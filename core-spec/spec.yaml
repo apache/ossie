@@ -37,6 +37,10 @@ semantic_model:
     # Optional: Human-readable description of the semantic model
     description: string
 
+    # Optional: Dialect used for all expressions in this document
+    # If not specified, defaults to ANSI_SQL
+    dialect: string
+
     # Optional: Additional context for AI tools (e.g., custom prompts, instructions)
     ai_context: string
 
@@ -156,14 +160,10 @@ fields:
   # Required: Unique identifier for the field within the logical dataset
   - name: string
 
-    # Required: Expression definition with dialect support
-    # Supports multiple SQL dialects for cross-platform compatibility
-    # Each field can have expressions in different dialects for portability
+    # Required: Expression definition
+    # Executed using the dialect at the document level
     # Can be a simple column reference or a complex scalar expression
-    expression:
-      dialects:
-        - dialect: string  # Must be one of the values from 'dialects' enum above, Default: "ANSI_SQL"
-          expression: string  # SQL scalar expression, e.g., "customer_id", "first_name || ' ' || last_name", "UPPER(email)"
+    expression: string  # SQL scalar expression, e.g., "customer_id", "first_name || ' ' || last_name", "UPPER(email)"
 
     # Optional: Dimension metadata
     # Indicates this field can be used as a dimension for grouping/filtering
@@ -195,13 +195,10 @@ metrics:
   # Required: Unique identifier for the metric
   - name: string
 
-    # Required: Expression definition with dialect support
-    # Supports multiple SQL dialects for cross-platform compatibility
-    # Each metric can have expressions in different dialects for portability
-    expression:
-      dialects:
-        - dialect: string  # Must be one of the values from 'dialects' enum above, Default: "ANSI_SQL"
-          expression: string  # Full SQL expression with aggregate functions, e.g., "SUM(orders.sales)", "AVG(orders.amount)"
+    # Required: Expression definition
+    # Executed using the dialect at the document level
+    # Expression with aggregation
+    expression: string  # Full SQL expression with aggregate functions, e.g., "SUM(orders.sales)", "AVG(orders.amount)"
 
     # Optional: Human-readable description of the metric
     # Should explain what the metric measures and how it's used

@@ -29,10 +29,7 @@ semantic_model:
 
         fields:
           - name: ss_sold_date_sk
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: ss_sold_date_sk
+            expression: ss_sold_date_sk
             description: Foreign key to date dimension
             dimension:
               is_time: false
@@ -42,10 +39,7 @@ semantic_model:
                 - "transaction date"
 
           - name: ss_item_sk
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: ss_item_sk
+            expression: ss_item_sk
             description: Foreign key to item dimension
             dimension:
               is_time: false
@@ -55,10 +49,7 @@ semantic_model:
                 - "item"
 
           - name: ss_customer_sk
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: ss_customer_sk
+            expression: ss_customer_sk
             description: Foreign key to customer dimension
             dimension:
               is_time: false
@@ -68,10 +59,7 @@ semantic_model:
                 - "buyer"
 
           - name: ss_store_sk
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: ss_store_sk
+            expression: ss_store_sk
             description: Foreign key to store dimension
             dimension:
               is_time: false
@@ -81,10 +69,7 @@ semantic_model:
                 - "location"
 
           - name: ss_quantity
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: ss_quantity
+            expression: ss_quantity
             description: Quantity of items sold
             ai_context:
               synonyms:
@@ -92,10 +77,7 @@ semantic_model:
                 - "quantity"
 
           - name: ss_sales_price
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: ss_sales_price
+            expression: ss_sales_price
             description: Sales price per unit
             ai_context:
               synonyms:
@@ -103,10 +85,7 @@ semantic_model:
                 - "price"
 
           - name: ss_ext_sales_price
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: ss_ext_sales_price
+            expression: ss_ext_sales_price
             description: Extended sales price (quantity * price)
             ai_context:
               synonyms:
@@ -114,10 +93,7 @@ semantic_model:
                 - "line total"
 
           - name: ss_net_profit
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: ss_net_profit
+            expression: ss_net_profit
             description: Net profit from the sale
             ai_context:
               synonyms:
@@ -139,19 +115,13 @@ semantic_model:
 
         fields:
           - name: d_date_sk
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: d_date_sk
+            expression: d_date_sk
             description: Surrogate key for date
             dimension:
               is_time: false
 
           - name: d_date
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: d_date
+            expression: d_date
             description: Actual date value
             dimension:
               is_time: true
@@ -161,10 +131,7 @@ semantic_model:
                 - "calendar date"
 
           - name: d_year
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: d_year
+            expression: d_year
             description: Year
             dimension:
               is_time: true
@@ -173,10 +140,7 @@ semantic_model:
                 - "year"
 
           - name: d_quarter_name
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: d_quarter_name
+            expression: d_quarter_name
             description: Quarter name (e.g., 2024Q1)
             dimension:
               is_time: true
@@ -186,10 +150,7 @@ semantic_model:
                 - "fiscal quarter"
 
           - name: d_month_name
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: d_month_name
+            expression: d_month_name
             description: Month name
             dimension:
               is_time: true
@@ -212,19 +173,13 @@ semantic_model:
 
         fields:
           - name: c_customer_sk
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: c_customer_sk
+            expression: c_customer_sk
             description: Surrogate key for customer
             dimension:
               is_time: false
 
           - name: c_customer_id
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: c_customer_id
+            expression: c_customer_id
             description: Business key for customer
             dimension:
               is_time: false
@@ -234,28 +189,19 @@ semantic_model:
                 - "customer number"
 
           - name: c_first_name
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: c_first_name
+            expression: c_first_name
             description: Customer first name
             dimension:
               is_time: false
 
           - name: c_last_name
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: c_last_name
+            expression: c_last_name
             description: Customer last name
             dimension:
               is_time: false
 
           - name: customer_full_name
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: c_first_name || ' ' || c_last_name
+            expression: c_first_name || ' ' || c_last_name
             description: Customer full name (computed field)
             dimension:
               is_time: false
@@ -265,10 +211,7 @@ semantic_model:
                 - "customer name"
 
           - name: c_email_address
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: c_email_address
+            expression: c_email_address
             description: Customer email address
             dimension:
               is_time: false
@@ -292,19 +235,13 @@ semantic_model:
 
         fields:
           - name: i_item_sk
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: i_item_sk
+            expression: i_item_sk
             description: Surrogate key for item
             dimension:
               is_time: false
 
           - name: i_item_id
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: i_item_id
+            expression: i_item_id
             description: Business key for item
             dimension:
               is_time: false
@@ -315,10 +252,7 @@ semantic_model:
                 - "SKU"
 
           - name: i_item_desc
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: i_item_desc
+            expression: i_item_desc
             description: Item description
             dimension:
               is_time: false
@@ -328,10 +262,7 @@ semantic_model:
                 - "item name"
 
           - name: i_brand
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: i_brand
+            expression: i_brand
             description: Brand name
             dimension:
               is_time: false
@@ -341,10 +272,7 @@ semantic_model:
                 - "manufacturer"
 
           - name: i_category
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: i_category
+            expression: i_category
             description: Item category
             dimension:
               is_time: false
@@ -354,10 +282,7 @@ semantic_model:
                 - "department"
 
           - name: i_current_price
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: i_current_price
+            expression: i_current_price
             description: Current price of the item
             dimension:
               is_time: false
@@ -381,19 +306,13 @@ semantic_model:
 
         fields:
           - name: s_store_sk
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: s_store_sk
+            expression: s_store_sk
             description: Surrogate key for store
             dimension:
               is_time: false
 
           - name: s_store_id
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: s_store_id
+            expression: s_store_id
             description: Business key for store
             dimension:
               is_time: false
@@ -403,10 +322,7 @@ semantic_model:
                 - "store number"
 
           - name: s_store_name
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: s_store_name
+            expression: s_store_name
             description: Store name
             dimension:
               is_time: false
@@ -416,10 +332,7 @@ semantic_model:
                 - "location name"
 
           - name: s_city
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: s_city
+            expression: s_city
             description: City where store is located
             dimension:
               is_time: false
@@ -429,10 +342,7 @@ semantic_model:
                 - "location"
 
           - name: s_state
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: s_state
+            expression: s_state
             description: State where store is located
             dimension:
               is_time: false
@@ -442,10 +352,7 @@ semantic_model:
                 - "region"
 
           - name: s_number_employees
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: s_number_employees
+            expression: s_number_employees
             description: Number of employees at the store
             ai_context:
               synonyms:
@@ -497,10 +404,7 @@ semantic_model:
     # Semantic model-level metrics spanning multiple datasets
     metrics:
       - name: total_sales
-        expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: SUM(store_sales.ss_ext_sales_price)
+        expression: SUM(store_sales.ss_ext_sales_price)
         description: Total sales revenue across all transactions
         ai_context:
           synonyms:
@@ -509,10 +413,7 @@ semantic_model:
             - "sales amount"
 
       - name: total_profit
-        expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: SUM(store_sales.ss_net_profit)
+        expression: SUM(store_sales.ss_net_profit)
         description: Total net profit from store sales
         ai_context:
           synonyms:
@@ -521,10 +422,7 @@ semantic_model:
             - "profit"
 
       - name: customer_lifetime_value
-        expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: SUM(store_sales.ss_ext_sales_price) / COUNT(DISTINCT customer.c_customer_sk)
+        expression: SUM(store_sales.ss_ext_sales_price) / COUNT(DISTINCT customer.c_customer_sk)
         description: Average lifetime sales value per customer
         ai_context:
           synonyms:
@@ -534,10 +432,7 @@ semantic_model:
             - "lifetime revenue"
 
       - name: sales_by_brand
-        expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: SUM(store_sales.ss_ext_sales_price)
+        expression: SUM(store_sales.ss_ext_sales_price)
         description: Total sales by brand (requires grouping by item.i_brand)
         ai_context:
           synonyms:
@@ -546,10 +441,7 @@ semantic_model:
             - "brand revenue"
 
       - name: store_productivity
-        expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: SUM(store_sales.ss_ext_sales_price) / NULLIF(SUM(store.s_number_employees), 0)
+        expression: SUM(store_sales.ss_ext_sales_price) / NULLIF(SUM(store.s_number_employees), 0)
         description: Sales per employee across stores
         ai_context:
           synonyms:

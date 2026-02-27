@@ -1,6 +1,7 @@
 # OSI - Core Metadata Specification
 
-**Version:** 1.0
+**Version:** 1.1
+**Status:** DRAFT
 
 ## Goals
 
@@ -26,15 +27,15 @@ Standard enumeration values used throughout the specification.
 
 ### Dialects
 
-Supported SQL and expression language dialects for metrics and field definitions.
+Supported SQL and expression language dialects for the semantic model.
 
-| Dialect | Description |
-|---------|-------------|
-| `ANSI_SQL` | Standard SQL dialect |
-| `SNOWFLAKE` | Snowflake SQL |
-| `MDX` | Multi-Dimensional Expressions |
-| `TABLEAU` | Tableau calculations |
-| `DATABRICKS` | Databricks SQL |
+| Dialect | Description                                     |
+|---------|-------------------------------------------------|
+| `ANSI_SQL` | Standard SQL dialect (default if not specified) |
+| `SNOWFLAKE` | Snowflake SQL                                   |
+| `MDX` | Multi-Dimensional Expressions                   |
+| `TABLEAU` | Tableau calculations                            |
+| `DATABRICKS` | Databricks SQL                                  |
 
 ### Vendors
 
@@ -54,15 +55,16 @@ The top-level container that represents a complete semantic model, including dat
 
 ### Schema
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | string | Yes | Unique identifier for the semantic model |
-| `description` | string | No | Human-readable description |
-| `ai_context` | string/object | No | Additional context for AI tools (e.g., custom instructions) |
-| `datasets` | array | Yes | Collection of logical datasets (fact and dimension tables) |
-| `relationships` | array | No | Defines how logical datasets are connected |
-| `metrics` | array | No | Quantifiable measures defined as aggregate expessions on fields from logical datsets |
-| `custom_extensions` | array | No | Vendor-specific attributes for extensibility |
+| Field               | Type          | Required | Description                                                                                                    |
+|---------------------|---------------|----------|----------------------------------------------------------------------------------------------------------------|
+| `name`              | string        | Yes      | Unique identifier for the semantic model                                                                       |
+| `description`       | string        | No       | Human-readable description                                                                                     |
+| `dialect`           | string        | No       | Expression langauge dialect used for all expression in this document (defaults to `ANSI_SQL` if not specified) |
+| `ai_context`        | string/object | No       | Additional context for AI tools (e.g., custom instructions)                                                    |
+| `datasets`          | array         | Yes      | Collection of logical datasets (fact and dimension tables)                                                     |
+| `relationships`     | array         | No       | Defines how logical datasets are connected                                                                     |
+| `metrics`           | array         | No       | Quantifiable measures defined as aggregate expessions on fields from logical datsets                           |
+| `custom_extensions` | array         | No       | Vendor-specific attributes for extensibility                                                                   |
 
 ### Example
 
@@ -70,6 +72,7 @@ The top-level container that represents a complete semantic model, including dat
 semantic_model:
   - name: sales_analytics
     description: Sales and customer analytics model
+    dialect: ANSI_SQL
     ai_context:
       instructions: "Use this model for sales analysis and customer insights"
     datasets: []
@@ -198,30 +201,22 @@ Fields represent row-level attributes that can be used for grouping, filtering, 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | Yes | Unique identifier for the field within the dataset |
-| `expression` | object | Yes | Expression definition with dialect support |
 | `dimension` | object | No | Dimension metadata (e.g., `is_time` flag) |
 | `label` | string | No | Label for categorization |
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms) |
 | `custom_extensions` | array | No | Vendor-specific attributes |
 
-### Expression Object
+### Expression String
 
-The expression object supports multiple SQL dialects for cross-platform compatibility. Each field can define expressions in different dialects.
-
-**Structure:**
-
-```yaml
-expression:
-  dialects:
-    - dialect: ANSI_SQL  # Must be one of the dialects enum values
-      expression: "customer_id"  # Scalar SQL expression
-```
+The expression is a simple string containing the expression in the dialect specified at the semantic model level.  
+Expressions are expected to be expressible as strings, in non-SQL dialects there must be a string representations of it.  
+It should be human-readable.
 
 **Key Points:**
 - Use scalar SQL expressions (no aggregations)
 - Can be simple column references (e.g., `customer_id`) or computed expressions (e.g., `first_name || ' ' || last_name`)
-- Multiple dialect versions can be provided for the same field
+- One dialect for all the expression in a document
 
 ### Dimension Object
 
@@ -235,10 +230,7 @@ expression:
 
 ```yaml
 - name: customer_id
-  expression:
-    dialects:
-      - dialect: ANSI_SQL
-        expression: customer_id
+  expression: customer_id
   description: Customer identifier
   dimension: 
     is_time: false
@@ -248,10 +240,7 @@ expression:
 
 ```yaml
 - name: full_name
-  expression:
-    dialects:
-      - dialect: ANSI_SQL
-        expression: first_name || ' ' || last_name
+  expression: first_name || ' ' || last_name
   description: Customer full name
   ai_context:
     synonyms:
@@ -263,10 +252,7 @@ expression:
 
 ```yaml
 - name: order_date
-  expression:
-    dialects:
-      - dialect: ANSI_SQL
-        expression: order_date
+  expression: order_date
   dimension:
     is_time: true
   description: Date when order was placed
@@ -274,19 +260,6 @@ expression:
     synonyms:
       - "purchase date"
       - "transaction date"
-```
-
-**Multi-Dialect Field:**
-
-```yaml
-- name: email_normalized
-  expression:
-    dialects:
-      - dialect: ANSI_SQL
-        expression: LOWER(email)
-      - dialect: SNOWFLAKE
-        expression: LOWER(email)::VARCHAR
-  description: Normalized email address
 ```
 
 ---
@@ -297,23 +270,20 @@ Quantitative measures defined on business data, representing key calculations li
 
 ### Schema
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | string | Yes | Unique identifier for the metric |
-| `expression` | object | Yes | Expression definition with dialect support |
-| `description` | string | No | Human-readable description of what the metric measures |
+| Field | Type          | Required | Description |
+|-------|---------------|----------|-------------|
+| `name` | string        | Yes | Unique identifier for the metric |
+| `expression` | string        | Yes | Expression definition with dialect support |
+| `description` | string        | No | Human-readable description of what the metric measures |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms) |
-| `custom_extensions` | array | No | Vendor-specific attributes |
+| `custom_extensions` | array         | No | Vendor-specific attributes |
 
-### Expression Object
-
-The expression object supports multiple dialects
+### Expression 
+The expression is a simple string containing the expression in the dialect specified at the semantic model level.  
+It should have aggregation functions wrapping any row data so it would be able to perform as a rollup.
 
 ```yaml
-expression:
-  dialects:
-  - dialect: ANSI_SQL  # Default
-    expression: "SUM(order.sales) / COUNT(DISTINCT order.customer_id)"
+expression: "SUM(order.sales) / COUNT(DISTINCT order.customer_id)"
 ```
 
 
@@ -323,9 +293,7 @@ expression:
 
 ```yaml
 - name: total_revenue
-  expression:
-    - dialect: ANSI_SQL
-      expression: SUM(orders.amount)
+  expression: SUM(orders.amount)
   description: Total revenue across all orders
   ai_context:
     synonyms:
@@ -337,9 +305,7 @@ expression:
 
 ```yaml
 - name: avg_orders
-  expression:
-    - dialect: ANSI_SQL
-      expression: SUM(orders.amount) / COUNT(DISTINCT customers.id)
+  expression: SUM(orders.amount) / COUNT(DISTINCT customers.id)
   description: Average orders
   ai_context:
     synonyms:
@@ -428,33 +394,21 @@ semantic_model:
         description: Customer orders
         fields:
           - name: order_id
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: order_id
+            expression: order_id
             description: Order identifier
           
           - name: customer_id
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: customer_id
+            expression: customer_id
             description: Customer identifier
           
           - name: order_date
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: order_date
+            expression: order_date
             dimension:
               is_time: true
             description: Order date
           
           - name: amount
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: amount
+            expression: amount
             description: Order amount
 
       - name: customers
@@ -463,17 +417,11 @@ semantic_model:
         description: Customer information
         fields:
           - name: id
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: id
+            expression: id
             description: Customer identifier
           
           - name: email
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: email
+            expression: email
             description: Customer email
 
     relationships:
@@ -485,10 +433,7 @@ semantic_model:
 
     metrics:
       - name: total_revenue
-        expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: SUM(orders.amount)
+        expression: SUM(orders.amount)
         description: Total revenue from all orders
         ai_context:
           synonyms:
@@ -496,10 +441,7 @@ semantic_model:
             - "revenue"
 
       - name: customer_count
-        expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: COUNT(DISTINCT customers.id)
+        expression: COUNT(DISTINCT customers.id)
         description: Total number of customers
         ai_context:
           synonyms:
@@ -549,6 +491,10 @@ ai_context:
 
 ## Version History
 
+- **1.1** (2026-01-29): Dialect simplification
+  - **Breaking Change** Moved dialect from the expression level to the document level
+  - Each semantic model now specifies a single dialect
+  
 - **1.0** (2024-12-11): Initial release
   - Core semantic model structure
   - Support for datasets, relationships, fields, and metrics
