@@ -53,6 +53,11 @@ semantic_model:
     # See Metrics section below for detailed structure
     metrics: []
 
+    # Optional: Pre-validated SQL queries that serve as ground truth for AI tools
+    # and test cases for semantic model validation
+    # See Verified Queries section below for detailed structure
+    verified_queries: []
+
     # Optional: Vendor-specific attributes for extensibility
     # Allows vendors to add custom metadata without breaking core compatibility
     custom_extensions:
@@ -212,6 +217,39 @@ metrics:
     ai_context: string
 
      # Optional: Vendor-specific attributes for extensibility
+    custom_extensions:
+      - vendor_name: string  # Must be one of the values from 'vendors' enum above
+        data: string
+
+---
+# Verified Queries Schema
+# Pre-validated SQL queries that serve as ground truth for AI query generation,
+# test cases for semantic model validation, and onboarding examples for users
+verified_queries:
+  # Required: Unique identifier for the verified query
+  - name: string
+
+    # Required: Natural language question this query answers
+    question: string
+
+    # Required: SQL expression definition with dialect support
+    # Same structure as metric/field expressions but contains complete SQL queries
+    expression:
+      dialects:
+        - dialect: string  # Must be one of the values from 'dialects' enum above, Default: "ANSI_SQL"
+          expression: string  # Complete SQL query
+
+    # Optional: Person or system that verified the query correctness
+    verified_by: string
+
+    # Optional: ISO 8601 date or datetime when verification occurred
+    # Examples: "2025-01-15", "2025-01-15T10:30:00Z"
+    verified_at: string
+
+    # Optional: Additional context for AI tools
+    ai_context: string
+
+    # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
       - vendor_name: string  # Must be one of the values from 'vendors' enum above
         data: string

@@ -16,7 +16,8 @@
 4. [Relationships](#relationships)
 5. [Fields](#fields)
 6. [Metrics](#metrics)
-7. [Examples](#examples)
+7. [Verified Queries](#verified-queries)
+8. [Examples](#examples)
 
 ---
 
@@ -61,7 +62,8 @@ The top-level container that represents a complete semantic model, including dat
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., custom instructions) |
 | `datasets` | array | Yes | Collection of logical datasets (fact and dimension tables) |
 | `relationships` | array | No | Defines how logical datasets are connected |
-| `metrics` | array | No | Quantifiable measures defined as aggregate expessions on fields from logical datsets |
+| `metrics` | array | No | Quantifiable measures defined as aggregate expressions on fields from logical datasets |
+| `verified_queries` | array | No | Pre-validated SQL queries that serve as ground truth for AI tools and test cases |
 | `custom_extensions` | array | No | Vendor-specific attributes for extensibility |
 
 ### Example
@@ -75,6 +77,7 @@ semantic_model:
     datasets: []
     relationships: []
     metrics: []
+    verified_queries: []
     custom_extensions:
       - vendor_name: DBT
         data: '{"project_name": "tpcds_analytics", "models_path": "models/semantic"}'
@@ -348,6 +351,67 @@ expression:
 
 ---
 
+## Verified Queries
+
+Pre-validated SQL queries that serve as ground truth for AI query generation, test cases for semantic model validation, and onboarding examples for users. Verified queries are defined at the semantic model level.
+
+### Schema
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Unique identifier for the verified query |
+| `question` | string | Yes | Natural language question this query answers |
+| `expression` | object | Yes | SQL expression definition with dialect support (same structure as metric/field expressions) |
+| `verified_by` | string | No | Person or system that verified the query |
+| `verified_at` | string | No | ISO 8601 date or datetime when verification occurred |
+| `ai_context` | string/object | No | Additional context for AI tools |
+| `custom_extensions` | array | No | Vendor-specific attributes |
+
+### Examples
+
+**Simple Verified Query:**
+
+```yaml
+- name: top_customers_by_revenue
+  question: "Who are the top 10 customers by total revenue?"
+  expression:
+    dialects:
+      - dialect: ANSI_SQL
+        expression: |
+          SELECT c.c_first_name, c.c_last_name,
+                 SUM(ss.ss_ext_sales_price) AS total_revenue
+          FROM store_sales ss
+          JOIN customer c ON ss.ss_customer_sk = c.c_customer_sk
+          GROUP BY c.c_first_name, c.c_last_name
+          ORDER BY total_revenue DESC
+          LIMIT 10
+  verified_by: "Jane Smith"
+  verified_at: "2025-01-15"
+```
+
+**Query with AI Context:**
+
+```yaml
+- name: monthly_sales_trend
+  question: "What is the monthly sales trend for the current year?"
+  expression:
+    dialects:
+      - dialect: ANSI_SQL
+        expression: |
+          SELECT d.d_month_name, SUM(ss.ss_ext_sales_price) AS monthly_sales
+          FROM store_sales ss
+          JOIN date_dim d ON ss.ss_sold_date_sk = d.d_date_sk
+          WHERE d.d_year = YEAR(CURRENT_DATE)
+          GROUP BY d.d_month_name
+          ORDER BY MIN(d.d_date)
+  verified_by: "Analytics Team"
+  verified_at: "2025-02-01"
+  ai_context:
+    instructions: "Use this as a reference for time-series sales analysis"
+```
+
+---
+
 ## Custom Extensions
 
 Custom extensions allow vendors to add platform-specific metadata without breaking core compatibility. Each extension includes a vendor name and arbitrary JSON data.
@@ -506,6 +570,22 @@ semantic_model:
             - "total customers"
             - "customer base"
 
+    verified_queries:
+      - name: top_customers
+        question: "Who are the top 5 customers by revenue?"
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: |
+                SELECT c.email, SUM(o.amount) AS total_spent
+                FROM orders o
+                JOIN customers c ON o.customer_id = c.id
+                GROUP BY c.email
+                ORDER BY total_spent DESC
+                LIMIT 5
+        verified_by: "Analytics Team"
+        verified_at: "2025-01-15"
+
     custom_extensions:
       - vendor_name: SNOWFLAKE
         data: '{"warehouse": "ANALYTICS_WH"}'
@@ -544,11 +624,18 @@ ai_context:
 | `instructions` | string | Instructions for AI on how to use this entity |
 | `synonyms` | array | Alternative names and terms |
 | `examples` | array | Sample questions or use cases |
+| `sample_values` | array | Representative data values. Particularly useful on fields to help AI tools understand value formats, disambiguate between fields, and generate correct filter predicates |
 
 ---
 
 ## Version History
 
+- **1.1** (2025-02-09): AI and query generation enhancements
+  - Added `data_type` to Fields for explicit type metadata
+  - Added `sample_values` to AI Context for value disambiguation
+  - Added `verified_queries` as a new top-level concept for ground-truth SQL examples
+  - Added `relationship_type` and `join_type` to Relationships for explicit cardinality and join semantics
+  - Clarified that `ai_context` is available at every level of the semantic model
 - **1.0** (2024-12-11): Initial release
   - Core semantic model structure
   - Support for datasets, relationships, fields, and metrics
