@@ -22,14 +22,9 @@ dialects:
 
 
 
-# Supported vendors for custom extensions
-vendors:
-  - "COMMON"
-  - "SNOWFLAKE"
-  - "SALESFORCE"
-  - "DBT"
-  - "DATABRICKS"
-  - "GOODDATA"
+# Vendor name for custom extensions (free-form string)
+# Examples: "COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA"
+vendor_name: string
 
  
 # Top-level semantic model definition
