@@ -117,10 +117,11 @@ Changes to the OSI Specification follow a structured voting process:
 
 1. **Proposal**: A specification change is submitted as a GitHub pull request with a clear description of the motivation, the change itself, and its impact on existing implementations.
 2. **Discussion period**: The community has a minimum of 7 days to review and discuss the proposed change. Complex changes may require a longer review window.
-3. **Vote**: Once the discussion period has elapsed, a vote is called. TSC members and committers cast binding votes using the following convention:
+3. **Vote**: Once the discussion period has elapsed, a vote is called. TSC members and committers cast votes using the following convention:
    - **+1** (Yes): In favor of the change
    - **0** (Abstain): No opinion or willing to go with the majority
    - **-1** (Veto): Against the change — must be accompanied by a technical justification
+  The votes from the TSC members are considered as binding votes.
 4. **Resolution**: A specification change passes with at least 2 binding +1 votes and no vetoes. A veto can only be overridden by addressing the stated concern or by a supermajority (two-thirds) vote of the TSC.
 
 ### Working Groups
@@ -260,32 +261,6 @@ This allows a single semantic model to be consumed natively by different platfor
 
 ---
 
-## Roadmap
-
-The OSI specification is actively evolving. The following areas represent the current focus of the community and working groups.
-
-### Near-Term
-
-- **Advanced Metric Language**: Expanding the expression language to support derived metrics (metrics computed from other metrics), cumulative metrics, period-over-period comparisons, and conditional aggregations. *(Metric Language and Relationships WG)*
-- **Composability Primitives**: Defining how semantic models can reference and extend other models — enabling modular, layered definitions where a base model can be enriched or specialized without duplication. *(Composability WG)*
-- **Catalog Integration**: Specifying how OSI models are registered, discovered, and governed within data catalog platforms — including lineage tracking and impact analysis. *(Catalog WG)*
-
-### Medium-Term
-
-- **Sync API Specification**: A formal API specification for real-time and scheduled synchronization of semantic models between platforms, enabling automated propagation of model changes across the ecosystem. *(Sync API WG)*
-- **Ontology Framework**: A higher-level conceptual framework for describing business domains, entity hierarchies, and semantic relationships beyond foreign keys — bringing richer meaning to the models. *(Ontology WG)*
-- **Additional Vendor Support**: Expanding the set of supported vendors and dialects as more organizations adopt OSI and contribute converters.
-
-### Long-Term
-
-- **Semantic Model Versioning**: First-class support for versioning semantic models, enabling teams to track changes over time, compare versions, and manage backward-compatible evolution.
-- **Governance Workflows**: Built-in support for approval workflows, change impact analysis, and automated validation as part of the model lifecycle.
-- **Ecosystem Tooling**: A broader set of open-source tools around OSI — including visual editors, diff tools, migration utilities, and CI/CD integrations for semantic models.
-
-The roadmap is shaped by community input. To propose a new direction or feature, open a GitHub issue or raise the topic in a community meeting.
-
----
-
 ## Frequently Asked Questions
 
 ### General
@@ -322,7 +297,7 @@ YAML is more human-readable and easier to author by hand, which is important for
 Through `custom_extensions`. Each vendor can store arbitrary JSON metadata in extension blocks tagged with their vendor name. This metadata is preserved during round-trip conversions and ignored by tools that don't understand it — ensuring that no information is lost.
 
 **Can metrics reference multiple datasets?**
-Yes. Metrics are defined at the semantic model level (not within a dataset) and can reference fields from multiple datasets. The relationships defined in the model tell tools how to join the datasets when computing cross-dataset metrics.
+Yes. Metrics are defined at the semantic model level (not within a dataset) and can reference fields from multiple datasets.
 
 **What SQL dialects are supported?**
 The current specification supports `ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`, `MDX`, and `TABLEAU`. New dialects can be proposed through the standard specification change process.
