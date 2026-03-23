@@ -19,7 +19,7 @@
     },
     "vendors": {
       "type": "array",
-      "description": "Supported vendors for custom extensions (enumeration definition)",
+      "description": "Well-known vendors for custom extensions (non-exhaustive list of examples)",
       "items": {
         "$ref": "#/$defs/Vendor"
       }

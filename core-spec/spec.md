@@ -363,7 +363,7 @@ Custom extensions allow vendors to add platform-specific metadata without breaki
 
 ```yaml
 custom_extensions:
-  - vendor_name: string  # Must be from vendors enum
+  - vendor_name: string  # Free-form string identifying the vendor
     data: string         # JSON string containing vendor-specific data
 ```
 
