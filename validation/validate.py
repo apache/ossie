@@ -4,9 +4,10 @@ OSI Semantic Model Validator
 
 Validates OSI YAML files against:
 1. JSON Schema (structure, types, enums)
-2. Unique names (datasets, fields, metrics, relationships)
-3. Valid relationship references
-4. SQL syntax (using sqlglot)
+2. Unique names (semantic models, datasets, fields, metrics, relationships, dialects)
+3. Valid relationship references and column count consistency
+4. Custom extension JSON validity
+5. SQL syntax (using sqlglot)
 
 Usage:
     python validation/validate.py <yaml_file>
@@ -70,6 +71,11 @@ def validate_unique_names(data: dict) -> list[str]:
     """Validate unique names for datasets, fields, metrics, relationships."""
     errors = []
 
+    # Check unique semantic model names
+    model_names = [m.get("name") for m in data.get("semantic_model", []) if m.get("name")]
+    for dup in find_duplicates(model_names):
+        errors.append(f"[Unique] Duplicate semantic model name '{dup}'")
+
     for model in data.get("semantic_model", []):
         model_name = model.get("name", "<unnamed>")
 
@@ -115,6 +121,90 @@ def validate_references(data: dict) -> list[str]:
                 errors.append(f"[Reference] Relationship '{rel_name}' references unknown dataset '{from_ds}'")
             if to_ds and to_ds not in dataset_names:
                 errors.append(f"[Reference] Relationship '{rel_name}' references unknown dataset '{to_ds}'")
+
+            # Check from_columns and to_columns have the same length
+            from_cols = rel.get("from_columns", [])
+            to_cols = rel.get("to_columns", [])
+            if from_cols and to_cols and len(from_cols) != len(to_cols):
+                errors.append(
+                    f"[Reference] Relationship '{rel_name}': from_columns has {len(from_cols)} column(s) "
+                    f"but to_columns has {len(to_cols)} column(s)"
+                )
+
+    return errors
+
+
+def validate_custom_extensions(data: dict) -> list[str]:
+    """Validate that custom extension 'data' fields contain valid JSON."""
+    errors = []
+
+    for model in data.get("semantic_model", []):
+        model_name = model.get("name", "<unnamed>")
+
+        # Collect all (context, extensions) pairs to check
+        extension_sources = [(f"model '{model_name}'", model.get("custom_extensions", []))]
+
+        for dataset in model.get("datasets", []):
+            ds_name = dataset.get("name", "<unnamed>")
+            extension_sources.append((f"dataset '{ds_name}'", dataset.get("custom_extensions", [])))
+            for field in dataset.get("fields", []):
+                field_name = field.get("name", "<unnamed>")
+                extension_sources.append(
+                    (f"field '{ds_name}.{field_name}'", field.get("custom_extensions", []))
+                )
+
+        for metric in model.get("metrics", []):
+            metric_name = metric.get("name", "<unnamed>")
+            extension_sources.append((f"metric '{metric_name}'", metric.get("custom_extensions", [])))
+
+        for rel in model.get("relationships", []):
+            rel_name = rel.get("name", "<unnamed>")
+            extension_sources.append((f"relationship '{rel_name}'", rel.get("custom_extensions", [])))
+
+        for context, extensions in extension_sources:
+            for ext in extensions or []:
+                vendor = ext.get("vendor_name", "<unknown>")
+                ext_data = ext.get("data")
+                if ext_data is not None:
+                    try:
+                        json.loads(ext_data)
+                    except (json.JSONDecodeError, TypeError) as e:
+                        errors.append(
+                            f"[Extension] Custom extension for vendor '{vendor}' in {context} "
+                            f"has invalid JSON in 'data': {e}"
+                        )
+
+    return errors
+
+
+def validate_duplicate_dialects(data: dict) -> list[str]:
+    """Validate that no expression has duplicate dialect entries."""
+    errors = []
+
+    for model in data.get("semantic_model", []):
+        # Check field expressions
+        for dataset in model.get("datasets", []):
+            ds_name = dataset.get("name", "<unnamed>")
+            for field in dataset.get("fields", []):
+                field_name = field.get("name", "<unnamed>")
+                dialects = [
+                    d.get("dialect")
+                    for d in field.get("expression", {}).get("dialects", [])
+                    if d.get("dialect")
+                ]
+                for dup in find_duplicates(dialects):
+                    errors.append(f"[Unique] Duplicate dialect '{dup}' in field '{ds_name}.{field_name}'")
+
+        # Check metric expressions
+        for metric in model.get("metrics", []):
+            metric_name = metric.get("name", "<unnamed>")
+            dialects = [
+                d.get("dialect")
+                for d in metric.get("expression", {}).get("dialects", [])
+                if d.get("dialect")
+            ]
+            for dup in find_duplicates(dialects):
+                errors.append(f"[Unique] Duplicate dialect '{dup}' in metric '{metric_name}'")
 
     return errors
 
@@ -217,6 +307,8 @@ def main():
     errors.extend(validate_schema(data, schema))
     errors.extend(validate_unique_names(data))
     errors.extend(validate_references(data))
+    errors.extend(validate_custom_extensions(data))
+    errors.extend(validate_duplicate_dialects(data))
     errors.extend(validate_sql(data))
 
     # Report results
