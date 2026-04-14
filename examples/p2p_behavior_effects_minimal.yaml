@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=../core-spec/osi-schema.json
+version: 0.1.2
+
+semantic_model:
+  - name: sap_p2p_minimal_behavior
+    description: "Minimal example: first-class behavior/actions/effects for SAP P2P"
+
+    datasets:
+      - name: suppliers
+        source: sap.p2p.suppliers
+        primary_key: [supplier_id]
+        description: "Supplier master data"
+        fields:
+          - name: supplier_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: supplier_id
+            description: "Supplier ID"
+
+          - name: supplier_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: supplier_name
+            description: "Supplier name"
+
+          - name: status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: status
+            description: "Supplier lifecycle / blocking status (e.g., Active, Blocked)"
+
+    behavior:
+      namespace: "SAP_P2P"
+      behavior_layer_version: "0.1"
+      metadata:
+        owner: "example"
+        tags: ["p2p", "behavior", "effects"]
+
+      actions:
+        - id: suppliers/block
+          title: Block supplier
+          description: Block a supplier and prevent downstream procurement actions.
+          kind: command
+          operation: block
+          entity_name: suppliers
+          idempotency: idempotent
+          io_schema:
+            input_schema:
+              type: object
+              required: [supplier_id]
+              properties:
+                supplier_id: { type: string }
+                reason: { type: string }
+            output_schema:
+              type: object
+              properties:
+                supplier_id: { type: string }
+                status: { type: string }
+          effects:
+            - entity: field
+              mode: write
+              impact_type: state_transition
+              selectors:
+                dataset: suppliers
+                field_names: [status]
+              set_value: Blocked
+              confidence: guaranteed
+              notes: "After blocking, procurement actions should be denied by policy."
+
+        - id: suppliers/unblock
+          title: Unblock supplier
+          description: Unblock a supplier.
+          kind: command
+          operation: unblock
+          entity_name: suppliers
+          idempotency: idempotent
+          io_schema:
+            input_schema:
+              type: object
+              required: [supplier_id]
+              properties:
+                supplier_id: { type: string }
+                comment: { type: string }
+            output_schema:
+              type: object
+              properties:
+                supplier_id: { type: string }
+                status: { type: string }
+          effects:
+            - entity: field
+              mode: write
+              impact_type: state_transition
+              selectors:
+                dataset: suppliers
+                field_names: [status]
+              transition:
+                from: Blocked
+                to: Active
+              confidence: likely
+              notes: "Exact target status may vary by ERP configuration."
+
+      rules:
+        - id: sap_p2p/rule_blocked_vendor_transaction_prevention
+          title: Blocked supplier prevents procurement transactions
+          severity: error
+          when:
+            entity: dataset
+            selectors:
+              dataset: suppliers
+              field_names: [status]
+          constraint:
+            type: state_machine
+            rule: "If suppliers.status == 'Blocked' then deny procurement transactions."
+          message: "Supplier is blocked. Procurement transactions are not allowed."
+          remediation: "Run suppliers/unblock or contact an administrator to unblock the supplier."
+

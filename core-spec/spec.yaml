@@ -1,5 +1,5 @@
 # OSI - Core Metadata Spec (YAML Schema)
-version: 0.1.1
+version: 0.1.2
 # 
 # Goals:
 # - Standardization: Establish uniform language and structure for semantic model definitions
@@ -58,6 +58,75 @@ semantic_model:
     custom_extensions:
       - vendor_name: string  # Must be one of the values from 'vendors' enum above
         data: string
+
+    # Optional:
+    # Behavior layer (actions/rules/effects) promoted to a first-class, vendor-agnostic structure.
+    # Intended for deterministic action planning and attribution (what changed/why).
+    #
+    # Backwards compatibility:
+    # - Tools MAY still embed behavior-layer JSON in custom_extensions (e.g. vendor_name: COMMON).
+    # - If both semantic_model.behavior and embedded behavior are provided, tools SHOULD define precedence
+    #   (recommended: semantic_model.behavior takes precedence).
+    behavior: {}
+
+---
+# Behavior Schema (Optional)
+# A vendor-agnostic behavior layer for deterministic action planning and attribution.
+# This is intentionally separate from SQL/query generation: actions can map to APIs, workflows, or tools.
+behavior:
+  # Required: Namespace for grouping actions/rules (e.g., "SAP_P2P", "CRM")
+  namespace: string
+
+  # Required: Version of the behavior schema used by this model
+  behavior_layer_version: string
+
+  # Optional: Metadata for governance/audit
+  metadata: {}
+
+  # Preferred: List of actions supported by this semantic model
+  actions: []
+
+  # Legacy alias (compat): actions MAY also be provided as action_types
+  # New models SHOULD use actions.
+  action_types: []
+
+  # Optional: Declarative rules/constraints for planning and validation
+  rules: []
+
+---
+# Action Schema (within behavior.actions)
+actions:
+  - id: string                # e.g. "suppliers/block"
+    title: string             # Human-friendly title
+    description: string
+    kind: "command"|"query"
+    operation: string         # free-form, e.g. "block"|"unblock"|"create"|"analyze"
+    entity_name: string       # dataset name or conceptual entity
+    idempotency: "idempotent"|"non_idempotent"|"unknown"
+    applies_to: {}            # optional selectors (dataset/field/metric/relationship)
+    io_schema: {}             # optional input/output JSON schema for tool execution
+    effects: []               # optional: machine-readable impact annotations
+    tags: []
+    synonyms: []
+
+---
+# Effect Schema (within action.effects)
+# Used for:
+# - Planning: understand state transitions and prohibited/required follow-up actions
+# - Attribution: explain "what changed/why" for fields/datasets
+effects:
+  - entity: "dataset"|"field"|"metric"|"relationship"
+    mode: "read"|"write"|"derive"
+    impact_type: "state_transition"|"master_data_mutation"|"transactional_write"|"derived_metric_change"|"other"
+    selectors:
+      dataset: string
+      field_names: []
+    transition:
+      from: string
+      to: string
+    set_value: string
+    confidence: "guaranteed"|"likely"|"unknown"
+    notes: string
 
 ---
 # Logical Dataset Schema
