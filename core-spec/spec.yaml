@@ -184,8 +184,17 @@ fields:
     # Optional: Dimension metadata
     # Indicates this field can be used as a dimension for grouping/filtering
     dimension:
-      # Optional: Indicates if this is a time-based dimension
-      # Used for time-series analysis and temporal filtering
+      # Optional: Temporal-role marker
+      # When true, consumers should treat this field as a time dimension
+      # for time-series analysis and temporal filtering. This is a *role*
+      # flag, independent of the field's data type. A field with
+      # is_time: true may carry any datatype (e.g. integer for a year
+      # grain, string for a month name, date/timestamp for a date column).
+      #
+      # Default: when unset, is_time defaults to true if datatype is one
+      # of date, time, timestamp, timestamp_tz, and false otherwise. Set
+      # is_time: false explicitly to opt a temporal-typed column out of
+      # time-dimension treatment.
       is_time: boolean
 
     # Optional: Label for categorization (e.g., "filter")
@@ -193,6 +202,11 @@ fields:
 
     # Optional: Human-readable description of the field
     description: string
+
+    # Optional: Logical data type for this field
+    # One of: string, integer, number, boolean, date, time, timestamp, timestamp_tz, other
+    # Use "other" + custom_extensions for vendor-specific types
+    datatype: string
 
     # Optional: Additional context for AI tools (e.g., synonyms, business terms)
     # Helps LLMs understand the field meaning and generate better queries
@@ -222,6 +236,11 @@ metrics:
     # Optional: Human-readable description of the metric
     # Should explain what the metric measures and how it's used
     description: string
+
+    # Optional: Logical data type for this metric
+    # One of: string, integer, number, boolean, date, time, timestamp, timestamp_tz, other
+    # Use "other" + custom_extensions for vendor-specific types
+    datatype: string
 
     # Optional: Additional context for AI tools (e.g., synonyms, business context)
     # Helps LLMs understand the metric meaning and suggest it appropriately

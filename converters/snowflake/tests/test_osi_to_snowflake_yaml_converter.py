@@ -195,6 +195,58 @@ class TestClassifyField:
     def test_dimension_none_is_fact(self):
         assert _classify_field({"dimension": None}) == "fact"
 
+    def test_datatype_timestamp_is_time_dimension(self):
+        assert _classify_field(
+            {"dimension": {}, "datatype": "timestamp"}
+        ) == "time_dimension"
+
+    def test_datatype_date_is_time_dimension(self):
+        assert _classify_field(
+            {"dimension": {}, "datatype": "date"}
+        ) == "time_dimension"
+
+    def test_datatype_time_is_time_dimension(self):
+        assert _classify_field(
+            {"dimension": {}, "datatype": "time"}
+        ) == "time_dimension"
+
+    def test_datatype_timestamp_tz_is_time_dimension(self):
+        assert _classify_field(
+            {"dimension": {}, "datatype": "timestamp_tz"}
+        ) == "time_dimension"
+
+    def test_datatype_string_is_dimension(self):
+        assert _classify_field(
+            {"dimension": {}, "datatype": "string"}
+        ) == "dimension"
+
+    def test_datatype_other_is_dimension(self):
+        assert _classify_field(
+            {"dimension": {}, "datatype": "other"}
+        ) == "dimension"
+
+    def test_is_time_preserved_when_datatype_non_temporal(self):
+        """A dimension with is_time=True is classified as a time_dimension
+        even when datatype is non-temporal, because is_time is an
+        independent role marker (e.g., d_year with datatype: integer and
+        is_time: true is a time-role integer grain)."""
+        assert _classify_field(
+            {"dimension": {"is_time": True}, "datatype": "integer"}
+        ) == "time_dimension"
+
+    def test_is_time_false_suppresses_time_dimension_on_temporal_datatype(self):
+        """Explicit is_time: false is an author opt-out for temporal
+        columns (e.g., an audit created_at that should not appear on
+        the time axis). Explicit is_time always wins over the default."""
+        assert _classify_field(
+            {"dimension": {"is_time": False}, "datatype": "timestamp"}
+        ) == "dimension"
+
+    def test_no_dimension_with_temporal_datatype_is_still_fact(self):
+        """A temporal datatype on a field with no dimension block is still
+        a fact; type does not imply role."""
+        assert _classify_field({"datatype": "timestamp"}) == "fact"
+
 
 # ---------------------------------------------------------------------------
 # _extract_expression

@@ -112,11 +112,17 @@ Datasets represent logical tables (fact or dimension tables). They contain field
 
 Fields represent row-level attributes. They can be simple column references or computed expressions.
 
+> **Note:** `datatype` (on `Field` and `Metric`) declares a field's logical data type; `dimension.is_time` is an independent temporal-role marker.
+> A field may carry both, either, or neither. Use `datatype` for data-type questions (casting, serialization); use `is_time` for role questions
+> (classifying time dimensions). When `is_time` is unset it defaults to `true` if `datatype` is one of `date`, `time`, `timestamp`, `timestamp_tz`,
+> and `false` otherwise. Explicit `is_time` always wins.
+
 | Ossie Field | Description | Converter Consideration |
 |-----------|-------------|------------------------|
 | `name` | Field identifier | Map to column/attribute name |
 | `expression.dialects` | Multi-dialect SQL expressions | Select the dialect matching the target vendor; fall back to `ANSI_SQL` |
-| `dimension.is_time` | Whether the field is a time dimension | Map to vendor-specific time dimension markers |
+| `datatype` | Logical data type of the field (one of `string`, `integer`, `number`, `boolean`, `date`, `time`, `timestamp`, `timestamp_tz`, `other`). | Converters SHOULD consult `datatype` for the field's data type; prefer the temporal members (`date`, `time`, `timestamp`, `timestamp_tz`) to classify time dimensions. Use `other` + `custom_extensions` for types not covered by the enum. |
+| `dimension.is_time` | Temporal-role marker. When `true`, the field should be treated as a time dimension regardless of its `datatype` (e.g. an integer year grain, a string month name, or a date column). When unset, defaults to `true` for temporal `datatype`s (`date`, `time`, `timestamp`, `timestamp_tz`) and `false` otherwise. | Map to vendor-specific time dimension markers. Converters SHOULD classify as a time dimension when `is_time` resolves to `true` (either explicit or defaulted from a temporal `datatype`). An explicit `is_time: false` suppresses the time-dimension classification even on temporal-typed columns. |
 | `label` | Categorization label | Map if vendor supports field labels/tags |
 | `description` | Human-readable description | Most vendors support field descriptions |
 | `ai_context` | Synonyms and business context | Map if vendor supports semantic annotations |
@@ -163,6 +169,7 @@ Metrics are aggregate measures defined at the semantic model level. They can spa
 |-----------|-------------|------------------------|
 | `name` | Metric identifier | Map to vendor's measure/KPI name |
 | `expression.dialects` | Multi-dialect aggregate expressions | Select the appropriate dialect; fall back to `ANSI_SQL` |
+| `datatype` | Logical data type of the metric result (one of `string`, `integer`, `number`, `boolean`, `date`, `time`, `timestamp`, `timestamp_tz`, `other`). | Converters SHOULD consult `datatype` to declare the result type of the aggregation. Most numeric measures will be `number` or `integer`; use `other` + `custom_extensions` for types not covered by the enum. |
 | `description` | What the metric measures | Most vendors support descriptions |
 | `ai_context` | Synonyms and business context | Map if vendor supports semantic annotations |
 

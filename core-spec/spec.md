@@ -59,6 +59,22 @@ Supported SQL and expression language dialects for metrics and field definitions
 | `MAQL` | GoodData MAQL (Metric Analysis and Query Language) |
 | `BIGQUERY` | Google BigQuery (GoogleSQL) |
 
+### Datatypes
+
+Logical data types for fields and metrics.
+
+| Datatype | Description |
+|----------|-------------|
+| `string` | Variable-length Unicode character data. |
+| `integer` | Signed integer with no scale. |
+| `number` | Real number (floating-point or decimal) with unspecified precision. |
+| `boolean` | Logical two-valued truth type. |
+| `date` | Calendar date with no time-of-day component. |
+| `time` | Time-of-day with no date component. |
+| `timestamp` | Instant-in-time without timezone offset (naive / local). |
+| `timestamp_tz` | Instant-in-time with timezone offset (zoned). |
+| `other` | Any data type not covered above; use `custom_extensions` for vendor-specific refinement. |
+
 ## Semantic Model
 
 The top-level container that represents a complete semantic model, including datasets, relationships, and  metrics.
@@ -213,6 +229,7 @@ Fields represent row-level attributes that can be used for grouping, filtering, 
 | `dimension` | object | No | Dimension metadata (e.g., `is_time` flag) |
 | `label` | string | No | Label for categorization |
 | `description` | string | No | Human-readable description |
+| `datatype` | string (enum) | No | Logical data type for this field. See [Datatypes](#datatypes). |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms) |
 | `custom_extensions` | array | No | Vendor-specific attributes |
 
@@ -239,7 +256,7 @@ expression:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `is_time` | boolean | Indicates if this is a time-based dimension for temporal filtering |
+| `is_time` | boolean | Temporal-role marker. When `true`, consumers that distinguish time dimensions (e.g. for time-series analysis or temporal filtering) should treat this field as a time dimension. This is a *role* flag, independent of the field's data type. See [Datatype and `is_time`: type vs. role](#datatype-and-is_time-type-vs-role). |
 
 ### Examples
 
@@ -279,6 +296,7 @@ expression:
     dialects:
       - dialect: ANSI_SQL
         expression: order_date
+  datatype: date
   dimension:
     is_time: true
   description: Date when order was placed
@@ -303,6 +321,33 @@ expression:
   description: Normalized email address
 ```
 
+### Datatype and `is_time`: type vs. role
+
+`datatype` and `dimension.is_time` are independent properties that answer different questions:
+
+- **`datatype`** describes the *data type* of the field (e.g. `date`, `integer`, `string`, `timestamp_tz`): what kind of values the field holds.
+- **`dimension.is_time`** is a *temporal-role marker*: whether the field should be treated as a time dimension for time-series analysis or temporal filtering, regardless of its data type.
+
+**Default for `is_time`.** When `is_time` is not set explicitly, it defaults to `true` if `datatype` is one of `date`, `time`, `timestamp`, `timestamp_tz`, and `false` otherwise. Explicit `is_time` always wins. Set `is_time: false` on a temporal-typed column (e.g. an audit `created_at` you don't want on the time axis) to opt out of the default.
+
+Common combinations:
+
+| Column example | `datatype` | `is_time` | Effective role | Why |
+|---|---|---|---|---|
+| `d_date` (calendar date) | `date` | omitted | time dimension | Temporal `datatype`; `is_time` defaults to `true`. |
+| `order_timestamp` | `timestamp_tz` | omitted | time dimension | Same. |
+| `created_at` (audit timestamp) | `timestamp` | `false` | regular dimension | Explicit opt-out of the temporal default. |
+| `d_year` (integer year grain) | `integer` | `true` | time dimension | Non-temporal `datatype`; `is_time: true` makes the role explicit. |
+| `d_quarter_name` (e.g. `"Q1"`) | `string` | `true` | time dimension | String-valued temporal grain. |
+| `customer_id` | `integer` | omitted | regular dimension | Non-temporal `datatype`; `is_time` defaults to `false`. |
+
+> **Precedent.** This type/role separation mirrors [Snowflake Semantic Views' YAML authoring form](https://docs.snowflake.com/en/user-guide/views-semantic/semantic-view-yaml-spec), which has a structural `time_dimensions:` collection whose entries can carry any `data_type`. The published example annotates `order_year` with `data_type: NUMBER`. LookML supports a similar split via its [`dimension_group`](https://cloud.google.com/looker/docs/reference/param-field-dimension-group), whose `datatype` enum covers `date`, `datetime`, `timestamp`, plus the integer-encoded forms `epoch` and `yyyymmdd`.
+
+**Consumer guidance.**
+
+- For *data-type* questions (casting, serialization, downstream type inference): prefer `datatype` when present. If only `is_time: true` is set, do not infer a specific scalar type from it.
+- For *role* questions (classifying time dimensions in a query UI, generating time-series output sections, choosing time-aware aggregations): treat the field as a time dimension when `is_time` resolves to `true`, whether explicitly set or defaulted from a temporal `datatype`.
+
 ---
 
 ## Metrics
@@ -316,6 +361,7 @@ Quantitative measures defined on business data, representing key calculations li
 | `name` | string | Yes | Unique identifier for the metric |
 | `expression` | object | Yes | Expression definition with dialect support |
 | `description` | string | No | Human-readable description of what the metric measures |
+| `datatype` | string (enum) | No | Logical data type for this metric. See [Datatypes](#datatypes). |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms) |
 | `custom_extensions` | array | No | Vendor-specific attributes |
 
@@ -337,9 +383,11 @@ expression:
 ```yaml
 - name: total_revenue
   expression:
-    - dialect: ANSI_SQL
-      expression: SUM(orders.amount)
+    dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(orders.amount)
   description: Total revenue across all orders
+  datatype: number
   ai_context:
     synonyms:
       - "total sales"
@@ -351,9 +399,11 @@ expression:
 ```yaml
 - name: avg_orders
   expression:
-    - dialect: ANSI_SQL
-      expression: SUM(orders.amount) / COUNT(DISTINCT customers.id)
+    dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(orders.amount) / COUNT(DISTINCT customers.id)
   description: Average orders
+  datatype: number
   ai_context:
     synonyms:
       - "Order Average by customer"
@@ -463,23 +513,24 @@ semantic_model:
                 - dialect: ANSI_SQL
                   expression: order_id
             description: Order identifier
-
+          
           - name: customer_id
             expression:
               dialects:
                 - dialect: ANSI_SQL
                   expression: customer_id
             description: Customer identifier
-
+          
           - name: order_date
             expression:
               dialects:
                 - dialect: ANSI_SQL
                   expression: order_date
+            datatype: date
             dimension:
               is_time: true
             description: Order date
-
+          
           - name: amount
             expression:
               dialects:

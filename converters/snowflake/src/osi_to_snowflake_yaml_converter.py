@@ -33,6 +33,8 @@ import yaml
 
 SUPPORTED_VERSION = "0.2.0.dev0"
 
+_TIME_DATATYPES = frozenset({"date", "time", "timestamp", "timestamp_tz"})
+
 
 class OsiConversionError(Exception):
     """Raised when an Ossie YAML cannot be converted to Snowflake format."""
@@ -216,11 +218,31 @@ def _convert_dataset(dataset):
 
 
 def _classify_field(field):
-    """Returns 'dimension', 'time_dimension', or 'fact' based on field structure."""
+    """Classify a field as 'fact', 'dimension', or 'time_dimension'.
+
+    ``datatype`` declares the field's data type; ``dimension.is_time`` is
+    an independent temporal-role marker. Classification rules:
+
+    - A field with no ``dimension`` block is a ``fact`` regardless of
+      ``datatype`` (data type does not imply role).
+    - Explicit ``dimension.is_time`` always wins: ``True`` classifies as
+      ``time_dimension``; ``False`` classifies as ``dimension`` even when
+      ``datatype`` is temporal (author opt-out for e.g. audit timestamps).
+    - When ``dimension.is_time`` is unset, it defaults to ``True`` for
+      temporal ``datatype`` values (``date``, ``time``, ``timestamp``,
+      ``timestamp_tz``) and ``False`` otherwise.
+    """
     dimension = field.get("dimension")
     if dimension is None:
         return "fact"
-    if isinstance(dimension, dict) and dimension.get("is_time") is True:
+    is_time = dimension.get("is_time") if isinstance(dimension, dict) else None
+    if is_time is True:
+        return "time_dimension"
+    if is_time is False:
+        return "dimension"
+    # is_time is unset; default from datatype
+    datatype = field.get("datatype")
+    if datatype in _TIME_DATATYPES:
         return "time_dimension"
     return "dimension"
 
