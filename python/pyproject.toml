@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "osi-python"
+version = "0.1.1"
+description = "Python types for the Open Semantic Interchange (OSI) specification"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0",
+    "PyYAML>=6.0",
+]
+
+[project.license]
+text = "Apache-2.0"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/osi"]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.0",
+]
