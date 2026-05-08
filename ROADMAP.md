@@ -386,6 +386,7 @@ Broad ecosystem adoption depends on practical tools that let teams validate thei
 - [JSON Schema (osi-schema.json)](core-spec/osi-schema.json) — schema for structural validation
 - [Validation Script (validate.py)](validation/validate.py) — validates OSI YAML against JSON Schema, unique names, references, and SQL syntax
 - [Snowflake Converter](converters/snowflake/) — OSI → Snowflake Cortex Analyst YAML converter
+- [Databricks Converter](converters/databricks/) — bidirectional OSI ↔ Databricks Unity Catalog Metric View YAML converter
 
 **Related Issues & PRs:**
 
