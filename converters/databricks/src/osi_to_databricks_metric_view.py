@@ -9,6 +9,7 @@ Usage:
 
 import argparse
 import json
+import re
 import sys
 import warnings
 from collections import Counter, deque
@@ -17,10 +18,18 @@ import yaml
 
 
 SUPPORTED_OSI_VERSION = "0.1.1"
-METRIC_VIEW_VERSION = "0.1"
+METRIC_VIEW_VERSION = "1.1"
 DATABRICKS_DIALECT = "DATABRICKS"
 ANSI_DIALECT = "ANSI_SQL"
 DATABRICKS_VENDOR = "DATABRICKS"
+
+# Bare single-identifier expressions can be safely auto-qualified with
+# their dataset name. Anything else (operators, function calls, string
+# literals, multi-column references) is left verbatim — auto-qualifying
+# such expressions is unsafe because only the first identifier would be
+# prefixed, leaving subsequent column references unqualified and ambiguous
+# after joins.
+_BARE_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class OsiConversionError(Exception):
@@ -134,6 +143,13 @@ def _convert_model(osi):
         )
 
     joins = _emit_joins(primary_name, by_name, relationships)
+    # Restore raw joins that the inverse converter could not parse back into
+    # OSI relationships, preserved in custom_extensions[DATABRICKS].raw_joins.
+    raw_joins = db_ext.get("raw_joins")
+    if isinstance(raw_joins, list):
+        for j in raw_joins:
+            if isinstance(j, dict):
+                joins.append(j)
     if joins:
         result["joins"] = joins
 
@@ -302,10 +318,11 @@ def _emit_dimensions(primary_name, by_name, reachable):
         ds = by_name.get(ds_name)
         if not ds:
             continue
+        is_primary = ds_name == primary_name
         for field in ds.get("fields") or []:
             if not isinstance(field, dict):
                 continue
-            converted = _convert_field_to_dim(field, ds_name)
+            converted = _convert_field_to_dim(field, ds_name, is_primary)
             if converted is None:
                 continue
             if converted["name"] in seen_names:
@@ -322,8 +339,17 @@ def _emit_dimensions(primary_name, by_name, reachable):
     return dimensions
 
 
-def _convert_field_to_dim(field, ds_name):
-    """Convert one OSI field dict to a UC dimension dict, or None to skip."""
+def _convert_field_to_dim(field, ds_name, is_primary):
+    """Convert one OSI field dict to a UC dimension dict, or None to skip.
+
+    Bare single-identifier expressions are auto-qualified with the dataset
+    name (`<ds_name>.<col>`) so they resolve unambiguously after joins.
+    Multi-token expressions (operators, function calls, multi-column
+    references) are emitted verbatim — auto-qualifying them is unsafe
+    because only the first identifier would be prefixed. For computed
+    fields on a non-primary dataset, callers should provide a DATABRICKS
+    dialect entry that's already qualified; otherwise a warning is emitted.
+    """
     name = field.get("name")
     if not name:
         raise OsiConversionError(f"Missing required 'name' in field of '{ds_name}'")
@@ -332,7 +358,19 @@ def _convert_field_to_dim(field, ds_name):
     if expr is None:
         return None
 
-    qualified = expr if "." in expr or "(" in expr else f"{ds_name}.{expr}"
+    if _BARE_IDENT_RE.match(expr):
+        qualified = f"{ds_name}.{expr}"
+    else:
+        qualified = expr
+        if not is_primary and f"{ds_name}." not in expr:
+            warnings.warn(
+                f"Field '{ds_name}.{name}' has a multi-token expression "
+                f"that the converter cannot auto-qualify for a UC metric "
+                f"view; column references may be ambiguous after joins. "
+                f"Provide a DATABRICKS dialect with table-qualified "
+                f"references to silence this warning."
+            )
+
     result = {"name": name, "expr": qualified}
 
     description = _combined_description(field)

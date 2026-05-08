@@ -93,7 +93,7 @@ def _minimal_two_table_model():
 def test_minimal_model_top_level_shape():
     out = yaml.safe_load(convert_osi_to_databricks(_wrap(_minimal_two_table_model())))
 
-    assert out["version"] == "0.1"
+    assert out["version"] == "1.1"
     assert out["source"] == "main.sales.orders"
     assert out["comment"] == "Sales analytics"
 
@@ -340,6 +340,90 @@ def test_emit_dimensions_includes_unqualified_when_expr_already_qualified():
     }
     dims = _emit_dimensions("a", by_name, {"a"})
     assert dims == [{"name": "col1", "expr": "a.col1"}]
+
+
+# ---------------------------------------------------------------------------
+# Multi-token expression handling (Bug 1 regression coverage)
+# ---------------------------------------------------------------------------
+
+def test_multi_token_expression_emitted_verbatim_on_primary():
+    """A computed field on the primary dataset is emitted as-is — the
+    metric view's `source` makes bare references unambiguous, so no
+    auto-qualification is required.
+    """
+    model = _minimal_two_table_model()
+    model["datasets"][0]["fields"].append(
+        _field("upper_id", expression="UPPER(order_id)")
+    )
+    out = yaml.safe_load(convert_osi_to_databricks(_wrap(model)))
+    by_name = {d["name"]: d for d in out["dimensions"]}
+    # Function call expression must NOT have a stray qualifier prepended.
+    assert by_name["upper_id"]["expr"] == "UPPER(order_id)"
+
+
+def test_multi_token_expression_on_join_warns_when_unqualified():
+    """A computed field on a *non-primary* dataset with a multi-token
+    expression that doesn't already mention the dataset name should warn
+    the user to provide a DATABRICKS dialect with explicit qualifiers.
+    """
+    model = _minimal_two_table_model()
+    model["datasets"][1]["fields"].append(
+        _field("full_name", expression="first_name || ' ' || last_name")
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        out = yaml.safe_load(convert_osi_to_databricks(_wrap(model)))
+    by_name = {d["name"]: d for d in out["dimensions"]}
+    # Critically, we do NOT emit `customers.first_name || ' ' || last_name`
+    # — that would only qualify the first column and leave `last_name`
+    # ambiguous after joins. The expression is left verbatim instead.
+    assert by_name["full_name"]["expr"] == "first_name || ' ' || last_name"
+    assert any("multi-token expression" in str(w.message) for w in caught)
+
+
+def test_databricks_dialect_with_qualified_expression_silences_warning():
+    """If the OSI author supplies a DATABRICKS dialect entry that already
+    contains the dataset-qualified references, the converter prefers it
+    and does not warn.
+    """
+    model = _minimal_two_table_model()
+    model["datasets"][1]["fields"].append({
+        "name": "full_name",
+        "expression": {"dialects": [
+            {"dialect": "ANSI_SQL",
+             "expression": "first_name || ' ' || last_name"},
+            {"dialect": "DATABRICKS",
+             "expression": "customers.first_name || ' ' || customers.last_name"},
+        ]},
+    })
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        out = yaml.safe_load(convert_osi_to_databricks(_wrap(model)))
+    by_name = {d["name"]: d for d in out["dimensions"]}
+    assert by_name["full_name"]["expr"] == (
+        "customers.first_name || ' ' || customers.last_name"
+    )
+    assert not any("multi-token expression" in str(w.message) for w in caught)
+
+
+def test_raw_joins_from_databricks_extension_round_tripped():
+    """An OSI model carrying a DATABRICKS custom_extension with raw_joins
+    (preserved from a previous UC -> OSI conversion) re-emits those joins
+    verbatim alongside the relationship-derived ones.
+    """
+    model = _minimal_two_table_model()
+    model["custom_extensions"] = [{
+        "vendor_name": "DATABRICKS",
+        "data": (
+            '{"raw_joins": [{"name": "complex_join", '
+            '"source": "main.sales.tax_rates", '
+            '"sql_on": "DATEDIFF(orders.dt, tax_rates.dt) < 30"}]}'
+        ),
+    }]
+    out = yaml.safe_load(convert_osi_to_databricks(_wrap(model)))
+    join_names = [j["name"] for j in out["joins"]]
+    assert "orders_to_customers" in join_names
+    assert "complex_join" in join_names
 
 
 def test_emit_measures_skips_metric_with_only_unsupported_dialects():
