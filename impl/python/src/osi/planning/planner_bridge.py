@@ -1,42 +1,54 @@
 """Mid-pipeline bridge resolution for the planner.
 
-This module discharges the bridge route in the Foundation spec
-(`Proposed_OSI_Semantics.md` §6.5.1) *without* requiring the bridge
-to be the source dataset. The standard planner sources a fact and
-walks an `N : 1` enrichment chain to every dimension dataset; when
-that chain hits an unsafe edge but a bridge dataset can resolve the
-M:N traversal, this module builds an alternative plan shape:
+The Foundation spec
+(``proposals/foundation-v0.1/Proposed_OSI_Semantics.md §6.8.1``, D-026
+/ D-027) describes the bridge route for M:N references: a metric over a
+fact reachable only through an ``N : N`` edge is well-defined when an
+*intermediate bridge dataset* makes the (fact-row, group-key) pairing
+explicit. The single-pass spec form is:
 
-1. ``source(fact)`` and the safe enrichment hops to the bridge's
-   left-side link dataset.
-2. ``aggregate`` to the bridge's left join-key grain, materialising
-   each metric at that grain (distributive aggregates only).
-3. ``source(bridge)``, ``enrich`` the right-side target, and
-   ``enrich`` the pre-aggregated state in via
+  *Materialise the distinct ``(fact-primary-key, group-key)`` row set
+  by joining the fact, the bridge, and the right-hand dimension once;
+  then aggregate once at the query's dimension grain.*
+
+Because that materialisation is just a join with ``DISTINCT``, every
+aggregate category (distributive, algebraic, holistic) is well-defined
+over it — there is no two-stage decomposition. D-027 therefore accepts
+bare ``SUM`` / ``AVG`` / ``MEDIAN`` / ``COUNT(DISTINCT)`` over an N:N
+bridge.
+
+The current reference implementation realises the spec by emitting a
+plan that is equivalent for the four distributive operators (``SUM``,
+``COUNT``, ``MIN``, ``MAX``) plus ``COUNT_DISTINCT`` (whose D-027
+treatment matches because the dedup IS the distinct count). Non-
+distributive operators (``AVG``, ``MEDIAN``, ``PERCENTILE_CONT``)
+require the single-pass dedup form rather than the two-stage shape and
+are still pending — they currently surface ``E_UNSAFE_REAGGREGATION``
+from the standard planner. Tracked by
+``compliance/foundation-v0.1/tests/bridge/hard/t-016`` and ``t-051`` in
+the conformance suite.
+
+Plan shape (distributive case):
+
+1. ``source(fact)`` + safe enrichments to the bridge's left link.
+2. ``aggregate`` at the bridge's left join-key grain (one row per fact
+   row contributing to a group).
+3. ``source(bridge)``, ``enrich`` the right-side target, then
+   ``enrich`` the pre-aggregated state via
    :class:`EnrichDerivedPayload`.
-4. ``aggregate`` again at the query's dimension grain, re-aggregating
-   each materialised metric with the same operator (``SUM``-of-``SUM``,
-   ``MAX``-of-``MAX`` …).
+4. ``aggregate`` at the query's dimension grain, re-aggregating each
+   metric with its same operator (``SUM``-of-``SUM``,
+   ``MAX``-of-``MAX``, …).
 
-The new plan shape is a pure composition of existing operators —
-``source`` + ``enrich`` + ``aggregate`` — so the algebra has nothing
-to add. The only new wiring is :class:`EnrichDerivedPayload`, which
-lets ``enrich`` accept a derived child rather than a base table.
+Limitations in this revision (re-examine when real models need more):
 
-Restrictions in this version of the reference implementation
-(re-examine when real models need more):
-
-* Every metric in the group must be **distributive** (``SUM``,
-  ``COUNT``, ``MIN``, ``MAX``). Algebraic (``AVG``) and holistic
-  (``COUNT_DISTINCT``) aggregates can't be re-aggregated losslessly
-  from a pre-aggregated intermediate, so the planner falls back to
-  the original error.
-* No composite metrics (`Proposed_OSI_Semantics.md §5.4`). Composites
-  must currently use the standard planner shape.
-* All query dimensions must reside on the bridge's right-hand side
-  (i.e. reachable from the bridge by safe `N : 1` steps). Fact-side
-  dimensions would force a wider pre-aggregation grain than this
-  version supports.
+* **Non-distributive aggregates** (``AVG``, ``MEDIAN``,
+  ``PERCENTILE_CONT``) over a bridge are not yet routed — see D-027
+  and the ``t-016`` / ``t-051`` conformance cases.
+* **Composite metrics** (``§5.4``) must use the standard plan shape.
+* **Query dimensions must live on the bridge's right-hand side** —
+  fact-side dimensions force a wider pre-aggregation grain than this
+  revision supports.
 """
 
 from __future__ import annotations

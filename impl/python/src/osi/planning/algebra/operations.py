@@ -56,7 +56,14 @@ class JoinType(StrEnum):
 
 
 class FilterMode(StrEnum):
-    """Mode for :func:`filtering_join` (semi-join / anti-semi-join)."""
+    """Mode for :func:`filtering_join` (semi-join / anti-semi-join).
+
+    Lives next to :class:`JoinType` because both are join-shape enums
+    consumed by the same operator family. The actual ``filtering_join``
+    operator is defined in :mod:`osi.planning.algebra.joins` to keep
+    that file's surface area cohesive (semi-joins, anti-semi-joins,
+    and the helpers they share).
+    """
 
     SEMI = auto()
     ANTI = auto()

@@ -204,10 +204,24 @@ type = "forbidden"
 source_modules = ["osi.codegen"]
 forbidden_modules = ["osi.parsing"]
 
-# NOTE: The "algebra state is only constructed inside algebra" contract is
-# added in Phase 1 once `osi.planning.algebra.state` exists. Keeping it
-# out of Phase 0 keeps import-linter green while the module tree is
-# still being scaffolded.
+# NOTE: The "algebra state is only constructed inside algebra" contract
+# (Phase 3 code-review I6) requires refactoring ``osi.planning.steps`` to
+# stop instantiating ``Column`` directly — that file is one of the three
+# documented LOC-exception files and is queued for its own refactor
+# under INFRA.md I-56. Once steps.py is split, we land the import-linter
+# contract:
+#
+#   [[tool.importlinter.contracts]]
+#   name = "algebra state constructed only inside algebra"
+#   type = "forbidden"
+#   source_modules = ["osi.planning", "osi.codegen"]
+#   forbidden_modules = ["osi.planning.algebra.state"]
+#   ignore_imports = [
+#       "osi.planning.algebra -> osi.planning.algebra.state",
+#       "osi.planning.algebra.* -> osi.planning.algebra.state",
+#   ]
+#
+# Tracked in INFRA.md §3 alongside I-56.
 
 # ---------------------------------------------------------------------------
 # mutmut
