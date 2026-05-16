@@ -11,7 +11,7 @@ conservative ``N:N``. The Foundation MUST then either:
    correctly-declared model (when a safe route applies — e.g.
    ``EXISTS_IN`` semi-join, which doesn't fan rows out), OR
 2. refuse the query with the actionable
-   ``E3012_MN_NO_STITCH_PATH`` (when no route applies) — never
+   ``E3012_MN_NO_SAFE_REWRITE`` (when no route applies) — never
    silently emit an inflated ``SUM`` over a fanned-out join.
 
 Every test in this file constructs *the same data* but loads it
@@ -344,7 +344,7 @@ def test_mismarked_nn_refuses_enrichment_with_E3012(duckdb_cs) -> None:
     )
     with pytest.raises(OSIError) as excinfo:
         plan(q, ctx)
-    assert excinfo.value.code is ErrorCode.E3012_MN_NO_STITCH_PATH
+    assert excinfo.value.code is ErrorCode.E3012_MN_NO_SAFE_REWRITE
     # The error context surfaces the actionable resolution suggestions
     # the spec calls for in §6.5.
     msg = str(excinfo.value)
@@ -548,7 +548,7 @@ def test_mismarked_stitch_refuses_with_E3012(duckdb_cs_with_returns) -> None:
     )
     with pytest.raises(OSIError) as excinfo:
         plan(q, ctx)
-    assert excinfo.value.code is ErrorCode.E3012_MN_NO_STITCH_PATH
+    assert excinfo.value.code is ErrorCode.E3012_MN_NO_SAFE_REWRITE
 
 
 # ---------------------------------------------------------------------------
@@ -602,4 +602,4 @@ def test_dim_only_mismarked_refuses_with_E3012(duckdb_cs) -> None:
     )
     with pytest.raises(OSIError) as excinfo:
         plan(q, ctx)
-    assert excinfo.value.code is ErrorCode.E3012_MN_NO_STITCH_PATH
+    assert excinfo.value.code is ErrorCode.E3012_MN_NO_SAFE_REWRITE

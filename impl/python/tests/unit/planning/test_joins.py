@@ -118,7 +118,7 @@ class TestFindEnrichmentPath:
 
         Per ``Proposed_OSI_Semantics.md §6.8 Semantic guarantee`` the
         user-facing per-query M:N failure surface for an M:N-supporting
-        engine is ``E3012_MN_NO_STITCH_PATH`` (or ``E3013`` for the
+        engine is ``E3012_MN_NO_SAFE_REWRITE`` (or ``E3013`` for the
         two-fact stitch case). ``E3011`` is reserved for the
         engine-capability opt-out (vendor declaring no M:N support at
         all) and never appears at the user-facing surface for the
@@ -134,4 +134,4 @@ class TestFindEnrichmentPath:
                 targets=frozenset({normalize_identifier("courses")}),
                 graph=ctx.graph,
             )
-        assert excinfo.value.code is ErrorCode.E3012_MN_NO_STITCH_PATH
+        assert excinfo.value.code is ErrorCode.E3012_MN_NO_SAFE_REWRITE

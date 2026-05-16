@@ -228,7 +228,7 @@ class TestMNRejection:
 
         Per ``Proposed_OSI_Semantics.md §6.8`` an M:N-supporting
         engine (which this implementation is) surfaces per-query M:N
-        failures as ``E3012_MN_NO_STITCH_PATH`` (or ``E3013`` for
+        failures as ``E3012_MN_NO_SAFE_REWRITE`` (or ``E3013`` for
         the two-fact stitch case), which carry the actionable
         resolution routes (bridge, stitch, EXISTS_IN) in the error
         context. ``E3011`` is reserved for engines that opt out of
@@ -242,7 +242,7 @@ class TestMNRejection:
         )
         with pytest.raises(OSIError) as excinfo:
             plan(q, ctx)
-        assert excinfo.value.code is ErrorCode.E3012_MN_NO_STITCH_PATH
+        assert excinfo.value.code is ErrorCode.E3012_MN_NO_SAFE_REWRITE
 
 
 # ---------------------------------------------------------------------------

@@ -246,14 +246,44 @@ _EXPLANATIONS: dict[ErrorCode, str] = {
         "D-032.)"
     ),
     ErrorCode.E_UNKNOWN_FUNCTION: (
-        "RESERVED — a function call references a name not in the "
-        "OSI_SQL_2026 catalog (D-021). The Foundation contract is that "
-        "every conforming implementation supports the catalog and "
-        "rejects functions outside it; vendor-specific functions must "
-        "be wrapped in a per-dialect ``dialects:`` block on the "
-        "owning metric or field. Catalog enforcement lands "
-        "post-Foundation; today unknown functions surface through "
-        "SQLGlot or the target engine."
+        "A function call references a name not in the OSI_SQL_2026 "
+        "catalog (D-021). The Foundation contract is that every "
+        "conforming implementation supports the catalog and rejects "
+        "functions outside it; vendor-specific functions must be "
+        "wrapped in a per-dialect ``dialects:`` block on the owning "
+        "metric or field. The whitelist and validator live in "
+        "``osi.parsing.function_whitelist``. (Spec: D-021 / "
+        "SQL_EXPRESSION_SUBSET.md.)"
+    ),
+    ErrorCode.E_AMBIGUOUS_MEASURE_GRAIN: (
+        "RESERVED — Appendix C / D-025 catch-all for a measure with "
+        "multiple incompatible starting grains where none of the more-"
+        "specific codes (``E3012``, ``E3013``, "
+        "``E_UNSAFE_REAGGREGATION``) applies. The reference "
+        "implementation reaches one of those specific codes today; "
+        "this code is reserved for engines that synthesise different "
+        "plan choices and need to surface the ambiguity to the user. "
+        "The diagnostic MUST list the starting grains the engine "
+        "identified."
+    ),
+    ErrorCode.E_PRIMARY_KEY_REQUIRED: (
+        "RESERVED — Appendix C / §4.2. Engines MAY require "
+        "``primary_key`` declarations on every dataset (so the table "
+        "grain is well-defined). The reference implementation does "
+        "not impose this requirement; the code is reserved so an "
+        "opt-in deployment can raise it under a stable name."
+    ),
+    ErrorCode.E_INVALID_NATURAL_GRAIN: (
+        "RESERVED — Appendix C. Raised by a future ``natural_grain`` "
+        "implementation (currently deferred). The Foundation parser "
+        "rejects the ``natural_grain`` key through "
+        "``E_DEFERRED_KEY_REJECTED`` today. See "
+        "``proposals/foundation-v0.1/Proposed_OSI_Natural_Grain.md``."
+    ),
+    ErrorCode.E_NATURAL_GRAIN_PRE_AGGREGATION_UNSAFE: (
+        "RESERVED — sibling of ``E_INVALID_NATURAL_GRAIN`` for the "
+        "pre-aggregation-unsafe case. See "
+        "``proposals/foundation-v0.1/Proposed_OSI_Natural_Grain.md``."
     ),
     ErrorCode.E_WINDOW_OVER_FANOUT_REWRITE: (
         "A window function would be evaluated over a fan-out join — "
@@ -413,7 +443,7 @@ _EXPLANATIONS: dict[ErrorCode, str] = {
         "``E3013`` (or ``E_NO_PATH`` for the two-fact stitch case). "
         "(Spec: §6.8 *Semantic guarantee*.)"
     ),
-    ErrorCode.E3012_MN_NO_STITCH_PATH: (
+    ErrorCode.E3012_MN_NO_SAFE_REWRITE: (
         "An ``N : N`` traversal in a measure has no semantically-"
         "equivalent safe rewrite at the query's grain — no bridge, no "
         "shared-dimension stitch. The user-facing per-query M:N failure "

@@ -3,7 +3,7 @@
 Extends :mod:`tests.properties.test_mn_rejection` from the algebra to
 the planner: any :class:`SemanticQuery` whose enrichment chain crosses
 an N:N relationship with no bridge / stitch / EXISTS_IN route must
-raise ``E3012_MN_NO_STITCH_PATH`` before any SQL is produced.
+raise ``E3012_MN_NO_SAFE_REWRITE`` before any SQL is produced.
 
 ``E3011_MN_AGGREGATION_REJECTED`` is reserved as the engine-capability
 opt-out (per ``Proposed_OSI_Semantics.md §6.8 Semantic guarantee``) —
@@ -48,4 +48,4 @@ def test_any_query_spanning_m_n_edge_raises_E3012(
     query = SemanticQuery(dimensions=(dimension,), measures=(measure,))
     with pytest.raises(OSIError) as excinfo:
         plan(query, ctx)
-    assert excinfo.value.code is ErrorCode.E3012_MN_NO_STITCH_PATH
+    assert excinfo.value.code is ErrorCode.E3012_MN_NO_SAFE_REWRITE

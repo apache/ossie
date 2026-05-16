@@ -116,6 +116,33 @@ class ErrorCode(StrEnum):
     # per-dialect ``dialects:`` block. The active whitelist and
     # validator live in :mod:`osi.parsing.function_whitelist`.
     E_UNKNOWN_FUNCTION = "E_UNKNOWN_FUNCTION"
+    # RESERVED — D-025 catch-all for measures with multiple
+    # incompatible starting grains where none of the more-specific
+    # codes (``E3012``, ``E3013``, ``E_UNSAFE_REAGGREGATION``)
+    # applies. The reference implementation reaches one of those
+    # specific codes today; this code is reserved for engines that
+    # synthesise different plan choices and need to surface the
+    # ambiguity. The diagnostic MUST list the starting grains the
+    # engine identified. (Appendix C / D-025.)
+    E_AMBIGUOUS_MEASURE_GRAIN = "E_AMBIGUOUS_MEASURE_GRAIN"
+    # RESERVED — Appendix C / §4.2. Engines that opt to require
+    # ``primary_key`` declarations on every dataset (so the table
+    # grain is well-defined) raise this when a model omits one. The
+    # reference implementation does not currently impose this
+    # requirement; the code is reserved so an opt-in deployment can
+    # raise it under a stable name.
+    E_PRIMARY_KEY_REQUIRED = "E_PRIMARY_KEY_REQUIRED"
+    # RESERVED — Appendix C. Declared by a model that uses the
+    # (deferred) ``natural_grain`` proposal. Reserved here so the
+    # diagnostic surface is stable when the natural-grain proposal
+    # lands; the Foundation parser rejects ``natural_grain`` outright
+    # through ``E_DEFERRED_KEY_REJECTED`` today. See
+    # ``proposals/foundation-v0.1/Proposed_OSI_Natural_Grain.md``.
+    E_INVALID_NATURAL_GRAIN = "E_INVALID_NATURAL_GRAIN"
+    # RESERVED — sibling of ``E_INVALID_NATURAL_GRAIN`` for the
+    # pre-aggregation-unsafe case. See
+    # ``proposals/foundation-v0.1/Proposed_OSI_Natural_Grain.md``.
+    E_NATURAL_GRAIN_PRE_AGGREGATION_UNSAFE = "E_NATURAL_GRAIN_PRE_AGGREGATION_UNSAFE"
 
     # E12xx — SQL-surface errors (see
     # ../../../proposals/foundation-v0.1/SQL_INTERFACE.md §8).
@@ -180,7 +207,7 @@ class ErrorCode(StrEnum):
     # for a particular query (no bridge, no shared-dimension stitch);
     # ``E3013`` when two unrelated facts have no shared dimension to
     # stitch on. See ``Proposed_OSI_Semantics.md`` §6.8.
-    E3012_MN_NO_STITCH_PATH = "E3012"
+    E3012_MN_NO_SAFE_REWRITE = "E3012"
     E3013_NO_STITCHING_DIMENSION = "E3013"
 
     # E4xxx — Algebra safety errors

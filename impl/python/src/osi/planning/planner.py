@@ -525,7 +525,7 @@ def _maybe_build_via_bridge(
     """
     if exc.code not in (
         ErrorCode.E3011_MN_AGGREGATION_REJECTED,
-        ErrorCode.E3012_MN_NO_STITCH_PATH,
+        ErrorCode.E3012_MN_NO_SAFE_REWRITE,
     ):
         return None
     if fact_local or foreign or semi_joins:

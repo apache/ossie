@@ -209,7 +209,7 @@ Recently completed Foundation work (see `INFRA.md §3`):
   instead of silently falling back to the first-declared dimension.
 - M:N resolution per `§6.5`: bridge anchor discovery for dim-only
   queries, multi-fact stitch validation, and the spec-mandated
-  `E3012_MN_NO_STITCH_PATH` / `E3013_NO_STITCHING_DIMENSION` errors
+  `E3012_MN_NO_SAFE_REWRITE` / `E3013_NO_STITCHING_DIMENSION` errors
   for per-query failures. (`E3011_MN_AGGREGATION_REJECTED` is
   reserved for engines that opt out of M:N support entirely;
   `osi_python` supports M:N and never raises `E3011` at the

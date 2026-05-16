@@ -234,7 +234,7 @@ def _classify_unsafe_step(
             "to convert it to a semi-join filter"
         )
         return OSIPlanningError(
-            ErrorCode.E3012_MN_NO_STITCH_PATH,
+            ErrorCode.E3012_MN_NO_SAFE_REWRITE,
             (
                 f"relationship {edge.name!r} between {parent!r} and "
                 f"{target!r} is N:N; no bridge / stitch / filter route "
