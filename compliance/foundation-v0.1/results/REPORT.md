@@ -80,9 +80,19 @@ when two distinct root datasets are referenced).
 The Foundation spec accepts `AVG`, `MEDIAN`, and other non-distributive
 aggregates over an N:N bridge in a single pass (D-027). The
 reference impl today resolves the bridge for distributive aggregates
-(SUM, COUNT) but raises `E_UNSAFE_REAGGREGATION` (t-016) or
-`E1206` "composite metric body has a raw fact" (t-051) for the
-non-distributive cases.
+(SUM, COUNT, MIN, MAX, COUNT_DISTINCT) but rejects the non-distributive
+cases:
+
+- **t-016 (AVG over bridge):** `E_UNSAFE_REAGGREGATION` — the planner
+  reaches the bridge dispatch via the standard route then aborts on
+  the fan-out precondition.
+- **t-051 (MEDIAN over bridge):** `E1208_UNSUPPORTED_SQL_CONSTRUCT`
+  (Phase 9 P1-7). The new top-level-aggregate gate in
+  `metric_shape.classify_metric` rejects `MEDIAN` at the metric root
+  with a clear diagnostic before the planner ever attempts the bridge
+  shape. Previously this surfaced as the misleading
+  `E_UNSAFE_REAGGREGATION` from a later path; the new code is more
+  actionable for authors.
 
 **Root cause:** documented in
 `impl/python/src/osi/planning/planner_bridge.py` module docstring.
@@ -137,7 +147,8 @@ Reports under `results/` are regenerated from disk by
 - `results/failures.csv` — failed cases with classification info
   (auto-generated).
 - `results/REPORT.md` — *this file*; written by Phase 7 of the
-  OSI_will migration-and-polish plan. Kept in version control so
+  OSI_will migration-and-polish plan and refreshed by Phase 9 after
+  the BI / compiler / test-quality fixes. Kept in version control so
   the conformance baseline is reviewable in PR diffs.
 
 To reproduce locally:
