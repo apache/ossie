@@ -233,7 +233,7 @@ def _resolve_fields(
     refs: Sequence,
     context: PlannerContext,
 ) -> tuple[ResolvedDimension | ResolvedFact | ResolvedMetric, ...]:
-    from osi.planning.windows import is_windowed_expression
+    from osi.common.windows import is_windowed_expression
 
     out = []
     for ref in refs:

@@ -128,7 +128,7 @@ def _reject_window_in_where(node: exp.Expression) -> None:
     to ``Having`` after wrapping the window in a metric, or use a
     ``QUALIFY``-style outer-Where).
     """
-    from osi.planning.windows import contains_window
+    from osi.common.windows import contains_window
 
     if contains_window(node):
         raise OSIPlanningError(

@@ -20,6 +20,7 @@ from typing import Iterable, Mapping
 from sqlglot import expressions as exp
 
 from osi.common.identifiers import Identifier
+from osi.common.windows import contains_window, is_windowed_expression
 from osi.errors import ErrorCode, OSIParseError
 from osi.parsing.models import Metric, Relationship, SemanticModel
 from osi.parsing.reserved_names import OSI_RESERVED_NAMES
@@ -198,8 +199,6 @@ def _validate_no_windowed_metric_composition(
     qualified or bare name matches a known windowed metric as a
     reference to it.
     """
-    from osi.planning.windows import contains_window, is_windowed_expression
-
     windowed_metric_names: set[str] = set()
     for metric in model.metrics:
         if is_windowed_expression(metric.expression.expr):

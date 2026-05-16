@@ -20,15 +20,15 @@ from __future__ import annotations
 import pytest
 
 from osi.common.sql_expr import FrozenSQL, parse_sql_expr
-from osi.errors import ErrorCode, OSIParseError
-from osi.parsing.deferred import check_expression_deferred
-from osi.parsing.parser import parse_semantic_model
-from osi.planning.windows import (
+from osi.common.windows import (
     contains_window,
     first_deferred_frame_clause,
     first_nested_window,
     is_windowed_expression,
 )
+from osi.errors import ErrorCode, OSIParseError
+from osi.parsing.deferred import check_expression_deferred
+from osi.parsing.parser import parse_semantic_model
 
 
 def _frozen(sql: str) -> FrozenSQL:

@@ -1,4 +1,4 @@
-"""Unit + property coverage for ``osi.planning.windows``.
+"""Unit + property coverage for ``osi.common.windows``.
 
 The S-12 module ``windows.py`` is purely shape-analysis — no I/O, no
 side effects, deterministic. That makes it a high-value target for
@@ -17,7 +17,7 @@ import sqlglot
 from hypothesis import given
 from hypothesis import strategies as st
 
-from osi.planning.windows import (
+from osi.common.windows import (
     contains_window,
     first_deferred_frame_clause,
     first_nested_window,

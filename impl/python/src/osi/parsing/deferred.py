@@ -1,7 +1,10 @@
 """Deferred-feature rejection.
 
-Every feature listed in ``specs/deferred/`` must be unambiguously
-refused at parse time with :class:`ErrorCode.E_DEFERRED_KEY_REJECTED`.
+Every feature listed in §10 of
+``../../../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md``
+(and detailed in the design archive ``../../../specs/deferred/``)
+must be unambiguously refused at parse time with
+:class:`ErrorCode.E_DEFERRED_KEY_REJECTED`.
 
 Two surfaces need guarding:
 
@@ -9,7 +12,7 @@ Two surfaces need guarding:
    but some deferred features live inside otherwise-valid shapes (e.g.
    a ``grain`` attribute on a metric). :func:`check_yaml_deferred` walks
    the raw document before pydantic validation so we can attach a
-   friendlier error and a stable ``E1105``.
+   friendlier error.
 
 2. **SQL ASTs** — window functions, grouping-set constructs, PIVOT,
    lateral joins, etc. :func:`check_expression_deferred` walks the
@@ -26,6 +29,7 @@ from typing import Any, Final, Iterable
 from sqlglot import expressions as exp
 
 from osi.common.sql_expr import FrozenSQL
+from osi.common.windows import first_deferred_frame_clause, first_nested_window
 from osi.errors import ErrorCode, OSIParseError
 from osi.parsing._root import unwrap_model_root
 
@@ -257,11 +261,6 @@ def _check_window_rules(expression: FrozenSQL, *, where: str) -> None:
     own named codes; if neither fires we let the caller's blanket
     rejection handle the still-unimplemented positive case.
     """
-    from osi.planning.windows import (  # local import — avoids planning→parsing cycle
-        first_deferred_frame_clause,
-        first_nested_window,
-    )
-
     nested = first_nested_window(expression.expr)
     if nested is not None:
         raise OSIParseError(

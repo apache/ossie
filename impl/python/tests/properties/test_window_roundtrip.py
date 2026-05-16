@@ -23,8 +23,8 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from osi.common.sql_expr import FrozenSQL, parse_sql_expr
+from osi.common.windows import contains_window, is_windowed_expression
 from osi.parsing.deferred import check_expression_deferred
-from osi.planning.windows import contains_window, is_windowed_expression
 
 
 def _frozen(sql: str) -> FrozenSQL:
