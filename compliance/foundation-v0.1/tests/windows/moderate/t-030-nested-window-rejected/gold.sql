@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_NESTED_WINDOW: window over window is not allowed

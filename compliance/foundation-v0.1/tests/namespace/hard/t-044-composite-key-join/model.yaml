@@ -1,0 +1,23 @@
+name: f_composite_model
+datasets:
+  - name: inventory
+    source: inventory
+    primary_key: [store_id, sku]
+    fields:
+      - {name: store_id,       expression: store_id,       dimension: {}}
+      - {name: sku,            expression: sku,            dimension: {}}
+      - {name: stock_level,    expression: stock_level}
+      - {name: reorder_point,  expression: reorder_point,  dimension: {}}
+  - name: sales
+    source: sales
+    primary_key: [id]
+    fields:
+      - {name: id,       expression: id,       dimension: {}}
+      - {name: store_id, expression: store_id, dimension: {}}
+      - {name: sku,      expression: sku,      dimension: {}}
+      - {name: qty,      expression: qty}
+      - {name: sale_ts,  expression: sale_ts,  dimension: {is_time: true}}
+relationships:
+  - {name: sales_to_inv, from: sales, to: inventory, from_columns: [store_id, sku], to_columns: [store_id, sku]}
+metrics:
+  - {name: units_sold, expression: "SUM(sales.qty)"}

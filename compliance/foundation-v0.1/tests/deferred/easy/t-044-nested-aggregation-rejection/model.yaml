@@ -1,0 +1,27 @@
+name: f_prelude_model
+datasets:
+  - name: customers
+    source: customers
+    primary_key: [id]
+    fields:
+      - {name: id,      expression: id,      dimension: {}}
+      - {name: region,  expression: region,  dimension: {}}
+      - {name: segment, expression: segment, dimension: {}}
+  - name: orders
+    source: orders
+    primary_key: [id]
+    fields:
+      - {name: id,          expression: id,          dimension: {}}
+      - {name: customer_id, expression: customer_id, dimension: {}}
+      - {name: status,      expression: status,      dimension: {}}
+      - {name: amount,      expression: amount}
+relationships:
+  - {name: orders_to_customer,  from: orders,  to: customers, from_columns: [customer_id], to_columns: [id]}
+metrics:
+  - {name: total_revenue, expression: "SUM(orders.amount)"}
+  # The offender: an aggregate of an aggregate. Even when both
+  # aggregates are distributive (and the §10 proposal will collapse
+  # this to a single SUM), Foundation v0.1 rejects all nested forms
+  # uniformly so the per-home-row semantics can be defined explicitly
+  # alongside the grain-aware-functions proposal.
+  - {name: avg_of_total, expression: "AVG(SUM(orders.amount))"}

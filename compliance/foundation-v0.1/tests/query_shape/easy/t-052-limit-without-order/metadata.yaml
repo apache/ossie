@@ -1,0 +1,13 @@
+name: t-052-limit-without-order
+description: "Limit + Order By compiles and runs; compiled SQL is byte-stable (D-014). Test renamed in S-E from limit-without-order-by to limit-with-order-by because LIMIT without ORDER BY is engine-defined and the harness compares rows."
+area: query_shape
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-014"
+tags: [limit, determinism]
+conformance_level: foundation_v0_1
+decision: D-014
+test_id: T-052
+status: planned
+xfail_reason: "Sprint S-7 — Limit without Order By compiles (D-014)"

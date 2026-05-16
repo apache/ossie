@@ -1,0 +1,13 @@
+name: t-049-null-dimension-column
+description: "NULL in dimension column groups with other NULL keys (SQL GROUP BY collapses NULLs)"
+area: empty_inputs
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-014"
+tags: [null, group-by]
+conformance_level: foundation_v0_1
+decision: D-014
+test_id: T-049
+status: planned
+xfail_reason: "Sprint S-14 — NULL-dim group collapse (D-014); inline NULL-region customer 4 needed in S-E"

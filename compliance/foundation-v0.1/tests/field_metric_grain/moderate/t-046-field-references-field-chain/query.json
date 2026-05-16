@@ -1,0 +1,9 @@
+{
+  "dataset": "order_lines",
+  "measures": [
+    {
+      "name": "total_final",
+      "metric": "total_final"
+    }
+  ]
+}

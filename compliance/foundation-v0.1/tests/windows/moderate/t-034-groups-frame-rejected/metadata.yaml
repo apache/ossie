@@ -1,0 +1,15 @@
+name: t-034-groups-frame-rejected
+description: "GROUPS frame mode is deferred; raises E_DEFERRED_FRAME_MODE"
+area: windows
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-032"
+tags: [window, frame, groups, deferred, negative]
+conformance_level: foundation_v0_1
+decision: D-032
+test_id: T-034
+expected_error: true
+expected_error_code: E_DEFERRED_FRAME_MODE
+status: planned
+xfail_reason: "Sprint S-12 — GROUPS frame deferral (D-032)"

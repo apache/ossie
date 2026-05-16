@@ -1,0 +1,7 @@
+{
+  "dataset": "customers",
+  "fields": [
+    "customers.region",
+    "orders.id"
+  ]
+}

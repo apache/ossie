@@ -1,1 +1,46 @@
+# Python
 __pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing
+.coverage
+.coverage.*
+coverage.json
+htmlcov/
+.pytest_cache/
+.hypothesis/
+.benchmarks/
+.mutmut-cache/
+.mypy_cache/
+.ruff_cache/
+.import_linter_cache/
+
+# Compliance suite per-run output (live runner artifacts)
+# Committed historical reports under results/ remain tracked.
+compliance/foundation-v0.1/results/_run_*/
+compliance/foundation-v0.1/results/*.tmp
+compliance/foundation-v0.1/results/*.partial.json
+
+# Test report artifacts
+impl/python/test-results/
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# Logs and scratch
+*.log
+logs/
+.temp_scripts/

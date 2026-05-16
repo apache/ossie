@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_NO_PATH: orders and inventory_movements have no shared dimension or path

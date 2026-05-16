@@ -1,0 +1,8 @@
+{
+  "dataset": "customers",
+  "fields": [
+    "orders.amount",
+    "returns.amount",
+    "customers.region"
+  ]
+}

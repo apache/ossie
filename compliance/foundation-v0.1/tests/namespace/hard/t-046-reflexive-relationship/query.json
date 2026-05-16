@@ -1,0 +1,12 @@
+{
+  "dataset": "employees",
+  "dimensions": [
+    "employees.region"
+  ],
+  "measures": [
+    {
+      "name": "direct_report_count",
+      "metric": "direct_report_count"
+    }
+  ]
+}

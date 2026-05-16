@@ -1,0 +1,13 @@
+name: t-011-multi-fact-full-outer
+description: "Multi-fact composition defaults to FULL OUTER stitch on shared dim (both sides preserved)"
+area: joins_default
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-004"
+tags: [multi-fact, full-outer, stitch]
+conformance_level: foundation_v0_1
+decision: D-004
+test_id: T-011
+status: planned
+xfail_reason: "Sprint S-7 — multi-fact FULL OUTER stitch (D-004b)"

@@ -1,0 +1,15 @@
+name: t-042l-parameterised-frame-bound
+description: "Deferred parameterised frame bound (:n PRECEDING) is rejected"
+area: deferred
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-009"
+tags: [deferred, negative, parameterised-frame-bound]
+conformance_level: foundation_v0_1
+decision: D-009
+test_id: T-042l
+expected_error: true
+expected_error_code: E_DEFERRED_KEY_REJECTED
+status: planned
+xfail_reason: "Sprint S-1 — deferred-key rejection for parameterised-frame-bound (D-009)"

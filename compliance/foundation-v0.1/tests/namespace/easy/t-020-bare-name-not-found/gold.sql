@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_NAME_NOT_FOUND: bare reference must not match dataset-scoped name

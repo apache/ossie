@@ -1,0 +1,12 @@
+{
+  "dataset": "actors",
+  "dimensions": [
+    "actors.height"
+  ],
+  "measures": [
+    {
+      "name": "median_gross",
+      "metric": "median_gross"
+    }
+  ]
+}

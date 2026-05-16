@@ -1,0 +1,16 @@
+{
+  "dataset": "orders",
+  "dimensions": [
+    "customers.region"
+  ],
+  "measures": [
+    {
+      "name": "revenue",
+      "metric": "total_revenue"
+    }
+  ],
+  "filters": [
+    "orders.status = 'completed'",
+    "orders.amount > 60"
+  ]
+}

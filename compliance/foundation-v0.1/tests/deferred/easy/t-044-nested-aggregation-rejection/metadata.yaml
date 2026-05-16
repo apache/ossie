@@ -1,0 +1,16 @@
+name: t-044-nested-aggregation-rejection
+description: "Nested aggregation in a metric body is deferred (D-027); §10's grain-aware-functions proposal will define the per-home-row interpretation"
+area: deferred
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#sec-4.5"
+  - "Proposed_OSI_Semantics.md#D-027"
+tags: [deferred, metrics, aggregation, negative]
+conformance_level: foundation_v0_1
+decision: D-027
+test_id: T-044
+expected_error: true
+expected_error_code: E_NESTED_AGGREGATION_DEFERRED
+status: planned
+xfail_reason: "Foundation v0.1 §4.5 / D-027 — nested aggregation in metrics deferred"

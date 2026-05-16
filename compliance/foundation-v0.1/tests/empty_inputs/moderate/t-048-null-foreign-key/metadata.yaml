@@ -1,0 +1,13 @@
+name: t-048-null-foreign-key
+description: "NULL foreign key in 1:N enrichment buckets into NULL-region row (same as orphan)"
+area: empty_inputs
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-004"
+tags: [null-fk, left-join]
+conformance_level: foundation_v0_1
+decision: D-004
+test_id: T-048
+status: planned
+xfail_reason: "Sprint S-14 — NULL FK as orphan-bucket (D-004 / D-033); inline NULL-FK row needed in S-E"

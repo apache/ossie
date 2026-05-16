@@ -1,0 +1,81 @@
+# Project-local pre-commit configuration for impl/python.
+#
+# Each hook's `files:` pattern restricts it to impl/python sources so that
+# running pre-commit from the repo root doesn't spuriously lint other
+# parts of the OSI tree.
+#
+# Install:  make precommit-install
+repos:
+  - repo: https://github.com/psf/black
+    rev: 24.8.0
+    hooks:
+      - id: black
+        files: ^impl/python/(src|tests)/.*\.py$
+        args: [--config, impl/python/pyproject.toml]
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        files: ^impl/python/(src|tests)/.*\.py$
+        args: [--settings-path, impl/python/pyproject.toml]
+
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.1.1
+    hooks:
+      - id: flake8
+        files: ^impl/python/(src|tests)/.*\.py$
+        args: [--config, impl/python/.flake8]
+        additional_dependencies:
+          - flake8-docstrings>=1.7
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        # Only type-check osi sources; tests are covered by pyproject overrides.
+        files: ^impl/python/src/osi/.*\.py$
+        args:
+          - --config-file=impl/python/pyproject.toml
+        additional_dependencies:
+          - pydantic>=2.6
+          - sqlglot>=26.0
+          - types-PyYAML>=6.0
+          - networkx>=3.0
+
+  - repo: local
+    hooks:
+      - id: no-fstring-sql
+        name: "Ban f-string SQL (INFRA.md §1.3)"
+        description: >
+          Rejects any f-string, string concatenation, or format call that
+          builds a SELECT / FROM / WHERE / GROUP BY / ORDER BY. All SQL
+          must be built via SQLGlot AST.
+        entry: >
+          bash -c '
+          if grep -nE "f\"[^\"]*\\b(SELECT|FROM|WHERE|GROUP BY|ORDER BY)\\b" "$@"; then
+            echo "ERROR: f-string SQL detected. Use SQLGlot AST instead."; exit 1;
+          fi
+          '
+        language: system
+        files: ^impl/python/src/.*\.py$
+        pass_filenames: true
+
+      - id: file-size-cap
+        name: "Enforce 600-LOC cap in src/osi/ (INFRA.md §1.2 / [I-DEC-6])"
+        description: >
+          Rejects any file in src/osi/ that exceeds 600 lines.
+        entry: >
+          bash -c '
+          fail=0;
+          for f in "$@"; do
+            lines=$(wc -l < "$f");
+            if [ "$lines" -gt 600 ]; then
+              echo "ERROR: $f has $lines lines, cap is 600."; fail=1;
+            fi;
+          done;
+          exit $fail
+          '
+        language: system
+        files: ^impl/python/src/osi/.*\.py$
+        pass_filenames: true

@@ -1,0 +1,32 @@
+name: t-051-holistic-over-bridge-accepted
+description: |
+  Bare holistic aggregate (MEDIAN) over an N:N bridge resolves via the same
+  bridge-dedup construction §6.8.1 uses for SUM and AVG (D-027). The bridge
+  plan is a single-pass aggregate over the unique (movie_id, height) row
+  set — no multi-stage decomposition is forced, so MEDIAN is well-defined
+  here. This locks in the post-revision D-027 contract that every aggregate
+  category (distributive, algebraic, holistic) is accepted bare over an N:N
+  bridge; E_UNSAFE_REAGGREGATION is reserved for plans that genuinely force
+  decomposition (§6.7 chasm pre-aggregation, §6.8.2 stitch).
+area: bridge
+difficulty: hard
+dataset: f_bridge
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-027"
+  - "Proposed_OSI_Semantics.md#6.8.1"
+  - "Proposed_OSI_Semantics.md#6.11.3"
+tags: [bridge, holistic, accepted]
+conformance_level: foundation_v0_1
+decision: D-027
+test_id: T-051
+status: planned
+xfail_reason: |
+  Pending implementation. Spec contract revised (D-027): bare MEDIAN
+  (and other holistic aggregates) over an N:N bridge resolves via the
+  same single-pass bridge-dedup construction used for SUM and AVG. The
+  osi_python planner has two outstanding gaps for this case: (1) MEDIAN
+  is not yet in the recognised aggregate set (currently parses as a
+  composite expression and raises E1206); (2) once recognised, the
+  planner must route it through the bridge-dedup CTE rather than the
+  fan-out reject. Both blockers fall out of the same future sprint that
+  unblocks t-016.

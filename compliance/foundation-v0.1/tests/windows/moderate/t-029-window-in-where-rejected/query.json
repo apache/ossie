@@ -1,0 +1,15 @@
+{
+  "dataset": "orders",
+  "dimensions": [
+    "orders.customer_id"
+  ],
+  "measures": [
+    {
+      "name": "revenue",
+      "metric": "total_revenue"
+    }
+  ],
+  "filters": [
+    "ROW_NUMBER() OVER (PARTITION BY orders.customer_id ORDER BY orders.amount) = 1"
+  ]
+}

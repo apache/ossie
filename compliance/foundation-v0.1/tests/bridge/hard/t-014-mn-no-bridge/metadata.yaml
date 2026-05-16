@@ -1,0 +1,15 @@
+name: t-014-mn-no-bridge
+description: "N:N with no bridge and no shared dim raises E_NO_PATH (formerly E3012)"
+area: bridge
+difficulty: hard
+dataset: f_bridge_none
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-007"
+tags: [bridge, m:n, negative]
+conformance_level: foundation_v0_1
+decision: D-007
+test_id: T-014
+expected_error: true
+expected_error_code: E_NO_PATH
+status: planned
+xfail_reason: "Sprint S-10 — M:N safe-rewrite rejection (D-007)"

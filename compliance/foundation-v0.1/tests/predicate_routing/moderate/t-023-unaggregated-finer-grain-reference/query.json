@@ -1,0 +1,7 @@
+{
+  "dataset": "customers",
+  "fields": [
+    "customers.id",
+    "customers.first_order_amount"
+  ]
+}

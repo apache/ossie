@@ -1,0 +1,14 @@
+{
+  "dataset": "orders",
+  "dimensions": [],
+  "measures": [
+    {
+      "name": "total_revenue",
+      "metric": "total_revenue"
+    },
+    {
+      "name": "total_returns",
+      "metric": "total_returns"
+    }
+  ]
+}

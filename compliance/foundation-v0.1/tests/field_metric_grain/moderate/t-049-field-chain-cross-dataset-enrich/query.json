@@ -1,0 +1,12 @@
+{
+  "dataset": "customers",
+  "dimensions": [
+    "customers.tagged_region_segment"
+  ],
+  "measures": [
+    {
+      "name": "total_amount",
+      "metric": "total_amount"
+    }
+  ]
+}

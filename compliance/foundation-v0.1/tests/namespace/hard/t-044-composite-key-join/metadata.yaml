@@ -1,0 +1,13 @@
+name: t-044-composite-key-join
+description: "Composite primary/foreign key join (store_id, sku) — both components required in ON clause"
+area: namespace
+difficulty: hard
+dataset: f_composite
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-009"
+tags: [composite-key, n:1]
+conformance_level: foundation_v0_1
+decision: D-009
+test_id: T-044
+status: planned
+xfail_reason: "Sprint S-10 — composite-key join (F-COMPOSITE inline model); needs new fixture in S-E"

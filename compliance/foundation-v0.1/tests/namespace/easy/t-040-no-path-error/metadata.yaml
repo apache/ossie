@@ -1,0 +1,15 @@
+name: t-040-no-path-error
+description: "E_NO_PATH when no relationship connects two datasets"
+area: namespace
+difficulty: easy
+dataset: f_nopath
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-018"
+tags: [path-resolution, no-path, negative]
+conformance_level: foundation_v0_1
+decision: D-018
+test_id: T-040
+expected_error: true
+expected_error_code: E_NO_PATH
+status: planned
+xfail_reason: "Sprint S-10 — E_NO_PATH (D-018b)"

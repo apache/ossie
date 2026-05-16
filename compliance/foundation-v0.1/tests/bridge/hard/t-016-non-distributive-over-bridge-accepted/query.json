@@ -1,0 +1,12 @@
+{
+  "dataset": "actors",
+  "dimensions": [
+    "actors.height"
+  ],
+  "measures": [
+    {
+      "name": "avg_gross",
+      "metric": "avg_gross"
+    }
+  ]
+}

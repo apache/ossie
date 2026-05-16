@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_FAN_OUT_IN_SCALAR_QUERY: scalar query crosses 1:N fan-out

@@ -1,0 +1,15 @@
+{
+  "dataset": "customers",
+  "dimensions": [
+    "customers.region"
+  ],
+  "fields": [
+    "customers.id"
+  ],
+  "measures": [
+    {
+      "name": "revenue",
+      "metric": "total_revenue"
+    }
+  ]
+}

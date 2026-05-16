@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_NO_PATH: no bridge declared between actors and movies

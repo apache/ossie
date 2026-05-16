@@ -1,0 +1,14 @@
+name: t-062-nulls-first-default-on-desc
+description: "Outer Order By with DESC defaults to NULLS FIRST. The DESC half of the high-end-NULL convention (D-029, amended 2026-05-13); the symmetric counterpart of t-026. Together t-026 + t-062 lock in the symmetry property: flipping ASC ↔ DESC also flips NULL placement, which is the behaviour every BI mental model assumes (e.g. 'top-N → bottom-N' brings the NULL rows into view)."
+area: null_ordering
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-014"
+  - "Proposed_OSI_Semantics.md#D-029"
+tags: [order-by, nulls-first, determinism, symmetry-desc]
+conformance_level: foundation_v0_1
+decision: D-029
+test_id: T-062
+status: planned
+xfail_reason: "Sprint S-13.1 — symmetry counterpart for D-029 amendment (high-end-NULL convention)"

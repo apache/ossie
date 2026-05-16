@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_DEFERRED_FRAME_MODE: GROUPS frame mode is deferred to §10

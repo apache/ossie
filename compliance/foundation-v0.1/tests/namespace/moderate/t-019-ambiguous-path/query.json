@@ -1,0 +1,12 @@
+{
+  "dataset": "orders",
+  "dimensions": [
+    "users.region"
+  ],
+  "measures": [
+    {
+      "name": "order_count",
+      "metric": "order_count"
+    }
+  ]
+}

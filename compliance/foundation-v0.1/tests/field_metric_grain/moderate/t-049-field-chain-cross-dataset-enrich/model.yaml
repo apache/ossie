@@ -1,0 +1,34 @@
+name: f_prelude_enrich_with_derived_child
+datasets:
+  - name: customers
+    source: customers
+    primary_key: [id]
+    fields:
+      - {name: id,      expression: id,      dimension: {}}
+      - {name: region,  expression: region,  dimension: {}}
+      - {name: segment, expression: segment, dimension: {}}
+      # Derived fields on the *enrich child* — each references the
+      # previous sibling. A planner that inlines child columns into
+      # the enrich SELECT (``... region || segment AS combo,
+      # 'tag:' || combo AS tagged ...``) would emit lateral aliasing
+      # within the enrich SELECT itself, which Snowflake / PostgreSQL /
+      # SQLite reject. The planner must stage the child as
+      # SOURCE + ADD_COLUMNS first, then ENRICH_DERIVED reads the
+      # staged columns by name.
+      - name: region_segment
+        expression: "region || ':' || segment"
+        dimension: {}
+      - name: tagged_region_segment
+        expression: "'rs=' || region_segment"
+        dimension: {}
+  - name: orders
+    source: orders
+    primary_key: [id]
+    fields:
+      - {name: id,          expression: id,          dimension: {}}
+      - {name: customer_id, expression: customer_id, dimension: {}}
+      - {name: amount,      expression: amount}
+relationships:
+  - {name: orders_to_customer, from: orders, to: customers, from_columns: [customer_id], to_columns: [id]}
+metrics:
+  - {name: total_amount, expression: "SUM(orders.amount)"}

@@ -1,0 +1,12 @@
+{
+  "dataset": "orders",
+  "dimensions": [
+    "customers.region"
+  ],
+  "measures": [
+    {
+      "name": "tr",
+      "metric": "total_revenue_scoped_undeclared_globally"
+    }
+  ]
+}

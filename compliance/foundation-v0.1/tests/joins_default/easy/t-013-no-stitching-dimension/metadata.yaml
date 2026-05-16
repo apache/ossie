@@ -1,0 +1,15 @@
+name: t-013-no-stitching-dimension
+description: "Two unrelated facts with no shared dimension are rejected (no stitching path)"
+area: joins_default
+difficulty: easy
+dataset: f_nopath
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-007"
+tags: [multi-fact, no-path, negative]
+conformance_level: foundation_v0_1
+decision: D-007
+test_id: T-013
+expected_error: true
+expected_error_code: E_NO_PATH
+status: planned
+xfail_reason: "Sprint S-7 — unrelated-facts rejection (D-007)"

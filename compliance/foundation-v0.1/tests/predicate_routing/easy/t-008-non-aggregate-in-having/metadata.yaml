@@ -1,0 +1,16 @@
+name: t-008-non-aggregate-in-having
+description: "Row-level dimension predicate inside Having is rejected with E_NON_AGGREGATE_IN_HAVING"
+area: predicate_routing
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-005"
+  - "Proposed_OSI_Semantics.md#D-012"
+tags: [predicate-routing, negative, having]
+conformance_level: foundation_v0_1
+decision: D-012
+test_id: T-008
+expected_error: true
+expected_error_code: E_NON_AGGREGATE_IN_HAVING
+status: planned
+xfail_reason: "Sprint S-3 — predicate routing (D-012b)"

@@ -1,0 +1,15 @@
+name: t-041-reserved-name
+description: "OSI grammar reserved name (`filter`) used as a user field name is rejected with E_RESERVED_NAME (D-019: GRAIN, FILTER, QUERY_FILTER are reserved)."
+area: namespace
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-019"
+tags: [reserved-name, negative]
+conformance_level: foundation_v0_1
+decision: D-019
+test_id: T-041
+expected_error: true
+expected_error_code: E_RESERVED_NAME
+status: planned
+xfail_reason: "Sprint S-10 — reserved-name rejection (D-019)"

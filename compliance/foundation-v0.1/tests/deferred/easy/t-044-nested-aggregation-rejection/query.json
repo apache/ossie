@@ -1,0 +1,12 @@
+{
+  "dataset": "orders",
+  "dimensions": [
+    "customers.region"
+  ],
+  "measures": [
+    {
+      "name": "r",
+      "metric": "avg_of_total"
+    }
+  ]
+}

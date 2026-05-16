@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_RESERVED_NAME: field name 'select' is a reserved SQL keyword

@@ -1,0 +1,3 @@
+-- EXPECTED ERROR E_AGGREGATE_IN_FIELD: field `orders.total_amount`
+-- contains aggregate function `SUM`. Foundation v0.1 §4.3 / D-003
+-- requires every aggregate to live in a top-level model metric.

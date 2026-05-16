@@ -1,0 +1,222 @@
+"""Unit tests for :mod:`osi.parsing.models`.
+
+These cover validators that raise :class:`OSIParseError` directly. Pure
+pydantic errors (``extra_forbidden``, ``missing``, ``enum``) are covered
+in :mod:`test_parser` where they flow through the error translator.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from osi.common.identifiers import normalize_identifier
+from osi.errors import ErrorCode, OSIError, OSIParseError
+from osi.parsing.models import (
+    Dataset,
+    Dialect,
+    Field,
+    FieldRole,
+    Metric,
+    NamedFilter,
+    Parameter,
+    ReferentialIntegrity,
+    Relationship,
+    SemanticModel,
+)
+
+
+def _minimal_dataset(name: str = "orders") -> Dataset:
+    return Dataset(
+        name=name,
+        source="schema.table",
+        primary_key=["id"],
+        fields=[
+            Field(name="id", expression="id", role=FieldRole.DIMENSION),
+            Field(name="amount", expression="amount", role=FieldRole.FACT),
+        ],
+    )
+
+
+class TestFieldValidation:
+    def test_happy_path(self) -> None:
+        f = Field(name="amount", expression="amount", role="fact")
+        assert f.name == normalize_identifier("amount")
+        assert f.role is FieldRole.FACT
+        assert f.expression.canonical
+
+    def test_invalid_identifier_rejected_E1005(self) -> None:
+        with pytest.raises(OSIError) as exc:
+            Field(name="1bad", expression="id", role="dimension")
+        assert exc.value.code is ErrorCode.E1005_IDENTIFIER_INVALID
+
+    def test_empty_expression_rejected_E1004(self) -> None:
+        with pytest.raises(OSIError) as exc:
+            Field(name="id", expression="   ", role="dimension")
+        assert exc.value.code is ErrorCode.E1004_TYPE_MISMATCH
+
+    def test_default_role_is_dimension(self) -> None:
+        f = Field(name="id", expression="id")
+        assert f.role is FieldRole.DIMENSION
+
+
+class TestMetricValidation:
+    def test_happy_path(self) -> None:
+        m = Metric(name="revenue", expression="SUM(amount)")
+        assert m.name == normalize_identifier("revenue")
+        assert "SUM" in m.expression.canonical.upper()
+
+    def test_invalid_identifier_E1005(self) -> None:
+        with pytest.raises(OSIError) as exc:
+            Metric(name="1rev", expression="SUM(amount)")
+        assert exc.value.code is ErrorCode.E1005_IDENTIFIER_INVALID
+
+
+class TestDatasetValidation:
+    def test_happy_path(self) -> None:
+        ds = _minimal_dataset()
+        assert len(ds.fields) == 2
+        assert ds.primary_key == (normalize_identifier("id"),)
+
+    def test_duplicate_field_name_E2003(self) -> None:
+        with pytest.raises(OSIError) as exc:
+            Dataset(
+                name="orders",
+                source="sales.orders",
+                primary_key=["id"],
+                fields=[
+                    Field(name="id", expression="id"),
+                    Field(name="id", expression="id"),
+                ],
+            )
+        assert exc.value.code is ErrorCode.E2003_DUPLICATE_NAME
+
+    def test_field_metric_name_collision_E2003(self) -> None:
+        with pytest.raises(OSIError) as exc:
+            Dataset(
+                name="orders",
+                source="sales.orders",
+                fields=[Field(name="amount", expression="amount", role="fact")],
+                metrics=[Metric(name="amount", expression="SUM(amount)")],
+            )
+        assert exc.value.code is ErrorCode.E2003_DUPLICATE_NAME
+
+    def test_unique_keys_coerced_to_tuples(self) -> None:
+        ds = Dataset(
+            name="orders",
+            source="sales.orders",
+            primary_key=["id"],
+            unique_keys=[["id"], ["order_number"]],
+            fields=[
+                Field(name="id", expression="id"),
+                Field(name="order_number", expression="order_number"),
+            ],
+        )
+        assert ds.unique_keys == (
+            (normalize_identifier("id"),),
+            (normalize_identifier("order_number"),),
+        )
+
+    def test_unique_keys_wrong_shape_E1004(self) -> None:
+        with pytest.raises(OSIError) as exc:
+            Dataset(
+                name="orders",
+                source="sales.orders",
+                unique_keys="id",  # type: ignore[arg-type]
+                fields=[Field(name="id", expression="id")],
+            )
+        assert exc.value.code is ErrorCode.E1004_TYPE_MISMATCH
+
+
+class TestRelationshipValidation:
+    def test_happy_path_alias_from_to(self) -> None:
+        rel = Relationship.model_validate(
+            {
+                "name": "orders_to_customers",
+                "from": "orders",
+                "to": "customers",
+                "from_columns": ["customer_id"],
+                "to_columns": ["id"],
+                "referential_integrity": {"from_all_rows_match": True},
+            }
+        )
+        assert rel.from_dataset == normalize_identifier("orders")
+        assert rel.to_dataset == normalize_identifier("customers")
+        assert rel.referential_integrity == ReferentialIntegrity(
+            from_all_rows_match=True
+        )
+
+    def test_column_arity_mismatch_E2006(self) -> None:
+        with pytest.raises(OSIError) as exc:
+            Relationship.model_validate(
+                {
+                    "name": "r",
+                    "from": "a",
+                    "to": "b",
+                    "from_columns": ["x", "y"],
+                    "to_columns": ["z"],
+                }
+            )
+        assert exc.value.code is ErrorCode.E2006_INVALID_RELATIONSHIP
+
+    def test_empty_columns_E2006(self) -> None:
+        with pytest.raises(OSIError) as exc:
+            Relationship.model_validate(
+                {
+                    "name": "r",
+                    "from": "a",
+                    "to": "b",
+                    "from_columns": [],
+                    "to_columns": [],
+                }
+            )
+        assert exc.value.code is ErrorCode.E2006_INVALID_RELATIONSHIP
+
+
+class TestParameterValidation:
+    def test_default_any(self) -> None:
+        p = Parameter(name="min_amount", data_type="NUMBER", default=0)
+        assert p.default == 0
+        assert p.data_type == "NUMBER"
+
+
+class TestNamedFilter:
+    def test_happy_path(self) -> None:
+        nf = NamedFilter(name="done", expression="status = 'done'")
+        assert nf.name == normalize_identifier("done")
+
+
+class TestSemanticModel:
+    def test_empty_datasets_rejected_E1002(self) -> None:
+        with pytest.raises(OSIError) as exc:
+            SemanticModel(name="x", datasets=[])
+        assert exc.value.code is ErrorCode.E1002_MISSING_REQUIRED_FIELD
+
+    def test_dataset_name_uniqueness_E2003(self) -> None:
+        with pytest.raises(OSIError) as exc:
+            SemanticModel(
+                name="x",
+                datasets=[_minimal_dataset(), _minimal_dataset()],
+            )
+        assert exc.value.code is ErrorCode.E2003_DUPLICATE_NAME
+
+    def test_metric_name_uniqueness_E2003(self) -> None:
+        with pytest.raises(OSIError) as exc:
+            SemanticModel(
+                name="x",
+                datasets=[_minimal_dataset()],
+                metrics=[
+                    Metric(name="m", expression="SUM(amount)"),
+                    Metric(name="m", expression="SUM(amount)"),
+                ],
+            )
+        assert exc.value.code is ErrorCode.E2003_DUPLICATE_NAME
+
+    def test_defaults(self) -> None:
+        model = SemanticModel(name="x", datasets=[_minimal_dataset()])
+        assert model.dialect is Dialect.ANSI
+        assert model.metrics == ()
+        assert model.filters == ()
+        assert model.parameters == ()
+
+
+_ = OSIParseError  # re-export used by readers of this module

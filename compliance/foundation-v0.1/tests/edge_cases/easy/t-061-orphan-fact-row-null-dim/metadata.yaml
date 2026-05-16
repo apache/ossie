@@ -1,0 +1,14 @@
+name: t-061-orphan-fact-row-null-dim
+description: "S-E hot-spot 5: orphan fact row (customer_id=99 with no matching customer) appears under a NULL region in the LEFT-join Foundation default."
+area: edge_cases
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-001"
+  - "Proposed_OSI_Semantics.md#D-014"
+tags: [orphan-fact, null-dim, left-join]
+conformance_level: foundation_v0_1
+decision: D-001
+test_id: T-061
+status: planned
+xfail_reason: "S-E — drift-hot-spot edge case for orphan-fact row preservation under LEFT-join default"

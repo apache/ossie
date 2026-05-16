@@ -1,0 +1,22 @@
+{
+  "dataset": "orders",
+  "fields": [
+    "orders.id",
+    "orders.customer_id",
+    "orders.amount",
+    "orders.running_total"
+  ],
+  "filters": [
+    "orders.customer_id IS NOT NULL"
+  ],
+  "order_by": [
+    {
+      "target": "orders.customer_id",
+      "direction": "ASC"
+    },
+    {
+      "target": "orders.id",
+      "direction": "ASC"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+name: t-015-bridge-dedup
+description: "Bridge resolution de-duplicates per (movie_id, height): M10 counted once, 170 ⇒ 300 not 400"
+area: bridge
+difficulty: hard
+dataset: f_bridge
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-026"
+tags: [bridge, m:n, dedup, flagship]
+conformance_level: foundation_v0_1
+decision: D-026
+test_id: T-015
+status: planned
+xfail_reason: "Sprint S-8 — bridge de-duplication plan (D-026)"

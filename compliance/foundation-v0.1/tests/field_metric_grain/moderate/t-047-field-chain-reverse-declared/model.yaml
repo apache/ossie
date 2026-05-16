@@ -1,0 +1,27 @@
+name: f_chain_reverse_declared
+datasets:
+  - name: order_lines
+    source: order_lines
+    primary_key: [id]
+    fields:
+      - {name: id,        expression: id,                dimension: {}}
+      - {name: order_id,  expression: order_id,          dimension: {}}
+      - {name: sku,       expression: sku,               dimension: {}}
+      - {name: qty,       expression: qty}
+      - {name: price,     expression: price}
+      # Same chain as T-046 but declared in REVERSE topological order.
+      # The semantic value is identical (declaration order is not
+      # significant to the spec). A planner that naively inlines field
+      # expressions in declaration order would emit
+      #   SELECT discounted_line_total + 1 AS final_price,
+      #          line_total * 0.9 AS discounted_line_total,
+      #          qty * price AS line_total ...
+      # which is rejected by Snowflake / PostgreSQL / SQLite (lateral
+      # forward reference) and silently wrong on engines that don't.
+      # A correct planner topologically sorts and emits one CTE stage
+      # per dependency level.
+      - {name: final_price,           expression: "discounted_line_total + 1"}
+      - {name: discounted_line_total, expression: "line_total * 0.9"}
+      - {name: line_total,            expression: "qty * price"}
+metrics:
+  - {name: total_final, expression: "SUM(order_lines.final_price)"}

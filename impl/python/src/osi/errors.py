@@ -1,0 +1,265 @@
+"""Typed error hierarchy for osi_python.
+
+See ``docs/ERROR_CODES.md`` for the full catalog. Every code listed there
+must have an enum value here before it can be raised in production code.
+
+Tests must assert on ``error.code``, never on message text.
+"""
+
+from __future__ import annotations
+
+from enum import StrEnum
+
+
+class ErrorCode(StrEnum):
+    """Stable error codes. See ``docs/ERROR_CODES.md``.
+
+    A code marked ``RESERVED`` is documented in ``docs/ERROR_CODES.md``
+    and the relevant spec, but has no emit path in the current
+    implementation. Reserved codes belong to deferred features
+    (``SEMANTIC_VIEW`` SQL surface, M:N stitch paths, strict-mode
+    warnings). They are retained so (a) external tooling that pins to a
+    code is not broken when the feature lands, and (b) the spec
+    references in the catalog stay stable. Tests covering reserved
+    codes live alongside the features that raise them — not here.
+    """
+
+    # E1xxx — Parse errors
+    E1001_YAML_SYNTAX = "E1001"
+    E1002_MISSING_REQUIRED_FIELD = "E1002"
+    E1003_INVALID_ENUM_VALUE = "E1003"
+    E1004_TYPE_MISMATCH = "E1004"
+    E1005_IDENTIFIER_INVALID = "E1005"
+    E1006_SQL_EXPRESSION_SYNTAX = "E1006"
+    # E_* — Foundation v0.1 named codes (Appendix C of
+    # ``Proposed_OSI_Semantics.md``). The Foundation rollout (S-1..S-17)
+    # is migrating every ``E1xxx``/``E2xxx``/``E3xxx`` numeric code to
+    # an ``E_*`` named code; new code MUST use the named form.
+    E_DEFERRED_KEY_REJECTED = "E_DEFERRED_KEY_REJECTED"
+    # S-2 / D-010 / D-011 / D-023 — query-shape errors.
+    E_MIXED_QUERY_SHAPE = "E_MIXED_QUERY_SHAPE"
+    E_AGGREGATE_IN_SCALAR_QUERY = "E_AGGREGATE_IN_SCALAR_QUERY"
+    E_EMPTY_AGGREGATION_QUERY = "E_EMPTY_AGGREGATION_QUERY"
+    E_EMPTY_SCALAR_QUERY = "E_EMPTY_SCALAR_QUERY"
+    E_FAN_OUT_IN_SCALAR_QUERY = "E_FAN_OUT_IN_SCALAR_QUERY"
+    # S-3 / D-005 / D-012 — predicate-routing errors that replace the
+    # legacy E3009 with named codes matching the spec's three-way
+    # taxonomy.
+    E_AGGREGATE_IN_WHERE = "E_AGGREGATE_IN_WHERE"
+    E_NON_AGGREGATE_IN_HAVING = "E_NON_AGGREGATE_IN_HAVING"
+    E_MIXED_PREDICATE_LEVEL = "E_MIXED_PREDICATE_LEVEL"
+    # S-5 / D-024 — a field body that references a finer grain
+    # without aggregating it.
+    E_UNAGGREGATED_FINER_GRAIN_REFERENCE = "E_UNAGGREGATED_FINER_GRAIN_REFERENCE"
+    # S-9 / D-022 — the chosen plan forces a multi-stage decomposition the
+    # aggregate cannot survive (holistic over §6.7 chasm pre-aggregation
+    # or §6.8.2 stitch). The §6.8.1 bridge plan is **not** in this family
+    # — it is a single-pass aggregate over the de-duplicated row set and
+    # is accepted bare for every aggregate category per D-027.
+    E_UNSAFE_REAGGREGATION = "E_UNSAFE_REAGGREGATION"
+    # RESERVED — superseded by E_NESTED_AGGREGATION_DEFERRED. The
+    # Foundation defers all nested aggregation in metric expressions to
+    # §10's grain-aware-functions proposal (Proposed_OSI_Semantics.md
+    # §4.5, D-027). The catalog keeps this code so older tooling that
+    # pinned to it does not break, but no path raises it today; the
+    # active code is ``E_NESTED_AGGREGATION_DEFERRED``.
+    E_AMBIGUOUS_NESTED_AGGREGATION_GRAIN = "E_AMBIGUOUS_NESTED_AGGREGATION_GRAIN"
+    # Foundation v0.1 §4.5 / D-027 — nested aggregation in a metric
+    # expression (an aggregate function applied to another aggregate's
+    # result, e.g. ``AVG(COUNT(orders.oid))``) is deferred to §10's
+    # grain-aware-functions proposal. Behind the
+    # ``allow_nested_aggregation`` feature flag the planner accepts the
+    # construct via ``planner_nested``; with the flag off the parser
+    # rejects the metric body up front with this code.
+    E_NESTED_AGGREGATION_DEFERRED = "E_NESTED_AGGREGATION_DEFERRED"
+    # Foundation v0.1 §4.3 / D-003 — a field expression contains an
+    # aggregate function (``SUM``, ``COUNT``, ``AVG``, …), whether
+    # over the home dataset's own columns or via a ``1:N`` reach. All
+    # aggregates live in model-scoped metrics (§4.5); field expressions
+    # are non-aggregate by construction. Behind the
+    # ``allow_aggregate_in_field`` feature flag the planner falls back
+    # to the legacy implicit-home-grain rewrite in
+    # ``osi.planning.home_grain``.
+    E_AGGREGATE_IN_FIELD = "E_AGGREGATE_IN_FIELD"
+    # Foundation v0.1 §4.3 — fields on the same dataset may reference
+    # one another, but the dependency graph must be a DAG. A cycle
+    # (e.g. field ``a`` depends on field ``b`` which depends on
+    # field ``a``) cannot be lowered to a finite sequence of
+    # ``ADD_COLUMNS`` stages and so is rejected at parse time. The
+    # planner relies on the topological order of inter-field
+    # dependencies to emit portable SQL — see
+    # :func:`osi.planning.steps.source_step` and
+    # :func:`osi.planning.columns.compute_field_dependencies`.
+    E_FIELD_DEPENDENCY_CYCLE = "E_FIELD_DEPENDENCY_CYCLE"
+    # S-10 / D-006 / D-018 / D-019 — identifier resolution + path
+    # errors. These replace the legacy E2001 / E2002 / E2004 / E2008 /
+    # E3001 numeric codes for user-facing diagnostics.
+    E_NAME_NOT_FOUND = "E_NAME_NOT_FOUND"
+    E_NAME_COLLISION = "E_NAME_COLLISION"
+    E_AMBIGUOUS_PATH = "E_AMBIGUOUS_PATH"
+    E_NO_PATH = "E_NO_PATH"
+    E_RESERVED_IDENTIFIER = "E_RESERVED_IDENTIFIER"
+    E_RESERVED_NAME = "E_RESERVED_NAME"
+    # S-12 / D-028 / D-030 / D-031 / D-032 — window-function placement
+    # and composition rules. Window functions live in ``Measures``,
+    # ``Fields``, ``Order By``, and ``Having``; never in ``Where`` or
+    # nested under another window. Frame modes other than ``ROWS`` /
+    # ``RANGE`` and parameterised frame bounds are deferred.
+    E_WINDOW_IN_WHERE = "E_WINDOW_IN_WHERE"
+    E_NESTED_WINDOW = "E_NESTED_WINDOW"
+    E_WINDOWED_METRIC_COMPOSITION = "E_WINDOWED_METRIC_COMPOSITION"
+    E_DEFERRED_FRAME_MODE = "E_DEFERRED_FRAME_MODE"
+    E_WINDOW_OVER_FANOUT_REWRITE = "E_WINDOW_OVER_FANOUT_REWRITE"
+    # S-16 / D-021 — function call that is not in the OSI_SQL_2026
+    # catalog. The catalog is the contract for every Foundation v0.1
+    # implementation; vendor-specific functions go through the
+    # per-dialect ``dialects:`` block. Currently RESERVED — the catalog
+    # whitelist enforcement lands as part of post-Foundation work
+    # (the planner currently surfaces unknown functions through
+    # downstream sqlglot or engine rejection).
+    E_UNKNOWN_FUNCTION = "E_UNKNOWN_FUNCTION"  # RESERVED
+
+    # E12xx — SQL-surface errors (see specs/SQL_INTERFACE.md §8).
+    # Only E1206 / E1207 / E1208 / E1209 / E1212 have active emit paths
+    # today; the rest are RESERVED for the SEMANTIC_VIEW clause parser.
+    E1201_SEMANTIC_VIEW_EMPTY = "E1201"  # RESERVED — SQL_INTERFACE.md §8
+    E1202_CLAUSE_ORDER = "E1202"  # RESERVED — SQL_INTERFACE.md §8
+    E1203_REFERENCE_TOO_DEEP = "E1203"  # RESERVED — SQL_INTERFACE.md §8
+    E1204_AMBIGUOUS_BARE_REFERENCE = "E1204"  # RESERVED — SQL_INTERFACE.md §8
+    E1205_DUPLICATE_OUTPUT_COLUMN = "E1205"  # RESERVED — SQL_INTERFACE.md §8
+    E1206_METRIC_IN_RAW_AGGREGATE = "E1206"
+    E1207_FACTS_METRICS_EXCLUSIVE = "E1207"
+    E1208_UNSUPPORTED_SQL_CONSTRUCT = "E1208"
+    E1209_CROSS_DATASET_AD_HOC_AGGREGATE = "E1209"
+    E1210_WINDOW_METRIC_DEFERRED = "E1210"  # RESERVED — window metrics deferred
+    E1211_CLAUSE_ONLY_OUTER = "E1211"  # RESERVED — SQL_INTERFACE.md §8
+    E1212_COUNT_STAR_AMBIGUOUS = "E1212"
+    E1213_PARAMETER_USED_AS_REFERENCE = "E1213"  # RESERVED — SQL_INTERFACE.md §8
+
+    # E2xxx — Validation errors
+    E2001_AMBIGUOUS_NAME = "E2001"
+    E2002_NAME_NOT_FOUND = "E2002"
+    E2003_DUPLICATE_NAME = "E2003"
+    E2004_UNREACHABLE_DATASET = "E2004"
+    E2005_CIRCULAR_METRIC = "E2005"
+    E2006_INVALID_RELATIONSHIP = "E2006"
+    E2007_MISSING_PRIMARY_KEY = "E2007"
+    E2008_RESERVED_IDENTIFIER = "E2008"
+
+    # E3xxx — Planning errors
+    E3001_AMBIGUOUS_JOIN_PATH = "E3001"
+    E3002_UNSATISFIABLE_GRAIN = "E3002"
+    # RESERVED — cardinality is inferred from declared keys today, so
+    # there is no path that raises this. Kept so a future explicit
+    # ``cardinality:`` YAML field or a constraint-free relationship can
+    # fail with a stable code.
+    E3003_AMBIGUOUS_CARDINALITY = "E3003"
+    E3004_GRAIN_NOT_SUBSET = "E3004"
+    E3005_COLUMN_NAME_COLLISION = "E3005"
+    E3006_MISSING_COLUMN_DEPENDENCY = "E3006"
+    E3007_AGGREGATE_IN_SCALAR_CONTEXT = "E3007"
+    E3008_GRAIN_MISMATCH_MERGE = "E3008"
+    # RESERVED — S-3 split this code into the named predicate-routing
+    # codes (E_AGGREGATE_IN_WHERE, E_NON_AGGREGATE_IN_HAVING,
+    # E_MIXED_PREDICATE_LEVEL). Retained so external pinning does not
+    # break, but no path raises it today.
+    E3009_POST_AGGREGATE_REF_PRE_AGGREGATE = "E3009"
+    # RESERVED — today's per-fact merge strategy (§4.11) means a chasm
+    # trap is prevented structurally rather than raised; see
+    # ``Proposed_OSI_Semantics.md §6.4``.
+    E3010_CHASM_TRAP = "E3010"
+    # E3011 is the engine-capability opt-out code: an engine that does
+    # not support M:N traversal at all raises it for every M:N query.
+    # ``osi_python`` is M:N-supporting (per ``Proposed_OSI_Semantics.md``
+    # §6.8 *Semantic guarantee*); the algebra layer raises ``E3011``
+    # internally as a precondition signal on ``N : N`` edges, and the
+    # planner translates it to the user-facing per-query codes
+    # ``E3012`` / ``E3013``.
+    E3011_MN_AGGREGATION_REJECTED = "E3011"
+    # E3012 / E3013 are the user-facing per-query M:N failure codes
+    # for M:N-supporting engines: ``E3012`` when no safe rewrite exists
+    # for a particular query (no bridge, no shared-dimension stitch);
+    # ``E3013`` when two unrelated facts have no shared dimension to
+    # stitch on. See ``Proposed_OSI_Semantics.md`` §6.8.
+    E3012_MN_NO_STITCH_PATH = "E3012"
+    E3013_NO_STITCHING_DIMENSION = "E3013"
+
+    # E4xxx — Algebra safety errors
+    E4001_EXPLOSION_UNSAFE = "E4001"
+    # RESERVED — enrich's precondition is phrased as a fan-trap check
+    # over child grain, so this shape never fires independently today.
+    E4002_ENRICH_KEYS_NOT_IN_GRAIN = "E4002"
+    E4003_MERGE_COLUMN_OVERLAP = "E4003"
+    E4004_BROADCAST_NOT_SCALAR = "E4004"
+    E4005_FILTERING_JOIN_ADDS_COLUMNS = "E4005"
+
+    # E5xxx — Codegen errors
+    E5001_DIALECT_UNSUPPORTED = "E5001"
+    E5002_SQLGLOT_RENDER_FAILED = "E5002"
+    # RESERVED — the Foundation lifts every dialect via SQLGlot, so a
+    # feature that reaches codegen is supported by construction. This
+    # code is carved out for when bespoke transpilers ship.
+    E5003_DIALECT_MISSING_FEATURE = "E5003"
+
+    # W6xxx — Warnings (non-fatal unless strict mode). All RESERVED:
+    # the diagnostic warnings channel is specified but not yet wired
+    # into planning (``diagnostics.explain`` does not attach warnings
+    # to the QueryPlan today).
+    W6001_AVG_OF_AVG = "W6001"  # RESERVED
+    W6002_REAGG_PRECISION_LOSS = "W6002"  # RESERVED
+    W6003_SUSPICIOUS_PATTERN = "W6003"  # RESERVED
+
+
+class OSIError(Exception):
+    """Root of every error raised anywhere in the compiler.
+
+    Carries a stable ``code`` (see ``ErrorCode``) and an optional
+    ``context`` dict with actionable fields (dataset, field, grain,
+    suggestion). Tests should assert on ``error.code``, never on
+    message text.
+    """
+
+    def __init__(
+        self,
+        code: ErrorCode,
+        message: str,
+        *,
+        context: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.context: dict[str, object] = dict(context or {})
+
+
+class OSIParseError(OSIError):
+    """Raised from ``osi.parsing``. Codes in ``E1xxx`` / ``E2xxx``."""
+
+
+class OSIPlanningError(OSIError):
+    """Raised from ``osi.planning`` (outside the algebra). Codes in ``E3xxx``."""
+
+
+class AlgebraError(OSIError):
+    """Raised from ``osi.planning.algebra``.
+
+    The algebra raises two adjacent code families:
+
+    * ``E4xxx`` — *safety* failures (explosion, broadcast shape, merge
+      column overlap, filtering-join shape). These are conditions only
+      the algebra can detect.
+    * ``E3xxx`` — *contract* failures inherited from the surrounding
+      planning layer (grain mismatch, missing column, M:N rejection).
+      They are surfaced by algebra preconditions because the algebra
+      is the place where the planner's promises become non-negotiable.
+
+    Tests should assert on ``error.code``, never on which family a
+    code happens to fall in.
+    """
+
+
+class OSICodegenError(OSIError):
+    """Raised from ``osi.codegen``. Codes in ``E5xxx``."""
+
+
+class OSIWarning(OSIError):
+    """Non-fatal warnings. Codes in ``W6xxx``. In strict mode these are errors."""

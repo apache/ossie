@@ -1,0 +1,4 @@
+-- EXPECTED ERROR E_DEFERRED_KEY_REJECTED: dataset `orders` declares a
+-- per-dataset `metrics:` block. Foundation v0.1 §4.5 defers per-dataset
+-- metric blocks; move `total_revenue` to the top-level `metrics:`
+-- section and qualify the body (SUM(orders.amount)).

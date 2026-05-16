@@ -1,0 +1,11 @@
+name: t-048-windowed-field-referenced
+description: "A windowed field's result is consumed by a downstream field on the same dataset; the downstream field must read the windowed value from a committed CTE so portability across dialects is preserved"
+area: field_metric_grain
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#sec-4.3.1"
+tags: [field, window, inter-field-deps, staging]
+conformance_level: foundation_v0_1
+test_id: T-048
+status: active

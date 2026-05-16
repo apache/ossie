@@ -1,0 +1,14 @@
+name: t-045-dataset-scoped-metric-rejection
+description: "Per-dataset `metrics:` block is deferred (§4.5); every metric must live at the top-level `metrics:` section"
+area: deferred
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#sec-4.5"
+tags: [deferred, metrics, scope, negative]
+conformance_level: foundation_v0_1
+test_id: T-045
+expected_error: true
+expected_error_code: E_DEFERRED_KEY_REJECTED
+status: planned
+xfail_reason: "Foundation v0.1 §4.5 — per-dataset metrics blocks deferred"

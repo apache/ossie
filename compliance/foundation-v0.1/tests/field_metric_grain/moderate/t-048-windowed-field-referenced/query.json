@@ -1,0 +1,9 @@
+{
+  "dataset": "orders",
+  "measures": [
+    {
+      "name": "top_per_customer_total",
+      "metric": "top_per_customer_total"
+    }
+  ]
+}

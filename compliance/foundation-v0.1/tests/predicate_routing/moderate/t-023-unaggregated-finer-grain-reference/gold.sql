@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_UNAGGREGATED_FINER_GRAIN_REFERENCE: row-level reference to finer grain

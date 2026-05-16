@@ -1,0 +1,15 @@
+name: t-050-empty-aggregation-query
+description: "Aggregation query with neither Dimensions nor Measures is rejected with E_EMPTY_AGGREGATION_QUERY"
+area: error_taxonomy
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#E_EMPTY_AGGREGATION_QUERY"
+tags: [empty, negative]
+conformance_level: foundation_v0_1
+decision: D-001
+test_id: T-050
+expected_error: true
+expected_error_code: E_EMPTY_AGGREGATION_QUERY
+status: planned
+xfail_reason: "Sprint S-2 — empty aggregation query rejection"

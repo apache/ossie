@@ -1,0 +1,5 @@
+-- EXPECTED ERROR E_NESTED_AGGREGATION_DEFERRED: metric `avg_of_total`
+-- nests aggregate `AVG` over aggregate `SUM`. Foundation v0.1 §4.5 /
+-- D-027 defers nested aggregation to §10's grain-aware-functions
+-- proposal; for distributive nesting use the single-step form
+-- (SUM(orders.amount) instead of SUM(SUM(orders.amount))).

@@ -1,0 +1,14 @@
+name: t-021-count-distinct-fanout
+description: "COUNT(DISTINCT actors.actor_id) over the M:N actor↔movie bridge is ACCEPTED via bridge de-duplication (D-022 + D-026 + §6.11.3). After dedup at (actor_id, title) each actor contributes once per title, and SUM gives the per-title distinct-actor count."
+area: bridge
+difficulty: hard
+dataset: f_bridge
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-022"
+  - "Proposed_OSI_Semantics.md#D-026"
+tags: [count-distinct, bridge-dedup, m-n]
+conformance_level: foundation_v0_1
+decision: D-022
+test_id: T-021
+status: planned
+xfail_reason: "Sprint S-19 — bridge resolution accepts COUNT(DISTINCT) when the argument lives on the fact dataset (D-022 / §6.11.3)."

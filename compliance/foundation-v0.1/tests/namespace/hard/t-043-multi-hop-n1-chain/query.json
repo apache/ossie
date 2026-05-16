@@ -1,0 +1,12 @@
+{
+  "dataset": "order_lines",
+  "dimensions": [
+    "segments.name"
+  ],
+  "measures": [
+    {
+      "name": "revenue",
+      "metric": "revenue"
+    }
+  ]
+}

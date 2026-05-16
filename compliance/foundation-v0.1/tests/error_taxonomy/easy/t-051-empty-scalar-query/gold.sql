@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_EMPTY_SCALAR_QUERY: Fields is empty

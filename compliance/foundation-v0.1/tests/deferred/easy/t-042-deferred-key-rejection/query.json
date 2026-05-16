@@ -1,0 +1,12 @@
+{
+  "dataset": "orders",
+  "dimensions": [
+    "customers.region"
+  ],
+  "measures": [
+    {
+      "name": "r",
+      "metric": "revenue_at_orders_grain"
+    }
+  ]
+}

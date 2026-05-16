@@ -1,0 +1,13 @@
+name: t-012-scalar-grand-total
+description: "Scalar grand total (no dimensions) uses CROSS JOIN of pre-aggregated scalars; one row"
+area: scalar_query
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-004"
+tags: [scalar, cross-join, grand-total]
+conformance_level: foundation_v0_1
+decision: D-004
+test_id: T-012
+status: planned
+xfail_reason: "Sprint S-7 — scalar grand total CROSS JOIN (D-004c)"

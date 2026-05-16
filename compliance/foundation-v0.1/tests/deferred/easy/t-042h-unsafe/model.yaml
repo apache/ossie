@@ -1,0 +1,37 @@
+name: f_prelude_model
+datasets:
+  - name: customers
+    source: customers
+    primary_key: [id]
+    fields:
+      - {name: id,      expression: id,      dimension: {}}
+      - {name: region,  expression: region,  dimension: {}}
+      - {name: segment, expression: segment, dimension: {}}
+  - name: orders
+    source: orders
+    primary_key: [id]
+    fields:
+      - {name: id,          expression: id,          dimension: {}}
+      - {name: customer_id, expression: customer_id, dimension: {}}
+      - {name: status,      expression: status,      dimension: {}}
+      - {name: amount,      expression: amount}
+  - name: returns
+    source: returns
+    primary_key: [id]
+    fields:
+      - {name: id,          expression: id,          dimension: {}}
+      - {name: customer_id, expression: customer_id, dimension: {}}
+      - {name: amount,      expression: amount}
+  - name: premium_customers
+    source: premium_customers
+    primary_key: [id]
+    fields:
+      - {name: id, expression: id, dimension: {}}
+relationships:
+  - {name: orders_to_customer,  from: orders,  to: customers, from_columns: [customer_id], to_columns: [id]}
+  - {name: returns_to_customer, from: returns, to: customers, from_columns: [customer_id], to_columns: [id]}
+metrics:
+  - {name: total_revenue,  expression: "SUM(orders.amount)"}
+  - {name: total_returns,  expression: "SUM(returns.amount)"}
+  - {name: order_count,    expression: "COUNT(orders.id)"}
+  - {name: unsafe_metric, expression: "AVG(orders.amount)", dataset: orders, unsafe: true}

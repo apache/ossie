@@ -1,0 +1,1486 @@
+# serializer version: 1
+# name: test_plan__enrichment_dim_on_joined_table
+  '''
+  {
+    "limit": null,
+    "order_by": [],
+    "output_columns": [
+      "region",
+      "total_revenue"
+    ],
+    "root_step_id": 3,
+    "steps": [
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "order_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "order_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "customer_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "customer_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "status",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "status"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "amount",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "fact",
+            "name": "amount"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "discount",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "fact",
+            "name": "discount"
+          }
+        ],
+        "grain": [
+          "order_id"
+        ],
+        "inputs": [],
+        "operation": "source",
+        "payload": {
+          "dataset": "orders",
+          "kind": "source",
+          "primary_key": [
+            "order_id"
+          ],
+          "source": "sales.orders"
+        },
+        "step_id": 0
+      },
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "order_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "order_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "customer_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "customer_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "status",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "status"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "amount",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "fact",
+            "name": "amount"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "discount",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "fact",
+            "name": "discount"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "id",
+            "from_join_rhs": true,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "region",
+            "from_join_rhs": true,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "region"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "market_segment",
+            "from_join_rhs": true,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "segment"
+          }
+        ],
+        "grain": [
+          "order_id"
+        ],
+        "inputs": [
+          0
+        ],
+        "operation": "enrich",
+        "payload": {
+          "child_columns": [
+            {
+              "aggregate": null,
+              "dependencies": [],
+              "expression": "id",
+              "from_join_rhs": false,
+              "is_single_valued": true,
+              "kind": "dimension",
+              "name": "id"
+            },
+            {
+              "aggregate": null,
+              "dependencies": [],
+              "expression": "region",
+              "from_join_rhs": false,
+              "is_single_valued": true,
+              "kind": "dimension",
+              "name": "region"
+            },
+            {
+              "aggregate": null,
+              "dependencies": [],
+              "expression": "market_segment",
+              "from_join_rhs": false,
+              "is_single_valued": true,
+              "kind": "dimension",
+              "name": "segment"
+            }
+          ],
+          "child_dataset": "customers",
+          "child_keys": [
+            "id"
+          ],
+          "child_source": "sales.customers",
+          "join_type": "LEFT",
+          "keys": [
+            "customer_id"
+          ],
+          "kind": "enrich",
+          "parent_keys": [
+            "customer_id"
+          ]
+        },
+        "step_id": 1
+      },
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "region",
+            "from_join_rhs": true,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "region"
+          },
+          {
+            "aggregate": {
+              "argument": "amount",
+              "function": "SUM"
+            },
+            "dependencies": [],
+            "expression": "SUM(amount)",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "aggregate",
+            "name": "total_revenue"
+          }
+        ],
+        "grain": [
+          "region"
+        ],
+        "inputs": [
+          1
+        ],
+        "operation": "aggregate",
+        "payload": {
+          "aggregations": [
+            {
+              "aggregate": {
+                "argument": "amount",
+                "function": "SUM"
+              },
+              "dependencies": [
+                "amount"
+              ],
+              "expression": "SUM(amount)",
+              "from_join_rhs": false,
+              "is_single_valued": false,
+              "kind": "aggregate",
+              "name": "total_revenue"
+            }
+          ],
+          "kind": "aggregate",
+          "new_grain": [
+            "region"
+          ]
+        },
+        "step_id": 2
+      },
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "region",
+            "from_join_rhs": true,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "region"
+          },
+          {
+            "aggregate": {
+              "argument": "amount",
+              "function": "SUM"
+            },
+            "dependencies": [],
+            "expression": "SUM(amount)",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "aggregate",
+            "name": "total_revenue"
+          }
+        ],
+        "grain": [
+          "region"
+        ],
+        "inputs": [
+          2
+        ],
+        "operation": "project",
+        "payload": {
+          "columns": [
+            "region",
+            "total_revenue"
+          ],
+          "kind": "project"
+        },
+        "step_id": 3
+      }
+    ]
+  }
+  '''
+# ---
+# name: test_plan__order_by_and_limit
+  '''
+  {
+    "limit": 10,
+    "order_by": [
+      {
+        "column": "total_revenue",
+        "descending": true
+      }
+    ],
+    "output_columns": [
+      "status",
+      "total_revenue"
+    ],
+    "root_step_id": 2,
+    "steps": [
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "order_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "order_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "customer_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "customer_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "status",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "status"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "amount",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "fact",
+            "name": "amount"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "discount",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "fact",
+            "name": "discount"
+          }
+        ],
+        "grain": [
+          "order_id"
+        ],
+        "inputs": [],
+        "operation": "source",
+        "payload": {
+          "dataset": "orders",
+          "kind": "source",
+          "primary_key": [
+            "order_id"
+          ],
+          "source": "sales.orders"
+        },
+        "step_id": 0
+      },
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "status",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "status"
+          },
+          {
+            "aggregate": {
+              "argument": "amount",
+              "function": "SUM"
+            },
+            "dependencies": [],
+            "expression": "SUM(amount)",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "aggregate",
+            "name": "total_revenue"
+          }
+        ],
+        "grain": [
+          "status"
+        ],
+        "inputs": [
+          0
+        ],
+        "operation": "aggregate",
+        "payload": {
+          "aggregations": [
+            {
+              "aggregate": {
+                "argument": "amount",
+                "function": "SUM"
+              },
+              "dependencies": [
+                "amount"
+              ],
+              "expression": "SUM(amount)",
+              "from_join_rhs": false,
+              "is_single_valued": false,
+              "kind": "aggregate",
+              "name": "total_revenue"
+            }
+          ],
+          "kind": "aggregate",
+          "new_grain": [
+            "status"
+          ]
+        },
+        "step_id": 1
+      },
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "status",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "status"
+          },
+          {
+            "aggregate": {
+              "argument": "amount",
+              "function": "SUM"
+            },
+            "dependencies": [],
+            "expression": "SUM(amount)",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "aggregate",
+            "name": "total_revenue"
+          }
+        ],
+        "grain": [
+          "status"
+        ],
+        "inputs": [
+          1
+        ],
+        "operation": "project",
+        "payload": {
+          "columns": [
+            "status",
+            "total_revenue"
+          ],
+          "kind": "project"
+        },
+        "step_id": 2
+      }
+    ]
+  }
+  '''
+# ---
+# name: test_plan__single_table_dim_plus_measure
+  '''
+  {
+    "limit": null,
+    "order_by": [],
+    "output_columns": [
+      "status",
+      "total_revenue"
+    ],
+    "root_step_id": 2,
+    "steps": [
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "order_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "order_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "customer_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "customer_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "status",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "status"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "amount",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "fact",
+            "name": "amount"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "discount",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "fact",
+            "name": "discount"
+          }
+        ],
+        "grain": [
+          "order_id"
+        ],
+        "inputs": [],
+        "operation": "source",
+        "payload": {
+          "dataset": "orders",
+          "kind": "source",
+          "primary_key": [
+            "order_id"
+          ],
+          "source": "sales.orders"
+        },
+        "step_id": 0
+      },
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "status",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "status"
+          },
+          {
+            "aggregate": {
+              "argument": "amount",
+              "function": "SUM"
+            },
+            "dependencies": [],
+            "expression": "SUM(amount)",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "aggregate",
+            "name": "total_revenue"
+          }
+        ],
+        "grain": [
+          "status"
+        ],
+        "inputs": [
+          0
+        ],
+        "operation": "aggregate",
+        "payload": {
+          "aggregations": [
+            {
+              "aggregate": {
+                "argument": "amount",
+                "function": "SUM"
+              },
+              "dependencies": [
+                "amount"
+              ],
+              "expression": "SUM(amount)",
+              "from_join_rhs": false,
+              "is_single_valued": false,
+              "kind": "aggregate",
+              "name": "total_revenue"
+            }
+          ],
+          "kind": "aggregate",
+          "new_grain": [
+            "status"
+          ]
+        },
+        "step_id": 1
+      },
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "status",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "status"
+          },
+          {
+            "aggregate": {
+              "argument": "amount",
+              "function": "SUM"
+            },
+            "dependencies": [],
+            "expression": "SUM(amount)",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "aggregate",
+            "name": "total_revenue"
+          }
+        ],
+        "grain": [
+          "status"
+        ],
+        "inputs": [
+          1
+        ],
+        "operation": "project",
+        "payload": {
+          "columns": [
+            "status",
+            "total_revenue"
+          ],
+          "kind": "project"
+        },
+        "step_id": 2
+      }
+    ]
+  }
+  '''
+# ---
+# name: test_plan__two_fact_merge_on_shared_dimension
+  '''
+  {
+    "limit": null,
+    "order_by": [],
+    "output_columns": [
+      "region",
+      "total_revenue",
+      "total_refunds"
+    ],
+    "root_step_id": 7,
+    "steps": [
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "order_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "order_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "customer_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "customer_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "status",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "status"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "amount",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "fact",
+            "name": "amount"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "discount",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "fact",
+            "name": "discount"
+          }
+        ],
+        "grain": [
+          "order_id"
+        ],
+        "inputs": [],
+        "operation": "source",
+        "payload": {
+          "dataset": "orders",
+          "kind": "source",
+          "primary_key": [
+            "order_id"
+          ],
+          "source": "sales.orders"
+        },
+        "step_id": 0
+      },
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "order_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "order_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "customer_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "customer_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "status",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "status"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "amount",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "fact",
+            "name": "amount"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "discount",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "fact",
+            "name": "discount"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "id",
+            "from_join_rhs": true,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "region",
+            "from_join_rhs": true,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "region"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "market_segment",
+            "from_join_rhs": true,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "segment"
+          }
+        ],
+        "grain": [
+          "order_id"
+        ],
+        "inputs": [
+          0
+        ],
+        "operation": "enrich",
+        "payload": {
+          "child_columns": [
+            {
+              "aggregate": null,
+              "dependencies": [],
+              "expression": "id",
+              "from_join_rhs": false,
+              "is_single_valued": true,
+              "kind": "dimension",
+              "name": "id"
+            },
+            {
+              "aggregate": null,
+              "dependencies": [],
+              "expression": "region",
+              "from_join_rhs": false,
+              "is_single_valued": true,
+              "kind": "dimension",
+              "name": "region"
+            },
+            {
+              "aggregate": null,
+              "dependencies": [],
+              "expression": "market_segment",
+              "from_join_rhs": false,
+              "is_single_valued": true,
+              "kind": "dimension",
+              "name": "segment"
+            }
+          ],
+          "child_dataset": "customers",
+          "child_keys": [
+            "id"
+          ],
+          "child_source": "sales.customers",
+          "join_type": "LEFT",
+          "keys": [
+            "customer_id"
+          ],
+          "kind": "enrich",
+          "parent_keys": [
+            "customer_id"
+          ]
+        },
+        "step_id": 1
+      },
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "region",
+            "from_join_rhs": true,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "region"
+          },
+          {
+            "aggregate": {
+              "argument": "amount",
+              "function": "SUM"
+            },
+            "dependencies": [],
+            "expression": "SUM(amount)",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "aggregate",
+            "name": "total_revenue"
+          }
+        ],
+        "grain": [
+          "region"
+        ],
+        "inputs": [
+          1
+        ],
+        "operation": "aggregate",
+        "payload": {
+          "aggregations": [
+            {
+              "aggregate": {
+                "argument": "amount",
+                "function": "SUM"
+              },
+              "dependencies": [
+                "amount"
+              ],
+              "expression": "SUM(amount)",
+              "from_join_rhs": false,
+              "is_single_valued": false,
+              "kind": "aggregate",
+              "name": "total_revenue"
+            }
+          ],
+          "kind": "aggregate",
+          "new_grain": [
+            "region"
+          ]
+        },
+        "step_id": 2
+      },
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "return_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "return_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "customer_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "customer_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "order_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "order_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "refund_amount",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "fact",
+            "name": "refund_amount"
+          }
+        ],
+        "grain": [
+          "return_id"
+        ],
+        "inputs": [],
+        "operation": "source",
+        "payload": {
+          "dataset": "returns",
+          "kind": "source",
+          "primary_key": [
+            "return_id"
+          ],
+          "source": "sales.returns"
+        },
+        "step_id": 3
+      },
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "return_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "return_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "customer_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "customer_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "order_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "order_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "refund_amount",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "fact",
+            "name": "refund_amount"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "id",
+            "from_join_rhs": true,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "region",
+            "from_join_rhs": true,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "region"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "market_segment",
+            "from_join_rhs": true,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "segment"
+          }
+        ],
+        "grain": [
+          "return_id"
+        ],
+        "inputs": [
+          3
+        ],
+        "operation": "enrich",
+        "payload": {
+          "child_columns": [
+            {
+              "aggregate": null,
+              "dependencies": [],
+              "expression": "id",
+              "from_join_rhs": false,
+              "is_single_valued": true,
+              "kind": "dimension",
+              "name": "id"
+            },
+            {
+              "aggregate": null,
+              "dependencies": [],
+              "expression": "region",
+              "from_join_rhs": false,
+              "is_single_valued": true,
+              "kind": "dimension",
+              "name": "region"
+            },
+            {
+              "aggregate": null,
+              "dependencies": [],
+              "expression": "market_segment",
+              "from_join_rhs": false,
+              "is_single_valued": true,
+              "kind": "dimension",
+              "name": "segment"
+            }
+          ],
+          "child_dataset": "customers",
+          "child_keys": [
+            "id"
+          ],
+          "child_source": "sales.customers",
+          "join_type": "LEFT",
+          "keys": [
+            "customer_id"
+          ],
+          "kind": "enrich",
+          "parent_keys": [
+            "customer_id"
+          ]
+        },
+        "step_id": 4
+      },
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "region",
+            "from_join_rhs": true,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "region"
+          },
+          {
+            "aggregate": {
+              "argument": "refund_amount",
+              "function": "SUM"
+            },
+            "dependencies": [],
+            "expression": "SUM(refund_amount)",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "aggregate",
+            "name": "total_refunds"
+          }
+        ],
+        "grain": [
+          "region"
+        ],
+        "inputs": [
+          4
+        ],
+        "operation": "aggregate",
+        "payload": {
+          "aggregations": [
+            {
+              "aggregate": {
+                "argument": "refund_amount",
+                "function": "SUM"
+              },
+              "dependencies": [
+                "refund_amount"
+              ],
+              "expression": "SUM(refund_amount)",
+              "from_join_rhs": false,
+              "is_single_valued": false,
+              "kind": "aggregate",
+              "name": "total_refunds"
+            }
+          ],
+          "kind": "aggregate",
+          "new_grain": [
+            "region"
+          ]
+        },
+        "step_id": 5
+      },
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "region",
+            "from_join_rhs": true,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "region"
+          },
+          {
+            "aggregate": {
+              "argument": "amount",
+              "function": "SUM"
+            },
+            "dependencies": [],
+            "expression": "SUM(amount)",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "aggregate",
+            "name": "total_revenue"
+          },
+          {
+            "aggregate": {
+              "argument": "refund_amount",
+              "function": "SUM"
+            },
+            "dependencies": [],
+            "expression": "SUM(refund_amount)",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "aggregate",
+            "name": "total_refunds"
+          }
+        ],
+        "grain": [
+          "region"
+        ],
+        "inputs": [
+          2,
+          5
+        ],
+        "operation": "merge",
+        "payload": {
+          "kind": "merge",
+          "on": [
+            "region"
+          ]
+        },
+        "step_id": 6
+      },
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "region",
+            "from_join_rhs": true,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "region"
+          },
+          {
+            "aggregate": {
+              "argument": "amount",
+              "function": "SUM"
+            },
+            "dependencies": [],
+            "expression": "SUM(amount)",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "aggregate",
+            "name": "total_revenue"
+          },
+          {
+            "aggregate": {
+              "argument": "refund_amount",
+              "function": "SUM"
+            },
+            "dependencies": [],
+            "expression": "SUM(refund_amount)",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "aggregate",
+            "name": "total_refunds"
+          }
+        ],
+        "grain": [
+          "region"
+        ],
+        "inputs": [
+          6
+        ],
+        "operation": "project",
+        "payload": {
+          "columns": [
+            "region",
+            "total_revenue",
+            "total_refunds"
+          ],
+          "kind": "project"
+        },
+        "step_id": 7
+      }
+    ]
+  }
+  '''
+# ---
+# name: test_plan__where_pushed_below_aggregate
+  '''
+  {
+    "limit": null,
+    "order_by": [],
+    "output_columns": [
+      "status",
+      "total_revenue"
+    ],
+    "root_step_id": 3,
+    "steps": [
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "order_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "order_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "customer_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "customer_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "status",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "status"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "amount",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "fact",
+            "name": "amount"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "discount",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "fact",
+            "name": "discount"
+          }
+        ],
+        "grain": [
+          "order_id"
+        ],
+        "inputs": [],
+        "operation": "source",
+        "payload": {
+          "dataset": "orders",
+          "kind": "source",
+          "primary_key": [
+            "order_id"
+          ],
+          "source": "sales.orders"
+        },
+        "step_id": 0
+      },
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "order_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "order_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "customer_id",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "customer_id"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "status",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "status"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "amount",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "fact",
+            "name": "amount"
+          },
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "discount",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "fact",
+            "name": "discount"
+          }
+        ],
+        "grain": [
+          "order_id"
+        ],
+        "inputs": [
+          0
+        ],
+        "operation": "filter",
+        "payload": {
+          "dependencies": [
+            "amount"
+          ],
+          "kind": "filter",
+          "post_aggregate": false,
+          "predicate": "orders.amount > 100"
+        },
+        "step_id": 1
+      },
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "status",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "status"
+          },
+          {
+            "aggregate": {
+              "argument": "amount",
+              "function": "SUM"
+            },
+            "dependencies": [],
+            "expression": "SUM(amount)",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "aggregate",
+            "name": "total_revenue"
+          }
+        ],
+        "grain": [
+          "status"
+        ],
+        "inputs": [
+          1
+        ],
+        "operation": "aggregate",
+        "payload": {
+          "aggregations": [
+            {
+              "aggregate": {
+                "argument": "amount",
+                "function": "SUM"
+              },
+              "dependencies": [
+                "amount"
+              ],
+              "expression": "SUM(amount)",
+              "from_join_rhs": false,
+              "is_single_valued": false,
+              "kind": "aggregate",
+              "name": "total_revenue"
+            }
+          ],
+          "kind": "aggregate",
+          "new_grain": [
+            "status"
+          ]
+        },
+        "step_id": 2
+      },
+      {
+        "columns": [
+          {
+            "aggregate": null,
+            "dependencies": [],
+            "expression": "status",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "dimension",
+            "name": "status"
+          },
+          {
+            "aggregate": {
+              "argument": "amount",
+              "function": "SUM"
+            },
+            "dependencies": [],
+            "expression": "SUM(amount)",
+            "from_join_rhs": false,
+            "is_single_valued": true,
+            "kind": "aggregate",
+            "name": "total_revenue"
+          }
+        ],
+        "grain": [
+          "status"
+        ],
+        "inputs": [
+          2
+        ],
+        "operation": "project",
+        "payload": {
+          "columns": [
+            "status",
+            "total_revenue"
+          ],
+          "kind": "project"
+        },
+        "step_id": 3
+      }
+    ]
+  }
+  '''
+# ---

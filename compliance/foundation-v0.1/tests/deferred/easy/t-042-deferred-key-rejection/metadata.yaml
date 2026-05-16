@@ -1,0 +1,15 @@
+name: t-042-deferred-key-rejection
+description: "Canonical deferred-key rejection: metric carries `grain: FIXED` (deferred to §10)"
+area: deferred
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-009"
+tags: [deferred, grain, negative]
+conformance_level: foundation_v0_1
+decision: D-009
+test_id: T-042
+expected_error: true
+expected_error_code: E_DEFERRED_KEY_REJECTED
+status: planned
+xfail_reason: "Sprint S-1 — deferred-key rejection canonical instance (D-009)"

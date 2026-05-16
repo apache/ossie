@@ -1,0 +1,15 @@
+name: t-033-windowed-metric-composition-rejected
+description: "Composing a non-windowed metric onto a windowed metric raises E_WINDOWED_METRIC_COMPOSITION"
+area: windows
+difficulty: hard
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#E_WINDOWED_METRIC_COMPOSITION"
+tags: [window, composition, negative]
+conformance_level: foundation_v0_1
+decision: D-031
+test_id: T-033
+expected_error: true
+expected_error_code: E_WINDOWED_METRIC_COMPOSITION
+status: planned
+xfail_reason: "Sprint S-12 — windowed metric composition rejection (E_WINDOWED_METRIC_COMPOSITION)"

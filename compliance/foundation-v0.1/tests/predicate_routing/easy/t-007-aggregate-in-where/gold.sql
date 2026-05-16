@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_AGGREGATE_IN_WHERE: aggregate predicate inside Where; should use Having

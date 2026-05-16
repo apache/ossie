@@ -1,0 +1,15 @@
+name: t-030-nested-window-rejected
+description: "Nested window function rejected with E_NESTED_WINDOW (window over window)"
+area: windows
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-031"
+tags: [window, negative, nested]
+conformance_level: foundation_v0_1
+decision: D-031
+test_id: T-030
+expected_error: true
+expected_error_code: E_NESTED_WINDOW
+status: planned
+xfail_reason: "Sprint S-12 — nested window rejection (D-031)"

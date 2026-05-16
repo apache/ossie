@@ -1,0 +1,10 @@
+{
+  "dataset": "orders",
+  "dimensions": ["customers.region"],
+  "measures": [
+    {"name": "n_distinct_status", "metric": "distinct_status_count"}
+  ],
+  "filters": [
+    "orders.amount > 1000000"
+  ]
+}

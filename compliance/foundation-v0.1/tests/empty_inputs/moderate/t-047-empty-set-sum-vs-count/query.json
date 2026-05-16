@@ -1,0 +1,20 @@
+{
+  "dataset": "orders",
+  "dimensions": [
+    "customers.region"
+  ],
+  "measures": [
+    {
+      "name": "revenue",
+      "metric": "total_revenue"
+    },
+    {
+      "name": "order_count",
+      "metric": "order_count"
+    },
+    {
+      "name": "row_count",
+      "metric": "order_id_count"
+    }
+  ]
+}

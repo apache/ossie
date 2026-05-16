@@ -1,0 +1,15 @@
+name: t-019-ambiguous-path
+description: "Two relationships between same datasets raise E_AMBIGUOUS_PATH; diagnostic names every candidate"
+area: namespace
+difficulty: moderate
+dataset: f_ambig
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-018"
+tags: [path-resolution, ambiguous, negative]
+conformance_level: foundation_v0_1
+decision: D-018
+test_id: T-019
+expected_error: true
+expected_error_code: E_AMBIGUOUS_PATH
+status: planned
+xfail_reason: "Sprint S-10 — ambiguous path rejection (D-018a)"

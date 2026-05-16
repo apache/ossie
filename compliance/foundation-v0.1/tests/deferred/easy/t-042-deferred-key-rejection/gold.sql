@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_DEFERRED_KEY_REJECTED: metric uses deferred key `grain`

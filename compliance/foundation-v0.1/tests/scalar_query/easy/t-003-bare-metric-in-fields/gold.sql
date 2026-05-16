@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_AGGREGATE_IN_SCALAR_QUERY: metric reference inside Fields

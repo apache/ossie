@@ -1,0 +1,27 @@
+name: t-016-non-distributive-over-bridge-accepted
+description: |
+  Bare non-distributive aggregate (AVG) over an N:N bridge resolves via the
+  same bridge-dedup construction §6.8.1 uses for SUM (D-027). It is a
+  single-pass aggregate over the unique (movie_id, height) row set; no
+  multi-stage decomposition is forced, so AVG is well-defined here. The
+  per-home-row-first interpretation (which would yield 125 for height 170)
+  requires the nested form AVG(AVG(...)) and is deferred — see t-044.
+area: bridge
+difficulty: hard
+dataset: f_bridge
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-027"
+  - "Proposed_OSI_Semantics.md#6.8.1"
+tags: [bridge, non-distributive, accepted]
+conformance_level: foundation_v0_1
+decision: D-027
+test_id: T-016
+status: planned
+xfail_reason: |
+  Pending implementation. Spec contract revised (D-027): bare AVG over an
+  N:N bridge resolves via the same single-pass bridge-dedup construction
+  used for SUM. The osi_python planner currently routes bare AVG through
+  the standard fan-out check (which rejects it as E_UNSAFE_REAGGREGATION)
+  — the bridge planner only handles the nested form today. A future
+  sprint must extend planner_bridge.py to route bare non-distributive
+  aggregates through the same dedup CTE used for SUM.

@@ -1,0 +1,20 @@
+name: f_chain_inter_field
+datasets:
+  - name: order_lines
+    source: order_lines
+    primary_key: [id]
+    fields:
+      - {name: id,        expression: id,                dimension: {}}
+      - {name: order_id,  expression: order_id,          dimension: {}}
+      - {name: sku,       expression: sku,               dimension: {}}
+      - {name: qty,       expression: qty}
+      - {name: price,     expression: price}
+      # Chain in declaration order: each derived field references the
+      # previous derived field on the same dataset. A correct planner
+      # lowers this into SOURCE + ADD_COLUMNS stages so the emitted
+      # SQL never relies on lateral aliasing within a single SELECT.
+      - {name: line_total,            expression: "qty * price"}
+      - {name: discounted_line_total, expression: "line_total * 0.9"}
+      - {name: final_price,           expression: "discounted_line_total + 1"}
+metrics:
+  - {name: total_final, expression: "SUM(order_lines.final_price)"}

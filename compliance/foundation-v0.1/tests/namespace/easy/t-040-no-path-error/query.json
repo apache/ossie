@@ -1,0 +1,12 @@
+{
+  "dataset": "orders",
+  "dimensions": [
+    "orders.customer_id"
+  ],
+  "measures": [
+    {
+      "name": "qty",
+      "metric": "total_quantity"
+    }
+  ]
+}

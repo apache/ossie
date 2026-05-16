@@ -1,0 +1,12 @@
+{
+  "dataset": "movies",
+  "dimensions": [
+    "movies.title"
+  ],
+  "measures": [
+    {
+      "name": "unique_actors",
+      "metric": "unique_actors"
+    }
+  ]
+}

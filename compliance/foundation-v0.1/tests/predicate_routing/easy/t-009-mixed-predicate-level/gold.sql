@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_MIXED_PREDICATE_LEVEL: predicate mixes row-level and aggregate levels; split required
