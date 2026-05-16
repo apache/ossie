@@ -19,8 +19,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from osi.common.identifiers import Identifier
+from osi.common.types import DimensionSet
+from osi.errors import ErrorCode, OSIError
+from osi.planning.algebra.state import Column
 from osi.planning.plan import (
+    AddColumnsPayload,
     AggregatePayload,
+    BroadcastPayload,
+    EnrichDerivedPayload,
     EnrichPayload,
     FilteringJoinPayload,
     FilterPayload,
@@ -86,15 +93,37 @@ def _render_step(step: PlanStep) -> list[str]:
 
 
 def _payload_summary(payload: PlanPayload) -> str:
+    """Return a one-line trace summary for every payload variant.
+
+    Every subclass of :data:`PlanPayload` must have a case here. The
+    exhaustive-match test
+    (:mod:`tests/unit/diagnostics/test_explain_exhaustive`) walks
+    ``PlanPayload`` so adding a payload variant without a case
+    surfaces the gap immediately. ``E_INTERNAL_INVARIANT`` is the
+    safety net for the property "every plan can be explained".
+    """
     if isinstance(payload, SourcePayload):
         return f"source: {payload.dataset} @ {payload.source}"
     if isinstance(payload, FilterPayload):
-        return f"filter: {payload.predicate.canonical}"
+        scope = "post-aggregate" if payload.is_post_aggregate else "row"
+        return f"filter ({scope}): {payload.predicate.canonical}"
     if isinstance(payload, EnrichPayload):
-        pairs = _render_key_pairs(payload)
+        pairs = _render_enrich_pairs(
+            payload.parent_keys, payload.child_keys, payload.keys
+        )
+        cols = _render_column_list(payload.child_columns)
         return (
             f"enrich {payload.join_type.name}: "
-            f"{payload.child_dataset} @ {payload.child_source}  on [{pairs}]"
+            f"{payload.child_dataset} @ {payload.child_source}  "
+            f"on [{pairs}]  adds [{cols}]"
+        )
+    if isinstance(payload, EnrichDerivedPayload):
+        pairs = _render_enrich_pairs(
+            payload.parent_keys, payload.child_keys, payload.keys
+        )
+        cols = _render_column_list(payload.child_columns)
+        return (
+            f"enrich_derived {payload.join_type.name}: " f"on [{pairs}]  adds [{cols}]"
         )
     if isinstance(payload, AggregatePayload):
         grain = ", ".join(sorted(str(g) for g in payload.new_grain))
@@ -103,6 +132,9 @@ def _payload_summary(payload: PlanPayload) -> str:
     if isinstance(payload, ProjectPayload):
         cols = ", ".join(str(c) for c in payload.columns)
         return f"project: [{cols}]"
+    if isinstance(payload, AddColumnsPayload):
+        defs = ", ".join(str(d.name) for d in payload.definitions)
+        return f"add_columns: [{defs}]"
     if isinstance(payload, MergePayload):
         on = ", ".join(sorted(str(k) for k in payload.on))
         return f"merge: on=({on})"
@@ -110,16 +142,37 @@ def _payload_summary(payload: PlanPayload) -> str:
         lhs = ", ".join(sorted(str(k) for k in payload.lhs_keys))
         rhs = ", ".join(sorted(str(k) for k in payload.rhs_keys))
         return f"filtering_join {payload.mode.name}: lhs=({lhs}) rhs=({rhs})"
-    return ""
+    if isinstance(payload, BroadcastPayload):
+        return f"broadcast: column={payload.column.name}"
+    raise OSIError(
+        ErrorCode.E_INTERNAL_INVARIANT,
+        f"_payload_summary has no case for "
+        f"{type(payload).__name__} — every PlanPayload variant must "
+        "have an entry",
+        context={"payload_type": type(payload).__name__},
+    )
 
 
-def _render_key_pairs(payload: EnrichPayload) -> str:
-    if payload.parent_keys and payload.child_keys:
+def _render_enrich_pairs(
+    parent_keys: tuple[Identifier, ...],
+    child_keys: tuple[Identifier, ...],
+    keys: DimensionSet,
+) -> str:
+    """Render the join-key pairing for an enrich step.
+
+    When the parent / child sides use the same column name the algebra
+    only carries one ``keys`` set; otherwise the split-out ``parent_keys``
+    / ``child_keys`` sequences let us print the actual mapping.
+    """
+    if parent_keys and child_keys:
         return ", ".join(
-            f"{p}={c}"
-            for p, c in zip(payload.parent_keys, payload.child_keys, strict=True)
+            f"{p}={c}" for p, c in zip(parent_keys, child_keys, strict=True)
         )
-    return ", ".join(sorted(str(k) for k in payload.keys))
+    return ", ".join(sorted(str(k) for k in keys))
+
+
+def _render_column_list(columns: tuple[Column, ...]) -> str:
+    return ", ".join(str(c.name) for c in columns)
 
 
 def _step_to_json(step: PlanStep) -> dict[str, Any]:

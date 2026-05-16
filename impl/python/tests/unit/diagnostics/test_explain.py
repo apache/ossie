@@ -106,3 +106,92 @@ def test_explain__is_deterministic() -> None:
     a = explain(_plan(q))
     b = explain(_plan(q))
     assert a == b
+
+
+def test_payload_summary_covers_every_payload_variant() -> None:
+    """Every concrete ``PlanPayload`` variant must have a summary case.
+
+    A missing case would silently render as an empty string in
+    ``explain(plan)`` — users would lose visibility into the step.
+    Walking the ``PlanPayload`` union catches the gap the moment a new
+    payload type lands without an ``explain`` update.
+    """
+    from osi.diagnostics.explain import _payload_summary
+    from osi.planning.algebra.operations import FilterMode, JoinType
+    from osi.planning.algebra.state import Column, ColumnKind
+    from osi.planning.plan import (
+        AddColumnsPayload,
+        AggregatePayload,
+        BroadcastPayload,
+        EnrichDerivedPayload,
+        EnrichPayload,
+        FilteringJoinPayload,
+        FilterPayload,
+        MergePayload,
+        PlanPayload,
+        ProjectPayload,
+        SourcePayload,
+    )
+
+    sample_column = Column(
+        name=normalize_identifier("col_x"),
+        expression=_sql("1"),
+        kind=ColumnKind.FACT,
+        dependencies=frozenset(),
+        aggregate=None,
+    )
+    sample_id = normalize_identifier("x")
+    sample_grain = frozenset({sample_id})
+
+    samples: list[object] = [
+        SourcePayload(dataset=sample_id, primary_key=sample_grain, source="orders"),
+        FilterPayload(
+            predicate=_sql("1 = 1"),
+            dependencies=frozenset(),
+            is_post_aggregate=False,
+        ),
+        EnrichPayload(
+            child_dataset=sample_id,
+            child_columns=(sample_column,),
+            keys=sample_grain,
+            join_type=JoinType.LEFT,
+            child_source="customers",
+            parent_keys=(sample_id,),
+            child_keys=(sample_id,),
+        ),
+        EnrichDerivedPayload(
+            child_columns=(sample_column,),
+            keys=sample_grain,
+            join_type=JoinType.LEFT,
+            parent_keys=(sample_id,),
+            child_keys=(sample_id,),
+        ),
+        AggregatePayload(new_grain=sample_grain, aggregations=(sample_column,)),
+        ProjectPayload(columns=(sample_id,)),
+        AddColumnsPayload(definitions=(sample_column,)),
+        MergePayload(on=sample_grain),
+        FilteringJoinPayload(
+            lhs_keys=sample_grain, rhs_keys=sample_grain, mode=FilterMode.SEMI
+        ),
+        BroadcastPayload(column=sample_column),
+    ]
+
+    # The union and the sample list must agree — adding a new payload
+    # variant without a sample is a test gap, not a passing test.
+    expected_variants = set(PlanPayload.__args__)
+    sampled_variants = {type(s) for s in samples}
+    assert sampled_variants == expected_variants, (
+        "The exhaustive-match sample set is out of sync with the "
+        f"PlanPayload union.\n  in samples but not in union: "
+        f"{sorted(c.__name__ for c in sampled_variants - expected_variants)}\n"
+        f"  in union but not in samples: "
+        f"{sorted(c.__name__ for c in expected_variants - sampled_variants)}"
+    )
+
+    for payload in samples:
+        summary = _payload_summary(payload)  # type: ignore[arg-type]
+        assert summary, (
+            f"_payload_summary returned an empty string for "
+            f"{type(payload).__name__}; every payload variant must "
+            "have a non-empty trace line."
+        )
