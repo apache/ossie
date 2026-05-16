@@ -143,7 +143,10 @@ def _build_edge(
         from_dataset=from_ds,
         to_dataset=to_ds,
     )
-    ri = relationship.referential_integrity
+    # ``referential_integrity`` is a deferred feature (D-018 / §10):
+    # the model has no such field, so RI hints can't propagate into
+    # the edge. ``from_all_rows_match`` / ``to_all_rows_match`` stay
+    # ``False`` until the proposal lands.
     return RelationshipEdge(
         name=relationship.name,
         from_dataset=relationship.from_dataset,
@@ -151,8 +154,8 @@ def _build_edge(
         from_columns=relationship.from_columns,
         to_columns=relationship.to_columns,
         cardinality=cardinality,
-        from_all_rows_match=bool(ri.from_all_rows_match) if ri else False,
-        to_all_rows_match=bool(ri.to_all_rows_match) if ri else False,
+        from_all_rows_match=False,
+        to_all_rows_match=False,
     )
 
 

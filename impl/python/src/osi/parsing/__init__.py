@@ -23,7 +23,6 @@ from osi.parsing.models import (
     Metric,
     NamedFilter,
     Parameter,
-    ReferentialIntegrity,
     Relationship,
     SemanticModel,
 )
@@ -44,7 +43,6 @@ __all__ = [
     "Namespace",
     "Parameter",
     "ParseResult",
-    "ReferentialIntegrity",
     "Relationship",
     "RelationshipEdge",
     "RelationshipGraph",

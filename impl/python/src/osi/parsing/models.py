@@ -156,13 +156,6 @@ class _Strict(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class ReferentialIntegrity(_Strict):
-    """Optional RI hints for a relationship (``§4.4``)."""
-
-    from_all_rows_match: bool = False
-    to_all_rows_match: bool = False
-
-
 class Field(_Strict):
     """A dataset field — dimension, fact, or time dimension (``§4.3``)."""
 
@@ -185,55 +178,19 @@ class Field(_Strict):
         return _parse_expression(str(value), kind="field")
 
 
-class JoinType(StrEnum):
-    """Per-metric join-type override (``§6.7``).
-
-    ``RIGHT`` is deliberately excluded: the spec calls it out as never
-    being the clearest expression of intent. ``FULL`` is reserved
-    today — only ``INNER`` and ``LEFT`` are wired into the planner.
-    """
-
-    INNER = "INNER"
-    LEFT = "LEFT"
-    FULL = "FULL"
-
-
-class MetricJoins(_Strict):
-    """Per-metric join overrides (``Proposed_OSI_Semantics.md §6.7``).
-
-    Both fields are optional. When ``using_relationships`` is set, the
-    planner restricts the candidate edges for this metric's
-    enrichment paths to the named relationships — which is how the
-    spec resolves ``E3001_AMBIGUOUS_JOIN_PATH`` (``§6.6``). When
-    ``type`` is set, every aggregation join performed for this metric
-    uses the override; today only ``LEFT`` (the default) and ``INNER``
-    are wired through. ``FULL`` parses successfully but is reserved.
-    """
-
-    using_relationships: tuple[Identifier, ...] = ()
-    type: Optional[JoinType] = None
-
-    @field_validator("using_relationships", mode="before")
-    @classmethod
-    def _normalize_relationships(cls, value: object) -> tuple[Identifier, ...]:
-        if value is None:
-            return ()
-        if not isinstance(value, (list, tuple)):
-            raise OSIParseError(
-                ErrorCode.E1004_TYPE_MISMATCH,
-                "joins.using_relationships must be a list of identifiers",
-                context={"value": value},
-            )
-        return tuple(_validate_identifier(str(v)) for v in value)
-
-
 class Metric(_Strict):
-    """A metric — aggregate expression (``§4.5``)."""
+    """A metric — aggregate expression (``§4.5``).
+
+    Per-metric ``joins`` (``joins.type`` / ``joins.using_relationships``)
+    are part of the full spec (``§6.7``) but deferred from
+    Foundation v0.1 (D-018 / §10). The YAML key is rejected up front by
+    :mod:`osi.parsing.deferred`; the field is absent from the model so
+    programmatic construction can't reintroduce it either.
+    """
 
     name: Identifier
     expression: FrozenSQL
     description: Optional[str] = None
-    joins: Optional[MetricJoins] = None
 
     @field_validator("name", mode="before")
     @classmethod
@@ -316,8 +273,11 @@ class Relationship(_Strict):
     to_dataset: Identifier = PydField(alias="to")
     from_columns: tuple[Identifier, ...]
     to_columns: tuple[Identifier, ...]
-    referential_integrity: Optional[ReferentialIntegrity] = None
     description: Optional[str] = None
+    # NOTE: ``referential_integrity`` (``§4.4``) is part of the full
+    # spec but deferred from Foundation v0.1. The YAML key is rejected
+    # by :mod:`osi.parsing.deferred`; the model has no field so
+    # programmatic construction can't reintroduce it.
 
     @field_validator("name", "from_dataset", "to_dataset", mode="before")
     @classmethod
@@ -483,7 +443,6 @@ __all__ = [
     "Metric",
     "NamedFilter",
     "Parameter",
-    "ReferentialIntegrity",
     "Relationship",
     "SemanticModel",
 ]

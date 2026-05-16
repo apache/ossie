@@ -204,35 +204,16 @@ def validate_multi_fact_stitch(
 def group_allowed_relationships(
     group: MeasureGroup,
 ) -> frozenset[Identifier] | None:
-    """Combine ``metric.joins.using_relationships`` across a measure group.
+    """Return per-group relationship whitelist (always ``None`` today).
 
-    Spec semantics (``Proposed_OSI_Semantics.md §6.7``): each metric's
-    override applies to *that metric's* aggregation joins. Since the
-    Foundation planner shares one enrichment chain per group, we
-    combine the per-metric whitelists with **intersection** so every
-    metric's restriction is honoured. Special cases:
-
-    * No metric in the group declares ``using_relationships`` →
-      return ``None`` (no restriction).
-    * At least one metric declares ``using_relationships``: the
-      effective whitelist is the intersection of every declared set
-      (metrics that don't declare a list contribute the universe and
-      therefore never narrow the intersection).
-    * If the intersection is empty the planner falls through to
-      :attr:`ErrorCode.E2004_UNREACHABLE_DATASET` — by construction no
-      edge is allowed, so no dataset outside ``root`` is reachable.
+    Per-metric ``joins.using_relationships`` (``§6.7``) is a deferred
+    feature in Foundation v0.1; the parsing layer rejects the YAML
+    key and the pydantic ``Metric`` model has no ``joins`` field, so
+    no measure can ever carry an override. The helper is kept as a
+    no-op stub so the planner's call sites read cleanly when the
+    feature lands and we revive the intersection logic.
     """
-    declared: list[frozenset[Identifier]] = []
-    for resolved in group.measures:
-        joins = resolved.metric.joins
-        if joins is not None and joins.using_relationships:
-            declared.append(frozenset(joins.using_relationships))
-    if not declared:
-        return None
-    intersection = declared[0]
-    for s in declared[1:]:
-        intersection = intersection & s
-    return intersection
+    return None
 
 
 __all__ = [

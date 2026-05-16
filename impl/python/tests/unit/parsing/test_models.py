@@ -19,7 +19,6 @@ from osi.parsing.models import (
     Metric,
     NamedFilter,
     Parameter,
-    ReferentialIntegrity,
     Relationship,
     SemanticModel,
 )
@@ -136,14 +135,39 @@ class TestRelationshipValidation:
                 "to": "customers",
                 "from_columns": ["customer_id"],
                 "to_columns": ["id"],
-                "referential_integrity": {"from_all_rows_match": True},
             }
         )
         assert rel.from_dataset == normalize_identifier("orders")
         assert rel.to_dataset == normalize_identifier("customers")
-        assert rel.referential_integrity == ReferentialIntegrity(
-            from_all_rows_match=True
-        )
+
+    def test_referential_integrity_is_a_deferred_key(self) -> None:
+        """``referential_integrity`` is a Foundation-deferred key.
+
+        The pydantic schema for ``Relationship`` has no such field
+        (``extra="forbid"`` makes the unknown key a hard error). YAML
+        callers are routed through :func:`parse_semantic_model`, which
+        translates pydantic's ``extra_forbidden`` into the user-facing
+        ``E1001_YAML_SYNTAX``; here we assert the underlying pydantic
+        behaviour directly so a programmatic construction can't
+        reintroduce the field by skipping the parser.
+        """
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError) as exc:
+            Relationship.model_validate(
+                {
+                    "name": "r",
+                    "from": "a",
+                    "to": "b",
+                    "from_columns": ["x"],
+                    "to_columns": ["y"],
+                    "referential_integrity": {"from_all_rows_match": True},
+                }
+            )
+        error_types = {err["type"] for err in exc.value.errors()}
+        assert "extra_forbidden" in error_types
+        error_locs = {err["loc"][0] for err in exc.value.errors()}
+        assert "referential_integrity" in error_locs
 
     def test_column_arity_mismatch_E2006(self) -> None:
         with pytest.raises(OSIError) as exc:
