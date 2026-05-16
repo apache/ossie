@@ -1,0 +1,22 @@
+name: t-042y-snowflake-partition-by-excluding
+description: >-
+  Snowflake's ``PARTITION BY ... EXCLUDING`` window clause is a
+  vendor-specific extension outside the OSI_SQL_2026 expression
+  subset. A Foundation engine MUST reject any window expression
+  that uses ``EXCLUDING`` with ``E_DEFERRED_KEY_REJECTED`` (Phase 4
+  review I4 — no registry row + no fixture before this commit).
+area: deferred
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#sec-10"
+  - "Proposed_OSI_Semantics.md#D-009"
+  - "SNOWFLAKE_DIVERGENCES.md"
+tags: [deferred, negative, snowflake, window, partition-by-excluding]
+conformance_level: foundation_v0_1
+decision: D-009
+test_id: T-042y
+expected_error: true
+expected_error_code: E_DEFERRED_KEY_REJECTED
+status: planned
+xfail_reason: "§10 deferred — Snowflake EXCLUDING extension (Phase 4 review I4)"

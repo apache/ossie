@@ -7,13 +7,13 @@ Each test is a folder containing:
 | `metadata.yaml` | `id: T-NNN`, `decision: D-NNN`, `dataset: f_*`, `spec_refs`, `required_features`, `expected_error_code` (negative cases), `xfail_reason` (if pinned to a sprint). |
 | `model.yaml` | The semantic model the test runs against. |
 | `query.json` | The semantic query, in the new two-shape format (`dimensions` + `measures` for aggregation queries; `fields` for scalar queries). |
-| `gold_rows.json` | Expected rows (positive cases). Order-insensitive unless the query has an `Order By`. Negative cases omit this. |
+| `gold.sql` | Hand-written reference SQL the harness executes against the fixture data to produce the expected row multiset. Positive cases only; negative cases keep a stub `gold.sql` so the harness can locate the directory. |
 
-Tests intentionally do NOT ship a `gold.sql`. Foundation v0.1 only
-asserts on observable behaviour (rows / error codes), per D-014. If
-you need a SQL-text witness for a per-engine determinism check, put
-it in `tests/null_ordering/medium/T-014_per_engine_determinism_witness/`
-explicitly.
+Tests assert on observable behaviour only. The harness executes both
+`gold.sql` and the adapter's emitted SQL against the shared fixture
+and compares the resulting row multisets — order-insensitive unless
+the query has an `Order By`. SQL strings are never compared
+byte-for-byte (per D-014 that's a per-engine concern).
 
 ## Layout
 
@@ -32,6 +32,7 @@ explicitly.
 | `null_ordering/` | NULLS LAST default emission, per-engine determinism witnesses | D-014, D-029 |
 | `empty_inputs/` | Standard SQL empty / NULL aggregate behaviour | D-033 |
 | `deferred/` | One negative test per `E_DEFERRED_KEY_REJECTED` family | D-009 |
+| `validation_errors/` | Structural validation errors that are NOT deferred features (e.g. `E_FIELD_DEPENDENCY_CYCLE` — fields must form a DAG). | Appendix C |
 | `error_taxonomy/` | Remaining Appendix C codes (E_PRIMARY_KEY_REQUIRED, E_AMBIGUOUS_MEASURE_GRAIN, etc.) | Appendix C |
 
 ## Sprint timeline

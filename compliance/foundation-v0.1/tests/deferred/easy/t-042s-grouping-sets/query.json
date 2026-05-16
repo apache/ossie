@@ -1,0 +1,6 @@
+{
+  "dataset": "customers",
+  "dimensions": ["customers.region", "customers.segment"],
+  "measures": [{"name": "revenue", "metric": "total_revenue"}],
+  "grouping_sets": [["customers.region"], ["customers.segment"]]
+}

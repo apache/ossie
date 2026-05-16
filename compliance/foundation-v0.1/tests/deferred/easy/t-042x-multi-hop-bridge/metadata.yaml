@@ -1,0 +1,17 @@
+name: t-042x-multi-hop-bridge
+description: >-
+  Multi-hop bridge resolution (more than one bridge dataset between the same endpoints) is deferred — Foundation only resolves single-hop bridges per D-026 / D-027. Raises ``E_DEFERRED_KEY_REJECTED``.
+area: deferred
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#sec-10"
+  - "Proposed_OSI_Semantics.md#D-009"
+tags: [deferred, negative, multi-hop-bridge]
+conformance_level: foundation_v0_1
+decision: D-009
+test_id: T-042x
+expected_error: true
+expected_error_code: E_DEFERRED_KEY_REJECTED
+status: planned
+xfail_reason: "§10 deferred — multi_hop_bridge negative coverage (Phase 4 review I3)"

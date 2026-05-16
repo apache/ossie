@@ -1,0 +1,19 @@
+name: f_prelude_model
+datasets:
+  - name: customers
+    source: customers
+    primary_key: [id]
+    fields:
+      - {name: id,     expression: id,     dimension: {}}
+      - {name: region, expression: region, dimension: {}}
+  - name: orders
+    source: orders
+    primary_key: [id]
+    fields:
+      - {name: id,          expression: id,          dimension: {}}
+      - {name: customer_id, expression: customer_id, dimension: {}}
+      - {name: amount,      expression: amount}
+relationships:
+  - {name: orders_to_customer, from: orders, to: customers, from_columns: [customer_id], to_columns: [id]}
+metrics:
+  - {name: running_total, expression: "SUM(orders.amount) OVER (PARTITION BY customers.region EXCLUDING TIES ORDER BY customers.id)"}

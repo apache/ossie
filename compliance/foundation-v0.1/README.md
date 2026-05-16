@@ -96,14 +96,19 @@ Each test is a folder containing:
 | `metadata.yaml` | `id: T-NNN`, `decision: D-NNN`, `spec_refs`, `required_features`, `expected_error_code`, `xfail_reason` (if applicable). |
 | `model.yaml` | The semantic model (typically a thin wrapper around a fixture from `datasets/f_*`). |
 | `query.json` | The semantic query, in the new two-shape format (`Aggregation` clauses or `Fields` for scalar). |
-| `gold_rows.json` | The expected row set, in the column order of the query's projection. *Not authored*: `gold.sql` — the Foundation tests row sets only, not SQL strings (D-014 is per-engine, not cross-engine). |
+| `gold.sql` | A hand-written reference SQL query the harness executes against the fixture data to produce the expected row multiset. Treated by the harness as a row oracle, not as a SQL-string comparison — D-014 is per-engine, not cross-engine. |
 
 Tests assert on observable behaviour only:
 
-- `expected_error_code: E_<NAME>` ⇒ adapter must surface that code in stderr.
-- `gold_rows.json` ⇒ adapter must emit SQL whose execution against the
-  fixture data returns this exact row multiset (order-insensitive
-  unless the query has an `Order By`).
+- `expected_error_code: E_<NAME>` ⇒ adapter must surface that code in
+  stderr (substring match — see `compliance/harness/src/harness/runner.py`).
+- The harness runs both `gold.sql` and the adapter's emitted SQL against
+  the shared fixture and compares the resulting row multisets
+  (order-insensitive unless the query has an `Order By`).
+
+This means a `gold.sql` is a *witness* of the answer's shape and the
+fixture data; the harness never compares SQL strings byte-for-byte
+(per D-014, that's a per-engine concern).
 
 ## Decision coverage
 

@@ -1,0 +1,17 @@
+name: t-042n-metric-composition-grain-filter
+description: >-
+  Metric composition that inherits a parent metric's ``grain:`` or ``filter:`` is deferred (§10); raises ``E_DEFERRED_KEY_REJECTED``.
+area: deferred
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#sec-10"
+  - "Proposed_OSI_Semantics.md#D-009"
+tags: [deferred, negative, metric-composition-grain-filter]
+conformance_level: foundation_v0_1
+decision: D-009
+test_id: T-042n
+expected_error: true
+expected_error_code: E_DEFERRED_KEY_REJECTED
+status: planned
+xfail_reason: "§10 deferred — metric_composition_grain_filter negative coverage (Phase 4 review I3)"
