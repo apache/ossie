@@ -110,14 +110,12 @@ class ErrorCode(StrEnum):
     E_WINDOWED_METRIC_COMPOSITION = "E_WINDOWED_METRIC_COMPOSITION"
     E_DEFERRED_FRAME_MODE = "E_DEFERRED_FRAME_MODE"
     E_WINDOW_OVER_FANOUT_REWRITE = "E_WINDOW_OVER_FANOUT_REWRITE"
-    # S-16 / D-021 — function call that is not in the OSI_SQL_2026
-    # catalog. The catalog is the contract for every Foundation v0.1
+    # D-021 — function call that is not in the OSI_SQL_2026 catalog.
+    # The catalog is the contract for every Foundation v0.1
     # implementation; vendor-specific functions go through the
-    # per-dialect ``dialects:`` block. Currently RESERVED — the catalog
-    # whitelist enforcement lands as part of post-Foundation work
-    # (the planner currently surfaces unknown functions through
-    # downstream sqlglot or engine rejection).
-    E_UNKNOWN_FUNCTION = "E_UNKNOWN_FUNCTION"  # RESERVED
+    # per-dialect ``dialects:`` block. The active whitelist and
+    # validator live in :mod:`osi.parsing.function_whitelist`.
+    E_UNKNOWN_FUNCTION = "E_UNKNOWN_FUNCTION"
 
     # E12xx — SQL-surface errors (see
     # ../../../proposals/foundation-v0.1/SQL_INTERFACE.md §8).

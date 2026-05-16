@@ -1,7 +1,7 @@
 # Error Codes
 
 > **Authoritative catalog: Appendix C of
-> [`../../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md`](../../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md).**
+> [`specs/Proposed_OSI_Semantics.md`](../specs/Proposed_OSI_Semantics.md).**
 > This document is the implementation-side mirror — it documents the
 > Python `ErrorCode` enum members in `src/osi/errors.py` and how they
 > map to Appendix-C codes. When the two disagree, Appendix C wins and
@@ -33,7 +33,7 @@ evolves; the codes do not.
 | Range | Layer | Kind |
 |:---|:---|:---|
 | `E10xx`–`E11xx` | Parsing | YAML syntax, missing fields, type mismatches, use of deferred features. |
-| `E12xx` | Parsing (SQL surface) | `SEMANTIC_VIEW(...)` clause and bare-view SQL grammar / resolution errors. See `../../../proposals/foundation-v0.1/SQL_INTERFACE.md §8`. |
+| `E12xx` | Parsing (SQL surface) | `SEMANTIC_VIEW(...)` clause and bare-view SQL grammar / resolution errors. See `specs/SQL_INTERFACE.md §8`. |
 | `E2xxx` | Validation | Cross-reference and semantic-rule violations in the model. |
 | `E3xxx` | Planning | Grain conflicts, unreachable fields, path ambiguity, chasm traps. |
 | `E4xxx` | Algebra | Safety violations (explosion-unsafe aggregations, M:N enrich). |
@@ -61,7 +61,7 @@ annotation here matches the enum in `src/osi/errors.py`.
 | `E1002` | active | `MISSING_REQUIRED_FIELD` | Required field absent in YAML. |
 | `E1003` | active | `INVALID_ENUM_VALUE` | Enum value not recognized. |
 | `E1004` | active | `TYPE_MISMATCH` | Field type does not match schema. |
-| `E1005` | active | `IDENTIFIER_INVALID` | Identifier does not conform to the grammar in `../../../proposals/foundation-v0.1/OSI_core_file_format.md`. |
+| `E1005` | active | `IDENTIFIER_INVALID` | Identifier does not conform to the grammar in `specs/OSI_core_file_format.md`. |
 | `E1006` | active | `SQL_EXPRESSION_SYNTAX` | Inline SQL expression inside a YAML field fails to parse as a SQLGlot AST. |
 | `E_DEFERRED_KEY_REJECTED` | active | `DEFERRED_KEY_REJECTED` | Feature exists in the full OSI spec but is deferred from Foundation v0.1. Fired for `EXISTS_IN`, `referential_integrity`, named filters, per-metric `joins.{type, using_relationships}`, FIXED/INCLUDE/EXCLUDE, filter context, windows, pivot, grouping sets, non-equijoins, `ATTR`/`UNSAFE`/`AGG`/`GRAIN_AGG`. See `specs/deferred/README.md` and `Proposed_OSI_Semantics.md §10`. Replaces the legacy `E1105` (S-1). |
 | `E_MIXED_QUERY_SHAPE` | active | `MIXED_QUERY_SHAPE` | Query mixes the aggregation shape (`Dimensions` / `Measures`) with the scalar shape (`Fields`). Foundation v0.1 routes per query into exactly one shape — see `Proposed_OSI_Semantics.md` D-010. (S-2) |
@@ -89,12 +89,12 @@ annotation here matches the enum in `src/osi/errors.py`.
 | `E_WINDOWED_METRIC_COMPOSITION` | active | `WINDOWED_METRIC_COMPOSITION` | A composite metric references a windowed metric. Composing arithmetic on top of a window changes the grain non-uniformly. Wrap the window in an aggregating CTE first if you need to compose. See D-031. (S-12) |
 | `E_DEFERRED_FRAME_MODE` | active | `DEFERRED_FRAME_MODE` | A window uses a frame mode (`GROUPS`) or bound (parameterised expressions like `:n PRECEDING`) that is not in Foundation v0.1. Only literal `ROWS` and `RANGE` frames with constant bounds are accepted. See D-032. (S-12) |
 | `E_WINDOW_OVER_FANOUT_REWRITE` | active | `WINDOW_OVER_FANOUT_REWRITE` | A window function would be evaluated over a fan-out join (the partition key includes a duplicated row from a 1:N enrichment). The planner cannot rewrite to a pre-fan-out CTE in this case. See D-030. (S-12) |
-| `E_UNKNOWN_FUNCTION` | RESERVED | `UNKNOWN_FUNCTION` | A function call references a name not in the OSI_SQL_2026 catalog. Reserved until the function catalog whitelist enforcement lands; today unknown functions surface through SQLGlot or the engine. See D-021. (S-16) |
+| `E_UNKNOWN_FUNCTION` | active | `UNKNOWN_FUNCTION` | A function call references a name not in the OSI_SQL_2026 catalog. The whitelist and validator live in `osi.parsing.function_whitelist`; vendor-specific functions must go through the per-dialect `dialects:` block. See D-021. |
 
 ## `E12xx` — SQL-surface errors
 
 Raised by the SQL-interface parser defined in
-[`../../../proposals/foundation-v0.1/SQL_INTERFACE.md`](../../../proposals/foundation-v0.1/SQL_INTERFACE.md). Every code here
+[`specs/SQL_INTERFACE.md`](../specs/SQL_INTERFACE.md). Every code here
 fires *before* planning — a malformed SQL query never reaches the
 algebra.
 

@@ -35,6 +35,7 @@ from osi.errors import ErrorCode, OSIParseError
 from osi.parsing._root import unwrap_model_root
 from osi.parsing.deferred import check_expression_deferred, check_yaml_deferred
 from osi.parsing.foundation import check_foundation_strictness
+from osi.parsing.function_whitelist import check_expression_functions
 from osi.parsing.graph import RelationshipGraph, build_graph
 from osi.parsing.models import Field, Metric, NamedFilter, SemanticModel
 from osi.parsing.namespace import Namespace, build_namespace
@@ -177,20 +178,21 @@ def _check_all_expression_asts(model: SemanticModel) -> None:
 
 
 def _check_field_expression(field: Field, *, dataset_name: str) -> None:
-    check_expression_deferred(
-        field.expression, where=f"field {dataset_name}.{field.name}"
-    )
+    where = f"field {dataset_name}.{field.name}"
+    check_expression_deferred(field.expression, where=where)
+    check_expression_functions(field.expression, where=where)
 
 
 def _check_metric_expression(metric: Metric, *, scope: str) -> None:
-    check_expression_deferred(metric.expression, where=f"metric {scope}.{metric.name}")
+    where = f"metric {scope}.{metric.name}"
+    check_expression_deferred(metric.expression, where=where)
+    check_expression_functions(metric.expression, where=where)
 
 
 def _check_filter_expression(named_filter: NamedFilter) -> None:
-    check_expression_deferred(
-        named_filter.expression,
-        where=f"filter {named_filter.name}",
-    )
+    where = f"filter {named_filter.name}"
+    check_expression_deferred(named_filter.expression, where=where)
+    check_expression_functions(named_filter.expression, where=where)
 
 
 __all__ = ["ParseResult", "parse_semantic_model"]
