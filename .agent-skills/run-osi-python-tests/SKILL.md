@@ -76,9 +76,9 @@ log lines that drove each finding.
 
 ## See also
 
-- [`impl/python/RUNNING_TESTS.md`](../../../impl/python/RUNNING_TESTS.md) —
+- [`impl/python/RUNNING_TESTS.md`](../../impl/python/RUNNING_TESTS.md) —
   the longer human-facing guide; the script + this skill are the agent path.
-- [`impl/python/Makefile`](../../../impl/python/Makefile) — every category
+- [`impl/python/Makefile`](../../impl/python/Makefile) — every category
   exists as a `make` target if you need to run one in isolation.
-- [`impl/python/INFRA.md`](../../../impl/python/INFRA.md) — quality
+- [`impl/python/INFRA.md`](../../impl/python/INFRA.md) — quality
   thresholds the report compares against.

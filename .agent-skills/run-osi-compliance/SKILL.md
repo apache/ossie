@@ -55,7 +55,7 @@ After a full run, surface:
    list every D-NNN with at least one failing test.
 3. For each failing test, classify the failure:
    - **impl bug** — the implementation is wrong vs the spec. Open a
-     ticket / fix using the [debug-planner-output](../debug-planner-output/SKILL.md)
+     ticket / fix using the `debug-planner-output` skill (carried separately in willtown)
      skill if present, or directly inspect `impl/python/src/osi/`.
    - **test bug** — the test asserts something the spec doesn't say. Fix
      in `compliance/foundation-v0.1/tests/<area>/<case>/`.
@@ -94,11 +94,11 @@ Tests assert on observable behaviour only:
 
 ## See also
 
-- [`compliance/foundation-v0.1/README.md`](../../../compliance/foundation-v0.1/README.md) —
+- [`compliance/foundation-v0.1/README.md`](../../compliance/foundation-v0.1/README.md) —
   suite layout and quick start.
-- [`compliance/foundation-v0.1/SPEC.md`](../../../compliance/foundation-v0.1/SPEC.md) —
+- [`compliance/foundation-v0.1/SPEC.md`](../../compliance/foundation-v0.1/SPEC.md) —
   what this suite targets and what it does NOT cover.
-- [`compliance/ADAPTER_INTERFACE.md`](../../../compliance/ADAPTER_INTERFACE.md) —
+- [`compliance/ADAPTER_INTERFACE.md`](../../compliance/ADAPTER_INTERFACE.md) —
   the CLI contract adapters implement.
-- [`proposals/foundation-v0.1/Proposed_OSI_Semantics.md`](../../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md)
+- [`proposals/foundation-v0.1/Proposed_OSI_Semantics.md`](../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md)
   Appendix B (decisions) and Appendix C (error codes).
