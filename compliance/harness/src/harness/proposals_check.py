@@ -16,7 +16,13 @@ import yaml
 PROPOSALS_FILE = "proposals.yaml"
 TESTS_DIR = "tests"
 METADATA_FILE = "metadata.yaml"
-VALID_STATUS = {"thin_slice", "proposed", "deferred"}
+# ``foundation`` denotes a proposal that is in scope for Foundation v0.1
+# (the proposal at proposals/foundation-v0.1/); ``deferred`` denotes a
+# §10 deferred feature; ``proposed`` / ``thin_slice`` were the
+# pre-Foundation rollout statuses. New rows should use ``foundation``
+# or ``deferred`` — the older two are retained so legacy proposal rows
+# parse without churn.
+VALID_STATUS = {"foundation", "thin_slice", "proposed", "deferred"}
 
 
 class ProposalsError(Exception):

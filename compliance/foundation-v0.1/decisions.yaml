@@ -46,7 +46,7 @@ decisions:
     status: must_pass
 
   - id: D-005
-    title: Routing of predicates by resolved expression shape (no role: keyword)
+    title: "Routing of predicates by resolved expression shape (no role: keyword)"
     spec_ref: §4.3, §6.3
     tests:
       - tests/predicate_routing/easy/T-005a_row_level_in_where/
@@ -162,7 +162,7 @@ decisions:
     status: must_pass
 
   - id: D-021
-    title: expression slot accepts string OR { dialects: [...] } per OSI_SQL_2026
+    title: "expression slot accepts string OR { dialects: [...] } per OSI_SQL_2026"
     spec_ref: §4.3 / §4.5
     tests:
       - tests/query_shape/easy/T-021a_string_expression/

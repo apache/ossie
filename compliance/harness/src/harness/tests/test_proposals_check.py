@@ -122,6 +122,18 @@ def test_missing_top_level_key_fails_fast(make_tree, capsys) -> None:
 
 
 def test_live_registry_validates() -> None:
-    """The real ``proposals.yaml`` in the repo passes the check."""
-    root = Path(proposals_check.__file__).resolve().parent.parent
-    assert proposals_check.main([str(root)]) == 0
+    """The real ``proposals.yaml`` in the repo passes the check.
+
+    Post-migration, ``proposals.yaml`` and the test corpus live under
+    ``compliance/foundation-v0.1/``. We resolve the path relative to
+    this file so the test stays correct regardless of where the
+    harness package itself happens to be installed.
+    """
+    foundation_root = (
+        Path(__file__).resolve().parents[4] / "foundation-v0.1"
+    )
+    assert (foundation_root / "proposals.yaml").exists(), (
+        f"proposals.yaml not found at {foundation_root} — the suite "
+        "layout under compliance/foundation-v0.1/ has changed."
+    )
+    assert proposals_check.main([str(foundation_root)]) == 0
