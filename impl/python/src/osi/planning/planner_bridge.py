@@ -49,6 +49,14 @@ Limitations in this revision (re-examine when real models need more):
 * **Query dimensions must live on the bridge's right-hand side** —
   fact-side dimensions force a wider pre-aggregation grain than this
   revision supports.
+
+**SQLGlot in the planner.** This module is the sanctioned exception to
+the "planner reasons over IR, not SQL text" rule. Materialising the
+bridge dedup join is small enough that constructing SQLGlot expressions
+in-line is clearer than threading a new payload through the algebra.
+New SQLGlot usage anywhere else in :mod:`osi.planning` is a layering
+violation; route through :mod:`osi.planning.algebra` and the
+``QueryPlan`` payloads instead.
 """
 
 from __future__ import annotations
@@ -599,9 +607,7 @@ def build_nested_bridge_plan(
         intermediate_keys_dataset, bridge=bridge, graph=context.graph
     )
     dim_columns = frozenset(
-        d.field.name
-        for d in dimensions
-        if d.field.name in bridge_state.state.column_names
+        d.field.name for d in dimensions if d.field.name in bridge_state.state.column_names
     )
     intermediate_grain = frozenset(intermediate_pk) | dim_columns
     inner_arg_sql = FrozenSQL.of(inner_arg_expr.copy())
@@ -621,9 +627,7 @@ def build_nested_bridge_plan(
         PlanOperation.AGGREGATE,
         inputs=(bridge_state.step_id,),
         state=aggregate(bridge_state.state, intermediate_grain, (inner_column,)),
-        payload=AggregatePayload(
-            new_grain=intermediate_grain, aggregations=(inner_column,)
-        ),
+        payload=AggregatePayload(new_grain=intermediate_grain, aggregations=(inner_column,)),
     )
 
     # 3. Outer aggregate at the query grain.

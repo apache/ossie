@@ -228,12 +228,19 @@ def enrich(
       check delegates to
       :meth:`CalculationState.is_unique_on`, which accepts any
       ``child_keys`` set that is a superset of either the child's
-      grain or any declared :attr:`unique_key`. ``Proposed_OSI_Semantics.md
+      grain or any declared :attr:`unique_key`.       ``Proposed_OSI_Semantics.md
       §6.1`` mandates this symmetric treatment so authors can recover
       from a wider-than-necessary PK declaration with an explicit UK
       on the join column. Failures raise
-      :attr:`ErrorCode.E3011_MN_AGGREGATION_REJECTED` (semantically a
-      fan trap; the same code covers the wider ``N:N`` case).
+      :attr:`ErrorCode.E3011_MN_AGGREGATION_REJECTED` — the algebra
+      precondition signal for any fan-out edge. Declared N:N edges
+      are normally rejected earlier in
+      :func:`osi.planning.joins.find_enrichment_path` with
+      :attr:`ErrorCode.E3012_MN_NO_SAFE_REWRITE` or
+      :attr:`ErrorCode.E3013_NO_STITCHING_DIMENSION`; the planner
+      translates this E3011 precondition signal into the user-facing
+      :attr:`ErrorCode.E_UNSAFE_REAGGREGATION` (per Appendix C / D-022)
+      for 1:N fan-trap cases that reach the algebra layer.
     * no child column (after the optional ``drop_child_columns``
       reduction) collides with a parent column
     * no child column is an aggregate (aggregates are built by

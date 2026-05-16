@@ -33,10 +33,12 @@ the ``E3xxx`` / ``E4xxx`` safety checks fire exactly once at plan time.
 The planner never inspects SQL text — all introspection happens on
 SQLGlot ASTs.
 
-Out-of-scope (raises ``E1105`` up in parsing / here in the planner):
-fixed-grain overrides, per-metric filter context, ad-hoc aggregate
-expressions in the ``measures`` slot, window functions, grouping sets,
-pivot, metric reset.
+Out-of-scope (raises ``E_DEFERRED_KEY_REJECTED`` in parsing / a more
+specific named code here in the planner): fixed-grain overrides, per-
+metric filter context, ad-hoc aggregate expressions in the ``measures``
+slot, window functions, grouping sets, pivot, metric reset. See
+``proposals/foundation-v0.1/Proposed_OSI_Semantics.md §10`` for the
+canonical deferred-feature list.
 """
 
 from __future__ import annotations

@@ -1,5 +1,15 @@
 """Symbolic grain helpers used by tests and diagnostics.
 
+**Audience.** This module is internal to the algebra package: the
+property tests in ``tests/properties/test_grain_closure.py`` use
+:func:`simulate` / :func:`simulate_grain` to compare symbolic
+computation against the concrete algebra, and
+``osi.diagnostics.explain`` uses :func:`combine_grains` to summarise
+plan steps. External callers (adapters, alternative planners) should
+construct real :class:`CalculationState` instances and use the
+algebra operators rather than reaching into the simulator. The
+``__all__`` at the bottom of this module is the supported surface.
+
 Per ``../../../../../proposals/foundation-v0.1/JOIN_ALGEBRA.md §4.4``
 the resulting grain of any operator chain is a pure function of the
 argument sequence. This module exposes that function without needing
