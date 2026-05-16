@@ -196,6 +196,65 @@ class TestCompositeDetection:
 
 
 # ---------------------------------------------------------------------------
+# Whitelisted-but-unsupported top-level aggregates (Phase 9 P1, 8a I1)
+# ---------------------------------------------------------------------------
+
+
+class TestUnsupportedTopLevelAggregate:
+    """The OSI_SQL_2026 parse whitelist names aggregate functions that
+    the planner does not yet lower (``MEDIAN``, ``STDDEV``,
+    ``PERCENTILE_CONT``, …). Without an explicit rejection, the
+    composite-classification path mistakes them for non-aggregate
+    expressions and raises the misleading
+    ``E1206_METRIC_IN_RAW_AGGREGATE``. ``classify_metric`` now rejects
+    these up front with ``E1208_UNSUPPORTED_SQL_CONSTRUCT`` and names
+    the offending function in ``error.context["function"]``.
+    """
+
+    @pytest.mark.parametrize(
+        ("expression", "function_name"),
+        [
+            ("MEDIAN(amount)", "MEDIAN"),
+            ("STDDEV(amount)", "STDDEV"),
+            ("VARIANCE(amount)", "VARIANCE"),
+            ("APPROX_COUNT_DISTINCT(amount)", "APPROXDISTINCT"),
+        ],
+    )
+    def test_top_level_unsupported_aggregate_raises_E1208(
+        self, expression: str, function_name: str
+    ) -> None:
+        bogus = f"""\
+    metrics:
+      - {{name: broken,
+         expression: "{expression}"}}
+"""
+        ctx = _model(extra_metrics=bogus)
+        with pytest.raises(OSIPlanningError) as excinfo:
+            classify_metric(_metric_by_name(ctx, "broken"), ctx.namespace)
+        assert excinfo.value.code is ErrorCode.E1208_UNSUPPORTED_SQL_CONSTRUCT
+        assert excinfo.value.context["metric"] == normalize_identifier("broken")
+        assert excinfo.value.context["function"] == function_name
+        assert "OSI_SQL_2026" in str(excinfo.value)
+
+    def test_supported_aggregates_still_classify_normally(self) -> None:
+        """SUM / COUNT / MIN / MAX / AVG must remain unchanged."""
+        ctx = _model()
+        for name in ("total_revenue", "order_count", "max_amount"):
+            shape = classify_metric(_metric_by_name(ctx, name), ctx.namespace)
+            assert isinstance(shape, AggregateMetric)
+
+    def test_count_distinct_still_classifies_as_count(self) -> None:
+        """``COUNT(DISTINCT x)`` is wrapped under ``exp.Count`` and so
+        must reach the supported branch, not the new rejection path."""
+        ctx = _model()
+        shape = classify_metric(
+            _metric_by_name(ctx, "distinct_customers"), ctx.namespace
+        )
+        assert isinstance(shape, AggregateMetric)
+        assert shape.function is AggregateFunction.COUNT_DISTINCT
+
+
+# ---------------------------------------------------------------------------
 # End-to-end composite planning
 # ---------------------------------------------------------------------------
 

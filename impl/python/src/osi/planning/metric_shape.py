@@ -80,16 +80,57 @@ def classify_metric(metric: Metric, namespace: Namespace) -> MetricShape:
     Raises :class:`OSIPlanningError` with
     :attr:`ErrorCode.E1206_METRIC_IN_RAW_AGGREGATE` for any shape the
     Foundation does not accept (undeclared reference, mixed shape,
-    nested aggregate inside a composite, etc.).
+    nested aggregate inside a composite, etc.). A top-level aggregate
+    whose function is in the OSI_SQL_2026 parse whitelist but does not
+    yet have a planner lowering (``MEDIAN``, ``STDDEV``,
+    ``PERCENTILE_CONT``, …) is rejected here with
+    :attr:`ErrorCode.E1208_UNSUPPORTED_SQL_CONSTRUCT` so that the
+    diagnostic surface matches the architectural reality (the parser
+    knows the function, the planner does not yet model it). This
+    closes the Phase 8 finding I1 — without it the composite path
+    fires later with the misleading
+    ``E1206_METRIC_IN_RAW_AGGREGATE`` message.
     """
     top = metric.expression.expr
+    _reject_unsupported_top_level_aggregate(metric=metric, top=top)
     agg = _as_top_level_aggregate(top)
     if agg is not None:
         return agg
-    # Not a top-level aggregate → must be a composite over other metrics.
     refs = _collect_composite_refs(metric=metric, expression=top, namespace=namespace)
     _reject_nested_aggregates(metric=metric, expression=top)
     return CompositeMetric(expression=metric.expression, references=refs)
+
+
+def _reject_unsupported_top_level_aggregate(
+    *, metric: Metric, top: exp.Expression
+) -> None:
+    """Reject whitelisted-but-unsupported aggregates at the metric root.
+
+    A metric body whose root AST node is a SQLGlot aggregate function
+    (``exp.AggFunc``) but not one of the five operators the planner
+    models (``SUM`` / ``COUNT`` / ``MIN`` / ``MAX`` / ``AVG``) is
+    rejected with ``E1208`` so authors do not see a confusing
+    ``E1206_METRIC_IN_RAW_AGGREGATE`` message later from the composite
+    path. ``COUNT(*)`` / ``COUNT(DISTINCT …)`` are handled by the
+    ``exp.Count`` branch and so reach this check as ``exp.Count``.
+    """
+    if not isinstance(top, exp.AggFunc):
+        return
+    if type(top) in _AGG_BY_AST:
+        return
+    raise OSIPlanningError(
+        ErrorCode.E1208_UNSUPPORTED_SQL_CONSTRUCT,
+        (
+            f"metric {metric.name!r} uses aggregate function "
+            f"{top.key.upper()!r}; the OSI_SQL_2026 parse whitelist "
+            "admits this function in expressions, but the planner "
+            "currently models only SUM / COUNT / MIN / MAX / AVG / "
+            "COUNT(DISTINCT) at the metric root. Decompose the metric "
+            "(e.g. AVG instead of MEDIAN), or use one of the supported "
+            "aggregates."
+        ),
+        context={"metric": metric.name, "function": top.key.upper()},
+    )
 
 
 def _as_top_level_aggregate(top: exp.Expression) -> AggregateMetric | None:
