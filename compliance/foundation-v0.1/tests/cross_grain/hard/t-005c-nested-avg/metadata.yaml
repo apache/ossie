@@ -1,13 +1,22 @@
 name: t-005c-nested-avg
-description: "Explicit nested cross-grain AVG(AVG(...)) over 1:N accepted; unweighted across customers"
+description: >-
+  Nested cross-grain ``AVG(AVG(orders.amount))`` over a 1:N edge is the
+  deferred per-home-row form (D-020(c) / D-027(d)); the Foundation
+  engine MUST reject it with ``E_NESTED_AGGREGATION_DEFERRED``.
+  This complements ``tests/deferred/easy/t-044-nested-aggregation-rejection/``
+  by pinning the rejection at the explicit ``AVG(AVG(...))`` shape
+  with a 1:N relationship (not the bridge case ``t-017`` exercises).
 area: cross_grain
 difficulty: hard
 dataset: f_prelude
 spec_refs:
+  - "Proposed_OSI_Semantics.md#sec-4.5"
   - "Proposed_OSI_Semantics.md#D-020"
-tags: [cross-grain, 1:N, nested-aggregation]
+  - "Proposed_OSI_Semantics.md#D-027"
+tags: [cross-grain, 1:N, nested-aggregation, deferred, negative]
 conformance_level: foundation_v0_1
-decision: D-020
+decision: D-027
 test_id: T-005c
-status: planned
-xfail_reason: "Sprint S-5 — nested cross-grain aggregation (D-020)"
+expected_error: true
+expected_error_code: E_NESTED_AGGREGATION_DEFERRED
+status: active

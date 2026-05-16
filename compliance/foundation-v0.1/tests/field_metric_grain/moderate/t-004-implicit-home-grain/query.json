@@ -1,8 +1,0 @@
-{
-  "dataset": "customers",
-  "fields": [
-    "customers.region",
-    "customers.id",
-    "customers.lifetime_value"
-  ]
-}

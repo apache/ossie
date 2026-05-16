@@ -35,4 +35,6 @@ metrics:
   - {name: total_returns,  expression: "SUM(returns.amount)"}
   - {name: order_count,    expression: "COUNT(orders.id)"}
   - {name: sum_single, expression: "SUM(orders.amount)"}
-  - {name: sum_nested, expression: "SUM(SUM(orders.amount))"}
+  # sum_nested intentionally removed — nested aggregation in a metric
+  # body is deferred (D-027(d)); the rejection is covered by
+  # tests/deferred/easy/t-044-nested-aggregation-rejection/.

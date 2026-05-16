@@ -1,10 +1,5 @@
-WITH per_actor AS (
-    SELECT a.actor_id, a.height, AVG(m.gross) AS aa
-    FROM actors a
-    JOIN appearances ap ON ap.actor_id = a.actor_id
-    JOIN movies m ON ap.movie_id = m.movie_id
-    GROUP BY a.actor_id, a.height
-)
-SELECT height, AVG(aa) AS avg_of_per_actor_avg
-FROM per_actor
-GROUP BY height
+-- Negative test: planner MUST reject the AVG(AVG(...)) over an N:N
+-- bridge with E_NESTED_AGGREGATION_DEFERRED (D-020(c) / D-027(d)).
+-- No SQL is emitted; gold.sql is kept as a stub so the harness can
+-- locate this directory.
+SELECT 1 WHERE FALSE;

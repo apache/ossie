@@ -28,7 +28,7 @@ decisions:
     title: All measures resolve at the query's grain (no per-aggregate native granularity leak)
     spec_ref: §6.2
     tests:
-      # TODO: add witness — see Phase 4 review I7.
+      # No active witness — Phase 4 review I7 backlog.
       []
     status: must_pass
 
@@ -37,7 +37,6 @@ decisions:
     spec_ref: §4.3.1
     tests:
       - tests/deferred/easy/t-043-aggregate-in-field-rejection/
-      - tests/field_metric_grain/moderate/t-004-implicit-home-grain/
     status: must_pass
 
   - id: D-004
@@ -76,7 +75,7 @@ decisions:
     title: No per-metric joins.type override at Foundation level (deferred)
     spec_ref: "§6.6, §6.9"
     tests:
-      # TODO: add witness — see Phase 4 review I7.
+      # No active witness — Phase 4 review I7 backlog.
       []
     status: must_pass
 
@@ -138,7 +137,7 @@ decisions:
     title: Implicit home-grain aggregation strategies are equivalent (correlated / LATERAL / pre-agg CTE)
     spec_ref: "§4.3, §6.2"
     tests:
-      # TODO: add witness — see Phase 4 review I7.
+      # No active witness — Phase 4 review I7 backlog.
       []
     status: must_pass
 
@@ -169,19 +168,17 @@ decisions:
     title: "Single-step + nested cross-grain aggregates over 1:N (every aggregate category)"
     spec_ref: "§4.5 form (1), §6.1 Semantic 2"
     tests:
-      - tests/cross_grain/hard/t-005c-nested-avg/
       - tests/cross_grain/moderate/t-005a-single-step-sum/
       - tests/cross_grain/moderate/t-005b-single-step-avg/
       - tests/cross_grain/moderate/t-005d-single-step-vs-nested-sum/
       - tests/cross_grain/moderate/t-005e-count-distinct-single-step/
-      - tests/nested_aggregates/hard/t-017-nested-aggregation-over-bridge/
     status: must_pass
 
   - id: D-021
     title: "expression slot accepts string OR { dialects: [...] } per OSI_SQL_2026"
     spec_ref: "§4.3 / §4.5"
     tests:
-      # TODO: add witness — see Phase 4 review I7.
+      # No active witness — Phase 4 review I7 backlog.
       []
     status: must_pass
 
@@ -211,7 +208,7 @@ decisions:
     title: Catch-all measure-grain ambiguity ⇒ E_AMBIGUOUS_MEASURE_GRAIN
     spec_ref: §6.2 Starting Grain
     tests:
-      # TODO: add witness — see Phase 4 review I7.
+      # No active witness — Phase 4 review I7 backlog.
       []
     status: must_pass
 
@@ -234,14 +231,16 @@ decisions:
     tests:
       - tests/bridge/hard/t-016-non-distributive-over-bridge-accepted/
       - tests/bridge/hard/t-051-holistic-over-bridge-accepted/
+      - tests/cross_grain/hard/t-005c-nested-avg/
       - tests/deferred/easy/t-044-nested-aggregation-rejection/
+      - tests/nested_aggregates/hard/t-017-nested-aggregation-over-bridge/
     status: must_pass
 
   - id: D-028
     title: Standard SQL window functions in Measures / Fields / Order By / Having; Where ⇒ E_WINDOW_IN_WHERE
     spec_ref: §6.10.1
     tests:
-      # TODO: add witness — see Phase 4 review I7.
+      # No active witness — Phase 4 review I7 backlog.
       []
     status: must_pass
 
