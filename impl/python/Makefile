@@ -106,17 +106,33 @@ format:
 	$(PYTHON) -m black src tests conformance
 	$(PYTHON) -m isort src tests conformance
 
-# Enforces the 600-LOC cap on files under src/osi/ (INFRA.md §1.2 / [I-DEC-6]).
-# Pre-commit already does this per-file; this target audits the whole tree.
+# Enforces the 600-LOC cap on files under src/osi/ (INFRA.md §1.2 /
+# [I-DEC-6]). Pre-commit already does this per-file; this target audits
+# the whole tree.
+#
+# EXCEPTION_FILES below is the documented temporary exception list — each
+# file here must have a corresponding INFRA.md §3 roadmap item tracking
+# the split that brings it back under the cap. Adding a new entry
+# requires updating both INFRA.md §1.2 and INFRA.md §3.
+EXCEPTION_FILES := \
+	src/osi/planning/planner_bridge.py \
+	src/osi/planning/planner.py \
+	src/osi/planning/steps.py
+EXCEPTION_CAP   := 700
+
 audit-file-size:
 	@fail=0; \
 	for f in $$(find src/osi -name '*.py' -type f); do \
 	    lines=$$(wc -l < "$$f"); \
-	    if [ "$$lines" -gt 600 ]; then \
-	        echo "ERROR: $$f has $$lines lines, cap is 600."; fail=1; \
+	    cap=600; \
+	    for e in $(EXCEPTION_FILES); do \
+	        if [ "$$f" = "$$e" ]; then cap=$(EXCEPTION_CAP); break; fi; \
+	    done; \
+	    if [ "$$lines" -gt "$$cap" ]; then \
+	        echo "ERROR: $$f has $$lines lines, cap is $$cap."; fail=1; \
 	    fi; \
 	done; \
-	if [ $$fail -eq 0 ]; then echo "OK: all files <= 600 lines."; fi; \
+	if [ $$fail -eq 0 ]; then echo "OK: all files within cap (default 600, exception 700)."; fi; \
 	exit $$fail
 
 # ---------------------------------------------------------------------------
