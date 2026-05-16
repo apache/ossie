@@ -15,8 +15,6 @@ datasets:
       - {name: customer_id, expression: customer_id, dimension: {}}
       - {name: status,      expression: status,      dimension: {}}
       - {name: amount,      expression: amount}
-    metrics:
-      - {name: total_revenue_orders, expression: "SUM(amount)"}
   - name: returns
     source: returns
     primary_key: [id]

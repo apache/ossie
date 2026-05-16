@@ -10,7 +10,7 @@
     }
   ],
   "filters": [
-    "customers.has_completed_orders"
+    "customers.is_premium"
   ],
   "order_by": [
     {"target": "customers.region"}

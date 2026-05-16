@@ -2,6 +2,6 @@
   "dataset": "orders",
   "fields": [
     "orders.id",
-    "orders.total_revenue_orders"
+    "total_revenue"
   ]
 }

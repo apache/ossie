@@ -5,8 +5,8 @@
   ],
   "measures": [
     {
-      "name": "revenue",
-      "metric": "total_revenue"
+      "name": "median_amount",
+      "metric": "median_amount"
     }
   ]
 }

@@ -1,4 +1,8 @@
-results/
+results/*
+# Phase 7: REPORT.md is the human-readable conformance baseline; keep
+# it in version control so changes show up in PR diffs. The runner's
+# auto-generated summary.md and failures.csv remain ignored.
+!results/REPORT.md
 *.pyc
 __pycache__/
 .pytest_cache/

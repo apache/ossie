@@ -7,7 +7,9 @@ datasets:
       - {name: id,      expression: id,      dimension: {}}
       - {name: region,  expression: region,  dimension: {}}
       - {name: segment, expression: segment, dimension: {}}
-      - {name: has_completed_orders, expression: "COUNT(CASE WHEN orders.status = 'completed' THEN orders.id END) > 0"}
+      # Boolean row-level scalar over the home dataset's own columns.
+      # Per D-005(a), this resolved-shape is accepted in Where.
+      - {name: is_premium, expression: "segment = 'PREMIUM'"}
   - name: orders
     source: orders
     primary_key: [id]

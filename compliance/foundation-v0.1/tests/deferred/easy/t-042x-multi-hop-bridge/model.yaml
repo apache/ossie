@@ -29,3 +29,4 @@ relationships:
 metrics:
   - {name: total_revenue,  expression: "SUM(orders.amount)"}
   - {name: order_count,    expression: "COUNT(orders.id)"}
+  - {name: total_returns,  expression: "SUM(returns.amount)"}

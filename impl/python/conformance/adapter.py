@@ -179,6 +179,27 @@ def _build_semantic_query(qdict: dict[str, Any]) -> SemanticQuery:
     missing-key, so the disambiguation lives at the adapter boundary
     where the user input format is known.
     """
+    # Reject deferred query-level keys before any translation. The
+    # deferred catalog lives in osi.parsing.deferred; the adapter is
+    # the only place that sees raw query JSON, so the check belongs
+    # here (the planner only sees translated SemanticQuery values
+    # which don't carry these keys at all).
+    from osi.parsing.deferred import DEFERRED_QUERY_KEYS
+
+    deferred_present = sorted(set(qdict) & DEFERRED_QUERY_KEYS)
+    if deferred_present:
+        first = deferred_present[0]
+        raise OSIParseError(
+            ErrorCode.E_DEFERRED_KEY_REJECTED,
+            (
+                f"query uses deferred key {first!r}; "
+                "see Proposed_OSI_Semantics.md §10 / D-009"
+            ),
+            context={
+                "where": "semantic_query",
+                "keys": tuple(deferred_present),
+            },
+        )
     # Suite contract: ``filters`` ⇒ Where (pre-aggregate), ``qualify``
     # ⇒ Having (post-aggregate). Foundation v0.1 routes by resolved
     # expression shape (D-005), but the suite preserves the user's

@@ -49,6 +49,11 @@ DEFERRED_METRIC_KEYS: Final[frozenset[str]] = frozenset(
         "grain",
         "filter",
         "semi_additive",
+        # Phase 7 / I3: Looker-style symmetric aggregates are a codegen
+        # extension deferred to §10. Catch before pydantic so the
+        # rejection cites the deferred catalog instead of a generic
+        # "extra field" error.
+        "symmetric_aggregate",
         "window",
         "reset",
         # S-1: per-metric joins block (D-001 / D-004 deferred form)
@@ -92,6 +97,11 @@ DEFERRED_FIELD_KEYS: Final[frozenset[str]] = frozenset(
 DEFERRED_DATASET_KEYS: Final[frozenset[str]] = frozenset(
     {
         "filters",  # dataset-level filters with scope propagation
+        # Phase 7 / I3: singular ``filter:`` on a dataset is the
+        # dataset-scope filter from §10 (distinct from the plural
+        # ``filters:`` form). Catch before pydantic so the rejection
+        # cites the deferred catalog.
+        "filter",
         # ``role:`` follows the same plan as on fields above (S-3).
     }
 )
@@ -113,6 +123,10 @@ DEFERRED_MODEL_KEYS: Final[frozenset[str]] = frozenset(
     {
         # S-1: top-level named-filter section is removed.
         "named_filters",
+        # Phase 7 / I3: model-level ``natural_grain:`` declaration is
+        # deferred to the natural-grain proposal
+        # (Proposed_OSI_Natural_Grain.md). Catch before pydantic.
+        "natural_grain",
     }
 )
 
