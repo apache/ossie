@@ -6,7 +6,8 @@ small list of rejection rules that fire at parse / classify time. This
 module is the single source of truth for those rules:
 
 * :func:`first_nested_window` — detects a window function whose argument
-  contains another window function (``D-031``).
+  contains another window function. Caller maps the hit to
+  :attr:`ErrorCode.E_NESTED_WINDOW` per Appendix B **D-028(c)**.
 * :func:`first_deferred_frame_clause` — detects ``GROUPS`` frames and
   parameterised frame bounds (``D-032``).
 * :func:`contains_window` — true iff any node in the AST is an
@@ -14,12 +15,17 @@ module is the single source of truth for those rules:
 * :func:`is_windowed_expression` — top-level shape check used by
   classification.
 
-The actual *positive* window planner (CTE materialisation, fan-out
-detection, codegen) is a separate concern handled by
-``planner_windows.py`` once the materialisation layer lands. This
-module is purely *rejection* logic — it lets us promote windows out of
-``E_DEFERRED_KEY_REJECTED`` without yet committing to the full
-planner.
+The actual *positive* window planner runs across two surfaces today:
+:mod:`osi.planning.planner_scalar` (scalar branch — windowed metrics
+become :class:`PlanOperation.ADD_COLUMNS` over the home dataset after
+enrichment) and :mod:`osi.planning.classify` (Where-clause rejection
+via :attr:`ErrorCode.E_WINDOW_IN_WHERE`). Windowed *measures* in the
+aggregation branch are not yet supported — see ``INFRA.md`` I-43.
+
+This module itself stays purely *rejection* logic: it lets the parser
+promote windows out of ``E_DEFERRED_KEY_REJECTED`` and emit the named
+window codes (``E_NESTED_WINDOW``, ``E_DEFERRED_FRAME_MODE``) without
+committing to the full planner surface.
 """
 
 from __future__ import annotations

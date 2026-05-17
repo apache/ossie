@@ -1,0 +1,8 @@
+{
+  "dataset": "returns",
+  "fields": [
+    "returns.id",
+    "orders.id",
+    "order_rank"
+  ]
+}

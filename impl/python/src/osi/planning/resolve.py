@@ -4,9 +4,21 @@ The planner receives :class:`~osi.planning.semantic_query.Reference`
 values as strings-by-shape (``dataset.field`` or bare). This module
 converts them into concrete :class:`ResolvedDimension`,
 :class:`ResolvedFact`, or :class:`ResolvedMetric` records. Every
-resolution failure raises :class:`~osi.errors.OSIPlanningError` with a
-code from ``E2xxx``; the planner never catches these, letting them
-bubble to the caller.
+resolution failure raises :class:`~osi.errors.OSIPlanningError` (or
+:class:`~osi.errors.OSIParseError` for SQL-surface shape violations)
+with an :class:`~osi.errors.ErrorCode` drawn from the **parsing /
+planning families**. The visible codes from this module today are:
+
+* ``E2001_AMBIGUOUS_NAME`` — bare name resolves to multiple datasets.
+* ``E2002_NAME_NOT_FOUND`` — bare or qualified name not in namespace.
+* ``E1206_METRIC_IN_RAW_AGGREGATE`` — caller asked for a measure but
+  the name resolves to a raw field aggregate.
+* ``E1207_FACTS_METRICS_EXCLUSIVE`` — caller asked for a dimension
+  but the name resolves to a fact or metric.
+* ``E_INTERNAL_INVARIANT`` — qualified reference with no dataset
+  (caller-side invariant violation).
+
+The planner never catches these; they bubble to the top-level caller.
 
 Scope (``Proposed_OSI_Semantics.md §4.7``):
 
@@ -181,7 +193,25 @@ def _dimension_or_fact(*, dataset: Identifier, field: Field) -> ResolvedField:
 
 
 def _require_identifier(value: Identifier | None) -> Identifier:
-    assert value is not None, "qualified reference missing dataset"
+    """Force-unwrap an optional ``dataset`` for a qualified reference.
+
+    ``Reference.is_qualified`` returns ``True`` only when ``dataset``
+    is populated, so this should be unreachable. We still raise a
+    typed :class:`OSIPlanningError` with
+    :attr:`ErrorCode.E_INTERNAL_INVARIANT` rather than a bare
+    ``AssertionError`` so the "every failure carries a code"
+    invariant of :class:`OSIError` is preserved.
+    """
+    if value is None:
+        raise OSIPlanningError(
+            ErrorCode.E_INTERNAL_INVARIANT,
+            (
+                "qualified reference reached resolve._require_identifier "
+                "with dataset=None; Reference.is_qualified should have "
+                "guaranteed a non-None dataset"
+            ),
+            context={"caller": "osi.planning.resolve._require_identifier"},
+        )
     return value
 
 

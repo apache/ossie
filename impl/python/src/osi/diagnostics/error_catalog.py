@@ -55,7 +55,8 @@ _EXPLANATIONS: dict[ErrorCode, str] = {
     ErrorCode.E1006_SQL_EXPRESSION_SYNTAX: (
         "A SQL expression in a metric, field, or filter did not parse with "
         "the OSI_SQL_2026 dialect. The error context names the offending "
-        "expression. (Spec: SQL_EXPRESSION_SUBSET_updated.md.)"
+        "expression. (Spec: ``proposals/foundation-v0.1/"
+        "SQL_EXPRESSION_SUBSET.md``.)"
     ),
     # --- Foundation v0.1 named codes (Appendix C) -----------------------------
     ErrorCode.E_DEFERRED_KEY_REJECTED: (
@@ -305,6 +306,20 @@ _EXPLANATIONS: dict[ErrorCode, str] = {
         "property invariant 'every failure carries a code' still "
         "holds for these paths. (Spec: implementation extension.)"
     ),
+    ErrorCode.E_WINDOWED_MEASURE_NOT_SUPPORTED: (
+        "A metric whose body is a window expression "
+        "(``ROW_NUMBER() OVER (...)``, ``SUM(x) OVER (...)``, …) "
+        "was used in an aggregation query's ``Measures`` slot. The "
+        "Foundation spec (§6.10 / D-031) accepts direct use of a "
+        "windowed metric in ``Measures``, but this reference engine's "
+        "aggregation planner does not yet implement the composition "
+        "of windowed measures with ``GROUP BY``. Workarounds: (a) use "
+        "a scalar (Fields-only) query — the scalar planner compiles "
+        "windowed metrics directly via ``ADD_COLUMNS``; (b) replace "
+        "the window with a plain aggregate that the engine does "
+        "model. (Spec: implementation extension; future work tracked "
+        "under INFRA.md I-43.)"
+    ),
     ErrorCode.E_WINDOW_OVER_FANOUT_REWRITE: (
         "A window function would be evaluated over a fan-out join — "
         "the partition key includes a column from a 1:N enrichment "
@@ -312,7 +327,18 @@ _EXPLANATIONS: dict[ErrorCode, str] = {
         "rewrite the query into a pre-fan-out CTE because the "
         "partition expression itself depends on a fan-out column. "
         "Materialise the fan-out into an explicit aggregating CTE "
-        "first. (Spec: D-030.)"
+        "first. (Spec: D-030 / Proposed_OSI_Semantics.md §6.10.3.) "
+        "Engine note: this reference engine forecloses on the "
+        "fan-out path *before* it reaches the window step — the "
+        "scalar planner rejects 1:N edges with "
+        "E_FAN_OUT_IN_SCALAR_QUERY (D-023), and the aggregation "
+        "planner does not yet support windowed measures (windowed "
+        "metric expressions are rejected at parse with "
+        "E_WINDOWED_METRIC_COMPOSITION). The code stays reserved "
+        "for the future surface where windowed measures land in "
+        "the aggregation branch; see INFRA.md I-43. Compliance "
+        "test ``t-052-window-over-fanout-foreclosed`` pins the "
+        "current behaviour so we notice when this changes."
     ),
     # --- SQL-surface errors (E12xx) -------------------------------------------
     ErrorCode.E1201_SEMANTIC_VIEW_EMPTY: (

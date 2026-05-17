@@ -14,7 +14,8 @@ module doesn't know how to index is a hard error (``E2002``).
 The Foundation does **not** expose: fixed-grain metric overrides,
 per-metric filter context, grain modifiers on a query, window functions,
 grouping-set / pivot operators, or metric reset. Attempting to construct
-a query with those shapes raises ``E1105`` at parse time.
+a query with those shapes raises ``E_DEFERRED_KEY_REJECTED`` at parse
+time.
 """
 
 from __future__ import annotations

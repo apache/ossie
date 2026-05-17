@@ -189,12 +189,24 @@ def _partition_filters(
     by the scalar planner — if they appear, surface a clean error
     rather than silently dropping them.
     """
-    classified: ClassifiedWhere = classify_where(where, context.namespace)
+    classified: ClassifiedWhere = classify_where(
+        where, context.namespace, flags=context.flags
+    )
     if classified.semi_joins:
         raise OSIPlanningError(
-            ErrorCode.E_AGGREGATE_IN_SCALAR_QUERY,
-            "scalar query filters cannot contain EXISTS_IN / NOT_EXISTS_IN; "
-            "convert to an aggregation query.",
+            ErrorCode.E_DEFERRED_KEY_REJECTED,
+            (
+                "EXISTS_IN / NOT EXISTS_IN is not supported in scalar "
+                "queries by this engine. Even with "
+                "FoundationFlags(experimental_exists_in=True), the "
+                "scalar planner does not lower semi-joins; rewrite as "
+                "an aggregation query or remove the predicate."
+            ),
+            context={
+                "deferred_feature": "exists_in_semi_join_in_scalar_query",
+                "flag": "experimental_exists_in",
+                "shape": "scalar",
+            },
         )
     pre: list[RowLevelPredicate] = []
     post: list[RowLevelPredicate] = []

@@ -3,7 +3,14 @@
 Splits ``where`` into row-level vs semi-join predicates and ``having``
 into post-aggregate predicates. Error codes asserted here:
 ``E1005`` (identifier invalid), ``E1208`` (unsupported SQL construct),
-``E3009`` (post-aggregate refers to pre-aggregate only).
+``E3009`` (post-aggregate refers to pre-aggregate only),
+``E_DEFERRED_KEY_REJECTED`` (semi-join in strict Foundation).
+
+``EXISTS_IN`` / ``NOT EXISTS_IN`` is gated by
+``FoundationFlags.experimental_exists_in``; the tests in
+:class:`TestSemiJoins` flip the flag to exercise the experimental
+admission path, and the strict-default tests in
+:class:`TestSemiJoinsStrict` verify the Foundation-default rejection.
 """
 
 from __future__ import annotations
@@ -12,6 +19,7 @@ import pytest
 
 from osi.common.identifiers import normalize_identifier
 from osi.common.sql_expr import FrozenSQL, parse_sql_expr
+from osi.config import FoundationFlags
 from osi.errors import ErrorCode, OSIPlanningError
 from osi.planning.algebra.operations import FilterMode
 from osi.planning.classify import SemiJoinPredicate, classify_having, classify_where
@@ -20,6 +28,9 @@ from tests.unit.planning.fixtures import orders_context
 
 def _where(sql: str) -> FrozenSQL:
     return FrozenSQL.of(parse_sql_expr(sql))
+
+
+EXISTS_FLAGS = FoundationFlags(experimental_exists_in=True)
 
 
 # ---------------------------------------------------------------------------
@@ -71,10 +82,35 @@ class TestRowLevel:
 # ---------------------------------------------------------------------------
 
 
+class TestSemiJoinsStrict:
+    """Foundation default (flag off): EXISTS_IN is rejected at classify."""
+
+    def test_exists_in_rejected_with_deferred_code(self) -> None:
+        ns = orders_context().namespace
+        with pytest.raises(OSIPlanningError) as excinfo:
+            classify_where(_where("EXISTS_IN(customer_id, returns.customer_id)"), ns)
+        assert excinfo.value.code is ErrorCode.E_DEFERRED_KEY_REJECTED
+        assert excinfo.value.context.get("flag") == "experimental_exists_in"
+
+    def test_not_exists_in_rejected_with_deferred_code(self) -> None:
+        ns = orders_context().namespace
+        with pytest.raises(OSIPlanningError) as excinfo:
+            classify_where(
+                _where("NOT EXISTS_IN(customer_id, returns.customer_id)"), ns
+            )
+        assert excinfo.value.code is ErrorCode.E_DEFERRED_KEY_REJECTED
+
+
 class TestSemiJoins:
+    """Experimental flag on: classify recognises the semi-join shape."""
+
     def test_exists_in_produces_semi_predicate(self) -> None:
         ns = orders_context().namespace
-        out = classify_where(_where("EXISTS_IN(customer_id, returns.customer_id)"), ns)
+        out = classify_where(
+            _where("EXISTS_IN(customer_id, returns.customer_id)"),
+            ns,
+            flags=EXISTS_FLAGS,
+        )
         assert out.row_level == ()
         assert len(out.semi_joins) == 1
         sj = out.semi_joins[0]
@@ -85,7 +121,9 @@ class TestSemiJoins:
     def test_not_exists_in_produces_anti_predicate(self) -> None:
         ns = orders_context().namespace
         out = classify_where(
-            _where("NOT EXISTS_IN(customer_id, returns.customer_id)"), ns
+            _where("NOT EXISTS_IN(customer_id, returns.customer_id)"),
+            ns,
+            flags=EXISTS_FLAGS,
         )
         assert out.semi_joins[0].mode is FilterMode.ANTI
 
@@ -97,6 +135,7 @@ class TestSemiJoins:
                 "customer_id, returns.customer_id)"
             ),
             ns,
+            flags=EXISTS_FLAGS,
         )
         sj = out.semi_joins[0]
         assert len(sj.pairs) == 2
@@ -104,13 +143,17 @@ class TestSemiJoins:
     def test_odd_argument_count_rejected_E1208(self) -> None:
         ns = orders_context().namespace
         with pytest.raises(OSIPlanningError) as excinfo:
-            classify_where(_where("EXISTS_IN(order_id)"), ns)
+            classify_where(_where("EXISTS_IN(order_id)"), ns, flags=EXISTS_FLAGS)
         assert excinfo.value.code is ErrorCode.E1208_UNSUPPORTED_SQL_CONSTRUCT
 
     def test_unqualified_rhs_rejected_E1208(self) -> None:
         ns = orders_context().namespace
         with pytest.raises(OSIPlanningError) as excinfo:
-            classify_where(_where("EXISTS_IN(customer_id, customer_id)"), ns)
+            classify_where(
+                _where("EXISTS_IN(customer_id, customer_id)"),
+                ns,
+                flags=EXISTS_FLAGS,
+            )
         assert excinfo.value.code is ErrorCode.E1208_UNSUPPORTED_SQL_CONSTRUCT
 
     def test_mixed_row_level_and_semi_join(self) -> None:
@@ -118,6 +161,7 @@ class TestSemiJoins:
         out = classify_where(
             _where("amount > 0 AND EXISTS_IN(customer_id, returns.customer_id)"),
             ns,
+            flags=EXISTS_FLAGS,
         )
         assert len(out.row_level) == 1
         assert len(out.semi_joins) == 1

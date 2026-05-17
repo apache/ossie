@@ -175,8 +175,13 @@ def _next_step(
     if len(distinct_edge_names) > 1:
         raise OSIPlanningError(
             ErrorCode.E3001_AMBIGUOUS_JOIN_PATH,
-            f"multiple relationships reach {closest!r}; "
-            "add using_relationships or rename for disambiguation",
+            f"multiple relationships reach {closest!r}: "
+            f"{sorted(distinct_edge_names)}. Restructure the model or "
+            "rename the conflicting relationships so exactly one path "
+            "resolves at home grain. (Per-metric "
+            "``joins.using_relationships`` disambiguation is deferred "
+            "in Foundation v0.1 §10 / D-009 and would itself be "
+            "rejected with E_DEFERRED_KEY_REJECTED.)",
             context={
                 "child": closest,
                 "candidates": sorted(distinct_edge_names),

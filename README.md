@@ -91,13 +91,13 @@ cd compliance/foundation-v0.1
 python -m harness.runner \
     --adapter adapters/osi_python_adapter.py \
     --tests tests/ \
-    --datasets datasets/ \
-    --output results/
+    --datasets datasets/
+# per-run artifacts land in results/latest/ by default
 ```
 
 Then read `compliance/foundation-v0.1/results/REPORT.md` for the
-overall pass rate and `decisions_coverage.md` for the per-decision
-breakdown.
+curated baseline pass rate and `results/latest/summary.md` for the
+breakdown of the run you just executed.
 
 To certify your own engine, implement the
 [`compliance/ADAPTER_INTERFACE.md`](compliance/ADAPTER_INTERFACE.md)

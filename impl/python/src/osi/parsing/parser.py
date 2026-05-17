@@ -46,11 +46,20 @@ from osi.parsing.validation import validate_model
 
 @dataclass(frozen=True, slots=True)
 class ParseResult:
-    """Bundle returned by :func:`parse_semantic_model`."""
+    """Bundle returned by :func:`parse_semantic_model`.
+
+    The ``flags`` field captures the :class:`FoundationFlags`
+    instance the parser was invoked with so downstream callers
+    (notably :class:`~osi.planning.planner_context.PlannerContext`)
+    can plan queries under the same opt-ins the model was admitted
+    under. The default is the strict Foundation
+    (:meth:`FoundationFlags.strict`).
+    """
 
     model: SemanticModel
     namespace: Namespace
     graph: RelationshipGraph
+    flags: FoundationFlags
 
 
 def parse_semantic_model(
@@ -87,7 +96,7 @@ def parse_semantic_model(
     check_foundation_strictness(model, flags)
     namespace = build_namespace(model)
     graph = build_graph(model)
-    return ParseResult(model=model, namespace=namespace, graph=graph)
+    return ParseResult(model=model, namespace=namespace, graph=graph, flags=flags)
 
 
 # ---------------------------------------------------------------------------

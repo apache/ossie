@@ -226,9 +226,14 @@ def _resolved_bridge_unique(
         ErrorCode.E3001_AMBIGUOUS_JOIN_PATH,
         (
             "multiple bridge datasets can resolve the M:N traversal: "
-            f"{sorted(str(b) for b in distinct_bridges)}. Disambiguate "
-            "with joins.using_relationships on the metric, or rename one "
-            "of the bridge relationships."
+            f"{sorted(str(b) for b in distinct_bridges)}. Restructure "
+            "the model so only one bridge applies — e.g. drop the "
+            "redundant relationship, rename the bridge datasets so "
+            "the right one is selected, or replace the duplicate path "
+            "with a single canonical bridge. (Per-metric "
+            "``joins.using_relationships`` disambiguation is deferred "
+            "in Foundation v0.1 §10 / D-009 and would itself be "
+            "rejected with ``E_DEFERRED_KEY_REJECTED``.)"
         ),
         context={"bridges": sorted(str(b) for b in distinct_bridges)},
     )

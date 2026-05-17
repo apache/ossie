@@ -32,11 +32,12 @@ cd compliance/foundation-v0.1
 python -m harness.runner \
     --adapter adapters/osi_python_adapter.py \
     --tests tests/ \
-    --datasets datasets/ \
-    --output results/
+    --datasets datasets/
+# per-run artifacts land in results/latest/ by default
 ```
 
-To scope to a single area:
+To scope to a single area, point ``--output`` at a sibling directory so
+the run doesn't clobber ``results/latest/``:
 
 ```bash
 python -m harness.runner \
@@ -46,12 +47,16 @@ python -m harness.runner \
     --output results/bridge/
 ```
 
+The curated baseline at ``results/REPORT.md`` is committed and must
+not be overwritten; pick a subdirectory of ``results/`` (or anywhere
+else) for every per-run output.
+
 ### 3. Read the report and triage
 
 After a full run, surface:
 
 1. **Overall pass rate** (e.g. "57 / 64 must-pass, 89.1%").
-2. **Per-decision coverage** from `results/decisions_coverage.md` —
+2. **Per-decision coverage** from `results/latest/decisions_coverage.md` —
    list every D-NNN with at least one failing test.
 3. For each failing test, classify the failure:
    - **impl bug** — the implementation is wrong vs the spec. Open a

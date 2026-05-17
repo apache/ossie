@@ -1,0 +1,34 @@
+name: t-052-window-over-fanout-foreclosed
+description: >
+  Scalar query that combines a windowed metric (``order_rank`` over
+  ``orders``) with a join path that crosses a 1:N edge
+  (``returns`` → ``customers`` → ``orders``). The Foundation spec
+  (D-030 / §6.10.3) defines ``E_WINDOW_OVER_FANOUT_REWRITE`` as the
+  failure mode for windows whose home dataset would be fanned out by
+  the query's join path. Reference implementations are free to
+  materialise the home grain *or* reject; this reference engine
+  reaches the earlier scalar fan-out gate first
+  (``E_FAN_OUT_IN_SCALAR_QUERY``, D-023), so the user-visible code
+  here is ``E_FAN_OUT_IN_SCALAR_QUERY``. This test pins that
+  contract so the suite notices when (a) the aggregation planner
+  gains windowed-measure support and the D-030 surface needs to be
+  wired up, or (b) the scalar planner gains pre-fan-out
+  materialisation and the response code legitimately changes.
+area: windows
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-030"
+  - "Proposed_OSI_Semantics.md#D-023"
+tags: [window, fan-out, scalar, negative, foreclosed]
+conformance_level: foundation_v0_1
+decision: D-030
+test_id: T-052
+expected_error: true
+expected_error_code: E_FAN_OUT_IN_SCALAR_QUERY
+status: active
+xfail_reason: >
+  Engine forecloses on the fan-out path before the window step; the
+  user-visible code is E_FAN_OUT_IN_SCALAR_QUERY (D-023). When
+  windowed measures land in the aggregation planner, revisit this
+  test to exercise the D-030 surface directly.

@@ -78,11 +78,29 @@ class FoundationFlags:
         When ``False`` (default) the parser raises
         :class:`~osi.errors.ErrorCode.E_NESTED_AGGREGATION_DEFERRED`
         on the offending metric.
+
+    experimental_exists_in
+        D-017 / Foundation §10. **Experimental.** When ``True`` the
+        planner accepts ``EXISTS_IN(...)`` / ``NOT EXISTS_IN(...)``
+        semi-join predicates inside a query's ``where`` clause and
+        compiles them through ``filtering_join`` in the algebra.
+        When ``False`` (default) the planner rejects them at query
+        classification time with
+        :class:`~osi.errors.ErrorCode.E_DEFERRED_KEY_REJECTED` —
+        matching the published Foundation v0.1, which lists
+        semi-joins as deferred. This is the only flag in this class
+        that gates a *query*-side (not model-side) construct, and
+        the only flag for a feature that does not yet have a
+        published OSI proposal; it lives behind a flag so the
+        reference implementation can keep its working semi-join
+        codepath alive without claiming Foundation conformance for
+        models / queries that use it.
     """
 
     allow_aggregate_in_field: bool = False
     allow_dataset_scoped_metrics: bool = False
     allow_nested_aggregation: bool = False
+    experimental_exists_in: bool = False
 
     @classmethod
     def strict(cls) -> "FoundationFlags":
@@ -109,6 +127,7 @@ class FoundationFlags:
             allow_aggregate_in_field=True,
             allow_dataset_scoped_metrics=True,
             allow_nested_aggregation=True,
+            experimental_exists_in=True,
         )
 
 

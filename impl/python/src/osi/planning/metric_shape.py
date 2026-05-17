@@ -90,8 +90,21 @@ def classify_metric(metric: Metric, namespace: Namespace) -> MetricShape:
     closes the Phase 8 finding I1 — without it the composite path
     fires later with the misleading
     ``E1206_METRIC_IN_RAW_AGGREGATE`` message.
+
+    A metric whose body root is :class:`exp.Window` (a windowed
+    expression — ``ROW_NUMBER() OVER (...)``, ``SUM(x) OVER (...)``,
+    …) is rejected here with
+    :attr:`ErrorCode.E_WINDOWED_MEASURE_NOT_SUPPORTED` (F-16). The
+    spec (`§6.10` / D-031) accepts direct use of a windowed metric in
+    ``Measures``, but this engine's aggregation branch does not yet
+    model that composition. The scalar planner
+    (:mod:`osi.planning.planner_scalar`) compiles windowed metrics as
+    :class:`PlanOperation.ADD_COLUMNS` over the home dataset and never
+    calls :func:`classify_metric`, so this gate fires only in the
+    aggregation path.
     """
     top = metric.expression.expr
+    _reject_windowed_root(metric=metric, top=top)
     _reject_unsupported_top_level_aggregate(metric=metric, top=top)
     agg = _as_top_level_aggregate(top)
     if agg is not None:
@@ -99,6 +112,42 @@ def classify_metric(metric: Metric, namespace: Namespace) -> MetricShape:
     refs = _collect_composite_refs(metric=metric, expression=top, namespace=namespace)
     _reject_nested_aggregates(metric=metric, expression=top)
     return CompositeMetric(expression=metric.expression, references=refs)
+
+
+def _reject_windowed_root(*, metric: Metric, top: exp.Expression) -> None:
+    """Reject a metric whose body's root is a window expression.
+
+    F-16: the aggregation planner does not yet model windowed
+    measures (§6.10 / D-031 accepts them but our engine doesn't
+    implement the composition with GROUP BY / re-aggregation yet).
+    Without this gate the metric falls into the composite path and
+    raises the misleading ``E1206_METRIC_IN_RAW_AGGREGATE`` —
+    pointing the author at the wrong surface.
+
+    Scalar (``Fields``) queries are unaffected: the scalar planner
+    compiles windowed metrics directly as ``ADD_COLUMNS`` and never
+    calls this classifier.
+    """
+    if not isinstance(top, exp.Window):
+        return
+    raise OSIPlanningError(
+        ErrorCode.E_WINDOWED_MEASURE_NOT_SUPPORTED,
+        (
+            f"metric {metric.name!r} is windowed (its body is a "
+            "window expression) and is being used in an aggregation "
+            "context. Spec §6.10 / D-031 accepts direct use of a "
+            "windowed metric in ``Measures``, but this engine's "
+            "aggregation planner does not yet model the composition "
+            "of windowed measures with GROUP BY. Use a scalar "
+            "(Fields-only) query to expose this metric, or replace "
+            "the window with a plain aggregate."
+        ),
+        context={
+            "metric": metric.name,
+            "shape": "windowed",
+            "spec_ref": "Proposed_OSI_Semantics.md §6.10 / D-031",
+        },
+    )
 
 
 def _reject_unsupported_top_level_aggregate(

@@ -19,11 +19,16 @@ this package to run their tests.
 
 ## Run
 
+The harness resolves ``--output`` relative to the current working
+directory, so run it from the suite root (per-run artifacts then land
+under ``<suite>/results/latest/`` by default):
+
 ```bash
+cd ../foundation-v0.1
 python -m harness.runner \
-    --adapter ../foundation-v0.1/adapters/osi_python_adapter.py \
-    --tests ../foundation-v0.1/tests/ \
-    --datasets ../foundation-v0.1/datasets/
+    --adapter adapters/osi_python_adapter.py \
+    --tests tests/ \
+    --datasets datasets/
 ```
 
 See [`../foundation-v0.1/README.md`](../foundation-v0.1/README.md) for

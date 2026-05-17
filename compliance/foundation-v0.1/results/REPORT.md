@@ -18,8 +18,8 @@ The default invocation —
 python -m harness.runner \
     --adapter adapters/osi_python_adapter.py \
     --tests tests \
-    --datasets datasets \
-    --output results
+    --datasets datasets
+# per-run artifacts written to results/latest/
 ```
 runs every test whose `metadata.yaml` carries `status: active` and is the
 gate that defines Foundation v0.1 conformance for the bundled adapter. All
@@ -140,16 +140,17 @@ the parser can promote this to `E_DEFERRED_KEY_REJECTED`.
 
 ## Methodology
 
-Reports under `results/` are regenerated from disk by
-`harness.runner`:
+Reports under `results/` are split between curated baselines and
+per-run runner artifacts:
 
-- `results/summary.md` — pass/fail per test (auto-generated).
-- `results/failures.csv` — failed cases with classification info
-  (auto-generated).
 - `results/REPORT.md` — *this file*; written by Phase 7 of the
   OSI_will migration-and-polish plan and refreshed by Phase 9 after
   the BI / compiler / test-quality fixes. Kept in version control so
   the conformance baseline is reviewable in PR diffs.
+- `results/latest/summary.md` — pass/fail per test for the most
+  recent local `harness.runner` invocation (auto-generated, gitignored).
+- `results/latest/failures.csv` — failed cases for the most recent
+  run, with classification info (auto-generated, gitignored).
 
 To reproduce locally:
 
@@ -158,15 +159,19 @@ cd /path/to/OSI_will
 pip install -e impl/python
 pip install -e compliance/harness
 cd compliance/foundation-v0.1
+
+# active tests only — runner writes to results/latest/ by default
+python -m harness.runner \
+    --adapter adapters/osi_python_adapter.py \
+    --tests tests \
+    --datasets datasets
+
+# 86-test extended view — point --output at a sibling subdir so the
+# two runs don't overwrite each other
 python -m harness.runner \
     --adapter adapters/osi_python_adapter.py \
     --tests tests \
     --datasets datasets \
-    --output results            # active tests only
-python -m harness.runner \
-    --adapter adapters/osi_python_adapter.py \
-    --tests tests \
-    --datasets datasets \
-    --output results \
-    --include-planned          # 86-test extended view
+    --output results/latest-planned \
+    --include-planned
 ```

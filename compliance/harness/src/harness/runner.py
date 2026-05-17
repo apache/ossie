@@ -178,7 +178,10 @@ def run_test(
                 status=TestStatus.FAIL,
                 spec_refs=test.spec_refs,
                 error_type="expected_error_missing",
-                error_detail=("Expected adapter to reject this query with a non-zero " "exit code, but it succeeded"),
+                error_detail=(
+                    "Expected adapter to reject this query with a non-zero "
+                    "exit code, but it succeeded"
+                ),
                 generated_sql=stdout.strip(),
                 duration_ms=elapsed,
             )
@@ -288,7 +291,9 @@ def list_tests(
     for t in tests:
         err = "yes" if t.expected_error else ""
         status = t.status if t.status != "active" else ""
-        print(f"{t.test_id:<60} {t.area:<25} {t.difficulty:<12} {t.conformance_level:<10} {status:<8} {err}")
+        print(
+            f"{t.test_id:<60} {t.area:<25} {t.difficulty:<12} {t.conformance_level:<10} {status:<8} {err}"
+        )
     print(f"\nTotal: {len(tests)} test(s)")
 
 
@@ -320,7 +325,9 @@ def run_suite(
     if adapter_features is not None:
         runnable_tests = []
         for t in tests:
-            if t.required_features and not set(t.required_features).issubset(adapter_features):
+            if t.required_features and not set(t.required_features).issubset(
+                adapter_features
+            ):
                 skipped_by_feature.append(t)
                 continue
             runnable_tests.append(t)
@@ -331,7 +338,10 @@ def run_suite(
 
     print(f"Discovered {len(tests)} test(s)")
     if skipped_by_feature:
-        print(f"  skipping {len(skipped_by_feature)} test(s) " "with unsupported proposals")
+        print(
+            f"  skipping {len(skipped_by_feature)} test(s) "
+            "with unsupported proposals"
+        )
     print(f"Adapter: {adapter_path}")
     print(f"Datasets: {datasets_dir}")
     print()
@@ -339,7 +349,9 @@ def run_suite(
     db = DBManager()
     suite = SuiteResult(
         adapter=str(adapter_path.name),
-        adapter_features=(frozenset(adapter_features) if adapter_features is not None else None),
+        adapter_features=(
+            frozenset(adapter_features) if adapter_features is not None else None
+        ),
     )
 
     for t in skipped_by_feature:
@@ -410,8 +422,14 @@ def main() -> int:
     )
     parser.add_argument(
         "--output",
-        default="results",
-        help="Output directory for reports (default: results)",
+        default="results/latest",
+        help=(
+            "Output directory for reports (default: results/latest). "
+            "Per-run artifacts (failures.csv, summary.md) go here. "
+            "The curated baseline at results/REPORT.md is committed and "
+            "must not be overwritten — choose a subdirectory of results/ "
+            "(e.g. results/<adapter>/) or another path entirely."
+        ),
     )
     parser.add_argument(
         "--difficulty",

@@ -22,8 +22,16 @@ The nine operators and their current planner wiring:
 - :func:`merge` — full-outer chasm-safe join at matching grain.
   *Emitted when two measure groups with different fact datasets must
   be combined (Foundation spec §4.11).*
-- :func:`filtering_join` — semi-/anti-semi-join for ``EXISTS_IN``.
-  *Emitted for ``EXISTS_IN`` predicates in ``WHERE``.*
+- :func:`filtering_join` — semi-/anti-semi-join. **Experimental.**
+  Emitted for ``EXISTS_IN`` / ``NOT EXISTS_IN`` predicates in
+  ``WHERE`` when the caller opts in via
+  ``FoundationFlags(experimental_exists_in=True)``. Foundation v0.1
+  §10 / D-017 lists semi-join filtering as deferred, so the default
+  Foundation parser rejects ``EXISTS_IN`` with
+  ``E_DEFERRED_KEY_REJECTED``. The operator and its laws are kept
+  in the closed algebra so the experimental codepath remains
+  testable; turning the flag off does not remove this operator from
+  the package, only from the planner's emission path.
 - :func:`broadcast` — attach a scalar column. **Reserved.** The
   operator and its ``BROADCAST`` plan step exist so the algebra stays
   closed under nine operators, but today's planner never emits it —

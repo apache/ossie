@@ -259,6 +259,46 @@ class TestUnsupportedTopLevelAggregate:
         assert shape.function is AggregateFunction.COUNT_DISTINCT
 
 
+class TestWindowedMetricRoot:
+    """F-16: windowed metric bodies surface a precise engine-gap code.
+
+    The Foundation spec accepts direct use of a windowed metric in
+    ``Measures`` (§6.10 / D-031); this engine's aggregation planner
+    does not yet implement that surface. Before F-16 the metric fell
+    into the composite path and raised the misleading
+    ``E1206_METRIC_IN_RAW_AGGREGATE``. ``classify_metric`` now rejects
+    these up front with ``E_WINDOWED_MEASURE_NOT_SUPPORTED``.
+    """
+
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            "ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY amount DESC)",
+            "RANK() OVER (PARTITION BY customer_id ORDER BY amount DESC)",
+            "SUM(amount) OVER (PARTITION BY customer_id ORDER BY order_id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)",
+        ],
+    )
+    def test_windowed_root_raises_engine_gap_code(self, expression: str) -> None:
+        bogus = f"""\
+    metrics:
+      - {{name: windowed_metric,
+         expression: "{expression}"}}
+"""
+        ctx = _model(extra_metrics=bogus)
+        with pytest.raises(OSIPlanningError) as excinfo:
+            classify_metric(_metric_by_name(ctx, "windowed_metric"), ctx.namespace)
+        assert excinfo.value.code is ErrorCode.E_WINDOWED_MEASURE_NOT_SUPPORTED
+        assert excinfo.value.context["metric"] == normalize_identifier(
+            "windowed_metric"
+        )
+        assert excinfo.value.context["shape"] == "windowed"
+        # Diagnostic must steer the author toward the scalar path or
+        # a plain aggregate, never the misleading composite-shape
+        # remediation.
+        msg = str(excinfo.value)
+        assert "scalar" in msg.lower() or "Fields" in msg
+
+
 # ---------------------------------------------------------------------------
 # End-to-end composite planning
 # ---------------------------------------------------------------------------

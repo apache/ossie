@@ -363,13 +363,32 @@ def _unwrap_walk_item(item: Any) -> exp.Expression:
 
     Different SQLGlot releases yield either an :class:`exp.Expression`
     directly or a ``(node, parent, key)`` tuple; this helper collapses
-    both shapes to the bare expression.
+    both shapes to the bare expression. Any other shape is a
+    SQLGlot-side surprise we don't know how to interpret — silently
+    returning a benign ``Expression()`` would let deferred-feature
+    rejection rules skip the unknown node, so we surface the surprise
+    as an :attr:`ErrorCode.E_INTERNAL_INVARIANT` instead. A future
+    SQLGlot upgrade that changes the walk shape will trip this
+    immediately rather than producing a misleading "accepted" verdict.
     """
     if isinstance(item, exp.Expression):
         return item
     if isinstance(item, tuple) and item and isinstance(item[0], exp.Expression):
         return item[0]
-    return exp.Expression()  # defensive — no match ⇒ benign Expression()
+    raise OSIParseError(
+        ErrorCode.E_INTERNAL_INVARIANT,
+        (
+            "SQLGlot walk() yielded an unrecognised item shape; the "
+            "deferred-feature visitor cannot decide whether to admit "
+            "or reject this node. This is a compiler-side invariant "
+            "violation — file a bug if you see it."
+        ),
+        context={
+            "item_type": type(item).__name__,
+            "item_repr": repr(item)[:200],
+            "caller": "osi.parsing.deferred._unwrap_walk_item",
+        },
+    )
 
 
 __all__ = [

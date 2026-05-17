@@ -175,11 +175,12 @@ class CalculationState:
         names = [c.name for c in self.columns]
         if len(names) != len(set(names)):
             seen: set[Identifier] = set()
-            dup = next(
-                n
-                for n in names
-                if n in seen or seen.add(n)  # type: ignore[func-returns-value]
-            )
+            dup: Identifier | None = None
+            for n in names:
+                if n in seen:
+                    dup = n
+                    break
+                seen.add(n)
             raise AlgebraError(
                 ErrorCode.E3005_COLUMN_NAME_COLLISION,
                 f"duplicate column name {dup!r}",

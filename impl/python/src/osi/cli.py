@@ -35,7 +35,8 @@ from osi.diagnostics import (
     resolve_json,
 )
 from osi.diagnostics.error_catalog import all_explanations, explain_error
-from osi.errors import ErrorCode, OSIError
+from osi.errors import ErrorCode, OSIError, OSIParseError
+from osi.parsing.deferred import check_expression_deferred
 from osi.parsing.parser import parse_semantic_model
 from osi.planning import OrderBy, Reference, SemanticQuery, SortDirection, plan
 from osi.planning.planner_context import PlannerContext
@@ -54,13 +55,48 @@ def _load_context(path: Path) -> PlannerContext:
         model=result.model,
         namespace=result.namespace,
         graph=result.graph,
+        flags=result.flags,
     )
 
 
 def _load_query(path: Path) -> SemanticQuery:
-    data = json.loads(path.read_text())
+    """Parse a query JSON file into a :class:`SemanticQuery`.
 
-    def _ref(spec: dict[str, object]) -> Reference:
+    Surfaces shape errors as :class:`OSIParseError` with a stable
+    code rather than letting raw ``KeyError`` / ``TypeError`` /
+    ``json.JSONDecodeError`` escape — keeping the CLI's failure
+    contract aligned with the library's "every failure carries an
+    :class:`ErrorCode`" invariant.
+    """
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise OSIParseError(
+            ErrorCode.E1001_YAML_SYNTAX,
+            f"query file is not valid JSON: {exc}",
+            context={"path": str(path)},
+        ) from exc
+    if not isinstance(data, dict):
+        raise OSIParseError(
+            ErrorCode.E1004_TYPE_MISMATCH,
+            "query JSON must be an object at the top level "
+            f"(got {type(data).__name__})",
+            context={"path": str(path)},
+        )
+
+    def _ref(spec: object) -> Reference:
+        if not isinstance(spec, dict):
+            raise OSIParseError(
+                ErrorCode.E1004_TYPE_MISMATCH,
+                f"reference entries must be objects (got {type(spec).__name__})",
+                context={"reference": spec},
+            )
+        if "name" not in spec:
+            raise OSIParseError(
+                ErrorCode.E1002_MISSING_REQUIRED_FIELD,
+                "reference is missing required 'name' field",
+                context={"reference": dict(spec)},
+            )
         dataset_raw = spec.get("dataset")
         return Reference(
             dataset=(
@@ -71,12 +107,28 @@ def _load_query(path: Path) -> SemanticQuery:
             name=normalize_identifier(str(spec["name"])),
         )
 
-    where = (
-        FrozenSQL.of(sqlglot.parse_one(data["where"])) if data.get("where") else None
-    )
+    try:
+        where = (
+            FrozenSQL.of(sqlglot.parse_one(data["where"]))
+            if data.get("where")
+            else None
+        )
+    except sqlglot.ParseError as exc:
+        raise OSIParseError(
+            ErrorCode.E1208_UNSUPPORTED_SQL_CONSTRUCT,
+            f"query 'where' clause is not parseable SQL: {exc}",
+            context={"where": data.get("where")},
+        ) from exc
+    # F-33: run the same deferred-AST screen that
+    # ``parse_semantic_model`` runs on model expressions so query-side
+    # ``where`` clauses can't slip past the deferred-feature gate via
+    # the CLI (e.g. ``PIVOT``, ``GROUPING SETS``, ``MATCH_RECOGNIZE``,
+    # ``EXISTS_IN`` when ``experimental_exists_in`` is off).
+    if where is not None:
+        check_expression_deferred(where, where="query 'where'")
     order_by = tuple(
         OrderBy(
-            target=_ref(entry["target"]),
+            target=_ref(entry.get("target", {})),
             direction=(
                 SortDirection.DESC if entry.get("descending") else SortDirection.ASC
             ),
@@ -137,9 +189,8 @@ def _cmd_explain_code(args: argparse.Namespace) -> int:
             "error: an OSI error code is required (e.g. E_NAME_NOT_FOUND)\n"
         )
         return 2
-    try:
-        code = _resolve_error_code(raw)
-    except KeyError:
+    code = _resolve_error_code(raw)
+    if code is None:
         sys.stderr.write(
             f"error: {raw!r} is not a known OSI error code. "
             "Run `osi explain-code --list` to see all codes.\n"
@@ -194,17 +245,19 @@ def _first_sentence(text: str, max_len: int = 100) -> str:
     return head
 
 
-def _resolve_error_code(raw: str) -> ErrorCode:
+def _resolve_error_code(raw: str) -> ErrorCode | None:
     """Look up an :class:`ErrorCode` by either its enum name or value.
 
     Accepts both the numeric form (``E2002``) and the named form
     (``E_NAME_NOT_FOUND``); case-insensitive on the named form.
+    Returns ``None`` for an unknown spelling so the caller can choose
+    its own diagnostic surface rather than chasing a ``KeyError``.
     """
     upper = raw.upper()
     for code in ErrorCode:
         if code.value == upper or code.name == upper:
             return code
-    raise KeyError(raw)
+    return None
 
 
 def _cmd_compile(args: argparse.Namespace) -> int:

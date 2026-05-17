@@ -9,8 +9,8 @@ time so downstream code never touches raw SQL.
 
 Deferred-feature detection lives in :mod:`osi.parsing.deferred` — these
 schemas describe only the shapes the Foundation accepts; anything else
-produces ``E1001`` / ``E1002`` / ``E1004`` via pydantic, or ``E1105`` via
-the deferred-feature visitor.
+produces ``E1001`` / ``E1002`` / ``E1004`` via pydantic, or
+``E_DEFERRED_KEY_REJECTED`` via the deferred-feature visitor.
 """
 
 from __future__ import annotations

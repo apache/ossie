@@ -104,6 +104,15 @@ _IMPLEMENTATION_EXTENSIONS: dict[str, str] = {
         "subclass). Lives inside OSIError so the typed-error "
         "property test still holds for these paths."
     ),
+    "E_WINDOWED_MEASURE_NOT_SUPPORTED": (
+        "F-16 engine gap — the aggregation planner does not yet "
+        "model windowed measures (the spec accepts them per §6.10 / "
+        "D-031). Without this code the metric falls into the "
+        "composite path and raises the misleading "
+        "``E1206_METRIC_IN_RAW_AGGREGATE``. Promote to Appendix C "
+        "if/when the engine implements windowed-measure composition; "
+        "remove if the spec ever defers them."
+    ),
 }
 
 

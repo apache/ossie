@@ -5,8 +5,13 @@ assigns each conjunct to one of three buckets:
 
 * **row-level** — ordinary boolean over fields; compiles to ``WHERE``
   on the measure group's pre-aggregated state.
-* **semi-join** — ``EXISTS_IN`` / ``NOT EXISTS_IN`` function calls;
-  compiles to :func:`osi.planning.algebra.filtering_join`.
+* **semi-join** — ``EXISTS_IN`` / ``NOT EXISTS_IN`` function calls.
+  This shape is **deferred in Foundation v0.1** (§10 / D-017) and is
+  only accepted when the caller opts in via
+  :attr:`FoundationFlags.experimental_exists_in`. With the flag on,
+  the predicate compiles to :func:`osi.planning.algebra.filtering_join`;
+  with the flag off, it is rejected with
+  :attr:`ErrorCode.E_DEFERRED_KEY_REJECTED`.
 * **post-aggregate (having)** — conjuncts that reference measures;
   compiles to ``HAVING`` on the final merged state. In the Foundation
   a conjunct is post-aggregate *iff* it comes from the ``having`` slot
@@ -26,7 +31,8 @@ from sqlglot import expressions as exp
 
 from osi.common.identifiers import Identifier, normalize_identifier
 from osi.common.sql_expr import FrozenSQL
-from osi.errors import ErrorCode, OSIParseError, OSIPlanningError
+from osi.config import FoundationFlags
+from osi.errors import ErrorCode, OSIError, OSIParseError, OSIPlanningError
 from osi.parsing.namespace import Namespace
 from osi.planning.algebra.operations import FilterMode
 
@@ -84,7 +90,10 @@ class ClassifiedWhere:
 
 
 def classify_where(
-    predicate: FrozenSQL | None, namespace: Namespace
+    predicate: FrozenSQL | None,
+    namespace: Namespace,
+    *,
+    flags: FoundationFlags | None = None,
 ) -> ClassifiedWhere:
     """Split a ``where`` clause into row-level + semi-join conjuncts.
 
@@ -98,7 +107,20 @@ def classify_where(
     * a single conjunct that mixes a bare column with an aggregate
       raises :attr:`ErrorCode.E_MIXED_PREDICATE_LEVEL` so the user
       sees the routing error before the placement error.
+
+    ``EXISTS_IN`` / ``NOT EXISTS_IN`` are recognised as semi-join
+    conjuncts but are **deferred in Foundation v0.1** (§10 / D-017):
+    the conjunct is rejected with
+    :attr:`ErrorCode.E_DEFERRED_KEY_REJECTED` unless the caller
+    passed ``flags=FoundationFlags(experimental_exists_in=True)``.
+    The flag is named ``experimental_*`` rather than ``allow_*``
+    because, unlike the other deferred constructs, ``EXISTS_IN`` does
+    not yet have a published OSI proposal — it lives behind the flag
+    as an opt-in surface for callers willing to take the portability
+    hit.
     """
+    if flags is None:
+        flags = FoundationFlags()
     if predicate is None:
         return ClassifiedWhere(row_level=(), semi_joins=())
     measure_names = _collect_measure_names(namespace)
@@ -108,7 +130,7 @@ def classify_where(
     row_level: list[RowLevelPredicate] = []
     semi_joins: list[SemiJoinPredicate] = []
     for node in conjuncts:
-        sj = _try_semi_join(node)
+        sj = _try_semi_join(node, flags=flags)
         if sj is not None:
             semi_joins.append(sj)
             continue
@@ -121,12 +143,17 @@ def classify_where(
 
 
 def _reject_window_in_where(node: exp.Expression) -> None:
-    """D-030: window functions are forbidden in ``WHERE``.
+    """D-028: window functions are forbidden in ``WHERE``.
 
     SQL standardly forbids them too, but the Foundation surfaces a
     named code so the user gets actionable advice (move the predicate
     to ``Having`` after wrapping the window in a metric, or use a
     ``QUALIFY``-style outer-Where).
+
+    Per Appendix C / Appendix B D-028 (`Proposed_OSI_Semantics.md`
+    §6.10.1): "A window function in `Where` MUST raise
+    `E_WINDOW_IN_WHERE`." D-030 governs the *fan-out* failure mode
+    (``E_WINDOW_OVER_FANOUT_REWRITE``), not where-clause placement.
     """
     from osi.common.windows import contains_window
 
@@ -136,7 +163,7 @@ def _reject_window_in_where(node: exp.Expression) -> None:
             (
                 "Where predicate contains a window function; windows "
                 "are only allowed in Measures, Fields, Order By, and "
-                "Having (D-030). Move the predicate to Having or wrap "
+                "Having (D-028). Move the predicate to Having or wrap "
                 "the window in a metric first."
             ),
             context={"predicate": node.sql()},
@@ -363,12 +390,45 @@ def classify_having(
 # ---------------------------------------------------------------------------
 
 
-def _try_semi_join(node: exp.Expression) -> SemiJoinPredicate | None:
+def _try_semi_join(
+    node: exp.Expression, *, flags: FoundationFlags
+) -> SemiJoinPredicate | None:
+    """Recognise an ``EXISTS_IN`` / ``NOT EXISTS_IN`` conjunct.
+
+    Returns ``None`` if ``node`` is not a semi-join shape (so the
+    caller can fall through to row-level / aggregate handling).
+
+    If ``node`` IS a semi-join, the flag in ``FoundationFlags``
+    decides whether to admit it. Foundation v0.1 §10 / D-017 lists
+    semi-join filtering as deferred, so the default (flag off) is to
+    raise ``E_DEFERRED_KEY_REJECTED`` with a hint that the caller can
+    opt in via ``FoundationFlags(experimental_exists_in=True)``. The
+    flag intentionally uses the ``experimental_`` prefix because the
+    semi-join surface does not yet have a published OSI proposal.
+    """
     inner, negated = _unwrap_not(node)
     if not isinstance(inner, exp.Anonymous):
         return None
     if (inner.this or "").upper() != "EXISTS_IN":
         return None
+    if not flags.experimental_exists_in:
+        raise OSIPlanningError(
+            ErrorCode.E_DEFERRED_KEY_REJECTED,
+            (
+                "EXISTS_IN / NOT EXISTS_IN semi-join filtering is "
+                "deferred in Foundation v0.1 (§10 / D-017). To "
+                "experiment with this engine's semi-join path, "
+                "parse the model with "
+                "FoundationFlags(experimental_exists_in=True) — note "
+                "that this is an experimental surface, not a "
+                "Foundation-conformant one."
+            ),
+            context={
+                "predicate": node.sql(),
+                "deferred_feature": "exists_in_semi_join",
+                "flag": "experimental_exists_in",
+            },
+        )
     raw_args: Sequence[exp.Expression] = tuple(inner.expressions)
     if len(raw_args) < 2 or len(raw_args) % 2 != 0:
         raise OSIPlanningError(
@@ -419,9 +479,14 @@ def _extract_column(node: exp.Expression) -> _ColRef:
             context={"node": node.sql()},
         )
     dataset = node.table or None
+    # Narrow exception handlers: ``normalize_identifier`` raises only
+    # :class:`OSIError` on bad shapes (see
+    # :mod:`osi.common.identifiers`). Catching a wider category here
+    # would mask real bugs and break the "every failure carries a
+    # code" contract by swallowing unrelated runtime errors.
     try:
         name = normalize_identifier(node.name)
-    except Exception as exc:
+    except OSIError as exc:
         raise OSIPlanningError(
             ErrorCode.E1005_IDENTIFIER_INVALID,
             f"invalid identifier in filter: {node.name!r}",
@@ -429,7 +494,7 @@ def _extract_column(node: exp.Expression) -> _ColRef:
         ) from exc
     try:
         ds_id = normalize_identifier(dataset) if dataset else None
-    except Exception as exc:
+    except OSIError as exc:
         raise OSIPlanningError(
             ErrorCode.E1005_IDENTIFIER_INVALID,
             f"invalid dataset in filter: {dataset!r}",

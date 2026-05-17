@@ -54,7 +54,10 @@ compliance/foundation-v0.1/
     empty_inputs/               # D-033
     deferred/                   # one negative test per E_DEFERRED_KEY_REJECTED case
     error_taxonomy/             # negative cases for the rest of Appendix C
-  results/                      # gitignored
+  results/
+    REPORT.md                   # curated baseline (tracked)
+    latest/                     # default runner --output (gitignored)
+    <adapter>/                  # per-adapter runs from the Makefile (gitignored)
 ```
 
 ## Quick start
@@ -67,17 +70,21 @@ pip install -e impl/python
 
 cd compliance/foundation-v0.1
 
-# Run the full suite against the bundled osi_python adapter
+# Run the full suite against the bundled osi_python adapter.
+# Per-run artifacts (summary.md, failures.csv) land in results/latest/
+# by default; the curated results/REPORT.md baseline is never touched.
 python -m harness.runner \
   --adapter adapters/osi_python_adapter.py \
   --tests tests/ \
   --datasets datasets/
 
-# Run a single area
+# Run a single area — choose a sibling subdirectory of results/ so it
+# doesn't clobber results/latest/
 python -m harness.runner \
   --adapter adapters/osi_python_adapter.py \
   --tests tests/bridge/ \
-  --datasets datasets/
+  --datasets datasets/ \
+  --output results/bridge
 
 # List discovered tests without running
 python -m harness.runner --list --tests tests/

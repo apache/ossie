@@ -33,12 +33,33 @@ the ``E3xxx`` / ``E4xxx`` safety checks fire exactly once at plan time.
 The planner never inspects SQL text — all introspection happens on
 SQLGlot ASTs.
 
-Out-of-scope (raises ``E_DEFERRED_KEY_REJECTED`` in parsing / a more
-specific named code here in the planner): fixed-grain overrides, per-
-metric filter context, ad-hoc aggregate expressions in the ``measures``
-slot, window functions, grouping sets, pivot, metric reset. See
-``proposals/foundation-v0.1/Proposed_OSI_Semantics.md §10`` for the
-canonical deferred-feature list.
+Surface coverage notes:
+
+* **Window functions** are *partially* supported. The scalar branch
+  (:mod:`osi.planning.planner_scalar`) compiles windowed metrics into
+  :class:`PlanOperation.ADD_COLUMNS` after enrichment. The aggregation
+  branch — this module — does **not** yet plan windowed metrics in
+  ``Measures``; the parser rejects windowed metric expressions with
+  :attr:`ErrorCode.E_WINDOWED_METRIC_COMPOSITION` (D-031 / §6.10.4)
+  before they reach this planner. Window functions appearing inside
+  ``Where`` raise :attr:`ErrorCode.E_WINDOW_IN_WHERE` (D-028) from
+  :mod:`osi.planning.classify`. The fan-out-vs-window failure mode
+  ``E_WINDOW_OVER_FANOUT_REWRITE`` (D-030) is currently foreclosed by
+  earlier gates — see ``INFRA.md`` I-43 and the ``E_WINDOW_OVER_*``
+  entry in :mod:`osi.errors`.
+* **Semi-join filtering** (``EXISTS_IN`` / ``NOT EXISTS_IN``) is
+  deferred in Foundation v0.1 (§10 / D-017). The aggregation planner
+  accepts semi-joins only when the caller opts in via
+  :attr:`FoundationFlags.experimental_exists_in`; without the flag,
+  :mod:`osi.planning.classify` rejects them with
+  :attr:`ErrorCode.E_DEFERRED_KEY_REJECTED`.
+
+Other out-of-scope features (raise :attr:`ErrorCode.E_DEFERRED_KEY_REJECTED`
+in parsing, or a more specific named code here in the planner):
+fixed-grain overrides, per-metric filter context, ad-hoc aggregate
+expressions in the ``measures`` slot, grouping sets, pivot, metric
+reset. See ``proposals/foundation-v0.1/Proposed_OSI_Semantics.md §10``
+for the canonical deferred-feature list.
 """
 
 from __future__ import annotations
@@ -160,7 +181,7 @@ def plan(query: SemanticQuery, context: PlannerContext) -> QueryPlan:
         query.having, provided=query.parameters, declared=context.model.parameters
     )
 
-    classified = classify_where(where, context.namespace)
+    classified = classify_where(where, context.namespace, flags=context.flags)
     post_agg_preds = classify_having(having, tuple(m.metric.name for m in measures))
 
     builder = PlanBuilder()
@@ -196,10 +217,28 @@ def plan(query: SemanticQuery, context: PlannerContext) -> QueryPlan:
             # surfaces that as ``E_UNSAFE_REAGGREGATION`` (a plan-shape
             # decomposition failure per D-022).
             if exc.code is ErrorCode.E3011_MN_AGGREGATION_REJECTED:
+                ctx = dict(exc.context)
+                # F-17: when this fan-trap is the bridge-AVG /
+                # bridge-holistic gap (D-027) the user needs to know
+                # the gap is engine-side, not a spec rejection.
+                # ``can_apply_bridge_resolution`` already surfaced the
+                # reason; thread it into the error context so the
+                # diagnostic surface is honest about the limitation.
+                applicable, reason = can_apply_bridge_resolution(group)
+                if not applicable and reason and "bridge resolution requires" in reason:
+                    ctx["engine_gap"] = (
+                        "Bridge resolution for non-distributive / "
+                        "holistic aggregates (D-027) is not yet "
+                        "implemented; see compliance tests "
+                        "t-016-non-distributive-over-bridge-accepted "
+                        "and t-051-holistic-over-bridge-accepted, and "
+                        "the planner_bridge module docstring."
+                    )
+                    ctx["bridge_precheck"] = reason
                 raise OSIPlanningError(
                     ErrorCode.E_UNSAFE_REAGGREGATION,
                     str(exc),
-                    context=dict(exc.context),
+                    context=ctx,
                 ) from exc
             raise
         group_roots.append(root)
@@ -570,7 +609,13 @@ def _maybe_build_via_bridge(
             (
                 "multiple bridge datasets resolve the M:N traversal: "
                 f"{sorted(str(b) for b in distinct_bridges)}. "
-                "Disambiguate with joins.using_relationships on the metric."
+                "Restructure the model so only one bridge applies — "
+                "e.g. drop the redundant relationship, rename one of "
+                "the bridge datasets, or replace the duplicate path "
+                "with a single canonical bridge. (Per-metric "
+                "``joins.using_relationships`` disambiguation is "
+                "deferred in Foundation v0.1 §10 / D-009 and would "
+                "itself be rejected with ``E_DEFERRED_KEY_REJECTED``.)"
             ),
             context={"bridges": sorted(str(b) for b in distinct_bridges)},
         )

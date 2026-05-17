@@ -162,29 +162,33 @@ def orders_context() -> PlannerContext:
     Includes a second fact dataset (``returns``) so multi-fact merge
     scenarios can be exercised. Every relationship is N:1. Uses the
     legacy-permissive flag set so the per-dataset ``metrics:`` blocks
-    parse — see the module docstring.
+    parse — see the module docstring — and so the ``EXISTS_IN``
+    semi-join surface is admitted (it lives behind
+    ``FoundationFlags.experimental_exists_in`` per F-13 / D-017).
     """
-    result = parse_semantic_model(
-        _ORDERS_MODEL, flags=FoundationFlags.legacy_permissive()
-    )
+    flags = FoundationFlags.legacy_permissive()
+    result = parse_semantic_model(_ORDERS_MODEL, flags=flags)
     namespace = build_namespace(result.model)
     graph = build_graph(result.model)
     return PlannerContext(
         model=result.model,
         namespace=namespace,
         graph=graph,
+        flags=flags,
     )
 
 
 def mn_context() -> PlannerContext:
     """Build a model with a deliberate N:N edge for rejection tests."""
-    result = parse_semantic_model(_MN_MODEL, flags=FoundationFlags.legacy_permissive())
+    flags = FoundationFlags.legacy_permissive()
+    result = parse_semantic_model(_MN_MODEL, flags=flags)
     namespace = build_namespace(result.model)
     graph = build_graph(result.model)
     return PlannerContext(
         model=result.model,
         namespace=namespace,
         graph=graph,
+        flags=flags,
     )
 
 

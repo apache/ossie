@@ -113,6 +113,29 @@ class ErrorCode(StrEnum):
     E_NESTED_WINDOW = "E_NESTED_WINDOW"
     E_WINDOWED_METRIC_COMPOSITION = "E_WINDOWED_METRIC_COMPOSITION"
     E_DEFERRED_FRAME_MODE = "E_DEFERRED_FRAME_MODE"
+    # Implementation extension (F-16). Spec §6.10 accepts windowed
+    # metrics in ``Measures`` of an aggregation query directly (D-031
+    # only defers *composing* a windowed metric from another metric).
+    # The aggregation planner does not yet implement that surface —
+    # it currently misclassified windowed metrics as composite and
+    # raised the misleading ``E1206_METRIC_IN_RAW_AGGREGATE``. The new
+    # code is the precise diagnostic the spec called for in F-16.
+    # Scalar (Fields-only) queries continue to compile windowed
+    # metrics as ``ADD_COLUMNS`` per §6.10 / D-028; see
+    # :mod:`osi.planning.planner_scalar`.
+    E_WINDOWED_MEASURE_NOT_SUPPORTED = "E_WINDOWED_MEASURE_NOT_SUPPORTED"
+    # RESERVED — D-030. The fan-out-vs-window failure mode is foreclosed
+    # earlier in the current planner: the scalar branch rejects every
+    # 1:N edge with ``E_FAN_OUT_IN_SCALAR_QUERY`` (D-023) before
+    # reaching the window step, and the aggregation branch rejects
+    # windowed measures at parse with ``E_WINDOWED_METRIC_COMPOSITION``
+    # (windowed metric expressions are not yet planned in the
+    # aggregation branch — see ``INFRA.md`` I-43). The code stays in
+    # the enum because Appendix C requires it and so the future
+    # surface — windowed measures in aggregation queries — has a
+    # ready landing pad. Compliance test
+    # ``t-052-window-over-fanout-foreclosed`` pins the current
+    # foreclose-before-window behaviour.
     E_WINDOW_OVER_FANOUT_REWRITE = "E_WINDOW_OVER_FANOUT_REWRITE"
     # D-021 — function call that is not in the OSI_SQL_2026 catalog.
     # The catalog is the contract for every Foundation v0.1

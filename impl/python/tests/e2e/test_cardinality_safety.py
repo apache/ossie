@@ -60,14 +60,18 @@ def _ref(ds: str, name: str) -> Reference:
 
 def _ctx(model_yaml: str) -> PlannerContext:
     # The cardinality-safety fixtures use per-dataset ``metrics:``
-    # blocks, deferred under the strict Foundation; opt back in via
-    # the legacy-permissive flag set so the planner-side cardinality
+    # blocks (deferred under the strict Foundation) and exercise the
+    # ``EXISTS_IN`` semi-join surface (deferred under the strict
+    # Foundation per §10 / D-017); opt back in via the
+    # legacy-permissive flag set so the planner-side cardinality
     # contract stays exercised end-to-end.
-    parsed = parse_semantic_model(model_yaml, flags=FoundationFlags.legacy_permissive())
+    flags = FoundationFlags.legacy_permissive()
+    parsed = parse_semantic_model(model_yaml, flags=flags)
     return PlannerContext(
         model=parsed.model,
         namespace=build_namespace(parsed.model),
         graph=build_graph(parsed.model),
+        flags=flags,
     )
 
 
