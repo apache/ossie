@@ -11,8 +11,8 @@ full contract, read [`SPEC.md`](SPEC.md),
 
 The project has three commitments that every contribution must honor.
 
-1. **The Foundation stays thin.** If a feature is in
-   [`specs/deferred/`](specs/deferred/), it's out of scope. Propose an
+1. **The Foundation stays thin.** If a feature is deferred in
+   `Proposed_OSI_Semantics.md §10`, it's out of scope. Propose an
    expansion of the standard before writing code.
 2. **The algebra is load-bearing.** Every compiler transformation
    composes operators from
@@ -147,7 +147,7 @@ qualify — paste the seed and the shrunk input.
 
 The Foundation is a *subset* of the full OSI standard. New semantic
 concerns — filter context, grain modes, window functions, semi-joins,
-parameters, etc. — live in [`specs/deferred/`](specs/deferred/) until
+parameters, etc. — are deferred in `Proposed_OSI_Semantics.md §10` until
 they have been **ratified, implemented, and conformance-tested**.
 
 A proposal moves through five stages. Nothing ships without all five.

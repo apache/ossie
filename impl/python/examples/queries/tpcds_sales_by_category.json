@@ -1,0 +1,15 @@
+{
+  "_comment": "Sales totals, order count, and average ticket size by item category using the tpcds_thin model. Single-fact aggregation with a cross-dataset dimension (store_sales → item). Render with: osi compile examples/models/tpcds_thin.yaml examples/queries/tpcds_sales_by_category.json --dialect duckdb",
+  "dimensions": [
+    {"dataset": "item", "name": "i_category"}
+  ],
+  "measures": [
+    {"name": "total_sales"},
+    {"name": "order_count"},
+    {"name": "avg_ticket"}
+  ],
+  "order_by": [
+    {"target": {"name": "total_sales"}, "descending": true}
+  ],
+  "limit": 20
+}

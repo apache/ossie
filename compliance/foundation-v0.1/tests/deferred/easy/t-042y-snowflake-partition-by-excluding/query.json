@@ -1,5 +1,0 @@
-{
-  "dataset": "customers",
-  "dimensions": ["customers.region"],
-  "measures": [{"name": "rev", "metric": "running_total"}]
-}

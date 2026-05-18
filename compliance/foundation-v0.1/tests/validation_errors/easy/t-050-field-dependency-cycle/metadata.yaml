@@ -5,8 +5,7 @@ description: >-
   Fields are required to form a DAG so resolution is well-defined and
   termination is guaranteed; cycles are rejected at parse time with
   ``E_FIELD_DEPENDENCY_CYCLE`` (Appendix C / §4.3). This is a
-  structural validation error — not a deferred feature — so it lives
-  under ``tests/validation_errors/`` rather than ``tests/deferred/``.
+  structural validation error, not a deferred feature.
 area: validation_errors
 difficulty: easy
 dataset: f_prelude

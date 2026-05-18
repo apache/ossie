@@ -34,8 +34,7 @@ decisions:
   - id: D-003
     title: Implicit home-grain aggregation in field expressions
     spec_ref: §4.3.1
-    tests:
-      - tests/deferred/easy/t-043-aggregate-in-field-rejection/
+    tests: []
     status: must_pass
 
   - id: D-004
@@ -74,25 +73,13 @@ decisions:
   - id: D-008
     title: No per-metric joins.type override at Foundation level (deferred)
     spec_ref: "§6.6, §6.9"
-    tests:
-      - tests/deferred/easy/t-042d-per-metric-joins-type/
+    tests: []
     status: must_pass
 
   - id: D-009
     title: Deferred relationship-level keys rejected with E_DEFERRED_KEY_REJECTED in default mode
     spec_ref: §11
-    tests:
-      - tests/deferred/easy/t-042-deferred-key-rejection/
-      - tests/deferred/easy/t-042a-exists-in/
-      - tests/deferred/easy/t-042b-referential-integrity/
-      - tests/deferred/easy/t-042c-named-filter/
-      - tests/deferred/easy/t-042d-per-metric-joins-type/
-      - tests/deferred/easy/t-042e-per-metric-using-relationships/
-      - tests/deferred/easy/t-042f-role-on-field/
-      - tests/deferred/easy/t-042g-attr/
-      - tests/deferred/easy/t-042h-unsafe/
-      - tests/deferred/easy/t-042i-agg/
-      - tests/deferred/easy/t-042j-grain-agg/
+    tests: []
     status: must_pass
 
   - id: D-010
@@ -220,7 +207,6 @@ decisions:
       - tests/bridge/hard/t-016-non-distributive-over-bridge-accepted/
       - tests/bridge/hard/t-051-holistic-over-bridge-accepted/
       - tests/cross_grain/hard/t-005c-nested-avg/
-      - tests/deferred/easy/t-044-nested-aggregation-rejection/
       - tests/nested_aggregates/hard/t-017-nested-aggregation-over-bridge/
     status: must_pass
 

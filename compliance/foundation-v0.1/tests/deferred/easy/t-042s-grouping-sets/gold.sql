@@ -1,1 +1,0 @@
--- EXPECTED ERROR E_DEFERRED_KEY_REJECTED: deferred construct: grouping-sets

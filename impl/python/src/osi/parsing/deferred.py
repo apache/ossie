@@ -2,7 +2,6 @@
 
 Every feature listed in §10 of
 ``../../../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md``
-(and detailed in the design archive ``../../../specs/deferred/``)
 must be unambiguously refused at parse time with
 :class:`ErrorCode.E_DEFERRED_KEY_REJECTED`.
 
@@ -234,7 +233,7 @@ def check_expression_deferred(expression: FrozenSQL, *, where: str) -> None:
                 ErrorCode.E_DEFERRED_KEY_REJECTED,
                 (
                     f"{where} uses deferred SQL construct "
-                    f"{type(ast).__name__}; see specs/deferred/README.md"
+                    f"{type(ast).__name__}; see Proposed_OSI_Semantics.md §10"
                 ),
                 context={
                     "where": where,
@@ -253,7 +252,7 @@ def check_expression_deferred(expression: FrozenSQL, *, where: str) -> None:
                     ErrorCode.E_DEFERRED_KEY_REJECTED,
                     (
                         f"{where} uses deferred SQL function "
-                        f"{fn_name}; see specs/deferred/README.md"
+                        f"{fn_name}; see Proposed_OSI_Semantics.md §10"
                     ),
                     context={
                         "where": where,
@@ -339,7 +338,7 @@ def _check_deferred(*, mapping: Any, banned: Iterable[str], location: str) -> No
                 ErrorCode.E_DEFERRED_KEY_REJECTED,
                 (
                     f"{location} uses deferred field {key!r}; "
-                    "see specs/deferred/README.md"
+                    "see Proposed_OSI_Semantics.md §10"
                 ),
                 context={"location": location, "field": key},
             )

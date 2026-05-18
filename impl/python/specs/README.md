@@ -1,9 +1,9 @@
 # Specs
 
 This folder is the **design archive** for the OSI Python reference
-implementation. It holds deferred proposals (under [`deferred/`](deferred/))
-that the Foundation intentionally does **not** adopt — they are kept here
-for design context, not as authoritative specs.
+implementation. It previously held deferred-feature proposal files, which
+have since been removed. The authoritative deferred-features list is
+in `Proposed_OSI_Semantics.md §10`.
 
 The **authoritative semantic standard** that `osi_python` implements lives
 under [`../../../proposals/foundation-v0.1/`](../../../proposals/foundation-v0.1/),
@@ -44,15 +44,14 @@ Each will land as its own follow-up proposal in
 - `SQL_INTERFACE` (`SEMANTIC_VIEW(...)` clause grammar + bare-view SQL)
 - Filter context propagation, metric composition, LOD grain modes, etc.
 
-## Deferred proposal archive (this folder)
+## Deferred features
 
-Under [`deferred/`](deferred/). These are existing OSI proposals that the
-Foundation intentionally does **not** adopt. Each item is an additive
-layer that can be designed once the Foundation is implemented and
-ratified. The implementation MUST reject models that rely on any
-deferred feature with `E_DEFERRED_KEY_REJECTED` per Appendix C / D-009.
+The individual deferred-feature spec files have been removed from this
+directory. The authoritative catalog of deferred features lives in
+[`Proposed_OSI_Semantics.md §10`](../../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md).
 
-See [`deferred/README.md`](deferred/README.md) for the full catalog.
+The implementation rejects any model that uses a deferred feature with
+`E_DEFERRED_KEY_REJECTED` per Appendix C / D-009.
 
 ## Where the implementation lives
 

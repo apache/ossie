@@ -35,7 +35,7 @@ The runnable compliance suite lives in
   dataset-level filters with scope propagation, parameterized window
   frame bounds, `GROUPS` frame mode, windowed-metric composition. The
   full normative list is §10 of the Foundation spec; the design archive
-  is in [`specs/deferred/README.md`](specs/deferred/README.md).
+  is described in `Proposed_OSI_Semantics.md §10`.
   *Model-scoped named filters* (top-level `filters:`) and
   *parameters* (top-level `parameters:`) are part of the Foundation
   and accepted by the parser today — see
@@ -62,7 +62,7 @@ Read in this order:
 | 7 | [`docs/TESTING_STRATEGY.md`](docs/TESTING_STRATEGY.md) | The four-layer test pyramid + mutation testing. |
 | 8 | [`RUNNING_TESTS.md`](RUNNING_TESTS.md) | Running the test suite end-to-end, including mutation testing and the readable report. |
 
-For the deferred-feature design archive see [`specs/deferred/README.md`](specs/deferred/README.md).
+Features not in Foundation v0.1 are listed in `Proposed_OSI_Semantics.md §10`.
 For the error code catalog see [`docs/ERROR_CODES.md`](docs/ERROR_CODES.md).
 
 ---

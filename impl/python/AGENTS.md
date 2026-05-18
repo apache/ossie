@@ -118,7 +118,6 @@ same PR. Don't defer it.
 | No raw-string SQL (no f-strings, no `+`, no `.format()` for SQL) | CI grep + flake8 rule |
 | No file in `src/osi/` exceeds 600 LOC | CI audit |
 | One-way imports: `parsing ← planning ← codegen`; `common` by all | `import-linter` |
-| No import from `specs/deferred/` symbols into `src/osi/` | `import-linter` |
 | Strict mypy; `# type: ignore` requires `[<code>]  # reason: <text>` | flake8 + CI |
 | Tests assert on `error.code`, never on message text | Code review |
 | No `@pytest.skip` without a platform-specific reason | Code review |

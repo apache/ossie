@@ -10,7 +10,7 @@
 #   * named filters
 #   * parameters
 #
-# No deferred features appear here. See specs/deferred/README.md for
+# No deferred features appear here. See Proposed_OSI_Semantics.md §10 for
 # what is intentionally absent.
 semantic_model:
   - name: demo_orders

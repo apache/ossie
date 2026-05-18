@@ -90,6 +90,21 @@ def _qualify_columns(
     return expression
 
 
+def _is_identity_column(expr: exp.Expression, name: str) -> bool:
+    """Return True iff ``expr`` is a bare column reference whose name equals ``name``.
+
+    Used by :func:`_render_source` to suppress redundant ``"x" AS "x"``
+    aliases: when a field's expression is already the bare column name,
+    emitting an alias adds visual noise without any semantic value.
+    Comparison is case-insensitive to match identifier normalisation.
+    """
+    return (
+        isinstance(expr, exp.Column)
+        and not expr.table
+        and (expr.name or "").lower() == name.lower()
+    )
+
+
 def _render_source(payload: SourcePayload, columns: tuple[Column, ...]) -> exp.Select:
     if not payload.source:
         raise OSICodegenError(
@@ -99,9 +114,14 @@ def _render_source(payload: SourcePayload, columns: tuple[Column, ...]) -> exp.S
         )
     projections: list[exp.Expression] = []
     for col in columns:
-        projections.append(
-            exp.alias_(col.expression.expr.copy(), str(col.name), quoted=False)
-        )
+        expr = col.expression.expr.copy()
+        col_name = str(col.name)
+        # Omit the alias when the expression is already a bare column
+        # reference with the same name — ``"x" AS "x"`` adds no information.
+        if _is_identity_column(expr, col_name):
+            projections.append(expr)
+        else:
+            projections.append(exp.alias_(expr, col_name, quoted=False))
     return exp.select(*projections).from_(exp.to_table(payload.source))
 
 

@@ -2,8 +2,7 @@
 
 Takes a YAML file (or string) and produces a frozen, validated
 :class:`SemanticModel` plus a :class:`Namespace` and
-:class:`RelationshipGraph`. Rejects any use of deferred features
-(``specs/deferred/``) with ``E_DEFERRED_KEY_REJECTED``.
+:class:`RelationshipGraph`. Rejects any use of deferred features (``Proposed_OSI_Semantics.md §10``) with ``E_DEFERRED_KEY_REJECTED``.
 
 See ``../../../ARCHITECTURE.md`` §2 for the full contract.
 """

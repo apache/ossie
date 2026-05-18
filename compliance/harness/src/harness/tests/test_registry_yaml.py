@@ -66,8 +66,7 @@ _INTENTIONALLY_ABSENT_DECISIONS: dict[str, str] = {
     # §10's grain-aware-functions proposal.
     "D-015": "Struck in Appendix B; depends on the deferred D-003.",
     # D-017 is deferred — semi-join filtering moved to a follow-up
-    # proposal. The negative test for EXISTS_IN lives in
-    # tests/deferred/ instead.
+    # proposal. The negative test for EXISTS_IN is a rejection test.
     "D-017": "Deferred — Proposed_OSI_Semantics.md table row marked",
 }
 

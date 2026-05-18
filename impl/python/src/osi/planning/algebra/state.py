@@ -55,7 +55,7 @@ class ColumnKind(StrEnum):
        whether a column groups (``DIMENSION``), aggregates
        (``AGGREGATE``), or carries a per-row value (``FACT``). Time
        semantics — period comparisons, rolling windows, snapshot
-       grains — are deferred features (``specs/deferred/``) and have
+       grains — are deferred features (see `Proposed_OSI_Semantics.md §10`) and have
        no algebra-level consequences in this slice. When that
        changes, add ``TIME_DIMENSION`` here *and* update every
        branch on :class:`ColumnKind` to handle it explicitly; do not

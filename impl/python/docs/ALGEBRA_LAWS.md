@@ -47,7 +47,7 @@ scope for the algebra tests; they live in parser tests).
 
 Generates a small, valid `SemanticModel` fixture: 1–4 datasets, 0–6
 relationships drawn from valid equijoin pairings, every dataset has a
-declared `primary_key`. Specifically excludes anything in `specs/deferred/`.
+declared `primary_key`. Specifically excludes deferred features (see `Proposed_OSI_Semantics.md §10`).
 
 ### 1.3 `states()`
 

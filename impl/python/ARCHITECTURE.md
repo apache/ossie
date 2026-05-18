@@ -434,7 +434,7 @@ See [`docs/ERROR_CODES.md`](docs/ERROR_CODES.md) for the full catalog.
 | Support a new SQL dialect | `codegen/dialect.py` + a transpiler variant | Dialects are a render-time concern. |
 | Improve SQL shape (fewer CTEs, better inlining) | `codegen/cte_optimizer.py` | Post-build AST transforms on the rendered tree only. |
 | Improve explainability | `diagnostics/` | Read-only over model + plan. |
-| Implement a previously-deferred feature | First: propose in `specs/`, get sign-off, move the spec out of `specs/deferred/`. Then: parser, planner, possibly a new algebra operator, tests across all four layers. | A deferred feature is not "opt-in"; it's an additive spec change. |
+| Implement a feature from `Proposed_OSI_Semantics.md §10` | First: add to the proposal and get sign-off. Then: update the parser, planner, possibly a new algebra operator, tests across all four layers. | A deferred feature is not "opt-in"; it's an additive spec change. |
 
 If a task pulls you across two layers, that's a signal to rethink the
 abstraction, not to make the layers leaky.

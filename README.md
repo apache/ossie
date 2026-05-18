@@ -44,9 +44,9 @@ Quick start:
 ```bash
 cd impl/python
 pip install -e .
-osi explain examples/models/demo_orders.yaml
-osi plan examples/models/demo_orders.yaml examples/queries/revenue_by_region.json
-osi compile examples/models/demo_orders.yaml examples/queries/revenue_by_region.json --dialect duckdb
+osi describe examples/models/demo_orders.yaml
+osi explain  examples/models/demo_orders.yaml examples/queries/revenue_by_region.json
+osi compile  examples/models/demo_orders.yaml examples/queries/revenue_by_region.json --dialect duckdb
 ```
 
 Deeper reading:
@@ -55,9 +55,10 @@ Deeper reading:
   a worked example end-to-end.
 - [`impl/python/ARCHITECTURE.md`](impl/python/ARCHITECTURE.md) — how
   the parse → plan → codegen pipeline is wired.
-- [`impl/python/SPEC.md`](impl/python/SPEC.md) — the per-feature
-  implementation contract, indexed to the proposal's Conformance
-  Decisions (D-NNN).
+- [`impl/python/SPEC.md`](impl/python/SPEC.md) — the implementation
+  contract: design priorities, what Foundation features are in scope
+  (§2) and explicitly deferred (§3), the algebra proof obligation,
+  expression handling rules, error discipline, and the glossary.
 - [`impl/python/docs/JOIN_ALGEBRA.md`](impl/python/docs/JOIN_ALGEBRA.md)
   — the closed algebra and its laws (the proof surface the planner
   uses to guarantee correctness).

@@ -66,8 +66,8 @@ functions in a metric expression raise `E1105 RESERVED_FOR_DEFERRED`.
 
 | # | Summary | Disposition | Spec anchor |
 |:--|:---|:---|:---|
-| 6–10 | FIXED / INCLUDE / EXCLUDE edge cases. | **Deferred** — LOD is not in the Foundation. | `specs/deferred/OSI_Core_Abstractions.md` |
-| 11–13 | Filter context propagation surprises. | **Deferred** — filter context is not in the Foundation. | `specs/deferred/OSI_Proposal_Resettable_Filters.md` |
+| 6–10 | FIXED / INCLUDE / EXCLUDE edge cases. | **Deferred** — LOD is not in the Foundation. | `Proposed_OSI_Semantics.md §10` |
+| 11–13 | Filter context propagation surprises. | **Deferred** — filter context is not in the Foundation. | `Proposed_OSI_Semantics.md §10` |
 
 Metric and query definitions that reference these features raise `E1105`
 at parse time.

@@ -22,13 +22,20 @@ into any DuckDB / Snowflake / Postgres console.
 
 ## Available scenarios
 
-| Scenario | Model | Query | What it shows |
-|:--|:--|:--|:--|
-| Revenue by region | [`models/demo_orders.yaml`](models/demo_orders.yaml) | [`queries/revenue_by_region.json`](queries/revenue_by_region.json) | Aggregation with cross-dataset enrichment (`orders → customers`) and `ORDER BY` on the measure. |
+### `demo_orders` model
 
-More scenarios will land as the deferred surface is promoted into the
-Foundation tier. See [`models/README.md`](models/README.md) for the
-model catalog.
+| Scenario | Query file | What it shows |
+|:--|:--|:--|
+| Revenue by region | [`queries/revenue_by_region.json`](queries/revenue_by_region.json) | Single metric, cross-dataset enrichment (`orders → customers`), `ORDER BY` on the measure. |
+| Multi-metric by segment | [`queries/multi_metric_by_segment.json`](queries/multi_metric_by_segment.json) | Three measures including a derived metric (`avg_order_value = total_revenue / order_count`). Shows metric composition and the `ADD_COLUMNS` codegen step. |
+| Filtered — completed orders | [`queries/filtered_completed_orders.json`](queries/filtered_completed_orders.json) | `WHERE` predicate pushed to a `FILTER` step before the join. Demonstrates pre-aggregation predicate routing (D-005). |
+
+### `tpcds_thin` model
+
+| Scenario | Query file | What it shows |
+|:--|:--|:--|
+| Sales by item category | [`queries/tpcds_sales_by_category.json`](queries/tpcds_sales_by_category.json) | Single-fact aggregation with `LIMIT`. Three concurrent metrics — `SUM`, `COUNT`, `AVG` — at the `item.i_category` grain. |
+| Sales vs returns by country | [`queries/tpcds_sales_vs_returns.json`](queries/tpcds_sales_vs_returns.json) | **Two-fact query.** `total_sales` (roots at `store_sales`) and `total_returns` (roots at `store_returns`) are planned independently then stitched with a `FULL OUTER JOIN` on the shared `customer` dimension (D-022). |
 
 ## Adapting
 

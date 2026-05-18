@@ -2,22 +2,24 @@
 
 The transpiler emits one CTE per :class:`PlanStep`. Some of those CTEs
 are trivially inline-able (pass-through ``PROJECT`` s, single-use chains
-with no grain-changing operation in between). The optimizer is
-deliberately *conservative*: its contract with goldens is that it can
-*only* produce a plan that yields the same relational result set.
+with no grain-changing operation in between). This module applies two
+conservative transforms; their contract is that the result is always
+relationally equivalent to the input.
 
-The Foundation ships with a single safe transform: **dead CTE removal**
-— if the transpiler ever produces a CTE that isn't referenced from any
-downstream step (possible as planner invariants evolve), drop it. Row-
-preserving inlining is left as a follow-up behind a feature flag to
-keep goldens stable while the rest of Phase 4 solidifies.
+**Pass-through CTE inlining** — if the final (root) CTE is a bare
+``SELECT col1, col2, … FROM step_M`` with no WHERE / GROUP BY / HAVING /
+JOIN, the outer ``SELECT`` can read from ``step_M`` directly, making the
+final PROJECT CTE unnecessary. This is the most common single
+readability gain across every plan shape.
 
-Reachability is computed as a BFS through *live* CTEs: the seed set is
-the step CTEs referenced from the outer ``SELECT`` only, and the
-transitive closure follows references *only inside CTEs already proven
-live*. A previous implementation walked every table in the entire AST,
-which would mark a CTE referenced by a dead CTE as live and defeat the
-purpose of the pass.
+**Dead CTE removal** — if the transpiler ever produces a CTE that is
+not referenced from any downstream step (possible as planner invariants
+evolve), drop it. Reachability is computed as a BFS through *live* CTEs:
+the seed set is the step CTEs referenced from the outer ``SELECT`` only,
+and the transitive closure follows references *only inside CTEs already
+proven live*. A previous implementation walked every table in the
+entire AST, which would mark a CTE referenced by a dead CTE as live and
+defeat the purpose of the pass.
 """
 
 from __future__ import annotations
@@ -27,11 +29,96 @@ from sqlglot import expressions as exp
 from osi.planning.prefixes import is_step_alias
 
 
+def _inline_trivial_final_cte(select: exp.Select) -> exp.Select:
+    """Inline a trivially pass-through root CTE into the outer SELECT.
+
+    Eliminates the pattern::
+
+        step_N AS (SELECT step_M.a, step_M.b FROM step_M),
+        SELECT step_N.a, step_N.b FROM step_N ORDER BY …
+
+    replacing it with::
+
+        SELECT step_M.a, step_M.b FROM step_M ORDER BY …
+
+    Only applied when the root CTE passes every qualification: bare
+    (table-qualified) column references, a single ``FROM``, and no
+    ``WHERE`` / ``GROUP BY`` / ``HAVING`` / ``JOIN``.
+    """
+    with_clause = select.args.get("with")
+    if with_clause is None:
+        return select
+
+    # Identify which CTE alias the outer SELECT reads from.
+    outer_from = select.args.get("from")
+    if outer_from is None:
+        return select
+    from_table = outer_from.this
+    if not isinstance(from_table, exp.Table):
+        return select
+    root_alias = from_table.name
+    if not root_alias or not is_step_alias(root_alias):
+        return select
+
+    # Look up the root CTE in the WITH clause.
+    by_alias: dict[str, exp.CTE] = {
+        _cte_name(c): c for c in with_clause.expressions if _cte_name(c)
+    }
+    root_cte = by_alias.get(root_alias)
+    if root_cte is None:
+        return select
+
+    # Check that the root CTE body is a trivial pass-through.
+    body = root_cte.this
+    if not isinstance(body, exp.Select):
+        return select
+    if any(body.args.get(k) for k in ("where", "group", "having")):
+        return select
+    if body.args.get("joins"):
+        return select
+    inner_from = body.args.get("from")
+    if inner_from is None:
+        return select
+    inner_table = inner_from.this
+    if not isinstance(inner_table, exp.Table) or not is_step_alias(inner_table.name):
+        return select
+    inner_alias = inner_table.name
+    # Every projection must be a bare column reference — no aliases, no
+    # computed expressions.  ``exp.Column`` covers both bare and
+    # table-qualified column references.
+    if not body.expressions or any(
+        not isinstance(p, exp.Column) for p in body.expressions
+    ):
+        return select
+
+    # Safe to inline: rewrite outer SELECT column references and FROM.
+    # Temporarily detach the WITH clause so find_all only visits the
+    # outer SELECT body (not CTE bodies).
+    select.set("with", None)
+    try:
+        for col in select.find_all(exp.Column):
+            if col.table == root_alias:
+                col.set("table", exp.to_identifier(inner_alias))
+    finally:
+        select.set("with", with_clause)
+
+    select.set("from", exp.From(this=exp.to_table(inner_alias)))
+
+    # Drop the now-inlined CTE from the WITH clause.
+    kept = [c for c in with_clause.expressions if _cte_name(c) != root_alias]
+    select.set("with", exp.With(expressions=kept) if kept else None)
+    return select
+
+
 def optimize_ctes(select: exp.Select) -> exp.Select:
     """Apply conservative CTE cleanup to ``select`` and return it.
 
     Idempotent; safe to call twice. Preserves CTE ordering.
+    Applies :func:`_inline_trivial_final_cte` first, then dead-CTE
+    removal, so that inlining can expose additional dead CTEs.
     """
+    select = _inline_trivial_final_cte(select)
+
     with_clause = select.args.get("with")
     if with_clause is None:
         return select
@@ -96,3 +183,4 @@ def _cte_name(cte: exp.CTE) -> str:
 
 
 __all__ = ["optimize_ctes"]
+

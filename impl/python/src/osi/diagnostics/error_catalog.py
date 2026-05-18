@@ -63,7 +63,7 @@ _EXPLANATIONS: dict[ErrorCode, str] = {
         "The model used a YAML key, SQL function, or relationship attribute "
         "that the Foundation v0.1 explicitly defers (e.g. ``EXISTS_IN``, "
         "``referential_integrity``, semi-join filter form). The catalog of deferred "
-        "constructs is in ``specs/deferred/README.md``. The fix is to remove "
+        "constructs is in ``Proposed_OSI_Semantics.md §10``. The fix is to remove "
         "the construct or wait for the proposal that re-introduces it. "
         "(Spec: §10, Appendix B.)"
     ),

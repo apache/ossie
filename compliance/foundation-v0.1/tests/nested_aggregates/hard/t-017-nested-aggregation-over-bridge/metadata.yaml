@@ -2,11 +2,9 @@ name: t-017-nested-aggregation-over-bridge
 description: >-
   Nested ``AVG(AVG(movies.gross))`` over an N:N edge is the deferred
   per-home-row form (D-020(c) / D-027(d)); the Foundation engine MUST
-  reject it with ``E_NESTED_AGGREGATION_DEFERRED``. This complements
-  ``tests/cross_grain/hard/t-005c-nested-avg/`` (1:N case) and
-  ``tests/deferred/easy/t-044-nested-aggregation-rejection/`` (generic
-  rejection) by pinning the deferral specifically at the N:N bridge
-  shape (D-027(d)).
+  reject it with ``E_NESTED_AGGREGATION_DEFERRED``. Complements
+  ``tests/cross_grain/hard/t-005c-nested-avg/`` (1:N case) by
+  pinning the deferral specifically at the N:N bridge shape (D-027(d)).
 area: nested_aggregates
 difficulty: hard
 dataset: f_bridge

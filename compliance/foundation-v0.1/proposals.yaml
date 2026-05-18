@@ -95,7 +95,6 @@ proposals:
   # -------- Deferred (§10 of the Foundation spec) ---------------------
   # Each deferred entry MUST be rejected at parse time with
   # E_DEFERRED_KEY_REJECTED (D-009). The compliance suite ships exactly
-  # one negative test per deferred entry under tests/deferred/.
   - id: explicit_grain_overrides
     status: deferred
     title: Explicit grain overrides (FIXED / INCLUDE / EXCLUDE / TABLE)
@@ -129,32 +128,32 @@ proposals:
   - id: non_equijoin_relationships
     status: deferred
     title: condition / cardinality on relationships (non-equijoin)
-    spec_ref: ../../impl/python/specs/deferred/OSI_Proposal_Non_Equijoins.md
+    spec_ref: "../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10"
     rejection_code: E_DEFERRED_KEY_REJECTED
   - id: asof_range_relationships
     status: deferred
     title: ASOF and Range relationships
-    spec_ref: ../../impl/python/specs/deferred/OSI_Proposal_ASOF_and_Range_Joins.md
+    spec_ref: "../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10"
     rejection_code: E_DEFERRED_KEY_REJECTED
   - id: referential_integrity_keys
     status: deferred
     title: referential_integrity / from_all_rows_match / to_all_rows_match
-    spec_ref: ../../impl/python/specs/deferred/OSI_Proposal_Referential_Integrity.md
+    spec_ref: "../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10"
     rejection_code: E_DEFERRED_KEY_REJECTED
   - id: semi_additive_measures
     status: deferred
     title: Semi-additive measures over snapshot facts
-    spec_ref: ../../impl/python/specs/deferred/OSI_Proposal_Semi_Additive.md
+    spec_ref: "../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10"
     rejection_code: E_DEFERRED_KEY_REJECTED
   - id: grouping_sets
     status: deferred
     title: GROUPING SETS / ROLLUP / CUBE
-    spec_ref: ../../impl/python/specs/deferred/OSI_Proposal_Grouping_Sets.md
+    spec_ref: "../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10"
     rejection_code: E_DEFERRED_KEY_REJECTED
   - id: pivot_operator
     status: deferred
     title: PIVOT / UNPIVOT
-    spec_ref: ../../impl/python/specs/deferred/OSI_Proposal_Pivot_Operator.md
+    spec_ref: "../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10"
     rejection_code: E_DEFERRED_KEY_REJECTED
   - id: parameterized_window_frame_bounds
     status: deferred
@@ -181,7 +180,7 @@ proposals:
   - id: dataset_scope_filters
     status: deferred
     title: Dataset-level filters with scope-based propagation
-    spec_ref: ../../impl/python/specs/deferred/OSI_Proposal_Dataset_Filters.md
+    spec_ref: "../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10"
     rejection_code: E_DEFERRED_KEY_REJECTED
   - id: semi_join_filter_form
     status: deferred

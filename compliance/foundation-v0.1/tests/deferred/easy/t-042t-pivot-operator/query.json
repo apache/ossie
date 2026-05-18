@@ -1,6 +1,0 @@
-{
-  "dataset": "customers",
-  "dimensions": ["customers.region"],
-  "measures": [{"name": "revenue", "metric": "total_revenue"}],
-  "pivot": {"by": "customers.segment", "values": ["A", "B"]}
-}

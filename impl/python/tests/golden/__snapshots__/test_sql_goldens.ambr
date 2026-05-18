@@ -3,11 +3,11 @@
   '''
   WITH "step_000" AS (
     SELECT
-      "order_id" AS "order_id",
-      "customer_id" AS "customer_id",
-      "status" AS "status",
-      "amount" AS "amount",
-      "discount" AS "discount"
+      "order_id",
+      "customer_id",
+      "status",
+      "amount",
+      "discount"
     FROM "sales"."orders"
   ), "step_001" AS (
     SELECT
@@ -29,27 +29,22 @@
     FROM "step_001"
     GROUP BY
       "step_001"."region"
-  ), "step_003" AS (
-    SELECT
-      "step_002"."region",
-      "step_002"."total_revenue"
-    FROM "step_002"
   )
   SELECT
-    "step_003"."region",
-    "step_003"."total_revenue"
-  FROM "step_003"
+    "step_002"."region",
+    "step_002"."total_revenue"
+  FROM "step_002"
   '''
 # ---
 # name: test_sql__enrichment_dim_on_joined_table[duckdb]
   '''
   WITH "step_000" AS (
     SELECT
-      "order_id" AS "order_id",
-      "customer_id" AS "customer_id",
-      "status" AS "status",
-      "amount" AS "amount",
-      "discount" AS "discount"
+      "order_id",
+      "customer_id",
+      "status",
+      "amount",
+      "discount"
     FROM "sales"."orders"
   ), "step_001" AS (
     SELECT
@@ -71,27 +66,22 @@
     FROM "step_001"
     GROUP BY
       "step_001"."region"
-  ), "step_003" AS (
-    SELECT
-      "step_002"."region",
-      "step_002"."total_revenue"
-    FROM "step_002"
   )
   SELECT
-    "step_003"."region",
-    "step_003"."total_revenue"
-  FROM "step_003"
+    "step_002"."region",
+    "step_002"."total_revenue"
+  FROM "step_002"
   '''
 # ---
 # name: test_sql__enrichment_dim_on_joined_table[snowflake]
   '''
   WITH "step_000" AS (
     SELECT
-      "order_id" AS "order_id",
-      "customer_id" AS "customer_id",
-      "status" AS "status",
-      "amount" AS "amount",
-      "discount" AS "discount"
+      "order_id",
+      "customer_id",
+      "status",
+      "amount",
+      "discount"
     FROM "sales"."orders"
   ), "step_001" AS (
     SELECT
@@ -113,27 +103,22 @@
     FROM "step_001"
     GROUP BY
       "step_001"."region"
-  ), "step_003" AS (
-    SELECT
-      "step_002"."region",
-      "step_002"."total_revenue"
-    FROM "step_002"
   )
   SELECT
-    "step_003"."region",
-    "step_003"."total_revenue"
-  FROM "step_003"
+    "step_002"."region",
+    "step_002"."total_revenue"
+  FROM "step_002"
   '''
 # ---
 # name: test_sql__order_by_and_limit[ansi]
   '''
   WITH "step_000" AS (
     SELECT
-      "order_id" AS "order_id",
-      "customer_id" AS "customer_id",
-      "status" AS "status",
-      "amount" AS "amount",
-      "discount" AS "discount"
+      "order_id",
+      "customer_id",
+      "status",
+      "amount",
+      "discount"
     FROM "sales"."orders"
   ), "step_001" AS (
     SELECT
@@ -142,18 +127,13 @@
     FROM "step_000"
     GROUP BY
       "step_000"."status"
-  ), "step_002" AS (
-    SELECT
-      "step_001"."status",
-      "step_001"."total_revenue"
-    FROM "step_001"
   )
   SELECT
-    "step_002"."status",
-    "step_002"."total_revenue"
-  FROM "step_002"
+    "step_001"."status",
+    "step_001"."total_revenue"
+  FROM "step_001"
   ORDER BY
-    "step_002"."total_revenue" DESC NULLS FIRST
+    "step_001"."total_revenue" DESC NULLS FIRST
   LIMIT 10
   '''
 # ---
@@ -161,11 +141,11 @@
   '''
   WITH "step_000" AS (
     SELECT
-      "order_id" AS "order_id",
-      "customer_id" AS "customer_id",
-      "status" AS "status",
-      "amount" AS "amount",
-      "discount" AS "discount"
+      "order_id",
+      "customer_id",
+      "status",
+      "amount",
+      "discount"
     FROM "sales"."orders"
   ), "step_001" AS (
     SELECT
@@ -174,18 +154,13 @@
     FROM "step_000"
     GROUP BY
       "step_000"."status"
-  ), "step_002" AS (
-    SELECT
-      "step_001"."status",
-      "step_001"."total_revenue"
-    FROM "step_001"
   )
   SELECT
-    "step_002"."status",
-    "step_002"."total_revenue"
-  FROM "step_002"
+    "step_001"."status",
+    "step_001"."total_revenue"
+  FROM "step_001"
   ORDER BY
-    "step_002"."total_revenue" DESC NULLS FIRST
+    "step_001"."total_revenue" DESC NULLS FIRST
   LIMIT 10
   '''
 # ---
@@ -193,11 +168,11 @@
   '''
   WITH "step_000" AS (
     SELECT
-      "order_id" AS "order_id",
-      "customer_id" AS "customer_id",
-      "status" AS "status",
-      "amount" AS "amount",
-      "discount" AS "discount"
+      "order_id",
+      "customer_id",
+      "status",
+      "amount",
+      "discount"
     FROM "sales"."orders"
   ), "step_001" AS (
     SELECT
@@ -206,18 +181,13 @@
     FROM "step_000"
     GROUP BY
       "step_000"."status"
-  ), "step_002" AS (
-    SELECT
-      "step_001"."status",
-      "step_001"."total_revenue"
-    FROM "step_001"
   )
   SELECT
-    "step_002"."status",
-    "step_002"."total_revenue"
-  FROM "step_002"
+    "step_001"."status",
+    "step_001"."total_revenue"
+  FROM "step_001"
   ORDER BY
-    "step_002"."total_revenue" DESC
+    "step_001"."total_revenue" DESC
   LIMIT 10
   '''
 # ---
@@ -225,11 +195,11 @@
   '''
   WITH "step_000" AS (
     SELECT
-      "order_id" AS "order_id",
-      "customer_id" AS "customer_id",
-      "status" AS "status",
-      "amount" AS "amount",
-      "discount" AS "discount"
+      "order_id",
+      "customer_id",
+      "status",
+      "amount",
+      "discount"
     FROM "sales"."orders"
   ), "step_001" AS (
     SELECT
@@ -238,27 +208,22 @@
     FROM "step_000"
     GROUP BY
       "step_000"."status"
-  ), "step_002" AS (
-    SELECT
-      "step_001"."status",
-      "step_001"."total_revenue"
-    FROM "step_001"
   )
   SELECT
-    "step_002"."status",
-    "step_002"."total_revenue"
-  FROM "step_002"
+    "step_001"."status",
+    "step_001"."total_revenue"
+  FROM "step_001"
   '''
 # ---
 # name: test_sql__single_table_dim_plus_measure[duckdb]
   '''
   WITH "step_000" AS (
     SELECT
-      "order_id" AS "order_id",
-      "customer_id" AS "customer_id",
-      "status" AS "status",
-      "amount" AS "amount",
-      "discount" AS "discount"
+      "order_id",
+      "customer_id",
+      "status",
+      "amount",
+      "discount"
     FROM "sales"."orders"
   ), "step_001" AS (
     SELECT
@@ -267,27 +232,22 @@
     FROM "step_000"
     GROUP BY
       "step_000"."status"
-  ), "step_002" AS (
-    SELECT
-      "step_001"."status",
-      "step_001"."total_revenue"
-    FROM "step_001"
   )
   SELECT
-    "step_002"."status",
-    "step_002"."total_revenue"
-  FROM "step_002"
+    "step_001"."status",
+    "step_001"."total_revenue"
+  FROM "step_001"
   '''
 # ---
 # name: test_sql__single_table_dim_plus_measure[snowflake]
   '''
   WITH "step_000" AS (
     SELECT
-      "order_id" AS "order_id",
-      "customer_id" AS "customer_id",
-      "status" AS "status",
-      "amount" AS "amount",
-      "discount" AS "discount"
+      "order_id",
+      "customer_id",
+      "status",
+      "amount",
+      "discount"
     FROM "sales"."orders"
   ), "step_001" AS (
     SELECT
@@ -296,11 +256,256 @@
     FROM "step_000"
     GROUP BY
       "step_000"."status"
+  )
+  SELECT
+    "step_001"."status",
+    "step_001"."total_revenue"
+  FROM "step_001"
+  '''
+# ---
+# name: test_sql__two_fact_merge_on_shared_dimension[ansi]
+  '''
+  WITH "step_000" AS (
+    SELECT
+      "order_id",
+      "customer_id",
+      "status",
+      "amount",
+      "discount"
+    FROM "sales"."orders"
+  ), "step_001" AS (
+    SELECT
+      "step_000"."order_id",
+      "step_000"."customer_id",
+      "step_000"."status",
+      "step_000"."amount",
+      "step_000"."discount",
+      "step_000_r"."id" AS "id",
+      "step_000_r"."region" AS "region",
+      "step_000_r"."market_segment" AS "segment"
+    FROM "step_000"
+    LEFT JOIN "sales"."customers" AS "step_000_r"
+      ON "step_000"."customer_id" = "step_000_r"."id"
+  ), "step_002" AS (
+    SELECT
+      "step_001"."region",
+      SUM("step_001"."amount") AS "total_revenue"
+    FROM "step_001"
+    GROUP BY
+      "step_001"."region"
+  ), "step_003" AS (
+    SELECT
+      "return_id",
+      "customer_id",
+      "order_id",
+      "refund_amount"
+    FROM "sales"."returns"
+  ), "step_004" AS (
+    SELECT
+      "step_003"."return_id",
+      "step_003"."customer_id",
+      "step_003"."order_id",
+      "step_003"."refund_amount",
+      "step_003_r"."id" AS "id",
+      "step_003_r"."region" AS "region",
+      "step_003_r"."market_segment" AS "segment"
+    FROM "step_003"
+    LEFT JOIN "sales"."customers" AS "step_003_r"
+      ON "step_003"."customer_id" = "step_003_r"."id"
+  ), "step_005" AS (
+    SELECT
+      "step_004"."region",
+      SUM("step_004"."refund_amount") AS "total_refunds"
+    FROM "step_004"
+    GROUP BY
+      "step_004"."region"
+  ), "step_006" AS (
+    SELECT
+      COALESCE("step_002"."region", "step_005"."region") AS "region",
+      "step_002"."total_revenue",
+      "step_005"."total_refunds"
+    FROM "step_002"
+    FULL OUTER JOIN "step_005"
+      ON "step_002"."region" = "step_005"."region"
+  )
+  SELECT
+    "step_006"."region",
+    "step_006"."total_revenue",
+    "step_006"."total_refunds"
+  FROM "step_006"
+  '''
+# ---
+# name: test_sql__two_fact_merge_on_shared_dimension[duckdb]
+  '''
+  WITH "step_000" AS (
+    SELECT
+      "order_id",
+      "customer_id",
+      "status",
+      "amount",
+      "discount"
+    FROM "sales"."orders"
+  ), "step_001" AS (
+    SELECT
+      "step_000"."order_id",
+      "step_000"."customer_id",
+      "step_000"."status",
+      "step_000"."amount",
+      "step_000"."discount",
+      "step_000_r"."id" AS "id",
+      "step_000_r"."region" AS "region",
+      "step_000_r"."market_segment" AS "segment"
+    FROM "step_000"
+    LEFT JOIN "sales"."customers" AS "step_000_r"
+      ON "step_000"."customer_id" = "step_000_r"."id"
+  ), "step_002" AS (
+    SELECT
+      "step_001"."region",
+      SUM("step_001"."amount") AS "total_revenue"
+    FROM "step_001"
+    GROUP BY
+      "step_001"."region"
+  ), "step_003" AS (
+    SELECT
+      "return_id",
+      "customer_id",
+      "order_id",
+      "refund_amount"
+    FROM "sales"."returns"
+  ), "step_004" AS (
+    SELECT
+      "step_003"."return_id",
+      "step_003"."customer_id",
+      "step_003"."order_id",
+      "step_003"."refund_amount",
+      "step_003_r"."id" AS "id",
+      "step_003_r"."region" AS "region",
+      "step_003_r"."market_segment" AS "segment"
+    FROM "step_003"
+    LEFT JOIN "sales"."customers" AS "step_003_r"
+      ON "step_003"."customer_id" = "step_003_r"."id"
+  ), "step_005" AS (
+    SELECT
+      "step_004"."region",
+      SUM("step_004"."refund_amount") AS "total_refunds"
+    FROM "step_004"
+    GROUP BY
+      "step_004"."region"
+  ), "step_006" AS (
+    SELECT
+      COALESCE("step_002"."region", "step_005"."region") AS "region",
+      "step_002"."total_revenue",
+      "step_005"."total_refunds"
+    FROM "step_002"
+    FULL OUTER JOIN "step_005"
+      ON "step_002"."region" = "step_005"."region"
+  )
+  SELECT
+    "step_006"."region",
+    "step_006"."total_revenue",
+    "step_006"."total_refunds"
+  FROM "step_006"
+  '''
+# ---
+# name: test_sql__two_fact_merge_on_shared_dimension[snowflake]
+  '''
+  WITH "step_000" AS (
+    SELECT
+      "order_id",
+      "customer_id",
+      "status",
+      "amount",
+      "discount"
+    FROM "sales"."orders"
+  ), "step_001" AS (
+    SELECT
+      "step_000"."order_id",
+      "step_000"."customer_id",
+      "step_000"."status",
+      "step_000"."amount",
+      "step_000"."discount",
+      "step_000_r"."id" AS "id",
+      "step_000_r"."region" AS "region",
+      "step_000_r"."market_segment" AS "segment"
+    FROM "step_000"
+    LEFT JOIN "sales"."customers" AS "step_000_r"
+      ON "step_000"."customer_id" = "step_000_r"."id"
+  ), "step_002" AS (
+    SELECT
+      "step_001"."region",
+      SUM("step_001"."amount") AS "total_revenue"
+    FROM "step_001"
+    GROUP BY
+      "step_001"."region"
+  ), "step_003" AS (
+    SELECT
+      "return_id",
+      "customer_id",
+      "order_id",
+      "refund_amount"
+    FROM "sales"."returns"
+  ), "step_004" AS (
+    SELECT
+      "step_003"."return_id",
+      "step_003"."customer_id",
+      "step_003"."order_id",
+      "step_003"."refund_amount",
+      "step_003_r"."id" AS "id",
+      "step_003_r"."region" AS "region",
+      "step_003_r"."market_segment" AS "segment"
+    FROM "step_003"
+    LEFT JOIN "sales"."customers" AS "step_003_r"
+      ON "step_003"."customer_id" = "step_003_r"."id"
+  ), "step_005" AS (
+    SELECT
+      "step_004"."region",
+      SUM("step_004"."refund_amount") AS "total_refunds"
+    FROM "step_004"
+    GROUP BY
+      "step_004"."region"
+  ), "step_006" AS (
+    SELECT
+      COALESCE("step_002"."region", "step_005"."region") AS "region",
+      "step_002"."total_revenue",
+      "step_005"."total_refunds"
+    FROM "step_002"
+    FULL OUTER JOIN "step_005"
+      ON "step_002"."region" = "step_005"."region"
+  )
+  SELECT
+    "step_006"."region",
+    "step_006"."total_revenue",
+    "step_006"."total_refunds"
+  FROM "step_006"
+  '''
+# ---
+# name: test_sql__where_pushed_below_aggregate[ansi]
+  '''
+  WITH "step_000" AS (
+    SELECT
+      "order_id",
+      "customer_id",
+      "status",
+      "amount",
+      "discount"
+    FROM "sales"."orders"
+  ), "step_001" AS (
+    SELECT
+      "step_000"."order_id",
+      "step_000"."customer_id",
+      "step_000"."status",
+      "step_000"."amount",
+      "step_000"."discount"
+    FROM "step_000"
+    WHERE
+      "step_000"."amount" > 100
   ), "step_002" AS (
     SELECT
       "step_001"."status",
-      "step_001"."total_revenue"
+      SUM("step_001"."amount") AS "total_revenue"
     FROM "step_001"
+    GROUP BY
+      "step_001"."status"
   )
   SELECT
     "step_002"."status",
@@ -308,288 +513,15 @@
   FROM "step_002"
   '''
 # ---
-# name: test_sql__two_fact_merge_on_shared_dimension[ansi]
-  '''
-  WITH "step_000" AS (
-    SELECT
-      "order_id" AS "order_id",
-      "customer_id" AS "customer_id",
-      "status" AS "status",
-      "amount" AS "amount",
-      "discount" AS "discount"
-    FROM "sales"."orders"
-  ), "step_001" AS (
-    SELECT
-      "step_000"."order_id",
-      "step_000"."customer_id",
-      "step_000"."status",
-      "step_000"."amount",
-      "step_000"."discount",
-      "step_000_r"."id" AS "id",
-      "step_000_r"."region" AS "region",
-      "step_000_r"."market_segment" AS "segment"
-    FROM "step_000"
-    LEFT JOIN "sales"."customers" AS "step_000_r"
-      ON "step_000"."customer_id" = "step_000_r"."id"
-  ), "step_002" AS (
-    SELECT
-      "step_001"."region",
-      SUM("step_001"."amount") AS "total_revenue"
-    FROM "step_001"
-    GROUP BY
-      "step_001"."region"
-  ), "step_003" AS (
-    SELECT
-      "return_id" AS "return_id",
-      "customer_id" AS "customer_id",
-      "order_id" AS "order_id",
-      "refund_amount" AS "refund_amount"
-    FROM "sales"."returns"
-  ), "step_004" AS (
-    SELECT
-      "step_003"."return_id",
-      "step_003"."customer_id",
-      "step_003"."order_id",
-      "step_003"."refund_amount",
-      "step_003_r"."id" AS "id",
-      "step_003_r"."region" AS "region",
-      "step_003_r"."market_segment" AS "segment"
-    FROM "step_003"
-    LEFT JOIN "sales"."customers" AS "step_003_r"
-      ON "step_003"."customer_id" = "step_003_r"."id"
-  ), "step_005" AS (
-    SELECT
-      "step_004"."region",
-      SUM("step_004"."refund_amount") AS "total_refunds"
-    FROM "step_004"
-    GROUP BY
-      "step_004"."region"
-  ), "step_006" AS (
-    SELECT
-      COALESCE("step_002"."region", "step_005"."region") AS "region",
-      "step_002"."total_revenue",
-      "step_005"."total_refunds"
-    FROM "step_002"
-    FULL OUTER JOIN "step_005"
-      ON "step_002"."region" = "step_005"."region"
-  ), "step_007" AS (
-    SELECT
-      "step_006"."region",
-      "step_006"."total_revenue",
-      "step_006"."total_refunds"
-    FROM "step_006"
-  )
-  SELECT
-    "step_007"."region",
-    "step_007"."total_revenue",
-    "step_007"."total_refunds"
-  FROM "step_007"
-  '''
-# ---
-# name: test_sql__two_fact_merge_on_shared_dimension[duckdb]
-  '''
-  WITH "step_000" AS (
-    SELECT
-      "order_id" AS "order_id",
-      "customer_id" AS "customer_id",
-      "status" AS "status",
-      "amount" AS "amount",
-      "discount" AS "discount"
-    FROM "sales"."orders"
-  ), "step_001" AS (
-    SELECT
-      "step_000"."order_id",
-      "step_000"."customer_id",
-      "step_000"."status",
-      "step_000"."amount",
-      "step_000"."discount",
-      "step_000_r"."id" AS "id",
-      "step_000_r"."region" AS "region",
-      "step_000_r"."market_segment" AS "segment"
-    FROM "step_000"
-    LEFT JOIN "sales"."customers" AS "step_000_r"
-      ON "step_000"."customer_id" = "step_000_r"."id"
-  ), "step_002" AS (
-    SELECT
-      "step_001"."region",
-      SUM("step_001"."amount") AS "total_revenue"
-    FROM "step_001"
-    GROUP BY
-      "step_001"."region"
-  ), "step_003" AS (
-    SELECT
-      "return_id" AS "return_id",
-      "customer_id" AS "customer_id",
-      "order_id" AS "order_id",
-      "refund_amount" AS "refund_amount"
-    FROM "sales"."returns"
-  ), "step_004" AS (
-    SELECT
-      "step_003"."return_id",
-      "step_003"."customer_id",
-      "step_003"."order_id",
-      "step_003"."refund_amount",
-      "step_003_r"."id" AS "id",
-      "step_003_r"."region" AS "region",
-      "step_003_r"."market_segment" AS "segment"
-    FROM "step_003"
-    LEFT JOIN "sales"."customers" AS "step_003_r"
-      ON "step_003"."customer_id" = "step_003_r"."id"
-  ), "step_005" AS (
-    SELECT
-      "step_004"."region",
-      SUM("step_004"."refund_amount") AS "total_refunds"
-    FROM "step_004"
-    GROUP BY
-      "step_004"."region"
-  ), "step_006" AS (
-    SELECT
-      COALESCE("step_002"."region", "step_005"."region") AS "region",
-      "step_002"."total_revenue",
-      "step_005"."total_refunds"
-    FROM "step_002"
-    FULL OUTER JOIN "step_005"
-      ON "step_002"."region" = "step_005"."region"
-  ), "step_007" AS (
-    SELECT
-      "step_006"."region",
-      "step_006"."total_revenue",
-      "step_006"."total_refunds"
-    FROM "step_006"
-  )
-  SELECT
-    "step_007"."region",
-    "step_007"."total_revenue",
-    "step_007"."total_refunds"
-  FROM "step_007"
-  '''
-# ---
-# name: test_sql__two_fact_merge_on_shared_dimension[snowflake]
-  '''
-  WITH "step_000" AS (
-    SELECT
-      "order_id" AS "order_id",
-      "customer_id" AS "customer_id",
-      "status" AS "status",
-      "amount" AS "amount",
-      "discount" AS "discount"
-    FROM "sales"."orders"
-  ), "step_001" AS (
-    SELECT
-      "step_000"."order_id",
-      "step_000"."customer_id",
-      "step_000"."status",
-      "step_000"."amount",
-      "step_000"."discount",
-      "step_000_r"."id" AS "id",
-      "step_000_r"."region" AS "region",
-      "step_000_r"."market_segment" AS "segment"
-    FROM "step_000"
-    LEFT JOIN "sales"."customers" AS "step_000_r"
-      ON "step_000"."customer_id" = "step_000_r"."id"
-  ), "step_002" AS (
-    SELECT
-      "step_001"."region",
-      SUM("step_001"."amount") AS "total_revenue"
-    FROM "step_001"
-    GROUP BY
-      "step_001"."region"
-  ), "step_003" AS (
-    SELECT
-      "return_id" AS "return_id",
-      "customer_id" AS "customer_id",
-      "order_id" AS "order_id",
-      "refund_amount" AS "refund_amount"
-    FROM "sales"."returns"
-  ), "step_004" AS (
-    SELECT
-      "step_003"."return_id",
-      "step_003"."customer_id",
-      "step_003"."order_id",
-      "step_003"."refund_amount",
-      "step_003_r"."id" AS "id",
-      "step_003_r"."region" AS "region",
-      "step_003_r"."market_segment" AS "segment"
-    FROM "step_003"
-    LEFT JOIN "sales"."customers" AS "step_003_r"
-      ON "step_003"."customer_id" = "step_003_r"."id"
-  ), "step_005" AS (
-    SELECT
-      "step_004"."region",
-      SUM("step_004"."refund_amount") AS "total_refunds"
-    FROM "step_004"
-    GROUP BY
-      "step_004"."region"
-  ), "step_006" AS (
-    SELECT
-      COALESCE("step_002"."region", "step_005"."region") AS "region",
-      "step_002"."total_revenue",
-      "step_005"."total_refunds"
-    FROM "step_002"
-    FULL OUTER JOIN "step_005"
-      ON "step_002"."region" = "step_005"."region"
-  ), "step_007" AS (
-    SELECT
-      "step_006"."region",
-      "step_006"."total_revenue",
-      "step_006"."total_refunds"
-    FROM "step_006"
-  )
-  SELECT
-    "step_007"."region",
-    "step_007"."total_revenue",
-    "step_007"."total_refunds"
-  FROM "step_007"
-  '''
-# ---
-# name: test_sql__where_pushed_below_aggregate[ansi]
-  '''
-  WITH "step_000" AS (
-    SELECT
-      "order_id" AS "order_id",
-      "customer_id" AS "customer_id",
-      "status" AS "status",
-      "amount" AS "amount",
-      "discount" AS "discount"
-    FROM "sales"."orders"
-  ), "step_001" AS (
-    SELECT
-      "step_000"."order_id",
-      "step_000"."customer_id",
-      "step_000"."status",
-      "step_000"."amount",
-      "step_000"."discount"
-    FROM "step_000"
-    WHERE
-      "step_000"."amount" > 100
-  ), "step_002" AS (
-    SELECT
-      "step_001"."status",
-      SUM("step_001"."amount") AS "total_revenue"
-    FROM "step_001"
-    GROUP BY
-      "step_001"."status"
-  ), "step_003" AS (
-    SELECT
-      "step_002"."status",
-      "step_002"."total_revenue"
-    FROM "step_002"
-  )
-  SELECT
-    "step_003"."status",
-    "step_003"."total_revenue"
-  FROM "step_003"
-  '''
-# ---
 # name: test_sql__where_pushed_below_aggregate[duckdb]
   '''
   WITH "step_000" AS (
     SELECT
-      "order_id" AS "order_id",
-      "customer_id" AS "customer_id",
-      "status" AS "status",
-      "amount" AS "amount",
-      "discount" AS "discount"
+      "order_id",
+      "customer_id",
+      "status",
+      "amount",
+      "discount"
     FROM "sales"."orders"
   ), "step_001" AS (
     SELECT
@@ -608,27 +540,22 @@
     FROM "step_001"
     GROUP BY
       "step_001"."status"
-  ), "step_003" AS (
-    SELECT
-      "step_002"."status",
-      "step_002"."total_revenue"
-    FROM "step_002"
   )
   SELECT
-    "step_003"."status",
-    "step_003"."total_revenue"
-  FROM "step_003"
+    "step_002"."status",
+    "step_002"."total_revenue"
+  FROM "step_002"
   '''
 # ---
 # name: test_sql__where_pushed_below_aggregate[snowflake]
   '''
   WITH "step_000" AS (
     SELECT
-      "order_id" AS "order_id",
-      "customer_id" AS "customer_id",
-      "status" AS "status",
-      "amount" AS "amount",
-      "discount" AS "discount"
+      "order_id",
+      "customer_id",
+      "status",
+      "amount",
+      "discount"
     FROM "sales"."orders"
   ), "step_001" AS (
     SELECT
@@ -647,15 +574,10 @@
     FROM "step_001"
     GROUP BY
       "step_001"."status"
-  ), "step_003" AS (
-    SELECT
-      "step_002"."status",
-      "step_002"."total_revenue"
-    FROM "step_002"
   )
   SELECT
-    "step_003"."status",
-    "step_003"."total_revenue"
-  FROM "step_003"
+    "step_002"."status",
+    "step_002"."total_revenue"
+  FROM "step_002"
   '''
 # ---

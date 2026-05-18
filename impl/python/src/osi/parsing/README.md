@@ -10,7 +10,7 @@ Takes a YAML path or string and produces a frozen, validated
 2. Any use of a deferred feature (see §10 of
    [`Proposed_OSI_Semantics.md`](../../../../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md)
    and the design archive in
-   [`../../../specs/deferred/`](../../../specs/deferred/)) raises
+   (`Proposed_OSI_Semantics.md §10`) raises
    `E_DEFERRED_KEY_REJECTED`.
 3. Parsing imports nothing from `osi.planning` or `osi.codegen`.
 

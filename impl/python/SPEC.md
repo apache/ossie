@@ -233,7 +233,7 @@ The canonical compliance vectors live in
 ## 3. What is out of scope (deferred)
 
 Authoritative deferred-features list: §10 of `../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md`.
-Design archive: [`specs/deferred/`](specs/deferred/).
+Features deferred from Foundation v0.1 are enumerated in `Proposed_OSI_Semantics.md §10`.
 
 Summary:
 
