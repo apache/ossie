@@ -25,6 +25,7 @@
         <logback.version>1.5.25</logback.version>
         <json-schema-validator.version>1.5.5</json-schema-validator.version>
         <maven-shade-plugin.version>3.6.0</maven-shade-plugin.version>
+        <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
     </properties>
 
     <dependencies>
@@ -69,6 +70,39 @@
 
     <build>
         <plugins>
+            <!--
+              Copy the canonical OSI core-spec JSON schema into this module's
+              classpath under /schemas/osi-schema.json so SchemaValidator can
+              load it at runtime. Single source of truth lives in
+              ../../core-spec/osi-schema.json; do not maintain a duplicate
+              copy in this module's src/main/resources.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>${maven-resources-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>copy-osi-core-spec-schema</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.outputDirectory}/schemas</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.basedir}/../../core-spec</directory>
+                                    <includes>
+                                        <include>osi-schema.json</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
