@@ -1,0 +1,1999 @@
+name: Palantir model
+concepts:
+  - name: Example_Runway
+    identifier:
+      - concept: String
+        ref_by: id
+  - name: Example_RouteAlertComment
+    identifier:
+      - concept: String
+        ref_by: id
+  - name: Example_Aircraft
+    identifier:
+      - concept: String
+        ref_by: tailnum
+  - name: Example_Airport
+    identifier:
+      - concept: String
+        ref_by: airportid
+  - name: Example_Flight
+    identifier:
+      - concept: String
+        ref_by: flightid
+  - name: Example_Carrier
+    identifier:
+      - concept: String
+        ref_by: airlineid
+  - name: Example_FlightSensor
+    identifier:
+      - concept: String
+        ref_by: uniquesensorflightid
+  - name: Example_RouteAlert
+    identifier:
+      - concept: String
+        ref_by: id
+  - name: Example_Explainer
+    identifier:
+      - concept: String
+        ref_by: id
+  - name: Example_Log_UpdateRouteAlertStatus
+    identifier:
+      - concept: String
+        ref_by: actionrid
+  - name: Example_Route
+    identifier:
+      - concept: String
+        ref_by: routeid
+relationships:
+  - name: shapelength
+    container: Example_Runway
+    relates:
+      - concept: Example_Runway
+      - concept: Float
+    verbalizes: '{Example_Runway} shapeLength {Float}'
+    multiplicity: ManyToOne
+  - name: airportid
+    container: Example_Runway
+    relates:
+      - concept: Example_Runway
+      - concept: String
+    verbalizes: '{Example_Runway} airportId {String}'
+    multiplicity: ManyToOne
+  - name: length
+    container: Example_Runway
+    relates:
+      - concept: Example_Runway
+      - concept: Float
+    verbalizes: '{Example_Runway} length {Float}'
+    multiplicity: ManyToOne
+  - name: geometry
+    container: Example_Runway
+    relates:
+      - concept: Example_Runway
+      - concept: String
+    verbalizes: '{Example_Runway} geometry {String}'
+    multiplicity: ManyToOne
+  - name: designator
+    container: Example_Runway
+    relates:
+      - concept: Example_Runway
+      - concept: String
+    verbalizes: '{Example_Runway} designator {String}'
+    multiplicity: ManyToOne
+  - name: alertid
+    container: Example_RouteAlertComment
+    relates:
+      - concept: Example_RouteAlertComment
+      - concept: String
+    verbalizes: '{Example_RouteAlertComment} alertId {String}'
+    multiplicity: ManyToOne
+  - name: type
+    container: Example_RouteAlertComment
+    relates:
+      - concept: Example_RouteAlertComment
+      - concept: String
+    verbalizes: '{Example_RouteAlertComment} type {String}'
+    multiplicity: ManyToOne
+  - name: createdby
+    container: Example_RouteAlertComment
+    relates:
+      - concept: Example_RouteAlertComment
+      - concept: String
+    verbalizes: '{Example_RouteAlertComment} createdBy {String}'
+    multiplicity: ManyToOne
+  - name: title
+    container: Example_RouteAlertComment
+    relates:
+      - concept: Example_RouteAlertComment
+      - concept: String
+    verbalizes: '{Example_RouteAlertComment} title {String}'
+    multiplicity: ManyToOne
+  - name: comment
+    container: Example_RouteAlertComment
+    relates:
+      - concept: Example_RouteAlertComment
+      - concept: String
+    verbalizes: '{Example_RouteAlertComment} comment {String}'
+    multiplicity: ManyToOne
+  - name: createdat
+    container: Example_RouteAlertComment
+    relates:
+      - concept: Example_RouteAlertComment
+      - concept: DateTime
+    verbalizes: '{Example_RouteAlertComment} createdAt {DateTime}'
+    multiplicity: ManyToOne
+  - name: flightcount
+    container: Example_Aircraft
+    relates:
+      - concept: Example_Aircraft
+      - concept: Integer
+    verbalizes: '{Example_Aircraft} flightCount {Integer}'
+    multiplicity: ManyToOne
+  - name: serialnumber
+    container: Example_Aircraft
+    relates:
+      - concept: Example_Aircraft
+      - concept: String
+    verbalizes: '{Example_Aircraft} serialNumber {String}'
+    multiplicity: ManyToOne
+  - name: modescodehex
+    container: Example_Aircraft
+    relates:
+      - concept: Example_Aircraft
+      - concept: String
+    verbalizes: '{Example_Aircraft} modeScodeHex {String}'
+    multiplicity: ManyToOne
+  - name: title
+    container: Example_Aircraft
+    relates:
+      - concept: Example_Aircraft
+      - concept: String
+    verbalizes: '{Example_Aircraft} title {String}'
+    multiplicity: ManyToOne
+  - name: numberofseats
+    container: Example_Aircraft
+    relates:
+      - concept: Example_Aircraft
+      - concept: Integer
+    verbalizes: '{Example_Aircraft} numberOfSeats {Integer}'
+    multiplicity: ManyToOne
+  - name: opcarrierairlineid
+    container: Example_Aircraft
+    relates:
+      - concept: Example_Aircraft
+      - concept: String
+    verbalizes: '{Example_Aircraft} opCarrierAirlineId {String}'
+    multiplicity: ManyToOne
+  - name: carriername
+    container: Example_Aircraft
+    relates:
+      - concept: Example_Aircraft
+      - concept: String
+    verbalizes: '{Example_Aircraft} carrierName {String}'
+    multiplicity: ManyToOne
+  - name: modescode
+    container: Example_Aircraft
+    relates:
+      - concept: Example_Aircraft
+      - concept: Integer
+    verbalizes: '{Example_Aircraft} modeScode {Integer}'
+    multiplicity: ManyToOne
+  - name: completeflighthistory
+    container: Example_Aircraft
+    relates:
+      - concept: Example_Aircraft
+      - concept: Boolean
+    verbalizes: '{Example_Aircraft} completeFlightHistory {Boolean}'
+    multiplicity: ManyToOne
+  - name: manufacturer
+    container: Example_Aircraft
+    relates:
+      - concept: Example_Aircraft
+      - concept: String
+    verbalizes: '{Example_Aircraft} manufacturer {String}'
+    multiplicity: ManyToOne
+  - name: latestflightid
+    container: Example_Aircraft
+    relates:
+      - concept: Example_Aircraft
+      - concept: String
+    verbalizes: '{Example_Aircraft} latestFlightId {String}'
+    multiplicity: ManyToOne
+  - name: model
+    container: Example_Aircraft
+    relates:
+      - concept: Example_Aircraft
+      - concept: String
+    verbalizes: '{Example_Aircraft} model {String}'
+    multiplicity: ManyToOne
+  - name: carrieriatacode
+    container: Example_Aircraft
+    relates:
+      - concept: Example_Aircraft
+      - concept: String
+    verbalizes: '{Example_Aircraft} carrierIataCode {String}'
+    multiplicity: ManyToOne
+  - name: yearmfr
+    container: Example_Aircraft
+    relates:
+      - concept: Example_Aircraft
+      - concept: String
+    verbalizes: '{Example_Aircraft} yearMfr {String}'
+    multiplicity: ManyToOne
+  - name: acquisitiondate
+    container: Example_Aircraft
+    relates:
+      - concept: Example_Aircraft
+      - concept: DateTime
+    verbalizes: '{Example_Aircraft} acquisitionDate {DateTime}'
+    multiplicity: ManyToOne
+  - name: capacityinpounds
+    container: Example_Aircraft
+    relates:
+      - concept: Example_Aircraft
+      - concept: Integer
+    verbalizes: '{Example_Aircraft} capacityInPounds {Integer}'
+    multiplicity: ManyToOne
+  - name: airportstatecode
+    container: Example_Airport
+    relates:
+      - concept: Example_Airport
+      - concept: String
+    verbalizes: '{Example_Airport} airportStateCode {String}'
+    multiplicity: ManyToOne
+  - name: arrivingflightcount
+    container: Example_Airport
+    relates:
+      - concept: Example_Airport
+      - concept: Integer
+    verbalizes: '{Example_Airport} arrivingFlightCount {Integer}'
+    multiplicity: ManyToOne
+  - name: displaycitymarketnamefull
+    container: Example_Airport
+    relates:
+      - concept: Example_Airport
+      - concept: String
+    verbalizes: '{Example_Airport} displayCityMarketNameFull {String}'
+    multiplicity: ManyToOne
+  - name: averagedepdelay
+    container: Example_Airport
+    relates:
+      - concept: Example_Airport
+      - concept: Float
+    verbalizes: '{Example_Airport} averageDepDelay {Float}'
+    multiplicity: ManyToOne
+  - name: longitude
+    container: Example_Airport
+    relates:
+      - concept: Example_Airport
+      - concept: Float
+    verbalizes: '{Example_Airport} longitude {Float}'
+    multiplicity: ManyToOne
+  - name: airportstartdate
+    container: Example_Airport
+    relates:
+      - concept: Example_Airport
+      - concept: DateTime
+    verbalizes: '{Example_Airport} airportStartDate {DateTime}'
+    multiplicity: ManyToOne
+  - name: airportstatename
+    container: Example_Airport
+    relates:
+      - concept: Example_Airport
+      - concept: String
+    verbalizes: '{Example_Airport} airportStateName {String}'
+    multiplicity: ManyToOne
+  - name: dailyavgdepdelay
+    container: Example_Airport
+    relates:
+      - concept: Example_Airport
+      - concept: String
+    verbalizes: '{Example_Airport} dailyAvgDepDelay {String}'
+    multiplicity: ManyToOne
+  - name: averagearrdelay
+    container: Example_Airport
+    relates:
+      - concept: Example_Airport
+      - concept: Float
+    verbalizes: '{Example_Airport} averageArrDelay {Float}'
+    multiplicity: ManyToOne
+  - name: displayairportcitynamefull
+    container: Example_Airport
+    relates:
+      - concept: Example_Airport
+      - concept: String
+    verbalizes: '{Example_Airport} displayAirportCityNameFull {String}'
+    multiplicity: ManyToOne
+  - name: dailyavgarrdelay
+    container: Example_Airport
+    relates:
+      - concept: Example_Airport
+      - concept: String
+    verbalizes: '{Example_Airport} dailyAvgArrDelay {String}'
+    multiplicity: ManyToOne
+  - name: dailycountofflights
+    container: Example_Airport
+    relates:
+      - concept: Example_Airport
+      - concept: String
+    verbalizes: '{Example_Airport} dailyCountOfFlights {String}'
+    multiplicity: ManyToOne
+  - name: completeflighthistory
+    container: Example_Airport
+    relates:
+      - concept: Example_Airport
+      - concept: Boolean
+    verbalizes: '{Example_Airport} completeFlightHistory {Boolean}'
+    multiplicity: ManyToOne
+  - name: displayairportname
+    container: Example_Airport
+    relates:
+      - concept: Example_Airport
+      - concept: String
+    verbalizes: '{Example_Airport} displayAirportName {String}'
+    multiplicity: ManyToOne
+  - name: airport
+    container: Example_Airport
+    relates:
+      - concept: Example_Airport
+      - concept: String
+    verbalizes: '{Example_Airport} airport {String}'
+    multiplicity: ManyToOne
+  - name: departingflightcount
+    container: Example_Airport
+    relates:
+      - concept: Example_Airport
+      - concept: Integer
+    verbalizes: '{Example_Airport} departingFlightCount {Integer}'
+    multiplicity: ManyToOne
+  - name: geopoint
+    container: Example_Airport
+    relates:
+      - concept: Example_Airport
+      - concept: String
+    verbalizes: '{Example_Airport} geopoint {String}'
+    multiplicity: ManyToOne
+  - name: latitude
+    container: Example_Airport
+    relates:
+      - concept: Example_Airport
+      - concept: Float
+    verbalizes: '{Example_Airport} latitude {Float}'
+    multiplicity: ManyToOne
+  - name: depdelay
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Integer
+    verbalizes: '{Example_Flight} depDelay {Integer}'
+    multiplicity: ManyToOne
+  - name: airtime
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Float
+    verbalizes: '{Example_Flight} airTime {Float}'
+    multiplicity: ManyToOne
+  - name: flightnumber
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} flightNumber {String}'
+    multiplicity: ManyToOne
+  - name: airlineid
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} airlineId {String}'
+    multiplicity: ManyToOne
+  - name: lateaircraftdelay
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Integer
+    verbalizes: '{Example_Flight} lateAircraftDelay {Integer}'
+    multiplicity: ManyToOne
+  - name: actualelapsedtime
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Float
+    verbalizes: '{Example_Flight} actualElapsedTime {Float}'
+    multiplicity: ManyToOne
+  - name: taxiin
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Integer
+    verbalizes: '{Example_Flight} taxiIn {Integer}'
+    multiplicity: ManyToOne
+  - name: scheduleddeparturetimestamp
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: DateTime
+    verbalizes: '{Example_Flight} scheduledDepartureTimestamp {DateTime}'
+    multiplicity: ManyToOne
+  - name: destairportid
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} destAirportId {String}'
+    multiplicity: ManyToOne
+  - name: arrdelay
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Integer
+    verbalizes: '{Example_Flight} arrDelay {Integer}'
+    multiplicity: ManyToOne
+  - name: cancelled
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Boolean
+    verbalizes: '{Example_Flight} cancelled {Boolean}'
+    multiplicity: ManyToOne
+  - name: carriercode
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} carrierCode {String}'
+    multiplicity: ManyToOne
+  - name: destinationdisplayairportcitynamefull
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} destinationDisplayAirportCityNameFull {String}'
+    multiplicity: ManyToOne
+  - name: carrierdelay
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Integer
+    verbalizes: '{Example_Flight} carrierDelay {Integer}'
+    multiplicity: ManyToOne
+  - name: cancellationcode
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} cancellationCode {String}'
+    multiplicity: ManyToOne
+  - name: originlatitude
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Float
+    verbalizes: '{Example_Flight} originLatitude {Float}'
+    multiplicity: ManyToOne
+  - name: destinationgeopoint
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} destinationGeopoint {String}'
+    multiplicity: ManyToOne
+  - name: flights
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Float
+    verbalizes: '{Example_Flight} flights {Float}'
+    multiplicity: ManyToOne
+  - name: destinationdisplaycitymarketnamefull
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} destinationDisplayCityMarketNameFull {String}'
+    multiplicity: ManyToOne
+  - name: distance
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Float
+    verbalizes: '{Example_Flight} distance {Float}'
+    multiplicity: ManyToOne
+  - name: origingeopoint
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} originGeopoint {String}'
+    multiplicity: ManyToOne
+  - name: scheduledarrivaltimestamp
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: DateTime
+    verbalizes: '{Example_Flight} scheduledArrivalTimestamp {DateTime}'
+    multiplicity: ManyToOne
+  - name: destinationlatitude
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Float
+    verbalizes: '{Example_Flight} destinationLatitude {Float}'
+    multiplicity: ManyToOne
+  - name: wheelsontimestamp
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: DateTime
+    verbalizes: '{Example_Flight} wheelsOnTimestamp {DateTime}'
+    multiplicity: ManyToOne
+  - name: longitudesensorseriesid
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} longitudeSensorSeriesId {String}'
+    multiplicity: ManyToOne
+  - name: nasdelay
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Integer
+    verbalizes: '{Example_Flight} nasDelay {Integer}'
+    multiplicity: ManyToOne
+  - name: latitudesensorseriesid
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} latitudeSensorSeriesId {String}'
+    multiplicity: ManyToOne
+  - name: destinationlongitude
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Float
+    verbalizes: '{Example_Flight} destinationLongitude {Float}'
+    multiplicity: ManyToOne
+  - name: originairportid
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} originAirportId {String}'
+    multiplicity: ManyToOne
+  - name: origindisplayairportname
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} originDisplayAirportName {String}'
+    multiplicity: ManyToOne
+  - name: securitydelay
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Integer
+    verbalizes: '{Example_Flight} securityDelay {Integer}'
+    multiplicity: ManyToOne
+  - name: origindisplayairportcitynamefull
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} originDisplayAirportCityNameFull {String}'
+    multiplicity: ManyToOne
+  - name: originlongitude
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Float
+    verbalizes: '{Example_Flight} originLongitude {Float}'
+    multiplicity: ManyToOne
+  - name: taxiout
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Integer
+    verbalizes: '{Example_Flight} taxiOut {Integer}'
+    multiplicity: ManyToOne
+  - name: origindisplaycitymarketnamefull
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} originDisplayCityMarketNameFull {String}'
+    multiplicity: ManyToOne
+  - name: destinationairport
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} destinationAirport {String}'
+    multiplicity: ManyToOne
+  - name: originairport
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} originAirport {String}'
+    multiplicity: ManyToOne
+  - name: date
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Date
+    verbalizes: '{Example_Flight} date {Date}'
+    multiplicity: ManyToOne
+  - name: destinationdisplayairportname
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} destinationDisplayAirportName {String}'
+    multiplicity: ManyToOne
+  - name: wheelsofftimestamp
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: DateTime
+    verbalizes: '{Example_Flight} wheelsOffTimestamp {DateTime}'
+    multiplicity: ManyToOne
+  - name: scheduledelapsedtime
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Integer
+    verbalizes: '{Example_Flight} scheduledElapsedTime {Integer}'
+    multiplicity: ManyToOne
+  - name: tailnum
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} tailNum {String}'
+    multiplicity: ManyToOne
+  - name: departuretimestamp
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: DateTime
+    verbalizes: '{Example_Flight} departureTimestamp {DateTime}'
+    multiplicity: ManyToOne
+  - name: carriername
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} carrierName {String}'
+    multiplicity: ManyToOne
+  - name: routeid
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} routeId {String}'
+    multiplicity: ManyToOne
+  - name: weatherdelay
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Integer
+    verbalizes: '{Example_Flight} weatherDelay {Integer}'
+    multiplicity: ManyToOne
+  - name: diverted
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Boolean
+    verbalizes: '{Example_Flight} diverted {Boolean}'
+    multiplicity: ManyToOne
+  - name: arrivaltimestamp
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: DateTime
+    verbalizes: '{Example_Flight} arrivalTimestamp {DateTime}'
+    multiplicity: ManyToOne
+  - name: flighttitle
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} flightTitle {String}'
+    multiplicity: ManyToOne
+  - name: routetitle
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: String
+    verbalizes: '{Example_Flight} routeTitle {String}'
+    multiplicity: ManyToOne
+  - name: carrier
+    container: Example_Carrier
+    relates:
+      - concept: Example_Carrier
+      - concept: String
+    verbalizes: '{Example_Carrier} carrier {String}'
+    multiplicity: ManyToOne
+  - name: averagemanufactureyear
+    container: Example_Carrier
+    relates:
+      - concept: Example_Carrier
+      - concept: Float
+    verbalizes: '{Example_Carrier} averageManufactureYear {Float}'
+    multiplicity: ManyToOne
+  - name: stddevmanufactureyear
+    container: Example_Carrier
+    relates:
+      - concept: Example_Carrier
+      - concept: Float
+    verbalizes: '{Example_Carrier} stdDevManufactureYear {Float}'
+    multiplicity: ManyToOne
+  - name: carriername
+    container: Example_Carrier
+    relates:
+      - concept: Example_Carrier
+      - concept: String
+    verbalizes: '{Example_Carrier} carrierName {String}'
+    multiplicity: ManyToOne
+  - name: dailyavgarrdelay
+    container: Example_Carrier
+    relates:
+      - concept: Example_Carrier
+      - concept: String
+    verbalizes: '{Example_Carrier} dailyAvgArrDelay {String}'
+    multiplicity: ManyToOne
+  - name: dailycountofflights
+    container: Example_Carrier
+    relates:
+      - concept: Example_Carrier
+      - concept: String
+    verbalizes: '{Example_Carrier} dailyCountOfFlights {String}'
+    multiplicity: ManyToOne
+  - name: completeflighthistory
+    container: Example_Carrier
+    relates:
+      - concept: Example_Carrier
+      - concept: Boolean
+    verbalizes: '{Example_Carrier} completeFlightHistory {Boolean}'
+    multiplicity: ManyToOne
+  - name: totalcapacityinpounds
+    container: Example_Carrier
+    relates:
+      - concept: Example_Carrier
+      - concept: Integer
+    verbalizes: '{Example_Carrier} totalCapacityInPounds {Integer}'
+    multiplicity: ManyToOne
+  - name: totalseats
+    container: Example_Carrier
+    relates:
+      - concept: Example_Carrier
+      - concept: Integer
+    verbalizes: '{Example_Carrier} totalSeats {Integer}'
+    multiplicity: ManyToOne
+  - name: aircraftcount
+    container: Example_Carrier
+    relates:
+      - concept: Example_Carrier
+      - concept: Integer
+    verbalizes: '{Example_Carrier} aircraftCount {Integer}'
+    multiplicity: ManyToOne
+  - name: dailyavgdepdelay
+    container: Example_Carrier
+    relates:
+      - concept: Example_Carrier
+      - concept: String
+    verbalizes: '{Example_Carrier} dailyAvgDepDelay {String}'
+    multiplicity: ManyToOne
+  - name: seriesname
+    container: Example_FlightSensor
+    relates:
+      - concept: Example_FlightSensor
+      - concept: String
+    verbalizes: '{Example_FlightSensor} seriesName {String}'
+    multiplicity: ManyToOne
+  - name: units
+    container: Example_FlightSensor
+    relates:
+      - concept: Example_FlightSensor
+      - concept: String
+    verbalizes: '{Example_FlightSensor} units {String}'
+    multiplicity: ManyToOne
+  - name: flightid
+    container: Example_FlightSensor
+    relates:
+      - concept: Example_FlightSensor
+      - concept: String
+    verbalizes: '{Example_FlightSensor} flightId {String}'
+    multiplicity: ManyToOne
+  - name: title
+    container: Example_FlightSensor
+    relates:
+      - concept: Example_FlightSensor
+      - concept: String
+    verbalizes: '{Example_FlightSensor} title {String}'
+    multiplicity: ManyToOne
+  - name: flightsensorseriesid
+    container: Example_FlightSensor
+    relates:
+      - concept: Example_FlightSensor
+      - concept: String
+    verbalizes: '{Example_FlightSensor} flightSensorSeriesId {String}'
+    multiplicity: ManyToOne
+  - name: normalizeddeviationmetric
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: Float
+    verbalizes: '{Example_RouteAlert} normalizedDeviationMetric {Float}'
+    multiplicity: ManyToOne
+  - name: normalizedweightedchangemetric
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: Float
+    verbalizes: '{Example_RouteAlert} normalizedWeightedChangeMetric {Float}'
+    multiplicity: ManyToOne
+  - name: percentchange
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: Float
+    verbalizes: '{Example_RouteAlert} percentChange {Float}'
+    multiplicity: ManyToOne
+  - name: priority
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: String
+    verbalizes: '{Example_RouteAlert} priority {String}'
+    multiplicity: ManyToOne
+  - name: assignee
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: String
+    verbalizes: '{Example_RouteAlert} assignee {String}'
+    multiplicity: ManyToOne
+  - name: flightcount
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: Integer
+    verbalizes: '{Example_RouteAlert} flightCount {Integer}'
+    multiplicity: ManyToOne
+  - name: alerttype
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: String
+    verbalizes: '{Example_RouteAlert} alertType {String}'
+    multiplicity: ManyToOne
+  - name: risklevel
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: Integer
+    verbalizes: '{Example_RouteAlert} riskLevel {Integer}'
+    multiplicity: ManyToOne
+  - name: deviationmetric
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: Float
+    verbalizes: '{Example_RouteAlert} deviationMetric {Float}'
+    multiplicity: ManyToOne
+  - name: floorthreshold
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: Float
+    verbalizes: '{Example_RouteAlert} floorThreshold {Float}'
+    multiplicity: ManyToOne
+  - name: descriptionmarkdown
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: String
+    verbalizes: '{Example_RouteAlert} descriptionMarkdown {String}'
+    multiplicity: ManyToOne
+  - name: status
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: String
+    verbalizes: '{Example_RouteAlert} status {String}'
+    multiplicity: ManyToOne
+  - name: title
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: String
+    verbalizes: '{Example_RouteAlert} title {String}'
+    multiplicity: ManyToOne
+  - name: alertperiodlength
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: Integer
+    verbalizes: '{Example_RouteAlert} alertPeriodLength {Integer}'
+    multiplicity: ManyToOne
+  - name: percentchangethreshold
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: Float
+    verbalizes: '{Example_RouteAlert} percentChangeThreshold {Float}'
+    multiplicity: ManyToOne
+  - name: routeid
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: String
+    verbalizes: '{Example_RouteAlert} routeId {String}'
+    multiplicity: ManyToOne
+  - name: metricdescription
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: String
+    verbalizes: '{Example_RouteAlert} metricDescription {String}'
+    multiplicity: ManyToOne
+  - name: description
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: String
+    verbalizes: '{Example_RouteAlert} description {String}'
+    multiplicity: ManyToOne
+  - name: previousdeviationmetric
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: Float
+    verbalizes: '{Example_RouteAlert} previousDeviationMetric {Float}'
+    multiplicity: ManyToOne
+  - name: investigationnotes
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: String
+    verbalizes: '{Example_RouteAlert} investigationNotes {String}'
+    multiplicity: ManyToOne
+  - name: alertperiodstart
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: Date
+    verbalizes: '{Example_RouteAlert} alertPeriodStart {Date}'
+    multiplicity: ManyToOne
+  - name: percentchangedisplay
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: Float
+    verbalizes: '{Example_RouteAlert} percentChangeDisplay {Float}'
+    multiplicity: ManyToOne
+  - name: linkurl
+    container: Example_Explainer
+    relates:
+      - concept: Example_Explainer
+      - concept: String
+    verbalizes: '{Example_Explainer} linkUrl {String}'
+    multiplicity: ManyToOne
+  - name: text
+    container: Example_Explainer
+    relates:
+      - concept: Example_Explainer
+      - concept: String
+    verbalizes: '{Example_Explainer} text {String}'
+    multiplicity: ManyToOne
+  - name: title
+    container: Example_Explainer
+    relates:
+      - concept: Example_Explainer
+      - concept: String
+    verbalizes: '{Example_Explainer} title {String}'
+    multiplicity: ManyToOne
+  - name: linktext
+    container: Example_Explainer
+    relates:
+      - concept: Example_Explainer
+      - concept: String
+    verbalizes: '{Example_Explainer} linkText {String}'
+    multiplicity: ManyToOne
+  - name: actiontriggerer
+    container: Example_Log_UpdateRouteAlertStatus
+    relates:
+      - concept: Example_Log_UpdateRouteAlertStatus
+      - concept: String
+    verbalizes: '{Example_Log_UpdateRouteAlertStatus} actionTriggerer {String}'
+    multiplicity: ManyToOne
+  - name: exampleroutealert
+    container: Example_Log_UpdateRouteAlertStatus
+    relates:
+      - concept: Example_Log_UpdateRouteAlertStatus
+      - concept: Integer
+        role_name: fst
+      - concept: String
+    verbalizes: '{Example_Log_UpdateRouteAlertStatus} exampleRouteAlert {Integer:fst}
+      maps to {String}'
+  - name: status
+    container: Example_Log_UpdateRouteAlertStatus
+    relates:
+      - concept: Example_Log_UpdateRouteAlertStatus
+      - concept: String
+    verbalizes: '{Example_Log_UpdateRouteAlertStatus} status {String}'
+    multiplicity: ManyToOne
+  - name: actiontyperid
+    container: Example_Log_UpdateRouteAlertStatus
+    relates:
+      - concept: Example_Log_UpdateRouteAlertStatus
+      - concept: String
+    verbalizes: '{Example_Log_UpdateRouteAlertStatus} actionTypeRid {String}'
+    multiplicity: ManyToOne
+  - name: actiontypeversion
+    container: Example_Log_UpdateRouteAlertStatus
+    relates:
+      - concept: Example_Log_UpdateRouteAlertStatus
+      - concept: String
+    verbalizes: '{Example_Log_UpdateRouteAlertStatus} actionTypeVersion {String}'
+    multiplicity: ManyToOne
+  - name: actionsummary
+    container: Example_Log_UpdateRouteAlertStatus
+    relates:
+      - concept: Example_Log_UpdateRouteAlertStatus
+      - concept: String
+    verbalizes: '{Example_Log_UpdateRouteAlertStatus} actionSummary {String}'
+    multiplicity: ManyToOne
+  - name: actiontimestamp
+    container: Example_Log_UpdateRouteAlertStatus
+    relates:
+      - concept: Example_Log_UpdateRouteAlertStatus
+      - concept: DateTime
+    verbalizes: '{Example_Log_UpdateRouteAlertStatus} actionTimestamp {DateTime}'
+    multiplicity: ManyToOne
+  - name: averagedepdelay
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: Float
+    verbalizes: '{Example_Route} averageDepDelay {Float}'
+    multiplicity: ManyToOne
+  - name: destinationlongitude
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: Float
+    verbalizes: '{Example_Route} destinationLongitude {Float}'
+    multiplicity: ManyToOne
+  - name: originairportid
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: String
+    verbalizes: '{Example_Route} originAirportId {String}'
+    multiplicity: ManyToOne
+  - name: destinationairport_1
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: String
+    verbalizes: '{Example_Route} destinationAirport_1 {String}'
+    multiplicity: ManyToOne
+  - name: origindisplayairportname
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: String
+    verbalizes: '{Example_Route} originDisplayAirportName {String}'
+    multiplicity: ManyToOne
+  - name: dailyavgdepdelay
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: String
+    verbalizes: '{Example_Route} dailyAvgDepDelay {String}'
+    multiplicity: ManyToOne
+  - name: origindisplayairportcitynamefull
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: String
+    verbalizes: '{Example_Route} originDisplayAirportCityNameFull {String}'
+    multiplicity: ManyToOne
+  - name: averagearrdelay
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: Float
+    verbalizes: '{Example_Route} averageArrDelay {Float}'
+    multiplicity: ManyToOne
+  - name: originlongitude
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: Float
+    verbalizes: '{Example_Route} originLongitude {Float}'
+    multiplicity: ManyToOne
+  - name: dailycountofflights
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: String
+    verbalizes: '{Example_Route} dailyCountOfFlights {String}'
+    multiplicity: ManyToOne
+  - name: dailyavgarrdelay
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: String
+    verbalizes: '{Example_Route} dailyAvgArrDelay {String}'
+    multiplicity: ManyToOne
+  - name: destairportid
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: String
+    verbalizes: '{Example_Route} destAirportId {String}'
+    multiplicity: ManyToOne
+  - name: originairport
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: String
+    verbalizes: '{Example_Route} originAirport {String}'
+    multiplicity: ManyToOne
+  - name: destinationdisplayairportcitynamefull
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: String
+    verbalizes: '{Example_Route} destinationDisplayAirportCityNameFull {String}'
+    multiplicity: ManyToOne
+  - name: originlatitude
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: Float
+    verbalizes: '{Example_Route} originLatitude {Float}'
+    multiplicity: ManyToOne
+  - name: actualelapsedtimestandarddeviation
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: Float
+    verbalizes: '{Example_Route} actualElapsedTimeStandardDeviation {Float}'
+    multiplicity: ManyToOne
+  - name: destinationdisplayairportname
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: String
+    verbalizes: '{Example_Route} destinationDisplayAirportName {String}'
+    multiplicity: ManyToOne
+  - name: destinationgeopoint
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: String
+    verbalizes: '{Example_Route} destinationGeopoint {String}'
+    multiplicity: ManyToOne
+  - name: averageactualelapsedtime
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: Float
+    verbalizes: '{Example_Route} averageActualElapsedTime {Float}'
+    multiplicity: ManyToOne
+  - name: flightscount
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: Integer
+    verbalizes: '{Example_Route} flightsCount {Integer}'
+    multiplicity: ManyToOne
+  - name: distance
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: Float
+    verbalizes: '{Example_Route} distance {Float}'
+    multiplicity: ManyToOne
+  - name: distancegroup
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: Integer
+    verbalizes: '{Example_Route} distanceGroup {Integer}'
+    multiplicity: ManyToOne
+  - name: origingeopoint
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: String
+    verbalizes: '{Example_Route} originGeopoint {String}'
+    multiplicity: ManyToOne
+  - name: completeflighthistory
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: Boolean
+    verbalizes: '{Example_Route} completeFlightHistory {Boolean}'
+    multiplicity: ManyToOne
+  - name: destinationlatitude
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: Float
+    verbalizes: '{Example_Route} destinationLatitude {Float}'
+    multiplicity: ManyToOne
+  - name: routetitle
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: String
+    verbalizes: '{Example_Route} routeTitle {String}'
+    multiplicity: ManyToOne
+  - name: destinationairport
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: Example_Airport
+    verbalizes: '{Example_Route} destinationairport {Example_Airport}'
+    multiplicity: ManyToOne
+    derived_by:
+      - formula: Example_Route.destairportid == Example_Airport.airportid
+  - name: departureairport
+    container: Example_Route
+    relates:
+      - concept: Example_Route
+      - concept: Example_Airport
+    verbalizes: '{Example_Route} departureairport {Example_Airport}'
+    multiplicity: ManyToOne
+    derived_by:
+      - formula: Example_Route.originairportid == Example_Airport.airportid
+  - name: routealert
+    container: Example_Log_UpdateRouteAlertStatus
+    relates:
+      - concept: Example_Log_UpdateRouteAlertStatus
+      - concept: Example_RouteAlert
+    verbalizes: '{Example_Log_UpdateRouteAlertStatus} routealert {Example_RouteAlert}'
+    multiplicity: ManyToOne
+    derived_by:
+      - formula: Example_Log_UpdateRouteAlertStatus.exampleroutealert == Example_RouteAlert.id
+  - name: route
+    container: Example_RouteAlert
+    relates:
+      - concept: Example_RouteAlert
+      - concept: Example_Route
+    verbalizes: '{Example_RouteAlert} route {Example_Route}'
+    multiplicity: ManyToOne
+    derived_by:
+      - formula: Example_RouteAlert.routeid == Example_Route.routeid
+  - name: flight
+    container: Example_FlightSensor
+    relates:
+      - concept: Example_FlightSensor
+      - concept: Example_Flight
+    verbalizes: '{Example_FlightSensor} flight {Example_Flight}'
+    multiplicity: ManyToOne
+    derived_by:
+      - formula: Example_FlightSensor.flightid == Example_Flight.flightid
+  - name: route
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Example_Route
+    verbalizes: '{Example_Flight} route {Example_Route}'
+    multiplicity: ManyToOne
+    derived_by:
+      - formula: Example_Flight.routeid == Example_Route.routeid
+  - name: departureairport
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Example_Airport
+    verbalizes: '{Example_Flight} departureairport {Example_Airport}'
+    multiplicity: ManyToOne
+    derived_by:
+      - formula: Example_Flight.originairportid == Example_Airport.airportid
+  - name: arrivalairport
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Example_Airport
+    verbalizes: '{Example_Flight} arrivalairport {Example_Airport}'
+    multiplicity: ManyToOne
+    derived_by:
+      - formula: Example_Flight.destairportid == Example_Airport.airportid
+  - name: aircraft
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Example_Aircraft
+    verbalizes: '{Example_Flight} aircraft {Example_Aircraft}'
+    multiplicity: ManyToOne
+    derived_by:
+      - formula: Example_Flight.tailnum == Example_Aircraft.tailnum
+  - name: carriers
+    container: Example_Flight
+    relates:
+      - concept: Example_Flight
+      - concept: Example_Carrier
+    verbalizes: '{Example_Flight} carriers {Example_Carrier}'
+    multiplicity: ManyToOne
+    derived_by:
+      - formula: Example_Flight.airlineid == Example_Carrier.airlineid
+  - name: carrier
+    container: Example_Aircraft
+    relates:
+      - concept: Example_Aircraft
+      - concept: Example_Carrier
+    verbalizes: '{Example_Aircraft} carrier {Example_Carrier}'
+    multiplicity: ManyToOne
+    derived_by:
+      - formula: Example_Aircraft.opcarrierairlineid == Example_Carrier.airlineid
+  - name: routealert
+    container: Example_RouteAlertComment
+    relates:
+      - concept: Example_RouteAlertComment
+      - concept: Example_RouteAlert
+    verbalizes: '{Example_RouteAlertComment} routealert {Example_RouteAlert}'
+    multiplicity: ManyToOne
+    derived_by:
+      - formula: Example_RouteAlertComment.alertid == Example_RouteAlert.id
+  - name: airports
+    container: Example_Runway
+    relates:
+      - concept: Example_Runway
+      - concept: Example_Airport
+    verbalizes: '{Example_Runway} airports {Example_Airport}'
+    multiplicity: ManyToOne
+    derived_by:
+      - formula: Example_Runway.airportid == Example_Airport.airportid
+datasets:
+  - name: Example_Runway_example_runway
+    source: PBACON_ATT_DB.GANDALF.EXAMPLE_RUNWAY
+    fields:
+      - name: id
+        type: String
+      - name: shape_length
+        type: Float
+      - name: airport_id
+        type: String
+      - name: length
+        type: Float
+      - name: geometry
+        type: String
+      - name: designator
+        type: String
+  - name: Example_RouteAlertComment_example_route_alert_comment
+    source: PBACON_ATT_DB.GANDALF.EXAMPLE_ROUTE_ALERT_COMMENT
+    fields:
+      - name: id
+        type: String
+      - name: alert_id
+        type: String
+      - name: type
+        type: String
+      - name: created_by
+        type: String
+      - name: title
+        type: String
+      - name: comment
+        type: String
+      - name: created_at
+        type: DateTime
+  - name: Example_Aircraft_example_aircraft
+    source: PBACON_ATT_DB.GANDALF.EXAMPLE_AIRCRAFT
+    description: Aircraft data with basic properties. Full 2023 flight history available
+      for a subset of aircraft where the "Complete Flight History" property is "true".
+    fields:
+      - name: flight_count
+        type: Integer
+      - name: serial_number
+        type: String
+      - name: mode_scode_hex
+        type: String
+      - name: title
+        type: String
+      - name: number_of_seats
+        type: Integer
+      - name: tail_num
+        type: String
+      - name: op_carrier_airline_id
+        type: String
+      - name: carrier_name
+        type: String
+      - name: mode_scode
+        type: Integer
+      - name: complete_flight_history
+        type: Boolean
+      - name: manufacturer
+        type: String
+      - name: latest_flight_id
+        type: String
+      - name: model
+        type: String
+      - name: carrier_iata_code
+        type: String
+      - name: year_mfr
+        type: String
+      - name: acquisition_date
+        type: DateTime
+      - name: capacity_in_pounds
+        type: Integer
+  - name: Example_Airport_example_airport
+    source: PBACON_ATT_DB.GANDALF.EXAMPLE_AIRPORT
+    description: Airports with various geospatial properties. Useful for map examples.
+      Full 2023 flight history available for a subset of airports where the "Complete
+      Flight History" property is "true".
+    fields:
+      - name: airport_state_code
+        type: String
+      - name: arriving_flight_count
+        type: Integer
+      - name: display_city_market_name_full
+        type: String
+      - name: average_dep_delay
+        type: Float
+      - name: longitude
+        type: Float
+      - name: airport_id
+        type: String
+      - name: airport_start_date
+        type: DateTime
+      - name: airport_state_name
+        type: String
+      - name: daily_avg_dep_delay
+        type: String
+      - name: average_arr_delay
+        type: Float
+      - name: display_airport_city_name_full
+        type: String
+      - name: daily_avg_arr_delay
+        type: String
+      - name: daily_count_of_flights
+        type: String
+      - name: complete_flight_history
+        type: Boolean
+      - name: display_airport_name
+        type: String
+      - name: airport
+        type: String
+      - name: departing_flight_count
+        type: Integer
+      - name: geopoint
+        type: String
+      - name: latitude
+        type: Float
+  - name: Example_Flight_example_flight
+    source: PBACON_ATT_DB.GANDALF.EXAMPLE_FLIGHT
+    description: Represents each individual commercial passenger flight in the US
+      in 2023. With geospatial and timeseries property examples.
+    fields:
+      - name: dep_delay
+        type: Integer
+      - name: air_time
+        type: Float
+      - name: flight_number
+        type: String
+      - name: airline_id
+        type: String
+      - name: late_aircraft_delay
+        type: Integer
+      - name: actual_elapsed_time
+        type: Float
+      - name: taxi_in
+        type: Integer
+      - name: scheduled_departure_timestamp
+        type: DateTime
+      - name: dest_airport_id
+        type: String
+      - name: arr_delay
+        type: Integer
+      - name: cancelled
+        type: Boolean
+      - name: carrier_code
+        type: String
+      - name: destination_display_airport_city_name_full
+        type: String
+      - name: carrier_delay
+        type: Integer
+      - name: cancellation_code
+        type: String
+      - name: origin_latitude
+        type: Float
+      - name: destination_geopoint
+        type: String
+      - name: flights
+        type: Float
+      - name: destination_display_city_market_name_full
+        type: String
+      - name: distance
+        type: Float
+      - name: flight_id
+        type: String
+      - name: origin_geopoint
+        type: String
+      - name: scheduled_arrival_timestamp
+        type: DateTime
+      - name: destination_latitude
+        type: Float
+      - name: wheels_on_timestamp
+        type: DateTime
+      - name: longitude_sensor_series_id
+        type: String
+      - name: nas_delay
+        type: Integer
+      - name: latitude_sensor_series_id
+        type: String
+      - name: destination_longitude
+        type: Float
+      - name: origin_airport_id
+        type: String
+      - name: origin_display_airport_name
+        type: String
+      - name: security_delay
+        type: Integer
+      - name: origin_display_airport_city_name_full
+        type: String
+      - name: origin_longitude
+        type: Float
+      - name: taxi_out
+        type: Integer
+      - name: origin_display_city_market_name_full
+        type: String
+      - name: destination_airport
+        type: String
+      - name: origin_airport
+        type: String
+      - name: date
+        type: Date
+      - name: destination_display_airport_name
+        type: String
+      - name: wheels_off_timestamp
+        type: DateTime
+      - name: scheduled_elapsed_time
+        type: Integer
+      - name: tail_num
+        type: String
+      - name: departure_timestamp
+        type: DateTime
+      - name: carrier_name
+        type: String
+      - name: route_id
+        type: String
+      - name: weather_delay
+        type: Integer
+      - name: diverted
+        type: Boolean
+      - name: arrival_timestamp
+        type: DateTime
+      - name: flight_title
+        type: String
+      - name: route_title
+        type: String
+  - name: Example_Carrier_example_carrier
+    source: PBACON_ATT_DB.GANDALF.EXAMPLE_CARRIER
+    description: Carriers with derived fleet metrics from associated aircraft. Full
+      2023 flight history available for a subset of carriers where the "Complete Flight
+      History" property is "true".
+    fields:
+      - name: carrier
+        type: String
+      - name: average_manufacture_year
+        type: Float
+      - name: std_dev_manufacture_year
+        type: Float
+      - name: carrier_name
+        type: String
+      - name: daily_avg_arr_delay
+        type: String
+      - name: daily_count_of_flights
+        type: String
+      - name: complete_flight_history
+        type: Boolean
+      - name: total_capacity_in_pounds
+        type: Integer
+      - name: airline_id
+        type: String
+      - name: total_seats
+        type: Integer
+      - name: aircraft_count
+        type: Integer
+      - name: daily_avg_dep_delay
+        type: String
+  - name: Example_FlightSensor_example_flight_sensor
+    source: PBACON_ATT_DB.GANDALF.EXAMPLE_FLIGHT_SENSOR
+    description: 'The flight sensor holds any sensor readings for the flight object.
+      It is linked to flights as a sensor object and therefore analyses on the flight
+      object can automatically access time series on the flight sensor. '
+    fields:
+      - name: series_name
+        type: String
+      - name: units
+        type: String
+      - name: flight_id
+        type: String
+      - name: title
+        type: String
+      - name: flight_sensor_series_id
+        type: String
+      - name: unique_sensor_flight_id
+        type: String
+  - name: Example_RouteAlert_example_route_alert
+    source: PBACON_ATT_DB.GANDALF.EXAMPLE_ROUTE_ALERT
+    description: Alerts generated based on historical route performance, structured
+      as an operational object type to demonstrate basic status and assignment patterns.
+    fields:
+      - name: normalized_deviation_metric
+        type: Float
+      - name: normalized_weighted_change_metric
+        type: Float
+      - name: percent_change
+        type: Float
+      - name: priority
+        type: String
+      - name: assignee
+        type: String
+      - name: id
+        type: String
+      - name: flight_count
+        type: Integer
+      - name: alert_type
+        type: String
+      - name: risk_level
+        type: Integer
+      - name: deviation_metric
+        type: Float
+      - name: floor_threshold
+        type: Float
+      - name: description_markdown
+        type: String
+      - name: status
+        type: String
+      - name: title
+        type: String
+      - name: alert_period_length
+        type: Integer
+      - name: percent_change_threshold
+        type: Float
+      - name: route_id
+        type: String
+      - name: metric_description
+        type: String
+      - name: description
+        type: String
+      - name: previous_deviation_metric
+        type: Float
+      - name: investigation_notes
+        type: String
+      - name: alert_period_start
+        type: Date
+      - name: percent_change_display
+        type: Float
+  - name: Example_Explainer_example_explainer
+    source: PBACON_ATT_DB.GANDALF.EXAMPLE_EXPLAINER
+    description: Stores re-usable callout references to integrate into Workshop and
+      other one state examples
+    fields:
+      - name: id
+        type: String
+      - name: link_url
+        type: String
+      - name: text
+        type: String
+      - name: title
+        type: String
+      - name: link_text
+        type: String
+  - name: Example_Log_UpdateRouteAlertStatus_example_log_update_route_alert_status
+    source: PBACON_ATT_DB.GANDALF.EXAMPLE_LOG_UPDATE_ROUTE_ALERT_STATUS
+    description: 'This object type was automatically created when logging was enabled
+      for the Action type: Update Route Alert Status'
+    fields:
+      - name: action_triggerer
+        type: String
+      - name: status
+        type: String
+      - name: action_rid
+        type: String
+      - name: action_type_rid
+        type: String
+      - name: action_type_version
+        type: String
+      - name: action_summary
+        type: String
+      - name: action_timestamp
+        type: DateTime
+  - name: Example_Route_example_route
+    source: PBACON_ATT_DB.GANDALF.EXAMPLE_ROUTE
+    description: Derived from flights between pairs of departure and arrival airports.
+      Demonstrates the use of deriving "intermediate" object types from granular data
+      as well as pre-calculating default metrics in a pipeline. Full 2023 flight history
+      available for a subset of routes where the "Complete Flight History" property
+      is "true".
+    fields:
+      - name: average_dep_delay
+        type: Float
+      - name: destination_longitude
+        type: Float
+      - name: origin_airport_id
+        type: String
+      - name: destination_airport_1
+        type: String
+      - name: origin_display_airport_name
+        type: String
+      - name: daily_avg_dep_delay
+        type: String
+      - name: origin_display_airport_city_name_full
+        type: String
+      - name: average_arr_delay
+        type: Float
+      - name: origin_longitude
+        type: Float
+      - name: daily_count_of_flights
+        type: String
+      - name: daily_avg_arr_delay
+        type: String
+      - name: dest_airport_id
+        type: String
+      - name: origin_airport
+        type: String
+      - name: destination_display_airport_city_name_full
+        type: String
+      - name: origin_latitude
+        type: Float
+      - name: actual_elapsed_time_standard_deviation
+        type: Float
+      - name: destination_display_airport_name
+        type: String
+      - name: destination_geopoint
+        type: String
+      - name: average_actual_elapsed_time
+        type: Float
+      - name: flights_count
+        type: Integer
+      - name: distance
+        type: Float
+      - name: distance_group
+        type: Integer
+      - name: route_id
+        type: String
+      - name: origin_geopoint
+        type: String
+      - name: complete_flight_history
+        type: Boolean
+      - name: destination_latitude
+        type: Float
+      - name: route_title
+        type: String
+mappings:
+  - entity: Example_Runway
+    dataset: Example_Runway_example_runway
+    identifier:
+      id: id
+    properties:
+      shapelength: shape_length
+      airportid: airport_id
+      length: length
+      geometry: geometry
+      designator: designator
+  - entity: Example_RouteAlertComment
+    dataset: Example_RouteAlertComment_example_route_alert_comment
+    identifier:
+      id: id
+    properties:
+      alertid: alert_id
+      type: type
+      createdby: created_by
+      title: title
+      comment: comment
+      createdat: created_at
+  - entity: Example_Aircraft
+    dataset: Example_Aircraft_example_aircraft
+    identifier:
+      tailnum: tail_num
+    properties:
+      flightcount: flight_count
+      serialnumber: serial_number
+      modescodehex: mode_scode_hex
+      title: title
+      numberofseats: number_of_seats
+      opcarrierairlineid: op_carrier_airline_id
+      carriername: carrier_name
+      modescode: mode_scode
+      completeflighthistory: complete_flight_history
+      manufacturer: manufacturer
+      latestflightid: latest_flight_id
+      model: model
+      carrieriatacode: carrier_iata_code
+      yearmfr: year_mfr
+      acquisitiondate: acquisition_date
+      capacityinpounds: capacity_in_pounds
+  - entity: Example_Airport
+    dataset: Example_Airport_example_airport
+    identifier:
+      airportid: airport_id
+    properties:
+      airportstatecode: airport_state_code
+      arrivingflightcount: arriving_flight_count
+      displaycitymarketnamefull: display_city_market_name_full
+      averagedepdelay: average_dep_delay
+      longitude: longitude
+      airportstartdate: airport_start_date
+      airportstatename: airport_state_name
+      dailyavgdepdelay: daily_avg_dep_delay
+      averagearrdelay: average_arr_delay
+      displayairportcitynamefull: display_airport_city_name_full
+      dailyavgarrdelay: daily_avg_arr_delay
+      dailycountofflights: daily_count_of_flights
+      completeflighthistory: complete_flight_history
+      displayairportname: display_airport_name
+      airport: airport
+      departingflightcount: departing_flight_count
+      geopoint: geopoint
+      latitude: latitude
+  - entity: Example_Flight
+    dataset: Example_Flight_example_flight
+    identifier:
+      flightid: flight_id
+    properties:
+      depdelay: dep_delay
+      airtime: air_time
+      flightnumber: flight_number
+      airlineid: airline_id
+      lateaircraftdelay: late_aircraft_delay
+      actualelapsedtime: actual_elapsed_time
+      taxiin: taxi_in
+      scheduleddeparturetimestamp: scheduled_departure_timestamp
+      destairportid: dest_airport_id
+      arrdelay: arr_delay
+      cancelled: cancelled
+      carriercode: carrier_code
+      destinationdisplayairportcitynamefull: destination_display_airport_city_name_full
+      carrierdelay: carrier_delay
+      cancellationcode: cancellation_code
+      originlatitude: origin_latitude
+      destinationgeopoint: destination_geopoint
+      flights: flights
+      destinationdisplaycitymarketnamefull: destination_display_city_market_name_full
+      distance: distance
+      origingeopoint: origin_geopoint
+      scheduledarrivaltimestamp: scheduled_arrival_timestamp
+      destinationlatitude: destination_latitude
+      wheelsontimestamp: wheels_on_timestamp
+      longitudesensorseriesid: longitude_sensor_series_id
+      nasdelay: nas_delay
+      latitudesensorseriesid: latitude_sensor_series_id
+      destinationlongitude: destination_longitude
+      originairportid: origin_airport_id
+      origindisplayairportname: origin_display_airport_name
+      securitydelay: security_delay
+      origindisplayairportcitynamefull: origin_display_airport_city_name_full
+      originlongitude: origin_longitude
+      taxiout: taxi_out
+      origindisplaycitymarketnamefull: origin_display_city_market_name_full
+      destinationairport: destination_airport
+      originairport: origin_airport
+      date: date
+      destinationdisplayairportname: destination_display_airport_name
+      wheelsofftimestamp: wheels_off_timestamp
+      scheduledelapsedtime: scheduled_elapsed_time
+      tailnum: tail_num
+      departuretimestamp: departure_timestamp
+      carriername: carrier_name
+      routeid: route_id
+      weatherdelay: weather_delay
+      diverted: diverted
+      arrivaltimestamp: arrival_timestamp
+      flighttitle: flight_title
+      routetitle: route_title
+  - entity: Example_Carrier
+    dataset: Example_Carrier_example_carrier
+    identifier:
+      airlineid: airline_id
+    properties:
+      carrier: carrier
+      averagemanufactureyear: average_manufacture_year
+      stddevmanufactureyear: std_dev_manufacture_year
+      carriername: carrier_name
+      dailyavgarrdelay: daily_avg_arr_delay
+      dailycountofflights: daily_count_of_flights
+      completeflighthistory: complete_flight_history
+      totalcapacityinpounds: total_capacity_in_pounds
+      totalseats: total_seats
+      aircraftcount: aircraft_count
+      dailyavgdepdelay: daily_avg_dep_delay
+  - entity: Example_FlightSensor
+    dataset: Example_FlightSensor_example_flight_sensor
+    identifier:
+      uniquesensorflightid: unique_sensor_flight_id
+    properties:
+      seriesname: series_name
+      units: units
+      flightid: flight_id
+      title: title
+      flightsensorseriesid: flight_sensor_series_id
+  - entity: Example_RouteAlert
+    dataset: Example_RouteAlert_example_route_alert
+    identifier:
+      id: id
+    properties:
+      normalizeddeviationmetric: normalized_deviation_metric
+      normalizedweightedchangemetric: normalized_weighted_change_metric
+      percentchange: percent_change
+      priority: priority
+      assignee: assignee
+      flightcount: flight_count
+      alerttype: alert_type
+      risklevel: risk_level
+      deviationmetric: deviation_metric
+      floorthreshold: floor_threshold
+      descriptionmarkdown: description_markdown
+      status: status
+      title: title
+      alertperiodlength: alert_period_length
+      percentchangethreshold: percent_change_threshold
+      routeid: route_id
+      metricdescription: metric_description
+      description: description
+      previousdeviationmetric: previous_deviation_metric
+      investigationnotes: investigation_notes
+      alertperiodstart: alert_period_start
+      percentchangedisplay: percent_change_display
+  - entity: Example_Explainer
+    dataset: Example_Explainer_example_explainer
+    identifier:
+      id: id
+    properties:
+      linkurl: link_url
+      text: text
+      title: title
+      linktext: link_text
+  - entity: Example_Log_UpdateRouteAlertStatus
+    dataset: Example_Log_UpdateRouteAlertStatus_example_log_update_route_alert_status
+    identifier:
+      actionrid: action_rid
+    properties:
+      actiontriggerer: action_triggerer
+      status: status
+      actiontyperid: action_type_rid
+      actiontypeversion: action_type_version
+      actionsummary: action_summary
+      actiontimestamp: action_timestamp
+  - entity: Example_Route
+    dataset: Example_Route_example_route
+    identifier:
+      routeid: route_id
+    properties:
+      averagedepdelay: average_dep_delay
+      destinationlongitude: destination_longitude
+      originairportid: origin_airport_id
+      destinationairport_1: destination_airport_1
+      origindisplayairportname: origin_display_airport_name
+      dailyavgdepdelay: daily_avg_dep_delay
+      origindisplayairportcitynamefull: origin_display_airport_city_name_full
+      averagearrdelay: average_arr_delay
+      originlongitude: origin_longitude
+      dailycountofflights: daily_count_of_flights
+      dailyavgarrdelay: daily_avg_arr_delay
+      destairportid: dest_airport_id
+      originairport: origin_airport
+      destinationdisplayairportcitynamefull: destination_display_airport_city_name_full
+      originlatitude: origin_latitude
+      actualelapsedtimestandarddeviation: actual_elapsed_time_standard_deviation
+      destinationdisplayairportname: destination_display_airport_name
+      destinationgeopoint: destination_geopoint
+      averageactualelapsedtime: average_actual_elapsed_time
+      flightscount: flights_count
+      distance: distance
+      distancegroup: distance_group
+      origingeopoint: origin_geopoint
+      completeflighthistory: complete_flight_history
+      destinationlatitude: destination_latitude
+      routetitle: route_title

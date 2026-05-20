@@ -1,0 +1,147 @@
+version: "0.1.1"
+semantic_model:
+  - name: tpcds_analytics
+    description: TPC-DS e-commerce analytics semantic model
+    
+    datasets:
+      - name: store_sales
+        source: tpcds.public.store_sales
+        description: Store sales transactions
+        primary_key: [ss_item_sk, ss_ticket_number]
+        
+        fields:
+          - name: ss_item_sk
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: ss_item_sk
+            dimension:
+              is_time: false
+            description: Item surrogate key
+            
+          - name: ss_ticket_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: ss_ticket_number
+            description: Ticket number
+            
+          - name: ss_quantity
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: ss_quantity
+            description: Quantity sold
+            
+          - name: ss_net_profit
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: ss_net_profit
+            description: Net profit amount
+            
+          - name: ss_sold_date_sk
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: ss_sold_date_sk
+            description: Date surrogate key
+      
+      - name: customer
+        source: tpcds.public.customer
+        description: Customer master data
+        primary_key: [c_customer_sk]
+        
+        fields:
+          - name: c_customer_sk
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: c_customer_sk
+            dimension:
+              is_time: false
+            description: Customer surrogate key
+            
+          - name: c_first_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: c_first_name
+            description: First name
+            
+          - name: c_last_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: c_last_name
+            description: Last name
+      
+      - name: item
+        source: tpcds.public.item
+        description: Product item master
+        primary_key: [i_item_sk]
+        
+        fields:
+          - name: i_item_sk
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: i_item_sk
+            description: Item surrogate key
+            
+          - name: i_item_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: i_item_id
+            description: Item ID
+            
+          - name: i_item_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: i_item_name
+            description: Item name
+      
+      - name: date_dim
+        source: tpcds.public.date_dim
+        description: Date dimension
+        primary_key: [d_date_sk]
+        
+        fields:
+          - name: d_date_sk
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: d_date_sk
+            dimension:
+              is_time: false
+            description: Date surrogate key
+            
+          - name: d_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: d_date
+            dimension:
+              is_time: true
+            description: Calendar date
+    
+    join_paths:
+      - name: store_sales_to_customer
+        from: store_sales
+        to: customer
+        from_columns: [ss_customer_sk]
+        to_columns: [c_customer_sk]
+      
+      - name: store_sales_to_item
+        from: store_sales
+        to: item
+        from_columns: [ss_item_sk]
+        to_columns: [i_item_sk]
+      
+      - name: store_sales_to_date
+        from: store_sales
+        to: date_dim
+        from_columns: [ss_sold_date_sk]
+        to_columns: [d_date_sk]
