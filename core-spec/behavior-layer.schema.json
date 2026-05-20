@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/open-semantic-interchange/OSI/core-spec/behavior-layer.schema.json",
+  "title": "OSI Behavior Layer (First-class)",
+  "description": "Schema for semantic_model.behavior (actions/rules/effects). Supports legacy alias action_types.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["namespace", "behavior_layer_version", "rules"],
+  "anyOf": [
+    { "required": ["actions"] },
+    { "required": ["action_types"] }
+  ],
+  "properties": {
+    "namespace": { "type": "string", "minLength": 1 },
+    "behavior_layer_version": { "type": "string", "minLength": 1 },
+    "metadata": { "type": "object", "additionalProperties": true },
+    "actions": {
+      "type": "array",
+      "description": "Preferred: list of actions supported by this semantic model. (Alias of legacy action_types)",
+      "items": { "$ref": "#/$defs/actionType" }
+    },
+    "action_types": {
+      "type": "array",
+      "description": "Legacy alias of actions. New models SHOULD use actions.",
+      "items": { "$ref": "#/$defs/actionType" }
+    },
+    "rules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/rule" }
+    }
+  },
+  "$defs": {
+    "actionType": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "title"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "kind": { "type": "string", "enum": ["command", "query"] },
+        "operation": { "type": "string", "description": "Free-form operation name." },
+        "aggregate": { "type": "string" },
+        "entity_name": { "type": "string" },
+        "idempotency": { "type": "string", "enum": ["idempotent", "non_idempotent", "unknown"] },
+        "applies_to": { "type": "object", "additionalProperties": true },
+        "io_schema": { "type": "object", "additionalProperties": true },
+        "effects": {
+          "type": "array",
+          "description": "Optional: machine-readable impact annotations (what this action reads/writes/derives).",
+          "items": { "$ref": "#/$defs/effect" }
+        },
+        "examples": { "type": "array", "items": { "type": "string" } },
+        "tool_hint": { "type": "object", "additionalProperties": true },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "synonyms": { "type": "array", "items": { "type": "string" } },
+        "deprecated": { "type": "boolean" },
+        "version": { "type": "string" }
+      }
+    },
+    "effect": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["entity", "mode"],
+      "properties": {
+        "entity": { "type": "string", "enum": ["dataset", "field", "metric", "relationship"] },
+        "mode": { "type": "string", "enum": ["read", "write", "derive"] },
+        "impact_type": { "type": "string" },
+        "selectors": { "type": "object", "additionalProperties": true },
+        "transition": { "type": "object", "additionalProperties": true },
+        "set_value": { "type": "string" },
+        "confidence": { "type": "string", "enum": ["guaranteed", "likely", "unknown"] },
+        "notes": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "title", "severity", "when", "constraint", "message"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "severity": { "type": "string", "enum": ["error", "warn", "info"] },
+        "when": { "type": "object", "additionalProperties": true },
+        "if": { "type": "object", "additionalProperties": true },
+        "constraint": { "type": "object", "additionalProperties": true },
+        "message": { "type": "string", "minLength": 1 },
+        "remediation": { "type": "string" },
+        "references": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}
+

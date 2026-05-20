@@ -1,6 +1,6 @@
 # OSI - Core Metadata Specification
 
-**Version:** 0.1.1
+**Version:** 0.1.2
 
 ## Goals
 
@@ -16,7 +16,8 @@
 4. [Relationships](#relationships)
 5. [Fields](#fields)
 6. [Metrics](#metrics)
-7. [Examples](#examples)
+7. [Behavior (Actions / Rules / Effects)](#behavior-actions--rules--effects)
+8. [Examples](#examples)
 
 ---
 
@@ -64,6 +65,7 @@ The top-level container that represents a complete semantic model, including dat
 | `datasets` | array | Yes | Collection of logical datasets (fact and dimension tables) |
 | `relationships` | array | No | Defines how logical datasets are connected |
 | `metrics` | array | No | Quantifiable measures defined as aggregate expessions on fields from logical datsets |
+| `behavior` | object | No | Optional behavior layer for deterministic action planning and attribution |
 | `custom_extensions` | array | No | Vendor-specific attributes for extensibility |
 
 ### Example
@@ -77,9 +79,83 @@ semantic_model:
     datasets: []
     relationships: []
     metrics: []
+    behavior:
+      namespace: "SALES"
+      behavior_layer_version: "0.1"
+      actions: []
+      rules: []
     custom_extensions:
       - vendor_name: DBT
         data: '{"project_name": "tpcds_analytics", "models_path": "models/semantic"}'
+```
+
+---
+
+## Behavior (Actions / Rules / Effects)
+
+Behavior is an optional, vendor-agnostic layer for **deterministic action planning** and **attribution** (what changed/why).
+
+This repository supports two equivalent placements:
+1) **Preferred (first-class):** `semantic_model[].behavior`
+2) **Backwards-compatible (legacy):** embed behavior-layer JSON under `custom_extensions` (e.g. `vendor_name: COMMON`)
+
+### Schema (semantic_model.behavior)
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `namespace` | string | Yes | Namespace/group for actions and rules (e.g. `SAP_P2P`) |
+| `behavior_layer_version` | string | Yes | Version for behavior schema evolution |
+| `actions` | array | No* | Preferred list of actions (`actions` or `action_types` required) |
+| `action_types` | array | No* | Legacy alias of `actions` (for backwards compatibility) |
+| `rules` | array | Yes | Declarative constraints/guards for planning and governance |
+| `metadata` | object | No | Governance metadata (owner/tags/last_updated, etc.) |
+
+### Action Schema (high-level)
+
+Actions represent executable intents (API calls, workflows, tools). This spec intentionally does **not** assume SQL.
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `id` | string | Yes | Action id, e.g. `suppliers/block` |
+| `title` | string | Yes | Human-friendly title |
+| `kind` | string | No | `command` or `query` |
+| `operation` | string | No | Free-form operation name (e.g. `block`, `unblock`, `analyze`) |
+| `effects` | array | No | Optional machine-readable impact annotations |
+
+### Effects (impact annotations)
+
+Effects encode how an action changes datasets/fields for:
+- plan validation (state transitions / prohibited follow-ups)
+- attribution (what changed/why for a field or dataset)
+
+Minimal effect fields:
+`entity` (dataset/field/metric/relationship), `mode` (read/write/derive), `selectors` (dataset + field_names),
+optional `impact_type`, `transition`, `set_value`.
+
+### Example
+
+```yaml
+semantic_model:
+  - name: sap_p2p
+    datasets: []
+    behavior:
+      namespace: "SAP_P2P"
+      behavior_layer_version: "0.1"
+      actions:
+        - id: suppliers/block
+          title: Block supplier
+          kind: command
+          operation: block
+          entity_name: suppliers
+          effects:
+            - entity: field
+              mode: write
+              impact_type: state_transition
+              selectors:
+                dataset: suppliers
+                field_names: [status]
+              set_value: Blocked
+      rules: []
 ```
 
 ---

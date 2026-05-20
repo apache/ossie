@@ -4,7 +4,7 @@
 # This example demonstrates the OSI Core Metadata Spec using the TPC-DS benchmark schema
 # TPC-DS is a decision support benchmark with a realistic retail business model
 
-version: "0.1.1"
+version: "0.1.2"
 
 semantic_model:
   - name: tpcds_retail_model
