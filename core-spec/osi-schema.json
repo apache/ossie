@@ -19,7 +19,7 @@
     },
     "vendors": {
       "type": "array",
-      "description": "Supported vendors for custom extensions (enumeration definition)",
+      "description": "List of vendor names used in custom extensions within this model",
       "items": {
         "$ref": "#/$defs/Vendor"
       }
@@ -42,8 +42,8 @@
     },
     "Vendor": {
       "type": "string",
-      "enum": ["COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA"],
-      "description": "Supported vendors for custom extensions"
+      "examples": ["COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA"],
+      "description": "Vendor name for custom extensions. Any string value is accepted."
     },
     "AIContext": {
       "description": "Additional context for AI tools",

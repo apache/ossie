@@ -41,7 +41,10 @@ Supported SQL and expression language dialects for metrics and field definitions
 
 ### Vendors
 
-Supported vendors for custom extensions and integrations.
+The `vendor_name` field is a free-form string, allowing any vendor or organization to
+define custom extensions without requiring changes to the core specification.
+
+The following are well-known examples:
 
 | Vendor | Description |
 |--------|-------------|
@@ -360,7 +363,7 @@ Custom extensions allow vendors to add platform-specific metadata without breaki
 
 ```yaml
 custom_extensions:
-  - vendor_name: string  # Must be from vendors enum
+  - vendor_name: string  # Free-form string identifying the vendor
     data: string         # JSON string containing vendor-specific data
 ```
 
