@@ -1,6 +1,22 @@
 # OSI
-The OSI initiative is a collaborative, open-source effort dedicated to standardizing and streamlining semantic model exchange and utilization across the diverse array of tools and platforms within the data analytics, AI, and BI ecosystem. Our shared vision is to establish a common, vendor-agnostic semantic model specification, promoting unparalleled interoperability, efficiency, and collaboration among all participants. By providing a single, consistent source of truth, this vendor-agnostic standard ensures that your data’s definitions and value remain consistent as they are interchanged between AI agents, BI platforms, and all other tools in your ecosystem, eliminating inconsistencies across your different tools.
 
+The **Open Semantic Interchange (OSI)** initiative is a collaborative, open-source effort dedicated to standardizing and streamlining semantic model exchange and utilization across the diverse array of tools and platforms within the data analytics, AI, and BI ecosystem. Our shared vision is to establish a common, vendor-agnostic semantic model specification, promoting unparalleled interoperability, efficiency, and collaboration among all participants. By providing a single, consistent source of truth, this vendor-agnostic standard ensures that your data's definitions and value remain consistent as they are interchanged between AI agents, BI platforms, and all other tools in your ecosystem, eliminating inconsistencies across your different tools.
+
+OSI addresses semantic fragmentation — where the same KPI is defined differently across tools, teams spend significant effort manually reconciling definitions, and AI agents produce unreliable outputs grounded in inconsistent business logic — by providing a single YAML-based specification that any tool can read and write.
+
+## What's in this repository
+
+- [`core-spec/`](core-spec/) — The OSI core specification (`spec.md`), the machine-readable schema (`spec.yaml`, `osi-schema.json`), and accompanying documentation.
+- [`converters/`](converters/) — Reference converters that translate between OSI and other semantic formats (e.g., dbt, GoodData, Polaris, Salesforce).
+- [`examples/`](examples/) — Example semantic models, including a complete TPC-DS model.
+- [`validation/`](validation/) — Tooling for validating semantic models against the OSI schema.
+- [`docs/`](docs/) — Project documentation and overview.
+
+## Get involved
+
+- **Contribute:** See [CONTRIBUTING.md](CONTRIBUTING.md) for how to propose specification changes, contribute code, and participate in the community.
+- **Roadmap:** See [ROADMAP.md](ROADMAP.md) for current working groups, future efforts, and planned enhancements informed by community discussion.
+- **Discuss:** Join the conversation on [GitHub Discussions](https://github.com/open-semantic-interchange/OSI/discussions) and [Issues](https://github.com/open-semantic-interchange/OSI/issues).
 
 # License
 
