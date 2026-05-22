@@ -2,7 +2,7 @@
 
 The **Open Semantic Interchange (OSI)** initiative is a collaborative, open-source effort dedicated to standardizing and streamlining semantic model exchange and utilization across the diverse array of tools and platforms within the data analytics, AI, and BI ecosystem. Our shared vision is to establish a common, vendor-agnostic semantic model specification, promoting unparalleled interoperability, efficiency, and collaboration among all participants. By providing a single, consistent source of truth, this vendor-agnostic standard ensures that your data's definitions and value remain consistent as they are interchanged between AI agents, BI platforms, and all other tools in your ecosystem, eliminating inconsistencies across your different tools.
 
-OSI addresses semantic fragmentation — the same KPI defined differently across tools, teams spending significant effort manually reconciling definitions, and AI agents producing unreliable outputs grounded in inconsistent business logic — by providing a single JSON- and YAML-based specification that any tool can read and write.
+OSI provides a single JSON- and YAML-based specification that any tool can read and write, addressing the semantic fragmentation common across today's data stack: the same KPI defined differently across tools, teams spending significant effort manually reconciling definitions, and AI agents producing unreliable outputs grounded in inconsistent business logic.
 
 ## What's in this repository
 
