@@ -1,0 +1,13 @@
+name: t-027-window-nulls-last
+description: "ORDER BY inside OVER(...) defaults to the high-end-NULL convention in compiled SQL: ASC ⇒ NULLS LAST, DESC ⇒ NULLS FIRST. This test exercises the DESC half (the symmetric counterpart of an ASC NULLS LAST default); paired with t-026 which exercises the ASC half."
+area: windows
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-029"
+tags: [window, nulls-first, symmetry]
+conformance_level: foundation_v0_1
+decision: D-029
+test_id: T-027
+status: planned
+xfail_reason: "Sprint S-9 — window OVER ORDER BY default NULL placement (D-029, amended 2026-05-13 to high-end-NULL convention)"

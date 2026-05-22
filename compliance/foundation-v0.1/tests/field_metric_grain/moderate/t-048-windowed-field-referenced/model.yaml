@@ -1,0 +1,34 @@
+name: f_prelude_windowed_field_chain
+datasets:
+  - name: customers
+    source: customers
+    primary_key: [id]
+    fields:
+      - {name: id,      expression: id,      dimension: {}}
+      - {name: region,  expression: region,  dimension: {}}
+      - {name: segment, expression: segment, dimension: {}}
+  - name: orders
+    source: orders
+    primary_key: [id]
+    fields:
+      - {name: id,          expression: id,          dimension: {}}
+      - {name: customer_id, expression: customer_id, dimension: {}}
+      - {name: status,      expression: status,      dimension: {}}
+      - {name: amount,      expression: amount}
+      # Windowed field — ROW_NUMBER over orders within a customer
+      # ranked by amount DESC. Per §4.3.1 window functions are
+      # evaluated at the home grain (per row of the orders dataset).
+      - name: rank_in_customer
+        expression: "ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY amount DESC, id ASC)"
+      # Downstream field that reads the windowed value. Inlining both
+      # into a single SELECT (``ROW_NUMBER() OVER (...) AS rn, CASE
+      # WHEN rn = 1 THEN amount ELSE 0 END AS top_only``) would rely
+      # on lateral aliasing within one SELECT — rejected on Snowflake,
+      # PostgreSQL, and SQLite. The planner must stage the windowed
+      # field in its own CTE before the downstream reference.
+      - name: top_only
+        expression: "CASE WHEN rank_in_customer = 1 THEN amount ELSE 0 END"
+relationships:
+  - {name: orders_to_customer, from: orders, to: customers, from_columns: [customer_id], to_columns: [id]}
+metrics:
+  - {name: top_per_customer_total, expression: "SUM(orders.top_only)"}

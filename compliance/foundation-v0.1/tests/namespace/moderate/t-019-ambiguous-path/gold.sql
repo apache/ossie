@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_AMBIGUOUS_PATH: two relationships orders↔users (placed_by/fulfilled_by)

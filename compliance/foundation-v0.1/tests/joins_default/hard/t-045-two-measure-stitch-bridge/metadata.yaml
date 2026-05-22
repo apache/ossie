@@ -1,0 +1,13 @@
+name: t-045-two-measure-stitch-bridge
+description: "Two-measure stitch where one branch needs bridge resolution (revenue + COUNT(DISTINCT campaign))"
+area: joins_default
+difficulty: hard
+dataset: f_bridge
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-026"
+tags: [bridge, stitch, full-outer]
+conformance_level: foundation_v0_1
+decision: D-026
+test_id: T-045
+status: planned
+xfail_reason: "Sprint S-7 — two-measure bridge stitch (D-026)"

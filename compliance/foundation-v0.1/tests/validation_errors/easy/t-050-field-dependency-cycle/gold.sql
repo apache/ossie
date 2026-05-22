@@ -1,0 +1,7 @@
+-- EXPECTED ERROR E_FIELD_DEPENDENCY_CYCLE: dataset `orders` declares
+-- a cycle in its inter-field dependency graph (``a → b → a``).
+-- Foundation v0.1 §4.3 requires each dataset's field dependency
+-- graph to be a DAG so the planner can lower derived fields into a
+-- topologically ordered chain of ``ADD_COLUMNS`` CTE stages — a
+-- cycle cannot be lowered to a finite stage count. Structural error;
+-- not gated by any feature flag.

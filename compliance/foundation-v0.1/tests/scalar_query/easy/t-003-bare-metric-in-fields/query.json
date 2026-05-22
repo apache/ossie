@@ -1,0 +1,7 @@
+{
+  "dataset": "orders",
+  "fields": [
+    "orders.id",
+    "total_revenue"
+  ]
+}

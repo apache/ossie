@@ -1,0 +1,15 @@
+{
+  "dataset": "orders",
+  "dimensions": [
+    "customers.region"
+  ],
+  "measures": [
+    {
+      "name": "order_count",
+      "metric": "order_count"
+    }
+  ],
+  "filters": [
+    "orders.status = 'completed'"
+  ]
+}

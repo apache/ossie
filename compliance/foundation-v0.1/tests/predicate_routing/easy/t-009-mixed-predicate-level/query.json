@@ -1,0 +1,15 @@
+{
+  "dataset": "orders",
+  "dimensions": [
+    "customers.region"
+  ],
+  "measures": [
+    {
+      "name": "revenue",
+      "metric": "total_revenue"
+    }
+  ],
+  "qualify": [
+    "customers.region = 'EAST' AND SUM(orders.amount) > 100"
+  ]
+}

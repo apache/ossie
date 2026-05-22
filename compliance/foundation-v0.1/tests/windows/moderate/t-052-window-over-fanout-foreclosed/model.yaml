@@ -1,0 +1,39 @@
+name: f_prelude_model
+datasets:
+  - name: customers
+    source: customers
+    primary_key: [id]
+    fields:
+      - {name: id,      expression: id,      dimension: {}}
+      - {name: region,  expression: region,  dimension: {}}
+      - {name: segment, expression: segment, dimension: {}}
+  - name: orders
+    source: orders
+    primary_key: [id]
+    fields:
+      - {name: id,          expression: id,          dimension: {}}
+      - {name: customer_id, expression: customer_id, dimension: {}}
+      - {name: status,      expression: status,      dimension: {}}
+      - {name: amount,      expression: amount}
+  - name: returns
+    source: returns
+    primary_key: [id]
+    fields:
+      - {name: id,          expression: id,          dimension: {}}
+      - {name: customer_id, expression: customer_id, dimension: {}}
+      - {name: amount,      expression: amount}
+  - name: premium_customers
+    source: premium_customers
+    primary_key: [id]
+    fields:
+      - {name: id, expression: id, dimension: {}}
+relationships:
+  - {name: orders_to_customer,  from: orders,  to: customers, from_columns: [customer_id], to_columns: [id]}
+  - {name: returns_to_customer, from: returns, to: customers, from_columns: [customer_id], to_columns: [id]}
+metrics:
+  # ``order_rank`` is windowed over orders (home grain = orders).
+  # A query that anchors at customers and references orders.order_rank
+  # would cross a 1:N edge (customers → orders), fanning out the
+  # one-side rows. The window would then run over fanned-out rows in
+  # violation of §6.10.3 / D-030, so the engine must refuse.
+  - {name: order_rank, expression: "RANK() OVER (PARTITION BY orders.customer_id ORDER BY orders.amount DESC)"}

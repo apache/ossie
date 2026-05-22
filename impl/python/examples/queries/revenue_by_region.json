@@ -1,0 +1,12 @@
+{
+  "_comment": "Foundation example: aggregate total revenue by customer region. Uses the demo_orders.yaml model. The planner enriches orders with customers on customer_id and aggregates at the region grain. Render with: osi compile examples/models/demo_orders.yaml examples/queries/revenue_by_region.json --dialect duckdb",
+  "dimensions": [
+    {"dataset": "customers", "name": "region"}
+  ],
+  "measures": [
+    {"name": "total_revenue"}
+  ],
+  "order_by": [
+    {"target": {"name": "total_revenue"}, "descending": true}
+  ]
+}

@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_NO_PATH: no relationship connects orders and inventory_movements

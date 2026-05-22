@@ -1,0 +1,261 @@
+# Foundation Conformance Decisions — runnable test mapping.
+#
+# Mirrors Appendix B of ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md.
+# Every D-NNN listed there has at least one row here pinning it to a
+# T-NNN test case under tests/. The runner emits
+# results/decisions_coverage.md after every run so gaps are visible.
+#
+# Status:
+#   * must_pass — the engine MUST pass every T-NNN test pinned to this
+#     decision; failure is a Foundation conformance failure.
+#   * xfail    — the test is shipped but expected to fail until the
+#     named sprint flips it; xfail_pinned_to identifies the sprint.
+
+version: "0.1"
+
+decisions:
+
+  - id: D-001
+    title: Aggregation result cardinality + multi-measure stitch on incompatible roots
+    spec_ref: "§5.1.1, §6.2, §6.6"
+    tests:
+      - tests/edge_cases/easy/t-061-orphan-fact-row-null-dim/
+      - tests/query_shape/easy/t-001-aggregation-cardinality/
+    status: must_pass
+
+  - id: D-002
+    title: All measures resolve at the query's grain (no per-aggregate native granularity leak)
+    spec_ref: §6.2
+    tests:
+      # No active witness — Phase 4 review I7 backlog.
+      []
+    status: must_pass
+
+  - id: D-003
+    title: Implicit home-grain aggregation in field expressions
+    spec_ref: §4.3.1
+    tests: []
+    status: must_pass
+
+  - id: D-004
+    title: "Default join shapes (LEFT for N:1; FULL OUTER stitch; CROSS JOIN of 1-row scalars)"
+    spec_ref: §6.6
+    tests:
+      - tests/empty_inputs/moderate/t-048-null-foreign-key/
+      - tests/joins_default/moderate/t-011-multi-fact-full-outer/
+      - tests/namespace/hard/t-043-multi-hop-n1-chain/
+      - tests/scalar_query/easy/t-012-scalar-grand-total/
+    status: must_pass
+
+  - id: D-005
+    title: "Routing of predicates by resolved expression shape (no role: keyword)"
+    spec_ref: "§4.3, §6.3"
+    tests:
+      - tests/cross_grain/moderate/t-024-boolean-home-grain-scalar-in-where/
+      - tests/query_shape/easy/t-028-where-and-list/
+    status: must_pass
+
+  - id: D-006
+    title: Bare-name resolves to global namespace; dataset-scoped via dataset.field
+    spec_ref: §4.6
+    tests:
+      - tests/namespace/easy/t-020-bare-name-not-found/
+    status: must_pass
+
+  - id: D-007
+    title: "M:N traversals must produce a result equivalent to bridge or stitch; otherwise E3012"
+    spec_ref: §6.8
+    tests:
+      - tests/bridge/hard/t-014-mn-no-bridge/
+      - tests/joins_default/easy/t-013-no-stitching-dimension/
+    status: must_pass
+
+  - id: D-008
+    title: No per-metric joins.type override at Foundation level (deferred)
+    spec_ref: "§6.6, §6.9"
+    tests: []
+    status: must_pass
+
+  - id: D-009
+    title: Deferred relationship-level keys rejected with E_DEFERRED_KEY_REJECTED in default mode
+    spec_ref: §11
+    tests: []
+    status: must_pass
+
+  - id: D-010
+    title: Aggregation vs Scalar query shape — mixing rejected with E_MIXED_QUERY_SHAPE
+    spec_ref: §5.1
+    tests:
+      - tests/error_taxonomy/easy/t-050-empty-aggregation-query/
+      - tests/error_taxonomy/easy/t-051-empty-scalar-query/
+      - tests/query_shape/easy/t-002-mixed-query-shape/
+    status: must_pass
+
+  - id: D-011
+    title: Bare metric reference inside Fields rejected with E_AGGREGATE_IN_SCALAR_QUERY
+    spec_ref: §5.1.2
+    tests:
+      - tests/scalar_query/easy/t-003-bare-metric-in-fields/
+    status: must_pass
+
+  - id: D-012
+    title: Predicate-shape errors (Where vs Having)
+    spec_ref: §6.3
+    tests:
+      - tests/predicate_routing/easy/t-007-aggregate-in-where/
+      - tests/predicate_routing/easy/t-008-non-aggregate-in-having/
+      - tests/predicate_routing/easy/t-009-mixed-predicate-level/
+    status: must_pass
+
+  - id: D-014
+    title: Per-engine determinism — same (model, query, dialect) → byte-identical SQL
+    spec_ref: §11
+    tests:
+      - tests/null_ordering/moderate/t-026-nulls-last-default/
+      - tests/query_shape/easy/t-052-limit-without-order/
+    status: must_pass
+
+  - id: D-016
+    title: COUNT(*) is required and counts rows of the home dataset / query grain
+    spec_ref: §7
+    tests:
+      - tests/query_shape/easy/t-006-count-star/
+    status: must_pass
+
+  - id: D-018
+    title: Path resolution — unique path used; multiple ⇒ E_AMBIGUOUS_PATH; none ⇒ E_NO_PATH
+    spec_ref: §6.9
+    tests:
+      - tests/namespace/easy/t-040-no-path-error/
+      - tests/namespace/hard/t-044-composite-key-join/
+      - tests/namespace/hard/t-046-reflexive-relationship/
+      - tests/namespace/moderate/t-019-ambiguous-path/
+    status: must_pass
+
+  - id: D-019
+    title: Reserved names (GRAIN, FILTER, QUERY_FILTER) cannot be used as user identifiers
+    spec_ref: §4.6.2
+    tests:
+      - tests/namespace/easy/t-041-reserved-name/
+    status: must_pass
+
+  - id: D-020
+    title: "Single-step + nested cross-grain aggregates over 1:N (every aggregate category)"
+    spec_ref: "§4.5 form (1), §6.1 Semantic 2"
+    tests:
+      - tests/cross_grain/moderate/t-005a-single-step-sum/
+      - tests/cross_grain/moderate/t-005b-single-step-avg/
+      - tests/cross_grain/moderate/t-005d-single-step-vs-nested-sum/
+      - tests/cross_grain/moderate/t-005e-count-distinct-single-step/
+    status: must_pass
+
+  - id: D-021
+    title: "expression slot accepts string OR { dialects: [...] } per OSI_SQL_2026"
+    spec_ref: "§4.3 / §4.5"
+    tests:
+      # No active witness — Phase 4 review I7 backlog.
+      []
+    status: must_pass
+
+  - id: D-022
+    title: Plan that forces decomposition the aggregate cannot survive ⇒ E_UNSAFE_REAGGREGATION (chasm pre-agg / stitch only — bridge plan is single-pass and not in scope)
+    spec_ref: "§6.2 Starting Grain, §6.7, §6.8.2"
+    tests:
+      - tests/bridge/hard/t-021-count-distinct-fanout/
+    status: must_pass
+
+  - id: D-023
+    title: Scalar query — fan-out / incompatible-home rejected with E_FAN_OUT_IN_SCALAR_QUERY
+    spec_ref: "§6.2 Final Grain, §5.1.2"
+    tests:
+      - tests/empty_inputs/moderate/t-025-scalar-two-unrelated-facts/
+      - tests/scalar_query/moderate/t-022-fanout-in-scalar-query/
+    status: must_pass
+
+  - id: D-024
+    title: Row-level reference at finer grain ⇒ E_UNAGGREGATED_FINER_GRAIN_REFERENCE
+    spec_ref: §6.2 Starting Grain
+    tests:
+      - tests/predicate_routing/moderate/t-023-unaggregated-finer-grain-reference/
+    status: must_pass
+
+  - id: D-025
+    title: Catch-all measure-grain ambiguity ⇒ E_AMBIGUOUS_MEASURE_GRAIN
+    spec_ref: §6.2 Starting Grain
+    tests:
+      # No active witness — Phase 4 review I7 backlog.
+      []
+    status: must_pass
+
+  - id: D-026
+    title: Bridge resolution materializes distinct (fact, group-key) — Semantic 2
+    spec_ref: "§6.1 Semantic 2, §6.8.1"
+    tests:
+      - tests/bridge/hard/t-015-bridge-dedup/
+      - tests/joins_default/hard/t-045-two-measure-stitch-bridge/
+    status: must_pass
+
+  - id: D-027
+    title: |
+      Bare cross-grain aggregate over an N:N edge resolves via the §6.8.1
+      bridge-dedup construction in a single pass for every aggregate
+      category (distributive, algebraic, holistic). The "per-home-row-first"
+      interpretation requires the nested form AGG(AGG(...)), which is
+      deferred to §10 and raises E_NESTED_AGGREGATION_DEFERRED.
+    spec_ref: "§4.5 form (1), §6.8.1"
+    tests:
+      - tests/bridge/hard/t-016-non-distributive-over-bridge-accepted/
+      - tests/bridge/hard/t-051-holistic-over-bridge-accepted/
+      - tests/cross_grain/hard/t-005c-nested-avg/
+      - tests/nested_aggregates/hard/t-017-nested-aggregation-over-bridge/
+    status: must_pass
+
+  - id: D-028
+    title: Standard SQL window functions in Measures / Fields / Order By / Having; Where ⇒ E_WINDOW_IN_WHERE
+    spec_ref: §6.10.1
+    tests:
+      - tests/windows/moderate/t-029-window-in-where-rejected/
+      - tests/windows/moderate/t-030-nested-window-rejected/
+    status: must_pass
+
+  - id: D-029
+    title: NULLS LAST default for outer Order By + OVER ORDER BY; emitted explicitly into compiled SQL
+    spec_ref: "§5.1, §6.10.2"
+    tests:
+      - tests/null_ordering/moderate/t-062-nulls-first-default-on-desc/
+      - tests/windows/moderate/t-027-window-nulls-last/
+    status: must_pass
+
+  - id: D-030
+    title: Window over fan-out ⇒ pre-fan-out materialization (or E_WINDOW_OVER_FANOUT_REWRITE)
+    spec_ref: §6.10.3
+    tests:
+      - tests/windows/hard/t-032-row-number-qualify-pattern/
+      - tests/windows/moderate/t-031-running-total-window/
+      - tests/windows/moderate/t-036-window-over-1n-fanout-accepted/
+    status: must_pass
+
+  - id: D-031
+    title: Composing a metric on top of a windowed metric ⇒ E_WINDOWED_METRIC_COMPOSITION
+    spec_ref: §6.10.5
+    tests:
+      - tests/windows/hard/t-033-windowed-metric-composition-rejected/
+    status: must_pass
+
+  - id: D-032
+    title: "ROWS / RANGE with integer-literal bounds only; GROUPS or :param ⇒ E_DEFERRED_FRAME_MODE"
+    spec_ref: §6.10.6
+    tests:
+      - tests/windows/moderate/t-034-groups-frame-rejected/
+      - tests/windows/moderate/t-035-parameterised-frame-bound-rejected/
+    status: must_pass
+
+  - id: D-033
+    title: Empty / NULL aggregate behaviour follows standard SQL (COUNT⇒0, others⇒NULL)
+    spec_ref: "§6.11.1, §6.11.2"
+    tests:
+      - tests/edge_cases/easy/t-060-empty-input-count-distinct/
+      - tests/empty_inputs/moderate/t-047-empty-set-sum-vs-count/
+      - tests/empty_inputs/moderate/t-049-null-dimension-column/
+      - tests/empty_inputs/moderate/t-053-avg-min-max-empty/
+    status: must_pass

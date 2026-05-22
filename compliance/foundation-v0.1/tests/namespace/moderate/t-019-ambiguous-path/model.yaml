@@ -1,0 +1,21 @@
+name: f_ambig_model
+datasets:
+  - name: orders
+    source: orders
+    primary_key: [id]
+    fields:
+      - {name: id,              expression: id,              dimension: {}}
+      - {name: placed_by_id,    expression: placed_by_id,    dimension: {}}
+      - {name: fulfilled_by_id, expression: fulfilled_by_id, dimension: {}}
+      - {name: amount,          expression: amount}
+  - name: users
+    source: users
+    primary_key: [id]
+    fields:
+      - {name: id,     expression: id,     dimension: {}}
+      - {name: region, expression: region, dimension: {}}
+relationships:
+  - {name: order_placed_by,    from: orders, to: users, from_columns: [placed_by_id],    to_columns: [id]}
+  - {name: order_fulfilled_by, from: orders, to: users, from_columns: [fulfilled_by_id], to_columns: [id]}
+metrics:
+  - {name: order_count, expression: "COUNT(orders.id)"}

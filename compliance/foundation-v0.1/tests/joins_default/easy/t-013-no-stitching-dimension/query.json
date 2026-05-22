@@ -1,0 +1,13 @@
+{
+  "dataset": "orders",
+  "measures": [
+    {
+      "name": "total_amount",
+      "metric": "total_amount"
+    },
+    {
+      "name": "total_quantity",
+      "metric": "total_quantity"
+    }
+  ]
+}

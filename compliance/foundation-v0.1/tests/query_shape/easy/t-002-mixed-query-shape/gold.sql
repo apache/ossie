@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_MIXED_QUERY_SHAPE: Dimensions and Fields cannot both be present

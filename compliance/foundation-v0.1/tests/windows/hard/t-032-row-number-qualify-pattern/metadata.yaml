@@ -1,0 +1,13 @@
+name: t-032-row-number-qualify-pattern
+description: "ROW_NUMBER exposed as a derived field; outer Where filters that field (qualify-style pattern)"
+area: windows
+difficulty: hard
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-030"
+tags: [window, qualify]
+conformance_level: foundation_v0_1
+decision: D-030
+test_id: T-032
+status: planned
+xfail_reason: "Sprint S-12 — derived-field qualify pattern (D-030)"

@@ -1,0 +1,12 @@
+name: t-049-field-chain-cross-dataset-enrich
+description: "An enriched (N:1) child dataset declares fields that reference other sibling fields; the planner must stage the child's derived fields before the join so the enrich SELECT projects them by name"
+area: field_metric_grain
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#sec-4.3"
+  - "Proposed_OSI_Semantics.md#sec-6.5.1"
+tags: [field, inter-field-deps, enrich, staging, portability]
+conformance_level: foundation_v0_1
+test_id: T-049
+status: active

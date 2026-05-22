@@ -1,0 +1,18 @@
+name: t-049-null-dimension-column
+description: >-
+  ``NULL`` values in a grouped dimension column collapse to a
+  single ``NULL`` group (standard SQL ``GROUP BY`` semantics).
+  Per D-033, empty / ``NULL`` behaviour follows standard SQL;
+  D-014 (per-engine SQL byte-determinism) is unrelated.
+area: empty_inputs
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-033"
+  - "Proposed_OSI_Semantics.md#sec-6.11"
+tags: [null, group-by]
+conformance_level: foundation_v0_1
+decision: D-033
+test_id: T-049
+status: planned
+xfail_reason: "Sprint S-14 — NULL-dim group collapse; inline NULL-region customer 4 needed in S-E"

@@ -1,0 +1,39 @@
+[flake8]
+max-line-length = 88
+extend-select = E,W,F
+extend-ignore =
+    # Black-compatible: whitespace before ':' (slices) and line-break before binary op
+    E203,
+    W503,
+    # Allow single-line Protocol / overload stubs that black collapses
+    E704,
+    # Missing docstring in public module / package (__init__.py is often empty)
+    D104,
+    # Missing docstring in __init__ of a class (we put the doc on the class)
+    D107
+exclude =
+    .git,
+    __pycache__,
+    build,
+    dist,
+    htmlcov,
+    .venv,
+    .mypy_cache,
+    .pytest_cache,
+    .hypothesis,
+    .benchmarks,
+    .mutmut-cache,
+    .temp_scripts,
+    docs,
+    specs,
+    logs
+per-file-ignores =
+    # Facade re-exports trip "imported but unused" (F401) by design
+    src/osi/__init__.py:F401
+    src/osi/planning/__init__.py:F401
+    src/osi/planning/algebra/__init__.py:F401
+    src/osi/codegen/__init__.py:F401
+    src/osi/parsing/__init__.py:F401
+    # Tests may skip docstrings and have long lines for fixtures
+    tests/*:D100,D101,D102,D103,E501,F841
+    conformance/*:D100,D101,D102,D103,E501,F841

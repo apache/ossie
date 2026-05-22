@@ -1,0 +1,22 @@
+# Enabled proposals for osi_python
+# -----------------------------------------------------------------------
+# This file is the authoritative answer to "which OSI proposals does
+# osi_python implement?". The ``make conformance`` Makefile target reads
+# this list and passes it as ``--proposals`` to the compliance/harness
+# runner; any test requiring a proposal not listed here is recorded as
+# a SKIP (not a FAIL).
+#
+# Every entry MUST appear in ``compliance/foundation-v0.1/proposals.yaml``.
+# Adding a proposal here means: "the implementation is complete, there
+# is reason to believe it is correct, and the suite should exercise it."
+#
+# Lifecycle (see ../CONTRIBUTING.md §Ratification):
+#   1. Draft a spec under ../specs/.
+#   2. Implement behind the existing deferred-feature rejection in
+#      osi.parsing.deferred so nothing regresses.
+#   3. Remove the rejection + tag associated tests with the proposal ID.
+#   4. Add the ID here and run ``make conformance``.
+
+# Foundation proposals (ratified and required of every osi_python build)
+# are implicit. Only opt-in proposals above the Foundation need listing.
+enabled: []

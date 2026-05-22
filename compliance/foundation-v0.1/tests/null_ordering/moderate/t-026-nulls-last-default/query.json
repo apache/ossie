@@ -1,0 +1,18 @@
+{
+  "dataset": "customers",
+  "dimensions": [
+    "customers.region"
+  ],
+  "measures": [
+    {
+      "name": "revenue",
+      "metric": "total_revenue"
+    }
+  ],
+  "order_by": [
+    {
+      "target": "customers.region",
+      "direction": "ASC"
+    }
+  ]
+}

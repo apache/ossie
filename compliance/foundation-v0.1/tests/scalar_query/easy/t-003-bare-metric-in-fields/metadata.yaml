@@ -1,0 +1,22 @@
+name: t-003-bare-metric-in-fields
+description: >-
+  Scalar query (``Fields`` clause): a bare metric reference inside
+  ``Fields`` is rejected with ``E_AGGREGATE_IN_SCALAR_QUERY`` per
+  D-011 / §5.1.2. This is the scalar-query rejection rule —
+  distinct from D-022's ``E_UNSAFE_REAGGREGATION`` for fan-trap
+  decomposition failures and from D-023's
+  ``E_FAN_OUT_IN_SCALAR_QUERY`` for join-path fan-outs.
+area: scalar_query
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-011"
+  - "Proposed_OSI_Semantics.md#sec-5.1"
+tags: [scalar-query, negative, aggregate]
+conformance_level: foundation_v0_1
+decision: D-011
+test_id: T-003
+expected_error: true
+expected_error_code: E_AGGREGATE_IN_SCALAR_QUERY
+status: planned
+xfail_reason: "Sprint S-2 — scalar-query aggregate rejection (D-011)"

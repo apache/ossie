@@ -1,1 +1,91 @@
+# Single repo-wide ignore file.
+#
+# Per-subtree ignores only exist where the rule is genuinely local:
+#   compliance/foundation-v0.1/.gitignore  — keeps results/* but tracks REPORT.md
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+build/
+dist/
+
+# ---------------------------------------------------------------------------
+# Virtual environments
+# ---------------------------------------------------------------------------
+.venv/
+venv/
+env/
+
+# ---------------------------------------------------------------------------
+# Testing / type-check / coverage caches
+# ---------------------------------------------------------------------------
+.coverage
+.coverage.*
+coverage.json
+coverage.xml
+*.cover
+htmlcov/
+.pytest_cache/
+.hypothesis/
+.benchmarks/
+.mutmut-cache/
+.mypy_cache/
+.ruff_cache/
+.import_linter_cache/
+.tox/
+
+# ---------------------------------------------------------------------------
+# Test report artifacts (impl/python/scripts/run_all_tests.sh, etc.)
+# ---------------------------------------------------------------------------
+test-results/
+
+# ---------------------------------------------------------------------------
+# Editor / IDE / OS
+# ---------------------------------------------------------------------------
+.idea/
+.vscode/
+.cursor/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ---------------------------------------------------------------------------
+# IDE-generated agent skill mirrors (auto-synced from .agent-skills/)
+# ---------------------------------------------------------------------------
+.claude/
+
+# ---------------------------------------------------------------------------
+# Review artifacts (local only — not committed)
+# ---------------------------------------------------------------------------
+.review/
+
+# ---------------------------------------------------------------------------
+# Streamlit secrets (never commit; commit only *.toml.example templates)
+# ---------------------------------------------------------------------------
+.streamlit/secrets.toml
+**/secrets.toml
+
+# ---------------------------------------------------------------------------
+# Local test fixtures (DuckDB / SQLite scratch DBs)
+# ---------------------------------------------------------------------------
+*.db
+*.sqlite
+*.sqlite3
+
+# ---------------------------------------------------------------------------
+# Logs and scratch
+# ---------------------------------------------------------------------------
+*.log
+*.tmp
+*.bak
+logs/
+.temp_scripts/

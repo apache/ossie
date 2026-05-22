@@ -1,0 +1,13 @@
+name: t-060-empty-input-count-distinct
+description: "S-E hot-spot 25: COUNT(DISTINCT x) over an empty group returns 0 (D-033)."
+area: edge_cases
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-033"
+tags: [empty-input, count-distinct, edge-case]
+conformance_level: foundation_v0_1
+decision: D-033
+test_id: T-060
+status: planned
+xfail_reason: "S-E — drift-hot-spot edge case for COUNT DISTINCT over empty group"

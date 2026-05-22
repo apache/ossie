@@ -1,0 +1,18 @@
+{
+  "dataset": "customers",
+  "dimensions": [
+    "customers.region"
+  ],
+  "measures": [
+    {
+      "name": "customer_count",
+      "metric": "order_count"
+    }
+  ],
+  "filters": [
+    "customers.is_premium"
+  ],
+  "order_by": [
+    {"target": "customers.region"}
+  ]
+}

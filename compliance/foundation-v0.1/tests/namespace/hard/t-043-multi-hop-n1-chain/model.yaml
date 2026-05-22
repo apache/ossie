@@ -1,0 +1,38 @@
+name: f_chain_model
+datasets:
+  - name: segments
+    source: segments
+    primary_key: [id]
+    fields:
+      - {name: id,   expression: id,   dimension: {}}
+      - {name: name, expression: name, dimension: {}}
+  - name: customers
+    source: customers
+    primary_key: [id]
+    fields:
+      - {name: id,         expression: id,         dimension: {}}
+      - {name: segment_id, expression: segment_id, dimension: {}}
+      - {name: region,     expression: region,     dimension: {}}
+  - name: orders
+    source: orders
+    primary_key: [id]
+    fields:
+      - {name: id,          expression: id,          dimension: {}}
+      - {name: customer_id, expression: customer_id, dimension: {}}
+      - {name: amount,      expression: amount}
+      - {name: status,      expression: status,      dimension: {}}
+  - name: order_lines
+    source: order_lines
+    primary_key: [id]
+    fields:
+      - {name: id,       expression: id,       dimension: {}}
+      - {name: order_id, expression: order_id, dimension: {}}
+      - {name: sku,      expression: sku,      dimension: {}}
+      - {name: qty,      expression: qty}
+      - {name: price,    expression: price}
+relationships:
+  - {name: cust_to_segment, from: customers,   to: segments,  from_columns: [segment_id], to_columns: [id]}
+  - {name: ord_to_cust,     from: orders,      to: customers, from_columns: [customer_id], to_columns: [id]}
+  - {name: line_to_order,   from: order_lines, to: orders,    from_columns: [order_id],    to_columns: [id]}
+metrics:
+  - {name: revenue, expression: "SUM(order_lines.qty * order_lines.price)"}

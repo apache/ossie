@@ -1,0 +1,57 @@
+# OSI Compliance Test Suite — Conformance Levels (updated Foundation)
+#
+# This file pins which subsets of the suite an engine MUST pass to claim
+# a particular Foundation conformance level. The Foundation spec lives
+# at ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md (osi_version: 0.1).
+#
+# Each level lists the test areas that contribute to it; an
+# implementation passes the level iff every must_pass case in those
+# areas is green.
+#
+# Cross-engine SQL determinism is NOT required by Foundation v0.1
+# (per D-014); cross-engine portability is observable behaviour
+# (rows or error code). The strict level adds per-engine SQL
+# determinism witnesses on top of the basic foundation level.
+
+version: "0.1"
+
+levels:
+  foundation_v0_1:
+    description: >
+      Foundation v0.1 conformance. Required for any engine that claims
+      to implement the updated OSI Foundation. Every D-NNN row in
+      Appendix B of Proposed_OSI_Semantics.md must produce the
+      expected outcome (row set or error code).
+    pass_threshold: 100%
+    areas:
+      query_shape: all              # D-001, D-010, D-011
+      scalar_query: all             # D-010, D-011, D-023
+      field_metric_grain: all       # D-003, D-015
+      cross_grain: all              # D-020, D-024
+      nested_aggregates: all        # D-022, D-027, §4.5.1
+      bridge: all                   # D-026 flagship
+      joins_default: all            # D-001, D-004, D-008
+      predicate_routing: all        # D-005, D-012
+      namespace: all                # D-006, D-018, D-019
+      windows: all                  # D-028, D-030, D-031, D-032
+      null_ordering: all            # D-029
+      empty_inputs: all             # D-033
+      deferred: all                 # D-009, every E_DEFERRED_KEY_REJECTED case
+      error_taxonomy: all           # remaining Appendix C codes (E_PRIMARY_KEY_REQUIRED, etc.)
+
+  foundation_v0_1_strict:
+    description: >
+      Foundation v0.1 with per-engine SQL determinism witnesses
+      (D-014). Optional. Adds: same (model, query, dialect) compiled
+      twice on the same engine produces byte-identical SQL; outer
+      Order By and OVER ORDER BY emit explicit NULLS LAST per D-029.
+    pass_threshold: 100%
+    includes: [foundation_v0_1]
+    areas:
+      determinism:
+        all: all                    # D-014, D-029 SQL-text witnesses
+
+# Extension levels (e.g. foundation_v0_1_with_grain_modes) will be
+# added when their feature proposals (§10 of the Foundation spec)
+# are ratified. Each ratified proposal becomes a new level here that
+# requires foundation_v0_1 plus the proposal's tests.

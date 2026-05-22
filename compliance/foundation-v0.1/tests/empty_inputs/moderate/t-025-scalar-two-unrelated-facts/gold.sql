@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_FAN_OUT_IN_SCALAR_QUERY: two row-level facts on many-side, no single home

@@ -1,0 +1,15 @@
+name: t-051-empty-scalar-query
+description: "Scalar query with empty Fields is rejected with E_EMPTY_SCALAR_QUERY"
+area: error_taxonomy
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#E_EMPTY_SCALAR_QUERY"
+tags: [empty, scalar, negative]
+conformance_level: foundation_v0_1
+decision: D-010
+test_id: T-051
+expected_error: true
+expected_error_code: E_EMPTY_SCALAR_QUERY
+status: planned
+xfail_reason: "Sprint S-2 — empty scalar query rejection"

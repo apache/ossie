@@ -1,0 +1,18 @@
+name: t-028-where-and-list
+description: >-
+  ``Where: [P1, P2]`` is conjunction (logical AND), not disjunction.
+  Predicate-routing semantics are normative per §6.3; the list form
+  is sugar for ``P1 AND P2``. D-014 (per-engine SQL byte-determinism)
+  does NOT cover this — it is a query-shape rule.
+area: query_shape
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-005"
+  - "Proposed_OSI_Semantics.md#sec-6.3"
+tags: [where, and]
+conformance_level: foundation_v0_1
+decision: D-005
+test_id: T-028
+status: planned
+xfail_reason: "Sprint S-2 — Where-list conjunction semantics"

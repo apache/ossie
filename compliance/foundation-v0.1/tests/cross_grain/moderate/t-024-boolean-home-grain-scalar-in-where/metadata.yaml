@@ -1,0 +1,13 @@
+name: t-024-boolean-home-grain-scalar-in-where
+description: "Boolean home-grain scalar field is usable in Where (predicate routes by resolved shape, not surface syntax)"
+area: cross_grain
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-005"
+tags: [predicate-routing, home-grain, where]
+conformance_level: foundation_v0_1
+decision: D-005
+test_id: T-024
+status: planned
+xfail_reason: "Sprint S-5 — predicate routing by resolved shape, boolean home-grain scalar in Where (D-005e)"

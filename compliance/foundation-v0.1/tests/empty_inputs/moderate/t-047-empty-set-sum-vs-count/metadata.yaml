@@ -1,0 +1,13 @@
+name: t-047-empty-set-sum-vs-count
+description: "Empty-set aggregate behaviour: SUM → NULL, COUNT(x) → 0, COUNT(*) → 0 (D-033)"
+area: empty_inputs
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-033"
+tags: [empty-set, null, count]
+conformance_level: foundation_v0_1
+decision: D-033
+test_id: T-047
+status: planned
+xfail_reason: "Sprint S-14 — empty/null aggregate behaviour (D-033)"

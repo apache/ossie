@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_WINDOWED_METRIC_COMPOSITION: metric composes onto a windowed metric

@@ -1,0 +1,4 @@
+-- Negative test: no SQL is produced. The engine must refuse this
+-- query with E_FAN_OUT_IN_SCALAR_QUERY (D-023). This file is present
+-- to satisfy the harness's "one file per shape" convention and to
+-- document that no SQL output is expected.

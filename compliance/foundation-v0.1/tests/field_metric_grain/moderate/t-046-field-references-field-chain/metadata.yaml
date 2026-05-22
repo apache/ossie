@@ -1,0 +1,11 @@
+name: t-046-field-references-field-chain
+description: "Field chain a→b→c where each derived field references the previous; SUM at the home grain produces the right rows on every dialect"
+area: field_metric_grain
+difficulty: moderate
+dataset: f_chain
+spec_refs:
+  - "Proposed_OSI_Semantics.md#sec-4.3"
+tags: [field, inter-field-deps, staging, portability]
+conformance_level: foundation_v0_1
+test_id: T-046
+status: active

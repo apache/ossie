@@ -1,0 +1,7 @@
+{
+  "dataset": "orders",
+  "fields": [
+    "orders.id",
+    "orders.recent_sum_param"
+  ]
+}

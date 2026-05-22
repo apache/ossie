@@ -1,0 +1,131 @@
+# Foundation example semantic model.
+#
+# Demonstrates every Foundation-supported shape:
+#   * datasets with primary keys and unique keys
+#   * dimensions, facts, and time dimensions
+#   * equijoin relationships (simple + composite)
+#   * referential integrity hints
+#   * model-scoped metrics (per-dataset metrics: blocks are deferred —
+#     see Proposed_OSI_Semantics.md §4.5 / D-027)
+#   * named filters
+#   * parameters
+#
+# No deferred features appear here. See Proposed_OSI_Semantics.md §10 for
+# what is intentionally absent.
+semantic_model:
+  - name: demo_orders
+    description: A minimal star-schema model for Foundation demos.
+    dialect: ANSI_SQL
+
+    datasets:
+      - name: orders
+        source: sales.public.orders
+        primary_key: [order_id]
+        unique_keys:
+          - [order_id]
+          - [order_number]
+        description: Customer orders, one row per order.
+        fields:
+          - name: order_id
+            expression: order_id
+            role: dimension
+            description: Surrogate primary key.
+          - name: order_number
+            expression: order_number
+            role: dimension
+            description: Natural unique key.
+          - name: customer_id
+            expression: customer_id
+            role: dimension
+            description: FK to customers.
+          - name: order_date
+            expression: order_date
+            role: time_dimension
+            description: Date the order was placed.
+          - name: status
+            expression: status
+            role: dimension
+          - name: amount
+            expression: amount
+            role: fact
+            description: Order total in USD.
+          - name: discount
+            expression: discount
+            role: fact
+            description: Discount as a decimal [0, 1].
+
+      - name: customers
+        source: sales.public.customers
+        primary_key: [id]
+        description: Customer master.
+        fields:
+          - name: id
+            expression: id
+            role: dimension
+          - name: email
+            expression: email
+            role: dimension
+          - name: region
+            expression: region
+            role: dimension
+          - name: segment
+            expression: market_segment
+            role: dimension
+
+      - name: line_items
+        source: sales.public.line_items
+        primary_key: [order_id, line_number]
+        description: Order line items, one row per item on an order.
+        fields:
+          - name: order_id
+            expression: order_id
+            role: dimension
+          - name: line_number
+            expression: line_number
+            role: dimension
+          - name: product_id
+            expression: product_id
+            role: dimension
+          - name: quantity
+            expression: quantity
+            role: fact
+          - name: unit_price
+            expression: unit_price
+            role: fact
+
+    relationships:
+      - name: orders_to_customers
+        from: orders
+        to: customers
+        from_columns: [customer_id]
+        to_columns: [id]
+        description: Every order belongs to a customer.
+
+      - name: line_items_to_orders
+        from: line_items
+        to: orders
+        from_columns: [order_id]
+        to_columns: [order_id]
+        description: Line items belong to one order.
+
+    metrics:
+      - name: total_revenue
+        expression: SUM(orders.amount)
+        description: Total revenue across orders.
+      - name: order_count
+        expression: COUNT(orders.order_id)
+        description: Number of orders.
+      - name: avg_order_value
+        expression: total_revenue / NULLIF(order_count, 0)
+        description: Average order value — derived metric.
+
+    filters:
+      - name: completed_orders
+        expression: status = 'completed'
+        description: Reusable filter for shipped/completed orders.
+
+    parameters:
+      - name: min_amount
+        data_type: NUMBER
+        default: 0
+        description: Minimum order amount for filtering.

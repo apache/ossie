@@ -1,0 +1,15 @@
+name: t-025-scalar-two-unrelated-facts
+description: "Scalar query referencing two unrelated row-level facts is rejected with E_FAN_OUT_IN_SCALAR_QUERY"
+area: empty_inputs
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-023"
+tags: [scalar, fan-out, multi-fact, negative]
+conformance_level: foundation_v0_1
+decision: D-023
+test_id: T-025
+expected_error: true
+expected_error_code: E_FAN_OUT_IN_SCALAR_QUERY
+status: planned
+xfail_reason: "Sprint S-14 — scalar two-fact rejection (D-023 extended)"

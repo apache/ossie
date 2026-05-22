@@ -1,0 +1,14 @@
+{
+  "_comment": "Sales totals vs return amounts by customer birth country — a two-fact query. total_sales roots at store_sales and total_returns roots at store_returns; both join to the shared customer dimension. The planner plans each fact branch independently then stitches with a FULL OUTER JOIN on c_birth_country (D-022, M:N stitch). Shows the MERGE codegen step (step_006 in the output). Render with: osi compile examples/models/tpcds_thin.yaml examples/queries/tpcds_sales_vs_returns.json --dialect duckdb",
+  "dimensions": [
+    {"dataset": "customer", "name": "c_birth_country"}
+  ],
+  "measures": [
+    {"name": "total_sales"},
+    {"name": "total_returns"}
+  ],
+  "order_by": [
+    {"target": {"name": "total_sales"}, "descending": true}
+  ],
+  "limit": 25
+}

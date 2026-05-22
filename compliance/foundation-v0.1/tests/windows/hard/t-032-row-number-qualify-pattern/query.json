@@ -1,0 +1,12 @@
+{
+  "dataset": "orders",
+  "fields": [
+    "orders.id",
+    "orders.customer_id",
+    "orders.amount",
+    "orders.order_rank_in_customer"
+  ],
+  "filters": [
+    "orders.order_rank_in_customer = 1"
+  ]
+}

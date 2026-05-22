@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_WINDOW_IN_WHERE: window function inside Where; use Having/Qualify or derived field

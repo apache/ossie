@@ -1,0 +1,16 @@
+{
+  "dataset": "actors",
+  "dimensions": [
+    "actors.height"
+  ],
+  "measures": [
+    {
+      "name": "total_gross",
+      "metric": "total_gross"
+    },
+    {
+      "name": "distinct_movies",
+      "metric": "distinct_movies"
+    }
+  ]
+}

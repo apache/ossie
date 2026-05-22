@@ -1,0 +1,11 @@
+name: t-047-field-chain-reverse-declared
+description: "Same a→b→c chain as T-046 but fields declared in reverse order; an implementation that inlines field expressions in declaration order will produce invalid SQL on every dialect — staging by inter-field dependency is required"
+area: field_metric_grain
+difficulty: moderate
+dataset: f_chain
+spec_refs:
+  - "Proposed_OSI_Semantics.md#sec-4.3"
+tags: [field, inter-field-deps, staging, portability, declaration-order]
+conformance_level: foundation_v0_1
+test_id: T-047
+status: active

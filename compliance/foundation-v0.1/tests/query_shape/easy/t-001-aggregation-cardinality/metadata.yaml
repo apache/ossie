@@ -1,0 +1,13 @@
+name: t-001-aggregation-cardinality
+description: "Aggregation-query cardinality is DISTINCT(Dimensions); single-measure ⇒ Plan A (NORTH absent, orphan NULL bucket present)"
+area: query_shape
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-001"
+tags: [query-shape, plan-a, left-join]
+conformance_level: foundation_v0_1
+decision: D-001
+test_id: T-001
+status: planned
+xfail_reason: "Sprint S-2 — query shape & Plan A single-measure default join (D-001)"

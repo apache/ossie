@@ -1,0 +1,15 @@
+{
+  "_comment": "Three metrics at the customer-segment grain, including a derived metric (avg_order_value = total_revenue / order_count). Shows metric composition and ADD_COLUMNS codegen. Render with: osi compile examples/models/demo_orders.yaml examples/queries/multi_metric_by_segment.json --dialect duckdb",
+  "dimensions": [
+    {"dataset": "customers", "name": "segment"}
+  ],
+  "measures": [
+    {"name": "total_revenue"},
+    {"name": "order_count"},
+    {"name": "avg_order_value"}
+  ],
+  "order_by": [
+    {"target": {"name": "total_revenue"}, "descending": true}
+  ],
+  "limit": 10
+}

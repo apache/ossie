@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_DEFERRED_FRAME_MODE: parameterised frame bound is deferred to §10

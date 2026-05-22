@@ -1,0 +1,14 @@
+{
+  "_comment": "Revenue and order count for completed orders only, grouped by region. The WHERE predicate is pushed down before the join — the planner emits a FILTER step (step_001) that applies status = 'completed' directly on the orders SOURCE, then enriches with customers. Shows pre-aggregation WHERE routing (D-005). Render with: osi compile examples/models/demo_orders.yaml examples/queries/filtered_completed_orders.json --dialect duckdb",
+  "dimensions": [
+    {"dataset": "customers", "name": "region"}
+  ],
+  "measures": [
+    {"name": "total_revenue"},
+    {"name": "order_count"}
+  ],
+  "where": "orders.status = 'completed'",
+  "order_by": [
+    {"target": {"name": "total_revenue"}, "descending": true}
+  ]
+}

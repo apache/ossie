@@ -1,0 +1,305 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "osi-python"
+version = "0.1.0"
+description = "Foundation reference implementation for the Open Semantic Interchange (OSI) standard"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "OSI Contributors", email = "noreply@example.com"}
+]
+keywords = ["osi", "semantic", "sql", "analytics", "query-generation"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "pydantic>=2.6,<3.0",
+    "sqlglot>=26.0,<28.0",
+    "pyyaml>=6.0",
+    "networkx>=3.0",
+]
+
+[project.scripts]
+# Registers the ``osi`` console command so ``pip install -e .`` (or
+# ``pip install osi-python``) puts ``osi describe``, ``osi explain``,
+# ``osi resolve``, ``osi compile``, and ``osi explain-code`` on the
+# user's PATH. Phase 10 / 10b B3 — docs assumed this binary existed
+# before this entry was added.
+osi = "osi.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    # Test runner
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "pytest-xdist>=3.0",          # Parallel test execution
+    "pytest-benchmark>=4.0",      # Performance regression detection
+    # Property-based testing (load-bearing for algebra laws)
+    "hypothesis>=6.100",
+    # Snapshot testing (used by tests/golden/)
+    "syrupy>=4.6",
+    # E2E execution harness
+    "duckdb>=0.10.0",
+    # Mutation testing (gate per INFRA.md §1.1)
+    "mutmut>=2.4",
+    # Static analysis
+    "mypy>=1.10",
+    "import-linter>=2.0",         # enforces one-way import flow
+    # Formatting & lint
+    "black>=24.0",
+    "isort>=5.13",
+    "flake8>=7.0",
+    "flake8-docstrings>=1.7",
+    # Git hooks
+    "pre-commit>=3.7",
+]
+
+[project.urls]
+Homepage = "https://github.com/osi/osi-python"
+Documentation = "https://github.com/osi/osi-python/blob/main/README.md"
+Repository = "https://github.com/osi/osi-python"
+Issues = "https://github.com/osi/osi-python/issues"
+
+# ---------------------------------------------------------------------------
+# Packaging
+# ---------------------------------------------------------------------------
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "conformance/tests"]
+pythonpath = ["src"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--strict-config",
+    "--tb=short",
+    # Skip pytest-benchmark timings by default; they belong to `make bench`.
+    # We still collect and *run* benchmark tests (so their asserts, if any,
+    # still exercise the code paths) but don't spend time on warmup/rounds.
+    "--benchmark-disable",
+    "--cov=osi",
+    "--cov-branch",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    # Coverage floor. See INFRA.md §1.1 for the ratchet plan. The floor
+    # currently sits at 84% because the scalar / bridge / nested-aggregate
+    # planner branches are exercised only by the compliance suite, not by
+    # focused unit tests; I-57 in INFRA.md §3 tracks lifting it back to
+    # 90% by adding direct unit coverage for those branches.
+    "--cov-fail-under=84",
+]
+markers = [
+    "unit: fast, focused single-function tests",
+    "property: Hypothesis-based universal-law tests",
+    "golden: snapshot plan / SQL tests",
+    "e2e: DuckDB-executed row-level tests",
+    "slow: tests that take longer than 1s",
+    "benchmark: pytest-benchmark performance tests",
+]
+
+# ---------------------------------------------------------------------------
+# coverage
+# ---------------------------------------------------------------------------
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["*/tests/*", "*/__pycache__/*"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+    "@overload",
+]
+
+# ---------------------------------------------------------------------------
+# mypy — strict from day one (INFRA.md [I-DEC-7])
+# ---------------------------------------------------------------------------
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+warn_return_any = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+disallow_any_generics = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_calls = true
+check_untyped_defs = true
+no_implicit_optional = true
+strict_equality = true
+strict_concatenate = true
+enable_error_code = ["redundant-self", "redundant-expr", "unused-ignore"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+
+# External libs without complete stubs
+[[tool.mypy.overrides]]
+module = ["sqlglot.*", "yaml", "networkx.*", "duckdb", "hypothesis.*", "mutmut.*", "syrupy.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+# black
+# ---------------------------------------------------------------------------
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+# ---------------------------------------------------------------------------
+# isort
+# ---------------------------------------------------------------------------
+
+[tool.isort]
+profile = "black"
+line_length = 88
+known_first_party = ["osi"]
+
+# ---------------------------------------------------------------------------
+# import-linter — enforces the one-way flow in ARCHITECTURE.md §1.1
+# ---------------------------------------------------------------------------
+
+[tool.importlinter]
+root_packages = ["osi"]
+
+[[tool.importlinter.contracts]]
+name = "Layer 1 (parsing) must not import from planning or codegen"
+type = "forbidden"
+source_modules = ["osi.parsing"]
+forbidden_modules = ["osi.planning", "osi.codegen"]
+
+[[tool.importlinter.contracts]]
+name = "Layer 2 (planning) must not import from codegen"
+type = "forbidden"
+source_modules = ["osi.planning"]
+forbidden_modules = ["osi.codegen"]
+
+[[tool.importlinter.contracts]]
+name = "Layer 3 (codegen) must not import from parsing"
+type = "forbidden"
+source_modules = ["osi.codegen"]
+forbidden_modules = ["osi.parsing"]
+
+# The CLI is the user-facing entry point — it sits *above* the
+# three-layer pipeline. No layer should call back into the CLI;
+# doing so would create a presentation-to-engine dependency that
+# breaks the layered architecture and makes the engine
+# untestable without the CLI surface.
+[[tool.importlinter.contracts]]
+name = "CLI is a sink: no layer may import osi.cli or osi.__main__"
+type = "forbidden"
+source_modules = ["osi.parsing", "osi.planning", "osi.codegen", "osi.common", "osi.diagnostics"]
+forbidden_modules = ["osi.cli", "osi.__main__"]
+
+# Diagnostics formats errors for humans — it lives next to the CLI,
+# above the three-layer pipeline. Planning and codegen must not
+# depend on it; if they did, the engine could not be embedded in a
+# host application without dragging in the diagnostics layer's
+# presentation choices.
+[[tool.importlinter.contracts]]
+name = "Diagnostics is a presentation layer: planning/codegen may not import it"
+type = "forbidden"
+source_modules = ["osi.planning", "osi.codegen", "osi.parsing"]
+forbidden_modules = ["osi.diagnostics"]
+
+# FoundationFlags is a parse-time-only concern: it controls how the
+# parser treats deferred features. By the time we reach codegen the
+# model has been parsed and the flag has either been honoured or
+# rejected, so codegen should never need to look at flags.
+# Enforcing this prevents a "feature flag tunnel" from forming.
+[[tool.importlinter.contracts]]
+name = "Codegen does not see FoundationFlags (parse-time-only concern)"
+type = "forbidden"
+source_modules = ["osi.codegen"]
+forbidden_modules = ["osi.config"]
+
+# NOTE: The "algebra state is only constructed inside algebra" contract
+# (Phase 3 code-review I6) requires refactoring ``osi.planning.steps`` to
+# stop instantiating ``Column`` directly — that file is one of the three
+# documented LOC-exception files and is queued for its own refactor
+# under INFRA.md I-56. Once steps.py is split, we land the import-linter
+# contract:
+#
+#   [[tool.importlinter.contracts]]
+#   name = "algebra state constructed only inside algebra"
+#   type = "forbidden"
+#   source_modules = ["osi.planning", "osi.codegen"]
+#   forbidden_modules = ["osi.planning.algebra.state"]
+#   ignore_imports = [
+#       "osi.planning.algebra -> osi.planning.algebra.state",
+#       "osi.planning.algebra.* -> osi.planning.algebra.state",
+#   ]
+#
+# Tracked in INFRA.md §3 alongside I-56.
+
+# ---------------------------------------------------------------------------
+# mutmut
+# ---------------------------------------------------------------------------
+
+[tool.mutmut]
+# mutmut 3.x configuration keys. The 2.x ``paths_to_mutate`` /
+# ``runner`` keys are no longer recognised.
+#
+# Notes for runners:
+# * mutmut 3 copies the project to ``mutants/`` and runs the test
+#   suite there, so anything referenced by tests via a relative path
+#   must be in ``also_copy``.
+# * The default test runner picks up our ``--cov-fail-under=90`` from
+#   pyproject's pytest config, which would make every mutated run
+#   fail on coverage rather than on the actual mutation. We override
+#   coverage off via ``pytest_add_cli_args`` so each test run reports
+#   its own pass/fail.
+source_paths = ["src/osi/"]
+pytest_add_cli_args_test_selection = [
+    "tests/unit/",
+    "tests/properties/",
+]
+pytest_add_cli_args = [
+    "--no-cov",
+    "-p", "no:cacheprovider",
+]
+also_copy = [
+    "examples/",
+    "docs/",
+]
+# macOS: ``setproctitle`` uses CoreFoundation APIs that are not
+# fork-safe; disable to avoid segfaults in mutmut child processes.
+use_setproctitle = false
+# Exclude the auto-generated error-catalog table and the parser's
+# vendored grammar; mutating these is high-noise / low-signal.
+do_not_mutate = [
+    "src/osi/diagnostics/error_catalog.py",
+]
+max_stack_depth = 8

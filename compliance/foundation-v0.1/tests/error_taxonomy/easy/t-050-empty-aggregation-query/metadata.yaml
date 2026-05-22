@@ -1,0 +1,20 @@
+name: t-050-empty-aggregation-query
+description: >-
+  An aggregation query with neither ``Dimensions`` nor ``Measures``
+  is rejected with ``E_EMPTY_AGGREGATION_QUERY`` (Appendix C, §6.2
+  step A.1). D-010 separates the two query shapes (aggregation vs
+  scalar); this test pins the empty-aggregation half.
+area: error_taxonomy
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-010"
+  - "Proposed_OSI_Semantics.md#sec-6.2"
+tags: [empty, negative]
+conformance_level: foundation_v0_1
+decision: D-010
+test_id: T-050
+expected_error: true
+expected_error_code: E_EMPTY_AGGREGATION_QUERY
+status: planned
+xfail_reason: "Sprint S-2 — empty aggregation query rejection"

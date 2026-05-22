@@ -1,0 +1,15 @@
+name: t-020-bare-name-not-found
+description: "Bare-name reference does not silently match a dataset-scoped name; raises E_NAME_NOT_FOUND"
+area: namespace
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-006"
+tags: [namespace, bare-name, negative]
+conformance_level: foundation_v0_1
+decision: D-006
+test_id: T-020
+expected_error: true
+expected_error_code: E_NAME_NOT_FOUND
+status: planned
+xfail_reason: "Sprint S-10 — bare-name global lookup (D-006)"

@@ -1,0 +1,153 @@
+semantic_model:
+  - name: tpcds_thin
+    description: |
+      A deliberately tiny slice of the TPC-DS schema, sized for the thin
+      slice: four datasets, five N:1 relationships, SUM/COUNT/AVG
+      metrics. Drives the Phase 6 E2E harness and the pytest-benchmark
+      baseline. Column names match TPC-DS; sources are synthetic so we
+      can seed deterministic data at test time.
+    dialect: ANSI_SQL
+    datasets:
+      - name: store_sales
+        source: tpcds.store_sales
+        primary_key: [ss_ticket_number, ss_item_sk]
+        fields:
+          - name: ss_ticket_number
+            expression: ss_ticket_number
+            role: dimension
+          - name: ss_item_sk
+            expression: ss_item_sk
+            role: dimension
+          - name: ss_customer_sk
+            expression: ss_customer_sk
+            role: dimension
+          - name: ss_store_sk
+            expression: ss_store_sk
+            role: dimension
+          - name: ss_sold_date_sk
+            expression: ss_sold_date_sk
+            role: dimension
+          - name: ss_quantity
+            expression: ss_quantity
+            role: fact
+          - name: ss_ext_sales_price
+            expression: ss_ext_sales_price
+            role: fact
+          - name: ss_net_profit
+            expression: ss_net_profit
+            role: fact
+
+      - name: store_returns
+        source: tpcds.store_returns
+        primary_key: [sr_ticket_number, sr_item_sk]
+        fields:
+          - name: sr_ticket_number
+            expression: sr_ticket_number
+            role: dimension
+          - name: sr_item_sk
+            expression: sr_item_sk
+            role: dimension
+          - name: sr_customer_sk
+            expression: sr_customer_sk
+            role: dimension
+          - name: sr_store_sk
+            expression: sr_store_sk
+            role: dimension
+          - name: sr_return_amt
+            expression: sr_return_amt
+            role: fact
+
+      - name: item
+        source: tpcds.item
+        primary_key: [i_item_sk]
+        fields:
+          - name: i_item_sk
+            expression: i_item_sk
+            role: dimension
+          - name: i_category
+            expression: i_category
+            role: dimension
+          - name: i_class
+            expression: i_class
+            role: dimension
+          - name: i_brand
+            expression: i_brand
+            role: dimension
+
+      - name: customer
+        source: tpcds.customer
+        primary_key: [c_customer_sk]
+        fields:
+          - name: c_customer_sk
+            expression: c_customer_sk
+            role: dimension
+          - name: c_birth_country
+            expression: c_birth_country
+            role: dimension
+          - name: c_preferred_cust_flag
+            expression: c_preferred_cust_flag
+            role: dimension
+
+      - name: store
+        source: tpcds.store
+        primary_key: [s_store_sk]
+        fields:
+          - name: s_store_sk
+            expression: s_store_sk
+            role: dimension
+          - name: s_state
+            expression: s_state
+            role: dimension
+          - name: s_country
+            expression: s_country
+            role: dimension
+
+    relationships:
+      - name: ss_to_item
+        from: store_sales
+        to: item
+        from_columns: [ss_item_sk]
+        to_columns: [i_item_sk]
+      - name: ss_to_customer
+        from: store_sales
+        to: customer
+        from_columns: [ss_customer_sk]
+        to_columns: [c_customer_sk]
+      - name: ss_to_store
+        from: store_sales
+        to: store
+        from_columns: [ss_store_sk]
+        to_columns: [s_store_sk]
+      - name: sr_to_item
+        from: store_returns
+        to: item
+        from_columns: [sr_item_sk]
+        to_columns: [i_item_sk]
+      - name: sr_to_customer
+        from: store_returns
+        to: customer
+        from_columns: [sr_customer_sk]
+        to_columns: [c_customer_sk]
+      - name: sr_to_store
+        from: store_returns
+        to: store
+        from_columns: [sr_store_sk]
+        to_columns: [s_store_sk]
+
+    metrics:
+      - name: total_sales
+        expression: SUM(store_sales.ss_ext_sales_price)
+      - name: total_profit
+        expression: SUM(store_sales.ss_net_profit)
+      - name: total_qty
+        expression: SUM(store_sales.ss_quantity)
+      - name: order_count
+        expression: COUNT(store_sales.ss_ticket_number)
+      - name: distinct_customers
+        expression: COUNT(DISTINCT store_sales.ss_customer_sk)
+      - name: avg_ticket
+        expression: AVG(store_sales.ss_ext_sales_price)
+      - name: total_returns
+        expression: SUM(store_returns.sr_return_amt)
+      - name: return_count
+        expression: COUNT(store_returns.sr_ticket_number)

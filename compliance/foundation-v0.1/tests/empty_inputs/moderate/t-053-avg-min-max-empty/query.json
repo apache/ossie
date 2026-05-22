@@ -1,0 +1,20 @@
+{
+  "dataset": "orders",
+  "dimensions": [
+    "customers.region"
+  ],
+  "measures": [
+    {
+      "name": "avg_amount",
+      "metric": "avg_amount"
+    },
+    {
+      "name": "min_amount",
+      "metric": "min_amount"
+    },
+    {
+      "name": "max_amount",
+      "metric": "max_amount"
+    }
+  ]
+}

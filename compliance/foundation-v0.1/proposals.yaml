@@ -1,0 +1,214 @@
+# OSI Foundation v0.1 — Proposal Registry
+# -----------------------------------------------------------------------
+# Mirrors §10 of ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md. Every
+# entry is either:
+#
+#   * status: foundation     — IN scope for v0.1; engines MUST implement
+#   * status: deferred       — OUT of scope; rejected at parse time with
+#                              E_DEFERRED_KEY_REJECTED (D-009).
+#
+# Test metadata.yaml files reference these IDs via `required_features:`.
+# A test that references an unknown ID is a CI failure.
+#
+# Adapters advertise the proposals they implement via
+# `enabled_proposals.yaml` (or equivalent) per the harness contract.
+# A Foundation-only adapter advertises every `status: foundation` ID
+# and rejects every `status: deferred` ID with E_DEFERRED_KEY_REJECTED.
+
+version: "0.1"
+
+proposals:
+  # -------- Foundation (v0.1) — required for every conforming engine --
+  - id: two_query_shapes
+    status: foundation
+    title: Aggregation vs Scalar query shapes (Fields clause)
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#5.1
+    decisions: [D-001, D-010, D-011, D-023]
+  - id: routing_by_expression_shape
+    status: foundation
+    title: Predicate routing by resolved expression shape (no role:)
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#6.3
+    decisions: [D-005, D-012]
+  - id: implicit_home_grain_aggregation_rejection
+    status: foundation
+    title: Implicit home-grain aggregation in field expressions is rejected (E_AGGREGATE_IN_FIELD)
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#4.3
+    rejection_code: E_AGGREGATE_IN_FIELD
+    decisions: [D-003]
+    # D-003 and D-015 are both struck/deferred in Appendix B; the
+    # Foundation's active surface is the rejection rule (any aggregate
+    # in a field body MUST raise E_AGGREGATE_IN_FIELD per §4.3 /
+    # Appendix C). Per-strategy equivalence (D-015) returns when
+    # §10's grain-aware-functions proposal lands.
+  - id: cross_grain_aggregates
+    status: foundation
+    title: Single-step cross-grain aggregates over 1:N (nested form is deferred per D-020(c)/D-027(d))
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#4.5
+    decisions: [D-020, D-024]
+  - id: default_join_shapes
+    status: foundation
+    title: Default LEFT for N:1, FULL OUTER stitch for incompatible-root multi-fact
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#6.6
+    decisions: [D-001, D-004, D-008]
+  - id: bridge_dedup
+    status: foundation
+    title: Bridge resolution materializes distinct (fact, group-key) in a single-pass aggregate (every category)
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#6.8.1
+    decisions: [D-026, D-027]
+  - id: decomposition_safety
+    status: foundation
+    title: E_UNSAFE_REAGGREGATION fires only when the chosen plan forces decomposition the aggregate cannot survive (chasm pre-agg / stitch — bridge plan is single-pass and not in scope)
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#6.2
+    decisions: [D-022]
+  - id: identifier_resolution
+    status: foundation
+    title: Global / dataset-scoped namespace, ambiguous-path / no-path errors
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#4.6
+    decisions: [D-006, D-018, D-019]
+  - id: window_functions_standard
+    status: foundation
+    title: Standard SQL window functions (ranking / navigation / aggregate-windows; ROWS / RANGE; integer-literal bounds)
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#6.10
+    decisions: [D-028, D-030, D-031, D-032]
+  - id: nulls_last_default
+    status: foundation
+    title: Default NULLS LAST emission for outer Order By + OVER ORDER BY
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#5.1
+    decisions: [D-014, D-029]
+  - id: empty_aggregate_standard_sql
+    status: foundation
+    title: Standard SQL empty / NULL aggregate behaviour
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#6.11
+    decisions: [D-033]
+  - id: osi_sql_2026_dialect
+    status: foundation
+    title: OSI_SQL_2026 default dialect with per-dialect expression form
+    spec_ref: ../../proposals/foundation-v0.1/SQL_EXPRESSION_SUBSET.md
+    decisions: [D-021, D-016]
+  - id: windowed_metric_composition
+    status: foundation
+    title: Composing a metric on top of a windowed metric is rejected with E_WINDOWED_METRIC_COMPOSITION
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#6.10.5
+    rejection_code: E_WINDOWED_METRIC_COMPOSITION
+    decisions: [D-031]
+
+  # -------- Deferred (§10 of the Foundation spec) ---------------------
+  # Each deferred entry MUST be rejected at parse time with
+  # E_DEFERRED_KEY_REJECTED (D-009). The compliance suite ships exactly
+  - id: explicit_grain_overrides
+    status: deferred
+    title: Explicit grain overrides (FIXED / INCLUDE / EXCLUDE / TABLE)
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10
+    rejection_code: E_DEFERRED_KEY_REJECTED
+  - id: filter_context_propagation
+    status: deferred
+    title: Filter context propagation (reset, filter.expression on metrics)
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10
+    rejection_code: E_DEFERRED_KEY_REJECTED
+  - id: metric_composition_grain_filter
+    status: deferred
+    title: Metric composition with grain or filter inheritance
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10
+    rejection_code: E_DEFERRED_KEY_REJECTED
+  - id: natural_grain_top_level
+    status: deferred
+    title: Model-level natural_grain declaration
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10
+    rejection_code: E_DEFERRED_KEY_REJECTED
+  - id: path_disambiguation_using_relationships
+    status: deferred
+    title: Per-metric joins.using_relationships path disambiguation
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10
+    rejection_code: E_DEFERRED_KEY_REJECTED
+  - id: per_metric_joins_type
+    status: deferred
+    title: Per-metric joins.type override (INNER / LEFT / FULL)
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10
+    rejection_code: E_DEFERRED_KEY_REJECTED
+  - id: non_equijoin_relationships
+    status: deferred
+    title: condition / cardinality on relationships (non-equijoin)
+    spec_ref: "../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10"
+    rejection_code: E_DEFERRED_KEY_REJECTED
+  - id: asof_range_relationships
+    status: deferred
+    title: ASOF and Range relationships
+    spec_ref: "../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10"
+    rejection_code: E_DEFERRED_KEY_REJECTED
+  - id: referential_integrity_keys
+    status: deferred
+    title: referential_integrity / from_all_rows_match / to_all_rows_match
+    spec_ref: "../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10"
+    rejection_code: E_DEFERRED_KEY_REJECTED
+  - id: semi_additive_measures
+    status: deferred
+    title: Semi-additive measures over snapshot facts
+    spec_ref: "../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10"
+    rejection_code: E_DEFERRED_KEY_REJECTED
+  - id: grouping_sets
+    status: deferred
+    title: GROUPING SETS / ROLLUP / CUBE
+    spec_ref: "../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10"
+    rejection_code: E_DEFERRED_KEY_REJECTED
+  - id: pivot_operator
+    status: deferred
+    title: PIVOT / UNPIVOT
+    spec_ref: "../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10"
+    rejection_code: E_DEFERRED_KEY_REJECTED
+  - id: parameterized_window_frame_bounds
+    status: deferred
+    title: Parameterized window frame bounds (e.g. ROWS BETWEEN :n PRECEDING ...)
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10
+    rejection_code: E_DEFERRED_FRAME_MODE
+  - id: groups_frame_mode
+    status: deferred
+    title: GROUPS frame mode (non-portable)
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10
+    rejection_code: E_DEFERRED_FRAME_MODE
+  - id: ordered_set_aggregates
+    status: deferred
+    title: WITHIN GROUP ordered-set aggregates (LISTAGG, PERCENTILE_CONT)
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10
+    rejection_code: E_DEFERRED_KEY_REJECTED
+  # ----- moved up: this is a Foundation rejection rule, not deferral
+  # See the foundation block above for the actual entry.
+  - id: named_filters
+    status: deferred
+    title: Reusable named boolean filters referenced by name
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10
+    rejection_code: E_DEFERRED_KEY_REJECTED
+  - id: dataset_scope_filters
+    status: deferred
+    title: Dataset-level filters with scope-based propagation
+    spec_ref: "../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10"
+    rejection_code: E_DEFERRED_KEY_REJECTED
+  - id: semi_join_filter_form
+    status: deferred
+    title: EXISTS_IN / NOT EXISTS_IN semi-join filter (separate proposal pending)
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#6.8
+    rejection_code: E_DEFERRED_KEY_REJECTED
+  - id: role_keyword
+    status: deferred
+    title: "role: keyword on fields/datasets (replaced by routing-by-shape D-005)"
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10
+    rejection_code: E_DEFERRED_KEY_REJECTED
+  - id: legacy_attr_unsafe_agg_grainagg
+    status: deferred
+    title: Legacy ATTR / UNSAFE / AGG / GRAIN_AGG keyword set
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10
+    rejection_code: E_DEFERRED_KEY_REJECTED
+  - id: multi_hop_bridge
+    status: deferred
+    title: Multi-hop bridge resolution (more than one bridge between the same endpoints)
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10
+    rejection_code: E_DEFERRED_KEY_REJECTED
+  - id: symmetric_aggregates
+    status: deferred
+    title: Looker-style symmetric aggregates (codegen-side, not a correctness mechanism)
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#10
+    rejection_code: E_DEFERRED_KEY_REJECTED
+  - id: snowflake_partition_by_excluding
+    status: deferred
+    title: Snowflake ``PARTITION BY ... EXCLUDING`` window extension (vendor-specific, outside OSI_SQL_2026)
+    spec_ref: ../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md#12a
+    rejection_code: E_DEFERRED_KEY_REJECTED

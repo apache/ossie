@@ -1,0 +1,13 @@
+name: t-006-count-star
+description: "COUNT(*) over orders dataset is well-defined at home grain; WHERE on orders.status applies pre-aggregation"
+area: query_shape
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-016"
+tags: [count-star, home-grain]
+conformance_level: foundation_v0_1
+decision: D-016
+test_id: T-006
+status: planned
+xfail_reason: "Sprint S-7 — default LEFT join + COUNT(*) home-grain (D-004a, D-016)"

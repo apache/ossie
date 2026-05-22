@@ -1,0 +1,10 @@
+{
+  "dataset": "orders",
+  "fields": [
+    "orders.id",
+    "orders.rn_per_customer"
+  ],
+  "filters": [
+    "orders.status = 'completed'"
+  ]
+}

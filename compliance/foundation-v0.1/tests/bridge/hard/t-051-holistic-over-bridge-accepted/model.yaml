@@ -1,0 +1,28 @@
+name: f_bridge_model
+datasets:
+  - name: actors
+    source: actors
+    primary_key: [actor_id]
+    fields:
+      - {name: actor_id, expression: actor_id, dimension: {}}
+      - {name: name,     expression: name,     dimension: {}}
+      - {name: height,   expression: height,   dimension: {}}
+  - name: movies
+    source: movies
+    primary_key: [movie_id]
+    fields:
+      - {name: movie_id, expression: movie_id, dimension: {}}
+      - {name: title,    expression: title,    dimension: {}}
+      - {name: gross,    expression: gross}
+  - name: appearances
+    source: appearances
+    primary_key: [actor_id, movie_id]
+    role: bridge
+    fields:
+      - {name: actor_id, expression: actor_id, dimension: {}}
+      - {name: movie_id, expression: movie_id, dimension: {}}
+relationships:
+  - {name: app_to_actor, from: appearances, to: actors, from_columns: [actor_id], to_columns: [actor_id]}
+  - {name: app_to_movie, from: appearances, to: movies, from_columns: [movie_id], to_columns: [movie_id]}
+metrics:
+  - {name: median_gross, expression: "MEDIAN(movies.gross)"}

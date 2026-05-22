@@ -1,0 +1,27 @@
+name: f_prelude_with_cycle
+datasets:
+  - name: customers
+    source: customers
+    primary_key: [id]
+    fields:
+      - {name: id,      expression: id,      dimension: {}}
+      - {name: region,  expression: region,  dimension: {}}
+      - {name: segment, expression: segment, dimension: {}}
+  - name: orders
+    source: orders
+    primary_key: [id]
+    fields:
+      - {name: id,          expression: id,          dimension: {}}
+      - {name: customer_id, expression: customer_id, dimension: {}}
+      - {name: amount,      expression: amount}
+      # Cyclic inter-field dependency: ``a`` references ``b`` which
+      # references back to ``a``. The dependency graph is not a DAG
+      # and cannot be lowered to the staged-CTE shape on any
+      # dialect. The parser rejects this up front with
+      # ``E_FIELD_DEPENDENCY_CYCLE`` regardless of any feature
+      # flag — there is no portable SQL shape that compiles a cyclic
+      # field graph.
+      - {name: a, expression: "b + 1"}
+      - {name: b, expression: "a * 2"}
+metrics:
+  - {name: total_amount, expression: "SUM(orders.amount)"}

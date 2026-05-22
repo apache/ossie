@@ -1,0 +1,21 @@
+name: t-044-composite-key-join
+description: >-
+  A composite primary/foreign key join (``store_id``, ``sku``)
+  requires both components in the emitted ``ON`` clause. This is a
+  path-resolution / join-shape concern (§6.6, §6.9), not a deferred
+  relationship key — D-009 covers feature flags such as
+  ``referential_integrity`` / ``condition`` / ``asof``, which
+  composite equi-keys are not.
+area: namespace
+difficulty: hard
+dataset: f_composite
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-018"
+  - "Proposed_OSI_Semantics.md#sec-6.6"
+  - "Proposed_OSI_Semantics.md#sec-6.9"
+tags: [composite-key, n:1]
+conformance_level: foundation_v0_1
+decision: D-018
+test_id: T-044
+status: planned
+xfail_reason: "Sprint S-10 — composite-key join (F-COMPOSITE inline model); needs new fixture in S-E"

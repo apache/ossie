@@ -1,0 +1,14 @@
+name: t-031-running-total-window
+description: "Running-total window (SUM OVER ROWS UNBOUNDED PRECEDING) compiles and runs correctly"
+area: windows
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-030"
+  - "Proposed_OSI_Semantics.md#D-029"
+tags: [window, running-total]
+conformance_level: foundation_v0_1
+decision: D-030
+test_id: T-031
+status: planned
+xfail_reason: "Sprint S-12 — running-total window (D-030, D-029)"

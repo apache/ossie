@@ -1,0 +1,13 @@
+name: t-053-avg-min-max-empty
+description: "AVG / MIN / MAX over zero matching rows return NULL (D-033 non-COUNT branch)"
+area: empty_inputs
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-033"
+tags: [empty-set, null, avg, min, max]
+conformance_level: foundation_v0_1
+decision: D-033
+test_id: T-053
+status: planned
+xfail_reason: "Sprint S-14 — AVG/MIN/MAX empty-set semantics (D-033 non-COUNT branch)"

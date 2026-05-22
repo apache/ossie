@@ -1,0 +1,26 @@
+name: t-014-mn-no-bridge
+description: >-
+  The model declares two facts (``actors`` and ``movies``) with no
+  bridge dataset and no shared stitch dimension; a query that
+  references both at once has no path through the graph. Per
+  Appendix C this is ``E3013_NO_STITCHING_DIMENSION`` — two
+  unrelated facts referenced together would otherwise yield a
+  Cartesian product. (The ``mn-no-bridge`` name reflects the
+  scenario authors had in mind: an N:N traversal that *would* need
+  a bridge dataset; absent the relationship declarations entirely,
+  the engine surfaces the more-specific no-stitching-dimension code
+  per §6.1, §6.8 / D-007(b).)
+area: bridge
+difficulty: hard
+dataset: f_bridge_none
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-007"
+  - "Proposed_OSI_Semantics.md#sec-6.8"
+tags: [bridge, m:n, negative]
+conformance_level: foundation_v0_1
+decision: D-007
+test_id: T-014
+expected_error: true
+expected_error_code: E3013
+status: planned
+xfail_reason: "Sprint S-10 — M:N safe-rewrite rejection (D-007)"

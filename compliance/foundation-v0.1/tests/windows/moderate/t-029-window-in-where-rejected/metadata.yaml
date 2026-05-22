@@ -1,0 +1,21 @@
+name: t-029-window-in-where-rejected
+description: >-
+  A window function in ``Where`` is rejected with
+  ``E_WINDOW_IN_WHERE``. Windows are only valid in
+  ``Measures`` / ``Fields`` / ``Order By`` / ``Having`` per D-028(b);
+  SQL itself forbids windows in ``WHERE`` (the window phase runs
+  after row filtering).
+area: windows
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-028"
+  - "Proposed_OSI_Semantics.md#sec-6.10.1"
+tags: [window, negative, where]
+conformance_level: foundation_v0_1
+decision: D-028
+test_id: T-029
+expected_error: true
+expected_error_code: E_WINDOW_IN_WHERE
+status: planned
+xfail_reason: "Sprint S-12 — window placement rules (D-028)"

@@ -1,0 +1,14 @@
+name: t-026-nulls-last-default
+description: "Outer Order By with ASC defaults to NULLS LAST regardless of dialect default. The ASC half of the high-end-NULL convention (D-029); paired with t-062 which exercises the symmetric DESC ⇒ NULLS FIRST half."
+area: null_ordering
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-014"
+  - "Proposed_OSI_Semantics.md#D-029"
+tags: [order-by, nulls-last, determinism, symmetry-asc]
+conformance_level: foundation_v0_1
+decision: D-014
+test_id: T-026
+status: planned
+xfail_reason: "Sprint S-13 — default NULL placement emission (D-029)"

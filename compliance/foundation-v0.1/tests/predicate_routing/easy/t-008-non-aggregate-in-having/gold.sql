@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_NON_AGGREGATE_IN_HAVING: row-level predicate inside Having; should be Where

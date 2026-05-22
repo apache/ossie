@@ -1,0 +1,1 @@
+-- EXPECTED ERROR E_EMPTY_AGGREGATION_QUERY: neither dimensions nor measures provided

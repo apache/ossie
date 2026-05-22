@@ -1,0 +1,14 @@
+name: f_reflexive_model
+datasets:
+  - name: employees
+    source: employees
+    primary_key: [id]
+    fields:
+      - {name: id,         expression: id,         dimension: {}}
+      - {name: name,       expression: name,       dimension: {}}
+      - {name: manager_id, expression: manager_id, dimension: {}}
+      - {name: region,     expression: region,     dimension: {}}
+relationships:
+  - {name: reports_to, from: employees, to: employees, from_columns: [manager_id], to_columns: [id]}
+metrics:
+  - {name: direct_report_count, expression: "COUNT(employees.id)"}

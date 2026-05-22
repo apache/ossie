@@ -1,0 +1,20 @@
+name: t-050-field-dependency-cycle
+description: >-
+  Field expressions on the same dataset that reference one another
+  transitively (e.g. ``a`` → ``b`` → ``a``) form a dependency cycle.
+  Fields are required to form a DAG so resolution is well-defined and
+  termination is guaranteed; cycles are rejected at parse time with
+  ``E_FIELD_DEPENDENCY_CYCLE`` (Appendix C / §4.3). This is a
+  structural validation error, not a deferred feature.
+area: validation_errors
+difficulty: easy
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#sec-4.3"
+  - "Proposed_OSI_Semantics.md#E_FIELD_DEPENDENCY_CYCLE"
+tags: [field, inter-field-deps, cycle, negative, structural]
+conformance_level: foundation_v0_1
+test_id: T-050
+expected_error: true
+expected_error_code: E_FIELD_DEPENDENCY_CYCLE
+status: active

@@ -1,0 +1,12 @@
+{
+  "dataset": "sales",
+  "dimensions": [
+    "inventory.reorder_point"
+  ],
+  "measures": [
+    {
+      "name": "units_sold",
+      "metric": "units_sold"
+    }
+  ]
+}
