@@ -10,20 +10,6 @@
       "const": "0.1.1",
       "description": "Ontology specification version"
     },
-    "concept_types": {
-      "type": "array",
-      "description": "Concept types (enumeration definition)",
-      "items": {
-        "$ref": "#/$defs/ConceptType"
-      }
-    },
-    "multiplicities": {
-      "type": "array",
-      "description": "Relationship multiplicities (enumeration definition)",
-      "items": {
-        "$ref": "#/$defs/Multiplicity"
-      }
-    },
     "name": {
       "type": "string",
       "description": "Unique identifier for the ontology"
