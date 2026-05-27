@@ -1,6 +1,6 @@
 # OSI ↔ Honeydew Converter
 
-Bidirectional converter between [OSI](../../core-spec/spec.md) semantic models and [Honeydew](https://docs.honeydew.ai) workspace YAML.
+Bidirectional converter between [OSI](../../core-spec/spec.md) semantic models and [Honeydew](https://honeydew.ai/docs) workspace YAML.
 
 ## Overview
 
@@ -62,7 +62,6 @@ python -m pytest tests/
 - **One dataset per entity**: The converter maps each OSI dataset to a single Honeydew entity with one source dataset. Multiple datasets per entity are not generated.
 - **Datatype inference**: OSI fields have no explicit datatype; the converter infers Honeydew datatypes from the `dimension.is_time` flag (`timestamp`) and the presence/absence of the `dimension` key (`string` vs `number`).
 - **Honeydew SQL expressions**: Calculated attributes and metrics use Honeydew's `entity.attribute` reference syntax. These are exported as `ANSI_SQL` dialect expressions in OSI; they remain valid for round-tripping but may not run on other databases without adaptation.
-- **Filters**: Honeydew `filter` objects have no OSI equivalent and are not exported.
 - **Perspectives and domains**: Not converted (no OSI equivalent).
-- **Connection expressions** (`connection_expr`): Preserved in `HONEYDEW` custom extensions on the OSI relationship.
-- **`ai_context`**: OSI `ai_context` fields (synonyms, instructions) are dropped during OSI → Honeydew conversion (no native Honeydew equivalent). Honeydew `description` fields are mapped to OSI `description`.
+- **Connection expressions** (`connection_expr`): Preserved in `HONEYDEW` custom extensions on the OSI relationship and restored on the return trip.
+- **`ai_context`**: OSI `ai_context` fields (synonyms, instructions) are stored in Honeydew `metadata` for round-trip recovery. Instructions are also merged into `description` for human readability.

@@ -192,7 +192,7 @@ def _dataset_to_files(
             raise HoneydewConversionError(f"Field missing 'name' in dataset '{entity_name}'")
 
         expr = _pick_ansi_expression(field.get("expression"), field_name)
-        if expr is None:
+        if not expr:
             continue
 
         datatype = _osi_field_to_honeydew_datatype(field)
@@ -223,7 +223,10 @@ def _dataset_to_files(
             custom_extensions=field_ext or None,
         )
 
-        if _is_simple_identifier(expr):
+        hd_hint = _get_honeydew_extension(field)
+        force_calc = hd_hint.get("type") == "calculated_attribute"
+
+        if _is_simple_identifier(expr) and not force_calc:
             attr: dict[str, Any] = {"column": expr, "name": field_name, "datatype": datatype}
             if effective_desc:
                 attr["description"] = effective_desc
@@ -293,13 +296,18 @@ def _dataset_to_files(
 
         metric_ext = [e for e in (metric.get("custom_extensions") or []) if e.get("vendor_name") != HONEYDEW_VENDOR]
         metric_meta = _build_osi_metadata(
-            ai_context=metric_ai_ctx if isinstance(metric_ai_ctx, dict) else None,
+            ai_context=metric_ai_ctx,
             custom_extensions=metric_ext or None,
         )
         if metric_meta:
             metric_dict["metadata"] = [metric_meta]
 
-        files[f"{base}/metrics/{mname}.yml"] = _dump(metric_dict)
+        metric_path = f"{base}/metrics/{mname}.yml"
+        if metric_path in files:
+            warnings.warn(
+                f"Metric '{mname}' in entity '{entity_name}' is defined more than once; later definition wins"
+            )
+        files[metric_path] = _dump(metric_dict)
 
     return files
 
@@ -331,6 +339,10 @@ def _osi_relation_to_honeydew(rel: dict[str, Any]) -> dict[str, Any] | None:
             {"src_field": fc, "target_field": tc}
             for fc, tc in zip(from_cols, to_cols)
         ]
+    elif not from_cols:
+        hd_ext = _get_honeydew_extension(rel)
+        if hd_ext.get("connection_expr"):
+            honeydew_rel["connection_expr"] = {"sql": hd_ext["connection_expr"]}
     return honeydew_rel
 
 
@@ -364,6 +376,9 @@ def _pick_ansi_expression(expression: Any, field_name: str) -> str | None:
 
 
 def _osi_field_to_honeydew_datatype(field: dict[str, Any]) -> str:
+    hd_ext = _get_honeydew_extension(field)
+    if hd_ext.get("datatype"):
+        return hd_ext["datatype"]
     dimension = field.get("dimension")
     if isinstance(dimension, dict) and dimension.get("is_time"):
         return "timestamp"
@@ -660,6 +675,8 @@ def _entity_to_osi_dataset(entity_data: dict[str, Any]) -> dict[str, Any]:
                 k: attr[k] for k in ("display_name", "hidden", "folder", "format_string", "timegrain")
                 if k in attr
             }
+            if datatype == "bool":
+                attr_honeydew_extra["datatype"] = datatype
             if len(attr_labels) > 1:
                 attr_honeydew_extra["labels"] = attr_labels
 
@@ -707,6 +724,8 @@ def _entity_to_osi_dataset(entity_data: dict[str, Any]) -> dict[str, Any]:
             k: calc[k] for k in ("display_name", "hidden", "folder", "format_string", "timegrain")
             if k in calc
         }
+        if datatype == "bool":
+            calc_honeydew_extra["datatype"] = datatype
 
         all_calc_ext = list(calc_osi_meta.get("custom_extensions") or [])
         # Always mark as calculated_attribute so OSI → Honeydew routes it correctly
@@ -860,7 +879,7 @@ def _read_osi_metadata(obj: dict[str, Any]) -> dict[str, Any]:
                 try:
                     result[key] = json.loads(raw)
                 except (json.JSONDecodeError, TypeError):
-                    pass
+                    warnings.warn(f"Could not parse OSI metadata field '{key}': {raw!r}")
         return result
     return {}
 

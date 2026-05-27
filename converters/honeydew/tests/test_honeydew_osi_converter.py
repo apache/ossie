@@ -886,3 +886,110 @@ class TestHoneydewToOsiToHoneydewRoundTrip:
         entity = yaml.safe_load((out_dir / "schema/orders/orders.yml").read_text())
         assert entity["relations"][0]["target_entity"] == "customers"
         assert entity["relations"][0]["connection"][0]["src_field"] == "cid"
+
+    def test_bool_datatype_preserved(self, tmp_path):
+        out_dir = self._roundtrip([{
+            "name": "orders", "keys": ["id"], "key_dataset": "orders",
+            "sql": "DB.S.ORDERS",
+            "dataset_attrs": [
+                {"column": "is_active", "name": "is_active", "datatype": "bool"},
+            ],
+        }], tmp_path)
+        ds = yaml.safe_load((out_dir / "schema/orders/datasets/orders.yml").read_text())
+        attrs = {a["name"]: a for a in ds["attributes"]}
+        assert attrs["is_active"]["datatype"] == "bool"
+
+    def test_connection_expr_preserved(self, tmp_path):
+        out_dir = self._roundtrip([
+            {"name": "orders", "keys": ["id"], "key_dataset": "orders", "sql": "DB.S.ORDERS",
+             "relations": [{"target_entity": "customers", "rel_type": "many-to-one",
+                            "connection_expr": {"sql": "orders.cid = customers.id AND orders.region = customers.region"}}],
+             "dataset_attrs": []},
+            {"name": "customers", "keys": ["id"], "key_dataset": "customers",
+             "sql": "DB.S.CUSTOMERS", "dataset_attrs": []},
+        ], tmp_path)
+        entity = yaml.safe_load((out_dir / "schema/orders/orders.yml").read_text())
+        rel = entity["relations"][0]
+        assert rel.get("connection_expr", {}).get("sql") == "orders.cid = customers.id AND orders.region = customers.region"
+
+    def test_calc_attr_with_simple_identifier_sql_preserved(self, tmp_path):
+        out_dir = self._roundtrip([{
+            "name": "orders", "keys": ["id"], "key_dataset": "orders",
+            "sql": "DB.S.ORDERS", "dataset_attrs": [],
+            "calc_attrs": [{"type": "calculated_attribute", "entity": "orders",
+                            "name": "revenue", "datatype": "number", "sql": "revenue"}],
+        }], tmp_path)
+        # sql='revenue' is a simple identifier — must still come back as calculated_attribute
+        calc_path = out_dir / "schema/orders/attributes/revenue.yml"
+        assert calc_path.exists(), "calculated_attribute with simple-id sql should not become a dataset column"
+        calc = yaml.safe_load(calc_path.read_text())
+        assert calc["sql"] == "revenue"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Bug-fix regression tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestBugFixes:
+    def test_empty_string_expression_skipped(self):
+        model = {"name": "m", "datasets": [{"name": "orders", "source": "db.s.orders", "fields": [{
+            "name": "bad",
+            "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": ""}]},
+            "dimension": {"is_time": False},
+        }]}]}
+        files = convert_osi_to_honeydew(_osi(model))
+        ds = yaml.safe_load(files["schema/orders/datasets/orders.yml"])
+        names = [a["name"] for a in ds["attributes"]]
+        assert "bad" not in names
+        assert "schema/orders/attributes/bad.yml" not in files
+
+    def test_duplicate_metric_name_warns(self):
+        model = {"name": "m",
+            "datasets": [{"name": "orders", "source": "db.s.orders", "fields": []}],
+            "metrics": [
+                {"name": "total", "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(orders.a)"}]}},
+                {"name": "total", "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(orders.b)"}]}},
+            ]}
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            files = convert_osi_to_honeydew(_osi(model))
+        assert any("total" in str(x.message) for x in w)
+        # Last definition wins
+        m = yaml.safe_load(files["schema/orders/metrics/total.yml"])
+        assert "orders.b" in m["sql"]
+
+    def test_metric_string_ai_context_preserved_in_roundtrip(self, tmp_path):
+        model = {"name": "m",
+            "datasets": [{"name": "orders", "source": "db.s.orders", "fields": []}],
+            "metrics": [{"name": "rev", "ai_context": "Use for revenue analysis",
+                         "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(orders.total)"}]}}]}
+        files = convert_osi_to_honeydew(_osi(model))
+        for rel_path, content in files.items():
+            p = tmp_path / rel_path
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content)
+        result = yaml.safe_load(convert_honeydew_to_osi(str(tmp_path)))
+        m = result["semantic_model"][0]["metrics"][0]
+        assert m.get("ai_context") == "Use for revenue analysis"
+
+    def test_malformed_osi_metadata_json_warns(self, tmp_path):
+        ws_path = tmp_path / "workspace.yml"
+        ws_path.write_text(yaml.dump({"type": "workspace", "name": "ws"}))
+        base = tmp_path / "schema" / "orders"
+        (base / "datasets").mkdir(parents=True)
+        entity = {
+            "type": "entity", "name": "orders", "keys": ["id"], "key_dataset": "orders",
+            "relations": [],
+            "metadata": [{"name": "osi", "metadata": [
+                {"name": "unique_keys", "value": "[broken json"},
+            ]}],
+        }
+        (base / "orders.yml").write_text(yaml.dump(entity))
+        (base / "datasets" / "orders.yml").write_text(yaml.dump(
+            {"type": "dataset", "entity": "orders", "name": "orders",
+             "sql": "DB.S.ORDERS", "dataset_type": "table", "attributes": []}
+        ))
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            convert_honeydew_to_osi(str(tmp_path))
+        assert any("unique_keys" in str(x.message) for x in w)
