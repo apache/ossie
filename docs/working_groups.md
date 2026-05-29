@@ -1,6 +1,6 @@
 # OSI Working Groups
 
-Join the community on Slack: [join.slack.com/t/opensemanticx](https://join.slack.com/t/opensemanticx/shared_invite/zt-3pq1j0lid-tQBbEvAngAvz0I0vZm~HJw)
+Join the community on Slack: [join.slack.com/t/opensemanticx](https://join.slack.com/t/opensemanticx/shared_invite/zt-3yuad6c0h-MaoPgVSD1g9MEOf1_QeaiQ)
 
 ## 1. Metric Language and Relationships
 
