@@ -17,7 +17,7 @@ OSI provides a single JSON- and YAML-based specification that any tool can read 
 - **Contribute:** See [CONTRIBUTING.md](CONTRIBUTING.md) for how to propose specification changes, contribute code, and participate in the community.
 - **Roadmap:** See [ROADMAP.md](ROADMAP.md) for current working groups, future efforts, and planned enhancements informed by community discussion.
 - **Discuss:** Join the conversation on [GitHub Discussions](https://github.com/open-semantic-interchange/OSI/discussions) and [Issues](https://github.com/open-semantic-interchange/OSI/issues).
-- **Join the Slack community:** Chat directly with contributors on [Slack](https://join.slack.com/t/opensemanticx/shared_invite/zt-3pq1j0lid-tQBbEvAngAvz0I0vZm~HJw).
+- **Join the Slack community:** Chat directly with contributors on [Slack](https://join.slack.com/t/opensemanticx/shared_invite/zt-3yuad6c0h-MaoPgVSD1g9MEOf1_QeaiQ).
 
 # License
 

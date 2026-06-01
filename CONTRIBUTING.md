@@ -16,7 +16,7 @@ We welcome contributions from everyone — whether you are a developer, a data e
 2. **Explore the Examples**: Review the [TPC-DS example](examples/tpcds_semantic_model.yaml) to see a complete semantic model in practice.
 3. **Join the Conversation**: Open or participate in [GitHub Issues](https://github.com/open-semantic-interchange) and Discussions to share ideas and feedback.
 4. **Submit a Pull Request**: Fork the repository, make your changes, and submit a pull request. All contributions go through the standard review process described below.
-5. **Join the Slack workspace**: Chat directly with the community by [joining Slack](https://join.slack.com/t/opensemanticx/shared_invite/zt-3pq1j0lid-tQBbEvAngAvz0I0vZm~HJw).
+5. **Join the Slack workspace**: Chat directly with the community by [joining Slack](https://join.slack.com/t/opensemanticx/shared_invite/zt-3yuad6c0h-MaoPgVSD1g9MEOf1_QeaiQ).
 
 ## Contribution Guidelines
 
