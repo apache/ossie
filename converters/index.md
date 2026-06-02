@@ -39,7 +39,7 @@ Read an OSI semantic model and produce the equivalent vendor-specific representa
 - OSI → dbt `semantic_models` YAML
 - OSI → Tableau data source / Salesforce semantic layer
 - OSI → Databricks semantic layer definition
-
+- OSI → LookML (Looker / BigQuery)
 ### Import (Vendor → OSI)
 
 Read a vendor-specific semantic model and produce a valid OSI model, including mapping vendor-specific metadata into `custom_extensions`.
@@ -54,6 +54,7 @@ The OSI specification currently defines extensions for the following vendors:
 | `SALESFORCE` | Salesforce / Tableau semantic layer |
 | `DBT` | dbt semantic models |
 | `DATABRICKS` | Databricks semantic layer |
+| `BIGQUERY` | Looker / LookML (Google Cloud semantic layer over BigQuery) |
 
 Each vendor may define custom extensions (via the `custom_extensions` field in the OSI spec) to carry vendor-specific metadata that does not have an equivalent in the core specification.
 

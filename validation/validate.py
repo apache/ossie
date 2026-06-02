@@ -38,6 +38,7 @@ DIALECT_MAP = {
     "ANSI_SQL": None,  # sqlglot default
     "SNOWFLAKE": "snowflake",
     "DATABRICKS": "databricks",
+    "BIGQUERY": "bigquery",
     "MDX": None,  # Not supported by sqlglot, skip validation
     "TABLEAU": None,  # Not supported by sqlglot, skip validation
     "MAQL": None,  # Not supported by sqlglot, skip validation
