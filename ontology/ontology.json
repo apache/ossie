@@ -35,11 +35,19 @@
       "items": {
         "$ref": "#/$defs/OntologyMap"
       }
+    },
+    "custom_properties": {
+      "$ref": "#/$defs/CustomProperties"
     }
   },
   "required": ["version", "name", "ontology"],
   "additionalProperties": false,
   "$defs": {
+    "CustomProperties": {
+      "type": "object",
+      "description": "Open set of custom properties for carrying data that is not covered by the core ontology spec, for example when importing an ontology from an external format such as OWL/RDF. Keys are free-form; CURIEs such as 'owl:equivalentClass' or 'rdfs:label' are recommended when round-tripping semantic-web sources. Values may be any JSON.",
+      "additionalProperties": true
+    },
     "OntologyComponent": {
       "type": "object",
       "description": "Ontology component that defines a single concept and any relationships that are keyed primarily by that concept",
@@ -101,6 +109,9 @@
             "type": "string"
           },
           "description": "Natural language expressions that verbalize this relationship"
+        },
+        "custom_properties": {
+          "$ref": "#/$defs/CustomProperties"
         }
       },
       "required": ["name", "verbalizes"],
@@ -148,6 +159,9 @@
             "$ref": "#/$defs/Expression"
           },
           "description": "Expressions that constrain the population of this concept"
+        },
+        "custom_properties": {
+          "$ref": "#/$defs/CustomProperties"
         }
       },
       "required": ["name", "type"],
@@ -216,6 +230,9 @@
         "name": {
           "type": "string",
           "description": "Optional name of this role, used when the same concept plays multiple roles in the same relationship"
+        },
+        "custom_properties": {
+          "$ref": "#/$defs/CustomProperties"
         }
       },
       "required": ["concept"],
