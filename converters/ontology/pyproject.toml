@@ -1,0 +1,29 @@
+[project]
+name = "ontology"
+version = "0.1.0"
+description = "OSI ontology converters — Palantir → OSI, OSI → Spec, Spec → OSI"
+readme = "README.md"
+authors = [
+    { name = "RelationalAI", email = "support@relational.ai" },
+]
+requires-python = ">= 3.11"
+dependencies = [
+    "pydantic",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.0.3",
+    "pytest-snapshot",
+    "parameterized",
+    "pip-tools",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+pythonVersion = "3.11"
