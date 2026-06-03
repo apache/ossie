@@ -13,8 +13,9 @@ ontology:
       type: EntityType
       custom_properties:
         iri: "http://xmlns.com/foaf/0.1/Person"
-        rdfs:label: "Person"
-        rdfs:comment: "A person."
+        rdfs:label@en: "Person"
+        rdfs:label@fr: "Personne"
+        rdfs:comment@en: "A person."
         owl:equivalentClass: "https://schema.org/Person"
     relationships:
       - name: name
@@ -24,7 +25,7 @@ ontology:
         multiplicity: ManyToOne
         custom_properties:
           iri: "http://xmlns.com/foaf/0.1/name"
-          rdfs:label: "name"
+          rdfs:label@en: "name"
       - name: knows
         roles:
           - concept: Person
@@ -34,4 +35,5 @@ ontology:
         verbalizes: [ "{Person} knows {Person:acquaintance}" ]
         custom_properties:
           iri: "http://xmlns.com/foaf/0.1/knows"
+          rdfs:label@en: "knows"
           owl:inverseOf: "http://xmlns.com/foaf/0.1/knows"

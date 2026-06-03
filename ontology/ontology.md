@@ -395,7 +395,8 @@ ontology:
       type: EntityType
       custom_properties:
         iri: "http://xmlns.com/foaf/0.1/Person"
-        rdfs:label: "Person"
+        rdfs:label@en: "Person"
+        rdfs:label@fr: "Personne"
         owl:equivalentClass: "https://schema.org/Person"
     relationships:
       - name: knows
@@ -406,6 +407,33 @@ ontology:
         custom_properties:
           iri: "http://xmlns.com/foaf/0.1/knows"
           owl:inverseOf: "http://xmlns.com/foaf/0.1/knows"
+```
+
+#### Language-tagged literals
+
+RDF literals often carry a language tag (for example `rdfs:label` with values `"Person"@en` and
+`"Personne"@fr`). The recommended convention is to append the [BCP 47](https://www.rfc-editor.org/info/bcp47)
+language tag to the key after an `@`, giving keys of the form `prefix:local@lang`:
+
+```yaml
+custom_properties:
+  rdfs:label@en: "Person"
+  rdfs:label@fr: "Personne"
+```
+
+`@` is not a legal character in a CURIE local name, so `prefix:local@lang` parses unambiguously into the
+property and its language. This form holds at most one value per language per key. When a property needs
+multiple values in the same language, or carries a non-language datatype such as `xsd:date`, use the
+[JSON-LD](https://www.w3.org/TR/json-ld11/) value-object form instead, which is lossless:
+
+```yaml
+custom_properties:
+  rdfs:label:
+    - { "@value": "Person", "@language": "en" }
+    - { "@value": "Persona", "@language": "en" }
+  dcterms:created:
+    "@value": "2020-01-01"
+    "@type": "xsd:date"
 ```
 
 ## Ontology mappings
