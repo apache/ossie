@@ -14,8 +14,8 @@ ontology:
         multiplicity: ManyToOne
       - name: shapelength
         roles:
-          - concept: Float
-        verbalizes: [ '{Example_Runway} shapeLength {Float}' ]
+          - concept: Decimal
+        verbalizes: [ '{Example_Runway} shapeLength {Decimal}' ]
         multiplicity: ManyToOne
       - name: airportid
         roles:
@@ -24,8 +24,8 @@ ontology:
         multiplicity: ManyToOne
       - name: length
         roles:
-          - concept: Float
-        verbalizes: [ '{Example_Runway} length {Float}' ]
+          - concept: Decimal
+        verbalizes: [ '{Example_Runway} length {Decimal}' ]
         multiplicity: ManyToOne
       - name: geometry
         roles:
@@ -1071,7 +1071,7 @@ ontology_mappings:
                   expression: Example_Runway_example_runway.id
             children:
               - object_mapping:
-                  concept: Float
+                  concept: Decimal
                   expression: Example_Runway_example_runway.length
                 relationship: length
               - object_mapping:
@@ -1083,7 +1083,7 @@ ontology_mappings:
                   expression: Example_Runway_example_runway.designator
                 relationship: designator
               - object_mapping:
-                  concept: Float
+                  concept: Decimal
                   expression: Example_Runway_example_runway.shape_length
                 relationship: shape_length
               - object_mapping:

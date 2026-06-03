@@ -43,7 +43,6 @@ Ontologies come with several built in concepts that can be referred to by name:
 | `Date` | Most general date value type |
 | `DateTime` | Most general datetime value type |
 | `Decimal` | Most general decimal value type |
-| `Float` | Most general floating point value type |
 | `Integer` | Most general integer value type |
 | `String` | Most general string value type |
 
