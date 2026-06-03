@@ -4,9 +4,6 @@ description: >
   Small ontology imported from the FOAF (Friend of a Friend) OWL vocabulary,
   demonstrating how custom_properties preserves OWL/RDF data (IRIs, labels, and
   axioms) that the core OSI spec does not model, so the source can be round-tripped.
-custom_properties:
-  owl:Ontology: "http://xmlns.com/foaf/0.1/"
-  dc:title: "Friend of a Friend (FOAF) vocabulary"
 ontology:
   - concept:
       name: Person
@@ -37,3 +34,6 @@ ontology:
           iri: "http://xmlns.com/foaf/0.1/knows"
           rdfs:label@en: "knows"
           owl:inverseOf: "http://xmlns.com/foaf/0.1/knows"
+custom_properties:
+  owl:Ontology: "http://xmlns.com/foaf/0.1/"
+  dc:title: "Friend of a Friend (FOAF) vocabulary"
