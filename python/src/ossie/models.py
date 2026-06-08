@@ -168,8 +168,6 @@ class OSIDocument(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     version: str = "0.2.0.dev0"
-    dialects: Optional[list[OSIDialect]] = None
-    vendors: Optional[list[OSIVendor]] = None
     semantic_model: list[OSISemanticModel]
 
     def to_osi_yaml(self, **kwargs: Any) -> str:
