@@ -1,2 +1,6 @@
 **/__pycache__/
 **/.venv/
+
+# Go CLI
+cli/dist/
+cli/osi
