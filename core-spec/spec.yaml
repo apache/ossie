@@ -54,7 +54,7 @@ semantic_model:
     # Optional: Vendor-specific attributes for extensibility
     # Allows vendors to add custom metadata without breaking core compatibility
     custom_extensions:
-      - vendor_name: string  # Must be one of the values from 'vendors' enum above
+      - vendor_name: string  # Free-form string identifying the vendor
         data: string
 
 ---
@@ -107,7 +107,7 @@ datasets:
 
     # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
-      - vendor_name: string  # Must be one of the values from 'vendors' enum above
+      - vendor_name: string  # Free-form string identifying the vendor
         data: string
 
 ---
@@ -144,7 +144,7 @@ relationships:
 
     # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
-      - vendor_name: string  # Must be one of the values from 'vendors' enum above
+      - vendor_name: string  # Free-form string identifying the vendor
         data: string
 
 ---
@@ -182,7 +182,7 @@ fields:
 
      # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
-      - vendor_name: string  # Must be one of the values from 'vendors' enum above
+      - vendor_name: string  # Free-form string identifying the vendor
         data: string
 
 ---
@@ -211,5 +211,5 @@ metrics:
 
      # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
-      - vendor_name: string  # Must be one of the values from 'vendors' enum above
+      - vendor_name: string  # Free-form string identifying the vendor
         data: string

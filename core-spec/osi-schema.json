@@ -10,20 +10,6 @@
       "const": "0.2.0.dev0",
       "description": "OSI specification version"
     },
-    "dialects": {
-      "type": "array",
-      "description": "Supported expression language dialects (enumeration definition)",
-      "items": {
-        "$ref": "#/$defs/Dialect"
-      }
-    },
-    "vendors": {
-      "type": "array",
-      "description": "List of vendor names used in custom extensions within this model",
-      "items": {
-        "$ref": "#/$defs/Vendor"
-      }
-    },
     "semantic_model": {
       "type": "array",
       "description": "Collection of semantic model definitions",
