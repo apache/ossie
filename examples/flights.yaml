@@ -5,7 +5,7 @@ ontology:
     name: NrFeet
     description: "Unit of measure for distance in feet"
     type: ValueType
-    extends: [ Float ]
+    extends: [ Decimal ]
 - concept:
     name: NrPounds
     description: "Unit of measure for weight in pounds"
@@ -15,7 +15,7 @@ ontology:
     name: NrMiles
     description: "Unit of measure for distance in miles"
     type: ValueType
-    extends: [ Float ]
+    extends: [ Decimal ]
 - concept:
     name: NrMinutes
     description: "Unit of measure for time in minutes"
@@ -29,12 +29,12 @@ ontology:
 - concept:
     name: DegreesLatitude
     type: ValueType
-    extends: [ Float ]
+    extends: [ Decimal ]
     requires: [ DegreesLatitude <= 90, DegreesLatitude >= -90 ]
 - concept:
     name: DegreesLongitude
     type: ValueType
-    extends: [ Float ]
+    extends: [ Decimal ]
     requires: [ DegreesLongitude <= 180, DegreesLongitude >= -180 ]
 - concept:
     name: Polygon
@@ -143,7 +143,7 @@ ontology:
     roles:
     - concept: RunwayLength
     verbalizes:
-    - '{Runway} hase {RunwayLength}'
+    - '{Runway} has {RunwayLength}'
     multiplicity: ManyToOne
   - name: geometry
     roles:
@@ -191,7 +191,6 @@ ontology:
     name: Aircraft
     type: EntityType
     identify_by: [ tailnum ]
-    requires: [ tailnum ]
   relationships:
   - name: serial_number
     roles:
@@ -292,7 +291,7 @@ ontology:
     verbalizes:
     - '{Airport} has average arrival {Delay}'
     multiplicity: ManyToOne
-    derived_by: [ 'Decimal == AVG[Flight.arrival_delay WHERE Airport == Flight.route.destination GROUP BY Airport]' ]
+    derived_by: [ 'Delay == AVG[Flight.arrival_delay WHERE Airport == Flight.route.destination GROUP BY Airport]' ]
   - name: name
     roles:
     - concept: AirportName
