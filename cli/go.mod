@@ -1,4 +1,4 @@
-module github.com/open-semantic-interchange/osi/cli
+module github.com/open-semantic-interchange/ossie/cli
 
 go 1.22
 

@@ -1,15 +1,15 @@
 package cmd
 
 import (
-	"github.com/open-semantic-interchange/osi/cli/cmd/plugin"
-	"github.com/open-semantic-interchange/osi/cli/internal/osidir"
+	"github.com/open-semantic-interchange/ossie/cli/cmd/plugin"
+	"github.com/open-semantic-interchange/ossie/cli/internal/osidir"
 	"github.com/spf13/cobra"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "osi",
+	Use:   "ossie",
 	Short: "Open Semantic Interchange CLI",
-	Long:  `osi is the command-line tool for the Open Semantic Interchange (OSI) project.`,
+	Long:  `ossie is the command-line tool for the Open Semantic Interchange (OSSIE) project.`,
 	// NOTE: Cobra does NOT automatically chain PersistentPreRunE from parent to
 	// child. If any subcommand defines its own PersistentPreRunE or PreRunE, this
 	// function will not run for that subcommand. Future subcommands that define
@@ -24,7 +24,7 @@ func Execute() error {
 	return rootCmd.Execute()
 }
 
-// SetVersion sets the version string reported by `osi --version`.
+// SetVersion sets the version string reported by `ossie --version`.
 func SetVersion(v string) {
 	rootCmd.Version = v
 }

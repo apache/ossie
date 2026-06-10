@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/open-semantic-interchange/osi/cli/cmd"
+	"github.com/open-semantic-interchange/ossie/cli/cmd"
 )
 
 // version, commit, and date are set at build time by GoReleaser via ldflags.

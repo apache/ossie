@@ -7,13 +7,13 @@ import (
 )
 
 const (
-	defaultOSIDir = ".osi"
+	defaultOSIDir = ".ossie"
 	pluginsSubdir = "plugins"
-	envVar        = "OSI_PLUGIN_DIR"
+	envVar        = "OSSIE_PLUGIN_DIR"
 )
 
 // PluginDir returns the resolved plugin directory path.
-// It respects $OSI_PLUGIN_DIR if set, otherwise defaults to ~/.osi/plugins/.
+// It respects $OSSIE_PLUGIN_DIR if set, otherwise defaults to ~/.ossie/plugins/.
 func PluginDir() (string, error) {
 	if override := os.Getenv(envVar); override != "" {
 		return override, nil

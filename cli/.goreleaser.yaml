@@ -1,15 +1,15 @@
 version: 2
 
-project_name: osi
+project_name: ossie
 
 before:
   hooks:
     - go mod tidy
 
 builds:
-  - id: osi
+  - id: ossie
     main: .
-    binary: osi
+    binary: ossie
     goos:
       - linux
       - darwin
@@ -29,7 +29,7 @@ builds:
       - -X main.date={{.Date}}
 
 archives:
-  - id: osi
+  - id: ossie
     format: tar.gz
     format_overrides:
       - goos: windows
