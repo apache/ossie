@@ -8,7 +8,7 @@ import (
 
 var validateCmd = &cobra.Command{
 	Use:   "validate [flags] <path> [<path>...]",
-	Short: "Validate one or more OSI YAML or JSON files",
+	Short: "Validate one or more OSSIE YAML or JSON files",
 	Args:  cobra.MinimumNArgs(1),
 	RunE:  runValidate,
 }

@@ -1,4 +1,4 @@
-BINARY_NAME := osi
+BINARY_NAME := ossie
 BUILD_DIR   := dist
 
 .PHONY: build test lint release-dry-run clean
