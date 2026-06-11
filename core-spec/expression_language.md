@@ -1,6 +1,6 @@
 # OSI Proposal: Expression Language
 
-**Current Status:** Draft for internal review  
+**Current Status:** Proposed Final 
 **Last Updated:** 4 May Feb 2026
 
 **Working Group**
