@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"github.com/open-semantic-interchange/ossie/cli/cmd/plugin"
-	"github.com/open-semantic-interchange/ossie/cli/internal/osidir"
+	"github.com/open-semantic-interchange/ossie/cli/internal/ossiedir"
 	"github.com/spf13/cobra"
 )
 
@@ -13,9 +13,9 @@ var rootCmd = &cobra.Command{
 	// NOTE: Cobra does NOT automatically chain PersistentPreRunE from parent to
 	// child. If any subcommand defines its own PersistentPreRunE or PreRunE, this
 	// function will not run for that subcommand. Future subcommands that define
-	// their own must call osidir.EnsurePluginDir() explicitly.
+	// their own must call ossiedir.EnsurePluginDir() explicitly.
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		return osidir.EnsurePluginDir()
+		return ossiedir.EnsurePluginDir()
 	},
 }
 
