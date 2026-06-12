@@ -1,0 +1,47 @@
+[project]
+name = "osi-databricks"
+version = "0.2.0.dev0"
+description = "Bidirectional converter between Databricks Unity Catalog Metric View YAML and OSI semantic model"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "osi-python>=0.2.0.dev0",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+osi-databricks = "osi_databricks.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "hypothesis>=6.0",
+    "ruff>=0.11.5",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+include = ["src/osi_databricks/**/*"]
+ignore-vcs = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/osi_databricks"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "W", "C4", "PIE", "SIM"]
+ignore = ["E501"]
+
+[tool.uv.sources]
+osi-python = { path = "../../python", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
