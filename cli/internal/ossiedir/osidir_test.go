@@ -1,4 +1,4 @@
-package osidir
+package ossiedir
 
 import (
 	"os"
