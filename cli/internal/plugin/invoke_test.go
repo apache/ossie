@@ -279,3 +279,16 @@ func TestInvoke_nilFilesNormalisedToEmptyObject(t *testing.T) {
 		t.Errorf("expected files to be serialised as {}, got: %s", raw)
 	}
 }
+
+func TestInvoke_emptyInvokeReturnsError(t *testing.T) {
+	ctx := context.Background()
+
+	resp, err := plugin.Invoke(ctx, t.TempDir(), []string{}, plugin.Request{}, io.Discard)
+
+	if err == nil {
+		t.Fatal("expected error for empty invoke slice, got nil")
+	}
+	if resp != nil {
+		t.Errorf("expected nil response, got %+v", resp)
+	}
+}
