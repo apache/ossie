@@ -1,0 +1,45 @@
+# OSSIE Plugin Registry
+#
+# Format: each top-level key is a platform name. The value is a list of
+# versioned entries ordered oldest → newest; the last entry is the latest.
+#
+# Entry types:
+#   git_release — download from a GitHub release tarball
+#   raw_url     — download from an arbitrary URL
+#
+# NOTE: All entries below are placeholders pending plugin packaging.
+
+dbt:
+  - version: "0.1.0"
+    type: git_release
+    url: https://github.com/open-semantic-interchange/OSI
+    tag: plugin-dbt-v0.1.0
+    checksum: sha256:placeholder
+
+gooddata:
+  - version: "0.1.0"
+    type: git_release
+    url: https://github.com/open-semantic-interchange/OSI
+    tag: plugin-gooddata-v0.1.0
+    checksum: sha256:placeholder
+
+polaris:
+  - version: "0.1.0"
+    type: git_release
+    url: https://github.com/open-semantic-interchange/OSI
+    tag: plugin-polaris-v0.1.0
+    checksum: sha256:placeholder
+
+salesforce:
+  - version: "0.1.0"
+    type: git_release
+    url: https://github.com/open-semantic-interchange/OSI
+    tag: plugin-salesforce-v0.1.0
+    checksum: sha256:placeholder
+
+snowflake:
+  - version: "0.1.0"
+    type: git_release
+    url: https://github.com/open-semantic-interchange/OSI
+    tag: plugin-snowflake-v0.1.0
+    checksum: sha256:placeholder
