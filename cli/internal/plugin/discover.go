@@ -60,6 +60,9 @@ func loadPlugin(dir string) (*Plugin, error) {
 		return nil, fmt.Errorf("could not read plugin.yaml: %w", err)
 	}
 
+	// yaml.Unmarshal is lenient by default: unknown fields are silently ignored.
+	// This is intentional — future spec versions may add fields that older CLI
+	// versions should tolerate rather than reject.
 	var raw rawPlugin
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("invalid YAML: %w", err)
