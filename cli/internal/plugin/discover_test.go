@@ -3,6 +3,7 @@ package plugin_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -94,15 +95,15 @@ func TestDiscover_validPlugin(t *testing.T) {
 		t.Errorf("OSSIESpecVersion: got %q, want %q", p.OSSIESpecVersion, ">=0.2.0")
 	}
 	wantInvoke := []string{"ossie-plugin-dbt", "to-osi"}
-	if !equalStringSlice(p.Convert.ToOSI.Invoke, wantInvoke) {
+	if !slices.Equal(p.Convert.ToOSI.Invoke, wantInvoke) {
 		t.Errorf("ToOSI.Invoke: got %v, want %v", p.Convert.ToOSI.Invoke, wantInvoke)
 	}
 	wantAccepts := []string{".yaml", ".json"}
-	if !equalStringSlice(p.Convert.ToOSI.Accepts, wantAccepts) {
+	if !slices.Equal(p.Convert.ToOSI.Accepts, wantAccepts) {
 		t.Errorf("ToOSI.Accepts: got %v, want %v", p.Convert.ToOSI.Accepts, wantAccepts)
 	}
 	wantFromInvoke := []string{"ossie-plugin-dbt", "from-osi"}
-	if !equalStringSlice(p.Convert.FromOSI.Invoke, wantFromInvoke) {
+	if !slices.Equal(p.Convert.FromOSI.Invoke, wantFromInvoke) {
 		t.Errorf("FromOSI.Invoke: got %v, want %v", p.Convert.FromOSI.Invoke, wantFromInvoke)
 	}
 	if stderr.Len() != 0 {
@@ -285,15 +286,3 @@ func TestDiscover_strayFileIgnored(t *testing.T) {
 	}
 }
 
-// equalStringSlice returns true if a and b contain the same elements in the same order.
-func equalStringSlice(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
