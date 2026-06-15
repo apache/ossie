@@ -286,3 +286,51 @@ func TestDiscover_strayFileIgnored(t *testing.T) {
 	}
 }
 
+func TestDiscover_setupFieldPopulated(t *testing.T) {
+	root := t.TempDir()
+	writePlugin(t, root, "with-setup", `
+ossie_plugin_spec: "0.1.0"
+ossie_spec_version: ">=0.2.0"
+platform:
+  name: dbt
+setup: bin/setup
+convert:
+  to_osi:
+    invoke: ["bin/convert", "to-osi"]
+    accepts: [".yaml"]
+  from_osi:
+    invoke: ["bin/convert", "from-osi"]
+`)
+	var stderr strings.Builder
+
+	plugins, err := plugin.Discover(root, &stderr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(plugins) != 1 {
+		t.Fatalf("expected 1 plugin, got %d", len(plugins))
+	}
+	if plugins[0].Setup != "bin/setup" {
+		t.Errorf("Setup: got %q, want %q", plugins[0].Setup, "bin/setup")
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("unexpected warning: %q", stderr.String())
+	}
+}
+
+func TestDiscover_setupFieldAbsent(t *testing.T) {
+	root := t.TempDir()
+	writePlugin(t, root, "no-setup", validPluginYAML)
+	var stderr strings.Builder
+
+	plugins, err := plugin.Discover(root, &stderr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(plugins) != 1 {
+		t.Fatalf("expected 1 plugin, got %d", len(plugins))
+	}
+	if plugins[0].Setup != "" {
+		t.Errorf("Setup: got %q, want empty string", plugins[0].Setup)
+	}
+}
