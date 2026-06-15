@@ -8,6 +8,8 @@ import (
 
 // knownPlatforms is the authoritative list of platforms that must be present
 // in the embedded registry for the CLI to have useful output.
+// Declared at package level (not inside the test) because slices cannot be
+// constants in Go, and multiple tests reference this list.
 var knownPlatforms = []string{"dbt", "gooddata", "polaris", "salesforce", "snowflake"}
 
 func TestLoad_succeeds(t *testing.T) {
@@ -43,6 +45,9 @@ func TestRegistry_Platforms_sorted(t *testing.T) {
 		t.Fatalf("Load() returned error: %v", err)
 	}
 	got := reg.Platforms()
+	if len(got) == 0 {
+		t.Fatal("Platforms() returned empty slice")
+	}
 	for i := 1; i < len(got); i++ {
 		if got[i] < got[i-1] {
 			t.Errorf("Platforms() not sorted: %q appears after %q", got[i-1], got[i])

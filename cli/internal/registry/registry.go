@@ -9,6 +9,8 @@ import (
 )
 
 // Entry types supported by the registry.
+// These constants are consumed by P2 (plugin install) when dispatching
+// on how to download and extract a plugin archive.
 const (
 	EntryTypeGitRelease = "git_release"
 	EntryTypeRawURL     = "raw_url"
