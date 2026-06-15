@@ -261,3 +261,21 @@ func TestInvoke_requestPayloadReachesPlugin(t *testing.T) {
 		t.Errorf("echoed file content:\ngot:  %q\nwant: %q", echoed.Files["core/orders.yaml"], want)
 	}
 }
+
+func TestInvoke_nilFilesNormalisedToEmptyObject(t *testing.T) {
+	// A Request with nil Files must marshal as {"files":{}} not {"files":null}.
+	// Plugins receiving null instead of an object may crash on iteration.
+	invoke := fakePluginInvoke(t, "echo_request")
+	ctx := context.Background()
+
+	resp, err := plugin.Invoke(ctx, t.TempDir(), invoke, plugin.Request{}, io.Discard)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	raw := resp.Files["received_request"]
+
+	// The echoed bytes must contain `"files":{}` not `"files":null`.
+	if !strings.Contains(raw, `"files":{}`) {
+		t.Errorf("expected files to be serialised as {}, got: %s", raw)
+	}
+}

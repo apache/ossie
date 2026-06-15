@@ -42,6 +42,11 @@ type Issue struct {
 // A non-empty Issues slice in the response is NOT itself a Go error — the
 // caller is responsible for inspecting severities and setting the exit code.
 func Invoke(ctx context.Context, pluginDir string, invoke []string, req Request, pluginStderr io.Writer) (*Response, error) {
+	// Normalise nil to empty map so plugins always receive {"files":{}} not {"files":null}.
+	if req.Files == nil {
+		req.Files = map[string]string{}
+	}
+
 	reqJSON, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal plugin request: %w", err)
