@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -24,7 +25,7 @@ const pluginYAML = "plugin.yaml"
 func Discover(pluginsDir string, stderr io.Writer) ([]*Plugin, error) {
 	entries, err := os.ReadDir(pluginsDir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("could not read plugin directory %s: %w", pluginsDir, err)
@@ -53,7 +54,7 @@ func loadPlugin(dir string) (*Plugin, error) {
 	yamlPath := filepath.Join(dir, pluginYAML)
 	data, err := os.ReadFile(yamlPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("no plugin.yaml found")
 		}
 		return nil, fmt.Errorf("could not read plugin.yaml: %w", err)
