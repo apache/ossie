@@ -57,7 +57,7 @@ func TestDiscover_emptyDir(t *testing.T) {
 func TestDiscover_nonExistentDir(t *testing.T) {
 	var stderr strings.Builder
 
-	plugins, err := plugin.Discover("/this/path/does/not/exist", &stderr)
+	plugins, err := plugin.Discover(filepath.Join(t.TempDir(), "nonexistent"), &stderr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
