@@ -96,7 +96,6 @@ All participants in the OSI community are expected to treat each other with resp
 
 ## License
 
-- **Code**: Licensed under the [Apache License 2.0](LICENSE).
-- **Specification and Documentation**: Licensed under the [Creative Commons Attribution License (CC BY)](LICENSE-Docs).
+All content in this repository — including code, specification, and documentation — is licensed under the [Apache License 2.0](LICENSE).
 
 By submitting a contribution, you agree that your contribution will be licensed under the same terms.
