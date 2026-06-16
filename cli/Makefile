@@ -1,18 +1,22 @@
 BINARY_NAME := ossie
 BUILD_DIR   := dist
 
-.PHONY: build install test lint release-dry-run clean
+.PHONY: prepare build install test lint release-dry-run clean
 
-build:
+# Copy the canonical schema from the repo root before any Go step that needs it.
+prepare:
+	cp ../core-spec/osi-schema.json internal/schema/osi-schema.json
+
+build: prepare
 	go build -o $(BUILD_DIR)/$(BINARY_NAME) .
 
-install:
+install: prepare
 	go build -o $(shell go env GOPATH)/bin/$(BINARY_NAME) .
 
-test:
+test: prepare
 	go test ./...
 
-lint:
+lint: prepare
 	go vet ./...
 
 release-dry-run:
