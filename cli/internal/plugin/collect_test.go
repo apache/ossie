@@ -120,3 +120,19 @@ func TestCollectFiles_nonExistentInput(t *testing.T) {
 		t.Fatal("expected error for non-existent path, got nil")
 	}
 }
+
+func TestCollectFiles_emptyAcceptsIncludesAllFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "model.yaml", "yaml-content")
+	writeFile(t, dir, "readme.md", "md-content")
+	writeFile(t, dir, "data.json", "json-content")
+
+	// Empty accepts means no filter — all files should be included.
+	files, err := plugin.CollectFiles(dir, []string{}, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(files) != 3 {
+		t.Errorf("expected 3 files with empty accepts, got %d: %v", len(files), files)
+	}
+}
