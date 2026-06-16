@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Creates a venv and installs the dbt converter and its dependencies.
+# Run once after installing the plugin. CWD must be the plugin root.
+set -euo pipefail
+
+python3 -m venv .venv
+
+# osi-python is a local dev package not yet published to PyPI.
+# When running from the source tree, install from the sibling python/ directory.
+# When installed as a plugin (no source tree present), install from GitHub.
+OSI_PYTHON_LOCAL="../../python"
+if [ -d "$OSI_PYTHON_LOCAL" ]; then
+    .venv/bin/pip install -e "$OSI_PYTHON_LOCAL" --quiet
+else
+    .venv/bin/pip install \
+        "git+https://github.com/apache/ossie#subdirectory=python" \
+        --quiet
+fi
+
+.venv/bin/pip install -e . --quiet

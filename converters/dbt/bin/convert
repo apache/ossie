@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# OSSIE plugin entry point for the dbt converter.
+# The OSSIE CLI sets CWD to the plugin directory before invoking this script,
+# so relative paths resolve against the plugin root.
+exec .venv/bin/python src/ossie_dbt/ossie_plugin.py "$@"

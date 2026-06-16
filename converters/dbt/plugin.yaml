@@ -1,0 +1,12 @@
+ossie_plugin_spec: "0.1.0"
+ossie_spec_version: ">=0.2.0"
+platform:
+  name: dbt
+  vendor: dbt Labs
+setup: bin/setup
+convert:
+  to_osi:
+    invoke: ["bin/convert", "to-osi"]
+    accepts: [".json"]
+  from_osi:
+    invoke: ["bin/convert", "from-osi"]
