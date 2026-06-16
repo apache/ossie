@@ -74,3 +74,10 @@ func loadPlugin(dir string) (*Plugin, error) {
 
 	return raw.toPlugin(dir), nil
 }
+
+// LoadPlugin reads, parses, and validates the plugin.yaml inside dir.
+// It is the exported equivalent of loadPlugin, used when --plugin bypasses
+// name-based discovery.
+func LoadPlugin(dir string) (*Plugin, error) {
+	return loadPlugin(dir)
+}
