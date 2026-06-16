@@ -80,7 +80,7 @@ func runConvert(cmd *cobra.Command, args []string) error {
 		}
 		switch len(matches) {
 		case 0:
-			return fmt.Errorf("no plugin found for %q; run 'ossie plugin install %s' to install it", platformName, platformName)
+			return fmt.Errorf("no plugin found for %q; run `ossie plugin install %s` to install it", platformName, platformName)
 		case 1:
 			p = matches[0]
 		default:
