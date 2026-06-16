@@ -153,8 +153,10 @@ func runConvert(cmd *cobra.Command, args []string) error {
 	if outDir == "" {
 		outDir = filepath.Join("ossie-output", p.Platform.Name, direction)
 	}
-	if err := os.MkdirAll(outDir, 0755); err != nil {
-		return fmt.Errorf("could not create output directory %q: %w", outDir, err)
+	if len(resp.Files) > 0 {
+		if err := os.MkdirAll(outDir, 0755); err != nil {
+			return fmt.Errorf("could not create output directory %q: %w", outDir, err)
+		}
 	}
 	for name, content := range resp.Files {
 		dest := filepath.Join(outDir, filepath.FromSlash(name))
