@@ -124,22 +124,22 @@ There is no way to create Physical fields.
 
 OSI expressions support the following SQL constructs within metric and filter expressions:
 
-| Construct | Notes |
-| :---- | :---- |
+| Construct | Notes                                                                                                                                                                                                                                                                                 |
+| :---- |:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Column and Metric references | Varies based on whether in Ontology or Semantic models. See namespaceing in [OSI Discussion Point: Core Analytic Abstractions](https://docs.google.com/document/d/1si8DqU4arG18ZgX4HnRG5D_zS2X7V1s-vgNY35rvxhM/edit?tab=t.0#heading=h.le505t8uoyfy) And future Ontology documentation |
-| Arithmetic operators | `+`, `-`, `*`, `/`, `%` (modulo) |
-| Comparison operators | `=`, `<>`, `!=`, `<`, `>`, `<=`, `>=` |
-| Logical operators | `AND`, `OR`, `NOT` |
-| `BETWEEN` | `x BETWEEN a AND b` |
-| `IN` / `NOT IN` | `x IN (a, b, c)` This only supports lists of values, not subqueries. |
-| `LIKE` / `ILIKE` | Pattern matching |
-| `IS NULL` / `IS NOT NULL` | Null checks |
-| `CASE WHEN` | Conditional logic |
-| Aggregate functions | See [Aggregation Functions](https://docs.google.com/document/d/1nvt-vOV8TRKDOlF8C2OkThBqGF73eVZLSC1wryUBPM4/edit#aggregation-functions) |
-| Window functions | See [Window Functions](https://docs.google.com/document/d/1nvt-vOV8TRKDOlF8C2OkThBqGF73eVZLSC1wryUBPM4/edit#window-functions) |
-| Scalar functions | See function categories below |
-| Parentheses | Expression grouping |
-| Bind parameters | `:parameter_name` syntax |
+| Arithmetic operators | `+`, `-`, `*`, `/`, `%` (modulo)                                                                                                                                                                                                                                                      |
+| Comparison operators | `=`, `<>`, `!=`, `<`, `>`, `<=`, `>=`                                                                                                                                                                                                                                                 |
+| Logical operators | `AND`, `OR`, `NOT`                                                                                                                                                                                                                                                                    |
+| `BETWEEN` | `x BETWEEN a AND b`                                                                                                                                                                                                                                                                   |
+| `IN` / `NOT IN` | `x IN (a, b, c)` This only supports lists of values, not subqueries.                                                                                                                                                                                                                  |
+| `LIKE` / `ILIKE` | Pattern matching                                                                                                                                                                                                                                                                      |
+| `IS NULL` / `IS NOT NULL` | Null checks                                                                                                                                                                                                                                                                           |
+| `CASE WHEN` | Conditional logic                                                                                                                                                                                                                                                                     |
+| Aggregate functions | Core functions used for aggregations                                                                                                                                                                                                                                                  |
+| Window functions | Core supported window functions                                                                                                                                                                                                                                                       |
+| Scalar functions | See function categories below                                                                                                                                                                                                                                                         |
+| Parentheses | Expression grouping                                                                                                                                                                                                                                                                   |
+| Bind parameters | `:parameter_name` syntax                                                                                                                                                                                                                                                              |
 
 ### 
 
