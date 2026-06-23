@@ -27,7 +27,8 @@ from osi.model import (
     ReferentMapping,
     Relationship,
     RelationshipMultiplicity,
-    OsiOntology
+    OsiOntology,
+    BUILTIN_CONCEPTS
 )
 from osi.spec import (
     Concept as SpecConcept,
@@ -374,12 +375,15 @@ class SpecToOsiConverter:
 
     @staticmethod
     def _sort_spec_dependency_graph(concepts: list[SpecConcept]) -> list[str]:
-        nodes = [concept.name for concept in concepts]
+        nodes: list[str] = []
         edges: list[tuple[str, str]] = []
         for concept in concepts:
+            name = concept.name
+            nodes.append(name)
             if concept.extends:
                 for ext in concept.extends:
-                    edges.append((ext, concept.name))
+                    if ext not in BUILTIN_CONCEPTS:
+                        edges.append((ext, name))
         return topological_sort(nodes, edges)
 
 
