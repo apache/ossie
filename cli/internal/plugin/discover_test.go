@@ -18,11 +18,11 @@ platform:
   name: dbt
   vendor: dbt Labs
 convert:
-  to_osi:
-    invoke: ["ossie-plugin-dbt", "to-osi"]
+  to_ossie:
+    invoke: ["ossie-plugin-dbt", "to-ossie"]
     accepts: [".yaml", ".json"]
-  from_osi:
-    invoke: ["ossie-plugin-dbt", "from-osi"]
+  from_ossie:
+    invoke: ["ossie-plugin-dbt", "from-ossie"]
 `
 
 // writePlugin creates a plugin directory under root with the given plugin.yaml content.
@@ -94,17 +94,17 @@ func TestDiscover_validPlugin(t *testing.T) {
 	if p.OSSIESpecVersion != ">=0.2.0" {
 		t.Errorf("OSSIESpecVersion: got %q, want %q", p.OSSIESpecVersion, ">=0.2.0")
 	}
-	wantInvoke := []string{"ossie-plugin-dbt", "to-osi"}
-	if !slices.Equal(p.Convert.ToOSI.Invoke, wantInvoke) {
-		t.Errorf("ToOSI.Invoke: got %v, want %v", p.Convert.ToOSI.Invoke, wantInvoke)
+	wantInvoke := []string{"ossie-plugin-dbt", "to-ossie"}
+	if !slices.Equal(p.Convert.ToOssie.Invoke, wantInvoke) {
+		t.Errorf("ToOssie.Invoke: got %v, want %v", p.Convert.ToOssie.Invoke, wantInvoke)
 	}
 	wantAccepts := []string{".yaml", ".json"}
-	if !slices.Equal(p.Convert.ToOSI.Accepts, wantAccepts) {
-		t.Errorf("ToOSI.Accepts: got %v, want %v", p.Convert.ToOSI.Accepts, wantAccepts)
+	if !slices.Equal(p.Convert.ToOssie.Accepts, wantAccepts) {
+		t.Errorf("ToOssie.Accepts: got %v, want %v", p.Convert.ToOssie.Accepts, wantAccepts)
 	}
-	wantFromInvoke := []string{"ossie-plugin-dbt", "from-osi"}
-	if !slices.Equal(p.Convert.FromOSI.Invoke, wantFromInvoke) {
-		t.Errorf("FromOSI.Invoke: got %v, want %v", p.Convert.FromOSI.Invoke, wantFromInvoke)
+	wantFromInvoke := []string{"ossie-plugin-dbt", "from-ossie"}
+	if !slices.Equal(p.Convert.FromOssie.Invoke, wantFromInvoke) {
+		t.Errorf("FromOssie.Invoke: got %v, want %v", p.Convert.FromOssie.Invoke, wantFromInvoke)
 	}
 	if stderr.Len() != 0 {
 		t.Errorf("unexpected warning: %q", stderr.String())
@@ -136,10 +136,10 @@ ossie_spec_version: ">=0.2.0"
 platform:
   vendor: dbt Labs
 convert:
-  to_osi:
+  to_ossie:
     invoke: ["bin/convert"]
     accepts: [".yaml"]
-  from_osi:
+  from_ossie:
     invoke: ["bin/convert"]
 `)
 	var stderr strings.Builder
@@ -295,11 +295,11 @@ platform:
   name: dbt
 setup: bin/setup
 convert:
-  to_osi:
-    invoke: ["bin/convert", "to-osi"]
+  to_ossie:
+    invoke: ["bin/convert", "to-ossie"]
     accepts: [".yaml"]
-  from_osi:
-    invoke: ["bin/convert", "from-osi"]
+  from_ossie:
+    invoke: ["bin/convert", "from-ossie"]
 `)
 	var stderr strings.Builder
 

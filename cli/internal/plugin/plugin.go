@@ -21,14 +21,14 @@ type Platform struct {
 
 // ConvertConfig holds both conversion directions.
 type ConvertConfig struct {
-	ToOSI   Direction
-	FromOSI Direction
+	ToOssie   Direction
+	FromOssie Direction
 }
 
 // Direction describes one conversion direction.
 type Direction struct {
 	Invoke  []string // command + args; first element is the executable
-	Accepts []string // file extensions e.g. [".yaml"]; populated on ToOSI only
+	Accepts []string // file extensions e.g. [".yaml"]; populated on ToOssie only
 }
 
 // rawPlugin mirrors the on-disk plugin.yaml layout for YAML unmarshaling.
@@ -51,11 +51,18 @@ type rawPlugin struct {
 	Setup string `yaml:"setup"`
 
 	Convert struct {
-		ToOSI struct {
+		ToOssie struct {
+			Invoke  []string `yaml:"invoke"`
+			Accepts []string `yaml:"accepts"`
+		} `yaml:"to_ossie"`
+		ToOSI struct { // deprecated
 			Invoke  []string `yaml:"invoke"`
 			Accepts []string `yaml:"accepts"`
 		} `yaml:"to_osi"`
-		FromOSI struct {
+		FromOssie struct {
+			Invoke []string `yaml:"invoke"`
+		} `yaml:"from_ossie"`
+		FromOSI struct { // deprecated
 			Invoke []string `yaml:"invoke"`
 		} `yaml:"from_osi"`
 	} `yaml:"convert"`
@@ -73,6 +80,19 @@ func (r *rawPlugin) validate() error {
 		specVersion = r.OSISpecVersion
 	}
 
+	toInvoke := r.Convert.ToOssie.Invoke
+	if len(toInvoke) == 0 {
+		toInvoke = r.Convert.ToOSI.Invoke
+	}
+	toAccepts := r.Convert.ToOssie.Accepts
+	if len(toAccepts) == 0 {
+		toAccepts = r.Convert.ToOSI.Accepts
+	}
+	fromInvoke := r.Convert.FromOssie.Invoke
+	if len(fromInvoke) == 0 {
+		fromInvoke = r.Convert.FromOSI.Invoke
+	}
+
 	switch {
 	case pluginSpec == "":
 		return errors.New("missing required field: ossie_plugin_spec (or osi_plugin_spec)")
@@ -80,12 +100,12 @@ func (r *rawPlugin) validate() error {
 		return errors.New("missing required field: ossie_spec_version (or osi_spec_version)")
 	case r.Platform.Name == "":
 		return errors.New("missing required field: platform.name")
-	case len(r.Convert.ToOSI.Invoke) == 0:
-		return errors.New("missing required field: convert.to_osi.invoke")
-	case len(r.Convert.ToOSI.Accepts) == 0:
-		return errors.New("missing required field: convert.to_osi.accepts")
-	case len(r.Convert.FromOSI.Invoke) == 0:
-		return errors.New("missing required field: convert.from_osi.invoke")
+	case len(toInvoke) == 0:
+		return errors.New("missing required field: convert.to_ossie.invoke (or convert.to_osi.invoke)")
+	case len(toAccepts) == 0:
+		return errors.New("missing required field: convert.to_ossie.accepts (or convert.to_osi.accepts)")
+	case len(fromInvoke) == 0:
+		return errors.New("missing required field: convert.from_ossie.invoke (or convert.from_osi.invoke)")
 	}
 	return nil
 }
@@ -101,6 +121,20 @@ func (r *rawPlugin) toPlugin(path string) *Plugin {
 	if specVersion == "" {
 		specVersion = r.OSISpecVersion
 	}
+
+	toInvoke := r.Convert.ToOssie.Invoke
+	if len(toInvoke) == 0 {
+		toInvoke = r.Convert.ToOSI.Invoke
+	}
+	toAccepts := r.Convert.ToOssie.Accepts
+	if len(toAccepts) == 0 {
+		toAccepts = r.Convert.ToOSI.Accepts
+	}
+	fromInvoke := r.Convert.FromOssie.Invoke
+	if len(fromInvoke) == 0 {
+		fromInvoke = r.Convert.FromOSI.Invoke
+	}
+
 	return &Plugin{
 		Path:             path,
 		OSSIEPluginSpec:  pluginSpec,
@@ -111,12 +145,12 @@ func (r *rawPlugin) toPlugin(path string) *Plugin {
 		},
 		Setup: r.Setup,
 		Convert: ConvertConfig{
-			ToOSI: Direction{
-				Invoke:  r.Convert.ToOSI.Invoke,
-				Accepts: r.Convert.ToOSI.Accepts,
+			ToOssie: Direction{
+				Invoke:  toInvoke,
+				Accepts: toAccepts,
 			},
-			FromOSI: Direction{
-				Invoke: r.Convert.FromOSI.Invoke,
+			FromOssie: Direction{
+				Invoke: fromInvoke,
 			},
 		},
 	}
