@@ -1,4 +1,4 @@
-"""Entrypoint: read a YAML/JSON OSI spec and produce a OsiOntology."""
+"""Entrypoint: read a YAML/JSON OSI spec and produce an OsiOntology."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from io import IOBase
 import yaml
 
 from osi.converter.spec_to_osi.converter import SpecToOsiConverter
-from osi.model import OsiOntology
+from osi.model import OsiOntology, FormulaFactory
 from osi.spec import OsiSpec
 
 
@@ -17,15 +17,16 @@ class OsiParser:
     _spec: OsiSpec | None
     _debug: bool
 
-    def __init__(self, debug: bool = False):
+    def __init__(self, debug: bool = False, formula_factory: FormulaFactory = FormulaFactory()):
         self._debug = debug
         self._model = None
         self._spec = None
+        self._formula_factory = formula_factory
 
     def parse(self, file: IOBase) -> None:
         raw = OsiParser.load_data(file)
         self._spec = OsiSpec.model_validate(raw)
-        self._model = SpecToOsiConverter().convert(self._spec)
+        self._model = SpecToOsiConverter(formula_factory=self._formula_factory).convert(self._spec)
 
     @staticmethod
     def load_data(file: IOBase):
