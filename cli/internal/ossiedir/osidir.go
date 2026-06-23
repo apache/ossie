@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	defaultOSIDir = ".ossie"
+	defaultOssieDir = ".ossie"
 	pluginsSubdir = "plugins"
 	envVar        = "OSSIE_PLUGIN_DIR"
 )
@@ -23,7 +23,7 @@ func PluginDir() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("could not determine home directory: %w", err)
 	}
-	return filepath.Join(home, defaultOSIDir, pluginsSubdir), nil
+	return filepath.Join(home, defaultOssieDir, pluginsSubdir), nil
 }
 
 // EnsurePluginDir ensures the plugin directory exists, creating it if needed.
