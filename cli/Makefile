@@ -1,10 +1,13 @@
 BINARY_NAME := ossie
 BUILD_DIR   := dist
 
-.PHONY: build test lint release-dry-run clean
+.PHONY: build install test lint release-dry-run clean
 
 build:
 	go build -o $(BUILD_DIR)/$(BINARY_NAME) .
+
+install:
+	go build -o $(shell go env GOPATH)/bin/$(BINARY_NAME) .
 
 test:
 	go test ./...
