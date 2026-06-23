@@ -32,16 +32,9 @@ type Direction struct {
 }
 
 // rawPlugin mirrors the on-disk plugin.yaml layout for YAML unmarshaling.
-//
-// ossie_* keys are the preferred (current brand) names. osi_* keys are
-// deprecated aliases kept for backward compatibility with plugins written
-// before the OSI → OSSIE rename. When both are present, ossie_* wins.
-// TODO: remove osi_* fallback support in a future major version.
 type rawPlugin struct {
 	OSSIEPluginSpec  string `yaml:"ossie_plugin_spec"`
 	OSSIESpecVersion string `yaml:"ossie_spec_version"`
-	OSIPluginSpec    string `yaml:"osi_plugin_spec"`  // deprecated
-	OSISpecVersion   string `yaml:"osi_spec_version"` // deprecated
 
 	Platform struct {
 		Name   string `yaml:"name"`
@@ -55,57 +48,28 @@ type rawPlugin struct {
 			Invoke  []string `yaml:"invoke"`
 			Accepts []string `yaml:"accepts"`
 		} `yaml:"to_ossie"`
-		ToOSI struct { // deprecated
-			Invoke  []string `yaml:"invoke"`
-			Accepts []string `yaml:"accepts"`
-		} `yaml:"to_osi"`
 		FromOssie struct {
 			Invoke []string `yaml:"invoke"`
 		} `yaml:"from_ossie"`
-		FromOSI struct { // deprecated
-			Invoke []string `yaml:"invoke"`
-		} `yaml:"from_osi"`
 	} `yaml:"convert"`
 }
 
 // validate checks that all required fields are present.
 // It performs presence checks only — not format validation.
 func (r *rawPlugin) validate() error {
-	pluginSpec := r.OSSIEPluginSpec
-	if pluginSpec == "" {
-		pluginSpec = r.OSIPluginSpec
-	}
-	specVersion := r.OSSIESpecVersion
-	if specVersion == "" {
-		specVersion = r.OSISpecVersion
-	}
-
-	toInvoke := r.Convert.ToOssie.Invoke
-	if len(toInvoke) == 0 {
-		toInvoke = r.Convert.ToOSI.Invoke
-	}
-	toAccepts := r.Convert.ToOssie.Accepts
-	if len(toAccepts) == 0 {
-		toAccepts = r.Convert.ToOSI.Accepts
-	}
-	fromInvoke := r.Convert.FromOssie.Invoke
-	if len(fromInvoke) == 0 {
-		fromInvoke = r.Convert.FromOSI.Invoke
-	}
-
 	switch {
-	case pluginSpec == "":
-		return errors.New("missing required field: ossie_plugin_spec (or osi_plugin_spec)")
-	case specVersion == "":
-		return errors.New("missing required field: ossie_spec_version (or osi_spec_version)")
+	case r.OSSIEPluginSpec == "":
+		return errors.New("missing required field: ossie_plugin_spec")
+	case r.OSSIESpecVersion == "":
+		return errors.New("missing required field: ossie_spec_version")
 	case r.Platform.Name == "":
 		return errors.New("missing required field: platform.name")
-	case len(toInvoke) == 0:
-		return errors.New("missing required field: convert.to_ossie.invoke (or convert.to_osi.invoke)")
-	case len(toAccepts) == 0:
-		return errors.New("missing required field: convert.to_ossie.accepts (or convert.to_osi.accepts)")
-	case len(fromInvoke) == 0:
-		return errors.New("missing required field: convert.from_ossie.invoke (or convert.from_osi.invoke)")
+	case len(r.Convert.ToOssie.Invoke) == 0:
+		return errors.New("missing required field: convert.to_ossie.invoke")
+	case len(r.Convert.ToOssie.Accepts) == 0:
+		return errors.New("missing required field: convert.to_ossie.accepts")
+	case len(r.Convert.FromOssie.Invoke) == 0:
+		return errors.New("missing required field: convert.from_ossie.invoke")
 	}
 	return nil
 }
@@ -113,32 +77,10 @@ func (r *rawPlugin) validate() error {
 // toPlugin maps a validated rawPlugin to the exported Plugin type.
 // path is the absolute directory path of the plugin's installation.
 func (r *rawPlugin) toPlugin(path string) *Plugin {
-	pluginSpec := r.OSSIEPluginSpec
-	if pluginSpec == "" {
-		pluginSpec = r.OSIPluginSpec
-	}
-	specVersion := r.OSSIESpecVersion
-	if specVersion == "" {
-		specVersion = r.OSISpecVersion
-	}
-
-	toInvoke := r.Convert.ToOssie.Invoke
-	if len(toInvoke) == 0 {
-		toInvoke = r.Convert.ToOSI.Invoke
-	}
-	toAccepts := r.Convert.ToOssie.Accepts
-	if len(toAccepts) == 0 {
-		toAccepts = r.Convert.ToOSI.Accepts
-	}
-	fromInvoke := r.Convert.FromOssie.Invoke
-	if len(fromInvoke) == 0 {
-		fromInvoke = r.Convert.FromOSI.Invoke
-	}
-
 	return &Plugin{
 		Path:             path,
-		OSSIEPluginSpec:  pluginSpec,
-		OSSIESpecVersion: specVersion,
+		OSSIEPluginSpec:  r.OSSIEPluginSpec,
+		OSSIESpecVersion: r.OSSIESpecVersion,
 		Platform: Platform{
 			Name:   r.Platform.Name,
 			Vendor: r.Platform.Vendor,
@@ -146,11 +88,11 @@ func (r *rawPlugin) toPlugin(path string) *Plugin {
 		Setup: r.Setup,
 		Convert: ConvertConfig{
 			ToOssie: Direction{
-				Invoke:  toInvoke,
-				Accepts: toAccepts,
+				Invoke:  r.Convert.ToOssie.Invoke,
+				Accepts: r.Convert.ToOssie.Accepts,
 			},
 			FromOssie: Direction{
-				Invoke: fromInvoke,
+				Invoke: r.Convert.FromOssie.Invoke,
 			},
 		},
 	}

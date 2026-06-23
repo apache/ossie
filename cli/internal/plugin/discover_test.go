@@ -201,20 +201,20 @@ func TestDiscover_multipleMixed(t *testing.T) {
 	}
 }
 
-func TestDiscover_ossieKeyPreferred(t *testing.T) {
+func TestDiscover_unknownFieldsIgnored(t *testing.T) {
 	root := t.TempDir()
-	writePlugin(t, root, "both-keys", `
-ossie_plugin_spec: "ossie-value"
-osi_plugin_spec: "osi-value"
-ossie_spec_version: ">=1.0.0"
-osi_spec_version: ">=0.1.0"
+	writePlugin(t, root, "extra-fields", `
+ossie_plugin_spec: "0.1.0"
+ossie_spec_version: ">=0.2.0"
+future_field: "some value"
 platform:
   name: test
+  future_platform_field: "ignored"
 convert:
-  to_osi:
+  to_ossie:
     invoke: ["bin/convert"]
     accepts: [".yaml"]
-  from_osi:
+  from_ossie:
     invoke: ["bin/convert"]
 `)
 	var stderr strings.Builder
@@ -224,44 +224,10 @@ convert:
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(plugins) != 1 {
-		t.Fatalf("expected 1 plugin, got %d", len(plugins))
+		t.Fatalf("expected 1 plugin, got %d: future spec fields should be silently ignored", len(plugins))
 	}
-	if plugins[0].OSSIEPluginSpec != "ossie-value" {
-		t.Errorf("OSSIEPluginSpec: got %q, want %q", plugins[0].OSSIEPluginSpec, "ossie-value")
-	}
-	if plugins[0].OSSIESpecVersion != ">=1.0.0" {
-		t.Errorf("OSSIESpecVersion: got %q, want %q", plugins[0].OSSIESpecVersion, ">=1.0.0")
-	}
-}
-
-func TestDiscover_osiKeyFallback(t *testing.T) {
-	root := t.TempDir()
-	writePlugin(t, root, "osi-only", `
-osi_plugin_spec: "0.2.0"
-osi_spec_version: ">=0.1.0"
-platform:
-  name: legacy
-convert:
-  to_osi:
-    invoke: ["bin/convert"]
-    accepts: [".json"]
-  from_osi:
-    invoke: ["bin/convert"]
-`)
-	var stderr strings.Builder
-
-	plugins, err := plugin.Discover(root, &stderr)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(plugins) != 1 {
-		t.Fatalf("expected 1 plugin, got %d", len(plugins))
-	}
-	if plugins[0].OSSIEPluginSpec != "0.2.0" {
-		t.Errorf("OSSIEPluginSpec: got %q, want %q", plugins[0].OSSIEPluginSpec, "0.2.0")
-	}
-	if plugins[0].OSSIESpecVersion != ">=0.1.0" {
-		t.Errorf("OSSIESpecVersion: got %q, want %q", plugins[0].OSSIESpecVersion, ">=0.1.0")
+	if stderr.Len() != 0 {
+		t.Errorf("unexpected warning: %q", stderr.String())
 	}
 }
 
