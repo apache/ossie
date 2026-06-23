@@ -26,7 +26,7 @@ func TestPluginDir_default(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not determine home dir: %v", err)
 	}
-	want := filepath.Join(home, defaultOSIDir, pluginsSubdir)
+	want := filepath.Join(home, defaultOssieDir, pluginsSubdir)
 
 	got, err := PluginDir()
 	if err != nil {
