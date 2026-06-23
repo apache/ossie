@@ -393,15 +393,18 @@ class Formula:
         return self._raw_expr
 
 
-class FormulaFactory(Protocol):
-    """Callable that produces a Formula (or a subclass) from a raw expression.
+class FormulaFactory:
+    """Base factory that produces a Formula from a raw expression.
 
-    The default implementation is the Formula constructor itself.  Override in
-    a downstream package to return an enriched subclass — e.g. one carrying an
-    AST produced by a FormulaParser — without touching the converters.
+    Subclass and override __call__ to return an enriched Formula subclass,
+    e.g. one carrying an AST produced by a FormulaParser.
+
+    The *ontology* parameter gives the factory access to the ontology being
+    built so that name resolution and validation can be performed.
     """
 
-    def __call__(self, raw_expr: str, parent: FormulaParent = None) -> Formula: ...
+    def __call__(self, raw_expr: str, parent: FormulaParent = None, ontology: OntologyComponent | None = None) -> Formula:
+        return Formula(raw_expr=raw_expr, parent=parent)
 
 
 # ---------------------------------------------------------------------------

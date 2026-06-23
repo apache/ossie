@@ -67,7 +67,7 @@ class SpecToOsiConverter:
         model = SpecToOsiConverter(formula_factory=my_parser).convert(spec)
     """
 
-    def __init__(self, formula_factory: FormulaFactory = Formula):
+    def __init__(self, formula_factory: FormulaFactory = FormulaFactory()):
         self._formula_factory = formula_factory
 
     def convert(self, spec: OsiSpec) -> OsiOntology:
@@ -144,12 +144,12 @@ class SpecToOsiConverter:
             if concept is None:
                 continue
             for raw in concept_spec.requires:
-                req = self._build_rule(raw, concept)
+                req = self._build_rule(raw, concept, ontology)
                 if req:
                     concept.add_require(req)
                     ontology.add_require(req)
             for raw in concept_spec.derived_by:
-                rule = self._build_rule(raw, concept)
+                rule = self._build_rule(raw, concept, ontology)
                 if rule:
                     concept.add_derived_by(rule)
                     ontology.add_rule(rule)
@@ -158,12 +158,12 @@ class SpecToOsiConverter:
                 if rel is None:
                     continue
                 for raw in rel_spec.requires:
-                    req = self._build_rule(raw, rel)
+                    req = self._build_rule(raw, rel, ontology)
                     if req:
                         rel.add_require(req)
                         ontology.add_require(req)
                 for raw in rel_spec.derived_by:
-                    rule = self._build_rule(raw, rel)
+                    rule = self._build_rule(raw, rel, ontology)
                     if rule:
                         rel.add_derived_by(rule)
                         ontology.add_rule(rule)
@@ -270,7 +270,7 @@ class SpecToOsiConverter:
                 )
         expression: DatasetField | Formula | None = None
         if om_spec.expression is not None:
-            expression = self._resolve_mapping_expression(om_spec.expression, semantic_model, concept)
+            expression = self._resolve_mapping_expression(om_spec.expression, semantic_model, concept, ontology)
         referent_mappings = None
         if om_spec.referent_mappings is not None:
             rm_container = concept if concept is not None else container
@@ -297,7 +297,7 @@ class SpecToOsiConverter:
         sibling_player = rel.last_role.player
         expression: DatasetField | Formula | None = None
         if rm_spec.expression is not None:
-            expression = self._resolve_mapping_expression(rm_spec.expression, semantic_model, sibling_player)
+            expression = self._resolve_mapping_expression(rm_spec.expression, semantic_model, sibling_player, ontology)
         nested = None
         if rm_spec.referent_mappings is not None:
             nested = [
@@ -336,13 +336,13 @@ class SpecToOsiConverter:
 
     # ----- Formula helpers -----------------------------------------------
 
-    def _build_rule(self, raw: str | None, parent: Container) -> Formula | None:
+    def _build_rule(self, raw: str | None, parent: Container,  ontology: OntologyComponent) -> Formula | None:
         if not raw:
             return None
-        return self._formula_factory(raw_expr=raw, parent=parent)
+        return self._formula_factory(raw_expr=raw, parent=parent, ontology=ontology)
 
     def _resolve_mapping_expression(
-        self, expression: str, semantic_model: SemanticModel, expected_type: Concept | None
+        self, expression: str, semantic_model: SemanticModel, expected_type: Concept | None, ontology: OntologyComponent
     ) -> DatasetField | Formula:
         """Map a raw spec expression onto either a DatasetField (single
         `DATASET.field` or bare `field` reference) or a Formula (anything else).
@@ -356,7 +356,7 @@ class SpecToOsiConverter:
                 if field is not None:
                     _pin_field_type(field, expected_type)
                     return field
-            return self._formula_factory(raw_expr=expression)
+            return self._formula_factory(raw_expr=expression, ontology=ontology)
 
         bare = _BARE_FIELD_RE.match(expression)
         if bare:
@@ -366,9 +366,9 @@ class SpecToOsiConverter:
                 if field is not None:
                     _pin_field_type(field, expected_type)
                     return field
-            return self._formula_factory(raw_expr=expression)
+            return self._formula_factory(raw_expr=expression, ontology=ontology)
 
-        return self._formula_factory(raw_expr=expression)
+        return self._formula_factory(raw_expr=expression, ontology=ontology)
 
     # ----- Structural helpers --------------------------
 

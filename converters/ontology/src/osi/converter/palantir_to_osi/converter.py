@@ -57,7 +57,7 @@ class PalantirToOsiConverter:
 
     depths_role_names = {1: "fst", 2: "snd", 3: "thd", 4: "frt"}
 
-    def __init__(self, formula_factory: FormulaFactory = Formula):
+    def __init__(self, formula_factory: FormulaFactory = FormulaFactory()):
         self._formula_factory = formula_factory
 
     # ------------------------------------------------------------------
@@ -441,7 +441,7 @@ class PalantirToOsiConverter:
                 for mprop, oprop in rel.property_map().items()
             ]
             if frags:
-                formula = self._formula_factory(raw_expr=" AND ".join(frags), parent=relationship)
+                formula = self._formula_factory(raw_expr=" AND ".join(frags), parent=relationship, ontology=ontology)
                 relationship.add_derived_by(formula)
                 ontology.add_rule(formula)
 
@@ -638,7 +638,7 @@ class PalantirToOsiConverter:
             f"{fp_a}.{rel_a_name}({relationship.first_role.name}) AND "
             f"{fp_b}.{rel_b_name}({relationship.last_role.name})"
         )
-        formula = self._formula_factory(raw_expr=join_condition, parent=relationship)
+        formula = self._formula_factory(raw_expr=join_condition, parent=relationship, ontology=ontology)
         relationship.add_derived_by(formula)
         ontology.add_rule(formula)
 
