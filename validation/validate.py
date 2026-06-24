@@ -106,17 +106,57 @@ def validate_references(data: dict) -> list[str]:
 
     for model in data.get("semantic_model", []):
         model_name = model.get("name", "<unnamed>")
-        dataset_names = {d.get("name") for d in model.get("datasets", []) if d.get("name")}
+        datasets = {d.get("name"): d for d in model.get("datasets", []) if d.get("name")}
+        fields_by_ds = {
+            name: {f.get("name") for f in d.get("fields", []) if f.get("name")}
+            for name, d in datasets.items()
+        }
+
+        # Key columns should be declared fields of their dataset (WARNING)
+        for ds_name, dataset in datasets.items():
+            known = fields_by_ds[ds_name]
+            keys = [("primary_key", dataset.get("primary_key", []) or [])]
+            for i, uk in enumerate(dataset.get("unique_keys", []) or []):
+                keys.append((f"unique_keys[{i}]", uk or []))
+            for key_name, cols in keys:
+                for col in cols:
+                    if col not in known:
+                        errors.append(
+                            f"[Reference] Warning: dataset '{ds_name}' {key_name} references "
+                            f"'{col}', not a declared field"
+                        )
 
         for rel in model.get("relationships", []):
             rel_name = rel.get("name", "<unnamed>")
             from_ds = rel.get("from")
             to_ds = rel.get("to")
+            from_cols = rel.get("from_columns", []) or []
+            to_cols = rel.get("to_columns", []) or []
 
-            if from_ds and from_ds not in dataset_names:
+            # Dataset existence
+            if from_ds and from_ds not in datasets:
                 errors.append(f"[Reference] Relationship '{rel_name}' references unknown dataset '{from_ds}'")
-            if to_ds and to_ds not in dataset_names:
+            if to_ds and to_ds not in datasets:
                 errors.append(f"[Reference] Relationship '{rel_name}' references unknown dataset '{to_ds}'")
+
+            # Column counts must correspond
+            if len(from_cols) != len(to_cols):
+                errors.append(
+                    f"[Reference] Relationship '{rel_name}' has {len(from_cols)} from_columns "
+                    f"but {len(to_cols)} to_columns; counts must match"
+                )
+
+            # Columns should be declared fields of their dataset (WARNING)
+            for side, ds_name, cols in (("from", from_ds, from_cols), ("to", to_ds, to_cols)):
+                known = fields_by_ds.get(ds_name)
+                if known is None:
+                    continue 
+                for col in cols:
+                    if col not in known:
+                        errors.append(
+                            f"[Reference] Warning: relationship '{rel_name}' {side}_columns references "
+                            f"'{col}', not a declared field of '{ds_name}'"
+                        )
 
     return errors
 
