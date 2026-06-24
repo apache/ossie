@@ -28,11 +28,11 @@ jobs:
           go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
 
-      - name: go build
-        run: go build ./...
+      - name: make build
+        run: make build
 
-      - name: go vet
-        run: go vet ./...
+      - name: make lint
+        run: make lint
 
-      - name: go test
-        run: go test ./...
+      - name: make test
+        run: make test
