@@ -603,13 +603,13 @@ CAST(expression AS target_type)
 
 Supported target types:
 
-- `VARCHAR` / `STRING` / `TEXT` \- Character string  
+- `VARCHAR` / `STRING` \- Character string  
 - `INTEGER` / `INT` / `BIGINT` \- Integer  
-- `DECIMAL` / `NUMERIC` / `NUMBER` \- Fixed-point decimal  
-- `FLOAT` / `DOUBLE` / `REAL` \- Floating-point  
-- `BOOLEAN` / `BOOL` \- Boolean  
+- `DECIMAL` / `NUMERIC` \- Fixed-point decimal  
+- `FLOAT` / `DOUBLE` \- Floating-point  
+- `BOOLEAN`  \- Boolean  
 - `DATE` \- Date  
-- `TIMESTAMP` / `DATETIME` \- Timestamp  
+- `TIMESTAMP` \- Timestamp  
 - `TIME` \- Time
 
 ### TRY\_CAST (RECOMMENDED)
@@ -617,17 +617,6 @@ Supported target types:
 ```sql
 TRY_CAST(expression AS target_type)  -- Returns NULL on failure
 ```
-
-### Type-Specific Conversions (REQUIRED)
-
-| Function | Syntax | Description |
-| :---- | :---- | :---- |
-| `TO_VARCHAR` | `TO_VARCHAR(expr)` | Convert to string |
-| `TO_NUMBER` | `TO_NUMBER(str, format)` | Parse string to number |
-| `TO_DATE` | `TO_DATE(str, format)` | Parse string to date |
-| `TO_TIMESTAMP` | `TO_TIMESTAMP(str, format)` | Parse string to timestamp |
-| `TO_BOOLEAN` | `TO_BOOLEAN(expr)` | Convert to boolean |
-
 ---
 
 ### Null-Safe Comparison
