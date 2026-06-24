@@ -1,7 +1,6 @@
 # OSI Proposal: Expression Language
 
 **Current Status:** Proposed Final 
-**Last Updated:** 4 May Feb 2026
 
 **Working Group**
 
@@ -62,12 +61,12 @@ The quote character for the OSI dialect will follow ANSI SQL and support the dou
 
 #### Comparison Table
 
-| You type this in SQL | Database sees it as... | Will it match a column created as id? |
-| :---- | :---- | :---- |
-| id | ID | **Yes** (Standard behavior) |
-| Id | ID | **Yes** (Standard behavior) |
-| "ID" | ID | **Yes** (Force-matched to normalized case) |
-| "id" | id | **No** (Database is looking for lowercase) |
+| You type this in SQL | Equivalen to | Will it match a column created as id?             |
+| :---- |:-------------|:--------------------------------------------------|
+| id | ID           | **Yes** (Standard behavior)                       |
+| Id | ID           | **Yes** (Standard behavior)                       |
+| "ID" | ID           | **Yes** (Force-matched to normalized case)        |
+| "id" | id           | **No** (Quotes cause an exact match to lowercase) |
 
 Sometimes, we may refer to a **normalized identifier**.  This is a form the identifiers can be put in, so they can be matched easily and matches can be made with case-sensitive, exact matching.  For **normalized identifiers**:
 
@@ -139,7 +138,6 @@ OSI expressions support the following SQL constructs within metric and filter ex
 | Window functions | Core supported window functions                                                                                                                                                                                                                                                       |
 | Scalar functions | See function categories below                                                                                                                                                                                                                                                         |
 | Parentheses | Expression grouping                                                                                                                                                                                                                                                                   |
-| Bind parameters | `:parameter_name` syntax                                                                                                                                                                                                                                                              |
 
 ### 
 
@@ -768,9 +766,9 @@ Implementations MAY support additional functions through dialect extensions. The
 
 ## Version History
 
-| Version | Date | Changes |
-| :---- | :---- | :---- |
-| 0.1 | 2026-05-04 | Initial draft |
+| Version   | Date       | Changes |
+|:----------|:-----------| :---- |
+| 0.2.0.dev | 2026-06-44 | Initial draft |
 
 ---
 
