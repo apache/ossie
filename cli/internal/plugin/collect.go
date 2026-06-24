@@ -43,10 +43,14 @@ func CollectFiles(input string, accepts []string, maxBytes int64) (map[string]st
 		acceptSet[strings.ToLower(ext)] = struct{}{}
 	}
 
+	return collectDir(input, acceptSet, maxBytes)
+}
+
+func collectDir(root string, acceptSet map[string]struct{}, maxBytes int64) (map[string]string, error) {
 	files := make(map[string]string)
 	var total int64
 
-	err = filepath.WalkDir(input, func(path string, d fs.DirEntry, werr error) error {
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, werr error) error {
 		if werr != nil {
 			return werr
 		}
@@ -73,7 +77,7 @@ func CollectFiles(input string, accepts []string, maxBytes int64) (map[string]st
 			}
 		}
 
-		rel, err := filepath.Rel(input, path)
+		rel, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
 		}
