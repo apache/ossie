@@ -151,20 +151,20 @@ func resolvePlugin(platformName, pluginFlag string, stderr io.Writer) (*plugin.P
 	}
 }
 
-// selectDirection returns the direction string ("to_osi" or "from_osi") and
+// selectDirection returns the direction string ("to_ossie" or "from_ossie") and
 // the corresponding Direction based on whether --from or --to was specified.
 func selectDirection(p *plugin.Plugin, from string) (string, plugin.Direction) {
 	if from != "" {
-		return "to_osi", p.Convert.ToOSI
+		return "to_ossie", p.Convert.ToOssie
 	}
-	return "from_osi", p.Convert.FromOSI
+	return "from_ossie", p.Convert.FromOssie
 }
 
-// validateOutput validates to_osi response files against the embedded OSI schema.
+// validateOutput validates to_ossie response files against the embedded OSI schema.
 // Invalid files are removed from resp.Files in place and returned as
 // error-severity issues for the caller to append to resp.Issues.
 func validateOutput(resp *plugin.Response, direction string) []plugin.Issue {
-	if direction != "to_osi" {
+	if direction != "to_ossie" {
 		return nil
 	}
 	var issues []plugin.Issue
