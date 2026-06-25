@@ -71,7 +71,9 @@ class OsiToSpecConverter:
 
 def _convert_ontology_concepts(ont: OntologyComponent) -> list[ConceptComponent]:
     components: list[ConceptComponent] = []
-    for concept in ont.concepts(exclude_builtin=True):
+    for concept in ont.concepts():
+        if not concept.is_component:
+            continue
         rels = [rel for rel in ont.relationships if rel.container is concept]
         components.append(
             ConceptComponent(
