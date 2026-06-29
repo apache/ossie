@@ -1,0 +1,34 @@
+# Fixture B -- stash round-trip (MV -> OSI -> MV, lossless).
+# Exercises the stash at every placement level: model (filter), relationship
+# (rely), dimension (format), measure (format). Must parse under v1.1.
+
+version: '1.1'
+source: samples.tpch.lineitem
+filter: l_returnflag = 'N'
+comment: Line item shipping metrics
+joins:
+- name: orders
+  source: samples.tpch.orders
+  on: source.l_orderkey = orders.o_orderkey
+  rely:
+    at_most_one_match: true
+dimensions:
+- name: line_number
+  expr: l_linenumber
+  format:
+    type: number
+    decimal_places:
+      type: exact
+      places: 0
+measures:
+- name: revenue
+  expr: SUM(l_extendedprice * (1 - l_discount))
+  comment: Net revenue
+  format:
+    type: currency
+    currency_code: USD
+    decimal_places:
+      type: exact
+      places: 2
+- name: order_count
+  expr: COUNT(DISTINCT l_orderkey)
