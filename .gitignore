@@ -1,2 +1,10 @@
 **/__pycache__/
 **/.venv/
+*.egg-info/
+
+# Local secrets / credentials — never commit
+.env
+.env.local
+*.env
+.secrets*
+.ataccama.env

@@ -1,0 +1,334 @@
+[
+  {
+    "item": {
+      "urn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+      "name": "Financial KPIs",
+      "description": null,
+      "originPath": "Executive Analytics (demo data)/Executive KPIs Accelerator/11111111-1111-1111-1111-000000000001",
+      "connection": {
+        "urn": "urn:ata:example-tenant:processing-center:connection:00000000-0000-0000-0000-000000000001"
+      },
+      "source": {
+        "urn": "urn:ata:example-tenant:catalog:source:00000000-0000-0000-0000-000000000001"
+      },
+      "locations": [
+        {
+          "name": "Executive KPIs Accelerator",
+          "description": null
+        },
+        {
+          "name": "Executive Analytics (demo data)",
+          "description": null
+        },
+        {
+          "name": "Projects",
+          "description": null
+        }
+      ],
+      "termAssignments": [],
+      "effectiveStewardship": null,
+      "primaryDqMonitor": {
+        "urn": "urn:ata:example-tenant:data-quality:dq-monitor:00000000-0000-0000-0000-000000000001"
+      },
+      "aliases": []
+    },
+    "attributes": [
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000001",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "Prior Yr. SM",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000002",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "Actual v. Prior %",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000003",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "KPI Filter - Allocated Expenses",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "STR",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000004",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "KPI Filter - Expense Driver",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "STR",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000005",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "KPI Filter - Resources",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "STR",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000006",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "Arrow",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000007",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "Year",
+        "description": null,
+        "dataType": "FLOAT",
+        "columnType": "R8",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000008",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "Time Filter",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "STR",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000009",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "Value",
+        "description": null,
+        "dataType": "FLOAT",
+        "columnType": "R8",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000010",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "Cat Filter",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "STR",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000011",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "Actual v. Prior",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000012",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "vs. Budget",
+        "description": null,
+        "dataType": "FLOAT",
+        "columnType": "R8",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000013",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "KPI Filter - Business Initiatives",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "STR",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000014",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "KPI Filter - Financials",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "STR",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000015",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "Category",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "STR",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000016",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "Display",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000017",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "Extract",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000018",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "X",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000019",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "Name",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "STR",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000020",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "Actual",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000021",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "Y",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000022",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "1",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000023",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "KPI",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "STR",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000024",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "Month",
+        "description": null,
+        "dataType": "DATE",
+        "columnType": "DBDATE",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000025",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
+        "name": "KPI Filter - Revenue Drivers",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "STR",
+        "comment": null,
+        "termAssignments": []
+      }
+    ],
+    "terms": {}
+  },
+  {
+    "item": {
+      "urn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000002",
+      "name": "Analysis Year to Date Summary",
+      "description": "[{\"type\":\"paragraph\",\"children\":[{\"text\":\"This report provides a comprehensive overview of marketing performance metrics for the current year, offering valuable insights into the effectiveness of various marketing strategies and campaigns. It serves as a crucial tool for marketing teams to assess progress, identify trends, and make informed decisions to optimize future initiatives. By consolidating key performance indicators and data points, it enables stakeholders to quickly evaluate the impact of marketing efforts on business objectives, ensuring alignment with overall company goals. This summary is instrumental in facilitating strategic planning and resource allocation within the marketing domain.\"}]}]",
+      "originPath": "Operational Reporting Library (demo data)/11111111-1111-1111-1111-000000000002",
+      "connection": {
+        "urn": "urn:ata:example-tenant:processing-center:connection:00000000-0000-0000-0000-000000000002"
+      },
+      "source": {
+        "urn": "urn:ata:example-tenant:catalog:source:00000000-0000-0000-0000-000000000002"
+      },
+      "locations": [
+        {
+          "name": "Operational Reporting Library (demo data)",
+          "description": null
+        },
+        {
+          "name": "Workspaces",
+          "description": null
+        }
+      ],
+      "termAssignments": [
+        {
+          "termUrn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000001"
+        }
+      ],
+      "effectiveStewardship": {
+        "groupUrn": "urn:ata:example-tenant:iam:group:00000000-0000-0000-0000-000000000001"
+      },
+      "primaryDqMonitor": {
+        "urn": "urn:ata:example-tenant:data-quality:dq-monitor:00000000-0000-0000-0000-000000000002"
+      },
+      "aliases": []
+    },
+    "attributes": [],
+    "terms": {
+      "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000001": {
+        "urn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000001",
+        "name": "Marketing",
+        "type": "businessTerm",
+        "description": "[{\"type\":\"paragraph\",\"children\":[{\"text\":\"Marketing refers to activities a company undertakes to promote the buying or selling a product or service. Marketing includes advertising, selling, and delivering products to consumers or other businesses. In this instance, Marketing is a Data Domain comprising several business terms under itself.\"}]}]"
+      }
+    }
+  }
+]
