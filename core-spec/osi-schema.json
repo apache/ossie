@@ -108,6 +108,54 @@
       "required": ["dialects"],
       "additionalProperties": false
     },
+    "Source": {
+      "description": "Dataset source. Legacy string sources are supported for backward compatibility.",
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "Legacy source string for a physical table/view reference or query.",
+          "deprecated": true
+        },
+        {
+          "$ref": "#/$defs/TableSource"
+        },
+        {
+          "$ref": "#/$defs/QuerySource"
+        }
+      ]
+    },
+    "TableSource": {
+      "type": "object",
+      "description": "Object-backed dataset source.",
+      "properties": {
+        "kind": {
+          "const": "table",
+          "description": "Identifies this source as an object-backed dataset."
+        },
+        "object": {
+          "type": "string",
+          "description": "Reference to the underlying physical table/view, e.g. database.schema.table."
+        }
+      },
+      "required": ["kind", "object"],
+      "additionalProperties": false
+    },
+    "QuerySource": {
+      "type": "object",
+      "description": "Query-backed dataset source.",
+      "properties": {
+        "kind": {
+          "const": "query",
+          "description": "Identifies this source as a query-backed dataset."
+        },
+        "object": {
+          "$ref": "#/$defs/Expression",
+          "description": "Query expression with dialect support."
+        }
+      },
+      "required": ["kind", "object"],
+      "additionalProperties": false
+    },
     "Dimension": {
       "type": "object",
       "description": "Dimension metadata",
@@ -163,8 +211,7 @@
           "description": "Unique identifier for the dataset"
         },
         "source": {
-          "type": "string",
-          "description": "Reference to underlying physical table/view (database.schema.table) or query"
+          "$ref": "#/$defs/Source"
         },
         "primary_key": {
           "type": "array",

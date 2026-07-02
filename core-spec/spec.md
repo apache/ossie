@@ -82,7 +82,7 @@ Logical datasets represent business entities or concepts (fact and dimension tab
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | Yes | Unique identifier for the dataset |
-| `source` | string | Yes | Reference to underlying physical table/view (e.g., `database.schema.table`) or query |
+| `source` | string/object | Yes | Structured source definition. Legacy string sources are still supported for backward compatibility. |
 | `primary_key` | array | No | Primary key columns that uniquely identify rows (single or composite) |
 | `unique_keys` | array of arrays | No | Array of unique key definitions (each can be single or composite) |
 | `description` | string | No | Human-readable description |
@@ -109,12 +109,37 @@ unique_keys:
   - [first_name, last_name]    # Composite unique key
 ```
 
+### Source Examples
+
+```yaml
+# Legacy string source, deprecated but still supported during migration
+source: sales.public.orders
+
+# Object-backed source
+source:
+  kind: table
+  object: sales.public.orders
+
+# Query-backed source
+source:
+  kind: query
+  object:
+    dialects:
+      - dialect: ANSI_SQL
+        expression: |
+          select order_id, customer_id, revenue
+          from sales.public.orders
+          where revenue > 10000
+```
+
 ### Example
 
 ```yaml
 datasets:
   - name: orders
-    source: sales.public.orders
+    source:
+      kind: table
+      object: sales.public.orders
     primary_key: [order_id]
     unique_keys:
       - [order_id]
@@ -430,7 +455,9 @@ semantic_model:
 
     datasets:
       - name: orders
-        source: sales.public.orders
+        source:
+          kind: table
+          object: sales.public.orders
         primary_key: [order_id]
         description: Customer orders
         fields:
@@ -465,7 +492,9 @@ semantic_model:
             description: Order amount
 
       - name: customers
-        source: sales.public.customers
+        source:
+          kind: table
+          object: sales.public.customers
         primary_key: [id]
         description: Customer information
         fields:

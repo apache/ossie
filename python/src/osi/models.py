@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -66,6 +66,27 @@ class OSIExpression(BaseModel):
     dialects: list[OSIDialectExpression]
 
 
+class OSITableSource(BaseModel):
+    """Object-backed dataset source."""
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: Literal["table"]
+    object: str
+
+
+class OSIQuerySource(BaseModel):
+    """Query-backed dataset source."""
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: Literal["query"]
+    object: OSIExpression
+
+
+OSISource = Union[str, OSITableSource, OSIQuerySource]
+
+
 class OSIDimension(BaseModel):
     """Dimension metadata on a field."""
 
@@ -94,7 +115,7 @@ class OSIDataset(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     name: str
-    source: str
+    source: OSISource
     primary_key: Optional[list[str]] = None
     unique_keys: Optional[list[list[str]]] = None
     description: Optional[str] = None
