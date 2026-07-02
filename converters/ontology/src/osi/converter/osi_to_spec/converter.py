@@ -60,6 +60,7 @@ class OsiToSpecConverter:
             name=model.name,
             description=model.description,
             ai_context=model.ai_context,
+            requires=[f.raw_expr for f in ont.requires],
             ontology=_convert_ontology_concepts(ont),
             ontology_mappings=ontology_mappings,
         )
