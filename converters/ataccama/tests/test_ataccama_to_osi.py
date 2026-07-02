@@ -1,4 +1,8 @@
-"""Tests for the Ataccama -> OSI conversion (offline, using a recorded fixture)."""
+"""Tests for the Ataccama -> OSI conversion (offline, using a recorded fixture).
+
+Fixture items: BANK_TRANSACTIONS (a warehouse table with terms, DATE columns, and
+rich DQ results) and aggregation (a derived output with no locations and a 0% DQ case).
+"""
 
 from __future__ import annotations
 
@@ -11,8 +15,9 @@ from jsonschema import Draft202012Validator
 
 from ataccama_osi.ataccama_to_osi import (
     OSI_VERSION,
-    attribute_to_field,
+    _quality_summary,
     ataccama_to_osi,
+    attribute_to_field,
     build_source,
     flatten_richtext,
 )
@@ -33,8 +38,19 @@ def document(bundles: list[CatalogItemBundle]) -> dict:
     return ataccama_to_osi(bundles, model_name="test_model", tenant="example-tenant")
 
 
-def _find_dataset(document: dict, name: str) -> dict:
+def _dataset(document: dict, name: str) -> dict:
     return next(d for d in document["semantic_model"][0]["datasets"] if d["name"] == name)
+
+
+def _field(dataset: dict, name: str) -> dict:
+    return next(f for f in dataset["fields"] if f["name"] == name)
+
+
+def _ext(obj: dict) -> dict:
+    return json.loads(obj["custom_extensions"][0]["data"])
+
+
+# --- structure & core mapping ---
 
 
 def test_document_is_schema_valid(document: dict) -> None:
@@ -47,45 +63,81 @@ def test_document_is_schema_valid(document: dict) -> None:
 def test_model_structure(document: dict) -> None:
     model = document["semantic_model"][0]
     assert model["name"] == "test_model"
-    assert len(model["datasets"]) == 2
-    # tenant preserved at model level
-    assert any(e["vendor_name"] == "ATACCAMA" for e in model["custom_extensions"])
+    assert {d["name"] for d in model["datasets"]} == {"BANK_TRANSACTIONS", "aggregation"}
 
 
 def test_attribute_becomes_quoted_ansi_field(document: dict) -> None:
-    ds = _find_dataset(document, "Financial KPIs")
-    assert len(ds["fields"]) == 25
-    field = ds["fields"][0]
-    assert field["name"] == "Prior Yr. SM"
-    dialects = field["expression"]["dialects"]
-    assert dialects == [{"dialect": "ANSI_SQL", "expression": '"Prior Yr. SM"'}]
-    # attribute urn + typing preserved for round-tripping
-    ext = json.loads(field["custom_extensions"][0]["data"])
-    assert ext["data_type"] == "STRING"
-    assert ext["attribute_urn"].startswith("urn:ata:")
+    ds = _dataset(document, "BANK_TRANSACTIONS")
+    assert len(ds["fields"]) == 13
+    field = _field(ds, "TRANSACTION_ID")
+    assert field["expression"]["dialects"] == [{"dialect": "ANSI_SQL", "expression": '"TRANSACTION_ID"'}]
+    assert _ext(field)["data_type"] == "STRING"
 
 
-def test_richtext_description_is_flattened(document: dict) -> None:
-    ds = _find_dataset(document, "Analysis Year to Date Summary")
-    assert ds["description"].startswith("This report provides")
-    # no Slate JSON leaked through
-    assert "{" not in ds["description"] and "children" not in ds["description"]
+def test_date_columns_are_time_dimensions(document: dict) -> None:
+    ds = _dataset(document, "BANK_TRANSACTIONS")
+    assert _field(ds, "BIRTH_DATE")["dimension"] == {"is_time": True}
+    assert _field(ds, "TRANSACTION_DATE")["dimension"] == {"is_time": True}
+    assert "dimension" not in _field(ds, "ACCOUNT_BALANCE")
 
 
-def test_assigned_term_becomes_ai_context(document: dict) -> None:
-    ds = _find_dataset(document, "Analysis Year to Date Summary")
-    assert ds["ai_context"]["synonyms"] == ["Marketing"]
-    assert "Marketing" in ds["ai_context"]["instructions"]
+def test_source_from_locations_and_limitation(document: dict) -> None:
+    # DB-backed item: reversed locations + name form a qualified path
+    assert _dataset(document, "BANK_TRANSACTIONS")["source"] == "DEMO_ENV.CLOUD_DEMO.BANK_TRANSACTIONS"
+    # derived item with no locations: source degrades to the bare name
+    assert _dataset(document, "aggregation")["source"] == "aggregation"
+
+
+def test_terms_become_ai_context(document: dict) -> None:
+    ds = _dataset(document, "BANK_TRANSACTIONS")
+    assert set(ds["ai_context"]["synonyms"]) >= {"Personal Data", "Finance"}
+    email = _field(ds, "EMAIL")
+    assert email["ai_context"]["synonyms"] == ["E-mail"]
+    assert "email" in email["ai_context"]["instructions"].lower()
 
 
 def test_governance_metadata_preserved(document: dict) -> None:
-    ds = _find_dataset(document, "Analysis Year to Date Summary")
-    ext = json.loads(ds["custom_extensions"][0]["data"])
+    ext = _ext(_dataset(document, "BANK_TRANSACTIONS"))
     assert ext["catalog_item_urn"].startswith("urn:ata:")
     assert "connection_urn" in ext and "stewardship_group_urn" in ext
 
 
-# --- unit tests for helpers ---
+# --- data quality enrichment ---
+
+
+def test_dataset_dq_overall_and_dimensions(document: dict) -> None:
+    dq = _ext(_dataset(document, "BANK_TRANSACTIONS"))["dq"]
+    assert dq["passed"] == 1784 and dq["failed"] == 472
+    assert dq["pass_rate_pct"] == 79.1
+    dims = {d["name"]: d for d in dq["dimensions"]}
+    assert dims["Completeness"]["pass_rate_pct"] == 98.8
+    assert dims["Validity"]["pass_rate_pct"] == 79.1
+    # dimensions with no evaluated records (Uniqueness/Accuracy = 0/0) are dropped
+    assert "Uniqueness" not in dims and "Accuracy" not in dims
+    assert dq["results_link"].startswith("https://")
+
+
+def test_field_level_dq(document: dict) -> None:
+    ds = _dataset(document, "BANK_TRANSACTIONS")
+    dq = _ext(_field(ds, "TRANSACTION_ID"))["dq"]
+    assert dq == {"passed": 2251, "failed": 5, "pass_rate_pct": 99.8}
+
+
+def test_zero_pass_rate_case(document: dict) -> None:
+    dq = _ext(_dataset(document, "aggregation"))["dq"]
+    assert dq["passed"] == 0 and dq["failed"] == 4
+    assert dq["pass_rate_pct"] == 0.0
+
+
+def test_no_dq_keys_when_dq_absent(bundles: list[CatalogItemBundle]) -> None:
+    b = bundles[0]
+    b.dq_results = None  # simulate --no-dq / item without a monitor
+    ds = ataccama_to_osi([b])["semantic_model"][0]["datasets"][0]
+    assert "dq" not in _ext(ds)
+    assert all("dq" not in _ext(f) for f in ds["fields"])
+
+
+# --- helper unit tests ---
 
 
 @pytest.mark.parametrize(
@@ -102,16 +154,21 @@ def test_flatten_richtext(value, expected) -> None:
     assert flatten_richtext(value) == expected
 
 
+@pytest.mark.parametrize(
+    "oq,expected",
+    [
+        (None, None),
+        ({"passedCount": 3, "failedCount": 1}, {"passed": 3, "failed": 1, "pass_rate_pct": 75.0}),
+        ({"passedCount": 0, "failedCount": 0}, {"passed": 0, "failed": 0}),  # not evaluated -> no rate
+    ],
+)
+def test_quality_summary(oq, expected) -> None:
+    assert _quality_summary(oq) == expected
+
+
 def test_is_time_inferred_from_datatype() -> None:
     attr = CatalogAttribute(urn="urn:ata:t:catalog:catalog-attribute:1", name="created_at", data_type="DATETIME")
-    field = attribute_to_field(attr, terms={}, used=set())
-    assert field["dimension"] == {"is_time": True}
-
-
-def test_non_time_datatype_has_no_dimension() -> None:
-    attr = CatalogAttribute(urn="urn:ata:t:catalog:catalog-attribute:1", name="amount", data_type="DOUBLE")
-    field = attribute_to_field(attr, terms={}, used=set())
-    assert "dimension" not in field
+    assert attribute_to_field(attr, terms={}, used=set())["dimension"] == {"is_time": True}
 
 
 def test_duplicate_dataset_names_are_disambiguated() -> None:
@@ -119,8 +176,7 @@ def test_duplicate_dataset_names_are_disambiguated() -> None:
         CatalogItemBundle(item=CatalogItem(urn=f"urn:ata:t:catalog:catalog-item:{i}", name="Orders"))
         for i in range(2)
     ]
-    doc = ataccama_to_osi(items)
-    names = [d["name"] for d in doc["semantic_model"][0]["datasets"]]
+    names = [d["name"] for d in ataccama_to_osi(items)["semantic_model"][0]["datasets"]]
     assert names == ["Orders", "Orders_2"]
 
 

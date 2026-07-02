@@ -2,9 +2,9 @@
   {
     "item": {
       "urn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-      "name": "Financial KPIs",
-      "description": null,
-      "originPath": "Executive Analytics (demo data)/Executive KPIs Accelerator/11111111-1111-1111-1111-000000000001",
+      "name": "BANK_TRANSACTIONS",
+      "description": "[{\"type\": \"paragraph\", \"children\": [{\"text\": \"\"}, {\"type\": \"a\", \"url\": \"https://ataccama-partner.atlan.com/assets/11111111-1111-1111-1111-000000000001/overview\", \"children\": [{\"text\": \"View in Atlan\"}]}, {\"text\": \"\"}]}]",
+      "originPath": "CLOUD_DEMO/BANK_TRANSACTIONS",
       "connection": {
         "urn": "urn:ata:example-tenant:processing-center:connection:00000000-0000-0000-0000-000000000001"
       },
@@ -13,20 +13,25 @@
       },
       "locations": [
         {
-          "name": "Executive KPIs Accelerator",
+          "name": "CLOUD_DEMO",
           "description": null
         },
         {
-          "name": "Executive Analytics (demo data)",
-          "description": null
-        },
-        {
-          "name": "Projects",
+          "name": "DEMO_ENV",
           "description": null
         }
       ],
-      "termAssignments": [],
-      "effectiveStewardship": null,
+      "termAssignments": [
+        {
+          "termUrn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000001"
+        },
+        {
+          "termUrn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000002"
+        }
+      ],
+      "effectiveStewardship": {
+        "groupUrn": "urn:ata:example-tenant:iam:group:00000000-0000-0000-0000-000000000001"
+      },
       "primaryDqMonitor": {
         "urn": "urn:ata:example-tenant:data-quality:dq-monitor:00000000-0000-0000-0000-000000000001"
       },
@@ -36,299 +41,3507 @@
       {
         "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000001",
         "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "Prior Yr. SM",
+        "name": "TRANSACTION_ID",
         "description": null,
         "dataType": "STRING",
-        "columnType": "",
-        "comment": null,
+        "columnType": "VARCHAR",
+        "comment": "",
         "termAssignments": []
       },
       {
         "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000002",
         "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "Actual v. Prior %",
+        "name": "CUSTOMER_ID",
         "description": null,
         "dataType": "STRING",
-        "columnType": "",
-        "comment": null,
-        "termAssignments": []
+        "columnType": "VARCHAR",
+        "comment": "",
+        "termAssignments": [
+          {
+            "termUrn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000003"
+          },
+          {
+            "termUrn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000004"
+          },
+          {
+            "termUrn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000005"
+          }
+        ]
       },
       {
         "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000003",
         "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "KPI Filter - Allocated Expenses",
+        "name": "CUSTOMER_NAME",
         "description": null,
         "dataType": "STRING",
-        "columnType": "STR",
-        "comment": null,
-        "termAssignments": []
+        "columnType": "VARCHAR",
+        "comment": "",
+        "termAssignments": [
+          {
+            "termUrn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000006"
+          },
+          {
+            "termUrn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000003"
+          }
+        ]
       },
       {
         "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000004",
         "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "KPI Filter - Expense Driver",
+        "name": "EMAIL",
         "description": null,
         "dataType": "STRING",
-        "columnType": "STR",
-        "comment": null,
-        "termAssignments": []
+        "columnType": "VARCHAR",
+        "comment": "",
+        "termAssignments": [
+          {
+            "termUrn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000007"
+          }
+        ]
       },
       {
         "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000005",
         "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "KPI Filter - Resources",
+        "name": "BIRTH_DATE",
         "description": null,
-        "dataType": "STRING",
-        "columnType": "STR",
-        "comment": null,
-        "termAssignments": []
+        "dataType": "DATE",
+        "columnType": "DATE",
+        "comment": "",
+        "termAssignments": [
+          {
+            "termUrn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000008"
+          }
+        ]
       },
       {
         "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000006",
         "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "Arrow",
+        "name": "COUNTRY_CODE",
         "description": null,
         "dataType": "STRING",
-        "columnType": "",
-        "comment": null,
-        "termAssignments": []
+        "columnType": "VARCHAR",
+        "comment": "",
+        "termAssignments": [
+          {
+            "termUrn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000009"
+          }
+        ]
       },
       {
         "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000007",
         "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "Year",
+        "name": "ACCOUNT_BALANCE",
         "description": null,
         "dataType": "FLOAT",
-        "columnType": "R8",
-        "comment": null,
+        "columnType": "NUMBER",
+        "comment": "",
         "termAssignments": []
       },
       {
         "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000008",
         "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "Time Filter",
+        "name": "ORDER_AMOUNT",
         "description": null,
-        "dataType": "STRING",
-        "columnType": "STR",
-        "comment": null,
+        "dataType": "FLOAT",
+        "columnType": "NUMBER",
+        "comment": "",
         "termAssignments": []
       },
       {
         "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000009",
         "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "Value",
+        "name": "APPROVAL_STATUS",
         "description": null,
-        "dataType": "FLOAT",
-        "columnType": "R8",
-        "comment": null,
+        "dataType": "STRING",
+        "columnType": "VARCHAR",
+        "comment": "",
         "termAssignments": []
       },
       {
         "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000010",
         "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "Cat Filter",
+        "name": "PAYMENT_METHOD",
         "description": null,
         "dataType": "STRING",
-        "columnType": "STR",
-        "comment": null,
+        "columnType": "VARCHAR",
+        "comment": "",
         "termAssignments": []
       },
       {
         "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000011",
         "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "Actual v. Prior",
+        "name": "TRANSACTION_DATE",
         "description": null,
-        "dataType": "STRING",
-        "columnType": "",
-        "comment": null,
+        "dataType": "DATE",
+        "columnType": "DATE",
+        "comment": "",
         "termAssignments": []
       },
       {
         "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000012",
         "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "vs. Budget",
+        "name": "CREATED_BY",
         "description": null,
-        "dataType": "FLOAT",
-        "columnType": "R8",
-        "comment": null,
+        "dataType": "STRING",
+        "columnType": "VARCHAR",
+        "comment": "",
         "termAssignments": []
       },
       {
         "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000013",
         "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "KPI Filter - Business Initiatives",
+        "name": "RISK_RATING",
         "description": null,
         "dataType": "STRING",
-        "columnType": "STR",
-        "comment": null,
-        "termAssignments": []
-      },
-      {
-        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000014",
-        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "KPI Filter - Financials",
-        "description": null,
-        "dataType": "STRING",
-        "columnType": "STR",
-        "comment": null,
-        "termAssignments": []
-      },
-      {
-        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000015",
-        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "Category",
-        "description": null,
-        "dataType": "STRING",
-        "columnType": "STR",
-        "comment": null,
-        "termAssignments": []
-      },
-      {
-        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000016",
-        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "Display",
-        "description": null,
-        "dataType": "STRING",
-        "columnType": "",
-        "comment": null,
-        "termAssignments": []
-      },
-      {
-        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000017",
-        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "Extract",
-        "description": null,
-        "dataType": "STRING",
-        "columnType": "",
-        "comment": null,
-        "termAssignments": []
-      },
-      {
-        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000018",
-        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "X",
-        "description": null,
-        "dataType": "STRING",
-        "columnType": "",
-        "comment": null,
-        "termAssignments": []
-      },
-      {
-        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000019",
-        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "Name",
-        "description": null,
-        "dataType": "STRING",
-        "columnType": "STR",
-        "comment": null,
-        "termAssignments": []
-      },
-      {
-        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000020",
-        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "Actual",
-        "description": null,
-        "dataType": "STRING",
-        "columnType": "",
-        "comment": null,
-        "termAssignments": []
-      },
-      {
-        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000021",
-        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "Y",
-        "description": null,
-        "dataType": "STRING",
-        "columnType": "",
-        "comment": null,
-        "termAssignments": []
-      },
-      {
-        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000022",
-        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "1",
-        "description": null,
-        "dataType": "STRING",
-        "columnType": "",
-        "comment": null,
-        "termAssignments": []
-      },
-      {
-        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000023",
-        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "KPI",
-        "description": null,
-        "dataType": "STRING",
-        "columnType": "STR",
-        "comment": null,
-        "termAssignments": []
-      },
-      {
-        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000024",
-        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "Month",
-        "description": null,
-        "dataType": "DATE",
-        "columnType": "DBDATE",
-        "comment": null,
-        "termAssignments": []
-      },
-      {
-        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000025",
-        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000001",
-        "name": "KPI Filter - Revenue Drivers",
-        "description": null,
-        "dataType": "STRING",
-        "columnType": "STR",
-        "comment": null,
-        "termAssignments": []
+        "columnType": "VARCHAR",
+        "comment": "",
+        "termAssignments": [
+          {
+            "termUrn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000010"
+          }
+        ]
       }
     ],
-    "terms": {}
+    "terms": {
+      "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000002": {
+        "urn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000002",
+        "name": "Finance",
+        "type": "businessTerm",
+        "description": "[{\"type\":\"paragraph\",\"children\":[{\"text\":\"Finance is a term for matters regarding the management, creation, and study of money and investments. It involves the use of credit and debt, securities, and investment to finance current projects using future income flows. Because of this temporal aspect, finance is closely linked to the time value of money, interest rates, and other related topics. In this instance, Finance is effectively a Data Domain comprising several business terms under itself.\"}]}]"
+      },
+      "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000008": {
+        "urn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000008",
+        "name": "Date of Birth",
+        "type": "businessTerm",
+        "description": "[{\"type\":\"paragraph\",\"children\":[{\"text\":\"The date on which the person was born.\"}]}]"
+      },
+      "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000005": {
+        "urn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000005",
+        "name": "Customer ID",
+        "type": "businessTerm",
+        "description": "[{\"type\":\"paragraph\",\"children\":[{\"text\":\"Customer ID\"}]}]"
+      },
+      "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000001": {
+        "urn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000001",
+        "name": "Personal Data",
+        "type": "businessTerm",
+        "description": "[{\"type\":\"paragraph\",\"children\":[{\"text\":\"Personal information might be subject to GDPR, CCPA or other privacy and data protection regulations.\"}]}]"
+      },
+      "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000010": {
+        "urn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000010",
+        "name": "Surname",
+        "type": "businessTerm",
+        "description": "[{\"type\":\"paragraph\",\"children\":[{\"text\":\"A person's name in joint with other family members as distinguished from a first or given name.\"}]}]"
+      },
+      "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000009": {
+        "urn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000009",
+        "name": "ISO-2 Country Code",
+        "type": "businessTerm",
+        "description": "[{\"type\":\"paragraph\",\"children\":[{\"text\":\"It was first published in 1998. ISO 3166-2 aims to establish an international standard of short and unique alphanumeric codes to represent the relevant administrative divisions and dependent territories of all countries in a more convenient and less ambiguous form than their full names.\"}]}]"
+      },
+      "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000007": {
+        "urn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000007",
+        "name": "E-mail",
+        "type": "businessTerm",
+        "description": "[{\"type\":\"p\",\"children\":[{\"text\":\"An email address serves as a unique identifier for sending and receiving electronic communications within the organization. It ensures accurate message delivery and supports efficient internal and external communication. As it constitutes \"},{\"type\":\"entityReference\",\"gid\":\"11111111-1111-1111-1111-000000000002\",\"entityName\":\"term\",\"children\":[{\"text\":\"Personal Data\"}]},{\"text\":\" under the \"},{\"type\":\"entityReference\",\"gid\":\"11111111-1111-1111-1111-000000000003\",\"entityName\":\"term\",\"children\":[{\"text\":\"Data Protection Policy\"}]},{\"text\":\", it \"},{\"text\":\"must be used lawfully and only for legitimate business purposes\",\"bold\":true},{\"text\":\".\"}]},{\"type\":\"p\",\"children\":[{\"text\":\"In line with the \"},{\"type\":\"entityReference\",\"gid\":\"11111111-1111-1111-1111-000000000004\",\"entityName\":\"term\",\"children\":[{\"text\":\"Data Access & Control Policy\"}]},{\"text\":\", email data should be accessed solely by authorized personnel and handled securely.\"}]},{\"type\":\"p\",\"children\":[{\"text\":\"According to the \"},{\"type\":\"entityReference\",\"gid\":\"11111111-1111-1111-1111-000000000005\",\"entityName\":\"term\",\"children\":[{\"text\":\"Information Security Policy\"}]},{\"text\":\", all email accounts must be protected through strong passwords and multi-factor authentication to prevent unauthorized access or misuse.\"}]},{\"type\":\"p\",\"children\":[{\"text\":\"Email records should also adhere to the \"},{\"type\":\"entityReference\",\"gid\":\"11111111-1111-1111-1111-000000000006\",\"entityName\":\"term\",\"children\":[{\"text\":\"Data Retention Policy\"}]},{\"text\":\", being stored only for as long as necessary for operational or legal purposes.\"}]},{\"type\":\"p\",\"children\":[{\"text\":\"Proper management of \"},{\"text\":\"email addresses ensures compliance, data integrity, and secure communication\",\"bold\":true},{\"text\":\" across the organization.\"}]},{\"type\":\"paragraph\",\"children\":[{\"text\":\"\"}]}]"
+      },
+      "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000003": {
+        "urn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000003",
+        "name": "TB Test Term",
+        "type": "businessTerm",
+        "description": "[{\"type\":\"paragraph\",\"children\":[{\"text\":\"Detect \\\"CUSTOMER\\\" in column name\"}]}]"
+      },
+      "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000004": {
+        "urn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000004",
+        "name": "Reference Term",
+        "type": "policyTerm",
+        "description": null
+      },
+      "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000006": {
+        "urn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000006",
+        "name": "Hide data",
+        "type": "policyTerm",
+        "description": null
+      }
+    },
+    "dq_results": {
+      "processingUrn": "urn:ata:example-tenant:data-quality:processing:00000000-0000-0000-0000-000000000001",
+      "overallQuality": {
+        "passedCount": 1784,
+        "failedCount": 472
+      },
+      "dimensionResults": [
+        {
+          "dimension": {
+            "name": "Completeness",
+            "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000001",
+            "results": [
+              {
+                "name": "Complete",
+                "passedOverallResult": true,
+                "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+              },
+              {
+                "name": "Not Complete",
+                "passedOverallResult": false,
+                "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+              }
+            ]
+          },
+          "passedCount": 2230,
+          "failedCount": 26,
+          "ruleInstanceCount": 0
+        },
+        {
+          "dimension": {
+            "name": "Validity",
+            "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000002",
+            "results": [
+              {
+                "name": "Valid",
+                "passedOverallResult": true,
+                "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+              },
+              {
+                "name": "Invalid",
+                "passedOverallResult": false,
+                "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+              }
+            ]
+          },
+          "passedCount": 1784,
+          "failedCount": 472,
+          "ruleInstanceCount": 0
+        },
+        {
+          "dimension": {
+            "name": "Timeliness",
+            "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000003",
+            "results": [
+              {
+                "name": "Timeliness ok",
+                "passedOverallResult": true,
+                "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000005"
+              },
+              {
+                "name": "Minor delay",
+                "passedOverallResult": false,
+                "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000006"
+              },
+              {
+                "name": "Major delay",
+                "passedOverallResult": false,
+                "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000007"
+              },
+              {
+                "name": "Future",
+                "passedOverallResult": false,
+                "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000008"
+              }
+            ]
+          },
+          "passedCount": 2256,
+          "failedCount": 0,
+          "ruleInstanceCount": 0
+        },
+        {
+          "dimension": {
+            "name": "Uniqueness",
+            "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000004",
+            "results": [
+              {
+                "name": "Unique",
+                "passedOverallResult": true,
+                "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000009"
+              },
+              {
+                "name": "Not Unique",
+                "passedOverallResult": false,
+                "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000010"
+              },
+              {
+                "name": "Not Populated",
+                "passedOverallResult": true,
+                "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000011"
+              }
+            ]
+          },
+          "passedCount": 0,
+          "failedCount": 0,
+          "ruleInstanceCount": 0
+        },
+        {
+          "dimension": {
+            "name": "Accuracy",
+            "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000005",
+            "results": [
+              {
+                "name": "Accurate",
+                "passedOverallResult": true,
+                "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000012"
+              },
+              {
+                "name": "Not Accurate",
+                "passedOverallResult": false,
+                "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000013"
+              },
+              {
+                "name": "No reference available",
+                "passedOverallResult": true,
+                "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000014"
+              }
+            ]
+          },
+          "passedCount": 0,
+          "failedCount": 0,
+          "ruleInstanceCount": 0
+        }
+      ],
+      "overallDqFindings": [],
+      "catalogItemLink": "https://one.example.com/catalog/catalog-items/11111111-1111-1111-1111-000000000007",
+      "dqResultsLink": "https://one.example.com/entities/catalog-item-dq-configurations/11111111-1111-1111-1111-000000000008/results",
+      "invalidSamplesLink": "https://one.example.com/entities/catalog-item-dq-configurations/11111111-1111-1111-1111-000000000008/invalid-records",
+      "invalidRecordsExportResults": [
+        {
+          "success": false,
+          "message": "Export definition or datasource context not found for exportId: 11111111-1111-1111-1111-000000000009",
+          "location": null,
+          "link": null
+        }
+      ],
+      "dqAttributeResults": [
+        {
+          "attributeUrn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000001",
+          "attributeName": "TRANSACTION_ID",
+          "overallQuality": {
+            "passedCount": 2251,
+            "failedCount": 5
+          },
+          "dimensionResults": [
+            {
+              "dimension": {
+                "name": "Completeness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000001",
+                "results": [
+                  {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  },
+                  {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Validity",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000002",
+                "results": [
+                  {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  },
+                  {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                ]
+              },
+              "passedCount": 2251,
+              "failedCount": 5,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Accuracy",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000005",
+                "results": [
+                  {
+                    "name": "Accurate",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000012"
+                  },
+                  {
+                    "name": "Not Accurate",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000013"
+                  },
+                  {
+                    "name": "No reference available",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000014"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Uniqueness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000004",
+                "results": [
+                  {
+                    "name": "Unique",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000009"
+                  },
+                  {
+                    "name": "Not Unique",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000010"
+                  },
+                  {
+                    "name": "Not Populated",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000011"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Timeliness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000003",
+                "results": [
+                  {
+                    "name": "Timeliness ok",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000005"
+                  },
+                  {
+                    "name": "Minor delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000006"
+                  },
+                  {
+                    "name": "Major delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000007"
+                  },
+                  {
+                    "name": "Future",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000008"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            }
+          ],
+          "ruleInstanceResults": [
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000001",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000001",
+              "ruleInstanceName": "r_TRANSACTION_ID",
+              "ruleName": "r_TRANSACTION_ID",
+              "results": [
+                {
+                  "count": 2251,
+                  "result": {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  }
+                },
+                {
+                  "count": 5,
+                  "result": {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 2251
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000002",
+                  "name": "not unique",
+                  "count": 5
+                }
+              ],
+              "dqFindings": []
+            }
+          ]
+        },
+        {
+          "attributeUrn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000002",
+          "attributeName": "CUSTOMER_ID",
+          "overallQuality": {
+            "passedCount": 2256,
+            "failedCount": 0
+          },
+          "dimensionResults": [
+            {
+              "dimension": {
+                "name": "Completeness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000001",
+                "results": [
+                  {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  },
+                  {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                ]
+              },
+              "passedCount": 2256,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Validity",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000002",
+                "results": [
+                  {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  },
+                  {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Accuracy",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000005",
+                "results": [
+                  {
+                    "name": "Accurate",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000012"
+                  },
+                  {
+                    "name": "Not Accurate",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000013"
+                  },
+                  {
+                    "name": "No reference available",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000014"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Uniqueness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000004",
+                "results": [
+                  {
+                    "name": "Unique",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000009"
+                  },
+                  {
+                    "name": "Not Unique",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000010"
+                  },
+                  {
+                    "name": "Not Populated",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000011"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Timeliness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000003",
+                "results": [
+                  {
+                    "name": "Timeliness ok",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000005"
+                  },
+                  {
+                    "name": "Minor delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000006"
+                  },
+                  {
+                    "name": "Major delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000007"
+                  },
+                  {
+                    "name": "Future",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000008"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            }
+          ],
+          "ruleInstanceResults": [
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000002",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000002",
+              "ruleInstanceName": "AI Rule Valid Customer ID",
+              "ruleName": "AI Rule Valid Customer ID",
+              "results": [
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                },
+                {
+                  "count": 2256,
+                  "result": {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 2256
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000003",
+                  "name": "Missing CUSTOMER_ID",
+                  "count": 0
+                }
+              ],
+              "dqFindings": []
+            },
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000003",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000003",
+              "ruleInstanceName": "AI Rule Consistent Account-Customer Mapping",
+              "ruleName": "AI Rule Consistent Account-Customer Mapping",
+              "results": [
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                },
+                {
+                  "count": 2256,
+                  "result": {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 2256
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000004",
+                  "name": "CustomerID is missing",
+                  "count": 0
+                }
+              ],
+              "dqFindings": []
+            }
+          ]
+        },
+        {
+          "attributeUrn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000003",
+          "attributeName": "CUSTOMER_NAME",
+          "overallQuality": {
+            "passedCount": 2256,
+            "failedCount": 0
+          },
+          "dimensionResults": [
+            {
+              "dimension": {
+                "name": "Completeness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000001",
+                "results": [
+                  {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  },
+                  {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                ]
+              },
+              "passedCount": 2256,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Validity",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000002",
+                "results": [
+                  {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  },
+                  {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Accuracy",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000005",
+                "results": [
+                  {
+                    "name": "Accurate",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000012"
+                  },
+                  {
+                    "name": "Not Accurate",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000013"
+                  },
+                  {
+                    "name": "No reference available",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000014"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Uniqueness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000004",
+                "results": [
+                  {
+                    "name": "Unique",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000009"
+                  },
+                  {
+                    "name": "Not Unique",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000010"
+                  },
+                  {
+                    "name": "Not Populated",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000011"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Timeliness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000003",
+                "results": [
+                  {
+                    "name": "Timeliness ok",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000005"
+                  },
+                  {
+                    "name": "Minor delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000006"
+                  },
+                  {
+                    "name": "Major delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000007"
+                  },
+                  {
+                    "name": "Future",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000008"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            }
+          ],
+          "ruleInstanceResults": [
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000004",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000004",
+              "ruleInstanceName": "AI Rule Valid Customer Name",
+              "ruleName": "AI Rule Valid Customer Name",
+              "results": [
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                },
+                {
+                  "count": 2256,
+                  "result": {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 2256
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000005",
+                  "name": "Customer name is missing or null",
+                  "count": 0
+                }
+              ],
+              "dqFindings": []
+            }
+          ]
+        },
+        {
+          "attributeUrn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000004",
+          "attributeName": "EMAIL",
+          "overallQuality": {
+            "passedCount": 0,
+            "failedCount": 0
+          },
+          "dimensionResults": [
+            {
+              "dimension": {
+                "name": "Completeness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000001",
+                "results": [
+                  {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  },
+                  {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Validity",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000002",
+                "results": [
+                  {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  },
+                  {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Accuracy",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000005",
+                "results": [
+                  {
+                    "name": "Accurate",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000012"
+                  },
+                  {
+                    "name": "Not Accurate",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000013"
+                  },
+                  {
+                    "name": "No reference available",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000014"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Uniqueness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000004",
+                "results": [
+                  {
+                    "name": "Unique",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000009"
+                  },
+                  {
+                    "name": "Not Unique",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000010"
+                  },
+                  {
+                    "name": "Not Populated",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000011"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Timeliness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000003",
+                "results": [
+                  {
+                    "name": "Timeliness ok",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000005"
+                  },
+                  {
+                    "name": "Minor delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000006"
+                  },
+                  {
+                    "name": "Major delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000007"
+                  },
+                  {
+                    "name": "Future",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000008"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            }
+          ],
+          "ruleInstanceResults": []
+        },
+        {
+          "attributeUrn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000005",
+          "attributeName": "BIRTH_DATE",
+          "overallQuality": {
+            "passedCount": 2216,
+            "failedCount": 40
+          },
+          "dimensionResults": [
+            {
+              "dimension": {
+                "name": "Completeness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000001",
+                "results": [
+                  {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  },
+                  {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Validity",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000002",
+                "results": [
+                  {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  },
+                  {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                ]
+              },
+              "passedCount": 2216,
+              "failedCount": 40,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Accuracy",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000005",
+                "results": [
+                  {
+                    "name": "Accurate",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000012"
+                  },
+                  {
+                    "name": "Not Accurate",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000013"
+                  },
+                  {
+                    "name": "No reference available",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000014"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Uniqueness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000004",
+                "results": [
+                  {
+                    "name": "Unique",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000009"
+                  },
+                  {
+                    "name": "Not Unique",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000010"
+                  },
+                  {
+                    "name": "Not Populated",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000011"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Timeliness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000003",
+                "results": [
+                  {
+                    "name": "Timeliness ok",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000005"
+                  },
+                  {
+                    "name": "Minor delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000006"
+                  },
+                  {
+                    "name": "Major delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000007"
+                  },
+                  {
+                    "name": "Future",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000008"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            }
+          ],
+          "ruleInstanceResults": [
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000005",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000005",
+              "ruleInstanceName": "AI Rule Valid Birth Date Rule",
+              "ruleName": "AI Rule Valid Birth Date Rule",
+              "results": [
+                {
+                  "count": 2216,
+                  "result": {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  }
+                },
+                {
+                  "count": 40,
+                  "result": {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 2216
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000006",
+                  "name": "Birth date is in the future or missing",
+                  "count": 40
+                }
+              ],
+              "dqFindings": []
+            }
+          ]
+        },
+        {
+          "attributeUrn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000006",
+          "attributeName": "COUNTRY_CODE",
+          "overallQuality": {
+            "passedCount": 2183,
+            "failedCount": 73
+          },
+          "dimensionResults": [
+            {
+              "dimension": {
+                "name": "Completeness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000001",
+                "results": [
+                  {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  },
+                  {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                ]
+              },
+              "passedCount": 2230,
+              "failedCount": 26,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Validity",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000002",
+                "results": [
+                  {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  },
+                  {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                ]
+              },
+              "passedCount": 2183,
+              "failedCount": 73,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Accuracy",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000005",
+                "results": [
+                  {
+                    "name": "Accurate",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000012"
+                  },
+                  {
+                    "name": "Not Accurate",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000013"
+                  },
+                  {
+                    "name": "No reference available",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000014"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Uniqueness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000004",
+                "results": [
+                  {
+                    "name": "Unique",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000009"
+                  },
+                  {
+                    "name": "Not Unique",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000010"
+                  },
+                  {
+                    "name": "Not Populated",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000011"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Timeliness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000003",
+                "results": [
+                  {
+                    "name": "Timeliness ok",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000005"
+                  },
+                  {
+                    "name": "Minor delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000006"
+                  },
+                  {
+                    "name": "Major delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000007"
+                  },
+                  {
+                    "name": "Future",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000008"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            }
+          ],
+          "ruleInstanceResults": [
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000006",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000006",
+              "ruleInstanceName": "RDM - Country code length check",
+              "ruleName": "RDM - Country code length check",
+              "results": [
+                {
+                  "count": 2183,
+                  "result": {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  }
+                },
+                {
+                  "count": 73,
+                  "result": {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 73
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000007",
+                  "name": "All good",
+                  "count": 2183
+                }
+              ],
+              "dqFindings": []
+            },
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000007",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000007",
+              "ruleInstanceName": "AI Rule Country Code Not Null Check",
+              "ruleName": "AI Rule Country Code Not Null Check",
+              "results": [
+                {
+                  "count": 26,
+                  "result": {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                },
+                {
+                  "count": 2230,
+                  "result": {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 2230
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000008",
+                  "name": "Country code is missing",
+                  "count": 26
+                }
+              ],
+              "dqFindings": []
+            },
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000008",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000008",
+              "ruleInstanceName": "AI Rule Rule for COUNTRY",
+              "ruleName": "AI Rule Rule for COUNTRY",
+              "results": [
+                {
+                  "count": 26,
+                  "result": {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                },
+                {
+                  "count": 2230,
+                  "result": {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 2230
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000009",
+                  "name": "Country is missing",
+                  "count": 26
+                }
+              ],
+              "dqFindings": []
+            }
+          ]
+        },
+        {
+          "attributeUrn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000007",
+          "attributeName": "ACCOUNT_BALANCE",
+          "overallQuality": {
+            "passedCount": 0,
+            "failedCount": 0
+          },
+          "dimensionResults": [
+            {
+              "dimension": {
+                "name": "Completeness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000001",
+                "results": [
+                  {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  },
+                  {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Validity",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000002",
+                "results": [
+                  {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  },
+                  {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Accuracy",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000005",
+                "results": [
+                  {
+                    "name": "Accurate",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000012"
+                  },
+                  {
+                    "name": "Not Accurate",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000013"
+                  },
+                  {
+                    "name": "No reference available",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000014"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Uniqueness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000004",
+                "results": [
+                  {
+                    "name": "Unique",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000009"
+                  },
+                  {
+                    "name": "Not Unique",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000010"
+                  },
+                  {
+                    "name": "Not Populated",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000011"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Timeliness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000003",
+                "results": [
+                  {
+                    "name": "Timeliness ok",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000005"
+                  },
+                  {
+                    "name": "Minor delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000006"
+                  },
+                  {
+                    "name": "Major delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000007"
+                  },
+                  {
+                    "name": "Future",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000008"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            }
+          ],
+          "ruleInstanceResults": []
+        },
+        {
+          "attributeUrn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000008",
+          "attributeName": "ORDER_AMOUNT",
+          "overallQuality": {
+            "passedCount": 1898,
+            "failedCount": 358
+          },
+          "dimensionResults": [
+            {
+              "dimension": {
+                "name": "Completeness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000001",
+                "results": [
+                  {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  },
+                  {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Validity",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000002",
+                "results": [
+                  {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  },
+                  {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                ]
+              },
+              "passedCount": 1898,
+              "failedCount": 358,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Accuracy",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000005",
+                "results": [
+                  {
+                    "name": "Accurate",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000012"
+                  },
+                  {
+                    "name": "Not Accurate",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000013"
+                  },
+                  {
+                    "name": "No reference available",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000014"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Uniqueness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000004",
+                "results": [
+                  {
+                    "name": "Unique",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000009"
+                  },
+                  {
+                    "name": "Not Unique",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000010"
+                  },
+                  {
+                    "name": "Not Populated",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000011"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Timeliness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000003",
+                "results": [
+                  {
+                    "name": "Timeliness ok",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000005"
+                  },
+                  {
+                    "name": "Minor delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000006"
+                  },
+                  {
+                    "name": "Major delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000007"
+                  },
+                  {
+                    "name": "Future",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000008"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            }
+          ],
+          "ruleInstanceResults": [
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000009",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000009",
+              "ruleInstanceName": "AI Rule Order Amount and Risk Rating Check",
+              "ruleName": "AI Rule Order Amount and Risk Rating Check",
+              "results": [
+                {
+                  "count": 1898,
+                  "result": {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  }
+                },
+                {
+                  "count": 358,
+                  "result": {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 1898
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000010",
+                  "name": "Payment method is not 'Credit Card' for high risk and high order amount",
+                  "count": 358
+                }
+              ],
+              "dqFindings": []
+            },
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000010",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000010",
+              "ruleInstanceName": "AI Rule Order Amount, Risk Rating, and Payment Method Check",
+              "ruleName": "AI Rule Order Amount, Risk Rating, and Payment Method Check",
+              "results": [
+                {
+                  "count": 1898,
+                  "result": {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  }
+                },
+                {
+                  "count": 358,
+                  "result": {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 1898
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000011",
+                  "name": "Payment method is not 'Credit Card' for high risk and high order amount",
+                  "count": 358
+                }
+              ],
+              "dqFindings": []
+            }
+          ]
+        },
+        {
+          "attributeUrn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000009",
+          "attributeName": "APPROVAL_STATUS",
+          "overallQuality": {
+            "passedCount": 0,
+            "failedCount": 0
+          },
+          "dimensionResults": [
+            {
+              "dimension": {
+                "name": "Completeness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000001",
+                "results": [
+                  {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  },
+                  {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Validity",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000002",
+                "results": [
+                  {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  },
+                  {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Accuracy",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000005",
+                "results": [
+                  {
+                    "name": "Accurate",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000012"
+                  },
+                  {
+                    "name": "Not Accurate",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000013"
+                  },
+                  {
+                    "name": "No reference available",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000014"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Uniqueness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000004",
+                "results": [
+                  {
+                    "name": "Unique",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000009"
+                  },
+                  {
+                    "name": "Not Unique",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000010"
+                  },
+                  {
+                    "name": "Not Populated",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000011"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Timeliness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000003",
+                "results": [
+                  {
+                    "name": "Timeliness ok",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000005"
+                  },
+                  {
+                    "name": "Minor delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000006"
+                  },
+                  {
+                    "name": "Major delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000007"
+                  },
+                  {
+                    "name": "Future",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000008"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            }
+          ],
+          "ruleInstanceResults": []
+        },
+        {
+          "attributeUrn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000010",
+          "attributeName": "PAYMENT_METHOD",
+          "overallQuality": {
+            "passedCount": 1898,
+            "failedCount": 358
+          },
+          "dimensionResults": [
+            {
+              "dimension": {
+                "name": "Completeness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000001",
+                "results": [
+                  {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  },
+                  {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Validity",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000002",
+                "results": [
+                  {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  },
+                  {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                ]
+              },
+              "passedCount": 1898,
+              "failedCount": 358,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Accuracy",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000005",
+                "results": [
+                  {
+                    "name": "Accurate",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000012"
+                  },
+                  {
+                    "name": "Not Accurate",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000013"
+                  },
+                  {
+                    "name": "No reference available",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000014"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Uniqueness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000004",
+                "results": [
+                  {
+                    "name": "Unique",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000009"
+                  },
+                  {
+                    "name": "Not Unique",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000010"
+                  },
+                  {
+                    "name": "Not Populated",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000011"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Timeliness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000003",
+                "results": [
+                  {
+                    "name": "Timeliness ok",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000005"
+                  },
+                  {
+                    "name": "Minor delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000006"
+                  },
+                  {
+                    "name": "Major delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000007"
+                  },
+                  {
+                    "name": "Future",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000008"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            }
+          ],
+          "ruleInstanceResults": [
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000009",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000009",
+              "ruleInstanceName": "AI Rule Order Amount and Risk Rating Check",
+              "ruleName": "AI Rule Order Amount and Risk Rating Check",
+              "results": [
+                {
+                  "count": 1898,
+                  "result": {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  }
+                },
+                {
+                  "count": 358,
+                  "result": {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 1898
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000010",
+                  "name": "Payment method is not 'Credit Card' for high risk and high order amount",
+                  "count": 358
+                }
+              ],
+              "dqFindings": []
+            },
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000010",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000010",
+              "ruleInstanceName": "AI Rule Order Amount, Risk Rating, and Payment Method Check",
+              "ruleName": "AI Rule Order Amount, Risk Rating, and Payment Method Check",
+              "results": [
+                {
+                  "count": 1898,
+                  "result": {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  }
+                },
+                {
+                  "count": 358,
+                  "result": {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 1898
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000011",
+                  "name": "Payment method is not 'Credit Card' for high risk and high order amount",
+                  "count": 358
+                }
+              ],
+              "dqFindings": []
+            }
+          ]
+        },
+        {
+          "attributeUrn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000011",
+          "attributeName": "TRANSACTION_DATE",
+          "overallQuality": {
+            "passedCount": 0,
+            "failedCount": 0
+          },
+          "dimensionResults": [
+            {
+              "dimension": {
+                "name": "Completeness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000001",
+                "results": [
+                  {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  },
+                  {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Validity",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000002",
+                "results": [
+                  {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  },
+                  {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Accuracy",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000005",
+                "results": [
+                  {
+                    "name": "Accurate",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000012"
+                  },
+                  {
+                    "name": "Not Accurate",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000013"
+                  },
+                  {
+                    "name": "No reference available",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000014"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Uniqueness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000004",
+                "results": [
+                  {
+                    "name": "Unique",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000009"
+                  },
+                  {
+                    "name": "Not Unique",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000010"
+                  },
+                  {
+                    "name": "Not Populated",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000011"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Timeliness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000003",
+                "results": [
+                  {
+                    "name": "Timeliness ok",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000005"
+                  },
+                  {
+                    "name": "Minor delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000006"
+                  },
+                  {
+                    "name": "Major delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000007"
+                  },
+                  {
+                    "name": "Future",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000008"
+                  }
+                ]
+              },
+              "passedCount": 2256,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            }
+          ],
+          "ruleInstanceResults": [
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000011",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000011",
+              "ruleInstanceName": "AI Rule No Future Dated Transactions",
+              "ruleName": "AI Rule No Future Dated Transactions",
+              "results": [
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Future",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000008"
+                  }
+                },
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Major delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000007"
+                  }
+                },
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Minor delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000006"
+                  }
+                },
+                {
+                  "count": 2256,
+                  "result": {
+                    "name": "Timeliness ok",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000005"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 2256
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000012",
+                  "name": "Transaction date is in the future",
+                  "count": 0
+                }
+              ],
+              "dqFindings": []
+            }
+          ]
+        },
+        {
+          "attributeUrn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000012",
+          "attributeName": "CREATED_BY",
+          "overallQuality": {
+            "passedCount": 2256,
+            "failedCount": 0
+          },
+          "dimensionResults": [
+            {
+              "dimension": {
+                "name": "Completeness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000001",
+                "results": [
+                  {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  },
+                  {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                ]
+              },
+              "passedCount": 2256,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Validity",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000002",
+                "results": [
+                  {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  },
+                  {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Accuracy",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000005",
+                "results": [
+                  {
+                    "name": "Accurate",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000012"
+                  },
+                  {
+                    "name": "Not Accurate",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000013"
+                  },
+                  {
+                    "name": "No reference available",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000014"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Uniqueness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000004",
+                "results": [
+                  {
+                    "name": "Unique",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000009"
+                  },
+                  {
+                    "name": "Not Unique",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000010"
+                  },
+                  {
+                    "name": "Not Populated",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000011"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Timeliness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000003",
+                "results": [
+                  {
+                    "name": "Timeliness ok",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000005"
+                  },
+                  {
+                    "name": "Minor delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000006"
+                  },
+                  {
+                    "name": "Major delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000007"
+                  },
+                  {
+                    "name": "Future",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000008"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            }
+          ],
+          "ruleInstanceResults": [
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000012",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000012",
+              "ruleInstanceName": "AI Rule Demo Rule for Completeness",
+              "ruleName": "AI Rule Demo Rule for Completeness",
+              "results": [
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                },
+                {
+                  "count": 2256,
+                  "result": {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 2256
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000013",
+                  "name": "Value is null",
+                  "count": 0
+                }
+              ],
+              "dqFindings": []
+            },
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000013",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000013",
+              "ruleInstanceName": "AI Rule Demo Rule for Completeness",
+              "ruleName": "AI Rule Demo Rule for Completeness",
+              "results": [
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                },
+                {
+                  "count": 2256,
+                  "result": {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 2256
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000014",
+                  "name": "Missing value",
+                  "count": 0
+                }
+              ],
+              "dqFindings": []
+            },
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000014",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000014",
+              "ruleInstanceName": "AI Rule Valid Created By",
+              "ruleName": "AI Rule Valid Created By",
+              "results": [
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                },
+                {
+                  "count": 2256,
+                  "result": {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 2256
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000015",
+                  "name": "CREATED_BY is missing",
+                  "count": 0
+                }
+              ],
+              "dqFindings": []
+            },
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000015",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000015",
+              "ruleInstanceName": "AI Rule Created By Completeness",
+              "ruleName": "AI Rule Created By Completeness",
+              "results": [
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                },
+                {
+                  "count": 2256,
+                  "result": {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 2256
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000016",
+                  "name": "Created by field is null or empty",
+                  "count": 0
+                }
+              ],
+              "dqFindings": []
+            },
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000016",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000016",
+              "ruleInstanceName": "AI Rule Demo Rule for Completeness",
+              "ruleName": "AI Rule Demo Rule for Completeness",
+              "results": [
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                },
+                {
+                  "count": 2256,
+                  "result": {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 2256
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000017",
+                  "name": "Missing value",
+                  "count": 0
+                }
+              ],
+              "dqFindings": []
+            },
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000017",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000017",
+              "ruleInstanceName": "AI Rule Demo Rule for Completeness",
+              "ruleName": "AI Rule Demo Rule for Completeness",
+              "results": [
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                },
+                {
+                  "count": 2256,
+                  "result": {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000018",
+                  "name": "Missing value",
+                  "count": 0
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 2256
+                }
+              ],
+              "dqFindings": []
+            },
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000018",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000018",
+              "ruleInstanceName": "AI Rule Demo Rule for Completeness",
+              "ruleName": "AI Rule Demo Rule for Completeness",
+              "results": [
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                },
+                {
+                  "count": 2256,
+                  "result": {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 2256
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000019",
+                  "name": "Missing value",
+                  "count": 0
+                }
+              ],
+              "dqFindings": []
+            },
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000019",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000019",
+              "ruleInstanceName": "AI Rule Demo Rule for Completeness",
+              "ruleName": "AI Rule Demo Rule for Completeness",
+              "results": [
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                },
+                {
+                  "count": 2256,
+                  "result": {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 2256
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000020",
+                  "name": "Value is null",
+                  "count": 0
+                }
+              ],
+              "dqFindings": []
+            },
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000020",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000014",
+              "ruleInstanceName": "AI Rule Valid Created By",
+              "ruleName": "AI Rule Valid Created By",
+              "results": [
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                },
+                {
+                  "count": 2256,
+                  "result": {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 2256
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000015",
+                  "name": "CREATED_BY is missing",
+                  "count": 0
+                }
+              ],
+              "dqFindings": []
+            },
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000021",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000020",
+              "ruleInstanceName": "AI Rule Demo Rule for Completeness",
+              "ruleName": "AI Rule Demo Rule for Completeness",
+              "results": [
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                },
+                {
+                  "count": 2256,
+                  "result": {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 2256
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000021",
+                  "name": "Missing value",
+                  "count": 0
+                }
+              ],
+              "dqFindings": []
+            },
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000022",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000015",
+              "ruleInstanceName": "AI Rule Created By Completeness",
+              "ruleName": "AI Rule Created By Completeness",
+              "results": [
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                },
+                {
+                  "count": 2256,
+                  "result": {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 2256
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000016",
+                  "name": "Created by field is null or empty",
+                  "count": 0
+                }
+              ],
+              "dqFindings": []
+            },
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000023",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000021",
+              "ruleInstanceName": "AI Rule Demo Rule for Completeness",
+              "ruleName": "AI Rule Demo Rule for Completeness",
+              "results": [
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                },
+                {
+                  "count": 2256,
+                  "result": {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 2256
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000022",
+                  "name": "Missing value",
+                  "count": 0
+                }
+              ],
+              "dqFindings": []
+            }
+          ]
+        },
+        {
+          "attributeUrn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000013",
+          "attributeName": "RISK_RATING",
+          "overallQuality": {
+            "passedCount": 1898,
+            "failedCount": 358
+          },
+          "dimensionResults": [
+            {
+              "dimension": {
+                "name": "Completeness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000001",
+                "results": [
+                  {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  },
+                  {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Validity",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000002",
+                "results": [
+                  {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  },
+                  {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                ]
+              },
+              "passedCount": 1898,
+              "failedCount": 358,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Accuracy",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000005",
+                "results": [
+                  {
+                    "name": "Accurate",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000012"
+                  },
+                  {
+                    "name": "Not Accurate",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000013"
+                  },
+                  {
+                    "name": "No reference available",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000014"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Uniqueness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000004",
+                "results": [
+                  {
+                    "name": "Unique",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000009"
+                  },
+                  {
+                    "name": "Not Unique",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000010"
+                  },
+                  {
+                    "name": "Not Populated",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000011"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            },
+            {
+              "dimension": {
+                "name": "Timeliness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000003",
+                "results": [
+                  {
+                    "name": "Timeliness ok",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000005"
+                  },
+                  {
+                    "name": "Minor delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000006"
+                  },
+                  {
+                    "name": "Major delay",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000007"
+                  },
+                  {
+                    "name": "Future",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000008"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 0,
+              "ruleInstanceCount": 0
+            }
+          ],
+          "ruleInstanceResults": [
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000009",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000009",
+              "ruleInstanceName": "AI Rule Order Amount and Risk Rating Check",
+              "ruleName": "AI Rule Order Amount and Risk Rating Check",
+              "results": [
+                {
+                  "count": 1898,
+                  "result": {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  }
+                },
+                {
+                  "count": 358,
+                  "result": {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 1898
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000010",
+                  "name": "Payment method is not 'Credit Card' for high risk and high order amount",
+                  "count": 358
+                }
+              ],
+              "dqFindings": []
+            },
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000010",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000010",
+              "ruleInstanceName": "AI Rule Order Amount, Risk Rating, and Payment Method Check",
+              "ruleName": "AI Rule Order Amount, Risk Rating, and Payment Method Check",
+              "results": [
+                {
+                  "count": 1898,
+                  "result": {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  }
+                },
+                {
+                  "count": 358,
+                  "result": {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000001",
+                  "name": "OTHER",
+                  "count": 1898
+                },
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000011",
+                  "name": "Payment method is not 'Credit Card' for high risk and high order amount",
+                  "count": 358
+                }
+              ],
+              "dqFindings": []
+            }
+          ]
+        }
+      ]
+    }
   },
   {
     "item": {
       "urn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000002",
-      "name": "Analysis Year to Date Summary",
-      "description": "[{\"type\":\"paragraph\",\"children\":[{\"text\":\"This report provides a comprehensive overview of marketing performance metrics for the current year, offering valuable insights into the effectiveness of various marketing strategies and campaigns. It serves as a crucial tool for marketing teams to assess progress, identify trends, and make informed decisions to optimize future initiatives. By consolidating key performance indicators and data points, it enables stakeholders to quickly evaluate the impact of marketing efforts on business objectives, ensuring alignment with overall company goals. This summary is instrumental in facilitating strategic planning and resource allocation within the marketing domain.\"}]}]",
-      "originPath": "Operational Reporting Library (demo data)/11111111-1111-1111-1111-000000000002",
+      "name": "aggregation",
+      "description": null,
+      "originPath": null,
       "connection": {
         "urn": "urn:ata:example-tenant:processing-center:connection:00000000-0000-0000-0000-000000000002"
       },
       "source": {
         "urn": "urn:ata:example-tenant:catalog:source:00000000-0000-0000-0000-000000000002"
       },
-      "locations": [
-        {
-          "name": "Operational Reporting Library (demo data)",
-          "description": null
-        },
-        {
-          "name": "Workspaces",
-          "description": null
-        }
-      ],
-      "termAssignments": [
-        {
-          "termUrn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000001"
-        }
-      ],
-      "effectiveStewardship": {
-        "groupUrn": "urn:ata:example-tenant:iam:group:00000000-0000-0000-0000-000000000001"
-      },
+      "locations": [],
+      "termAssignments": [],
+      "effectiveStewardship": null,
       "primaryDqMonitor": {
         "urn": "urn:ata:example-tenant:data-quality:dq-monitor:00000000-0000-0000-0000-000000000002"
       },
       "aliases": []
     },
-    "attributes": [],
-    "terms": {
-      "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000001": {
-        "urn": "urn:ata:example-tenant:catalog:term:00000000-0000-0000-0000-000000000001",
-        "name": "Marketing",
-        "type": "businessTerm",
-        "description": "[{\"type\":\"paragraph\",\"children\":[{\"text\":\"Marketing refers to activities a company undertakes to promote the buying or selling a product or service. Marketing includes advertising, selling, and delivering products to consumers or other businesses. In this instance, Marketing is a Data Domain comprising several business terms under itself.\"}]}]"
+    "attributes": [
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000014",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000002",
+        "name": "PAYMENT_METHOD",
+        "description": null,
+        "dataType": "STRING",
+        "columnType": "VARCHAR",
+        "comment": null,
+        "termAssignments": []
+      },
+      {
+        "urn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000015",
+        "catalogItemUrn": "urn:ata:example-tenant:catalog:catalog-item:00000000-0000-0000-0000-000000000002",
+        "name": "NUM_OF_TRANSACTIONS",
+        "description": null,
+        "dataType": "LONG",
+        "columnType": "NUMBER",
+        "comment": null,
+        "termAssignments": []
       }
+    ],
+    "terms": {},
+    "dq_results": {
+      "processingUrn": "urn:ata:example-tenant:data-quality:processing:00000000-0000-0000-0000-000000000002",
+      "overallQuality": {
+        "passedCount": 0,
+        "failedCount": 4
+      },
+      "dimensionResults": [
+        {
+          "dimension": {
+            "name": "Completeness",
+            "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000001",
+            "results": [
+              {
+                "name": "Complete",
+                "passedOverallResult": true,
+                "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+              },
+              {
+                "name": "Not Complete",
+                "passedOverallResult": false,
+                "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+              }
+            ]
+          },
+          "passedCount": 4,
+          "failedCount": 0,
+          "ruleInstanceCount": 2
+        },
+        {
+          "dimension": {
+            "name": "Validity",
+            "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000002",
+            "results": [
+              {
+                "name": "Valid",
+                "passedOverallResult": true,
+                "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+              },
+              {
+                "name": "Invalid",
+                "passedOverallResult": false,
+                "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+              }
+            ]
+          },
+          "passedCount": 0,
+          "failedCount": 4,
+          "ruleInstanceCount": 2
+        }
+      ],
+      "overallDqFindings": [],
+      "catalogItemLink": "https://one.example.com/catalog/catalog-items/11111111-1111-1111-1111-000000000010",
+      "dqResultsLink": "https://one.example.com/entities/catalog-item-dq-configurations/11111111-1111-1111-1111-000000000011/results",
+      "invalidSamplesLink": "https://one.example.com/entities/catalog-item-dq-configurations/11111111-1111-1111-1111-000000000011/invalid-records",
+      "invalidRecordsExportResults": [],
+      "dqAttributeResults": [
+        {
+          "attributeUrn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000014",
+          "attributeName": "PAYMENT_METHOD",
+          "overallQuality": {
+            "passedCount": 0,
+            "failedCount": 4
+          },
+          "dimensionResults": [
+            {
+              "dimension": {
+                "name": "Completeness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000001",
+                "results": [
+                  {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  },
+                  {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 4,
+              "ruleInstanceCount": 3
+            },
+            {
+              "dimension": {
+                "name": "Validity",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000002",
+                "results": [
+                  {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  },
+                  {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                ]
+              },
+              "passedCount": 0,
+              "failedCount": 4,
+              "ruleInstanceCount": 3
+            }
+          ],
+          "ruleInstanceResults": [
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000024",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000022",
+              "ruleInstanceName": "AI Rule SSN Validation Rule",
+              "ruleName": "AI Rule SSN Validation Rule",
+              "results": [
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  }
+                },
+                {
+                  "count": 4,
+                  "result": {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000023",
+                  "name": "Does not match the SSN format",
+                  "count": 4
+                }
+              ],
+              "dqFindings": []
+            },
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000025",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000023",
+              "ruleInstanceName": "AI Rule Completeness Rule for CUSTOMER",
+              "ruleName": "AI Rule Completeness Rule for CUSTOMER",
+              "results": [
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                },
+                {
+                  "count": 4,
+                  "result": {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000024",
+                  "name": "Customer attribute is null or empty",
+                  "count": 0
+                }
+              ],
+              "dqFindings": []
+            },
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000026",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000024",
+              "ruleInstanceName": "AI Rule Insurance Completeness Rule",
+              "ruleName": "AI Rule Insurance Completeness Rule",
+              "results": [
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                },
+                {
+                  "count": 4,
+                  "result": {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000025",
+                  "name": "Critical field is empty",
+                  "count": 0
+                }
+              ],
+              "dqFindings": []
+            }
+          ]
+        },
+        {
+          "attributeUrn": "urn:ata:example-tenant:catalog:catalog-attribute:00000000-0000-0000-0000-000000000015",
+          "attributeName": "NUM_OF_TRANSACTIONS",
+          "overallQuality": {
+            "passedCount": 4,
+            "failedCount": 0
+          },
+          "dimensionResults": [
+            {
+              "dimension": {
+                "name": "Completeness",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000001",
+                "results": [
+                  {
+                    "name": "Complete",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000001"
+                  },
+                  {
+                    "name": "Not Complete",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000002"
+                  }
+                ]
+              },
+              "passedCount": 4,
+              "failedCount": 0,
+              "ruleInstanceCount": 1
+            },
+            {
+              "dimension": {
+                "name": "Validity",
+                "urn": "urn:ata:example-tenant:data-quality:dimension:00000000-0000-0000-0000-000000000002",
+                "results": [
+                  {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  },
+                  {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                ]
+              },
+              "passedCount": 4,
+              "failedCount": 0,
+              "ruleInstanceCount": 1
+            }
+          ],
+          "ruleInstanceResults": [
+            {
+              "ruleInstanceUrn": "urn:ata:example-tenant:data-quality:rule-instance:00000000-0000-0000-0000-000000000027",
+              "ruleUrn": "urn:ata:example-tenant:data-quality:rule:00000000-0000-0000-0000-000000000025",
+              "ruleInstanceName": "AI Rule Accuracy Rule for INVOICED_USD",
+              "ruleName": "AI Rule Accuracy Rule for INVOICED_USD",
+              "results": [
+                {
+                  "count": 4,
+                  "result": {
+                    "name": "Valid",
+                    "passedOverallResult": true,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000003"
+                  }
+                },
+                {
+                  "count": 0,
+                  "result": {
+                    "name": "Invalid",
+                    "passedOverallResult": false,
+                    "urn": "urn:ata:example-tenant:data-quality:dimension-result:00000000-0000-0000-0000-000000000004"
+                  }
+                }
+              ],
+              "explanations": [
+                {
+                  "urn": "urn:ata:example-tenant:data-quality:explanation:00000000-0000-0000-0000-000000000026",
+                  "name": "Negative value",
+                  "count": 0
+                }
+              ],
+              "dqFindings": []
+            }
+          ]
+        }
+      ]
     }
   }
 ]

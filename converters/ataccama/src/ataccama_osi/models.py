@@ -140,6 +140,8 @@ class CatalogItemBundle:
     item: CatalogItem
     attributes: list[CatalogAttribute] = field(default_factory=list)
     terms: dict[str, Term] = field(default_factory=dict)
+    # Raw DqResults payload (overall + per-dimension + per-attribute quality), or None.
+    dq_results: dict[str, Any] | None = None
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> CatalogItemBundle:
@@ -147,6 +149,7 @@ class CatalogItemBundle:
             item=CatalogItem.from_dict(d["item"]),
             attributes=[CatalogAttribute.from_dict(a) for a in d.get("attributes", [])],
             terms={urn: Term.from_dict(t) for urn, t in d.get("terms", {}).items()},
+            dq_results=d.get("dq_results"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -155,6 +158,7 @@ class CatalogItemBundle:
             "item": _dataclass_to_raw_item(self.item),
             "attributes": [_dataclass_to_raw_attr(a) for a in self.attributes],
             "terms": {urn: _dataclass_to_raw_term(t) for urn, t in self.terms.items()},
+            "dq_results": self.dq_results,
         }
 
 

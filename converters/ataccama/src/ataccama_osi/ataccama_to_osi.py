@@ -122,10 +122,77 @@ def _ataccama_extension(data: dict[str, Any]) -> dict[str, str]:
     return {"vendor_name": VENDOR, "data": json.dumps(data, sort_keys=True)}
 
 
+# --- data quality ---
+
+
+def _quality_summary(overall_quality: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Turn an OverallQuality {passedCount, failedCount} into a compact summary.
+
+    ``pass_rate_pct`` is DERIVED (passed / (passed + failed)); the raw counts are the
+    authoritative signal. Ataccama's own UI score may weight dimensions/rules differently.
+    """
+    if not overall_quality:
+        return None
+    passed = overall_quality.get("passedCount") or 0
+    failed = overall_quality.get("failedCount") or 0
+    total = passed + failed
+    summary: dict[str, Any] = {"passed": passed, "failed": failed}
+    if total:
+        summary["pass_rate_pct"] = round(passed / total * 100, 1)
+    return summary
+
+
+def _dataset_dq(dq_results: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Build the dataset-level DQ block from a raw DqResults payload."""
+    if not dq_results:
+        return None
+    dq = _quality_summary(dq_results.get("overallQuality")) or {}
+
+    dimensions = []
+    for dim in dq_results.get("dimensionResults", []) or []:
+        passed = dim.get("passedCount") or 0
+        failed = dim.get("failedCount") or 0
+        if passed + failed == 0:  # dimension not evaluated in this processing
+            continue
+        entry = {"name": (dim.get("dimension") or {}).get("name"), "passed": passed, "failed": failed}
+        entry["pass_rate_pct"] = round(passed / (passed + failed) * 100, 1)
+        dimensions.append(entry)
+    if dimensions:
+        dq["dimensions"] = dimensions
+
+    active_findings = sum(1 for f in dq_results.get("overallDqFindings", []) or [] if f.get("status") == "ACTIVE")
+    if active_findings:
+        dq["active_findings"] = active_findings
+    if dq_results.get("processingUrn"):
+        dq["processing_urn"] = dq_results["processingUrn"]
+    if dq_results.get("dqResultsLink"):
+        dq["results_link"] = dq_results["dqResultsLink"]
+
+    return dq or None
+
+
+def _attribute_dq_index(dq_results: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    """Map attributeUrn -> quality summary from a raw DqResults payload."""
+    index: dict[str, dict[str, Any]] = {}
+    if not dq_results:
+        return index
+    for attr_result in dq_results.get("dqAttributeResults", []) or []:
+        urn = attr_result.get("attributeUrn")
+        summary = _quality_summary(attr_result.get("overallQuality"))
+        if urn and summary:
+            index[urn] = summary
+    return index
+
+
 # --- attribute -> field --------------------------------------------------
 
 
-def attribute_to_field(attr: CatalogAttribute, terms: dict[str, Term], used: set[str]) -> dict[str, Any]:
+def attribute_to_field(
+    attr: CatalogAttribute,
+    terms: dict[str, Term],
+    used: set[str],
+    dq_by_attr: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     name = _unique_name(attr.name, used, fallback="column")
     field_obj: dict[str, Any] = {
         "name": name,
@@ -151,6 +218,8 @@ def attribute_to_field(attr: CatalogAttribute, terms: dict[str, Term], used: set
         ext_data["column_type"] = attr.column_type
     if attr.term_assignments:
         ext_data["term_urns"] = [ta.term_urn for ta in attr.term_assignments]
+    if dq_by_attr and attr.urn in dq_by_attr:
+        ext_data["dq"] = dq_by_attr[attr.urn]
     field_obj["custom_extensions"] = [_ataccama_extension(ext_data)]
 
     return field_obj
@@ -173,8 +242,9 @@ def bundle_to_dataset(bundle: CatalogItemBundle, used_dataset_names: set[str]) -
     if ai_context:
         dataset["ai_context"] = ai_context
 
+    dq_by_attr = _attribute_dq_index(bundle.dq_results)
     used_field_names: set[str] = set()
-    fields = [attribute_to_field(attr, bundle.terms, used_field_names) for attr in bundle.attributes]
+    fields = [attribute_to_field(attr, bundle.terms, used_field_names, dq_by_attr) for attr in bundle.attributes]
     if fields:
         dataset["fields"] = fields
 
@@ -196,6 +266,9 @@ def bundle_to_dataset(bundle: CatalogItemBundle, used_dataset_names: set[str]) -
         ext_data["term_urns"] = [ta.term_urn for ta in item.term_assignments]
     if item.aliases:
         ext_data["aliases"] = item.aliases
+    dataset_dq = _dataset_dq(bundle.dq_results)
+    if dataset_dq:
+        ext_data["dq"] = dataset_dq
     dataset["custom_extensions"] = [_ataccama_extension(ext_data)]
 
     return dataset

@@ -67,6 +67,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model-description", default=None, help="OSI semantic model description.")
     parser.add_argument("--output", "-o", default="-", help="Output YAML path ('-' for stdout).")
     parser.add_argument("--env-file", help="Optional KEY=VALUE file with Ataccama connection config.")
+    parser.add_argument(
+        "--no-dq",
+        action="store_true",
+        help="Skip fetching data-quality results (DQ enrichment is included by default).",
+    )
     args = parser.parse_args(argv)
 
     if args.env_file:
@@ -90,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     bundles = []
     for urn in urns:
         print(f"Fetching {urn} ...", file=sys.stderr)
-        bundles.append(client.fetch_bundle(urn))
+        bundles.append(client.fetch_bundle(urn, with_dq=not args.no_dq))
 
     document = ataccama_to_osi(
         bundles,

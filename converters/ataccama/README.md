@@ -6,8 +6,9 @@ semantic model specification.
 
 Given one or more Ataccama **catalog items** (selected by URN), the converter produces
 a single OSI semantic model: each catalog item becomes a dataset, each catalog attribute
-becomes a field, and business terms / governance metadata are carried across as
-`ai_context` and `ATACCAMA` custom extensions.
+becomes a field, business terms are carried across as `ai_context`, and
+**data-quality scores** plus other governance metadata are attached as `ATACCAMA`
+custom extensions.
 
 ## Scope & direction
 
@@ -42,6 +43,9 @@ ataccama-to-osi --env-file .ataccama.env \
     --urn urn:ata:<tenant>:catalog:catalog-item:<id> \
     --model-name my_model \
     --output my_model.osi.yaml
+
+# data-quality results are fetched by default; use --no-dq to skip them
+ataccama-to-osi --env-file .ataccama.env --urn <urn> --no-dq -o my_model.osi.yaml
 
 # or supply a file of URNs (one per line)
 ataccama-to-osi --env-file .ataccama.env --urns-file items.txt -o my_model.osi.yaml
@@ -83,17 +87,36 @@ Tests run fully offline against a recorded catalog fixture
 | `CatalogAttribute.dataType` ∈ {DATE, DATETIME, TIMESTAMP, TIME} | `field.dimension.is_time = true` |
 | `CatalogAttribute.description` / `comment` | `field.description` |
 | attribute `Term`s | `field.ai_context` |
-| URNs, `dataType`, `columnType`, connection/source/stewardship/DQ | `custom_extensions` (`vendor_name: ATACCAMA`) |
+| DQ `overallQuality` + `dimensionResults` (latest processing) | dataset `custom_extensions` → `dq` (`passed`, `failed`, `pass_rate_pct`, `dimensions[]`, `results_link`) |
+| DQ per-attribute `overallQuality` | field `custom_extensions` → `dq` (`passed`, `failed`, `pass_rate_pct`) |
+| URNs, `dataType`, `columnType`, connection/source/stewardship/monitor | `custom_extensions` (`vendor_name: ATACCAMA`) |
 
 All Ataccama-specific metadata with no OSI-core home is preserved in `ATACCAMA`
 custom extensions (as a JSON string) so the model round-trips without data loss.
+
+### Data quality
+
+Data-quality results (from the DQ API's latest processing on each item's primary
+monitor) are fetched by default and attached to the `ATACCAMA` extension — overall
+and per-dimension quality on the dataset, and per-column quality on each field. Pass
+`--no-dq` to skip the DQ calls.
+
+Notes:
+- `pass_rate_pct` is **derived** (`passed / (passed + failed)`); the raw `passed`/`failed`
+  counts are authoritative. Ataccama's own UI score may weight dimensions/rules
+  differently, so this is not presented as an official Ataccama "Data Quality score".
+- Dimensions with no evaluated records in the processing are omitted.
+- Items without a published monitor/results simply carry no `dq` block (best-effort).
 
 ## Limitations
 
 The Ataccama Catalog API is a **catalog / governance / data-quality** surface, while OSI
 is an **analytics semantic model**. Some OSI constructs therefore have no source today:
 
-- **Metrics** — Ataccama has no analytics metrics; none are emitted.
+- **Metrics** — Ataccama has no analytics metrics; none are emitted. (Data-quality
+  scores are attached as `ATACCAMA` extensions, not as OSI metrics.)
+- **Data Trust Score / Index** — not exposed by the public APIs, so it is not
+  emitted. Only rule-level DQ results (which the converter does carry) are available.
 - **Relationships / `primary_key` / `unique_keys`** — the Catalog API does not expose
   foreign or primary keys on catalog items, so these are omitted.
 - **`source` string** — the API exposes only a folder hierarchy (`locations`) and

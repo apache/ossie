@@ -102,10 +102,29 @@ class AtaccamaClient:
     def get_term(self, urn: str) -> Term:
         return Term.from_dict(self._get(f"/catalog/v1/terms/{urn}"))
 
+    # --- data-quality endpoint ---
+
+    def get_dq_results(
+        self, catalog_item_urn: str, monitor: str = "primary", processing: str = "latest"
+    ) -> dict | None:
+        """Latest DQ results for a catalog item's primary monitor.
+
+        Returns the raw ``DqResults`` payload (overall + per-dimension + per-attribute
+        quality), or ``None`` if the item has no monitor / published results.
+        """
+        path = (
+            f"/data-quality/v1/catalog-items/{catalog_item_urn}"
+            f"/dq-monitors/{monitor}/processings/{processing}/dq-results"
+        )
+        try:
+            return self._get(path)
+        except requests.HTTPError:
+            return None
+
     # --- composite ---
 
-    def fetch_bundle(self, catalog_item_urn: str) -> CatalogItemBundle:
-        """Fetch a catalog item, its attributes, and every term it (or its columns) reference."""
+    def fetch_bundle(self, catalog_item_urn: str, *, with_dq: bool = True) -> CatalogItemBundle:
+        """Fetch a catalog item, its attributes, referenced terms, and (by default) DQ results."""
         item = self.get_catalog_item(catalog_item_urn)
         attributes = self.get_attributes(catalog_item_urn)
 
@@ -123,4 +142,6 @@ class AtaccamaClient:
                 # A referenced term may be inaccessible; skip it rather than fail the whole run.
                 continue
 
-        return CatalogItemBundle(item=item, attributes=attributes, terms=terms)
+        dq_results = self.get_dq_results(catalog_item_urn) if with_dq else None
+
+        return CatalogItemBundle(item=item, attributes=attributes, terms=terms, dq_results=dq_results)
