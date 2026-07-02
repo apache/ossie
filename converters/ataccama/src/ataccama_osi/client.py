@@ -121,6 +121,19 @@ class AtaccamaClient:
         except requests.HTTPError:
             return None
 
+    def get_dq_overall_threshold(self, catalog_item_urn: str, monitor: str = "primary") -> float | None:
+        """The monitor's configured overall DQ threshold (0-100), or None if unset.
+
+        This is the pass/fail bar shown in Ataccama, and is only available from the
+        monitor-config endpoint (not the DQ results payload).
+        """
+        try:
+            mon = self._get(f"/data-quality/v1/catalog-items/{catalog_item_urn}/dq-monitors/{monitor}")
+        except requests.HTTPError:
+            return None
+        thresholds = mon.get("overallDqThresholds") or []
+        return thresholds[0].get("value") if thresholds else None
+
     # --- composite ---
 
     def fetch_bundle(self, catalog_item_urn: str, *, with_dq: bool = True) -> CatalogItemBundle:
@@ -142,6 +155,17 @@ class AtaccamaClient:
                 # A referenced term may be inaccessible; skip it rather than fail the whole run.
                 continue
 
-        dq_results = self.get_dq_results(catalog_item_urn) if with_dq else None
+        dq_results = None
+        dq_threshold_pct = None
+        if with_dq:
+            dq_results = self.get_dq_results(catalog_item_urn)
+            if dq_results is not None:
+                dq_threshold_pct = self.get_dq_overall_threshold(catalog_item_urn)
 
-        return CatalogItemBundle(item=item, attributes=attributes, terms=terms, dq_results=dq_results)
+        return CatalogItemBundle(
+            item=item,
+            attributes=attributes,
+            terms=terms,
+            dq_results=dq_results,
+            dq_threshold_pct=dq_threshold_pct,
+        )

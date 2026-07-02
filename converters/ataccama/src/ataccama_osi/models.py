@@ -142,6 +142,8 @@ class CatalogItemBundle:
     terms: dict[str, Term] = field(default_factory=dict)
     # Raw DqResults payload (overall + per-dimension + per-attribute quality), or None.
     dq_results: dict[str, Any] | None = None
+    # The monitor's configured overall DQ threshold (0-100), or None if not set.
+    dq_threshold_pct: float | None = None
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> CatalogItemBundle:
@@ -150,6 +152,7 @@ class CatalogItemBundle:
             attributes=[CatalogAttribute.from_dict(a) for a in d.get("attributes", [])],
             terms={urn: Term.from_dict(t) for urn, t in d.get("terms", {}).items()},
             dq_results=d.get("dq_results"),
+            dq_threshold_pct=d.get("dq_threshold_pct"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -159,6 +162,7 @@ class CatalogItemBundle:
             "attributes": [_dataclass_to_raw_attr(a) for a in self.attributes],
             "terms": {urn: _dataclass_to_raw_term(t) for urn, t in self.terms.items()},
             "dq_results": self.dq_results,
+            "dq_threshold_pct": self.dq_threshold_pct,
         }
 
 

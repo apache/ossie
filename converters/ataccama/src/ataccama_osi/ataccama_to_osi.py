@@ -128,8 +128,9 @@ def _ataccama_extension(data: dict[str, Any]) -> dict[str, str]:
 def _quality_summary(overall_quality: dict[str, Any] | None) -> dict[str, Any] | None:
     """Turn an OverallQuality {passedCount, failedCount} into a compact summary.
 
-    ``pass_rate_pct`` is DERIVED (passed / (passed + failed)); the raw counts are the
-    authoritative signal. Ataccama's own UI score may weight dimensions/rules differently.
+    ``pass_rate_pct`` is Ataccama's overall quality expressed as a percentage
+    (passed / (passed + failed)). The DQ API returns only counts, not a preformatted
+    percentage, so the converter formats it; the underlying counts are Ataccama's own.
     """
     if not overall_quality:
         return None
@@ -142,11 +143,21 @@ def _quality_summary(overall_quality: dict[str, Any] | None) -> dict[str, Any] |
     return summary
 
 
-def _dataset_dq(dq_results: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Build the dataset-level DQ block from a raw DqResults payload."""
+def _dataset_dq(dq_results: dict[str, Any] | None, threshold_pct: float | None = None) -> dict[str, Any] | None:
+    """Build the dataset-level DQ block from a raw DqResults payload.
+
+    ``threshold_pct`` is the monitor's configured overall pass/fail bar (from the
+    monitor config). When present alongside a pass rate, ``below_threshold`` records
+    whether the data is under that bar — the same pass/fail state shown in Ataccama.
+    """
     if not dq_results:
         return None
     dq = _quality_summary(dq_results.get("overallQuality")) or {}
+
+    if threshold_pct is not None:
+        dq["threshold_pct"] = threshold_pct
+        if "pass_rate_pct" in dq:
+            dq["below_threshold"] = dq["pass_rate_pct"] < threshold_pct
 
     dimensions = []
     for dim in dq_results.get("dimensionResults", []) or []:
@@ -160,9 +171,11 @@ def _dataset_dq(dq_results: dict[str, Any] | None) -> dict[str, Any] | None:
     if dimensions:
         dq["dimensions"] = dimensions
 
-    active_findings = sum(1 for f in dq_results.get("overallDqFindings", []) or [] if f.get("status") == "ACTIVE")
-    if active_findings:
-        dq["active_findings"] = active_findings
+    # Always report the active-finding count (0 = no open data-quality issues) so the
+    # "clean" state is an explicit signal, not just an omission.
+    dq["active_findings"] = sum(
+        1 for f in dq_results.get("overallDqFindings", []) or [] if f.get("status") == "ACTIVE"
+    )
     if dq_results.get("processingUrn"):
         dq["processing_urn"] = dq_results["processingUrn"]
     if dq_results.get("dqResultsLink"):
@@ -182,6 +195,45 @@ def _attribute_dq_index(dq_results: dict[str, Any] | None) -> dict[str, dict[str
         if urn and summary:
             index[urn] = summary
     return index
+
+
+# --- optional AI warnings driven by DQ ---
+
+
+def _dataset_dq_warning(dq: dict[str, Any] | None) -> str | None:
+    """A natural-language warning for AI consumers when a dataset is below quality.
+
+    Fires only on Ataccama's own signals — below the monitor's configured threshold, or
+    an active finding — so Ataccama remains the sole source of truth. If neither applies
+    (including when no threshold is configured), no warning is produced.
+    """
+    if not dq:
+        return None
+    reasons: list[str] = []
+    if dq.get("below_threshold") is True:
+        reasons.append(f"below the configured {dq.get('threshold_pct')}% quality threshold")
+    if dq.get("active_findings"):
+        reasons.append(f"{dq['active_findings']} active data-quality finding(s)")
+    if not reasons:
+        return None
+    pass_rate = dq.get("pass_rate_pct")
+    prefix = f"{pass_rate}% of quality checks passed on the latest run" if pass_rate is not None else "quality checks failed"
+    return (
+        f"Data-quality warning: {prefix} ({'; '.join(reasons)}). "
+        "Verify this data before using it for analysis or automated decisions."
+    )
+
+
+def _inject_warning(ai_context: dict[str, Any] | None, warning: str | None) -> dict[str, Any] | None:
+    """Append a warning to an ai_context object's instructions (creating one if needed)."""
+    if not warning:
+        return ai_context
+    if ai_context is None:
+        return {"instructions": warning}
+    ctx = dict(ai_context) if isinstance(ai_context, dict) else {"instructions": str(ai_context)}
+    existing = ctx.get("instructions")
+    ctx["instructions"] = f"{existing} {warning}" if existing else warning
+    return ctx
 
 
 # --- attribute -> field --------------------------------------------------
@@ -206,6 +258,8 @@ def attribute_to_field(
     if description:
         field_obj["description"] = description
 
+    field_dq = dq_by_attr.get(attr.urn) if dq_by_attr else None
+
     ai_context = _terms_ai_context([ta.term_urn for ta in attr.term_assignments], terms)
     if ai_context:
         field_obj["ai_context"] = ai_context
@@ -218,8 +272,8 @@ def attribute_to_field(
         ext_data["column_type"] = attr.column_type
     if attr.term_assignments:
         ext_data["term_urns"] = [ta.term_urn for ta in attr.term_assignments]
-    if dq_by_attr and attr.urn in dq_by_attr:
-        ext_data["dq"] = dq_by_attr[attr.urn]
+    if field_dq:
+        ext_data["dq"] = field_dq
     field_obj["custom_extensions"] = [_ataccama_extension(ext_data)]
 
     return field_obj
@@ -228,7 +282,11 @@ def attribute_to_field(
 # --- catalog item -> dataset ---------------------------------------------
 
 
-def bundle_to_dataset(bundle: CatalogItemBundle, used_dataset_names: set[str]) -> dict[str, Any]:
+def bundle_to_dataset(
+    bundle: CatalogItemBundle,
+    used_dataset_names: set[str],
+    dq_ai_warnings: bool = False,
+) -> dict[str, Any]:
     item = bundle.item
     name = _unique_name(item.name, used_dataset_names, fallback="dataset")
 
@@ -238,7 +296,11 @@ def bundle_to_dataset(bundle: CatalogItemBundle, used_dataset_names: set[str]) -
     if description:
         dataset["description"] = description
 
+    dataset_dq = _dataset_dq(bundle.dq_results, bundle.dq_threshold_pct)
+
     ai_context = _terms_ai_context([ta.term_urn for ta in item.term_assignments], bundle.terms)
+    if dq_ai_warnings:
+        ai_context = _inject_warning(ai_context, _dataset_dq_warning(dataset_dq))
     if ai_context:
         dataset["ai_context"] = ai_context
 
@@ -266,7 +328,6 @@ def bundle_to_dataset(bundle: CatalogItemBundle, used_dataset_names: set[str]) -
         ext_data["term_urns"] = [ta.term_urn for ta in item.term_assignments]
     if item.aliases:
         ext_data["aliases"] = item.aliases
-    dataset_dq = _dataset_dq(bundle.dq_results)
     if dataset_dq:
         ext_data["dq"] = dataset_dq
     dataset["custom_extensions"] = [_ataccama_extension(ext_data)]
@@ -282,10 +343,16 @@ def ataccama_to_osi(
     model_name: str = "ataccama_model",
     model_description: str | None = None,
     tenant: str | None = None,
+    dq_ai_warnings: bool = False,
 ) -> dict[str, Any]:
-    """Convert a list of catalog-item bundles into an OSI document dict (ready for YAML)."""
+    """Convert a list of catalog-item bundles into an OSI document dict (ready for YAML).
+
+    When ``dq_ai_warnings`` is set, datasets that Ataccama flags as below quality (below
+    the configured threshold, or with active findings) get a natural-language warning
+    appended to their ``ai_context.instructions`` (see ``_dataset_dq_warning``).
+    """
     used_dataset_names: set[str] = set()
-    datasets = [bundle_to_dataset(b, used_dataset_names) for b in bundles]
+    datasets = [bundle_to_dataset(b, used_dataset_names, dq_ai_warnings) for b in bundles]
 
     semantic_model: dict[str, Any] = {"name": model_name, "datasets": datasets}
     if model_description:

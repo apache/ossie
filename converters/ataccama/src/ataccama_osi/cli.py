@@ -72,6 +72,13 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Skip fetching data-quality results (DQ enrichment is included by default).",
     )
+    parser.add_argument(
+        "--dq-ai-warnings",
+        action="store_true",
+        help="Append a data-quality warning to ai_context.instructions for datasets that "
+        "Ataccama flags as below quality — below its configured threshold, or with active "
+        "findings (opt-in; requires DQ, so not with --no-dq).",
+    )
     args = parser.parse_args(argv)
 
     if args.env_file:
@@ -102,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
         model_name=args.model_name,
         model_description=args.model_description,
         tenant=_tenant_from_urn(urns[0]),
+        dq_ai_warnings=args.dq_ai_warnings,
     )
 
     text = yaml.dump(document, default_flow_style=False, sort_keys=False, allow_unicode=True)

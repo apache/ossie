@@ -47,6 +47,9 @@ ataccama-to-osi --env-file .ataccama.env \
 # data-quality results are fetched by default; use --no-dq to skip them
 ataccama-to-osi --env-file .ataccama.env --urn <urn> --no-dq -o my_model.osi.yaml
 
+# opt-in: append DQ warnings to ai_context for datasets Ataccama flags as below quality
+ataccama-to-osi --env-file .ataccama.env --urn <urn> --dq-ai-warnings -o my_model.osi.yaml
+
 # or supply a file of URNs (one per line)
 ataccama-to-osi --env-file .ataccama.env --urns-file items.txt -o my_model.osi.yaml
 ```
@@ -87,7 +90,7 @@ Tests run fully offline against a recorded catalog fixture
 | `CatalogAttribute.dataType` ∈ {DATE, DATETIME, TIMESTAMP, TIME} | `field.dimension.is_time = true` |
 | `CatalogAttribute.description` / `comment` | `field.description` |
 | attribute `Term`s | `field.ai_context` |
-| DQ `overallQuality` + `dimensionResults` (latest processing) | dataset `custom_extensions` (`vendor_name: ATACCAMA`) → `data.dq` (`passed`, `failed`, `pass_rate_pct`, `dimensions[]`, `results_link`) |
+| DQ `overallQuality` + `dimensionResults` + findings + monitor threshold | dataset `custom_extensions` (`vendor_name: ATACCAMA`) → `data.dq` (`passed`, `failed`, `pass_rate_pct`, `threshold_pct`, `below_threshold`, `active_findings`, `dimensions[]`, `results_link`) |
 | DQ per-attribute `overallQuality` | field `custom_extensions` (`vendor_name: ATACCAMA`) → `data.dq` (`passed`, `failed`, `pass_rate_pct`) |
 | URNs, `dataType`, `columnType`, connection/source/stewardship/monitor | `custom_extensions` (`vendor_name: ATACCAMA`) → `data` |
 
@@ -99,11 +102,33 @@ and per-dimension quality on the dataset, and per-column quality on each field. 
 `--no-dq` to skip the DQ calls.
 
 Notes:
-- `pass_rate_pct` is **derived** (`passed / (passed + failed)`); the raw `passed`/`failed`
-  counts are authoritative. Ataccama's own UI score may weight dimensions/rules
-  differently, so this is not presented as an official Ataccama "Data Quality score".
+- `pass_rate_pct` is Ataccama's overall quality (`overallQuality`) expressed as a
+  percentage: `passed / (passed + failed)`. The DQ API returns only the pass/fail
+  **counts**, not a preformatted percentage, so the converter formats it — the counts
+  themselves are Ataccama's own, consistent with what the platform reports.
+- `threshold_pct` / `below_threshold` come from the monitor's configured overall
+  threshold (`overallDqThresholds`, fetched from the monitor-config endpoint) — i.e.
+  the same pass/fail bar shown in Ataccama. They are omitted when the monitor has no
+  overall threshold configured.
+- `active_findings` is always reported (`0` = no open data-quality findings), so the
+  clean state is an explicit signal rather than an omission.
 - Dimensions with no evaluated records in the processing are omitted.
 - Items without a published monitor/results simply carry no `dq` block (best-effort).
+
+#### AI warnings (opt-in)
+
+By default the DQ block is descriptive data only. With `--dq-ai-warnings`, a plain-language
+warning is appended to `ai_context.instructions` for any dataset Ataccama flags as having
+data quality issues (data quality below configured threshold or active findings), so a
+downstream AI/BI tool reading the OSI model (not just the vendor extension) is told to
+treat the data with caution. Example:
+
+> *Data-quality warning: 60.0% of quality checks passed on the latest run (below the
+> configured 75% quality threshold). Verify this data before using it for analysis or
+> automated decisions.*
+
+Warnings are appended to any existing (term-derived) instructions, never replacing them,
+and require DQ (so not usable with `--no-dq`).
 
 ## Limitations
 
@@ -112,8 +137,9 @@ is an **analytics semantic model**. Some OSI constructs therefore have no source
 
 - **Metrics** — Ataccama has no analytics metrics; none are emitted. (Data-quality
   scores are attached as `ATACCAMA` extensions, not as OSI metrics.)
-- **Data Trust Score / Index** — not exposed by the public APIs, so it is not
-  emitted. Only rule-level DQ results (which the converter does carry) are available.
+- **Data Trust Score / Index** — not exposed by the public APIs (no precomputed
+  score field exists), so it is not emitted. The converter instead carries the DQ
+  results and monitor threshold that the APIs do provide.
 - **Relationships / `primary_key` / `unique_keys`** — the Catalog API does not expose
   foreign or primary keys on catalog items, so these are omitted.
 - **`source` string** — the API exposes only a folder hierarchy (`locations`) and
