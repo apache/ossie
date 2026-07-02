@@ -87,12 +87,9 @@ Tests run fully offline against a recorded catalog fixture
 | `CatalogAttribute.dataType` ∈ {DATE, DATETIME, TIMESTAMP, TIME} | `field.dimension.is_time = true` |
 | `CatalogAttribute.description` / `comment` | `field.description` |
 | attribute `Term`s | `field.ai_context` |
-| DQ `overallQuality` + `dimensionResults` (latest processing) | dataset `custom_extensions` → `dq` (`passed`, `failed`, `pass_rate_pct`, `dimensions[]`, `results_link`) |
-| DQ per-attribute `overallQuality` | field `custom_extensions` → `dq` (`passed`, `failed`, `pass_rate_pct`) |
-| URNs, `dataType`, `columnType`, connection/source/stewardship/monitor | `custom_extensions` (`vendor_name: ATACCAMA`) |
-
-All Ataccama-specific metadata with no OSI-core home is preserved in `ATACCAMA`
-custom extensions (as a JSON string) so the model round-trips without data loss.
+| DQ `overallQuality` + `dimensionResults` (latest processing) | dataset `custom_extensions` (`vendor_name: ATACCAMA`) → `data.dq` (`passed`, `failed`, `pass_rate_pct`, `dimensions[]`, `results_link`) |
+| DQ per-attribute `overallQuality` | field `custom_extensions` (`vendor_name: ATACCAMA`) → `data.dq` (`passed`, `failed`, `pass_rate_pct`) |
+| URNs, `dataType`, `columnType`, connection/source/stewardship/monitor | `custom_extensions` (`vendor_name: ATACCAMA`) → `data` |
 
 ### Data quality
 
