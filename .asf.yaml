@@ -60,8 +60,6 @@ github:
   ghp_branch: gh-pages
   ghp_path: /
 
-  collaborators:
-
 notifications:
   commits:      commits@ossie.apache.org
   issues:       issues@ossie.apache.org
