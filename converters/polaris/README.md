@@ -1,8 +1,27 @@
-# OSI Polaris Converter
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
 
-A two-way converter between [OSI semantic models](../../core-spec/spec.md) and [Apache Polaris](https://polaris.apache.org/) catalogs.
+    http://www.apache.org/licenses/LICENSE-2.0
 
-Apache Polaris is an open-source catalog for Apache Iceberg. This converter communicates with Polaris via the Iceberg REST Catalog API to import catalog metadata into OSI format and export OSI models back into Polaris.
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+-->
+
+# Apache Ossie Polaris Converter
+
+A two-way converter between [Ossie semantic models](../../core-spec/spec.md) and [Apache Polaris](https://polaris.apache.org/) catalogs.
+
+Apache Polaris is an open-source catalog for Apache Iceberg. This converter communicates with Polaris via the Iceberg REST Catalog API to import catalog metadata into Ossie format and export Ossie models back into Polaris.
 
 ## Building
 
@@ -14,12 +33,12 @@ Requires Java 11+.
 
 ## Usage
 
-### Import (Polaris → OSI)
+### Import (Polaris → Apache Ossie)
 
-Reads all namespaces and tables from a Polaris catalog and generates an OSI YAML file.
+Reads all namespaces and tables from a Polaris catalog and generates an Ossie YAML file.
 
 ```bash
-java -jar target/osi-polaris-converter-0.1.0-SNAPSHOT.jar import \
+java -jar target/ossie-polaris-converter-0.1.0-SNAPSHOT.jar import \
   --url http://localhost:8181 \
   --catalog my_catalog \
   --client-id <client-id> \
@@ -27,14 +46,14 @@ java -jar target/osi-polaris-converter-0.1.0-SNAPSHOT.jar import \
   -o output.yaml
 ```
 
-Each Polaris namespace becomes a separate OSI semantic model containing datasets for every table in that namespace.
+Each Polaris namespace becomes a separate Ossie semantic model containing datasets for every table in that namespace.
 
-### Export (OSI → Polaris)
+### Export (Apache Ossie → Polaris)
 
-Reads an OSI YAML file and creates namespaces and Iceberg tables in a Polaris catalog.
+Reads an Ossie YAML file and creates namespaces and Iceberg tables in a Polaris catalog.
 
 ```bash
-java -jar target/osi-polaris-converter-0.1.0-SNAPSHOT.jar export \
+java -jar target/ossie-polaris-converter-0.1.0-SNAPSHOT.jar export \
   --url http://localhost:8181 \
   --catalog my_catalog \
   --client-id <client-id> \
@@ -42,7 +61,7 @@ java -jar target/osi-polaris-converter-0.1.0-SNAPSHOT.jar export \
   model.yaml
 ```
 
-Each OSI semantic model becomes a Polaris namespace, and each dataset becomes an Iceberg table.
+Each Ossie semantic model becomes a Polaris namespace, and each dataset becomes an Iceberg table.
 
 ### Options
 
@@ -57,9 +76,9 @@ Each OSI semantic model becomes a Polaris namespace, and each dataset becomes an
 
 ## Mapping Reference
 
-### Import (Polaris → OSI)
+### Import (Polaris → Apache Ossie)
 
-| Polaris / Iceberg | OSI |
+| Polaris / Iceberg | Ossie |
 |-------------------|-----|
 | Namespace | `semantic_model` (name, description) |
 | Table | `dataset` (name) |
@@ -69,9 +88,9 @@ Each OSI semantic model becomes a Polaris namespace, and each dataset becomes an
 | Temporal types (`timestamp`, `timestamptz`, `date`, `time`) | `field.dimension.is_time: true` |
 | Table properties | `dataset.custom_extensions` (vendor: `COMMON`) |
 
-### Export (OSI → Polaris)
+### Export (Apache Ossie → Polaris)
 
-| OSI | Polaris / Iceberg |
+| Ossie | Polaris / Iceberg |
 |-----|-------------------|
 | `semantic_model` | Namespace |
 | `dataset` | Table |
@@ -83,7 +102,7 @@ Each OSI semantic model becomes a Polaris namespace, and each dataset becomes an
 
 ### Type Inference (Export)
 
-Since OSI fields are expression-based and don't carry explicit types, the exporter infers Iceberg types using:
+Since Ossie fields are expression-based and don't carry explicit types, the exporter infers Iceberg types using:
 
 1. **Round-trip hints** — if a field description starts with `Iceberg type:` (produced by the importer), that type is used directly.
 2. **Time dimensions** — fields with `dimension.is_time: true` map to `timestamptz`.
@@ -106,7 +125,7 @@ Since OSI fields are expression-based and don't carry explicit types, the export
               │                         │
      ┌────────┴────────┐     ┌─────────┴─────────┐
      │ PolarisImporter  │     │  PolarisExporter   │
-     │ (Polaris → OSI)  │     │  (OSI → Polaris)   │
+     │ (Polaris→Ossie)  │     │  (Ossie→Polaris)   │
      └────────┬────────┘     └─────────┬─────────┘
               │                         │
        ┌──────┴──────┐          ┌──────┴──────┐
@@ -116,7 +135,7 @@ Since OSI fields are expression-based and don't carry explicit types, the export
 
 ## Dependencies
 
-- [SnakeYAML 2.2](https://bitbucket.org/snakeyaml/snakeyaml/) — OSI YAML parsing and generation
+- [SnakeYAML 2.2](https://bitbucket.org/snakeyaml/snakeyaml/) — Ossie YAML parsing and generation
 - [Jackson Databind 2.17](https://github.com/FasterXML/jackson-databind) — JSON handling for Polaris REST API
 - [JUnit 5](https://junit.org/junit5/) — testing
 

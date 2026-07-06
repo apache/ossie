@@ -1,8 +1,25 @@
 #!/usr/bin/env python3
-"""
-OSI Semantic Model Validator
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
 
-Validates OSI YAML files against:
+"""
+Ossie Semantic Model Validator
+
+Validates Ossie YAML files against:
 1. JSON Schema (structure, types, enums)
 2. Unique names (datasets, fields, metrics, relationships)
 3. Valid relationship references
@@ -33,7 +50,7 @@ try:
 except ImportError:
     SQLGLOT_AVAILABLE = False
 
-# Map OSI dialects to sqlglot dialects
+# Map Ossie dialects to sqlglot dialects
 DIALECT_MAP = {
     "ANSI_SQL": None,  # sqlglot default
     "SNOWFLAKE": "snowflake",
@@ -199,7 +216,7 @@ def main():
     args = sys.argv[1:]
     yaml_path = Path(args[0])
 
-    schema_path = Path(__file__).parent.parent / "core-spec" / "osi-schema.json"
+    schema_path = Path(__file__).parent.parent / "core-spec" / "ossie-schema.json"
     if len(args) > 1:
         if len(args) == 3 and args[1] == "--schema":
             schema_path = Path(args[2])

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/open-semantic-interchange/OSI/core-spec/osi-schema.json",
-  "title": "OSI Ontology Metadata Specification",
-  "description": "JSON Schema for validating OSI (Open Semantic Interoperability) ontology definitions",
+  "$id": "https://github.com/apache/ossie/core-spec/osi-schema.json",
+  "title": "Apache Ossie Ontology Metadata Specification",
+  "description": "JSON Schema for validating Apache Ossie ontology definitions",
   "type": "object",
   "properties": {
     "version": {
@@ -19,7 +19,7 @@
       "description": "Human-readable description"
     },
     "ai_context": {
-      "$ref": "https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json#/$defs/AIContext"
+      "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/osi-schema.json#/$defs/AIContext"
     },
     "ontology": {
       "type": "array",
@@ -282,7 +282,7 @@
           "description": "Human-readable description of this ontology map"
         },
         "semantic_model": {
-          "$ref": "https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json#/$defs/SemanticModel"
+          "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/osi-schema.json#/$defs/SemanticModel"
         },
         "concept_mappings": {
           "type": "array",

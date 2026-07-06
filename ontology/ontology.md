@@ -1,4 +1,23 @@
-# OSI - Ontology Specification
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+-->
+
+# Apache Ossie - Ontology Specification
 
 **Version:** 0.2.0.dev0
 
@@ -382,7 +401,7 @@ mappings that group by some concept.
 
 Each concept mapping declares how to populate a concept with objects and how to populate the relationships
 that group under that concept with links. These declarations are formed from patterns of expressions that
-reference fields in a logical model that is declared using the OSI core semantic model spec.
+reference fields in a logical model that is declared using the Ossie core semantic model spec.
 
 Concept mappings have the following schema:
 

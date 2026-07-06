@@ -1,19 +1,36 @@
-"""Round-trip conversion tests: GoodData → OSI → GoodData."""
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+"""Round-trip conversion tests: GoodData → Ossie → GoodData."""
 
 from __future__ import annotations
 
-from gooddata_osi.gooddata_to_osi import gooddata_to_osi
-from gooddata_osi.models import GdDeclarativeModel
-from gooddata_osi.osi_to_gooddata import osi_to_gooddata
+from ossie_gooddata.gooddata_to_osi import gooddata_to_osi
+from ossie_gooddata.models import GdDeclarativeModel
+from ossie_gooddata.osi_to_gooddata import osi_to_gooddata
 
 
 def test_roundtrip_preserves_datasets(gooddata_tpcds_model: GdDeclarativeModel):
-    """Verify GoodData → OSI → GoodData preserves dataset count and IDs."""
-    # GoodData -> OSI
-    osi = gooddata_to_osi(gooddata_tpcds_model, model_name="roundtrip_test")
+    """Verify GoodData → Ossie → GoodData preserves dataset count and IDs."""
+    # GoodData -> Ossie
+    ossie = gooddata_to_osi(gooddata_tpcds_model, model_name="roundtrip_test")
 
-    # OSI -> GoodData
-    result = osi_to_gooddata(osi)
+    # Ossie -> GoodData
+    result = osi_to_gooddata(ossie)
 
     original_ds_ids = {ds.id for ds in gooddata_tpcds_model.ldm.datasets}
     result_ds_ids = {ds.id for ds in result.ldm.datasets}
@@ -25,8 +42,8 @@ def test_roundtrip_preserves_datasets(gooddata_tpcds_model: GdDeclarativeModel):
 
 def test_roundtrip_preserves_date_instances(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify date instances survive the round trip."""
-    osi = gooddata_to_osi(gooddata_tpcds_model)
-    result = osi_to_gooddata(osi)
+    ossie = gooddata_to_osi(gooddata_tpcds_model)
+    result = osi_to_gooddata(ossie)
 
     assert len(result.ldm.date_instances) == len(gooddata_tpcds_model.ldm.date_instances)
 
@@ -38,8 +55,8 @@ def test_roundtrip_preserves_date_instances(gooddata_tpcds_model: GdDeclarativeM
 
 def test_roundtrip_preserves_references(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify references/relationships survive the round trip."""
-    osi = gooddata_to_osi(gooddata_tpcds_model)
-    result = osi_to_gooddata(osi)
+    ossie = gooddata_to_osi(gooddata_tpcds_model)
+    result = osi_to_gooddata(ossie)
 
     original_ss = next(ds for ds in gooddata_tpcds_model.ldm.datasets if ds.id == "store_sales")
     result_ss = next(ds for ds in result.ldm.datasets if ds.id == "store_sales")
@@ -51,8 +68,8 @@ def test_roundtrip_preserves_references(gooddata_tpcds_model: GdDeclarativeModel
 
 def test_roundtrip_preserves_attribute_count(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify attribute counts survive the round trip."""
-    osi = gooddata_to_osi(gooddata_tpcds_model)
-    result = osi_to_gooddata(osi)
+    ossie = gooddata_to_osi(gooddata_tpcds_model)
+    result = osi_to_gooddata(ossie)
 
     for orig_ds in gooddata_tpcds_model.ldm.datasets:
         result_ds = next((ds for ds in result.ldm.datasets if ds.id == orig_ds.id), None)
@@ -64,8 +81,8 @@ def test_roundtrip_preserves_attribute_count(gooddata_tpcds_model: GdDeclarative
 
 def test_roundtrip_preserves_fact_count(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify fact counts survive the round trip."""
-    osi = gooddata_to_osi(gooddata_tpcds_model)
-    result = osi_to_gooddata(osi)
+    ossie = gooddata_to_osi(gooddata_tpcds_model)
+    result = osi_to_gooddata(ossie)
 
     for orig_ds in gooddata_tpcds_model.ldm.datasets:
         result_ds = next((ds for ds in result.ldm.datasets if ds.id == orig_ds.id), None)

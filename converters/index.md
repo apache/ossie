@@ -1,14 +1,33 @@
-# OSI Converters
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+-->
+
+# Apache Ossie Converters
 
 ## Overview
 
-An OSI Converter translates between the OSI semantic model format and a specific vendor's semantic implementation. This enables teams to author a semantic model once in the OSI standard and then generate the corresponding vendor-specific representation automatically.
+An Ossie Converter translates between the Ossie semantic model format and a specific vendor's semantic implementation. This enables teams to author a semantic model once in the Ossie standard and then generate the corresponding vendor-specific representation automatically.
 
 ## Hub-and-Spoke Model
 
-OSI converters follow a **hub-and-spoke** architecture:
+Ossie converters follow a **hub-and-spoke** architecture:
 
-- **Hub**: The OSI core specification acts as the central, vendor-neutral format.
+- **Hub**: The Ossie core specification acts as the central, vendor-neutral format.
 - **Spokes**: Each converter handles translation to or from a specific vendor format.
 
 ```
@@ -17,7 +36,7 @@ OSI converters follow a **hub-and-spoke** architecture:
                   └──────┬──────┘
                          │
 ┌─────────────┐    ┌─────┴─────┐    ┌─────────────┐
-│     dbt     ├────┤    OSI    ├────┤  Salesforce │
+│     dbt     ├────┤   Ossie   ├────┤  Salesforce │
 └─────────────┘    └─────┬─────┘    └─────────────┘
                          │
                   ┌──────┴──────┐
@@ -25,28 +44,28 @@ OSI converters follow a **hub-and-spoke** architecture:
                   └─────────────┘
 ```
 
-This approach avoids the need for point-to-point converters between every pair of vendors. With N vendors, a point-to-point strategy would require N*(N-1) converters. With OSI as the hub, only 2*N converters are needed (one import and one export per vendor), and interoperability with all other vendors comes for free.
+This approach avoids the need for point-to-point converters between every pair of vendors. With N vendors, a point-to-point strategy would require N*(N-1) converters. With Ossie as the hub, only 2*N converters are needed (one import and one export per vendor), and interoperability with all other vendors comes for free.
 
 ## Converter Responsibilities
 
 A converter handles two directions of translation:
 
-### Export (OSI → Vendor)
+### Export (Apache Ossie → Vendor)
 
-Read an OSI semantic model and produce the equivalent vendor-specific representation. For example:
+Read an Ossie semantic model and produce the equivalent vendor-specific representation. For example:
 
-- OSI → Snowflake semantic model definition
-- OSI → dbt `semantic_models` YAML
-- OSI → Tableau data source / Salesforce semantic layer
-- OSI → Databricks semantic layer definition
+- Ossie → Snowflake semantic model definition
+- Ossie → dbt `semantic_models` YAML
+- Ossie → Tableau data source / Salesforce semantic layer
+- Ossie → Databricks semantic layer definition
 
-### Import (Vendor → OSI)
+### Import (Vendor → Apache Ossie)
 
-Read a vendor-specific semantic model and produce a valid OSI model, including mapping vendor-specific metadata into `custom_extensions`.
+Read a vendor-specific semantic model and produce a valid Ossie model, including mapping vendor-specific metadata into `custom_extensions`.
 
 ## Supported Vendors
 
-The OSI specification currently defines extensions for the following vendors:
+The Ossie specification currently defines extensions for the following vendors:
 
 | Vendor | Description |
 |--------|-------------|
@@ -55,17 +74,17 @@ The OSI specification currently defines extensions for the following vendors:
 | `DBT` | dbt semantic models |
 | `DATABRICKS` | Databricks semantic layer |
 
-Each vendor may define custom extensions (via the `custom_extensions` field in the OSI spec) to carry vendor-specific metadata that does not have an equivalent in the core specification.
+Each vendor may define custom extensions (via the `custom_extensions` field in the Ossie spec) to carry vendor-specific metadata that does not have an equivalent in the core specification.
 
 ## Mapping Core Constructs
 
-The following table shows how each OSI construct maps conceptually to vendor equivalents. A converter must handle each of these:
+The following table shows how each Ossie construct maps conceptually to vendor equivalents. A converter must handle each of these:
 
 ### Semantic Model
 
 The top-level container. Maps to the root object in each vendor's format.
 
-| OSI Field | Description | Converter Consideration |
+| Ossie Field | Description | Converter Consideration |
 |-----------|-------------|------------------------|
 | `name` | Model identifier | Map to vendor's model/project name |
 | `description` | Human-readable description | Most vendors support a description field |
@@ -79,7 +98,7 @@ The top-level container. Maps to the root object in each vendor's format.
 
 Datasets represent logical tables (fact or dimension tables). They contain fields and define the structure of the data.
 
-| OSI Field | Description | Converter Consideration |
+| Ossie Field | Description | Converter Consideration |
 |-----------|-------------|------------------------|
 | `name` | Dataset identifier | Map to table/entity/model name |
 | `source` | Physical table reference (e.g., `database.schema.table`) | Parse into vendor-specific catalog/schema/table components |
@@ -93,7 +112,7 @@ Datasets represent logical tables (fact or dimension tables). They contain field
 
 Fields represent row-level attributes. They can be simple column references or computed expressions.
 
-| OSI Field | Description | Converter Consideration |
+| Ossie Field | Description | Converter Consideration |
 |-----------|-------------|------------------------|
 | `name` | Field identifier | Map to column/attribute name |
 | `expression.dialects` | Multi-dialect SQL expressions | Select the dialect matching the target vendor; fall back to `ANSI_SQL` |
@@ -119,7 +138,7 @@ A Snowflake converter should pick the `SNOWFLAKE` dialect when available, and fa
 
 Relationships define foreign key connections between datasets. They support both simple and composite keys.
 
-| OSI Field | Description | Converter Consideration |
+| Ossie Field | Description | Converter Consideration |
 |-----------|-------------|------------------------|
 | `name` | Relationship identifier | Map to vendor's join/relationship name |
 | `from` | Many-side dataset | Map to the referencing table |
@@ -140,7 +159,7 @@ means `from.product_id = to.id AND from.variant_id = to.variant_id`. The convert
 
 Metrics are aggregate measures defined at the semantic model level. They can span multiple datasets via relationships.
 
-| OSI Field | Description | Converter Consideration |
+| Ossie Field | Description | Converter Consideration |
 |-----------|-------------|------------------------|
 | `name` | Metric identifier | Map to vendor's measure/KPI name |
 | `expression.dialects` | Multi-dialect aggregate expressions | Select the appropriate dialect; fall back to `ANSI_SQL` |
@@ -163,8 +182,8 @@ The converter must ensure that the dataset references (`store_sales`, `customer`
 
 Custom extensions carry vendor-specific metadata as a JSON string. A converter should:
 
-1. **On export (OSI → Vendor)**: Extract extensions where `vendor_name` matches the target vendor, parse the `data` JSON, and apply the vendor-specific settings.
-2. **On import (Vendor → OSI)**: Capture vendor-specific settings that have no OSI core equivalent and store them as a `custom_extension` entry.
+1. **On export (Ossie → Vendor)**: Extract extensions where `vendor_name` matches the target vendor, parse the `data` JSON, and apply the vendor-specific settings.
+2. **On import (Vendor → Ossie)**: Capture vendor-specific settings that have no Ossie core equivalent and store them as a `custom_extension` entry.
 
 **Example**: A Snowflake export converter would extract:
 
@@ -200,9 +219,9 @@ A converter should map `ai_context` when the target vendor supports equivalent c
 
 ### Step-by-Step Guide
 
-1. **Validate input**: Use the [OSI JSON Schema](../core-spec/osi-schema.json) and the [validation script](../validation/validate.py) to ensure the source OSI model is valid before conversion.
+1. **Validate input**: Use the [Ossie JSON Schema](../core-spec/osi-schema.json) and the [validation script](../validation/validate.py) to ensure the source Ossie model is valid before conversion.
 
-2. **Parse the OSI model**: Load the YAML file and iterate over the top-level `semantic_model` entries.
+2. **Parse the Ossie model**: Load the YAML file and iterate over the top-level `semantic_model` entries.
 
 3. **Map datasets**: For each dataset, translate the `name`, `source`, `primary_key`, `unique_keys`, and `fields` to the vendor's format. Parse the `source` string (typically `database.schema.table`) into the vendor's catalog structure.
 
@@ -226,7 +245,7 @@ A converter should map `ai_context` when the target vendor supports equivalent c
 | Scenario | Recommended Approach |
 |----------|---------------------|
 | Missing vendor-specific dialect for a field/metric | Fall back to `ANSI_SQL`; log a warning |
-| Computed fields with vendor-specific SQL syntax | Require the vendor dialect in the source OSI model; error if neither vendor nor ANSI dialect is available |
+| Computed fields with vendor-specific SQL syntax | Require the vendor dialect in the source Ossie model; error if neither vendor nor ANSI dialect is available |
 | Composite primary keys | Ensure the vendor format supports composite keys; if not, flatten or document the limitation |
 | Cross-dataset metrics referencing multiple tables | Ensure all referenced datasets exist and relationships are defined; resolve qualified column names |
 | Custom extensions with unknown vendor | Ignore (do not discard) — preserve for round-tripping |
@@ -237,14 +256,14 @@ A converter should map `ai_context` when the target vendor supports equivalent c
 A well-implemented converter pair (import + export) should preserve as much information as possible during round-tripping:
 
 ```
-Vendor A model → [Import] → OSI model → [Export] → Vendor A model
+Vendor A model → [Import] → Ossie model → [Export] → Vendor A model
 ```
 
 To achieve this:
 
-- **Never discard information silently**. If a vendor-specific attribute has no OSI core equivalent, store it in `custom_extensions`.
+- **Never discard information silently**. If a vendor-specific attribute has no Ossie core equivalent, store it in `custom_extensions`.
 - **Preserve field ordering** where possible, as some vendors are sensitive to declaration order.
-- **Preserve `custom_extensions`** for all vendors, not just the target vendor. This allows a model to carry metadata for multiple vendors simultaneously (e.g., a single OSI model with both Snowflake and dbt extensions).
+- **Preserve `custom_extensions`** for all vendors, not just the target vendor. This allows a model to carry metadata for multiple vendors simultaneously (e.g., a single Ossie model with both Snowflake and dbt extensions).
 
 ## Example: Conceptual Conversion Flow
 
@@ -256,7 +275,7 @@ Given the [TPC-DS example](../examples/tpcds_semantic_model.yaml) included in th
 4. For each field, select the `ANSI_SQL` dialect expression (since no `SNOWFLAKE` dialect is provided in this example).
 5. Translate relationships into Snowflake join definitions, mapping `from_columns` and `to_columns` pairs.
 6. Translate metrics like `total_sales` (`SUM(store_sales.ss_ext_sales_price)`) into Snowflake metric definitions.
-7. Extract the `SALESFORCE` and `DBT` custom extensions — these would not be applied to the Snowflake output but should be preserved if the model is later imported back to OSI.
+7. Extract the `SALESFORCE` and `DBT` custom extensions — these would not be applied to the Snowflake output but should be preserved if the model is later imported back to Ossie.
 
 ## Contributing a New Converter
 
@@ -264,7 +283,7 @@ To add support for a new vendor:
 
 1. Add the vendor to the `vendors` enum in the [core specification](../core-spec/spec.md) if not already present.
 2. Define the custom extension schema for the vendor (what vendor-specific metadata fields are supported in the `data` JSON).
-3. Implement the export converter (OSI → Vendor).
-4. Implement the import converter (Vendor → OSI).
+3. Implement the export converter (Ossie → Vendor).
+4. Implement the import converter (Vendor → Ossie).
 5. Add tests using the [TPC-DS example model](../examples/tpcds_semantic_model.yaml) as a baseline.
 6. Document any limitations or unsupported constructs.

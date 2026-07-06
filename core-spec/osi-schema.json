@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/open-semantic-interchange/OSI/core-spec/osi-schema.json",
-  "title": "OSI Core Metadata Specification",
-  "description": "JSON Schema for validating OSI (Open Semantic Interoperability) semantic model definitions",
+  "$id": "https://github.com/apache/ossie/core-spec/osi-schema.json",
+  "title": "Apache Ossie Core Metadata Specification",
+  "description": "JSON Schema for validating Apache Ossie semantic model definitions",
   "type": "object",
   "properties": {
     "version": {
       "type": "string",
       "const": "0.2.0.dev0",
-      "description": "OSI specification version"
+      "description": "Apache Ossie specification version"
     },
     "semantic_model": {
       "type": "array",
