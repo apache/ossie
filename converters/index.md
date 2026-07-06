@@ -54,6 +54,7 @@ The OSI specification currently defines extensions for the following vendors:
 | `SALESFORCE` | Salesforce / Tableau semantic layer |
 | `DBT` | dbt semantic models |
 | `DATABRICKS` | Databricks semantic layer |
+| `OMNI` | Omni semantic model |
 
 Each vendor may define custom extensions (via the `custom_extensions` field in the OSI spec) to carry vendor-specific metadata that does not have an equivalent in the core specification.
 

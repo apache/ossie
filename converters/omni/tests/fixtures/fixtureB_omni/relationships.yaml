@@ -1,0 +1,12 @@
+# Exercises: non-default join_type, reversible, a composite-key one_to_many
+# join (flipped to OSI's many-side-first orientation and flipped back on export).
+- join_from_view: order_items
+  join_to_view: users
+  on_sql: ${order_items.user_id} = ${users.id}
+  relationship_type: many_to_one
+  join_type: inner
+  reversible: true
+- join_from_view: users
+  join_to_view: orders
+  on_sql: ${users.id} = ${orders.user_id} AND ${users.region} = ${orders.region}
+  relationship_type: one_to_many

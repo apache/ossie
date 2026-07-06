@@ -1,0 +1,15 @@
+# Topic curation (label, joins, default_filters, fields) has no OSI home and
+# round-trips via the model-level stash; description/ai_context map natively.
+base_view: order_items
+label: Order Analysis
+description: Line-item order analysis
+ai_context: You are an ecommerce analyst.
+joins:
+  users:
+    orders: {}
+default_filters:
+  users.state:
+    is: California
+fields:
+- all_views.*
+- -users.state

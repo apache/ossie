@@ -1,0 +1,9 @@
+schema: ecomm
+dimensions:
+  id:
+    primary_key: true
+  region: {}
+  state: {}
+measures:
+  count:
+    aggregate_type: count

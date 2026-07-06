@@ -1,0 +1,11 @@
+base_view: store_sales
+description: TPC-DS retail semantic model for sales and customer analytics
+ai_context: Use this semantic model for retail analytics. It provides comprehensive
+  sales, customer, product, and store data from the TPC-DS benchmark. The model supports
+  time-based analysis, customer segmentation, product performance, and store operations
+  metrics.
+joins:
+  date_dim: {}
+  customer: {}
+  item: {}
+  store: {}

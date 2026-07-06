@@ -1,0 +1,7 @@
+catalog: samples
+schema: tpch
+dimensions:
+  c_custkey:
+    primary_key: true
+  c_name:
+    description: Customer name
