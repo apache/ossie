@@ -3,10 +3,10 @@
 Pure offline conversion. Accepts the Omni model-directory layout as a mapping of
 {relative filename: YAML string} -- `model.yaml`, `relationships.yaml`,
 `views/*.view.yaml`, `topics/*.topic.yaml`. Omni features OSI has no native field
-for (formats, timeframes, hidden/tags, topic curation, the model file itself, ...)
-are preserved in `custom_extensions[OMNI]` so that converting back reproduces the
-original files. A join `on_sql` an OSI relationship cannot represent (a non-equi
-or cross join) is rejected, not stashed. See README.md.
+for (formats, timeframes, hidden/tags, topic curation, the model file itself,
+query views, extends-only views, non-equi joins, ...) are preserved in
+`custom_extensions[OMNI]` so that converting back reproduces the original files.
+See README.md.
 
 Usage (CLI):
     osi-omni import -i omni_model/ [-o model.yaml] [--name NAME] [--topic TOPIC]
@@ -17,13 +17,13 @@ import warnings
 
 from ._common import (
     ConversionError,
-    DEFAULT_JOIN_TYPE,
     DIALECT_ANSI,
     MODEL_FILE,
     OSI_VERSION,
     REL_MANY_TO_ONE,
     REL_ONE_TO_MANY,
     RELATIONSHIPS_FILE,
+    TOPIC_DIR,
     dump_yaml,
     has_timeframe_ref,
     is_simple_identifier,
@@ -31,6 +31,7 @@ from ._common import (
     load_yaml,
     omni_sql_to_osi,
     require_str,
+    view_file,
     write_stash,
 )
 
@@ -44,6 +45,23 @@ _QUERY_VIEW_FILE_RE = re.compile(r"(?:^|/)([^/]+)\.query\.view(?:\.ya?ml)?$")
 _TOPIC_FILE_RE = re.compile(r"(?:^|/)([^/]+)\.topic(?:\.ya?ml)?$")
 _MODEL_FILE_RE = re.compile(r"(?:^|/)model(?:\.ya?ml)?$")
 _RELS_FILE_RE = re.compile(r"(?:^|/)relationships(?:\.ya?ml)?$")
+
+# Omni's IDE/API writes each view file with a header naming the identifier the
+# rest of the model uses for it -- which is schema-qualified (`schema__table`)
+# when the view is outside the connection's default schema, and so differs from
+# the file's basename. That header is authoritative; the basename is the
+# fallback for hand-laid-out directories (including this converter's exports).
+_REF_COMMENT_RE = re.compile(r"^#\s*Reference this view as\s+([A-Za-z_]\w*)\s*$")
+
+
+def _canonical_view_name(text, basename):
+    for line in text.splitlines()[:5]:
+        m = _REF_COMMENT_RE.match(line)
+        if m:
+            return m.group(1)
+        if line.strip() and not line.lstrip().startswith("#"):
+            break
+    return basename
 
 # View-file keys the converter maps natively; everything else is stashed
 # verbatim in the dataset's `view_extras` (and restored on export).
@@ -88,6 +106,9 @@ def convert_omni_to_osi(files, model_name=None, topic=None):
         raise ConversionError("expected a non-empty mapping of {filename: YAML}")
 
     views, topics = {}, {}
+    view_meta = {}   # canonical name -> (file path, file basename)
+    topic_paths = {}
+    unmapped_views = set()  # view names present as files but with no OSI dataset
     model_yaml = None
     rel_entries = []
     extra_files = {}
@@ -98,15 +119,35 @@ def convert_omni_to_osi(files, model_name=None, topic=None):
             # dataset form for them. Preserved verbatim, restored on export.
             _warn(f"file '{fname}'", "query views have no OSI dataset form; "
                                      "preserved in custom_extensions only")
+            unmapped_views.add(_canonical_view_name(text, qv.group(1)))
             extra_files[fname] = text
             continue
         mv = _VIEW_FILE_RE.search(fname)
         if mv:
-            views[mv.group(1)] = load_yaml(text, fname) or {}
+            vname = _canonical_view_name(text, mv.group(1))
+            parsed = load_yaml(text, fname) or {}
+            source = join_source(
+                dict(parsed, table_name=parsed.get("table_name", mv.group(1))))
+            if source is None:
+                # A view with no schema/sql of its own (an `extends`-only view)
+                # has no standalone OSI dataset form. Preserved verbatim.
+                _warn(f"view '{vname}'",
+                      "no `schema`/`sql` source (an extends-only view?); "
+                      "preserved in custom_extensions only")
+                unmapped_views.add(vname)
+                extra_files[fname] = text
+                continue
+            if vname in views:
+                raise ConversionError(
+                    f"two view files resolve to view '{vname}' "
+                    f"('{view_meta[vname][0]}' and '{fname}')")
+            views[vname] = parsed
+            view_meta[vname] = (fname, mv.group(1))
             continue
         mt = _TOPIC_FILE_RE.search(fname)
         if mt:
             topics[mt.group(1)] = load_yaml(text, fname) or {}
+            topic_paths[mt.group(1)] = fname
             continue
         if _MODEL_FILE_RE.search(fname):
             model_yaml = load_yaml(text, fname)
@@ -123,7 +164,9 @@ def convert_omni_to_osi(files, model_name=None, topic=None):
         extra_files[fname] = text
 
     if not views:
-        raise ConversionError("no view files (*.view.yaml) found; nothing to convert")
+        raise ConversionError(
+            "no convertible view files (*.view.yaml with a schema/sql source) "
+            "found; nothing to convert")
 
     # The mapped topic supplies the OSI model's name/description/ai_context.
     mapped_name = None
@@ -152,12 +195,36 @@ def convert_omni_to_osi(files, model_name=None, topic=None):
 
     datasets = []
     for vname, view in views.items():
-        datasets.append(_convert_view(vname, view))
+        datasets.append(_convert_view(vname, view, view_meta[vname]))
     model["datasets"] = datasets
 
-    relationships = [
-        _convert_relationship(entry, i, views) for i, entry in enumerate(rel_entries)
-    ]
+    # A join OSI cannot represent -- one touching a view with no OSI dataset (a
+    # query view, an extends-only view), or a non-equi/cross join -- is stashed
+    # verbatim with its position, so export rebuilds relationships.yaml in the
+    # original order. Malformed entries still raise.
+    relationships, extra_rels = [], []
+    rel_names = set()
+    for i, entry in enumerate(rel_entries):
+        endpoints = {entry.get("join_from_view"), entry.get("join_to_view")}
+        rel = None
+        if endpoints & unmapped_views:
+            _warn(f"relationship #{i + 1}",
+                  "references a view with no OSI dataset form; preserved in "
+                  "custom_extensions only")
+        else:
+            rel = _convert_relationship(entry, i, views)
+        if rel is None:
+            extra_rels.append({"index": i, "entry": entry})
+            continue
+        # OSI relationship names are unique per model; several (aliased) joins
+        # between one view pair generate the same `<from>_to_<to>` -- suffix
+        # the repeats. Export never reads the name, so this stays lossless.
+        base, n, k = rel["name"], rel["name"], 2
+        while n in rel_names:
+            n, k = f"{base}_{k}", k + 1
+        rel["name"] = n
+        rel_names.add(n)
+        relationships.append(rel)
     if relationships:
         model["relationships"] = relationships
 
@@ -180,6 +247,10 @@ def convert_omni_to_osi(files, model_name=None, topic=None):
             tdict.pop("description", None)
             tdict.pop("ai_context", None)
         stash["topics"][tname] = tdict
+    topic_files = {t: p for t, p in topic_paths.items()
+                   if p != f"{TOPIC_DIR}/{t}.topic.yaml"}
+    if topic_files:
+        stash["topic_files"] = topic_files
     if mapped_name is not None:
         stash["mapped_topic"] = mapped_name
     if base_view:
@@ -188,6 +259,8 @@ def convert_omni_to_osi(files, model_name=None, topic=None):
                   f"base_view '{base_view}' is not a view in this model")
         else:
             stash["base_view"] = base_view
+    if extra_rels:
+        stash["extra_relationships"] = extra_rels
     if extra_files:
         stash["extra_files"] = extra_files
     write_stash(model, stash)
@@ -195,16 +268,20 @@ def convert_omni_to_osi(files, model_name=None, topic=None):
     return dump_yaml({"version": OSI_VERSION, "semantic_model": [model]})
 
 
-def _convert_view(vname, view):
+def _convert_view(vname, view, meta):
     scope = f"view '{vname}'"
+    fname, basename = meta
     ds = {"name": vname}
+    stash = {}
 
-    source = join_source(dict(view, table_name=view.get("table_name", vname)))
-    if source is None:
-        raise ConversionError(
-            f"{scope}: no usable source -- a view needs `schema` (+ `table_name`) "
-            f"or `sql`")
+    # An implicit table_name is the *file's* name -- not the canonical view
+    # name, which is schema-qualified for a view outside the default schema.
+    source = join_source(dict(view, table_name=view.get("table_name", basename)))
     ds["source"] = source
+    if str(view.get("table_name", "")) == basename:
+        # Explicit-but-redundant table_name: the exporter would normalize it
+        # away, so remember it was spelled out.
+        stash["table_name"] = view["table_name"]
 
     if view.get("description"):
         ds["description"] = view["description"]
@@ -213,18 +290,53 @@ def _convert_view(vname, view):
 
     fields = []
     pk_cols = []
-    compound = view.get("custom_compound_primary_key_sql") or []
+    # Omni writes compound-key entries as `${view.field}`/`${field}` references;
+    # resolve same-view references to plain field names (the original list is
+    # stashed whenever this normalization changes it).
+    raw_compound = view.get("custom_compound_primary_key_sql") or []
+    compound = []
+    for c in raw_compound:
+        translated, _ = omni_sql_to_osi(str(c), vname)
+        translated = translated.strip()
+        compound.append(translated if is_simple_identifier(translated) else str(c))
+    # Omni mustache templating ({{# field.filter }} ...) in a field's sql has
+    # no SQL (or OSI) form at all; such dimensions/measures are stashed whole
+    # and dropped from the OSI model. Popped here so the later measure pass
+    # sees only convertible measures.
+    for kind, key in (("dimensions", "extra_dimensions"),
+                      ("measures", "extra_measures")):
+        entries = view.get(kind) or {}
+        templated = {n: e for n, e in entries.items()
+                     if "{{" in str((e or {}).get("sql", ""))}
+        if templated:
+            for n in templated:
+                _warn(f"{kind[:-1]} '{vname}.{n}'",
+                      "sql uses Omni template syntax ('{{'), which has no "
+                      "OSI form; preserved in custom_extensions only")
+                entries.pop(n)
+            stash[key] = templated
+
     dims = view.get("dimensions") or {}
+    covered = set()  # names the exporter can resolve back to a dimension
     for dname, dim in dims.items():
         dim = dim or {}
         field, col = _convert_dimension(vname, dname, dim)
         fields.append(field)
+        covered.update((dname, col))
         if dim.get("primary_key"):
             pk_cols.append(col)
         if dname in compound:
             compound = [col if c == dname else c for c in compound]
     if fields:
         ds["fields"] = fields
+
+    # Stash the original compound-key list whenever the exporter could not
+    # rebuild it from the OSI primary_key alone (a `${view.field}` reference
+    # that was normalized away, or an entry no dimension covers).
+    if raw_compound and (
+            compound != [str(c) for c in raw_compound]
+            or any(str(c) not in covered for c in compound)):
+        stash["custom_compound_primary_key_sql"] = list(raw_compound)
 
     if compound:
         unknown = [c for c in compound if not is_simple_identifier(str(c))]
@@ -241,9 +353,16 @@ def _convert_view(vname, view):
         # Multiple primary_key dimensions form a composite key in Omni.
         ds["primary_key"] = pk_cols
 
+    if fname != view_file(vname):
+        stash["file"] = fname
     extras = {k: v for k, v in view.items() if k not in _VIEW_NATIVE_KEYS}
+    for key in ("description", "ai_context"):
+        # Present-but-empty metadata has no OSI slot; preserve it as an extra.
+        if key in view and not view[key]:
+            extras[key] = view[key]
     if extras:
-        write_stash(ds, {"view_extras": extras})
+        stash["view_extras"] = extras
+    write_stash(ds, stash)
     return ds
 
 
@@ -263,7 +382,11 @@ def _convert_dimension(vname, dname, dim):
         if has_timeframe_ref(sql):
             _warn(scope, "timeframe reference (${view.field[timeframe]}) has no OSI "
                          "form; flattened to the base field, original sql stashed")
-        if changed:
+        if changed or sql.strip() == dname:
+            # Stashed when the OSI expression differs from the Omni sql, and
+            # also when the sql is an explicit same-named bare column -- which
+            # the exporter would otherwise normalize to the implicit
+            # schema-layer default (no `sql:` key).
             stash["sql"] = sql
 
     field = {
@@ -286,7 +409,13 @@ def _convert_dimension(vname, dname, dim):
         stash["timeframes"] = dim["timeframes"]
 
     for key, value in dim.items():
-        if key in _DIM_NATIVE_KEYS or key == "timeframes":
+        if key == "timeframes":
+            continue
+        if key in _DIM_NATIVE_KEYS:
+            # A present-but-empty native value (description: '') has no OSI
+            # slot -- OSI omits empty metadata -- so it rides in the stash.
+            if not value and not isinstance(value, bool) and key != "sql":
+                stash[key] = value
             continue
         stash[key] = value
 
@@ -316,10 +445,13 @@ def _convert_relationship(entry, index, views):
     for clause in re.split(r"\s+AND\s+", on_sql, flags=re.IGNORECASE):
         m = _ON_CLAUSE_RE.match(clause)
         if not m:
-            raise ConversionError(
-                f"{what} ('{from_view}' -> '{to_view}'): on_sql clause '{clause.strip()}' "
-                f"is not an equi-join of two ${{view.field}} references; OSI "
-                f"relationships are equi-joins, so this join cannot be imported.")
+            # A valid Omni join OSI cannot express (a range/non-equi or cross
+            # join). The caller stashes the entry verbatim.
+            _warn(what, f"('{from_view}' -> '{to_view}'): on_sql clause "
+                        f"'{clause.strip()}' is not an equi-join of two "
+                        f"${{view.field}} references, so it has no OSI "
+                        f"relationship form; preserved in custom_extensions only")
+            return None
         la, lf, ra, rf = m.groups()
         if aliases.get(la) == from_view and aliases.get(ra) == to_view:
             from_cols.append(_field_column(views[from_view], lf))
@@ -328,31 +460,42 @@ def _convert_relationship(entry, index, views):
             from_cols.append(_field_column(views[from_view], rf))
             to_cols.append(_field_column(views[to_view], lf))
         else:
-            raise ConversionError(
-                f"{what}: on_sql clause '{clause.strip()}' references views other "
-                f"than '{from_view}'/'{to_view}' (or their aliases); cannot import.")
+            _warn(what, f"on_sql clause '{clause.strip()}' references views other "
+                        f"than '{from_view}'/'{to_view}' (or their aliases); "
+                        f"preserved in custom_extensions only")
+            return None
 
+    # The declared type/join_type are stashed verbatim whenever present -- even
+    # when they restate an Omni default -- so export reproduces the exact file.
     stash = {}
+    # Export rebuilds on_sql from the OSI columns in canonical form; when that
+    # would not reproduce the original (an alias reference, reversed clause
+    # sides, `and` casing, spacing, a field-to-column translation), the
+    # original rides in the stash instead.
+    rebuilt = " AND ".join(
+        "${" + f"{from_view}.{fc}" + "} = ${" + f"{to_view}.{tc}" + "}"
+        for fc, tc in zip(from_cols, to_cols))
+    if rebuilt != on_sql:
+        stash["on_sql"] = on_sql
     rel_type = str(entry.get("relationship_type") or REL_MANY_TO_ONE)
+    if "relationship_type" in entry:
+        stash["relationship_type"] = rel_type
     if rel_type == REL_ONE_TO_MANY:
-        # OSI `from` is always the many side; flip the orientation, and stash the
-        # declared type so export flips back to the original one_to_many join.
+        # OSI `from` is always the many side; flip the orientation (the stashed
+        # type tells export to flip back to the original one_to_many join).
         from_view, to_view = to_view, from_view
         from_cols, to_cols = to_cols, from_cols
-        stash["relationship_type"] = rel_type
-    elif rel_type != REL_MANY_TO_ONE:
-        # one_to_one / many_to_many / assumed_many_to_one: keep the declared
-        # orientation and stash the type so export restores it verbatim.
-        stash["relationship_type"] = rel_type
-        if rel_type == "many_to_many":
-            _warn(what, "many_to_many has no OSI orientation (OSI `to` is the one "
-                        "side); orientation kept as declared, type preserved in "
-                        "custom_extensions")
+    elif rel_type == "many_to_many":
+        # one_to_one / many_to_many / assumed_many_to_one keep the declared
+        # orientation.
+        _warn(what, "many_to_many has no OSI orientation (OSI `to` is the one "
+                    "side); orientation kept as declared, type preserved in "
+                    "custom_extensions")
 
     rel = {"name": f"{from_view}_to_{to_view}", "from": from_view, "to": to_view,
            "from_columns": from_cols, "to_columns": to_cols}
 
-    if entry.get("join_type") and entry["join_type"] != DEFAULT_JOIN_TYPE:
+    if entry.get("join_type"):
         stash["join_type"] = entry["join_type"]
     if entry.get("where_sql"):
         stash["where_sql"] = entry["where_sql"]
@@ -362,10 +505,6 @@ def _convert_relationship(entry, index, views):
                 "join_to_view_as", "join_to_view_as_label"):
         if key in entry:
             stash[key] = entry[key]
-    if stash and rel_type == REL_ONE_TO_MANY and (
-            "join_to_view_as" in stash or "join_from_view_as" in stash):
-        # The stashed on_sql keeps alias references intact across the flip.
-        stash["on_sql"] = on_sql
     write_stash(rel, stash)
     return rel
 

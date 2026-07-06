@@ -63,13 +63,22 @@ def test_sql_view_becomes_subquery_source():
     assert dataset(imp(files), "v")["source"] == "SELECT 1 AS x"
 
 
-def test_view_without_schema_or_sql_rejected():
-    with pytest.raises(ConversionError, match="no usable source"):
+def test_view_without_schema_or_sql_is_stashed_not_converted():
+    # An extends-only view has no standalone dataset form; it is preserved in
+    # the model stash (and a model with nothing else convertible is an error).
+    files = dict(minimal_files())
+    files["views/v.view.yaml"] = dump_yaml({"extends": ["orders"],
+                                            "dimensions": {"x": {}}})
+    model = imp(files)
+    assert [d["name"] for d in model["datasets"]] == ["orders"]
+    assert "views/v.view.yaml" in stash_of(model)["extra_files"]
+
+    with pytest.raises(ConversionError, match="no convertible view files"):
         imp({"views/v.view.yaml": dump_yaml({"dimensions": {"x": {}}})})
 
 
 def test_no_view_files_rejected():
-    with pytest.raises(ConversionError, match="no view files"):
+    with pytest.raises(ConversionError, match="no convertible view files"):
         imp({"model.yaml": "{}\n"})
 
 
@@ -192,20 +201,26 @@ def test_field_reference_in_on_sql_resolves_to_column():
     assert rel["from_columns"] == ["user_id_raw"]
 
 
-def test_non_equi_join_rejected():
-    with pytest.raises(ConversionError, match="equi-join"):
-        imp(_two_view_files([
-            {"join_from_view": "orders", "join_to_view": "users",
+def test_non_equi_join_is_stashed_not_converted():
+    # A range join is valid in Omni but has no OSI relationship form; it is
+    # preserved verbatim (with its position) rather than failing the import.
+    entry = {"join_from_view": "orders", "join_to_view": "users",
              "on_sql": "${orders.total} >= ${users.threshold}",
-             "relationship_type": "many_to_one"}]))
+             "relationship_type": "many_to_one"}
+    model = imp(_two_view_files([entry]))
+    assert "relationships" not in model
+    assert stash_of(model)["extra_relationships"] == [
+        {"index": 0, "entry": entry}]
 
 
-def test_join_referencing_third_view_rejected():
-    with pytest.raises(ConversionError, match="references views other than"):
-        imp(_two_view_files([
-            {"join_from_view": "orders", "join_to_view": "users",
+def test_join_referencing_third_view_is_stashed_not_converted():
+    entry = {"join_from_view": "orders", "join_to_view": "users",
              "on_sql": "${orders.x} = ${ghost.y}",
-             "relationship_type": "many_to_one"}]))
+             "relationship_type": "many_to_one"}
+    model = imp(_two_view_files([entry]))
+    assert "relationships" not in model
+    assert stash_of(model)["extra_relationships"] == [
+        {"index": 0, "entry": entry}]
 
 
 def test_join_to_missing_view_rejected():

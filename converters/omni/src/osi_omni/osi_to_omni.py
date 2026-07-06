@@ -15,7 +15,6 @@ import warnings
 
 from ._common import (
     ConversionError,
-    DEFAULT_JOIN_TYPE,
     DEFAULT_TIMEFRAMES,
     MODEL_FILE,
     OSI_VERSION,
@@ -109,7 +108,7 @@ def _convert_model(model, explicit_base_view, dialect):
     for d in dataset_list:
         ds_name = require_str(d, "name", f"Model '{name}': dataset")
         view_names[ds_name] = sanitize_name(ds_name, f"Model '{name}': dataset", taken)
-        taken.add(view_names[ds_name])
+        taken.add(view_names[ds_name].lower())
     datasets = {d["name"]: d for d in dataset_list}
     relationships = model.get("relationships", []) or []
     for rel in relationships:
@@ -127,18 +126,29 @@ def _convert_model(model, explicit_base_view, dialect):
     if model_stash.get("model_file") is not None:
         files[MODEL_FILE] = dump_yaml(model_stash["model_file"])
 
-    # Views (and the per-view dimension name maps the other stages need).
+    # Views (and the per-view dimension name maps the other stages need). A
+    # stashed original file path (e.g. `DELIGHTED/response.view`) wins over the
+    # canonical `views/<name>.view.yaml` layout.
     dims_by_view = {}
+    view_paths = {}
     for ds_name, ds in datasets.items():
         vname = view_names[ds_name]
         view, dim_names = _convert_dataset(ds, vname, view_names, dialect)
-        files[view_file(vname)] = dump_yaml(view)
+        view_paths[vname] = read_stash(ds).get("file") or view_file(vname)
+        files[view_paths[vname]] = dump_yaml(view)
         dims_by_view[vname] = dim_names
 
-    # Relationships.
+    # Relationships: converted OSI relationships in order, with any joins a
+    # prior import could not map (they touch a query/extends view) reinserted
+    # verbatim at their original positions.
+    imported = "topics" in model_stash
     rel_entries = [
-        _convert_relationship(rel, view_names) for rel in relationships
+        _convert_relationship(rel, view_names, imported) for rel in relationships
     ]
+    for item in sorted(model_stash.get("extra_relationships") or [],
+                       key=lambda x: x.get("index", 0)):
+        rel_entries.insert(min(item.get("index", 0), len(rel_entries)),
+                           item["entry"])
     if rel_entries:
         files[RELATIONSHIPS_FILE] = dump_yaml(rel_entries)
 
@@ -164,13 +174,13 @@ def _convert_model(model, explicit_base_view, dialect):
             continue
         target_view, mname, measure = placed
         target = measures_by_view.setdefault(target_view, {})
-        if mname in target:
+        if mname.lower() in {m.lower() for m in target}:
             raise ConversionError(
                 f"Model '{name}': two metrics map to measure '{mname}' on view "
                 f"'{target_view}'; rename one in the OSI model.")
         target[mname] = measure
     for vname, measures in measures_by_view.items():
-        view = load_yaml(files[view_file(vname)], f"view '{vname}'") or {}
+        view = load_yaml(files[view_paths[vname]], f"view '{vname}'") or {}
         clashes = set(measures) & set(view.get("dimensions") or {})
         for c in sorted(clashes):
             _warn(f"measure '{c}'",
@@ -178,7 +188,7 @@ def _convert_model(model, explicit_base_view, dialect):
                   f"unique field names per view -- rename before use")
         existing = view.setdefault("measures", {})
         existing.update(measures)
-        files[view_file(vname)] = dump_yaml(view)
+        files[view_paths[vname]] = dump_yaml(view)
 
     # Topics: stashed originals restore verbatim (with natively-mapped properties
     # re-injected on the mapped topic). The `topics` stash key being *present* --
@@ -186,6 +196,7 @@ def _convert_model(model, explicit_base_view, dialect):
     # fresh topic is only generated for hand-authored OSI (no stash).
     if "topics" in model_stash:
         mapped = model_stash.get("mapped_topic")
+        topic_paths = model_stash.get("topic_files") or {}
         for tname, topic in (model_stash["topics"] or {}).items():
             topic = dict(topic)
             if tname == mapped:
@@ -194,7 +205,7 @@ def _convert_model(model, explicit_base_view, dialect):
                 instructions = instructions_of(model.get("ai_context"))
                 if instructions:
                     topic["ai_context"] = instructions
-            files[topic_file(tname)] = dump_yaml(topic)
+            files[topic_paths.get(tname) or topic_file(tname)] = dump_yaml(topic)
     else:
         tname = sanitize_name(name, f"Model '{name}'", set())
         files[topic_file(tname)] = dump_yaml(
@@ -226,8 +237,17 @@ def _convert_dataset(ds, vname, view_names, dialect):
         if catalog:
             view["catalog"] = catalog
         view["schema"] = schema
-        # table_name defaults to the view (file) name; emit only when it differs.
-        if table != vname:
+        # table_name defaults to the *file's* name -- the basename of the
+        # stashed original path when there is one (a schema-folder layout names
+        # the view `schema__table` but the file `SCHEMA/table.view`), else the
+        # view name. Emit only when it differs.
+        default_table = vname
+        if stash.get("file"):
+            base = stash["file"].rsplit("/", 1)[-1]
+            default_table = re.sub(r"\.view(\.ya?ml)?$", "", base)
+        if "table_name" in stash:  # was spelled out even though redundant
+            view["table_name"] = stash["table_name"]
+        elif table != default_table:
             view["table_name"] = table
     if ds.get("description"):
         view["description"] = ds["description"]
@@ -249,7 +269,7 @@ def _convert_dataset(ds, vname, view_names, dialect):
         fname = require_str(field, "name", f"{scope}: field")
         fscope = f"field '{fname}'"
         dname = sanitize_name(fname, f"{scope}: field", taken)
-        taken.add(dname)
+        taken.add(dname.lower())
         expr = pick_expression(field.get("expression"), dialect)
         if expr is None:
             _warn(fscope, "no usable ANSI_SQL (or preferred-dialect) expression; "
@@ -262,15 +282,22 @@ def _convert_dataset(ds, vname, view_names, dialect):
 
     # primary_key: mark the matching dimension (creating a hidden one for a key
     # column no field covers); a composite key becomes the view-level
-    # custom_compound_primary_key_sql list of field names.
+    # custom_compound_primary_key_sql list of field names -- restored verbatim
+    # when a prior import stashed the original (`${view.field}`-form) list.
     pk = ds.get("primary_key") or []
-    if pk:
+    if stash.get("custom_compound_primary_key_sql"):
+        view["custom_compound_primary_key_sql"] = \
+            stash["custom_compound_primary_key_sql"]
+    elif pk:
         pk_dims = []
         for col in pk:
-            dname = col_to_dim.get(col)
+            # A key entry is either a raw column some dimension covers, or
+            # already a dimension name (import resolves a computed dimension's
+            # key to its field name).
+            dname = col_to_dim.get(col) or (col if col in dimensions else None)
             if dname is None:
                 dname = sanitize_name(col, f"{scope}: primary key column", taken)
-                taken.add(dname)
+                taken.add(dname.lower())
                 dim = {"hidden": True}
                 if dname != col:
                     dim["sql"] = col
@@ -288,6 +315,11 @@ def _convert_dataset(ds, vname, view_names, dialect):
         if extra:
             _warn(scope, "unique_keys have no Omni home; dropped")
 
+    # Fields a prior import could not convert (Omni template syntax in sql)
+    # restore verbatim alongside the mapped ones.
+    dimensions.update(stash.get("extra_dimensions") or {})
+    if stash.get("extra_measures"):
+        view["measures"] = dict(stash["extra_measures"])
     if dimensions:
         view["dimensions"] = dimensions
     if foreign_vendor_extensions(ds):
@@ -325,7 +357,10 @@ def _convert_field(field, dname, expr, fscope):
         dim["ai_context"] = instructions
 
     if (field.get("dimension") or {}).get("is_time"):
-        dim["timeframes"] = stash.get("timeframes") or list(DEFAULT_TIMEFRAMES)
+        # The stashed list wins even when empty (`timeframes: []` is a real
+        # Omni value); the default list is only for hand-authored OSI.
+        dim["timeframes"] = (stash["timeframes"] if "timeframes" in stash
+                             else list(DEFAULT_TIMEFRAMES))
     elif "timeframes" in stash:
         dim["timeframes"] = stash["timeframes"]
 
@@ -339,7 +374,7 @@ def _convert_field(field, dname, expr, fscope):
     return dim
 
 
-def _convert_relationship(rel, view_names):
+def _convert_relationship(rel, view_names, imported=False):
     rname = rel.get("name", "<unnamed>")
     scope = f"relationship '{rname}'"
     from_cols = rel.get("from_columns") or []
@@ -375,10 +410,14 @@ def _convert_relationship(rel, view_names):
             "${" + f"{from_view}.{fc}" + "} = ${" + f"{to_view}.{tc}" + "}"
             for fc, tc in zip(from_cols, to_cols)
         )
-    # OSI orientation is many(from) -> one(to); an Omni-only type (one_to_one,
-    # many_to_many, assumed_*) round-trips via the stash.
-    entry["relationship_type"] = stash.get("relationship_type", REL_MANY_TO_ONE)
-    if stash.get("join_type") and stash["join_type"] != DEFAULT_JOIN_TYPE:
+    # OSI orientation is many(from) -> one(to). The stash holds the declared
+    # type/join_type verbatim (even an explicit Omni default). An imported join
+    # with no stashed key genuinely omitted it; fresh OSI states many_to_one.
+    if "relationship_type" in stash:
+        entry["relationship_type"] = stash["relationship_type"]
+    elif not imported:
+        entry["relationship_type"] = REL_MANY_TO_ONE
+    if stash.get("join_type"):
         entry["join_type"] = stash["join_type"]
     for key in ("reversible", "where_sql", "id"):
         if key in stash:

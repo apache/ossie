@@ -7,6 +7,7 @@ stash protocol, Omni file-name conventions, identifier sanitization, and the
 OSI expressions use.
 """
 
+import datetime
 import json
 import re
 
@@ -42,8 +43,11 @@ REL_ONE_TO_MANY = "one_to_many"
 # OSI `dimension.is_time` when no exact list is stashed.
 DEFAULT_TIMEFRAMES = ["raw", "date", "week", "month", "quarter", "year"]
 
-# A valid Omni identifier (view, dimension, measure, topic name).
-_OMNI_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+# A valid Omni identifier (view, dimension, measure, topic name). Broader than
+# the documented lowercase convention because real Omni-generated models use
+# more: leading underscores (Fivetran's `_fivetran_id`), trailing underscores
+# (truncated column names), and camelCase (JSON-flattened `..._dimensionIndex`).
+_OMNI_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # A bare SQL identifier (single column reference), e.g. `c_name`.
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -153,15 +157,21 @@ def is_omni_name(name):
 def sanitize_name(name, what, taken):
     """Coerce an OSI name into a valid Omni identifier.
 
-    Lowercases and replaces every invalid character run with `_`. A sanitized
-    name colliding with one already in `taken` (a set of sanitized names) is an
-    error rather than a silent merge; the caller adds the result to `taken`.
+    A name that is already a valid Omni identifier passes through untouched
+    (leading/trailing underscores and camelCase are legal and occur in real
+    Omni-generated models); anything else is lowercased with every invalid
+    character run replaced by `_`. A result colliding case-insensitively with
+    one already in `taken` (a set of casefolded names) is an error rather than
+    a silent merge; the caller adds `result.lower()` to `taken`.
     """
     raw = str(name)
-    out = re.sub(r"[^a-z0-9_]+", "_", raw.lower()).strip("_")
-    if not out or not out[0].isalpha():
-        out = f"v_{out}" if out else "v"
-    if out in taken:
+    if _OMNI_NAME_RE.match(raw):
+        out = raw
+    else:
+        out = re.sub(r"[^a-z0-9_]+", "_", raw.lower()).strip("_")
+        if not out or not out[0].isalpha():
+            out = f"v_{out}" if out else "v"
+    if out.lower() in taken:
         raise ConversionError(
             f"{what} '{name}' sanitizes to '{out}', which collides with another "
             f"name; rename it in the OSI model."
@@ -177,6 +187,26 @@ def topic_file(topic_name):
     return f"{TOPIC_DIR}/{topic_name}.topic.yaml"
 
 
+# YAML parses a bare `2024-01-01` (e.g. in a topic's default_filters) into a
+# datetime.date, which JSON cannot hold; the stash tags such values so they come
+# back as dates and re-dump unquoted, keeping the round trip lossless.
+_JSON_TEMPORAL = {"date": datetime.date, "datetime": datetime.datetime}
+
+
+def _json_default(o):
+    for tag, cls in _JSON_TEMPORAL.items():
+        if type(o) is cls:
+            return {"__osi_omni__": tag, "v": o.isoformat()}
+    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+
+
+def _json_object_hook(d):
+    cls = _JSON_TEMPORAL.get(d.get("__osi_omni__", ""))
+    if cls is not None and set(d) == {"__osi_omni__", "v"}:
+        return cls.fromisoformat(d["v"])
+    return d
+
+
 def read_stash(obj):
     """Return the OMNI stash dict on an OSI object, or {} if absent.
 
@@ -184,7 +214,8 @@ def read_stash(obj):
     """
     for ext in (obj or {}).get("custom_extensions") or []:
         if ext.get("vendor_name") == VENDOR:
-            data = json.loads(ext.get("data") or "{}")
+            data = json.loads(ext.get("data") or "{}",
+                              object_hook=_json_object_hook)
             data.pop("_v", None)
             return data
     return {}
@@ -200,7 +231,7 @@ def write_stash(obj, data):
         return
     payload = {"_v": STASH_VERSION}
     payload.update(data)
-    blob = json.dumps(payload)
+    blob = json.dumps(payload, default=_json_default)
     exts = obj.setdefault("custom_extensions", [])
     for ext in exts:
         if ext.get("vendor_name") == VENDOR:
@@ -260,11 +291,24 @@ def instructions_of(ai_context):
     return None
 
 
+# One part of a dotted source reference: double-quoted (may hold spaces/dots --
+# Omni's uploaded-CSV schema is literally `Omni Views`) or a bare name.
+_SOURCE_PARTS_RE = re.compile(r'^(?:"[^"]+"|[^".]+)(?:\.(?:"[^"]+"|[^".]+))*$')
+_SOURCE_PART_RE = re.compile(r'"([^"]+)"|([^".]+)')
+
+
+def quote_source_part(part):
+    """Quote one part of an OSI dotted source when it needs it."""
+    p = str(part)
+    return p if re.fullmatch(r"[A-Za-z0-9_$]+", p) else f'"{p}"'
+
+
 def parse_source(source, dataset_name):
     """Split an OSI dataset `source` into Omni view placement.
 
     Returns ("sql", sql_text) for a SELECT/WITH subquery source, or
-    ("table", catalog_or_None, schema, table) for a dotted table reference.
+    ("table", catalog_or_None, schema, table) for a dotted table reference
+    (parts may be double-quoted: `"Omni Views".channel_info`).
     Omni views require a `schema`, so a bare 1-part table name is rejected.
     """
     if not source or not str(source).strip():
@@ -272,12 +316,20 @@ def parse_source(source, dataset_name):
     s = str(source).strip()
     if re.match(r"(?i)(select|with)\b", s):
         return ("sql", s)
-    parts = [p for p in s.split(".")]
-    if any(not p or any(ch.isspace() for ch in p) for p in parts):
+    if not _SOURCE_PARTS_RE.match(s):
         raise ConversionError(
             f"Dataset '{dataset_name}': source '{source}' is not a valid dotted "
             f"table reference or SELECT/WITH subquery"
         )
+    parts = []
+    for m in _SOURCE_PART_RE.finditer(s):
+        quoted, bare = m.group(1), m.group(2)
+        if bare is not None and any(ch.isspace() for ch in bare):
+            raise ConversionError(
+                f"Dataset '{dataset_name}': source '{source}' is not a valid "
+                f"dotted table reference or SELECT/WITH subquery"
+            )
+        parts.append(quoted if quoted is not None else bare)
     if len(parts) == 3:
         return ("table", parts[0], parts[1], parts[2])
     if len(parts) == 2:
@@ -297,7 +349,7 @@ def join_source(view):
     if not schema or not table:
         return None
     parts = [view["catalog"], schema, table] if view.get("catalog") else [schema, table]
-    return ".".join(str(p) for p in parts)
+    return ".".join(quote_source_part(p) for p in parts)
 
 
 def omni_sql_to_osi(sql, own_view):
