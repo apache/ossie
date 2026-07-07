@@ -47,15 +47,9 @@ github:
     projects: true
     discussions: true
 
-  ghp_branch: gh-pages
-  ghp_path: /
-
 notifications:
   commits:      commits@ossie.apache.org
   issues:       issues@ossie.apache.org
   pullrequests: issues@ossie.apache.org
   discussions:  dev@ossie.apache.org
   jira_options: link label
-
-publish:
-  whoami: asf-site
