@@ -1,0 +1,36 @@
+# Fixture A -- expected UC Metric View (v1.1, single-source) produced from
+# fixtureA_osi.yaml. Must parse under the v1.1 strict schema.
+
+version: '1.1'
+source: samples.tpch.orders
+comment: Sales orders with customer attributes
+joins:
+- name: customer
+  source: samples.tpch.customer
+  on: source.o_custkey = customer.c_custkey
+  rely:
+    at_most_one_match: true
+dimensions:
+- name: o_orderkey
+  expr: o_orderkey
+  comment: Order identifier
+- name: o_orderdate
+  expr: o_orderdate
+  display_name: Order Date
+  synonyms:
+  - order date
+  - date
+- name: c_name
+  expr: customer.c_name
+  comment: Customer name
+measures:
+- name: total_revenue
+  expr: SUM(o_totalprice)
+  comment: Total order revenue
+  synonyms:
+  - revenue
+  - total revenue
+  - sales
+- name: order_count
+  expr: COUNT(*)
+  comment: Number of orders
