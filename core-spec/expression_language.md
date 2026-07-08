@@ -75,53 +75,14 @@ Sometimes, we may refer to a **normalized identifier**.  This is a form the iden
 
 #### Name Spaces
 
-Namespaces define how an identifier is looked up in an expression.  The identifier rules above determine how to create a normalized name, and the namespace determines whether those normalized names resolve to the same objects.
-
-There are three scopes which make up our namespace, with membership in each determined by where the field was defined: **Global**, **Dataset** and **Physical**.
-
-We use the term *field*  as a term that maps either to an [OSI Field](https://github.com/open-semantic-interchange/OSI/blob/main/core-spec/spec.md#fields) or an [OSI Metric](https://github.com/open-semantic-interchange/OSI/blob/main/core-spec/spec.md#metrics). From the point of view of the expression language they should act the same, although, later semantics may be different.
-
-We use the term *object* as a term that refers to parts of the spec that can be named and/or contain fields.  Currently this would map to [datasets](https://github.com/open-semantic-interchange/OSI/blob/main/core-spec/spec.md#datasets), [relationships](https://github.com/open-semantic-interchange/OSI/blob/main/core-spec/spec.md#relationships), and [metrics](https://github.com/open-semantic-interchange/OSI/blob/main/core-spec/spec.md#metrics).	
-
-##### Global Scope
-
-Objects defined at the top level of the semantic model are in the Global scope.  These are from expressions without any qualifier, and can be accessed from anywhere (although other rules like grain rules still apply in how they can be used).  
-
-In the current OSI spec, the only global scoped objects are Metrics, Datasets and Relationships.  However, in the future there could be others.  Regardless of the mapping the fields are defined in, any of those top level mappings share in the same namespace, and should not be able to have the same normalized field names.
-
-The Global Metrics have access to global and object fields, but NOT physical fields.  In order to access a physical field, it MUST be pulled in through a dataset field.  
-
-Relationships have access to global, object and physical fields (since, they can be useful for defining joins).  
-
-Accessing an object’s field MUST be qualified with the name of the object in order to reference the field.  E.g. store\_sales.id would reference the ID field in the STORE\_SALES object.
-
-##### Dataset / Object
-
-The object scope is unique to the object the fields are defined in.  Currently, the only objects that have nested fields are Datasets.  They have a fields section to define new fields.
-
-Fields may be defined at the dataset level.  Their identifiers MUST be unique within the dataset, but can have the same name as identifiers in other datasets, or in the global scope.
-
-**Object fields can access logical or physical fields** within the object’s scope without requiring qualification.  The fields may also access global fields as well, which means that shadowing can occur here.  To handle these in a predictable way, names will be resolved with the following rules:
-
-| Precedence | Field Type | Disambiguation |
-| :---- | :---- | :---- |
-| Highest | Physical Fields | N/A |
-| Middle | Logical fields on the object | Qualifying access through the object name, will ensure getting a logical field, rather than the shadowing physical field. store\_sales.id will ensure access to the logical id field, not the physical one. |
-| Lowest | Global fields or objects | Unable to access a shadowed global field.  E.g. if there is a global field sales and the object scope has a sales field, then the local sales will shadow the global one. |
-
-##### Physical
-
-Physical fields are ones that come directly from the Dataset’s source query.  They are not directly stored in the model, but reflect what is in the actual system of record.
-
-Physical fields are ONLY accessible from Dataset fields. 
-
-There is no way to create Physical fields.
+Namespaces define how an identifier is looked up in an expression.  They are covered in the semantics document.  Identifiers
+will be able to be multi-part and the parts will be separated by the '.' characters,  E.g. `dataset.field`  This matches SQL conventions.
 
 ## SQL Language Subset
 
 ### Supported SQL Constructs
 
-OSI expressions support the following SQL constructs within metric and filter expressions:
+OSI expressions support the following SQL constructs within any expression:
 
 | Construct | Notes                                                                                                                                                                                                                                                                                 |
 | :---- |:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -162,16 +123,13 @@ Standard SQL operator precedence applies (highest to lowest):
 2. Unary operators: `+`, `-`, `NOT`  
 3. Multiplication/Division: `*`, `/`, `%`  
 4. Addition/Subtraction: `+`, `-`  
-5. Comparison: `=`, `<>`, `<`, `>`, `<=`, `>=`, `LIKE`, `IN`, `BETWEEN`, `IS NULL`  
-6. `NOT`  
-7. `AND`  
-8. `OR`
+5. Comparison: `=`, `<>`, `<`, `>`, `<=`, `>=`, `LIKE`, `IN`, `BETWEEN`, `IS NULL`   
+6`AND`  
+7`OR`
 
 ---
 
 ## Aggregation Functions
-
-All aggregation functions operate on the effective grain of the metric.
 
 ### Core Aggregation Functions (REQUIRED)
 
@@ -235,12 +193,6 @@ APPROX_PERCENTILE(response_time, 0.95)
 
 **Note**: BigQuery uses `APPROX_QUANTILES(expr, num_buckets)` which returns an array. To get a specific percentile: `APPROX_QUANTILES(amount, 100)[OFFSET(50)]` for median.
 
-**When to use approximate functions:**
-
-- Large datasets (millions+ rows) where exact results aren't critical  
-- Interactive dashboards where response time matters  
-- Exploratory analysis where directional accuracy is sufficient
-
 ---
 
 ### Conditional Aggregations (REQUIRED)
@@ -268,8 +220,6 @@ For multi-stage aggregation (see [OSI Analytical Context Extension](https://docs
 | **Algebraic** | AVG, STDDEV, VARIANCE |
 | **Holistic** | MEDIAN, PERCENTILE, COUNT DISTINCT |
 | **Sketch-based** | APPROX\_COUNT\_DISTINCT, APPROX\_PERCENTILE |
-
-Approximate functions are naturally suited for multi-stage aggregation because their sketch data structures are designed to be mergeable.
 
 ---
 
@@ -431,7 +381,6 @@ Pattern wildcards for `LIKE`:
 
 | Function | Syntax | Description |
 | :---- | :---- | :---- |
-| `REGEXP_LIKE` | `REGEXP_LIKE(str, pattern)` | Test if pattern matches |
 | `REGEXP_EXTRACT` | `REGEXP_EXTRACT(str, pattern)` | Extract first match |
 | `REGEXP_REPLACE` | `REGEXP_REPLACE(str, pattern, replacement)` | Replace matches |
 | `REGEXP_COUNT` | `REGEXP_COUNT(str, pattern)` | Count matches |
@@ -535,6 +484,7 @@ END
 ## Window Functions
 
 Window functions operate over a window frame defined by `OVER()`. This should act consistently with window functions in ANSI SQL.
+When, adding the query interface, window functions will be subject to where they are allowed.
 
 ### Syntax
 
