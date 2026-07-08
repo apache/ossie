@@ -1,5 +1,8 @@
 # Contributing to Open Semantic Interchange (OSI)
 
+> [!IMPORTANT]
+> **This repository is legacy and will be archived.** The project has moved to [apache/ossie](https://github.com/apache/ossie). Please direct new contributions there.
+
 We welcome contributions from everyone — whether you are a developer, a data engineer, a BI analyst, or simply someone interested in the future of semantic interoperability.
 
 ## Ways to Contribute
