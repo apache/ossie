@@ -19,8 +19,98 @@
 
 from __future__ import annotations
 
-from ossie_gooddata.gooddata_to_osi import gooddata_to_osi
-from ossie_gooddata.models import GdDeclarativeModel
+import json
+
+import pytest
+
+from ossie_gooddata.gooddata_to_osi import (
+    _convert_attribute,
+    _convert_fact,
+    gooddata_to_osi,
+)
+from ossie_gooddata.models import GdAttribute, GdDeclarativeModel, GdFact
+
+
+@pytest.mark.parametrize(
+    ("gooddata_type", "ossie_type"),
+    [
+        ("STRING", "String"),
+        ("INT", "Integer"),
+        ("NUMERIC", "Decimal"),
+        ("BOOLEAN", "Boolean"),
+        ("DATE", "Date"),
+        ("TIMESTAMP", "DateTime"),
+        ("TIMESTAMP_TZ", "DateTimeTz"),
+    ],
+)
+def test_native_source_types_become_ossie_datatypes(gooddata_type: str, ossie_type: str):
+    """Verify native GoodData types map on both attributes and facts."""
+    attribute = GdAttribute(
+        id="attr.orders.value",
+        title="Value",
+        source_column="value",
+        source_column_data_type=gooddata_type,
+    )
+    fact = GdFact(
+        id="fact.orders.value",
+        title="Value",
+        source_column="value",
+        source_column_data_type=gooddata_type,
+    )
+
+    osi_attribute = _convert_attribute(attribute, "orders")
+    osi_fact = _convert_fact(fact, "orders")
+
+    assert osi_attribute["datatype"] == ossie_type
+    assert osi_attribute["dimension"]["is_time"] is False
+    assert osi_fact["datatype"] == ossie_type
+    assert "dimension" not in osi_fact
+
+
+@pytest.mark.parametrize(
+    ("source_type", "converter", "model"),
+    [
+        (
+            "CUSTOM_ATTRIBUTE_TYPE",
+            _convert_attribute,
+            GdAttribute(
+                id="attr.orders.value",
+                title="Value",
+                source_column="value",
+                source_column_data_type="CUSTOM_ATTRIBUTE_TYPE",
+            ),
+        ),
+        (
+            "CUSTOM_FACT_TYPE",
+            _convert_fact,
+            GdFact(
+                id="fact.orders.value",
+                title="Value",
+                source_column="value",
+                source_column_data_type="CUSTOM_FACT_TYPE",
+            ),
+        ),
+    ],
+)
+def test_unknown_source_type_becomes_opaque_and_is_preserved(source_type: str, converter, model):
+    """Verify unknown GoodData types survive in an exact vendor extension."""
+    osi_field = converter(model, "orders")
+
+    assert osi_field["datatype"] == "Opaque"
+    extension = json.loads(osi_field["custom_extensions"][0]["data"])
+    assert extension["source_column_data_type"] == source_type
+
+
+def test_empty_source_type_is_omitted():
+    """Verify an empty source type does not invent an Ossie datatype."""
+    attribute = GdAttribute(
+        id="attr.orders.value",
+        title="Value",
+        source_column="value",
+        source_column_data_type="",
+    )
+
+    assert "datatype" not in _convert_attribute(attribute, "orders")
 
 
 def test_basic_conversion(gooddata_tpcds_model: GdDeclarativeModel):
@@ -85,6 +175,19 @@ def test_attributes_become_dimension_fields(gooddata_tpcds_model: GdDeclarativeM
         assert f["dimension"]["is_time"] is False
 
 
+def test_fixture_source_types_become_datatypes(gooddata_tpcds_model: GdDeclarativeModel):
+    """Verify the fixture's default GoodData types are represented in Ossie."""
+    result = gooddata_to_osi(gooddata_tpcds_model)
+    fields = [
+        field
+        for dataset in result["semantic_model"][0]["datasets"]
+        for field in dataset.get("fields", [])
+    ]
+
+    assert sum(field["datatype"] == "String" for field in fields) == 14
+    assert sum(field["datatype"] == "Decimal" for field in fields) == 6
+
+
 def test_facts_become_plain_fields(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify GoodData facts become Ossie fields without dimension metadata."""
     result = gooddata_to_osi(gooddata_tpcds_model)
@@ -141,7 +244,6 @@ def test_date_instance_converted(gooddata_tpcds_model: GdDeclarativeModel):
 
     ext = date_ds["custom_extensions"][0]
     assert ext["vendor_name"] == "GOODDATA"
-    import json
 
     ext_data = json.loads(ext["data"])
     assert ext_data["date_dimension"] is True
@@ -158,7 +260,6 @@ def test_labels_in_custom_extensions(gooddata_tpcds_model: GdDeclarativeModel):
     sk_field = next(f for f in customer["fields"] if f["name"] == "c_customer_sk")
 
     assert "custom_extensions" in sk_field
-    import json
 
     ext_data = json.loads(sk_field["custom_extensions"][0]["data"])
     assert ext_data["field_type"] == "attribute"
@@ -174,7 +275,6 @@ def test_data_source_id_extension(gooddata_tpcds_model: GdDeclarativeModel):
     sm = result["semantic_model"][0]
 
     assert "custom_extensions" in sm
-    import json
 
     ext_data = json.loads(sm["custom_extensions"][0]["data"])
     assert ext_data["data_source_id"] == "my_pg"

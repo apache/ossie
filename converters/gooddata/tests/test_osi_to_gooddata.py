@@ -19,7 +19,129 @@
 
 from __future__ import annotations
 
-from ossie_gooddata.osi_to_gooddata import osi_to_gooddata
+import warnings
+
+import pytest
+
+from ossie_gooddata.osi_to_gooddata import (
+    _convert_to_attribute,
+    _convert_to_fact,
+    _is_time_field,
+    osi_to_gooddata,
+)
+
+
+@pytest.mark.parametrize(
+    ("ossie_type", "gooddata_type"),
+    [
+        ("String", "STRING"),
+        ("Integer", "INT"),
+        ("Decimal", "NUMERIC"),
+        ("Boolean", "BOOLEAN"),
+        ("Date", "DATE"),
+        ("DateTime", "TIMESTAMP"),
+        ("DateTimeTz", "TIMESTAMP_TZ"),
+    ],
+)
+def test_ossie_datatypes_become_native_source_types(ossie_type: str, gooddata_type: str):
+    """Verify portable Ossie types map on both attributes and facts."""
+    field = {"name": "value", "datatype": ossie_type}
+
+    assert _convert_to_attribute(field, "orders").source_column_data_type == gooddata_type
+    assert _convert_to_fact(field, "orders").source_column_data_type == gooddata_type
+
+
+def test_float_becomes_numeric_with_loss_warning():
+    """Verify approximate Float values use GoodData's single numeric type."""
+    with pytest.warns(UserWarning, match="exact/approximate distinction"):
+        fact = _convert_to_fact({"name": "value", "datatype": "Float"}, "orders")
+
+    assert fact.source_column_data_type == "NUMERIC"
+
+
+@pytest.mark.parametrize(
+    ("converter", "default"),
+    [(_convert_to_attribute, "STRING"), (_convert_to_fact, "NUMERIC")],
+)
+def test_time_uses_role_default_with_warning(converter, default: str):
+    """Verify time-only fields retain the converter's existing role default."""
+    with pytest.warns(UserWarning, match="no native GoodData source column type"):
+        converted = converter({"name": "value", "datatype": "Time"}, "orders")
+
+    assert converted.source_column_data_type == default
+
+
+def test_opaque_restores_exact_gooddata_extension_type():
+    """Verify Opaque can round-trip an otherwise unknown GoodData type."""
+    field = {
+        "name": "value",
+        "datatype": "Opaque",
+        "custom_extensions": [
+            {
+                "vendor_name": "GOODDATA",
+                "data": '{"source_column_data_type": "CUSTOM_TYPE"}',
+            }
+        ],
+    }
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        fact = _convert_to_fact(field, "orders")
+
+    assert fact.source_column_data_type == "CUSTOM_TYPE"
+
+
+def test_opaque_without_extension_uses_role_default_with_warning():
+    """Verify Opaque does not fabricate a native source type."""
+    with pytest.warns(UserWarning, match="without an exact GoodData source type"):
+        attribute = _convert_to_attribute({"name": "value", "datatype": "Opaque"}, "orders")
+
+    assert attribute.source_column_data_type == "STRING"
+
+
+def test_extension_type_takes_precedence_over_portable_mapping():
+    """Verify an exact GoodData extension wins, with a conflict warning."""
+    field = {
+        "name": "value",
+        "datatype": "Integer",
+        "custom_extensions": [
+            {
+                "vendor_name": "GOODDATA",
+                "data": {"source_column_data_type": "CUSTOM_TYPE"},
+            }
+        ],
+    }
+
+    with pytest.warns(UserWarning, match="Preserving the extension value"):
+        attribute = _convert_to_attribute(field, "orders")
+
+    assert attribute.source_column_data_type == "CUSTOM_TYPE"
+
+
+@pytest.mark.parametrize("converter", [_convert_to_attribute, _convert_to_fact])
+def test_omitted_datatype_keeps_role_default_without_warning(converter):
+    """Verify models without datatype retain the converter's old behavior."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        converter({"name": "value"}, "orders")
+
+
+@pytest.mark.parametrize(
+    ("field", "expected"),
+    [
+        ({"name": "value", "datatype": "Date"}, False),
+        ({"name": "value", "datatype": "Date", "dimension": {"is_time": False}}, False),
+        ({"name": "value", "datatype": "String", "dimension": {"is_time": True}}, True),
+        ({"name": "value", "datatype": "Date", "dimension": {}}, True),
+        ({"name": "value", "datatype": "Time", "dimension": {}}, True),
+        ({"name": "value", "datatype": "DateTime", "dimension": {"is_time": None}}, True),
+        ({"name": "value", "datatype": "DateTimeTz", "dimension": {}}, True),
+        ({"name": "value", "datatype": "String", "dimension": {}}, False),
+    ],
+)
+def test_effective_time_role(field: dict, expected: bool):
+    """Verify explicit dimension role wins before temporal datatype inference."""
+    assert _is_time_field(field) is expected
 
 
 def test_basic_conversion(osi_tpcds_dict: dict):

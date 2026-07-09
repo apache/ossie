@@ -19,9 +19,58 @@
 
 from __future__ import annotations
 
+import json
+
+import pytest
+
 from ossie_gooddata.gooddata_to_osi import gooddata_to_osi
-from ossie_gooddata.models import GdDeclarativeModel
+from ossie_gooddata.models import GdAttribute, GdDataset, GdDeclarativeModel, GdLdm
 from ossie_gooddata.osi_to_gooddata import osi_to_gooddata
+
+
+def _model_with_attribute(source_type: str) -> GdDeclarativeModel:
+    return GdDeclarativeModel(
+        ldm=GdLdm(
+            datasets=[
+                GdDataset(
+                    id="orders",
+                    title="Orders",
+                    attributes=[
+                        GdAttribute(
+                            id="attr.orders.value",
+                            title="Value",
+                            source_column="value",
+                            source_column_data_type=source_type,
+                        )
+                    ],
+                )
+            ]
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "source_type",
+    ["STRING", "INT", "NUMERIC", "BOOLEAN", "DATE", "TIMESTAMP", "TIMESTAMP_TZ"],
+)
+def test_roundtrip_preserves_native_source_types(source_type: str):
+    """Verify every directly mapped GoodData source type round-trips."""
+    ossie = gooddata_to_osi(_model_with_attribute(source_type))
+    result = osi_to_gooddata(ossie)
+
+    assert result.ldm.datasets[0].attributes[0].source_column_data_type == source_type
+
+
+def test_roundtrip_preserves_unknown_source_type_through_opaque():
+    """Verify an unknown GoodData type round-trips through Opaque extension data."""
+    ossie = gooddata_to_osi(_model_with_attribute("CUSTOM_TYPE"))
+    field = ossie["semantic_model"][0]["datasets"][0]["fields"][0]
+
+    assert field["datatype"] == "Opaque"
+    assert json.loads(field["custom_extensions"][0]["data"])["source_column_data_type"] == "CUSTOM_TYPE"
+
+    result = osi_to_gooddata(ossie)
+    assert result.ldm.datasets[0].attributes[0].source_column_data_type == "CUSTOM_TYPE"
 
 
 def test_roundtrip_preserves_datasets(gooddata_tpcds_model: GdDeclarativeModel):
