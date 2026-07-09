@@ -34,6 +34,31 @@ class OSIDialect(str, Enum):
     BIGQUERY = "BIGQUERY"
 
 
+class OSIDataType(str, Enum):
+    """Portable logical data types for fields and metric results."""
+
+    STRING = "String"
+    INTEGER = "Integer"
+    DECIMAL = "Decimal"
+    FLOAT = "Float"
+    BOOLEAN = "Boolean"
+    DATE = "Date"
+    TIME = "Time"
+    DATE_TIME = "DateTime"
+    DATE_TIME_TZ = "DateTimeTz"
+    OPAQUE = "Opaque"
+
+
+_TEMPORAL_DATA_TYPES = frozenset(
+    {
+        OSIDataType.DATE,
+        OSIDataType.TIME,
+        OSIDataType.DATE_TIME,
+        OSIDataType.DATE_TIME_TZ,
+    }
+)
+
+
 class OSIVendor(str, Enum):
     """Well-known vendor names for custom extensions."""
 
@@ -102,8 +127,22 @@ class OSIField(BaseModel):
     dimension: Optional[OSIDimension] = None
     label: Optional[str] = None
     description: Optional[str] = None
+    datatype: Optional[OSIDataType] = None
     ai_context: Optional[OSIAIContext] = None
     custom_extensions: Optional[list[OSICustomExtension]] = None
+
+    def is_time_dimension(self) -> bool:
+        """Return the field's effective temporal-dimension role.
+
+        A field must have dimension metadata to be a dimension. Within that
+        block, an explicit ``is_time`` value takes precedence; otherwise the
+        role defaults from a temporal ``datatype``.
+        """
+        if self.dimension is None:
+            return False
+        if self.dimension.is_time is not None:
+            return self.dimension.is_time
+        return self.datatype in _TEMPORAL_DATA_TYPES
 
 
 class OSIDataset(BaseModel):
@@ -143,6 +182,7 @@ class OSIMetric(BaseModel):
     name: str
     expression: OSIExpression
     description: Optional[str] = None
+    datatype: Optional[OSIDataType] = None
     ai_context: Optional[OSIAIContext] = None
     custom_extensions: Optional[list[OSICustomExtension]] = None
 
