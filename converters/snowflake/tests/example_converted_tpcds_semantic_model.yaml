@@ -44,24 +44,28 @@ tables:
     synonyms:
     - sale date
     - transaction date
+    data_type: NUMBER(38,0)
   - name: ss_item_sk
     expr: ss_item_sk
     description: Foreign key to item dimension
     synonyms:
     - product
     - item
+    data_type: NUMBER(38,0)
   - name: ss_customer_sk
     expr: ss_customer_sk
     description: Foreign key to customer dimension
     synonyms:
     - customer
     - buyer
+    data_type: NUMBER(38,0)
   - name: ss_store_sk
     expr: ss_store_sk
     description: Foreign key to store dimension
     synonyms:
     - store
     - location
+    data_type: NUMBER(38,0)
   facts:
   - name: ss_quantity
     expr: ss_quantity
@@ -69,24 +73,28 @@ tables:
     synonyms:
     - units sold
     - quantity
+    data_type: NUMBER(38,0)
   - name: ss_sales_price
     expr: ss_sales_price
     description: Sales price per unit
     synonyms:
     - unit price
     - price
+    data_type: NUMBER
   - name: ss_ext_sales_price
     expr: ss_ext_sales_price
     description: Extended sales price (quantity * price)
     synonyms:
     - total price
     - line total
+    data_type: NUMBER
   - name: ss_net_profit
     expr: ss_net_profit
     description: Net profit from the sale
     synonyms:
     - profit
     - margin
+    data_type: NUMBER
 - name: date_dim
   base_table:
     database: TPCDS
@@ -107,6 +115,7 @@ tables:
   - name: d_date_sk
     expr: d_date_sk
     description: Surrogate key for date
+    data_type: NUMBER(38,0)
   time_dimensions:
   - name: d_date
     expr: d_date
@@ -114,11 +123,13 @@ tables:
     synonyms:
     - date
     - calendar date
+    data_type: DATE
   - name: d_year
     expr: d_year
     description: Year
     synonyms:
     - year
+    data_type: NUMBER(38,0)
   - name: d_quarter_name
     expr: d_quarter_name
     description: Quarter name (e.g., 2024Q1)
@@ -150,30 +161,36 @@ tables:
   - name: c_customer_sk
     expr: c_customer_sk
     description: Surrogate key for customer
+    data_type: NUMBER(38,0)
   - name: c_customer_id
     expr: c_customer_id
     description: Business key for customer
     synonyms:
     - customer ID
     - customer number
+    data_type: VARCHAR
   - name: c_first_name
     expr: c_first_name
     description: Customer first name
+    data_type: VARCHAR
   - name: c_last_name
     expr: c_last_name
     description: Customer last name
+    data_type: VARCHAR
   - name: customer_full_name
     expr: c_first_name || ' ' || c_last_name
     description: Customer full name (computed field)
     synonyms:
     - full name
     - customer name
+    data_type: VARCHAR
   - name: c_email_address
     expr: c_email_address
     description: Customer email address
     synonyms:
     - email
     - contact
+    data_type: VARCHAR
 - name: item
   base_table:
     database: TPCDS
@@ -194,6 +211,7 @@ tables:
   - name: i_item_sk
     expr: i_item_sk
     description: Surrogate key for item
+    data_type: NUMBER(38,0)
   - name: i_item_id
     expr: i_item_id
     description: Business key for item
@@ -201,30 +219,35 @@ tables:
     - item ID
     - product ID
     - SKU
+    data_type: VARCHAR
   - name: i_item_desc
     expr: i_item_desc
     description: Item description
     synonyms:
     - product description
     - item name
+    data_type: VARCHAR
   - name: i_brand
     expr: i_brand
     description: Brand name
     synonyms:
     - brand
     - manufacturer
+    data_type: VARCHAR
   - name: i_category
     expr: i_category
     description: Item category
     synonyms:
     - product category
     - department
+    data_type: VARCHAR
   - name: i_current_price
     expr: i_current_price
     description: Current price of the item
     synonyms:
     - price
     - list price
+    data_type: NUMBER
 - name: store
   base_table:
     database: TPCDS
@@ -245,30 +268,35 @@ tables:
   - name: s_store_sk
     expr: s_store_sk
     description: Surrogate key for store
+    data_type: NUMBER(38,0)
   - name: s_store_id
     expr: s_store_id
     description: Business key for store
     synonyms:
     - store ID
     - store number
+    data_type: VARCHAR
   - name: s_store_name
     expr: s_store_name
     description: Store name
     synonyms:
     - store name
     - location name
+    data_type: VARCHAR
   - name: s_city
     expr: s_city
     description: City where store is located
     synonyms:
     - city
     - location
+    data_type: VARCHAR
   - name: s_state
     expr: s_state
     description: State where store is located
     synonyms:
     - state
     - region
+    data_type: VARCHAR
   facts:
   - name: s_number_employees
     expr: s_number_employees
@@ -276,6 +304,7 @@ tables:
     synonyms:
     - employee count
     - staff size
+    data_type: NUMBER(38,0)
 relationships:
 - name: store_sales_to_date
   left_table: store_sales

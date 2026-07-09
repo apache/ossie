@@ -30,6 +30,7 @@ from osi_to_snowflake_yaml_converter import (
     OsiConversionError,
     convert_osi_to_snowflake,
     _classify_field,
+    _convert_datatype,
     _convert_dataset,
     _convert_named_expr,
     _convert_relationship,
@@ -172,6 +173,43 @@ class TestExtractSynonyms:
         result = _extract_synonyms({"synonyms": original})
         assert result == original
         assert result is not original
+
+
+# ---------------------------------------------------------------------------
+# _convert_datatype
+# ---------------------------------------------------------------------------
+
+class TestConvertDatatype:
+    @pytest.mark.parametrize(
+        ("osi_datatype", "snowflake_datatype"),
+        [
+            ("String", "VARCHAR"),
+            ("Integer", "NUMBER(38,0)"),
+            ("Decimal", "NUMBER"),
+            ("Float", "FLOAT"),
+            ("Boolean", "BOOLEAN"),
+            ("Date", "DATE"),
+            ("Time", "TIME"),
+            ("DateTime", "TIMESTAMP_NTZ"),
+            ("DateTimeTz", "TIMESTAMP_TZ"),
+        ],
+    )
+    def test_maps_portable_datatype(self, osi_datatype, snowflake_datatype):
+        assert _convert_datatype(osi_datatype, "field") == snowflake_datatype
+
+    def test_missing_datatype_is_omitted_without_warning(self):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            assert _convert_datatype(None, "field") is None
+        assert len(caught) == 0
+
+    def test_opaque_datatype_is_omitted_with_warning(self):
+        with pytest.warns(UserWarning, match="Opaque"):
+            assert _convert_datatype("Opaque", "payload") is None
+
+    def test_unrecognized_datatype_is_omitted_with_warning(self):
+        with pytest.warns(UserWarning, match="unrecognized.*Geography"):
+            assert _convert_datatype("Geography", "location") is None
 
 
 # ---------------------------------------------------------------------------
@@ -472,6 +510,60 @@ class TestConvertDataset:
         assert len(result["facts"]) == 1
         assert result["facts"][0]["name"] == "amount"
 
+    @pytest.mark.parametrize(
+        ("dimension", "datatype", "bucket", "snowflake_datatype"),
+        [
+            ({"is_time": False}, "String", "dimensions", "VARCHAR"),
+            ({}, "Date", "time_dimensions", "DATE"),
+            (None, "Decimal", "facts", "NUMBER"),
+            ({"is_time": False}, "DateTime", "dimensions", "TIMESTAMP_NTZ"),
+            ({"is_time": True}, "Integer", "time_dimensions", "NUMBER(38,0)"),
+            (None, "DateTimeTz", "facts", "TIMESTAMP_TZ"),
+        ],
+    )
+    def test_datatype_emitted_independently_of_field_role(
+        self, dimension, datatype, bucket, snowflake_datatype
+    ):
+        field = {
+            "name": "typed_field",
+            "expression": {
+                "dialects": [
+                    {"dialect": "ANSI_SQL", "expression": "typed_field"}
+                ]
+            },
+            "datatype": datatype,
+        }
+        if dimension is not None:
+            field["dimension"] = dimension
+
+        result = _convert_dataset(
+            {"name": "typed_table", "source": "db.schema.table", "fields": [field]}
+        )
+
+        assert result[bucket][0]["data_type"] == snowflake_datatype
+
+    def test_opaque_field_omits_data_type(self):
+        dataset = {
+            "name": "typed_table",
+            "source": "db.schema.table",
+            "fields": [
+                {
+                    "name": "payload",
+                    "expression": {
+                        "dialects": [
+                            {"dialect": "ANSI_SQL", "expression": "payload"}
+                        ]
+                    },
+                    "datatype": "Opaque",
+                }
+            ],
+        }
+
+        with pytest.warns(UserWarning, match="Opaque"):
+            result = _convert_dataset(dataset)
+
+        assert "data_type" not in result["facts"][0]
+
     def test_missing_name_raises(self):
         with pytest.raises(OsiConversionError, match="Missing required 'name'"):
             _convert_dataset({"source": "db.s.t"})
@@ -550,6 +642,25 @@ class TestConvertOsiToSnowflake:
         result = yaml.safe_load(convert_osi_to_snowflake(_wrap_osi(model)))
         assert len(result["metrics"]) == 1
         assert result["metrics"][0]["expr"] == "SUM(x)"
+
+    def test_metric_datatype_is_not_emitted(self):
+        model = _minimal_model(
+            metrics=[
+                {
+                    "name": "total",
+                    "expression": {
+                        "dialects": [
+                            {"dialect": "ANSI_SQL", "expression": "SUM(x)"}
+                        ]
+                    },
+                    "datatype": "Decimal",
+                }
+            ]
+        )
+
+        result = yaml.safe_load(convert_osi_to_snowflake(_wrap_osi(model)))
+
+        assert "data_type" not in result["metrics"][0]
 
     def test_invalid_yaml_root_raises(self):
         with pytest.raises(OsiConversionError, match="expected a mapping"):

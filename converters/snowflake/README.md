@@ -35,6 +35,26 @@ pip3 install -r requirements.txt
 python3 src/osi_to_snowflake_yaml_converter.py -i input.yaml -o output.yaml
 ```
 
+## Data Type Mapping
+
+The exporter maps the optional logical `datatype` on Ossie fields to Snowflake
+`data_type` as follows:
+
+| Ossie | Snowflake |
+|---|---|
+| `String` | `VARCHAR` |
+| `Integer` | `NUMBER(38,0)` |
+| `Decimal` | `NUMBER` |
+| `Float` | `FLOAT` |
+| `Boolean` | `BOOLEAN` |
+| `Date` | `DATE` |
+| `Time` | `TIME` |
+| `DateTime` | `TIMESTAMP_NTZ` |
+| `DateTimeTz` | `TIMESTAMP_TZ` |
+
+An omitted datatype remains unspecified. `Opaque` has no portable Snowflake
+mapping, so the exporter omits `data_type` and emits a warning.
+
 ## Tests
 
 ```bash
@@ -44,3 +64,6 @@ python3 -m pytest tests/
 ## Limitations
 
 Some Ossie concepts (e.g., `ai_context` on relationships) do not have a native counterpart in the Snowflake semantic model. These are dropped during conversion and the converter will emit warnings so you know what was left behind.
+
+Snowflake metric result types are inferred from their expressions, so Ossie
+metric `datatype` values are not emitted as `data_type` properties.
