@@ -66,8 +66,18 @@ datasets:
   - name: string
 
     # Required: Reference to the underlying physical table/view or query
-    # Format should be either database_name.schema_name.table_name or query
-    source: string
+    # Legacy string source remains supported for backward compatibility.
+    source:
+      kind: table
+      object: string
+
+    # Query-backed source:
+    # source:
+    #   kind: query
+    #   object:
+    #     dialects:
+    #       - dialect: string
+    #         expression: string
     
     # Optional: Primary key definition that uniquely identifies rows in this dataset
     # Can be a single column or a composite of multiple columns

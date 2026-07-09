@@ -10,8 +10,11 @@ from osi.models import (
     OSIExpression,
     OSIField,
     OSIMetric,
+    OSIQuerySource,
     OSIRelationship,
     OSISemanticModel,
+    OSISource,
+    OSITableSource,
     OSIVendor,
 )
 
@@ -27,7 +30,10 @@ __all__ = [
     "OSIExpression",
     "OSIField",
     "OSIMetric",
+    "OSIQuerySource",
     "OSIRelationship",
     "OSISemanticModel",
+    "OSISource",
+    "OSITableSource",
     "OSIVendor",
 ]
