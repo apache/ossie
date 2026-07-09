@@ -83,9 +83,10 @@ Each Ossie semantic model becomes a Polaris namespace, and each dataset becomes 
 | Namespace | `semantic_model` (name, description) |
 | Table | `dataset` (name) |
 | Table location (`catalog.namespace.table`) | `dataset.source` |
-| Schema fields | `field` with `ANSI_SQL` dialect expression |
+| Schema fields | `field` with `ANSI_SQL` dialect expression and logical `datatype` |
 | `identifier-field-ids` | `dataset.primary_key` |
 | Temporal types (`timestamp`, `timestamptz`, `date`, `time`) | `field.dimension.is_time: true` |
+| Exact Iceberg type JSON | `field.custom_extensions` (vendor: `POLARIS`) |
 | Table properties | `dataset.custom_extensions` (vendor: `COMMON`) |
 
 ### Export (Apache Ossie → Polaris)
@@ -96,18 +97,48 @@ Each Ossie semantic model becomes a Polaris namespace, and each dataset becomes 
 | `dataset` | Table |
 | `dataset.source` | Stored in table property `osi.source` |
 | `dataset.primary_key` | `identifier-field-ids` |
-| `field` | Schema column |
-| `field.dimension.is_time: true` | `timestamptz` type |
+| `field.datatype` | Schema column type |
+| Untyped `field.dimension.is_time: true` | `timestamptz` fallback type |
 | `dataset.description` | Table property `comment` |
 
-### Type Inference (Export)
+### Data Types
 
-Since Ossie fields are expression-based and don't carry explicit types, the exporter infers Iceberg types using:
+The importer maps Iceberg physical types to Ossie logical types as follows:
 
-1. **Round-trip hints** — if a field description starts with `Iceberg type:` (produced by the importer), that type is used directly.
-2. **Time dimensions** — fields with `dimension.is_time: true` map to `timestamptz`.
-3. **Name conventions** — `*_id` → `long`, `*_date` → `date`, `*_at`/`*_timestamp` → `timestamptz`, `*_amount`/`*_price` → `decimal(18,2)`, `*_count`/`quantity` → `int`, `is_*`/`has_*` → `boolean`.
-4. **Default** — `string`.
+| Iceberg type | Ossie `datatype` |
+|---|---|
+| `boolean` | `Boolean` |
+| `int`, `long` | `Integer` |
+| `float`, `double` | `Float` |
+| `decimal(P,S)` | `Decimal` |
+| `date` | `Date` |
+| `time` | `Time` |
+| `timestamp`, `timestamp_ns` | `DateTime` |
+| `timestamptz`, `timestamptz_ns` | `DateTimeTz` |
+| `string` | `String` |
+| `unknown` | omitted |
+| UUID, binary, fixed, variant, spatial, and nested types | `Opaque` |
+
+Because logical types omit physical details such as integer width, decimal precision,
+timestamp precision, and nested structure, the importer also stores every exact Iceberg
+type in a field-level `POLARIS` custom extension. Nested field IDs are regenerated when
+creating a new table so the resulting Iceberg schema remains valid.
+
+The exporter resolves types in this order:
+
+1. **Exact extension type** — restores the complete Iceberg type from a `POLARIS` extension.
+2. **Ossie `datatype`** — maps portable logical types to Iceberg defaults.
+3. **Legacy description hint** — restores `Iceberg type:` descriptions from older converter output.
+4. **Time role** — an untyped field with `dimension.is_time: true` maps to `timestamptz`.
+5. **Name conventions** — retains the previous `*_id`, `*_date`, numeric, boolean, and other heuristics.
+6. **Default** — `string`.
+
+`datatype` and `dimension.is_time` are independent: an explicitly typed `String` time
+dimension remains an Iceberg `string`, while an explicitly typed `DateTime` field becomes
+`timestamp` even when it is not assigned a time-dimension role. A `Decimal` without an
+exact extension uses `decimal(18,2)` with a warning because Ossie does not specify precision
+or scale. `Opaque` requires an exact extension for lossless export; otherwise legacy
+inference is used with a warning.
 
 ## Architecture
 

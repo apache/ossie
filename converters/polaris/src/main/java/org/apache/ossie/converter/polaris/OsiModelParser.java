@@ -134,17 +134,7 @@ public class OsiModelParser {
             ds.setFields(fields);
         }
 
-        List<Map<String, Object>> extList = (List<Map<String, Object>>) map.get("custom_extensions");
-        if (extList != null) {
-            List<CustomExtension> extensions = new ArrayList<>();
-            for (Map<String, Object> extMap : extList) {
-                CustomExtension ext = new CustomExtension();
-                ext.setVendorName((String) extMap.get("vendor_name"));
-                ext.setData((String) extMap.get("data"));
-                extensions.add(ext);
-            }
-            ds.setCustomExtensions(extensions);
-        }
+        ds.setCustomExtensions(parseCustomExtensions(map));
 
         return ds;
     }
@@ -153,6 +143,7 @@ public class OsiModelParser {
     private Field parseField(Map<String, Object> map) {
         Field field = new Field();
         field.setName((String) map.get("name"));
+        field.setDatatype((String) map.get("datatype"));
         field.setDescription((String) map.get("description"));
 
         // Dimension
@@ -164,7 +155,24 @@ public class OsiModelParser {
 
         // Expressions
         field.setExpressions(parseDialectExpressions(map));
+        field.setCustomExtensions(parseCustomExtensions(map));
         return field;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<CustomExtension> parseCustomExtensions(Map<String, Object> map) {
+        List<CustomExtension> extensions = new ArrayList<>();
+        List<Map<String, Object>> extList = (List<Map<String, Object>>) map.get("custom_extensions");
+        if (extList == null) {
+            return extensions;
+        }
+        for (Map<String, Object> extMap : extList) {
+            CustomExtension ext = new CustomExtension();
+            ext.setVendorName((String) extMap.get("vendor_name"));
+            ext.setData((String) extMap.get("data"));
+            extensions.add(ext);
+        }
+        return extensions;
     }
 
     @SuppressWarnings("unchecked")
