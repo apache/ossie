@@ -132,6 +132,11 @@ public class MetricMappingHandler implements PipelineStep {
                 // Wrap in Ossie dialect structure
                 osiMetric.put(EXPRESSION, wrapExpression(expressionValue));
             }
+
+            String datatype = SalesforceDataTypeMapper.toOssie(getString(sfMetric, DATA_TYPE));
+            if (datatype != null) {
+                osiMetric.put(OSI_DATATYPE, datatype);
+            }
         }
     }
 

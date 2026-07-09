@@ -155,8 +155,23 @@ class SalesforceToOsiConverterTest {
                 .orElse(null);
         assertNotNull(customerIdField);
         assertEquals("Customer ID", customerIdField.get("label"));
+        assertEquals("String", customerIdField.get("datatype"));
         assertNotNull(customerIdField.get("dimension"));
         assertNotNull(customerIdField.get("expression"));
+
+        Map<String, Object> emailField = fields.stream()
+                .filter(f -> "email".equals(f.get("name")))
+                .findFirst()
+                .orElse(null);
+        assertNotNull(emailField);
+        assertEquals("String", emailField.get("datatype"));
+
+        Map<String, Object> purchasesField = fields.stream()
+                .filter(f -> "total_purchases".equals(f.get("name")))
+                .findFirst()
+                .orElse(null);
+        assertNotNull(purchasesField);
+        assertEquals("Decimal", purchasesField.get("datatype"));
 
         // Verify expression dialect structure
         Map<String, Object> expression = (Map<String, Object>) customerIdField.get("expression");
@@ -187,6 +202,11 @@ class SalesforceToOsiConverterTest {
         boolean hasOrderYear = orderFields.stream()
                 .anyMatch(f -> "order_year".equals(f.get("name")));
         assertTrue(hasOrderYear, "order_year should be converted to a field");
+        Map<String, Object> orderYear = orderFields.stream()
+                .filter(f -> "order_year".equals(f.get("name")))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("Decimal", orderYear.get("datatype"));
 
         // customer_order_key should remain in custom_extensions (multiple dependencies)
         List<Map<String, Object>> customExtensions = (List<Map<String, Object>>) model.get("custom_extensions");
@@ -260,6 +280,7 @@ class SalesforceToOsiConverterTest {
         // Verify first metric
         Map<String, Object> metric1 = metrics.get(0);
         assertEquals("total_revenue", metric1.get("name"));
+        assertEquals("Decimal", metric1.get("datatype"));
         assertNotNull(metric1.get("expression"));
 
         Map<String, Object> expression = (Map<String, Object>) metric1.get("expression");
@@ -308,6 +329,7 @@ class SalesforceToOsiConverterTest {
                 .findFirst()
                 .orElse(null);
         assertNotNull(orderDateField);
+        assertEquals("Date", orderDateField.get("datatype"));
 
         Map<String, Object> dimension = (Map<String, Object>) orderDateField.get("dimension");
         assertNotNull(dimension);

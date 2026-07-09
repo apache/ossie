@@ -183,7 +183,7 @@ public class FieldMappingHandler implements PipelineStep {
         // Add dimension property with is_time based on dataType
         Map<String, Object> dimensionProp = new LinkedHashMap<>();
         String dataType = getString(sfDimension, DATA_TYPE);
-        if (DATA_TYPE_DATE.equals(dataType) || DATA_TYPE_DATE_TIME.equals(dataType)) {
+        if (SalesforceDataTypeMapper.isTemporalSalesforceType(dataType)) {
             dimensionProp.put(IS_TIME, true);
         } else {
             dimensionProp.put(IS_TIME, false);
@@ -237,6 +237,11 @@ public class FieldMappingHandler implements PipelineStep {
         String description = getString(sfField, DESCRIPTION);
         if (description != null) {
             osiField.put(DESCRIPTION, description);
+        }
+
+        String datatype = SalesforceDataTypeMapper.toOssie(getString(sfField, DATA_TYPE));
+        if (datatype != null) {
+            osiField.put(OSI_DATATYPE, datatype);
         }
     }
 
@@ -307,6 +312,8 @@ public class FieldMappingHandler implements PipelineStep {
 
                 customExtensionHandler.restoreSalesforceCustomExtension(calcDim, osiField);
 
+                applyOsiDatatype(calcDim, osiField);
+
                 applyFieldDefaults(calcDim);
 
                 // Add to semantic calculated dimensions array
@@ -319,6 +326,8 @@ public class FieldMappingHandler implements PipelineStep {
                 Map<String, Object> sfField = mapFieldProperties(osiField, expression);
 
                 customExtensionHandler.restoreSalesforceCustomExtension(sfField, osiField);
+
+                applyOsiDatatype(sfField, osiField);
 
                 applyFieldDefaults(sfField);
 
@@ -540,6 +549,43 @@ public class FieldMappingHandler implements PipelineStep {
     }
 
     /**
+     * Applies the portable Ossie datatype when no exact Salesforce dataType was
+     * restored from custom_extensions. Exact extension data wins to preserve
+     * Salesforce-specific distinctions such as Email and Currency.
+     */
+    private void applyOsiDatatype(Map<String, Object> sfField, Map<String, Object> osiField) {
+        String osiDatatype = getString(osiField, OSI_DATATYPE);
+        String exactSalesforceDataType = getString(sfField, DATA_TYPE);
+
+        if (exactSalesforceDataType != null) {
+            if (osiDatatype != null
+                    && !SalesforceDataTypeMapper.areCompatible(osiDatatype, exactSalesforceDataType)) {
+                logger.warn(
+                        "Field '{}' has Ossie datatype '{}' that conflicts with exact Salesforce dataType '{}'; "
+                                + "preserving the Salesforce extension value",
+                        getString(osiField, NAME),
+                        osiDatatype,
+                        exactSalesforceDataType);
+            }
+            return;
+        }
+
+        if (osiDatatype == null) {
+            return;
+        }
+
+        String salesforceDataType = SalesforceDataTypeMapper.toSalesforce(osiDatatype);
+        if (salesforceDataType == null) {
+            logger.warn(
+                    "Field '{}' has Ossie datatype '{}' with no safe Salesforce mapping; omitting dataType",
+                    getString(osiField, NAME),
+                    osiDatatype);
+            return;
+        }
+        sfField.put(DATA_TYPE, salesforceDataType);
+    }
+
+    /**
      * Processes model-level semanticCalculatedDimensions and converts them to dataset fields
      * if all their dependencies point to the same data object.
      *
@@ -649,7 +695,7 @@ public class FieldMappingHandler implements PipelineStep {
         // Add dimension property with is_time based on dataType
         Map<String, Object> dimensionProp = new LinkedHashMap<>();
         String dataType = getString(calcDim, DATA_TYPE);
-        if (DATA_TYPE_DATE.equals(dataType) || DATA_TYPE_DATE_TIME.equals(dataType)) {
+        if (SalesforceDataTypeMapper.isTemporalSalesforceType(dataType)) {
             dimensionProp.put(IS_TIME, true);
         } else {
             dimensionProp.put(IS_TIME, false);
