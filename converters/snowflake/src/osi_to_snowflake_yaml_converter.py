@@ -33,7 +33,7 @@ import yaml
 
 SUPPORTED_VERSION = "0.2.0.dev0"
 
-_TIME_DATATYPES = frozenset({"date", "time", "timestamp", "timestamp_tz"})
+_TIME_DATATYPES = frozenset({"Date", "Time", "DateTime", "DateTimeTz"})
 
 
 class OsiConversionError(Exception):
@@ -229,8 +229,8 @@ def _classify_field(field):
       ``time_dimension``; ``False`` classifies as ``dimension`` even when
       ``datatype`` is temporal (author opt-out for e.g. audit timestamps).
     - When ``dimension.is_time`` is unset, it defaults to ``True`` for
-      temporal ``datatype`` values (``date``, ``time``, ``timestamp``,
-      ``timestamp_tz``) and ``False`` otherwise.
+      temporal ``datatype`` values (``Date``, ``Time``, ``DateTime``,
+      ``DateTimeTz``) and ``False`` otherwise.
     """
     dimension = field.get("dimension")
     if dimension is None:

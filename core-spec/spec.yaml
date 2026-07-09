@@ -188,11 +188,11 @@ fields:
       # When true, consumers should treat this field as a time dimension
       # for time-series analysis and temporal filtering. This is a *role*
       # flag, independent of the field's data type. A field with
-      # is_time: true may carry any datatype (e.g. integer for a year
-      # grain, string for a month name, date/timestamp for a date column).
+      # is_time: true may carry any datatype (e.g. Integer for a year
+      # grain, String for a month name, Date/DateTime for a date column).
       #
       # Default: when unset, is_time defaults to true if datatype is one
-      # of date, time, timestamp, timestamp_tz, and false otherwise. Set
+      # of Date, Time, DateTime, DateTimeTz, and false otherwise. Set
       # is_time: false explicitly to opt a temporal-typed column out of
       # time-dimension treatment.
       is_time: boolean
@@ -204,8 +204,12 @@ fields:
     description: string
 
     # Optional: Logical data type for this field
-    # One of: string, integer, number, boolean, date, time, timestamp, timestamp_tz, other
-    # Use "other" + custom_extensions for vendor-specific types
+    # One of: String, Integer, Decimal, Float, Boolean, Date, Time,
+    # DateTime, DateTimeTz, Opaque
+    # Decimal is exact base-10 with unspecified precision and scale;
+    # Float is approximate. Omit datatype when unknown or unspecified.
+    # Use Opaque + custom_extensions for a known type outside the
+    # portable vocabulary.
     datatype: string
 
     # Optional: Additional context for AI tools (e.g., synonyms, business terms)
@@ -238,8 +242,12 @@ metrics:
     description: string
 
     # Optional: Logical data type for this metric
-    # One of: string, integer, number, boolean, date, time, timestamp, timestamp_tz, other
-    # Use "other" + custom_extensions for vendor-specific types
+    # One of: String, Integer, Decimal, Float, Boolean, Date, Time,
+    # DateTime, DateTimeTz, Opaque
+    # Decimal is exact base-10 with unspecified precision and scale;
+    # Float is approximate. Omit datatype when unknown or unspecified.
+    # Use Opaque + custom_extensions for a known type outside the
+    # portable vocabulary.
     datatype: string
 
     # Optional: Additional context for AI tools (e.g., synonyms, business context)

@@ -108,20 +108,21 @@
       "required": ["dialects"],
       "additionalProperties": false
     },
-    "Datatype": {
+    "DataType": {
       "type": "string",
       "enum": [
-        "string",
-        "integer",
-        "number",
-        "boolean",
-        "date",
-        "time",
-        "timestamp",
-        "timestamp_tz",
-        "other"
+        "String",
+        "Integer",
+        "Decimal",
+        "Float",
+        "Boolean",
+        "Date",
+        "Time",
+        "DateTime",
+        "DateTimeTz",
+        "Opaque"
       ],
-      "description": "Logical data type for fields and metrics. Describes what kind of value is stored, independent of role (e.g. dimension vs fact). Use `other` plus `custom_extensions` for vendor-specific types not covered by the enum."
+      "description": "Logical data type for fields and metrics, independent of role (e.g. dimension vs fact) and physical representation. `Decimal` is exact base-10 with unspecified precision and scale; `Float` is approximate. `DateTime` has no timezone or offset, while `DateTimeTz` identifies an instant using offset or timezone context but does not guarantee preservation of a named timezone. Omit `datatype` when unknown; use `Opaque` plus `custom_extensions` for a known type outside the portable vocabulary."
     },
     "Dimension": {
       "type": "object",
@@ -129,7 +130,7 @@
       "properties": {
         "is_time": {
           "type": "boolean",
-          "description": "Temporal-role marker. When true, consumers that distinguish time dimensions (e.g. for time-series analysis or temporal filtering) should treat this field as a time dimension. This is a *role* flag, independent of the field's data type: a field with `is_time: true` may carry any `datatype` (e.g. `integer` for a year grain, `string` for a month name, as well as temporal datatypes). When `is_time` is unset, it defaults to `true` if `datatype` is one of `date`, `time`, `timestamp`, or `timestamp_tz`, and `false` otherwise. Set `is_time: false` explicitly to opt a temporal-typed column (such as an audit timestamp) out of time-dimension treatment."
+          "description": "Temporal-role marker. When true, consumers that distinguish time dimensions (e.g. for time-series analysis or temporal filtering) should treat this field as a time dimension. This is a *role* flag, independent of the field's data type: a field with `is_time: true` may carry any `datatype` (e.g. `Integer` for a year grain, `String` for a month name, as well as temporal data types). When `is_time` is unset, it defaults to `true` if `datatype` is one of `Date`, `Time`, `DateTime`, or `DateTimeTz`, and `false` otherwise. Set `is_time: false` explicitly to opt a temporal-typed column (such as an audit timestamp) out of time-dimension treatment."
         }
       },
       "additionalProperties": false
@@ -157,7 +158,7 @@
           "description": "Human-readable description"
         },
         "datatype": {
-          "$ref": "#/$defs/Datatype"
+          "$ref": "#/$defs/DataType"
         },
         "ai_context": {
           "$ref": "#/$defs/AIContext"
@@ -285,7 +286,7 @@
           "description": "Human-readable description of what the metric measures"
         },
         "datatype": {
-          "$ref": "#/$defs/Datatype"
+          "$ref": "#/$defs/DataType"
         },
         "ai_context": {
           "$ref": "#/$defs/AIContext"
