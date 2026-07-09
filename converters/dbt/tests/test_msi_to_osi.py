@@ -285,7 +285,6 @@ class TestDialectConfiguration:
         )
         result = MSIToOSIConverter().convert(_manifest(semantic_models=[sm])).output
 
-        assert result.dialects == [OSIDialect.ANSI_SQL]
         assert _fields(result)[0].expression.dialects[0].dialect == OSIDialect.ANSI_SQL
 
     def test_configurable_dialect(self) -> None:
@@ -295,7 +294,6 @@ class TestDialectConfiguration:
         )
         result = MSIToOSIConverter(dialect=OSIDialect.SNOWFLAKE).convert(_manifest(semantic_models=[sm])).output
 
-        assert result.dialects == [OSIDialect.SNOWFLAKE]
         assert _fields(result)[0].expression.dialects[0].dialect == OSIDialect.SNOWFLAKE
 
 

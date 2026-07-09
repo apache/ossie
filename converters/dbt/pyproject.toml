@@ -26,6 +26,7 @@ packages = ["src/osi_dbt"]
 
 [tool.uv]
 dev-dependencies = [
+    "jsonschema>=4.0",
     "pytest>=8.0",
     "syrupy>=4.0",
 ]
