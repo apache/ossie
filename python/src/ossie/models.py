@@ -42,6 +42,7 @@ class OSIVendor(str, Enum):
     DBT = "DBT"
     DATABRICKS = "DATABRICKS"
     GOODDATA = "GOODDATA"
+    WISDOM = "WISDOM"
 
 
 class OSIAIContextObject(BaseModel):

@@ -385,6 +385,7 @@ The following are well-known examples:
 | `DBT` | dbt-specific attributes |
 | `DATABRICKS` | Databricks-specific attributes |
 | `GOODDATA` | GoodData-specific attributes |
+| `WISDOM` | WisdomAI-specific attributes |
 
 ### Examples
 
