@@ -80,6 +80,19 @@ def _minimal_model(**overrides):
     return base
 
 
+def _typed_field(name, datatype, dimension=None):
+    field = {
+        "name": name,
+        "expression": {
+            "dialects": [{"dialect": "ANSI_SQL", "expression": name}]
+        },
+        "datatype": datatype,
+    }
+    if dimension is not None:
+        field["dimension"] = dimension
+    return field
+
+
 # ---------------------------------------------------------------------------
 # _normalize_identifier
 # ---------------------------------------------------------------------------
@@ -233,67 +246,24 @@ class TestClassifyField:
     def test_dimension_none_is_fact(self):
         assert _classify_field({"dimension": None}) == "fact"
 
-    def test_datatype_datetime_is_time_dimension(self):
-        assert _classify_field(
-            {"dimension": {}, "datatype": "DateTime"}
-        ) == "time_dimension"
-
-    def test_datatype_date_is_time_dimension(self):
-        assert _classify_field(
-            {"dimension": {}, "datatype": "Date"}
-        ) == "time_dimension"
-
-    def test_datatype_time_is_time_dimension(self):
-        assert _classify_field(
-            {"dimension": {}, "datatype": "Time"}
-        ) == "time_dimension"
-
-    def test_datatype_datetime_tz_is_time_dimension(self):
-        assert _classify_field(
-            {"dimension": {}, "datatype": "DateTimeTz"}
-        ) == "time_dimension"
-
-    def test_datatype_string_is_dimension(self):
-        assert _classify_field(
-            {"dimension": {}, "datatype": "String"}
-        ) == "dimension"
-
-    def test_datatype_decimal_is_dimension(self):
-        assert _classify_field(
-            {"dimension": {}, "datatype": "Decimal"}
-        ) == "dimension"
-
-    def test_datatype_float_is_dimension(self):
-        assert _classify_field(
-            {"dimension": {}, "datatype": "Float"}
-        ) == "dimension"
-
-    def test_datatype_opaque_is_dimension(self):
-        assert _classify_field(
-            {"dimension": {}, "datatype": "Opaque"}
-        ) == "dimension"
-
-    def test_is_time_preserved_when_datatype_non_temporal(self):
-        """A dimension with is_time=True is classified as a time_dimension
-        even when datatype is non-temporal, because is_time is an
-        independent role marker (e.g., d_year with datatype: Integer and
-        is_time: true is a time-role integer grain)."""
-        assert _classify_field(
-            {"dimension": {"is_time": True}, "datatype": "Integer"}
-        ) == "time_dimension"
-
-    def test_is_time_false_suppresses_time_dimension_on_temporal_datatype(self):
-        """Explicit is_time: false is an author opt-out for temporal
-        columns (e.g., an audit created_at that should not appear on
-        the time axis). Explicit is_time always wins over the default."""
-        assert _classify_field(
-            {"dimension": {"is_time": False}, "datatype": "DateTimeTz"}
-        ) == "dimension"
-
-    def test_no_dimension_with_temporal_datatype_is_still_fact(self):
-        """A temporal datatype on a field with no dimension block is still
-        a fact; type does not imply role."""
-        assert _classify_field({"datatype": "DateTime"}) == "fact"
+    @pytest.mark.parametrize(
+        ("field", "classification"),
+        [
+            ({"dimension": {}, "datatype": "Date"}, "time_dimension"),
+            ({"dimension": {}, "datatype": "Time"}, "time_dimension"),
+            ({"dimension": {}, "datatype": "DateTime"}, "time_dimension"),
+            ({"dimension": {}, "datatype": "DateTimeTz"}, "time_dimension"),
+            ({"dimension": {}, "datatype": "String"}, "dimension"),
+            ({"dimension": {}, "datatype": "Decimal"}, "dimension"),
+            ({"dimension": {}, "datatype": "Float"}, "dimension"),
+            ({"dimension": {}, "datatype": "Opaque"}, "dimension"),
+            ({"dimension": {"is_time": True}, "datatype": "Integer"}, "time_dimension"),
+            ({"dimension": {"is_time": False}, "datatype": "DateTimeTz"}, "dimension"),
+            ({"datatype": "DateTime"}, "fact"),
+        ],
+    )
+    def test_datatype_and_explicit_time_role(self, field, classification):
+        assert _classify_field(field) == classification
 
 
 # ---------------------------------------------------------------------------
@@ -524,20 +494,12 @@ class TestConvertDataset:
     def test_datatype_emitted_independently_of_field_role(
         self, dimension, datatype, bucket, snowflake_datatype
     ):
-        field = {
-            "name": "typed_field",
-            "expression": {
-                "dialects": [
-                    {"dialect": "ANSI_SQL", "expression": "typed_field"}
-                ]
-            },
-            "datatype": datatype,
-        }
-        if dimension is not None:
-            field["dimension"] = dimension
-
         result = _convert_dataset(
-            {"name": "typed_table", "source": "db.schema.table", "fields": [field]}
+            {
+                "name": "typed_table",
+                "source": "db.schema.table",
+                "fields": [_typed_field("typed_field", datatype, dimension)],
+            }
         )
 
         assert result[bucket][0]["data_type"] == snowflake_datatype
@@ -546,17 +508,7 @@ class TestConvertDataset:
         dataset = {
             "name": "typed_table",
             "source": "db.schema.table",
-            "fields": [
-                {
-                    "name": "payload",
-                    "expression": {
-                        "dialects": [
-                            {"dialect": "ANSI_SQL", "expression": "payload"}
-                        ]
-                    },
-                    "datatype": "Opaque",
-                }
-            ],
+            "fields": [_typed_field("payload", "Opaque")],
         }
 
         with pytest.warns(UserWarning, match="Opaque"):
@@ -636,30 +588,13 @@ class TestConvertOsiToSnowflake:
                         ]
                     },
                     "description": "Total x",
+                    "datatype": "Decimal",
                 }
             ]
         )
         result = yaml.safe_load(convert_osi_to_snowflake(_wrap_osi(model)))
         assert len(result["metrics"]) == 1
         assert result["metrics"][0]["expr"] == "SUM(x)"
-
-    def test_metric_datatype_is_not_emitted(self):
-        model = _minimal_model(
-            metrics=[
-                {
-                    "name": "total",
-                    "expression": {
-                        "dialects": [
-                            {"dialect": "ANSI_SQL", "expression": "SUM(x)"}
-                        ]
-                    },
-                    "datatype": "Decimal",
-                }
-            ]
-        )
-
-        result = yaml.safe_load(convert_osi_to_snowflake(_wrap_osi(model)))
-
         assert "data_type" not in result["metrics"][0]
 
     def test_invalid_yaml_root_raises(self):

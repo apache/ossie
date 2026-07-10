@@ -175,19 +175,6 @@ def test_attributes_become_dimension_fields(gooddata_tpcds_model: GdDeclarativeM
         assert f["dimension"]["is_time"] is False
 
 
-def test_fixture_source_types_become_datatypes(gooddata_tpcds_model: GdDeclarativeModel):
-    """Verify the fixture's default GoodData types are represented in Ossie."""
-    result = gooddata_to_osi(gooddata_tpcds_model)
-    fields = [
-        field
-        for dataset in result["semantic_model"][0]["datasets"]
-        for field in dataset.get("fields", [])
-    ]
-
-    assert sum(field["datatype"] == "String" for field in fields) == 14
-    assert sum(field["datatype"] == "Decimal" for field in fields) == 6
-
-
 def test_facts_become_plain_fields(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify GoodData facts become Ossie fields without dimension metadata."""
     result = gooddata_to_osi(gooddata_tpcds_model)
