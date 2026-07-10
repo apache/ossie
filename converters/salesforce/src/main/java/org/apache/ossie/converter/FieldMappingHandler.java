@@ -556,6 +556,18 @@ public class FieldMappingHandler implements PipelineStep {
     private void applyOsiDatatype(Map<String, Object> sfField, Map<String, Object> osiField) {
         String osiDatatype = getString(osiField, OSI_DATATYPE);
         String exactSalesforceDataType = getString(sfField, DATA_TYPE);
+        String mappedSalesforceDataType = SalesforceDataTypeMapper.toSalesforce(osiDatatype);
+        String selectedSalesforceDataType = exactSalesforceDataType != null
+                ? exactSalesforceDataType
+                : mappedSalesforceDataType;
+
+        if (SalesforceDataTypeMapper.isTimezoneLossyMapping(
+                osiDatatype, selectedSalesforceDataType)) {
+            logger.warn(
+                    "Field '{}' has Ossie datatype 'DateTime'; Salesforce dataType 'DateTime' "
+                            + "cannot preserve the timezone-free distinction and re-imports as 'DateTimeTz'",
+                    getString(osiField, NAME));
+        }
 
         if (exactSalesforceDataType != null) {
             if (osiDatatype != null
@@ -574,15 +586,14 @@ public class FieldMappingHandler implements PipelineStep {
             return;
         }
 
-        String salesforceDataType = SalesforceDataTypeMapper.toSalesforce(osiDatatype);
-        if (salesforceDataType == null) {
+        if (mappedSalesforceDataType == null) {
             logger.warn(
                     "Field '{}' has Ossie datatype '{}' with no safe Salesforce mapping; omitting dataType",
                     getString(osiField, NAME),
                     osiDatatype);
             return;
         }
-        sfField.put(DATA_TYPE, salesforceDataType);
+        sfField.put(DATA_TYPE, mappedSalesforceDataType);
     }
 
     /**

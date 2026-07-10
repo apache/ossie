@@ -73,6 +73,11 @@ final class SalesforceDataTypeMapper {
         return "Date".equals(salesforceDataType) || "DateTime".equals(salesforceDataType);
     }
 
+    /** Returns whether this mapping loses Ossie's timezone-free DateTime distinction. */
+    static boolean isTimezoneLossyMapping(String osiDatatype, String salesforceDataType) {
+        return "DateTime".equals(osiDatatype) && "DateTime".equals(salesforceDataType);
+    }
+
     /**
      * Returns whether an exact Salesforce extension type and a portable Ossie type
      * describe compatible values. This treats lossy portable collapses such as

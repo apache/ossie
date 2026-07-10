@@ -89,6 +89,18 @@ class SalesforceDataTypeMapperTest {
     }
 
     @Test
+    void identifiesTimezoneLossyRoundTrips() {
+        String localDateTimeTarget = SalesforceDataTypeMapper.toSalesforce("DateTime");
+        String instantTarget = SalesforceDataTypeMapper.toSalesforce("DateTimeTz");
+
+        assertEquals("DateTimeTz", SalesforceDataTypeMapper.toOssie(localDateTimeTarget));
+        assertEquals("DateTimeTz", SalesforceDataTypeMapper.toOssie(instantTarget));
+        assertTrue(SalesforceDataTypeMapper.isTimezoneLossyMapping("DateTime", localDateTimeTarget));
+        assertFalse(SalesforceDataTypeMapper.isTimezoneLossyMapping("DateTimeTz", instantTarget));
+        assertFalse(SalesforceDataTypeMapper.isTimezoneLossyMapping("Date", "Date"));
+    }
+
+    @Test
     void treatsPortableCollapsesAsCompatibleWithExactSalesforceTypes() {
         assertTrue(SalesforceDataTypeMapper.areCompatible("String", "Email"));
         assertTrue(SalesforceDataTypeMapper.areCompatible("Decimal", "Currency"));

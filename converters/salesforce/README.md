@@ -204,6 +204,10 @@ type exists:
 | `DateTime`, `DateTimeTz` | `DateTime` |
 | `Time`, `Opaque` | Omitted with a warning unless an exact extension type exists |
 
+Salesforce has one `DateTime` type, so exporting timezone-free Ossie `DateTime`
+loses its distinction from `DateTimeTz`; the converter logs a warning because a
+subsequent Salesforce import interprets that value as `DateTimeTz`.
+
 An exact Salesforce extension value takes precedence over the portable mapping.
 If it conflicts with `datatype`, the converter preserves the exact Salesforce
 value and logs a warning.
