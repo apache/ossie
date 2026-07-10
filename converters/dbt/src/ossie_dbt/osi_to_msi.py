@@ -182,7 +182,7 @@ class OSIToMSIConverter:
         1. primary_key → PRIMARY entity
         2. unique_keys → UNIQUE entity
         3. foreign key (from relationship) → FOREIGN entity
-        4. dimension.is_time → TIME dimension (granularity defaults to DAY)
+        4. effective time-dimension role → TIME dimension (granularity defaults to DAY)
         5. fallback → CATEGORICAL dimension
 
         Aggregation info lives on metrics (`metric_aggregation_params`), not on
@@ -227,7 +227,7 @@ class OSIToMSIConverter:
                 )
             )
             return
-        if field.dimension is not None and field.dimension.is_time:
+        if field.is_time_dimension():
             # Ossie carries no granularity metadata; default to DAY.
             dimensions.append(
                 PydanticDimension(

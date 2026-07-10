@@ -20,6 +20,7 @@
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
+from ossie import OSIDataType, OSIDimension
 from ossie_dbt.msi_to_osi import MSIToOSIConverter
 from ossie_dbt.osi_to_msi import OSIToMSIConverter
 from metricflow_semantic_interfaces.type_enums import (
@@ -154,6 +155,29 @@ class TestOSIToMSIFieldClassification:
 
         assert len(sm.dimensions) == 1
         assert sm.dimensions[0].name == field_name
+        assert sm.dimensions[0].type == expected_type
+
+    @pytest.mark.parametrize(
+        ("dimension", "datatype", "expected_type"),
+        [
+            (OSIDimension(), OSIDataType.DATE, DimensionType.TIME),
+            (OSIDimension(is_time=False), OSIDataType.DATE_TIME_TZ, DimensionType.CATEGORICAL),
+            (None, OSIDataType.DATE, DimensionType.CATEGORICAL),
+        ],
+    )
+    def test_field_becomes_dimension_by_effective_time_role(
+        self,
+        dimension: OSIDimension | None,
+        datatype: OSIDataType,
+        expected_type: DimensionType,
+    ) -> None:
+        field = _osi_field("occurred_at").model_copy(
+            update={"dimension": dimension, "datatype": datatype}
+        )
+        doc = _osi_doc(datasets=[_osi_dataset("events", fields=[field])])
+
+        sm = OSIToMSIConverter().convert(doc).output.semantic_models[0]
+
         assert sm.dimensions[0].type == expected_type
 
     def test_field_referenced_in_metric_stays_as_dimension(self) -> None:
