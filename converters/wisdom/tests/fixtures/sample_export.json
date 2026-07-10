@@ -1,0 +1,227 @@
+{
+  "version": "1.0",
+  "export_metadata": {
+    "exported_at": "2026-07-10T00:00:00+00:00",
+    "source_domain_id": "ET_DOMAIN_sample",
+    "domain_name": "Sample Sales"
+  },
+  "domain": {
+    "zsheet_json": {
+      "ref": {"uuid": "ET_DOMAIN_sample", "name": "Sample Sales", "version": "1"},
+      "description": "Synthetic sales domain used for converter tests",
+      "zsheetType": "DOMAIN",
+      "domainSystemInstructions": "Only answer questions about sales data.",
+      "knowledge": [
+        {
+          "name": "Fiscal year",
+          "content": "The fiscal year starts in February.",
+          "id": "ET_UNSTRUCTURED_KNOWLEDGE_1"
+        },
+        {
+          "name": "Pipeline",
+          "content": "Pipeline refers to open orders expected to close this quarter.",
+          "id": "ET_UNSTRUCTURED_KNOWLEDGE_2",
+          "schemaAnnotation": {"relevance": "NOT_SCHEMA_RELATED"}
+        }
+      ],
+      "relationshipGraph": {
+        "zsheets": [
+          {"uuid": "ET_ZSHEET_orders", "name": "orders", "version": "1"},
+          {"uuid": "ET_ZSHEET_customers", "name": "customers", "version": "1"},
+          {"uuid": "ET_ZSHEET_tags", "name": "tags", "version": "1"}
+        ],
+        "relationships": [
+          {
+            "properties": {
+              "joinCondition": {
+                "leftColumn": {"name": "customer_id", "zsheetRef": {"uuid": "ET_ZSHEET_orders", "name": "orders"}},
+                "rightColumn": {"name": "customer_id", "zsheetRef": {"uuid": "ET_ZSHEET_customers", "name": "customers"}}
+              },
+              "relationshipType": "MANY_TO_ONE"
+            },
+            "leftDataSource": {"zsheet": {"uuid": "ET_ZSHEET_orders", "name": "orders"}},
+            "rightDataSource": {"zsheet": {"uuid": "ET_ZSHEET_customers", "name": "customers"}}
+          },
+          {
+            "properties": {
+              "joinCondition": {
+                "leftColumn": {"name": "customer_id", "zsheetRef": {"uuid": "ET_ZSHEET_customers", "name": "customers"}},
+                "rightColumn": {"name": "customer_id", "zsheetRef": {"uuid": "ET_ZSHEET_orders", "name": "orders"}}
+              },
+              "relationshipType": "ONE_TO_MANY"
+            },
+            "leftDataSource": {"zsheet": {"uuid": "ET_ZSHEET_customers", "name": "customers"}},
+            "rightDataSource": {"zsheet": {"uuid": "ET_ZSHEET_orders", "name": "orders"}}
+          },
+          {
+            "properties": {
+              "joinCondition": {
+                "leftColumn": {"name": "order_id", "zsheetRef": {"uuid": "ET_ZSHEET_orders", "name": "orders"}},
+                "rightColumn": {"name": "order_id", "zsheetRef": {"uuid": "ET_ZSHEET_tags", "name": "tags"}}
+              },
+              "relationshipType": "MANY_TO_MANY"
+            },
+            "leftDataSource": {"zsheet": {"uuid": "ET_ZSHEET_orders", "name": "orders"}},
+            "rightDataSource": {"zsheet": {"uuid": "ET_ZSHEET_tags", "name": "tags"}}
+          },
+          {
+            "properties": {
+              "compoundJoinCondition": {
+                "nestedCondition": {
+                  "logicalOperator": "AND",
+                  "conditions": [
+                    {
+                      "simpleCondition": {
+                        "leftColumn": {"name": "order_id", "zsheetRef": {"uuid": "ET_ZSHEET_orders", "name": "orders"}},
+                        "rightColumn": {"name": "order_id", "zsheetRef": {"uuid": "ET_ZSHEET_tags", "name": "tags"}}
+                      }
+                    },
+                    {
+                      "simpleCondition": {
+                        "leftColumn": {"name": "customer_id", "zsheetRef": {"uuid": "ET_ZSHEET_orders", "name": "orders"}},
+                        "rightColumn": {"name": "customer_id", "zsheetRef": {"uuid": "ET_ZSHEET_tags", "name": "tags"}}
+                      }
+                    }
+                  ]
+                }
+              },
+              "relationshipType": "MANY_TO_ONE"
+            },
+            "leftDataSource": {"zsheet": {"uuid": "ET_ZSHEET_orders", "name": "orders"}},
+            "rightDataSource": {"zsheet": {"uuid": "ET_ZSHEET_tags", "name": "tags"}}
+          },
+          {
+            "properties": {
+              "compoundJoinCondition": {
+                "nestedCondition": {
+                  "logicalOperator": "OR",
+                  "conditions": [
+                    {
+                      "simpleCondition": {
+                        "leftColumn": {"name": "order_id", "zsheetRef": {"uuid": "ET_ZSHEET_orders", "name": "orders"}},
+                        "rightColumn": {"name": "order_id", "zsheetRef": {"uuid": "ET_ZSHEET_tags", "name": "tags"}}
+                      }
+                    }
+                  ]
+                }
+              },
+              "relationshipType": "MANY_TO_ONE"
+            },
+            "leftDataSource": {"zsheet": {"uuid": "ET_ZSHEET_orders", "name": "orders"}},
+            "rightDataSource": {"zsheet": {"uuid": "ET_ZSHEET_tags", "name": "tags"}}
+          }
+        ]
+      }
+    }
+  },
+  "tables": [
+    {
+      "zsheet_uuid": "ET_ZSHEET_orders",
+      "zsheet_json": {
+        "ref": {"uuid": "ET_ZSHEET_orders", "name": "orders", "version": "1"},
+        "description": "Customer orders",
+        "location": {
+          "database": "analytics",
+          "schema": "sales",
+          "dbTable": "orders",
+          "connectionId": "et-connection-snowflake"
+        },
+        "columns": [
+          {"name": "order_id", "properties": {"dataType": "INT64", "isPrimaryKey": true}},
+          {"name": "customer_id", "properties": {"dataType": "INT64"}},
+          {"name": "order_date", "properties": {"dataType": "DATE"}},
+          {"name": "amount", "properties": {"dataType": "DOUBLE", "visibility": "HIDDEN"}},
+          {
+            "name": "status",
+            "description": "Current order status",
+            "properties": {"dataType": "VARCHAR", "displayName": "Order Status", "isEnum": true}
+          },
+          {"name": "Discount - Percent", "properties": {"dataType": "DOUBLE"}}
+        ],
+        "formulas": [
+          {
+            "name": "is_large",
+            "expression": "CASE WHEN \"orders\".\"amount\" > 100 THEN TRUE ELSE FALSE END",
+            "description": "true when the order amount exceeds 100",
+            "properties": {"dataType": "BOOL", "displayName": "Is Large"},
+            "id": "FORMULA_1"
+          }
+        ],
+        "measures": [
+          {
+            "name": "total_amount",
+            "expression": "SUM(\"orders\".\"amount\")",
+            "description": "Total order amount",
+            "staleReason": "Column orders.amount is hidden in this domain and cannot be queried.",
+            "id": "MEASURE_1"
+          }
+        ]
+      }
+    },
+    {
+      "zsheet_uuid": "ET_ZSHEET_customers",
+      "zsheet_json": {
+        "ref": {"uuid": "ET_ZSHEET_customers", "name": "customers", "version": "1"},
+        "description": "Customer master data",
+        "location": {
+          "database": "analytics",
+          "schema": "sales",
+          "dbTable": "customers",
+          "connectionId": "et-connection-snowflake"
+        },
+        "primaryKey": {"columns": ["customer_id"]},
+        "columns": [
+          {"name": "customer_id", "properties": {"dataType": "INT64"}},
+          {"name": "name", "properties": {"dataType": "VARCHAR"}},
+          {"name": "region", "properties": {"dataType": "VARCHAR"}}
+        ],
+        "formulas": [
+          {
+            "name": "region",
+            "expression": "UPPER(\"customers\".\"region\")",
+            "properties": {"dataType": "VARCHAR"},
+            "id": "FORMULA_2"
+          }
+        ],
+        "measures": [
+          {
+            "name": "total_amount",
+            "expression": "COUNT(DISTINCT \"customers\".\"customer_id\")",
+            "description": "Distinct customer count (name collides with the orders measure)",
+            "id": "MEASURE_2"
+          }
+        ]
+      }
+    },
+    {
+      "zsheet_uuid": "ET_ZSHEET_tags",
+      "zsheet_json": {
+        "ref": {"uuid": "ET_ZSHEET_tags", "name": "tags", "version": "1"},
+        "description": "Order tags",
+        "location": {
+          "database": "tagdb",
+          "schema": "public",
+          "dbTable": "tags",
+          "connectionId": "et-connection-postgres"
+        },
+        "columns": [
+          {"name": "tag_id", "properties": {"dataType": "INT64"}},
+          {"name": "order_id", "properties": {"dataType": "INT64"}},
+          {"name": "customer_id", "properties": {"dataType": "INT64"}}
+        ]
+      }
+    }
+  ],
+  "connections": [
+    {"connection_id": "et-connection-snowflake", "dialect": "snowflake", "name": "Snowflake"},
+    {"connection_id": "et-connection-postgres", "dialect": "postgres", "name": "Postgres"}
+  ],
+  "reviewed_queries": {"ref": null, "items_json": "{}"},
+  "synonym_sets": {"ref": null, "items_json": "{}"},
+  "table_metadata": [
+    {"zsheet_uuid": "ET_ZSHEET_orders", "connection_id": "et-connection-snowflake", "database": "analytics", "schema": "sales", "table_name": "orders"},
+    {"zsheet_uuid": "ET_ZSHEET_customers", "connection_id": "et-connection-snowflake", "database": "analytics", "schema": "sales", "table_name": "customers"},
+    {"zsheet_uuid": "ET_ZSHEET_tags", "connection_id": "et-connection-postgres", "database": "tagdb", "schema": "public", "table_name": "tags"}
+  ],
+  "recommended_questions": ["What is the total order amount by region?"]
+}
