@@ -33,9 +33,6 @@ GOODDATA_TO_OSSIE_DATATYPES = {
 
 OSSIE_TO_GOODDATA_DATATYPES = {value: key for key, value in GOODDATA_TO_OSSIE_DATATYPES.items()}
 
-TEMPORAL_OSSIE_DATATYPES = frozenset({"Date", "Time", "DateTime", "DateTimeTz"})
-
-
 def gooddata_to_ossie_datatype(source_type: str | None) -> str | None:
     """Map a GoodData source column type to an Ossie DataType value."""
     if source_type is None or not source_type.strip():
@@ -54,14 +51,44 @@ def ossie_to_gooddata_datatype(
     mapped_type = OSSIE_TO_GOODDATA_DATATYPES.get(datatype) if datatype is not None else None
 
     if extension_type is not None and extension_type.strip():
-        if mapped_type is not None and extension_type.strip().upper() != mapped_type:
+        normalized_extension_type = extension_type.strip().upper()
+        if datatype is None or datatype == "Opaque":
+            return normalized_extension_type
+        if mapped_type is not None and normalized_extension_type != mapped_type:
             warnings.warn(
                 f"Field '{field_name}' has Ossie datatype '{datatype}', which maps to "
                 f"GoodData '{mapped_type}', but its GOODDATA extension specifies "
-                f"'{extension_type}'. Preserving the extension value.",
+                f"'{normalized_extension_type}'. Preserving the extension value.",
                 stacklevel=2,
             )
-        return extension_type
+        elif datatype == "Float":
+            if normalized_extension_type == "NUMERIC":
+                warnings.warn(
+                    f"Field '{field_name}' has Ossie datatype 'Float'; GoodData only has "
+                    "NUMERIC, so the exact/approximate distinction will be lost.",
+                    stacklevel=2,
+                )
+            else:
+                warnings.warn(
+                    f"Field '{field_name}' has Ossie datatype 'Float', which maps lossily to "
+                    f"GoodData 'NUMERIC', but its GOODDATA extension specifies "
+                    f"'{normalized_extension_type}'. Preserving the extension value.",
+                    stacklevel=2,
+                )
+        elif datatype == "Time":
+            warnings.warn(
+                f"Field '{field_name}' has Ossie datatype 'Time', which has no native "
+                f"GoodData source column type. Preserving the extension value "
+                f"'{normalized_extension_type}'.",
+                stacklevel=2,
+            )
+        elif mapped_type is None:
+            warnings.warn(
+                f"Field '{field_name}' has unrecognized Ossie datatype '{datatype}'. "
+                f"Preserving the GOODDATA extension value '{normalized_extension_type}'.",
+                stacklevel=2,
+            )
+        return normalized_extension_type
 
     if datatype is None:
         return default
@@ -95,8 +122,3 @@ def ossie_to_gooddata_datatype(
         stacklevel=2,
     )
     return default
-
-
-def is_temporal_ossie_datatype(datatype: str | None) -> bool:
-    """Return whether an Ossie datatype represents a temporal value."""
-    return datatype in TEMPORAL_OSSIE_DATATYPES

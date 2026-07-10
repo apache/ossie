@@ -24,11 +24,17 @@ import json
 import pytest
 
 from ossie_gooddata.gooddata_to_osi import gooddata_to_osi
-from ossie_gooddata.models import GdAttribute, GdDataset, GdDeclarativeModel, GdLdm
+from ossie_gooddata.models import (
+    GdAttribute,
+    GdDataset,
+    GdDeclarativeModel,
+    GdLdm,
+    gd_model_to_dict,
+)
 from ossie_gooddata.osi_to_gooddata import osi_to_gooddata
 
 
-def _model_with_attribute(source_type: str) -> GdDeclarativeModel:
+def _model_with_attribute(source_type: str | None) -> GdDeclarativeModel:
     return GdDeclarativeModel(
         ldm=GdLdm(
             datasets=[
@@ -71,6 +77,19 @@ def test_roundtrip_preserves_unknown_source_type_through_opaque():
 
     result = osi_to_gooddata(ossie)
     assert result.ldm.datasets[0].attributes[0].source_column_data_type == "CUSTOM_TYPE"
+
+
+def test_roundtrip_keeps_missing_source_type_unasserted():
+    """Verify a missing input type stays absent in Ossie and serialized GoodData."""
+    model = _model_with_attribute(None)
+
+    ossie = gooddata_to_osi(model)
+    field = ossie["semantic_model"][0]["datasets"][0]["fields"][0]
+    result = gd_model_to_dict(osi_to_gooddata(ossie))
+    attribute = result["ldm"]["datasets"][0]["attributes"][0]
+
+    assert "datatype" not in field
+    assert "sourceColumnDataType" not in attribute
 
 
 def test_roundtrip_preserves_datasets(gooddata_tpcds_model: GdDeclarativeModel):

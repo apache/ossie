@@ -101,13 +101,14 @@ def test_unknown_source_type_becomes_opaque_and_is_preserved(source_type: str, c
     assert extension["source_column_data_type"] == source_type
 
 
-def test_empty_source_type_is_omitted():
-    """Verify an empty source type does not invent an Ossie datatype."""
+@pytest.mark.parametrize("source_type", [None, ""])
+def test_missing_or_empty_source_type_is_omitted(source_type: str | None):
+    """Verify a missing source type does not invent an Ossie datatype."""
     attribute = GdAttribute(
         id="attr.orders.value",
         title="Value",
         source_column="value",
-        source_column_data_type="",
+        source_column_data_type=source_type,
     )
 
     assert "datatype" not in _convert_attribute(attribute, "orders")
@@ -188,6 +189,19 @@ def test_facts_become_plain_fields(gooddata_tpcds_model: GdDeclarativeModel):
 
     fact_fields = [f for f in fields if "dimension" not in f]
     assert len(fact_fields) == 4
+
+
+def test_omitted_fixture_source_types_remain_unspecified(gooddata_tpcds_model: GdDeclarativeModel):
+    """Verify absent GoodData source types are not promoted from field roles."""
+    result = gooddata_to_osi(gooddata_tpcds_model)
+    store_sales = next(
+        ds for ds in result["semantic_model"][0]["datasets"] if ds["name"] == "store_sales"
+    )
+
+    item_key = next(field for field in store_sales["fields"] if field["name"] == "ss_item_sk")
+    quantity = next(field for field in store_sales["fields"] if field["name"] == "ss_quantity")
+    assert "datatype" not in item_key
+    assert "datatype" not in quantity
 
 
 def test_maql_expressions(gooddata_tpcds_model: GdDeclarativeModel):

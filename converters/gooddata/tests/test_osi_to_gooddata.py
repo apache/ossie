@@ -26,9 +26,33 @@ import pytest
 from ossie_gooddata.osi_to_gooddata import (
     _convert_to_attribute,
     _convert_to_fact,
-    _is_time_field,
     osi_to_gooddata,
 )
+
+
+def _field_with_extension(datatype: str | None, extension_type: str) -> dict:
+    field = {
+        "name": "value",
+        "custom_extensions": [
+            {
+                "vendor_name": "GOODDATA",
+                "data": {"source_column_data_type": extension_type},
+            }
+        ],
+    }
+    if datatype is not None:
+        field["datatype"] = datatype
+    return field
+
+
+def _direct_field(name: str, **properties) -> dict:
+    return {
+        "name": name,
+        "expression": {
+            "dialects": [{"dialect": "ANSI_SQL", "expression": name}],
+        },
+        **properties,
+    }
 
 
 @pytest.mark.parametrize(
@@ -101,21 +125,63 @@ def test_opaque_without_extension_uses_role_default_with_warning():
 
 def test_extension_type_takes_precedence_over_portable_mapping():
     """Verify an exact GoodData extension wins, with a conflict warning."""
-    field = {
-        "name": "value",
-        "datatype": "Integer",
-        "custom_extensions": [
-            {
-                "vendor_name": "GOODDATA",
-                "data": {"source_column_data_type": "CUSTOM_TYPE"},
-            }
-        ],
-    }
+    field = _field_with_extension("Integer", "CUSTOM_TYPE")
 
     with pytest.warns(UserWarning, match="Preserving the extension value"):
         attribute = _convert_to_attribute(field, "orders")
 
     assert attribute.source_column_data_type == "CUSTOM_TYPE"
+
+
+@pytest.mark.parametrize(
+    ("datatype", "extension_type", "expected_type", "warning_pattern"),
+    [
+        ("Float", "BOOLEAN", "BOOLEAN", "maps lossily.*NUMERIC"),
+        ("Float", "NUMERIC", "NUMERIC", "exact/approximate distinction"),
+        ("Time", "TIMESTAMP", "TIMESTAMP", "no native GoodData source column type"),
+        ("FutureOssieType", "STRING", "STRING", "unrecognized Ossie datatype"),
+    ],
+)
+def test_extension_warning_for_lossy_or_conflicting_portable_types(
+    datatype: str,
+    extension_type: str,
+    expected_type: str,
+    warning_pattern: str,
+):
+    """Verify exact extension precedence does not hide portable type loss."""
+    with pytest.warns(UserWarning, match=warning_pattern) as caught:
+        attribute = _convert_to_attribute(
+            _field_with_extension(datatype, extension_type),
+            "orders",
+        )
+
+    assert len(caught) == 1
+    assert attribute.source_column_data_type == expected_type
+
+
+@pytest.mark.parametrize(
+    ("datatype", "extension_type", "expected_type"),
+    [
+        ("Integer", " int ", "INT"),
+        ("String", "string", "STRING"),
+        ("Opaque", "custom_type", "CUSTOM_TYPE"),
+        (None, " boolean ", "BOOLEAN"),
+    ],
+)
+def test_extension_type_is_normalized_without_spurious_warning(
+    datatype: str | None,
+    extension_type: str,
+    expected_type: str,
+):
+    """Verify extension values are canonicalized before GoodData emission."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        attribute = _convert_to_attribute(
+            _field_with_extension(datatype, extension_type),
+            "orders",
+        )
+
+    assert attribute.source_column_data_type == expected_type
 
 
 @pytest.mark.parametrize("converter", [_convert_to_attribute, _convert_to_fact])
@@ -126,22 +192,80 @@ def test_omitted_datatype_keeps_role_default_without_warning(converter):
         converter({"name": "value"}, "orders")
 
 
-@pytest.mark.parametrize(
-    ("field", "expected"),
-    [
-        ({"name": "value", "datatype": "Date"}, False),
-        ({"name": "value", "datatype": "Date", "dimension": {"is_time": False}}, False),
-        ({"name": "value", "datatype": "String", "dimension": {"is_time": True}}, True),
-        ({"name": "value", "datatype": "Date", "dimension": {}}, True),
-        ({"name": "value", "datatype": "Time", "dimension": {}}, True),
-        ({"name": "value", "datatype": "DateTime", "dimension": {"is_time": None}}, True),
-        ({"name": "value", "datatype": "DateTimeTz", "dimension": {}}, True),
-        ({"name": "value", "datatype": "String", "dimension": {}}, False),
-    ],
-)
-def test_effective_time_role(field: dict, expected: bool):
-    """Verify explicit dimension role wins before temporal datatype inference."""
-    assert _is_time_field(field) is expected
+def test_temporal_datatype_does_not_turn_regular_dataset_into_date_instance():
+    """Verify a temporal role does not imply GoodData's special date dataset kind."""
+    model = {
+        "semantic_model": [
+            {
+                "name": "events",
+                "datasets": [
+                    {
+                        "name": "event_times",
+                        "source": "analytics.event_times",
+                        "fields": [
+                            _direct_field(
+                                "occurred_at",
+                                datatype="DateTimeTz",
+                                dimension={},
+                                description="Event occurrence time",
+                            )
+                        ],
+                    },
+                    {
+                        "name": "observations",
+                        "source": "analytics.observations",
+                        "fields": [_direct_field("event_time", dimension={})],
+                    },
+                ],
+                "relationships": [
+                    {
+                        "name": "observation_event_time",
+                        "from": "observations",
+                        "to": "event_times",
+                        "from_columns": ["event_time"],
+                        "to_columns": ["occurred_at"],
+                    }
+                ],
+            }
+        ]
+    }
+
+    result = osi_to_gooddata(model)
+
+    assert result.ldm.date_instances == []
+    event_times = next(ds for ds in result.ldm.datasets if ds.id == "event_times")
+    assert len(event_times.attributes) == 1
+    assert event_times.attributes[0].description == "Event occurrence time"
+    assert event_times.attributes[0].source_column_data_type == "TIMESTAMP_TZ"
+    observations = next(ds for ds in result.ldm.datasets if ds.id == "observations")
+    target = observations.references[0].sources[0].target
+    assert target.type == "attribute"
+    assert target.id == "attr.event_times.occurred_at"
+
+
+def test_legacy_all_explicit_time_fields_still_create_date_instance():
+    """Verify the converter's pre-datatype date-dataset heuristic remains compatible."""
+    model = {
+        "semantic_model": [
+            {
+                "name": "calendar",
+                "datasets": [
+                    {
+                        "name": "calendar_dates",
+                        "source": "analytics.calendar_dates",
+                        "fields": [
+                            _direct_field("date_label", dimension={"is_time": True})
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+
+    result = osi_to_gooddata(model)
+
+    assert result.ldm.datasets == []
+    assert [date_instance.id for date_instance in result.ldm.date_instances] == ["calendar_dates"]
 
 
 def test_basic_conversion(osi_tpcds_dict: dict):

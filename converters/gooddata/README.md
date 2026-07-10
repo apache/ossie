@@ -84,6 +84,10 @@ uv run pytest
 | `TIMESTAMP` | `DateTime` |
 | `TIMESTAMP_TZ` | `DateTimeTz` |
 
+Only an explicitly present GoodData `sourceColumnDataType` becomes an Ossie
+`datatype`. If GoodData omits the source type, the Ossie datatype remains
+unspecified rather than being inferred from whether the field is an attribute or fact.
+
 Unknown GoodData source types become `Opaque` and their exact value is retained in a
 `GOODDATA` custom extension for lossless round trips. Regular GoodData attributes remain
 explicitly non-time dimensions even when their source column has a temporal data type;
