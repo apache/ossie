@@ -389,6 +389,7 @@ The following are well-known examples:
 | `DATABRICKS` | Databricks-specific attributes |
 | `GOODDATA` | GoodData-specific attributes |
 | `HONEYDEW` | Honeydew-specific attributes |
+| `WISDOM` | WisdomAI-specific attributes |
 
 ### Examples
 
