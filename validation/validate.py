@@ -1,4 +1,14 @@
 #!/usr/bin/env python3
+#
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "jsonschema>=4.26.0",
+#     "pyyaml>=6.0.3",
+#     "sqlglot>=30.12.0",
+# ]
+# ///
+
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
