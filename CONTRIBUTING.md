@@ -59,7 +59,7 @@ it didn't happen.*
   [archives](https://lists.apache.org/list.html?dev@ossie.apache.org).
 - **commits@ossie.apache.org** — automated notifications for commits, pull requests.
   Subscribe via `commits-subscribe@ossie.apache.org`.
-- **issues@ossie.apache.org** — automated notifications for issues. 
+- **issues@ossie.apache.org** — automated notifications for issues.
   Subscribe via `issues-subscribe@ossie.apache.org`.
 - **private@ossie.apache.org** — the Podling Project Management Committee (PPMC)
   private list, used only for confidential matters such as committer nominations.

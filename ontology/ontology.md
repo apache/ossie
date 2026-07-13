@@ -101,7 +101,7 @@ concept plays the first role:
 
 Concepts represent the types of things that have meaning in a business setting, e.g., person, company,
 or salary. Every ontology implicitly includes all of the [built-in concepts](#built-in-concepts) and
-may refer to them by name without declaring them. 
+may refer to them by name without declaring them.
 
 Concepts have the following schema:
 
@@ -187,7 +187,7 @@ ontology:
 the relationship is identified by the string `Person.earns`. This convention naturally supports
 expressions that navigate over the links of relationships using the “dot-join” operator in a
 manner that is familiar to object-oriented programming languages. This relationship links
-`Person` and `Salary` objects and verbalizes each link as “Person earns Salary.” 
+`Person` and `Salary` objects and verbalizes each link as “Person earns Salary.”
 
 #### Roles
 
@@ -285,7 +285,7 @@ idnetifier of a concept.
 
 ### Derivation expressions
 
-Concepts and relationships may be derived using expressions. Think of a derived concept or 
+Concepts and relationships may be derived using expressions. Think of a derived concept or
 relationship as a view whose objects or links are derived from those of other concepts or
 relationships. For instance:
 
@@ -306,7 +306,7 @@ ontology:
             name: "descendant"
         derived_by:
           - "Person.parent_of(descendant)"
-            "Person.ancestor_of.parent_of(descendant)"  
+            "Person.ancestor_of.parent_of(descendant)"
       - name: taxed_at
         roles:
           - concept: TaxRate
@@ -458,7 +458,7 @@ then mapping those values to `Person` objects using the declared identifier. The
 concept_mappings:
   - concept: Person
     object_mappings:
-      - expression: PERSONS.SSN                  
+      - expression: PERSONS.SSN
   ...
 ```
 maps values from the `SSN` field of dataset `PERSONS` into `Person` objects.

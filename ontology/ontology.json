@@ -51,7 +51,7 @@
         "concept": {
           "$ref": "#/$defs/Concept"
         },
-        "relationships": { 
+        "relationships": {
           "type": "array",
           "items": {
             "$ref": "#/$defs/Relationship"
@@ -167,7 +167,7 @@
             "$ref": "#/$defs/ObjectMapping"
           },
           "description": "Mappings from logical constructs that populate the concept in this component. Valid only when the concept is an entity type"
-        },         
+        },
         "link_mappings": {
           "type": "array",
           "items": {

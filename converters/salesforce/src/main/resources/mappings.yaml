@@ -19,7 +19,7 @@
 # Ossie-Salesforce Converter - Mapping Configuration
 # =============================================================================
 #
-# This file defines ONLY straightforward property mappings between Ossie YAML 
+# This file defines ONLY straightforward property mappings between Ossie YAML
 # format and Salesforce Semantic Model JSON format.
 #
 # Complex mappings (arrays, routing, transformations) are handled programmatically
