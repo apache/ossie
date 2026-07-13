@@ -364,7 +364,7 @@ We welcome contributions from everyone — whether you are a developer, a data e
 2. **Explore the Examples**: Review the [TPC-DS example](../examples/tpcds_semantic_model.yaml) to see a complete semantic model in practice.
 3. **Join the Conversation**: Open or participate in [GitHub Issues](https://github.com/apache/ossie) and Discussions to share ideas and feedback.
 4. **Submit a Pull Request**: Fork the repository, make your changes, and submit a pull request. All contributions go through the standard review process described in the governance section above.
-5. **Join the Slack workspace**: You can chat directly with the community by [joining Slack](https://join.slack.com/t/opensemanticx/shared_invite/zt-3yuad6c0h-MaoPgVSD1g9MEOf1_QeaiQ).
+5. **Join the Slack workspace**: You can chat directly with the community by [joining Slack](https://join.slack.com/t/apache-ossie/shared_invite/zt-42i1xkgy8-7YQtKEDq7v~mceFmdiLhkA).
 
 ### Code of Conduct
 
