@@ -142,9 +142,9 @@ def validate_references(data: dict) -> list[str]:
             to_ds = rel.get("to")
 
             if from_ds and from_ds not in dataset_names:
-                errors.append(f"[Reference] Relationship '{rel_name}' references unknown dataset '{from_ds}'")
+                errors.append(f"[Reference] Relationship '{rel_name}' in model '{model_name}' references unknown dataset '{from_ds}'")
             if to_ds and to_ds not in dataset_names:
-                errors.append(f"[Reference] Relationship '{rel_name}' references unknown dataset '{to_ds}'")
+                errors.append(f"[Reference] Relationship '{rel_name}' in model '{model_name}' references unknown dataset '{to_ds}'")
 
     return errors
 
@@ -198,7 +198,7 @@ def validate_sql(data: dict) -> list[str]:
                     dialect = dialect_expr.get("dialect", "ANSI_SQL")
                     expr = dialect_expr.get("expression", "")
                     if expr:
-                        context = f"Field '{dataset_name}.{field_name}' ({dialect})"
+                        context = f"Field '{dataset_name}.{field_name}' in model '{model_name}' ({dialect})"
                         error = validate_sql_expression(expr, dialect, context)
                         if error:
                             errors.append(error)
@@ -211,7 +211,7 @@ def validate_sql(data: dict) -> list[str]:
                 dialect = dialect_expr.get("dialect", "ANSI_SQL")
                 expr = dialect_expr.get("expression", "")
                 if expr:
-                    context = f"Metric '{metric_name}' ({dialect})"
+                    context = f"Metric '{metric_name}' in model '{model_name}' ({dialect})"
                     error = validate_sql_expression(expr, dialect, context)
                     if error:
                         errors.append(error)
@@ -227,7 +227,7 @@ def main():
     args = sys.argv[1:]
     yaml_path = Path(args[0])
 
-    schema_path = Path(__file__).parent.parent / "core-spec" / "ossie-schema.json"
+    schema_path = Path(__file__).parent.parent / "core-spec" / "osi-schema.json"
     if len(args) > 1:
         if len(args) == 3 and args[1] == "--schema":
             schema_path = Path(args[2])
