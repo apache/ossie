@@ -41,6 +41,7 @@
     <properties>
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
+        <maven.compiler.release>11</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <snakeyaml.version>2.2</snakeyaml.version>
         <jackson.version>2.17.0</jackson.version>
