@@ -38,7 +38,18 @@ dialects:
   - "MAQL"                  # GoodData MAQL (Multi-Dimensional Analytical Query Language)
   - "BIGQUERY"              # Google BigQuery GoogleSQL
 
-
+# Supported logical data types for fields and metrics
+datatypes:
+  - "String"                # Variable-length Unicode character data
+  - "Integer"               # Exact integral number
+  - "Decimal"               # Exact base-10 number
+  - "Float"                 # Approximate floating-point number
+  - "Boolean"               # Logical two-valued truth type
+  - "Date"                  # Calendar date without time of day
+  - "Time"                  # Time of day without a date or timezone
+  - "DateTime"              # Date and time without a timezone or offset
+  - "DateTimeTz"            # Instant identified using offset or timezone context
+  - "Opaque"                # Known type outside the portable vocabulary
 
 # Vendor name for custom extensions (free-form string)
 # Examples: "COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA"
@@ -204,8 +215,7 @@ fields:
     description: string
 
     # Optional: Logical data type for this field
-    # One of: String, Integer, Decimal, Float, Boolean, Date, Time,
-    # DateTime, DateTimeTz, Opaque
+    # Must be one of the values from the 'datatypes' enum above.
     # Decimal is exact base-10 with unspecified precision and scale;
     # Float is approximate. Omit datatype when unknown or unspecified.
     # Use Opaque + custom_extensions for a known type outside the
@@ -242,8 +252,7 @@ metrics:
     description: string
 
     # Optional: Logical data type for this metric
-    # One of: String, Integer, Decimal, Float, Boolean, Date, Time,
-    # DateTime, DateTimeTz, Opaque
+    # Must be one of the values from the 'datatypes' enum above.
     # Decimal is exact base-10 with unspecified precision and scale;
     # Float is approximate. Omit datatype when unknown or unspecified.
     # Use Opaque + custom_extensions for a known type outside the
