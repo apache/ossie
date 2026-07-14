@@ -388,7 +388,7 @@ New adopters and tool authors need clearer documentation, real-world samples, an
 
 - [Core Specification (spec.md)](core-spec/spec.md) — the current Ossie spec document
 - [TPC-DS Example Model](examples/tpcds_semantic_model.yaml) — reference semantic model using the TPC-DS benchmark
-- [Converter Guide (converters/index.md)](converters/index.md) — hub-and-spoke converter architecture and authoring guide
+- [Converter Guide (converters/README.md)](converters/README.md) — hub-and-spoke converter architecture and authoring guide
 
 ---
 
@@ -439,4 +439,3 @@ Broad ecosystem adoption depends on practical tools that let teams validate thei
 
 - [Issue #121 — Create converter/common module (for Java binding)](https://github.com/apache/ossie/issues/121)
 - [Issue #111 — Follow up on Ossie ai_context and custom_extensions mapping in Snowflake YAML](https://github.com/apache/ossie/issues/111)
-

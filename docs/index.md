@@ -73,7 +73,7 @@ Alation, Anomalo, Atlan, AtScale, Bigeye, BlackRock, Blue Yonder, Carto, Clouder
 
 Ossie converters follow a **hub-and-spoke** architecture: the Ossie core specification acts as the central, vendor-neutral format, and each converter handles translation to or from a specific vendor format (e.g., Snowflake, dbt, Salesforce, Databricks). This avoids the need for point-to-point converters between every pair of vendors.
 
-For details on implementing a converter, see the [Converters Guide](../converters/index.md).
+For details on implementing a converter, see the [Converters Guide](../converters/README.md).
 
 ---
 
@@ -228,10 +228,10 @@ No. Ossie is vendor-agnostic by design. The specification is developed and gover
 ### Adoption
 
 **Can I use Ossie with my existing BI tool?**
-Yes, as long as a converter exists (or is built) for your tool. The hub-and-spoke model means that adding Ossie support to a single tool gives it interoperability with every other Ossie-compatible tool. Check the [Converters Guide](../converters/index.md) for currently supported vendors.
+Yes, as long as a converter exists (or is built) for your tool. The hub-and-spoke model means that adding Ossie support to a single tool gives it interoperability with every other Ossie-compatible tool. Check the [Converters Guide](../converters/README.md) for currently supported vendors.
 
 **What if my vendor isn't supported yet?**
-You can contribute a converter. The [Converters Guide](../converters/index.md) provides a step-by-step guide for implementing import and export converters for new vendors. The community is happy to help with design reviews and testing.
+You can contribute a converter. The [Converters Guide](../converters/README.md) provides a step-by-step guide for implementing import and export converters for new vendors. The community is happy to help with design reviews and testing.
 
 **Do I need to rewrite my existing semantic models?**
 No. Import converters translate existing vendor-specific models into the Ossie format automatically. Your existing models remain intact — Ossie provides an additional interchange layer on top of them.
@@ -287,7 +287,7 @@ A practical guide for organizations looking to adopt Ossie.
 
 - **Inventory your semantic layer**: Identify which tools in your organization define semantic models — BI platforms, data modeling tools, AI/ML pipelines, metrics stores.
 - **Map your pain points**: Determine where semantic fragmentation causes the most friction — conflicting metric definitions, manual reconciliation, onboarding new tools.
-- **Check converter availability**: Review the [Converters Guide](../converters/index.md) to see if converters exist for your tools. If not, assess the effort to build one.
+- **Check converter availability**: Review the [Converters Guide](../converters/README.md) to see if converters exist for your tools. If not, assess the effort to build one.
 
 ### Phase 2: Pilot
 
@@ -342,7 +342,7 @@ A practical guide for organizations looking to adopt Ossie.
 - **YAML Schema**: [core-spec/spec.yaml](../core-spec/spec.yaml)
 - **TPC-DS Example Model**: [examples/tpcds_semantic_model.yaml](../examples/tpcds_semantic_model.yaml)
 - **Validation Script**: [validation/validate.py](../validation/validate.py)
-- **Converters Guide**: [converters/index.md](../converters/index.md)
+- **Converters Guide**: [converters/README.md](../converters/README.md)
 
 ---
 
