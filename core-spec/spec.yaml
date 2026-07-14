@@ -198,7 +198,7 @@ fields:
     # Helps LLMs understand the field meaning and generate better queries
     ai_context: string
 
-     # Optional: Vendor-specific attributes for extensibility
+    # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
       - vendor_name: string  # Free-form string identifying the vendor
         data: string
@@ -227,7 +227,7 @@ metrics:
     # Helps LLMs understand the metric meaning and suggest it appropriately
     ai_context: string
 
-     # Optional: Vendor-specific attributes for extensibility
+    # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
       - vendor_name: string  # Free-form string identifying the vendor
         data: string
