@@ -1,2 +1,22 @@
 **/__pycache__/
 **/.venv/
+*.egg-info/
+dist/
+build/
+
+# Hypothesis property-based testing database
+**/.hypothesis/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test / coverage artifacts
+.coverage
+htmlcov/
+.pytest_cache/

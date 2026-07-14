@@ -1,0 +1,96 @@
+version: '1.1'
+source: tpcds.analytics.store_sales
+comment: Store sales fact table with date and item dimensions from TPC-DS benchmark
+filter: ss_net_profit > 0
+joins:
+  - name: date_dim
+    source: tpcds.analytics.date_dim
+    on: source.ss_sold_date_sk = date_dim.d_date_sk
+    cardinality: many_to_one
+    rely:
+      at_most_one_match: true
+  - name: item
+    source: tpcds.analytics.item
+    on: source.ss_item_sk = item.i_item_sk
+    cardinality: many_to_one
+fields:
+  - name: sold_date
+    expr: DATE_TRUNC('DAY', d_date)
+    comment: Date the sale occurred
+    display_name: Sale Date
+    synonyms:
+      - transaction date
+      - order date
+    format:
+      type: date
+      date_format: year_month_day
+  - name: sold_year
+    expr: YEAR(d_date)
+    comment: Year the sale occurred
+    display_name: Sale Year
+  - name: item_id
+    expr: i_item_id
+    comment: Unique item identifier
+  - name: item_category
+    expr: i_category
+    comment: Product category
+    display_name: Category
+    synonyms:
+      - product category
+      - item type
+  - name: store_id
+    expr: ss_store_sk
+    comment: Store identifier
+measures:
+  - name: total_sales
+    expr: SUM(ss_sales_price)
+    comment: Total sales revenue
+    display_name: Total Sales
+    synonyms:
+      - revenue
+      - gross sales
+    format:
+      type: currency
+      currency_code: USD
+  - name: total_quantity
+    expr: SUM(ss_quantity)
+    comment: Total units sold
+    display_name: Units Sold
+  - name: avg_discount
+    expr: AVG(ss_ext_discount_amt)
+    comment: Average discount amount per transaction
+    display_name: Avg Discount
+    format:
+      type: number
+      decimal_places:
+        min: 2
+        max: 2
+  - name: net_profit
+    expr: SUM(ss_net_profit)
+    comment: Total net profit
+    display_name: Net Profit
+    synonyms:
+      - profit
+      - margin
+    format:
+      type: currency
+      currency_code: USD
+  - name: trailing_7d_sales
+    expr: SUM(ss_sales_price)
+    comment: Trailing 7-day rolling sales
+    display_name: 7-Day Sales
+    window:
+      - order: sold_date
+        range: trailing 7 day
+materialization:
+  schedule: every 6 hours
+  mode: relaxed
+  materialized_views:
+    - name: sales_by_date
+      type: aggregated
+      dimensions:
+        - sold_date
+        - item_category
+      measures:
+        - total_sales
+        - total_quantity

@@ -1,0 +1,174 @@
+version: 0.2.0.dev0
+dialects:
+  - DATABRICKS
+  - ANSI_SQL
+vendors:
+  - DATABRICKS
+semantic_model:
+  - name: tpcds_store_sales
+    description: Store sales fact table with date and item dimensions from TPC-DS benchmark
+    datasets:
+      - name: store_sales
+        source: tpcds.analytics.store_sales
+        fields:
+          - name: sold_date
+            expression:
+              dialects:
+                - dialect: DATABRICKS
+                  expression: DATE_TRUNC('DAY', d_date)
+            dimension:
+              is_time: true
+            description: Date the sale occurred
+            ai_context:
+              synonyms:
+                - Sale Date
+                - transaction date
+                - order date
+            custom_extensions:
+              - vendor_name: DATABRICKS
+                data: '{"format": {"type": "date", "date_format": "year_month_day"}}'
+          - name: sold_year
+            expression:
+              dialects:
+                - dialect: DATABRICKS
+                  expression: YEAR(d_date)
+            dimension:
+              is_time: true
+            description: Year the sale occurred
+            ai_context:
+              synonyms:
+                - Sale Year
+          - name: item_id
+            expression:
+              dialects:
+                - dialect: DATABRICKS
+                  expression: i_item_id
+                - dialect: ANSI_SQL
+                  expression: i_item_id
+            dimension:
+              is_time: false
+            description: Unique item identifier
+          - name: item_category
+            expression:
+              dialects:
+                - dialect: DATABRICKS
+                  expression: i_category
+                - dialect: ANSI_SQL
+                  expression: i_category
+            dimension:
+              is_time: false
+            description: Product category
+            ai_context:
+              synonyms:
+                - Category
+                - product category
+                - item type
+          - name: store_id
+            expression:
+              dialects:
+                - dialect: DATABRICKS
+                  expression: ss_store_sk
+                - dialect: ANSI_SQL
+                  expression: ss_store_sk
+            dimension:
+              is_time: false
+            description: Store identifier
+        custom_extensions:
+          - vendor_name: DATABRICKS
+            data: '{"filter": "ss_net_profit > 0"}'
+    relationships:
+      - name: date_dim
+        from: store_sales
+        to: date_dim
+        from_columns:
+          - ss_sold_date_sk
+        to_columns:
+          - d_date_sk
+        custom_extensions:
+          - vendor_name: DATABRICKS
+            data: '{"cardinality": "many_to_one", "rely": {"at_most_one_match": true}}'
+      - name: item
+        from: store_sales
+        to: item
+        from_columns:
+          - ss_item_sk
+        to_columns:
+          - i_item_sk
+        custom_extensions:
+          - vendor_name: DATABRICKS
+            data: '{"cardinality": "many_to_one"}'
+    metrics:
+      - name: total_sales
+        expression:
+          dialects:
+            - dialect: DATABRICKS
+              expression: SUM(ss_sales_price)
+            - dialect: ANSI_SQL
+              expression: SUM(ss_sales_price)
+        description: Total sales revenue
+        ai_context:
+          synonyms:
+            - Total Sales
+            - revenue
+            - gross sales
+        custom_extensions:
+          - vendor_name: DATABRICKS
+            data: '{"format": {"type": "currency", "currency_code": "USD"}}'
+      - name: total_quantity
+        expression:
+          dialects:
+            - dialect: DATABRICKS
+              expression: SUM(ss_quantity)
+            - dialect: ANSI_SQL
+              expression: SUM(ss_quantity)
+        description: Total units sold
+        ai_context:
+          synonyms:
+            - Units Sold
+      - name: avg_discount
+        expression:
+          dialects:
+            - dialect: DATABRICKS
+              expression: AVG(ss_ext_discount_amt)
+            - dialect: ANSI_SQL
+              expression: AVG(ss_ext_discount_amt)
+        description: Average discount amount per transaction
+        ai_context:
+          synonyms:
+            - Avg Discount
+        custom_extensions:
+          - vendor_name: DATABRICKS
+            data: '{"format": {"type": "number", "decimal_places": {"min": 2, "max": 2}}}'
+      - name: net_profit
+        expression:
+          dialects:
+            - dialect: DATABRICKS
+              expression: SUM(ss_net_profit)
+            - dialect: ANSI_SQL
+              expression: SUM(ss_net_profit)
+        description: Total net profit
+        ai_context:
+          synonyms:
+            - Net Profit
+            - profit
+            - margin
+        custom_extensions:
+          - vendor_name: DATABRICKS
+            data: '{"format": {"type": "currency", "currency_code": "USD"}}'
+      - name: trailing_7d_sales
+        expression:
+          dialects:
+            - dialect: DATABRICKS
+              expression: SUM(ss_sales_price)
+            - dialect: ANSI_SQL
+              expression: SUM(ss_sales_price)
+        description: Trailing 7-day rolling sales
+        ai_context:
+          synonyms:
+            - 7-Day Sales
+        custom_extensions:
+          - vendor_name: DATABRICKS
+            data: '{"window": [{"order": "sold_date", "range": "trailing 7 day"}]}'
+    custom_extensions:
+      - vendor_name: DATABRICKS
+        data: '{"materialization": {"schedule": "every 6 hours", "mode": "relaxed", "materialized_views": [{"name": "sales_by_date", "type": "aggregated", "dimensions": ["sold_date", "item_category"], "measures": ["total_sales", "total_quantity"]}]}}'
