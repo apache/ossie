@@ -83,7 +83,9 @@ semantic_model:
     description: Sales and customer analytics model
     ai_context:
       instructions: "Use this model for sales analysis and customer insights"
-    datasets: []
+    datasets:
+      - name: orders
+        source: sales.public.orders
     relationships: []
     metrics: []
     custom_extensions:
@@ -337,8 +339,9 @@ expression:
 ```yaml
 - name: total_revenue
   expression:
-    - dialect: ANSI_SQL
-      expression: SUM(orders.amount)
+    dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(orders.amount)
   description: Total revenue across all orders
   ai_context:
     synonyms:
@@ -351,8 +354,9 @@ expression:
 ```yaml
 - name: avg_orders
   expression:
-    - dialect: ANSI_SQL
-      expression: SUM(orders.amount) / COUNT(DISTINCT customers.id)
+    dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(orders.amount) / COUNT(DISTINCT customers.id)
   description: Average orders
   ai_context:
     synonyms:
@@ -445,6 +449,7 @@ The following are well-known examples:
 Here's a complete semantic model example showing all components working together:
 
 ```yaml
+version: 0.2.0.dev0
 semantic_model:
   - name: ecommerce_analytics
     description: E-commerce sales and customer analytics

@@ -91,11 +91,9 @@ datasets:
     # Can be a single column or a composite of multiple columns
     # This is the preferred unique identifier for this dataset and is used in relationships to determine many-to-one or one-to-one.
     # Examples:
-    # primary_key:
-    #   - [customer_id]           # Simple primary key
+    # primary_key: [customer_id]            # Simple primary key
     #
-    # primary_key:
-    #   - [order_id, line_number] # Composite primary key
+    # primary_key: [order_id, line_number]  # Composite primary key
     primary_key: []  # Array of column names (single or composite)
 
     # Optional: Array of unique key definitions that uniquely identify rows in this dataset
