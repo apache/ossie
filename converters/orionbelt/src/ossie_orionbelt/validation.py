@@ -189,13 +189,22 @@ def validate_osi(osi_dict: dict[str, Any], schema_path: Path | None = None) -> V
     # 1. JSON Schema validation (OSI uses Draft 2020-12)
     _validate_json_schema(osi_dict, schema_path or _OSI_SCHEMA_PATH, result, draft="draft2020")
 
+    # The semantic checks below assume a well-formed structure (lists of dicts).
+    # JSON Schema validation above already reports structural errors, so guard
+    # every level here rather than raising on malformed input.
+    def _as_dict_list(value: Any) -> list[dict[str, Any]]:
+        return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+    models = _as_dict_list(osi_dict.get("semantic_model", []))
+
     # 2. Unique name checks
-    for model in osi_dict.get("semantic_model", []):
+    for model in models:
         model_name = model.get("name", "<unnamed>")
+        datasets = _as_dict_list(model.get("datasets", []))
 
         # Unique dataset names
         dataset_names: list[str] = []
-        for ds in model.get("datasets", []):
+        for ds in datasets:
             name = ds.get("name", "")
             if name in dataset_names:
                 result.semantic_errors.append(
@@ -204,10 +213,10 @@ def validate_osi(osi_dict: dict[str, Any], schema_path: Path | None = None) -> V
             dataset_names.append(name)
 
         # Unique field names within each dataset
-        for ds in model.get("datasets", []):
+        for ds in datasets:
             ds_name = ds.get("name", "<unnamed>")
             field_names: list[str] = []
-            for field in ds.get("fields", []):
+            for field in _as_dict_list(ds.get("fields", [])):
                 fname = field.get("name", "")
                 if fname in field_names:
                     result.semantic_errors.append(
@@ -217,7 +226,7 @@ def validate_osi(osi_dict: dict[str, Any], schema_path: Path | None = None) -> V
 
         # Unique metric names
         metric_names: list[str] = []
-        for m in model.get("metrics", []):
+        for m in _as_dict_list(model.get("metrics", [])):
             mname = m.get("name", "")
             if mname in metric_names:
                 result.semantic_errors.append(
@@ -227,7 +236,7 @@ def validate_osi(osi_dict: dict[str, Any], schema_path: Path | None = None) -> V
 
         # Unique relationship names
         rel_names: list[str] = []
-        for r in model.get("relationships", []):
+        for r in _as_dict_list(model.get("relationships", [])):
             rname = r.get("name", "")
             if rname in rel_names:
                 result.semantic_errors.append(
@@ -237,9 +246,10 @@ def validate_osi(osi_dict: dict[str, Any], schema_path: Path | None = None) -> V
             rel_names.append(rname)
 
     # 3. Reference checks — relationships reference existing datasets
-    for model in osi_dict.get("semantic_model", []):
-        ds_name_set = {ds.get("name") for ds in model.get("datasets", []) if ds.get("name")}
-        for rel in model.get("relationships", []):
+    for model in models:
+        datasets = _as_dict_list(model.get("datasets", []))
+        ds_name_set = {ds.get("name") for ds in datasets if ds.get("name")}
+        for rel in _as_dict_list(model.get("relationships", [])):
             rel_name = rel.get("name", "<unnamed>")
             from_ds = rel.get("from")
             to_ds = rel.get("to")
