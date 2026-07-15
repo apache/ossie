@@ -1,4 +1,4 @@
-# OSI Proposal: Expression Language
+# Ossie Proposal: Expression Language
 
 **Current Status:** Proposed Final 
 
@@ -10,16 +10,16 @@
 
 ## Overview
 
-![OSI Layers](img/osi_layers.png)
+![Ossie Layers](img/Ossie_layers.png)
 
-There are two layers in OSI that need an expression language:
+There are two layers in Ossie that need an expression language:
 
 * **Ontology layer.**  This layer maps onto the ontology layer which sits above the logical layer.  It maps more closely to modelling languages like OWL, [(Py)Rel](https://docs.relational.ai) from RelationalAI, and [Legend](https://legend.finos.org) from Goldman Sachs  
 * **Logical layer.**  This layer maps directly to the databases and physical layer.  It maps closely to traditional BI semantic models.
 
 This proposal is only targeted at the Logical Layer.  It would be nice if the Ontological layer could re-use the same expression language, but that will be treated as a separate proposal.
 
-This document defines the SQL expression language subset that OSI-compliant implementations MUST support. The goal is to provide a portable expression language that works across all OSI implementations while allowing vendors to expose richer database-specific functionality through dialect extensions.  In particular, it is meant for expressions at the logical layer.  This means metrics, fields, filters, etc  In the future, expressions such as arbitrary join expressions should also use this expression language.
+This document defines the SQL expression language subset that Ossie-compliant implementations MUST support. The goal is to provide a portable expression language that works across all Ossie implementations while allowing vendors to expose richer database-specific functionality through dialect extensions.  In particular, it is meant for expressions at the logical layer.  This means metrics, fields, filters, etc  In the future, expressions such as arbitrary join expressions should also use this expression language.
 
 We expect there will be extensions to this language to cover concepts such as sub-queries, grain calculations, etc.  However, these will each have their own proposal.
 
@@ -32,8 +32,8 @@ We expect there will be extensions to this language to cover concepts such as su
 
 ### Changes to YAML
 
-1) Create a new dialect in the OSI spec: OSI\_SQL\_2026, which refers to this language specification.   
-2) Make OSI\_SQL\_2026 the default dialect if one is not chosen.
+1) Create a new dialect in the Ossie spec: Ossie\_SQL\_2026, which refers to this language specification.   
+2) Make Ossie\_SQL\_2026 the default dialect if one is not chosen.
 
 ### Standards Reference
 
@@ -51,13 +51,13 @@ The identifiers will match standard SQL identifiers:
 
 `FieldExpr: Field | Field ‘.’ Field`
 
-The OSI spec currently contains three namespaces, which determine the visibility and uniqueness of each value.  Where and how a field (or metric) is defined will determine the namespace for it, which in turn determines the ways it can be addressed by other fields.
+The Ossie spec currently contains three namespaces, which determine the visibility and uniqueness of each value.  Where and how a field (or metric) is defined will determine the namespace for it, which in turn determines the ways it can be addressed by other fields.
 
 All identifiers MUST be valid names and follow ANSI SQL naming, with the size limitation of 128 characters for identifiers.  Many databases support longer identifiers, however, this number is safe for a broad number of vendors.
 
 Regular identifiers (unquoted) should be case insensitive.    For example, an identifier id is regular, so it would match with Id or iD.  Comparing quoted and non-quoted identifiers is DB specific, so for best portability it is best to use simple identifiers.
 
-The quote character for the OSI dialect will follow ANSI SQL and support the double quote character (“).  This means that if an expression is in a field expression or as an identifier in the YAML, this will be the expected quoting.  However, there are some databases that use other escape characters.  Working with these have the option of either creating expressions using their dialect or having the OSI document written in the OSI dialect, but then having the SQL Interface queried in the local dialect.  The SQL Interface will be defined in a different document. 
+The quote character for the Ossie dialect will follow ANSI SQL and support the double quote character (“).  This means that if an expression is in a field expression or as an identifier in the YAML, this will be the expected quoting.  However, there are some databases that use other escape characters.  Working with these have the option of either creating expressions using their dialect or having the Ossie document written in the Ossie dialect, but then having the SQL Interface queried in the local dialect.  The SQL Interface will be defined in a different document. 
 
 #### Comparison Table
 
@@ -82,7 +82,7 @@ will be able to be multi-part and the parts will be separated by the '.' charact
 
 ### Supported SQL Constructs
 
-OSI expressions support the following SQL constructs within any expression:
+Ossie expressions support the following SQL constructs within any expression:
 
 | Construct | Notes                                                                                                                                                                                                                                                                                 |
 | :---- |:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -212,7 +212,7 @@ COUNT(CASE WHEN status = 'completed' THEN 1 END)
 
 ### Decomposability Reference
 
-For multi-stage aggregation (see [OSI Analytical Context Extension](https://docs.google.com/document/d/1MKNySGmEv_C6CzBZ7um9Ym3_mMvmOolpDuwPvRzQ1bo/edit?usp=sharing)):
+For multi-stage aggregation (see [Ossie Analytical Context Extension](https://docs.google.com/document/d/1MKNySGmEv_C6CzBZ7um9Ym3_mMvmOolpDuwPvRzQ1bo/edit?usp=sharing)):
 
 | Category | Functions |
 | :---- | :---- |
@@ -584,9 +584,9 @@ a IS DISTINCT FROM b        -- TRUE if one is NULL and other isn't
 
 ## Dialect Extensions
 
-OSI implementations MAY support additional functions through dialect-specific extensions. When using dialect extensions, the expression must specify the dialect.
+Ossie implementations MAY support additional functions through dialect-specific extensions. When using dialect extensions, the expression must specify the dialect.
 
-The OSI dialect should always be supported.  Other dialects MAY be ignored.  There is no guarantee that all different dialects for an expression will act the same, so implementations should be consistent with their dialect handling.  This means that if an OSI model has an expression written in two dialects, the implementation should deterministically choose which dialect to use.  
+The Ossie dialect should always be supported.  Other dialects MAY be ignored.  There is no guarantee that all different dialects for an expression will act the same, so implementations should be consistent with their dialect handling.  This means that if an Ossie model has an expression written in two dialects, the implementation should deterministically choose which dialect to use.  
 
 ### Declaring Dialect-Specific Expressions
 
@@ -616,16 +616,16 @@ expression:
 
 ### Dialect-Specific Extensions
 
-Vendors may expose their own feature through extensions, however the default for OSI should be to pass unknown values through.:  
+Vendors may expose their own feature through extensions, however the default for Ossie should be to pass unknown values through.:  
 ---
 
 ## Cross-Reference: Tool Mappings
 
-This section maps OSI standard functions to their equivalents in popular BI tools.
+This section maps Ossie standard functions to their equivalents in popular BI tools.
 
 ### Aggregation Function Mapping
 
-| OSI Standard | Tableau | Looker Studio | DAX |
+| Ossie Standard | Tableau | Looker Studio | DAX |
 | :---- | :---- | :---- | :---- |
 | `SUM(x)` | `SUM(x)` | `SUM(X)` | `SUM(x)` |
 | `COUNT(x)` | `COUNT(x)` | `COUNT(X)` | `COUNT(x)` |
@@ -641,7 +641,7 @@ This section maps OSI standard functions to their equivalents in popular BI tool
 
 ### Date Function Mapping
 
-| OSI Standard | Tableau | Looker Studio | DAX |
+| Ossie Standard | Tableau | Looker Studio | DAX |
 | :---- | :---- | :---- | :---- |
 | `YEAR(d)` | `YEAR(d)` | `YEAR(Date)` | `YEAR(d)` |
 | `MONTH(d)` | `MONTH(d)` | `MONTH(Date)` | `MONTH(d)` |
@@ -653,7 +653,7 @@ This section maps OSI standard functions to their equivalents in popular BI tool
 
 ### String Function Mapping
 
-| OSI Standard | Tableau | Looker Studio | DAX |
+| Ossie Standard | Tableau | Looker Studio | DAX |
 | :---- | :---- | :---- | :---- |
 | `CONCAT(a, b)` | `a + b` | `CONCAT(X, Y)` | `CONCATENATE(a, b)` or `a & b` |
 | `LENGTH(s)` | `LEN(s)` | `LENGTH(X)` | `LEN(s)` |
@@ -668,7 +668,7 @@ This section maps OSI standard functions to their equivalents in popular BI tool
 
 ### Conditional Function Mapping
 
-| OSI Standard | Tableau | Looker Studio | DAX |
+| Ossie Standard | Tableau | Looker Studio | DAX |
 | :---- | :---- | :---- | :---- |
 | `CASE WHEN...` | `CASE WHEN...` or `IF...` | `CASE WHEN...` | `SWITCH(TRUE(), ...)` |
 | `IF(cond, t, f)` | `IF cond THEN t ELSE f END` | N/A (use CASE) | `IF(cond, t, f)` |
@@ -677,7 +677,7 @@ This section maps OSI standard functions to their equivalents in popular BI tool
 
 ### Window Function Mapping
 
-| OSI Standard | Tableau | Looker Studio | DAX |
+| Ossie Standard | Tableau | Looker Studio | DAX |
 | :---- | :---- | :---- | :---- |
 | `ROW_NUMBER() OVER(...)` | `INDEX()` | N/A | `RANKX(...)` with DENSE |
 | `RANK() OVER(...)` | `RANK(expr)` | N/A | `RANKX(...)` |
