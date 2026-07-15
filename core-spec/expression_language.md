@@ -240,9 +240,7 @@ For multi-stage aggregation (see [Ossie Analytical Context Extension](https://do
 | `YEAR` | `YEAR(date_expr)` | Extract year (integer) |
 | `QUARTER` | `QUARTER(date_expr)` | Extract quarter (1-4) |
 | `MONTH` | `MONTH(date_expr)` | Extract month (1-12) |
-| `WEEK` | `WEEK(date_expr)` | Extract week of year (1-53) |
 | `DAY` | `DAY(date_expr)` | Extract day of month (1-31) |
-| `DAYOFWEEK` | `DAYOFWEEK(date_expr)` | Day of week (1=Sunday, 7=Saturday) |
 | `DAYOFYEAR` | `DAYOFYEAR(date_expr)` | Day of year (1-366) |
 | `HOUR` | `HOUR(timestamp_expr)` | Extract hour (0-23) |
 | `MINUTE` | `MINUTE(timestamp_expr)` | Extract minute (0-59) |
@@ -302,36 +300,76 @@ DATEDIFF(month, start_date, end_date)  -- Months between dates
 DATEDIFF(year, start_date, end_date)   -- Years between dates
 ```
 
-### Date Construction (REQUIRED)
+### Date/Time Construction (REQUIRED)
+
+Construct DATE, TIME, and TIMESTAMP values using ANSI typed literals or `CAST`.
+ISO-8601 strings (`YYYY-MM-DD`, `YYYY-MM-DD HH:MI:SS`, `HH:MI:SS`) require no format
+model and behave identically across engines, making them the portable default.
+
+| Form | Syntax | Description |
+| :---- | :---- | :---- |
+| Typed literal | `DATE '2024-01-15'` | Construct a DATE |
+| Typed literal | `TIMESTAMP_NTZ '2024-01-15 10:30:00'` | Construct a wall-clock timestamp (no time zone) |
+| Typed literal | `TIME '10:30:00'` | Construct a TIME |
+| Cast | `CAST('2024-01-15' AS DATE)` | Parse ISO string to DATE |
+| Cast | `CAST('2024-01-15 10:30:00' AS TIMESTAMP_NTZ)` | Parse ISO string to timestamp |
+| Cast | `CAST('10:30:00' AS TIME)` | Parse ISO string to TIME |
+| `TO_DATE` | `TO_DATE(string)` | Parse ISO string to DATE |
+| `TO_TIMESTAMP` | `TO_TIMESTAMP(string)` | Parse ISO string to timestamp |
+
+### Date/Time Construction from Format Strings (EXPERIMENTAL)
+
+Parsing with an explicit format string relies on a datetime format model whose token
+vocabulary differs across engines (Oracle/`TO_CHAR`-style, `strftime` `%`-codes, and
+Java/LDML patterns are all in use). 
+
+For portability, we are looking to restrict the `format` argument to
+the portable core format tokens defined in Date Formatting below, and prefer the
+single-argument, ISO-8601 forms above where possible. 
+
+**Since, this differs so widely across databases, consider this experimental for now.**  
 
 | Function | Syntax | Description |
 | :---- | :---- | :---- |
-| `DATE` | `DATE(year, month, day)` | Construct date from parts |
-| `TIMESTAMP` | `TIMESTAMP(year, month, day, hour, minute, second)` | Construct timestamp |
 | `TO_DATE` | `TO_DATE(string, format)` | Parse string to date |
 | `TO_TIMESTAMP` | `TO_TIMESTAMP(string, format)` | Parse string to timestamp |
 
-### Date Formatting (REQUIRED)
+### Date Formatting (EXPERIMENTAL)
 
 | Function | Syntax | Description |
 | :---- | :---- | :---- |
 | `TO_CHAR` | `TO_CHAR(date_expr, format)` | Format date as string |
 
-Common format specifiers:
+Ossie defines a portable core of format tokens: the tokens that can be expressed in
+every major engine's datetime format model. 
 
-- `YYYY` \- 4-digit year  
-- `YY` \- 2-digit year  
-- `MM` \- Month (01-12)  
-- `MON` \- Abbreviated month name  
-- `MONTH` \- Full month name  
-- `DD` \- Day of month (01-31)  
-- `DY` \- Abbreviated day name  
-- `DAY` \- Full day name  
-- `HH24` \- Hour (00-23)  
-- `HH` or `HH12` \- Hour (01-12)  
-- `MI` \- Minute (00-59)  
-- `SS` \- Second (00-59)
+This feature is experimental.  Implementations choosing to support these should support the following tokens for the 
+`format` argument of `TO_CHAR`. The `strftime` and Java/LDML columns below are informative,
+provided to aid translation.
 
+| Token | Meaning | `strftime` (C / Python / BigQuery) | Java/LDML (Spark, .NET) |
+| :---- | :---- | :---- | :---- |
+| `YYYY` | 4-digit year | `%Y` | `yyyy` |
+| `YY` | 2-digit year | `%y` | `yy` |
+| `MM` | Month (01-12) | `%m` | `MM` |
+| `MON` | Abbreviated month name | `%b` | `MMM` |
+| `MONTH` | Full month name | `%B` | `MMMM` |
+| `DD` | Day of month (01-31) | `%d` | `dd` |
+| `DY` | Abbreviated day name | `%a` | `EEE` |
+| `DAY` | Full day name | `%A` | `EEEE` |
+| `HH24` | Hour (00-23) | `%H` | `HH` |
+| `HH12` (`HH`) | Hour (01-12) | `%I` | `hh` |
+| `MI` | Minute (00-59) | `%M` | `mm` |
+| `SS` | Second (00-59) | `%S` | `ss` |
+| `AM` / `PM` | Meridiem indicator | `%p` | `a` |
+
+**Locale-dependent output.** The name tokens (`MON`, `MONTH`, `DY`, `DAY`, `AM`/`PM`)
+render text whose language is governed by engine/session locale settings; the spelling
+is not guaranteed identical across engines.
+
+**Fractional seconds** are available everywhere but the token and precision differ
+(Oracle `FF1`–`FF9`, `strftime` `%f`, Java `S`…`SSSSSS`); treat sub-second formatting as
+a dialect extension.
 ---
 
 ## String Functions
@@ -707,7 +745,7 @@ Implementations MAY support additional functions through dialect extensions. The
 
 | Version   | Date       | Changes |
 |:----------|:-----------| :---- |
-| 0.2.0.dev | 2026-06-44 | Initial draft |
+| 0.2.0.dev | 2026-07-15 | Initial draft |
 
 ---
 
