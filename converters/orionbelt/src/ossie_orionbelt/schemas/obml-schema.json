@@ -1,0 +1,1327 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "/obml/schema",
+  "title": "OBML",
+  "description": "A markup language to define the OrionBelt Semantic Layer",
+  "definitions": {
+    "customExtension": {
+      "type": "object",
+      "description": "Vendor-keyed extension data — opaque to OrionBelt",
+      "properties": {
+        "vendor": {
+          "type": "string",
+          "description": "Vendor or format identifier (e.g. OSI, GOVERNANCE)"
+        },
+        "data": {
+          "type": "string",
+          "description": "Opaque data payload (typically JSON string)"
+        }
+      },
+      "required": [
+        "vendor",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "dataObject": {
+      "type": "object",
+      "description": "Unique Data Object Name in the OrionBelt Model",
+      "properties": {
+        "database": {
+          "type": "string",
+          "description": "Database Name"
+        },
+        "schema": {
+          "type": "string",
+          "description": "Schema Name in Database"
+        },
+        "code": {
+          "type": "string",
+          "description": "Database Table Name, View Name or SELECT statement"
+        },
+        "columns": {
+          "type": "object",
+          "description": "Selected Columns from Database Object to be used in OrionBelt. Column names must be unique within each data object.",
+          "patternProperties": {
+            ".": {
+              "$ref": "#/definitions/column"
+            }
+          },
+          "additionalProperties": false,
+          "minProperties": 1
+        },
+        "joins": {
+          "type": "array",
+          "description": "Connect this Data Object with other Data Objects by defining Joins",
+          "items": {
+            "$ref": "#/definitions/join"
+          }
+        },
+        "description": {
+          "type": "string",
+          "description": "Business description of this data object (semantic layer metadata)"
+        },
+        "comment": {
+          "type": "string",
+          "description": "Physical database comment (from COMMENT ON TABLE)"
+        },
+        "owner": {
+          "type": "string",
+          "description": "Owner or responsible party for this data object"
+        },
+        "countable": {
+          "type": "boolean",
+          "description": "When true (default), the model synthesizes a grain-anchored row-count measure for this data object (name == label, e.g. 'Sales Count'). Set false to opt out.",
+          "default": true
+        },
+        "countLabel": {
+          "type": "string",
+          "description": "Optional name/label for this object's synthesized count measure (the count's id is its label); overrides the model-level countLabelPattern. The {object} token interpolates the object's display label. Ignored when countable is false."
+        },
+        "synonyms": {
+          "type": "array",
+          "description": "Alternative names or terms for this data object (LLM hints)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "customExtensions": {
+          "type": "array",
+          "description": "Vendor-keyed extension data",
+          "items": {
+            "$ref": "#/definitions/customExtension"
+          }
+        },
+        "refresh": {
+          "type": "object",
+          "description": "Freshness contract for the physical table this dataObject maps to. Drives result-cache TTL composition and heartbeat invalidation. See PLAN_freshness_driven_cache.md §5.",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "interval",
+                "heartbeat",
+                "static"
+              ],
+              "description": "interval: fixed cadence; heartbeat: irregular + ETL pings; static: never changes"
+            },
+            "interval": {
+              "type": "string",
+              "description": "Required for mode=interval. ISO 8601 duration or shorthand (1h, 15m, 1d)"
+            },
+            "anchor": {
+              "type": "string",
+              "description": "Optional HH:MM time-of-day anchor for interval mode"
+            },
+            "timezone": {
+              "type": "string",
+              "description": "IANA TZ name; only used when anchor is set. Default UTC"
+            },
+            "maxStaleness": {
+              "type": "string",
+              "description": "Required for mode=heartbeat. Max time between heartbeats before stale"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "code",
+        "columns"
+      ],
+      "additionalProperties": false
+    },
+    "dataType": {
+      "description": "OrionBelt internal Data Type",
+      "enum": [
+        "string",
+        "json",
+        "int",
+        "float",
+        "date",
+        "time",
+        "time_tz",
+        "timestamp",
+        "timestamp_tz",
+        "boolean"
+      ]
+    },
+    "timeGrain": {
+      "description": "Used to truncate a date value to aggregate along a date hierarchy. Must match the TimeGrain enum in models/semantic.py (#85).",
+      "enum": [
+        "year",
+        "quarter",
+        "month",
+        "week",
+        "day",
+        "hour",
+        "minute",
+        "second"
+      ]
+    },
+    "numClass": {
+      "description": "Numeric classification hint for LLMs: categorical (IDs/codes — group/filter only), additive (sum-safe — amounts, quantities), non_additive (rates, %, ratios — don't assume SUM)",
+      "enum": [
+        "categorical",
+        "additive",
+        "non-additive"
+      ]
+    },
+    "column": {
+      "type": "object",
+      "description": "Unique Column Name in that Data Object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "abstractType": {
+          "$ref": "#/definitions/dataType"
+        },
+        "sqlType": {
+          "type": "string",
+          "description": "Informational: the SQL data type of the column (e.g. VARCHAR, INTEGER, NUMERIC(10,2))"
+        },
+        "sqlPrecision": {
+          "type": "integer",
+          "description": "Informational: numeric precision",
+          "minimum": 1
+        },
+        "sqlScale": {
+          "type": "integer",
+          "description": "Informational: numeric scale",
+          "minimum": 0
+        },
+        "numClass": {
+          "$ref": "#/definitions/numClass"
+        },
+        "primaryKey": {
+          "type": "boolean",
+          "description": "Marks this column as part of the data object's primary key (informational; multiple columns may set true to express composite keys)",
+          "default": false
+        },
+        "description": {
+          "type": "string",
+          "description": "Business description of this column (semantic layer metadata)"
+        },
+        "comment": {
+          "type": "string",
+          "description": "Physical database comment (from COMMENT ON COLUMN)"
+        },
+        "owner": {
+          "type": "string",
+          "description": "Owner or responsible party for this column"
+        },
+        "expression": {
+          "type": "string",
+          "description": "When set, the column is computed from an inline SQL expression instead of mapping to a physical column. ``{name}`` placeholders refer to other columns of the same data object (by their label) and are substituted with the referenced column's physical code, table-qualified at codegen. ``code`` becomes optional when ``expression`` is set. Note: SQL syntax is dialect-leaky — pin ``settings.defaultDialect`` if your expression uses vendor-specific functions."
+        },
+        "synonyms": {
+          "type": "array",
+          "description": "Alternative names or terms for this column (LLM hints)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "customExtensions": {
+          "type": "array",
+          "description": "Vendor-keyed extension data",
+          "items": {
+            "$ref": "#/definitions/customExtension"
+          }
+        }
+      },
+      "required": [
+        "abstractType"
+      ],
+      "additionalProperties": false,
+      "if": {
+        "not": {
+          "properties": {
+            "abstractType": {
+              "enum": [
+                "int",
+                "float"
+              ]
+            }
+          },
+          "required": [
+            "abstractType"
+          ]
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "numClass"
+          ]
+        }
+      }
+    },
+    "join": {
+      "type": "object",
+      "properties": {
+        "joinType": {
+          "description": "Join Cardinality",
+          "enum": [
+            "many-to-one",
+            "one-to-one",
+            "many-to-many"
+          ]
+        },
+        "joinTo": {
+          "type": "string",
+          "description": "Join-to Data Object Name"
+        },
+        "columnsFrom": {
+          "type": "array",
+          "contains": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "columnsTo": {
+          "type": "array",
+          "contains": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "secondary": {
+          "type": "boolean",
+          "description": "Mark this join as a secondary (alternative) path. Secondary joins are excluded from multipath/cycle validation.",
+          "default": false
+        },
+        "pathName": {
+          "type": "string",
+          "description": "Unique name for this join path within the (source, target) pair. Required when secondary is true. Used in queries via usePathNames to select this join."
+        }
+      },
+      "required": [
+        "joinType",
+        "joinTo",
+        "columnsFrom",
+        "columnsTo"
+      ],
+      "additionalProperties": false
+    },
+    "queryColumn": {
+      "type": "object",
+      "description": "Column reference by dataObject + column pair",
+      "properties": {
+        "dataObject": {
+          "type": "string",
+          "description": "OrionBelt Data Object Name"
+        },
+        "column": {
+          "type": "string",
+          "description": "OrionBelt Column Name"
+        }
+      },
+      "required": [
+        "dataObject",
+        "column"
+      ],
+      "additionalProperties": false
+    },
+    "operator": {
+      "description": "Filter operation code (measure-level filters)",
+      "enum": [
+        "equals",
+        "notequals",
+        "inlist",
+        "notinlist",
+        "contains",
+        "notcontains",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "set",
+        "notset",
+        "between",
+        "notbetween",
+        "like",
+        "notlike",
+        "starts_with",
+        "ends_with"
+      ]
+    },
+    "staticFilterOperator": {
+      "description": "Filter operator for static model filters — supports both OBML and SQL-style naming",
+      "enum": [
+        "equals",
+        "notequals",
+        "inlist",
+        "notinlist",
+        "contains",
+        "notcontains",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "set",
+        "notset",
+        "between",
+        "notbetween",
+        "like",
+        "notlike",
+        "starts_with",
+        "ends_with",
+        "=",
+        "!=",
+        ">",
+        ">=",
+        "<",
+        "<=",
+        "in",
+        "not_in",
+        "is_null",
+        "is_not_null"
+      ]
+    },
+    "parameterValue": {
+      "type": "object",
+      "description": "Value to apply for filtering",
+      "properties": {
+        "dataType": {
+          "description": "defines datatype of parameter value",
+          "$ref": "#/definitions/dataType"
+        },
+        "isNull": {
+          "description": "used to include NULL in inlist, notinlist, if set true other value properties are ignored",
+          "type": "boolean"
+        },
+        "valueString": {
+          "type": "string"
+        },
+        "valueInt": {
+          "type": "integer"
+        },
+        "valueFloat": {
+          "type": "number"
+        },
+        "valueDate": {
+          "description": "ISO 8601 date string YYYY-MM-DD (2021-02-18)",
+          "type": "string"
+        },
+        "valueBoolean": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "dataType"
+      ]
+    },
+    "filter": {
+      "type": "object",
+      "description": "Filter definition",
+      "properties": {
+        "column": {
+          "$ref": "#/definitions/queryColumn"
+        },
+        "operator": {
+          "$ref": "#/definitions/operator"
+        },
+        "values": {
+          "type": "array",
+          "description": "no value for set/notSet, one value for comparisons, two values for between/notBetween, list of values for contains/notContains",
+          "items": {
+            "$ref": "#/definitions/parameterValue"
+          }
+        }
+      },
+      "required": [
+        "column",
+        "operator"
+      ]
+    },
+    "filterGroup": {
+      "type": "object",
+      "description": "A group of filters combined with AND or OR logic, supporting recursive nesting",
+      "properties": {
+        "logic": {
+          "description": "Boolean combination logic for child filters",
+          "enum": [
+            "and",
+            "or"
+          ],
+          "default": "and"
+        },
+        "filters": {
+          "type": "array",
+          "description": "Child filters (leaf filters or nested filter groups)",
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/definitions/filter"
+              },
+              {
+                "$ref": "#/definitions/filterGroup"
+              }
+            ]
+          },
+          "minItems": 1
+        },
+        "negated": {
+          "type": "boolean",
+          "description": "When true, negates the entire group: NOT (filter1 AND/OR filter2)",
+          "default": false
+        }
+      },
+      "required": [
+        "filters"
+      ],
+      "additionalProperties": false
+    },
+    "dimension": {
+      "type": "object",
+      "description": "Dimension definition",
+      "properties": {
+        "dataObject": {
+          "type": "string",
+          "description": "OrionBelt Data Object Name"
+        },
+        "column": {
+          "type": "string",
+          "description": "OrionBelt Column Name"
+        },
+        "resultType": {
+          "$ref": "#/definitions/dataType",
+          "description": "Data type of the result (informative only, not used for SQL generation)"
+        },
+        "label": {
+          "type": "string"
+        },
+        "timeGrain": {
+          "$ref": "#/definitions/timeGrain"
+        },
+        "description": {
+          "type": "string",
+          "description": "Business description of this dimension"
+        },
+        "format": {
+          "type": "string"
+        },
+        "via": {
+          "type": "string",
+          "description": "Intermediate data object name. Forces the join path through this data object to reach the dimension's dataObject. Used for role-playing dimensions (e.g., SalesEmployee vs ReturnEmployee)."
+        },
+        "owner": {
+          "type": "string",
+          "description": "Owner or responsible party for this dimension"
+        },
+        "synonyms": {
+          "type": "array",
+          "description": "Alternative names or terms for this dimension (LLM hints)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "customExtensions": {
+          "type": "array",
+          "description": "Vendor-keyed extension data",
+          "items": {
+            "$ref": "#/definitions/customExtension"
+          }
+        }
+      },
+      "required": [
+        "dataObject",
+        "column"
+      ],
+      "additionalProperties": false
+    },
+    "grainMode": {
+      "description": "Grain mode: FIXED starts empty, RELATIVE inherits query dimensions",
+      "enum": [
+        "FIXED",
+        "RELATIVE"
+      ]
+    },
+    "grainOverride": {
+      "type": "object",
+      "description": "Grain override — controls aggregation grain independently from query dimensions",
+      "properties": {
+        "mode": {
+          "$ref": "#/definitions/grainMode",
+          "description": "FIXED: start with empty grain (include adds). RELATIVE: start with query dims (exclude removes).",
+          "default": "RELATIVE"
+        },
+        "exclude": {
+          "type": "array",
+          "description": "Dimension names to remove from inherited grain (RELATIVE mode only)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "include": {
+          "type": "array",
+          "description": "Dimension names to add. With FIXED: these are the grain. With RELATIVE: added to inherited.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "keepOnly": {
+          "type": "array",
+          "description": "With FIXED: adaptive grain = keepOnly ∩ query_dims. Dimensions from this list present in the query.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "filterContextMode": {
+      "description": "Filter context mode: FIXED ignores all query filters, RELATIVE inherits them",
+      "enum": [
+        "FIXED",
+        "RELATIVE"
+      ]
+    },
+    "filterContextFilter": {
+      "type": "object",
+      "description": "A static filter to include in a filter context",
+      "properties": {
+        "field": {
+          "type": "string",
+          "description": "Dimension name or DataObject.Column reference"
+        },
+        "op": {
+          "type": "string",
+          "description": "Filter operator (equals, notequals, gt, gte, lt, lte, inlist, etc.)"
+        },
+        "value": {
+          "description": "Filter value (scalar, list, or null)"
+        }
+      },
+      "required": [
+        "field",
+        "op"
+      ],
+      "additionalProperties": false
+    },
+    "filterContext": {
+      "type": "object",
+      "description": "Filter context override — controls which query WHERE filters apply to this measure",
+      "properties": {
+        "mode": {
+          "$ref": "#/definitions/filterContextMode",
+          "description": "FIXED: ignore all query filters. RELATIVE (default): inherit query filters.",
+          "default": "RELATIVE"
+        },
+        "exclude": {
+          "type": "array",
+          "description": "Field names — query filters referencing these fields are removed (RELATIVE mode only)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "include": {
+          "type": "array",
+          "description": "Static filters to add to this measure's context",
+          "items": {
+            "$ref": "#/definitions/filterContextFilter"
+          }
+        },
+        "keepOnly": {
+          "type": "array",
+          "description": "Only query filters referencing these fields are kept",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "measure": {
+      "type": "object",
+      "description": "Measure definition",
+      "properties": {
+        "columns": {
+          "type": "array",
+          "description": "Columns used in Measure for Aggregation",
+          "items": {
+            "$ref": "#/definitions/queryColumn"
+          }
+        },
+        "label": {
+          "type": "string"
+        },
+        "resultType": {
+          "$ref": "#/definitions/dataType",
+          "description": "Data type of the result (informative only, not used for SQL generation)"
+        },
+        "aggregation": {
+          "type": "string",
+          "enum": [
+            "sum",
+            "count",
+            "count_distinct",
+            "avg",
+            "min",
+            "max",
+            "any_value",
+            "median",
+            "mode",
+            "listagg",
+            "stddev",
+            "stddev_pop",
+            "variance",
+            "var_pop",
+            "corr",
+            "covar_pop",
+            "covar_samp",
+            "regr_slope",
+            "regr_intercept",
+            "measure"
+          ],
+          "description": "Aggregation function. Core: sum, count, count_distinct, avg, min, max, any_value, median, mode, listagg. Statistical (v2.6+): stddev, stddev_pop, variance, var_pop (single-column), corr, covar_pop, covar_samp, regr_slope, regr_intercept (two-column). Vendor delegation (v2.7.7+): measure (Databricks Metric Views only; emits MEASURE(\"<label>\") and forbids columns/expression/filters/total). Dialect support varies: MySQL lacks correlation/covariance/regression; BigQuery and ClickHouse lack regr_slope/regr_intercept; only Databricks accepts 'measure'."
+        },
+        "distinct": {
+          "type": "boolean",
+          "description": "DISTINCT clause"
+        },
+        "delimiter": {
+          "type": "string",
+          "description": "Delimiter Field for List Functions (LISTAGG)"
+        },
+        "withinGroup": {
+          "type": "object",
+          "description": "WITHIN GROUP clause to specify column for ordering in LISTAGG",
+          "properties": {
+            "column": {
+              "$ref": "#/definitions/queryColumn"
+            },
+            "order": {
+              "enum": [
+                "ASC",
+                "DESC"
+              ],
+              "default": "ASC"
+            }
+          },
+          "required": [
+            "column"
+          ],
+          "additionalProperties": false
+        },
+        "allowFanOut": {
+          "type": "boolean",
+          "description": "allow fan out for this measure, only applicable if measures can't reach dimensions but dimensions can reach measures for a specific grain"
+        },
+        "total": {
+          "type": "boolean",
+          "description": "will use the total value of the measure"
+        },
+        "grain": {
+          "$ref": "#/definitions/grainOverride",
+          "description": "Grain override — controls aggregation grain independently from query dimensions. Mutually exclusive with 'total'."
+        },
+        "filterContext": {
+          "$ref": "#/definitions/filterContext",
+          "description": "Filter context override — controls which query WHERE filters apply to this measure. Requires CTE isolation."
+        },
+        "expression": {
+          "type": "string",
+          "description": "template string with {[DataObject].[Column]} placeholders for measure expression"
+        },
+        "description": {
+          "type": "string",
+          "description": "Business description of this measure"
+        },
+        "format": {
+          "type": "string"
+        },
+        "filters": {
+          "type": "array",
+          "description": "Filters applied to this measure (combined with AND by default). Supports leaf filters and filter groups with AND/OR/NOT logic.",
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/definitions/filter"
+              },
+              {
+                "$ref": "#/definitions/filterGroup"
+              }
+            ]
+          }
+        },
+        "owner": {
+          "type": "string",
+          "description": "Owner or responsible party for this measure"
+        },
+        "synonyms": {
+          "type": "array",
+          "description": "Alternative names or terms for this measure (LLM hints)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dataType": {
+          "type": "string",
+          "description": "Explicit OBML data type for this measure (e.g. decimal(18, 2), bigint). Overrides automatic type inference.",
+          "pattern": "^(decimal\\(\\s*\\d+\\s*,\\s*\\d+\\s*\\)|bigint|integer|double|date|timestamp|time|string|boolean)$"
+        },
+        "customExtensions": {
+          "type": "array",
+          "description": "Vendor-keyed extension data",
+          "items": {
+            "$ref": "#/definitions/customExtension"
+          }
+        }
+      },
+      "required": [
+        "aggregation"
+      ],
+      "additionalProperties": false
+    },
+    "cumulativeAggType": {
+      "description": "Window aggregation function for cumulative metrics",
+      "enum": [
+        "sum",
+        "avg",
+        "min",
+        "max",
+        "count"
+      ]
+    },
+    "grainToDate": {
+      "description": "Reset boundary for grain-to-date cumulative metrics",
+      "enum": [
+        "year",
+        "quarter",
+        "month",
+        "week"
+      ]
+    },
+    "periodOverPeriodComparison": {
+      "description": "Comparison type for period-over-period metrics",
+      "enum": [
+        "ratio",
+        "difference",
+        "previousValue",
+        "percentChange"
+      ]
+    },
+    "windowFunctionKind": {
+      "description": "SQL window-function family for MetricType.WINDOW",
+      "enum": [
+        "rank",
+        "dense_rank",
+        "row_number",
+        "ntile",
+        "lag",
+        "lead",
+        "first_value",
+        "last_value"
+      ]
+    },
+    "periodOverPeriod": {
+      "type": "object",
+      "description": "Period-over-period configuration — compares a measure against a prior time period",
+      "properties": {
+        "timeDimension": {
+          "type": "string",
+          "description": "Name of the time dimension used for period comparison (must be in SELECT)"
+        },
+        "grain": {
+          "$ref": "#/definitions/timeGrain",
+          "description": "Time grain for the date spine (e.g. month, quarter, year)"
+        },
+        "offset": {
+          "type": "integer",
+          "description": "Number of periods to look back (negative = past, e.g. -1 = previous period)",
+          "default": -1
+        },
+        "offsetGrain": {
+          "$ref": "#/definitions/timeGrain",
+          "description": "Unit for the offset (e.g. year for YoY, month for MoM)"
+        },
+        "comparison": {
+          "$ref": "#/definitions/periodOverPeriodComparison",
+          "description": "How to compare current vs previous period value",
+          "default": "percentChange"
+        }
+      },
+      "required": [
+        "timeDimension",
+        "grain",
+        "offsetGrain"
+      ],
+      "additionalProperties": false
+    },
+    "metric": {
+      "type": "object",
+      "description": "Metric definition. A derived metric (expression referencing measures), a cumulative metric (window function over a measure), or a period-over-period metric (comparing a measure across time periods).",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "type": {
+          "description": "Metric category: derived (expression-based), cumulative (windowed aggregation over a measure), period_over_period (time comparison), or window (rank/lag/lead/ntile/first_value/last_value).",
+          "enum": [
+            "derived",
+            "cumulative",
+            "period_over_period",
+            "window"
+          ],
+          "default": "derived"
+        },
+        "expression": {
+          "type": "string",
+          "description": "Template string with {[Measure Name]} placeholders (required for derived and period_over_period metrics)"
+        },
+        "measure": {
+          "type": "string",
+          "description": "Name of base measure (required for cumulative metrics)"
+        },
+        "timeDimension": {
+          "type": "string",
+          "description": "Dimension used for ordering (required for cumulative metrics, must be a date/timestamp dimension)"
+        },
+        "cumulativeType": {
+          "$ref": "#/definitions/cumulativeAggType",
+          "description": "Window aggregation function (default: sum)",
+          "default": "sum"
+        },
+        "window": {
+          "type": "integer",
+          "description": "Rolling window size in periods (omit for unbounded running total). Mutually exclusive with grainToDate.",
+          "minimum": 1
+        },
+        "grainToDate": {
+          "$ref": "#/definitions/grainToDate",
+          "description": "Reset boundary for grain-to-date (e.g. month for MTD). Mutually exclusive with window."
+        },
+        "partitionBy": {
+          "type": "array",
+          "description": "Dimensions used as PARTITION BY keys for cumulative or window metrics. Each entry must be a dimension defined in the model and selected in the query. Default: [] (no partition).",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "periodOverPeriod": {
+          "$ref": "#/definitions/periodOverPeriod",
+          "description": "Period-over-period configuration (required for period_over_period metrics)"
+        },
+        "windowFunction": {
+          "$ref": "#/definitions/windowFunctionKind",
+          "description": "Window-function family (required for window metrics)"
+        },
+        "offset": {
+          "type": "integer",
+          "description": "Row offset for LAG/LEAD (must be >= 1)",
+          "minimum": 1
+        },
+        "buckets": {
+          "type": "integer",
+          "description": "Bucket count for NTILE (must be >= 2)",
+          "minimum": 2
+        },
+        "orderDirection": {
+          "type": "string",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "default": "desc",
+          "description": "Window ORDER BY direction (default 'desc' for ranking; 'asc' is natural for ROW_NUMBER over time)"
+        },
+        "defaultValue": {
+          "description": "Default value for LAG/LEAD (NULL when omitted)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Business description of this metric"
+        },
+        "format": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string",
+          "description": "Owner or responsible party for this metric"
+        },
+        "synonyms": {
+          "type": "array",
+          "description": "Alternative names or terms for this metric (LLM hints)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dataType": {
+          "type": "string",
+          "description": "Explicit OBML data type for this metric (e.g. decimal(18, 4)). Overrides automatic type inference.",
+          "pattern": "^(decimal\\(\\s*\\d+\\s*,\\s*\\d+\\s*\\)|bigint|integer|double|date|timestamp|time|string|boolean)$"
+        },
+        "customExtensions": {
+          "type": "array",
+          "description": "Vendor-keyed extension data",
+          "items": {
+            "$ref": "#/definitions/customExtension"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "cumulative"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "measure",
+              "timeDimension"
+            ],
+            "not": {
+              "required": [
+                "window",
+                "grainToDate"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "period_over_period"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "expression",
+              "periodOverPeriod"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "window"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "windowFunction"
+            ]
+          }
+        },
+        {
+          "if": {
+            "not": {
+              "properties": {
+                "type": {
+                  "enum": [
+                    "cumulative",
+                    "period_over_period",
+                    "window"
+                  ]
+                }
+              },
+              "required": [
+                "type"
+              ]
+            }
+          },
+          "then": {
+            "required": [
+              "expression"
+            ]
+          }
+        }
+      ],
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "properties": {
+    "version": {
+      "enum": [
+        1.0
+      ]
+    },
+    "name": {
+      "type": "string",
+      "description": "Optional addressing identifier for multi-model mode. After normalization (lowercase; spaces/dots/dashes -> underscores; trimmed) must match ^[a-z][a-z0-9_]{0,62}$. Selected by BI tools via the Flight `database` catalog or pgwire `database=` parameter.",
+      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+    },
+    "description": {
+      "type": "string",
+      "description": "Business description of this semantic model"
+    },
+    "dataObjects": {
+      "type": "object",
+      "description": "Data Object Names in the OrionBelt Model",
+      "patternProperties": {
+        ".": {
+          "$ref": "#/definitions/dataObject"
+        }
+      },
+      "additionalProperties": false,
+      "minProperties": 1
+    },
+    "dimensions": {
+      "type": "object",
+      "description": "Dimensions for use in Queries",
+      "patternProperties": {
+        ".": {
+          "$ref": "#/definitions/dimension"
+        }
+      },
+      "additionalProperties": false
+    },
+    "measures": {
+      "type": "object",
+      "description": "Measures for use in Queries or referenced by Metrics",
+      "patternProperties": {
+        ".": {
+          "$ref": "#/definitions/measure"
+        }
+      },
+      "additionalProperties": false
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Metrics for use in Queries",
+      "patternProperties": {
+        ".": {
+          "$ref": "#/definitions/metric"
+        }
+      },
+      "additionalProperties": false
+    },
+    "owner": {
+      "type": "string",
+      "description": "Owner or responsible party for this model"
+    },
+    "exposeCounts": {
+      "type": "boolean",
+      "description": "When true (default), synthesize a row-count measure for every countable data object. Set false to suppress all synthesized counts. Declared measures are unaffected.",
+      "default": true
+    },
+    "countLabelPattern": {
+      "type": "string",
+      "description": "Name/label template for synthesized count measures (the count's id is its label). The only valid token is {object}, which interpolates each object's display label (e.g. 'Sales' -> 'Sales Count'). A per-object countLabel overrides it.",
+      "default": "{object} Count"
+    },
+    "filters": {
+      "type": "array",
+      "description": "Static WHERE filters applied to every query against this model",
+      "items": {
+        "type": "object",
+        "properties": {
+          "dataObject": {
+            "type": "string",
+            "description": "Data object containing the filter column"
+          },
+          "column": {
+            "type": "string",
+            "description": "Column name within the data object"
+          },
+          "operator": {
+            "$ref": "#/definitions/staticFilterOperator"
+          },
+          "value": {
+            "description": "Single filter value. Dates and timestamps use ISO 8601 strings (e.g. '2026-01-01', '2026-01-01T14:30:00Z'). Bare YAML dates are auto-coerced to ISO strings at load time.",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "values": {
+            "type": "array",
+            "description": "List of filter values (for in/between operators). Dates use ISO 8601 strings.",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "dataObject",
+          "column",
+          "operator"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "examples": {
+      "type": "array",
+      "description": "Canonical example queries authored alongside the model. Surfaced via the /examples endpoints so agents can discover what kinds of questions the model is designed to answer. See PLAN_agent_api_improvements.md §5.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Snake_case identifier, unique within the examples block"
+          },
+          "description": {
+            "type": "string",
+            "description": "One- or two-sentence explanation of what this example shows"
+          },
+          "intentTags": {
+            "type": "array",
+            "description": "Free-form tags used by the /examples?intent= filter",
+            "items": {
+              "type": "string"
+            }
+          },
+          "query": {
+            "type": "object",
+            "description": "Full QueryObject payload (the same shape accepted by /query/sql)"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "query"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "extends": {
+      "type": "array",
+      "description": "List of OBML files to merge as analytical layers (dimensions, measures, metrics). Extend files must not contain dataObjects.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "inherits": {
+      "type": "string",
+      "description": "Path to a parent OBML model to inherit all definitions from. The parent provides dataObjects, joins, dimensions, measures, metrics, and filters. The child can add or override analytical definitions and append static filters."
+    },
+    "settings": {
+      "type": "object",
+      "description": "Model-level settings for compilation and execution behavior",
+      "properties": {
+        "defaultNumericDataType": {
+          "type": "string",
+          "description": "Default numeric data type for measures/metrics without explicit data_type. Must be a decimal type (e.g. decimal(18, 4)).",
+          "pattern": "^decimal\\(\\s*\\d+\\s*,\\s*\\d+\\s*\\)$"
+        },
+        "defaultTimezone": {
+          "type": "string",
+          "description": "IANA timezone name (e.g. Europe/Zagreb, America/New_York). Used as fallback for naive timestamps when DB session timezone cannot be detected, or as override when overrideDatabaseTimezone is true."
+        },
+        "overrideDatabaseTimezone": {
+          "type": "boolean",
+          "description": "If true, use defaultTimezone instead of the auto-detected database session timezone. Use when naive timestamps are stored in a known timezone that differs from the DB session. Default: false.",
+          "default": false
+        },
+        "defaultDialect": {
+          "type": "string",
+          "description": "Default SQL dialect for queries that omit the 'dialect' field. Resolution order at request time: explicit dialect → model.settings.defaultDialect → DB_VENDOR env. Must be one of the registered OrionBelt dialects.",
+          "enum": [
+            "bigquery",
+            "clickhouse",
+            "databricks",
+            "dremio",
+            "duckdb",
+            "mysql",
+            "postgres",
+            "snowflake"
+          ]
+        },
+        "defaultLocale": {
+          "type": "string",
+          "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
+          "description": "Default BCP-47 locale tag (e.g. 'en-US', 'de-DE') for result value formatting. Resolution at request time: explicit ?locale= -> settings.defaultLocale -> DEFAULT_LOCALE env."
+        }
+      },
+      "additionalProperties": false
+    },
+    "customExtensions": {
+      "type": "array",
+      "description": "Vendor-keyed extension data at model level",
+      "items": {
+        "$ref": "#/definitions/customExtension"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "version"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "extends"
+              ]
+            },
+            {
+              "required": [
+                "inherits"
+              ]
+            }
+          ]
+        }
+      },
+      "then": {
+        "required": [
+          "dataObjects"
+        ]
+      }
+    },
+    {
+      "not": {
+        "required": [
+          "extends",
+          "inherits"
+        ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "inherits"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "dataObjects"
+          ]
+        }
+      }
+    }
+  ]
+}

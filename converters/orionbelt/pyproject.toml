@@ -1,0 +1,72 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "apache-ossie-orionbelt"
+version = "0.1.0"
+description = "Bidirectional OBML <-> OSI (Open Semantic Interchange) converter for OrionBelt semantic models"
+license = { text = "Apache-2.0" }
+readme = "README.md"
+authors = [{ name = "Ralf Becher", email = "info@orionbelt.ai" }]
+keywords = ["osi", "open-semantic-interchange", "obml", "semantic-layer", "orionbelt", "converter"]
+requires-python = ">=3.12"
+dependencies = [
+    "pyyaml>=6.0",
+    "jsonschema>=4.18",
+    "referencing>=0.30",
+]
+
+[project.optional-dependencies]
+# Deep OBML semantic validation (cycles, duplicate names, invalid refs) via the
+# full OrionBelt engine. Optional: validate_obml degrades to JSON-schema-only
+# checks with a warning when this is not installed.
+obml-validation = ["orionbelt-semantic-layer"]
+dev = [
+    "pytest>=8.0",
+    "mypy>=1.10",
+    "ruff>=0.4",
+    "types-jsonschema",
+    "types-PyYAML",
+]
+
+[project.scripts]
+ossie-orionbelt = "ossie_orionbelt.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ossie_orionbelt"]
+
+# The OSI core schema is not tracked as a copy in this package (it lives once at
+# the repo's core-spec/). Bundle it into the built wheel from that single source
+# so a pip-installed converter still validates OSI documents self-contained.
+# In-tree (dev/test) runs resolve it from core-spec/ via validation._osi_schema_path.
+[tool.hatch.build.targets.wheel.force-include]
+"../../core-spec/osi-schema.json" = "ossie_orionbelt/schemas/osi-schema.json"
+
+# Only the OBML schema (OrionBelt's own format) is vendored under
+# src/ossie_orionbelt/schemas/. OSI core documents are validated against the
+# repo's core-spec/osi-schema.json, resolved at runtime by
+# validation._osi_schema_path (no duplicate copy). The OSI ontology export is
+# validated semantically only (ossie ships no ontology schema).
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "A", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src/ossie_orionbelt"]
+
+# The OrionBelt engine is an optional runtime dependency: validate_obml uses it
+# for semantic validation when present and degrades gracefully otherwise, so it
+# is not installed in this standalone converter and has no published stubs.
+[[tool.mypy.overrides]]
+module = ["orionbelt.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

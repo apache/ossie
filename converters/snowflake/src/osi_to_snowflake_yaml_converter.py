@@ -1,5 +1,22 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 """
-Converts an OSI (Open Semantic Interchange) YAML semantic model to a Snowflake
+Converts an Ossie (Open Semantic Interchange) YAML semantic model to a Snowflake
 Cortex Analyst semantic model YAML. Pure offline conversion — no Snowflake
 connection required.
 
@@ -18,21 +35,21 @@ SUPPORTED_VERSION = "0.2.0.dev0"
 
 
 class OsiConversionError(Exception):
-    """Raised when an OSI YAML cannot be converted to Snowflake format."""
+    """Raised when an Ossie YAML cannot be converted to Snowflake format."""
 
 
 def convert_osi_to_snowflake(osi_yaml_str):
-    """Top-level entry point. Parses OSI YAML, validates, converts, returns
+    """Top-level entry point. Parses Ossie YAML, validates, converts, returns
     Snowflake YAML string.
 
-    Expects the standard OSI wrapped format::
+    Expects the standard Ossie wrapped format::
 
         version: "0.2.0.dev0"
         semantic_model:
           - name: ...
 
     Args:
-        osi_yaml_str: OSI YAML as a string.
+        osi_yaml_str: Ossie YAML as a string.
 
     Returns:
         Snowflake Cortex Analyst semantic model YAML string.
@@ -42,34 +59,34 @@ def convert_osi_to_snowflake(osi_yaml_str):
     """
     root = yaml.safe_load(osi_yaml_str)
     if not isinstance(root, dict):
-        raise OsiConversionError("Invalid OSI YAML: expected a mapping at the root")
+        raise OsiConversionError("Invalid Ossie YAML: expected a mapping at the root")
 
     version_str = str(root.get("version", ""))
     if version_str != SUPPORTED_VERSION:
         raise OsiConversionError(
-            f"Unsupported OSI specification version '{version_str}'. "
+            f"Unsupported Ossie specification version '{version_str}'. "
             f"Supported: {SUPPORTED_VERSION}"
         )
 
     semantic_model = root.get("semantic_model")
     if not isinstance(semantic_model, list) or len(semantic_model) == 0:
         raise OsiConversionError(
-            "Invalid OSI YAML: 'semantic_model' must be a non-empty list"
+            "Invalid Ossie YAML: 'semantic_model' must be a non-empty list"
         )
 
     if len(semantic_model) > 1:
         warnings.warn(
-            f"OSI YAML contains {len(semantic_model)} semantic models; "
+            f"Ossie YAML contains {len(semantic_model)} semantic models; "
             f"only the first will be converted"
         )
 
-    osi = semantic_model[0]
-    if not isinstance(osi, dict):
+    ossie = semantic_model[0]
+    if not isinstance(ossie, dict):
         raise OsiConversionError(
-            "Invalid OSI YAML: 'semantic_model' entries must be mappings"
+            "Invalid Ossie YAML: 'semantic_model' entries must be mappings"
         )
 
-    snowflake_model = _convert_model(osi)
+    snowflake_model = _convert_model(ossie)
 
     return yaml.dump(
         snowflake_model,
@@ -79,38 +96,38 @@ def convert_osi_to_snowflake(osi_yaml_str):
     )
 
 
-def _convert_model(osi):
-    """Converts the root OSI model dict to a Snowflake semantic model dict."""
-    name = osi.get("name")
+def _convert_model(ossie):
+    """Converts the root Ossie model dict to a Snowflake semantic model dict."""
+    name = ossie.get("name")
     if not name:
         raise OsiConversionError("Missing required 'name' field in semantic model")
 
     result = {}
     result["name"] = name
 
-    description = osi.get("description")
-    ai_context = osi.get("ai_context")
+    description = ossie.get("description")
+    ai_context = ossie.get("ai_context")
     if isinstance(ai_context, str) and ai_context:
         description = f"{description}\n{ai_context}" if description else ai_context
     if description:
         result["description"] = description
 
     # datasets -> tables
-    datasets = osi.get("datasets")
+    datasets = ossie.get("datasets")
     if datasets:
         tables = [_convert_dataset(ds) for ds in datasets]
         if tables:
             result["tables"] = tables
 
     # relationships
-    relationships = osi.get("relationships")
+    relationships = ossie.get("relationships")
     if relationships:
         converted_rels = [_convert_relationship(rel) for rel in relationships]
         if converted_rels:
             result["relationships"] = converted_rels
 
     # metrics
-    metrics = osi.get("metrics")
+    metrics = ossie.get("metrics")
     if metrics:
         converted_metrics = []
         for m in metrics:
@@ -121,13 +138,13 @@ def _convert_model(osi):
             result["metrics"] = converted_metrics
 
     dropped_ai = ["ai_context"] if isinstance(ai_context, dict) and ai_context else []
-    _warn_dropped_fields(osi, "model", extra_dropped=dropped_ai)
+    _warn_dropped_fields(ossie, "model", extra_dropped=dropped_ai)
 
     return result
 
 
 def _convert_dataset(dataset):
-    """Converts an OSI dataset dict to a Snowflake table dict."""
+    """Converts an Ossie dataset dict to a Snowflake table dict."""
     result = {}
     name = dataset.get("name")
     if not name:
@@ -209,11 +226,11 @@ def _classify_field(field):
 
 
 def _convert_named_expr(entry, kind):
-    """Converts an OSI field or metric dict to a Snowflake entry with name, expr,
+    """Converts an Ossie field or metric dict to a Snowflake entry with name, expr,
     description, and synonyms.
 
     Args:
-        entry: The OSI field or metric dict.
+        entry: The Ossie field or metric dict.
         kind: Human-readable type for error messages (e.g., "field", "metric").
     """
     name = entry.get("name")
@@ -250,7 +267,7 @@ def _convert_named_expr(entry, kind):
 
 
 def _convert_relationship(rel):
-    """Converts an OSI relationship dict to a Snowflake relationship dict."""
+    """Converts an Ossie relationship dict to a Snowflake relationship dict."""
     result = {}
     rel_name = rel.get("name")
     if not rel_name:
@@ -342,7 +359,7 @@ def _normalize_identifier(identifier):
 
 
 def _parse_source(source):
-    """Parses an OSI dataset source string into a Snowflake base_table dict.
+    """Parses an Ossie dataset source string into a Snowflake base_table dict.
 
     Returns None if source is empty/None. Returns {"definition": source} for
     subqueries. Otherwise splits into 3-part db.schema.table.
@@ -393,13 +410,13 @@ def _extract_synonyms(ai_context):
 
 
 def _warn_dropped_fields(source, context, extra_dropped=None):
-    """Warns about OSI fields that have no Snowflake counterpart and are dropped.
+    """Warns about Ossie fields that have no Snowflake counterpart and are dropped.
 
     Checks for universally-dropped fields (custom_extensions, label, version).
     Callers handle ai_context warnings themselves since consumption logic varies.
 
     Args:
-        source: The OSI dict being converted.
+        source: The Ossie dict being converted.
         context: Human-readable description (e.g., "field 'col1'").
         extra_dropped: Optional list of additional field descriptions to report
             as dropped (e.g., ai_context details computed by the caller).
@@ -424,10 +441,10 @@ def _warn_dropped_fields(source, context, extra_dropped=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert OSI YAML semantic model to Snowflake Cortex Analyst YAML"
+        description="Convert Ossie YAML semantic model to Snowflake Cortex Analyst YAML"
     )
     parser.add_argument(
-        "-i", "--input", required=True, help="Path to the OSI YAML input file"
+        "-i", "--input", required=True, help="Path to the Ossie YAML input file"
     )
     parser.add_argument(
         "-o", "--output", required=True, help="Path to write the Snowflake YAML output"

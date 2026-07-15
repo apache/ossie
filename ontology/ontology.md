@@ -1,4 +1,23 @@
-# OSI - Ontology Specification
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+-->
+
+# Apache Ossie - Ontology Specification
 
 **Version:** 0.2.0.dev0
 
@@ -29,7 +48,7 @@ e-mail address. In some modeling languages these are called either entities or o
 
 A value type is a concept that represents instances of some data type (i.e SQL types like Integer
 or String) with additional semantics. For instance, a social-security number is a string or positive
-integer that comprises exactly nine digits. In some modeling langauges these are called data types
+integer that comprises exactly nine digits. In some modeling languages these are called data types
 or domains.
 
 ### Built-in concepts
@@ -82,7 +101,7 @@ concept plays the first role:
 
 Concepts represent the types of things that have meaning in a business setting, e.g., person, company,
 or salary. Every ontology implicitly includes all of the [built-in concepts](#built-in-concepts) and
-may refer to them by name without declaring them. 
+may refer to them by name without declaring them.
 
 Concepts have the following schema:
 
@@ -168,7 +187,7 @@ ontology:
 the relationship is identified by the string `Person.earns`. This convention naturally supports
 expressions that navigate over the links of relationships using the “dot-join” operator in a
 manner that is familiar to object-oriented programming languages. This relationship links
-`Person` and `Salary` objects and verbalizes each link as “Person earns Salary.” 
+`Person` and `Salary` objects and verbalizes each link as “Person earns Salary.”
 
 #### Roles
 
@@ -201,7 +220,7 @@ ontology:
           - concept: Vehicle
           - concept: Date
         multiplicity: ManyToOne
-        verbalizes: [ "{Person} puchased {Vehicle} on {Date}" ]
+        verbalizes: [ "{Person} purchased {Vehicle} on {Date}" ]
 ```
 
 the unary relationship `Person.files_married_joint` has an empty roles list, while the
@@ -209,7 +228,7 @@ ternary relationship `Person.purchased_on` declares two additional roles played 
 `Vehicle` and `Date` respectively,
 
 The role player often suffices to distinguish the role within its relationship, but when
-the same concept plays more than one role, the user must declare a distinguising name for
+the same concept plays more than one role, the user must declare a distinguishing name for
 any additional role whose player's name does not distinguish it from other roles in
 the same relationship. For instance, in:
 
@@ -234,13 +253,13 @@ this relationship.
 Expressions that are used to define derived_by rules and requires constraints will refer to
 roles by name -- the name defaulting to the concept that plays the role unless an explicit
 role name is provided. In any expression that involving links of the `Store.ships_to_in_days`
-relationship can then use the variables `Store` and `destination` to refer to objecs that
+relationship can then use the variables `Store` and `destination` to refer to objects that
 play these two `Store`-playing roles without ambiguity.
 
 #### Multiplicities
 
 If a relationship comprises more than one role, objects that play the last role could be functionally
-dermined by a tuple of objects that play the other roles. This knowledge is declared using a `ManyToOne`
+determined by a tuple of objects that play the other roles. This knowledge is declared using a `ManyToOne`
 multiplicity constraint. In the examples above, the constraint declares that each person earns at most
 one salary and that for each pair of stores, the former ships to the latter in at most one number of
 days. For relationships of ternary and higher arity, the multiplicity applies to the n-th role, meaning
@@ -266,7 +285,7 @@ idnetifier of a concept.
 
 ### Derivation expressions
 
-Concepts and relationships may be derived using expressions. Think of a derived concept or 
+Concepts and relationships may be derived using expressions. Think of a derived concept or
 relationship as a view whose objects or links are derived from those of other concepts or
 relationships. For instance:
 
@@ -287,7 +306,7 @@ ontology:
             name: "descendant"
         derived_by:
           - "Person.parent_of(descendant)"
-            "Person.ancestor_of.parent_of(descendant)"  
+            "Person.ancestor_of.parent_of(descendant)"
       - name: taxed_at
         roles:
           - concept: TaxRate
@@ -382,7 +401,7 @@ mappings that group by some concept.
 
 Each concept mapping declares how to populate a concept with objects and how to populate the relationships
 that group under that concept with links. These declarations are formed from patterns of expressions that
-reference fields in a logical model that is declared using the OSI core semantic model spec.
+reference fields in a logical model that is declared using the Ossie core semantic model spec.
 
 Concept mappings have the following schema:
 
@@ -403,7 +422,7 @@ An object mapping has the following schema:
 |---------------|---------|-----|-------|
 | `concept`     | string  | No | Names the concept being mapped to using this object map |
 | `expression`  | string  | if no `referent_mappings` | SQL expression that computes a value from fields |
-| `referent_mappings` | list  | if no `expression` | Referent mappings that find entity objects using identifying realtionships |
+| `referent_mappings` | list  | if no `expression` | Referent mappings that find entity objects using identifying relationships |
 
 When the concept is a value type or an entity type with a simple identifier, then an object mapping is just
 a SQL expression. For instance, given this ontology snippet:
@@ -439,7 +458,7 @@ then mapping those values to `Person` objects using the declared identifier. The
 concept_mappings:
   - concept: Person
     object_mappings:
-      - expression: PERSONS.SSN                  
+      - expression: PERSONS.SSN
   ...
 ```
 maps values from the `SSN` field of dataset `PERSONS` into `Person` objects.
@@ -454,7 +473,7 @@ Referent mappings have the following schema:
 |----------------|--------|-----|-------|
 | `relationship` | string | Yes | Name of an identifying relationship |
 | `expression`  | string  | if no `referent_mappings` | SQL expression that computes a value from fields |
-| `referent_mappings` | list  | if no `expression` | Referent mappings that find entity objects using identifying realtionships |
+| `referent_mappings` | list  | if no `expression` | Referent mappings that find entity objects using identifying relationships |
 
 For instance, consider this ontology snippet:
 

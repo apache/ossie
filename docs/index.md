@@ -1,10 +1,31 @@
-# Open Semantic Interchange (OSI)
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+-->
+
+# Apache Ossie
 
 ## Overview
 
-The [Open Semantic Interchange (OSI)](https://open-semantic-interchange.org/) initiative is a collaborative, open-source effort dedicated to standardizing and streamlining semantic model exchange and utilization across the data analytics, AI, and BI ecosystem. Our shared vision is to establish a common, vendor-agnostic semantic model specification, promoting interoperability, efficiency, and collaboration among all participants.
+The [Apache Ossie](https://ossie.apache.org/) initiative is a collaborative, open-source effort dedicated to standardizing and streamlining semantic model exchange and utilization across the data analytics, AI, and BI ecosystem. Our shared vision is to establish a common, vendor-agnostic semantic model specification, promoting interoperability, efficiency, and collaboration among all participants.
 
-By providing a single, consistent source of truth, the OSI standard ensures that your data's definitions and value remain consistent as they are interchanged between AI agents, BI platforms, and all other tools in your ecosystem — eliminating inconsistencies across your different tools.
+Apache Ossie was formerly known as **Open Semantic Interchange (OSI)**.
+
+By providing a single, consistent source of truth, the Ossie standard ensures that your data's definitions and value remain consistent as they are interchanged between AI agents, BI platforms, and all other tools in your ecosystem — eliminating inconsistencies across your different tools.
 
 ### The Problem: Semantic Fragmentation
 
@@ -15,18 +36,18 @@ Today's data ecosystem is fragmented. Organizations rely on a wide array of tool
 - **AI Hallucinations**: When AI agents encounter conflicting or incomplete business logic across tools, they produce unreliable outputs grounded in inconsistent data definitions.
 - **Integration Debt**: Every new tool added to the stack requires custom integration work, creating a web of brittle, point-to-point connectors that are costly to maintain.
 
-### How OSI Solves It
+### How Apache Ossie Solves It
 
-OSI addresses semantic fragmentation by providing:
+Ossie addresses semantic fragmentation by providing:
 
 - **Single Source of Truth**: A unified specification for semantic and metric definitions that all tools can read and write, ensuring consistency across the entire data stack.
-- **Native Interoperability**: A hub-and-spoke model where tools exchange semantic models through OSI as a common format — enabling direct platform-to-platform exchange without custom connectors.
+- **Native Interoperability**: A hub-and-spoke model where tools exchange semantic models through Ossie as a common format — enabling direct platform-to-platform exchange without custom connectors.
 - **Trusted AI Grounding**: Consistent business logic and rich AI context annotations ensure that AI agents and LLMs can reliably interpret and query data.
 - **Reduced Total Cost of Ownership**: Automated model exchange eliminates manual reconciliation work and reduces the engineering effort needed to integrate new tools.
 
 ### Specification at a Glance
 
-The OSI core specification (current version: **0.2.0.dev0**, latest released: **0.1.1**) defines a YAML-based format for describing semantic models. The key constructs are:
+The Ossie core specification (current version: **0.2.0.dev0**, latest released: **0.1.1**) defines a YAML-based format for describing semantic models. The key constructs are:
 
 | Construct | Description |
 |-----------|-------------|
@@ -44,22 +65,22 @@ For the full specification, see [core-spec/spec.md](../core-spec/spec.md). For v
 
 ### Participating Organizations
 
-OSI is supported by a broad coalition of 50+ organizations across the data ecosystem, including:
+Ossie is supported by a broad coalition of 50+ organizations across the data ecosystem, including:
 
 Alation, Anomalo, Atlan, AtScale, Bigeye, BlackRock, Blue Yonder, Carto, Cloudera, Coalesce, Collate, Collibra, Cogniti, Count, Credible, Cube, Databricks, DataHub, Denodo, dbt Labs, Dremio, Domo, Elementum AI, Firebolt, GoodData, Hex, Honeydew, Informatica, Instacart, JetBrains, Lightdash, Mistral AI, Omni, Oracle, Preset, Qlik, RelationalAI, Salesforce, Select Star, Sigma, Snowflake, Starburst Data, Strategy, Sundial, ThoughtSpot, and more.
 
 ### Converters
 
-OSI converters follow a **hub-and-spoke** architecture: the OSI core specification acts as the central, vendor-neutral format, and each converter handles translation to or from a specific vendor format (e.g., Snowflake, dbt, Salesforce, Databricks). This avoids the need for point-to-point converters between every pair of vendors.
+Ossie converters follow a **hub-and-spoke** architecture: the Ossie core specification acts as the central, vendor-neutral format, and each converter handles translation to or from a specific vendor format (e.g., Snowflake, dbt, Salesforce, Databricks). This avoids the need for point-to-point converters between every pair of vendors.
 
-For details on implementing a converter, see the [Converters Guide](../converters/index.md).
+For details on implementing a converter, see the [Converters Guide](../converters/README.md).
 
 ---
 
 ## Project Governance
 
-We wanted the OSI project to be a collaborative effort from the start. The purpose is to grow a community of developers, contributors, and users who are actively involved in shaping the OSI Specification as it moves along.
-Open Semantic Interchange (OSI) project governance is inspired by the governance model from [The ASF](https://www.apache.org).
+We wanted the Ossie project to be a collaborative effort from the start. The purpose is to grow a community of developers, contributors, and users who are actively involved in shaping the Ossie Specification as it moves along.
+Apache Ossie project governance is inspired by the governance model from [The ASF](https://www.apache.org).
 
 ### The Apache Way
 
@@ -82,47 +103,43 @@ All technical discussions, design decisions, and specification changes happen in
 The community collectively ensures that the specification and its associated tooling remain high quality, secure, and aligned with the project's mission of vendor-agnostic semantic interoperability.
 
 6. **Independence**
-The OSI project operates independently of any single vendor or organization. While contributors may be employed by companies that have a stake in semantic interoperability, the project's direction is determined by the community as a whole.
+The Ossie project operates independently of any single vendor or organization. While contributors may be employed by companies that have a stake in semantic interoperability, the project's direction is determined by the community as a whole.
 
-### Technical Governing Bodies
+### Governing Bodies
 
-The **Technical Steering Committee (TSC)** is responsible for the overall technical direction of the OSI Specification. The TSC:
+As an incubating project, Apache Ossie is governed by its **Podling Project Management Committee (PPMC)**, working alongside the project's **Mentors** and under the oversight of the **Apache Incubator PMC (IPMC)**. See [CONTRIBUTING.md](../CONTRIBUTING.md) for the full description of roles and process.
+
+The **PPMC** is responsible for the overall direction and health of the podling. It:
 
 - Reviews and approves significant changes to the core specification
-- Resolves technical disputes that cannot be settled through normal consensus
+- Guides the roadmap for new specification features and extensions
 - Ensures backward compatibility and coherence across specification versions
-- Oversees the roadmap for new specification features and extensions
-- Has binding vote on the Specification Change vote
+- Casts binding votes and votes on committer/PPMC nominations and releases
+- Resolves technical disputes that cannot be settled through normal consensus
 
-New TSC members are elected by the TSC members.
+New committers and PPMC members are nominated and voted on by the PPMC following the standard [ASF process](https://www.apache.org/dev/pmc.html). During incubation, releases are additionally approved by the Incubator PMC.
 
-The TSC members are:
+Current PPMC members and Mentors are listed on the [podling status page](https://incubator.apache.org/projects/ossie.html).
 
-| Name | Affiliation |
-|------|-------------|
-| Khushboo Bhatia | Snowflake |
-| Lior Ebel | Salesforce |
-| Quigley Malcom | dbt Labs |
-| JB Onofré | The ASF |
+### Roles
 
-### Non-Governing Bodies
+- **Contributors**: Anyone who contributes to the project in any form — code, documentation, bug reports, specification feedback, or community support. Contributor votes are non-binding, but everyone is encouraged to participate in all discussions and votes.
+- **Committers**: Contributors who have earned write access to the repository through sustained contributions. Committers merge pull requests and have binding votes on the project's technical decisions. All committers have an ICLA on file.
+- **PPMC Members**: Committers who also help steer the podling — growing the community, overseeing releases, and mentoring contributors. PPMC votes are binding.
+- **Mentors**: Experienced ASF members assigned by the Incubator to guide the podling and shepherd release votes to the IPMC.
 
-- **Contributors**: Anyone who contributes to the project in any form — code, documentation, bug reports, specification feedback, or community support. Contributors do not have binding vote rights but are encouraged to participate in all discussions.
-- **Committers**: Contributors who have earned write access to the repository through sustained contributions. Committers can merge pull requests and have binding votes on non-specification matters.
-- **Specification Reviewers**: Community members with domain expertise (e.g., in BI, AI, data engineering) who review proposed specification changes for correctness, completeness, and practical applicability.
+### Voting on Specification Changes
 
-### Vote on Specification Changes
+Changes to the Apache Ossie specification follow the ASF voting model, held on the `dev@ossie.apache.org` mailing list:
 
-Changes to the OSI Specification follow a structured voting process:
-
-1. **Proposal**: A specification change is submitted as a GitHub pull request with a clear description of the motivation, the change itself, and its impact on existing implementations.
-2. **Discussion period**: The community has a minimum of 7 days to review and discuss the proposed change. Complex changes may require a longer review window.
-3. **Vote**: Once the discussion period has elapsed, a vote is called. TSC members and committers cast votes using the following convention:
-   - **+1** (Yes): In favor of the change
-   - **0** (Abstain): No opinion or willing to go with the majority
-   - **-1** (Veto): Against the change — must be accompanied by a technical justification
-  The votes from the TSC members are considered as binding votes.
-4. **Resolution**: A specification change passes with at least 2 binding +1 votes and no vetoes. A veto can only be overridden by addressing the stated concern or by a supermajority (two-thirds) vote of the TSC.
+1. **Proposal**: Announce the change on `dev@ossie.apache.org` and open a GitHub pull request describing the motivation, the change, and its impact on existing implementations.
+2. **Discussion period**: The community has a minimum of 7 days to review and discuss. Complex changes may require a longer window.
+3. **Vote**: A `[VOTE]` thread is called. Voters cast:
+   - **+1**: In favor
+   - **0**: Abstain / no strong opinion
+   - **-1**: Veto — must include a technical justification; a valid veto is resolved only by addressing the stated concern
+   PPMC member votes are binding.
+4. **Resolution**: A specification change passes with at least **three binding +1 votes** and no vetoes.
 
 ### Working Groups
 
@@ -137,7 +154,7 @@ Community meetings are open to all participants and provide a forum for discussi
 - **Global Community Meetings**: Regular meetings open to all community members for cross-cutting discussions, roadmap reviews, and community announcements.
 - **Working Group Meetings**: Each working group holds its own meetings to drive focused progress on their specific area of the specification.
 
-Meeting schedules, agendas, and notes are published on the [OSI website](https://open-semantic-interchange.org/) and the project's GitHub repository. All community members are welcome to attend and participate.
+Meeting schedules, agendas, and notes are published on the [Ossie website](https://ossie.apache.org/) and the project's GitHub repository. All community members are welcome to attend and participate.
 
 **Google Calendar**: _link TBD_
 
@@ -147,7 +164,7 @@ Meeting schedules, agendas, and notes are published on the [OSI website](https:/
 
 ### Hub-and-Spoke Model
 
-OSI is designed around a hub-and-spoke architecture that dramatically simplifies the integration landscape. Instead of requiring every tool to build custom connectors to every other tool, OSI acts as the universal interchange format at the center.
+Ossie is designed around a hub-and-spoke architecture that dramatically simplifies the integration landscape. Instead of requiring every tool to build custom connectors to every other tool, Ossie acts as the universal interchange format at the center.
 
 ```
                         ┌─────────────┐
@@ -155,7 +172,7 @@ OSI is designed around a hub-and-spoke architecture that dramatically simplifies
                         └──────┬──────┘
                                │
       ┌─────────────┐    ┌─────┴─────┐    ┌─────────────┐
-      │     dbt     ├────┤    OSI    ├────┤  Salesforce │
+      │     dbt     ├────┤   Ossie   ├────┤  Salesforce │
       └─────────────┘    └─────┬─────┘    └─────────────┘
                                │
                         ┌──────┴──────┐
@@ -163,22 +180,22 @@ OSI is designed around a hub-and-spoke architecture that dramatically simplifies
                         └─────────────┘
 ```
 
-With N vendors, a point-to-point strategy would require **N×(N-1)** converters. With OSI as the hub, only **2×N** converters are needed (one import and one export per vendor), and interoperability with all other vendors comes for free.
+With N vendors, a point-to-point strategy would require **N×(N-1)** converters. With Ossie as the hub, only **2×N** converters are needed (one import and one export per vendor), and interoperability with all other vendors comes for free.
 
 ### How It Flows
 
-A typical OSI-based workflow looks like this:
+A typical Ossie-based workflow looks like this:
 
-1. **Author**: A semantic model is authored in one tool (e.g., dbt) or directly in the OSI YAML format.
-2. **Import**: If authored in a vendor tool, the vendor's import converter translates it into an OSI model, preserving vendor-specific metadata in `custom_extensions`.
-3. **Validate**: The OSI model is validated against the [JSON Schema](../core-spec/osi-schema.json) and the [validation script](../validation/validate.py) to ensure correctness.
-4. **Exchange**: The OSI model is shared — via Git, a data catalog, or a sync API — with other teams and tools.
-5. **Export**: Each consuming tool's export converter translates the OSI model into its native format, selecting the appropriate SQL dialect and applying vendor-specific extensions.
-6. **Round-Trip**: When changes are made in a downstream tool, they can be imported back into the OSI model, preserving all metadata for lossless round-tripping.
+1. **Author**: A semantic model is authored in one tool (e.g., dbt) or directly in the Ossie YAML format.
+2. **Import**: If authored in a vendor tool, the vendor's import converter translates it into an Ossie model, preserving vendor-specific metadata in `custom_extensions`.
+3. **Validate**: The Ossie model is validated against the [JSON Schema](../core-spec/osi-schema.json) and the [validation script](../validation/validate.py) to ensure correctness.
+4. **Exchange**: The Ossie model is shared — via Git, a data catalog, or a sync API — with other teams and tools.
+5. **Export**: Each consuming tool's export converter translates the Ossie model into its native format, selecting the appropriate SQL dialect and applying vendor-specific extensions.
+6. **Round-Trip**: When changes are made in a downstream tool, they can be imported back into the Ossie model, preserving all metadata for lossless round-tripping.
 
 ### Multi-Dialect Expression System
 
-A key architectural feature of OSI is its multi-dialect expression system. Fields and metrics can carry expressions in multiple SQL dialects simultaneously:
+A key architectural feature of Ossie is its multi-dialect expression system. Fields and metrics can carry expressions in multiple SQL dialects simultaneously:
 
 ```yaml
 expression:
@@ -202,32 +219,32 @@ This allows a single semantic model to be consumed natively by different platfor
 **What is a semantic model?**
 A semantic model is a structured description of business data that defines what datasets exist, what their fields mean, how datasets relate to each other, and what metrics (KPIs) can be computed from the data. It serves as a shared vocabulary between data producers and consumers — whether those consumers are humans using BI tools or AI agents generating queries.
 
-**How is OSI different from existing standards?**
-Most existing standards focus on data formats (e.g., Parquet, Arrow), query interfaces (e.g., ODBC, JDBC), or catalog metadata (e.g., Hive Metastore, OpenMetadata). OSI focuses specifically on the *semantic layer* — the business meaning, metric definitions, and relationships that sit on top of raw data. It is complementary to these other standards rather than a replacement.
+**How is Ossie different from existing standards?**
+Most existing standards focus on data formats (e.g., Parquet, Arrow), query interfaces (e.g., ODBC, JDBC), or catalog metadata (e.g., Hive Metastore, OpenMetadata). Ossie focuses specifically on the *semantic layer* — the business meaning, metric definitions, and relationships that sit on top of raw data. It is complementary to these other standards rather than a replacement.
 
-**Is OSI tied to any specific vendor?**
-No. OSI is vendor-agnostic by design. The specification is developed and governed by a community of contributors from many organizations. While vendor-specific metadata can be carried via `custom_extensions`, the core specification is neutral.
+**Is Ossie tied to any specific vendor?**
+No. Ossie is vendor-agnostic by design. The specification is developed and governed by a community of contributors from many organizations. While vendor-specific metadata can be carried via `custom_extensions`, the core specification is neutral.
 
 ### Adoption
 
-**Can I use OSI with my existing BI tool?**
-Yes, as long as a converter exists (or is built) for your tool. The hub-and-spoke model means that adding OSI support to a single tool gives it interoperability with every other OSI-compatible tool. Check the [Converters Guide](../converters/index.md) for currently supported vendors.
+**Can I use Ossie with my existing BI tool?**
+Yes, as long as a converter exists (or is built) for your tool. The hub-and-spoke model means that adding Ossie support to a single tool gives it interoperability with every other Ossie-compatible tool. Check the [Converters Guide](../converters/README.md) for currently supported vendors.
 
 **What if my vendor isn't supported yet?**
-You can contribute a converter. The [Converters Guide](../converters/index.md) provides a step-by-step guide for implementing import and export converters for new vendors. The community is happy to help with design reviews and testing.
+You can contribute a converter. The [Converters Guide](../converters/README.md) provides a step-by-step guide for implementing import and export converters for new vendors. The community is happy to help with design reviews and testing.
 
 **Do I need to rewrite my existing semantic models?**
-No. Import converters translate existing vendor-specific models into the OSI format automatically. Your existing models remain intact — OSI provides an additional interchange layer on top of them.
+No. Import converters translate existing vendor-specific models into the Ossie format automatically. Your existing models remain intact — Ossie provides an additional interchange layer on top of them.
 
-**How do I validate an OSI model?**
+**How do I validate an Ossie model?**
 Use the [validation script](../validation/validate.py) included in the repository. It checks your model against the [JSON Schema](../core-spec/osi-schema.json), validates SQL expressions across dialects, and ensures referential integrity between datasets and relationships.
 
 ### Technical
 
 **Why YAML and not JSON?**
-YAML is more human-readable and easier to author by hand, which is important for a specification that teams may edit directly. The OSI JSON Schema is available for programmatic validation, and converters can work with either format.
+YAML is more human-readable and easier to author by hand, which is important for a specification that teams may edit directly. The Ossie JSON Schema is available for programmatic validation, and converters can work with either format.
 
-**How does OSI handle vendor-specific features?**
+**How does Ossie handle vendor-specific features?**
 Through `custom_extensions`. Each vendor can store arbitrary JSON metadata in extension blocks tagged with their vendor name. This metadata is preserved during round-trip conversions and ignored by tools that don't understand it — ensuring that no information is lost.
 
 **Can metrics reference multiple datasets?**
@@ -242,7 +259,7 @@ The current specification supports `ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`, `MDX`,
 
 ### Specification Versioning
 
-The OSI specification follows [Semantic Versioning](https://semver.org/) (SemVer):
+The Ossie specification follows [Semantic Versioning](https://semver.org/) (SemVer):
 
 - **Major version** (e.g., 1.0.0 → 2.0.0): Breaking changes that are not backward compatible. Existing valid models may not be valid under the new version. Major version bumps are rare and go through an extended review and migration period.
 - **Minor version** (e.g., 0.1.0 → 0.2.0): New features or constructs added in a backward-compatible way. Existing valid models remain valid.
@@ -264,32 +281,32 @@ Custom extensions (`custom_extensions`) are explicitly outside the scope of core
 
 ## Adoption Guide
 
-A practical guide for organizations looking to adopt OSI.
+A practical guide for organizations looking to adopt Ossie.
 
 ### Phase 1: Evaluate
 
 - **Inventory your semantic layer**: Identify which tools in your organization define semantic models — BI platforms, data modeling tools, AI/ML pipelines, metrics stores.
 - **Map your pain points**: Determine where semantic fragmentation causes the most friction — conflicting metric definitions, manual reconciliation, onboarding new tools.
-- **Check converter availability**: Review the [Converters Guide](../converters/index.md) to see if converters exist for your tools. If not, assess the effort to build one.
+- **Check converter availability**: Review the [Converters Guide](../converters/README.md) to see if converters exist for your tools. If not, assess the effort to build one.
 
 ### Phase 2: Pilot
 
-- **Start with one model**: Choose a well-understood semantic model (e.g., a core sales or finance model) and express it in the OSI format.
+- **Start with one model**: Choose a well-understood semantic model (e.g., a core sales or finance model) and express it in the Ossie format.
 - **Validate**: Run the [validation script](../validation/validate.py) to ensure the model conforms to the specification.
-- **Test round-tripping**: If converters are available, export the OSI model to your vendor format and compare with the original. Identify any gaps or lossy conversions.
+- **Test round-tripping**: If converters are available, export the Ossie model to your vendor format and compare with the original. Identify any gaps or lossy conversions.
 - **Gather feedback**: Share the pilot results with your data team and collect feedback on the experience.
 
 ### Phase 3: Expand
 
-- **Convert additional models**: Gradually bring more semantic models into the OSI format, prioritizing those shared across multiple tools.
-- **Integrate into workflows**: Add OSI validation to your CI/CD pipeline. Store OSI models in version control alongside your data code.
+- **Convert additional models**: Gradually bring more semantic models into the Ossie format, prioritizing those shared across multiple tools.
+- **Integrate into workflows**: Add Ossie validation to your CI/CD pipeline. Store Ossie models in version control alongside your data code.
 - **Automate synchronization**: Use converters (and eventually the Sync API) to automate the propagation of semantic model changes across your tool ecosystem.
 
 ### Phase 4: Govern
 
 - **Establish ownership**: Define who owns each semantic model and who is responsible for approving changes.
 - **Implement review processes**: Use the voting and review processes described in this document (or your own governance model) to manage specification changes.
-- **Monitor consistency**: Regularly validate that the semantic models consumed by each tool are in sync with the authoritative OSI model.
+- **Monitor consistency**: Regularly validate that the semantic models consumed by each tool are in sync with the authoritative Ossie model.
 
 ---
 
@@ -300,15 +317,15 @@ A practical guide for organizations looking to adopt OSI.
 | **Semantic Model** | A structured description of business data that defines datasets, fields, relationships, and metrics. It provides a shared vocabulary for interpreting data across tools and teams. |
 | **Dataset** | A logical representation of a business entity, typically corresponding to a fact table or dimension table in a data warehouse. |
 | **Field** | A row-level attribute within a dataset, used for grouping, filtering, or as part of metric expressions. Fields can be simple column references or computed expressions. |
-| **Dimension** | A categorical attribute used to slice and filter data (e.g., region, product category, date). In OSI, dimensions are represented as fields with optional metadata such as `is_time`. |
+| **Dimension** | A categorical attribute used to slice and filter data (e.g., region, product category, date). In Ossie, dimensions are represented as fields with optional metadata such as `is_time`. |
 | **Metric** | A quantitative measure computed by aggregating data across one or more datasets (e.g., total revenue, average order value). Metrics are defined at the semantic model level. |
 | **Relationship** | A foreign key connection between two datasets, defining how they can be joined. Relationships are always many-to-one (from the referencing dataset to the referenced dataset). |
-| **Dialect** | A specific SQL or expression language variant (e.g., `ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`). OSI supports multiple dialects so expressions can be tailored to each platform. |
-| **Custom Extension** | Vendor-specific metadata attached to any OSI construct as a JSON string. Extensions allow platforms to carry additional information without modifying the core specification. |
-| **AI Context** | Optional annotations on any OSI construct (model, dataset, field, relationship, metric) that provide additional context for AI tools — including natural language instructions, synonyms, and example queries. |
-| **Converter** | A tool that translates between the OSI format and a specific vendor's semantic model format. Converters come in pairs: import (vendor → OSI) and export (OSI → vendor). |
-| **Hub-and-Spoke** | The architectural pattern used by OSI, where the specification acts as the central format (hub) and vendor converters act as spokes, avoiding the need for point-to-point integrations. |
-| **Round-Trip Fidelity** | The ability to convert a model from one format to OSI and back without losing information. Achieved by preserving vendor-specific metadata in `custom_extensions`. |
+| **Dialect** | A specific SQL or expression language variant (e.g., `ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`). Ossie supports multiple dialects so expressions can be tailored to each platform. |
+| **Custom Extension** | Vendor-specific metadata attached to any Ossie construct as a JSON string. Extensions allow platforms to carry additional information without modifying the core specification. |
+| **AI Context** | Optional annotations on any Ossie construct (model, dataset, field, relationship, metric) that provide additional context for AI tools — including natural language instructions, synonyms, and example queries. |
+| **Converter** | A tool that translates between the Ossie format and a specific vendor's semantic model format. Converters come in pairs: import (vendor → Ossie) and export (Ossie → vendor). |
+| **Hub-and-Spoke** | The architectural pattern used by Ossie, where the specification acts as the central format (hub) and vendor converters act as spokes, avoiding the need for point-to-point integrations. |
+| **Round-Trip Fidelity** | The ability to convert a model from one format to Ossie and back without losing information. Achieved by preserving vendor-specific metadata in `custom_extensions`. |
 | **Fact Table** | A dataset that records business events or transactions (e.g., sales, clicks, shipments). Fact tables typically contain numeric measures and foreign keys to dimension tables. |
 | **Dimension Table** | A dataset that describes business entities referenced by fact tables (e.g., customers, products, dates). Dimension tables provide the context for analyzing facts. |
 | **Semantic Layer** | The abstraction layer between raw data and business users/tools. It defines the business meaning of data, standardizes metric calculations, and provides a consistent query interface. |
@@ -317,15 +334,15 @@ A practical guide for organizations looking to adopt OSI.
 
 ## Related Resources
 
-- **Website**: [open-semantic-interchange.org](https://open-semantic-interchange.org/)
-- **GitHub**: [github.com/open-semantic-interchange](https://github.com/open-semantic-interchange)
-- **Slack**: [join slack](https://join.slack.com/t/apache-ossie/shared_invite/zt-42i1xkgy8-7YQtKEDq7v~mceFmdiLhkA)
+- **Website**: [ossie.apache.org](https://ossie.apache.org/)
+- **GitHub**: [github.com/apache/ossie](https://github.com/apache/ossie)
+- **Slack**: [join slack](https://join.slack.com/t/opensemanticx/shared_invite/zt-3yuad6c0h-MaoPgVSD1g9MEOf1_QeaiQ)
 - **Core Specification**: [core-spec/spec.md](../core-spec/spec.md)
 - **JSON Schema**: [core-spec/osi-schema.json](../core-spec/osi-schema.json)
 - **YAML Schema**: [core-spec/spec.yaml](../core-spec/spec.yaml)
 - **TPC-DS Example Model**: [examples/tpcds_semantic_model.yaml](../examples/tpcds_semantic_model.yaml)
 - **Validation Script**: [validation/validate.py](../validation/validate.py)
-- **Converters Guide**: [converters/index.md](../converters/index.md)
+- **Converters Guide**: [converters/README.md](../converters/README.md)
 
 ---
 
@@ -345,13 +362,13 @@ We welcome contributions from everyone — whether you are a developer, a data e
 
 1. **Read the Specification**: Familiarize yourself with the [core specification](../core-spec/spec.md) to understand the semantic model format.
 2. **Explore the Examples**: Review the [TPC-DS example](../examples/tpcds_semantic_model.yaml) to see a complete semantic model in practice.
-3. **Join the Conversation**: Open or participate in [GitHub Issues](https://github.com/open-semantic-interchange) and Discussions to share ideas and feedback.
+3. **Join the Conversation**: Open or participate in [GitHub Issues](https://github.com/apache/ossie) and Discussions to share ideas and feedback.
 4. **Submit a Pull Request**: Fork the repository, make your changes, and submit a pull request. All contributions go through the standard review process described in the governance section above.
 5. **Join the Slack workspace**: You can chat directly with the community by [joining Slack](https://join.slack.com/t/apache-ossie/shared_invite/zt-42i1xkgy8-7YQtKEDq7v~mceFmdiLhkA).
 
 ### Code of Conduct
 
-All participants in the OSI community are expected to treat each other with respect and professionalism. We are committed to providing a welcoming and inclusive environment for everyone, regardless of background or experience level.
+All participants in the Ossie community are expected to treat each other with respect and professionalism. We are committed to providing a welcoming and inclusive environment for everyone, regardless of background or experience level.
 
 ---
 
