@@ -124,6 +124,86 @@
       ],
       "description": "Logical data type for fields and metrics, independent of role (e.g. dimension vs fact) and physical representation. `Decimal` is exact base-10 with unspecified precision and scale; `Float` is approximate. `DateTime` has no timezone or offset, while `DateTimeTz` identifies an instant using offset or timezone context but does not guarantee preservation of a named timezone. Omit `datatype` when unknown; use `Opaque` plus `custom_extensions` for a known type outside the portable vocabulary."
     },
+    "SemanticType": {
+      "type": "string",
+      "enum": ["categorical", "quantitative", "monetary", "temporal", "geographic", "ordinal", "identifier"],
+      "description": "High-level semantic classification of a field or metric"
+    },
+    "DesiredDirection": {
+      "type": "string",
+      "enum": ["higher_is_better", "lower_is_better", "neutral"],
+      "description": "KPI polarity indicating whether higher or lower values are preferred"
+    },
+    "DefaultAggregation": {
+      "type": "string",
+      "enum": ["sum", "avg", "min", "max", "count", "count_distinct"],
+      "description": "Default aggregation function to apply when this field is used as a measure"
+    },
+    "DefaultTimeGranularity": {
+      "type": "string",
+      "enum": ["day", "week", "month", "quarter", "year"],
+      "description": "Default time bucket for temporal fields"
+    },
+    "UnitSystem": {
+      "type": "string",
+      "enum": ["si", "imperial", "custom"],
+      "description": "Unit system classification"
+    },
+    "Measurement": {
+      "type": "object",
+      "description": "Describes what a numeric value represents (units and measurement)",
+      "properties": {
+        "quantity_kind": {
+          "type": "string",
+          "description": "The kind of quantity (e.g., currency, length, weight, temperature, percentage, duration)"
+        },
+        "unit": {
+          "type": "string",
+          "description": "Specific unit. For currency use ISO 4217 (e.g., usd, eur). For others use UCUM or descriptive strings."
+        },
+        "unit_system": {
+          "$ref": "#/$defs/UnitSystem"
+        }
+      },
+      "additionalProperties": false
+    },
+    "DefaultSort": {
+      "type": "object",
+      "description": "Default sorting behavior",
+      "properties": {
+        "direction": {
+          "type": "string",
+          "enum": ["asc", "desc"],
+          "description": "Sort direction"
+        },
+        "nulls": {
+          "type": "string",
+          "enum": ["first", "last"],
+          "description": "Null value positioning"
+        },
+        "by_field": {
+          "type": "string",
+          "description": "Sort by a different field (e.g., sort month names by month number)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SemanticMapping": {
+      "type": "object",
+      "description": "Link to an external ontology or standard",
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "Ontology or standard name (e.g., schema.org, FIBO)"
+        },
+        "identifier": {
+          "type": "string",
+          "description": "URI or identifier within that ontology"
+        }
+      },
+      "required": ["source", "identifier"],
+      "additionalProperties": false
+    },
     "Dimension": {
       "type": "object",
       "description": "Dimension metadata",
@@ -153,6 +233,10 @@
           "type": "string",
           "description": "Label for categorization"
         },
+        "display_label": {
+          "type": "string",
+          "description": "Human-readable display name for UI and AI interaction"
+        },
         "description": {
           "type": "string",
           "description": "Human-readable description"
@@ -162,6 +246,40 @@
         },
         "ai_context": {
           "$ref": "#/$defs/AIContext"
+        },
+        "semantic_type": {
+          "$ref": "#/$defs/SemanticType"
+        },
+        "measurement": {
+          "$ref": "#/$defs/Measurement"
+        },
+        "display_format": {
+          "type": "string",
+          "description": "Excel-compatible display format string (e.g., $#,##0.00, 0.0%, #,##0)"
+        },
+        "default_aggregation": {
+          "$ref": "#/$defs/DefaultAggregation"
+        },
+        "default_sort": {
+          "$ref": "#/$defs/DefaultSort"
+        },
+        "default_time_granularity": {
+          "$ref": "#/$defs/DefaultTimeGranularity"
+        },
+        "semantic_mappings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SemanticMapping"
+          },
+          "description": "Links to external ontologies or standards"
+        },
+        "hidden": {
+          "type": "boolean",
+          "description": "Whether this field should be hidden from consumer UIs"
+        },
+        "group_label": {
+          "type": "string",
+          "description": "Organizational grouping label for UI presentation"
         },
         "custom_extensions": {
           "type": "array",
@@ -290,6 +408,41 @@
         },
         "ai_context": {
           "$ref": "#/$defs/AIContext"
+        },
+        "display_label": {
+          "type": "string",
+          "description": "Human-readable display name for UI and AI interaction"
+        },
+        "semantic_type": {
+          "$ref": "#/$defs/SemanticType"
+        },
+        "measurement": {
+          "$ref": "#/$defs/Measurement"
+        },
+        "display_format": {
+          "type": "string",
+          "description": "Excel-compatible display format string (e.g., $#,##0.00, 0.0%, #,##0)"
+        },
+        "desired_direction": {
+          "$ref": "#/$defs/DesiredDirection"
+        },
+        "default_sort": {
+          "$ref": "#/$defs/DefaultSort"
+        },
+        "semantic_mappings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SemanticMapping"
+          },
+          "description": "Links to external ontologies or standards"
+        },
+        "hidden": {
+          "type": "boolean",
+          "description": "Whether this metric should be hidden from consumer UIs"
+        },
+        "group_label": {
+          "type": "string",
+          "description": "Organizational grouping label for UI presentation"
         },
         "custom_extensions": {
           "type": "array",
