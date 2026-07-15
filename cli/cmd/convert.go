@@ -8,13 +8,13 @@ import (
 
 var convertCmd = &cobra.Command{
 	Use:   "convert --from <platform> --input <path> | --to <platform> --input <path>",
-	Short: "Convert a semantic model between OSSIE and a platform format",
+	Short: "Convert a semantic model between Ossie and a platform format",
 	RunE:  runConvert,
 }
 
 func init() {
-	convertCmd.Flags().String("from", "", "Source platform — converts platform → OSSIE")
-	convertCmd.Flags().String("to", "", "Target platform — converts OSSIE → platform")
+	convertCmd.Flags().String("from", "", "Source platform — converts platform → Ossie")
+	convertCmd.Flags().String("to", "", "Target platform — converts Ossie → platform")
 	convertCmd.Flags().StringP("input", "i", "", "Input file or directory path (required)")
 	convertCmd.Flags().StringP("output", "o", "", "Output directory path (default: ./ossie-output/<plugin>/<direction>)")
 	convertCmd.Flags().String("plugin", "", "Path to plugin directory (bypasses name-based discovery)")

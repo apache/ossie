@@ -6,7 +6,7 @@ import "github.com/spf13/cobra"
 // register it. Invoking it bare prints help.
 var Cmd = &cobra.Command{
 	Use:   "plugin",
-	Short: "Manage OSSIE plugins",
+	Short: "Manage Ossie plugins",
 }
 
 func init() {
