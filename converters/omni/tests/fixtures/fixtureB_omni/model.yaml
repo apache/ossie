@@ -1,0 +1,10 @@
+# Fixture B -- stash round-trip (Omni -> OSI -> Omni, lossless).
+# The model file has no OSI home and round-trips via the model-level stash.
+included_schemas:
+- ecomm
+week_start_day: Sunday
+access_grants:
+  pii_access:
+    user_attribute: role
+    allowed_values:
+    - admin

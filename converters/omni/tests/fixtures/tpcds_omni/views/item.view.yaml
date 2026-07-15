@@ -1,0 +1,33 @@
+catalog: tpcds
+schema: public
+description: Item/Product dimension with product attributes
+dimensions:
+  i_item_sk:
+    description: Surrogate key for item
+    primary_key: true
+  i_item_id:
+    description: Business key for item
+    synonyms:
+    - item ID
+    - product ID
+    - SKU
+  i_item_desc:
+    description: Item description
+    synonyms:
+    - product description
+    - item name
+  i_brand:
+    description: Brand name
+    synonyms:
+    - brand
+    - manufacturer
+  i_category:
+    description: Item category
+    synonyms:
+    - product category
+    - department
+  i_current_price:
+    description: Current price of the item
+    synonyms:
+    - price
+    - list price

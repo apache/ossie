@@ -1,0 +1,6 @@
+schema: ecomm
+dimensions:
+  order_id:
+    primary_key: true
+  user_id: {}
+  region: {}

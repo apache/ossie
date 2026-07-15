@@ -1,0 +1,46 @@
+# Exercises the dimension/measure stash: format, hidden, group_label,
+# timeframes, convert_tz, a quoted-identifier sql, a ${field} reference, a
+# filtered measure, and a percentile measure.
+schema: ecomm
+table_name: ORDER_ITEMS
+label: Order Items
+description: One row per line item
+dimensions:
+  id:
+    primary_key: true
+    format: id
+    hidden: true
+  user_id: {}
+  sale_price:
+    sql: '"SALE_PRICE"'
+    format: usdcurrency_2
+    group_label: Money
+  created_at:
+    timeframes:
+    - raw
+    - date
+    - month
+    convert_tz: false
+  full_price:
+    sql: ${sale_price} * 1.1
+    label: Full Price
+measures:
+  count:
+    aggregate_type: count
+  total_revenue:
+    sql: ${sale_price}
+    aggregate_type: sum
+    format: usdcurrency_0
+    description: Total revenue
+    synonyms:
+    - sales
+    - revenue
+  completed:
+    aggregate_type: count
+    filters:
+      status:
+        is: complete
+  p95_price:
+    sql: ${sale_price}
+    aggregate_type: percentile
+    percentile: 95

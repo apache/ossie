@@ -1,0 +1,16 @@
+- join_from_view: store_sales
+  join_to_view: date_dim
+  on_sql: ${store_sales.ss_sold_date_sk} = ${date_dim.d_date_sk}
+  relationship_type: many_to_one
+- join_from_view: store_sales
+  join_to_view: customer
+  on_sql: ${store_sales.ss_customer_sk} = ${customer.c_customer_sk}
+  relationship_type: many_to_one
+- join_from_view: store_sales
+  join_to_view: item
+  on_sql: ${store_sales.ss_item_sk} = ${item.i_item_sk}
+  relationship_type: many_to_one
+- join_from_view: store_sales
+  join_to_view: store
+  on_sql: ${store_sales.ss_store_sk} = ${store.s_store_sk}
+  relationship_type: many_to_one

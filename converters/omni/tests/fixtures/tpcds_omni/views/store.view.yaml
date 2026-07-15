@@ -1,0 +1,32 @@
+catalog: tpcds
+schema: public
+description: Store dimension with location and store attributes
+dimensions:
+  s_store_sk:
+    description: Surrogate key for store
+    primary_key: true
+  s_store_id:
+    description: Business key for store
+    synonyms:
+    - store ID
+    - store number
+  s_store_name:
+    description: Store name
+    synonyms:
+    - store name
+    - location name
+  s_city:
+    description: City where store is located
+    synonyms:
+    - city
+    - location
+  s_state:
+    description: State where store is located
+    synonyms:
+    - state
+    - region
+  s_number_employees:
+    description: Number of employees at the store
+    synonyms:
+    - employee count
+    - staff size

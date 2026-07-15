@@ -1,0 +1,5 @@
+base_view: orders
+description: Sales orders with customer attributes
+ai_context: Use this model for order analysis.
+joins:
+  customer: {}

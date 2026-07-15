@@ -1,0 +1,32 @@
+catalog: samples
+schema: tpch
+description: One row per order
+dimensions:
+  o_orderkey:
+    description: Order identifier
+    primary_key: true
+  o_custkey: {}
+  o_orderdate:
+    label: Order Date
+    synonyms:
+    - order date
+    - date
+    timeframes:
+    - raw
+    - date
+    - week
+    - month
+    - quarter
+    - year
+  o_totalprice: {}
+measures:
+  total_revenue:
+    sql: ${o_totalprice}
+    aggregate_type: sum
+    description: Total order revenue
+    synonyms:
+    - revenue
+    - sales
+  order_count:
+    aggregate_type: count
+    description: Number of orders

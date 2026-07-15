@@ -1,0 +1,53 @@
+catalog: tpcds
+schema: public
+description: Date dimension with calendar attributes
+dimensions:
+  d_date_sk:
+    description: Surrogate key for date
+    primary_key: true
+  d_date:
+    description: Actual date value
+    synonyms:
+    - date
+    - calendar date
+    timeframes:
+    - raw
+    - date
+    - week
+    - month
+    - quarter
+    - year
+  d_year:
+    description: Year
+    synonyms:
+    - year
+    timeframes:
+    - raw
+    - date
+    - week
+    - month
+    - quarter
+    - year
+  d_quarter_name:
+    description: Quarter name (e.g., 2024Q1)
+    synonyms:
+    - quarter
+    - fiscal quarter
+    timeframes:
+    - raw
+    - date
+    - week
+    - month
+    - quarter
+    - year
+  d_month_name:
+    description: Month name
+    synonyms:
+    - month
+    timeframes:
+    - raw
+    - date
+    - week
+    - month
+    - quarter
+    - year

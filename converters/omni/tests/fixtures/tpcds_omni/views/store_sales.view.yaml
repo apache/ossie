@@ -1,0 +1,90 @@
+catalog: tpcds
+schema: public
+description: Fact table containing all store sales transactions
+custom_compound_primary_key_sql:
+- ss_item_sk
+- ss_ticket_number
+dimensions:
+  ss_sold_date_sk:
+    description: Foreign key to date dimension
+    synonyms:
+    - sale date
+    - transaction date
+  ss_item_sk:
+    description: Foreign key to item dimension
+    synonyms:
+    - product
+    - item
+  ss_customer_sk:
+    description: Foreign key to customer dimension
+    synonyms:
+    - customer
+    - buyer
+  ss_store_sk:
+    description: Foreign key to store dimension
+    synonyms:
+    - store
+    - location
+  ss_quantity:
+    description: Quantity of items sold
+    synonyms:
+    - units sold
+    - quantity
+  ss_sales_price:
+    description: Sales price per unit
+    synonyms:
+    - unit price
+    - price
+  ss_ext_sales_price:
+    description: Extended sales price (quantity * price)
+    synonyms:
+    - total price
+    - line total
+  ss_net_profit:
+    description: Net profit from the sale
+    synonyms:
+    - profit
+    - margin
+  ss_ticket_number:
+    hidden: true
+measures:
+  total_sales:
+    sql: ${ss_ext_sales_price}
+    aggregate_type: sum
+    description: Total sales revenue across all transactions
+    synonyms:
+    - total revenue
+    - gross sales
+    - sales amount
+  total_profit:
+    sql: ${ss_net_profit}
+    aggregate_type: sum
+    description: Total net profit from store sales
+    synonyms:
+    - net profit
+    - total earnings
+    - profit
+  customer_lifetime_value:
+    sql: SUM(${store_sales.ss_ext_sales_price}) / COUNT(DISTINCT ${customer.c_customer_sk})
+    description: Average lifetime sales value per customer
+    synonyms:
+    - CLV
+    - LTV
+    - customer value
+    - lifetime revenue
+  sales_by_brand:
+    sql: ${ss_ext_sales_price}
+    aggregate_type: sum
+    description: Total sales by brand (requires grouping by item.i_brand)
+    synonyms:
+    - brand sales
+    - brand performance
+    - brand revenue
+  store_productivity:
+    sql: SUM(${store_sales.ss_ext_sales_price}) / NULLIF(SUM(${store.s_number_employees}),
+      0)
+    description: Sales per employee across stores
+    synonyms:
+    - sales per employee
+    - employee productivity
+    - revenue per employee
