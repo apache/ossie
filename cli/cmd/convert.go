@@ -23,17 +23,10 @@ func init() {
 
 	_ = convertCmd.MarkFlagRequired("input")
 	convertCmd.MarkFlagsMutuallyExclusive("from", "to")
+	convertCmd.MarkFlagsOneRequired("from", "to")
 }
 
 func runConvert(cmd *cobra.Command, args []string) error {
-	from, _ := cmd.Flags().GetString("from")
-	to, _ := cmd.Flags().GetString("to")
-
-	// MarkFlagsMutuallyExclusive handles the both-set case; handle neither here.
-	if from == "" && to == "" {
-		return fmt.Errorf("exactly one of --from or --to must be specified")
-	}
-
 	fmt.Fprintln(cmd.OutOrStdout(), "not yet implemented")
 	return nil
 }
