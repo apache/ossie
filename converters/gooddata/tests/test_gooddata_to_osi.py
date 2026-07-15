@@ -1,13 +1,30 @@
-"""Tests for GoodData → OSI conversion."""
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+"""Tests for GoodData → Ossie conversion."""
 
 from __future__ import annotations
 
-from gooddata_osi.gooddata_to_osi import gooddata_to_osi
-from gooddata_osi.models import GdDeclarativeModel
+from ossie_gooddata.gooddata_to_osi import gooddata_to_osi
+from ossie_gooddata.models import GdDeclarativeModel
 
 
 def test_basic_conversion(gooddata_tpcds_model: GdDeclarativeModel):
-    """Verify basic structure of GoodData → OSI conversion."""
+    """Verify basic structure of GoodData → Ossie conversion."""
     result = gooddata_to_osi(gooddata_tpcds_model, model_name="tpcds_test")
 
     assert result["version"] == "0.2.0.dev0"
@@ -52,7 +69,7 @@ def test_primary_key_from_grain(gooddata_tpcds_model: GdDeclarativeModel):
 
 
 def test_attributes_become_dimension_fields(gooddata_tpcds_model: GdDeclarativeModel):
-    """Verify GoodData attributes become OSI fields with dimension metadata."""
+    """Verify GoodData attributes become Ossie fields with dimension metadata."""
     result = gooddata_to_osi(gooddata_tpcds_model)
     sm = result["semantic_model"][0]
 
@@ -69,7 +86,7 @@ def test_attributes_become_dimension_fields(gooddata_tpcds_model: GdDeclarativeM
 
 
 def test_facts_become_plain_fields(gooddata_tpcds_model: GdDeclarativeModel):
-    """Verify GoodData facts become OSI fields without dimension metadata."""
+    """Verify GoodData facts become Ossie fields without dimension metadata."""
     result = gooddata_to_osi(gooddata_tpcds_model)
     sm = result["semantic_model"][0]
 
@@ -102,7 +119,7 @@ def test_maql_expressions(gooddata_tpcds_model: GdDeclarativeModel):
 
 
 def test_references_become_relationships(gooddata_tpcds_model: GdDeclarativeModel):
-    """Verify GoodData references become OSI relationships."""
+    """Verify GoodData references become Ossie relationships."""
     result = gooddata_to_osi(gooddata_tpcds_model)
     sm = result["semantic_model"][0]
 
@@ -115,7 +132,7 @@ def test_references_become_relationships(gooddata_tpcds_model: GdDeclarativeMode
 
 
 def test_date_instance_converted(gooddata_tpcds_model: GdDeclarativeModel):
-    """Verify date instances become OSI datasets with custom_extensions."""
+    """Verify date instances become Ossie datasets with custom_extensions."""
     result = gooddata_to_osi(gooddata_tpcds_model)
     sm = result["semantic_model"][0]
 

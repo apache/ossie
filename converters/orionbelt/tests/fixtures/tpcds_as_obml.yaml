@@ -1,0 +1,381 @@
+version: 1.0
+dataObjects:
+  store_sales:
+    code: store_sales
+    database: tpcds
+    schema: public
+    columns:
+      ss_sold_date_sk:
+        code: ss_sold_date_sk
+        abstractType: string
+        comment: Foreign key to date dimension
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["sale date", "transaction date"]}'
+      ss_item_sk:
+        code: ss_item_sk
+        abstractType: string
+        comment: Foreign key to item dimension
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["product", "item"]}'
+      ss_customer_sk:
+        code: ss_customer_sk
+        abstractType: string
+        comment: Foreign key to customer dimension
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["customer", "buyer"]}'
+      ss_store_sk:
+        code: ss_store_sk
+        abstractType: string
+        comment: Foreign key to store dimension
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["store", "location"]}'
+      ss_quantity:
+        code: ss_quantity
+        abstractType: int
+        comment: Quantity of items sold
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["units sold", "quantity"]}'
+      ss_sales_price:
+        code: ss_sales_price
+        abstractType: float
+        comment: Sales price per unit
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["unit price", "price"]}'
+      ss_ext_sales_price:
+        code: ss_ext_sales_price
+        abstractType: float
+        comment: Extended sales price (quantity * price)
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["total price", "line total"]}'
+      ss_net_profit:
+        code: ss_net_profit
+        abstractType: float
+        comment: Net profit from the sale
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["profit", "margin"]}'
+    joins:
+    - joinType: many-to-one
+      joinTo: date_dim
+      columnsFrom:
+      - ss_sold_date_sk
+      columnsTo:
+      - d_date_sk
+    - joinType: many-to-one
+      joinTo: customer
+      columnsFrom:
+      - ss_customer_sk
+      columnsTo:
+      - c_customer_sk
+    - joinType: many-to-one
+      joinTo: item
+      columnsFrom:
+      - ss_item_sk
+      columnsTo:
+      - i_item_sk
+    - joinType: many-to-one
+      joinTo: store
+      columnsFrom:
+      - ss_store_sk
+      columnsTo:
+      - s_store_sk
+    comment: Fact table containing all store sales transactions
+    customExtensions:
+    - vendor: OSI
+      data: '{"synonyms": ["sales transactions", "store purchases", "retail sales", "POS data"]}'
+  date_dim:
+    code: date_dim
+    database: tpcds
+    schema: public
+    columns:
+      d_date_sk:
+        code: d_date_sk
+        abstractType: string
+        comment: Surrogate key for date
+      d_date:
+        code: d_date
+        abstractType: date
+        comment: Actual date value
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["date", "calendar date"]}'
+      d_year:
+        code: d_year
+        abstractType: date
+        comment: Year
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["year"]}'
+      d_quarter_name:
+        code: d_quarter_name
+        abstractType: date
+        comment: Quarter name (e.g., 2024Q1)
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["quarter", "fiscal quarter"]}'
+      d_month_name:
+        code: d_month_name
+        abstractType: date
+        comment: Month name
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["month"]}'
+    comment: Date dimension with calendar attributes
+    customExtensions:
+    - vendor: OSI
+      data: '{"synonyms": ["calendar", "dates", "time periods"]}'
+  customer:
+    code: customer
+    database: tpcds
+    schema: public
+    columns:
+      c_customer_sk:
+        code: c_customer_sk
+        abstractType: string
+        comment: Surrogate key for customer
+      c_customer_id:
+        code: c_customer_id
+        abstractType: string
+        comment: Business key for customer
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["customer ID", "customer number"]}'
+      c_first_name:
+        code: c_first_name
+        abstractType: string
+        comment: Customer first name
+      c_last_name:
+        code: c_last_name
+        abstractType: string
+        comment: Customer last name
+      customer_full_name:
+        code: c_first_name || ' ' || c_last_name
+        abstractType: string
+        comment: Customer full name (computed field)
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["full name", "customer name"]}'
+      c_email_address:
+        code: c_email_address
+        abstractType: string
+        comment: Customer email address
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["email", "contact"]}'
+    comment: Customer dimension with demographic information
+    customExtensions:
+    - vendor: OSI
+      data: '{"synonyms": ["customers", "shoppers", "buyers"]}'
+  item:
+    code: item
+    database: tpcds
+    schema: public
+    columns:
+      i_item_sk:
+        code: i_item_sk
+        abstractType: string
+        comment: Surrogate key for item
+      i_item_id:
+        code: i_item_id
+        abstractType: string
+        comment: Business key for item
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["item ID", "product ID", "SKU"]}'
+      i_item_desc:
+        code: i_item_desc
+        abstractType: string
+        comment: Item description
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["product description", "item name"]}'
+      i_brand:
+        code: i_brand
+        abstractType: string
+        comment: Brand name
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["brand", "manufacturer"]}'
+      i_category:
+        code: i_category
+        abstractType: string
+        comment: Item category
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["product category", "department"]}'
+      i_current_price:
+        code: i_current_price
+        abstractType: float
+        comment: Current price of the item
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["price", "list price"]}'
+    comment: Item/Product dimension with product attributes
+    customExtensions:
+    - vendor: OSI
+      data: '{"synonyms": ["products", "items", "merchandise"]}'
+  store:
+    code: store
+    database: tpcds
+    schema: public
+    columns:
+      s_store_sk:
+        code: s_store_sk
+        abstractType: string
+        comment: Surrogate key for store
+      s_store_id:
+        code: s_store_id
+        abstractType: string
+        comment: Business key for store
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["store ID", "store number"]}'
+      s_store_name:
+        code: s_store_name
+        abstractType: string
+        comment: Store name
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["store name", "location name"]}'
+      s_city:
+        code: s_city
+        abstractType: string
+        comment: City where store is located
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["city", "location"]}'
+      s_state:
+        code: s_state
+        abstractType: string
+        comment: State where store is located
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["state", "region"]}'
+      s_number_employees:
+        code: s_number_employees
+        abstractType: int
+        comment: Number of employees at the store
+        customExtensions:
+        - vendor: OSI
+          data: '{"synonyms": ["employee count", "staff size"]}'
+    comment: Store dimension with location and store attributes
+    customExtensions:
+    - vendor: OSI
+      data: '{"synonyms": ["stores", "retail locations", "branches"]}'
+dimensions:
+  d_date:
+    dataObject: date_dim
+    column: d_date
+    resultType: date
+  d_year:
+    dataObject: date_dim
+    column: d_year
+    resultType: date
+  d_quarter_name:
+    dataObject: date_dim
+    column: d_quarter_name
+    resultType: date
+  d_month_name:
+    dataObject: date_dim
+    column: d_month_name
+    resultType: date
+  c_customer_id:
+    dataObject: customer
+    column: c_customer_id
+    resultType: string
+  c_first_name:
+    dataObject: customer
+    column: c_first_name
+    resultType: string
+  c_last_name:
+    dataObject: customer
+    column: c_last_name
+    resultType: string
+  customer_full_name:
+    dataObject: customer
+    column: customer_full_name
+    resultType: string
+  c_email_address:
+    dataObject: customer
+    column: c_email_address
+    resultType: string
+  i_item_id:
+    dataObject: item
+    column: i_item_id
+    resultType: string
+  i_item_desc:
+    dataObject: item
+    column: i_item_desc
+    resultType: string
+  i_brand:
+    dataObject: item
+    column: i_brand
+    resultType: string
+  i_category:
+    dataObject: item
+    column: i_category
+    resultType: string
+  i_current_price:
+    dataObject: item
+    column: i_current_price
+    resultType: float
+  s_store_id:
+    dataObject: store
+    column: s_store_id
+    resultType: string
+  s_store_name:
+    dataObject: store
+    column: s_store_name
+    resultType: string
+  s_city:
+    dataObject: store
+    column: s_city
+    resultType: string
+  s_state:
+    dataObject: store
+    column: s_state
+    resultType: string
+measures:
+  total_sales:
+    columns:
+    - dataObject: store_sales
+      column: ss_ext_sales_price
+    resultType: float
+    aggregation: sum
+  total_profit:
+    columns:
+    - dataObject: store_sales
+      column: ss_net_profit
+    resultType: float
+    aggregation: sum
+  _customer_c_customer_sk_count_distinct:
+    columns:
+    - dataObject: customer
+      column: c_customer_sk
+    resultType: float
+    aggregation: count
+    distinct: true
+  sales_by_brand:
+    columns:
+    - dataObject: store_sales
+      column: ss_ext_sales_price
+    resultType: float
+    aggregation: sum
+  _store_s_number_employees_sum:
+    columns:
+    - dataObject: store
+      column: s_number_employees
+    resultType: float
+    aggregation: sum
+metrics:
+  customer_lifetime_value:
+    expression: '{[total_sales]} / {[_customer_c_customer_sk_count_distinct]}'
+  store_productivity:
+    expression: '{[total_sales]} / NULLIF({[_store_s_number_employees_sum]}, 0)'
