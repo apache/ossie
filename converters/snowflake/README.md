@@ -51,5 +51,5 @@ Some Ossie concepts (e.g., `ai_context` on relationships) do not have a native c
 
 A dedicated open-source Ossie ↔ semantic-view converter would be a welcome future addition. In the meantime, Snowflake can already read and write Ossie YAML natively, so the round-trip works today:
 
-- `SYSTEM$CREATE_SEMANTIC_VIEW_FROM_OSI_YAML` — create a semantic view directly from Ossie YAML (Ossie YAML → semantic view).
-- `SYSTEM$READ_OSI_YAML_FROM_SEMANTIC_VIEW` — export an existing semantic view to Ossie YAML (semantic view → Ossie YAML).
+- [`SYSTEM$CREATE_SEMANTIC_VIEW_FROM_OSI_YAML`](https://docs.snowflake.com/en/sql-reference/stored-procedures/system_create_semantic_view_from_osi_yaml) — create a semantic view directly from Ossie YAML (Ossie YAML → semantic view).
+- [`SYSTEM$READ_OSI_YAML_FROM_SEMANTIC_VIEW`](https://docs.snowflake.com/en/sql-reference/functions/system_read_osi_yaml_from_semantic_view) — export an existing semantic view to Ossie YAML (semantic view → Ossie YAML).
