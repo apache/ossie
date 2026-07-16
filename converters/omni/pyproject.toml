@@ -27,12 +27,12 @@ dependencies = [
     "PyYAML>=6.0",
 ]
 
+[project.scripts]
+osi-omni = "osi_omni.cli:main"
+
 [project.urls]
 homepage = "https://ossie.apache.org/"
 repository = "https://github.com/apache/ossie/"
-
-[project.scripts]
-osi-omni = "osi_omni.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/osi_omni"]
