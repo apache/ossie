@@ -24,7 +24,7 @@ The Apache Ossie Python package provides Pydantic v2 models for the Apache Ossie
 ## Development
 
 ### Prerequisites
-- Python 3.10 or later
+- Python 3.11 or later
 - uv >= 0.9.0
 
 ### Installation
