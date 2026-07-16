@@ -11,3 +11,4 @@
 # Go CLI
 cli/dist/
 cli/ossie
+cli/.tool-versions
