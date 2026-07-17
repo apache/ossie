@@ -8,8 +8,8 @@ import (
 
 const (
 	defaultOssieDir = ".ossie"
-	pluginsSubdir = "plugins"
-	envVar        = "OSSIE_PLUGIN_DIR"
+	pluginsSubdir   = "plugins"
+	envVar          = "OSSIE_PLUGIN_DIR"
 )
 
 // PluginDir returns the resolved plugin directory path.
