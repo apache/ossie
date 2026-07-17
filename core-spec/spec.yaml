@@ -53,8 +53,15 @@ semantic_model:
     # Optional: Human-readable description of the semantic model
     description: string
 
-    # Optional: Additional context for AI tools (e.g., custom prompts, instructions)
-    ai_context: string
+    # Optional: Additional context for AI tools.
+    # Can be a simple string or a structured object with instructions,
+    # synonyms, examples, or vendor-specific keys.
+    ai_context:
+      instructions: string
+      synonyms:
+        - string
+      examples:
+        - string
 
     # Required: Collection of logical datasets (fact and dimension tables)
     # See Logical Dataset section below for detailed structure
@@ -117,7 +124,13 @@ datasets:
 
     # Optional: Additional context for AI tools (e.g., synonyms, common terms)
     # Helps LLMs understand the business meaning and generate better queries
-    ai_context: string
+    # Can also be provided as a simple string.
+    ai_context:
+      instructions: string
+      synonyms:
+        - string
+      examples:
+        - string
 
     # Optional: Row-level calculations for grouping, filtering, and in metric expressions
     # See Fields section below for detailed structure
@@ -160,6 +173,15 @@ relationships:
     #   - [order_id, line_number]    # Composite key
     to_columns: []  # Array of column names
 
+    # Optional: Additional context for AI tools.
+    # Can be a simple string or a structured object.
+    ai_context:
+      instructions: string
+      synonyms:
+        - string
+      examples:
+        - string
+
     # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
       - vendor_name: string  # Free-form string identifying the vendor
@@ -196,7 +218,13 @@ fields:
 
     # Optional: Additional context for AI tools (e.g., synonyms, business terms)
     # Helps LLMs understand the field meaning and generate better queries
-    ai_context: string
+    # Can also be provided as a simple string.
+    ai_context:
+      instructions: string
+      synonyms:
+        - string
+      examples:
+        - string
 
     # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
@@ -225,7 +253,13 @@ metrics:
 
     # Optional: Additional context for AI tools (e.g., synonyms, business context)
     # Helps LLMs understand the metric meaning and suggest it appropriately
-    ai_context: string
+    # Can also be provided as a simple string.
+    ai_context:
+      instructions: string
+      synonyms:
+        - string
+      examples:
+        - string
 
     # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
