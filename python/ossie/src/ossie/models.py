@@ -15,14 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from enum import Enum
-from typing import Any, Optional, Union
+from enum import StrEnum
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class OSIDialect(str, Enum):
+class OSIDialect(StrEnum):
     """Supported SQL and expression language dialects."""
 
     ANSI_SQL = "ANSI_SQL"
@@ -34,7 +34,7 @@ class OSIDialect(str, Enum):
     BIGQUERY = "BIGQUERY"
 
 
-class OSIDataType(str, Enum):
+class OSIDataType(StrEnum):
     """Portable logical data types for fields and metric results."""
 
     STRING = "String"
@@ -59,7 +59,7 @@ _TEMPORAL_DATA_TYPES = frozenset(
 )
 
 
-class OSIVendor(str, Enum):
+class OSIVendor(StrEnum):
     """Well-known vendor names for custom extensions."""
 
     COMMON = "COMMON"
@@ -77,12 +77,12 @@ class OSIAIContextObject(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="allow")
 
-    instructions: Optional[str] = None
-    synonyms: Optional[tuple[str, ...]] = None
-    examples: Optional[tuple[str, ...]] = None
+    instructions: str | None = None
+    synonyms: tuple[str, ...] | None = None
+    examples: tuple[str, ...] | None = None
 
 
-OSIAIContext = Union[str, OSIAIContextObject]
+OSIAIContext = str | OSIAIContextObject
 
 
 class OSICustomExtension(BaseModel):
@@ -116,7 +116,7 @@ class OSIDimension(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    is_time: Optional[bool] = None
+    is_time: bool | None = None
 
 
 class OSIField(BaseModel):
@@ -126,12 +126,12 @@ class OSIField(BaseModel):
 
     name: str
     expression: OSIExpression
-    dimension: Optional[OSIDimension] = None
-    label: Optional[str] = None
-    description: Optional[str] = None
-    datatype: Optional[OSIDataType] = None
-    ai_context: Optional[OSIAIContext] = None
-    custom_extensions: Optional[list[OSICustomExtension]] = None
+    dimension: OSIDimension | None = None
+    label: str | None = None
+    description: str | None = None
+    datatype: OSIDataType | None = None
+    ai_context: OSIAIContext | None = None
+    custom_extensions: list[OSICustomExtension] | None = None
 
     def is_time_dimension(self) -> bool:
         """Return the field's effective temporal-dimension role.
@@ -154,12 +154,12 @@ class OSIDataset(BaseModel):
 
     name: str
     source: str
-    primary_key: Optional[list[str]] = None
-    unique_keys: Optional[list[list[str]]] = None
-    description: Optional[str] = None
-    ai_context: Optional[OSIAIContext] = None
-    fields: Optional[list[OSIField]] = None
-    custom_extensions: Optional[list[OSICustomExtension]] = None
+    primary_key: list[str] | None = None
+    unique_keys: list[list[str]] | None = None
+    description: str | None = None
+    ai_context: OSIAIContext | None = None
+    fields: list[OSIField] | None = None
+    custom_extensions: list[OSICustomExtension] | None = None
 
 
 class OSIRelationship(BaseModel):
@@ -172,8 +172,8 @@ class OSIRelationship(BaseModel):
     to: str
     from_columns: list[str]
     to_columns: list[str]
-    ai_context: Optional[OSIAIContext] = None
-    custom_extensions: Optional[list[OSICustomExtension]] = None
+    ai_context: OSIAIContext | None = None
+    custom_extensions: list[OSICustomExtension] | None = None
 
 
 class OSIMetric(BaseModel):
@@ -183,10 +183,10 @@ class OSIMetric(BaseModel):
 
     name: str
     expression: OSIExpression
-    description: Optional[str] = None
-    datatype: Optional[OSIDataType] = None
-    ai_context: Optional[OSIAIContext] = None
-    custom_extensions: Optional[list[OSICustomExtension]] = None
+    description: str | None = None
+    datatype: OSIDataType | None = None
+    ai_context: OSIAIContext | None = None
+    custom_extensions: list[OSICustomExtension] | None = None
 
 
 class OSISemanticModel(BaseModel):
@@ -195,12 +195,12 @@ class OSISemanticModel(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     name: str
-    description: Optional[str] = None
-    ai_context: Optional[OSIAIContext] = None
+    description: str | None = None
+    ai_context: OSIAIContext | None = None
     datasets: list[OSIDataset]
-    relationships: Optional[list[OSIRelationship]] = None
-    metrics: Optional[list[OSIMetric]] = None
-    custom_extensions: Optional[list[OSICustomExtension]] = None
+    relationships: list[OSIRelationship] | None = None
+    metrics: list[OSIMetric] | None = None
+    custom_extensions: list[OSICustomExtension] | None = None
 
 
 class OSIDocument(BaseModel):
@@ -209,8 +209,8 @@ class OSIDocument(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     version: str = "0.2.0.dev0"
-    dialects: Optional[list[OSIDialect]] = None
-    vendors: Optional[list[OSIVendor]] = None
+    dialects: list[OSIDialect] | None = None
+    vendors: list[OSIVendor] | None = None
     semantic_model: list[OSISemanticModel]
 
     def to_osi_yaml(self, **kwargs: Any) -> str:
