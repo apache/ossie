@@ -17,4 +17,17 @@
   under the License.
 -->
 
-This is for compliance tests
+# Ossie Compliance
+
+This directory holds the compliance test suites that validate an Ossie
+implementation against a proposal's semantics, plus the shared runner
+that executes them.
+
+- [`ADAPTER_INTERFACE.md`](ADAPTER_INTERFACE.md) — the CLI contract an
+  implementation must satisfy to plug into a compliance suite.
+- [`harness/`](harness/) — the engine-agnostic runner / reporter / DB
+  manager shared by every per-version suite below.
+- [`foundation/`](foundation/) — the compliance suite for the
+  Foundation proposal (`osi_version: "0.1"`). See its
+  [README](foundation/README.md) for current status — this is
+  currently a bootstrap slice, not the full suite.

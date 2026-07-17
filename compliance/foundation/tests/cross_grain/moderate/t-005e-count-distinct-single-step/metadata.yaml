@@ -1,0 +1,14 @@
+name: t-005e-count-distinct-single-step
+description: "Single-step COUNT(DISTINCT) over 1:N accepted (holistic but well-defined on plain 1:N)"
+area: cross_grain
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-020"
+  - "Proposed_OSI_Semantics.md#D-022"
+tags: [cross-grain, 1:N, count-distinct, holistic]
+conformance_level: foundation_v0_1
+decision: D-020
+test_id: T-005e
+status: planned
+xfail_reason: "Sprint S-5 — COUNT(DISTINCT) single-step over 1:N (D-020 (d), D-022 caveat)"

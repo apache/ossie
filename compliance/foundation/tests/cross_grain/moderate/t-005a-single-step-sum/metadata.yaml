@@ -1,0 +1,13 @@
+name: t-005a-single-step-sum
+description: "Single-step cross-grain SUM over 1:N accepted; identical to nested SUM (distributive)"
+area: cross_grain
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "Proposed_OSI_Semantics.md#D-020"
+tags: [cross-grain, 1:N, distributive]
+conformance_level: foundation_v0_1
+decision: D-020
+test_id: T-005a
+status: planned
+xfail_reason: "Sprint S-5 — single-step cross-grain aggregation (D-020)"
