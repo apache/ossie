@@ -1,0 +1,21 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ossie-sql-ruff-check
+        name: ossie-sql ruff check
+        entry: bash -c 'cd python/ossie-sql && uv run ruff check --fix src tests'
+        language: system
+        files: ^python/ossie-sql/.*\.py$
+        pass_filenames: false
+      - id: ossie-sql-ruff-format
+        name: ossie-sql ruff format
+        entry: bash -c 'cd python/ossie-sql && uv run ruff format src tests'
+        language: system
+        files: ^python/ossie-sql/.*\.py$
+        pass_filenames: false
+      - id: ossie-sql-mypy
+        name: ossie-sql mypy (strict)
+        entry: bash -c 'cd python/ossie-sql && uv run mypy --config-file ../../mypy.ini src tests'
+        language: system
+        files: ^python/ossie-sql/.*\.py$
+        pass_filenames: false
