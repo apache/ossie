@@ -1,0 +1,39 @@
+version: 0.2.0.dev0
+name: foaf
+description: >
+  Small ontology imported from the FOAF (Friend of a Friend) OWL vocabulary,
+  demonstrating how custom_properties preserves OWL/RDF data (IRIs, labels, and
+  axioms) that the core OSI spec does not model, so the source can be round-tripped.
+ontology:
+  - concept:
+      name: Person
+      type: EntityType
+      custom_properties:
+        iri: "http://xmlns.com/foaf/0.1/Person"
+        rdfs:label@en: "Person"
+        rdfs:label@fr: "Personne"
+        rdfs:comment@en: "A person."
+        owl:equivalentClass: "https://schema.org/Person"
+    relationships:
+      - name: name
+        roles:
+          - concept: String
+        verbalizes: [ "{Person} has name {String}" ]
+        multiplicity: ManyToOne
+        custom_properties:
+          iri: "http://xmlns.com/foaf/0.1/name"
+          rdfs:label@en: "name"
+      - name: knows
+        roles:
+          - concept: Person
+            name: acquaintance
+            custom_properties:
+              rdfs:range: "http://xmlns.com/foaf/0.1/Person"
+        verbalizes: [ "{Person} knows {Person:acquaintance}" ]
+        custom_properties:
+          iri: "http://xmlns.com/foaf/0.1/knows"
+          rdfs:label@en: "knows"
+          owl:inverseOf: "http://xmlns.com/foaf/0.1/knows"
+custom_properties:
+  owl:Ontology: "http://xmlns.com/foaf/0.1/"
+  dc:title: "Friend of a Friend (FOAF) vocabulary"
