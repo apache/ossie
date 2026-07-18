@@ -16,7 +16,6 @@ authors = [{ name = "Apache Software Foundation", email = "dev@ossie.apache.org"
 requires-python = ">=3.10"
 readme = "README.md"
 license = "Apache-2.0"
-license-files = ["LICENSE", "NOTICE"]
 keywords = [
     "Apache Ossie",
     "Ossie",
