@@ -55,7 +55,7 @@ except ImportError:
 
 try:
     import sqlglot
-    from sqlglot.errors import ParseError
+    from sqlglot.errors import ParseError, TokenError
     SQLGLOT_AVAILABLE = True
 except ImportError:
     SQLGLOT_AVAILABLE = False
@@ -163,14 +163,14 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
         # Try parsing as expression first (for field expressions like "column_name")
         sqlglot.parse_one(expr, dialect=sqlglot_dialect)
         return None
-    except ParseError:
+    except (ParseError, TokenError):
         pass
 
     try:
         # Try wrapping in SELECT for simple column references
         sqlglot.parse_one(f"SELECT {expr}", dialect=sqlglot_dialect)
         return None
-    except ParseError as e:
+    except (ParseError, TokenError) as e:
         return f"[SQL] {context}: {str(e).split(chr(10))[0]}"
 
 
