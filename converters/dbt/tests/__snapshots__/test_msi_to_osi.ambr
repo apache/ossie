@@ -1,0 +1,184 @@
+# serializer version: 1
+# name: TestMetricConversion.test_derived_metric_nested
+  '''
+  version: 0.2.0.dev0
+  dialects:
+  - ANSI_SQL
+  semantic_model:
+  - name: semantic_model
+    datasets:
+    - name: orders
+      source: schema.table
+      fields:
+      - name: revenue
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: amount
+      - name: cost
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: cost_amount
+      - name: expenses
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: expense_amount
+    metrics:
+    - name: revenue
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(orders.amount)
+    - name: cost
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(orders.cost_amount)
+    - name: expenses
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(orders.expense_amount)
+    - name: gross_profit
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(orders.amount) - SUM(orders.cost_amount)
+    - name: net_profit
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: (SUM(orders.amount) - SUM(orders.cost_amount)) - SUM(orders.expense_amount)
+  
+  '''
+# ---
+# name: TestMetricConversion.test_ratio_metric_inlines_sub_expressions
+  '''
+  version: 0.2.0.dev0
+  dialects:
+  - ANSI_SQL
+  semantic_model:
+  - name: semantic_model
+    datasets:
+    - name: orders
+      source: schema.table
+      fields:
+      - name: revenue
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: amount
+      - name: order_count
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: CASE WHEN order_id IS NOT NULL THEN 1 ELSE 0 END
+    metrics:
+    - name: revenue
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(orders.amount)
+    - name: order_count
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(CASE WHEN orders.order_id IS NOT NULL THEN 1 ELSE 0 END)
+    - name: arpu
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: (SUM(orders.amount)) / (SUM(CASE WHEN orders.order_id IS NOT NULL
+            THEN 1 ELSE 0 END))
+  
+  '''
+# ---
+# name: TestMetricFilterFlattening.test_metric_and_measure_filters_combined_with_and
+  '''
+  version: 0.2.0.dev0
+  dialects:
+  - ANSI_SQL
+  semantic_model:
+  - name: semantic_model
+    datasets:
+    - name: orders
+      source: schema.table
+      fields:
+      - name: revenue
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: amount
+    metrics:
+    - name: paid_intl_revenue
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(CASE WHEN (status = 'paid') AND (region = 'intl') THEN orders.amount
+            END)
+  
+  '''
+# ---
+# name: TestRelationshipConversion.test_three_datasets_produce_all_pairs
+  '''
+  version: 0.2.0.dev0
+  dialects:
+  - ANSI_SQL
+  semantic_model:
+  - name: semantic_model
+    datasets:
+    - name: users_a
+      source: schema.table
+      primary_key:
+      - user_id
+      fields:
+      - name: user
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: user_id
+    - name: users_b
+      source: schema.table
+      unique_keys:
+      - - user_id
+      fields:
+      - name: user
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: user_id
+    - name: orders
+      source: schema.table
+      fields:
+      - name: user
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: user_id
+    relationships:
+    - name: users_a__users_b__user
+      from: users_a
+      to: users_b
+      from_columns:
+      - user_id
+      to_columns:
+      - user_id
+    - name: orders__users_a__user
+      from: orders
+      to: users_a
+      from_columns:
+      - user_id
+      to_columns:
+      - user_id
+    - name: orders__users_b__user
+      from: orders
+      to: users_b
+      from_columns:
+      - user_id
+      to_columns:
+      - user_id
+  
+  '''
+# ---
