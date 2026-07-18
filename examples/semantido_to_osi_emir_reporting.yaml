@@ -1,0 +1,464 @@
+version: 0.2.0.dev0
+semantic_model:
+- name: emir_reporting
+  datasets:
+  - name: collateral_report
+    source: collateral_report
+    primary_key:
+    - id
+    description: Daily collateral/margin per UTI (Art. 11(3)).
+    ai_context:
+      instructions: 'SIGN CONVENTION (different from trade_state!): amounts are UNSIGNED;
+        direction is carried by which column they sit in. Net collateral = posted
+        - received, computed, never read from a column.'
+    fields:
+    - name: id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: id
+      description: 'Column: id'
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "INTEGER"}'
+    - name: uti
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: uti
+      description: 'Column: uti'
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "VARCHAR", "references": "trade.uti"}'
+    - name: reporting_date
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: reporting_date
+      dimension:
+        is_time: true
+      description: 'Column: reporting_date'
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "DATE", "time_grain": "day"}'
+    - name: initial_margin_posted
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: initial_margin_posted
+      description: IM posted BY the reporting counterparty. Unsigned.
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "DECIMAL"}'
+    - name: initial_margin_received
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: initial_margin_received
+      description: IM received. Unsigned; do not sum with posted — subtract.
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "DECIMAL"}'
+    - name: collateral_currency
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: collateral_currency
+      description: ISO 4217 currency of margin amounts.
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "VARCHAR"}'
+    custom_extensions:
+    - vendor_name: SEMANTIDO
+      data: '{"time_dimension": "reporting_date"}'
+  - name: counterparty
+    source: counterparty
+    primary_key:
+    - lei
+    description: Legal entity master for derivative counterparties, one row per LEI.
+    ai_context:
+      instructions: EMIR counterparty classification drives clearing and reporting
+        obligations (FC / NFC+ / NFC- under Art. 2 and Art. 10).
+      synonyms:
+      - legal entities
+      - counterparties
+    fields:
+    - name: lei
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: lei
+      description: Legal Entity Identifier (ISO 17442). The sole join key for counterparty
+        identity everywhere in this schema.
+      ai_context:
+        examples:
+        - 529900T8BM49AURSDO55
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "VARCHAR"}'
+    - name: legal_name
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: legal_name
+      description: Registered legal name as per GLEIF record.
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "VARCHAR", "privacy_level": "confidential"}'
+    - name: classification
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: classification
+      description: 'EMIR counterparty classification: ''FC'' (financial counterparty,
+        Art. 2(8)), ''NFC+'' (non-financial above clearing threshold, Art. 10), ''NFC-''
+        (below). Filter on this before any obligation question.'
+      ai_context:
+        examples:
+        - FC
+        - NFC+
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "VARCHAR"}'
+    - name: country
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: country
+      description: ISO 3166-1 alpha-2 country of incorporation.
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "VARCHAR"}'
+  - name: counterparty_trade_role
+    source: counterparty_trade_role
+    primary_key:
+    - id
+    description: Role bridge between trades and counterparties. A trade has AT LEAST
+      two rows here (reporting + other counterparty), often more.
+    ai_context:
+      instructions: 'FAN-OUT GUARD: joining trade -> this table -> counterparty multiplies
+        trade rows by role count; any SUM over trade amounts after this join double-counts.
+        Filter to a single role (usually ''RPTG'') before aggregating trade-level
+        amounts.'
+    fields:
+    - name: id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: id
+      description: 'Column: id'
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "INTEGER"}'
+    - name: uti
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: uti
+      description: 'Column: uti'
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "VARCHAR", "references": "trade.uti"}'
+    - name: lei
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: lei
+      description: 'Column: lei'
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "VARCHAR", "references": "counterparty.lei"}'
+    - name: role
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: role
+      description: '''RPTG'' reporting counterparty, ''OTHR'' other counterparty,
+        ''BRKR'' broker, ''CLRM'' clearing member. Exactly one RPTG row per UTI.'
+      ai_context:
+        examples:
+        - RPTG
+        - OTHR
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "VARCHAR"}'
+  - name: submission_log
+    source: submission_log
+    primary_key:
+    - id
+    description: 'Trade repository submission log. Grain: one row per submission attempt
+      — a trade may have many.'
+    ai_context:
+      instructions: Rejection-rate questions resolve here, per attempt, not per trade,
+        unless deduplicated. Rejection rate = NACK / all attempts.
+    fields:
+    - name: id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: id
+      description: 'Column: id'
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "INTEGER"}'
+    - name: uti
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: uti
+      description: 'Column: uti'
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "VARCHAR", "references": "trade.uti"}'
+    - name: submission_timestamp
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: submission_timestamp
+      dimension:
+        is_time: true
+      description: 'Column: submission_timestamp'
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "TIMESTAMP", "time_grain": "second"}'
+    - name: status
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: status
+      description: '''ACKD'' accepted, ''NACK'' rejected, ''PEND'' pending.'
+      ai_context:
+        examples:
+        - ACKD
+        - NACK
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "VARCHAR"}'
+    - name: nack_reason
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: nack_reason
+      description: TR rejection reason text; NULL unless NACK.
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "VARCHAR"}'
+    custom_extensions:
+    - vendor_name: SEMANTIDO
+      data: '{"time_dimension": "submission_timestamp"}'
+  - name: trade
+    source: trade
+    primary_key:
+    - uti
+    description: Reportable OTC derivative trades, one row per UTI. Immutable birth
+      record of the trade; evolving economics live in trade_state.
+    ai_context:
+      instructions: 'AMBIGUITY GUARD: notional_amount is contract size, NOT current
+        value and NOT exposure. ''How big'' -> notional; ''worth today'' -> trade_state.valuation_amount;
+        ''at risk'' -> collateral_report.'
+      synonyms:
+      - trades
+      - derivatives
+      - positions
+    fields:
+    - name: uti
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: uti
+      description: Unique Trade Identifier (Art. 9 REFIT). Canonical trade key.
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "VARCHAR"}'
+    - name: asset_class
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: asset_class
+      description: 'EMIR asset class: ''IR'' rates, ''CR'' credit, ''EQ'' equity,
+        ''FX'' FX, ''CO'' commodity.'
+      ai_context:
+        examples:
+        - IR
+        - FX
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "VARCHAR"}'
+    - name: notional_amount
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: notional_amount
+      description: Trade notional in notional_currency. Contract size, not value.
+        Never sum across currencies without conversion.
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "DECIMAL", "privacy_level": "restricted"}'
+    - name: notional_currency
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: notional_currency
+      description: ISO 4217 currency of notional_amount.
+      ai_context:
+        examples:
+        - EUR
+        - USD
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "VARCHAR"}'
+    - name: execution_timestamp
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: execution_timestamp
+      dimension:
+        is_time: true
+      description: UTC execution time (Art. 9 REFIT). Primary time axis.
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "TIMESTAMP", "time_grain": "second"}'
+    custom_extensions:
+    - vendor_name: SEMANTIDO
+      data: '{"time_dimension": "execution_timestamp"}'
+  - name: trade_state
+    source: trade_state
+    primary_key:
+    - id
+    description: Daily trade-state reports (EMIR REFIT is state-based), one row per
+      UTI per reporting_date. The latest state per UTI is the current view.
+    ai_context:
+      instructions: 'SIGN CONVENTION: valuation_amount is signed from the REPORTING
+        counterparty''s perspective. Aggregating across counterparties without flipping
+        signs by role is meaningless.'
+    fields:
+    - name: id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: id
+      description: 'Column: id'
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "INTEGER"}'
+    - name: uti
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: uti
+      description: 'Column: uti'
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "VARCHAR", "references": "trade.uti"}'
+    - name: reporting_date
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: reporting_date
+      dimension:
+        is_time: true
+      description: State date; one state per trade per day.
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "DATE", "time_grain": "day"}'
+    - name: valuation_amount
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: valuation_amount
+      description: 'Mark-to-market value (Art. 11(2)), signed from the reporting counterparty''s
+        perspective. Value, not size: do not confuse with notional.'
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "DECIMAL", "privacy_level": "restricted"}'
+    - name: contract_status
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: contract_status
+      description: '''OUTS'' outstanding, ''TERM'' terminated, ''MATU'' matured, ''ERRO''
+        error. Exclude non-OUTS from exposure aggregates unless asked otherwise.'
+      ai_context:
+        examples:
+        - OUTS
+        - TERM
+      custom_extensions:
+      - vendor_name: SEMANTIDO
+        data: '{"data_type": "VARCHAR"}'
+    custom_extensions:
+    - vendor_name: SEMANTIDO
+      data: '{"sql_filters": ["reporting_date = (SELECT MAX(ts2.reporting_date) FROM
+        trade_state ts2 WHERE ts2.uti = trade_state.uti)"], "time_dimension": "reporting_date"}'
+  relationships:
+  - name: counterparty_to_counterparty_trade_role
+    from: counterparty
+    to: counterparty_trade_role
+    from_columns:
+    - lei
+    to_columns:
+    - lei
+    ai_context:
+      instructions: Roles this entity plays on trades.
+    custom_extensions:
+    - vendor_name: SEMANTIDO
+      data: '{"relationship_type": "one-to-many"}'
+  - name: counterparty_trade_role_to_trade
+    from: counterparty_trade_role
+    to: trade
+    from_columns:
+    - uti
+    to_columns:
+    - uti
+    ai_context:
+      instructions: Trade this role row belongs to.
+    custom_extensions:
+    - vendor_name: SEMANTIDO
+      data: '{"relationship_type": "many-to-one"}'
+  - name: counterparty_trade_role_to_counterparty
+    from: counterparty_trade_role
+    to: counterparty
+    from_columns:
+    - lei
+    to_columns:
+    - lei
+    ai_context:
+      instructions: Entity playing this role.
+    custom_extensions:
+    - vendor_name: SEMANTIDO
+      data: '{"relationship_type": "many-to-one"}'
+  - name: trade_to_trade_state
+    from: trade
+    to: trade_state
+    from_columns:
+    - uti
+    to_columns:
+    - uti
+    ai_context:
+      instructions: Daily state reports for this trade.
+    custom_extensions:
+    - vendor_name: SEMANTIDO
+      data: '{"relationship_type": "one-to-many"}'
+  - name: trade_to_counterparty_trade_role
+    from: trade
+    to: counterparty_trade_role
+    from_columns:
+    - uti
+    to_columns:
+    - uti
+    ai_context:
+      instructions: Counterparty roles attached to this trade.
+    custom_extensions:
+    - vendor_name: SEMANTIDO
+      data: '{"relationship_type": "one-to-many"}'
+  - name: trade_state_to_trade
+    from: trade_state
+    to: trade
+    from_columns:
+    - uti
+    to_columns:
+    - uti
+    ai_context:
+      instructions: The trade this state report belongs to.
+    custom_extensions:
+    - vendor_name: SEMANTIDO
+      data: '{"relationship_type": "many-to-one"}'
