@@ -133,9 +133,3 @@ cd converters/dbt
 uv sync
 uv run pytest
 ```
-
-Generate initial syrupy snapshots on first run:
-
-```bash
-uv run pytest --snapshot-update
-```
