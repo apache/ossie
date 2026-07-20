@@ -236,7 +236,7 @@ class OsiSpec(OsiObject):
         return self.model_dump(exclude_none=True, exclude_defaults=True, by_alias=True)
 
     def dump_yaml(self) -> str:
-        return yaml.safe_dump(self.dump_dict(), sort_keys=False)
+        return yaml.safe_dump(self.dump_dict(), sort_keys=False, width=float("inf"))
 
 
 # `ReferentMapping` and `LinkMapping` are self-referential (each can contain a
