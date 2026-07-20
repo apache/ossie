@@ -114,6 +114,14 @@ class TestParseSource:
             "table": '"myTable"',
         }
 
+    def test_quoted_identifiers_with_dots_preserved(self):
+        result = _parse_source('"my.db"."my schema"."my table"')
+        assert result == {
+            "database": '"my.db"',
+            "schema": '"my schema"',
+            "table": '"my table"',
+        }
+
     def test_subquery_select(self):
         result = _parse_source("SELECT * FROM foo")
         assert result == {"definition": "SELECT * FROM foo"}
