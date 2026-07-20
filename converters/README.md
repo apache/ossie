@@ -23,6 +23,12 @@
 
 An Ossie Converter translates between the Ossie semantic model format and a specific vendor's semantic implementation. This enables teams to author a semantic model once in the Ossie standard and then generate the corresponding vendor-specific representation automatically.
 
+Java converters can reuse the schema-derived POJOs provided by the
+[`ossie-common`](java/ossie-common/) Maven module. Its model classes are generated
+from the canonical core specification during each Maven build.
+All Java modules are grouped in the [`java`](java/) Maven reactor; non-Java
+converters keep their existing top-level layout.
+
 ## Hub-and-Spoke Model
 
 Ossie converters follow a **hub-and-spoke** architecture:
