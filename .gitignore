@@ -25,6 +25,7 @@
 **/dist/
 **/target/
 *.py[cod]
+**/.idea/
 
 # Go CLI
 cli/dist/
