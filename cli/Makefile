@@ -1,7 +1,7 @@
 BINARY_NAME := ossie
 BUILD_DIR   := dist
 
-.PHONY: build test lint release-dry-run clean
+.PHONY: build test lint format release-dry-run clean
 
 build:
 	go build -o $(BUILD_DIR)/$(BINARY_NAME) .
@@ -11,6 +11,9 @@ test:
 
 lint:
 	go vet ./...
+
+format:
+	gofmt -w .
 
 release-dry-run:
 	goreleaser release --snapshot --clean --config .goreleaser.yaml
