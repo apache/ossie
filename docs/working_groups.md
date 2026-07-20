@@ -60,3 +60,11 @@ Join the community on Slack: [join.slack.com/t/opensemanticx](https://join.slack
 | **Lead** | Francois Lopitaux (ThoughtSpot) |
 | **Slack channel** | `#wg-sync-api` |
 | **Google Calendar** | _link TBD_ |
+
+## 6. Financial Services Common Semantics
+
+| | |
+|---|---|
+| **Lead** | John Heisler (Snowflake) |
+| **Slack channel** | [`#ossie-financial-services-common-semantics`](https://apache-ossie.slack.com/archives/C0BJG69TLCD) |
+| **Google Calendar** | [Apache Ossie Financial Services Common Semantics Calendar](https://calendar.google.com/calendar/u/0?cid=Y182YzA2MDRmM2YzNWFhYjc0Njg4MGRlNTc3MjkzNWIxYTlhNzk1YWJmOWMwOWJkM2FkYzEwYzRiZjdiOGY3NjFmQGdyb3VwLmNhbGVuZGFyLmdvb2dsZS5jb20) |
