@@ -332,7 +332,7 @@ class TestStaleStashNameCollision:
         }
         osi_again = conv.OBMLtoOSI(obml, "sales").convert()
         result = conv.validate_osi(osi_again)
-        assert result.valid, result.errors
+        assert result.valid, result.summary_lines()
 
 
 class TestIdempotency:

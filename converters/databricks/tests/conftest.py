@@ -15,21 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
-root = true
+import pathlib
+import sys
 
-[*]
-end_of_line = lf
-charset = utf-8
-trim_trailing_whitespace = true
-insert_final_newline = true
-
-[*.{yml,yaml,json}]
-indent_style = space
-indent_size = 2
-
-[*.{py,java,toml}]
-indent_style = space
-indent_size = 4
-
-[{Makefile,go.mod,*.go}]
-indent_style = tab
+# Make the converter modules in ../src importable from the tests.
+_SRC = pathlib.Path(__file__).resolve().parent.parent / "src"
+sys.path.insert(0, str(_SRC))

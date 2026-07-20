@@ -15,21 +15,18 @@
 # specific language governing permissions and limitations
 # under the License.
 
-root = true
+"""Bidirectional converter between Apache Ossie semantic models and Databricks Unity Catalog
+Metric Views (YAML v1.1). Pure offline string-in / string-out transforms.
 
-[*]
-end_of_line = lf
-charset = utf-8
-trim_trailing_whitespace = true
-insert_final_newline = true
+    from ossie_databricks import convert_ossie_to_metric_view, convert_metric_view_to_ossie
+"""
 
-[*.{yml,yaml,json}]
-indent_style = space
-indent_size = 2
+from ._common import ConversionError
+from .metric_view_to_ossie import convert_metric_view_to_ossie
+from .ossie_to_metric_view import convert_ossie_to_metric_view
 
-[*.{py,java,toml}]
-indent_style = space
-indent_size = 4
-
-[{Makefile,go.mod,*.go}]
-indent_style = tab
+__all__ = [
+    "ConversionError",
+    "convert_metric_view_to_ossie",
+    "convert_ossie_to_metric_view",
+]

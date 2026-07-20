@@ -15,21 +15,38 @@
 # specific language governing permissions and limitations
 # under the License.
 
-root = true
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[*]
-end_of_line = lf
-charset = utf-8
-trim_trailing_whitespace = true
-insert_final_newline = true
+[project]
+name = "apache-ossie-databricks"
+version = "0.2.0.dev0"
+description = "Databricks Unity Catalog Metric View <> Apache Ossie converter"
+requires-python = ">=3.11"
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "PyYAML>=6.0",
+]
 
-[*.{yml,yaml,json}]
-indent_style = space
-indent_size = 2
+[project.license]
+text = "Apache-2.0"
 
-[*.{py,java,toml}]
-indent_style = space
-indent_size = 4
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "hypothesis>=6.0",
+]
 
-[{Makefile,go.mod,*.go}]
-indent_style = tab
+[project.scripts]
+ossie-databricks = "ossie_databricks.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ossie_databricks"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
