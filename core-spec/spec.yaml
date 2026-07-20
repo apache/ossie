@@ -115,6 +115,12 @@ datasets:
     # Optional: Human-readable description of the logical dataset
     description: string
 
+    # Optional: Indicates if this dataset contains personal data (PII) subject to privacy regulations
+    contains_personal_data: boolean
+
+    # Optional: Indicates if this dataset contains confidential information that should not be exposed to LLMs or external tools
+    is_confidential: boolean
+
     # Optional: Additional context for AI tools (e.g., synonyms, common terms)
     # Helps LLMs understand the business meaning and generate better queries
     ai_context: string
@@ -193,6 +199,12 @@ fields:
 
     # Optional: Human-readable description of the field
     description: string
+
+    # Optional: Indicates if this field contains personal data (PII) subject to privacy regulations
+    contains_personal_data: boolean
+
+    # Optional: Indicates if this field contains confidential information that should not be exposed to LLMs or external tools
+    is_confidential: boolean
 
     # Optional: Additional context for AI tools (e.g., synonyms, business terms)
     # Helps LLMs understand the field meaning and generate better queries

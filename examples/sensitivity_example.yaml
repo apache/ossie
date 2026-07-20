@@ -1,0 +1,117 @@
+# yaml-language-server: $schema=../core-spec/osi-schema.json
+
+# Example demonstrating the use of data sensitivity attributes
+# Shows how to mark fields and datasets with contains_personal_data and is_confidential flags
+
+version: "1.0"
+
+semantic_model:
+  - name: customer_analytics
+    description: Customer data with sensitivity markings
+    ai_context:
+      instructions: "Use this model for customer analytics. Note that some fields contain personal data or confidential information."
+
+    datasets:
+      # Dataset with personal data marking
+      - name: customers
+        source: sales.public.customers
+        primary_key: [customer_id]
+        description: Customer information including PII
+        contains_personal_data: true  # Dataset contains personal identifiable information
+        fields:
+          - name: customer_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: customer_id
+            description: Customer identifier
+
+          - name: email
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: email
+            description: Customer email address
+            contains_personal_data: true  # Field contains PII
+            ai_context:
+              synonyms:
+                - "email address"
+                - "contact email"
+
+          - name: phone_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: phone_number
+            description: Customer phone number
+            contains_personal_data: true  # Field contains PII
+
+      # Dataset with confidential marking
+      - name: financial_records
+        source: finance.private.records
+        primary_key: [record_id]
+        description: Sensitive financial records
+        is_confidential: true  # Dataset should not be exposed to LLMs
+        fields:
+          - name: record_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: record_id
+            description: Record identifier
+
+          - name: ssn
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: social_security_number
+            description: Social security number
+            is_confidential: true  # Field should not be exposed to LLMs
+            contains_personal_data: true  # Also PII
+
+          - name: account_balance
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: account_balance
+            description: Account balance
+            is_confidential: true  # Confidential financial information
+
+      # Dataset without sensitivity markings
+      - name: products
+        source: catalog.public.products
+        primary_key: [product_id]
+        description: Product catalog information
+        fields:
+          - name: product_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_id
+            description: Product identifier
+
+          - name: product_name
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: product_name
+            description: Product name
+
+    relationships:
+      - name: customers_to_financial_records
+        from: financial_records
+        to: customers
+        from_columns: [record_id]
+        to_columns: [customer_id]
+
+    metrics:
+      - name: total_customers
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(DISTINCT customers.customer_id)
+        description: Total number of customers
+        ai_context:
+          synonyms:
+            - "customer count"
+            - "number of customers"

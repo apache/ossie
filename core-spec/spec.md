@@ -106,6 +106,8 @@ Logical datasets represent business entities or concepts (fact and dimension tab
 | `primary_key` | array | No | Primary key columns that uniquely identify rows (single or composite) |
 | `unique_keys` | array of arrays | No | Array of unique key definitions (each can be single or composite) |
 | `description` | string | No | Human-readable description |
+| `contains_personal_data` | boolean | No | Indicates if this dataset contains personal data (PII) subject to privacy regulations |
+| `is_confidential` | boolean | No | Indicates if this dataset contains confidential information that should not be exposed to LLMs or external tools |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms, common terms) |
 | `fields` | array | No | Row-level attributes for grouping, filtering, and metric expressions |
 | `custom_extensions` | array | No | Vendor-specific attributes |
@@ -148,6 +150,20 @@ datasets:
     custom_extensions:
       - vendor_name: DBT
         data: '{"materialized": "table"}'
+
+  - name: customers
+    source: sales.public.customers
+    primary_key: [customer_id]
+    description: Customer information including PII
+    contains_personal_data: true  # Dataset contains personal identifiable information
+    fields: []
+
+  - name: financial_records
+    source: finance.private.records
+    primary_key: [record_id]
+    description: Sensitive financial records
+    is_confidential: true  # Dataset should not be exposed to LLMs
+    fields: []
 ```
 
 ---
@@ -213,6 +229,8 @@ Fields represent row-level attributes that can be used for grouping, filtering, 
 | `dimension` | object | No | Dimension metadata (e.g., `is_time` flag) |
 | `label` | string | No | Label for categorization |
 | `description` | string | No | Human-readable description |
+| `contains_personal_data` | boolean | No | Indicates if this field contains personal data (PII) subject to privacy regulations |
+| `is_confidential` | boolean | No | Indicates if this field contains confidential information that should not be exposed to LLMs or external tools |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms) |
 | `custom_extensions` | array | No | Vendor-specific attributes |
 
@@ -301,6 +319,34 @@ expression:
       - dialect: BIGQUERY
         expression: SAFE_CAST(LOWER(email) AS STRING)
   description: Normalized email address
+```
+
+**Field with Personal Data:**
+
+```yaml
+- name: email
+  expression:
+    dialects:
+      - dialect: ANSI_SQL
+        expression: email
+  description: Customer email address
+  contains_personal_data: true  # Field contains PII
+  ai_context:
+    synonyms:
+      - "email address"
+      - "contact email"
+```
+
+**Confidential Field:**
+
+```yaml
+- name: ssn
+  expression:
+    dialects:
+      - dialect: ANSI_SQL
+        expression: social_security_number
+  description: Social security number
+  is_confidential: true  # Field should not be exposed to LLMs
 ```
 
 ---

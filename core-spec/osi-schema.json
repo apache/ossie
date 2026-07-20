@@ -141,6 +141,14 @@
           "type": "string",
           "description": "Human-readable description"
         },
+        "contains_personal_data": {
+          "type": "boolean",
+          "description": "Indicates if this field contains personal data (PII) subject to privacy regulations"
+        },
+        "is_confidential": {
+          "type": "boolean",
+          "description": "Indicates if this field contains confidential information that should not be exposed to LLMs or external tools"
+        },
         "ai_context": {
           "$ref": "#/$defs/AIContext"
         },
@@ -186,6 +194,14 @@
         "description": {
           "type": "string",
           "description": "Human-readable description"
+        },
+        "contains_personal_data": {
+          "type": "boolean",
+          "description": "Indicates if this dataset contains personal data (PII) subject to privacy regulations"
+        },
+        "is_confidential": {
+          "type": "boolean",
+          "description": "Indicates if this dataset contains confidential information that should not be exposed to LLMs or external tools"
         },
         "ai_context": {
           "$ref": "#/$defs/AIContext"
