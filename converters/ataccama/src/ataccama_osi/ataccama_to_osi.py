@@ -292,6 +292,14 @@ def bundle_to_dataset(
 
     dataset: dict[str, Any] = {"name": name, "source": build_source(item)}
 
+    # Keys (from the Generic Metadata Entities API). primary_key = the first key's
+    # columns; unique_keys = every key's column set.
+    key_sets = [pk["columns"] for pk in bundle.primary_keys if pk.get("columns")]
+    if key_sets:
+        # distinct list copies so the YAML has no shared anchors/aliases
+        dataset["primary_key"] = list(key_sets[0])
+        dataset["unique_keys"] = [list(k) for k in key_sets]
+
     description = flatten_richtext(item.description)
     if description:
         dataset["description"] = description
@@ -335,6 +343,44 @@ def bundle_to_dataset(
     return dataset
 
 
+# --- relationships -------------------------------------------------------
+
+
+def _build_relationships(bundles: list[CatalogItemBundle], datasets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Derive OSI relationships from foreign keys.
+
+    Only relationships whose target table is also in the converted set are emitted —
+    OSI requires both endpoints of a relationship to exist as datasets, so an FK to a
+    table the caller didn't include is skipped (rather than producing an invalid model).
+    """
+    dataset_names = {d["name"] for d in datasets}
+    relationships: list[dict[str, Any]] = []
+    used_names: set[str] = set()
+    for bundle, dataset in zip(bundles, datasets):
+        from_name = dataset["name"]
+        for fk in bundle.foreign_keys:
+            to_name = fk.get("referenced_table")
+            from_cols = fk.get("columns") or []
+            to_cols = fk.get("referenced_columns") or []
+            if not to_name or to_name not in dataset_names:
+                continue  # target not in the converted set
+            if not from_cols or len(from_cols) != len(to_cols):
+                continue  # need a well-formed, equal-cardinality column pairing
+            rel_name = _unique_name(
+                fk.get("name") or f"{from_name}_to_{to_name}", used_names, fallback="relationship"
+            )
+            relationships.append(
+                {
+                    "name": rel_name,
+                    "from": from_name,
+                    "to": to_name,
+                    "from_columns": from_cols,
+                    "to_columns": to_cols,
+                }
+            )
+    return relationships
+
+
 # --- top level -----------------------------------------------------------
 
 
@@ -357,6 +403,10 @@ def ataccama_to_osi(
     semantic_model: dict[str, Any] = {"name": model_name, "datasets": datasets}
     if model_description:
         semantic_model["description"] = model_description
+
+    relationships = _build_relationships(bundles, datasets)
+    if relationships:
+        semantic_model["relationships"] = relationships
 
     model_ext: dict[str, Any] = {"source": "ataccama-one-catalog"}
     if tenant:

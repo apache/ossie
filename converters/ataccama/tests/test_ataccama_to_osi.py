@@ -200,6 +200,73 @@ def test_dataset_dq_warning_triggers() -> None:
     assert af and "2 active data-quality finding(s)" in af
 
 
+# --- keys & relationships ---
+
+
+def _keyed_bundle(name, primary_keys=None, foreign_keys=None):
+    return CatalogItemBundle(
+        item=CatalogItem(urn=f"urn:ata:t:catalog:catalog-item:{name}", name=name),
+        primary_keys=primary_keys or [],
+        foreign_keys=foreign_keys or [],
+    )
+
+
+def test_primary_key_and_unique_keys() -> None:
+    b = _keyed_bundle("line_items", primary_keys=[{"name": "pk", "columns": ["order_id", "line_no"]}])
+    ds = ataccama_to_osi([b])["semantic_model"][0]["datasets"][0]
+    assert ds["primary_key"] == ["order_id", "line_no"]  # composite, order preserved
+    assert ds["unique_keys"] == [["order_id", "line_no"]]
+
+
+def test_relationship_emitted_when_target_in_set() -> None:
+    orders = _keyed_bundle("orders", primary_keys=[{"name": "pk", "columns": ["id"]}])
+    line_items = _keyed_bundle(
+        "line_items",
+        foreign_keys=[
+            {"name": "fk_order", "columns": ["order_id"], "referenced_table": "orders", "referenced_columns": ["id"]}
+        ],
+    )
+    doc = ataccama_to_osi([orders, line_items])
+    rels = doc["semantic_model"][0]["relationships"]
+    assert rels == [
+        {"name": "fk_order", "from": "line_items", "to": "orders", "from_columns": ["order_id"], "to_columns": ["id"]}
+    ]
+    # and the whole model is schema-valid with the relationship present
+    schema = json.loads(SCHEMA.read_text())
+    assert not list(Draft202012Validator(schema).iter_errors(doc))
+
+
+def test_relationship_skipped_when_target_not_in_set() -> None:
+    line_items = _keyed_bundle(
+        "line_items",
+        foreign_keys=[
+            {"name": "fk", "columns": ["order_id"], "referenced_table": "orders", "referenced_columns": ["id"]}
+        ],
+    )
+    doc = ataccama_to_osi([line_items])  # 'orders' not included
+    assert "relationships" not in doc["semantic_model"][0]
+
+
+def test_relationship_names_deduplicated() -> None:
+    orders = _keyed_bundle("orders")
+    child = _keyed_bundle(
+        "child",
+        foreign_keys=[
+            {"name": "fk", "columns": ["a"], "referenced_table": "orders", "referenced_columns": ["id"]},
+            {"name": "fk", "columns": ["b"], "referenced_table": "orders", "referenced_columns": ["id"]},
+        ],
+    )
+    rels = ataccama_to_osi([orders, child])["semantic_model"][0]["relationships"]
+    assert [r["name"] for r in rels] == ["fk", "fk_2"]
+
+
+def test_fixture_items_have_no_keys(document: dict) -> None:
+    # BANK_TRANSACTIONS / aggregation have no PK/FK, so no key or relationship output.
+    for ds in document["semantic_model"][0]["datasets"]:
+        assert "primary_key" not in ds and "unique_keys" not in ds
+    assert "relationships" not in document["semantic_model"][0]
+
+
 # --- helper unit tests ---
 
 

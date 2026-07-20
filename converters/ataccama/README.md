@@ -78,7 +78,7 @@ Tests run fully offline against a recorded catalog fixture
 
 ## Concept mapping
 
-| Ataccama ONE (Catalog API) | OSI Semantic Model |
+| Ataccama ONE | OSI Semantic Model |
 |---|---|
 | `CatalogItem` | `dataset` |
 | `CatalogItem.name` | `dataset.name` (de-duplicated if repeated) |
@@ -90,6 +90,8 @@ Tests run fully offline against a recorded catalog fixture
 | `CatalogAttribute.dataType` ∈ {DATE, DATETIME, TIMESTAMP, TIME} | `field.dimension.is_time = true` |
 | `CatalogAttribute.description` / `comment` | `field.description` |
 | attribute `Term`s | `field.ai_context` |
+| `primaryKey` / `primaryKeyColumn` (Metadata Entities API) | `dataset.primary_key`, `dataset.unique_keys` |
+| `foreignKey` / `foreignKeyColumn` (Metadata Entities API) | `relationships` (`from`/`to` + `from_columns`/`to_columns`) |
 | DQ `overallQuality` + `dimensionResults` + findings + monitor threshold | dataset `custom_extensions` (`vendor_name: ATACCAMA`) → `data.dq` (`passed`, `failed`, `pass_rate_pct`, `threshold_pct`, `below_threshold`, `active_findings`, `dimensions[]`, `results_link`) |
 | DQ per-attribute `overallQuality` | field `custom_extensions` (`vendor_name: ATACCAMA`) → `data.dq` (`passed`, `failed`, `pass_rate_pct`) |
 | URNs, `dataType`, `columnType`, connection/source/stewardship/monitor | `custom_extensions` (`vendor_name: ATACCAMA`) → `data` |
@@ -130,6 +132,22 @@ treat the data with caution. Example:
 Warnings are appended to any existing (term-derived) instructions, never replacing them,
 and require DQ (so not usable with `--no-dq`).
 
+## Relationships & keys
+
+Primary/foreign keys are read via the Generic Metadata Entities API (`primaryKey`,
+`foreignKey`, and their column children) and fetched by default; pass `--no-relationships`
+to skip them.
+
+- **Primary keys** → `dataset.primary_key` (the first key's columns, order preserved) and
+  `dataset.unique_keys` (every key's column set). Composite keys are supported.
+- **Foreign keys** → `relationships` (`from`/`to` datasets with paired
+  `from_columns`/`to_columns`).
+
+Keys are only present where the source system defined them (typically database tables, not
+BI artifacts). Because OSI requires both ends of a relationship to exist in the model, a
+foreign key whose referenced table is **not among the converted catalog items is skipped**
+— include both tables in the same run to get the relationship.
+
 ## Limitations
 
 The Ataccama Catalog API is a **catalog / governance / data-quality** surface, while OSI
@@ -137,11 +155,10 @@ is an **analytics semantic model**. Some OSI constructs therefore have no source
 
 - **Metrics** — Ataccama has no analytics metrics; none are emitted. (Data-quality
   scores are attached as `ATACCAMA` extensions, not as OSI metrics.)
-- **Data Trust Score / Index** — not exposed by the public APIs (no precomputed
-  score field exists), so it is not emitted. The converter instead carries the DQ
-  results and monitor threshold that the APIs do provide.
-- **Relationships / `primary_key` / `unique_keys`** — the Catalog API does not expose
-  foreign or primary keys on catalog items, so these are omitted.
+- **Data Trust Index (DTI)** — not exposed via REST. There is no DTI entity type or
+  property in the metadata model; the score is computed by the UI/AI Agent from inputs
+  (DQ %, ownership, terms, description) that the converter already carries, but no DTI
+  *value* is retrievable, so none is emitted.
 - **`source` string** — the API exposes only a folder hierarchy (`locations`) and
   `originPath`, not `database.schema.table`. `source` is a best-effort dotted namespace;
   the authoritative connection/source URNs are preserved in `custom_extensions`.

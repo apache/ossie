@@ -73,6 +73,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Skip fetching data-quality results (DQ enrichment is included by default).",
     )
     parser.add_argument(
+        "--no-relationships",
+        action="store_true",
+        help="Skip fetching primary/foreign keys (relationships and primary_key/unique_keys "
+        "are included by default).",
+    )
+    parser.add_argument(
         "--dq-ai-warnings",
         action="store_true",
         help="Append a data-quality warning to ai_context.instructions for datasets that "
@@ -102,7 +108,9 @@ def main(argv: list[str] | None = None) -> int:
     bundles = []
     for urn in urns:
         print(f"Fetching {urn} ...", file=sys.stderr)
-        bundles.append(client.fetch_bundle(urn, with_dq=not args.no_dq))
+        bundles.append(
+            client.fetch_bundle(urn, with_dq=not args.no_dq, with_relationships=not args.no_relationships)
+        )
 
     document = ataccama_to_osi(
         bundles,

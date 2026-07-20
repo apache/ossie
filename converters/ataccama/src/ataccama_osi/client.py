@@ -134,9 +134,55 @@ class AtaccamaClient:
         thresholds = mon.get("overallDqThresholds") or []
         return thresholds[0].get("value") if thresholds else None
 
+    # --- generic metadata entities (keys & relationships) ---
+
+    def _entities_by_parent(self, entity_type: str, parent_urn: str, properties: str) -> list[dict]:
+        """List entities of a type filtered to a parent, via the Generic Metadata Entities API."""
+        return list(
+            self._paged(
+                "/catalog/v1/entities",
+                {"entityType": entity_type, "parentUrn": parent_urn, "properties": properties},
+            )
+        )
+
+    def get_primary_keys(self, catalog_item_urn: str) -> list[dict]:
+        """Primary keys for a catalog item: [{"name", "columns": [ordered column names]}]."""
+        result: list[dict] = []
+        for pk in self._entities_by_parent("primaryKey", catalog_item_urn, "name"):
+            cols = self._entities_by_parent("primaryKeyColumn", pk["urn"], "name,order")
+            cols.sort(key=lambda c: c.get("properties", {}).get("order") or 0)
+            names = [c["properties"].get("name") for c in cols if c.get("properties", {}).get("name")]
+            if names:
+                result.append({"name": pk.get("properties", {}).get("name"), "columns": names})
+        return result
+
+    def get_foreign_keys(self, catalog_item_urn: str) -> list[dict]:
+        """Foreign keys for a catalog item, with the referenced table and columns."""
+        result: list[dict] = []
+        for fk in self._entities_by_parent("foreignKey", catalog_item_urn, "name"):
+            cols = self._entities_by_parent(
+                "foreignKeyColumn", fk["urn"], "name,referencedTableName,referencedColumnName,order"
+            )
+            cols.sort(key=lambda c: c.get("properties", {}).get("order") or 0)
+            local = [c["properties"].get("name") for c in cols]
+            ref_cols = [c["properties"].get("referencedColumnName") for c in cols]
+            ref_tables = {c["properties"].get("referencedTableName") for c in cols if c["properties"].get("referencedTableName")}
+            result.append(
+                {
+                    "name": fk.get("properties", {}).get("name"),
+                    "columns": [c for c in local if c],
+                    # a foreign key targets a single table; None if inconsistent/missing
+                    "referenced_table": next(iter(ref_tables)) if len(ref_tables) == 1 else None,
+                    "referenced_columns": [c for c in ref_cols if c],
+                }
+            )
+        return result
+
     # --- composite ---
 
-    def fetch_bundle(self, catalog_item_urn: str, *, with_dq: bool = True) -> CatalogItemBundle:
+    def fetch_bundle(
+        self, catalog_item_urn: str, *, with_dq: bool = True, with_relationships: bool = True
+    ) -> CatalogItemBundle:
         """Fetch a catalog item, its attributes, referenced terms, and (by default) DQ results."""
         item = self.get_catalog_item(catalog_item_urn)
         attributes = self.get_attributes(catalog_item_urn)
@@ -162,10 +208,18 @@ class AtaccamaClient:
             if dq_results is not None:
                 dq_threshold_pct = self.get_dq_overall_threshold(catalog_item_urn)
 
+        primary_keys: list[dict] = []
+        foreign_keys: list[dict] = []
+        if with_relationships:
+            primary_keys = self.get_primary_keys(catalog_item_urn)
+            foreign_keys = self.get_foreign_keys(catalog_item_urn)
+
         return CatalogItemBundle(
             item=item,
             attributes=attributes,
             terms=terms,
             dq_results=dq_results,
             dq_threshold_pct=dq_threshold_pct,
+            primary_keys=primary_keys,
+            foreign_keys=foreign_keys,
         )
