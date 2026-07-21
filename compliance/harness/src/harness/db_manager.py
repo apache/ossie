@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import duckdb
+import sqlglot
 
 
 class DBManager:
@@ -57,10 +58,15 @@ class DBManager:
         if not schema_path.exists():
             raise FileNotFoundError(f"Dataset schema not found: {schema_path}")
 
+        # Split with sqlglot rather than a naive ``.split(";")`` so that
+        # semicolons inside string literals and ``--``/``/* */`` comments
+        # are handled correctly. ``comments=False`` drops comment-only
+        # statements (they render as empty text) so we skip them below.
         sql_text = schema_path.read_text()
-        for statement in sql_text.split(";"):
-            lines = [line for line in statement.splitlines() if not line.strip().startswith("--")]
-            stmt = "\n".join(lines).strip()
+        for statement in sqlglot.parse(sql_text, dialect="duckdb"):
+            if statement is None:
+                continue
+            stmt = statement.sql(dialect="duckdb", comments=False).strip()
             if stmt:
                 self._conn.execute(stmt)
 

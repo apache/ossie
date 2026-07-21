@@ -30,6 +30,7 @@ license = { text = "Apache-2.0" }
 dependencies = [
     "duckdb>=0.10",
     "pyyaml>=6.0",
+    "sqlglot>=25",
 ]
 
 [project.optional-dependencies]

@@ -32,6 +32,36 @@ from .models import SuiteResult, TestCase, TestResult, TestStatus
 from .reporter import format_summary_console, write_reports
 from .result_compare import compare_results
 
+CONFORMANCE_FILE_NAME = "conformance.yaml"
+DEFAULT_ADAPTER_TIMEOUT = 60
+
+
+class AdapterTimeout(Exception):
+    """Raised when the adapter subprocess exceeds its time budget."""
+
+    def __init__(self, timeout: int) -> None:
+        super().__init__(f"adapter exceeded {timeout}s timeout")
+        self.timeout = timeout
+
+
+def load_conformance_levels(start: Path, *, max_depth: int = 6) -> set[str]:
+    """Return the conformance-level names declared in the nearest
+    ``conformance.yaml``, searching upward from ``start``.
+
+    Returns an empty set when no registry is found; callers then accept
+    any level string rather than blocking on an unknown one.
+    """
+    cursor = start.resolve()
+    for _ in range(max_depth):
+        candidate = cursor / CONFORMANCE_FILE_NAME
+        if candidate.exists():
+            data = yaml.safe_load(candidate.read_text()) or {}
+            return set((data.get("levels") or {}).keys())
+        if cursor.parent == cursor:
+            break
+        cursor = cursor.parent
+    return set()
+
 
 def discover_tests(
     tests_dir: Path,
@@ -103,9 +133,14 @@ def invoke_adapter(
     model_path: Path,
     query_path: Path,
     dialect: str = "duckdb",
-    timeout: int = 60,
+    timeout: int = DEFAULT_ADAPTER_TIMEOUT,
 ) -> tuple[str, str, int]:
-    """Invoke the adapter subprocess. Returns (stdout, stderr, returncode)."""
+    """Invoke the adapter subprocess. Returns (stdout, stderr, returncode).
+
+    Raises :class:`AdapterTimeout` if the subprocess exceeds ``timeout``
+    seconds, so callers can distinguish a timeout from an ordinary
+    non-zero exit.
+    """
     cmd = [
         sys.executable,
         str(adapter_path),
@@ -126,8 +161,8 @@ def invoke_adapter(
             timeout=timeout,
         )
         return proc.stdout, proc.stderr, proc.returncode
-    except subprocess.TimeoutExpired:
-        return "", "Adapter timed out", 1
+    except subprocess.TimeoutExpired as exc:
+        raise AdapterTimeout(timeout) from exc
 
 
 def run_test(
@@ -135,6 +170,7 @@ def run_test(
     adapter_path: Path,
     db: DBManager,
     datasets_dir: Path,
+    timeout: int = DEFAULT_ADAPTER_TIMEOUT,
 ) -> TestResult:
     """Run a single test case and return the result."""
     start = time.monotonic()
@@ -154,11 +190,24 @@ def run_test(
             duration_ms=(time.monotonic() - start) * 1000,
         )
 
-    stdout, stderr, rc = invoke_adapter(
-        adapter_path,
-        test.model_path,
-        test.query_path,
-    )
+    try:
+        stdout, stderr, rc = invoke_adapter(
+            adapter_path,
+            test.model_path,
+            test.query_path,
+            timeout=timeout,
+        )
+    except AdapterTimeout as exc:
+        return TestResult(
+            test_id=test.test_id,
+            area=test.area,
+            difficulty=test.difficulty,
+            status=TestStatus.ERROR,
+            spec_refs=test.spec_refs,
+            error_type="adapter_timeout",
+            error_detail=str(exc),
+            duration_ms=(time.monotonic() - start) * 1000,
+        )
 
     if test.expected_error:
         elapsed = (time.monotonic() - start) * 1000
@@ -326,6 +375,7 @@ def run_suite(
     include_planned: bool = False,
     verbose: bool = False,
     adapter_features: set[str] | None = None,
+    timeout: int = DEFAULT_ADAPTER_TIMEOUT,
 ) -> SuiteResult:
     """Run the full test suite and generate reports."""
     tests = discover_tests(
@@ -388,7 +438,7 @@ def run_suite(
 
     for i, test in enumerate(runnable_tests, 1):
         label = f"[{i}/{len(runnable_tests)}] {test.test_id}"
-        result = run_test(test, adapter_path, db, datasets_dir)
+        result = run_test(test, adapter_path, db, datasets_dir, timeout=timeout)
         result.required_features = list(test.required_features)
         suite.results.append(result)
 
@@ -459,8 +509,17 @@ def main() -> int:
     )
     parser.add_argument(
         "--conformance-level",
-        choices=["core", "full", "extended"],
-        help="Filter tests by conformance level",
+        help="Filter tests by conformance level (e.g. foundation_v0_1). "
+        "Valid values are the levels declared in the suite's "
+        "conformance.yaml.",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=DEFAULT_ADAPTER_TIMEOUT,
+        help=f"Per-test adapter timeout in seconds (default: "
+        f"{DEFAULT_ADAPTER_TIMEOUT}). Exceeding it records the test as an "
+        "error with type 'adapter_timeout'.",
     )
     parser.add_argument(
         "--include-planned",
@@ -507,6 +566,15 @@ def main() -> int:
     if not args.datasets:
         parser.error("--datasets is required when running tests")
 
+    if args.conformance_level:
+        levels = load_conformance_levels(Path(args.tests))
+        if levels and args.conformance_level not in levels:
+            parser.error(
+                f"--conformance-level {args.conformance_level!r} is not "
+                f"defined in {CONFORMANCE_FILE_NAME}; known levels: "
+                f"{', '.join(sorted(levels))}"
+            )
+
     feat = set(args.adapter_features) if args.adapter_features is not None else None
     suite = run_suite(
         adapter_path=Path(args.adapter),
@@ -519,6 +587,7 @@ def main() -> int:
         include_planned=args.include_planned,
         verbose=args.verbose,
         adapter_features=feat,
+        timeout=args.timeout,
     )
 
     if suite.failed + suite.errors > 0:

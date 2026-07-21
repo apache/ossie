@@ -38,7 +38,19 @@ import pytest
 
 from harness.db_manager import DBManager
 from harness.models import TestCase, TestResult, TestStatus
-from harness.runner import discover_tests, list_tests, run_suite, run_test
+from harness.runner import (
+    discover_tests,
+    list_tests,
+    load_conformance_levels,
+    run_suite,
+    run_test,
+)
+
+# A fake adapter that sleeps forever, to exercise the timeout path.
+SLEEPING_ADAPTER = """\
+import time
+time.sleep(30)
+"""
 
 # A fake adapter satisfying the CLI contract in ADAPTER_INTERFACE.md:
 # `<adapter> sql --model <model.yaml> --query-file <query.json> --dialect <dialect>`.
@@ -291,6 +303,46 @@ def test_run_suite_skips_tests_with_unsupported_proposal(suite_root: Path) -> No
     assert suite.total == 1
     assert suite.skipped == 1
     assert suite.results[0].error_type == "unsupported_proposal"
+
+
+def test_run_test_times_out(suite_root: Path, db: DBManager) -> None:
+    (suite_root / "sleeper.py").write_text(SLEEPING_ADAPTER)
+    tests_dir = suite_root / "tests"
+    case_dir = _write_test(
+        tests_dir,
+        "slow_case",
+        model_payload="SELECT SUM(n) AS total FROM numbers",
+    )
+
+    (case,) = discover_tests(tests_dir)
+    result = run_test(
+        case, suite_root / "sleeper.py", db, suite_root / "datasets", timeout=1
+    )
+
+    assert result.status == TestStatus.ERROR
+    assert result.error_type == "adapter_timeout"
+    assert "1s" in result.error_detail
+    assert case_dir.exists()
+
+
+def test_load_conformance_levels_reads_registry(tmp_path: Path) -> None:
+    suite = tmp_path / "suite"
+    (suite / "tests" / "area").mkdir(parents=True)
+    (suite / "conformance.yaml").write_text(
+        "levels:\n"
+        "  foundation_v0_1:\n"
+        "    description: base\n"
+        "  foundation_v0_1_strict:\n"
+        "    description: strict\n"
+    )
+
+    # Discoverable by searching upward from the tests directory.
+    levels = load_conformance_levels(suite / "tests" / "area")
+    assert levels == {"foundation_v0_1", "foundation_v0_1_strict"}
+
+
+def test_load_conformance_levels_missing_returns_empty(tmp_path: Path) -> None:
+    assert load_conformance_levels(tmp_path) == set()
 
 
 def test_list_tests_smoke(suite_root: Path, capsys) -> None:

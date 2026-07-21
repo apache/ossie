@@ -27,14 +27,9 @@ from pathlib import Path
 from typing import Any
 
 
-class Difficulty(str, Enum):
-    EASY = "easy"
-    MODERATE = "moderate"
-    HARD = "hard"
-    CONVERSION = "conversion"
-
-
 class TestStatus(str, Enum):
+    __test__ = False  # not a pytest test class despite the "Test" prefix
+
     PASS = "pass"
     FAIL = "fail"
     ERROR = "error"
@@ -44,6 +39,8 @@ class TestStatus(str, Enum):
 @dataclass(frozen=True)
 class TestCase:
     """A single compliance test case loaded from disk."""
+
+    __test__ = False  # not a pytest test class despite the "Test" prefix
 
     test_id: str
     name: str
@@ -59,7 +56,9 @@ class TestCase:
     test_dir: Path
     expected_error: bool = False
     expected_error_code: str = ""
-    conformance_level: str = "full"
+    # Default matches the base level in foundation/conformance.yaml. Tests
+    # may override with any level declared there (e.g. foundation_v0_1_strict).
+    conformance_level: str = "foundation_v0_1"
     status: str = "active"  # "active" or "planned" — planned tests skipped unless --include-planned
     required_features: list[str] = field(default_factory=list)  # Feature IDs; skip if adapter doesn't support
 
@@ -73,6 +72,8 @@ class TestCase:
 @dataclass
 class TestResult:
     """Result of running a single test case."""
+
+    __test__ = False  # not a pytest test class despite the "Test" prefix
 
     test_id: str
     area: str
