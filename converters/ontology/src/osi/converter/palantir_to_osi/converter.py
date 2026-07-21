@@ -450,7 +450,6 @@ class PalantirToOsiConverter:
             if frags:
                 formula = self._formula_factory(raw_expr=" AND ".join(frags), parent=relationship, ontology=ontology)
                 relationship.add_derived_by(formula)
-                ontology.add_rule(formula)
 
     def _attach_link_to_concept_mappings(
         self,
@@ -647,7 +646,6 @@ class PalantirToOsiConverter:
         )
         formula = self._formula_factory(raw_expr=join_condition, parent=relationship, ontology=ontology)
         relationship.add_derived_by(formula)
-        ontology.add_rule(formula)
 
     # ------------------------------------------------------------------
     # Datasets

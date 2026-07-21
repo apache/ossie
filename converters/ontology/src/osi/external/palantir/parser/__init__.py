@@ -1,14 +1,15 @@
-import io
 import json
 import warnings
 import zipfile
 from io import IOBase
-from typing import Any
+from pathlib import Path
+from typing import Any, Iterable
 
 from osi.common.utils import camel_to_snake
 from osi.external.palantir.model import DataSet, DataSetColumn, DataSetModel, ObjectType, Ontology, DataType, \
     ArrayDataType, Property, Status, ManyToOneRelation, Relation, ManyToManyRelation, IntermediaryRelation, DataSource
-from osi.common.file_utils import iter_json_files_from_dir_in_zip, open_top_level_file_from_zip
+from osi.common.file_utils import iter_json_files_from_dir_in_zip, open_top_level_file_from_zip, \
+    iter_json_files_from_dir, get_top_level_json_file_from_dir, validate_dir
 
 
 # Helper functions to aid in parsing. Palantir's JSON exports can be inconsistent in their formatting, especially
@@ -554,25 +555,67 @@ class PalantirParser:
     def _make_ontology_parser(self) -> PalantirOntologyParser:
         return PalantirOntologyParser()
 
-    def parse(self, file: IOBase):
-        raw = file.buffer if isinstance(file, io.TextIOWrapper) else file
+    def parse(self, path: Path) -> Ontology:
+        # A Palantir export may arrive as a ZIP archive, an already extracted
+        # folder, or a folder that simply wraps a single ZIP archive. Detect
+        # which and process accordingly.
+        if path.is_dir():
+            wrapped_zip = self._single_zip_in_dir(path)
+            if wrapped_zip is not None:
+                with zipfile.ZipFile(wrapped_zip) as zf:
+                    self._parse_from_zip(zf)
+            else:
+                self._parse_from_dir(path)
+        elif path.is_file():
+            if not zipfile.is_zipfile(path):
+                raise ValueError(f"Unsupported Palantir source '{path}'. Expected a ZIP archive or a directory")
+            with zipfile.ZipFile(path) as zf:
+                self._parse_from_zip(zf)
+        else:
+            raise FileNotFoundError(f"Palantir source '{path}' does not exist")
+        return self.model()
 
-        # Read all bytes and detect ZIP
-        data = raw.read()
-        bio = io.BytesIO(data)
-        if not zipfile.is_zipfile(bio):
-            raise ValueError("Unsupported archive format. Expected ZIP")
-
-        bio.seek(0)
-        with zipfile.ZipFile(bio) as zf:
-            self._parse_from_zip(zf)
+    @staticmethod
+    def _single_zip_in_dir(base_dir: Path) -> Path | None:
+        """Return the lone ZIP archive inside ``base_dir`` when the folder wraps
+        exactly one ``.zip`` file (and nothing else); otherwise ``None``. This
+        mirrors the convenience of accepting a folder that just contains a
+        Palantir export archive."""
+        entries = list(base_dir.iterdir())
+        if len(entries) == 1 and entries[0].is_file() and zipfile.is_zipfile(entries[0]):
+            return entries[0]
+        return None
 
     def _parse_from_zip(self, zf: zipfile.ZipFile):
         self._validate_archive(zf)
 
+        def _data_set_streams() -> Iterable[IOBase]:
+            for _name, fh in iter_json_files_from_dir_in_zip(zf, "data_sets"):
+                yield fh
+
+        try:
+            with open_top_level_file_from_zip(zf, self._get_ontology_json_file_path(zf)) as ontology_fh:
+                self._build_model(_data_set_streams(), ontology_fh)
+        except FileNotFoundError as e:
+            raise FileNotFoundError(str(e)) from e
+
+    def _parse_from_dir(self, base_dir: Path):
+        validate_dir(base_dir)
+        ontology_path = get_top_level_json_file_from_dir(base_dir)
+
+        def _data_set_streams() -> Iterable[IOBase]:
+            for _name, fh in iter_json_files_from_dir(base_dir, "data_sets"):
+                yield fh
+
+        with ontology_path.open("rb") as ontology_fh:
+            self._build_model(_data_set_streams(), ontology_fh)
+
+    def _build_model(self, data_set_streams: Iterable[IOBase], ontology_stream: IOBase):
+        """Build the ontology model from a stream of data set JSON files and the
+        top-level ontology JSON stream. Shared by the ZIP and directory paths."""
         any_json = False
         data_sets: dict[str, DataSet] = {}
-        for name, fh in iter_json_files_from_dir_in_zip(zf, "data_sets"):
+        for fh in data_set_streams:
             any_json = True
             try:
                 parser = PalantirDataSetParser()
@@ -583,39 +626,35 @@ class PalantirParser:
         if not any_json:
             raise ValueError("'data_sets' folder contains no JSON files")
 
-        try:
-            with open_top_level_file_from_zip(zf, self._get_ontology_json_file_path(zf)) as fh:
-                parser = self._make_ontology_parser()
-                parser.parse(fh)
-                model = parser.model()
-                model.set_data_sets(data_sets)
+        parser = self._make_ontology_parser()
+        parser.parse(ontology_stream)
+        model = parser.model()
+        model.set_data_sets(data_sets)
 
-                for ot in model.object_types().values():
-                    for ds in ot.data_sources():
-                        data_set = data_sets.get(ds.backing_dataset_id(), None)
-                        if data_set is None:
-                            # For SDK-extracted ontologies with synthetic datasources,
-                            # mainDatasetId in data_sets JSON matches the object type's RID
-                            data_set = data_sets.get(ot.guid(), None)
-                        if data_set:
-                            ot.sync_from_data_set(data_set)
-                            # For SDK-extracted ontologies, property column_name defaults to
-                            # the apiName (camelCase), but dataset columns use snake_case.
-                            # Cross-reference to use the actual dataset column names.
-                            ds_col_names = {col.name() for col in data_set.columns()}
-                            for prop in ot.properties().values():
-                                col_name = prop.column_name()
-                                if col_name not in ds_col_names:
-                                    snake_name = camel_to_snake(col_name)
-                                    if snake_name in ds_col_names:
-                                        prop._column_name = snake_name
-                for rel in model.relations().values():
-                    if isinstance(rel, ManyToManyRelation):
-                        rel._data_set = data_sets.get(rel.backing_dataset_id(), None)
+        for ot in model.object_types().values():
+            for ds in ot.data_sources():
+                data_set = data_sets.get(ds.backing_dataset_id(), None)
+                if data_set is None:
+                    # For SDK-extracted ontologies with synthetic datasources,
+                    # mainDatasetId in data_sets JSON matches the object type's RID
+                    data_set = data_sets.get(ot.guid(), None)
+                if data_set:
+                    ot.sync_from_data_set(data_set)
+                    # For SDK-extracted ontologies, property column_name defaults to
+                    # the apiName (camelCase), but dataset columns use snake_case.
+                    # Cross-reference to use the actual dataset column names.
+                    ds_col_names = {col.name() for col in data_set.columns()}
+                    for prop in ot.properties().values():
+                        col_name = prop.column_name()
+                        if col_name not in ds_col_names:
+                            snake_name = camel_to_snake(col_name)
+                            if snake_name in ds_col_names:
+                                prop._column_name = snake_name
+        for rel in model.relations().values():
+            if isinstance(rel, ManyToManyRelation):
+                rel._data_set = data_sets.get(rel.backing_dataset_id(), None)
 
-                self._model = model
-        except FileNotFoundError as e:
-            raise FileNotFoundError(str(e)) from e
+        self._model = model
 
     def _validate_archive(self, zf: zipfile.ZipFile):
         """

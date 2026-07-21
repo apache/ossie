@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from io import IOBase
+from pathlib import Path
 
 import yaml
 
@@ -26,19 +26,21 @@ class OsiParser:
         self._formula_factory = formula_factory
         self._mapping_formula_factory = mapping_formula_factory
 
-    def parse(self, file: IOBase) -> None:
-        raw = OsiParser.load_data(file)
+    def parse(self, path: Path) -> OsiOntology:
+        # OSI always expects a single spec file.
+        if not path.is_file():
+            raise ValueError(f"Expected a single OSI spec file, but '{path}' is not a file")
+        raw = OsiParser.load_data(path)
         self._spec = OsiSpec.model_validate(raw)
         self._model = SpecToOsiConverter(
             formula_factory=self._formula_factory, mapping_formula_factory=self._mapping_formula_factory
         ).convert(self._spec)
+        return self._model
 
     @staticmethod
-    def load_data(file: IOBase):
-        content = file.read()
-        file.seek(0)
-        name = (getattr(file, "name", "") or "").lower()
-        if name.endswith(".json"):
+    def load_data(path: Path):
+        content = path.read_text()
+        if path.suffix.lower() == ".json":
             return json.loads(content)
         return yaml.safe_load(content)
 

@@ -62,12 +62,14 @@ from osi.converter.spec_to_osi.converter import SpecToOsiConverter
 
 ### `scripts/palantir_to_osi.py`
 
-Converts a Palantir ontology export (`.zip` file containing a Palantir ontology JSON and one or more dataset spec JSON files) into an OSI-compliant YAML representation, printed to stdout.
+Converts a Palantir ontology export (a `.zip` archive or an already extracted folder containing a Palantir ontology JSON and a `data_sets` folder of one or more dataset spec JSON files) into an OSI-compliant YAML representation, printed to stdout.
 
 **Usage:**
 
 ```bash
 python scripts/palantir_to_osi.py path/to/palantir_export.zip
+# or an extracted folder:
+python scripts/palantir_to_osi.py path/to/palantir_export/
 ```
 
 Warnings are written to stderr; the OSI YAML is written to stdout.

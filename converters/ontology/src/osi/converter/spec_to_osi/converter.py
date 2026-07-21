@@ -151,12 +151,10 @@ class SpecToOsiConverter:
                 req = self._build_rule(raw, concept, ontology)
                 if req:
                     concept.add_require(req)
-                    ontology.add_require(req)
             for raw in concept_spec.derived_by:
                 rule = self._build_rule(raw, concept, ontology)
                 if rule:
                     concept.add_derived_by(rule)
-                    ontology.add_rule(rule)
             for rel_spec in concept_component.relationships:
                 rel = ontology.lookup_concept_relationship(concept, rel_spec.name)
                 if rel is None:
@@ -165,12 +163,17 @@ class SpecToOsiConverter:
                     req = self._build_rule(raw, rel, ontology)
                     if req:
                         rel.add_require(req)
-                        ontology.add_require(req)
                 for raw in rel_spec.derived_by:
                     rule = self._build_rule(raw, rel, ontology)
                     if rule:
                         rel.add_derived_by(rule)
-                        ontology.add_rule(rule)
+
+        # Ontology-level requires are not scoped to any concept/relationship;
+        # they attach directly to the ontology component.
+        for raw in spec.requires:
+            req = self._build_rule(raw, None, ontology)
+            if req:
+                ontology.add_require(req)
 
     def _convert_relationship(
         self, ontology: OntologyComponent, container: Concept, rel_spec: SpecRelationship
@@ -338,7 +341,7 @@ class SpecToOsiConverter:
 
     # ----- Formula helpers -----------------------------------------------
 
-    def _build_rule(self, raw: str | None, parent: Container, ontology: OntologyComponent) -> Formula | None:
+    def _build_rule(self, raw: str | None, parent: Container | None, ontology: OntologyComponent) -> Formula | None:
         if not raw:
             return None
         return self._formula_factory(raw_expr=raw, parent=parent, ontology=ontology)

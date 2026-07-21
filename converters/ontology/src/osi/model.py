@@ -881,7 +881,6 @@ class OntologyComponent:
     Document-level metadata (name, description, ai_context) lives on OsiOntology."""
     _concepts: list[Concept]
     _relationships: list[Relationship]
-    _rules: list[Formula]
     _requires: list[Formula]
     _concept_name_map: dict[str, Concept]
     _relationship_name_map: dict[str, Relationship]
@@ -890,7 +889,6 @@ class OntologyComponent:
     def __init__(self):
         self._concepts = []
         self._relationships = []
-        self._rules = []
         self._requires = []
         self._concept_name_map = {}
         self._relationship_name_map = {}
@@ -918,9 +916,6 @@ class OntologyComponent:
         self._relationships.append(relationship)
         self._relationship_name_map[full_name] = relationship
 
-    def add_rule(self, rule: Formula) -> None:
-        self._rules.append(rule)
-
     def add_require(self, require: Formula) -> None:
         self._requires.append(require)
         for obs in self._observers:
@@ -934,10 +929,6 @@ class OntologyComponent:
     @property
     def relationships(self) -> list[Relationship]:
         return list(self._relationships)
-
-    @property
-    def rules(self) -> list[Formula]:
-        return list(self._rules)
 
     @property
     def requires(self) -> list[Formula]:

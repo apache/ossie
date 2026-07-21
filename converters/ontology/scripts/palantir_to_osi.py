@@ -1,14 +1,15 @@
 # Description:
 #
-#   This script converts a zip file that contains:
+#   This script converts a Palantir ontology export into an OSI compliant YAML
+#   representation of that ontology, using environment variables to configure the
+#   Snowflake database and schema names. The export may be supplied either as a
+#   zip archive or as an already extracted folder, and must contain:
 #     1. A Palantir ontology (JSON file) and
-#     2. A folder containing one or more Palantir dataset specs (JSON files)
-#   into an OSI compliant YAML representation of that ontology, using environment
-#   variables to configure the Snowflake database and schema names.
+#     2. A 'data_sets' folder containing one or more Palantir dataset specs (JSON files)
 #
 # Usage:
 #
-#   $ python palantir_to_osi.py <path_to_zip_file>
+#   $ python palantir_to_osi.py <path_to_zip_or_folder>
 # 
 # Environment variables used:
 #
@@ -43,10 +44,7 @@ if __name__ == "__main__":
     path = Path(sys.argv[1])
 
     parser = PalantirParser()
-
-    mode = "rb" if path.suffix.lower() == ".zip" else "r"
-    with open(path, mode) as file:
-        parser.parse(file)
+    parser.parse(path)
 
     ontology_model = PalantirToOsiConverter().convert(parser.model(), db_name, schema_name)
 
