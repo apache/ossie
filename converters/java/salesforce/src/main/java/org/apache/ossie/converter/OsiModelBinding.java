@@ -22,7 +22,7 @@ package org.apache.ossie.converter;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.apache.ossie.model.OsiSchema;
+import org.apache.ossie.model.OsiModel;
 import org.apache.ossie.model.SemanticModel;
 
 import java.util.LinkedHashMap;
@@ -37,8 +37,8 @@ final class OsiModelBinding {
     private OsiModelBinding() {
     }
 
-    static OsiSchema fromRootMap(ObjectMapper mapper, Map<String, Object> root) {
-        return mapper.convertValue(root, OsiSchema.class);
+    static OsiModel fromRootMap(ObjectMapper mapper, Map<String, Object> root) {
+        return mapper.convertValue(root, OsiModel.class);
     }
 
     static Map<String, Object> toPipelineMap(ObjectMapper mapper, SemanticModel semanticModel) {
@@ -46,11 +46,11 @@ final class OsiModelBinding {
                 semanticModel, new TypeReference<LinkedHashMap<String, Object>>() {});
     }
 
-    static OsiSchema wrapPipelineYaml(
+    static OsiModel wrapPipelineYaml(
             ObjectMapper yamlMapper, String semanticModelYaml, String version)
             throws JsonProcessingException {
         SemanticModel semanticModel = yamlMapper.readValue(semanticModelYaml, SemanticModel.class);
-        OsiSchema root = new OsiSchema();
+        OsiModel root = new OsiModel();
         root.setVersion(version);
         root.setSemanticModel(List.of(semanticModel));
         return root;

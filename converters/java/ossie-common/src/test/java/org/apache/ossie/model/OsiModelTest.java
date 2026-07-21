@@ -27,7 +27,7 @@ import java.util.Map;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
-class OsiSchemaTest {
+class OsiModelTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -85,7 +85,7 @@ class OsiSchemaTest {
                 "  }]",
                 "}");
 
-        OsiSchema schema = objectMapper.readValue(json, OsiSchema.class);
+        OsiModel schema = objectMapper.readValue(json, OsiModel.class);
 
         assertEquals("0.2.0.dev0", schema.getVersion());
         assertEquals("sales", schema.getSemanticModel().get(0).getName());

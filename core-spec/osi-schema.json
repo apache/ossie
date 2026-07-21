@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/apache/ossie/core-spec/osi-schema.json",
+  "javaName": "OsiModel",
   "title": "Apache Ossie Core Metadata Specification",
   "description": "JSON Schema for validating Apache Ossie semantic model definitions",
   "type": "object",

@@ -27,7 +27,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ossie.converter.pipeline.*;
 import org.apache.ossie.exception.ConversionException;
-import org.apache.ossie.model.OsiSchema;
+import org.apache.ossie.model.OsiModel;
 import org.apache.ossie.model.SemanticModel;
 import org.apache.ossie.validator.SchemaValidator;
 
@@ -91,14 +91,14 @@ public class ConverterImpl extends AbstractConverter {
         schemaValidator.validate(sourceData);
 
         if (direction == ConversionDirection.OSI_TO_SALESFORCE) {
-            OsiSchema osiSchema = OsiModelBinding.fromRootMap(jsonMapper, sourceData);
-            return convertOsiToSalesforce(osiSchema);
+            OsiModel osiModel = OsiModelBinding.fromRootMap(jsonMapper, sourceData);
+            return convertOsiToSalesforce(osiModel);
         } else {
             return convertSalesforceToOsi(sourceData);
         }
     }
 
-    private List<String> convertOsiToSalesforce(OsiSchema osiRoot) {
+    private List<String> convertOsiToSalesforce(OsiModel osiRoot) {
         List<String> results = new ArrayList<>();
 
         for (SemanticModel semanticModel : osiRoot.getSemanticModel()) {
@@ -114,7 +114,7 @@ public class ConverterImpl extends AbstractConverter {
         String result = executePipeline(sourceData);
 
         try {
-            OsiSchema osiRoot = OsiModelBinding.wrapPipelineYaml(
+            OsiModel osiRoot = OsiModelBinding.wrapPipelineYaml(
                     yamlMapper, result, OSI_VERSION);
             return List.of(yamlMapper.writeValueAsString(osiRoot));
         } catch (JsonProcessingException e) {
@@ -150,9 +150,9 @@ public class ConverterImpl extends AbstractConverter {
     protected String extractModelName(String result) {
         try {
             if (direction == ConversionDirection.SALESFORCE_TO_OSI) {
-                OsiSchema osiSchema = yamlMapper.readValue(result, OsiSchema.class);
-                if (!osiSchema.getSemanticModel().isEmpty()) {
-                    return osiSchema.getSemanticModel().get(0).getName();
+                OsiModel osiModel = yamlMapper.readValue(result, OsiModel.class);
+                if (!osiModel.getSemanticModel().isEmpty()) {
+                    return osiModel.getSemanticModel().get(0).getName();
                 }
             }
 

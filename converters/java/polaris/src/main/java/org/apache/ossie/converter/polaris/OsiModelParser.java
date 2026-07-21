@@ -21,7 +21,7 @@ package org.apache.ossie.converter.polaris;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-import org.apache.ossie.model.OsiSchema;
+import org.apache.ossie.model.OsiModel;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -29,7 +29,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * Parses an Ossie YAML document into the schema-generated {@link OsiSchema} model.
+ * Parses an Ossie YAML document into the schema-generated {@link OsiModel} model.
  */
 public class OsiModelParser {
 
@@ -38,18 +38,18 @@ public class OsiModelParser {
     /**
      * Parse an Ossie YAML file from the given path.
      */
-    public OsiSchema parse(Path yamlPath) throws IOException {
+    public OsiModel parse(Path yamlPath) throws IOException {
         try (InputStream inputStream = Files.newInputStream(yamlPath)) {
-            return yamlMapper.readValue(inputStream, OsiSchema.class);
+            return yamlMapper.readValue(inputStream, OsiModel.class);
         }
     }
 
     /**
      * Parse an Ossie YAML file from an input stream.
      */
-    public OsiSchema parse(InputStream inputStream) {
+    public OsiModel parse(InputStream inputStream) {
         try {
-            return yamlMapper.readValue(inputStream, OsiSchema.class);
+            return yamlMapper.readValue(inputStream, OsiModel.class);
         } catch (IOException e) {
             throw new IllegalArgumentException("Invalid Ossie YAML", e);
         }

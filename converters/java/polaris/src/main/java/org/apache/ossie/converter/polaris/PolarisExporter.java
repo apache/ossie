@@ -26,7 +26,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
 import org.apache.ossie.model.Dataset;
 import org.apache.ossie.model.Field;
-import org.apache.ossie.model.OsiSchema;
+import org.apache.ossie.model.OsiModel;
 import org.apache.ossie.model.SemanticModel;
 
 import java.io.IOException;
@@ -58,7 +58,7 @@ public class PolarisExporter {
      * Export the Ossie model to the Polaris catalog.
      * Each semantic model becomes a namespace, and each dataset becomes a table.
      */
-    public void exportModel(OsiSchema model) throws IOException, InterruptedException {
+    public void exportModel(OsiModel model) throws IOException, InterruptedException {
         for (SemanticModel sm : model.getSemanticModel()) {
             exportSemanticModel(sm);
         }
