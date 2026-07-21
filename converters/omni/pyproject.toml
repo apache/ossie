@@ -19,30 +19,45 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[project]
-name = "osi-omni"
-version = "0.2.0.dev0"
-description = "Bidirectional converter between OSI semantic models and Omni semantic model files"
-requires-python = ">=3.9"
-dependencies = [
-    "PyYAML>=6.0",
-]
-
-[project.license]
-text = "Apache-2.0"
-
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest>=8.0",
     "hypothesis>=6.0",
 ]
 
+[project]
+name = "osi-omni"
+version = "0.2.0.dev0"
+description = "Bidirectional converter between Apache Ossie semantic models and Omni semantic model files"
+authors = [{ name = "Apache Software Foundation", email = "dev@ossie.apache.org" }]
+requires-python = ">=3.10"
+readme = "README.md"
+license = "Apache-2.0"
+keywords = [
+    "Apache Ossie",
+    "Ossie",
+    "Open Semantic Interchange",
+    "Omni"
+]
+dependencies = [
+    "PyYAML>=6.0",
+]
+
 [project.scripts]
 osi-omni = "osi_omni.cli:main"
+
+[project.urls]
+homepage = "https://ossie.apache.org/"
+repository = "https://github.com/apache/ossie/"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/osi_omni"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+
+[tool.uv]
+required-version = ">=0.9.0"
+default-groups = [
+    "dev"
+]

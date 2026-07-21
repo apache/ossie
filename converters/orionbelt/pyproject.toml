@@ -19,15 +19,29 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "mypy>=1.10",
+    "ruff>=0.4",
+    "types-jsonschema",
+    "types-PyYAML",
+]
+
 [project]
 name = "apache-ossie-orionbelt"
-version = "0.1.0"
+version = "0.2.0.dev0"
 description = "Bidirectional OBML <-> OSI (Open Semantic Interchange) converter for OrionBelt semantic models"
-license = { text = "Apache-2.0" }
-readme = "README.md"
-authors = [{ name = "Ralf Becher", email = "info@orionbelt.ai" }]
-keywords = ["osi", "open-semantic-interchange", "obml", "semantic-layer", "orionbelt", "converter"]
+authors = [{ name = "Apache Software Foundation", email = "dev@ossie.apache.org" }]
 requires-python = ">=3.12"
+readme = "README.md"
+license = "Apache-2.0"
+keywords = [
+    "Apache Ossie",
+    "Ossie",
+    "Open Semantic Interchange",
+    "orionbelt"
+]
 dependencies = [
     "pyyaml>=6.0",
     "jsonschema>=4.18",
@@ -39,16 +53,13 @@ dependencies = [
 # full OrionBelt engine. Optional: validate_obml degrades to JSON-schema-only
 # checks with a warning when this is not installed.
 obml-validation = ["orionbelt-semantic-layer"]
-dev = [
-    "pytest>=8.0",
-    "mypy>=1.10",
-    "ruff>=0.4",
-    "types-jsonschema",
-    "types-PyYAML",
-]
 
 [project.scripts]
 ossie-orionbelt = "ossie_orionbelt.cli:main"
+
+[project.urls]
+homepage = "https://ossie.apache.org/"
+repository = "https://github.com/apache/ossie/"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ossie_orionbelt"]
@@ -66,13 +77,6 @@ packages = ["src/ossie_orionbelt"]
 # validation._osi_schema_path (no duplicate copy). The OSI ontology export is
 # validated semantically only (ossie ships no ontology schema).
 
-[tool.ruff]
-line-length = 100
-target-version = "py312"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "N", "UP", "B", "A", "SIM"]
-
 [tool.mypy]
 python_version = "3.12"
 files = ["src/ossie_orionbelt"]
@@ -86,4 +90,16 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "A", "SIM"]
+
+[tool.uv]
+required-version = ">=0.9.0"
+default-groups = [
+    "dev"
+]

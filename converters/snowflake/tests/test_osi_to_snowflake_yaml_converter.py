@@ -17,16 +17,12 @@
 
 """Tests for the Ossie to Snowflake YAML converter."""
 
-import sys
 import warnings
-from pathlib import Path
 
 import pytest
 import yaml
 
-# Make src/ importable
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-from osi_to_snowflake_yaml_converter import (
+from ossie_snowflake.converter import (
     OsiConversionError,
     convert_osi_to_snowflake,
     _classify_field,
@@ -112,6 +108,14 @@ class TestParseSource:
             "database": '"myDb"',
             "schema": '"mySchema"',
             "table": '"myTable"',
+        }
+
+    def test_quoted_identifiers_with_dots_preserved(self):
+        result = _parse_source('"my.db"."my schema"."my table"')
+        assert result == {
+            "database": '"my.db"',
+            "schema": '"my schema"',
+            "table": '"my table"',
         }
 
     def test_subquery_select(self):

@@ -26,8 +26,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-from honeydew_osi_converter import (
+from honeydew_osi.converter import (
     HoneydewConversionError,
     _assign_metrics_to_entities,
     _build_osi_metadata,
@@ -1445,7 +1444,7 @@ def test_main_osi_to_honeydew(tmp_path):
     }))
     output_dir = tmp_path / "out"
     result = subprocess.run(
-        [sys.executable, str(Path(__file__).resolve().parent.parent / "src" / "honeydew_osi_converter.py"),
+        [sys.executable, "-m", "honeydew_osi.converter",
          "osi-to-honeydew", "-i", str(input_file), "-o", str(output_dir)],
         capture_output=True, text=True,
     )
@@ -1463,7 +1462,7 @@ def test_main_honeydew_to_osi(tmp_path):
     }])
     output_file = tmp_path / "output.yaml"
     result = subprocess.run(
-        [sys.executable, str(Path(__file__).resolve().parent.parent / "src" / "honeydew_osi_converter.py"),
+        [sys.executable, "-m", "honeydew_osi.converter",
          "honeydew-to-osi", "-i", str(tmp_path), "-o", str(output_file)],
         capture_output=True, text=True,
     )
@@ -1488,7 +1487,7 @@ def test_main_path_traversal_rejected(tmp_path):
     )
     output_dir = tmp_path / "out"
     result = subprocess.run(
-        [sys.executable, str(Path(__file__).resolve().parent.parent / "src" / "honeydew_osi_converter.py"),
+        [sys.executable, "-m", "honeydew_osi.converter",
          "osi-to-honeydew", "-i", str(input_file), "-o", str(output_dir)],
         capture_output=True, text=True,
     )

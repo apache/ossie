@@ -44,25 +44,23 @@ Bidirectional converter between [OSI](../../core-spec/spec.md) semantic models a
 ## Setup
 
 ```bash
-pip install .
-# or in editable mode for development:
-pip install -e .
+uv sync
 ```
 
 ## Usage
 
 ```bash
 # OSI YAML → Honeydew workspace directory
-python src/honeydew_osi_converter.py osi-to-honeydew -i input.yaml -o output_dir/
+uv run honeydew-osi osi-to-honeydew -i input.yaml -o output_dir/
 
 # Honeydew workspace directory → OSI YAML
-python src/honeydew_osi_converter.py honeydew-to-osi -i workspace_dir/ -o output.yaml
+uv run honeydew-osi honeydew-to-osi -i workspace_dir/ -o output.yaml
 ```
 
 ## Tests
 
 ```bash
-python -m pytest tests/
+uv run pytest
 ```
 
 ## Limitations

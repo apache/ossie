@@ -26,19 +26,19 @@ Converts Ossie YAML semantic models to [Snowflake Cortex Analyst](https://docs.s
 ## Setup
 
 ```bash
-pip3 install -r requirements.txt
+uv sync
 ```
 
 ## Usage
 
 ```bash
-python3 src/osi_to_snowflake_yaml_converter.py -i input.yaml -o output.yaml
+uv run ossie-snowflake -i input.yaml -o output.yaml
 ```
 
 ## Tests
 
 ```bash
-python3 -m pytest tests/
+uv run pytest
 ```
 
 ## Limitations

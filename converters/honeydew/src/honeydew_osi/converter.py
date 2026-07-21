@@ -24,8 +24,8 @@ OSI → Honeydew: Converts a single OSI YAML file into a Honeydew workspace
 Honeydew → OSI: Reads a Honeydew workspace directory and produces an OSI YAML.
 
 Usage:
-    python honeydew_osi_converter.py osi-to-honeydew -i input.yaml -o output_dir/
-    python honeydew_osi_converter.py honeydew-to-osi -i workspace_dir/ -o output.yaml
+    python converter.py osi-to-honeydew -i input.yaml -o output_dir/
+    python converter.py honeydew-to-osi -i workspace_dir/ -o output.yaml
 """
 
 import argparse

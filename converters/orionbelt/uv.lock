@@ -39,7 +39,7 @@ wheels = [
 
 [[package]]
 name = "apache-ossie-orionbelt"
-version = "0.1.0"
+version = "0.2.0.dev0"
 source = { editable = "." }
 dependencies = [
     { name = "jsonschema" },
@@ -48,6 +48,11 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+obml-validation = [
+    { name = "orionbelt-semantic-layer" },
+]
+
+[package.dev-dependencies]
 dev = [
     { name = "mypy" },
     { name = "pytest" },
@@ -55,23 +60,24 @@ dev = [
     { name = "types-jsonschema" },
     { name = "types-pyyaml" },
 ]
-obml-validation = [
-    { name = "orionbelt-semantic-layer" },
-]
 
 [package.metadata]
 requires-dist = [
     { name = "jsonschema", specifier = ">=4.18" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "orionbelt-semantic-layer", marker = "extra == 'obml-validation'" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "referencing", specifier = ">=0.30" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
-    { name = "types-jsonschema", marker = "extra == 'dev'" },
-    { name = "types-pyyaml", marker = "extra == 'dev'" },
 ]
-provides-extras = ["obml-validation", "dev"]
+provides-extras = ["obml-validation"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=1.10" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "ruff", specifier = ">=0.4" },
+    { name = "types-jsonschema" },
+    { name = "types-pyyaml" },
+]
 
 [[package]]
 name = "ast-serialize"

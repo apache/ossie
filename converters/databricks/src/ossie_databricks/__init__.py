@@ -15,34 +15,18 @@
 # specific language governing permissions and limitations
 # under the License.
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+"""Bidirectional converter between Apache Ossie semantic models and Databricks Unity Catalog
+Metric Views (YAML v1.1). Pure offline string-in / string-out transforms.
 
-[project]
-name = "apache-ossie"
-version = "0.2.0.dev0"
-description = "Python types for the Apache Ossie semantic model specification"
-authors = [{ name = "Apache Software Foundation", email = "dev@ossie.apache.org" }]
-requires-python = ">=3.11"
-readme = "README.md"
-license = "Apache-2.0"
-keywords = [
-    "Apache Ossie",
-    "Ossie",
-    "Open Semantic Interchange",
+    from ossie_databricks import convert_ossie_to_metric_view, convert_metric_view_to_ossie
+"""
+
+from ._common import ConversionError
+from .metric_view_to_ossie import convert_metric_view_to_ossie
+from .ossie_to_metric_view import convert_ossie_to_metric_view
+
+__all__ = [
+    "ConversionError",
+    "convert_metric_view_to_ossie",
+    "convert_ossie_to_metric_view",
 ]
-dependencies = [
-    "pydantic>=2.0",
-    "PyYAML>=6.0",
-]
-
-[project.urls]
-homepage = "https://ossie.apache.org/"
-repository = "https://github.com/apache/ossie/"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/ossie"]
-
-[tool.uv]
-required-version = ">=0.9.0"

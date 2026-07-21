@@ -15,34 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+import pathlib
+import sys
 
-[project]
-name = "apache-ossie"
-version = "0.2.0.dev0"
-description = "Python types for the Apache Ossie semantic model specification"
-authors = [{ name = "Apache Software Foundation", email = "dev@ossie.apache.org" }]
-requires-python = ">=3.11"
-readme = "README.md"
-license = "Apache-2.0"
-keywords = [
-    "Apache Ossie",
-    "Ossie",
-    "Open Semantic Interchange",
-]
-dependencies = [
-    "pydantic>=2.0",
-    "PyYAML>=6.0",
-]
-
-[project.urls]
-homepage = "https://ossie.apache.org/"
-repository = "https://github.com/apache/ossie/"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/ossie"]
-
-[tool.uv]
-required-version = ">=0.9.0"
+# Make the converter modules in ../src importable from the tests.
+_SRC = pathlib.Path(__file__).resolve().parent.parent / "src"
+sys.path.insert(0, str(_SRC))
