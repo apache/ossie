@@ -56,8 +56,8 @@ python ../../validation/validate.py semantic_model.yaml --schema ../../core-spec
 | `metrics[]` | every table's `measures[]`, hoisted to the model level |
 
 Expressions are emitted verbatim under the Ossie dialect mapped from the table's connection
-(`snowflake → SNOWFLAKE`, `databricks → DATABRICKS`). Connections with any other dialect fall
-back to `ANSI_SQL` verbatim with an `UNSUPPORTED_DIALECT` warning.
+(`snowflake → SNOWFLAKE`, `databricks → DATABRICKS`, `bigquery → BIGQUERY`). Connections with
+any other dialect fall back to `ANSI_SQL` verbatim with an `UNSUPPORTED_DIALECT` warning.
 
 ### Relationship cardinality
 

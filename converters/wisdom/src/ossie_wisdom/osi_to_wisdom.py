@@ -46,6 +46,7 @@ from ossie_wisdom.converter_issues import ConverterIssue, ConverterIssueType, Co
 _WISDOM_DIALECT = {
     OSIDialect.SNOWFLAKE: "snowflake",
     OSIDialect.DATABRICKS: "databricks",
+    OSIDialect.BIGQUERY: "bigquery",
     OSIDialect.ANSI_SQL: "ansi",
 }
 
@@ -148,7 +149,7 @@ class OSIToWisdomConverter:
     def _infer_dataset_dialect(self, dataset: OSIDataset) -> OSIDialect:
         for field in dataset.fields or []:
             for entry in field.expression.dialects:
-                if entry.dialect in (OSIDialect.SNOWFLAKE, OSIDialect.DATABRICKS):
+                if entry.dialect in (OSIDialect.SNOWFLAKE, OSIDialect.DATABRICKS, OSIDialect.BIGQUERY):
                     return entry.dialect
         return OSIDialect.ANSI_SQL
 

@@ -42,9 +42,12 @@ from ossie_wisdom.converter_issues import ConverterIssue, ConverterIssueType, Co
 _DIALECT_MAP: Dict[str, OSIDialect] = {
     "snowflake": OSIDialect.SNOWFLAKE,
     "databricks": OSIDialect.DATABRICKS,
+    "bigquery": OSIDialect.BIGQUERY,
     "ansi": OSIDialect.ANSI_SQL,
     "ansi_sql": OSIDialect.ANSI_SQL,
 }
+
+_BACKTICK_DIALECTS = {OSIDialect.DATABRICKS, OSIDialect.BIGQUERY}
 
 _TIME_DATA_TYPES = {"DATE", "DATETIME", "TIMESTAMP"}
 
@@ -350,7 +353,7 @@ class WisdomToOSIConverter:
         """Quotes a column name for use as a SQL expression when it is not a plain identifier."""
         if _SIMPLE_IDENTIFIER.match(name):
             return name
-        if dialect is OSIDialect.DATABRICKS:
+        if dialect in _BACKTICK_DIALECTS:
             return "`" + name.replace("`", "``") + "`"
         return '"' + name.replace('"', '""') + '"'
 
