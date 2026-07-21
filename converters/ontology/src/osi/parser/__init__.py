@@ -49,9 +49,3 @@ class OsiParser:
         if spec is None:
             raise RuntimeError("You must call 'parse()' before accessing 'spec()'")
         return spec
-
-    def model(self) -> OsiOntology:
-        model = self._model
-        if model is None:
-            raise RuntimeError("You must call 'parse()' before accessing 'model()'")
-        return model

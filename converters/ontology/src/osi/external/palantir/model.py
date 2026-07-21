@@ -627,6 +627,6 @@ class IntermediaryRelation(Relation):
 
     def info(self):
         return (f'Relation "{self.readable_id()}" associates "{self.role_a_player()._name}" with '
-                f'"{self.role_b_player()._name} via intermediary player "{self.intermediary_player()._name}" and '
+                f'"{self.role_b_player()._name}" via intermediary player "{self.intermediary_player()._name}" and '
                 f'relations "{self.relation_a()}" and "{self.relation_b()}"')
 

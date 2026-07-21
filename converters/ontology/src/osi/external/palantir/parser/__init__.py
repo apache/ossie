@@ -138,16 +138,16 @@ class PalantirOntologyParser:
     # Given a Raw Palantir ObjectType, extract the string to use as its name regardless
     # of JSON convention
     def _parse_object_type_name(self, raw_ot):
-            # Newer JSONs contain a displayMetadata section with this information
-            display_metadata = get_dict(raw_ot, "displayMetadata")
-            if display_metadata:
-                ot_name = norm(display_metadata.get("displayName"))
-            else:
-                ot_name = norm(raw_ot.get("displayName"))
+        # Newer JSONs contain a displayMetadata section with this information
+        display_metadata = get_dict(raw_ot, "displayMetadata")
+        if display_metadata:
+            ot_name = norm(display_metadata.get("displayName"))
+        else:
+            ot_name = norm(raw_ot.get("displayName"))
 
-            if ot_name is None:
-                raise ValueError(f'Could not extract a name from ObjectType with rid: {raw_ot.get("rid")}')
-            return ot_name
+        if ot_name is None:
+            raise ValueError(f'Could not extract a name from ObjectType with rid: {raw_ot.get("rid")}')
+        return ot_name
 
     def _parse_property_backing_data(self, raw_prop, property_id, object_type_id):
         # In the new exports this information stores in the `source` field, but in the old exports
@@ -545,12 +545,10 @@ class PalantirOntologyParser:
         """
 
 class PalantirParser:
-    _model: Ontology
+    _model: Ontology | None
 
-    def model(self):
-        if self._model is None:
-            raise RuntimeError("You must call 'parse()' first before calling 'model()'")
-        return self._model
+    def __init__(self):
+        self._model = None
 
     def _make_ontology_parser(self) -> PalantirOntologyParser:
         return PalantirOntologyParser()
@@ -573,7 +571,7 @@ class PalantirParser:
                 self._parse_from_zip(zf)
         else:
             raise FileNotFoundError(f"Palantir source '{path}' does not exist")
-        return self.model()
+        return self._model
 
     @staticmethod
     def _single_zip_in_dir(base_dir: Path) -> Path | None:

@@ -365,11 +365,21 @@ class SpecToOsiConverter:
         bare = _BARE_FIELD_RE.match(expression)
         if bare:
             field_name = bare.group(1)
-            for dataset in semantic_model.datasets:
-                field = dataset.field(field_name)
-                if field is not None:
-                    _pin_field_type(field, expected_type)
-                    return field
+            matches = [
+                (dataset, field)
+                for dataset in semantic_model.datasets
+                if (field := dataset.field(field_name)) is not None
+            ]
+            if len(matches) > 1:
+                owners = ", ".join(dataset.name for dataset, _ in matches)
+                raise ValueError(
+                    f"Bare field reference '{field_name}' is ambiguous: it exists in multiple "
+                    f"datasets ({owners}). Qualify it as 'DATASET.{field_name}'."
+                )
+            if matches:
+                _, field = matches[0]
+                _pin_field_type(field, expected_type)
+                return field
             return self._mapping_formula_factory(raw_expr=expression, ontology=ontology, semantic_model=semantic_model)
 
         return self._mapping_formula_factory(raw_expr=expression, ontology=ontology, semantic_model=semantic_model)

@@ -39,7 +39,7 @@ if __name__ == "__main__":
     schema_name = os.environ.get("SNOWFLAKE_SCHEMA_NAME", "PALANTIR")
 
     if len(sys.argv) != 2:
-       raise Exception(f"++ Usage: {sys.argv[0]} path to Palantir sources")
+        sys.exit(f"Usage: {sys.argv[0]} <path to Palantir sources (.zip or folder)>")
 
     path = Path(sys.argv[1])
 
