@@ -44,10 +44,9 @@ if __name__ == "__main__":
     path = Path(sys.argv[1])
 
     parser = PalantirParser()
-    parser.parse(path)
+    palantir_model = parser.parse(path)
 
-    ontology_model = PalantirToOsiConverter().convert(parser.model(), db_name, schema_name)
+    ontology_model = PalantirToOsiConverter().convert(palantir_model, db_name, schema_name)
 
     osi_spec = OsiToSpecConverter.convert(ontology_model)
     print(osi_spec.dump_yaml())
-

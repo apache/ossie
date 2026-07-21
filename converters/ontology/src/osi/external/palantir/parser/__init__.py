@@ -571,6 +571,10 @@ class PalantirParser:
                 self._parse_from_zip(zf)
         else:
             raise FileNotFoundError(f"Palantir source '{path}' does not exist")
+
+        if self._model is None:
+            raise RuntimeError(f"Parsing '{path}' did not produce an ontology model")
+
         return self._model
 
     @staticmethod

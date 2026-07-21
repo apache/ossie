@@ -174,7 +174,9 @@ class PalantirToOsiConverter:
 
             if not is_subtype or ignore_subtype:
                 identifiers: dict[str, Relationship] = {}
-                for prop in ot.primary_keys():
+                # primary_keys() is a set; sort by readable_id so identify_by
+                # ordering (and the resulting YAML) is stable across runs.
+                for prop in sorted(ot.primary_keys(), key=lambda p: p.readable_id()):
                     prop_name = PalantirToOsiConverter._attribute_name(prop)
                     rel = ontology.lookup_concept_relationship(concept, prop_name)
                     if rel is None:
