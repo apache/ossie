@@ -52,7 +52,8 @@ _WISDOM_DIALECT = {
 
 
 def _stable_id(prefix: str, value: str) -> str:
-    return f"{prefix}_{hashlib.md5(value.encode('utf-8')).hexdigest()}"
+    # usedforsecurity=False: IDs only, and required for FIPS-enabled OpenSSL builds.
+    return f"{prefix}_{hashlib.md5(value.encode('utf-8'), usedforsecurity=False).hexdigest()}"
 
 
 class OSIToWisdomConverter:

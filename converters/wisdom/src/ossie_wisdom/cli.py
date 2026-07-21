@@ -62,7 +62,7 @@ _DROPPED_ISSUE_TYPES = {
 def _print_issues(result) -> None:
     for issue in result.issues:
         verb = "was dropped" if issue.issue_type in _DROPPED_ISSUE_TYPES else "was converted with loss"
-        reason = _ISSUE_REASON[issue.issue_type]
+        reason = _ISSUE_REASON.get(issue.issue_type, issue.issue_type.value)
         print(f"[WARNING] {issue.issue_type.value}: {issue.element_name} {verb} during conversion because {reason}", file=sys.stderr)
 
 
