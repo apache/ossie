@@ -30,7 +30,7 @@ classifiers = [
 ]
 dependencies = [
     "apache-ossie>=0.2.0.dev0",
-    "semantido>=0.4.0",
+    "semantido>=0.4.1",
     "SQLAlchemy>=2.0",
     "PyYAML>=6.0",
 ]
@@ -47,6 +47,7 @@ packages = ["src/ossie_semantido"]
 [tool.uv]
 dev-dependencies = [
     "pytest>=8.0",
+    "ruff==0.15.22"
 ]
 
 [tool.uv.sources]

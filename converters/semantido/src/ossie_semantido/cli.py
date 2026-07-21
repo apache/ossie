@@ -30,7 +30,9 @@ from ossie_semantido.semantido_to_osi import semantic_layer_to_osi
 
 def _report_issues(issues) -> None:
     for issue in issues:
-        print(f"warning: {issue.issue_type.value}: {issue.element_name}", file=sys.stderr)
+        print(
+            f"warning: {issue.issue_type.value}: {issue.element_name}", file=sys.stderr
+        )
 
 
 def _cmd_semantido_to_osi(args: argparse.Namespace) -> None:
@@ -60,23 +62,49 @@ def main() -> None:
     to_osi = subparsers.add_parser(
         "semantido-to-osi", help="Convert decorated SQLAlchemy models → Ossie YAML"
     )
-    to_osi.add_argument("-m", "--module", required=True, metavar="MODULE",
-                        help="Dotted module path of the semantido models, e.g. models.emir_reporting")
-    to_osi.add_argument("-p", "--path", default=None, metavar="DIR",
-                        help="Directory prepended to sys.path before import")
-    to_osi.add_argument("-n", "--name", required=True, metavar="NAME",
-                        help="Name for the Ossie semantic_model")
-    to_osi.add_argument("-o", "--output", required=True, metavar="FILE",
-                        help="Path for output Ossie YAML")
+    to_osi.add_argument(
+        "-m",
+        "--module",
+        required=True,
+        metavar="MODULE",
+        help="Dotted module path of the semantido models, e.g. models.emir_reporting",
+    )
+    to_osi.add_argument(
+        "-p",
+        "--path",
+        default=None,
+        metavar="DIR",
+        help="Directory prepended to sys.path before import",
+    )
+    to_osi.add_argument(
+        "-n",
+        "--name",
+        required=True,
+        metavar="NAME",
+        help="Name for the Ossie semantic_model",
+    )
+    to_osi.add_argument(
+        "-o",
+        "--output",
+        required=True,
+        metavar="FILE",
+        help="Path for output Ossie YAML",
+    )
     to_osi.set_defaults(func=_cmd_semantido_to_osi)
 
     from_osi = subparsers.add_parser(
         "osi-to-semantido", help="Convert Ossie YAML → generated semantido model code"
     )
-    from_osi.add_argument("-i", "--input", required=True, metavar="FILE",
-                          help="Path to Ossie YAML")
-    from_osi.add_argument("-o", "--output", required=True, metavar="FILE",
-                          help="Path for generated Python module")
+    from_osi.add_argument(
+        "-i", "--input", required=True, metavar="FILE", help="Path to Ossie YAML"
+    )
+    from_osi.add_argument(
+        "-o",
+        "--output",
+        required=True,
+        metavar="FILE",
+        help="Path for generated Python module",
+    )
     from_osi.set_defaults(func=_cmd_osi_to_semantido)
 
     args = parser.parse_args()

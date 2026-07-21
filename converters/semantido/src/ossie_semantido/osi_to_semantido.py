@@ -29,9 +29,12 @@ from typing import List
 
 from ossie import OSIDataset, OSIDocument, OSIField
 
-from ossie_semantido.converter_issues import ConverterIssue, ConverterIssueType, ConverterResult
-
-VENDOR_NAME = "SEMANTIDO"
+from ossie_semantido.constants import VENDOR_NAME
+from ossie_semantido.converter_issues import (
+    ConverterIssue,
+    ConverterIssueType,
+    ConverterResult,
+)
 
 _TYPE_MAP = {
     "VARCHAR": "String",
@@ -67,7 +70,9 @@ def _sqlalchemy_type(field: OSIField, issues: List[ConverterIssue]) -> str:
         return _TYPE_MAP[base]
     if base:
         issues.append(
-            ConverterIssue(ConverterIssueType.UNMAPPED_DATA_TYPE, f"{field.name}:{base}")
+            ConverterIssue(
+                ConverterIssueType.UNMAPPED_DATA_TYPE, f"{field.name}:{base}"
+            )
         )
     return "String"
 
@@ -117,7 +122,9 @@ def _emit_dataset(dataset: OSIDataset, issues: List[ConverterIssue]) -> str:
             level = field_payload["privacy_level"].upper()
             lines.append(f"    {field.name}_privacy_level = PrivacyLevel.{level}")
         if field_ctx and field_ctx.examples:
-            lines.append(f"    {field.name}_sample_values = {[str(e) for e in field_ctx.examples]!r}")
+            lines.append(
+                f"    {field.name}_sample_values = {[str(e) for e in field_ctx.examples]!r}"
+            )
         if field_payload.get("time_grain"):
             grain = field_payload["time_grain"].upper()
             lines.append(f"    {field.name}_time_grain = TimeGrain.{grain}")
@@ -131,13 +138,17 @@ def osi_to_semantido_source(document: OSIDocument) -> ConverterResult[str]:
 
     for model in document.semantic_model:
         for metric in model.metrics or []:
-            issues.append(ConverterIssue(ConverterIssueType.METRIC_DROPPED, metric.name))
+            issues.append(
+                ConverterIssue(ConverterIssueType.METRIC_DROPPED, metric.name)
+            )
         for dataset in model.datasets:
             blocks.append(_emit_dataset(dataset, issues))
 
     todo_block = ""
     if issues:
-        todo_lines = "\n".join(f"#   {i.issue_type.value}: {i.element_name}" for i in issues)
+        todo_lines = "\n".join(
+            f"#   {i.issue_type.value}: {i.element_name}" for i in issues
+        )
         todo_block = (
             "# TODO(ossie-semantido): the following Ossie constructs have no\n"
             "# semantido equivalent yet and were not converted:\n" + todo_lines + "\n\n"

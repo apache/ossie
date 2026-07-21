@@ -15,22 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""semantido <> Apache Ossie converter."""
+"""Shared constants for the ossie-semantido converter."""
 
-from ossie_semantido.converter_issues import (
-    ConverterIssue,
-    ConverterIssueType,
-    ConverterResult,
-)
-from ossie_semantido.loaders import load_from_module
-from ossie_semantido.osi_to_semantido import osi_to_semantido_source
-from ossie_semantido.semantido_to_osi import semantic_layer_to_osi
-
-__all__ = [
-    "ConverterIssue",
-    "ConverterIssueType",
-    "ConverterResult",
-    "load_from_module",
-    "osi_to_semantido_source",
-    "semantic_layer_to_osi",
-]
+VENDOR_NAME = "SEMANTIDO"

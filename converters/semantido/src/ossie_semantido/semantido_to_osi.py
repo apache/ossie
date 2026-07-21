@@ -17,7 +17,7 @@
 
 """semantido SemanticLayer -> Apache Ossie document conversion.
 
-Builds the Ossie model through the typed ``apache-ossie`` objects so the
+Builds the Ossie model through the typed ``apache-ossie`` objects, so the
 output is schema-conformant by construction. Governance metadata that has
 no Ossie core field (privacy levels, SQL filters, time grain, the primary
 time axis) is preserved losslessly in ``custom_extensions`` under the
@@ -42,15 +42,21 @@ from ossie import (
     OSIRelationship,
     OSISemanticModel,
 )
-from semantido.generators.semantic_layer import Column, Relationship, SemanticLayer, Table
-
-from ossie_semantido.converter_issues import ConverterIssue, ConverterIssueType, ConverterResult
-
-VENDOR_NAME = "SEMANTIDO"
-
-_JOIN_RE = re.compile(
-    r"^\s*(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)\s*$"
+from semantido.generators.semantic_layer import (
+    Column,
+    Relationship,
+    SemanticLayer,
+    Table,
 )
+
+from ossie_semantido.constants import VENDOR_NAME
+from ossie_semantido.converter_issues import (
+    ConverterIssue,
+    ConverterIssueType,
+    ConverterResult,
+)
+
+_JOIN_RE = re.compile(r"^\s*(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)\s*$")
 
 
 def _extension(payload: dict) -> OSICustomExtension:
@@ -63,7 +69,9 @@ def _extension(payload: dict) -> OSICustomExtension:
 
 def _ansi(expression: str) -> OSIExpression:
     return OSIExpression(
-        dialects=[OSIDialectExpression(dialect=OSIDialect.ANSI_SQL, expression=expression)]
+        dialects=[
+            OSIDialectExpression(dialect=OSIDialect.ANSI_SQL, expression=expression)
+        ]
     )
 
 
@@ -92,12 +100,16 @@ def _column_to_field(column: Column) -> OSIField:
         dimension=OSIDimension(is_time=True) if column.is_time_dimension else None,
         description=column.description or None,
         ai_context=OSIAIContextObject(**ai_kwargs) if ai_kwargs else None,
-        custom_extensions=[_extension(extension_payload)] if extension_payload else None,
+        custom_extensions=[_extension(extension_payload)]
+        if extension_payload
+        else None,
     )
 
 
 def _table_to_dataset(table: Table) -> OSIDataset:
-    instructions_parts = [p for p in (table.business_context, table.application_context) if p]
+    instructions_parts = [
+        p for p in (table.business_context, table.application_context) if p
+    ]
 
     ai_kwargs = {}
     if instructions_parts:
@@ -118,7 +130,9 @@ def _table_to_dataset(table: Table) -> OSIDataset:
         description=table.description or None,
         ai_context=OSIAIContextObject(**ai_kwargs) if ai_kwargs else None,
         fields=[_column_to_field(c) for c in table.columns] or None,
-        custom_extensions=[_extension(extension_payload)] if extension_payload else None,
+        custom_extensions=[_extension(extension_payload)]
+        if extension_payload
+        else None,
     )
 
 
@@ -140,8 +154,18 @@ def _relationship_to_osi(
     # which side of the equality each table appeared on.
     if left_table == rel.from_table:
         from_columns, to_columns = [left_col], [right_col]
-    else:
+    elif right_table == rel.from_table:
         from_columns, to_columns = [right_col], [left_col]
+    else:
+        # Neither side of the join references rel.from_table (e.g., aliases)
+        # Treat this as unparseable rather than silently swapping columns.
+        issues.append(
+            ConverterIssue(
+                issue_type=ConverterIssueType.RELATIONSHIP_JOIN_UNPARSED,
+                element_name=f"{rel.from_table}->{rel.to_table}",
+            )
+        )
+        return None
 
     ai_kwargs = {}
     if rel.description:
@@ -156,7 +180,9 @@ def _relationship_to_osi(
             "to_columns": to_columns,
             "ai_context": ai_kwargs or None,
             "custom_extensions": [
-                _extension({"relationship_type": rel.relationship_type.value}).model_dump()
+                _extension(
+                    {"relationship_type": rel.relationship_type.value}
+                ).model_dump()
             ],
         }
     )
@@ -178,7 +204,9 @@ def semantic_layer_to_osi(
 
     model_extensions = None
     if layer.application_glossary:
-        model_extensions = [_extension({"application_glossary": layer.application_glossary})]
+        model_extensions = [
+            _extension({"application_glossary": layer.application_glossary})
+        ]
 
     model = OSISemanticModel(
         name=model_name,
