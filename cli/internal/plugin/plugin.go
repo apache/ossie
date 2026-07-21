@@ -8,15 +8,10 @@ type Plugin struct {
 	Path             string // absolute path to plugin dir on disk
 	OSSIEPluginSpec  string
 	OSSIESpecVersion string
-	Platform         Platform
+	Name             string // required; the plugin's own identity, matched against --from/--to values
+	Platform         string // optional; freeform display label for what the plugin converts to/from (e.g. "dbt Labs", "PowerBI")
 	Setup            string // relative path to setup script; empty = no setup
 	Convert          ConvertConfig
-}
-
-// Platform identifies the semantic platform this plugin handles.
-type Platform struct {
-	Name   string // required; matched against --from/--to values
-	Vendor string // optional; human-readable
 }
 
 // ConvertConfig holds both conversion directions.
@@ -36,10 +31,8 @@ type rawPlugin struct {
 	OSSIEPluginSpec  string `yaml:"ossie_plugin_spec"`
 	OSSIESpecVersion string `yaml:"ossie_spec_version"`
 
-	Platform struct {
-		Name   string `yaml:"name"`
-		Vendor string `yaml:"vendor"`
-	} `yaml:"platform"`
+	Name     string `yaml:"name"`
+	Platform string `yaml:"platform"`
 
 	Setup string `yaml:"setup"`
 
@@ -62,8 +55,8 @@ func (r *rawPlugin) validate() error {
 		return errors.New("missing required field: ossie_plugin_spec")
 	case r.OSSIESpecVersion == "":
 		return errors.New("missing required field: ossie_spec_version")
-	case r.Platform.Name == "":
-		return errors.New("missing required field: platform.name")
+	case r.Name == "":
+		return errors.New("missing required field: name")
 	case len(r.Convert.ToOssie.Invoke) == 0:
 		return errors.New("missing required field: convert.to_ossie.invoke")
 	case len(r.Convert.ToOssie.Accepts) == 0:
@@ -81,11 +74,9 @@ func (r *rawPlugin) toPlugin(path string) *Plugin {
 		Path:             path,
 		OSSIEPluginSpec:  r.OSSIEPluginSpec,
 		OSSIESpecVersion: r.OSSIESpecVersion,
-		Platform: Platform{
-			Name:   r.Platform.Name,
-			Vendor: r.Platform.Vendor,
-		},
-		Setup: r.Setup,
+		Name:             r.Name,
+		Platform:         r.Platform,
+		Setup:            r.Setup,
 		Convert: ConvertConfig{
 			ToOssie: Direction{
 				Invoke:  r.Convert.ToOssie.Invoke,

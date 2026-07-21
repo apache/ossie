@@ -3,7 +3,6 @@ package plugin
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -40,8 +39,7 @@ func runPluginList(cmd *cobra.Command, args []string) error {
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "NAME\tPLATFORM\tSPEC")
 	for _, p := range plugins {
-		name := filepath.Base(p.Path)
-		fmt.Fprintf(w, "%s\t%s\t%s\n", name, p.Platform.Name, p.OSSIEPluginSpec)
+		fmt.Fprintf(w, "%s\t%s\t%s\n", p.Name, p.Platform, p.OSSIEPluginSpec)
 	}
 	return w.Flush()
 }

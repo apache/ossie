@@ -14,9 +14,8 @@ import (
 const validPluginYAML = `
 ossie_plugin_spec: "0.1.0"
 ossie_spec_version: ">=0.2.0"
-platform:
-  name: dbt
-  vendor: dbt Labs
+name: dbt
+platform: dbt Labs
 convert:
   to_ossie:
     invoke: ["ossie-plugin-dbt", "to-ossie"]
@@ -82,11 +81,11 @@ func TestDiscover_validPlugin(t *testing.T) {
 	if p.Path != pluginDir {
 		t.Errorf("Path: got %q, want %q", p.Path, pluginDir)
 	}
-	if p.Platform.Name != "dbt" {
-		t.Errorf("Platform.Name: got %q, want %q", p.Platform.Name, "dbt")
+	if p.Name != "dbt" {
+		t.Errorf("Name: got %q, want %q", p.Name, "dbt")
 	}
-	if p.Platform.Vendor != "dbt Labs" {
-		t.Errorf("Platform.Vendor: got %q, want %q", p.Platform.Vendor, "dbt Labs")
+	if p.Platform != "dbt Labs" {
+		t.Errorf("Platform: got %q, want %q", p.Platform, "dbt Labs")
 	}
 	if p.OSSIEPluginSpec != "0.1.0" {
 		t.Errorf("OSSIEPluginSpec: got %q, want %q", p.OSSIEPluginSpec, "0.1.0")
@@ -130,11 +129,10 @@ func TestDiscover_malformedYAML(t *testing.T) {
 
 func TestDiscover_missingRequiredField(t *testing.T) {
 	root := t.TempDir()
-	writePlugin(t, root, "noplat", `
+	writePlugin(t, root, "noname", `
 ossie_plugin_spec: "0.1.0"
 ossie_spec_version: ">=0.2.0"
-platform:
-  vendor: dbt Labs
+platform: dbt Labs
 convert:
   to_ossie:
     invoke: ["bin/convert"]
@@ -151,7 +149,7 @@ convert:
 	if len(plugins) != 0 {
 		t.Errorf("expected 0 plugins, got %d", len(plugins))
 	}
-	if !strings.Contains(stderr.String(), filepath.Join(root, "noplat")) {
+	if !strings.Contains(stderr.String(), filepath.Join(root, "noname")) {
 		t.Errorf("warning should contain plugin path, got: %q", stderr.String())
 	}
 }
@@ -207,9 +205,8 @@ func TestDiscover_unknownFieldsIgnored(t *testing.T) {
 ossie_plugin_spec: "0.1.0"
 ossie_spec_version: ">=0.2.0"
 future_field: "some value"
-platform:
-  name: test
-  future_platform_field: "ignored"
+name: test
+platform: some-platform
 convert:
   to_ossie:
     invoke: ["bin/convert"]
@@ -257,8 +254,7 @@ func TestDiscover_setupFieldPopulated(t *testing.T) {
 	writePlugin(t, root, "with-setup", `
 ossie_plugin_spec: "0.1.0"
 ossie_spec_version: ">=0.2.0"
-platform:
-  name: dbt
+name: dbt
 setup: bin/setup
 convert:
   to_ossie:
