@@ -28,7 +28,7 @@ import org.apache.ossie.model.DialectExpression;
 import org.apache.ossie.model.Dimension;
 import org.apache.ossie.model.Expression;
 import org.apache.ossie.model.Field;
-import org.apache.ossie.model.OsiSchema;
+import org.apache.ossie.model.OsiModel;
 import org.apache.ossie.model.Relationship;
 import org.apache.ossie.model.SemanticModel;
 
@@ -115,7 +115,7 @@ class OsiPolarisConverterTest {
     @Test
     void testParseMinimalModel() {
         OsiModelParser parser = new OsiModelParser();
-        OsiSchema model = parser.parse(
+        OsiModel model = parser.parse(
                 new ByteArrayInputStream(MINIMAL_MODEL.getBytes(StandardCharsets.UTF_8)));
 
         assertEquals("0.2.0.dev0", model.getVersion());
@@ -132,7 +132,7 @@ class OsiPolarisConverterTest {
     @Test
     void testParseDatasetFields() {
         OsiModelParser parser = new OsiModelParser();
-        OsiSchema model = parser.parse(
+        OsiModel model = parser.parse(
                 new ByteArrayInputStream(MINIMAL_MODEL.getBytes(StandardCharsets.UTF_8)));
 
         Dataset orders = model.getSemanticModel().get(0).getDatasets().get(0);
@@ -151,7 +151,7 @@ class OsiPolarisConverterTest {
     @Test
     void testParseTimeDimension() {
         OsiModelParser parser = new OsiModelParser();
-        OsiSchema model = parser.parse(
+        OsiModel model = parser.parse(
                 new ByteArrayInputStream(MINIMAL_MODEL.getBytes(StandardCharsets.UTF_8)));
 
         Dataset orders = model.getSemanticModel().get(0).getDatasets().get(0);
@@ -164,7 +164,7 @@ class OsiPolarisConverterTest {
     @Test
     void testParseRelationship() {
         OsiModelParser parser = new OsiModelParser();
-        OsiSchema model = parser.parse(
+        OsiModel model = parser.parse(
                 new ByteArrayInputStream(MINIMAL_MODEL.getBytes(StandardCharsets.UTF_8)));
 
         Relationship rel = model.getSemanticModel().get(0).getRelationships().get(0);
@@ -180,7 +180,7 @@ class OsiPolarisConverterTest {
     @Test
     void testYamlGenerationRoundTrip() {
         OsiModelParser parser = new OsiModelParser();
-        OsiSchema model = parser.parse(
+        OsiModel model = parser.parse(
                 new ByteArrayInputStream(MINIMAL_MODEL.getBytes(StandardCharsets.UTF_8)));
 
         OsiYamlGenerator generator = new OsiYamlGenerator();
@@ -202,7 +202,7 @@ class OsiPolarisConverterTest {
         assertTrue(yaml.contains("SUM(orders.total_amount)"));
 
         // Re-parse the generated YAML to verify it's valid
-        OsiSchema reparsed = parser.parse(
+        OsiModel reparsed = parser.parse(
                 new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8)));
         assertEquals(1, reparsed.getSemanticModel().size());
         assertEquals("test_model", reparsed.getSemanticModel().get(0).getName());
@@ -215,7 +215,7 @@ class OsiPolarisConverterTest {
     @Test
     void testExporterBuildCreateTableRequest() throws Exception {
         OsiModelParser parser = new OsiModelParser();
-        OsiSchema model = parser.parse(
+        OsiModel model = parser.parse(
                 new ByteArrayInputStream(MINIMAL_MODEL.getBytes(StandardCharsets.UTF_8)));
 
         PolarisClient client = new PolarisClient("http://localhost:8181", "test_catalog");
@@ -301,7 +301,7 @@ class OsiPolarisConverterTest {
 
         PolarisClient client = new FakePolarisClient(tableMetadata);
         PolarisImporter importer = new PolarisImporter(client);
-        OsiSchema model = importer.importCatalog();
+        OsiModel model = importer.importCatalog();
 
         Dataset ds = model.getSemanticModel().get(0).getDatasets().get(0);
         assertEquals("test_table", ds.getName());
@@ -349,7 +349,7 @@ class OsiPolarisConverterTest {
 
         // Reparse the generated Ossie YAML and export it again. Exact physical
         // distinctions survive, while nested IDs are regenerated for the new schema.
-        OsiSchema reparsed = new OsiModelParser().parse(
+        OsiModel reparsed = new OsiModelParser().parse(
                 new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8)));
         Dataset reparsedDataset = reparsed.getSemanticModel().get(0).getDatasets().get(0);
         JsonNode exportedSchema = mapper.readTree(
@@ -425,7 +425,7 @@ class OsiPolarisConverterTest {
     @Test
     void testTypeInference() throws Exception {
         // Test that the exporter correctly infers Iceberg types from field names
-        OsiSchema model = new OsiSchema();
+        OsiModel model = new OsiModel();
         model.setVersion("0.2.0.dev0");
 
         SemanticModel sm = new SemanticModel();
@@ -472,7 +472,7 @@ class OsiPolarisConverterTest {
     void testEmptyModel() {
         String emptyYaml = "version: \"0.2.0.dev0\"\n";
         OsiModelParser parser = new OsiModelParser();
-        OsiSchema model = parser.parse(
+        OsiModel model = parser.parse(
                 new ByteArrayInputStream(emptyYaml.getBytes(StandardCharsets.UTF_8)));
 
         assertEquals("0.2.0.dev0", model.getVersion());

@@ -19,7 +19,7 @@
 
 package org.apache.ossie.converter.polaris;
 
-import org.apache.ossie.model.OsiSchema;
+import org.apache.ossie.model.OsiModel;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -117,7 +117,7 @@ public class OsiPolarisConverter {
 
     private static void doImport(PolarisClient client, String outputFile) throws Exception {
         PolarisImporter importer = new PolarisImporter(client);
-        OsiSchema model = importer.importCatalog();
+        OsiModel model = importer.importCatalog();
 
         if (model.getSemanticModel().isEmpty()) {
             System.err.println("Warning: no tables found in catalog.");
@@ -141,7 +141,7 @@ public class OsiPolarisConverter {
         }
 
         OsiModelParser parser = new OsiModelParser();
-        OsiSchema model = parser.parse(Paths.get(inputFile));
+        OsiModel model = parser.parse(Paths.get(inputFile));
 
         if (model.getSemanticModel().isEmpty()) {
             System.err.println("Error: no semantic_model found in " + inputFile);

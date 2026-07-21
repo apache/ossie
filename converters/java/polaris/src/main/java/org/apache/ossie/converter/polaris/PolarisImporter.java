@@ -27,7 +27,7 @@ import org.apache.ossie.model.DialectExpression;
 import org.apache.ossie.model.Dimension;
 import org.apache.ossie.model.Expression;
 import org.apache.ossie.model.Field;
-import org.apache.ossie.model.OsiSchema;
+import org.apache.ossie.model.OsiModel;
 import org.apache.ossie.model.SemanticModel;
 
 import java.io.IOException;
@@ -40,7 +40,7 @@ import java.util.List;
  * <p>
  * Reads namespaces and tables from a Polaris catalog via the Iceberg REST API,
  * maps Iceberg table schemas to Ossie datasets and fields, and produces a complete
- * {@link OsiSchema}.
+ * {@link OsiModel}.
  */
 public class PolarisImporter {
 
@@ -54,8 +54,8 @@ public class PolarisImporter {
      * Import all tables from all namespaces in the catalog into an Ossie model.
      * Each namespace becomes a separate semantic model.
      */
-    public OsiSchema importCatalog() throws IOException, InterruptedException {
-        OsiSchema model = new OsiSchema();
+    public OsiModel importCatalog() throws IOException, InterruptedException {
+        OsiModel model = new OsiModel();
         model.setVersion("0.2.0.dev0");
 
         List<List<String>> namespaces = client.listNamespaces();

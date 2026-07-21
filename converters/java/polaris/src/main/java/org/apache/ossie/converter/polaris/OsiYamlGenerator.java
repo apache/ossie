@@ -23,10 +23,10 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.fasterxml.jackson.dataformat.yaml.YAMLGenerator;
-import org.apache.ossie.model.OsiSchema;
+import org.apache.ossie.model.OsiModel;
 
 /**
- * Generates Ossie YAML from the schema-generated {@link OsiSchema} model.
+ * Generates Ossie YAML from the schema-generated {@link OsiModel} model.
  */
 public class OsiYamlGenerator {
 
@@ -43,7 +43,7 @@ public class OsiYamlGenerator {
     /**
      * Generate an Ossie YAML string from a model.
      */
-    public String generate(OsiSchema model) {
+    public String generate(OsiModel model) {
         try {
             return yamlMapper.writeValueAsString(model);
         } catch (JsonProcessingException e) {

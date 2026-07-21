@@ -85,6 +85,7 @@
                             </includes>
                             <sourceType>jsonschema</sourceType>
                             <targetPackage>org.apache.ossie.model</targetPackage>
+                            <removeOldOutput>true</removeOldOutput>
                             <targetVersion>11</targetVersion>
                             <annotationStyle>jackson2</annotationStyle>
                             <includeGeneratedAnnotation>true</includeGeneratedAnnotation>

@@ -26,7 +26,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import org.apache.ossie.model.DialectExpression;
-import org.apache.ossie.model.OsiSchema;
+import org.apache.ossie.model.OsiModel;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
@@ -54,7 +54,7 @@ class OsiModelBindingTest {
         Map<String, Object> rootMap = yamlMapper.readValue(
                 rootYaml, new TypeReference<LinkedHashMap<String, Object>>() {});
 
-        OsiSchema typedRoot = OsiModelBinding.fromRootMap(yamlMapper, rootMap);
+        OsiModel typedRoot = OsiModelBinding.fromRootMap(yamlMapper, rootMap);
         assertEquals(DialectExpression.Dialect.ANSI_SQL, typedRoot.getSemanticModel().get(0)
                 .getDatasets().get(0).getFields().get(0)
                 .getExpression().getDialects().get(0).getDialect());
@@ -65,7 +65,7 @@ class OsiModelBindingTest {
 
         String pipelineYaml = yamlMapper.writeValueAsString(
                 typedRoot.getSemanticModel().get(0));
-        OsiSchema wrapped = OsiModelBinding.wrapPipelineYaml(
+        OsiModel wrapped = OsiModelBinding.wrapPipelineYaml(
                 yamlMapper, pipelineYaml, ConverterConstants.OSI_VERSION);
         assertEquals("sales", wrapped.getSemanticModel().get(0).getName());
         assertEquals("0.2.0.dev0", wrapped.getVersion());
