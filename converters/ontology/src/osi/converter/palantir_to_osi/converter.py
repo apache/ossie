@@ -57,8 +57,8 @@ class PalantirToOsiConverter:
 
     depths_role_names = {1: "fst", 2: "snd", 3: "thd", 4: "frt"}
 
-    def __init__(self, formula_factory: FormulaFactory = FormulaFactory()):
-        self._formula_factory = formula_factory
+    def __init__(self, formula_factory: FormulaFactory | None = None):
+        self._formula_factory = formula_factory or FormulaFactory()
 
     # ------------------------------------------------------------------
     # Entry point

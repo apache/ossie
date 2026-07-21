@@ -18,13 +18,13 @@ class OsiParser:
     _debug: bool
 
     def __init__(self, debug: bool = False,
-                 formula_factory: FormulaFactory = FormulaFactory(),
-                 mapping_formula_factory: MappingFormulaFactory = MappingFormulaFactory()):
+                 formula_factory: FormulaFactory | None = None,
+                 mapping_formula_factory: MappingFormulaFactory | None = None):
         self._debug = debug
         self._model = None
         self._spec = None
-        self._formula_factory = formula_factory
-        self._mapping_formula_factory = mapping_formula_factory
+        self._formula_factory = formula_factory or FormulaFactory()
+        self._mapping_formula_factory = mapping_formula_factory or MappingFormulaFactory()
 
     def parse(self, path: Path) -> OsiOntology:
         # OSI always expects a single spec file.

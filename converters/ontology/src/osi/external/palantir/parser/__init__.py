@@ -168,6 +168,10 @@ class PalantirOntologyParser:
                 raise ValueError("Object type `rid` field must be non-empty")
             # Support both formats: new (id) and old (apiName)
             readable_id = norm(raw_ot.get("id")) or norm(raw_ot.get("apiName"))
+            if not readable_id:
+                raise ValueError(
+                    f"Object type must have a non-empty `id` or `apiName` (rid: {guid})"
+                )
 
             # Extract the ObjectType's name
             ot_name = self._parse_object_type_name(raw_ot)
@@ -409,11 +413,12 @@ class PalantirOntologyParser:
 
         property_map: dict[Property, Property] = {}
         for k, v in one_to_many_mapping.items():
-            try:
-                one_property = one_object_type.properties()[k]
-                many_property = many_object_type.properties()[v]
-            except KeyError as e:
-                raise ValueError(f"Property {e.args[0]} is not defined in object type {e.args[1]}") from None
+            one_property = one_object_type.properties().get(k)
+            if one_property is None:
+                raise ValueError(f"Property {k} is not defined in object type {one_object_type.readable_id()}")
+            many_property = many_object_type.properties().get(v)
+            if many_property is None:
+                raise ValueError(f"Property {v} is not defined in object type {many_object_type.readable_id()}")
 
             property_map[many_property] = one_property
 
@@ -435,10 +440,11 @@ class PalantirOntologyParser:
         def build_property_map(object_type, pk_mapping: dict[str, str]) -> dict[Property, str]:
             prop_map: dict[Property, str] = {}
             for src_prop_id, dst_prop_id in pk_mapping.items():
-                try:
-                    obj_prop = object_type.properties()[src_prop_id]
-                except KeyError as e:
-                    raise ValueError(f"Property {e.args[0]} is not defined in object type {e.args[1]}") from None
+                obj_prop = object_type.properties().get(src_prop_id)
+                if obj_prop is None:
+                    raise ValueError(
+                        f"Property {src_prop_id} is not defined in object type {object_type.readable_id()}"
+                    )
                 prop_map[obj_prop] = dst_prop_id
             return prop_map
 
@@ -457,7 +463,9 @@ class PalantirOntologyParser:
         relation = ManyToManyRelation(guid, id, role_a_object_type, role_b_object_type, role_a_property_map,
                                   role_b_property_map)
 
-        join_table_data_source = get_list(raw, "joinTableDatasource")
+        # Accept both key spellings seen across export versions: `joinTableDatasource`
+        # and `joinTableDataSource` (capital 'S').
+        join_table_data_source = get_list(raw, "joinTableDatasource") or get_list(raw, "joinTableDataSource")
         if len(join_table_data_source) != 1:
             raise ValueError("Relation definition must contain exactly one `joinTableDatasource`")
 

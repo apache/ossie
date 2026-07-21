@@ -69,10 +69,10 @@ class SpecToOsiConverter:
         model = SpecToOsiConverter(formula_factory=my_parser).convert(spec)
     """
 
-    def __init__(self, formula_factory: FormulaFactory = FormulaFactory(), 
-                 mapping_formula_factory: MappingFormulaFactory = MappingFormulaFactory()):
-        self._formula_factory = formula_factory
-        self._mapping_formula_factory = mapping_formula_factory
+    def __init__(self, formula_factory: FormulaFactory | None = None,
+                 mapping_formula_factory: MappingFormulaFactory | None = None):
+        self._formula_factory = formula_factory or FormulaFactory()
+        self._mapping_formula_factory = mapping_formula_factory or MappingFormulaFactory()
 
     def convert(self, spec: OsiSpec) -> OsiOntology:
         ontology = OntologyComponent()
