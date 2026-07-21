@@ -1,15 +1,28 @@
-"""Tests for the OSI to Snowflake YAML converter."""
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
 
-import sys
+"""Tests for the Ossie to Snowflake YAML converter."""
+
 import warnings
-from pathlib import Path
 
 import pytest
 import yaml
 
-# Make src/ importable
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-from osi_to_snowflake_yaml_converter import (
+from ossie_snowflake.converter import (
     OsiConversionError,
     convert_osi_to_snowflake,
     _classify_field,
@@ -29,7 +42,7 @@ from osi_to_snowflake_yaml_converter import (
 # ---------------------------------------------------------------------------
 
 def _wrap_osi(model_dict):
-    """Wrap a model dict in the standard OSI envelope."""
+    """Wrap a model dict in the standard Ossie envelope."""
     return yaml.dump(
         {"version": "0.2.0.dev0", "semantic_model": [model_dict]},
         default_flow_style=False,
@@ -37,7 +50,7 @@ def _wrap_osi(model_dict):
 
 
 def _minimal_model(**overrides):
-    """Return a minimal valid OSI model dict."""
+    """Return a minimal valid Ossie model dict."""
     base = {
         "name": "test_model",
         "datasets": [
@@ -95,6 +108,14 @@ class TestParseSource:
             "database": '"myDb"',
             "schema": '"mySchema"',
             "table": '"myTable"',
+        }
+
+    def test_quoted_identifiers_with_dots_preserved(self):
+        result = _parse_source('"my.db"."my schema"."my table"')
+        assert result == {
+            "database": '"my.db"',
+            "schema": '"my schema"',
+            "table": '"my table"',
         }
 
     def test_subquery_select(self):
@@ -478,7 +499,7 @@ class TestConvertOsiToSnowflake:
 
     def test_wrong_version_raises(self):
         bad = yaml.dump({"version": "9.9.9", "semantic_model": [{"name": "m"}]})
-        with pytest.raises(OsiConversionError, match="Unsupported OSI specification"):
+        with pytest.raises(OsiConversionError, match="Unsupported Ossie specification"):
             convert_osi_to_snowflake(bad)
 
     def test_missing_semantic_model_raises(self):
@@ -605,7 +626,7 @@ class TestConvertOsiToSnowflake:
 
 
 # ---------------------------------------------------------------------------
-# _warn_dropped_fields (OSI concepts with no Snowflake counterpart)
+# _warn_dropped_fields (Ossie concepts with no Snowflake counterpart)
 # ---------------------------------------------------------------------------
 
 class TestWarnDroppedFields:

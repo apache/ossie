@@ -1,4 +1,23 @@
-# OSI - Core Metadata Specification
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+-->
+
+# Apache Ossie - Core Metadata Specification
 
 > **DRAFT version** — in development, schema may change before 0.2.0 is released.
 
@@ -38,6 +57,7 @@ Supported SQL and expression language dialects for metrics and field definitions
 | `TABLEAU` | Tableau calculations |
 | `DATABRICKS` | Databricks SQL |
 | `MAQL` | GoodData MAQL (Metric Analysis and Query Language) |
+| `BIGQUERY` | Google BigQuery (GoogleSQL) |
 
 ## Semantic Model
 
@@ -52,7 +72,7 @@ The top-level container that represents a complete semantic model, including dat
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., custom instructions) |
 | `datasets` | array | Yes | Collection of logical datasets (fact and dimension tables) |
 | `relationships` | array | No | Defines how logical datasets are connected |
-| `metrics` | array | No | Quantifiable measures defined as aggregate expessions on fields from logical datsets |
+| `metrics` | array | No | Quantifiable measures defined as aggregate expressions on fields from logical datasets |
 | `custom_extensions` | array | No | Vendor-specific attributes for extensibility |
 
 ### Example
@@ -232,7 +252,7 @@ expression:
       - dialect: ANSI_SQL
         expression: customer_id
   description: Customer identifier
-  dimension: 
+  dimension:
     is_time: false
 ```
 
@@ -278,6 +298,8 @@ expression:
         expression: LOWER(email)
       - dialect: SNOWFLAKE
         expression: LOWER(email)::VARCHAR
+      - dialect: BIGQUERY
+        expression: SAFE_CAST(LOWER(email) AS STRING)
   description: Normalized email address
 ```
 
@@ -366,6 +388,7 @@ The following are well-known examples:
 | `DBT` | dbt-specific attributes |
 | `DATABRICKS` | Databricks-specific attributes |
 | `GOODDATA` | GoodData-specific attributes |
+| `HONEYDEW` | Honeydew-specific attributes |
 
 ### Examples
 
@@ -440,14 +463,14 @@ semantic_model:
                 - dialect: ANSI_SQL
                   expression: order_id
             description: Order identifier
-          
+
           - name: customer_id
             expression:
               dialects:
                 - dialect: ANSI_SQL
                   expression: customer_id
             description: Customer identifier
-          
+
           - name: order_date
             expression:
               dialects:
@@ -456,7 +479,7 @@ semantic_model:
             dimension:
               is_time: true
             description: Order date
-          
+
           - name: amount
             expression:
               dialects:
@@ -475,7 +498,7 @@ semantic_model:
                 - dialect: ANSI_SQL
                   expression: id
             description: Customer identifier
-          
+
           - name: email
             expression:
               dialects:
