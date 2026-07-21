@@ -24,6 +24,7 @@ name = "apache-ossie"
 version = "0.2.0.dev0"
 description = "Python types for the Apache Ossie semantic model specification"
 requires-python = ">=3.11"
+license = "Apache-2.0"
 classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
@@ -32,9 +33,6 @@ dependencies = [
     "pydantic>=2.0",
     "PyYAML>=6.0",
 ]
-
-[project.license]
-text = "Apache-2.0"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ossie"]
