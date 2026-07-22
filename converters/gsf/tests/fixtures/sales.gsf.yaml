@@ -1,0 +1,96 @@
+version: '1.0'
+model:
+  name: sales
+  database: analytics
+  description: Sales model
+  ai_context:
+    instructions: Use approved metrics
+terms:
+- name: orders
+  source:
+    database: analytics
+    schema: public
+    table: orders
+  description: Orders
+  synonyms:
+  - purchases
+  primary_key:
+  - order_id
+  column_attributes:
+  - name: order_id
+    source_column: order_id
+    expressions:
+    - dialect: ANSI_SQL
+      expression: order_id
+    dimension:
+      is_time: false
+  - name: customer_id
+    source_column: customer_id
+    expressions:
+    - dialect: ANSI_SQL
+      expression: customer_id
+    dimension:
+      is_time: false
+  - name: order_date
+    source_column: order_date
+    expressions:
+    - dialect: ANSI_SQL
+      expression: order_date
+    dimension:
+      is_time: true
+  sql_attributes:
+  - name: net_total
+    kind: field
+    expressions:
+    - dialect: ANSI_SQL
+      expression: subtotal - discount
+    sql: SELECT subtotal - discount AS "net_total" FROM "analytics"."public"."orders"
+      AS "orders"
+    table_refs:
+    - orders
+    dimension:
+      is_time: false
+  - name: revenue_per_customer
+    kind: metric
+    expressions:
+    - dialect: ANSI_SQL
+      expression: SUM(orders.subtotal) / COUNT(DISTINCT customers.customer_id)
+    - dialect: SNOWFLAKE
+      expression: SUM(orders.subtotal)::NUMBER / COUNT(DISTINCT customers.customer_id)
+    sql: SELECT SUM(orders.subtotal) / COUNT(DISTINCT customers.customer_id) AS "revenue_per_customer"
+      FROM "analytics"."public"."orders" AS "orders" JOIN "analytics"."public"."customers"
+      AS "customers" ON "orders"."customer_id" = "customers"."customer_id"
+    table_refs:
+    - orders
+    - customers
+    description: Revenue per customer
+- name: customers
+  source:
+    database: analytics
+    schema: public
+    table: customers
+  primary_key:
+  - customer_id
+  column_attributes:
+  - name: customer_id
+    source_column: customer_id
+    expressions:
+    - dialect: ANSI_SQL
+      expression: customer_id
+    dimension:
+      is_time: false
+  - name: customer_name
+    source_column: name
+    expressions:
+    - dialect: ANSI_SQL
+      expression: name
+    dimension:
+      is_time: false
+semantic_foreign_keys:
+- name: orders_to_customers
+  from_term: orders
+  to_term: customers
+  from_columns:
+  - customer_id
+  to_columns:
+  - customer_id
