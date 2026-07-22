@@ -68,14 +68,15 @@ class PalantirDataSetParser:
         ds._readable_id = set_if_value(ds.readable_id(), norm(d.get("datasetName")))
         ds._description = set_if_value(ds.description(), norm(d.get("description")))
 
-        # Columns
-        ds_schema = d.get("datasetSchema")
-        if isinstance(ds_schema, list):
+        # Columns: normalize list-vs-singleton like the other helpers. Only touch
+        # columns when the field is actually present, so a missing schema in one
+        # JSON entry doesn't clobber columns populated from another.
+        if d.get("datasetSchema") is not None:
             cols: list[DataSetColumn] = []
-            for item in ds_schema:
+            for item in get_list(d, "datasetSchema"):
                 if isinstance(item, dict):
                     cols.append(DataSetColumn(item.get("name"), item.get("type"), ds))
-            ds._columns = cols  # only when provided as a proper list
+            ds._columns = cols
 
         # Dependencies
         raw_inputs = d.get("inputDatasetIds")

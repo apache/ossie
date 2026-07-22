@@ -9,24 +9,21 @@ import pytest
 from osi.model import OsiOntology
 from osi.parser import OsiParser
 
-# Repo layout: <repo>/converters/ontology/tests/conftest.py -> <repo>/examples
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_EXAMPLES_DIR = _REPO_ROOT / "examples"
+# Test inputs are vendored under tests/fixtures/ so the suite runs even when the
+# repo-level examples/ directory isn't present (e.g. from an sdist/wheel or a
+# subset checkout). tests/test_examples_in_sync.py guards against drift from the
+# canonical examples/ copies.
+_FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
 
 @pytest.fixture(scope="session")
-def examples_dir() -> Path:
-    if not _EXAMPLES_DIR.is_dir():
-        pytest.skip(f"examples directory not found at {_EXAMPLES_DIR}")
-    return _EXAMPLES_DIR
+def fixtures_dir() -> Path:
+    return _FIXTURES_DIR
 
 
 @pytest.fixture(scope="session")
-def flights_path(examples_dir: Path) -> Path:
-    path = examples_dir / "flights.yaml"
-    if not path.is_file():
-        pytest.skip(f"flights.yaml not found at {path}")
-    return path
+def flights_path(fixtures_dir: Path) -> Path:
+    return fixtures_dir / "flights.yaml"
 
 
 @pytest.fixture

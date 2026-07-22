@@ -68,8 +68,11 @@ def iter_json_files_from_dir(base_dir: Path, dir_prefix: str) -> Iterable[tuple[
         return
     for path in sorted(data_dir.rglob("*")):
         if path.is_file() and path.suffix.lower() == ".json":
+            # Yield a stable, root-relative name (posix separators) to mirror the
+            # ZIP variant and avoid leaking host-specific absolute paths.
+            name = path.relative_to(root).as_posix()
             with path.open("rb") as fp:
-                yield str(path), io.BytesIO(fp.read())
+                yield name, io.BytesIO(fp.read())
 
 
 def get_top_level_json_file_from_dir(base_dir: Path) -> Path:

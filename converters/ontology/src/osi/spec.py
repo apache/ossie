@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-import sys
 from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
+
+# Default line width for YAML output: bounded so diffs stay reviewable, but wide
+# enough that typical concept/relationship lines aren't wrapped mid-token.
+DEFAULT_YAML_WIDTH = 1000
 
 
 class OsiObject(BaseModel):
@@ -236,8 +239,10 @@ class OsiSpec(OsiObject):
     def dump_dict(self) -> dict:
         return self.model_dump(exclude_none=True, exclude_defaults=True, by_alias=True)
 
-    def dump_yaml(self) -> str:
-        return yaml.safe_dump(self.dump_dict(), sort_keys=False, width=sys.maxsize)
+    def dump_yaml(self, width: int = DEFAULT_YAML_WIDTH) -> str:
+        # A bounded width keeps output reasonably wrapped (reviewable diffs) while
+        # staying deterministic. Callers can pass a large width to disable wrapping.
+        return yaml.safe_dump(self.dump_dict(), sort_keys=False, width=width)
 
 
 # `ReferentMapping` and `LinkMapping` are self-referential (each can contain a
