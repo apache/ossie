@@ -20,7 +20,7 @@
 # apache-ossie-orionbelt
 
 Bidirectional converter between **OBML** (OrionBelt Markup Language) semantic
-models and **OSI** ([Open Semantic Interchange](https://open-semantic-interchange.org/)),
+models and **Ossie** ([Apache Ossie](https://ossie.apache.org/)),
 the open standard for portable semantic models (metrics, dimensions,
 relationships).
 

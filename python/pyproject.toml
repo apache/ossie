@@ -30,7 +30,6 @@ license = "Apache-2.0"
 keywords = [
     "Apache Ossie",
     "Ossie",
-    "Open Semantic Interchange",
 ]
 dependencies = [
     "pydantic>=2.0",

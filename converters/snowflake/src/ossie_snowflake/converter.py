@@ -16,7 +16,7 @@
 # under the License.
 
 """
-Converts an Ossie (Open Semantic Interchange) YAML semantic model to a Snowflake
+Converts an Ossie YAML semantic model to a Snowflake
 Cortex Analyst semantic model YAML. Pure offline conversion — no Snowflake
 connection required.
 
