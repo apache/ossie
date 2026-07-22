@@ -74,6 +74,7 @@ The Ossie specification currently defines extensions for the following vendors:
 | `DBT` | dbt semantic models |
 | `DATABRICKS` | Databricks semantic layer |
 | `OMNI` | Omni semantic model |
+| `WISDOM` | WisdomAI domain |
 
 Each vendor may define custom extensions (via the `custom_extensions` field in the Ossie spec) to carry vendor-specific metadata that does not have an equivalent in the core specification.
 
