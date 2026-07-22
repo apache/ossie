@@ -1,10 +1,5 @@
 # Ossie Proposal: Foundational Semantics
 
-**Status:** Draft Proposal
-**Spec version:** 0.1
-**Author:** [will.pugh@snowflake.com](mailto:will.pugh@snowflake.com)
-**Date:** 2026-04-25
-
 **Working Group**
 
 | Lead(s) | Participants |
@@ -13,8 +8,8 @@
 
 **Related specs:**
 
-- [Ossie Core Specification](https://github.com/apache/ossie/blob/main/core-spec/spec.md)
-- [Ossie Proposal: Expression Language](https://github.com/apache/ossie/blob/main/core-spec/expression_language.md)
+- [Ossie Core Specification](./spec.md)
+- [Ossie Proposal: Expression Language](./expression_language.md)
 
 ## Table of Contents
 
@@ -417,13 +412,15 @@ metrics:
 
 ### 4.6 Namespacing and Identifiers
 
-This section is normative for the Foundation surface. The identifier *grammar* (case-folding, normalised-identifier definition, the `Field` / `FieldExpr` shape, the global / dataset / physical scope model, and the in-dataset precedence table) lives in the [Ossie Expression Language](https://github.com/apache/ossie/blob/main/core-spec/expression_language.md) proposal §"Namespacing and Identifier Resolution"; this section adds the Foundation-specific pieces that document doesn't — and shouldn't — cover: a definitive position on quoted-identifier case-sensitivity, the Foundation's reserved-name set, the error codes, and the reference rules at every site a name appears in a semantic query. Where the two documents overlap they MUST agree; where they differ this section is normative for the Foundation.
+This section is normative for the Foundation surface. The identifier *grammar* and case equivalence lives in the [Ossie Expression Language](./expression_language.md) proposal.  This section defines the semantics for identifier resolution.
 
 #### 4.6.1 Identifier Form
 
-The grammar lives in the [Ossie Expression Language](https://github.com/apache/ossie/blob/main/core-spec/expression_language.md) proposal §"Namespacing and Identifier Resolution": ANSI SQL identifiers, ≤128 characters, regular (unquoted) identifiers are case-insensitive and fold to upper-case, quoted identifiers preserve their inner text verbatim, and the **normalised identifier** is the canonical form used for matching (regulars upper-cased; quoted have quotes stripped and escapes unescaped). Two identifiers are equal iff their normalised forms are byte-equal.
+The identifier form allows for a multipart definition, that can include scopes.  For example `cost` and `part_order.cost` are both valid identifiers in Ossie.  In order to match this to an object in the semantic definition, we need to know which scope to look in.
 
-The Foundation pins one point on which the Ossie Expression Language proposal hedges: **quoted identifiers are case-sensitive relative to regular identifiers**. So `"id"` does not match the regular identifier `id` (the regular form normalises to `ID` and the quoted form preserves `id`), but `"ID"` does. The conformance suite (§11.1) asserts this position.
+When, and identifier is singlepart, the scope is implied by where the expression is created.  E.g. if it is in a global metric, then it is global.  If it is in a dataset's field.  It is scoped to that dataset.
+
+When an identifier is multipart, the section before the `.` will help determine the scope.  It will match from the global scope to find the parent object and the parts will be used to refine from that.  E.g. `part_order.cost` will look for a dataset named `part_order` and find the `cost` field on it.
 
 #### 4.6.2 Reserved Names
 
@@ -451,15 +448,15 @@ The three-scope model (Global / Dataset / Physical) and the in-dataset precedenc
 
 Three rules cover every reference site:
 
-1. **Inside a query** (Dimensions, Measures, Where, Having, Order By, Fields): metrics are referenced by **bare name** from the global metric namespace. Dataset-scoped fields MUST be referenced as `dataset.field`.
+1. **Inside a query** (Dimensions, Measures, Where, Having, Order By, Fields): the precedence is only to look at the global scope.  Therefore, and **bare name** will look for a global metric, and any dataset field MUST be qualitied with the global dataset name, e.g. `dataset.field`.
 
    Example: in `Measures: [total_revenue]`, the engine resolves `total_revenue` to the model-scoped metric of that name. If no metric `total_revenue` exists, the engine raises `E_NAME_NOT_FOUND`. In `Dimensions: [orders.region]`, `orders.region` resolves to the field `region` on dataset `orders`.
 
    The Foundation has no `dataset.metric_name` form (dataset-namespaced metrics are deferred per §4.5). Every metric lives in one global namespace, so name collisions across the model surface as ordinary `E_NAME_COLLISION` at validation time, not as scope-resolution ambiguities at query time.
 
-2. **Inside a dataset field expression**: bare names follow the precedence table in the Ossie Expression Language proposal §"Name Spaces" (physical → logical → global). A dataset-local logical field that shadows a global name is reachable via the `dataset.field` form.
+2. **Inside a dataset field expression**: bare names follow the precedence of (physical → logical → global). If a global name is shadowed by a local logical field, then it is not accessible from within a dataset field.
 
-3. **Inside a model-scoped metric expression**: names MUST be `dataset.field`-qualified for any reference to a dataset-scoped field (model-scoped metrics live in the global scope and have no implicit home dataset). Bare references to other global names (e.g., another model-scoped metric) are allowed.
+3. **Inside a global-scoped metric expression**: the precedence acts the same as the query lookup.  It only looks at the global scope, so dataset local fields MUST be qualified to include the global dataset name, e.g. `dataset.field`. 
 
 ## 5. Query Model
 
