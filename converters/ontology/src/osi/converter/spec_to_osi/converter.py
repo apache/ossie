@@ -189,6 +189,14 @@ class SpecToOsiConverter:
             relates.append((role_concept, role_spec.name))
 
         multiplicity = RelationshipMultiplicity.from_value(rel_spec.multiplicity)
+        # OneToOne is only meaningful for binary relationships (the container
+        # concept plus exactly one additional role).
+        if multiplicity == RelationshipMultiplicity.ONE_TO_ONE and len(relates) != 1:
+            raise ValueError(
+                f"Relationship '{container.name}.{rel_spec.name}' declares OneToOne multiplicity, "
+                f"which is only valid for binary relationships (exactly one additional role), "
+                f"but it has {len(relates)}."
+            )
         relationship = Relationship(
             name=rel_spec.name,
             container=container,

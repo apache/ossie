@@ -39,7 +39,8 @@ class OsiParser:
 
     @staticmethod
     def load_data(path: Path):
-        content = path.read_text()
+        # Pin UTF-8 so parsing is reproducible regardless of the process locale.
+        content = path.read_text(encoding="utf-8")
         if path.suffix.lower() == ".json":
             return json.loads(content)
         return yaml.safe_load(content)

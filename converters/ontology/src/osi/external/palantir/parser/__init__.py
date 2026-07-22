@@ -32,7 +32,13 @@ def get_dict(d, key):
 
 def get_list(d, key):
     v = d.get(key)
-    return v if isinstance(v, list) else []
+    if isinstance(v, list):
+        return v
+    # Normalize singletons: some exports emit a lone object/value where a list is
+    # expected. Treat a non-null singleton as a one-element list; missing/null -> [].
+    if v is None:
+        return []
+    return [v]
 
 # DataSets in Palantir have their own JSON format that is separate from the Ontology JSON format.
 class PalantirDataSetParser:
