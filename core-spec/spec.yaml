@@ -39,6 +39,8 @@ dialects:
   - "BIGQUERY"              # Google BigQuery GoogleSQL
 
 # Supported logical data types for fields and metrics
+# TODO: Generate this list from the authoritative DataType enum in
+# osi-schema.json ($defs.DataType.enum); until then, keep them in sync.
 datatypes:
   - "String"                # Variable-length Unicode character data
   - "Integer"               # Exact integral number
