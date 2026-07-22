@@ -29,15 +29,7 @@ Join the community on Slack: [join.slack.com/t/opensemanticx](https://join.slack
 | **Slack channel** | [`#ossie-metric-language-wg`](https://apache-ossie.slack.com/archives/C0ADR49SBEK) |
 | **Google Calendar** | [Apache Ossie (incubating) Calendar](https://calendar.google.com/calendar/embed?src=a34f013e8d8f9cda419c66af89ab47488644d735fdfe3b0cb2ced90a880a2a95%40group.calendar.google.com&ctz=America%2FChicago) |
 
-## 2. Composability
-
-| | |
-|---|---|
-| **Lead** | Dianne Wood (AtScale) |
-| **Slack channel** | [`#ossie-composability-wg`](https://apache-ossie.slack.com/archives/C0BJYHLBKC1) |
-| **Google Calendar** | [Apache Ossie (incubating) Calendar](https://calendar.google.com/calendar/embed?src=a34f013e8d8f9cda419c66af89ab47488644d735fdfe3b0cb2ced90a880a2a95%40group.calendar.google.com&ctz=America%2FChicago) |
-
-## 3. Catalog
+## 2. Catalog
 
 | | |
 |---|---|
@@ -45,7 +37,7 @@ Join the community on Slack: [join.slack.com/t/opensemanticx](https://join.slack
 | **Slack channel** | [`#ossie-catalog-wg`](https://apache-ossie.slack.com/archives/C0B8N5VQG1Y) |
 | **Google Calendar** | [Apache Ossie (incubating) Calendar](https://calendar.google.com/calendar/embed?src=a34f013e8d8f9cda419c66af89ab47488644d735fdfe3b0cb2ced90a880a2a95%40group.calendar.google.com&ctz=America%2FChicago) |
 
-## 4. Ontology
+## 3. Ontology
 
 | | |
 |---|---|
@@ -53,15 +45,7 @@ Join the community on Slack: [join.slack.com/t/opensemanticx](https://join.slack
 | **Slack channel** | [`#ossie-ontology-wg`](https://apache-ossie.slack.com/archives/C0ACQJVFVRN) |
 | **Google Calendar** | [Apache Ossie (incubating) Calendar](https://calendar.google.com/calendar/embed?src=a34f013e8d8f9cda419c66af89ab47488644d735fdfe3b0cb2ced90a880a2a95%40group.calendar.google.com&ctz=America%2FChicago) |
 
-## 5. Sync API
-
-| | |
-|---|---|
-| **Lead** | Francois Lopitaux (ThoughtSpot) |
-| **Slack channel** | [`#ossie-sync-api-wg`](https://apache-ossie.slack.com/archives/C0BKR0UBG8G) |
-| **Google Calendar** | [Apache Ossie (incubating) Calendar](https://calendar.google.com/calendar/embed?src=a34f013e8d8f9cda419c66af89ab47488644d735fdfe3b0cb2ced90a880a2a95%40group.calendar.google.com&ctz=America%2FChicago) |
-
-## 6. Financial Services Common Semantics
+## 4. Financial Services Common Semantics
 
 | | |
 |---|---|
