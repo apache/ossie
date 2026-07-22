@@ -114,11 +114,11 @@ transactionally, validates SQL, and refreshes semantic embeddings.
 - Native GSF SQL attributes with `kind: attribute` have no unambiguous Ossie
   field/metric equivalent and fail GSF → Ossie conversion.
 - Metrics are attached to the first referenced dataset. Unqualified metrics in
-  multi-dataset models need a `GSF` custom extension containing
+  multi-dataset models need an `NVIDIA_GSF` custom extension containing
   `{"term": "dataset_name"}`.
 - Expression dialect variants are preserved in the standalone GSF file.
 - Ossie custom extensions and GSF metadata are preserved through metadata and
-  `GSF` custom-extension payloads.
+  `NVIDIA_GSF` custom-extension payloads.
 
 ## Tests
 

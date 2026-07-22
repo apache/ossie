@@ -120,7 +120,9 @@ def test_gsf_to_ossie_round_trip_preserves_semantics() -> None:
     metric = model["metrics"][0]
     assert len(metric["expression"]["dialects"]) == 2
     extension = next(
-        item for item in metric["custom_extensions"] if item["vendor_name"] == "GSF"
+        item
+        for item in metric["custom_extensions"]
+        if item["vendor_name"] == "NVIDIA_GSF"
     )
     assert json.loads(extension["data"])["term"] == "orders"
     assert model["relationships"][0]["from"] == "orders"

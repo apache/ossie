@@ -31,7 +31,8 @@ import yaml
 
 OSSIE_VERSION = "0.2.0.dev0"
 GSF_VERSION = "1.0"
-GSF_VENDOR = "GSF"
+NVIDIA_GSF_VENDOR = "NVIDIA_GSF"
+GSF_VENDOR_ALIASES = {NVIDIA_GSF_VENDOR, "GSF"}
 
 _SIMPLE_COLUMN = re.compile(
     r"^(?:(?P<qualifier>[A-Za-z_][A-Za-z0-9_]*)\.)?"
@@ -595,13 +596,14 @@ def _metric_term(
         return next(iter(datasets))
     raise GSFConversionError(
         f"Metric {metric.get('name')!r} does not identify an owning dataset. "
-        'Add a GSF extension with data {"term": "dataset_name"}.'
+        "Add an NVIDIA_GSF extension with data "
+        '{"term": "dataset_name"}.'
     )
 
 
 def _gsf_extension_data(item: Mapping[str, Any]) -> dict[str, Any]:
     for extension in item.get("custom_extensions") or []:
-        if extension.get("vendor_name") != GSF_VENDOR:
+        if extension.get("vendor_name") not in GSF_VENDOR_ALIASES:
             continue
         try:
             data = json.loads(str(extension.get("data") or "{}"))
@@ -790,7 +792,7 @@ def _copy_ossie_metadata(
     preserved_extensions = [
         extension
         for extension in source.get("custom_extensions") or []
-        if extension.get("vendor_name") != GSF_VENDOR
+        if extension.get("vendor_name") not in GSF_VENDOR_ALIASES
     ]
     if preserved_extensions:
         native_metadata = dict(target.get("metadata") or {})
@@ -822,7 +824,7 @@ def _native_extensions(
     if data:
         extensions.append(
             {
-                "vendor_name": GSF_VENDOR,
+                "vendor_name": NVIDIA_GSF_VENDOR,
                 "data": json.dumps(data),
             }
         )
