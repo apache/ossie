@@ -82,7 +82,7 @@ def get_top_level_json_file_from_dir(base_dir: Path) -> Path:
         if p.is_file() and p.suffix.lower() == ".json"
     ]
     if len(candidates) == 0:
-        raise FileNotFoundError("Directory must contain exactly one top-level JSON file (none found)")
+        raise ValueError("Directory must contain exactly one top-level JSON file (none found)")
     if len(candidates) > 1:
         raise ValueError("Directory must contain exactly one top-level JSON file (multiple found)")
     return candidates[0]

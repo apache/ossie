@@ -39,7 +39,7 @@ class DataType(Enum):
         try:
             return DataType[name.upper()]
         except KeyError:
-            raise ValueError(f"Unrecognized data type: {name}")
+            raise ValueError(f"Unrecognized data type: {name}") from None
 
     def to_type(self) -> str:
         if self in (DataType.STRING, DataType.GEOHASH, DataType.GEOSHAPE, DataType.GEOPOINT, DataType.TIMESERIES):
@@ -509,7 +509,7 @@ class ManyToOneRelation(Relation):
     def info(self) -> str:
         one_role = self._one_object_type
         many_role = self._many_object_type
-        return f'Relation "{self.readable_id()}" maps "{many_role._name}" to "{one_role._name}"'
+        return f'Relation "{self.readable_id()}" maps "{many_role.name()}" to "{one_role.name()}"'
 
     def many_object_type(self):
         return self._many_object_type
@@ -597,7 +597,7 @@ class ManyToManyRelation(Relation):
         self._backing_datasource_id = id
 
     def info(self):
-        result = [f'Relation "{self.readable_id()}" associates "{self.role_a_player()._name}" with "{self.role_b_player()._name}"']
+        result = [f'Relation "{self.readable_id()}" associates "{self.role_a_player().name()}" with "{self.role_b_player().name()}"']
         if self._data_set:
             result.append(f'    DataSet "{self.data_set().readable_id()}"')
         return "\n".join(result)
@@ -629,7 +629,7 @@ class IntermediaryRelation(Relation):
         return self._relation_b
 
     def info(self):
-        return (f'Relation "{self.readable_id()}" associates "{self.role_a_player()._name}" with '
-                f'"{self.role_b_player()._name}" via intermediary player "{self.intermediary_player()._name}" and '
+        return (f'Relation "{self.readable_id()}" associates "{self.role_a_player().name()}" with '
+                f'"{self.role_b_player().name()}" via intermediary player "{self.intermediary_player().name()}" and '
                 f'relations "{self.relation_a()}" and "{self.relation_b()}"')
 

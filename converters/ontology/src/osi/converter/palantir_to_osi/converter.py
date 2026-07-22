@@ -27,7 +27,6 @@ from osi.model import (
     DatasetField,
     DialectExpression,
     DialectExpressionSet,
-    Formula,
     FormulaFactory,
     LinkMapping,
     SemanticModel,
@@ -574,7 +573,7 @@ class PalantirToOsiConverter:
 
         if aot_concept is bot_concept:
             verbalize = f"{{{aot_concept}}} {rel_name} {{{bot_concept}:snd}}"
-            relates = [(bot_concept, "snd")]
+            relates: list[tuple[Concept, str | None]] = [(bot_concept, "snd")]
         else:
             verbalize = f"{{{aot_concept}}} {rel_name} {{{bot_concept}}}"
             relates = [(bot_concept, None)]
@@ -624,18 +623,12 @@ class PalantirToOsiConverter:
         rel_b = palantir_ontology.relations()[rel.relation_b()]
         rel_b_name = PalantirToOsiConverter._attribute_name(rel_b)
 
-        fp_a = PalantirToOsiConverter._concept_name(
-            rel_a.many_object_type() if isinstance(rel_a, ManyToOneRelation) else rel_a.role_a_player()
-        )
-        sp_a = PalantirToOsiConverter._concept_name(
-            rel_a.one_object_type() if isinstance(rel_a, ManyToOneRelation) else rel_a.role_b_player()
-        )
-        fp_b = PalantirToOsiConverter._concept_name(
-            rel_b.many_object_type() if isinstance(rel_b, ManyToOneRelation) else rel_b.role_a_player()
-        )
-        sp_b = PalantirToOsiConverter._concept_name(
-            rel_b.one_object_type() if isinstance(rel_b, ManyToOneRelation) else rel_b.role_b_player()
-        )
+        fp_a_ot, sp_a_ot = PalantirToOsiConverter._relation_players(rel_a)
+        fp_a = PalantirToOsiConverter._concept_name(fp_a_ot)
+        sp_a = PalantirToOsiConverter._concept_name(sp_a_ot)
+        fp_b_ot, sp_b_ot = PalantirToOsiConverter._relation_players(rel_b)
+        fp_b = PalantirToOsiConverter._concept_name(fp_b_ot)
+        sp_b = PalantirToOsiConverter._concept_name(sp_b_ot)
 
         assert (aot_name == fp_a and bot_name == fp_b) or (
             aot_name == sp_a and bot_name == sp_b
@@ -746,6 +739,18 @@ class PalantirToOsiConverter:
                 )
             roles.append((target, None))
         return roles
+
+    @staticmethod
+    def _relation_players(rel: Relation) -> tuple[ObjectType, ObjectType]:
+        """Return the (first, second) role-player object types of a binary
+        relation, regardless of its concrete relation type."""
+        if isinstance(rel, ManyToOneRelation):
+            return rel.many_object_type(), rel.one_object_type()
+        if isinstance(rel, (ManyToManyRelation, IntermediaryRelation)):
+            return rel.role_a_player(), rel.role_b_player()
+        raise ValueError(
+            f"Unsupported relation type '{type(rel).__name__}' for relation {rel.readable_id()}"
+        )
 
     @staticmethod
     def _depth_role_name(depth: int) -> str:

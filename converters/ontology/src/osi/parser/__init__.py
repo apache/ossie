@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -38,7 +39,7 @@ class OsiParser:
         return self._model
 
     @staticmethod
-    def load_data(path: Path):
+    def load_data(path: Path) -> Any:
         # Pin UTF-8 so parsing is reproducible regardless of the process locale.
         content = path.read_text(encoding="utf-8")
         if path.suffix.lower() == ".json":

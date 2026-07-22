@@ -213,8 +213,9 @@ class PalantirOntologyParser:
             properties = {}
             properties_by_readable_id = {}
 
-            # Support both formats: list (new) and dict (old)
-            raw_properties = raw_ot.get("properties", [])
+            # Support both formats: list (new) and dict (old). Use `or []` so a
+            # present-but-null `properties` is treated the same as missing.
+            raw_properties = raw_ot.get("properties") or []
             if isinstance(raw_properties, dict):
                 # Old format: properties is a dict keyed by property name
                 raw_properties = list(raw_properties.values())
@@ -245,8 +246,8 @@ class PalantirOntologyParser:
                 primary_key_mapping = get_dict(raw_prop, "primaryKeyMapping")
                 if primary_key_mapping:
                     pk_mapping = {}
-                    for k,v in primary_key_mapping.items():
-                        pk_column_name = norm(v.get("columnName"))
+                    for k in primary_key_mapping:
+                        pk_column_name = norm(get_dict(primary_key_mapping, k).get("columnName"))
                         pk_mapping[k] = pk_column_name
                     prop._pk_mapping = pk_mapping
 
@@ -610,11 +611,8 @@ class PalantirParser:
             for _name, fh in iter_json_files_from_dir_in_zip(zf, "data_sets"):
                 yield fh
 
-        try:
-            with open_top_level_file_from_zip(zf, self._get_ontology_json_file_path(zf)) as ontology_fh:
-                self._build_model(_data_set_streams(), ontology_fh)
-        except FileNotFoundError as e:
-            raise FileNotFoundError(str(e)) from e
+        with open_top_level_file_from_zip(zf, self._get_ontology_json_file_path(zf)) as ontology_fh:
+            self._build_model(_data_set_streams(), ontology_fh)
 
     def _parse_from_dir(self, base_dir: Path):
         validate_dir(base_dir)
