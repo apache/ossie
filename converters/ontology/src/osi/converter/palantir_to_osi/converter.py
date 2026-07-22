@@ -225,8 +225,7 @@ class PalantirToOsiConverter:
         if ontology.lookup_concept_relationship(concept, prop_name) is not None:
             return
 
-        relates: list[tuple[Concept, str | None]] = []
-        relates = self._convert_property_type_roles(ontology, relates, prop.type())
+        relates = self._convert_property_type_roles(ontology, [], prop.type())
 
         ontology.add_relationship(Relationship(
             name=prop_name,
@@ -250,7 +249,7 @@ class PalantirToOsiConverter:
         db_name: str,
         schema_name: str,
     ) -> None:
-        if not ot._syncs_from:
+        if not ot.has_syncs_from():
             return
 
         parent_concept: Concept | None = None
@@ -437,7 +436,7 @@ class PalantirToOsiConverter:
         )
         ontology.add_relationship(relationship)
 
-        if mot._syncs_from:
+        if mot.has_syncs_from():
             self._attach_link_to_concept_mappings(
                 ontology, rel, relationship, mot, mot_concept, oot_concept, concept_mappings, semantic_model
             )
@@ -752,7 +751,7 @@ class PalantirToOsiConverter:
     def _depth_role_name(depth: int) -> str:
         name = PalantirToOsiConverter.depths_role_names.get(depth)
         if not name:
-            raise Exception(f"Array types of depth {depth} are not supported")
+            raise ValueError(f"Array types of depth {depth} are not supported")
         return name
 
     @staticmethod

@@ -1092,7 +1092,7 @@ def _parse_verbalization(relationship: Relationship, verbalization: str) -> Rela
     if len(tokens) != relationship.arity:
         raise ValueError(
             f"Number of roles in verbalization '{verbalization}' for relationship "
-            f"{relationship.full_name} don't match"
+            f"{relationship.full_name} doesn't match its arity ({relationship.arity})"
         )
     segments: list[str] = []
     roles: list[VerbalizationRole] = []

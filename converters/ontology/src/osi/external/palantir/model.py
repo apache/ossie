@@ -346,6 +346,9 @@ class ObjectType(Resource):
     def type_groups(self):
         return self._type_groups
 
+    def has_syncs_from(self) -> bool:
+        return bool(self._syncs_from)
+
     def syncs_from(self):
         if not self._syncs_from:
             raise RuntimeError(f"Mandatory constraint violation: ObjectType '{self.readable_id()}' must sync with some DataSet")
