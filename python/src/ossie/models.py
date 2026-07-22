@@ -32,6 +32,7 @@ class OSIDialect(str, Enum):
     TABLEAU = "TABLEAU"
     DATABRICKS = "DATABRICKS"
     BIGQUERY = "BIGQUERY"
+    DUCKDB = "DUCKDB"
 
 
 class OSIVendor(str, Enum):
@@ -44,6 +45,7 @@ class OSIVendor(str, Enum):
     DATABRICKS = "DATABRICKS"
     GOODDATA = "GOODDATA"
     SEMANTIDO = "SEMANTIDO"
+    DUCKDB = "DUCKDB"
 
 
 class OSIAIContextObject(BaseModel):

@@ -58,6 +58,7 @@ Supported SQL and expression language dialects for metrics and field definitions
 | `DATABRICKS` | Databricks SQL |
 | `MAQL` | GoodData MAQL (Metric Analysis and Query Language) |
 | `BIGQUERY` | Google BigQuery (GoogleSQL) |
+| `DUCKDB` | DuckDB SQL (including MotherDuck) |
 
 ## Semantic Model
 

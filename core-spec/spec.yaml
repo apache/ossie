@@ -37,6 +37,7 @@ dialects:
   - "DATABRICKS"            # Databricks SQL
   - "MAQL"                  # GoodData MAQL (Multi-Dimensional Analytical Query Language)
   - "BIGQUERY"              # Google BigQuery GoogleSQL
+  - "DUCKDB"                # DuckDB SQL (including MotherDuck)
 
 
 
