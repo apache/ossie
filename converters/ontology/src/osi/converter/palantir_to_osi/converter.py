@@ -661,7 +661,10 @@ class PalantirToOsiConverter:
 
         fields: list[DatasetField] = []
         for column in palantir_ds.columns():
-            if column.type().upper() == "ARRAY":
+            # type() may be None for a partially-specified schema; only ARRAY
+            # columns are skipped, and a missing type falls back to String below.
+            col_type = column.type()
+            if col_type is not None and col_type.upper() == "ARRAY":
                 continue
             field_name = PalantirToOsiConverter._normalize_field_name(column.name())
             fields.append(

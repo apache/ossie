@@ -1129,16 +1129,33 @@ def _parse_verbalization(relationship: Relationship, verbalization: str) -> Rela
 
 
 def _split_segment(segment: str) -> tuple[str | None, str | None, str | None]:
+    """Split a text segment into ``(postfix, middle, prefix)`` using the dash
+    conventions (dashes are stripped from the returned text):
+
+    - **postfix** — text glued to the *preceding* concept. A leading-dash word
+      (e.g. ``-box``) marks the segment's opening run as a postfix: the first
+      word plus any following dash-prefixed words (so ``"big -box"`` -> ``"big box"``).
+    - **prefix** — text glued to the *following* concept. A trailing-dash word
+      (e.g. ``chain-``) marks the start of the closing run (so ``"chain- super"``
+      -> ``"chain super"``).
+    - **middle** — the free text left between the postfix and prefix runs.
+
+    See tests/test_verbalization_parsing.py for the full set of expected splits.
+    """
     words = segment.split()
     if not words:
         return None, None, None
 
+    # Postfix run: first word plus any following dash-prefixed words, but only
+    # when the segment actually contains a leading-dash marker somewhere.
     postfix_end = 0
     if any(w.startswith("-") for w in words):
         postfix_end = 1
         while postfix_end < len(words) and words[postfix_end].startswith("-"):
             postfix_end += 1
 
+    # Prefix run: begins at the first trailing-dash word (after the postfix run)
+    # and extends to the end of the segment.
     prefix_start = len(words)
     for i in range(postfix_end, len(words)):
         if words[i].endswith("-"):

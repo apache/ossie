@@ -356,8 +356,20 @@ class SpecToOsiConverter:
 
     def _resolve_mapping_expression(self, expression: str, semantic_model: SemanticModel, expected_type: Concept | None,
                                     ontology: OntologyComponent) -> DatasetField | Formula:
-        """Map a raw spec expression onto either a DatasetField (single
-        `DATASET.field` or bare `field` reference) or a Formula (anything else).
+        """Map a raw spec expression onto either a DatasetField or a Formula.
+
+        A `DATASET.field` or unambiguous bare `field` reference that resolves
+        against *semantic_model* is returned as the corresponding DatasetField.
+
+        Everything else — including a `DATASET.field`-shaped expression whose
+        dataset or field is not found here — is delegated to the
+        MappingFormulaFactory, which receives both the ontology and the semantic
+        model. Name resolution and validation of such expressions is deliberately
+        the factory's responsibility, not this method's: the default factory
+        wraps the raw text in a plain Formula, while downstream packages inject
+        enriched factories that parse, resolve, and validate references (e.g.
+        against constructs the base semantic-model lookup cannot see). An unknown
+        `DATASET.field` is therefore not treated as an error at this layer.
         """
         qualified = _QUALIFIED_FIELD_RE.match(expression)
         if qualified:
@@ -368,6 +380,7 @@ class SpecToOsiConverter:
                 if field is not None:
                     _pin_field_type(field, expected_type)
                     return field
+            # Deferred to the factory by design (see docstring), not an error here.
             return self._mapping_formula_factory(raw_expr=expression, ontology=ontology, semantic_model=semantic_model)
 
         bare = _BARE_FIELD_RE.match(expression)
