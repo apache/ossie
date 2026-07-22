@@ -26,37 +26,29 @@ Join the community on Slack: [join.slack.com/t/opensemanticx](https://join.slack
 | | |
 |---|---|
 | **Lead** | Will Pugh |
-| **Slack channel** | `#metric-language-working-group` |
-| **Google Calendar** | _link TBD_ |
+| **Slack channel** | [`#ossie-metric-language-wg`](https://apache-ossie.slack.com/archives/C0ADR49SBEK) |
+| **Google Calendar** | [Apache Ossie (incubating) Calendar](https://calendar.google.com/calendar/embed?src=a34f013e8d8f9cda419c66af89ab47488644d735fdfe3b0cb2ced90a880a2a95%40group.calendar.google.com&ctz=America%2FChicago) |
 
-## 2. Composability
-
-| | |
-|---|---|
-| **Lead** | Dianne Wood (AtScale) |
-| **Slack channel** | `#wg-composability` |
-| **Google Calendar** | _link TBD_ |
-
-## 3. Catalog
+## 2. Catalog
 
 | | |
 |---|---|
 | **Lead** | Shubham Bhargav (Atlan) |
-| **Slack channel** | `#wg-catalog` |
-| **Google Calendar** | _link TBD_ |
+| **Slack channel** | [`#ossie-catalog-wg`](https://apache-ossie.slack.com/archives/C0B8N5VQG1Y) |
+| **Google Calendar** | [Apache Ossie (incubating) Calendar](https://calendar.google.com/calendar/embed?src=a34f013e8d8f9cda419c66af89ab47488644d735fdfe3b0cb2ced90a880a2a95%40group.calendar.google.com&ctz=America%2FChicago) |
 
-## 4. Ontology
+## 3. Ontology
 
 | | |
 |---|---|
 | **Lead** | Kurt (Relational AI) |
-| **Slack channel** | `#osi-ontology` |
-| **Google Calendar** | _link TBD_ |
+| **Slack channel** | [`#ossie-ontology-wg`](https://apache-ossie.slack.com/archives/C0ACQJVFVRN) |
+| **Google Calendar** | [Apache Ossie (incubating) Calendar](https://calendar.google.com/calendar/embed?src=a34f013e8d8f9cda419c66af89ab47488644d735fdfe3b0cb2ced90a880a2a95%40group.calendar.google.com&ctz=America%2FChicago) |
 
-## 5. Sync API
+## 4. Financial Services Common Semantics
 
 | | |
 |---|---|
-| **Lead** | Francois Lopitaux (ThoughtSpot) |
-| **Slack channel** | `#wg-sync-api` |
-| **Google Calendar** | _link TBD_ |
+| **Lead** | John Heisler (Snowflake) |
+| **Slack channel** | [`#ossie-financial-services-common-semantics`](https://apache-ossie.slack.com/archives/C0BJG69TLCD) |
+| **Google Calendar** | [Apache Ossie (incubating) Calendar](https://calendar.google.com/calendar/embed?src=a34f013e8d8f9cda419c66af89ab47488644d735fdfe3b0cb2ced90a880a2a95%40group.calendar.google.com&ctz=America%2FChicago) |

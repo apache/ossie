@@ -1,0 +1,70 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+catalog: tpcds
+schema: public
+description: Date dimension with calendar attributes
+dimensions:
+  d_date_sk:
+    description: Surrogate key for date
+    primary_key: true
+  d_date:
+    description: Actual date value
+    synonyms:
+    - date
+    - calendar date
+    timeframes:
+    - raw
+    - date
+    - week
+    - month
+    - quarter
+    - year
+  d_year:
+    description: Year
+    synonyms:
+    - year
+    timeframes:
+    - raw
+    - date
+    - week
+    - month
+    - quarter
+    - year
+  d_quarter_name:
+    description: Quarter name (e.g., 2024Q1)
+    synonyms:
+    - quarter
+    - fiscal quarter
+    timeframes:
+    - raw
+    - date
+    - week
+    - month
+    - quarter
+    - year
+  d_month_name:
+    description: Month name
+    synonyms:
+    - month
+    timeframes:
+    - raw
+    - date
+    - week
+    - month
+    - quarter
+    - year

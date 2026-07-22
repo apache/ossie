@@ -134,8 +134,7 @@ uv sync
 uv run pytest
 ```
 
-Generate initial syrupy snapshots on first run:
-
+Generate new Syrupy snapshots:
 ```bash
 uv run pytest --snapshot-update
 ```

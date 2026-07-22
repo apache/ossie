@@ -21,7 +21,7 @@ Cortex Analyst semantic model YAML. Pure offline conversion — no Snowflake
 connection required.
 
 Usage:
-    python3 osi_to_snowflake_yaml_converter.py -i input.yaml -o output.yaml
+    python3 converter.py -i input.yaml -o output.yaml
 """
 
 import argparse
@@ -421,6 +421,22 @@ def _normalize_identifier(identifier):
         return stripped
     return stripped.upper()
 
+def _split_identifiers(source_str):
+    """Split a dot-separated identifier string while respecting double quotes."""
+    parts = []
+    current = []
+    in_quotes = False
+    for char in source_str:
+        if char == '"':
+            in_quotes = not in_quotes
+            current.append(char)
+        elif char == "." and not in_quotes:
+            parts.append("".join(current).strip())
+            current = []
+        else:
+            current.append(char)
+    parts.append("".join(current).strip())
+    return parts
 
 def _parse_source(source):
     """Parses an Ossie dataset source string into a Snowflake base_table dict.
@@ -442,11 +458,7 @@ def _parse_source(source):
                           "WITH ", "WITH\n", "WITH\t")):
         return {"definition": source_stripped}
 
-    # Strict 3-part rule: source must be db.schema.table. This may be relaxed
-    # in the future to allow 1- or 2-part names.
-    # TODO: Quoted identifiers (e.g., "my.db"."my schema"."my table") are not
-    # handled. Basic dot-splitting only.
-    parts = source_stripped.split(".")
+    parts = _split_identifiers(source_stripped)
     if len(parts) == 3:
         # Only uppercase unquoted identifiers; preserve quoted ones as-is.
         return {

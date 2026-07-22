@@ -19,14 +19,25 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "syrupy>=4.0",
+]
+
 [project]
 name = "apache-ossie-dbt"
 version = "0.2.0.dev0"
 description = "dbt (MetricFlow Semantic Interface) <> Apache Ossie converter"
+authors = [{ name = "Apache Software Foundation", email = "dev@ossie.apache.org" }]
 requires-python = ">=3.11"
-classifiers = [
-    "License :: OSI Approved :: Apache Software License",
-    "Programming Language :: Python :: 3",
+readme = "README.md"
+license = "Apache-2.0"
+keywords = [
+    "Apache Ossie",
+    "Ossie",
+    "Open Semantic Interchange",
+    "dbt"
 ]
 dependencies = [
     "apache-ossie>=0.2.0.dev0",
@@ -36,20 +47,26 @@ dependencies = [
     "PyYAML>=6.0",
 ]
 
-[project.license]
-text = "Apache-2.0"
-
 [project.scripts]
 ossie-dbt = "ossie_dbt.cli:main"
+
+[project.urls]
+homepage = "https://ossie.apache.org/"
+repository = "https://github.com/apache/ossie/"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ossie_dbt"]
 
-[tool.uv]
-dev-dependencies = [
-    "pytest>=8.0",
-    "syrupy>=4.0",
-]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.uv]
+required-version = ">=0.9.0"
+default-groups = [
+    "dev"
+]
+
+# apache-ossie is not yet published to PyPI; resolve it from the in-repo
+# package for now. Remove this block once apache-ossie published to PyPI.
+[tool.uv.sources]
+apache-ossie = { path = "../../python", editable = true}
