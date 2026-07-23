@@ -517,6 +517,8 @@ semantic_model:
           dialects:
             - dialect: ANSI_SQL
               expression: SUM(store_sales.ss_ext_sales_price)
+            - dialect: DAX
+              expression: SUM(store_sales.ss_ext_sales_price)
         description: Total sales revenue across all transactions
         ai_context:
           synonyms:
