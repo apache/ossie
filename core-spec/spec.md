@@ -54,6 +54,7 @@ Supported SQL and expression language dialects for metrics and field definitions
 | `ANSI_SQL` | Standard SQL dialect |
 | `SNOWFLAKE` | Snowflake SQL |
 | `MDX` | Multi-Dimensional Expressions |
+| `DAX` | Data Analysis Expressions |
 | `TABLEAU` | Tableau calculations |
 | `DATABRICKS` | Databricks SQL |
 | `MAQL` | GoodData MAQL (Metric Analysis and Query Language) |

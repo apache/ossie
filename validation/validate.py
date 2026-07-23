@@ -67,12 +67,13 @@ DIALECT_MAP = {
     "DATABRICKS": "databricks",
     "BIGQUERY": "bigquery",
     "MDX": None,  # Not supported by sqlglot, skip validation
+    "DAX": None,  # Not supported by sqlglot, skip validation
     "TABLEAU": None,  # Not supported by sqlglot, skip validation
     "MAQL": None,  # Not supported by sqlglot, skip validation
 }
 
 # Dialects that sqlglot cannot parse
-SKIP_SQL_VALIDATION = {"MDX", "TABLEAU", "MAQL"}
+SKIP_SQL_VALIDATION = {"MDX", "DAX", "TABLEAU", "MAQL"}
 
 
 def validate_schema(data: dict, schema: dict) -> list[str]:

@@ -33,6 +33,7 @@ dialects:
   - "ANSI_SQL"              # Standard SQL dialect
   - "SNOWFLAKE"             # Snowflake
   - "MDX"                   # Multi-Dimensional Expressions
+  - "DAX"                   # Data Analysis Expressions
   - "TABLEAU"               # Tableau
   - "DATABRICKS"            # Databricks SQL
   - "MAQL"                  # GoodData MAQL (Multi-Dimensional Analytical Query Language)
