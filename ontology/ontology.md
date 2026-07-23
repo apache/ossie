@@ -89,13 +89,9 @@ hierarchically, grouping each relationship under the concept that plays its firs
 | `ai_context` | string/object | No | Additional context for AI tools |
 | `ontology` | list | Yes | Concepts and relationships they group that form this ontology |
 
-Each component of an ontology defines a concept and a list of relationships where that
-concept plays the first role:
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `concept` | Concept | Yes | A concept in this ontology |
-| `relationships` | list | No | Relationships where this concept plays the first role |
+Each component of an ontology declares a concept and lists the relationships where that
+concept plays the first role. The concept's name is the value of the `concept` field, and
+the concept's remaining fields are declared alongside it.
 
 ### Concepts
 
@@ -107,13 +103,14 @@ Concepts have the following schema:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | string | Yes | Unique name of this concept |
+| `concept` | string | Yes | Unique name of this concept |
 | `type` | ConceptType | Yes | Entity type or value type |
 | `description` | string | No | Human-readable description |
 | `extends` | list | No | Names of this concept's supertypes |
 | `derived_by` | list | No | Expressions that derive this concept's population |
 | `identify_by` | list | No | Names of relationships that uniquely reference objects of this concept |
 | `requires` | list | No | Expressions that constrain this concept's population |
+| `relationships` | list | No | Relationships where this concept plays the first role |
 
 Each concept is either an entity type or a value type.
 
@@ -159,15 +156,14 @@ Each relationship that is declared under a concept conforms to the following sch
 | `requires` | list | No | Expressions that constrain this relationship's population |
 | `verbalizes` | list | Yes | Patterns describing how to verbalize links |
 
-Each relationship is uniquely identified by a prepending its declared name with that of the containing
+Each relationship is uniquely identified by prepending its declared name with that of the containing
 concept. For instance, in:
 
 ```yaml
 ontology:
-  - concept:
-      name: Person
-      type: EntityType
-      identify_by: [ nr ]
+  - concept: Person
+    type: EntityType
+    identify_by: [ nr ]
     relationships:
       - name: nr
         roles:
@@ -207,9 +203,8 @@ For instance, in:
 
 ```yaml
 ontology:
-  - concept:
-      name: Person
-      type: EntityType
+  - concept: Person
+    type: EntityType
     relationships:
       - name: files_married_joint
         verbalizes: [ "{Person} files married filing joint" ]
@@ -232,9 +227,8 @@ the same relationship. For instance, in:
 
 ```yaml
 ontology:
-  - concept:
-      name: Store
-      type: EntityType
+  - concept: Store
+    type: EntityType
     relationships:
       - name: ships_to_in_days
         roles:
@@ -279,7 +273,7 @@ the pair of relationships `License.acct` and `License.seat_nr` can be used to re
 its associated account and seat number. These relationships are always binary, and their first role
 is always played by the referent concept, i.e., the concept that the relationship is used to reference.
 The `identify_by` array allows modelers to list the names of relationships that form the preferred
-idnetifier of a concept.
+identifier of a concept.
 
 ### Derivation expressions
 
@@ -289,9 +283,8 @@ relationships. For instance:
 
 ```yaml
 ontology:
-  - concept:
-      name: Person
-      type: EntityType
+  - concept: Person
+    type: EntityType
     relationships:
       - name: parent_of
         roles:
@@ -304,7 +297,7 @@ ontology:
             name: "descendant"
         derived_by:
           - "Person.parent_of(descendant)"
-            "Person.ancestor_of.parent_of(descendant)"
+          - "Person.ancestor_of.parent_of(descendant)"
       - name: taxed_at
         roles:
           - concept: TaxRate
@@ -338,15 +331,14 @@ using one or more expressions. For instance:
 
 ```yaml
 ontology:
-  - concept:
-      name: Employee
-      type: EntityType
-      extends: [Person]
-      derived_by: [ "EXISTS ( Person.earns )" ]
+  - concept: Employee
+    type: EntityType
+    extends: [Person]
+    derived_by: [ "EXISTS ( Person.earns )" ]
 ```
 
 declares that the population of Employee is derived from the population of Person by
-classifying each Person who earns some salary as a Employee.
+classifying each Person who earns some salary as an Employee.
 
 ### Requires
 
@@ -356,11 +348,10 @@ expression must reference the concept, as in:
 
 ```yaml
 ontology:
-  - concept:
-      name: SocialSecurityNr
-      type: ValueType
-      extends: [Integer]
-      requires: [ "0 < SocialSecurityNr", "SocialSecurityNr <= 999999999" ]
+  - concept: SocialSecurityNr
+    type: ValueType
+    extends: [Integer]
+    requires: [ "0 < SocialSecurityNr", "SocialSecurityNr <= 999999999" ]
 ```
 
 When applied to a relationship, each expression must reference one or more roles of the
@@ -368,9 +359,8 @@ relationship. For instance, in:
 
 ```yaml
 ontology:
-  - concept:
-      name: Item
-      type: EntityType
+  - concept: Item
+    type: EntityType
     relationships:
       - name: offers_in
         roles:
@@ -427,15 +417,13 @@ a SQL expression. For instance, given this ontology snippet:
 
 ```yaml
 ontology:
-  - concept:
-    name: SocialSecurityNr
+  - concept: SocialSecurityNr
     type: ValueType
     extends: [ Integer ]
     requires: [ "0 < SocialSecurityNr", "SocialSecurityNr <= 999999999" ]
-  - concept:
-      name: Person
-      type: EntityType
-      identify_by: [ nr ]
+  - concept: Person
+    type: EntityType
+    identify_by: [ nr ]
     relationships:
       - name: nr
         roles:
@@ -477,18 +465,19 @@ For instance, consider this ontology snippet:
 
 ```yaml
 ontology:
-  - concept:
-      name: OrderLineItem
-      type: EntityType
-      identify_by: [ "nr", "order" ]
-      requires: [ "OrderLineItem.nr", "OrderLineItem.order" ]
+  - concept: OrderLineItem
+    type: EntityType
+    identify_by: [ "nr", "order" ]
+    requires: [ "OrderLineItem.nr", "OrderLineItem.order" ]
     relationships:
       - name: nr
         roles: [ concept: LineNr ]
         multiplicity: ManyToOne
+        verbalizes: [ "{OrderLineItem} has line number {LineNr}" ]
       - name: order
         roles: [ concept: CustOrder ]
         multiplicity: ManyToOne
+        verbalizes: [ "{OrderLineItem} belongs to {CustOrder}" ]
 ```
 
 and notice that `OrderLineItem` has a compound identifier. This concept mapping:
@@ -538,15 +527,14 @@ For instance, this ontology snippet:
 
 ```yaml
 ontology:
-  - concept:
-      name: Item
-      type: EntityType
-      identify_by: [ nr ]
+  - concept: Item
+    type: EntityType
+    identify_by: [ nr ]
     relationships:
       - name: nr
         roles: [ concept: SkuNr ]
         multiplicity: OneToOne
-        verbalizes: "{Item} is identified by {SkuNr}"
+        verbalizes: [ "{Item} is identified by {SkuNr}" ]
       - name: active     # A unary relationship
         verbalizes: [ "{Item} is actively sold" ]
       - name: active_in
