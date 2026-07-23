@@ -83,7 +83,7 @@ class OSIExpression(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    dialects: list[OSIDialectExpression]
+    dialects: list[OSIDialectExpression] = Field(..., min_length=1)
 
 
 class OSIDimension(BaseModel):
@@ -131,8 +131,8 @@ class OSIRelationship(BaseModel):
     name: str
     from_dataset: str = Field(..., alias="from")
     to: str
-    from_columns: list[str]
-    to_columns: list[str]
+    from_columns: list[str] = Field(..., min_length=1)
+    to_columns: list[str] = Field(..., min_length=1)
     ai_context: Optional[OSIAIContext] = None
     custom_extensions: Optional[list[OSICustomExtension]] = None
 
@@ -157,7 +157,7 @@ class OSISemanticModel(BaseModel):
     name: str
     description: Optional[str] = None
     ai_context: Optional[OSIAIContext] = None
-    datasets: list[OSIDataset]
+    datasets: list[OSIDataset] = Field(..., min_length=1)
     relationships: Optional[list[OSIRelationship]] = None
     metrics: Optional[list[OSIMetric]] = None
     custom_extensions: Optional[list[OSICustomExtension]] = None
