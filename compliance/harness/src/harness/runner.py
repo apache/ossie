@@ -29,7 +29,11 @@ import yaml
 
 from .db_manager import DBManager
 from .models import SuiteResult, TestCase, TestResult, TestStatus
-from .reporter import format_summary_console, write_reports
+from .reporter import (
+    format_summary_console,
+    write_decisions_coverage,
+    write_reports,
+)
 from .result_compare import compare_results
 
 CONFORMANCE_FILE_NAME = "conformance.yaml"
@@ -461,10 +465,16 @@ def run_suite(
     db.close()
 
     csv_path, md_path = write_reports(suite, output_dir)
+    # decisions.yaml sits at the suite root, one level above tests/.
+    coverage_path = write_decisions_coverage(
+        suite, tests_dir.parent / "decisions.yaml", output_dir
+    )
     print(format_summary_console(suite))
     print("\nReports written to:")
     print(f"  {csv_path}")
     print(f"  {md_path}")
+    if coverage_path is not None:
+        print(f"  {coverage_path}")
 
     return suite
 

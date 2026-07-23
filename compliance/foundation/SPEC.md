@@ -22,19 +22,19 @@
 **Targets:** Foundation `osi_version: "0.1"`. Authoritative spec
 documents:
 
-- [`../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md`](../../proposals/foundation-v0.1/Proposed_OSI_Semantics.md)
-  — the semantic, query, join, M:N, and window contracts; Appendix B
-  (`D-001` … `D-033`) and Appendix C (error code index) are the
-  specific anchors this suite exercises.
-- [`../../proposals/foundation-v0.1/SQL_EXPRESSION_SUBSET.md`](../../proposals/foundation-v0.1/SQL_EXPRESSION_SUBSET.md)
+- [`../../core-spec/foundational_semantics.md`](../../core-spec/foundational_semantics.md)
+  — the semantic, query, join, M:N, and window contracts; the inline
+  Conformance Decisions (`D-001` … `D-033`) and Appendix A (the error
+  code index) are the specific anchors this suite exercises.
+- [`../../core-spec/expression_language.md`](../../core-spec/expression_language.md)
   — the `OSI_SQL_2026` default expression dialect.
 - [`DATA_TESTS.md`](DATA_TESTS.md)
   — the normative test catalog (`T-001` … `T-NNN`) this suite encodes
   as runnable cases.
 
 This suite is the runnable witness layer for the spec. Every
-conformance decision in Appendix B has at least one `T-NNN` test here;
-every error code in Appendix C has at least one negative test here.
+Conformance Decision has at least one `T-NNN` test here;
+every error code in Appendix A has at least one negative test here.
 
 ## What this suite does NOT cover
 
@@ -60,7 +60,7 @@ Defined in [`conformance.yaml`](conformance.yaml):
 
 | Level | Description |
 |:---|:---|
-| **`foundation_v0_1`** | Required for every Foundation-claiming engine. Every D-NNN in Appendix B must produce the expected outcome. |
+| **`foundation_v0_1`** | Required for every Foundation-claiming engine. Every D-NNN Conformance Decision must produce the expected outcome. |
 | **`foundation_v0_1_strict`** | Adds determinism witnesses (D-014, D-029) — same `(model, query, dialect)` produces byte-identical SQL across runs. Optional. |
 
 Cross-engine portability is observable behaviour (rows / error codes),

@@ -29,12 +29,18 @@ implements the CLI contract documented in
 
 ## Install
 
+This package (`osi_compliance_harness`, imported as `harness`) is a member of
+the [`compliance/`](../) [`uv`](https://docs.astral.sh/uv/) workspace, so you do
+**not** install it on its own. A single `uv sync` at the workspace root installs
+it alongside every suite:
+
 ```bash
-pip install -e .
+cd ..        # compliance/ (the workspace root)
+uv sync
 ```
 
-This installs the `harness` package. The compliance suites then depend on
-this package to run their tests.
+The compliance suites depend on this package to run their tests; `uv run` picks
+it up automatically from any directory under `compliance/`.
 
 ## Run
 
@@ -44,11 +50,13 @@ under ``<suite>/results/latest/`` by default):
 
 ```bash
 cd ../foundation
-python -m harness.runner \
+uv run python -m harness.runner \
     --adapter adapters/osi_python_adapter.py \
     --tests tests/ \
     --datasets datasets/
 ```
 
-See [`../foundation-v0.1/README.md`](../foundation/README.md) for
-the suite-level entry point and reporting layout.
+See [`../foundation/README.md`](../foundation/README.md) for
+the suite-level entry point and reporting layout, and
+[`../ARCHITECTURE.md`](../ARCHITECTURE.md) for how the harness, adapters, and
+spec fit together.

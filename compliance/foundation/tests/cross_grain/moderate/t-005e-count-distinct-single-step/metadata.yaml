@@ -4,8 +4,8 @@ area: cross_grain
 difficulty: moderate
 dataset: f_prelude
 spec_refs:
-  - "Proposed_OSI_Semantics.md#D-020"
-  - "Proposed_OSI_Semantics.md#D-022"
+  - "core-spec/foundational_semantics.md#D-020"
+  - "core-spec/foundational_semantics.md#D-022"
 tags: [cross-grain, 1:N, count-distinct, holistic]
 conformance_level: foundation_v0_1
 decision: D-020

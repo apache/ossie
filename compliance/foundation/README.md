@@ -20,8 +20,9 @@
 # OSI Compliance Test Suite — Foundation
 
 **Targets the
-[Ossie Semantic Foundation](https://docs.google.com/document/d/1bEuIb2eUpwesi6cIZ5FOkXMQDh7KAPIjZsWchmLgOAk/edit?usp=sharing) proposal
-[`SQL_EXPRESSION_SUBSET`](../core-spec/expression_language.md)**
+[Ossie foundational semantics](../../core-spec/foundational_semantics.md) spec
+and its SQL expression subset
+[`expression_language.md`](../../core-spec/expression_language.md)**
 
 The Foundation is the deliberately narrow first-cut of Ossie semantics:
 two query shapes, implicit home-grain aggregation, window functions,
@@ -48,7 +49,7 @@ comparison, reporting) runnable and testable end to end:
 - **No adapter yet.** `adapters/osi_python_adapter.py` delegates to
   `impl/python/conformance/adapter.py`, which does not exist in this
   repo yet (`impl/python/` is still a placeholder). Until an
-  implementation lands, `python -m harness.runner --list` is the way
+  implementation lands, `uv run python -m harness.runner --list` is the way
   to exercise this suite — it discovers and validates the test corpus
   without needing an engine. The 4 included tests carry
   `status: planned` in their `metadata.yaml` (matching their status in
@@ -76,12 +77,12 @@ comparison, reporting) runnable and testable end to end:
 ## Layout
 
 ```
-compliance/foundation-v0.1/
+compliance/foundation/
   README.md                     # this file
   SPEC.md                       # the specs this suite targets (Foundation v0.1)
-  pyproject.toml                # editable install; depends on ../harness (osi_compliance_harness)
+  pyproject.toml                # workspace member; depends on ../harness (osi_compliance_harness)
   conformance.yaml              # test conformance levels; "foundation_v0_1" = required
-  proposals.yaml                # mirrors §10 of the Foundation spec; every deferred is a proposal
+  proposals.yaml                # mirrors §3 (deferred features) of the Foundation spec; every deferred is a proposal
   decisions.yaml                # D-NNN registry with anchor + status; tests: populated only for D-020 in this slice
   adapters/
     osi_python_adapter.py       # delegates to impl/python/conformance/adapter.py (not yet present)
@@ -99,20 +100,21 @@ The full target layout — `query_shape/`, `scalar_query/`, `bridge/`,
 ## Quick start
 
 ```bash
-# From the repo root
-pip install -e compliance/harness
-pip install -e compliance/foundation
+# One uv sync at the compliance workspace root installs everything
+# (this suite + the shared harness) into a single environment.
+cd compliance
+uv sync
 
-cd compliance/foundation
+cd foundation
 
 # List discovered tests without running them (no adapter needed).
 # The 4 cross_grain/moderate cases show status "planned" — they're
 # skipped by a real run until an adapter lands, unless you pass
-# --include-planned.
-python -m harness.runner --list --tests tests/ --include-planned
+# --include-planned. `uv run` uses the workspace env automatically.
+uv run python -m harness.runner --list --tests tests/ --include-planned
 
 # Once an OSI implementation adapter exists (see ../ADAPTER_INTERFACE.md):
-python -m harness.runner \
+uv run python -m harness.runner \
   --adapter adapters/osi_python_adapter.py \
   --tests tests/ \
   --datasets datasets/ \

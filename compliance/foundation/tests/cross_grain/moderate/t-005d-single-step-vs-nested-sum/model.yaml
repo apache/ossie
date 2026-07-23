@@ -36,4 +36,4 @@ metrics:
   - {name: order_count,    expression: "COUNT(orders.id)"}
   - {name: sum_single, expression: "SUM(orders.amount)"}
   # sum_nested intentionally removed — nested aggregation in a metric
-  # body is deferred (D-027(d)); see Proposed_OSI_Semantics.md §10.
+  # body is deferred (D-027(d)); see foundational_semantics.md §3.

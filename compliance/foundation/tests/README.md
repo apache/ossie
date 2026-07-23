@@ -57,8 +57,8 @@ byte-for-byte (per D-014 that's a per-engine concern).
 | `null_ordering/` | NULLS LAST default emission, per-engine determinism witnesses | D-014, D-029 |
 | `empty_inputs/` | Standard SQL empty / NULL aggregate behaviour | D-033 |
 | `deferred/` | One negative test per `E_DEFERRED_KEY_REJECTED` family | D-009 |
-| `validation_errors/` | Structural validation errors that are NOT deferred features (e.g. `E_FIELD_DEPENDENCY_CYCLE` — fields must form a DAG). | Appendix C |
-| `error_taxonomy/` | Remaining Appendix C codes (E_PRIMARY_KEY_REQUIRED, E_AMBIGUOUS_MEASURE_GRAIN, etc.) | Appendix C |
+| `validation_errors/` | Structural validation errors that are NOT deferred features (e.g. `E_FIELD_DEPENDENCY_CYCLE` — fields must form a DAG). | Appendix A |
+| `error_taxonomy/` | Remaining Appendix A codes (E_PRIMARY_KEY_REQUIRED, E_AMBIGUOUS_MEASURE_GRAIN, etc.) | Appendix A |
 
 ## Sprint timeline
 
@@ -71,7 +71,7 @@ byte-for-byte (per D-014 that's a per-engine concern).
 ## Negative tests
 
 A test is negative when its `metadata.yaml` carries
-`expected_error_code: E_<NAME>` (no `gold_rows.json`). The runner
+`expected_error_code: E_<NAME>` (no `gold.sql`). The runner
 asserts that the adapter exited non-zero AND that stderr contains the
 named error code. Negative tests do NOT carry `required_features:`
 unless the rejection itself depends on a Foundation-level feature; the

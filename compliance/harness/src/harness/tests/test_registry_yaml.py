@@ -17,9 +17,9 @@
 
 """Cleanliness gate for the compliance registry YAML files.
 
-``decisions.yaml`` is the source of truth that ties Appendix B decisions
-in the Foundation spec to runnable witness tests. ``proposals.yaml``
-plays the same role for §10 deferred features. Both files have already
+``decisions.yaml`` is the source of truth that ties the Foundation spec's
+Conformance Decisions to runnable witness tests. ``proposals.yaml``
+plays the same role for §3 deferred features. Both files have already
 broken at least once because an unquoted ``:`` inside a title was
 parsed by YAML as a mapping value (Phase 4 compliance review, finding
 B1). This test pins both files so a future edit cannot reintroduce
@@ -71,20 +71,20 @@ def test_registry_yaml_is_parseable(yaml_path: Path) -> None:
 # reference so a future reviewer can verify the demotion is still
 # accurate. Update this set in lockstep with the spec.
 _INTENTIONALLY_ABSENT_DECISIONS: dict[str, str] = {
-    # D-013 is reserved in the spec but has no Appendix-B row (the
-    # number is intentionally skipped — see Proposed_OSI_Semantics.md).
-    "D-013": "Reserved in Appendix B (number skipped).",
-    # D-015 is struck in Appendix B (~~D-015~~ Deferred — moved to a
+    # D-013 is reserved in the spec but has no decision row (the
+    # number is intentionally skipped — see foundational_semantics.md).
+    "D-013": "Reserved in the spec (number skipped).",
+    # D-015 is struck in the spec (~~D-015~~ Deferred — moved to a
     # separate proposal). The compilation-strategy equivalence for
     # field-level cross-grain aggregation is moot at the Foundation
     # level because field-level aggregation itself is deferred per
     # D-003. The Foundation surface is exercised by the D-003
     # rejection witness; the strategy equivalence returns alongside
-    # §10's grain-aware-functions proposal.
-    "D-015": "Struck in Appendix B; depends on the deferred D-003.",
+    # the deferred grain-aware-functions proposal.
+    "D-015": "Struck in the spec; depends on the deferred D-003.",
     # D-017 is deferred — semi-join filtering moved to a follow-up
     # proposal. The negative test for EXISTS_IN is a rejection test.
-    "D-017": "Deferred — Proposed_OSI_Semantics.md table row marked",
+    "D-017": "Deferred — foundational_semantics.md table row marked",
 }
 
 

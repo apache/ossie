@@ -214,6 +214,101 @@ def _write_proposals_status(buf: io.StringIO, suite: SuiteResult) -> None:
     buf.write("\n")
 
 
+def _normalize_decision_test_path(raw: str) -> str:
+    """Normalize a ``decisions.yaml`` test path to a runner ``test_id``.
+
+    ``decisions.yaml`` lists tests as e.g.
+    ``tests/cross_grain/moderate/t-005a-single-step-sum/``; the runner's
+    ``test_id`` for the same case is
+    ``cross_grain/moderate/t-005a-single-step-sum``. Strip the leading
+    ``tests/`` and any surrounding slashes so the two line up.
+    """
+    p = raw.strip().strip("/")
+    if p.startswith("tests/"):
+        p = p[len("tests/"):]
+    return p
+
+
+def write_decisions_coverage(
+    suite: SuiteResult,
+    decisions_path: Path,
+    output_dir: Path,
+) -> Path | None:
+    """Write ``decisions_coverage.md`` mapping each ``D-NNN`` to its tests.
+
+    Reads the suite's ``decisions.yaml`` registry and, for every decision,
+    reports whether it has witness tests and how those tests fared in this
+    run. Decisions with an empty ``tests:`` list surface as coverage gaps —
+    the suite's primary PR-review signal. Returns the written path, or
+    ``None`` if no registry is found (the run still succeeds without it).
+    """
+    if decisions_path is None or not decisions_path.exists():
+        return None
+
+    data = yaml.safe_load(decisions_path.read_text()) or {}
+    decisions = data.get("decisions", []) or []
+
+    status_by_id = {r.test_id: r.status for r in suite.results}
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / "decisions_coverage.md"
+
+    rows: list[tuple[str, str, str, str]] = []
+    n_total = 0
+    n_with_tests = 0
+    n_passing = 0
+    n_gap = 0
+
+    for decision in decisions:
+        did = decision.get("id", "?")
+        status = decision.get("status", "")
+        raw_tests = decision.get("tests", []) or []
+        n_total += 1
+
+        test_ids = [_normalize_decision_test_path(t) for t in raw_tests]
+        present = [t for t in test_ids if t in status_by_id]
+        passed = [t for t in present if status_by_id[t] == TestStatus.PASS]
+
+        if not test_ids:
+            outcome = "⚠️ no tests"
+            n_gap += 1
+        elif not present:
+            outcome = f"— not run ({len(test_ids)} defined)"
+        elif len(passed) == len(present) == len(test_ids):
+            outcome = f"✅ pass ({len(passed)}/{len(test_ids)})"
+            n_with_tests += 1
+            n_passing += 1
+        else:
+            outcome = f"❌ {len(passed)}/{len(test_ids)} passing"
+            n_with_tests += 1
+
+        rows.append((did, status, str(len(test_ids)), outcome))
+
+    buf = io.StringIO()
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    buf.write("# OSI Compliance — Decision Coverage\n\n")
+    buf.write(f"**Adapter**: {suite.adapter}  \n")
+    buf.write(f"**Date**: {now}  \n")
+    buf.write(f"**Source**: {decisions_path.name}  \n\n")
+
+    buf.write("## Overall\n\n")
+    buf.write("| Metric | Count |\n")
+    buf.write("|--------|-------|\n")
+    buf.write(f"| Decisions (total) | {n_total} |\n")
+    buf.write(f"| With a witness test | {n_total - n_gap} |\n")
+    buf.write(f"| Uncovered (no tests) | {n_gap} |\n")
+    buf.write(f"| Passing this run | {n_passing} |\n\n")
+
+    buf.write("## By decision\n\n")
+    buf.write("| Decision | Reg. status | Tests | This run |\n")
+    buf.write("|----------|-------------|-------|----------|\n")
+    for did, status, count, outcome in rows:
+        buf.write(f"| {did} | {status} | {count} | {outcome} |\n")
+    buf.write("\n")
+
+    path.write_text(buf.getvalue())
+    return path
+
+
 def format_summary_console(suite: SuiteResult) -> str:
     """Format a brief console summary."""
     pct = (suite.passed / suite.total * 100) if suite.total > 0 else 0

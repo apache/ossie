@@ -20,27 +20,27 @@
 # DATA_TESTS.md — Concrete Test Vectors for the Foundation Compliance Suite
 
 This document is the **concrete realization** of the Foundation Conformance
-Decisions catalogued in `Proposed_OSI_Semantics.md` Appendix B. Each
+Decisions catalogued in `foundational_semantics.md`. Each
 **T-NNN** entry below is a runnable test vector: a model, a dataset, a query,
-and the row set or error code an implementation MUST produce. Appendix B's
-**D-NNN** entries say *what* an implementation must do; this file says *what
+and the row set or error code an implementation MUST produce. The spec's
+**D-NNN** decisions say *what* an implementation must do; this file says *what
 inputs prove it*.
 
 Implementations are encouraged to translate each entry into a fixture under
 the published Foundation compliance suite — for `osi_python` this is
-[`compliance/foundation-v0.1/tests/`](/tests/)
+[`compliance/foundation/tests/`](/tests/)
 (one folder per `T-NNN` containing `metadata.yaml + model.yaml +
-query.json + gold_rows.json`). Implementations on other engines run the
+query.json + gold.sql`). Implementations on other engines run the
 same suite through the standard adapter contract documented in
-[`compliance/foundation-v0.1/ADAPTER_INTERFACE.md`](../../compliance/ADAPTER_INTERFACE.md).
+[`compliance/ADAPTER_INTERFACE.md`](../../compliance/ADAPTER_INTERFACE.md).
 The expected outputs are normative and implementation-independent.
 
 > **Bootstrap-slice note.** The compliance suite currently ported into
 > this repo only ships fixtures for the T-005 family
-> (`compliance/foundation-v0.1/tests/cross_grain/moderate/`). Every
+> (`compliance/foundation/tests/cross_grain/moderate/`). Every
 > other `T-NNN` entry below is normative documentation for tests that
 > will land — with their own fixtures — in follow-up PRs. See
-> `compliance/foundation-v0.1/README.md` for current status.
+> `compliance/foundation/README.md` for current status.
 
 ---
 
@@ -222,7 +222,7 @@ above. The Foundation prefers "predictable, matches raw SQL" over
 ## 2. How to add a new test
 
 1. Pick the lowest-numbered free `T-NNN`.
-2. Link it to a `D-NNN` in `Proposed_OSI_Semantics.md` Appendix B — if no `D-NNN` covers the behaviour, add one there first.
+2. Link it to a `D-NNN` in `foundational_semantics.md` — if no `D-NNN` covers the behaviour, add one there first.
 3. Write the test against an existing fixture (§3) if possible; create a new fixture only when the existing ones can't express the shape.
 4. Cite the test from the relevant spec § so the doc and the test grow together.
 
@@ -232,7 +232,7 @@ above. The Foundation prefers "predictable, matches raw SQL" over
 
 ### 3.1 Fixture **F-PRELUDE** — single-fact star with multi-fact extension
 
-Mirrors the *Prelude model* in `Proposed_OSI_Semantics.md` Appendix A.
+Mirrors the *Prelude model* in `foundational_semantics.md` (§4).
 
 ```yaml
 datasets:
@@ -867,7 +867,7 @@ exists *only because* the default join from `orders → customers` is
 that defaults to `INNER` returns one fewer row and fails the test on
 row count. This is the single most common silent-correctness failure
 in BI tools (Snowflake's "first matching row" rule is the worst case;
-see Appendix B note B-1).
+see the Snowflake divergence note in the spec).
 
 #### T-011 — Multi-fact composition defaults to `FULL OUTER` on shared dims
 
@@ -1874,7 +1874,7 @@ honoured) or silently produces wrong counts.
 
 #### T-025 — Scalar query with two unrelated row-level facts is rejected
 
-**Anchors:** §5.1.2, Appendix B · D-023 (extended)
+**Anchors:** §5.1.2 · D-023 (extended)
 **Fixture:** F-PRELUDE.
 
 **Query:**
@@ -2184,7 +2184,7 @@ input. The NORTH row is absent for the same reason as in T-001 / T-047
 ## 5. Coverage map
 
 This map is the authoritative cross-reference. Every `D-NNN` decision
-in the spec's Appendix B that has observable runtime behaviour MUST
+in the spec that has observable runtime behaviour MUST
 appear here with at least one covering `T-NNN`.
 
 | D-NNN | Decision | Covered by |
@@ -2253,6 +2253,6 @@ one is the natural next sprint of this catalog.
 | D-021 | Structured `expression` slot — parser/codegen-conformance. |
 | D-025 | `E_AMBIGUOUS_MEASURE_GRAIN` catch-all — the D-025 enumeration lists the known cases; T-036b covers one (windowed field with no declared home grain). Remaining enumerated cases are mechanical follow-ups. |
 
-When this list shrinks to empty, every `D-NNN` in Appendix B has an
+When this list shrinks to empty, every `D-NNN` in the spec has an
 executable witness in this file and the Foundation Conformance Suite is
 self-contained.

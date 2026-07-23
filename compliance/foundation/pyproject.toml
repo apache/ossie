@@ -37,13 +37,14 @@ dev = [
     "pytest>=7.4",
 ]
 
-# The compliance runner harness is vendored at compliance/harness/ inside
-# this OSI repo. To install everything needed to run the suite:
+# This suite and the shared runner harness (compliance/harness/) are members of
+# the compliance/ uv workspace, so a single `uv sync` at the workspace root
+# installs everything needed to run the suite:
 #
-#     pip install -e ../harness
-#     pip install -e .
+#     cd compliance && uv sync
 #
-# Both packages are editable so iterating on either is one-step.
+# Both members are installed editable, so iterating on either is one-step, and
+# `uv run` uses the workspace environment from anywhere under compliance/.
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -34,9 +34,9 @@ PROPOSALS_FILE = "proposals.yaml"
 TESTS_DIR = "tests"
 METADATA_FILE = "metadata.yaml"
 # ``foundation`` denotes a proposal that is in scope for Foundation v0.1
-# (the proposal at proposals/foundation/); ``deferred`` denotes a
-# §10 deferred feature; ``proposed`` / ``thin_slice`` were the
-# pre-Foundation rollout statuses. New rows should use ``foundation``
+# (defined in core-spec/foundational_semantics.md); ``deferred`` denotes a
+# §3 "What is In / What is Out" deferred feature; ``proposed`` / ``thin_slice``
+# were the pre-Foundation rollout statuses. New rows should use ``foundation``
 # or ``deferred`` — the older two are retained so legacy proposal rows
 # parse without churn.
 VALID_STATUS = {"foundation", "thin_slice", "proposed", "deferred"}

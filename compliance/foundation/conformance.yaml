@@ -19,11 +19,17 @@
 #
 # This file pins which subsets of the suite an engine MUST pass to claim
 # a particular Foundation conformance level. The Foundation spec lives
-# at ../../proposals/foundation/Proposed_OSI_Semantics.md (osi_version: 0.1).
+# at ../../core-spec/foundational_semantics.md (osi_version: 0.1).
 #
 # Each level lists the test areas that contribute to it; an
 # implementation passes the level iff every must_pass case in those
 # areas is green.
+#
+# NOTE (current status): the `areas:` maps below are declarative — they
+# document the intended scope of each level. The runner does not yet
+# compute pass/fail per level from these maps; it filters tests by the
+# per-test `conformance_level` string (see harness/runner.py). Enforcing
+# the areas map is tracked as a follow-up.
 #
 # Cross-engine SQL determinism is NOT required by Foundation v0.1
 # (per D-014); cross-engine portability is observable behaviour
@@ -36,8 +42,8 @@ levels:
   foundation_v0_1:
     description: >
       Foundation v0.1 conformance. Required for any engine that claims
-      to implement the updated OSI Foundation. Every D-NNN row in
-      Appendix B of Proposed_OSI_Semantics.md must produce the
+      to implement the updated OSI Foundation. Every D-NNN Conformance
+      Decision in foundational_semantics.md must produce the
       expected outcome (row set or error code).
     pass_threshold: 100%
     areas:

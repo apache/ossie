@@ -17,9 +17,9 @@
 
 # Foundation Conformance Decisions — runnable test mapping.
 #
-# Mirrors the D-NNN decisions called out throughout
-# ../../proposals/foundation/Proposed_OSI_Semantics.md. Every D-NNN row
-# from the source proposal is kept here (harness's registry-consistency
+# Mirrors the D-NNN Conformance Decisions called out inline throughout
+# ../../core-spec/foundational_semantics.md. Every D-NNN row
+# from the source spec is kept here (harness's registry-consistency
 # tests require full D-NNN coverage), but this bootstrap slice only ships
 # witness tests for D-020 — every other decision's tests: is intentionally
 # empty pending its tests landing in a follow-up PR. The runner emits
@@ -85,7 +85,7 @@ decisions:
 
   - id: D-009
     title: Deferred relationship-level keys rejected with E_DEFERRED_KEY_REJECTED in default mode
-    spec_ref: §11
+    spec_ref: §3
     tests: []
     status: must_pass
 
@@ -109,7 +109,7 @@ decisions:
 
   - id: D-014
     title: Per-engine determinism — same (model, query, dialect) → byte-identical SQL
-    spec_ref: §11
+    spec_ref: "§5.1, §6.10.2"
     tests: []
     status: must_pass
 
