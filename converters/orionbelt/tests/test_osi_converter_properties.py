@@ -270,21 +270,28 @@ class TestDataObjectProperties:
 class TestDimensionProperties:
     """Dimension properties roundtrip.
 
-    Note: OSI uses column *code* as the field name, so after roundtrip the
-    dimension key becomes the physical code (ORDER_DATE).
+    The OSI field name is the physical column code, but the export stashes the
+    dimension's OBML name in an ``obml_dimension_name`` extension, so the
+    round-trip restores the original key (``Order Date``), not the code (#220).
     """
+
+    def test_dimension_name_roundtrip(self):
+        result = _roundtrip(_OBML_FULL)
+        # The OBML dimension name is restored, not renamed to the column code.
+        assert "Order Date" in result["dimensions"]
+        assert "ORDER_DATE" not in result["dimensions"]
 
     def test_dimension_result_type_roundtrip(self):
         result = _roundtrip(_OBML_FULL)
-        assert result["dimensions"]["ORDER_DATE"].get("resultType") == "date"
+        assert result["dimensions"]["Order Date"].get("resultType") == "date"
 
     def test_dimension_description_roundtrip(self):
         result = _roundtrip(_OBML_FULL)
-        assert result["dimensions"]["ORDER_DATE"].get("description") == "Order date dimension"
+        assert result["dimensions"]["Order Date"].get("description") == "Order date dimension"
 
     def test_dimension_owner_roundtrip(self):
         result = _roundtrip(_OBML_FULL)
-        assert result["dimensions"]["ORDER_DATE"].get("owner") == "analytics"
+        assert result["dimensions"]["Order Date"].get("owner") == "analytics"
 
 
 class TestCumulativeMetricDataType:
