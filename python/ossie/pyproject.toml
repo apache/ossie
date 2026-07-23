@@ -39,8 +39,8 @@ text = "Apache-2.0"
 [tool.hatch.build.targets.wheel]
 packages = ["src/ossie"]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest>=8.0",
     "mypy>=1.10",
     "ruff>=0.11",

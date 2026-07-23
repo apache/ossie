@@ -68,4 +68,4 @@ default-groups = [
 # apache-ossie is not yet published to PyPI; resolve it from the in-repo
 # package for now. Remove this block once apache-ossie published to PyPI.
 [tool.uv.sources]
-apache-ossie = { path = "../../python", editable = true}
+apache-ossie = { path = "../../python/ossie", editable = true}
