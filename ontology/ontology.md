@@ -132,14 +132,12 @@ This ontology snippet:
 ```yaml
 name: EnterpriseOntology
 ontology:
-  - concept:
-      name: SocialSecurityNr
-      type: ValueType
-      extends: [Integer]
-  - concept:
-      name: Employee
-      type: EntityType
-      extends: [Person]
+  - concept: SocialSecurityNr
+    type: ValueType
+    extends: [Integer]
+  - concept: Employee
+    type: EntityType
+    extends: [Person]
 ```
 declares two concepts that extend other concepts.
 
