@@ -72,7 +72,12 @@ def _lightdash_extension_data(element: Any, issues: List[ConverterIssue]) -> Dic
             try:
                 data.update(json.loads(extension.data))
             except (TypeError, ValueError):
-                pass
+                issues.append(
+                    ConverterIssue(
+                        issue_type=ConverterIssueType.EXTENSION_DATA_INVALID,
+                        element_name=getattr(element, "name", "<unnamed>"),
+                    )
+                )
         else:
             issues.append(
                 ConverterIssue(

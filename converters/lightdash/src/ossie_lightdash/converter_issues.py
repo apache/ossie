@@ -33,6 +33,12 @@ class ConverterIssueType(Enum):
     # Export: a relationship's from_columns/to_columns differ in length, so a
     # correct sql_on cannot be built.
     RELATIONSHIP_COLUMNS_MISMATCHED = "RELATIONSHIP_COLUMNS_MISMATCHED"
+    # Export: a `lightdash` extension whose data is not valid JSON cannot be
+    # applied; its presentation attributes are lost.
+    EXTENSION_DATA_INVALID = "EXTENSION_DATA_INVALID"
+    # Import: a model-level metric without `sql` has no expressible OSI
+    # expression and is skipped.
+    METRIC_SQL_MISSING = "METRIC_SQL_MISSING"
     # Export: a custom extension from another vendor cannot be carried into
     # Lightdash meta (it remains in the OSI document itself).
     FOREIGN_EXTENSION_IGNORED = "FOREIGN_EXTENSION_IGNORED"

@@ -217,6 +217,24 @@ class TestLightdashToOSI:
             == "COUNT(orders.order_id) / COUNT(DISTINCT customers.customer_id)"
         )
 
+    def test_model_metric_without_sql_is_skipped(self):
+        schema_yml = {
+            "models": [
+                {
+                    "name": "orders",
+                    "meta": {"metrics": {"broken_metric": {"type": "number"}}},
+                    "columns": [],
+                }
+            ]
+        }
+        result = LightdashToOSIConverter().convert(schema_yml, schema="marts")
+        assert result.output.semantic_model[0].metrics is None
+        assert any(
+            issue.issue_type is ConverterIssueType.METRIC_SQL_MISSING
+            and issue.element_name == "broken_metric"
+            for issue in result.issues
+        )
+
     def test_unparseable_join_is_reported(self):
         schema_yml = {
             "models": [

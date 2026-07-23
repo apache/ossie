@@ -165,6 +165,14 @@ class LightdashToOSIConverter:
 
         model_meta = model.get("meta") or {}
         for metric_name, definition in (model_meta.get("metrics") or {}).items():
+            if not definition.get("sql"):
+                issues.append(
+                    ConverterIssue(
+                        issue_type=ConverterIssueType.METRIC_SQL_MISSING,
+                        element_name=metric_name,
+                    )
+                )
+                continue
             metrics.append(
                 self._convert_sql_metric(metric_name, definition, dataset_name=name)
             )
@@ -249,8 +257,7 @@ class LightdashToOSIConverter:
     def _convert_sql_metric(
         self, metric_name: str, definition: Dict[str, Any], *, dataset_name: str
     ) -> OSIMetric:
-        sql = definition.get("sql") or ""
-        expression = lightdash_sql_to_osi(sql, dataset_name)
+        expression = lightdash_sql_to_osi(definition["sql"], dataset_name)
         return self._build_metric(
             metric_name,
             definition,

@@ -233,6 +233,24 @@ class TestOSIToLightdash:
             for issue in result.issues
         )
 
+    def test_invalid_extension_json_is_reported(self):
+        document = _document()
+        tampered = document.model_copy(deep=True)
+        metric = tampered.semantic_model[0].metrics[0].model_copy(
+            update={
+                "custom_extensions": [
+                    OSICustomExtension(vendor_name="lightdash", data="{not json")
+                ]
+            }
+        )
+        tampered.semantic_model[0].metrics[0] = metric
+        result = OSIToLightdashConverter().convert(tampered)
+        assert any(
+            issue.issue_type is ConverterIssueType.EXTENSION_DATA_INVALID
+            and issue.element_name == "total_amount"
+            for issue in result.issues
+        )
+
     def test_relationship_becomes_join(self):
         result = OSIToLightdashConverter().convert(_document())
         joins = _model(result.output, "orders")["meta"]["joins"]
