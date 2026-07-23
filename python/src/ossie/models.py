@@ -28,6 +28,7 @@ class OSIDialect(str, Enum):
     ANSI_SQL = "ANSI_SQL"
     SNOWFLAKE = "SNOWFLAKE"
     MDX = "MDX"
+    DAX = "DAX"
     MAQL = "MAQL"
     TABLEAU = "TABLEAU"
     DATABRICKS = "DATABRICKS"
