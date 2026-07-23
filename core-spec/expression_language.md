@@ -659,14 +659,14 @@ expression:
     - dialect: BIGQUERY
       expression: DATE_TRUNC(order_date, MONTH)
     - dialect: DAX
-      expression: STARTOFMONTH(order_date)
+      expression: DATE(YEAR(order_date), MONTH(order_date), 1)
 ```
 
 ### Common Dialect Variations
 
 | Function | ANSI\_SQL | Snowflake | BigQuery | Databricks | PostgreSQL | DAX |
 | :---- | :---- | :---- | :---- | :---- | :---- | :---- |
-| Date truncation | `DATE_TRUNC('month', d)` | `DATE_TRUNC('month', d)` | `DATE_TRUNC(d, MONTH)` | `DATE_TRUNC('month', d)` | `DATE_TRUNC('month', d)` | `STARTOFMONTH(d)` |
+| Date truncation | `DATE_TRUNC('month', d)` | `DATE_TRUNC('month', d)` | `DATE_TRUNC(d, MONTH)` | `DATE_TRUNC('month', d)` | `DATE_TRUNC('month', d)` | `DATE(YEAR(d), MONTH(d), 1)` |
 | Date add | `DATEADD(day, 7, d)` | `DATEADD(day, 7, d)` | `DATE_ADD(d, INTERVAL 7 DAY)` | `DATE_ADD(d, 7)` | `d + INTERVAL '7 days'` | `DATEADD(d, 7, DAY)` |
 | String concat | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT_WS('', a, b)` | `CONCATENATE(a, b)` or `a & b` |
 | Null coalesce | `COALESCE(a, b)` | `COALESCE(a, b)` or `NVL(a, b)` | `COALESCE(a, b)` or `IFNULL(a, b)` | `COALESCE(a, b)` | `COALESCE(a, b)` | `COALESCE(a, b)` |
