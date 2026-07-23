@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/open-semantic-interchange/OSI/core-spec/osi-schema.json",
-  "title": "OSI Ontology Metadata Specification",
-  "description": "JSON Schema for validating OSI (Open Semantic Interoperability) ontology definitions",
+  "$id": "https://github.com/apache/ossie/core-spec/osi-schema.json",
+  "title": "Apache Ossie Ontology Metadata Specification",
+  "description": "JSON Schema for validating Apache Ossie ontology definitions",
   "type": "object",
   "properties": {
     "version": {
@@ -19,7 +19,14 @@
       "description": "Human-readable description"
     },
     "ai_context": {
-      "$ref": "https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json#/$defs/AIContext"
+      "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/osi-schema.json#/$defs/AIContext"
+    },
+    "requires": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Expression"
+      },
+      "description": "Expressions that constrain the population of this ontology"
     },
     "ontology": {
       "type": "array",
@@ -51,7 +58,7 @@
         "concept": {
           "$ref": "#/$defs/Concept"
         },
-        "relationships": { 
+        "relationships": {
           "type": "array",
           "items": {
             "$ref": "#/$defs/Relationship"
@@ -94,6 +101,13 @@
             "$ref": "#/$defs/Expression"
           },
           "description": "Expressions that define how this concept is derived"
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Expression"
+          },
+          "description": "Expressions that constrain the population of this relationship"
         },
         "verbalizes": {
           "type": "array",
@@ -167,7 +181,7 @@
             "$ref": "#/$defs/ObjectMapping"
           },
           "description": "Mappings from logical constructs that populate the concept in this component. Valid only when the concept is an entity type"
-        },         
+        },
         "link_mappings": {
           "type": "array",
           "items": {
@@ -282,7 +296,7 @@
           "description": "Human-readable description of this ontology map"
         },
         "semantic_model": {
-          "$ref": "https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json#/$defs/SemanticModel"
+          "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/osi-schema.json#/$defs/SemanticModel"
         },
         "concept_mappings": {
           "type": "array",

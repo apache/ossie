@@ -1,12 +1,29 @@
-"""Tests for OSI → GoodData conversion."""
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+"""Tests for Ossie → GoodData conversion."""
 
 from __future__ import annotations
 
-from gooddata_osi.osi_to_gooddata import osi_to_gooddata
+from ossie_gooddata.osi_to_gooddata import osi_to_gooddata
 
 
 def test_basic_conversion(osi_tpcds_dict: dict):
-    """Verify basic structure of OSI → GoodData conversion."""
+    """Verify basic structure of Ossie → GoodData conversion."""
     result = osi_to_gooddata(osi_tpcds_dict, data_source_id="tpcds")
 
     # 4 regular datasets (date_dim becomes a date instance)
@@ -25,7 +42,7 @@ def test_dataset_ids(osi_tpcds_dict: dict):
 
 
 def test_date_dimension_detected(osi_tpcds_dict: dict):
-    """Verify OSI dataset with date_dimension extension becomes a GoodData date instance."""
+    """Verify Ossie dataset with date_dimension extension becomes a GoodData date instance."""
     result = osi_to_gooddata(osi_tpcds_dict)
 
     assert len(result.ldm.date_instances) == 1
@@ -36,7 +53,7 @@ def test_date_dimension_detected(osi_tpcds_dict: dict):
 
 
 def test_dimension_fields_become_attributes(osi_tpcds_dict: dict):
-    """Verify OSI fields with dimension metadata become GoodData attributes."""
+    """Verify Ossie fields with dimension metadata become GoodData attributes."""
     result = osi_to_gooddata(osi_tpcds_dict)
 
     customer = next(ds for ds in result.ldm.datasets if ds.id == "customer")
@@ -46,7 +63,7 @@ def test_dimension_fields_become_attributes(osi_tpcds_dict: dict):
 
 
 def test_non_dimension_fields_become_facts(osi_tpcds_dict: dict):
-    """Verify OSI fields without dimension become GoodData facts."""
+    """Verify Ossie fields without dimension become GoodData facts."""
     result = osi_to_gooddata(osi_tpcds_dict)
 
     store_sales = next(ds for ds in result.ldm.datasets if ds.id == "store_sales")
@@ -76,7 +93,7 @@ def test_grain_from_primary_key(osi_tpcds_dict: dict):
 
 
 def test_relationships_become_references(osi_tpcds_dict: dict):
-    """Verify OSI relationships become GoodData references."""
+    """Verify Ossie relationships become GoodData references."""
     result = osi_to_gooddata(osi_tpcds_dict)
 
     store_sales = next(ds for ds in result.ldm.datasets if ds.id == "store_sales")

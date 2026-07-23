@@ -1,7 +1,24 @@
-# OSI - Core Metadata Spec (YAML Schema)
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Apache Ossie - Core Metadata Spec (YAML Schema)
 # DRAFT version - in development, schema may change before 0.2.0 is released
 version: 0.2.0.dev0
-# 
+#
 # Goals:
 # - Standardization: Establish uniform language and structure for semantic model definitions
 # - Extensibility: Support domain-specific extensions while maintaining core compatibility
@@ -19,14 +36,15 @@ dialects:
   - "TABLEAU"               # Tableau
   - "DATABRICKS"            # Databricks SQL
   - "MAQL"                  # GoodData MAQL (Multi-Dimensional Analytical Query Language)
+  - "BIGQUERY"              # Google BigQuery GoogleSQL
 
 
 
 # Vendor name for custom extensions (free-form string)
-# Examples: "COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA"
+# Examples: "COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA", "WISDOM"
 vendor_name: string
 
- 
+
 # Top-level semantic model definition
 semantic_model:
   # Required: Unique identifier for the semantic model
@@ -46,7 +64,7 @@ semantic_model:
     # See Relationships section below for detailed structure
     relationships: []
 
-    # Optional: 
+    # Optional:
     # These metrics can span one or more logical datasets and use relationships
     # See Metrics section below for detailed structure
     metrics: []
@@ -68,7 +86,7 @@ datasets:
     # Required: Reference to the underlying physical table/view or query
     # Format should be either database_name.schema_name.table_name or query
     source: string
-    
+
     # Optional: Primary key definition that uniquely identifies rows in this dataset
     # Can be a single column or a composite of multiple columns
     # This is the preferred unique identifier for this dataset and is used in relationships to determine many-to-one or one-to-one.
@@ -89,8 +107,8 @@ datasets:
     #   - [column2, column3]
     #
     # unique_keys:
-    #   - [column1, column2]      
-    #   - [column3, column4]     
+    #   - [column1, column2]
+    #   - [column3, column4]
     unique_keys:
       - []  # Array of column names (single or composite)
 
@@ -180,7 +198,7 @@ fields:
     # Helps LLMs understand the field meaning and generate better queries
     ai_context: string
 
-     # Optional: Vendor-specific attributes for extensibility
+    # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
       - vendor_name: string  # Free-form string identifying the vendor
         data: string
@@ -209,7 +227,7 @@ metrics:
     # Helps LLMs understand the metric meaning and suggest it appropriately
     ai_context: string
 
-     # Optional: Vendor-specific attributes for extensibility
+    # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
       - vendor_name: string  # Free-form string identifying the vendor
         data: string

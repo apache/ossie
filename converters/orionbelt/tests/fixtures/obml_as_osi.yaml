@@ -1,0 +1,804 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+version: '0.1.1'
+semantic_model:
+- name: sales_analytics
+  description: Sales, Returns, Shipments and Purchases Analytics
+  ai_context:
+    instructions: Use this model for retail sales analysis, returns tracking, and purchase management.
+  datasets:
+  - name: calendar
+    source: ANALYTICS.PUBLIC.calendar
+    fields:
+    - name: date
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: date
+      dimension:
+        is_time: true
+      description: Calendar Date
+      ai_context:
+        synonyms:
+        - Calendar Date
+    - name: ym
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: ym
+      dimension:
+        is_time: false
+      description: Year Month
+      ai_context:
+        synonyms:
+        - Year Month
+    - name: weekday
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: weekday
+      dimension:
+        is_time: false
+      description: Weekday
+    - name: public_holiday
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: public_holiday
+      description: Public Holiday
+      ai_context:
+        synonyms:
+        - Public Holiday
+  - name: countries
+    source: ANALYTICS.PUBLIC.countries
+    fields:
+    - name: country_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: country_id
+      description: Country ID
+      ai_context:
+        synonyms:
+        - Country ID
+    - name: country_name
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: country_name
+      dimension:
+        is_time: false
+      description: Country Name
+      ai_context:
+        synonyms:
+        - Country Name
+  - name: clients
+    source: ANALYTICS.PUBLIC.clients
+    fields:
+    - name: client_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: client_id
+      description: Client ID
+      ai_context:
+        synonyms:
+        - Client ID
+    - name: client_name
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: client_name
+      dimension:
+        is_time: false
+      description: Client Name
+      ai_context:
+        synonyms:
+        - Client Name
+    - name: client_gender
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: client_gender
+      dimension:
+        is_time: false
+      description: Client Gender
+      ai_context:
+        synonyms:
+        - Client Gender
+    - name: client_country_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: client_country_id
+      description: Client Country ID
+      ai_context:
+        synonyms:
+        - Client Country ID
+  - name: suppliers
+    source: ANALYTICS.PUBLIC.suppliers
+    fields:
+    - name: supplier_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: supplier_id
+      description: Supplier ID
+      ai_context:
+        synonyms:
+        - Supplier ID
+    - name: supplier_name
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: supplier_name
+      dimension:
+        is_time: false
+      description: Supplier Name
+      ai_context:
+        synonyms:
+        - Supplier Name
+    - name: supplier_country_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: supplier_country_id
+      description: Supplier Country ID
+      ai_context:
+        synonyms:
+        - Supplier Country ID
+  - name: products
+    source: ANALYTICS.PUBLIC.products
+    fields:
+    - name: product_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: product_id
+      description: Product ID
+      ai_context:
+        synonyms:
+        - Product ID
+    - name: product_name
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: product_name
+      dimension:
+        is_time: false
+      description: Product Name
+      ai_context:
+        synonyms:
+        - Product Name
+    - name: product_cat
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: product_cat
+      dimension:
+        is_time: false
+      description: Product Category
+      ai_context:
+        synonyms:
+        - Product Category
+    - name: product_suppl
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: product_suppl
+      description: Product Supplier
+      ai_context:
+        synonyms:
+        - Product Supplier
+    - name: unit_cost
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: unit_cost
+      description: Unit Cost
+      ai_context:
+        synonyms:
+        - Unit Cost
+    - name: unit_price
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: unit_price
+      description: Unit Price
+      ai_context:
+        synonyms:
+        - Unit Price
+  - name: employees
+    source: ANALYTICS.PUBLIC.employees
+    fields:
+    - name: employee_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: employee_id
+      description: Employee ID
+      ai_context:
+        synonyms:
+        - Employee ID
+    - name: employee_name
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: employee_name
+      dimension:
+        is_time: false
+      description: Employee Name
+      ai_context:
+        synonyms:
+        - Employee Name
+    - name: department_name
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: department_name
+      dimension:
+        is_time: false
+      description: Department Name
+      ai_context:
+        synonyms:
+        - Department Name
+        - Department
+  - name: acct_bal
+    source: ANALYTICS.PUBLIC.acct_bal
+    fields:
+    - name: account_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: account_id
+      description: Account ID
+      ai_context:
+        synonyms:
+        - Account ID
+    - name: iban
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: iban
+      description: IBAN
+    - name: balance
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: balance
+      description: Balance
+  - name: sales
+    source: ANALYTICS.PUBLIC.sales
+    fields:
+    - name: sales_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: sales_id
+      description: Sales ID
+      ai_context:
+        synonyms:
+        - Sales ID
+    - name: sales_date
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: sales_date
+      dimension:
+        is_time: true
+      description: Sales Date
+      ai_context:
+        synonyms:
+        - Sales Date
+    - name: sales_ym
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: sales_ym
+      description: Sales YM
+      ai_context:
+        synonyms:
+        - Sales YM
+    - name: sales_client
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: sales_client
+      description: Sales Client
+      ai_context:
+        synonyms:
+        - Sales Client
+    - name: product
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: product
+      description: Sales Product
+      ai_context:
+        synonyms:
+        - Sales Product
+    - name: sales_emp_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: sales_emp_id
+      description: Sales Employee
+      ai_context:
+        synonyms:
+        - Sales Employee
+    - name: sales_payment_type
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: sales_payment_type
+      dimension:
+        is_time: false
+      description: Sales Payment Type
+      ai_context:
+        synonyms:
+        - Sales Payment Type
+        - Payment Type
+    - name: sales_quantity
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: sales_quantity
+      description: Sales Quantity
+      ai_context:
+        synonyms:
+        - Sales Quantity
+    - name: sales_amount
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: sales_amount
+      description: Sales Amount
+      ai_context:
+        synonyms:
+        - Sales Amount
+    - name: notes
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: notes
+      description: Sales Notes
+      ai_context:
+        synonyms:
+        - Sales Notes
+  - name: returns
+    source: ANALYTICS.PUBLIC.returns
+    fields:
+    - name: return_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: return_id
+      description: Return ID
+      ai_context:
+        synonyms:
+        - Return ID
+    - name: return_sales_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: return_sales_id
+      description: Return Sales ID
+      ai_context:
+        synonyms:
+        - Return Sales ID
+    - name: return_date
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: return_date
+      dimension:
+        is_time: true
+      description: Return Date
+      ai_context:
+        synonyms:
+        - Return Date
+    - name: return_ym
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: return_ym
+      description: Return YM
+      ai_context:
+        synonyms:
+        - Return YM
+    - name: return_quantity
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: return_quantity
+      description: Return Quantity
+      ai_context:
+        synonyms:
+        - Return Quantity
+    - name: return_amount
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: return_amount
+      description: Return Amount
+      ai_context:
+        synonyms:
+        - Return Amount
+    - name: notes
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: notes
+      description: Return Notes
+      ai_context:
+        synonyms:
+        - Return Notes
+  - name: shipments
+    source: ANALYTICS.PUBLIC.shipments
+    fields:
+    - name: shipment_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: shipment_id
+      description: Shipment ID
+      ai_context:
+        synonyms:
+        - Shipment ID
+    - name: shipment_sales_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: shipment_sales_id
+      description: Shipment Sales ID
+      ai_context:
+        synonyms:
+        - Shipment Sales ID
+    - name: shipment_date
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: shipment_date
+      dimension:
+        is_time: true
+      description: Shipment Date
+      ai_context:
+        synonyms:
+        - Shipment Date
+    - name: shipment_ym
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: shipment_ym
+      description: Shipment YM
+      ai_context:
+        synonyms:
+        - Shipment YM
+    - name: shipment_product
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: shipment_product
+      description: Shipment Product
+      ai_context:
+        synonyms:
+        - Shipment Product
+    - name: shipment_quantity
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: shipment_quantity
+      description: Shipment Quantity
+      ai_context:
+        synonyms:
+        - Shipment Quantity
+    - name: shipment_amount
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: shipment_amount
+      description: Shipment Amount
+      ai_context:
+        synonyms:
+        - Shipment Amount
+    - name: notes
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: notes
+      description: Shipment Notes
+      ai_context:
+        synonyms:
+        - Shipment Notes
+  - name: purchases
+    source: ANALYTICS.PUBLIC.purchases
+    fields:
+    - name: purchase_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: purchase_id
+      description: Purchase ID
+      ai_context:
+        synonyms:
+        - Purchase ID
+    - name: purchase_date
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: purchase_date
+      dimension:
+        is_time: true
+      description: Purchase Date
+      ai_context:
+        synonyms:
+        - Purchase Date
+    - name: purchase_ym
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: purchase_ym
+      description: Purchase YM
+      ai_context:
+        synonyms:
+        - Purchase YM
+    - name: purchase_product_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: purchase_product_id
+      description: Purchase Product ID
+      ai_context:
+        synonyms:
+        - Purchase Product ID
+    - name: purchase_emp_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: purchase_emp_id
+      description: Purchase Employee
+      ai_context:
+        synonyms:
+        - Purchase Employee
+    - name: purchase_supplier
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: purchase_supplier
+      description: Purchase Supplier
+      ai_context:
+        synonyms:
+        - Purchase Supplier
+    - name: purchase_quantity
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: purchase_quantity
+      description: Purchase Quantity
+      ai_context:
+        synonyms:
+        - Purchase Quantity
+    - name: purchase_price
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: purchase_price
+      description: Purchase Price
+      ai_context:
+        synonyms:
+        - Purchase Price
+  relationships:
+  - name: clients_to_countries
+    from: clients
+    to: countries
+    from_columns:
+    - client_country_id
+    to_columns:
+    - country_id
+  - name: suppliers_to_countries_supplier_country
+    from: suppliers
+    to: countries
+    from_columns:
+    - supplier_country_id
+    to_columns:
+    - country_id
+    ai_context:
+      instructions: 'Secondary/alternative join path named: supplier_country. Use only when explicitly needed.'
+  - name: products_to_suppliers
+    from: products
+    to: suppliers
+    from_columns:
+    - product_suppl
+    to_columns:
+    - supplier_id
+  - name: sales_to_clients
+    from: sales
+    to: clients
+    from_columns:
+    - sales_client
+    to_columns:
+    - client_id
+  - name: sales_to_products_1
+    from: sales
+    to: products
+    from_columns:
+    - product
+    to_columns:
+    - product_id
+  - name: sales_to_employees_2
+    from: sales
+    to: employees
+    from_columns:
+    - sales_emp_id
+    to_columns:
+    - employee_id
+  - name: sales_to_calendar_3
+    from: sales
+    to: calendar
+    from_columns:
+    - sales_ym
+    to_columns:
+    - ym
+  - name: sales_to_calendar_sales_date
+    from: sales
+    to: calendar
+    from_columns:
+    - sales_date
+    to_columns:
+    - date
+    ai_context:
+      instructions: 'Secondary/alternative join path named: sales_date. Use only when explicitly needed.'
+  - name: returns_to_sales
+    from: returns
+    to: sales
+    from_columns:
+    - return_sales_id
+    to_columns:
+    - sales_id
+  - name: shipments_to_sales
+    from: shipments
+    to: sales
+    from_columns:
+    - shipment_sales_id
+    to_columns:
+    - sales_id
+  - name: shipments_to_products_1
+    from: shipments
+    to: products
+    from_columns:
+    - shipment_product
+    to_columns:
+    - product_id
+  - name: purchases_to_products
+    from: purchases
+    to: products
+    from_columns:
+    - purchase_product_id
+    to_columns:
+    - product_id
+  - name: purchases_to_employees_1
+    from: purchases
+    to: employees
+    from_columns:
+    - purchase_emp_id
+    to_columns:
+    - employee_id
+  - name: purchases_to_suppliers_2
+    from: purchases
+    to: suppliers
+    from_columns:
+    - purchase_supplier
+    to_columns:
+    - supplier_id
+  metrics:
+  - name: total_sales
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(sales.sales_amount)
+    description: Total Sales
+    ai_context:
+      synonyms:
+      - Total Sales
+  - name: sales_count
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: COUNT(DISTINCT sales.sales_id)
+    description: Sales Count
+    ai_context:
+      synonyms:
+      - Sales Count
+  - name: total_sales_qty
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(sales.sales_quantity)
+    description: Total Sales Qty
+    ai_context:
+      synonyms:
+      - Total Sales Qty
+  - name: total_returns
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(returns.return_amount)
+    description: Total Returns
+    ai_context:
+      synonyms:
+      - Total Returns
+  - name: return_count
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: COUNT(DISTINCT sales.sales_id)
+    description: Return Count
+    ai_context:
+      synonyms:
+      - Return Count
+  - name: total_shipments
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(shipments.shipment_amount)
+    description: Total Shipments
+    ai_context:
+      synonyms:
+      - Total Shipments
+  - name: total_shipment_qty
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(shipments.shipment_quantity)
+    description: Total Shipment Qty
+    ai_context:
+      synonyms:
+      - Total Shipment Qty
+  - name: total_purchases
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(purchases.purchase_price)
+    description: Total Purchases
+    ai_context:
+      synonyms:
+      - Total Purchases
+  - name: total_purchase_qty
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(purchases.purchase_quantity)
+    description: Total Purchase Qty
+    ai_context:
+      synonyms:
+      - Total Purchase Qty
+  - name: return_rate
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(returns.return_amount) / SUM(sales.sales_amount)
+    description: Return Rate
+  - name: average_sale
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(sales.sales_amount) / COUNT(DISTINCT sales.sales_id)
+    description: Average Sale
+  custom_extensions:
+  - vendor_name: COMMON
+    data: '{"source_format": "OBML", "source_version": "1.0", "converter": "ossie-orionbelt"}'

@@ -1,0 +1,51 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Fixture B -- stash round-trip (MV -> Apache Ossie -> MV, lossless).
+# Exercises the stash at every placement level: model (filter), relationship
+# (rely), dimension (format), measure (format). Must parse under v1.1.
+
+version: '1.1'
+source: samples.tpch.lineitem
+filter: l_returnflag = 'N'
+comment: Line item shipping metrics
+joins:
+- name: orders
+  source: samples.tpch.orders
+  on: source.l_orderkey = orders.o_orderkey
+  rely:
+    at_most_one_match: true
+dimensions:
+- name: line_number
+  expr: l_linenumber
+  format:
+    type: number
+    decimal_places:
+      type: exact
+      places: 0
+measures:
+- name: revenue
+  expr: SUM(l_extendedprice * (1 - l_discount))
+  comment: Net revenue
+  format:
+    type: currency
+    currency_code: USD
+    decimal_places:
+      type: exact
+      places: 2
+- name: order_count
+  expr: COUNT(DISTINCT l_orderkey)
