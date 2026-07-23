@@ -69,6 +69,7 @@ DIALECT_MAP = {
     "DATABRICKS": "databricks",
     "BIGQUERY": "bigquery",
     "MDX": None,  # Not supported by sqlglot, skip validation
+    "DAX": None,  # Not supported by sqlglot, skip validation
     "TABLEAU": None,  # Not supported by sqlglot, skip validation
     "MAQL": None,  # Not supported by sqlglot, skip validation
     "SIGMA": None,  # Sigma's spreadsheet-style formula language, not SQL; skip validation
@@ -76,7 +77,7 @@ DIALECT_MAP = {
 }
 
 # Dialects that sqlglot cannot parse
-SKIP_SQL_VALIDATION = {"MDX", "TABLEAU", "MAQL", "SIGMA", "THOUGHTSPOT"}
+SKIP_SQL_VALIDATION = {"MDX", "DAX", "TABLEAU", "MAQL", "SIGMA", "THOUGHTSPOT"}
 
 
 class UniqueKeyLoader(yaml.SafeLoader):
