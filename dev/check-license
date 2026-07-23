@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Checks that all source files contain the ASF license header
+# using Apache RAT (Release Audit Tool).
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+RAT_VERSION="0.16.1"
+RAT_JAR="$SCRIPT_DIR/lib/apache-rat-${RAT_VERSION}.jar"
+RAT_URL="https://repo1.maven.org/maven2/org/apache/rat/apache-rat/${RAT_VERSION}/apache-rat-${RAT_VERSION}.jar"
+
+# Download RAT if not cached
+if [ ! -f "$RAT_JAR" ]; then
+  echo "Downloading Apache RAT ${RAT_VERSION}..."
+  mkdir -p "$SCRIPT_DIR/lib"
+  curl -sSfL -o "$RAT_JAR" "$RAT_URL"
+fi
+
+# Ensure Java is available
+if ! command -v java &> /dev/null; then
+  echo "ERROR: Java is required to run Apache RAT."
+  echo "Install Java 11+ and ensure it is on PATH."
+  exit 1
+fi
+
+echo "Running Apache RAT license header check..."
+java -jar "$RAT_JAR" \
+  --input-exclude-file "$SCRIPT_DIR/.rat-excludes" \
+  --input-exclude-std GIT IDEA MAC \
+  --output-style missing-headers \
+  --log-level ERROR \
+  -- "$REPO_DIR"
+
+echo "License header check passed."
