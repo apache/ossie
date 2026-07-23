@@ -53,9 +53,6 @@ _SIMPLE_AGG_RE = re.compile(
     re.IGNORECASE,
 )
 
-_COLUMN_REF_RE = re.compile(r"^[A-Za-z_]\w*$")
-
-
 def parse_simple_aggregation(expression: str) -> Optional[Tuple[str, str]]:
     """Parse ``AGG(qualifier.column)`` into a (lightdash_type, column_ref) pair.
 
@@ -109,13 +106,14 @@ def osi_sql_to_lightdash(expression: str, dataset: str) -> str:
 
 
 def lightdash_sql_to_osi(sql: str, dataset: str) -> str:
-    """Rewrite Lightdash's ``${TABLE}.column`` references into ``dataset.column``."""
-    return sql.replace("${TABLE}.", f"{dataset}.")
+    """Rewrite Lightdash column references into OSI ``dataset.column`` references.
 
+    ``${TABLE}.column`` refers to the current model; ``${other_table.column}``
+    refers to a joined model and becomes a cross-dataset reference.
+    """
+    rewritten = sql.replace("${TABLE}.", f"{dataset}.")
+    return re.sub(r"\$\{(\w+)\.(\w+)\}", r"\1.\2", rewritten)
 
-def is_bare_column(reference: str) -> bool:
-    """True when the reference is a plain column name without qualifier or SQL."""
-    return bool(_COLUMN_REF_RE.match(reference))
 
 
 def referenced_datasets(expression: str, dataset_names: set) -> set:

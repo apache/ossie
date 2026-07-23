@@ -78,6 +78,18 @@ def _ansi(expression: str) -> OSIExpression:
     )
 
 
+def _type_needs_extension(lightdash_type: str) -> bool:
+    """True for metric types an OSI expression cannot encode faithfully.
+
+    ``number`` is fully described by its SQL and typed aggregations are
+    recovered by parsing the expression, so only the remaining types
+    (currently ``percentile``) must survive inside the extension.
+    """
+    if lightdash_type == "number":
+        return False
+    return build_aggregation(lightdash_type, "_", "_") is None
+
+
 def _lightdash_extension(data: Dict[str, Any]) -> List[OSICustomExtension]:
     if not data:
         return []
@@ -220,24 +232,18 @@ class LightdashToOSIConverter:
     ) -> OSIMetric:
         lightdash_type = definition.get("type", "number")
         expression = build_aggregation(lightdash_type, dataset_name, column)
-        keep_type_in_extension = False
-        if lightdash_type == "count_distinct":
-            pass
-        elif expression is None:
-            # number metrics carry their own SQL; percentile and friends have
-            # no faithful OSI expression, so their type stays in the extension.
+        if expression is None:
             sql = definition.get("sql")
             if sql:
                 expression = lightdash_sql_to_osi(sql, dataset_name)
             else:
                 expression = f"{dataset_name}.{column}"
-                keep_type_in_extension = True
 
         return self._build_metric(
             metric_name,
             definition,
             expression=expression,
-            keep_type_in_extension=keep_type_in_extension,
+            keep_type_in_extension=_type_needs_extension(lightdash_type),
         )
 
     def _convert_sql_metric(
@@ -246,7 +252,10 @@ class LightdashToOSIConverter:
         sql = definition.get("sql") or ""
         expression = lightdash_sql_to_osi(sql, dataset_name)
         return self._build_metric(
-            metric_name, definition, expression=expression, keep_type_in_extension=False
+            metric_name,
+            definition,
+            expression=expression,
+            keep_type_in_extension=_type_needs_extension(definition.get("type", "number")),
         )
 
     @staticmethod

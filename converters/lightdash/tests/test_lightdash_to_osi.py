@@ -167,6 +167,56 @@ class TestLightdashToOSI:
         assert relationship.from_columns == ["customer_id"]
         assert relationship.to_columns == ["customer_id"]
 
+    def test_percentile_with_sql_keeps_type_in_extension(self):
+        schema_yml = {
+            "models": [
+                {
+                    "name": "orders",
+                    "meta": {
+                        "metrics": {
+                            "p90_custom": {
+                                "type": "percentile",
+                                "percentile": 90,
+                                "sql": "${TABLE}.amount - ${TABLE}.discount",
+                            }
+                        }
+                    },
+                    "columns": [],
+                }
+            ]
+        }
+        result = LightdashToOSIConverter().convert(schema_yml, schema="marts")
+        metric = _metric(result.output, "p90_custom")
+        assert (
+            metric.expression.dialects[0].expression
+            == "orders.amount - orders.discount"
+        )
+        assert _lightdash_data(metric) == {"type": "percentile", "percentile": 90}
+
+    def test_joined_table_references_become_cross_dataset(self):
+        schema_yml = {
+            "models": [
+                {
+                    "name": "orders",
+                    "meta": {
+                        "metrics": {
+                            "orders_per_customer": {
+                                "type": "number",
+                                "sql": "COUNT(${TABLE}.order_id) / COUNT(DISTINCT ${customers.customer_id})",
+                            }
+                        }
+                    },
+                    "columns": [],
+                }
+            ]
+        }
+        result = LightdashToOSIConverter().convert(schema_yml, schema="marts")
+        metric = _metric(result.output, "orders_per_customer")
+        assert (
+            metric.expression.dialects[0].expression
+            == "COUNT(orders.order_id) / COUNT(DISTINCT customers.customer_id)"
+        )
+
     def test_unparseable_join_is_reported(self):
         schema_yml = {
             "models": [

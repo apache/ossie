@@ -75,6 +75,9 @@ Omitting `--schema` as well is reported as a `SOURCE_UNQUALIFIED` issue.
 - **`primary_key` / `unique_keys` are not exported** — Lightdash has no
   corresponding concept — and consequently cannot be reconstructed on import.
 - **`ai_context` is not carried** into Lightdash meta.
+- **Model-level Lightdash meta beyond `metrics` and `joins`** (`label`,
+  `group_details`, `sql_filter`, `order_fields_by`, column
+  `additional_dimensions`, ...) is not carried yet.
 - **Standalone Lightdash YAML projects** (Lightdash without dbt) are not
   supported yet; the converter targets the dbt-meta flavour.
 - Custom extensions from other vendors are ignored on export (reported as
