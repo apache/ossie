@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ossie_gooddata.datatype_mapping import gooddata_to_ossie_datatype
 from ossie_gooddata.models import (
     GdAttribute,
     GdDataset,
@@ -162,6 +163,7 @@ def _convert_date_instance(di: GdDateInstance) -> dict[str, Any]:
 
 def _convert_attribute(attr: GdAttribute, dataset_id: str) -> dict[str, Any]:
     """Convert a GoodData attribute to an Ossie field."""
+    datatype = gooddata_to_ossie_datatype(attr.source_column_data_type)
     osi_field: dict[str, Any] = {
         "name": attr.source_column,
         "expression": {
@@ -172,6 +174,8 @@ def _convert_attribute(attr: GdAttribute, dataset_id: str) -> dict[str, Any]:
         },
         "dimension": {"is_time": False},
     }
+    if datatype is not None:
+        osi_field["datatype"] = datatype
     if attr.description:
         osi_field["description"] = attr.description
     if attr.title != attr.source_column:
@@ -179,6 +183,8 @@ def _convert_attribute(attr: GdAttribute, dataset_id: str) -> dict[str, Any]:
 
     # Store GoodData-specific attribute metadata in custom_extensions
     ext = _build_attribute_extension(attr)
+    if datatype == "Opaque":
+        ext["source_column_data_type"] = attr.source_column_data_type
     if ext:
         osi_field["custom_extensions"] = [{"vendor_name": "GOODDATA", "data": json.dumps(ext)}]
 
@@ -187,6 +193,7 @@ def _convert_attribute(attr: GdAttribute, dataset_id: str) -> dict[str, Any]:
 
 def _convert_fact(fact: GdFact, dataset_id: str) -> dict[str, Any]:
     """Convert a GoodData fact to an Ossie field."""
+    datatype = gooddata_to_ossie_datatype(fact.source_column_data_type)
     osi_field: dict[str, Any] = {
         "name": fact.source_column,
         "expression": {
@@ -196,10 +203,19 @@ def _convert_fact(fact: GdFact, dataset_id: str) -> dict[str, Any]:
             ],
         },
     }
+    if datatype is not None:
+        osi_field["datatype"] = datatype
     if fact.description:
         osi_field["description"] = fact.description
     if fact.title != fact.source_column:
         osi_field.setdefault("ai_context", {})["synonyms"] = [fact.title]
+    if datatype == "Opaque":
+        osi_field["custom_extensions"] = [
+            {
+                "vendor_name": "GOODDATA",
+                "data": json.dumps({"source_column_data_type": fact.source_column_data_type}),
+            }
+        ]
 
     return osi_field
 

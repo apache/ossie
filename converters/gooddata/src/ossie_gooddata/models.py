@@ -67,7 +67,7 @@ class GdAttribute:
     title: str
     source_column: str
     description: str = ""
-    source_column_data_type: str = "STRING"
+    source_column_data_type: str | None = None
     sort_column: str | None = None
     sort_direction: str | None = None
     labels: list[GdLabel] = field(default_factory=list)
@@ -80,7 +80,7 @@ class GdFact:
     title: str
     source_column: str
     description: str = ""
-    source_column_data_type: str = "NUMERIC"
+    source_column_data_type: str | None = None
     tags: list[str] = field(default_factory=list)
 
 
@@ -192,7 +192,7 @@ def gd_model_from_dict(data: dict[str, Any]) -> GdDeclarativeModel:
                     title=attr.get("title", ""),
                     source_column=attr.get("sourceColumn", ""),
                     description=attr.get("description", ""),
-                    source_column_data_type=attr.get("sourceColumnDataType", "STRING"),
+                    source_column_data_type=attr.get("sourceColumnDataType"),
                     sort_column=attr.get("sortColumn"),
                     sort_direction=attr.get("sortDirection"),
                     labels=labels,
@@ -206,7 +206,7 @@ def gd_model_from_dict(data: dict[str, Any]) -> GdDeclarativeModel:
                 title=f.get("title", ""),
                 source_column=f.get("sourceColumn", ""),
                 description=f.get("description", ""),
-                source_column_data_type=f.get("sourceColumnDataType", "NUMERIC"),
+                source_column_data_type=f.get("sourceColumnDataType"),
                 tags=f.get("tags", []),
             )
             for f in ds.get("facts", [])
@@ -366,7 +366,7 @@ def _attr_to_dict(a: GdAttribute) -> dict[str, Any]:
     }
     if a.description:
         d["description"] = a.description
-    if a.source_column_data_type != "STRING":
+    if a.source_column_data_type is not None and a.source_column_data_type != "STRING":
         d["sourceColumnDataType"] = a.source_column_data_type
     if a.sort_column:
         d["sortColumn"] = a.sort_column
@@ -385,7 +385,7 @@ def _fact_to_dict(f: GdFact) -> dict[str, Any]:
     }
     if f.description:
         d["description"] = f.description
-    if f.source_column_data_type != "NUMERIC":
+    if f.source_column_data_type is not None and f.source_column_data_type != "NUMERIC":
         d["sourceColumnDataType"] = f.source_column_data_type
     if f.tags:
         d["tags"] = f.tags
