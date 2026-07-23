@@ -15,20 +15,21 @@
 # specific language governing permissions and limitations
 # under the License.
 
-**/__pycache__/
-**/.venv/
+name: License Header Check
 
-**/.pytest_cache/
-**/.ruff_cache/
-**/.coverage
-**/htmlcov/
-**/dist/
-**/target/
+on:
+  pull_request:
 
-# Go CLI
-cli/dist/
-cli/ossie
-cli/.tool-versions
+permissions:
+  contents: read
 
-# Apache RAT (downloaded by dev/check-license)
-dev/lib/
+jobs:
+  rat:
+    if: github.repository_owner == 'apache'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run Apache RAT
+        run: dev/check-license

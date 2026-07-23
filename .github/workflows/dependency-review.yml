@@ -15,20 +15,21 @@
 # specific language governing permissions and limitations
 # under the License.
 
-**/__pycache__/
-**/.venv/
+name: Dependency Review
 
-**/.pytest_cache/
-**/.ruff_cache/
-**/.coverage
-**/htmlcov/
-**/dist/
-**/target/
+on: [pull_request]
 
-# Go CLI
-cli/dist/
-cli/ossie
-cli/.tool-versions
+permissions:
+  contents: read
+  pull-requests: write
 
-# Apache RAT (downloaded by dev/check-license)
-dev/lib/
+jobs:
+  dependency-review:
+    if: github.repository_owner == 'apache'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          deny-licenses: GPL-2.0-only, GPL-2.0-or-later, GPL-3.0-only, GPL-3.0-or-later, LGPL-2.1-only, LGPL-2.1-or-later, LGPL-3.0-only, LGPL-3.0-or-later, AGPL-3.0-only, AGPL-3.0-or-later, SSPL-1.0, EUPL-1.1, EUPL-1.2
+          comment-summary-in-pr: always

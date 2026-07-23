@@ -15,20 +15,22 @@
 # specific language governing permissions and limitations
 # under the License.
 
-**/__pycache__/
-**/.venv/
+name: ASF Allowlist Check
 
-**/.pytest_cache/
-**/.ruff_cache/
-**/.coverage
-**/htmlcov/
-**/dist/
-**/target/
+on:
+  pull_request:
+  push:
+    branches: [main]
 
-# Go CLI
-cli/dist/
-cli/ossie
-cli/.tool-versions
+permissions:
+  contents: read
 
-# Apache RAT (downloaded by dev/check-license)
-dev/lib/
+jobs:
+  asf-allowlist-check:
+    if: github.repository_owner == 'apache'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: apache/infrastructure-actions/allowlist-check@main
