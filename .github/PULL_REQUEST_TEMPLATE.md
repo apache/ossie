@@ -59,3 +59,7 @@
 ### Compliance
 - [ ] ASF license headers are present on all new source files
 - [ ] No third-party dependencies are added without PMC/IPMC approval
+
+### AI Tool Disclosure (Check the box below if used - Optional)
+- [ ] This contribution used AI-assisted tooling (if yes, note tool/model below)
+
