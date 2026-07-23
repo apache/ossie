@@ -189,6 +189,50 @@ class TestOSIToLightdash:
             for issue in result.issues
         )
 
+    def test_extension_cannot_override_structural_keys(self):
+        document = _document()
+        tampered = document.model_copy(deep=True)
+        metric = tampered.semantic_model[0].metrics[0].model_copy(
+            update={
+                "custom_extensions": [
+                    OSICustomExtension(
+                        vendor_name="lightdash",
+                        data=json.dumps(
+                            {"label": "Total amount", "sql": "1 + 1", "description": "stale"}
+                        ),
+                    )
+                ]
+            }
+        )
+        tampered.semantic_model[0].metrics[0] = metric
+        result = OSIToLightdashConverter().convert(tampered)
+        column = _column(_model(result.output, "orders"), "amount")
+        exported = column["meta"]["metrics"]["total_amount"]
+        assert exported["label"] == "Total amount"
+        assert "sql" not in exported
+        assert exported["description"] == "Sum of order amounts"
+
+    def test_mismatched_relationship_columns_are_skipped(self):
+        document = _document()
+        tampered = document.model_copy(deep=True)
+        relationship = OSIRelationship.model_validate(
+            {
+                "name": "broken",
+                "from": "orders",
+                "to": "customers",
+                "from_columns": ["customer_id", "order_id"],
+                "to_columns": ["customer_id"],
+            }
+        )
+        tampered.semantic_model[0].relationships[0] = relationship
+        result = OSIToLightdashConverter().convert(tampered)
+        assert "joins" not in _model(result.output, "orders").get("meta", {})
+        assert any(
+            issue.issue_type is ConverterIssueType.RELATIONSHIP_COLUMNS_MISMATCHED
+            and issue.element_name == "broken"
+            for issue in result.issues
+        )
+
     def test_relationship_becomes_join(self):
         result = OSIToLightdashConverter().convert(_document())
         joins = _model(result.output, "orders")["meta"]["joins"]

@@ -30,6 +30,9 @@ class ConverterIssueType(Enum):
     # Export: a metric references more than one dataset, which a Lightdash
     # model metric cannot express.
     CROSS_DATASET_METRIC_DROPPED = "CROSS_DATASET_METRIC_DROPPED"
+    # Export: a relationship's from_columns/to_columns differ in length, so a
+    # correct sql_on cannot be built.
+    RELATIONSHIP_COLUMNS_MISMATCHED = "RELATIONSHIP_COLUMNS_MISMATCHED"
     # Export: a custom extension from another vendor cannot be carried into
     # Lightdash meta (it remains in the OSI document itself).
     FOREIGN_EXTENSION_IGNORED = "FOREIGN_EXTENSION_IGNORED"

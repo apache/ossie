@@ -49,7 +49,7 @@ ossie-lightdash import schema.yml semantic_model.json --database analytics_db --
 | `metric` with single-aggregation expression (`SUM(ds.col)`, `COUNT(DISTINCT ds.col)`, ...) | column-level `meta.metrics.<name>` with a typed metric (`sum`, `count_distinct`, ...) |
 | `metric` with any other single-dataset expression | model-level `meta.metrics.<name>` with `type: number` + `sql` |
 | `relationship` | `meta.joins` (`sql_on` built from / parsed into column pairs) |
-| Lightdash presentation attributes (`label`, `format`, `round`, `compact`, `group_label`, `hidden`, `percentile`, ...) | `custom_extensions` with `vendor_name: "lightdash"`; on export the extension data is overlaid onto the generated definition and always wins |
+| Lightdash presentation attributes (`label`, `format`, `round`, `compact`, `group_label`, `hidden`, `percentile`, ...) | `custom_extensions` with `vendor_name: "lightdash"`; on export the extension data is overlaid onto the generated definition (structural keys — `sql`/`label` on dimensions, `sql`/`description` on metrics — are protected and cannot be overridden) |
 
 Expressions are written under the `ANSI_SQL` dialect. Warehouse-specific
 dialects (e.g. `BIGQUERY`) can be added once the surrounding tooling resolves
@@ -74,6 +74,13 @@ Omitting `--schema` as well is reported as a `SOURCE_UNQUALIFIED` issue.
   as model-level metrics.
 - **`primary_key` / `unique_keys` are not exported** — Lightdash has no
   corresponding concept — and consequently cannot be reconstructed on import.
+- **`dataset.name` is not preserved when it differs from the source table
+  name**: the dbt model is named after the table part of `source`, and the
+  import direction derives dataset names from model names. References inside
+  expressions and relationships are rewritten consistently, but a
+  name-stable round-trip is not guaranteed.
+- **Relationships with mismatched `from_columns` / `to_columns` lengths are
+  skipped on export** with a `RELATIONSHIP_COLUMNS_MISMATCHED` issue.
 - **`ai_context` is not carried** into Lightdash meta.
 - **Model-level Lightdash meta beyond `metrics` and `joins`** (`label`,
   `group_details`, `sql_filter`, `order_fields_by`, column

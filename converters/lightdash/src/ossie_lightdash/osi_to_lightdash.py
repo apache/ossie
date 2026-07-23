@@ -22,7 +22,9 @@ carry Lightdash dimensions, metrics and joins, ready to be merged into a dbt
 project that Lightdash reads. Lightdash-specific presentation attributes that
 have no OSI vocabulary round-trip through ``custom_extensions`` entries with
 ``vendor_name: "lightdash"``; their keys are overlaid onto the generated
-definitions and therefore always win.
+definitions and win for presentation attributes, while structural keys
+(``sql``/``label`` on dimensions, ``sql``/``description`` on metrics) are
+protected so they can never override the OSI-derived definition.
 """
 
 import json
@@ -44,6 +46,14 @@ from ossie_lightdash.expression_utils import (
 )
 
 LIGHTDASH_VENDOR_NAME = "lightdash"
+
+# Structural keys are owned by OSI vocabulary (the import direction never puts
+# them into the extension); dropping them here keeps a hand-authored extension
+# from overriding the OSI-derived definition. ``type`` stays overridable on
+# metrics: it is the documented channel for types OSI expressions cannot
+# express (e.g. percentile).
+_PROTECTED_DIMENSION_KEYS = {"sql", "label"}
+_PROTECTED_METRIC_KEYS = {"sql", "description"}
 
 
 def _pick_expression(osi_expression: Any, dialect: OSIDialect) -> str:
@@ -122,6 +132,14 @@ class OSIToLightdashConverter:
             from_model_name = model_name_by_dataset.get(relationship.from_dataset)
             if from_model is None or to_model_name is None:
                 continue
+            if len(relationship.from_columns) != len(relationship.to_columns):
+                issues.append(
+                    ConverterIssue(
+                        issue_type=ConverterIssueType.RELATIONSHIP_COLUMNS_MISMATCHED,
+                        element_name=relationship.name,
+                    )
+                )
+                continue
             sql_on = " AND ".join(
                 f"${{{from_model_name}.{from_column}}} = ${{{to_model_name}.{to_column}}}"
                 for from_column, to_column in zip(
@@ -150,7 +168,13 @@ class OSIToLightdashConverter:
             expression = _pick_expression(field.expression, self._dialect)
             if expression and expression != field.name:
                 dimension["sql"] = osi_sql_to_lightdash(expression, dataset.name)
-            dimension.update(_lightdash_extension_data(field, issues))
+            dimension.update(
+                {
+                    key: value
+                    for key, value in _lightdash_extension_data(field, issues).items()
+                    if key not in _PROTECTED_DIMENSION_KEYS
+                }
+            )
             # An empty dict still marks dimension-ness: a field OSI declares as a
             # categorical dimension must not degrade to a plain column on export,
             # or the import direction could not reconstruct it.
@@ -202,7 +226,13 @@ class OSIToLightdashConverter:
             definition["sql"] = osi_sql_to_lightdash(expression, target_dataset)
             target_column = None
 
-        definition.update(extension_data)
+        definition.update(
+            {
+                key: value
+                for key, value in extension_data.items()
+                if key not in _PROTECTED_METRIC_KEYS
+            }
+        )
 
         if target_column is not None:
             column = columns_by_dataset[target_dataset][target_column]
