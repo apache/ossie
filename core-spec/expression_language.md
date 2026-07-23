@@ -29,7 +29,7 @@
 
 ## Overview
 
-![Ossie Layers](img/Ossie_layers.png)
+![Ossie Layers](img/ossie_layers.png)
 
 There are two layers in Ossie that need an expression language:
 
