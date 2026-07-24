@@ -49,3 +49,16 @@ Apply automatic fixes and formatting:
 uv run ruff check src tests --fix
 uv run ruff format src tests
 ```
+
+Run the complete converter test suite:
+
+```bash
+uv run pytest
+```
+
+Run one file or test while iterating:
+
+```bash
+uv run pytest tests/<file>.py
+uv run pytest tests/<file>.py::<test>
+```
