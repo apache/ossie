@@ -44,6 +44,7 @@
         <jackson.version>2.18.9</jackson.version>
         <jsonschema2pojo.version>1.3.3</jsonschema2pojo.version>
         <junit.version>5.11.4</junit.version>
+        <maven-antrun-plugin.version>3.1.0</maven-antrun-plugin.version>
     </properties>
 
     <dependencies>
@@ -68,6 +69,35 @@
 
     <build>
         <plugins>
+            <!--
+              Give the build-local schema a model-oriented filename so
+              jsonschema2pojo generates OsiModel without modifying the canonical
+              JSON Schema.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>${maven-antrun-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>prepare-osi-model-schema-for-java-generation</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <mkdir dir="${project.build.directory}/generated-schema"/>
+                                <copy
+                                    file="${project.basedir}/../../../core-spec/osi-schema.json"
+                                    tofile="${project.build.directory}/generated-schema/osi-model.json"
+                                    overwrite="true"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <plugin>
                 <groupId>org.jsonschema2pojo</groupId>
                 <artifactId>jsonschema2pojo-maven-plugin</artifactId>
@@ -79,9 +109,9 @@
                             <goal>generate</goal>
                         </goals>
                         <configuration>
-                            <sourceDirectory>${project.basedir}/../../../core-spec</sourceDirectory>
+                            <sourceDirectory>${project.build.directory}/generated-schema</sourceDirectory>
                             <includes>
-                                <include>osi-schema.json</include>
+                                <include>osi-model.json</include>
                             </includes>
                             <sourceType>jsonschema</sourceType>
                             <targetPackage>org.apache.ossie.model</targetPackage>
