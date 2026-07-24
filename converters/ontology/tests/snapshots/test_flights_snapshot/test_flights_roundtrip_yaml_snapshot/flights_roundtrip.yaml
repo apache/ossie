@@ -1,0 +1,1163 @@
+version: 0.2.0.dev0
+name: Flights
+description: Ontology of flights into and out of airports.
+requires:
+- COUNT[Airport] > 0
+- COUNT[Carrier] > 0
+ontology:
+- concept: Route
+  type: EntityType
+  identify_by:
+  - id
+  relationships:
+  - name: average_departure_delay
+    roles:
+    - concept: Delay
+    verbalizes:
+    - '{Route} has average- departure {Delay}'
+    multiplicity: ManyToOne
+    derived_by:
+    - Delay == AVG[Flight.departure_delay WHERE Flight.route(Route) GROUP BY Route]
+  - name: average_arrival_delay
+    roles:
+    - concept: Delay
+    verbalizes:
+    - '{Route} has average- arrival {Delay}'
+    multiplicity: ManyToOne
+    derived_by:
+    - Delay == AVG[Flight.arrival_delay WHERE Flight.route(Route) GROUP BY Route]
+  - name: distance
+    roles:
+    - concept: Distance
+    verbalizes:
+    - '{Route} spans {Distance}'
+    multiplicity: ManyToOne
+  - name: lies_in
+    roles:
+    - concept: DistanceGroup
+    verbalizes:
+    - '{Route} has {DistanceGroup}'
+    multiplicity: ManyToOne
+  - name: id
+    roles:
+    - concept: RouteId
+    verbalizes:
+    - '{Route} is identified by {RouteId}'
+    multiplicity: OneToOne
+  - name: route_name
+    roles:
+    - concept: String
+    verbalizes:
+    - '{Route} has name- {String}'
+    multiplicity: ManyToOne
+  - name: destination
+    roles:
+    - concept: Airport
+    verbalizes:
+    - '{Route} connects to destination- {Airport}'
+    multiplicity: ManyToOne
+    requires:
+    - NOT Route.departure(Airport)
+  - name: departure
+    roles:
+    - concept: Airport
+    verbalizes:
+    - '{Route} connects to departure- {Airport}'
+    multiplicity: ManyToOne
+    requires:
+    - NOT Route.destination(Airport)
+- concept: RouteId
+  type: ValueType
+  description: A unique identifier for a route between two airports. Constructed by concatenating the IATA codes of the departure and destination airports (e.g., 'ATL -> DCA')
+  extends:
+  - String
+- concept: Carrier
+  type: EntityType
+  identify_by:
+  - code
+  relationships:
+  - name: code
+    roles:
+    - concept: CarrierCode
+    verbalizes:
+    - '{Carrier} uses {CarrierCode}'
+    multiplicity: OneToOne
+  - name: name
+    roles:
+    - concept: CarrierName
+    verbalizes:
+    - '{Carrier} has {CarrierName}'
+    multiplicity: ManyToOne
+- concept: CarrierName
+  type: ValueType
+  extends:
+  - String
+- concept: CarrierCode
+  type: ValueType
+  description: The two-letter IATA code for the airline carrier.
+  extends:
+  - String
+- concept: Flight
+  type: EntityType
+  identify_by:
+  - id
+  relationships:
+  - name: departure_delay
+    roles:
+    - concept: Delay
+    verbalizes:
+    - '{Flight} has departure- {Delay}'
+    multiplicity: ManyToOne
+  - name: number
+    roles:
+    - concept: FlightNr
+    verbalizes:
+    - '{Flight} has {FlightNr}'
+    multiplicity: ManyToOne
+  - name: scheduled_departure
+    roles:
+    - concept: DateTime
+    verbalizes:
+    - '{Flight} is scheduled to depart at {DateTime}'
+    multiplicity: ManyToOne
+    requires:
+    - Flight.scheduled_departure < Flight.scheduled_arrival
+  - name: arrival_delay
+    roles:
+    - concept: Delay
+    verbalizes:
+    - '{Flight} has arrival- {Delay}'
+    multiplicity: ManyToOne
+  - name: canceled
+    verbalizes:
+    - '{Flight} was canceled'
+  - name: canceled_due_to
+    roles:
+    - concept: CancelationReason
+    verbalizes:
+    - '{Flight} was canceled due to {CancelationReason}'
+    multiplicity: ManyToOne
+  - name: distance
+    roles:
+    - concept: Distance
+    verbalizes:
+    - '{Flight} spans actual- {Distance}'
+    multiplicity: ManyToOne
+  - name: id
+    roles:
+    - concept: FlightId
+    verbalizes:
+    - '{Flight} is identified by {FlightId}'
+    multiplicity: OneToOne
+  - name: scheduled_arrival
+    roles:
+    - concept: DateTime
+    verbalizes:
+    - '{Flight} is scheduled to arrive at {DateTime}'
+    multiplicity: ManyToOne
+  - name: registers_longitude_series
+    roles:
+    - concept: DateTime
+    - concept: DegreesLongitude
+    verbalizes:
+    - '{Flight} at {DateTime} registers {DegreesLongitude}'
+    multiplicity: ManyToOne
+  - name: registers_latitude_series
+    roles:
+    - concept: DateTime
+    - concept: DegreesLatitude
+    verbalizes:
+    - '{Flight} at {DateTime} registers {DegreesLatitude}'
+    multiplicity: ManyToOne
+  - name: date
+    roles:
+    - concept: Date
+    verbalizes:
+    - '{Flight} is scheduled to depart on {Date}'
+    multiplicity: ManyToOne
+  - name: departs_at
+    roles:
+    - concept: DateTime
+    verbalizes:
+    - '{Flight} departs at {DateTime}'
+    multiplicity: ManyToOne
+    requires:
+    - Flight.departs_at < Flight.arrives_at
+  - name: diverted
+    verbalizes:
+    - '{Flight} was diverted'
+  - name: arrives_at
+    roles:
+    - concept: DateTime
+    verbalizes:
+    - '{Flight} arrives at {DateTime}'
+    multiplicity: ManyToOne
+  - name: route
+    roles:
+    - concept: Route
+    verbalizes:
+    - '{Flight} traverses {Route}'
+    multiplicity: ManyToOne
+  - name: aircraft
+    roles:
+    - concept: Aircraft
+    verbalizes:
+    - '{Flight} uses {Aircraft}'
+    multiplicity: ManyToOne
+    requires:
+    - Flight.operated_by(Aircraft.carrier)
+  - name: operated_by
+    roles:
+    - concept: Carrier
+    verbalizes:
+    - '{Flight} is operated by {Carrier}'
+    multiplicity: ManyToOne
+- concept: FlightId
+  type: ValueType
+  description: A unique identifier for an instance of a flight
+  extends:
+  - String
+- concept: FlightNr
+  type: ValueType
+  description: The IATA flight number, which is typically a combination of the airline's IATA code and a numeric code (e.g., 'AA1234').
+  extends:
+  - String
+- concept: Market
+  type: EntityType
+  identify_by:
+  - name
+  relationships:
+  - name: name
+    roles:
+    - concept: MarketName
+    verbalizes:
+    - '{Market} is identified by {MarketName}'
+    multiplicity: OneToOne
+- concept: MarketName
+  type: ValueType
+  extends:
+  - String
+- concept: Airport
+  type: EntityType
+  identify_by:
+  - code
+  requires:
+  - Airport.latitude
+  - Airport.longitude
+  relationships:
+  - name: city
+    roles:
+    - concept: City
+    verbalizes:
+    - '{Airport} is located in {City}'
+    multiplicity: ManyToOne
+  - name: serves
+    roles:
+    - concept: Market
+    verbalizes:
+    - '{Airport} serves {Market}'
+    multiplicity: ManyToOne
+  - name: average_departure_delay
+    roles:
+    - concept: Delay
+    verbalizes:
+    - '{Airport} has average- departure {Delay}'
+    multiplicity: ManyToOne
+    derived_by:
+    - Delay == AVG[Flight.departure_delay WHERE Airport == Flight.route.departure GROUP BY Airport]
+  - name: longitude
+    roles:
+    - concept: DegreesLongitude
+    verbalizes:
+    - '{Airport} centers at {DegreesLongitude}'
+    multiplicity: ManyToOne
+  - name: average_arrival_delay
+    roles:
+    - concept: Delay
+    verbalizes:
+    - '{Airport} has average- arrival {Delay}'
+    multiplicity: ManyToOne
+    derived_by:
+    - Delay == AVG[Flight.arrival_delay WHERE Airport == Flight.route.destination GROUP BY Airport]
+  - name: name
+    roles:
+    - concept: AirportName
+    verbalizes:
+    - '{Airport} has {AirportName}'
+    multiplicity: ManyToOne
+  - name: code
+    roles:
+    - concept: AirportCode
+    verbalizes:
+    - '{Airport} has {AirportCode}'
+    multiplicity: OneToOne
+  - name: latitude
+    roles:
+    - concept: DegreesLatitude
+    verbalizes:
+    - '{Airport} centers at {DegreesLatitude}'
+    multiplicity: ManyToOne
+- concept: AirportId
+  type: ValueType
+  description: Five digit number used as an alternate identifier for airports.
+  extends:
+  - String
+- concept: AirportCode
+  type: ValueType
+  description: The three-letter IATA code for the airport.
+  extends:
+  - String
+- concept: AirportName
+  type: ValueType
+  extends:
+  - String
+- concept: Aircraft
+  type: EntityType
+  identify_by:
+  - tailnum
+  relationships:
+  - name: serial_number
+    roles:
+    - concept: SerialNr
+    verbalizes:
+    - '{Aircraft} has {SerialNr}'
+    multiplicity: ManyToOne
+  - name: name
+    roles:
+    - concept: String
+    verbalizes:
+    - '{Aircraft} has name {String}'
+    multiplicity: ManyToOne
+  - name: number_of_seats
+    roles:
+    - concept: Integer
+    verbalizes:
+    - '{Aircraft} has {Integer} seats'
+    multiplicity: ManyToOne
+  - name: tailnum
+    roles:
+    - concept: TailNr
+    verbalizes:
+    - '{Aircraft} is identified by {TailNr}'
+    multiplicity: OneToOne
+  - name: model
+    roles:
+    - concept: Model
+    verbalizes:
+    - '{Aircraft} has {Model}'
+    multiplicity: ManyToOne
+  - name: year_manufactured
+    roles:
+    - concept: Year
+    verbalizes:
+    - '{Aircraft} was manufactured in {Year}'
+    multiplicity: ManyToOne
+  - name: capacity
+    roles:
+    - concept: Capacity
+    verbalizes:
+    - '{Aircraft} has {Capacity}'
+    multiplicity: ManyToOne
+  - name: carrier
+    roles:
+    - concept: Carrier
+    verbalizes:
+    - '{Aircraft} is operated by {Carrier}'
+    multiplicity: ManyToOne
+- concept: Model
+  type: EntityType
+  identify_by:
+  - name
+  - manufacturer
+  relationships:
+  - name: name
+    roles:
+    - concept: ModelName
+    verbalizes:
+    - '{Model} has {ModelName}'
+    multiplicity: ManyToOne
+  - name: manufacturer
+    roles:
+    - concept: Manufacturer
+    verbalizes:
+    - '{Model} is manufactured by {Manufacturer}'
+    multiplicity: ManyToOne
+- concept: ModelName
+  type: ValueType
+  extends:
+  - String
+- concept: Manufacturer
+  type: EntityType
+  identify_by:
+  - name
+  relationships:
+  - name: name
+    roles:
+    - concept: ManufacturerName
+    verbalizes:
+    - '{Manufacturer} is identified by {ManufacturerName}'
+    multiplicity: OneToOne
+- concept: ManufacturerName
+  type: ValueType
+  extends:
+  - String
+- concept: Runway
+  type: EntityType
+  identify_by:
+  - designator
+  - airport
+  relationships:
+  - name: airport
+    roles:
+    - concept: Airport
+    verbalizes:
+    - '{Runway} belongs to {Airport}'
+    multiplicity: ManyToOne
+  - name: designator
+    roles:
+    - concept: RunwayDesignator
+    verbalizes:
+    - '{Runway} uses {RunwayDesignator}'
+    multiplicity: ManyToOne
+  - name: length
+    roles:
+    - concept: RunwayLength
+    verbalizes:
+    - '{Runway} has {RunwayLength}'
+    multiplicity: ManyToOne
+  - name: geometry
+    roles:
+    - concept: RunwayGeometry
+    verbalizes:
+    - '{Runway} has {RunwayGeometry}'
+    multiplicity: ManyToOne
+- concept: City
+  type: EntityType
+  identify_by:
+  - name
+  - state
+  relationships:
+  - name: name
+    roles:
+    - concept: CityName
+    verbalizes:
+    - '{City} has {CityName}'
+    multiplicity: ManyToOne
+  - name: state
+    roles:
+    - concept: State
+    verbalizes:
+    - '{City} is located in {State}'
+    multiplicity: ManyToOne
+- concept: State
+  type: EntityType
+  identify_by:
+  - code
+  relationships:
+  - name: code
+    roles:
+    - concept: StateCode
+    verbalizes:
+    - '{State} is identified by {StateCode}'
+    multiplicity: OneToOne
+  - name: name
+    roles:
+    - concept: StateName
+    verbalizes:
+    - '{State} has {StateName}'
+    multiplicity: ManyToOne
+- concept: CancelationReason
+  type: EntityType
+  description: A curated set of reasons that explain why a flight is canceled
+  identify_by:
+  - code
+  relationships:
+  - name: code
+    roles:
+    - concept: CancelationCode
+    verbalizes:
+    - '{CancelationReason} is identified by {CancelationCode}'
+    multiplicity: OneToOne
+  - name: description
+    roles:
+    - concept: String
+    verbalizes:
+    - '{CancelationReason} has description- {String}'
+    multiplicity: ManyToOne
+- concept: Year
+  type: ValueType
+  extends:
+  - String
+- concept: TailNr
+  type: ValueType
+  extends:
+  - String
+- concept: StateName
+  type: ValueType
+  extends:
+  - String
+- concept: StateCode
+  type: ValueType
+  extends:
+  - String
+- concept: SerialNr
+  type: ValueType
+  extends:
+  - String
+- concept: RunwayDesignator
+  type: ValueType
+  description: Used to distinguish runways within a given airport.
+  extends:
+  - String
+- concept: DistanceGroup
+  type: ValueType
+  description: A number used to group distances of different lengths, where 1 groups the shortest and 10 the longest.
+  extends:
+  - Integer
+  requires:
+  - 1 <= DistanceGroup
+  - DistanceGroup <= 10
+- concept: CityName
+  type: ValueType
+  extends:
+  - String
+- concept: Polygon
+  type: ValueType
+  description: A polygon represented as a list of vertices, where each vertex is a pair of latitude and longitude coordinates.
+  extends:
+  - String
+- concept: RunwayGeometry
+  type: ValueType
+  description: A polygon that models the shape of a runway.
+  extends:
+  - Polygon
+- concept: DegreesLongitude
+  type: ValueType
+  extends:
+  - Decimal
+  requires:
+  - DegreesLongitude <= 180
+  - DegreesLongitude >= -180
+- concept: DegreesLatitude
+  type: ValueType
+  extends:
+  - Decimal
+  requires:
+  - DegreesLatitude <= 90
+  - DegreesLatitude >= -90
+- concept: CancelationCode
+  type: ValueType
+  description: The single character code that identifies the reason a flight is canceled
+  extends:
+  - String
+  requires:
+  - CancelationCode == 'A' OR CancelationCode == 'B' OR CancelationCode == 'C' OR CancelationCode == 'D'
+- concept: NrMinutes
+  type: ValueType
+  description: Unit of measure for time in minutes
+  extends:
+  - Decimal
+- concept: Delay
+  type: ValueType
+  extends:
+  - NrMinutes
+- concept: NrMiles
+  type: ValueType
+  description: Unit of measure for distance in miles
+  extends:
+  - Decimal
+- concept: Distance
+  type: ValueType
+  extends:
+  - NrMiles
+- concept: NrPounds
+  type: ValueType
+  description: Unit of measure for weight in pounds
+  extends:
+  - Integer
+- concept: Capacity
+  type: ValueType
+  description: The capacity of an aircraft, measured in pounds.
+  extends:
+  - NrPounds
+- concept: NrFeet
+  type: ValueType
+  description: Unit of measure for distance in feet
+  extends:
+  - Decimal
+- concept: RunwayLength
+  type: ValueType
+  description: The unit for measuring the lengths of runways in American airports.
+  extends:
+  - NrFeet
+ontology_mappings:
+- name: flights_mapping
+  semantic_model:
+    name: Flights semantic model
+    datasets:
+    - name: RUNWAY
+      source: DATABASE.SCHEMA.RUNWAYS
+      fields:
+      - name: airport_code
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: airport_code
+      - name: length
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: length
+      - name: shape
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: shape
+      - name: designator
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: designator
+    - name: AIRCRAFT
+      source: DATABASE.SCHEMA.AIRCRAFT
+      description: An airplane, helicopter, or other machine capable of flight
+      fields:
+      - name: serial_nr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: serial_nr
+      - name: name
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: name
+      - name: nr_seats
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: nr_seats
+      - name: tail_nr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: tail_nr
+      - name: carrier_code
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: carrier_code
+      - name: manufacturer
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: manufacturer
+      - name: model
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: model
+      - name: year
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: year
+      - name: capacity
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: capacity
+    - name: AIRPORT
+      source: DATABASE.SCHEMA.AIRPORTS
+      description: An airport that is identified by an IATA code.
+      fields:
+      - name: state_code
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: state_code
+      - name: market_nm
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: market_nm
+      - name: longitude
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: longitude
+      - name: opened
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: opened
+      - name: state_nm
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: state_nm
+      - name: city_nm
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: city_nm
+      - name: name
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: name
+      - name: code
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: code
+      - name: latitude
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: latitude
+    - name: FLIGHT
+      source: DATABASE.SCHEMA.FLIGHTS
+      description: A commercial passenger flight.
+      fields:
+      - name: dep_delay
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: dep_delay
+      - name: air_time
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: air_time
+      - name: nr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: nr
+      - name: carrier_code
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: carrier_code
+      - name: duration
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: duration
+      - name: scheduled_departure
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: scheduled_departure
+      - name: arr_delay
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: arr_delay
+      - name: cancelled
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: cancelled
+      - name: cancel_code
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: cancel_code
+      - name: distance
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: distance
+      - name: id
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: id
+      - name: scheduled_arrival
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: scheduled_arrival
+      - name: wheels_on
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: wheels_on
+      - name: date
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: date
+      - name: wheels_off
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: wheels_off
+      - name: scheduled_duration
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: scheduled_duration
+      - name: tail_nr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: tail_nr
+      - name: departure
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: departure
+      - name: route_id
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: route_id
+      - name: diverted
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: diverted
+      - name: arrival
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: arrival
+    - name: CARRIER
+      source: DATABASE.SCHEMA.CARRIERS
+      description: An airline, such as Delta, United, or American.
+      fields:
+      - name: code
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: code
+      - name: name
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: name
+    - name: ROUTE
+      source: DATABASE.SCHEMA.ROUTES
+      description: Represents the existence of one or more flights between a pair of departure arrival airports.
+      fields:
+      - name: orig_airport_code
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: orig_airport_code
+      - name: dest_airport_code
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: dest_airport_code
+      - name: distance
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: distance
+      - name: dist_grp
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: dist_grp
+      - name: id
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: id
+      - name: name
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: name
+  concept_mappings:
+  - concept: Runway
+    object_mappings:
+    - referent_mappings:
+      - relationship: designator
+        expression: RUNWAY.designator
+      - relationship: airport
+        referent_mappings:
+        - relationship: code
+          expression: RUNWAY.airport_code
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: designator
+          expression: RUNWAY.designator
+        - relationship: airport
+          referent_mappings:
+          - relationship: code
+            expression: RUNWAY.airport_code
+      children:
+      - object_mapping:
+          concept: RunwayLength
+          expression: RUNWAY.length
+        relationship: length
+      - object_mapping:
+          concept: RunwayGeometry
+          expression: RUNWAY.shape
+        relationship: geometry
+  - concept: Manufacturer
+    object_mappings:
+    - referent_mappings:
+      - relationship: name
+        expression: AIRCRAFT.manufacturer
+  - concept: Model
+    object_mappings:
+    - referent_mappings:
+      - relationship: name
+        expression: AIRCRAFT.model
+      - relationship: manufacturer
+        referent_mappings:
+        - relationship: name
+          expression: AIRCRAFT.manufacturer
+  - concept: Aircraft
+    object_mappings:
+    - referent_mappings:
+      - relationship: tailnum
+        expression: AIRCRAFT.tail_nr
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: tailnum
+          expression: AIRCRAFT.tail_nr
+      children:
+      - object_mapping:
+          concept: SerialNr
+          expression: AIRCRAFT.serial_nr
+        relationship: serial_number
+      - object_mapping:
+          concept: String
+          expression: AIRCRAFT.name
+        relationship: name
+      - object_mapping:
+          concept: Integer
+          expression: AIRCRAFT.nr_seats
+        relationship: number_of_seats
+      - object_mapping:
+          concept: Model
+          referent_mappings:
+          - relationship: name
+            expression: AIRCRAFT.model
+          - relationship: manufacturer
+            referent_mappings:
+            - relationship: name
+              expression: AIRCRAFT.manufacturer
+        relationship: model
+      - object_mapping:
+          concept: Year
+          expression: AIRCRAFT.year
+        relationship: year_manufactured
+      - object_mapping:
+          concept: Capacity
+          expression: AIRCRAFT.capacity
+        relationship: capacity
+      - object_mapping:
+          concept: Carrier
+          referent_mappings:
+          - relationship: code
+            expression: AIRCRAFT.carrier_code
+        relationship: carrier
+  - concept: State
+    object_mappings:
+    - referent_mappings:
+      - relationship: code
+        expression: AIRPORT.state_code
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: code
+          expression: AIRPORT.state_code
+      children:
+      - object_mapping:
+          concept: StateName
+          expression: AIRPORT.state_nm
+        relationship: name
+  - concept: City
+    object_mappings:
+    - referent_mappings:
+      - relationship: name
+        expression: AIRPORT.city_nm
+      - relationship: state
+        referent_mappings:
+        - relationship: code
+          expression: AIRPORT.state_code
+  - concept: Market
+    object_mappings:
+    - referent_mappings:
+      - relationship: name
+        expression: AIRPORT.market_nm
+  - concept: Airport
+    object_mappings:
+    - referent_mappings:
+      - relationship: code
+        expression: AIRPORT.code
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: code
+          expression: AIRPORT.code
+      children:
+      - object_mapping:
+          concept: City
+          referent_mappings:
+          - relationship: name
+            expression: AIRPORT.city_nm
+          - relationship: state
+            referent_mappings:
+            - relationship: code
+              expression: AIRPORT.state_code
+        relationship: city
+      - object_mapping:
+          concept: Market
+          referent_mappings:
+          - relationship: name
+            expression: AIRPORT.market_nm
+        relationship: serves
+      - object_mapping:
+          concept: DegreesLongitude
+          expression: AIRPORT.longitude
+        relationship: longitude
+      - object_mapping:
+          concept: AirportName
+          expression: AIRPORT.name
+        relationship: name
+      - object_mapping:
+          concept: DegreesLatitude
+          expression: AIRPORT.latitude
+        relationship: latitude
+  - concept: Flight
+    object_mappings:
+    - referent_mappings:
+      - relationship: id
+        expression: FLIGHT.id
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: id
+          expression: FLIGHT.id WHERE ( FLIGHT.diverted == TRUE )
+      relationship: diverted
+    - object_mapping:
+        referent_mappings:
+        - relationship: id
+          expression: FLIGHT.id WHERE ( FLIGHT.cancelled == TRUE )
+      relationship: canceled
+    - object_mapping:
+        referent_mappings:
+        - relationship: id
+          expression: FLIGHT.id
+      children:
+      - object_mapping:
+          concept: Delay
+          expression: FLIGHT.arr_delay
+        relationship: arrival_delay
+      - object_mapping:
+          concept: Delay
+          expression: FLIGHT.dep_delay
+        relationship: departure_delay
+      - object_mapping:
+          concept: FlightNr
+          expression: FLIGHT.nr
+        relationship: number
+      - object_mapping:
+          concept: DateTime
+          expression: FLIGHT.scheduled_departure
+        relationship: scheduled_departure
+      - object_mapping:
+          concept: CancelationReason
+          referent_mappings:
+          - relationship: code
+            expression: FLIGHT.cancel_code
+        relationship: canceled_due_to
+      - object_mapping:
+          concept: Distance
+          expression: FLIGHT.distance
+        relationship: distance
+      - object_mapping:
+          concept: DateTime
+          expression: FLIGHT.scheduled_arrival
+        relationship: scheduled_arrival
+      - object_mapping:
+          concept: Date
+          expression: FLIGHT.date
+        relationship: date
+      - object_mapping:
+          concept: DateTime
+          expression: FLIGHT.departure
+        relationship: departs_at
+      - object_mapping:
+          concept: DateTime
+          expression: FLIGHT.arrival
+        relationship: arrives_at
+      - object_mapping:
+          concept: Route
+          referent_mappings:
+          - relationship: id
+            expression: FLIGHT.route_id
+        relationship: route
+      - object_mapping:
+          concept: Aircraft
+          referent_mappings:
+          - relationship: tailnum
+            expression: FLIGHT.tail_nr
+        relationship: aircraft
+      - object_mapping:
+          concept: Carrier
+          referent_mappings:
+          - relationship: code
+            expression: FLIGHT.carrier_code
+        relationship: operated_by
+  - concept: Carrier
+    object_mappings:
+    - referent_mappings:
+      - relationship: code
+        expression: CARRIER.code
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: code
+          expression: CARRIER.code
+      children:
+      - object_mapping:
+          concept: CarrierName
+          expression: CARRIER.name
+        relationship: name
+  - concept: Route
+    object_mappings:
+    - referent_mappings:
+      - relationship: id
+        expression: ROUTE.id
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: id
+          expression: ROUTE.id
+      children:
+      - object_mapping:
+          concept: Distance
+          expression: ROUTE.distance
+        relationship: distance
+      - object_mapping:
+          concept: DistanceGroup
+          expression: ROUTE.dist_grp
+        relationship: lies_in
+      - object_mapping:
+          concept: String
+          expression: ROUTE.name
+        relationship: route_name
+      - object_mapping:
+          concept: Airport
+          referent_mappings:
+          - relationship: code
+            expression: ROUTE.dest_airport_code
+        relationship: destination
+      - object_mapping:
+          concept: Airport
+          referent_mappings:
+          - relationship: code
+            expression: ROUTE.orig_airport_code
+        relationship: departure

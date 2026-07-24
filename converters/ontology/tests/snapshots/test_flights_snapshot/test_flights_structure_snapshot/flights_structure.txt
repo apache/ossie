@@ -1,0 +1,166 @@
+name: Flights
+version: 0.2.0.dev0
+description: Ontology of flights into and out of airports.
+
+ontology requires:
+  - COUNT[Airport] > 0
+  - COUNT[Carrier] > 0
+
+concepts:
+  Aircraft (ENTITY_TYPE)
+    identify_by: Aircraft.tailnum
+  Airport (ENTITY_TYPE)
+    identify_by: Airport.code
+    requires: Airport.latitude
+    requires: Airport.longitude
+  AirportCode (VALUE_TYPE)
+    extends: String
+  AirportId (VALUE_TYPE)
+    extends: String
+  AirportName (VALUE_TYPE)
+    extends: String
+  CancelationCode (VALUE_TYPE)
+    extends: String
+    requires: CancelationCode == 'A' OR CancelationCode == 'B' OR CancelationCode == 'C' OR CancelationCode == 'D'
+  CancelationReason (ENTITY_TYPE)
+    identify_by: CancelationReason.code
+  Capacity (VALUE_TYPE)
+    extends: NrPounds
+  Carrier (ENTITY_TYPE)
+    identify_by: Carrier.code
+  CarrierCode (VALUE_TYPE)
+    extends: String
+  CarrierName (VALUE_TYPE)
+    extends: String
+  City (ENTITY_TYPE)
+    identify_by: City.name, City.state
+  CityName (VALUE_TYPE)
+    extends: String
+  DegreesLatitude (VALUE_TYPE)
+    extends: Decimal
+    requires: DegreesLatitude <= 90
+    requires: DegreesLatitude >= -90
+  DegreesLongitude (VALUE_TYPE)
+    extends: Decimal
+    requires: DegreesLongitude <= 180
+    requires: DegreesLongitude >= -180
+  Delay (VALUE_TYPE)
+    extends: NrMinutes
+  Distance (VALUE_TYPE)
+    extends: NrMiles
+  DistanceGroup (VALUE_TYPE)
+    extends: Integer
+    requires: 1 <= DistanceGroup
+    requires: DistanceGroup <= 10
+  Flight (ENTITY_TYPE)
+    identify_by: Flight.id
+  FlightId (VALUE_TYPE)
+    extends: String
+  FlightNr (VALUE_TYPE)
+    extends: String
+  Manufacturer (ENTITY_TYPE)
+    identify_by: Manufacturer.name
+  ManufacturerName (VALUE_TYPE)
+    extends: String
+  Market (ENTITY_TYPE)
+    identify_by: Market.name
+  MarketName (VALUE_TYPE)
+    extends: String
+  Model (ENTITY_TYPE)
+    identify_by: Model.manufacturer, Model.name
+  ModelName (VALUE_TYPE)
+    extends: String
+  NrFeet (VALUE_TYPE)
+    extends: Decimal
+  NrMiles (VALUE_TYPE)
+    extends: Decimal
+  NrMinutes (VALUE_TYPE)
+    extends: Decimal
+  NrPounds (VALUE_TYPE)
+    extends: Integer
+  Polygon (VALUE_TYPE)
+    extends: String
+  Route (ENTITY_TYPE)
+    identify_by: Route.id
+  RouteId (VALUE_TYPE)
+    extends: String
+  Runway (ENTITY_TYPE)
+    identify_by: Runway.airport, Runway.designator
+  RunwayDesignator (VALUE_TYPE)
+    extends: String
+  RunwayGeometry (VALUE_TYPE)
+    extends: Polygon
+  RunwayLength (VALUE_TYPE)
+    extends: NrFeet
+  SerialNr (VALUE_TYPE)
+    extends: String
+  State (ENTITY_TYPE)
+    identify_by: State.code
+  StateCode (VALUE_TYPE)
+    extends: String
+  StateName (VALUE_TYPE)
+    extends: String
+  TailNr (VALUE_TYPE)
+    extends: String
+  Year (VALUE_TYPE)
+    extends: String
+
+relationships:
+  Aircraft.capacity [MANY_TO_ONE]: Aircraft -> Capacity
+  Aircraft.carrier [MANY_TO_ONE]: Aircraft -> Carrier
+  Aircraft.model [MANY_TO_ONE]: Aircraft -> Model
+  Aircraft.name [MANY_TO_ONE]: Aircraft -> String
+  Aircraft.number_of_seats [MANY_TO_ONE]: Aircraft -> Integer
+  Aircraft.serial_number [MANY_TO_ONE]: Aircraft -> SerialNr
+  Aircraft.tailnum [ONE_TO_ONE]: Aircraft -> TailNr
+  Aircraft.year_manufactured [MANY_TO_ONE]: Aircraft -> Year
+  Airport.average_arrival_delay [MANY_TO_ONE]: Airport -> Delay
+  Airport.average_departure_delay [MANY_TO_ONE]: Airport -> Delay
+  Airport.city [MANY_TO_ONE]: Airport -> City
+  Airport.code [ONE_TO_ONE]: Airport -> AirportCode
+  Airport.latitude [MANY_TO_ONE]: Airport -> DegreesLatitude
+  Airport.longitude [MANY_TO_ONE]: Airport -> DegreesLongitude
+  Airport.name [MANY_TO_ONE]: Airport -> AirportName
+  Airport.serves [MANY_TO_ONE]: Airport -> Market
+  CancelationReason.code [ONE_TO_ONE]: CancelationReason -> CancelationCode
+  CancelationReason.description [MANY_TO_ONE]: CancelationReason -> String
+  Carrier.code [ONE_TO_ONE]: Carrier -> CarrierCode
+  Carrier.name [MANY_TO_ONE]: Carrier -> CarrierName
+  City.name [MANY_TO_ONE]: City -> CityName
+  City.state [MANY_TO_ONE]: City -> State
+  Flight.aircraft [MANY_TO_ONE]: Flight -> Aircraft
+  Flight.arrival_delay [MANY_TO_ONE]: Flight -> Delay
+  Flight.arrives_at [MANY_TO_ONE]: Flight -> DateTime
+  Flight.canceled [None]: Flight
+  Flight.canceled_due_to [MANY_TO_ONE]: Flight -> CancelationReason
+  Flight.date [MANY_TO_ONE]: Flight -> Date
+  Flight.departs_at [MANY_TO_ONE]: Flight -> DateTime
+  Flight.departure_delay [MANY_TO_ONE]: Flight -> Delay
+  Flight.distance [MANY_TO_ONE]: Flight -> Distance
+  Flight.diverted [None]: Flight
+  Flight.id [ONE_TO_ONE]: Flight -> FlightId
+  Flight.number [MANY_TO_ONE]: Flight -> FlightNr
+  Flight.operated_by [MANY_TO_ONE]: Flight -> Carrier
+  Flight.registers_latitude_series [MANY_TO_ONE]: Flight -> DateTime -> DegreesLatitude
+  Flight.registers_longitude_series [MANY_TO_ONE]: Flight -> DateTime -> DegreesLongitude
+  Flight.route [MANY_TO_ONE]: Flight -> Route
+  Flight.scheduled_arrival [MANY_TO_ONE]: Flight -> DateTime
+  Flight.scheduled_departure [MANY_TO_ONE]: Flight -> DateTime
+  Manufacturer.name [ONE_TO_ONE]: Manufacturer -> ManufacturerName
+  Market.name [ONE_TO_ONE]: Market -> MarketName
+  Model.manufacturer [MANY_TO_ONE]: Model -> Manufacturer
+  Model.name [MANY_TO_ONE]: Model -> ModelName
+  Route.average_arrival_delay [MANY_TO_ONE]: Route -> Delay
+  Route.average_departure_delay [MANY_TO_ONE]: Route -> Delay
+  Route.departure [MANY_TO_ONE]: Route -> Airport
+  Route.destination [MANY_TO_ONE]: Route -> Airport
+  Route.distance [MANY_TO_ONE]: Route -> Distance
+  Route.id [ONE_TO_ONE]: Route -> RouteId
+  Route.lies_in [MANY_TO_ONE]: Route -> DistanceGroup
+  Route.route_name [MANY_TO_ONE]: Route -> String
+  Runway.airport [MANY_TO_ONE]: Runway -> Airport
+  Runway.designator [MANY_TO_ONE]: Runway -> RunwayDesignator
+  Runway.geometry [MANY_TO_ONE]: Runway -> RunwayGeometry
+  Runway.length [MANY_TO_ONE]: Runway -> RunwayLength
+  State.code [ONE_TO_ONE]: State -> StateCode
+  State.name [MANY_TO_ONE]: State -> StateName
