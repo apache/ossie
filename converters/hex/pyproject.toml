@@ -38,6 +38,11 @@ keywords = [
     "Ossie",
     "Hex",
 ]
+dependencies = [
+    "pydantic>=2.13.4",
+    "pydantic-core>=2.46.4",
+    "typing-extensions>=4.16.0",
+]
 
 [project.urls]
 homepage = "https://ossie.apache.org/"
