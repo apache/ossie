@@ -15,21 +15,22 @@
 # specific language governing permissions and limitations
 # under the License.
 
-**/__pycache__/
-**/.venv/
+name: Auto Label PRs
 
-**/.pytest_cache/
-**/.ruff_cache/
-**/.coverage
-**/htmlcov/
-**/dist/
-**/target/
-*.py[cod]
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
 
-# Go CLI
-cli/dist/
-cli/ossie
-cli/.tool-versions
+permissions:
+  contents: read
+  pull-requests: write
 
-# Apache RAT (downloaded by dev/check-license)
-dev/lib/
+jobs:
+  label-by-files:
+    if: github.repository_owner == 'apache'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/labeler@v5
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          sync-labels: true
