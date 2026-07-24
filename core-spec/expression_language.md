@@ -19,7 +19,7 @@
 
 # Ossie Proposal: Expression Language
 
-**Current Status:** Proposed Final 
+**Current Status:** Proposed Final
 
 **Working Group**
 
@@ -33,7 +33,7 @@
 
 There are two layers in Ossie that need an expression language:
 
-* **Ontology layer.**  This layer maps onto the ontology layer which sits above the logical layer.  It maps more closely to modelling languages like OWL, [(Py)Rel](https://docs.relational.ai) from RelationalAI, and [Legend](https://legend.finos.org) from Goldman Sachs  
+* **Ontology layer.**  This layer maps onto the ontology layer which sits above the logical layer.  It maps more closely to modelling languages like OWL, [(Py)Rel](https://docs.relational.ai) from RelationalAI, and [Legend](https://legend.finos.org) from Goldman Sachs
 * **Logical layer.**  This layer maps directly to the databases and physical layer.  It maps closely to traditional BI semantic models.
 
 This proposal is only targeted at the Logical Layer.  It would be nice if the Ontological layer could re-use the same expression language, but that will be treated as a separate proposal.
@@ -44,22 +44,22 @@ We expect there will be extensions to this language to cover concepts such as su
 
 ### Design Principles
 
-1. **Portability**: Core functions work identically across all implementations  
-2. **Familiarity**: Based on widely-adopted SQL syntax and semantics  
-3. **Analytical Focus**: Prioritizes functions commonly used in BI and analytics  
+1. **Portability**: Core functions work identically across all implementations
+2. **Familiarity**: Based on widely-adopted SQL syntax and semantics
+3. **Analytical Focus**: Prioritizes functions commonly used in BI and analytics
 4. **Extensibility**: Vendor dialects can extend beyond the core
 
 ### Changes to YAML
 
-1) Create a new dialect in the Ossie spec: Ossie\_SQL\_2026, which refers to this language specification.   
+1) Create a new dialect in the Ossie spec: Ossie\_SQL\_2026, which refers to this language specification.
 2) Make Ossie\_SQL\_2026 the default dialect if one is not chosen.
 
 ### Standards Reference
 
 The core language is based on **ANSI SQL:2003 Core** (ISO/IEC 9075-2:2003), selected for its:
 
-- Wide adoption across major databases (Snowflake, Databricks, PostgreSQL, BigQuery)  
-- Well-defined semantics  
+- Wide adoption across major databases (Snowflake, Databricks, PostgreSQL, BigQuery)
+- Well-defined semantics
 - Support for modern analytical features (window functions, CTEs)
 
 ### Namespacing and Identifier Resolution
@@ -76,7 +76,7 @@ All identifiers MUST be valid names and follow ANSI SQL naming, with the size li
 
 Regular identifiers (unquoted) should be case insensitive.    For example, an identifier id is regular, so it would match with Id or iD.  Comparing quoted and non-quoted identifiers is DB specific, so for best portability it is best to use simple identifiers.
 
-The quote character for the Ossie dialect will follow ANSI SQL and support the double quote character (“).  This means that if an expression is in a field expression or as an identifier in the YAML, this will be the expected quoting.  However, there are some databases that use other escape characters.  Working with these have the option of either creating expressions using their dialect or having the Ossie document written in the Ossie dialect, but then having the SQL Interface queried in the local dialect.  The SQL Interface will be defined in a different document. 
+The quote character for the Ossie dialect will follow ANSI SQL and support the double quote character (“).  This means that if an expression is in a field expression or as an identifier in the YAML, this will be the expected quoting.  However, there are some databases that use other escape characters.  Working with these have the option of either creating expressions using their dialect or having the Ossie document written in the Ossie dialect, but then having the SQL Interface queried in the local dialect.  The SQL Interface will be defined in a different document.
 
 #### Comparison Table
 
@@ -89,7 +89,7 @@ The quote character for the Ossie dialect will follow ANSI SQL and support the d
 
 Sometimes, we may refer to a **normalized identifier**.  This is a form the identifiers can be put in, so they can be matched easily and matches can be made with case-sensitive, exact matching.  For **normalized identifiers**:
 
-* Regular identifiers are upper cased  
+* Regular identifiers are upper cased
 * Quoted identifiers have their quotes stripped and any escaped characters are unescaped
 
 #### Name Spaces
@@ -119,7 +119,7 @@ Ossie expressions support the following SQL constructs within any expression:
 | Scalar functions | See function categories below                                                                                                                                                                                                                                                         |
 | Parentheses | Expression grouping                                                                                                                                                                                                                                                                   |
 
-### 
+###
 
 ### Not Supported in Expressions
 
@@ -138,13 +138,14 @@ Ossie expressions support the following SQL constructs within any expression:
 
 Standard SQL operator precedence applies (highest to lowest):
 
-1. Parentheses `()`  
-2. Unary operators: `+`, `-`, `NOT`  
-3. Multiplication/Division: `*`, `/`, `%`  
-4. Addition/Subtraction: `+`, `-`  
-5. Comparison: `=`, `<>`, `<`, `>`, `<=`, `>=`, `LIKE`, `IN`, `BETWEEN`, `IS NULL`   
-6`AND`  
-7`OR`
+1. Parentheses `()`
+2. Unary operators: `+`, `-`
+3. Multiplication/Division: `*`, `/`, `%`
+4. Addition/Subtraction/Concatenation: `+`, `-`, `||`
+5. Comparison: `=`, `<>`, `<`, `>`, `<=`, `>=`, `LIKE`, `IN`, `BETWEEN`, `IS NULL`
+6. `NOT`
+7. `AND`
+8. `OR`
 
 ---
 
@@ -199,7 +200,7 @@ APPROX_COUNT_DISTINCT(customer_id)
 -- Approximate median
 APPROX_PERCENTILE(amount, 0.5)
 
--- Approximate 95th percentile  
+-- Approximate 95th percentile
 APPROX_PERCENTILE(response_time, 0.95)
 ```
 
@@ -216,7 +217,7 @@ APPROX_PERCENTILE(response_time, 0.95)
 
 ### Conditional Aggregations (REQUIRED)
 
-SUM / COUNT aggregation functions support `DISTINCT.`   
+SUM / COUNT aggregation functions support `DISTINCT.`
 All aggregations should support filtered aggregation:
 
 ```sql
@@ -281,8 +282,8 @@ DATE_PART('day', date_expr)
 
 Supported date parts for `EXTRACT` and `DATE_PART`:
 
-- `YEAR`, `QUARTER`, `MONTH`, `WEEK`, `DAY`  
-- `DAYOFWEEK`, `DAYOFYEAR`  
+- `YEAR`, `QUARTER`, `MONTH`, `WEEK`, `DAY`
+- `DAYOFWEEK`, `DAYOFYEAR`
 - `HOUR`, `MINUTE`, `SECOND`, `MILLISECOND`
 
 ### Date Truncation (REQUIRED)
@@ -340,13 +341,13 @@ model and behave identically across engines, making them the portable default.
 
 Parsing with an explicit format string relies on a datetime format model whose token
 vocabulary differs across engines (Oracle/`TO_CHAR`-style, `strftime` `%`-codes, and
-Java/LDML patterns are all in use). 
+Java/LDML patterns are all in use).
 
 For portability, we are looking to restrict the `format` argument to
 the portable core format tokens defined in Date Formatting below, and prefer the
-single-argument, ISO-8601 forms above where possible. 
+single-argument, ISO-8601 forms above where possible.
 
-**Since, this differs so widely across databases, consider this experimental for now.**  
+**Since, this differs so widely across databases, consider this experimental for now.**
 
 | Function | Syntax | Description |
 | :---- | :---- | :---- |
@@ -360,9 +361,9 @@ single-argument, ISO-8601 forms above where possible.
 | `TO_CHAR` | `TO_CHAR(date_expr, format)` | Format date as string |
 
 Ossie defines a portable core of format tokens: the tokens that can be expressed in
-every major engine's datetime format model. 
+every major engine's datetime format model.
 
-This feature is experimental.  Implementations choosing to support these should support the following tokens for the 
+This feature is experimental.  Implementations choosing to support these should support the following tokens for the
 `format` argument of `TO_CHAR`. The `strftime` and Java/LDML columns below are informative,
 provided to aid translation.
 
@@ -431,7 +432,7 @@ a dialect extension.
 
 Pattern wildcards for `LIKE`:
 
-- `%` \- Match any sequence of characters  
+- `%` \- Match any sequence of characters
 - `_` \- Match any single character
 
 ### Regular Expressions (RECOMMENDED)
@@ -555,8 +556,8 @@ function_name(args) OVER (
 
 Frame clause options:
 
-- `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`  
-- `ROWS BETWEEN n PRECEDING AND n FOLLOWING`  
+- `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
+- `ROWS BETWEEN n PRECEDING AND n FOLLOWING`
 - `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
 
 ### Ranking Functions (REQUIRED)
@@ -610,13 +611,13 @@ CAST(expression AS target_type)
 
 Supported target types:
 
-- `VARCHAR` / `STRING` \- Character string  
-- `INTEGER` / `INT` / `BIGINT` \- Integer  
-- `DECIMAL` / `NUMERIC` \- Fixed-point decimal  
-- `FLOAT` / `DOUBLE` \- Floating-point  
-- `BOOLEAN`  \- Boolean  
-- `DATE` \- Date  
-- `TIMESTAMP` \- Timestamp  
+- `VARCHAR` / `STRING` \- Character string
+- `INTEGER` / `INT` / `BIGINT` \- Integer
+- `DECIMAL` / `NUMERIC` \- Fixed-point decimal
+- `FLOAT` / `DOUBLE` \- Floating-point
+- `BOOLEAN`  \- Boolean
+- `DATE` \- Date
+- `TIMESTAMP` \- Timestamp
 - `TIME` \- Time
 
 ### TRY\_CAST (RECOMMENDED)
@@ -643,7 +644,7 @@ a IS DISTINCT FROM b        -- TRUE if one is NULL and other isn't
 
 Ossie implementations MAY support additional functions through dialect-specific extensions. When using dialect extensions, the expression must specify the dialect.
 
-The Ossie dialect should always be supported.  Other dialects MAY be ignored.  There is no guarantee that all different dialects for an expression will act the same, so implementations should be consistent with their dialect handling.  This means that if an Ossie model has an expression written in two dialects, the implementation should deterministically choose which dialect to use.  
+The Ossie dialect should always be supported.  Other dialects MAY be ignored.  There is no guarantee that all different dialects for an expression will act the same, so implementations should be consistent with their dialect handling.  This means that if an Ossie model has an expression written in two dialects, the implementation should deterministically choose which dialect to use.
 
 ### Declaring Dialect-Specific Expressions
 
@@ -669,11 +670,11 @@ expression:
 | Current timestamp | `CURRENT_TIMESTAMP` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP` |
 | Substring | `SUBSTRING(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTRING(s, start, len)` | `SUBSTRING(s, start, len)` |
 
-### 
+###
 
 ### Dialect-Specific Extensions
 
-Vendors may expose their own feature through extensions, however the default for Ossie should be to pass unknown values through.:  
+Vendors may expose their own feature through extensions, however the default for Ossie should be to pass unknown values through.:
 ---
 
 ## Cross-Reference: Tool Mappings
@@ -770,11 +771,11 @@ Implementations MAY support additional functions through dialect extensions. The
 
 ## References
 
-- [SQL:2003 Standard](https://www.iso.org/standard/34132.html) (ISO/IEC 9075-2:2003)  
-- [Tableau Functions Reference](https://help.tableau.com/current/pro/desktop/en-us/functions.htm)  
-- [Looker Studio Function List](https://support.google.com/looker-studio/table/6379764)  
-- [DAX Function Reference](https://learn.microsoft.com/en-us/dax/dax-function-reference)  
-- [Snowflake SQL Reference](https://docs.snowflake.com/en/sql-reference-functions)  
-- [BigQuery Standard SQL Reference](https://cloud.google.com/bigquery/docs/reference/standard-sql/functions-and-operators)  
-- [Databricks SQL Functions](https://docs.databricks.com/sql/language-manual/sql-ref-functions.html)  
+- [SQL:2003 Standard](https://www.iso.org/standard/34132.html) (ISO/IEC 9075-2:2003)
+- [Tableau Functions Reference](https://help.tableau.com/current/pro/desktop/en-us/functions.htm)
+- [Looker Studio Function List](https://support.google.com/looker-studio/table/6379764)
+- [DAX Function Reference](https://learn.microsoft.com/en-us/dax/dax-function-reference)
+- [Snowflake SQL Reference](https://docs.snowflake.com/en/sql-reference-functions)
+- [BigQuery Standard SQL Reference](https://cloud.google.com/bigquery/docs/reference/standard-sql/functions-and-operators)
+- [Databricks SQL Functions](https://docs.databricks.com/sql/language-manual/sql-ref-functions.html)
 - [PostgreSQL Functions](https://www.postgresql.org/docs/current/functions.html)

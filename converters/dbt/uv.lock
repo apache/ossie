@@ -14,7 +14,7 @@ wheels = [
 [[package]]
 name = "apache-ossie"
 version = "0.2.0.dev0"
-source = { editable = "../../python" }
+source = { editable = "../../python/ossie" }
 dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -24,6 +24,14 @@ dependencies = [
 requires-dist = [
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pyyaml", specifier = ">=6.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=1.10" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "ruff", specifier = ">=0.11" },
+    { name = "types-pyyaml" },
 ]
 
 [[package]]
@@ -46,7 +54,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "apache-ossie", editable = "../../python" },
+    { name = "apache-ossie", editable = "../../python/ossie" },
     { name = "jinja2", specifier = ">=3.0" },
     { name = "metricflow", specifier = ">=0.209.0" },
     { name = "pyyaml", specifier = ">=6.0" },
