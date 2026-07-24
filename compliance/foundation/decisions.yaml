@@ -1,0 +1,225 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Foundation Conformance Decisions — runnable test mapping.
+#
+# Mirrors the D-NNN Conformance Decisions called out inline throughout
+# ../../core-spec/foundational_semantics.md. Every D-NNN row
+# from the source spec is kept here (harness's registry-consistency
+# tests require full D-NNN coverage), but this bootstrap slice only ships
+# witness tests for D-020 — every other decision's tests: is intentionally
+# empty pending its tests landing in a follow-up PR. The runner emits
+# results/decisions_coverage.md after every run so gaps are visible.
+#
+# Status:
+#   * must_pass — the engine MUST pass every T-NNN test pinned to this
+#     decision; failure is a Foundation conformance failure.
+#   * xfail    — the test is shipped but expected to fail until the
+#     named sprint flips it; xfail_pinned_to identifies the sprint.
+
+version: "0.1"
+
+decisions:
+
+  - id: D-001
+    title: Aggregation result cardinality + multi-measure stitch on incompatible roots
+    spec_ref: "§5.1.1, §6.2, §6.6"
+    tests: []
+    status: must_pass
+
+  - id: D-002
+    title: All measures resolve at the query's grain (no per-aggregate native granularity leak)
+    spec_ref: §6.2
+    tests: []
+    status: must_pass
+
+  - id: D-003
+    title: Implicit home-grain aggregation in field expressions
+    spec_ref: §4.3.1
+    tests: []
+    status: must_pass
+
+  - id: D-004
+    title: "Default join shapes (LEFT for N:1; FULL OUTER stitch; CROSS JOIN of 1-row scalars)"
+    spec_ref: §6.6
+    tests: []
+    status: must_pass
+
+  - id: D-005
+    title: "Routing of predicates by resolved expression shape (no role: keyword)"
+    spec_ref: "§4.3, §6.3"
+    tests: []
+    status: must_pass
+
+  - id: D-006
+    title: Bare-name resolves to global namespace; dataset-scoped via dataset.field
+    spec_ref: §4.6
+    tests: []
+    status: must_pass
+
+  - id: D-007
+    title: "M:N traversals must produce a result equivalent to bridge or stitch; otherwise E3012"
+    spec_ref: §6.8
+    tests: []
+    status: must_pass
+
+  - id: D-008
+    title: No per-metric joins.type override at Foundation level (deferred)
+    spec_ref: "§6.6, §6.9"
+    tests: []
+    status: must_pass
+
+  - id: D-009
+    title: Deferred relationship-level keys rejected with E_DEFERRED_KEY_REJECTED in default mode
+    spec_ref: §3
+    tests: []
+    status: must_pass
+
+  - id: D-010
+    title: Aggregation vs Scalar query shape — mixing rejected with E_MIXED_QUERY_SHAPE
+    spec_ref: §5.1
+    tests: []
+    status: must_pass
+
+  - id: D-011
+    title: Bare metric reference inside Fields rejected with E_AGGREGATE_IN_SCALAR_QUERY
+    spec_ref: §5.1.2
+    tests: []
+    status: must_pass
+
+  - id: D-012
+    title: Predicate-shape errors (Where vs Having)
+    spec_ref: §6.3
+    tests: []
+    status: must_pass
+
+  - id: D-014
+    title: Per-engine determinism — same (model, query, dialect) → byte-identical SQL
+    spec_ref: "§5.1, §6.10.2"
+    tests: []
+    status: must_pass
+
+  - id: D-016
+    title: COUNT(*) is required and counts rows of the home dataset / query grain
+    spec_ref: §7
+    tests: []
+    status: must_pass
+
+  - id: D-018
+    title: Path resolution — unique path used; multiple ⇒ E_AMBIGUOUS_PATH; none ⇒ E_NO_PATH
+    spec_ref: §6.9
+    tests: []
+    status: must_pass
+
+  - id: D-019
+    title: Reserved names (GRAIN, FILTER, QUERY_FILTER) cannot be used as user identifiers
+    spec_ref: §4.6.2
+    tests: []
+    status: must_pass
+
+  - id: D-020
+    title: "Single-step + nested cross-grain aggregates over 1:N (every aggregate category)"
+    spec_ref: "§4.5 form (1), §6.1 Semantic 2"
+    tests:
+      - tests/cross_grain/moderate/t-005a-single-step-sum/
+      - tests/cross_grain/moderate/t-005b-single-step-avg/
+      - tests/cross_grain/moderate/t-005d-single-step-vs-nested-sum/
+      - tests/cross_grain/moderate/t-005e-count-distinct-single-step/
+    status: must_pass
+
+  - id: D-021
+    title: "expression slot accepts string OR { dialects: [...] } per OSI_SQL_2026"
+    spec_ref: "§4.3 / §4.5"
+    tests: []
+    status: must_pass
+
+  - id: D-022
+    title: Plan that forces decomposition the aggregate cannot survive ⇒ E_UNSAFE_REAGGREGATION (chasm pre-agg / stitch only — bridge plan is single-pass and not in scope)
+    spec_ref: "§6.2 Starting Grain, §6.7, §6.8.2"
+    tests: []
+    status: must_pass
+
+  - id: D-023
+    title: Scalar query — fan-out / incompatible-home rejected with E_FAN_OUT_IN_SCALAR_QUERY
+    spec_ref: "§6.2 Final Grain, §5.1.2"
+    tests: []
+    status: must_pass
+
+  - id: D-024
+    title: Row-level reference at finer grain ⇒ E_UNAGGREGATED_FINER_GRAIN_REFERENCE
+    spec_ref: §6.2 Starting Grain
+    tests: []
+    status: must_pass
+
+  - id: D-025
+    title: Catch-all measure-grain ambiguity ⇒ E_AMBIGUOUS_MEASURE_GRAIN
+    spec_ref: §6.2 Starting Grain
+    tests: []
+    status: must_pass
+
+  - id: D-026
+    title: Bridge resolution materializes distinct (fact, group-key) — Semantic 2
+    spec_ref: "§6.1 Semantic 2, §6.8.1"
+    tests: []
+    status: must_pass
+
+  - id: D-027
+    title: |
+      Bare cross-grain aggregate over an N:N edge resolves via the §6.8.1
+      bridge-dedup construction in a single pass for every aggregate
+      category (distributive, algebraic, holistic). The "per-home-row-first"
+      interpretation requires the nested form AGG(AGG(...)), which is
+      deferred to §10 and raises E_NESTED_AGGREGATION_DEFERRED.
+    spec_ref: "§4.5 form (1), §6.8.1"
+    tests: []
+    status: must_pass
+
+  - id: D-028
+    title: Standard SQL window functions in Measures / Fields / Order By / Having; Where ⇒ E_WINDOW_IN_WHERE
+    spec_ref: §6.10.1
+    tests: []
+    status: must_pass
+
+  - id: D-029
+    title: NULLS LAST default for outer Order By + OVER ORDER BY; emitted explicitly into compiled SQL
+    spec_ref: "§5.1, §6.10.2"
+    tests: []
+    status: must_pass
+
+  - id: D-030
+    title: Window over fan-out ⇒ pre-fan-out materialization (or E_WINDOW_OVER_FANOUT_REWRITE)
+    spec_ref: §6.10.3
+    tests: []
+    status: must_pass
+
+  - id: D-031
+    title: Composing a metric on top of a windowed metric ⇒ E_WINDOWED_METRIC_COMPOSITION
+    spec_ref: §6.10.5
+    tests: []
+    status: must_pass
+
+  - id: D-032
+    title: "ROWS / RANGE with integer-literal bounds only; GROUPS or :param ⇒ E_DEFERRED_FRAME_MODE"
+    spec_ref: §6.10.6
+    tests: []
+    status: must_pass
+
+  - id: D-033
+    title: Empty / NULL aggregate behaviour follows standard SQL (COUNT⇒0, others⇒NULL)
+    spec_ref: "§6.11.1, §6.11.2"
+    tests: []
+    status: must_pass
