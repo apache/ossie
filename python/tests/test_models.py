@@ -22,53 +22,21 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
+from conftest import _expression
+
 from ossie import (
+    OSIAIContextObject,
     OSIDataType,
     OSIDimension,
     OSIDocument,
-    OSIExpression,
     OSIField,
+    OSIRelationship,
 )
 
 
-def _expression_data(value: str = "value") -> dict:
-    return {"dialects": [{"dialect": "ANSI_SQL", "expression": value}]}
-
-
-def _expression(value: str = "value") -> OSIExpression:
-    return OSIExpression.model_validate(_expression_data(value))
-
-
-def _document() -> dict:
-    return {
-        "version": "0.2.0.dev0",
-        "semantic_model": [
-            {
-                "name": "typed_model",
-                "datasets": [
-                    {
-                        "name": "events",
-                        "source": "catalog.schema.events",
-                        "fields": [
-                            {
-                                "name": "occurred_at",
-                                "expression": _expression_data("occurred_at"),
-                                "dimension": {},
-                                "datatype": "DateTimeTz",
-                            }
-                        ],
-                    }
-                ],
-                "metrics": [
-                    {
-                        "name": "revenue",
-                        "expression": _expression_data("SUM(events.revenue)"),
-                        "datatype": "Decimal",
-                    }
-                ],
-            }
-        ],
-    }
+# ---------------------------------------------------------------------------
+# Data type tests
+# ---------------------------------------------------------------------------
 
 
 def test_data_type_enum_matches_core_schema() -> None:
@@ -86,8 +54,8 @@ def test_data_type_enum_matches_core_schema() -> None:
     }
 
 
-def test_field_and_metric_datatypes_survive_serialization() -> None:
-    document = OSIDocument.model_validate(_document())
+def test_field_and_metric_datatypes_survive_serialization(document_data: dict) -> None:
+    document = OSIDocument.model_validate(document_data)
 
     field = document.semantic_model[0].datasets[0].fields[0]
     metric = document.semantic_model[0].metrics[0]
@@ -102,13 +70,12 @@ def test_field_and_metric_datatypes_survive_serialization() -> None:
         assert model["metrics"][0]["datatype"] == "Decimal"
 
 
-def test_invalid_datatype_is_rejected() -> None:
-    document = _document()
-    field = document["semantic_model"][0]["datasets"][0]["fields"][0]
+def test_invalid_datatype_is_rejected(document_data: dict) -> None:
+    field = document_data["semantic_model"][0]["datasets"][0]["fields"][0]
     field["datatype"] = "timestamp"
 
     with pytest.raises(ValidationError):
-        OSIDocument.model_validate(document)
+        OSIDocument.model_validate(document_data)
 
 
 @pytest.mark.parametrize(
@@ -135,3 +102,52 @@ def test_effective_time_dimension_role(
     )
 
     assert field.is_time_dimension() is expected
+
+
+# ---------------------------------------------------------------------------
+# Model behavior
+# ---------------------------------------------------------------------------
+
+
+def test_ai_context_object_allows_extra() -> None:
+    ai_ctx = OSIAIContextObject(custom_field="custom_value")
+    assert ai_ctx.custom_field == "custom_value"
+
+
+def test_ai_context_accepts_string(document_data: dict) -> None:
+    document_data["semantic_model"][0]["ai_context"] = "Plain text context"
+    document = OSIDocument.model_validate(document_data)
+    assert document.semantic_model[0].ai_context == "Plain text context"
+
+
+def test_ai_context_accepts_object(document_data: dict) -> None:
+    document_data["semantic_model"][0]["ai_context"] = {
+        "instructions": "Use this model for analytics"
+    }
+    document = OSIDocument.model_validate(document_data)
+    ai_ctx = document.semantic_model[0].ai_context
+    assert isinstance(ai_ctx, OSIAIContextObject)
+    assert ai_ctx.instructions == "Use this model for analytics"
+
+
+def test_relationship_with_alias() -> None:
+    relationship = OSIRelationship(
+        name="order_customer",
+        **{"from": "orders"},
+        to="customers",
+        from_columns=["customer_id"],
+        to_columns=["id"],
+    )
+    assert relationship.from_dataset == "orders"
+    assert relationship.to == "customers"
+
+
+def test_relationship_with_python_name() -> None:
+    relationship = OSIRelationship(
+        name="order_customer",
+        from_dataset="orders",
+        to="customers",
+        from_columns=["customer_id"],
+        to_columns=["id"],
+    )
+    assert relationship.from_dataset == "orders"
