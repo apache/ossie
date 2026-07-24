@@ -70,6 +70,7 @@ class OSIVendor(str, Enum):
     GOODDATA = "GOODDATA"
     SEMANTIDO = "SEMANTIDO"
     WISDOM = "WISDOM"
+    HEX = "HEX"
 
 
 class OSIAIContextObject(BaseModel):

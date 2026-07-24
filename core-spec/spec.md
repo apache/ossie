@@ -446,6 +446,7 @@ The following are well-known examples:
 | `GOODDATA` | GoodData-specific attributes |
 | `HONEYDEW` | Honeydew-specific attributes |
 | `WISDOM` | WisdomAI-specific attributes |
+| `HEX` | Hex-specific attributes |
 
 ### Examples
 
