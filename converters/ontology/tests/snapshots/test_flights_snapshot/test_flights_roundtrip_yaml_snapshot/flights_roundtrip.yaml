@@ -5,11 +5,10 @@ requires:
 - COUNT[Airport] > 0
 - COUNT[Carrier] > 0
 ontology:
-- concept:
-    name: Route
-    type: EntityType
-    identify_by:
-    - id
+- concept: Route
+  type: EntityType
+  identify_by:
+  - id
   relationships:
   - name: average_departure_delay
     roles:
@@ -67,17 +66,15 @@ ontology:
     multiplicity: ManyToOne
     requires:
     - NOT Route.destination(Airport)
-- concept:
-    name: RouteId
-    type: ValueType
-    description: A unique identifier for a route between two airports. Constructed by concatenating the IATA codes of the departure and destination airports (e.g., 'ATL -> DCA')
-    extends:
-    - String
-- concept:
-    name: Carrier
-    type: EntityType
-    identify_by:
-    - code
+- concept: RouteId
+  type: ValueType
+  description: A unique identifier for a route between two airports. Constructed by concatenating the IATA codes of the departure and destination airports (e.g., 'ATL -> DCA')
+  extends:
+  - String
+- concept: Carrier
+  type: EntityType
+  identify_by:
+  - code
   relationships:
   - name: code
     roles:
@@ -91,22 +88,19 @@ ontology:
     verbalizes:
     - '{Carrier} has {CarrierName}'
     multiplicity: ManyToOne
-- concept:
-    name: CarrierName
-    type: ValueType
-    extends:
-    - String
-- concept:
-    name: CarrierCode
-    type: ValueType
-    description: The two-letter IATA code for the airline carrier.
-    extends:
-    - String
-- concept:
-    name: Flight
-    type: EntityType
-    identify_by:
-    - id
+- concept: CarrierName
+  type: ValueType
+  extends:
+  - String
+- concept: CarrierCode
+  type: ValueType
+  description: The two-letter IATA code for the airline carrier.
+  extends:
+  - String
+- concept: Flight
+  type: EntityType
+  identify_by:
+  - id
   relationships:
   - name: departure_delay
     roles:
@@ -218,23 +212,20 @@ ontology:
     verbalizes:
     - '{Flight} is operated by {Carrier}'
     multiplicity: ManyToOne
-- concept:
-    name: FlightId
-    type: ValueType
-    description: A unique identifier for an instance of a flight
-    extends:
-    - String
-- concept:
-    name: FlightNr
-    type: ValueType
-    description: The IATA flight number, which is typically a combination of the airline's IATA code and a numeric code (e.g., 'AA1234').
-    extends:
-    - String
-- concept:
-    name: Market
-    type: EntityType
-    identify_by:
-    - name
+- concept: FlightId
+  type: ValueType
+  description: A unique identifier for an instance of a flight
+  extends:
+  - String
+- concept: FlightNr
+  type: ValueType
+  description: The IATA flight number, which is typically a combination of the airline's IATA code and a numeric code (e.g., 'AA1234').
+  extends:
+  - String
+- concept: Market
+  type: EntityType
+  identify_by:
+  - name
   relationships:
   - name: name
     roles:
@@ -242,19 +233,17 @@ ontology:
     verbalizes:
     - '{Market} is identified by {MarketName}'
     multiplicity: OneToOne
-- concept:
-    name: MarketName
-    type: ValueType
-    extends:
-    - String
-- concept:
-    name: Airport
-    type: EntityType
-    identify_by:
-    - code
-    requires:
-    - Airport.latitude
-    - Airport.longitude
+- concept: MarketName
+  type: ValueType
+  extends:
+  - String
+- concept: Airport
+  type: EntityType
+  identify_by:
+  - code
+  requires:
+  - Airport.latitude
+  - Airport.longitude
   relationships:
   - name: city
     roles:
@@ -308,28 +297,24 @@ ontology:
     verbalizes:
     - '{Airport} centers at {DegreesLatitude}'
     multiplicity: ManyToOne
-- concept:
-    name: AirportId
-    type: ValueType
-    description: Five digit number used as an alternate identifier for airports.
-    extends:
-    - String
-- concept:
-    name: AirportCode
-    type: ValueType
-    description: The three-letter IATA code for the airport.
-    extends:
-    - String
-- concept:
-    name: AirportName
-    type: ValueType
-    extends:
-    - String
-- concept:
-    name: Aircraft
-    type: EntityType
-    identify_by:
-    - tailnum
+- concept: AirportId
+  type: ValueType
+  description: Five digit number used as an alternate identifier for airports.
+  extends:
+  - String
+- concept: AirportCode
+  type: ValueType
+  description: The three-letter IATA code for the airport.
+  extends:
+  - String
+- concept: AirportName
+  type: ValueType
+  extends:
+  - String
+- concept: Aircraft
+  type: EntityType
+  identify_by:
+  - tailnum
   relationships:
   - name: serial_number
     roles:
@@ -379,12 +364,11 @@ ontology:
     verbalizes:
     - '{Aircraft} is operated by {Carrier}'
     multiplicity: ManyToOne
-- concept:
-    name: Model
-    type: EntityType
-    identify_by:
-    - name
-    - manufacturer
+- concept: Model
+  type: EntityType
+  identify_by:
+  - name
+  - manufacturer
   relationships:
   - name: name
     roles:
@@ -398,16 +382,14 @@ ontology:
     verbalizes:
     - '{Model} is manufactured by {Manufacturer}'
     multiplicity: ManyToOne
-- concept:
-    name: ModelName
-    type: ValueType
-    extends:
-    - String
-- concept:
-    name: Manufacturer
-    type: EntityType
-    identify_by:
-    - name
+- concept: ModelName
+  type: ValueType
+  extends:
+  - String
+- concept: Manufacturer
+  type: EntityType
+  identify_by:
+  - name
   relationships:
   - name: name
     roles:
@@ -415,17 +397,15 @@ ontology:
     verbalizes:
     - '{Manufacturer} is identified by {ManufacturerName}'
     multiplicity: OneToOne
-- concept:
-    name: ManufacturerName
-    type: ValueType
-    extends:
-    - String
-- concept:
-    name: Runway
-    type: EntityType
-    identify_by:
-    - designator
-    - airport
+- concept: ManufacturerName
+  type: ValueType
+  extends:
+  - String
+- concept: Runway
+  type: EntityType
+  identify_by:
+  - designator
+  - airport
   relationships:
   - name: airport
     roles:
@@ -451,12 +431,11 @@ ontology:
     verbalizes:
     - '{Runway} has {RunwayGeometry}'
     multiplicity: ManyToOne
-- concept:
-    name: City
-    type: EntityType
-    identify_by:
-    - name
-    - state
+- concept: City
+  type: EntityType
+  identify_by:
+  - name
+  - state
   relationships:
   - name: name
     roles:
@@ -470,11 +449,10 @@ ontology:
     verbalizes:
     - '{City} is located in {State}'
     multiplicity: ManyToOne
-- concept:
-    name: State
-    type: EntityType
-    identify_by:
-    - code
+- concept: State
+  type: EntityType
+  identify_by:
+  - code
   relationships:
   - name: code
     roles:
@@ -488,12 +466,11 @@ ontology:
     verbalizes:
     - '{State} has {StateName}'
     multiplicity: ManyToOne
-- concept:
-    name: CancelationReason
-    type: EntityType
-    description: A curated set of reasons that explain why a flight is canceled
-    identify_by:
-    - code
+- concept: CancelationReason
+  type: EntityType
+  description: A curated set of reasons that explain why a flight is canceled
+  identify_by:
+  - code
   relationships:
   - name: code
     roles:
@@ -507,133 +484,112 @@ ontology:
     verbalizes:
     - '{CancelationReason} has description- {String}'
     multiplicity: ManyToOne
-- concept:
-    name: Year
-    type: ValueType
-    extends:
-    - String
-- concept:
-    name: TailNr
-    type: ValueType
-    extends:
-    - String
-- concept:
-    name: StateName
-    type: ValueType
-    extends:
-    - String
-- concept:
-    name: StateCode
-    type: ValueType
-    extends:
-    - String
-- concept:
-    name: SerialNr
-    type: ValueType
-    extends:
-    - String
-- concept:
-    name: RunwayDesignator
-    type: ValueType
-    description: Used to distinguish runways within a given airport.
-    extends:
-    - String
-- concept:
-    name: DistanceGroup
-    type: ValueType
-    description: A number used to group distances of different lengths, where 1 groups the shortest and 10 the longest.
-    extends:
-    - Integer
-    requires:
-    - 1 <= DistanceGroup
-    - DistanceGroup <= 10
-- concept:
-    name: CityName
-    type: ValueType
-    extends:
-    - String
-- concept:
-    name: Polygon
-    type: ValueType
-    description: A polygon represented as a list of vertices, where each vertex is a pair of latitude and longitude coordinates.
-    extends:
-    - String
-- concept:
-    name: RunwayGeometry
-    type: ValueType
-    description: A polygon that models the shape of a runway.
-    extends:
-    - Polygon
-- concept:
-    name: DegreesLongitude
-    type: ValueType
-    extends:
-    - Decimal
-    requires:
-    - DegreesLongitude <= 180
-    - DegreesLongitude >= -180
-- concept:
-    name: DegreesLatitude
-    type: ValueType
-    extends:
-    - Decimal
-    requires:
-    - DegreesLatitude <= 90
-    - DegreesLatitude >= -90
-- concept:
-    name: CancelationCode
-    type: ValueType
-    description: The single character code that identifies the reason a flight is canceled
-    extends:
-    - String
-    requires:
-    - CancelationCode == 'A' OR CancelationCode == 'B' OR CancelationCode == 'C' OR CancelationCode == 'D'
-- concept:
-    name: NrMinutes
-    type: ValueType
-    description: Unit of measure for time in minutes
-    extends:
-    - Decimal
-- concept:
-    name: Delay
-    type: ValueType
-    extends:
-    - NrMinutes
-- concept:
-    name: NrMiles
-    type: ValueType
-    description: Unit of measure for distance in miles
-    extends:
-    - Decimal
-- concept:
-    name: Distance
-    type: ValueType
-    extends:
-    - NrMiles
-- concept:
-    name: NrPounds
-    type: ValueType
-    description: Unit of measure for weight in pounds
-    extends:
-    - Integer
-- concept:
-    name: Capacity
-    type: ValueType
-    description: The capacity of an aircraft, measured in pounds.
-    extends:
-    - NrPounds
-- concept:
-    name: NrFeet
-    type: ValueType
-    description: Unit of measure for distance in feet
-    extends:
-    - Decimal
-- concept:
-    name: RunwayLength
-    type: ValueType
-    description: The unit for measuring the lengths of runways in American airports.
-    extends:
-    - NrFeet
+- concept: Year
+  type: ValueType
+  extends:
+  - String
+- concept: TailNr
+  type: ValueType
+  extends:
+  - String
+- concept: StateName
+  type: ValueType
+  extends:
+  - String
+- concept: StateCode
+  type: ValueType
+  extends:
+  - String
+- concept: SerialNr
+  type: ValueType
+  extends:
+  - String
+- concept: RunwayDesignator
+  type: ValueType
+  description: Used to distinguish runways within a given airport.
+  extends:
+  - String
+- concept: DistanceGroup
+  type: ValueType
+  description: A number used to group distances of different lengths, where 1 groups the shortest and 10 the longest.
+  extends:
+  - Integer
+  requires:
+  - 1 <= DistanceGroup
+  - DistanceGroup <= 10
+- concept: CityName
+  type: ValueType
+  extends:
+  - String
+- concept: Polygon
+  type: ValueType
+  description: A polygon represented as a list of vertices, where each vertex is a pair of latitude and longitude coordinates.
+  extends:
+  - String
+- concept: RunwayGeometry
+  type: ValueType
+  description: A polygon that models the shape of a runway.
+  extends:
+  - Polygon
+- concept: DegreesLongitude
+  type: ValueType
+  extends:
+  - Decimal
+  requires:
+  - DegreesLongitude <= 180
+  - DegreesLongitude >= -180
+- concept: DegreesLatitude
+  type: ValueType
+  extends:
+  - Decimal
+  requires:
+  - DegreesLatitude <= 90
+  - DegreesLatitude >= -90
+- concept: CancelationCode
+  type: ValueType
+  description: The single character code that identifies the reason a flight is canceled
+  extends:
+  - String
+  requires:
+  - CancelationCode == 'A' OR CancelationCode == 'B' OR CancelationCode == 'C' OR CancelationCode == 'D'
+- concept: NrMinutes
+  type: ValueType
+  description: Unit of measure for time in minutes
+  extends:
+  - Decimal
+- concept: Delay
+  type: ValueType
+  extends:
+  - NrMinutes
+- concept: NrMiles
+  type: ValueType
+  description: Unit of measure for distance in miles
+  extends:
+  - Decimal
+- concept: Distance
+  type: ValueType
+  extends:
+  - NrMiles
+- concept: NrPounds
+  type: ValueType
+  description: Unit of measure for weight in pounds
+  extends:
+  - Integer
+- concept: Capacity
+  type: ValueType
+  description: The capacity of an aircraft, measured in pounds.
+  extends:
+  - NrPounds
+- concept: NrFeet
+  type: ValueType
+  description: Unit of measure for distance in feet
+  extends:
+  - Decimal
+- concept: RunwayLength
+  type: ValueType
+  description: The unit for measuring the lengths of runways in American airports.
+  extends:
+  - NrFeet
 ontology_mappings:
 - name: flights_mapping
   semantic_model:

@@ -26,7 +26,6 @@ from osi.model import (
     OsiOntology,
 )
 from osi.spec import (
-    Concept as SpecConcept,
     ConceptComponent,
     ConceptMapping as SpecConceptMapping,
     CustomExtension as SpecCustomExtension,
@@ -76,33 +75,25 @@ def _convert_ontology_concepts(ont: OntologyComponent) -> list[ConceptComponent]
         if not concept.is_component:
             continue
         rels = [rel for rel in ont.relationships if rel.container is concept]
-        components.append(
-            ConceptComponent(
-                concept=_convert_concept(concept),
-                relationships=[_convert_relationship(rel) for rel in rels],
-            )
-        )
+        components.append(_convert_concept(concept, rels))
     return components
 
 
-def _convert_concept(concept: Concept) -> SpecConcept:
+def _convert_concept(concept: Concept, rels: list[Relationship]) -> ConceptComponent:
     type_value: str | None = None
     if isinstance(concept.type, ConceptType):
         type_value = concept.type.value  # type: ignore[union-attr]
     extends = [p.name for p in concept.extends] if concept.extends else None
 
-    identify_by: list[str] = [rel.name for rel in concept.identify_by.values()]
-    derived_by = [f.raw_expr for f in concept.derived_by]
-    requires = [f.raw_expr for f in concept.requires]
-
-    return SpecConcept(
-        name=concept.name,
+    return ConceptComponent(
+        concept=concept.name,
         type=type_value,  # type: ignore[arg-type]
         description=concept.description,
         extends=extends,
-        identify_by=identify_by,
-        derived_by=derived_by,
-        requires=requires,
+        identify_by=[rel.name for rel in concept.identify_by.values()],
+        derived_by=[f.raw_expr for f in concept.derived_by],
+        requires=[f.raw_expr for f in concept.requires],
+        relationships=[_convert_relationship(rel) for rel in rels],
     )
 
 

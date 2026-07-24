@@ -32,7 +32,7 @@ from osi.model import (
     BUILTIN_CONCEPTS
 )
 from osi.spec import (
-    Concept as SpecConcept,
+    ConceptComponent as SpecConceptComponent,
     ConceptMapping as SpecConceptMapping,
     CustomExtension as SpecCustomExtension,
     Dataset as SpecDataset,
@@ -95,7 +95,7 @@ class SpecToOsiConverter:
 
     def _populate_ontology(self, ontology: OntologyComponent, spec: OsiSpec) -> None:
 
-        concept_specs = {concept_component.concept.name: concept_component.concept for concept_component in spec.ontology}
+        concept_specs = {cc.concept: cc for cc in spec.ontology}
         sorted_names = self._sort_spec_dependency_graph(list(concept_specs.values()))
         for name in sorted_names:
             concept_spec = concept_specs[name]
@@ -110,7 +110,7 @@ class SpecToOsiConverter:
                     extends.append(parent)
             ontology.add_concept(
                 Concept(
-                    name=concept_spec.name,
+                    name=concept_spec.concept,
                     type=ConceptType.from_value(concept_spec.type),
                     description=concept_spec.description,
                     extends=extends,
@@ -118,20 +118,19 @@ class SpecToOsiConverter:
             )
 
         for concept_component in spec.ontology:
-            container = ontology.lookup_concept(concept_component.concept.name)
+            container = ontology.lookup_concept(concept_component.concept)
             if container is None:
-                raise ValueError(f"Internal: container concept '{concept_component.concept.name}' not found")
+                raise ValueError(f"Internal: container concept '{concept_component.concept}' not found")
             for rel_spec in concept_component.relationships:
                 self._convert_relationship(ontology, container, rel_spec)
 
         # Identifiers: now that all relationships exist, resolve identify_by.
         for concept_component in spec.ontology:
-            concept_spec = concept_component.concept
-            concept = ontology.lookup_concept(concept_spec.name)
+            concept = ontology.lookup_concept(concept_component.concept)
             if concept is None:
                 continue
             identifiers: dict[str, Relationship] = {}
-            for ref_name in concept_spec.identify_by:
+            for ref_name in concept_component.identify_by:
                 rel = ontology.lookup_concept_relationship(concept, ref_name)
                 if rel is None:
                     raise ValueError(
@@ -143,15 +142,14 @@ class SpecToOsiConverter:
 
         # Formulas: derived_by + requires (after concepts/relationships exist).
         for concept_component in spec.ontology:
-            concept_spec = concept_component.concept
-            concept = ontology.lookup_concept(concept_spec.name)
+            concept = ontology.lookup_concept(concept_component.concept)
             if concept is None:
                 continue
-            for raw in concept_spec.requires:
+            for raw in concept_component.requires:
                 req = self._build_rule(raw, concept, ontology)
                 if req:
                     concept.add_require(req)
-            for raw in concept_spec.derived_by:
+            for raw in concept_component.derived_by:
                 rule = self._build_rule(raw, concept, ontology)
                 if rule:
                     concept.add_derived_by(rule)
@@ -408,11 +406,11 @@ class SpecToOsiConverter:
     # ----- Structural helpers --------------------------
 
     @staticmethod
-    def _sort_spec_dependency_graph(concepts: list[SpecConcept]) -> list[str]:
+    def _sort_spec_dependency_graph(concepts: list[SpecConceptComponent]) -> list[str]:
         nodes: list[str] = []
         edges: list[tuple[str, str]] = []
         for concept in concepts:
-            name = concept.name
+            name = concept.concept
             nodes.append(name)
             if concept.extends:
                 for ext in concept.extends:

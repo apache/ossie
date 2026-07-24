@@ -62,31 +62,31 @@ class Relationship(OsiObject):
     requires: list[str] = Field(default_factory=list)
 
 
-class Concept(OsiObject):
-    """A type-like node in the ontology — either an `EntityType` (real-world
-    object referenced via other relationships) or a `ValueType` (a data type
-    with extra semantics, must transitively extend a built-in value type).
+class ConceptComponent(OsiObject):
+    """A concept and the relationships grouped under it.
 
-    `identify_by` lists the names of relationships (declared under this
-    concept) whose values uniquely reference its objects.
+    A concept is a type-like node in the ontology — either an `EntityType`
+    (a real-world object referenced via other relationships) or a `ValueType`
+    (a data type with extra semantics, which must transitively extend a
+    built-in value type).
+
+    Mirrors the flattened YAML shape:
+
+        { concept: <name>, type: ..., description: ..., extends: [...],
+          identify_by: [...], relationships: [...] }
+
+    where `concept` names the concept and every relationship in
+    `relationships` takes it as the implicit first role. `identify_by` lists
+    the names of relationships (declared under this concept) whose values
+    uniquely reference its objects.
     """
-    name: str
+    concept: str
     type: Literal["EntityType", "ValueType"] | None = None
     description: str | None = None
     extends: list[str] | None = None
     identify_by: list[str] = Field(default_factory=list)
     derived_by: list[str] = Field(default_factory=list)
     requires: list[str] = Field(default_factory=list)
-
-
-class ConceptComponent(OsiObject):
-    """Envelope for a concept and the relationships nested under it.
-
-    Mirrors the YAML shape `{ concept: {...}, relationships: [...] }` where
-    every relationship in the list takes the enclosing concept as its
-    implicit first role.
-    """
-    concept: Concept
     relationships: list[Relationship] = Field(default_factory=list)
 
 
