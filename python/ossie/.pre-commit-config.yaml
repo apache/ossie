@@ -1,0 +1,39 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ossie-ruff-check
+        name: ossie ruff check
+        entry: bash -c 'cd python/ossie && uv run ruff check --fix src tests'
+        language: system
+        files: ^python/ossie/.*\.py$
+        pass_filenames: false
+      - id: ossie-ruff-format
+        name: ossie ruff format
+        entry: bash -c 'cd python/ossie && uv run ruff format src tests'
+        language: system
+        files: ^python/ossie/.*\.py$
+        pass_filenames: false
+      - id: ossie-mypy
+        name: ossie mypy (strict, src)
+        entry: bash -c 'cd python/ossie && uv run mypy --config-file ../../mypy.ini src'
+        language: system
+        files: ^python/ossie/.*\.py$
+        pass_filenames: false
+      - id: ossie-lint-imports
+        name: ossie import-linter (algebra closure)
+        entry: bash -c 'cd python/ossie && uv run lint-imports'
+        language: system
+        files: ^python/ossie/.*\.py$
+        pass_filenames: false
+      - id: ossie-audit-file-size
+        name: ossie module size audit
+        entry: bash -c 'cd python/ossie && make audit-file-size'
+        language: system
+        files: ^python/ossie/.*\.py$
+        pass_filenames: false
+      - id: ossie-pytest
+        name: ossie pytest (algebra suite)
+        entry: bash -c 'cd python/ossie && uv run pytest -q'
+        language: system
+        files: ^python/ossie/.*\.py$
+        pass_filenames: false

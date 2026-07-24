@@ -31,6 +31,7 @@ classifiers = [
 dependencies = [
     "pydantic>=2.0",
     "PyYAML>=6.0",
+    "sqlglot>=25.0",
 ]
 
 [project.license]
@@ -45,7 +46,37 @@ dev = [
     "mypy>=1.10",
     "ruff>=0.11",
     "types-PyYAML",
+    "hypothesis>=6.0",
+    "import-linter>=2.0",
+    "mutmut>=3.0",
 ]
 
 [tool.ruff]
 extend = "../../ruff.toml"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+# Closed-algebra layering guard (run: `make lint-imports`). The algebra is
+# the lowest compiler layer; it may depend only on ossie.common / ossie.errors
+# (plus stdlib + sqlglot), never on higher layers. See
+# src/ossie/algebra/ARCHITECTURE.md.
+[tool.importlinter]
+root_package = "ossie"
+
+[[tool.importlinter.contracts]]
+name = "algebra is a closed lower layer"
+type = "forbidden"
+source_modules = ["ossie.algebra"]
+forbidden_modules = [
+    "ossie.models",
+    "ossie.parsing",
+    "ossie.planning",
+    "ossie.codegen",
+]
+
+# Mutation testing of the correctness core (run: `make mutation`). Opt-in and
+# slow, so it is not part of pre-commit. Target: >= 90% killed.
+[tool.mutmut]
+paths_to_mutate = ["src/ossie/algebra/"]
