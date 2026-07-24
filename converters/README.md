@@ -58,6 +58,7 @@ Read an Ossie semantic model and produce the equivalent vendor-specific represen
 - Ossie → dbt `semantic_models` YAML
 - Ossie → Tableau data source / Salesforce semantic layer
 - Ossie → Databricks semantic layer definition
+- Ossie → LookML (Looker / BigQuery)
 
 ### Import (Vendor → Apache Ossie)
 
@@ -73,6 +74,7 @@ The Ossie specification currently defines extensions for the following vendors:
 | `SALESFORCE` | Salesforce / Tableau semantic layer |
 | `DBT` | dbt semantic models |
 | `DATABRICKS` | Databricks semantic layer |
+| `BIGQUERY` | Looker / LookML (Google Cloud semantic layer over BigQuery) |
 | `OMNI` | Omni semantic model |
 | `WISDOM` | WisdomAI domain |
 
