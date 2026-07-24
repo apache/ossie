@@ -79,6 +79,47 @@ is being made):
 4. **Find something to work on**: Browse the [issues](https://github.com/apache/ossie/issues), or raise a topic on the dev list.
 5. **Submit a Pull Request**: Fork the repository, make your changes, and submit a pull request. All contributions go through the review process described below.
 
+## Development Setup
+
+### Python
+
+The project uses [ruff](https://docs.astral.sh/ruff/) for linting and formatting
+across all Python packages. A shared configuration lives in the top-level `ruff.toml`.
+
+```bash
+# Install ruff (if not already available)
+pip install ruff
+
+# Check for lint issues
+make lint
+
+# Auto-format code
+make format
+
+# Check formatting without modifying files
+make format-check
+```
+
+**Optional: pre-commit hooks** — If you'd like automatic formatting on every commit:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+This runs ruff lint (with auto-fix) and ruff format before each commit, so issues
+are caught locally before pushing.
+
+### Go
+
+The `cli/` directory has its own `Makefile` with `make lint` (runs `go vet`) and
+`make format` (runs `gofmt`).
+
+### Java
+
+The Maven converters (`converters/salesforce/`, `converters/polaris/`) are built with
+`mvn verify`. Apache RAT checks license headers during the verify phase.
+
 ## Contributor License Agreement (ICLA)
 
 All contributions to Apache Ossie are made under the [Apache License 2.0](LICENSE).
