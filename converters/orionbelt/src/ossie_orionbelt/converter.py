@@ -18,7 +18,7 @@
 """
 OSI ↔ OBML Bidirectional Converter
 ===================================
-Converts between Open Semantic Interchange (OSI v0.2.0.dev0) YAML models
+Converts between Ossie (v0.2.0.dev0) YAML models
 and OrionBelt Markup Language (OBML v1.0) YAML models.
 
 OSI v0.1.1 inputs are still accepted on read — the legacy shim

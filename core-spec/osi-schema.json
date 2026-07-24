@@ -28,7 +28,7 @@
     },
     "Vendor": {
       "type": "string",
-      "examples": ["COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA"],
+      "examples": ["COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA", "WISDOM"],
       "description": "Vendor name for custom extensions. Any string value is accepted."
     },
     "AIContext": {
@@ -108,13 +108,29 @@
       "required": ["dialects"],
       "additionalProperties": false
     },
+    "DataType": {
+      "type": "string",
+      "enum": [
+        "String",
+        "Integer",
+        "Decimal",
+        "Float",
+        "Boolean",
+        "Date",
+        "Time",
+        "DateTime",
+        "DateTimeTz",
+        "Opaque"
+      ],
+      "description": "Logical data type for fields and metrics, independent of role (e.g. dimension vs fact) and physical representation. `Decimal` is exact base-10 with unspecified precision and scale; `Float` is approximate. `DateTime` has no timezone or offset, while `DateTimeTz` identifies an instant using offset or timezone context but does not guarantee preservation of a named timezone. Omit `datatype` when unknown; use `Opaque` plus `custom_extensions` for a known type outside the portable vocabulary."
+    },
     "Dimension": {
       "type": "object",
       "description": "Dimension metadata",
       "properties": {
         "is_time": {
           "type": "boolean",
-          "description": "Indicates if this is a time-based dimension for temporal filtering"
+          "description": "Temporal-role marker. When true, consumers that distinguish time dimensions (e.g. for time-series analysis or temporal filtering) should treat this field as a time dimension. This is a *role* flag, independent of the field's data type: a field with `is_time: true` may carry any `datatype` (e.g. `Integer` for a year grain, `String` for a month name, as well as temporal data types). When `is_time` is unset, it defaults to `true` if `datatype` is one of `Date`, `Time`, `DateTime`, or `DateTimeTz`, and `false` otherwise. Set `is_time: false` explicitly to opt a temporal-typed column (such as an audit timestamp) out of time-dimension treatment."
         }
       },
       "additionalProperties": false
@@ -140,6 +156,9 @@
         "description": {
           "type": "string",
           "description": "Human-readable description"
+        },
+        "datatype": {
+          "$ref": "#/$defs/DataType"
         },
         "ai_context": {
           "$ref": "#/$defs/AIContext"
@@ -265,6 +284,9 @@
         "description": {
           "type": "string",
           "description": "Human-readable description of what the metric measures"
+        },
+        "datatype": {
+          "$ref": "#/$defs/DataType"
         },
         "ai_context": {
           "$ref": "#/$defs/AIContext"

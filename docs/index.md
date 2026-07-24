@@ -67,7 +67,7 @@ For the full specification, see [core-spec/spec.md](../core-spec/spec.md). For v
 
 Ossie is supported by a broad coalition of 50+ organizations across the data ecosystem, including:
 
-Alation, Anomalo, Atlan, AtScale, Bigeye, BlackRock, Blue Yonder, Carto, Cloudera, Coalesce, Collate, Collibra, Cogniti, Count, Credible, Cube, Databricks, DataHub, Denodo, dbt Labs, Dremio, Domo, Elementum AI, Firebolt, GoodData, Hex, Honeydew, Informatica, Instacart, JetBrains, Lightdash, Mistral AI, Omni, Oracle, Preset, Qlik, RelationalAI, Salesforce, Select Star, Sigma, Snowflake, Starburst Data, Strategy, Sundial, ThoughtSpot, and more.
+Alation, Anomalo, Atlan, AtScale, Bigeye, BlackRock, Blue Yonder, Carto, Cloudera, Coalesce, Collate, Collibra, Cogniti, Count, Credible, Cube, Databricks, DataHub, Denodo, dbt Labs, Dremio, Domo, Elementum AI, Firebolt, GoodData, Hex, Honeydew, Informatica, Instacart, JetBrains, Lightdash, Mistral AI, Omni, Oracle, Preset, Qlik, RelationalAI, Salesforce, Select Star, Sigma, Snowflake, Solid, Starburst Data, Strategy, Sundial, ThoughtSpot, and more.
 
 ### Converters
 
@@ -316,7 +316,7 @@ A practical guide for organizations looking to adopt Ossie.
 |------|------------|
 | **Semantic Model** | A structured description of business data that defines datasets, fields, relationships, and metrics. It provides a shared vocabulary for interpreting data across tools and teams. |
 | **Dataset** | A logical representation of a business entity, typically corresponding to a fact table or dimension table in a data warehouse. |
-| **Field** | A row-level attribute within a dataset, used for grouping, filtering, or as part of metric expressions. Fields can be simple column references or computed expressions. |
+| **Field** | A row-level attribute within a dataset, used for grouping, filtering, or as part of metric expressions. Fields can be simple column references or computed expressions. A field's logical data type is declared by the optional top-level `datatype` field (one of `String`, `Integer`, `Decimal`, `Float`, `Boolean`, `Date`, `Time`, `DateTime`, `DateTimeTz`, or `Opaque`). |
 | **Dimension** | A categorical attribute used to slice and filter data (e.g., region, product category, date). In Ossie, dimensions are represented as fields with optional metadata such as `is_time`. |
 | **Metric** | A quantitative measure computed by aggregating data across one or more datasets (e.g., total revenue, average order value). Metrics are defined at the semantic model level. |
 | **Relationship** | A foreign key connection between two datasets, defining how they can be joined. Relationships are always many-to-one (from the referencing dataset to the referenced dataset). |

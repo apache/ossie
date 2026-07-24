@@ -16,7 +16,7 @@
 # under the License.
 
 """
-Converts an Ossie (Open Semantic Interchange) YAML semantic model to a Snowflake
+Converts an Ossie YAML semantic model to a Snowflake
 Cortex Analyst semantic model YAML. Pure offline conversion — no Snowflake
 connection required.
 
@@ -33,9 +33,48 @@ import yaml
 
 SUPPORTED_VERSION = "0.2.0.dev0"
 
+_TIME_DATATYPES = frozenset({"Date", "Time", "DateTime", "DateTimeTz"})
+
+_SNOWFLAKE_DATATYPES = {
+    "String": "VARCHAR",
+    "Integer": "NUMBER(38,0)",
+    "Decimal": "NUMBER",
+    "Float": "FLOAT",
+    "Boolean": "BOOLEAN",
+    "Date": "DATE",
+    "Time": "TIME",
+    "DateTime": "TIMESTAMP_NTZ",
+    "DateTimeTz": "TIMESTAMP_TZ",
+}
+
 
 class OsiConversionError(Exception):
     """Raised when an Ossie YAML cannot be converted to Snowflake format."""
+
+
+def _convert_datatype(datatype, field_name):
+    """Map an Ossie logical datatype to a Snowflake field data type.
+
+    Missing datatypes remain unspecified. ``Opaque`` and unrecognized values
+    cannot be mapped safely, so they are omitted with a warning.
+    """
+    if datatype is None:
+        return None
+
+    if datatype == "Opaque":
+        warnings.warn(
+            f"Omitting data_type from field '{field_name}': "
+            "Ossie datatype 'Opaque' has no portable Snowflake mapping"
+        )
+        return None
+
+    snowflake_datatype = _SNOWFLAKE_DATATYPES.get(datatype)
+    if snowflake_datatype is None:
+        warnings.warn(
+            f"Omitting data_type from field '{field_name}': "
+            f"unrecognized Ossie datatype '{datatype}'"
+        )
+    return snowflake_datatype
 
 
 def convert_osi_to_snowflake(osi_yaml_str):
@@ -191,6 +230,11 @@ def _convert_dataset(dataset):
             converted = _convert_named_expr(field, "field")
             if converted is None:
                 continue
+            snowflake_datatype = _convert_datatype(
+                field.get("datatype"), field.get("name", "<unnamed>")
+            )
+            if snowflake_datatype is not None:
+                converted["data_type"] = snowflake_datatype
             if classification == "time_dimension":
                 time_dimensions.append(converted)
             elif classification == "dimension":
@@ -216,11 +260,31 @@ def _convert_dataset(dataset):
 
 
 def _classify_field(field):
-    """Returns 'dimension', 'time_dimension', or 'fact' based on field structure."""
+    """Classify a field as 'fact', 'dimension', or 'time_dimension'.
+
+    ``datatype`` declares the field's data type; ``dimension.is_time`` is
+    an independent temporal-role marker. Classification rules:
+
+    - A field with no ``dimension`` block is a ``fact`` regardless of
+      ``datatype`` (data type does not imply role).
+    - Explicit ``dimension.is_time`` always wins: ``True`` classifies as
+      ``time_dimension``; ``False`` classifies as ``dimension`` even when
+      ``datatype`` is temporal (author opt-out for e.g. audit timestamps).
+    - When ``dimension.is_time`` is unset, it defaults to ``True`` for
+      temporal ``datatype`` values (``Date``, ``Time``, ``DateTime``,
+      ``DateTimeTz``) and ``False`` otherwise.
+    """
     dimension = field.get("dimension")
     if dimension is None:
         return "fact"
-    if isinstance(dimension, dict) and dimension.get("is_time") is True:
+    is_time = dimension.get("is_time") if isinstance(dimension, dict) else None
+    if is_time is True:
+        return "time_dimension"
+    if is_time is False:
+        return "dimension"
+    # is_time is unset; default from datatype
+    datatype = field.get("datatype")
+    if datatype in _TIME_DATATYPES:
         return "time_dimension"
     return "dimension"
 

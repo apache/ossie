@@ -31,7 +31,7 @@ dev = [
 [project]
 name = "apache-ossie-orionbelt"
 version = "0.2.0.dev0"
-description = "Bidirectional OBML <-> OSI (Open Semantic Interchange) converter for OrionBelt semantic models"
+description = "Bidirectional OBML <-> Ossie converter for OrionBelt semantic models"
 authors = [{ name = "Apache Software Foundation", email = "dev@ossie.apache.org" }]
 requires-python = ">=3.12"
 readme = "README.md"
@@ -39,7 +39,6 @@ license = "Apache-2.0"
 keywords = [
     "Apache Ossie",
     "Ossie",
-    "Open Semantic Interchange",
     "orionbelt"
 ]
 dependencies = [

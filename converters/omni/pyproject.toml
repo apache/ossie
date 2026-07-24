@@ -36,7 +36,6 @@ license = "Apache-2.0"
 keywords = [
     "Apache Ossie",
     "Ossie",
-    "Open Semantic Interchange",
     "Omni"
 ]
 dependencies = [

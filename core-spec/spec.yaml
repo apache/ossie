@@ -38,10 +38,23 @@ dialects:
   - "MAQL"                  # GoodData MAQL (Multi-Dimensional Analytical Query Language)
   - "BIGQUERY"              # Google BigQuery GoogleSQL
 
-
+# Supported logical data types for fields and metrics
+# TODO: Generate this list from the authoritative DataType enum in
+# osi-schema.json ($defs.DataType.enum); until then, keep them in sync.
+datatypes:
+  - "String"                # Variable-length Unicode character data
+  - "Integer"               # Exact integral number
+  - "Decimal"               # Exact base-10 number
+  - "Float"                 # Approximate floating-point number
+  - "Boolean"               # Logical two-valued truth type
+  - "Date"                  # Calendar date without time of day
+  - "Time"                  # Time of day without a date or timezone
+  - "DateTime"              # Date and time without a timezone or offset
+  - "DateTimeTz"            # Instant identified using offset or timezone context
+  - "Opaque"                # Known type outside the portable vocabulary
 
 # Vendor name for custom extensions (free-form string)
-# Examples: "COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA"
+# Examples: "COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA", "WISDOM"
 vendor_name: string
 
 
@@ -184,8 +197,17 @@ fields:
     # Optional: Dimension metadata
     # Indicates this field can be used as a dimension for grouping/filtering
     dimension:
-      # Optional: Indicates if this is a time-based dimension
-      # Used for time-series analysis and temporal filtering
+      # Optional: Temporal-role marker
+      # When true, consumers should treat this field as a time dimension
+      # for time-series analysis and temporal filtering. This is a *role*
+      # flag, independent of the field's data type. A field with
+      # is_time: true may carry any datatype (e.g. Integer for a year
+      # grain, String for a month name, Date/DateTime for a date column).
+      #
+      # Default: when unset, is_time defaults to true if datatype is one
+      # of Date, Time, DateTime, DateTimeTz, and false otherwise. Set
+      # is_time: false explicitly to opt a temporal-typed column out of
+      # time-dimension treatment.
       is_time: boolean
 
     # Optional: Label for categorization (e.g., "filter")
@@ -193,6 +215,14 @@ fields:
 
     # Optional: Human-readable description of the field
     description: string
+
+    # Optional: Logical data type for this field
+    # Must be one of the values from the 'datatypes' enum above.
+    # Decimal is exact base-10 with unspecified precision and scale;
+    # Float is approximate. Omit datatype when unknown or unspecified.
+    # Use Opaque + custom_extensions for a known type outside the
+    # portable vocabulary.
+    datatype: string
 
     # Optional: Additional context for AI tools (e.g., synonyms, business terms)
     # Helps LLMs understand the field meaning and generate better queries
@@ -222,6 +252,14 @@ metrics:
     # Optional: Human-readable description of the metric
     # Should explain what the metric measures and how it's used
     description: string
+
+    # Optional: Logical data type for this metric
+    # Must be one of the values from the 'datatypes' enum above.
+    # Decimal is exact base-10 with unspecified precision and scale;
+    # Float is approximate. Omit datatype when unknown or unspecified.
+    # Use Opaque + custom_extensions for a known type outside the
+    # portable vocabulary.
+    datatype: string
 
     # Optional: Additional context for AI tools (e.g., synonyms, business context)
     # Helps LLMs understand the metric meaning and suggest it appropriately
