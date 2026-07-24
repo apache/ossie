@@ -5,12 +5,12 @@ on:
     paths:
       - 'converters/java/**'
       - 'core-spec/**'
-      - '.github/workflows/java-ci.yml'
+      - '.github/workflows/converter-java-ci.yml'
   pull_request:
     paths:
       - 'converters/java/**'
       - 'core-spec/**'
-      - '.github/workflows/java-ci.yml'
+      - '.github/workflows/converter-java-ci.yml'
 
 jobs:
   build-and-test:
