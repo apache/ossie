@@ -38,3 +38,24 @@ pip install ossie-hex
 ```
 
 Requires Python 3.11 or newer.
+
+## Conversion
+
+### Data types
+
+Data types translate between the two formats as follows, with notes where conversion is not one-to-one.
+
+| Ossie `datatype` | Hex `type`        | Notes                                                |
+| ---------------- | ----------------- | ---------------------------------------------------- |
+| `String`         | `string`          |                                                      |
+| `Decimal`        | `number`          |                                                      |
+| `Integer`        | `number`          | Returns as `Decimal`.                                |
+| `Float`          | `number`          | Returns as `Decimal`.                                |
+| `Boolean`        | `boolean`         |                                                      |
+| `Date`           | `date`            |                                                      |
+| `DateTime`       | `timestamp_naive` |                                                      |
+| `DateTimeTz`     | `timestamp_tz`    |                                                      |
+| `Opaque`         | `null`            | Preserved in the `HEX` custom extension.             |
+| `Opaque`         | `other`           |                                                      |
+| `Time`           | `other`           | No Hex equivalent.                                   |
+| _omitted_        | `string`/`number` | Warning. String for dimensions, number for measures. |

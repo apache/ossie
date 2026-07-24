@@ -39,6 +39,7 @@ keywords = [
     "Hex",
 ]
 dependencies = [
+    "apache-ossie>=0.2.0.dev0",
     "pydantic>=2.13.4",
     "pydantic-core>=2.46.4",
     "typing-extensions>=4.16.0",
@@ -60,3 +61,8 @@ target-version = "py311"
 
 [tool.uv]
 default-groups = ["dev"]
+
+# apache-ossie is not yet published to PyPI; resolve it from the in-repo
+# package for now. Remove this block once apache-ossie is published to PyPI.
+[tool.uv.sources]
+apache-ossie = { path = "../../python", editable = true }
