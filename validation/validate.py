@@ -197,7 +197,7 @@ def _retrieve_local_schema(uri: str) -> str:
 _SCHEMA_REGISTRY = Registry(retrieve=_retrieve_local_schema)
 
 
-def validate_schema(data: dict, schema: dict) -> list[str]:
+def validate_schema(data: object, schema: dict) -> list[str]:
     """Validate against JSON Schema, resolving Ossie schema references locally."""
     validator = Draft202012Validator(schema, registry=_SCHEMA_REGISTRY)
     errors = []
@@ -1801,6 +1801,10 @@ def validate_file(yaml_path: Path, schema: dict) -> bool:
         print(f"\nValidation FAILED with {len(actual_errors)} error(s):\n")
         for error in actual_errors:
             print(f"  {error}")
+        # Only validate_schema() emits [Schema] errors, and any of them stops
+        # validate_document() before the semantic checks.
+        if any(error.startswith("[Schema]") for error in actual_errors):
+            print("\nSemantic checks skipped until schema errors are fixed.")
         return False
 
     print(f"Validation PASSED: {yaml_path.name}")
