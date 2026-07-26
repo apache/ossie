@@ -75,7 +75,7 @@ DIALECT_MAP = {
 SKIP_SQL_VALIDATION = {"MDX", "TABLEAU", "MAQL"}
 
 
-def validate_schema(data: dict, schema: dict) -> list[str]:
+def validate_schema(data: object, schema: dict) -> list[str]:
     """Validate against JSON Schema."""
     validator = Draft202012Validator(schema)
     errors = []
@@ -255,11 +255,10 @@ def main():
             sys.exit(1)
 
     # Run validations
-    errors = []
-    errors.extend(validate_schema(data, schema))
+    errors = validate_schema(data, schema)
 
-    # Run semantic-model-specific checks only for semantic model payloads.
-    if data.get("semantic_model"):
+    # Semantic checks assume the schema has established the nested data shapes.
+    if not errors and isinstance(data, dict) and data.get("semantic_model"):
         errors.extend(validate_unique_names(data))
         errors.extend(validate_references(data))
         errors.extend(validate_sql(data))
