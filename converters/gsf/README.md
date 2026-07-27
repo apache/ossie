@@ -19,25 +19,26 @@
 
 # Apache Ossie ↔ NVIDIA GSF Converter
 
-Offline conversion between Apache Ossie YAML and the standalone semantic-model
-YAML format supported by [NVIDIA GSF](https://github.com/NVIDIA/GSF). No GSF,
-Neo4j, database, or network connection is required.
+Offline conversion between Apache Ossie YAML and NVIDIA GSF's native
+`GsfModelDocument` YAML contract. Conversion itself does not require GSF,
+Neo4j, a database, or network access.
 
 ## Mapping
 
-| Apache Ossie | Standalone GSF YAML |
+| Apache Ossie | Native GSF model document |
 |---|---|
-| Semantic model | `model` |
-| Dataset | `terms[]` |
-| Physical field | `column_attributes[]` |
-| Computed field | `sql_attributes[]` with `kind: field` |
-| Metric | `sql_attributes[]` with `kind: metric` |
-| Relationship | `semantic_foreign_keys[]` |
-| Expression dialects | `expressions[]` |
-| Dataset source | Term `source` mapping |
+| Dataset source | `data_layer.databases[].schemas[].tables[]` |
+| Dataset field backed by one column | `semantic_layer.terms[].columns_attributes[]` |
+| Computed dataset field | `semantic_layer.sql_attributes.manual[]` |
+| Model-level metric | `semantic_layer.custom_analyses[]` |
+| Relationship | data-layer `joins` and `foreign_keys`, plus `semantic_fks` when possible |
+| Dataset | term that `represents` exactly one catalog table |
 
-Computed fields and metrics include generated full SQL and explicit
-`table_refs`, which lets GSF validate and attach them to its ingested catalog.
+The generated root contains exactly `data_layer`, `semantic_layer`, and
+`zones`. It does not contain a converter-specific version or model envelope.
+Catalog columns are collected from fields, primary and unique keys,
+relationships, and SQL column references. Stable UUIDv5 identifiers make
+repeated Ossie exports deterministic.
 
 ## Setup
 
@@ -55,18 +56,14 @@ uv run ossie-gsf export \
   --database-name tpcds
 ```
 
-`--database-name` supplies the database for sources written as `schema.table`.
-Fully qualified `database.schema.table` sources do not require it.
-
-Python:
+`--database-name` supplies the database for `schema.table` sources. Fully
+qualified `database.schema.table` sources do not require it. One document may
+contain multiple databases.
 
 ```python
 from ossie_gsf import convert_ossie_to_gsf
 
-gsf_yaml = convert_ossie_to_gsf(
-    ossie_yaml,
-    database_name="tpcds",
-)
+gsf_yaml = convert_ossie_to_gsf(ossie_yaml, database_name="tpcds")
 ```
 
 ## GSF → Ossie
@@ -74,51 +71,67 @@ gsf_yaml = convert_ossie_to_gsf(
 ```bash
 uv run ossie-gsf import \
   --input tpcds.gsf.yaml \
-  --output semantic_model.yaml
+  --output semantic_model.yaml \
+  --name tpcds
 ```
 
-Use `--name` to override the exported Ossie semantic-model name.
-
-Python:
+`--name` overrides the Ossie model name. Without it, the converter uses the
+single catalog database name when there is one, otherwise `gsf_model`.
 
 ```python
 from ossie_gsf import convert_gsf_to_ossie
 
-ossie_yaml = convert_gsf_to_ossie(gsf_yaml)
+ossie_yaml = convert_gsf_to_ossie(gsf_yaml, model_name="tpcds")
 ```
 
-## Loading the converted model into GSF
+This converter subset currently accepts only GSF terms that represent exactly
+one table, because one Ossie dataset cannot represent several physical tables.
+Several terms may represent the same table and become distinct Ossie datasets
+sharing one source. SQL attributes become Ossie fields regardless of their GSF
+source group. Custom analyses remain global by becoming model-level Ossie
+metrics. Relationships are recovered from joins, then physical foreign keys,
+then semantic foreign keys.
 
-Run the native GSF importer from the GSF repository:
+## Importing the model into GSF
+
+Start GSF, then send the native document to its REST API:
 
 ```bash
-uv run python -m gsf.semantic import \
-  --database-name tpcds \
-  --input tpcds.gsf.yaml
+curl --fail-with-body \
+  -X POST \
+  'http://127.0.0.1:3001/api/model/import?replace=true&embed=true' \
+  -H 'Content-Type: application/x-yaml' \
+  --data-binary @tpcds.gsf.yaml
 ```
 
-GSF resolves the file against its existing catalog, writes the graph
-transactionally, validates SQL, and refreshes semantic embeddings.
+The endpoint also accepts a multipart upload in a `file` field.
 
-## Conversion behavior and limitations
+The target GSF instance must already have a connection configured for each
+database named in the document. GSF validates every imported SQL attribute
+against that connection's dialect, so importing into an instance with no
+matching connection fails. A database's `dialect` is likewise derived from the
+live connection rather than stored on import, so it is exported for information
+only and does not survive a GSF → GSF cycle.
 
-- Apache Ossie `0.2.0.dev0` and GSF model-file `1.0` are supported.
-- One semantic model is converted per document.
-- GSF term sources must resolve to physical `database.schema.table` names.
-- Simple field expressions become `ColumnAttribute` mappings. Other field
-  expressions become SQL attributes.
-- Multi-dataset metric SQL is joined through declared Ossie relationships.
-  Disconnected datasets fail conversion instead of producing a cross join.
-- GSF SQL attribute names are global, so duplicate computed-field or metric
-  names fail conversion.
-- Native GSF SQL attributes with `kind: attribute` have no unambiguous Ossie
-  field/metric equivalent and fail GSF → Ossie conversion.
-- Metrics are attached to the first referenced dataset. Unqualified metrics in
-  multi-dataset models need an `NVIDIA_GSF` custom extension containing
-  `{"term": "dataset_name"}`.
-- Expression dialect variants are preserved in the standalone GSF file.
-- Ossie custom extensions and GSF metadata are preserved through metadata and
-  `NVIDIA_GSF` custom-extension payloads.
+## Fidelity and unavoidable losses
+
+When converting GSF to Ossie, the converter records the native document in an
+`NVIDIA_GSF` custom extension. A direct GSF → Ossie → GSF cycle can therefore
+reuse live identifiers and preserve catalog properties, SQL source groups,
+SQL text, `sql_column_is`, relationships, and zones. Ossie-origin entities use
+deterministic IDs when no preserved native ID is available. Current Ossie
+expressions and relationships remain authoritative: preserved SQL and native
+relationship records are reused only when they still correspond to the Ossie
+entities or are outside the represented Ossie catalog scope.
+
+The GSF contract has no semantic-model envelope, `ai_context`, dimensions,
+synonyms, Ossie custom-extension storage, or expression-dialect variants.
+Those values cannot be represented in a native GSF document and are
+unavoidably lost on Ossie → GSF. GSF joins also have no relationship name, so
+GSF → Ossie synthesizes a stable `<from>_to_<to>` name. The converter never
+adds fictional fields to the GSF schema. GSF records uniqueness per column, so
+Ossie composite unique keys cannot be reconstructed after GSF → Ossie; only
+single-column unique keys survive.
 
 ## Tests
 
@@ -126,6 +139,7 @@ transactionally, validates SQL, and refreshes semantic embeddings.
 uv run pytest
 ```
 
-The suite includes a checked-in Ossie/GSF fixture pair, bidirectional
-round-trip checks, validation failures, CLI coverage, and verification of
-generated Ossie YAML with the repository's official validator.
+The suite checks the exact native root shape, deterministic and resolvable
+IDs, official Ossie validation, semantic round trips, native metadata
+preservation, multiple databases, relationships, input validation, and CLI
+behavior.
