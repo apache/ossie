@@ -24,12 +24,12 @@ on:
     branches: [ "main" ]
     paths:
       - 'converters/salesforce/**'
-      - '.github/**'
+      - '.github/workflows/converter-salesforce-ci.yml'
   pull_request:
     branches: [ "main" ]
     paths:
       - 'converters/salesforce/**'
-      - '.github/**'
+      - '.github/workflows/converter-salesforce-ci.yml'
 
 jobs:
   build:
