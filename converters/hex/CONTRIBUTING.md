@@ -33,3 +33,19 @@ contribution, review, and Apache release requirements are documented in the
 cd converters/hex
 uv sync
 ```
+
+## Verification
+
+Lint and check formatting:
+
+```bash
+uv run ruff check src tests
+uv run ruff format --check src tests
+```
+
+Apply automatic fixes and formatting:
+
+```bash
+uv run ruff check src tests --fix
+uv run ruff format src tests
+```
