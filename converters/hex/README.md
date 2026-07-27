@@ -24,7 +24,14 @@ Bidirectional, offline conversion between [Apache Ossie](https://ossie.apache.or
 - **Export** (`ossie-hex export`): Ossie → Hex
 - **Import** (`ossie-hex import`): Hex → Ossie
 
-**Hex → Ossie → Hex is lossless for the supported Hex surface.**
+A Hex semantic project is a directory of YAML resource files (models and views). This converter maps an Ossie semantic model to/from that layout.
+
+During export, datasets and fields become models and dimensions, relationships become per-model relations, and metrics become per-model measures. Import performs the reverse conversion.
+
+**Hex → Ossie → Hex is lossless.** The reverse is not.
+
+Invalid input raises a `ConversionError`. Anything Hex cannot represent is
+reported as a warning rather than dropped quietly.
 
 ## Installation
 
@@ -109,7 +116,57 @@ ossie_yaml, warnings = convert_hex_to_ossie("hex_project/", dialect="snowflake")
 files, warnings = convert_ossie_to_hex(ossie_yaml)  # {relative path: YAML str}
 ```
 
+## Problems
+
+Conversion raises a `ConversionError` when the process cannot produce reasonable output:
+
+In Hex → Ossie,
+
+- The Hex project directory is missing or contains no YAML resources.
+
+In Ossie → Hex,
+
+- Compiled Hex resource fails validation.
+- Unique identifiers that normalize to the same Hex ID.
+- Metrics cannot be assigned to a model and `--base-model` is not given.
+- Custom extension data is malformed.
+- The given dialect is not one Hex supports.
+
+Conversion emits a `ConversionWarning` when the output is lossy:
+
+- [Concepts](#concepts) that are supported in one format but not the other.
+- [Data types](#data-types) that are not one-to-one.
+
 ## Conversion
+
+### Concepts
+
+The table below shows how Ossie and Hex concepts correspond, and where a concept in one format has no direct equivalent in the other. Backticks identify literal fields in each format. Where a concept exists in Hex but is not supported in Ossie, then data is preserved in the `HEX` custom extension on import. Where a concept exists in Ossie but is not supported in Hex, then data is omitted on export.
+
+| Concept                   | Ossie                                          | Hex                                                                      |
+| ------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------ |
+| –                         | Semantic model                                 | Semantic project                                                         |
+| –                         | Dataset                                        | Model                                                                    |
+| Data source               | Dataset `source`                               | Model `base_sql_table` or `base_sql_query`                               |
+| Primary key               | Dataset `primary_key` (simple, composite)      | _Not supported; translated to Dimension `unique: true`; drops composite_ |
+| Unique key                | Dataset `unique_keys` (simple, composite)      | Dimension `unique: true` (simple); _Composite not supported_             |
+| Row-level attribute       | Field                                          | Dimension                                                                |
+| Data type                 | Field / Metric `datatype`                      | Dimension / Measure `type`                                               |
+| Connections               | Relationship                                   | Relation                                                                 |
+| Arbitrary join condition  | _Not supported beyond column-pair equality._   | Relation `join_sql`                                                      |
+| Explicit join cardinality | _Not supported beyond many-to-one direction._  | Relation `type`                                                          |
+| Quantitative measures     | Metric                                         | Measure                                                                  |
+| Unique identifier         | Dataset / Field / Metric / Relationship `name` | Model / Dimension / Measure / Relation `id`                              |
+| Display metadata          | Field / Metric `description`, Field `label`    | Model / Dimension / Measure / Relation `name`, `description`             |
+| AI context                | `ai_context`                                   | _Not supported._                                                         |
+| Custom extension          | `custom_extensions`                            | _Not supported._                                                         |
+| Cross-dataset reference   | `dataset.field` qualifier                      | `${relation.dimension}` qualifier                                        |
+| Time role                 | Dimension `is_time`, temporal `datatype`       | Temporal `type`; _Additional time metadata not supported._               |
+| Curated view              | _Not supported._                               | View                                                                     |
+| Visibility                | _Not supported._                               | Model / Dimension / Measure / Relation `visibility`                      |
+| Calculation formula       | _Not supported._                               | Measure `func_calc` / Dimension `expr_calc`                              |
+| Structured filter         | _Not supported._                               | Measure `filters`                                                        |
+| Semi-additive measure     | _Not supported._                               | Measure `semi_additive`                                                  |
 
 ### Data types
 
@@ -129,3 +186,15 @@ Data types translate between the two formats as follows, with notes where conver
 | `Opaque`         | `other`           |                                                      |
 | `Time`           | `other`           | No Hex equivalent.                                   |
 | _omitted_        | `string`/`number` | Warning. String for dimensions, number for measures. |
+
+### Custom extension
+
+Hex features that Ossie cannot express are preserved in an Ossie custom extension so they survive a round trip. The extension data is versioned with a key at the document's top-level custom extensions field. The vendor name is `HEX` and data is a JSON object. The keys used at each scope are listed below.
+
+| Scope          | Keys                                                                                                                  |
+| -------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Semantic Model | `extension_version`, `hex_dialect`, `resource_order`, `views`                                                         |
+| Dataset        | `display_name`, `source_kind`, `visibility`, `undecomposable_relations`                                               |
+| Field          | `type`, `visibility`, `expr_sql`, `expr_calc`                                                                         |
+| Metric         | `model_id`, `measure_id`, `display_name`, `type`, `visibility`, `semi_additive`, `func_calc`, `func`, `of`, `filters` |
+| Relationship   | `join_sql`, `relation_type`, `target`, `source_model_id`, `relation_id`, `visibility`                                 |
