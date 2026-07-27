@@ -41,6 +41,65 @@ Requires Python 3.11 or newer.
 
 ## Usage
 
+### Command line
+
+#### `export`
+
+Convert an Ossie semantic model into a Hex semantic project.
+
+```bash
+ossie-hex export -i <file> -o <directory> \
+  [--model <name>] \
+  [--base-model <dataset>] \
+  [--dialect <dialect>]
+```
+
+Options:
+
+- `-i, --input <file>` — Required. Ossie YAML file to export.
+- `-o, --output <directory>` — Required. Directory where Hex YAML files are written.
+- `--model <name>` — Optional. Ossie semantic model to export. If omitted, the first model is exported and a warning is emitted when the document contains multiple models.
+- `--base-model <dataset>` — Optional. Dataset to receive metrics that cannot be attributed to a single dataset.
+- `-d, --dialect <dialect>` — Optional. OSI dialect to pick from Ossie expressions. If omitted, the dialect is restored from `HEX` metadata or inferred from the Ossie document.
+
+Example:
+
+```bash
+ossie-hex export -i model.yaml -o hex_project/ \
+  --model revenue \
+  --base-model orders \
+  --dialect snowflake
+```
+
+#### `import`
+
+Convert Hex semantic project resource files into Ossie YAML.
+
+```bash
+ossie-hex import -i <directory> --dialect <dialect> \
+  [-o <file>] \
+  [--name <name>]
+```
+
+Options:
+
+- `-i, --input <directory>` — Required. Directory containing the Hex YAML files.
+- `-d, --dialect <dialect>` — Required. Warehouse dialect for Ossie expressions.
+- `-o, --output <file>` — Optional. Ossie YAML output file. If omitted, output is written to stdout.
+- `--name <name>` — Optional. Name to assign to the imported Ossie model. If omitted, the project directory name is used.
+
+Examples:
+
+```bash
+# Write Ossie YAML to a file
+ossie-hex import -i hex_project/ -o model.yaml \
+  --dialect snowflake \
+  --name my_model
+
+# Write Ossie YAML to stdout
+ossie-hex import -i hex_project/ --dialect snowflake
+```
+
 ### Python API
 
 ```python
