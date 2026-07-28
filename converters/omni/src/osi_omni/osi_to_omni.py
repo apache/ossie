@@ -373,7 +373,15 @@ def _convert_field(field, dname, expr, fscope):
     if instructions:
         dim["ai_context"] = instructions
 
-    if (field.get("dimension") or {}).get("is_time"):
+    dimension = field.get("dimension")
+    is_time = False
+    if dimension is not None:
+        is_time_explicit = dimension.get("is_time")
+        if is_time_explicit is not None:
+            is_time = bool(is_time_explicit)
+        else:
+            is_time = field.get("datatype") in ("Date", "Time", "DateTime", "DateTimez")
+    if is_time:
         # The stashed list wins even when empty (`timeframes: []` is a real
         # Omni value); the default list is only for hand-authored OSI.
         dim["timeframes"] = (stash["timeframes"] if "timeframes" in stash

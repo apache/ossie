@@ -24,12 +24,12 @@ on:
     branches: [ "main" ]
     paths:
       - 'converters/dbt/**'
-      - '.github/**'    
+      - '.github/workflows/converter-dbt-ci.yml'    
   pull_request:
     branches: [ "main" ]
     paths:
       - 'converters/dbt/**'
-      - '.github/**'    
+      - '.github/workflows/converter-dbt-ci.yml'    
 
 jobs:
   build:

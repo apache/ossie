@@ -93,6 +93,11 @@ on file with the ASF. If you are contributing on behalf of your employer, a
 may also be required. Please keep individual commits signed off and attributed to
 the correct author so that provenance is clear.
 
+## AI-Assisted Contributions
+
+- You remain personally responsible for all code you submit, regardless of how it was produced
+- For details, see [ASF Generative Tooling Guidance](https://www.apache.org/legal/generative-tooling.html)
+
 ## Contribution Workflow
 
 The project's canonical repository is hosted at
