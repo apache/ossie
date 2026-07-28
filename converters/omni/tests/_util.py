@@ -107,8 +107,19 @@ def strip_normalized(osi):
             fields = ds.get("fields", []) or []
             for field in fields:
                 field.pop("custom_extensions", None)
-                if field.get("dimension") == {"is_time": False}:
-                    field.pop("dimension")
+                dimension = field.get("dimension")
+                is_time = False
+                if dimension is not None:
+                    is_time_explicit = dimension.get("is_time")
+                    if is_time_explicit is not None:
+                        is_time = bool(is_time_explicit)
+                    else:
+                        is_time = field.get("datatype") in ("Date", "Time", "DateTime", "DateTimez")
+                field.pop("datatype", None)
+                if is_time:
+                    field["dimension"] = {"is_time": True}
+                else:
+                    field.pop("dimension", None)
             # Drop backfilled key fields: a bare-column field named after a
             # primary_key column, carrying nothing but its expression.
             pk = set(ds.get("primary_key") or [])
@@ -126,6 +137,7 @@ def strip_normalized(osi):
             rel.pop("custom_extensions", None)
         for metric in model.get("metrics", []) or []:
             metric.pop("custom_extensions", None)
+            metric.pop("datatype", None)
         # Metric order is not semantic; the import regroups metrics by the view
         # their measure lives on.
         if model.get("metrics"):

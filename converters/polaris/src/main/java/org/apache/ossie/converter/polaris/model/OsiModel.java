@@ -106,12 +106,17 @@ public class OsiModel {
 
     public static class Field {
         private String name;
+        private String datatype;
         private String description;
         private List<DialectExpression> expressions = new ArrayList<>();
         private boolean isTime;
+        private List<CustomExtension> customExtensions = new ArrayList<>();
 
         public String getName() { return name; }
         public void setName(String name) { this.name = name; }
+
+        public String getDatatype() { return datatype; }
+        public void setDatatype(String datatype) { this.datatype = datatype; }
 
         public String getDescription() { return description; }
         public void setDescription(String description) { this.description = description; }
@@ -121,6 +126,9 @@ public class OsiModel {
 
         public boolean isTime() { return isTime; }
         public void setTime(boolean time) { isTime = time; }
+
+        public List<CustomExtension> getCustomExtensions() { return customExtensions; }
+        public void setCustomExtensions(List<CustomExtension> customExtensions) { this.customExtensions = customExtensions; }
     }
 
     public static class DialectExpression {

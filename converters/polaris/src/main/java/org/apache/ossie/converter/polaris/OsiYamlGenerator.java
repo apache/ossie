@@ -22,10 +22,7 @@ package org.apache.ossie.converter.polaris;
 import org.apache.ossie.converter.polaris.model.OsiModel;
 import org.apache.ossie.converter.polaris.model.OsiModel.*;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Generates Ossie YAML from an {@link OsiModel}.
@@ -107,16 +104,16 @@ public class OsiYamlGenerator {
         }
 
         if (!ds.getCustomExtensions().isEmpty()) {
-            sb.append("        custom_extensions:\n");
-            for (CustomExtension ext : ds.getCustomExtensions()) {
-                sb.append("          - vendor_name: ").append(ext.getVendorName()).append("\n");
-                sb.append("            data: '").append(ext.getData()).append("'\n");
-            }
+            generateCustomExtensions(sb, ds.getCustomExtensions(), "        ");
         }
     }
 
     private void generateField(StringBuilder sb, Field field) {
         sb.append("          - name: ").append(field.getName()).append("\n");
+
+        if (field.getDatatype() != null) {
+            sb.append("            datatype: ").append(field.getDatatype()).append("\n");
+        }
 
         if (!field.getExpressions().isEmpty()) {
             sb.append("            expression:\n");
@@ -141,6 +138,20 @@ public class OsiYamlGenerator {
 
         if (field.getDescription() != null) {
             sb.append("            description: \"").append(escapeYaml(field.getDescription())).append("\"\n");
+        }
+
+        if (!field.getCustomExtensions().isEmpty()) {
+            generateCustomExtensions(sb, field.getCustomExtensions(), "            ");
+        }
+    }
+
+    private void generateCustomExtensions(
+            StringBuilder sb, List<CustomExtension> extensions, String indent) {
+        sb.append(indent).append("custom_extensions:\n");
+        for (CustomExtension ext : extensions) {
+            sb.append(indent).append("  - vendor_name: ").append(ext.getVendorName()).append("\n");
+            sb.append(indent).append("    data: '")
+                    .append(ext.getData().replace("'", "''")).append("'\n");
         }
     }
 

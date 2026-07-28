@@ -19,18 +19,22 @@
 
 package org.apache.ossie.converter.polaris;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.TextNode;
 import org.apache.ossie.converter.polaris.model.OsiModel;
 import org.apache.ossie.converter.polaris.model.OsiModel.*;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Exports an Ossie semantic model to an Apache Polaris catalog.
@@ -113,13 +117,14 @@ public class PolarisExporter {
 
         ArrayNode fields = schema.putArray("fields");
         List<String> pk = dataset.getPrimaryKey();
+        AtomicInteger nextNestedId = new AtomicInteger(dataset.getFields().size() + 1);
 
         int fieldId = 1;
         for (Field osiField : dataset.getFields()) {
             ObjectNode field = objectMapper.createObjectNode();
             field.put("id", fieldId);
             field.put("name", osiField.getName());
-            field.put("type", inferIcebergType(osiField));
+            field.set("type", inferIcebergType(osiField, nextNestedId));
             field.put("required", pk != null && pk.contains(osiField.getName()));
             if (osiField.getDescription() != null) {
                 field.put("doc", osiField.getDescription());
@@ -143,13 +148,52 @@ public class PolarisExporter {
     }
 
     /**
-     * Infer an Iceberg type from an Ossie field.
+     * Resolve an Iceberg type from an Ossie field.
      * <p>
-     * Since Ossie fields are expression-based and don't carry explicit type information,
-     * we use heuristics based on field name, description, and dimension metadata.
+     * Exact Polaris extension data wins, followed by the portable Ossie datatype.
+     * Legacy description, temporal-role, and name heuristics remain as fallbacks for
+     * models authored before datatype support.
      */
-    private String inferIcebergType(Field field) {
-        // Check description for Iceberg type hint (from round-trip)
+    private JsonNode inferIcebergType(Field field, AtomicInteger nextNestedId) {
+        JsonNode exactType = IcebergTypeMapper.exactIcebergType(field, objectMapper);
+        if (exactType != null) {
+            String extensionDatatype = IcebergTypeMapper.toOssieDatatype(exactType);
+            if (field.getDatatype() != null
+                    && !Objects.equals(field.getDatatype(), extensionDatatype)) {
+                IcebergTypeMapper.warn(
+                        field.getName(),
+                        "datatype '" + field.getDatatype() + "' conflicts with exact Iceberg type '"
+                                + IcebergTypeMapper.displayIcebergType(exactType)
+                                + "'; preserving the POLARIS extension value");
+            }
+            return IcebergTypeMapper.prepareExactTypeForExport(exactType, nextNestedId);
+        }
+
+        JsonNode portableType = IcebergTypeMapper.toDefaultIcebergType(field.getDatatype());
+        if (portableType != null) {
+            if ("Decimal".equals(field.getDatatype())) {
+                IcebergTypeMapper.warn(
+                        field.getName(),
+                        "Ossie datatype 'Decimal' has no precision or scale; using decimal(18, 2)");
+            }
+            return portableType;
+        }
+
+        if (field.getDatatype() != null) {
+            if ("Opaque".equals(field.getDatatype())) {
+                IcebergTypeMapper.warn(
+                        field.getName(),
+                        "Ossie datatype 'Opaque' has no exact Iceberg type in a POLARIS extension; "
+                                + "using legacy inference");
+            } else {
+                IcebergTypeMapper.warn(
+                        field.getName(),
+                        "unrecognized Ossie datatype '" + field.getDatatype()
+                                + "'; using legacy inference");
+            }
+        }
+
+        // Check the legacy description type hint produced by older importer versions.
         if (field.getDescription() != null && field.getDescription().startsWith("Iceberg type: ")) {
             String typeHint = field.getDescription().substring("Iceberg type: ".length());
             // Strip optional/required suffix
@@ -157,16 +201,19 @@ public class PolarisExporter {
             if (parenIdx > 0) {
                 typeHint = typeHint.substring(0, parenIdx);
             }
-            return typeHint;
+            return TextNode.valueOf(typeHint);
         }
 
-        // Time dimension -> timestamp
+        // A time role is only a fallback; it never overrides an explicit datatype.
         if (field.isTime()) {
-            return "timestamptz";
+            return TextNode.valueOf("timestamptz");
         }
 
-        // Name-based heuristics
-        String name = field.getName().toLowerCase();
+        return TextNode.valueOf(inferIcebergTypeFromName(field.getName()));
+    }
+
+    private String inferIcebergTypeFromName(String fieldName) {
+        String name = fieldName.toLowerCase(Locale.ROOT);
         if (name.endsWith("_id") || name.equals("id")) {
             return "long";
         }

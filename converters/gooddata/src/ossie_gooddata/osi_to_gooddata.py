@@ -23,6 +23,7 @@ import json
 import re
 from typing import Any
 
+from ossie_gooddata.datatype_mapping import ossie_to_gooddata_datatype
 from ossie_gooddata.models import (
     GdAttribute,
     GdDataset,
@@ -99,8 +100,16 @@ def _is_date_dataset(ds: dict[str, Any]) -> bool:
     gd_ext = _get_gooddata_extension(ds)
     if gd_ext and gd_ext.get("date_dimension"):
         return True
+    return _is_legacy_date_dataset(ds, gd_ext)
+
+
+def _is_legacy_date_dataset(
+    ds: dict[str, Any],
+    gd_ext: dict[str, Any] | None = None,
+) -> bool:
+    """Detect the converter's legacy all-explicit-time date-dataset shape."""
     fields = ds.get("fields", [])
-    return bool(fields) and all(_is_time_field(f) for f in fields) and not gd_ext
+    return bool(fields) and all(_has_explicit_time_role(f) for f in fields) and not gd_ext
 
 
 def _build_relationship_map(
@@ -129,10 +138,11 @@ def _convert_osi_dataset(
     if gd_ext and gd_ext.get("date_dimension"):
         return _placeholder_dataset(ds_name), _convert_to_date_instance(ds, gd_ext)
 
-    # Check if all fields are time dimensions — heuristic for date datasets
+    # Preserve the legacy explicit-is_time heuristic for date datasets. The
+    # general temporal datatype default does not imply this GoodData-specific
+    # dataset kind.
     fields = ds.get("fields", [])
-    all_time = fields and all(_is_time_field(f) for f in fields)
-    if all_time and not gd_ext:
+    if _is_legacy_date_dataset(ds, gd_ext):
         return _placeholder_dataset(ds_name), _convert_to_date_instance_from_fields(ds)
 
     # Regular dataset
@@ -234,6 +244,12 @@ def _convert_to_attribute(field_def: dict[str, Any], dataset_id: str) -> GdAttri
         title=_get_title(field_def, fallback=field_name),
         source_column=source_col,
         description=field_def.get("description", ""),
+        source_column_data_type=ossie_to_gooddata_datatype(
+            field_def.get("datatype"),
+            default="STRING",
+            field_name=field_name,
+            extension_type=gd_ext.get("source_column_data_type") if gd_ext else None,
+        ),
         sort_column=gd_ext.get("sort_column") if gd_ext else None,
         sort_direction=gd_ext.get("sort_direction") if gd_ext else None,
         labels=labels,
@@ -244,12 +260,19 @@ def _convert_to_fact(field_def: dict[str, Any], dataset_id: str) -> GdFact:
     """Convert an Ossie field (non-dimension) to a GoodData fact."""
     field_name = field_def["name"]
     source_col = _get_source_column(field_def)
+    gd_ext = _get_gooddata_extension(field_def)
 
     return GdFact(
         id=f"fact.{dataset_id}.{field_name}",
         title=_get_title(field_def, fallback=field_name),
         source_column=source_col,
         description=field_def.get("description", ""),
+        source_column_data_type=ossie_to_gooddata_datatype(
+            field_def.get("datatype"),
+            default="NUMERIC",
+            field_name=field_name,
+            extension_type=gd_ext.get("source_column_data_type") if gd_ext else None,
+        ),
     )
 
 
@@ -294,7 +317,7 @@ def _get_title(obj: dict[str, Any], fallback: str = "") -> str:
     return obj.get("description", "") or obj.get("name", "") or fallback
 
 
-def _is_time_field(field_def: dict[str, Any]) -> bool:
+def _has_explicit_time_role(field_def: dict[str, Any]) -> bool:
     dim = field_def.get("dimension")
     return isinstance(dim, dict) and dim.get("is_time") is True
 

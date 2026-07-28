@@ -36,6 +36,8 @@ def test_parse_gooddata_model(gooddata_tpcds_dict: dict, gooddata_tpcds_model: G
     assert len(store_sales.facts) == 4
     assert len(store_sales.grain) == 2
     assert len(store_sales.references) == 4
+    assert store_sales.attributes[0].source_column_data_type is None
+    assert store_sales.facts[0].source_column_data_type is None
 
     # Check data source table id
     assert store_sales.data_source_table_id is not None
@@ -70,6 +72,8 @@ def test_roundtrip_serialization(gooddata_tpcds_dict: dict):
     assert len(ds["attributes"]) == 4
     assert len(ds["facts"]) == 4
     assert len(ds["references"]) == 4
+    assert "sourceColumnDataType" not in ds["attributes"][0]
+    assert "sourceColumnDataType" not in ds["facts"][0]
 
     # Check date instance preserved
     di = result["ldm"]["dateInstances"][0]

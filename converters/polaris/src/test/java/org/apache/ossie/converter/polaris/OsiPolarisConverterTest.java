@@ -26,8 +26,9 @@ import org.apache.ossie.converter.polaris.model.OsiModel;
 import org.apache.ossie.converter.polaris.model.OsiModel.*;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -48,17 +49,23 @@ class OsiPolarisConverterTest {
             + "        description: Order fact table\n"
             + "        fields:\n"
             + "          - name: order_id\n"
+            + "            datatype: Integer\n"
             + "            expression:\n"
             + "              dialects:\n"
             + "                - dialect: ANSI_SQL\n"
             + "                  expression: order_id\n"
             + "          - name: total_amount\n"
+            + "            datatype: Decimal\n"
             + "            expression:\n"
             + "              dialects:\n"
             + "                - dialect: ANSI_SQL\n"
             + "                  expression: \"quantity * unit_price\"\n"
             + "            description: Computed total\n"
+            + "            custom_extensions:\n"
+            + "              - vendor_name: POLARIS\n"
+            + "                data: '{\"iceberg_type\":\"decimal(18,2)\"}'\n"
             + "          - name: order_date\n"
+            + "            datatype: Date\n"
             + "            expression:\n"
             + "              dialects:\n"
             + "                - dialect: ANSI_SQL\n"
@@ -70,11 +77,13 @@ class OsiPolarisConverterTest {
             + "        primary_key: [customer_id]\n"
             + "        fields:\n"
             + "          - name: customer_id\n"
+            + "            datatype: String\n"
             + "            expression:\n"
             + "              dialects:\n"
             + "                - dialect: ANSI_SQL\n"
             + "                  expression: customer_id\n"
             + "          - name: full_name\n"
+            + "            datatype: String\n"
             + "            expression:\n"
             + "              dialects:\n"
             + "                - dialect: ANSI_SQL\n"
@@ -125,6 +134,7 @@ class OsiPolarisConverterTest {
 
         Field computed = orders.getFields().get(1);
         assertEquals("total_amount", computed.getName());
+        assertEquals("Decimal", computed.getDatatype());
         assertEquals("quantity * unit_price", computed.getExpressions().get(0).getExpression());
     }
 
@@ -137,6 +147,7 @@ class OsiPolarisConverterTest {
         Dataset orders = model.getSemanticModels().get(0).getDatasets().get(0);
         Field orderDate = orders.getFields().get(2);
         assertEquals("order_date", orderDate.getName());
+        assertEquals("Date", orderDate.getDatatype());
         assertTrue(orderDate.isTime());
     }
 
@@ -172,6 +183,8 @@ class OsiPolarisConverterTest {
         assertTrue(yaml.contains("source: catalog.ns.orders"));
         assertTrue(yaml.contains("primary_key: [order_id]"));
         assertTrue(yaml.contains("name: total_amount"));
+        assertTrue(yaml.contains("datatype: Decimal"));
+        assertTrue(yaml.contains("datatype: Date"));
         assertTrue(yaml.contains("is_time: true"));
         assertTrue(yaml.contains("name: orders_to_customer"));
         assertTrue(yaml.contains("from_columns: [customer_id]"));
@@ -224,11 +237,12 @@ class OsiPolarisConverterTest {
         JsonNode amountField = fields.get(1);
         assertEquals("total_amount", amountField.get("name").asText());
         assertFalse(amountField.get("required").asBoolean());
+        assertEquals("decimal(18,2)", amountField.get("type").asText());
 
-        // order_date should be timestamptz (time dimension)
+        // Explicit datatype determines the physical type independently of its time role.
         JsonNode dateField = fields.get(2);
         assertEquals("order_date", dateField.get("name").asText());
-        assertEquals("timestamptz", dateField.get("type").asText());
+        assertEquals("date", dateField.get("type").asText());
 
         // Verify identifier-field-ids for primary key
         JsonNode identifierFieldIds = schema.get("identifier-field-ids");
@@ -259,8 +273,9 @@ class OsiPolarisConverterTest {
                 + "        {\"id\": 1, \"name\": \"id\", \"type\": \"long\", \"required\": true},\n"
                 + "        {\"id\": 2, \"name\": \"name\", \"type\": \"string\", \"required\": false},\n"
                 + "        {\"id\": 3, \"name\": \"created_at\", \"type\": \"timestamptz\", \"required\": false},\n"
-                + "        {\"id\": 4, \"name\": \"amount\", \"type\": {\"type\": \"decimal\", \"precision\": 18, \"scale\": 2}, \"required\": false},\n"
-                + "        {\"id\": 5, \"name\": \"tags\", \"type\": {\"type\": \"list\", \"element-id\": 6, \"element\": \"string\", \"element-required\": false}, \"required\": false}\n"
+                + "        {\"id\": 4, \"name\": \"amount\", \"type\": \"decimal(18,2)\", \"required\": false},\n"
+                + "        {\"id\": 5, \"name\": \"event_nanos\", \"type\": \"timestamp_ns\", \"required\": false},\n"
+                + "        {\"id\": 6, \"name\": \"tags\", \"type\": {\"type\": \"list\", \"element-id\": 99, \"element\": \"string\", \"element-required\": false}, \"required\": false}\n"
                 + "      ],\n"
                 + "      \"identifier-field-ids\": [1]\n"
                 + "    }],\n"
@@ -273,44 +288,29 @@ class OsiPolarisConverterTest {
         ObjectMapper mapper = new ObjectMapper();
         JsonNode tableMetadata = mapper.readTree(tableMetadataJson);
 
-        // Use reflection-free approach: create importer and test via YAML round-trip
-        PolarisClient client = new PolarisClient("http://localhost:8181", "test_catalog");
+        PolarisClient client = new FakePolarisClient(tableMetadata);
         PolarisImporter importer = new PolarisImporter(client);
+        OsiModel model = importer.importCatalog();
 
-        // We test the mapping logic by creating a model and verifying YAML output
-        OsiModel model = new OsiModel();
-        model.setVersion("0.2.0.dev0");
+        Dataset ds = model.getSemanticModels().get(0).getDatasets().get(0);
+        assertEquals("test_table", ds.getName());
+        assertEquals("test_catalog.test_ns.test_table", ds.getSource());
+        assertEquals(Collections.singletonList("id"), ds.getPrimaryKey());
+        assertEquals(6, ds.getFields().size());
 
-        SemanticModel sm = new SemanticModel();
-        sm.setName("test_ns");
-        sm.setDescription("Test namespace");
+        assertEquals("Integer", ds.getFields().get(0).getDatatype());
+        assertEquals("String", ds.getFields().get(1).getDatatype());
+        assertEquals("DateTimeTz", ds.getFields().get(2).getDatatype());
+        assertTrue(ds.getFields().get(2).isTime());
+        assertEquals("Decimal", ds.getFields().get(3).getDatatype());
+        assertEquals("DateTime", ds.getFields().get(4).getDatatype());
+        assertTrue(ds.getFields().get(4).isTime());
+        assertEquals("Opaque", ds.getFields().get(5).getDatatype());
 
-        // Manually build what the importer would produce
-        Dataset ds = new Dataset();
-        ds.setName("test_table");
-        ds.setSource("test_catalog.test_ns.test_table");
-        ds.setPrimaryKey(Collections.singletonList("id"));
-
-        // Map fields from the metadata
-        JsonNode schema = tableMetadata.get("metadata").get("schemas").get(0);
-        JsonNode fields = schema.get("fields");
-
-        List<Field> osiFields = new java.util.ArrayList<>();
-        for (JsonNode col : fields) {
-            Field f = new Field();
-            f.setName(col.get("name").asText());
-            f.setExpressions(Collections.singletonList(
-                    new DialectExpression("ANSI_SQL", col.get("name").asText())));
-
-            String type = col.get("type").isTextual() ? col.get("type").asText() : col.get("type").get("type").asText();
-            if ("timestamptz".equals(type) || "timestamp".equals(type) || "date".equals(type)) {
-                f.setTime(true);
-            }
-            osiFields.add(f);
-        }
-        ds.setFields(osiFields);
-        sm.setDatasets(Collections.singletonList(ds));
-        model.setSemanticModels(Collections.singletonList(sm));
+        JsonNode tagsExtension = mapper.readTree(
+                ds.getFields().get(5).getCustomExtensions().get(0).getData());
+        assertEquals("list", tagsExtension.path("iceberg_type").path("type").asText());
+        assertEquals(99, tagsExtension.path("iceberg_type").path("element-id").asInt());
 
         // Generate YAML and verify
         OsiYamlGenerator generator = new OsiYamlGenerator();
@@ -325,6 +325,86 @@ class OsiPolarisConverterTest {
         assertTrue(yaml.contains("is_time: true"));
         assertTrue(yaml.contains("name: amount"));
         assertTrue(yaml.contains("name: tags"));
+        assertTrue(yaml.contains("datatype: Integer"));
+        assertTrue(yaml.contains("datatype: DateTimeTz"));
+        assertTrue(yaml.contains("datatype: DateTime"));
+        assertTrue(yaml.contains("datatype: Decimal"));
+        assertTrue(yaml.contains("datatype: Opaque"));
+        assertTrue(yaml.contains("vendor_name: POLARIS"));
+
+        // Reparse the generated Ossie YAML and export it again. Exact physical
+        // distinctions survive, while nested IDs are regenerated for the new schema.
+        OsiModel reparsed = new OsiModelParser().parse(
+                new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8)));
+        Dataset reparsedDataset = reparsed.getSemanticModels().get(0).getDatasets().get(0);
+        JsonNode exportedSchema = mapper.readTree(
+                new PolarisExporter(client).buildCreateTableRequest(reparsedDataset)).path("schema");
+        JsonNode exportedFields = exportedSchema.path("fields");
+        assertEquals("long", exportedFields.get(0).path("type").asText());
+        assertEquals("timestamptz", exportedFields.get(2).path("type").asText());
+        assertEquals("decimal(18,2)", exportedFields.get(3).path("type").asText());
+        assertEquals("timestamp_ns", exportedFields.get(4).path("type").asText());
+        assertEquals("list", exportedFields.get(5).path("type").path("type").asText());
+        assertEquals(7, exportedFields.get(5).path("type").path("element-id").asInt());
+    }
+
+    @Test
+    void testDatatypePrecedenceAndLegacyFallbacks() throws Exception {
+        Dataset ds = new Dataset();
+        ds.setName("precedence_test");
+        ds.setSource("cat.ns.precedence_test");
+
+        Field typedStringWithTimeRole = makeField("typed_string", true);
+        typedStringWithTimeRole.setDatatype("String");
+
+        Field typedLocalTimestamp = makeField("local_timestamp", false);
+        typedLocalTimestamp.setDatatype("DateTime");
+
+        Field legacyUuid = makeField("legacy_value", false);
+        legacyUuid.setDescription("Iceberg type: uuid (optional)");
+
+        Field exactConflict = makeField("exact_conflict", false);
+        exactConflict.setDatatype("String");
+        exactConflict.setCustomExtensions(Collections.singletonList(
+                new CustomExtension("POLARIS", "{\"iceberg_type\":\"int\"}")));
+
+        Field opaqueWithoutExtension = makeField("opaque_id", false);
+        opaqueWithoutExtension.setDatatype("Opaque");
+
+        Field decimalWithoutExtension = makeField("amount", false);
+        decimalWithoutExtension.setDatatype("Decimal");
+
+        ds.setFields(java.util.Arrays.asList(
+                typedStringWithTimeRole,
+                typedLocalTimestamp,
+                legacyUuid,
+                exactConflict,
+                opaqueWithoutExtension,
+                decimalWithoutExtension));
+
+        PolarisClient client = new PolarisClient("http://localhost:8181", "cat");
+        ByteArrayOutputStream warningBytes = new ByteArrayOutputStream();
+        PrintStream originalError = System.err;
+        String requestJson;
+        try {
+            System.setErr(new PrintStream(warningBytes, true, StandardCharsets.UTF_8));
+            requestJson = new PolarisExporter(client).buildCreateTableRequest(ds);
+        } finally {
+            System.setErr(originalError);
+        }
+        JsonNode fields = new ObjectMapper().readTree(requestJson).path("schema").path("fields");
+
+        assertEquals("string", fields.get(0).path("type").asText());
+        assertEquals("timestamp", fields.get(1).path("type").asText());
+        assertEquals("uuid", fields.get(2).path("type").asText());
+        assertEquals("int", fields.get(3).path("type").asText());
+        assertEquals("long", fields.get(4).path("type").asText());
+        assertEquals("decimal(18, 2)", fields.get(5).path("type").asText());
+
+        String warnings = warningBytes.toString(StandardCharsets.UTF_8);
+        assertTrue(warnings.contains("conflicts with exact Iceberg type 'int'"));
+        assertTrue(warnings.contains("datatype 'Opaque' has no exact Iceberg type"));
+        assertTrue(warnings.contains("datatype 'Decimal' has no precision or scale"));
     }
 
     @Test
@@ -392,5 +472,29 @@ class OsiPolarisConverterTest {
         f.setExpressions(Collections.singletonList(new DialectExpression("ANSI_SQL", name)));
         f.setTime(isTime);
         return f;
+    }
+
+    private static class FakePolarisClient extends PolarisClient {
+        private final JsonNode tableMetadata;
+
+        FakePolarisClient(JsonNode tableMetadata) {
+            super("http://localhost:8181", "test_catalog");
+            this.tableMetadata = tableMetadata;
+        }
+
+        @Override
+        public List<List<String>> listNamespaces() {
+            return Collections.singletonList(Collections.singletonList("test_ns"));
+        }
+
+        @Override
+        public List<String> listTables(List<String> namespace) {
+            return Collections.singletonList("test_table");
+        }
+
+        @Override
+        public JsonNode loadTable(List<String> namespace, String tableName) {
+            return tableMetadata;
+        }
     }
 }

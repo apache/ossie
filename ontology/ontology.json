@@ -51,12 +51,44 @@
       "type": "object",
       "description": "Ontology component that defines a single concept and any relationships that are keyed primarily by that concept",
       "properties": {
+        "concept": {
+          "type": "string",
+          "description": "Unique name of the concept defined by this component"
+        },
+        "type": {
+          "$ref": "#/$defs/ConceptType"
+        },
         "description": {
           "type": "string",
-          "description": "Human-readable description of the component"
+          "description": "Human-readable description of the concept"
         },
-        "concept": {
-          "$ref": "#/$defs/Concept"
+        "extends": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Indicates that this concept extends one or more other concepts"
+        },
+        "derived_by": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Expression"
+          },
+          "description": "Expressions that define how this concept is derived"
+        },
+        "identify_by": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Names of relationships to use as the preferred identifier of this concept"
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Expression"
+          },
+          "description": "Expressions that constrain the population of this concept"
         },
         "relationships": {
           "type": "array",
@@ -66,7 +98,7 @@
           "description": "Defines relationships that pertain primarily to the concept defined in this component"
         }
       },
-      "required": ["concept"],
+      "required": ["concept", "type"],
       "additionalProperties": false
     },
     "Expression": {
@@ -118,53 +150,6 @@
         }
       },
       "required": ["name", "verbalizes"],
-      "additionalProperties": false
-    },
-    "Concept": {
-      "type": "object",
-      "description": "Defines a concept in the ontology",
-      "properties": {
-        "name": {
-          "type": "string",
-          "description": "Unique identifier for the concept"
-        },
-        "type": {
-          "$ref": "#/$defs/ConceptType"
-        },
-        "description": {
-          "type": "string",
-          "description": "Human-readable description of the concept"
-        },
-        "extends": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "Indicates that this concept extends one or more other concepts"
-        },
-        "derived_by": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Expression"
-          },
-          "description": "Expressions that define how this concept is derived"
-        },
-        "identify_by": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "Names of relationships to use as the preferred identifier of this concept"
-        },
-        "requires": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Expression"
-          },
-          "description": "Expressions that constrain the population of this concept"
-        }
-      },
-      "required": ["name", "type"],
       "additionalProperties": false
     },
     "ConceptMapping": {

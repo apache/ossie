@@ -266,6 +266,24 @@ class OsiToSalesforceConverterTest {
         assertNotNull(customerIdDim);
         assertEquals("Text", customerIdDim.get("dataType"));
         assertEquals("Discrete", customerIdDim.get("displayCategory"));
+
+        Map<String, Object> emailDim = customerDimensions.stream()
+                .filter(d -> "email".equals(d.get("apiName")))
+                .findFirst()
+                .orElse(null);
+        assertNotNull(emailDim);
+        assertEquals("Email", emailDim.get("dataType"),
+                "Exact Salesforce extension type should win over portable String");
+
+        List<Map<String, Object>> customerMeasurements =
+                (List<Map<String, Object>>) customersDataset.get("semanticMeasurements");
+        Map<String, Object> lifetimeValue = customerMeasurements.stream()
+                .filter(m -> "lifetime_value".equals(m.get("apiName")))
+                .findFirst()
+                .orElse(null);
+        assertNotNull(lifetimeValue);
+        assertEquals("Currency", lifetimeValue.get("dataType"),
+                "Exact Salesforce extension type should win over portable Decimal");
     }
 
     @Test
