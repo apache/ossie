@@ -158,6 +158,75 @@ _GSF_TO_OSSIE_DIALECT = {
     "databricks": "DATABRICKS",
     "bigquery": "BIGQUERY",
 }
+# A GSF column carries the physical type its connection reports. Ossie names ten
+# logical types, so the mapping is deliberately coarse in that direction and
+# canonical in the other, which is what lets a datatype survive a full cycle.
+_OSSIE_DATATYPE_BY_SQL_TYPE = {
+    "VARCHAR": "String",
+    "VARCHAR2": "String",
+    "NVARCHAR": "String",
+    "NVARCHAR2": "String",
+    "CHAR": "String",
+    "NCHAR": "String",
+    "CHARACTER": "String",
+    "CHARACTER VARYING": "String",
+    "TEXT": "String",
+    "STRING": "String",
+    "CLOB": "String",
+    "NCLOB": "String",
+    "INT": "Integer",
+    "INTEGER": "Integer",
+    "BIGINT": "Integer",
+    "SMALLINT": "Integer",
+    "TINYINT": "Integer",
+    "BYTEINT": "Integer",
+    "INT2": "Integer",
+    "INT4": "Integer",
+    "INT8": "Integer",
+    "DEC": "Decimal",
+    "DECIMAL": "Decimal",
+    "NUMERIC": "Decimal",
+    "NUMBER": "Decimal",
+    "MONEY": "Decimal",
+    "FLOAT": "Float",
+    "FLOAT4": "Float",
+    "FLOAT8": "Float",
+    "REAL": "Float",
+    "DOUBLE": "Float",
+    "DOUBLE PRECISION": "Float",
+    "BINARY_FLOAT": "Float",
+    "BINARY_DOUBLE": "Float",
+    "BOOL": "Boolean",
+    "BOOLEAN": "Boolean",
+    "DATE": "Date",
+    "TIME": "Time",
+    "TIME WITHOUT TIME ZONE": "Time",
+    "DATETIME": "DateTime",
+    "DATETIME2": "DateTime",
+    "SMALLDATETIME": "DateTime",
+    "TIMESTAMP": "DateTime",
+    "TIMESTAMP_NTZ": "DateTime",
+    "TIMESTAMP WITHOUT TIME ZONE": "DateTime",
+    "DATETIMEOFFSET": "DateTimeTz",
+    "TIMESTAMPTZ": "DateTimeTz",
+    "TIMESTAMP_LTZ": "DateTimeTz",
+    "TIMESTAMP_TZ": "DateTimeTz",
+    "TIMESTAMP WITH LOCAL TIME ZONE": "DateTimeTz",
+    "TIMESTAMP WITH TIME ZONE": "DateTimeTz",
+}
+# Opaque is absent on purpose: it names a type outside Ossie's vocabulary, so
+# there is nothing to write back and no physical type worth inventing.
+_SQL_TYPE_BY_OSSIE_DATATYPE = {
+    "String": "TEXT",
+    "Integer": "BIGINT",
+    "Decimal": "DECIMAL",
+    "Float": "DOUBLE",
+    "Boolean": "BOOLEAN",
+    "Date": "DATE",
+    "Time": "TIME",
+    "DateTime": "TIMESTAMP",
+    "DateTimeTz": "TIMESTAMP WITH TIME ZONE",
+}
 
 
 class GSFConversionError(Exception):
@@ -564,6 +633,9 @@ def convert_gsf_to_ossie(
                 "name": field_name,
                 "expression": _ossie_expression(str(column["name"])),
             }
+            datatype = _ossie_datatype(column["item"].get("type"))
+            if datatype:
+                field["datatype"] = datatype
             if attribute.get("description"):
                 field["description"] = str(attribute["description"])
             fields_by_term[term_id].append(field)
@@ -763,6 +835,15 @@ def _build_catalog(
                 column for _, context in contexts for column in context["columns"]
             )
         )
+        # A field states the logical type of the column behind it, which is the
+        # only type information an Ossie-origin catalog has to offer.
+        declared_types: dict[str, str] = {}
+        for _, context in contexts:
+            for field, column_name in context["simple_fields"]:
+                sql_type = _gsf_column_type(field.get("datatype"))
+                if sql_type:
+                    declared_types.setdefault(column_name, sql_type)
+
         columns: list[dict[str, Any]] = []
         for column_name in catalog_columns:
             preserved_column = preserved["columns"].get((*source_key, column_name), {})
@@ -780,7 +861,10 @@ def _build_catalog(
                     "id": column_id,
                     "name": column_name,
                     "description": str(preserved_column.get("description") or ""),
-                    "type": str(preserved_column.get("type") or ""),
+                    "type": str(
+                        preserved_column.get("type")
+                        or declared_types.get(column_name, "")
+                    ),
                     "sample_values": list(preserved_column.get("sample_values") or []),
                     "is_nullable": bool(
                         preserved_column.get("is_nullable", column_name not in pk)
@@ -1768,6 +1852,44 @@ def _ossie_expression(expression: str, dialect: str = "ANSI_SQL") -> dict[str, A
             }
         ]
     }
+
+
+def _ossie_datatype(sql_type: Any) -> str | None:
+    """Map a GSF column's physical type onto Ossie's logical vocabulary.
+
+    A type Ossie cannot name becomes ``Opaque``, as the spec prescribes for a
+    known type outside the portable vocabulary. An absent type stays unset
+    rather than being guessed.
+    """
+    base, scale = _split_sql_type(sql_type)
+    if not base:
+        return None
+    datatype = _OSSIE_DATATYPE_BY_SQL_TYPE.get(base)
+    if datatype is None:
+        return "Opaque"
+    if datatype == "Decimal" and scale == 0:
+        # NUMBER(38,0) and friends are exact integers.
+        return "Integer"
+    return datatype
+
+
+def _split_sql_type(sql_type: Any) -> tuple[str, int | None]:
+    """Split a physical type into its base name and declared scale."""
+    text = " ".join(str(sql_type or "").upper().split())
+    if not text:
+        return "", None
+    scale: int | None = None
+    parameters = re.search(r"\(([^)]*)\)", text)
+    if parameters:
+        parts = [part.strip() for part in parameters.group(1).split(",")]
+        if len(parts) > 1 and parts[1].isdigit():
+            scale = int(parts[1])
+    return " ".join(re.sub(r"\([^)]*\)", " ", text).split()), scale
+
+
+def _gsf_column_type(datatype: Any) -> str:
+    """Map an Ossie logical datatype onto a physical type for a new column."""
+    return _SQL_TYPE_BY_OSSIE_DATATYPE.get(str(datatype or ""), "")
 
 
 def _dialects_by_database(root: Mapping[str, Any]) -> dict[str, str]:

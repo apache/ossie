@@ -31,6 +31,7 @@ Neo4j, a database, or network access.
 | Dataset field backed by one column | `semantic_layer.terms[].columns_attributes[]` |
 | Computed dataset field | `semantic_layer.sql_attributes.manual[]` |
 | Model-level metric | `semantic_layer.custom_analyses[]` |
+| Field `datatype` | physical `type` on the catalog column behind the field |
 | Relationship | data-layer `joins` and `foreign_keys`, plus `semantic_fks` when possible |
 | Dataset | term that `represents` exactly one catalog table |
 
@@ -160,6 +161,21 @@ GSF → Ossie synthesizes a stable `<from>_to_<to>` name. The converter never
 adds fictional fields to the GSF schema. GSF records uniqueness per column, so
 Ossie composite unique keys cannot be reconstructed after GSF → Ossie; only
 single-column unique keys survive.
+
+Ossie's `datatype` maps to and from the physical type on a GSF catalog column,
+for fields backed by a single column. GSF → Ossie reduces the physical type to
+Ossie's logical vocabulary, so `NUMBER(38,0)` becomes `Integer`, `NUMBER(12,2)`
+becomes `Decimal`, and a type Ossie cannot name, such as Snowflake's `VARIANT`,
+becomes `Opaque` as the spec prescribes. Ossie → GSF writes a canonical physical
+type for a column the Ossie model introduces, and never overrides a type
+preserved from a real GSF catalog, since GSF reports what the connection
+actually holds. The two mappings are inverses, so a declared `datatype` survives
+a full cycle.
+
+A computed field or a metric has no single column behind it and GSF stores no
+type for either, so their `datatype` is not carried. `Opaque` is not written
+back, because it names a type outside the vocabulary and there is no physical
+type worth inventing from it.
 
 ## Tests
 

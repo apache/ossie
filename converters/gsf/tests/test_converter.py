@@ -36,7 +36,9 @@ from ossie_gsf.converter import (
     main,
 )
 from ossie_gsf.native_converter import (
+    _SQL_TYPE_BY_OSSIE_DATATYPE,
     _index_native_document,
+    _ossie_datatype,
     _parse_source,
     _reconcile_native_relationships,
     _simple_source_column,
@@ -45,6 +47,7 @@ from ossie_gsf.native_converter import (
 OSSIE_VERSION = "0.2.0.dev0"
 FIXTURES = Path(__file__).parent / "fixtures"
 VALIDATOR = Path(__file__).resolve().parents[3] / "validation" / "validate.py"
+SCHEMA = Path(__file__).resolve().parents[3] / "core-spec" / "osi-schema.json"
 
 
 def _ossie_yaml() -> str:
@@ -757,6 +760,133 @@ def test_dialects_ossie_cannot_name_stay_ansi() -> None:
     )
 
     assert net_total["expression"]["dialects"][0]["dialect"] == "ANSI_SQL"
+
+
+@pytest.mark.parametrize("datatype", sorted(_SQL_TYPE_BY_OSSIE_DATATYPE))
+def test_every_mappable_datatype_survives_a_round_trip(datatype: str) -> None:
+    ossie = yaml.safe_load(_ossie_yaml())
+    orders = next(
+        dataset
+        for dataset in ossie["semantic_model"][0]["datasets"]
+        if dataset["name"] == "orders"
+    )
+    next(field for field in orders["fields"] if field["name"] == "order_id")[
+        "datatype"
+    ] = datatype
+
+    native = convert_ossie_to_gsf(yaml.safe_dump(ossie))
+    restored = yaml.safe_load(convert_gsf_to_ossie(native))
+    field = next(
+        item
+        for dataset in restored["semantic_model"][0]["datasets"]
+        if dataset["name"] == "orders"
+        for item in dataset["fields"]
+        if item["name"] == "order_id"
+    )
+
+    assert field["datatype"] == datatype
+
+
+def test_the_physical_type_chosen_for_each_datatype_maps_back_to_it() -> None:
+    """The two directions have to be inverses or a cycle would drift."""
+    for datatype, sql_type in _SQL_TYPE_BY_OSSIE_DATATYPE.items():
+        assert _ossie_datatype(sql_type) == datatype
+
+
+def test_mapping_covers_the_specs_datatype_vocabulary() -> None:
+    """Fail loudly if the spec grows a logical type the mapping ignores."""
+    schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
+
+    assert set(schema["$defs"]["DataType"]["enum"]) == {
+        *_SQL_TYPE_BY_OSSIE_DATATYPE,
+        "Opaque",
+    }
+
+
+@pytest.mark.parametrize(
+    ("sql_type", "expected"),
+    [
+        ("TEXT", "String"),
+        ("VARCHAR(255)", "String"),
+        ("NUMBER(38,0)", "Integer"),
+        ("NUMBER(12,2)", "Decimal"),
+        ("DECIMAL", "Decimal"),
+        ("double precision", "Float"),
+        ("TIMESTAMP_NTZ(9)", "DateTime"),
+        ("TIMESTAMP(6) WITH TIME ZONE", "DateTimeTz"),
+        ("VARIANT", "Opaque"),
+        ("GEOGRAPHY", "Opaque"),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_physical_types_map_onto_the_ossie_vocabulary(
+    sql_type: str | None,
+    expected: str | None,
+) -> None:
+    assert _ossie_datatype(sql_type) == expected
+
+
+def test_gsf_column_types_reach_the_ossie_field() -> None:
+    native = yaml.safe_load(_gsf_yaml())
+    orders = next(
+        table
+        for database in native["data_layer"]["databases"]
+        for schema in database["schemas"]
+        for table in schema["tables"]
+        if table["name"] == "orders"
+    )
+    for column in orders["columns"]:
+        column["type"] = "NUMBER(38,0)" if column["name"] == "order_id" else "TEXT"
+
+    ossie = yaml.safe_load(convert_gsf_to_ossie(yaml.safe_dump(native)))
+    fields = {
+        field["name"]: field.get("datatype")
+        for dataset in ossie["semantic_model"][0]["datasets"]
+        if dataset["name"] == "orders"
+        for field in dataset["fields"]
+    }
+
+    assert fields["order_id"] == "Integer"
+    assert fields["customer_id"] == "String"
+    # A computed attribute has no column, so GSF holds no type for it.
+    assert fields["net_total"] is None
+
+
+def test_a_live_gsf_column_type_outranks_an_ossie_datatype() -> None:
+    """GSF reports the physical type; Ossie only names a logical one."""
+    native = yaml.safe_load(_gsf_yaml())
+    orders = next(
+        table
+        for database in native["data_layer"]["databases"]
+        for schema in database["schemas"]
+        for table in schema["tables"]
+        if table["name"] == "orders"
+    )
+    next(column for column in orders["columns"] if column["name"] == "order_id")[
+        "type"
+    ] = "NUMBER(38,0)"
+
+    ossie = yaml.safe_load(convert_gsf_to_ossie(yaml.safe_dump(native)))
+    next(
+        field
+        for dataset in ossie["semantic_model"][0]["datasets"]
+        if dataset["name"] == "orders"
+        for field in dataset["fields"]
+        if field["name"] == "order_id"
+    )["datatype"] = "String"
+
+    restored = yaml.safe_load(convert_ossie_to_gsf(yaml.safe_dump(ossie)))
+    column = next(
+        column
+        for database in restored["data_layer"]["databases"]
+        for schema in database["schemas"]
+        for table in schema["tables"]
+        for column in table["columns"]
+        if column["name"] == "order_id"
+    )
+
+    assert column["type"] == "NUMBER(38,0)"
 
 
 def test_old_fictional_gsf_root_is_rejected() -> None:
