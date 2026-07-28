@@ -32,9 +32,13 @@ from uuid import UUID, uuid5
 
 import yaml
 from sqlglot import exp, parse_one
-from sqlglot.errors import ParseError
+from sqlglot.errors import ParseError, TokenError
 
 OSSIE_VERSION = "0.2.0.dev0"
+# Any release in this major.minor series is accepted on input. The spec is
+# still on a .dev line, so pinning the exact string would reject every real
+# model as soon as the patch or dev suffix moves.
+OSSIE_SERIES = tuple(int(part) for part in OSSIE_VERSION.split(".")[:2])
 NVIDIA_GSF_VENDOR = "NVIDIA_GSF"
 GSF_VENDOR_ALIASES = {NVIDIA_GSF_VENDOR, "GSF"}
 _ID_NAMESPACE = UUID("03d14261-6432-50fe-b099-77e8061af4f9")
@@ -42,6 +46,21 @@ _SQL_GROUPS = ("manual", "table", "sql", "bridge_table")
 _SIMPLE_COLUMN = re.compile(
     r"^(?:(?P<qualifier>[A-Za-z_][A-Za-z0-9_]*)\.)?"
     r"(?P<column>[A-Za-z_][A-Za-z0-9_]*)$"
+)
+# sqlglot's default parser first, since it is closest to ANSI, then the
+# dialects GSF connections commonly report.
+_SQL_DIALECTS = (
+    "",
+    "snowflake",
+    "databricks",
+    "bigquery",
+    "tsql",
+    "postgres",
+    "mysql",
+    "duckdb",
+    "spark",
+    "oracle",
+    "sqlite",
 )
 _DATE_PART_UNITS = frozenset(
     {
@@ -92,7 +111,10 @@ _DATE_PART_UNITS = frozenset(
         "epoch",
     }
 )
-_DATE_FUNCTIONS = frozenset(
+# Functions whose *first* argument is a date-part unit rather than data.
+# LAST_DAY, TRUNC and EXTRACT are deliberately absent: the first two take data
+# there, and EXTRACT's unit uses syntax sqlglot does not parse as a column.
+_UNIT_FIRST_FUNCTIONS = frozenset(
     {
         "datediff",
         "date_diff",
@@ -118,11 +140,24 @@ _DATE_FUNCTIONS = frozenset(
         "date_part",
         "datepart",
         "datename",
-        "extract",
-        "last_day",
-        "trunc",
     }
 )
+# Typed sqlglot nodes that hold the unit in their ``this`` slot. DATE_ADD and
+# friends are excluded: they keep the unit in ``unit`` and put data in ``this``.
+_UNIT_IN_THIS_FUNCTIONS = tuple(
+    node
+    for node in (
+        getattr(exp, name, None)
+        for name in ("DateDiff", "TimestampDiff", "DatetimeDiff", "TimeDiff")
+    )
+    if isinstance(node, type)
+)
+# Ossie names only a few dialects; everything else has no equivalent.
+_GSF_TO_OSSIE_DIALECT = {
+    "snowflake": "SNOWFLAKE",
+    "databricks": "DATABRICKS",
+    "bigquery": "BIGQUERY",
+}
 
 
 class GSFConversionError(Exception):
@@ -448,6 +483,7 @@ def convert_gsf_to_ossie(
     """Convert a native ``GsfModelDocument`` to one Apache Ossie model."""
     root = _parse_gsf(gsf_yaml)
     catalog = _read_catalog(root)
+    dialects = _dialects_by_database(root)
     semantic = root["semantic_layer"]
     terms = semantic["terms"]
     if not terms:
@@ -557,7 +593,7 @@ def convert_gsf_to_ossie(
                 )
             field_names_by_term[term_id].add(name)
             represented_table_id = str(term_by_id[term_id]["represents"][0])
-            _validate_gsf_sql_databases(
+            sql_databases = _validate_gsf_sql_databases(
                 f"SQL attribute {name!r}",
                 sql,
                 attribute.get("sql_column_is") or [],
@@ -567,7 +603,10 @@ def convert_gsf_to_ossie(
             ossie_expression = _expression_from_sql(sql)
             field = {
                 "name": name,
-                "expression": _ossie_expression(ossie_expression),
+                "expression": _ossie_expression(
+                    ossie_expression,
+                    _ossie_dialect(dialects, sql_databases),
+                ),
                 "custom_extensions": [
                     _gsf_extension(
                         {
@@ -600,7 +639,7 @@ def convert_gsf_to_ossie(
             raise GSFConversionError(
                 "Every GSF custom analysis requires non-empty name and sql"
             )
-        _validate_gsf_sql_databases(
+        sql_databases = _validate_gsf_sql_databases(
             f"Custom analysis {name!r}",
             sql,
             analysis.get("sql_column_is") or [],
@@ -609,7 +648,10 @@ def convert_gsf_to_ossie(
         ossie_expression = _expression_from_sql(sql)
         metric: dict[str, Any] = {
             "name": name,
-            "expression": _ossie_expression(ossie_expression),
+            "expression": _ossie_expression(
+                ossie_expression,
+                _ossie_dialect(dialects, sql_databases),
+            ),
             "custom_extensions": [
                 _gsf_extension(
                     {
@@ -854,10 +896,7 @@ def _index_native_document(root: dict[str, Any] | None) -> dict[str, Any]:
     }
     if not root:
         return result
-    try:
-        catalog = _read_catalog(root)
-    except GSFConversionError:
-        return result
+    catalog = _read_native_catalog(root)
     for database in root["data_layer"].get("databases") or []:
         database_names = {
             str(schema.get("database_name") or "")
@@ -918,6 +957,21 @@ def _index_native_document(root: dict[str, Any] | None) -> dict[str, Any]:
     return result
 
 
+def _read_native_catalog(root: dict[str, Any]) -> dict[str, Any]:
+    """Read the catalog out of a preserved native snapshot.
+
+    Both the indexing and the relationship-reconciliation paths go through
+    here so a hand-edited extension fails the same way in either, rather than
+    silently dropping the preserved identifiers in one of them.
+    """
+    try:
+        return _read_catalog(root)
+    except GSFConversionError as exc:
+        raise GSFConversionError(
+            f"Malformed {NVIDIA_GSF_VENDOR} 'native_document' extension: {exc}"
+        ) from exc
+
+
 def _read_catalog(root: dict[str, Any]) -> dict[str, Any]:
     tables: dict[str, dict[str, Any]] = {}
     columns: dict[str, dict[str, Any]] = {}
@@ -972,7 +1026,8 @@ def _validate_gsf_sql_databases(
     catalog: Mapping[str, Any],
     *,
     attached_table_id: str | None = None,
-) -> None:
+) -> set[str]:
+    """Validate the SQL resolves to one database, and return the databases."""
     databases: set[str] = set()
     if attached_table_id:
         table = catalog["tables"].get(attached_table_id)
@@ -984,7 +1039,7 @@ def _validate_gsf_sql_databases(
             databases.add(str(catalog["tables"][column["table_id"]]["source"][0]))
 
     parsed = _parse_sql(sql)
-    for sql_table in parsed.find_all(exp.Table):
+    for sql_table in parsed.find_all(exp.Table) if parsed is not None else []:
         if sql_table.catalog:
             databases.add(sql_table.catalog)
         matches = [
@@ -1001,6 +1056,7 @@ def _validate_gsf_sql_databases(
             f"{context} spans multiple databases ({', '.join(sorted(databases))}); "
             "the GSF importer validates each SQL object against one database"
         )
+    return databases
 
 
 def _relationships_from_gsf(
@@ -1233,11 +1289,7 @@ def _parse_ossie(value: str) -> tuple[dict[str, Any], dict[str, Any]]:
         raise GSFConversionError(
             "Unsupported Ossie root properties: " + ", ".join(unknown)
         )
-    if str(root.get("version", "")) != OSSIE_VERSION:
-        raise GSFConversionError(
-            f"Unsupported Ossie version {root.get('version')!r}; "
-            f"supported version is {OSSIE_VERSION!r}"
-        )
+    _check_ossie_version(root.get("version"))
     models = root.get("semantic_model")
     if not isinstance(models, list) or len(models) != 1:
         raise GSFConversionError("Ossie input must contain exactly one semantic model")
@@ -1245,6 +1297,16 @@ def _parse_ossie(value: str) -> tuple[dict[str, Any], dict[str, Any]]:
     if not isinstance(model, dict) or not model.get("name"):
         raise GSFConversionError("Ossie semantic model requires a name")
     return root, model
+
+
+def _check_ossie_version(value: Any) -> None:
+    """Accept any Ossie version in the supported major.minor series."""
+    series = re.match(r"^\s*(\d+)\.(\d+)", str(value or ""))
+    if not series or (int(series.group(1)), int(series.group(2))) != OSSIE_SERIES:
+        expected = ".".join(str(part) for part in OSSIE_SERIES)
+        raise GSFConversionError(
+            f"Unsupported Ossie version {value!r}; expected {expected}.x"
+        )
 
 
 def _load_yaml(value: str, label: str) -> dict[str, Any]:
@@ -1442,9 +1504,7 @@ def _validate_single_database_refs(
     databases = {
         str(datasets[ref]["source"]["database"]) for ref in refs if ref in datasets
     }
-    databases.update(
-        table.catalog for table in _parse_sql(sql).find_all(exp.Table) if table.catalog
-    )
+    databases.update(table.catalog for table in _sql_tables(sql) if table.catalog)
     if len(databases) > 1:
         raise GSFConversionError(
             f"{context} spans multiple databases ({', '.join(sorted(databases))}); "
@@ -1458,6 +1518,8 @@ def _referenced_datasets(
 ) -> list[str]:
     references: list[str] = []
     parsed = _parse_sql(sql)
+    if parsed is None:
+        return references
     for table in parsed.find_all(exp.Table):
         matches = [
             name
@@ -1545,41 +1607,62 @@ def _column_dataset(
 
 
 def _sql_columns(sql: str) -> list[exp.Column]:
+    parsed = _parse_sql(sql)
+    if parsed is None:
+        return []
     return [
         column
-        for column in _parse_sql(sql).find_all(exp.Column)
+        for column in parsed.find_all(exp.Column)
         if not _is_date_part_unit(column)
     ]
+
+
+def _sql_tables(sql: str) -> list[exp.Table]:
+    parsed = _parse_sql(sql)
+    return list(parsed.find_all(exp.Table)) if parsed is not None else []
 
 
 def _is_date_part_unit(column: exp.Column) -> bool:
     """Report whether a parsed column is really a date-part keyword.
 
-    ``DATEDIFF(day, a, b)`` and friends put the unit in an argument slot that
-    sqlglot parses as an unqualified column, which would otherwise be mistaken
-    for a physical catalog column.
+    ``DATEDIFF(day, a, b)`` puts the unit where sqlglot parses an unqualified
+    column, which would otherwise be mistaken for a physical catalog column.
+    Only the unit slot itself counts, so a column genuinely named ``day``
+    elsewhere in the same call still resolves as data.
     """
     parent = column.parent
     if column.table or column.name.lower() not in _DATE_PART_UNITS:
         return False
-    if not isinstance(parent, exp.Func):
-        return False
     if isinstance(parent, exp.Anonymous):
-        return str(parent.this).lower() in _DATE_FUNCTIONS
-    try:
-        names = parent.sql_names()
-    except (AttributeError, IndexError):
-        return False
-    return any(name.lower() in _DATE_FUNCTIONS for name in names)
+        if str(parent.this).lower() not in _UNIT_FIRST_FUNCTIONS:
+            return False
+        arguments = parent.args.get("expressions") or []
+        return bool(arguments) and arguments[0] is column
+    if isinstance(parent, _UNIT_IN_THIS_FUNCTIONS):
+        # MySQL's two-argument DATEDIFF(ended, started) has no unit, so its
+        # first argument is data rather than a keyword.
+        return column.arg_key == "this" and _argument_count(parent) >= 3
+    return False
 
 
-def _parse_sql(sql: str) -> exp.Expression:
-    try:
-        return parse_one(sql)
-    except (ParseError, ValueError) as exc:
-        raise GSFConversionError(
-            f"Unable to parse SQL expression {sql!r}: {exc}"
-        ) from exc
+def _argument_count(func: exp.Expression) -> int:
+    return sum(1 for value in func.args.values() if value is not None)
+
+
+def _parse_sql(sql: str) -> exp.Expression | None:
+    """Parse *sql*, trying each candidate dialect, or return ``None``.
+
+    Preserved GSF SQL carries whatever dialect its connection reported, so a
+    single parser is not enough. SQL that no candidate can parse is treated as
+    opaque: it is still carried through verbatim, and only the parse-derived
+    enrichment (column and table discovery) is skipped.
+    """
+    for dialect in _SQL_DIALECTS:
+        try:
+            return parse_one(sql, dialect=dialect or None)
+        except (ParseError, TokenError, ValueError):
+            continue
+    return None
 
 
 def _first_resolvable_column_ids(
@@ -1654,9 +1737,8 @@ def _wrap_expression(
 
 
 def _expression_from_sql(sql: str) -> str:
-    try:
-        parsed = parse_one(sql)
-    except (ParseError, ValueError):
+    parsed = _parse_sql(sql)
+    if parsed is None:
         return sql
     select = parsed.find(exp.Select)
     if select is None or not select.expressions:
@@ -1670,21 +1752,48 @@ def _expression_from_sql(sql: str) -> str:
 def _expression_matches(current: str, emitted: Any) -> bool:
     if not isinstance(emitted, str) or not emitted.strip():
         return False
-    try:
-        return parse_one(current).sql() == parse_one(emitted).sql()
-    except (ParseError, ValueError):
+    parsed_current = _parse_sql(current)
+    parsed_emitted = _parse_sql(emitted)
+    if parsed_current is None or parsed_emitted is None:
         return current.strip() == emitted.strip()
+    return parsed_current.sql() == parsed_emitted.sql()
 
 
-def _ossie_expression(expression: str) -> dict[str, Any]:
+def _ossie_expression(expression: str, dialect: str = "ANSI_SQL") -> dict[str, Any]:
     return {
         "dialects": [
             {
-                "dialect": "ANSI_SQL",
+                "dialect": dialect,
                 "expression": expression,
             }
         ]
     }
+
+
+def _dialects_by_database(root: Mapping[str, Any]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for database in root["data_layer"].get("databases") or []:
+        dialect = str(database.get("dialect") or "")
+        if not dialect:
+            continue
+        for schema in database.get("schemas") or []:
+            name = str(schema.get("database_name") or "")
+            if name:
+                result[name] = dialect
+    return result
+
+
+def _ossie_dialect(dialects: Mapping[str, str], databases: Iterable[str]) -> str:
+    """Map a GSF connection dialect onto the Ossie dialect enum.
+
+    Ossie names only a few dialects, so anything else stays ANSI_SQL rather
+    than being labelled inaccurately.
+    """
+    names = {str(dialects.get(database, "")).lower() for database in databases}
+    labels = {
+        _GSF_TO_OSSIE_DIALECT[name] for name in names if name in _GSF_TO_OSSIE_DIALECT
+    }
+    return labels.pop() if len(labels) == 1 else "ANSI_SQL"
 
 
 def _parse_source(
@@ -1781,7 +1890,7 @@ def _reconcile_native_relationships(
     joins: list[dict[str, Any]],
     semantic_fks: list[dict[str, str]],
 ) -> tuple[list[dict[str, str]], list[dict[str, Any]], list[dict[str, str]]]:
-    catalog = _read_catalog(native)
+    catalog = _read_native_catalog(native)
     native_joins = [
         item
         for item in native.get("data_layer", {}).get("joins") or []

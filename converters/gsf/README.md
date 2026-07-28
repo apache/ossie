@@ -38,7 +38,9 @@ The generated root contains exactly `data_layer`, `semantic_layer`, and
 `zones`. It does not contain a converter-specific version or model envelope.
 Catalog columns are collected from fields, primary and unique keys,
 relationships, and SQL column references. Stable UUIDv5 identifiers make
-repeated Ossie exports deterministic.
+repeated Ossie exports deterministic. Any Ossie `0.2.x` version is accepted on
+input, including `.dev` releases; output is written as the spec version the
+converter targets.
 
 ## Setup
 
@@ -123,6 +125,32 @@ deterministic IDs when no preserved native ID is available. Current Ossie
 expressions and relationships remain authoritative: preserved SQL and native
 relationship records are reused only when they still correspond to the Ossie
 entities or are outside the represented Ossie catalog scope.
+
+That extension holds the whole native document, so an Ossie file produced from
+GSF carries a full copy of the GSF catalog alongside the model derived from it.
+This is a deliberate trade of size for round-trip fidelity: it is what lets a
+GSF → Ossie → GSF cycle keep live identifiers, and it means the Ossie output of
+a large catalog is bulky and not meant to be reviewed by hand. Converting
+Ossie → GSF from a hand-written Ossie file, which has no such extension, is
+unaffected.
+
+SQL is parsed with sqlglot across a list of candidate dialects rather than a
+single one, because preserved GSF SQL carries whatever dialect its connection
+reported. SQL that no candidate can parse is treated as opaque: it is still
+carried through verbatim, and only the parse-derived enrichment (discovering
+which tables and columns an expression touches) is skipped, so a model that
+imported cleanly can always be exported again. On GSF → Ossie, expressions are
+labelled with the source connection's dialect when Ossie names it
+(`SNOWFLAKE`, `DATABRICKS`, `BIGQUERY`) and `ANSI_SQL` otherwise.
+
+For an Ossie-origin model there is no GSF catalog to check against, so physical
+columns are synthesized from the identifiers in each expression. Date-part
+keywords are excluded, but only in the unit argument of a recognized date
+function, so a column genuinely named `day` or `month` is kept everywhere else.
+A unit passed to a date function the converter does not recognize is still
+synthesized as a column; this is inherent to deriving a catalog from SQL text
+and does not apply once a GSF catalog is present, since a GSF-sourced catalog
+is authoritative and never widened.
 
 The GSF contract has no semantic-model envelope, `ai_context`, dimensions,
 synonyms, Ossie custom-extension storage, or expression-dialect variants.

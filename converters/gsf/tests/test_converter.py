@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +35,12 @@ from ossie_gsf.converter import (
     convert_ossie_to_gsf,
     main,
 )
-from ossie_gsf.native_converter import _parse_source, _simple_source_column
+from ossie_gsf.native_converter import (
+    _index_native_document,
+    _parse_source,
+    _reconcile_native_relationships,
+    _simple_source_column,
+)
 
 OSSIE_VERSION = "0.2.0.dev0"
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -56,6 +62,15 @@ def _native_extension(item: dict[str, Any]) -> dict[str, Any]:
         if value["vendor_name"] == "NVIDIA_GSF"
     )
     return json.loads(extension["data"])
+
+
+def _manual_sql(native: dict[str, Any], name: str) -> str:
+    attribute = next(
+        item
+        for item in native["semantic_layer"]["sql_attributes"]["manual"]
+        if item["name"] == name
+    )
+    return str(attribute["sql"])
 
 
 def _ids(value: Any) -> set[str]:
@@ -604,6 +619,144 @@ def test_gsf_sourced_catalog_is_never_widened_by_sql_identifiers() -> None:
 
     assert {column["id"] for column in after_columns} == before
     assert "not_a_real_column" not in {column["name"] for column in after_columns}
+
+
+@pytest.mark.parametrize("version", ["0.2.0.dev0", "0.2.0", "0.2.1", "0.2.7.dev3"])
+def test_any_release_in_the_supported_series_is_accepted(version: str) -> None:
+    ossie = yaml.safe_load(_ossie_yaml())
+    ossie["version"] = version
+
+    native = yaml.safe_load(convert_ossie_to_gsf(yaml.safe_dump(ossie)))
+
+    assert native["semantic_layer"]["terms"]
+
+
+@pytest.mark.parametrize("version", ["0.1.9", "0.3.0", "1.0.0", "", "dev"])
+def test_versions_outside_the_supported_series_are_rejected(version: str) -> None:
+    ossie = yaml.safe_load(_ossie_yaml())
+    ossie["version"] = version
+
+    with pytest.raises(GSFConversionError, match="Unsupported Ossie version"):
+        convert_ossie_to_gsf(yaml.safe_dump(ossie))
+
+
+def test_dialect_specific_native_sql_survives_a_round_trip() -> None:
+    """``TOP n`` is valid Snowflake but the default parser rejects it."""
+    native = yaml.safe_load(_gsf_yaml())
+    manual = native["semantic_layer"]["sql_attributes"]["manual"][0]
+    manual["sql"] = (
+        'SELECT TOP 1 "orders"."subtotal" AS "net_total" '
+        'FROM "analytics"."public"."orders" AS "orders"'
+    )
+
+    ossie = convert_gsf_to_ossie(yaml.safe_dump(native))
+    restored = yaml.safe_load(convert_ossie_to_gsf(ossie))
+
+    assert _manual_sql(restored, "net_total") == manual["sql"]
+
+
+def test_native_sql_no_dialect_can_parse_is_carried_through_verbatim() -> None:
+    native = yaml.safe_load(_gsf_yaml())
+    manual = native["semantic_layer"]["sql_attributes"]["manual"][0]
+    manual["sql"] = "SELECT not ((parseable by any dialect"
+
+    ossie = convert_gsf_to_ossie(yaml.safe_dump(native))
+    restored = yaml.safe_load(convert_ossie_to_gsf(ossie))
+
+    assert _manual_sql(restored, "net_total") == manual["sql"]
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "DATEDIFF(month, day, CURRENT_TIMESTAMP())",
+        "DATEDIFF(day, order_date)",
+        "LAST_DAY(day)",
+        "TRUNC(day)",
+        "SUM(day)",
+    ],
+)
+def test_columns_named_like_units_survive_outside_the_unit_slot(
+    expression: str,
+) -> None:
+    """Only the unit argument itself is treated as a keyword."""
+    ossie = yaml.safe_load(_ossie_yaml())
+    ossie["semantic_model"][0]["datasets"][0]["fields"].append(
+        {
+            "name": "order_age",
+            "expression": {
+                "dialects": [{"dialect": "ANSI_SQL", "expression": expression}]
+            },
+        }
+    )
+
+    native = yaml.safe_load(convert_ossie_to_gsf(yaml.safe_dump(ossie)))
+    orders = next(
+        table
+        for database in native["data_layer"]["databases"]
+        for schema in database["schemas"]
+        for table in schema["tables"]
+        if table["name"] == "orders"
+    )
+
+    assert "day" in {column["name"] for column in orders["columns"]}
+
+
+def test_malformed_native_snapshot_fails_alike_in_both_paths() -> None:
+    """Indexing and relationship reconciliation read the same snapshot."""
+    native = yaml.safe_load(_gsf_yaml())
+    native["data_layer"]["databases"].append(
+        deepcopy(native["data_layer"]["databases"][0])
+    )
+
+    with pytest.raises(GSFConversionError, match="Malformed NVIDIA_GSF"):
+        _index_native_document(native)
+
+    with pytest.raises(GSFConversionError, match="Malformed NVIDIA_GSF"):
+        _reconcile_native_relationships(
+            native,
+            represented_table_ids=set(),
+            foreign_keys=[],
+            joins=[],
+            semantic_fks=[],
+        )
+
+
+def test_expression_dialect_follows_the_gsf_connection() -> None:
+    native = yaml.safe_load(_gsf_yaml())
+    native["data_layer"]["databases"][0]["dialect"] = "snowflake"
+
+    ossie = yaml.safe_load(convert_gsf_to_ossie(yaml.safe_dump(native)))
+    orders = next(
+        dataset
+        for dataset in ossie["semantic_model"][0]["datasets"]
+        if dataset["name"] == "orders"
+    )
+    dialects = {
+        field["name"]: field["expression"]["dialects"][0]["dialect"]
+        for field in orders["fields"]
+    }
+
+    assert dialects["net_total"] == "SNOWFLAKE"
+    # A bare column reference is dialect-neutral.
+    assert dialects["order_id"] == "ANSI_SQL"
+
+
+def test_dialects_ossie_cannot_name_stay_ansi() -> None:
+    native = yaml.safe_load(_gsf_yaml())
+    native["data_layer"]["databases"][0]["dialect"] = "mysql"
+
+    ossie = yaml.safe_load(convert_gsf_to_ossie(yaml.safe_dump(native)))
+    orders = next(
+        dataset
+        for dataset in ossie["semantic_model"][0]["datasets"]
+        if dataset["name"] == "orders"
+    )
+    net_total = next(
+        field for field in orders["fields"] if field["name"] == "net_total"
+    )
+
+    assert net_total["expression"]["dialects"][0]["dialect"] == "ANSI_SQL"
 
 
 def test_old_fictional_gsf_root_is_rejected() -> None:
