@@ -431,7 +431,7 @@ def test_jinja_templated_file_is_preserved_not_parsed():
     model = model_of(out)
     assert by_name(model["datasets"]).keys() == {"orders"}
     assert "model/cubes/dyn.yml" in stash_of(model)["extra_files"]
-    assert issues.of_type(IssueType.TEMPLATED_MEMBER_DROPPED)
+    assert issues.of_type(IssueType.TEMPLATED_FILE_SKIPPED)
 
 
 def test_join_into_a_skipped_file_explains_itself():
@@ -463,7 +463,7 @@ def test_javascript_model_is_preserved_not_parsed():
     }
     out, issues = convert_cube_to_ossie(files)
     assert "model/cubes/orders.js" in stash_of(model_of(out))["extra_files"]
-    assert issues.of_type(IssueType.TEMPLATED_MEMBER_DROPPED)
+    assert issues.of_type(IssueType.TEMPLATED_FILE_SKIPPED)
 
 
 def test_extends_is_refused_rather_than_half_resolved():

@@ -201,12 +201,12 @@ def _collect(files, issues):
             # A `.js`/`.ts` data model needs Cube's own transpiler and a `.py` one
             # is Jinja-driven. Preserved verbatim so the round trip keeps the file,
             # but no cube inside it is converted.
-            issues.add(IssueType.TEMPLATED_MEMBER_DROPPED, fname,
+            issues.add(IssueType.TEMPLATED_FILE_SKIPPED, fname,
                        "not a YAML data model; preserved in custom_extensions only")
             extra_files[fname] = text
             continue
         if JINJA_RE.search(text):
-            issues.add(IssueType.TEMPLATED_MEMBER_DROPPED, fname,
+            issues.add(IssueType.TEMPLATED_FILE_SKIPPED, fname,
                        "uses Jinja templating, which has no static form; "
                        "preserved in custom_extensions only")
             extra_files[fname] = text
@@ -371,15 +371,8 @@ def _convert_cube(cname, cube, extra_joins, issues):
 
     fields = []
     primary_key = []
-    templated = {}
     for dim in _as_named_list(cube.get("dimensions"), f"{scope} dimensions"):
         dname = require_str(dim, "name", f"{scope}: dimension")
-        if JINJA_RE.search(str(dim.get("sql", ""))):
-            issues.add(IssueType.TEMPLATED_MEMBER_DROPPED, f"{cname}.{dname}",
-                       "dimension sql uses Jinja templating; preserved in "
-                       "custom_extensions only")
-            templated[dname] = dim
-            continue
         if dim.get("primary_key"):
             primary_key.append(dname)
         fields.extend(_convert_dimension(cname, dname, dim, issues))
@@ -387,8 +380,6 @@ def _convert_cube(cname, cube, extra_joins, issues):
         ds["fields"] = fields
     if primary_key:
         ds["primary_key"] = primary_key
-    if templated:
-        stash["extra_dimensions"] = templated
     if extra_joins:
         stash["extra_joins"] = extra_joins
 
@@ -699,13 +690,6 @@ class _MeasureResolver:
                 f"multi_stage measure (type '{mtype}'); preserved in "
                 f"custom_extensions only")
             return None
-        if JINJA_RE.search(str(measure.get("sql", ""))):
-            self._issues.add(
-                IssueType.TEMPLATED_MEMBER_DROPPED, scope,
-                "measure sql uses Jinja templating; preserved in "
-                "custom_extensions only")
-            return None
-
         sql = measure.get("sql")
         filter_exprs = [
             self._translate(f["sql"], cname, stack + (key,))

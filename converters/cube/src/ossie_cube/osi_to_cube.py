@@ -284,10 +284,6 @@ def _build_cube(ds, cname, members, joins, measures, dialect, issues):
         if dim["name"] in pk_names:
             dim["primary_key"] = True
 
-    dimensions.extend(
-        _ordered(dict(d, name=n), _DIM_KEY_ORDER)
-        for n, d in (stash.get("extra_dimensions") or {}).items()
-    )
     if dimensions:
         cube["dimensions"] = [_ordered(d, _DIM_KEY_ORDER) for d in dimensions]
 

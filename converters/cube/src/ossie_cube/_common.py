@@ -173,11 +173,6 @@ def is_simple_identifier(expr):
     return isinstance(expr, str) and bool(_IDENTIFIER_RE.match(expr.strip()))
 
 
-def is_cube_name(name):
-    """True if `name` is already a valid Cube identifier."""
-    return isinstance(name, str) and bool(_CUBE_NAME_RE.match(name))
-
-
 def sanitize_name(name, what, taken):
     """Coerce an Ossie name into a valid Cube identifier.
 

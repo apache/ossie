@@ -185,7 +185,7 @@ element it concerns, and a detail string.
 | `MULTI_STAGE_MEASURE_DROPPED` | A `multi_stage` measure (`group_by`/`reduce_by`/`time_shift`/`rank`) renders as a window function over another grain |
 | `CUBE_LEVEL_AI_CONTEXT_INERT` | Cube's agent ignores cube-level `meta.ai_context` |
 | `GEO_DIMENSION_SPLIT` | A `type: geo` dimension became two Ossie fields |
-| `TEMPLATED_MEMBER_DROPPED` | Jinja templating, or a `.js`/`.ts` model file |
+| `TEMPLATED_FILE_SKIPPED` | Jinja templating anywhere in a file, or a `.js`/`.ts` model file. Detected per file, as Cube's own tooling does, so the file is preserved whole rather than half-converted |
 | `NO_USABLE_DIALECT` | Export: no `ANSI_SQL` or preferred-dialect expression |
 | `PARKED_IN_META` | An element preserved in the stash with no native mapping |
 

@@ -53,9 +53,11 @@ class IssueType(Enum):
     # because an Ossie field holds a single expression.
     GEO_DIMENSION_SPLIT = "GEO_DIMENSION_SPLIT"
 
-    # A dimension or measure whose `sql` uses Jinja templating, or a cube using
-    # `extends`: no static form, so it is preserved in the stash only.
-    TEMPLATED_MEMBER_DROPPED = "TEMPLATED_MEMBER_DROPPED"
+    # A file with no static form -- Jinja templating anywhere in it, or a `.js` /
+    # `.ts` data model needing Cube's transpiler. Detected per file (as Cube's own
+    # CubeSchemaConverter does), so the whole file is preserved verbatim in the
+    # stash rather than half-converted.
+    TEMPLATED_FILE_SKIPPED = "TEMPLATED_FILE_SKIPPED"
 
     # An Ossie field or metric with no usable expression dialect (export).
     NO_USABLE_DIALECT = "NO_USABLE_DIALECT"
