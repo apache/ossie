@@ -397,6 +397,86 @@ def test_off_layout_files_are_restored_with_their_grouping():
     assert stash["view_files"]["main"] == "schema/warehouse/everything.yaml"
 
 
+_MIXED_VIEW_FILE = (
+    "views:\n"
+    "  - name: sales\n"
+    "    description: Sales overview\n"
+    "    meta:\n"
+    "      ai_context: Use for revenue questions.\n"
+    "    cubes:\n"
+    "      - join_path: orders\n"
+    "        includes: '*'\n"
+    "cubes:\n"
+    "  - name: orders\n"
+    "    sql_table: public.orders\n"
+    "    dimensions:\n"
+    "      - name: id\n"
+    "        sql: id\n"
+    "        type: number\n"
+    "        primary_key: true\n"
+    "    measures:\n"
+    "      - name: revenue\n"
+    "        sql: \"{CUBE}.amount\"\n"
+    "        type: sum\n"
+)
+
+
+def test_a_view_file_may_also_define_cubes():
+    """`cubes:` and `views:` are independent top-level keys, so one file can hold
+    both -- a self-contained model. Note the view's own nested `cubes:` (its
+    include list) is a different key at a different level and is not confused with
+    cube definitions."""
+    files = {"model/views/sales.yml": _MIXED_VIEW_FILE}
+    ossie, _ = convert_cube_to_ossie(files)
+    model = model_of(ossie)
+    # The view supplied the model identity...
+    assert model["name"] == "sales"
+    assert model["description"] == "Sales overview"
+    assert model["ai_context"]["instructions"] == "Use for revenue questions."
+    # ...and the cube in the same file became the dataset.
+    assert [d["name"] for d in model["datasets"]] == ["orders"]
+    assert expr_of(model["metrics"][0]) == "SUM(orders.amount)"
+    # The view's include list round-trips as curation, not as a dataset.
+    assert stash_of(model)["views"]["sales"]["cubes"] == [
+        {"join_path": "orders", "includes": "*"}]
+
+
+def test_a_mixed_file_is_rebuilt_as_one_file():
+    """Both halves have to go back into the single file they came from, rather than
+    being split into the canonical per-cube and per-view layout."""
+    files = {"model/views/sales.yml": _MIXED_VIEW_FILE}
+    _, back, _ = _roundtrip(files)
+    assert set(back) == {"model/views/sales.yml"}
+    assert parse_files(back) == parse_files(files)
+    rebuilt = parse(back["model/views/sales.yml"])
+    assert [c["name"] for c in rebuilt["cubes"]] == ["orders"]
+    assert [v["name"] for v in rebuilt["views"]] == ["sales"]
+
+
+def test_a_cube_file_may_also_define_views():
+    """The mirror image: the canonical cube path holding the view. The view's path is
+    the off-layout one here, so it is the one that gets stashed."""
+    files = {"model/cubes/orders.yml": _MIXED_VIEW_FILE}
+    ossie, back, _ = _roundtrip(files)
+    assert stash_of(model_of(ossie))["view_files"]["sales"] == (
+        "model/cubes/orders.yml")
+    assert "cube_files" not in stash_of(model_of(ossie))
+    assert set(back) == {"model/cubes/orders.yml"}
+    assert parse_files(back) == parse_files(files)
+
+
+def test_a_single_monolithic_file_round_trips():
+    """Neither path is canonical, so both are stashed and both return to the one
+    file -- the shape you get from `-i model.yml`."""
+    files = {"model.yml": _MIXED_VIEW_FILE}
+    ossie, back, _ = _roundtrip(files)
+    stash = stash_of(model_of(ossie))
+    assert stash["cube_files"]["orders"] == "model.yml"
+    assert stash["view_files"]["sales"] == "model.yml"
+    assert set(back) == {"model.yml"}
+    assert parse_files(back) == parse_files(files)
+
+
 def test_non_model_yaml_is_preserved_verbatim():
     files = {
         "model/cubes/orders.yml": (
