@@ -31,7 +31,7 @@ converters:
 
 ## Build
 
-Java 17 or newer and Maven 3.9.12 or newer are required to build the reactor.
+Java 21 or newer and Maven 3.9.12 or newer are required to build the reactor.
 
 ```bash
 cd converters/java
