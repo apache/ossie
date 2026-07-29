@@ -304,10 +304,10 @@ func TestDiscover_symlinkedPluginDirectory(t *testing.T) {
 
 	// Create pluginsDir with a symlink to the real plugin directory
 	pluginsDir := t.TempDir()
-symlinkPath := filepath.Join(pluginsDir, "dbt-link")
-if err := os.Symlink(pluginDir, symlinkPath); err != nil {
-	t.Skipf("symlinks not supported or not permitted on this platform: %v", err)
-}
+	symlinkPath := filepath.Join(pluginsDir, "dbt-link")
+	if err := os.Symlink(pluginDir, symlinkPath); err != nil {
+		t.Skipf("symlinks not supported or not permitted on this platform: %v", err)
+	}
 
 	var stderr strings.Builder
 	plugins, err := plugin.Discover(pluginsDir, &stderr)
