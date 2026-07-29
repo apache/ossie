@@ -112,9 +112,7 @@ def convert_cube_to_ossie(files, model_name=None, view=None, strict_fanout=True)
 
     cubes, cube_paths, views, view_paths, extra_files = _collect(files, issues)
     if not cubes:
-        raise ConversionError(
-            "no convertible cubes found (a `.yml` file with a top-level `cubes:` "
-            "list); nothing to convert")
+        raise ConversionError(_no_cubes_message(views))
 
     # The mapped view supplies the Ossie model's identity. Cube users are
     # view-first, and Cube's own agent reads `meta.ai_context` only from views and
@@ -270,6 +268,56 @@ def _as_named_list(value, what):
         return out
     raise ConversionError(
         f"{what}: expected a list or mapping, got {type(value).__name__}")
+
+
+def _cubes_referenced_by(view):
+    """The cube names a view's `cubes:` entries address, in order.
+
+    Every segment of a `join_path` names a cube (`orders.users.addresses` reaches
+    three), so all of them count as referenced.
+    """
+    names = []
+    for entry in view.get("cubes") or []:
+        if not isinstance(entry, dict):
+            continue
+        path = entry.get("join_path")
+        if not isinstance(path, str) or not path:
+            continue
+        for segment in path.split("."):
+            if segment and segment not in names:
+                names.append(segment)
+    return names
+
+
+def _no_cubes_message(views):
+    """Explain *why* there is nothing to convert.
+
+    Being handed only view files is an easy mistake -- a Cube view looks like a
+    complete model, and it is what a view-first user thinks of as "the model". But a
+    view only projects members from cubes and defines none of its own, so it cannot
+    become an Ossie semantic model on its own. Naming the cubes it references turns
+    the error into instructions.
+    """
+    if not views:
+        return ("no convertible cubes found (a `.yml` file with a top-level "
+                "`cubes:` list); nothing to convert")
+    referenced = []
+    for view in views.values():
+        for name in _cubes_referenced_by(view):
+            if name not in referenced:
+                referenced.append(name)
+    which = ", ".join(f"'{v}'" for v in sorted(views))
+    needed = (
+        f" It references {', '.join(repr(c) for c in referenced)}, so include the "
+        f"file(s) defining those cubes."
+        if referenced else
+        " Include the files defining the cubes it draws from."
+    )
+    return (
+        f"found only view(s) {which} and no cubes. A Cube view projects members "
+        f"from cubes rather than defining any, so it has no Ossie dataset to "
+        f"convert on its own.{needed}"
+    )
 
 
 def _order_by_view(cubes, mapped_view):

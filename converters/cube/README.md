@@ -67,12 +67,18 @@ ossie-cube import -i model/ [-o model.yaml] [--name my_model] [--view sales]
 ossie-cube export -i model.yaml -o model/ [--dialect SNOWFLAKE] [--base-cube orders]
 ```
 
-`import` with no `-o` writes the Ossie YAML to stdout; `export` always needs `-o`
-(a directory). Issues always go to stderr. `--view` picks which view's
-name/description/AI context map onto the Ossie model when the directory holds
-several; `--name` overrides the model name. `--base-cube` picks the cube a
-*generated* view is rooted at, and is only consulted for a hand-authored Ossie
-model with no stashed views.
+`import` takes a model directory *or* a single model file, and with no `-o` writes
+the Ossie YAML to stdout; `export` always needs `-o` (a directory). Issues always go
+to stderr, so stdout stays pipeable. `--view` picks which view's
+name/description/AI context map onto the Ossie model when the input holds several;
+`--name` overrides the model name. `--base-cube` picks the cube a *generated* view
+is rooted at, and is only consulted for a hand-authored Ossie model with no stashed
+views.
+
+**A view on its own is not a model.** A Cube view projects members from cubes and
+defines none of its own, so passing only `views/sales.yml` is refused -- with an
+error naming the cubes it references, so you know which files to add. Include the
+cube files (or point `-i` at the model directory).
 
 ### Python API
 
@@ -229,7 +235,8 @@ uv sync
 uv run pytest
 ```
 
-Example-based unit tests per direction, fixture round-trip tests (including the
+216 tests at 97% line coverage: example-based unit tests per direction, CLI
+behavior tests, fixture round-trip tests (including the
 [TPC-DS model](../../examples/tpcds_semantic_model.yaml) the converter guide asks
 for as a baseline), core-spec JSON Schema validation of every emitted Ossie
 document, and Hypothesis property-based round-trip tests over generated Cube

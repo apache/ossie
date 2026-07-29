@@ -49,7 +49,8 @@ def _build_parser():
 
     imp = sub.add_parser(
         "import", help="Cube data model directory -> Apache Ossie semantic model YAML")
-    imp.add_argument("-i", "--input", required=True, help="Cube model directory")
+    imp.add_argument("-i", "--input", required=True,
+                     help="Cube model directory, or a single model file")
     imp.add_argument("-o", "--output",
                      help="output Ossie YAML file (default: stdout)")
     imp.add_argument("--name",
@@ -76,15 +77,22 @@ def _build_parser():
     return parser
 
 
-def _read_model_dir(path):
-    """Collect every file under a Cube model directory as {relative path: text}.
+def _read_model_input(path):
+    """Collect a Cube model as {relative path: text}.
 
-    Everything is collected, not just YAML: a `.js` data model has no Ossie form,
-    but the converter preserves it so a round trip does not lose the file. Hidden
-    files and directories (including `node_modules`) are skipped.
+    `path` is normally a model directory, but a single file is accepted too --
+    pointing at one `.yml` is a natural thing to try and there is nothing ambiguous
+    about it.
+
+    Under a directory everything is collected, not just YAML: a `.js` data model has
+    no Ossie form, but the converter preserves it so a round trip does not lose the
+    file. Hidden files and directories (including `node_modules`) are skipped.
     """
+    if os.path.isfile(path):
+        with open(path) as fh:
+            return {os.path.basename(path): fh.read()}
     if not os.path.isdir(path):
-        raise ConversionError(f"'{path}' is not a directory")
+        raise ConversionError(f"'{path}' is not a file or directory")
     files = {}
     for dirpath, dirnames, filenames in os.walk(path):
         dirnames[:] = [d for d in sorted(dirnames)
@@ -126,7 +134,7 @@ def main(argv=None):
             _report(issues)
             return 0
 
-        files = _read_model_dir(args.input)
+        files = _read_model_input(args.input)
         out, issues = convert_cube_to_ossie(
             files, model_name=args.name, view=args.view,
             strict_fanout=args.strict_fanout)
