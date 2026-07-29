@@ -121,6 +121,7 @@ def convert_cube_to_ossie(files, model_name=None, view=None, strict_fanout=True)
     # individual members -- so the view, not any cube, is the model boundary.
     mapped_name = _pick_view(views, view, issues)
     mapped_view = views.get(mapped_name) or {}
+    cubes = _order_by_view(cubes, mapped_view)
 
     model = {"name": model_name or mapped_name or "cube_model"}
     if mapped_view.get("description"):
@@ -131,7 +132,7 @@ def convert_cube_to_ossie(files, model_name=None, view=None, strict_fanout=True)
 
     # Joins are decomposed first: a join with no Ossie form is parked on its
     # declaring cube's stash, which has to be known before the dataset is built.
-    relationships, extra_joins = _convert_joins(cubes, issues)
+    relationships, extra_joins = _convert_joins(cubes, sorted(extra_files), issues)
 
     datasets = []
     pk_by_cube = {}
@@ -176,6 +177,13 @@ def convert_cube_to_ossie(files, model_name=None, view=None, strict_fanout=True)
     if extra_files:
         stash["extra_files"] = extra_files
     write_stash(model, stash)
+
+    # Foreign-vendor extensions a previous export parked on the mapped view are
+    # restored after the stash is written, so the CUBE entry stays first.
+    parked_exts = ((mapped_view.get("meta") or {}).get("ossie") or {}).get(
+        "custom_extensions")
+    if parked_exts:
+        model.setdefault("custom_extensions", []).extend(parked_exts)
 
     return dump_yaml({"version": OSSIE_VERSION, "semantic_model": [model]}), issues
 
@@ -264,6 +272,29 @@ def _as_named_list(value, what):
         f"{what}: expected a list or mapping, got {type(value).__name__}")
 
 
+def _order_by_view(cubes, mapped_view):
+    """Order the datasets the way the mapped view presents them.
+
+    The view is the model boundary, so its `cubes:` order is the order a Cube user
+    sees -- and carrying it over means the Ossie dataset order is meaningful rather
+    than an artifact of how the files happened to be named. A cube the view does
+    not include keeps its file position, after the ones it does.
+    """
+    ranks = {}
+    for entry in mapped_view.get("cubes") or []:
+        if not isinstance(entry, dict):
+            continue
+        path = entry.get("join_path")
+        if not isinstance(path, str) or not path:
+            continue
+        leaf = path.split(".")[-1]
+        ranks.setdefault(leaf, len(ranks))
+    if not ranks:
+        return cubes
+    order = sorted(cubes, key=lambda name: (ranks.get(name, len(ranks)),))
+    return {name: cubes[name] for name in order}
+
+
 def _pick_view(views, requested, issues):
     if requested is not None:
         if requested not in views:
@@ -296,7 +327,10 @@ def _ai_context_from_meta(meta):
         return parked
     text = meta.get("ai_context")
     if isinstance(text, str) and text.strip():
-        return {"instructions": text.strip()}
+        # Kept verbatim rather than stripped: a folded block scalar carries a
+        # trailing newline, and normalizing it away here would make the round trip
+        # lossy for the sake of cosmetics.
+        return {"instructions": text}
     return None
 
 
@@ -471,12 +505,16 @@ def _convert_geo_dimension(cname, dname, dim, issues):
 
 # --- joins ----------------------------------------------------------------------
 
-def _convert_joins(cubes, issues):
+def _convert_joins(cubes, skipped_files, issues):
     """Turn every cube's `joins` into Ossie relationships.
 
     Ossie's `from` is always the many side. A `many_to_one` join declared on cube
     A points A(many) -> B(one) directly; a `one_to_many` join is flipped, and the
     declared side and type are stashed so export restores the original.
+
+    `skipped_files` names the input files that held no convertible cube, so a join
+    pointing into one of them explains itself rather than just reporting a missing
+    cube.
 
     Returns (relationships, {cube name: [unconvertible join, ...]}).
     """
@@ -489,8 +527,13 @@ def _convert_joins(cubes, issues):
             target = require_str(join, "name", f"cube '{cname}': join")
             what = f"join '{cname}' -> '{target}'"
             if target not in cubes:
+                hint = ""
+                if skipped_files:
+                    hint = (f"; note that no cube was converted from "
+                            f"{', '.join(repr(f) for f in skipped_files)} -- if "
+                            f"'{target}' is defined there, that is why")
                 raise ConversionError(
-                    f"{what}: '{target}' is not a cube in this model")
+                    f"{what}: '{target}' is not a cube in this model{hint}")
             raw_rel = snake(require_str(join, "relationship", what))
             rel_type = _RELATIONSHIP_ALIASES.get(raw_rel)
             if rel_type is None:
@@ -754,7 +797,7 @@ def _convert_measures(cubes, pk_by_cube, fanned_out, issues):
     resolver = _MeasureResolver(cubes, pk_by_cube, issues)
 
     counts = {}
-    for (_cname, mname) in resolver.measures():
+    for (_, mname) in resolver.measures():
         counts[mname] = counts.get(mname, 0) + 1
 
     metrics = []
@@ -828,6 +871,11 @@ def _convert_measure(cname, mname, metric_name, measure, resolver, fanned_out,
             snake(k): v for k, v in measure.items()
             if snake(k) not in ("description", "meta")
         }
+    elif sql is not None:
+        # The operand's exact Cube spelling: `{CUBE}.city` and `{CUBE.city}` are
+        # equivalent but not interchangeable byte-for-byte, and export cannot tell
+        # which one the author wrote from the Ossie expression alone.
+        stash["sql"] = sql
     if metric_name != mname:
         stash["name"] = mname
     if measure.get("title"):

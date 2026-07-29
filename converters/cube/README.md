@@ -23,10 +23,6 @@ Bidirectional, offline conversion between an [Apache Ossie](https://github.com/a
 semantic model and a [Cube](https://cube.dev/docs/product/data-modeling/overview)
 data model. No Cube deployment, API token, or network access required.
 
-> **Status:** the **import** direction (Cube -> Ossie) is implemented. The
-> **export** direction (Ossie -> Cube) is in progress; the mapping table below
-> describes the agreed behavior for both.
-
 A Cube data model is a *directory* of YAML files rather than a single document, so
 this converter maps one Ossie YAML document to/from the Cube model layout:
 
@@ -68,18 +64,23 @@ The only runtime dependency is `PyYAML`. Python 3.11+.
 ```bash
 ossie-cube import -i model/ [-o model.yaml] [--name my_model] [--view sales]
                             [--no-strict-fanout]
+ossie-cube export -i model.yaml -o model/ [--dialect SNOWFLAKE] [--base-cube orders]
 ```
 
-With no `-o` the Ossie YAML goes to stdout; issues always go to stderr. `--view`
-picks which view's name/description/AI context map onto the Ossie model when the
-directory holds several. `--name` overrides the model name.
+`import` with no `-o` writes the Ossie YAML to stdout; `export` always needs `-o`
+(a directory). Issues always go to stderr. `--view` picks which view's
+name/description/AI context map onto the Ossie model when the directory holds
+several; `--name` overrides the model name. `--base-cube` picks the cube a
+*generated* view is rooted at, and is only consulted for a hand-authored Ossie
+model with no stashed views.
 
 ### Python API
 
 ```python
-from ossie_cube import convert_cube_to_ossie
+from ossie_cube import convert_cube_to_ossie, convert_ossie_to_cube
 
-ossie_yaml, issues = convert_cube_to_ossie(files)   # {relative filename: YAML str}
+ossie_yaml, issues = convert_cube_to_ossie(files)     # {relative filename: YAML str}
+files, issues = convert_ossie_to_cube(ossie_yaml)     # -> {relative filename: YAML str}
 for issue in issues:
     print(issue)
 ```
@@ -228,10 +229,18 @@ uv sync
 uv run pytest
 ```
 
+Example-based unit tests per direction, fixture round-trip tests (including the
+[TPC-DS model](../../examples/tpcds_semantic_model.yaml) the converter guide asks
+for as a baseline), core-spec JSON Schema validation of every emitted Ossie
+document, and Hypothesis property-based round-trip tests over generated Cube
+models -- which fall back to a seeded sweep when `hypothesis` is unavailable, so
+the properties still run.
+
 ## Future effort
 
 Both the Apache Ossie specification and Cube's data model are still evolving. As
 either side adds or changes fields, this converter will be updated to track them.
-Known next steps: the export direction, offline `extends` resolution, and a
-first-class Ossie representation for measure additivity so the fan-out caveat can
-be recorded in the model instead of an issue log.
+Known next steps: offline `extends` resolution, `.js`/`.ts` model support (which
+needs Cube's own transpiler, so most likely a Cube-side exporter feeding this
+converter), and a first-class Ossie representation for measure additivity so the
+fan-out caveat can be recorded in the model instead of an issue log.

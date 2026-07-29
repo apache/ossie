@@ -46,6 +46,20 @@ def parse(yaml_str):
     return load_yaml(yaml_str)
 
 
+def parse_files(files):
+    """Parse every file of a Cube model dict for structural comparison.
+
+    Comments and key order are not part of the data model, so round-trip fidelity
+    is asserted on the parsed structures. A non-YAML file (a `.js` model preserved
+    verbatim) is compared as text.
+    """
+    out = {}
+    for name, text in files.items():
+        out[name] = (load_yaml(text, name) if name.lower().endswith((".yml", ".yaml"))
+                     else text)
+    return out
+
+
 def model_of(ossie_yaml):
     """The sole semantic model of an Ossie document."""
     doc = parse(ossie_yaml)

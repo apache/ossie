@@ -496,10 +496,6 @@ DATATYPE_TO_DIM_TYPE = {
     "Opaque": "string",
 }
 
-# Ossie datatypes whose temporal role makes `is_time` default to true (spec.md,
-# "DataType and is_time").
-TEMPORAL_DATATYPES = frozenset({"Date", "Time", "DateTime", "DateTimeTz"})
-
 # Cube measure `type` -> the Ossie aggregate function that reproduces it.
 # `count` is absent: it maps through the cube's primary key, see
 # primary_key_count_expression().

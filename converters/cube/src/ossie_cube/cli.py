@@ -18,15 +18,17 @@
 """Command-line interface for the Apache Ossie <-> Cube converter.
 
     ossie-cube import -i model/ [-o model.yaml] [--name my_model] [--view sales]
+    ossie-cube export -i model.yaml -o model/ [--dialect SNOWFLAKE] [--base-cube orders]
 
 `import` converts a Cube data model directory (any `.yml` holding `cubes:` /
 `views:`) into an Apache Ossie semantic model; with no `-o` the Ossie YAML goes to
-stdout. Conversions that could not carry something across print an issue list to
-stderr.
+stdout. `export` does the reverse and always needs `-o` (a directory).
+Conversions that could not carry something across print an issue list to stderr.
 
 By default a metric whose value a static Ossie expression cannot keep correct
-under row multiplication is refused, mirroring Cube's own refusal to answer such
-a query; pass `--no-strict-fanout` to emit it with a recorded issue instead.
+under row multiplication is refused on import, mirroring Cube's own refusal to
+answer such a query; pass `--no-strict-fanout` to emit it with a recorded issue
+instead.
 """
 
 import argparse
@@ -35,6 +37,7 @@ import sys
 
 from ._common import ConversionError
 from .cube_to_osi import convert_cube_to_ossie
+from .osi_to_cube import convert_ossie_to_cube
 
 
 def _build_parser():
@@ -58,6 +61,18 @@ def _build_parser():
                      action="store_false", default=True,
                      help="record fan-out-unsafe metrics as issues instead of "
                           "refusing the conversion")
+
+    exp = sub.add_parser(
+        "export", help="Apache Ossie semantic model -> Cube data model directory")
+    exp.add_argument("-i", "--input", required=True, help="Ossie YAML file")
+    exp.add_argument("-o", "--output", required=True,
+                     help="output directory for the Cube model files")
+    exp.add_argument("-d", "--dialect",
+                     help="preferred Ossie expression dialect (e.g. SNOWFLAKE); "
+                          "ANSI_SQL is always the fallback")
+    exp.add_argument("-b", "--base-cube",
+                     help="dataset a generated view is rooted at (only used for a "
+                          "model with no stashed views; default: the FK-sink dataset)")
     return parser
 
 
@@ -97,6 +112,20 @@ def _report(issues):
 def main(argv=None):
     args = _build_parser().parse_args(argv)
     try:
+        if args.command == "export":
+            with open(args.input) as fh:
+                ossie_yaml = fh.read()
+            files, issues = convert_ossie_to_cube(
+                ossie_yaml, dialect=args.dialect, base_cube=args.base_cube)
+            for rel, text in files.items():
+                dest = os.path.join(args.output, *rel.split("/"))
+                os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+                with open(dest, "w") as fh:
+                    fh.write(text)
+            print(f"Wrote {len(files)} file(s) to {args.output}", file=sys.stderr)
+            _report(issues)
+            return 0
+
         files = _read_model_dir(args.input)
         out, issues = convert_cube_to_ossie(
             files, model_name=args.name, view=args.view,

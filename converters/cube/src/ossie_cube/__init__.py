@@ -19,14 +19,16 @@
 models. Pure offline transforms: Ossie YAML string <-> {relative filename: YAML
 string}.
 
-    from ossie_cube import convert_cube_to_ossie
+    from ossie_cube import convert_cube_to_ossie, convert_ossie_to_cube
 
     ossie_yaml, issues = convert_cube_to_ossie(files)
+    files, issues = convert_ossie_to_cube(ossie_yaml)
 """
 
 from ._common import ConversionError
 from .converter_issues import ConverterIssue, IssueLog, IssueType
 from .cube_to_osi import convert_cube_to_ossie
+from .osi_to_cube import convert_ossie_to_cube
 
 __all__ = [
     "ConversionError",
@@ -34,4 +36,5 @@ __all__ = [
     "IssueLog",
     "IssueType",
     "convert_cube_to_ossie",
+    "convert_ossie_to_cube",
 ]

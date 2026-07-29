@@ -434,6 +434,27 @@ def test_jinja_templated_file_is_preserved_not_parsed():
     assert issues.of_type(IssueType.TEMPLATED_MEMBER_DROPPED)
 
 
+def test_join_into_a_skipped_file_explains_itself():
+    """A file the converter had to skip whole (Jinja, `.js`) can leave a join
+    pointing at a cube that is no longer there. The error says so, rather than just
+    reporting a missing cube."""
+    files = {
+        "model/cubes/dyn.yml": (
+            "cubes:\n  - name: users\n    sql_table: t{{ suffix }}\n"),
+        "model/cubes/orders.yml": (
+            "cubes:\n"
+            "  - name: orders\n"
+            "    sql_table: public.orders\n"
+            "    joins:\n"
+            "      - name: users\n"
+            "        sql: \"{CUBE}.user_id = {users}.id\"\n"
+            "        relationship: many_to_one\n"
+        ),
+    }
+    with pytest.raises(ConversionError, match="model/cubes/dyn.yml"):
+        convert_cube_to_ossie(files)
+
+
 def test_javascript_model_is_preserved_not_parsed():
     files = {
         "model/cubes/orders.js": "cube(`orders`, { sql_table: `public.orders` });",

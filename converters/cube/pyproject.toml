@@ -44,6 +44,9 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "hypothesis>=6.0",
+    # So the core-spec schema validation in test_roundtrip.py runs rather than
+    # skipping; the converter itself needs neither.
+    "jsonschema>=4.0",
 ]
 
 [project.scripts]
