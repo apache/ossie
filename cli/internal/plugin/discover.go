@@ -33,10 +33,19 @@ func Discover(pluginsDir string, stderr io.Writer) ([]*Plugin, error) {
 
 	var plugins []*Plugin
 	for _, entry := range entries {
-		// TODO: handle symlinked plugin directories
-		// (entry.Type()&os.ModeSymlink != 0 requires os.Stat to resolve)
 		if !entry.IsDir() {
-			continue
+			if entry.Type()&os.ModeSymlink == 0 {
+				continue
+			}
+			entryPath := filepath.Join(pluginsDir, entry.Name())
+			resolved, err := os.Stat(entryPath)
+			if err != nil {
+				fmt.Fprintf(stderr, "warning: skipping plugin at %s: %s\n", entryPath, err)
+				continue
+			}
+			if !resolved.IsDir() {
+				continue
+			}
 		}
 		pluginPath := filepath.Join(pluginsDir, entry.Name())
 		p, err := loadPlugin(pluginPath)
