@@ -16,3 +16,12 @@
 # under the License.
 
 """Bidirectional converter between Apache Ossie and Hex."""
+
+from ._common import ConversionError, ConversionWarning
+from .hex_to_ossie import convert_hex_to_ossie
+
+__all__ = [
+    "ConversionError",
+    "ConversionWarning",
+    "convert_hex_to_ossie",
+]

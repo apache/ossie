@@ -1,0 +1,14 @@
+id: sales
+base_sql_table: s.sales
+dimensions:
+  - id: value
+    type: number
+measures:
+  - id: revenue
+    func: sum
+    of: value
+  - id: revenue_per_order
+    func_calc: revenue / order_count
+    description: What an average order is worth.
+  - id: order_count
+    func: count

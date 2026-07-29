@@ -39,6 +39,16 @@ pip install ossie-hex
 
 Requires Python 3.11 or newer.
 
+## Usage
+
+### Python API
+
+```python
+from ossie_hex import convert_hex_to_ossie
+
+ossie_yaml, warnings = convert_hex_to_ossie("hex_project/", dialect="snowflake")
+```
+
 ## Conversion
 
 ### Data types
@@ -59,3 +69,15 @@ Data types translate between the two formats as follows, with notes where conver
 | `Opaque`         | `other`           |                                                      |
 | `Time`           | `other`           | No Hex equivalent.                                   |
 | _omitted_        | `string`/`number` | Warning. String for dimensions, number for measures. |
+
+### Custom extension
+
+Hex features that Ossie cannot express are preserved in an Ossie custom extension (vendor name `HEX`) so they survive a round trip. The extension data is a JSON object. Data contents are versioned with a key at the document's top-level custom extensions field. The keys used at each scope are listed below.
+
+| Scope          | Keys                                                                                                     |
+| -------------- | -------------------------------------------------------------------------------------------------------- |
+| Semantic Model | `extension_version`, `hex_dialect`, `views`                                                              |
+| Dataset        | `display_name`, `source_kind`, `visibility`, `measures`, `undecomposable_relations`                      |
+| Field          | `type`, `visibility`, `expr_sql`, `expr_calc`                                                            |
+| Metric         | `model_id`, `measure_id`, `display_name`, `type`, `visibility`, `semi_additive`, `func`, `of`, `filters` |
+| Relationship   | `relation_type`, `visibility`                                                                            |

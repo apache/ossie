@@ -1,0 +1,9 @@
+id: order_overview
+type: view
+base: orders
+contents:
+  - dimensions:
+      - "..."
+    measures:
+      - order_count
+      - total_amount

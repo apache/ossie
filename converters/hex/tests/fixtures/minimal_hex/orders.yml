@@ -1,0 +1,32 @@
+id: orders
+base_sql_table: analytics.public.orders
+description: Order fact table.
+dimensions:
+  - id: order_id
+    type: string
+    unique: true
+    visibility: internal
+  - id: customer_id
+    type: string
+  - id: order_date
+    type: date
+  - id: amount
+    type: number
+    expr_sql: amount_usd
+  - id: is_cancelled
+    type: boolean
+    expr_sql: "status = 'cancelled'"
+measures:
+  - id: order_count
+    func: count
+  - id: total_amount
+    func: sum
+    of: amount
+  - id: cancelled_orders
+    func: count
+    filters:
+      - is_cancelled
+relations:
+  - id: customers
+    type: many_to_one
+    join_sql: "${customer_id} = ${customers.customer_id}"

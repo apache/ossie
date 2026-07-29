@@ -52,6 +52,7 @@ dependencies = [
     { name = "apache-ossie" },
     { name = "pydantic" },
     { name = "pydantic-core" },
+    { name = "pyyaml" },
     { name = "typing-extensions" },
 ]
 
@@ -66,6 +67,7 @@ requires-dist = [
     { name = "apache-ossie", editable = "../../python" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "pydantic-core", specifier = ">=2.46.4" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "typing-extensions", specifier = ">=4.16.0" },
 ]
 
