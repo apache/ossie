@@ -442,7 +442,9 @@ The following types are used by the extended metadata fields on both fields and 
 
 ### Semantic Type
 
-High-level classification of a field or metric value.
+High-level classification of a field or metric value. Accepts either a **well-known token** or a **URI** pointing to an external type system. Using URIs keeps the field registry-agnostic and allows governed external type systems to carry the long tail of domain-specific types.
+
+**Well-known tokens:**
 
 | Value | Description |
 |-------|-------------|
@@ -453,6 +455,14 @@ High-level classification of a field or metric value.
 | `geographic` | Location-related values (country, lat/lng, region) |
 | `ordinal` | Ordered categorical values (e.g., Low/Medium/High, ratings) |
 | `identifier` | Unique identifiers (e.g., IDs, codes) |
+
+**URI examples** (for regulated or domain-specific types):
+
+```yaml
+semantic_type: https://www.iso20022.org/glossary/LEI
+semantic_type: https://fpml.org/types/ISIN
+semantic_type: https://spec.edmcouncil.org/fibo/ontology/FBC/ProductsAndServices/FinancialProductsAndServices/UPI
+```
 
 ### Measurement
 
@@ -493,19 +503,43 @@ default_sort:
 
 ### Semantic Mappings
 
-Links a field or metric to external ontologies or standards. Enables semantic interoperability and knowledge graph integration.
+Links a field or metric to external ontologies or standards using a SKOS-based predicate. The predicate vocabulary is **intentionally open** — the SKOS predicates provide a well-understood baseline, but non-standard predicates (e.g., `DISTINCT_FROM` for regulatory disambiguation) are permitted and can be expressed via extensions without being schema-invalid.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `source` | string | Yes | Ontology or standard name (e.g., `schema.org`, `FIBO`) |
-| `identifier` | string | Yes | URI or identifier within that ontology |
+| `target` | string (URI) | Yes | URI of the external concept |
+| `predicate` | string | No | Relationship type. Defaults to `exactMatch`. SKOS baseline predicates listed below. Vocabulary is open. |
+| `provenance` | string | No | Origin of this mapping (e.g., `"manual"`, `"FIBO 4.1"`, a tool name) |
 
-**Example:**
+**SKOS baseline predicates:**
+
+| Predicate | Meaning |
+|-----------|--------|
+| `exactMatch` | Concepts are sufficiently similar to be used interchangeably (default) |
+| `closeMatch` | Concepts are similar enough to be useful in some contexts |
+| `broadMatch` | Target concept is broader (more general) |
+| `narrowMatch` | Target concept is narrower (more specific) |
+| `relatedMatch` | Concepts are associatively related |
+
+**Example — standard alignment:**
 
 ```yaml
 semantic_mappings:
-  - source: schema.org
-    identifier: https://schema.org/MonetaryAmount
+  - target: https://schema.org/MonetaryAmount
+    predicate: exactMatch
+    provenance: manual
+```
+
+**Example — regulatory disambiguation (open predicate):**
+
+```yaml
+semantic_mappings:
+  - target: https://spec.edmcouncil.org/fibo/ontology/DER/RateDerivatives/IRSwaps/Counterparty
+    predicate: exactMatch
+    provenance: FIBO 4.1
+  - target: https://www.esma.europa.eu/emir/Counterparty
+    predicate: DISTINCT_FROM
+    provenance: EMIR-vs-MiFIR mapping review 2024
 ```
 
 ### Display Format
@@ -546,8 +580,8 @@ The `display_format` string follows Excel-compatible custom number format conven
     direction: desc
     nulls: last
   semantic_mappings:
-    - source: schema.org
-      identifier: https://schema.org/MonetaryAmount
+    - target: https://schema.org/MonetaryAmount
+      predicate: exactMatch
   group_label: "Revenue"
 ```
 
@@ -570,6 +604,9 @@ The `display_format` string follows Excel-compatible custom number format conven
   default_sort:
     direction: desc
   group_label: "Revenue"
+  semantic_mappings:
+    - target: https://schema.org/MonetaryAmount
+      predicate: exactMatch
 ```
 
 **Temporal field with time granularity:**

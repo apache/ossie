@@ -232,7 +232,9 @@ fields:
 
     # Optional: High-level semantic classification of the field
     # Helps consumers determine appropriate visualization and handling
-    # Values: categorical, quantitative, monetary, temporal, geographic, ordinal, identifier
+    # Either a well-known token OR a URI pointing to an external type system
+    # Well-known tokens: categorical, quantitative, monetary, temporal, geographic, ordinal, identifier
+    # URI examples: https://www.iso20022.org/glossary/LEI, https://fpml.org/types/ISIN
     semantic_type: string
 
     # Optional: Describes what a numeric value represents (units and measurement)
@@ -277,9 +279,13 @@ fields:
     default_time_granularity: string
 
     # Optional: Links to external ontologies or standards
+    # Uses SKOS-based predicates as a baseline but the predicate vocabulary is open,
+    # allowing extensions to express non-positive assertions (e.g., DISTINCT_FROM)
     semantic_mappings:
-      - source: string      # Ontology or standard name (e.g., "schema.org", "FIBO")
-        identifier: string  # URI or identifier within that ontology
+      - target: string      # URI of the external concept (e.g., https://schema.org/MonetaryAmount)
+        predicate: string   # Relationship type. SKOS baseline: exactMatch, closeMatch, broadMatch,
+                            # narrowMatch, relatedMatch. Defaults to exactMatch. Vocabulary is open.
+        provenance: string  # Optional: source of this mapping (e.g., "manual", "FIBO 4.1", a tool name)
 
     # Optional: Whether this field should be hidden from consumer UIs
     # Hidden fields remain available for expressions but are not surfaced to end users
@@ -330,7 +336,8 @@ metrics:
     display_label: string
 
     # Optional: High-level semantic classification of the metric
-    # Values: categorical, quantitative, monetary, temporal, geographic, ordinal, identifier
+    # Either a well-known token OR a URI pointing to an external type system
+    # Well-known tokens: categorical, quantitative, monetary, temporal, geographic, ordinal, identifier
     semantic_type: string
 
     # Optional: Describes what the metric value represents (units and measurement)
@@ -353,9 +360,11 @@ metrics:
       nulls: string      # first, last
 
     # Optional: Links to external ontologies or standards
+    # Uses SKOS-based predicates as a baseline but the predicate vocabulary is open
     semantic_mappings:
-      - source: string
-        identifier: string
+      - target: string      # URI of the external concept
+        predicate: string   # Relationship type (SKOS baseline, open vocabulary). Default: exactMatch
+        provenance: string  # Optional: source of this mapping
 
     # Optional: Whether this metric should be hidden from consumer UIs
     hidden: boolean

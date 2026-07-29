@@ -125,9 +125,19 @@
       "description": "Logical data type for fields and metrics, independent of role (e.g. dimension vs fact) and physical representation. `Decimal` is exact base-10 with unspecified precision and scale; `Float` is approximate. `DateTime` has no timezone or offset, while `DateTimeTz` identifies an instant using offset or timezone context but does not guarantee preservation of a named timezone. Omit `datatype` when unknown; use `Opaque` plus `custom_extensions` for a known type outside the portable vocabulary."
     },
     "SemanticType": {
-      "type": "string",
-      "enum": ["categorical", "quantitative", "monetary", "temporal", "geographic", "ordinal", "identifier"],
-      "description": "High-level semantic classification of a field or metric"
+      "description": "High-level semantic classification of a field or metric. Either a well-known token or a URI pointing to an external type system.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": ["categorical", "quantitative", "monetary", "temporal", "geographic", "ordinal", "identifier"],
+          "description": "Well-known semantic type token"
+        },
+        {
+          "type": "string",
+          "format": "uri",
+          "description": "URI pointing to an external type system (e.g., ISO 20022, FIBO, SKOS vocabulary)"
+        }
+      ]
     },
     "DesiredDirection": {
       "type": "string",
@@ -190,18 +200,23 @@
     },
     "SemanticMapping": {
       "type": "object",
-      "description": "Link to an external ontology or standard",
+      "description": "Link to an external ontology or standard using a SKOS-based predicate. The predicate vocabulary is intentionally open to allow non-positive assertions (e.g. DISTINCT_FROM) via extensions.",
       "properties": {
-        "source": {
+        "target": {
           "type": "string",
-          "description": "Ontology or standard name (e.g., schema.org, FIBO)"
+          "format": "uri",
+          "description": "URI of the external concept (e.g., https://schema.org/MonetaryAmount, https://spec.edmcouncil.org/fibo/...)"
         },
-        "identifier": {
+        "predicate": {
           "type": "string",
-          "description": "URI or identifier within that ontology"
+          "description": "Relationship type. SKOS baseline: exactMatch, closeMatch, broadMatch, narrowMatch, relatedMatch. Defaults to exactMatch. Vocabulary is open — non-standard predicates (e.g., DISTINCT_FROM) are permitted."
+        },
+        "provenance": {
+          "type": "string",
+          "description": "Optional: origin of this mapping (e.g., 'manual', 'FIBO 4.1', a tool name)"
         }
       },
-      "required": ["source", "identifier"],
+      "required": ["target"],
       "additionalProperties": false
     },
     "Dimension": {
