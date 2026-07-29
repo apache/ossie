@@ -78,6 +78,80 @@ def test_a_single_file_converts(tmp_path, capsys):
     assert [d["name"] for d in doc["semantic_model"][0]["datasets"]] == ["orders"]
 
 
+def test_several_paths_merge_into_one_model(tmp_path, capsys):
+    """Cube has a single model root, but converting part of a model -- or files from
+    different trees -- should not require assembling a directory first."""
+    a = tmp_path / "cubes" / "orders.yml"
+    b = tmp_path / "views" / "sales.yml"
+    for path, text in ((a, _ORDERS), (b, _VIEW)):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    assert main(["import", "-i", str(a), str(b)]) == 0
+    model = parse(capsys.readouterr().out)["semantic_model"][0]
+    assert model["name"] == "sales"          # the view was picked up
+    assert [d["name"] for d in model["datasets"]] == ["orders"]
+
+
+def test_several_paths_are_keyed_relative_to_their_common_parent(tmp_path, capsys):
+    """The keys decide where export writes the files back, so two inputs from
+    different subtrees have to stay distinguishable."""
+    a = tmp_path / "cubes" / "orders.yml"
+    b = tmp_path / "views" / "sales.yml"
+    for path, text in ((a, _ORDERS), (b, _VIEW)):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    out = tmp_path / "model.yaml"
+    assert main(["import", "-i", str(a), str(b), "-o", str(out)]) == 0
+    back = tmp_path / "back"
+    assert main(["export", "-i", str(out), "-o", str(back)]) == 0
+    capsys.readouterr()
+    assert (back / "cubes" / "orders.yml").is_file()
+    assert (back / "views" / "sales.yml").is_file()
+
+
+def test_mixing_a_directory_and_a_file_works(tmp_path, capsys):
+    model = _write(tmp_path / "model", **{"cubes|orders.yml": _ORDERS})
+    extra = tmp_path / "extra.yml"
+    extra.write_text(_VIEW)
+    assert main(["import", "-i", str(model), str(extra)]) == 0
+    assert parse(capsys.readouterr().out)["semantic_model"][0]["name"] == "sales"
+
+
+def test_overlapping_inputs_are_reported(tmp_path, capsys):
+    """Passing a directory and a file inside it is an easy mistake (an overlapping
+    glob), and it would otherwise read the same file twice."""
+    model = _write(tmp_path / "model", **{"cubes|orders.yml": _ORDERS})
+    assert main(["import", "-i", str(model),
+                 str(model / "cubes" / "orders.yml")]) == 1
+    err = capsys.readouterr().err
+    assert "both resolve to 'cubes/orders.yml'" in err
+
+
+def test_the_same_cube_in_two_inputs_is_reported(tmp_path, capsys):
+    a = tmp_path / "one" / "orders.yml"
+    b = tmp_path / "two" / "orders.yml"
+    for path in (a, b):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(_ORDERS)
+    # Distinct keys ('one/orders.yml', 'two/orders.yml'), but the same cube name.
+    assert main(["import", "-i", str(a), str(b)]) == 1
+    assert "defined twice" in capsys.readouterr().err
+
+
+def test_a_single_path_is_keyed_exactly_as_before(tmp_path, capsys):
+    """The multi-path anchor must not change the one-directory case, since the keys
+    are what export writes back."""
+    model = _write(tmp_path / "model", **{
+        "cubes|orders.yml": _ORDERS, "views|sales.yml": _VIEW})
+    out = tmp_path / "model.yaml"
+    assert main(["import", "-i", str(model), "-o", str(out)]) == 0
+    back = tmp_path / "back"
+    assert main(["export", "-i", str(out), "-o", str(back)]) == 0
+    capsys.readouterr()
+    assert (back / "cubes" / "orders.yml").is_file()
+    assert (back / "views" / "sales.yml").is_file()
+
+
 def test_only_a_view_file_is_refused_with_an_actionable_message(tmp_path, capsys):
     """The likeliest mistake for a view-first user: a Cube view looks like the whole
     model, but it projects members from cubes and defines none, so the error names

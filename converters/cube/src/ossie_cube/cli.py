@@ -18,12 +18,15 @@
 """Command-line interface for the Apache Ossie <-> Cube converter.
 
     ossie-cube import -i model/ [-o model.yaml] [--name my_model] [--view sales]
+    ossie-cube import -i cubes/orders.yml cubes/users.yml views/sales.yml
     ossie-cube export -i model.yaml -o model/ [--dialect SNOWFLAKE] [--base-cube orders]
 
-`import` converts a Cube data model directory (any `.yml` holding `cubes:` /
-`views:`) into an Apache Ossie semantic model; with no `-o` the Ossie YAML goes to
-stdout. `export` does the reverse and always needs `-o` (a directory).
-Conversions that could not carry something across print an issue list to stderr.
+`import` converts a Cube data model (any `.yml` holding `cubes:` / `views:`) into an
+Apache Ossie semantic model; with no `-o` the Ossie YAML goes to stdout. It accepts
+a model directory, individual files, or a mix of several -- so converting part of a
+model does not mean assembling a directory first. `export` does the reverse and
+always needs `-o` (a directory). Conversions that could not carry something across
+print an issue list to stderr.
 
 By default a metric whose value a static Ossie expression cannot keep correct
 under row multiplication is refused on import, mirroring Cube's own refusal to
@@ -49,8 +52,11 @@ def _build_parser():
 
     imp = sub.add_parser(
         "import", help="Cube data model directory -> Apache Ossie semantic model YAML")
-    imp.add_argument("-i", "--input", required=True,
-                     help="Cube model directory, or a single model file")
+    imp.add_argument("-i", "--input", required=True, nargs="+",
+                     metavar="PATH",
+                     help="Cube model directories and/or files. A directory is "
+                          "walked recursively; several paths are merged, keyed "
+                          "relative to their common parent (globs work)")
     imp.add_argument("-o", "--output",
                      help="output Ossie YAML file (default: stdout)")
     imp.add_argument("--name",
@@ -77,36 +83,64 @@ def _build_parser():
     return parser
 
 
-def _read_model_input(path):
-    """Collect a Cube model as {relative path: text}.
+def _read_model_input(paths):
+    """Collect a Cube model as {relative path: text} from one or more paths.
 
-    `path` is normally a model directory, but a single file is accepted too --
-    pointing at one `.yml` is a natural thing to try and there is nothing ambiguous
-    about it.
+    Cube itself has a single model root (`CUBEJS_SCHEMA_PATH`, one string), so
+    pointing at a model directory is the idiomatic whole-project case. But
+    converting part of a model -- two cubes out of fifty, or files that live in
+    different trees -- is a real workflow, so several paths merge into one model
+    rather than forcing the caller to assemble a directory first.
 
-    Under a directory everything is collected, not just YAML: a `.js` data model has
-    no Ossie form, but the converter preserves it so a round trip does not lose the
-    file. Hidden files and directories (including `node_modules`) are skipped.
+    Keys are relative to the deepest directory containing every input, which
+    leaves the single-directory and single-file cases keyed exactly as before.
+    Directories are walked recursively, collecting everything rather than only
+    YAML: a `.js` data model has no Ossie form, but the converter preserves it so a
+    round trip does not lose the file. Hidden files and directories (including
+    `node_modules`) are skipped.
     """
-    if os.path.isfile(path):
-        with open(path) as fh:
-            return {os.path.basename(path): fh.read()}
-    if not os.path.isdir(path):
-        raise ConversionError(f"'{path}' is not a file or directory")
+    resolved = [os.path.abspath(p) for p in paths]
+    for path, original in zip(resolved, paths):
+        if not os.path.exists(path):
+            raise ConversionError(f"'{original}' is not a file or directory")
+
+    # The anchor keys every file. Using the inputs' common parent means one
+    # directory anchors to itself and one file to its own directory, so those
+    # cases are unchanged; several inputs stay distinguishable from each other.
+    containers = [p if os.path.isdir(p) else os.path.dirname(p) for p in resolved]
+    try:
+        anchor = os.path.commonpath(containers)
+    except ValueError:
+        # No shared prefix at all (different drives on Windows); fall back to bare
+        # file names, which are still unique or else reported as a collision below.
+        anchor = None
+
     files = {}
-    for dirpath, dirnames, filenames in os.walk(path):
-        dirnames[:] = [d for d in sorted(dirnames)
-                       if not d.startswith(".") and d != "node_modules"]
-        for fname in sorted(filenames):
-            if fname.startswith("."):
-                continue
-            rel = os.path.relpath(os.path.join(dirpath, fname), path)
-            rel = rel.replace(os.sep, "/")
-            with open(os.path.join(dirpath, fname)) as fh:
-                files[rel] = fh.read()
+    for path in resolved:
+        if os.path.isfile(path):
+            _collect_file(files, path, anchor)
+            continue
+        for dirpath, dirnames, filenames in os.walk(path):
+            dirnames[:] = [d for d in sorted(dirnames)
+                           if not d.startswith(".") and d != "node_modules"]
+            for fname in sorted(filenames):
+                if not fname.startswith("."):
+                    _collect_file(files, os.path.join(dirpath, fname), anchor)
     if not files:
-        raise ConversionError(f"'{path}' holds no files")
-    return files
+        raise ConversionError(
+            f"{', '.join(repr(p) for p in paths)} holds no files")
+    return dict(sorted(files.items()))
+
+
+def _collect_file(files, path, anchor):
+    rel = (os.path.basename(path) if anchor is None
+           else os.path.relpath(path, anchor)).replace(os.sep, "/")
+    if rel in files:
+        raise ConversionError(
+            f"two inputs both resolve to '{rel}'; pass their common parent "
+            f"directory instead, or rename one")
+    with open(path) as fh:
+        files[rel] = fh.read()
 
 
 def _report(issues):

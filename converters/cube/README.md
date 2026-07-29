@@ -67,13 +67,28 @@ ossie-cube import -i model/ [-o model.yaml] [--name my_model] [--view sales]
 ossie-cube export -i model.yaml -o model/ [--dialect SNOWFLAKE] [--base-cube orders]
 ```
 
-`import` takes a model directory *or* a single model file, and with no `-o` writes
-the Ossie YAML to stdout; `export` always needs `-o` (a directory). Issues always go
-to stderr, so stdout stays pipeable. `--view` picks which view's
-name/description/AI context map onto the Ossie model when the input holds several;
-`--name` overrides the model name. `--base-cube` picks the cube a *generated* view
-is rooted at, and is only consulted for a hand-authored Ossie model with no stashed
-views.
+`import` accepts a model directory (walked recursively), individual files, or any
+mix of several — so converting part of a model does not mean assembling a directory
+first:
+
+```bash
+ossie-cube import -i model/                                   # the whole model
+ossie-cube import -i model/cubes/orders.yml                   # one file
+ossie-cube import -i model/cubes/orders.yml model/views/*.yml # a subset
+```
+
+Cube itself has a single model root (`CUBEJS_SCHEMA_PATH` is one path), so pointing
+at that root is the idiomatic whole-project case. With several paths, files are keyed
+relative to their common parent directory — which is what decides where `export`
+writes them back — and the single-directory and single-file cases are keyed exactly
+as they would be alone.
+
+With no `-o`, `import` writes the Ossie YAML to stdout; `export` always needs `-o` (a
+directory). Issues always go to stderr, so stdout stays pipeable. `--view` picks
+which view's name/description/AI context map onto the Ossie model when the input
+holds several; `--name` overrides the model name. `--base-cube` picks the cube a
+*generated* view is rooted at, and is only consulted for a hand-authored Ossie model
+with no stashed views.
 
 **A view on its own is not a model.** A Cube view projects members from cubes and
 defines none of its own, so passing only `views/sales.yml` is refused -- with an
@@ -235,7 +250,7 @@ uv sync
 uv run pytest
 ```
 
-216 tests at 97% line coverage: example-based unit tests per direction, CLI
+226 tests at 96% line coverage: example-based unit tests per direction, CLI
 behavior tests, fixture round-trip tests (including the
 [TPC-DS model](../../examples/tpcds_semantic_model.yaml) the converter guide asks
 for as a baseline), core-spec JSON Schema validation of every emitted Ossie
