@@ -35,20 +35,20 @@ semantic model specification.
 ```python
 import json
 import yaml
-from ossie_gooddata import gooddata_to_osi, osi_to_gooddata
+from ossie_gooddata import gooddata_to_ossie, ossie_to_gooddata
 from ossie_gooddata.models import gd_model_from_dict, gd_model_to_dict
 
 # GoodData → Apache Ossie
 with open("gooddata_ldm.json") as f:
     gd_model = gd_model_from_dict(json.load(f))
-osi_model = gooddata_to_osi(gd_model, model_name="my_model")
-with open("osi_model.yaml", "w") as f:
-    yaml.dump(osi_model, f, default_flow_style=False)
+ossie_model = gooddata_to_ossie(gd_model, model_name="my_model")
+with open("ossie_model.yaml", "w") as f:
+    yaml.dump(ossie_model, f, default_flow_style=False)
 
 # Apache Ossie → GoodData
-with open("osi_model.yaml") as f:
-    osi_data = yaml.safe_load(f)
-gd_model = osi_to_gooddata(osi_data, data_source_id="my_datasource")
+with open("ossie_model.yaml") as f:
+    ossie_data = yaml.safe_load(f)
+gd_model = ossie_to_gooddata(ossie_data, data_source_id="my_datasource")
 with open("gooddata_ldm.json", "w") as f:
     json.dump(gd_model_to_dict(gd_model), f, indent=2)
 ```

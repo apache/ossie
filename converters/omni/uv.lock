@@ -102,7 +102,7 @@ wheels = [
 ]
 
 [[package]]
-name = "osi-omni"
+name = "ossie-omni"
 version = "0.2.0.dev0"
 source = { editable = "." }
 dependencies = [

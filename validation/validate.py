@@ -227,7 +227,7 @@ def main():
     args = sys.argv[1:]
     yaml_path = Path(args[0])
 
-    schema_path = Path(__file__).parent.parent / "core-spec" / "osi-schema.json"
+    schema_path = Path(__file__).parent.parent / "core-spec" / "ossie-schema.json"
     if len(args) > 1:
         if len(args) == 3 and args[1] == "--schema":
             schema_path = Path(args[2])

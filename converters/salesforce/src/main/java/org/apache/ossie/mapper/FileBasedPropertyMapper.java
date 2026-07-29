@@ -96,12 +96,12 @@ public class FileBasedPropertyMapper implements PropertyMapper {
     }
 
     @Override
-    public Map<String, String> getOsiToSalesforceMappings() {
+    public Map<String, String> getOssieToSalesforceMappings() {
         return Collections.unmodifiableMap(mappings);
     }
 
     @Override
-    public Map<String, String> getSalesforceToOsiMappings() {
+    public Map<String, String> getSalesforceToOssieMappings() {
         return Collections.unmodifiableMap(reverseMappings);
     }
 

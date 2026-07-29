@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Validation helpers for OBML / OSI / OSI-ontology documents.
+"""Validation helpers for OBML / Ossie / Ossie-ontology documents.
 
 Extracted verbatim from ``converter.py``. Schema files are vendored beside the
 package under ``schemas/``.
@@ -36,14 +36,14 @@ _SCHEMAS_DIR = _SCRIPT_DIR / "schemas"
 _OBML_SCHEMA_PATH = _SCHEMAS_DIR / "obml-schema.json"
 
 
-def _osi_schema_path(filename: str) -> Path:
-    """Resolve an OSI core-spec schema without forcing a duplicate copy where a
+def _ossie_schema_path(filename: str) -> Path:
+    """Resolve an Ossie core-spec schema without forcing a duplicate copy where a
     canonical one already exists.
 
     Resolution order:
     1. A copy vendored beside this package (``schemas/<filename>``). The
        standalone PyPI wheel and the OrionBelt product API rely on this, so the
-       package validates OSI documents self-contained and offline.
+       package validates Ossie documents self-contained and offline.
     2. Otherwise ``core-spec/<filename>`` in an enclosing Ossie monorepo
        checkout, found by walking up from this file. This lets the in-tree
        converter drop its vendored copy and link the single canonical schema
@@ -62,7 +62,7 @@ def _osi_schema_path(filename: str) -> Path:
     return vendored
 
 
-_OSI_SCHEMA_PATH = _osi_schema_path("osi-schema.json")
+_OSSIE_SCHEMA_PATH = _ossie_schema_path("ossie-schema.json")
 
 
 class ValidationResult:
@@ -189,22 +189,22 @@ def validate_obml(obml_dict: dict[str, Any], schema_path: Path | None = None) ->
     return result
 
 
-# ── OSI Validation ───────────────────────────────────────────────────────
+# ── Ossie Validation ───────────────────────────────────────────────────────
 
 
-def validate_osi(osi_dict: dict[str, Any], schema_path: Path | None = None) -> ValidationResult:
-    """Validate an OSI dict against JSON Schema and semantic rules.
+def validate_ossie(ossie_dict: dict[str, Any], schema_path: Path | None = None) -> ValidationResult:
+    """Validate an Ossie dict against JSON Schema and semantic rules.
 
-    Runs three layers of validation (mirroring OSI's own ``validate.py``):
-    1. **JSON Schema** — structural correctness against ``osi-schema.json``
+    Runs three layers of validation (mirroring Ossie's own ``validate.py``):
+    1. **JSON Schema** — structural correctness against ``ossie-schema.json``
        (Draft 2020-12)
     2. **Unique names** — datasets, fields, metrics, relationships
     3. **References** — relationship from/to reference existing datasets
     """
-    result = ValidationResult("OSI")
+    result = ValidationResult("Ossie")
 
-    # 1. JSON Schema validation (OSI uses Draft 2020-12)
-    _validate_json_schema(osi_dict, schema_path or _OSI_SCHEMA_PATH, result, draft="draft2020")
+    # 1. JSON Schema validation (Ossie uses Draft 2020-12)
+    _validate_json_schema(ossie_dict, schema_path or _OSSIE_SCHEMA_PATH, result, draft="draft2020")
 
     # The semantic checks below assume a well-formed structure (lists of dicts).
     # JSON Schema validation above already reports structural errors, so guard
@@ -212,7 +212,7 @@ def validate_osi(osi_dict: dict[str, Any], schema_path: Path | None = None) -> V
     def _as_dict_list(value: Any) -> list[dict[str, Any]]:
         return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
 
-    models = _as_dict_list(osi_dict.get("semantic_model", []))
+    models = _as_dict_list(ossie_dict.get("semantic_model", []))
 
     # 2. Unique name checks
     for model in models:
@@ -284,17 +284,17 @@ def validate_osi(osi_dict: dict[str, Any], schema_path: Path | None = None) -> V
     return result
 
 
-def validate_osi_ontology(onto_dict: dict[str, Any]) -> ValidationResult:
-    """Validate an OSI ontology dict against semantic rules.
+def validate_ossie_ontology(onto_dict: dict[str, Any]) -> ValidationResult:
+    """Validate an Ossie ontology dict against semantic rules.
 
-    Ossie ships no OSI ontology schema (the converter emits ontology documents
+    Ossie ships no Ossie ontology schema (the converter emits ontology documents
     but never consumes them), so JSON-Schema conformance is not checked here.
     Runs the converter-owned semantic checks:
     1. **Unique concept names** across the ``ontology`` components.
     2. **Reference integrity** — relationship roles and concept_mappings
        reference concepts defined in the ontology.
     """
-    result = ValidationResult("OSI-ONTOLOGY")
+    result = ValidationResult("Ossie-ONTOLOGY")
 
     # 1. Unique concept names + collect the defined set.
     defined: set[str] = set()

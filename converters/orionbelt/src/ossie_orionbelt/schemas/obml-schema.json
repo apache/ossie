@@ -10,7 +10,7 @@
       "properties": {
         "vendor": {
           "type": "string",
-          "description": "Vendor or format identifier (e.g. OSI, GOVERNANCE)"
+          "description": "Vendor or format identifier (e.g. Ossie, GOVERNANCE)"
         },
         "data": {
           "type": "string",

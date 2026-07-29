@@ -188,7 +188,7 @@ A typical Ossie-based workflow looks like this:
 
 1. **Author**: A semantic model is authored in one tool (e.g., dbt) or directly in the Ossie YAML format.
 2. **Import**: If authored in a vendor tool, the vendor's import converter translates it into an Ossie model, preserving vendor-specific metadata in `custom_extensions`.
-3. **Validate**: The Ossie model is validated against the [JSON Schema](../core-spec/osi-schema.json) and the [validation script](../validation/validate.py) to ensure correctness.
+3. **Validate**: The Ossie model is validated against the [JSON Schema](../core-spec/ossie-schema.json) and the [validation script](../validation/validate.py) to ensure correctness.
 4. **Exchange**: The Ossie model is shared — via Git, a data catalog, or a sync API — with other teams and tools.
 5. **Export**: Each consuming tool's export converter translates the Ossie model into its native format, selecting the appropriate SQL dialect and applying vendor-specific extensions.
 6. **Round-Trip**: When changes are made in a downstream tool, they can be imported back into the Ossie model, preserving all metadata for lossless round-tripping.
@@ -237,7 +237,7 @@ You can contribute a converter. The [Converters Guide](../converters/README.md) 
 No. Import converters translate existing vendor-specific models into the Ossie format automatically. Your existing models remain intact — Ossie provides an additional interchange layer on top of them.
 
 **How do I validate an Ossie model?**
-Use the [validation script](../validation/validate.py) included in the repository. It checks your model against the [JSON Schema](../core-spec/osi-schema.json), validates SQL expressions across dialects, and ensures referential integrity between datasets and relationships.
+Use the [validation script](../validation/validate.py) included in the repository. It checks your model against the [JSON Schema](../core-spec/ossie-schema.json), validates SQL expressions across dialects, and ensures referential integrity between datasets and relationships.
 
 ### Technical
 
@@ -338,7 +338,7 @@ A practical guide for organizations looking to adopt Ossie.
 - **GitHub**: [github.com/apache/ossie](https://github.com/apache/ossie)
 - **Slack**: [join slack](https://join.slack.com/t/opensemanticx/shared_invite/zt-3yuad6c0h-MaoPgVSD1g9MEOf1_QeaiQ)
 - **Core Specification**: [core-spec/spec.md](../core-spec/spec.md)
-- **JSON Schema**: [core-spec/osi-schema.json](../core-spec/osi-schema.json)
+- **JSON Schema**: [core-spec/ossie-schema.json](../core-spec/ossie-schema.json)
 - **YAML Schema**: [core-spec/spec.yaml](../core-spec/spec.yaml)
 - **TPC-DS Example Model**: [examples/tpcds_semantic_model.yaml](../examples/tpcds_semantic_model.yaml)
 - **Validation Script**: [validation/validate.py](../validation/validate.py)

@@ -52,9 +52,9 @@ Both schemas must be obtained and placed under `src/main/resources/schemas/` bef
 
 ### Apache Ossie Schema
 
-1. Visit the [Ossie schema on GitHub](https://github.com/apache/ossie/blob/main/core-spec/osi-schema.json)
+1. Visit the [Ossie schema on GitHub](https://github.com/apache/ossie/blob/main/core-spec/ossie-schema.json)
 2. Copy the raw JSON contents
-3. Save it to `src/main/resources/schemas/osi-schema.json`
+3. Save it to `src/main/resources/schemas/ossie-schema.json`
 
 ## Usage
 
@@ -65,15 +65,15 @@ Both schemas must be obtained and placed under `src/main/resources/schemas/` bef
 Convert a Salesforce Semantic Model JSON file to Ossie YAML format:
 
 ```bash
-java -jar target/ossie-salesforce-converter-0.1.0-SNAPSHOT.jar toOSI input.json
+java -jar target/ossie-salesforce-converter-0.1.0-SNAPSHOT.jar toOssie input.json
 # Output: Customer_Orders_Model.yaml (named after model's 'name' field)
 # Created in the same directory as the input file
 ```
 
 Example:
 ```bash
-java -jar target/ossie-salesforce-converter-0.1.0-SNAPSHOT.jar toOSI \
-  src/test/resources/examples/salesforceToOsi.json
+java -jar target/ossie-salesforce-converter-0.1.0-SNAPSHOT.jar toOssie \
+  src/test/resources/examples/salesforceToOssie.json
 # Output: src/test/resources/examples/Customer_Orders_Model.yaml
 ```
 
@@ -90,7 +90,7 @@ java -jar target/ossie-salesforce-converter-0.1.0-SNAPSHOT.jar toSF input.yaml
 Example:
 ```bash
 java -jar target/ossie-salesforce-converter-0.1.0-SNAPSHOT.jar toSF \
-  src/test/resources/examples/osiToSalesforce.yaml
+  src/test/resources/examples/ossieToSalesforce.yaml
 # Output: src/test/resources/examples/Customer_Orders_Model.json
 ```
 
@@ -103,12 +103,12 @@ import org.apache.ossie.converter.Converter;
 import org.apache.ossie.converter.ConverterFactory;
 import org.apache.ossie.converter.ConversionDirection;
 
-Converter sfToOsi = ConverterFactory.getConverter(ConversionDirection.SALESFORCE_TO_OSI);
-List<String> osiYamlList = sfToOsi.convert(salesforceJsonString);
-String osiYaml = osiYamlList.get(0);
+Converter sfToOssie = ConverterFactory.getConverter(ConversionDirection.SALESFORCE_TO_OSSIE);
+List<String> ossieYamlList = sfToOssie.convert(salesforceJsonString);
+String ossieYaml = ossieYamlList.get(0);
 
-Converter osiToSf = ConverterFactory.getConverter(ConversionDirection.OSI_TO_SALESFORCE);
-List<String> salesforceJsonList = osiToSf.convert(osiYamlString);
+Converter ossieToSf = ConverterFactory.getConverter(ConversionDirection.OSSIE_TO_SALESFORCE);
+List<String> salesforceJsonList = ossieToSf.convert(ossieYamlString);
 ```
 
 #### File Conversion
@@ -120,11 +120,11 @@ import org.apache.ossie.converter.ConversionDirection;
 
 import java.nio.file.Paths;
 
-Converter sfToOsi = ConverterFactory.getConverter(ConversionDirection.SALESFORCE_TO_OSI);
-sfToOsi.convert(Paths.get("input/model.json"), Paths.get("output/"));
+Converter sfToOssie = ConverterFactory.getConverter(ConversionDirection.SALESFORCE_TO_OSSIE);
+sfToOssie.convert(Paths.get("input/model.json"), Paths.get("output/"));
 
-Converter osiToSf = ConverterFactory.getConverter(ConversionDirection.OSI_TO_SALESFORCE);
-osiToSf.convert(Paths.get("input/model.yaml"), Paths.get("output/"));
+Converter ossieToSf = ConverterFactory.getConverter(ConversionDirection.OSSIE_TO_SALESFORCE);
+ossieToSf.convert(Paths.get("input/model.yaml"), Paths.get("output/"));
 ```
 
 ### Features
@@ -233,7 +233,7 @@ dimensions.
 
 ```
                     ┌───────────────────────┐
-                    │ OsiSalesforceConverter│
+                    │ OssieSalesforceConverter│
                     │      (CLI App)        │
                     └───────────┬───────────┘
                             │
@@ -270,7 +270,7 @@ dimensions.
 
 **ConverterFactory** — Creates converter instances for specified direction
 
-**Pipeline Configuration** — Handlers and direction-specific settings defined in `osi-salesforce-converter-config.yaml`
+**Pipeline Configuration** — Handlers and direction-specific settings defined in `ossie-salesforce-converter-config.yaml`
 
 **GenericMappingEngine** — Path-based property mapping using `mappings.yaml` configuration
 
@@ -281,9 +281,9 @@ dimensions.
 ## Examples
 
 See the test suite for sample models demonstrating various features:
-- `src/test/resources/examples/osiToSalesforce.yaml` - Ossie model example
-- `src/test/java/org/apache/ossie/OsiToSalesforceConverterTest.java` - Ossie to Salesforce conversion tests
-- `src/test/java/org/apache/ossie/SalesforceToOsiConverterTest.java` - Salesforce to Ossie conversion tests
+- `src/test/resources/examples/ossieToSalesforce.yaml` - Ossie model example
+- `src/test/java/org/apache/ossie/OssieToSalesforceConverterTest.java` - Ossie to Salesforce conversion tests
+- `src/test/java/org/apache/ossie/SalesforceToOssieConverterTest.java` - Salesforce to Ossie conversion tests
 
 ## License
 

@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# yaml-language-server: $schema=../../../../core-spec/osi-schema.json
+# yaml-language-server: $schema=../../../../core-spec/ossie-schema.json
 #
 # Fixture A -- all-native round-trip (Apache Ossie -> MV -> Apache Ossie).
 # Star schema; every field maps to a native MV field. Documented losses on the

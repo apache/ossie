@@ -27,56 +27,56 @@ dataObjects:
         abstractType: string
         comment: Foreign key to date dimension
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["sale date", "transaction date"]}'
       ss_item_sk:
         code: ss_item_sk
         abstractType: string
         comment: Foreign key to item dimension
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["product", "item"]}'
       ss_customer_sk:
         code: ss_customer_sk
         abstractType: string
         comment: Foreign key to customer dimension
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["customer", "buyer"]}'
       ss_store_sk:
         code: ss_store_sk
         abstractType: string
         comment: Foreign key to store dimension
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["store", "location"]}'
       ss_quantity:
         code: ss_quantity
         abstractType: int
         comment: Quantity of items sold
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["units sold", "quantity"]}'
       ss_sales_price:
         code: ss_sales_price
         abstractType: float
         comment: Sales price per unit
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["unit price", "price"]}'
       ss_ext_sales_price:
         code: ss_ext_sales_price
         abstractType: float
         comment: Extended sales price (quantity * price)
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["total price", "line total"]}'
       ss_net_profit:
         code: ss_net_profit
         abstractType: float
         comment: Net profit from the sale
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["profit", "margin"]}'
     joins:
     - joinType: many-to-one
@@ -105,7 +105,7 @@ dataObjects:
       - s_store_sk
     comment: Fact table containing all store sales transactions
     customExtensions:
-    - vendor: OSI
+    - vendor: Ossie
       data: '{"synonyms": ["sales transactions", "store purchases", "retail sales", "POS data"]}'
   date_dim:
     code: date_dim
@@ -121,32 +121,32 @@ dataObjects:
         abstractType: date
         comment: Actual date value
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["date", "calendar date"]}'
       d_year:
         code: d_year
         abstractType: date
         comment: Year
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["year"]}'
       d_quarter_name:
         code: d_quarter_name
         abstractType: date
         comment: Quarter name (e.g., 2024Q1)
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["quarter", "fiscal quarter"]}'
       d_month_name:
         code: d_month_name
         abstractType: date
         comment: Month name
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["month"]}'
     comment: Date dimension with calendar attributes
     customExtensions:
-    - vendor: OSI
+    - vendor: Ossie
       data: '{"synonyms": ["calendar", "dates", "time periods"]}'
   customer:
     code: customer
@@ -162,7 +162,7 @@ dataObjects:
         abstractType: string
         comment: Business key for customer
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["customer ID", "customer number"]}'
       c_first_name:
         code: c_first_name
@@ -177,18 +177,18 @@ dataObjects:
         abstractType: string
         comment: Customer full name (computed field)
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["full name", "customer name"]}'
       c_email_address:
         code: c_email_address
         abstractType: string
         comment: Customer email address
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["email", "contact"]}'
     comment: Customer dimension with demographic information
     customExtensions:
-    - vendor: OSI
+    - vendor: Ossie
       data: '{"synonyms": ["customers", "shoppers", "buyers"]}'
   item:
     code: item
@@ -204,39 +204,39 @@ dataObjects:
         abstractType: string
         comment: Business key for item
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["item ID", "product ID", "SKU"]}'
       i_item_desc:
         code: i_item_desc
         abstractType: string
         comment: Item description
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["product description", "item name"]}'
       i_brand:
         code: i_brand
         abstractType: string
         comment: Brand name
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["brand", "manufacturer"]}'
       i_category:
         code: i_category
         abstractType: string
         comment: Item category
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["product category", "department"]}'
       i_current_price:
         code: i_current_price
         abstractType: float
         comment: Current price of the item
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["price", "list price"]}'
     comment: Item/Product dimension with product attributes
     customExtensions:
-    - vendor: OSI
+    - vendor: Ossie
       data: '{"synonyms": ["products", "items", "merchandise"]}'
   store:
     code: store
@@ -252,39 +252,39 @@ dataObjects:
         abstractType: string
         comment: Business key for store
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["store ID", "store number"]}'
       s_store_name:
         code: s_store_name
         abstractType: string
         comment: Store name
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["store name", "location name"]}'
       s_city:
         code: s_city
         abstractType: string
         comment: City where store is located
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["city", "location"]}'
       s_state:
         code: s_state
         abstractType: string
         comment: State where store is located
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["state", "region"]}'
       s_number_employees:
         code: s_number_employees
         abstractType: int
         comment: Number of employees at the store
         customExtensions:
-        - vendor: OSI
+        - vendor: Ossie
           data: '{"synonyms": ["employee count", "staff size"]}'
     comment: Store dimension with location and store attributes
     customExtensions:
-    - vendor: OSI
+    - vendor: Ossie
       data: '{"synonyms": ["stores", "retail locations", "branches"]}'
 dimensions:
   d_date:

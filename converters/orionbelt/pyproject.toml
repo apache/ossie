@@ -63,17 +63,17 @@ repository = "https://github.com/apache/ossie/"
 [tool.hatch.build.targets.wheel]
 packages = ["src/ossie_orionbelt"]
 
-# The OSI core schema is not tracked as a copy in this package (it lives once at
+# The Ossie core schema is not tracked as a copy in this package (it lives once at
 # the repo's core-spec/). Bundle it into the built wheel from that single source
-# so a pip-installed converter still validates OSI documents self-contained.
-# In-tree (dev/test) runs resolve it from core-spec/ via validation._osi_schema_path.
+# so a pip-installed converter still validates Ossie documents self-contained.
+# In-tree (dev/test) runs resolve it from core-spec/ via validation._ossie_schema_path.
 [tool.hatch.build.targets.wheel.force-include]
-"../../core-spec/osi-schema.json" = "ossie_orionbelt/schemas/osi-schema.json"
+"../../core-spec/ossie-schema.json" = "ossie_orionbelt/schemas/ossie-schema.json"
 
 # Only the OBML schema (OrionBelt's own format) is vendored under
-# src/ossie_orionbelt/schemas/. OSI core documents are validated against the
-# repo's core-spec/osi-schema.json, resolved at runtime by
-# validation._osi_schema_path (no duplicate copy). The OSI ontology export is
+# src/ossie_orionbelt/schemas/. Ossie core documents are validated against the
+# repo's core-spec/ossie-schema.json, resolved at runtime by
+# validation._ossie_schema_path (no duplicate copy). The Ossie ontology export is
 # validated semantically only (ossie ships no ontology schema).
 
 [tool.mypy]

@@ -31,8 +31,8 @@ class SalesforceDataTypeMapperTest {
 
     @ParameterizedTest
     @MethodSource("salesforceToOssieTypes")
-    void mapsSalesforceTypesToOssie(String salesforceType, String osiDatatype) {
-        assertEquals(osiDatatype, SalesforceDataTypeMapper.toOssie(salesforceType));
+    void mapsSalesforceTypesToOssie(String salesforceType, String ossieDatatype) {
+        assertEquals(ossieDatatype, SalesforceDataTypeMapper.toOssie(salesforceType));
     }
 
     static Stream<Arguments> salesforceToOssieTypes() {
@@ -54,8 +54,8 @@ class SalesforceDataTypeMapperTest {
 
     @ParameterizedTest
     @MethodSource("ossieToSalesforceTypes")
-    void mapsOssieTypesToSalesforce(String osiDatatype, String salesforceType) {
-        assertEquals(salesforceType, SalesforceDataTypeMapper.toSalesforce(osiDatatype));
+    void mapsOssieTypesToSalesforce(String ossieDatatype, String salesforceType) {
+        assertEquals(salesforceType, SalesforceDataTypeMapper.toSalesforce(ossieDatatype));
     }
 
     static Stream<Arguments> ossieToSalesforceTypes() {

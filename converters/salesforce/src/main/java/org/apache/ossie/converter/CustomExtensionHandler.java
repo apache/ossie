@@ -186,25 +186,25 @@ public class CustomExtensionHandler {
     /**
      * Stores unmapped properties for array items (datasets, relationships, metrics).
      *
-     * @param osiData The Ossie output data
+     * @param ossieData The Ossie output data
      * @param sfData The Salesforce source data
      * @param allHandledProps All properties that were handled (from mappings + programmatic)
-     * @param osiArrayKey The Ossie array key (e.g., "datasets")
+     * @param ossieArrayKey The Ossie array key (e.g., "datasets")
      * @param sfArrayKey The SF array key (e.g., "semanticDataObjects")
-     * @param osiIdKey The Ossie identifier key (e.g., "name")
+     * @param ossieIdKey The Ossie identifier key (e.g., "name")
      * @param sfIdKey The SF identifier key (e.g., "apiName")
      */
     private void storeArrayLevelUnmappedProperties(
-            Map<String, Object> osiData,
+            Map<String, Object> ossieData,
             Map<String, Object> sfData,
             Set<String> allHandledProps,
-            String osiArrayKey,
+            String ossieArrayKey,
             String sfArrayKey,
-            String osiIdKey,
+            String ossieIdKey,
             String sfIdKey) {
 
-        List<Object> osiArray = getList(osiData, osiArrayKey);
-        if (osiArray == null) {
+        List<Object> ossieArray = getList(ossieData, ossieArrayKey);
+        if (ossieArray == null) {
             return;
         }
 
@@ -214,9 +214,9 @@ public class CustomExtensionHandler {
         }
 
         // Process each Ossie item and find its matching SF item
-        streamMaps(osiArray).forEach(osiItem -> {
+        streamMaps(ossieArray).forEach(ossieItem -> {
             // Find matching SF item by identifier
-            String itemId = getString(osiItem, osiIdKey);
+            String itemId = getString(ossieItem, ossieIdKey);
             if (itemId == null) return;
 
             Map<String, Object> sfItem = findItemById(sfArray, sfIdKey, itemId);
@@ -233,7 +233,7 @@ public class CustomExtensionHandler {
 
             // Store unmapped properties in custom_extensions
             if (!unmappedProperties.isEmpty()) {
-                addCustomExtension(osiItem, unmappedProperties);
+                addCustomExtension(ossieItem, unmappedProperties);
             }
         });
     }
@@ -242,12 +242,12 @@ public class CustomExtensionHandler {
      * Stores unmapped properties from a source item into an Ossie item's custom_extensions.
      * Generic method that can be used for fields or any other individual items.
      *
-     * @param osiItem The target Ossie item to add custom_extensions to
+     * @param ossieItem The target Ossie item to add custom_extensions to
      * @param sfItem The source Salesforce item
      * @param handledProps Set of property keys that were handled (mapped or programmatically processed)
      */
     public void storeUnmappedItemProperties(
-            Map<String, Object> osiItem, Map<String, Object> sfItem, Set<String> handledProps) {
+            Map<String, Object> ossieItem, Map<String, Object> sfItem, Set<String> handledProps) {
         // Find unmapped properties: everything in SF item that wasn't handled
         Map<String, Object> unmappedProps = new LinkedHashMap<>();
         for (Map.Entry<String, Object> entry : sfItem.entrySet()) {
@@ -258,12 +258,12 @@ public class CustomExtensionHandler {
 
         // Store in custom_extensions
         if (!unmappedProps.isEmpty()) {
-            String itemName = getString(osiItem, NAME);
+            String itemName = getString(ossieItem, NAME);
             if (itemName == null) {
                 logger.warn("Item has no name, skipping custom_extensions storage for unmapped properties");
                 return;
             }
-            addCustomExtension(osiItem, unmappedProps);
+            addCustomExtension(ossieItem, unmappedProps);
         }
     }
 
@@ -303,10 +303,10 @@ public class CustomExtensionHandler {
      * This is a generic method that can be used for any level (dataset, field, relationship, metric).
      *
      * @param sfItem The Salesforce item to merge properties into
-     * @param osiItem The Ossie item containing custom_extensions
+     * @param ossieItem The Ossie item containing custom_extensions
      */
-    public void restoreSalesforceCustomExtension(Map<String, Object> sfItem, Map<String, Object> osiItem) {
-        Object customExtensionsObj = osiItem.get(CUSTOM_EXTENSIONS);
+    public void restoreSalesforceCustomExtension(Map<String, Object> sfItem, Map<String, Object> ossieItem) {
+        Object customExtensionsObj = ossieItem.get(CUSTOM_EXTENSIONS);
         if (customExtensionsObj == null) {
             return;
         }
@@ -330,7 +330,7 @@ public class CustomExtensionHandler {
                     new TypeReference<LinkedHashMap<String, Object>>() {}
                 );
 
-                String itemName = getString(osiItem, NAME);
+                String itemName = getString(ossieItem, NAME);
                 if (itemName == null) {
                     logger.warn("Item has no name, skipping custom_extensions restoration");
                     return;

@@ -81,7 +81,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>org.apache.ossie.converter.polaris.OsiPolarisConverter</mainClass>
+                            <mainClass>org.apache.ossie.converter.polaris.OssiePolarisConverter</mainClass>
                         </manifest>
                     </archive>
                 </configuration>

@@ -44,7 +44,7 @@ import org.slf4j.LoggerFactory;
 public class SchemaValidator {
 
     private static final Logger logger = LoggerFactory.getLogger(SchemaValidator.class);
-    public static final String OSI_SCHEMA_PATH = "/schemas/osi-schema.json";
+    public static final String OSSIE_SCHEMA_PATH = "/schemas/ossie-schema.json";
     public static final String SALESFORCE_SCHEMA_PATH = "/schemas/salesforce-semantic-model-schema.json";
 
     private final JsonSchema schema;

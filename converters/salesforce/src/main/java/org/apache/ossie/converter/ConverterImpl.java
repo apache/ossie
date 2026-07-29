@@ -36,7 +36,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Unified converter that executes pipelines configured in osi-salesforce-converter-config.yaml.
+ * Unified converter that executes pipelines configured in ossie-salesforce-converter-config.yaml.
  *
  */
 public class ConverterImpl extends AbstractConverter {
@@ -89,15 +89,15 @@ public class ConverterImpl extends AbstractConverter {
 
         schemaValidator.validate(sourceData);
 
-        if (direction == ConversionDirection.OSI_TO_SALESFORCE) {
-            return convertOsiToSalesforce(sourceData);
+        if (direction == ConversionDirection.OSSIE_TO_SALESFORCE) {
+            return convertOssieToSalesforce(sourceData);
         } else {
-            return convertSalesforceToOsi(sourceData);
+            return convertSalesforceToOssie(sourceData);
         }
     }
 
-    private List<String> convertOsiToSalesforce(Map<String, Object> osiRoot) {
-        List<Object> semanticModels = getList(osiRoot, SEMANTIC_MODEL);
+    private List<String> convertOssieToSalesforce(Map<String, Object> ossieRoot) {
+        List<Object> semanticModels = getList(ossieRoot, SEMANTIC_MODEL);
         List<String> results = new ArrayList<>();
 
         for (Object modelObj : semanticModels) {
@@ -108,16 +108,16 @@ public class ConverterImpl extends AbstractConverter {
         return results;
     }
 
-    private List<String> convertSalesforceToOsi(Map<String, Object> sourceData) {
+    private List<String> convertSalesforceToOssie(Map<String, Object> sourceData) {
         String result = executePipeline(sourceData);
 
         // Wrap output in Ossie root structure
         try {
             Map<String, Object> outputData = yamlMapper.readValue(result, new TypeReference<>() {});
-            Map<String, Object> osiRoot = new LinkedHashMap<>();
-            osiRoot.put(VERSION, OSI_VERSION);
-            osiRoot.put(SEMANTIC_MODEL, List.of(outputData));
-            return List.of(toYaml(osiRoot));
+            Map<String, Object> ossieRoot = new LinkedHashMap<>();
+            ossieRoot.put(VERSION, OSSIE_VERSION);
+            ossieRoot.put(SEMANTIC_MODEL, List.of(outputData));
+            return List.of(toYaml(ossieRoot));
         } catch (JsonProcessingException e) {
             throw new ConversionException("Failed to wrap output in Ossie root", e);
         }
@@ -125,9 +125,9 @@ public class ConverterImpl extends AbstractConverter {
 
     private String executePipeline(Map<String, Object> sourceData) {
         Map<String, Object> outputData = new LinkedHashMap<>();
-        Map<String, String> mappings = new LinkedHashMap<>(direction == ConversionDirection.OSI_TO_SALESFORCE
-            ? mapper.getOsiToSalesforceMappings()
-            : mapper.getSalesforceToOsiMappings());
+        Map<String, String> mappings = new LinkedHashMap<>(direction == ConversionDirection.OSSIE_TO_SALESFORCE
+            ? mapper.getOssieToSalesforceMappings()
+            : mapper.getSalesforceToOssieMappings());
 
         for (PipelineStep step : steps) {
             step.execute(sourceData, outputData, mappings);
@@ -157,7 +157,7 @@ public class ConverterImpl extends AbstractConverter {
             String field = directionConfig.getExtractModelNameFrom();
 
             // Handle Ossie format (wrapped in semantic_model array)
-            if (direction == ConversionDirection.SALESFORCE_TO_OSI) {
+            if (direction == ConversionDirection.SALESFORCE_TO_OSSIE) {
                 List<Object> models = getList(data, SEMANTIC_MODEL);
                 if (models != null && !models.isEmpty()) {
                     Map<String, Object> firstModel = asMap(models.get(0));

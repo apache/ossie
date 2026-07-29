@@ -26,9 +26,9 @@ dev = [
 ]
 
 [project]
-name = "honeydew-osi"
+name = "honeydew-ossie"
 version = "0.2.0.dev0"
-description = "Bidirectional converter between Honeydew workspace YAML and OSI semantic model"
+description = "Bidirectional converter between Honeydew workspace YAML and Ossie semantic model"
 authors = [{ name = "Apache Software Foundation", email = "dev@ossie.apache.org" }]
 requires-python = ">=3.12"
 readme = "README.md"
@@ -43,14 +43,14 @@ dependencies = [
 ]
 
 [project.scripts]
-honeydew-osi = "honeydew_osi.converter:main"
+honeydew-ossie = "honeydew_ossie.converter:main"
 
 [project.urls]
 homepage = "https://ossie.apache.org/"
 repository = "https://github.com/apache/ossie/"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/honeydew_osi"]
+packages = ["src/honeydew_ossie"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

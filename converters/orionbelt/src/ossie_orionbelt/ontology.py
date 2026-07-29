@@ -15,9 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""OBML → OSI ontology derivation (the :class:`OBMLtoOSIOntology` direction).
+"""OBML → Ossie ontology derivation (the :class:`OBMLtoOssieOntology` direction).
 
-Extracted verbatim from ``converter.py``; reuses :class:`OBMLtoOSI` for the
+Extracted verbatim from ``converter.py``; reuses :class:`OBMLtoOssie` for the
 embedded core-spec model.
 """
 
@@ -25,25 +25,25 @@ from __future__ import annotations
 
 from typing import Any
 
-from ossie_orionbelt._common import _OSI_VERSION
-from ossie_orionbelt.obml_to_osi import OBMLtoOSI
+from ossie_orionbelt._common import _OSSIE_VERSION
+from ossie_orionbelt.obml_to_ossie import OBMLtoOssie
 
 
-class OBMLtoOSIOntology:
-    """Derive an OSI **ontology** document from an OBML semantic model.
+class OBMLtoOssieOntology:
+    """Derive an Ossie **ontology** document from an OBML semantic model.
 
-    Produces a document conforming to ``osi-ontology-schema.json`` (OSI version
-    ``0.2.0.dev0``) — a *separate* artefact from the OSI core-spec semantic
-    model. The OSI ``OntologyMap`` embeds the full core-spec model, so this
-    class reuses :class:`OBMLtoOSI` for that part and overlays a concept /
+    Produces a document conforming to ``ossie-ontology-schema.json`` (Ossie version
+    ``0.2.0.dev0``) — a *separate* artefact from the Ossie core-spec semantic
+    model. The Ossie ``OntologyMap`` embeds the full core-spec model, so this
+    class reuses :class:`OBMLtoOssie` for that part and overlays a concept /
     relationship ontology plus the logical-to-conceptual mappings.
 
-    See ``osi_obml_ontology_mapping_analysis.md`` for the full mapping rules
+    See ``ossie_obml_ontology_mapping_analysis.md`` for the full mapping rules
     and the documented gaps that surface as ``warnings``.
     """
 
-    # OBML join cardinality → OSI ontology multiplicity. ``many-to-many`` has
-    # no OSI equivalent (the enum is ManyToOne/OneToOne only) and is skipped.
+    # OBML join cardinality → Ossie ontology multiplicity. ``many-to-many`` has
+    # no Ossie equivalent (the enum is ManyToOne/OneToOne only) and is skipped.
     _MULTIPLICITY_MAP = {
         "many-to-one": "ManyToOne",
         "one-to-one": "OneToOne",
@@ -98,8 +98,8 @@ class OBMLtoOSIOntology:
         return f"{table_ref}.{self._col_code(do_obj, pk[0])}"
 
     def convert(self) -> dict:
-        # 1. Core semantic model (embedded — required by OSI OntologyMap).
-        core_conv = OBMLtoOSI(
+        # 1. Core semantic model (embedded — required by Ossie OntologyMap).
+        core_conv = OBMLtoOssie(
             self.obml,
             model_name=self.model_name,
             model_description=self.model_description,
@@ -134,7 +134,7 @@ class OBMLtoOSIOntology:
                 if join_type == "many-to-many":
                     self.warnings.append(
                         f"Join {do_name} -> {to_name} is many-to-many; skipped "
-                        f"(OSI ontology multiplicity supports only ManyToOne/OneToOne)"
+                        f"(Ossie ontology multiplicity supports only ManyToOne/OneToOne)"
                     )
                     continue
                 multiplicity = self._MULTIPLICITY_MAP.get(join_type)
@@ -152,7 +152,7 @@ class OBMLtoOSIOntology:
                     self.warnings.append(
                         f"Join {do_name} -> {to_name} is a named/secondary path "
                         f"('{path_name}'); emitted as an ordinary relationship "
-                        f"(named-path semantics are not represented in OSI ontology)"
+                        f"(named-path semantics are not represented in Ossie ontology)"
                     )
                 elif join.get("secondary"):
                     self.warnings.append(
@@ -210,7 +210,7 @@ class OBMLtoOSIOntology:
                 concept_mappings.append(cm)
 
         # 4. Assemble the ontology document.
-        ontology_doc: dict[str, Any] = {"version": _OSI_VERSION, "name": self.model_name}
+        ontology_doc: dict[str, Any] = {"version": _OSSIE_VERSION, "name": self.model_name}
         model_desc = self.obml.get("description", "") or self.model_description
         if model_desc:
             ontology_doc["description"] = model_desc

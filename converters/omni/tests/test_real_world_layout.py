@@ -30,7 +30,7 @@ canonical `views/<name>.view.yaml` layout these converters write:
     metadata, `timeframes: []`, camelCase/underscore-edged identifiers, and
     schema names with spaces all occur.
 
-Every one of these was found in production models; the round trip through OSI
+Every one of these was found in production models; the round trip through Ossie
 must reproduce the original files exactly (same paths, same parsed content).
 """
 
@@ -38,8 +38,8 @@ import warnings
 
 import pytest
 
-from osi_omni import ConversionError, convert_omni_to_osi, convert_osi_to_omni
-from osi_omni._common import dump_yaml, load_yaml
+from ossie_omni import ConversionError, convert_omni_to_ossie, convert_ossie_to_omni
+from ossie_omni._common import dump_yaml, load_yaml
 
 
 REAL_FILES = {
@@ -51,7 +51,7 @@ REAL_FILES = {
          "join_type": "always_left",
          "on_sql": "${delighted__response.person_id} = ${delighted__person.id}",
          "relationship_type": "assumed_many_to_one"},
-        # Non-equi (range) join: valid Omni, no OSI form -- stashed.
+        # Non-equi (range) join: valid Omni, no Ossie form -- stashed.
         {"join_from_view": "delighted__response",
          "join_to_view": "github__team_membership",
          "join_type": "always_left",
@@ -65,7 +65,7 @@ REAL_FILES = {
          "on_sql": "${github__team_membership.user_id} = ${membership_owner.id} "
                    "and ${github__team_membership.org} = ${membership_owner.org}",
          "relationship_type": "many_to_one"},
-        # Second join between the same pair (name dedup on the OSI side).
+        # Second join between the same pair (name dedup on the Ossie side).
         {"join_from_view": "github__team_membership",
          "join_to_view": "delighted__person",
          "on_sql": "${github__team_membership.approver_id} = "
@@ -128,8 +128,8 @@ REAL_FILES = {
 def _roundtrip(files):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        osi_yaml = convert_omni_to_osi(files)
-        return osi_yaml, convert_osi_to_omni(osi_yaml)
+        ossie_yaml = convert_omni_to_ossie(files)
+        return ossie_yaml, convert_ossie_to_omni(ossie_yaml)
 
 
 def test_api_layout_roundtrip_is_lossless():
@@ -144,35 +144,35 @@ def test_api_layout_roundtrip_is_lossless():
 def test_qualified_view_names_come_from_reference_comment():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        osi = load_yaml(convert_omni_to_osi(REAL_FILES))["semantic_model"][0]
-    names = {d["name"] for d in osi["datasets"]}
+        ossie = load_yaml(convert_omni_to_ossie(REAL_FILES))["semantic_model"][0]
+    names = {d["name"] for d in ossie["datasets"]}
     assert "delighted__response" in names
     assert "upload" in names  # comment name wins even with a folder
     # The qualified name resolves relationship references and same-view
     # ${view.field} compound-key entries.
-    rel = osi["relationships"][0]
+    rel = ossie["relationships"][0]
     assert rel["from"] == "delighted__response"
     assert rel["to"] == "delighted__person"
-    response = next(d for d in osi["datasets"]
+    response = next(d for d in ossie["datasets"]
                     if d["name"] == "delighted__response")
     assert response["primary_key"] == ["id", "org"]
     assert response["source"] == "DELIGHTED.RESPONSE"
-    upload = next(d for d in osi["datasets"] if d["name"] == "upload")
+    upload = next(d for d in ossie["datasets"] if d["name"] == "upload")
     assert upload["source"] == '"Omni Views".upload'
 
 
-def test_unmappable_omni_features_drop_out_of_osi_but_survive():
+def test_unmappable_omni_features_drop_out_of_ossie_but_survive():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        osi = load_yaml(convert_omni_to_osi(REAL_FILES))["semantic_model"][0]
+        ossie = load_yaml(convert_omni_to_ossie(REAL_FILES))["semantic_model"][0]
     # The extends view is not a dataset; the templated dimension not a field.
-    assert "delighted__response_ext" not in {d["name"] for d in osi["datasets"]}
-    response = next(d for d in osi["datasets"]
+    assert "delighted__response_ext" not in {d["name"] for d in ossie["datasets"]}
+    response = next(d for d in ossie["datasets"]
                     if d["name"] == "delighted__response")
     assert "templated" not in {f["name"] for f in response["fields"]}
-    # The non-equi join is not an OSI relationship; the two same-pair joins get
-    # unique OSI names.
-    names = [r["name"] for r in osi["relationships"]]
+    # The non-equi join is not an Ossie relationship; the two same-pair joins get
+    # unique Ossie names.
+    names = [r["name"] for r in ossie["relationships"]]
     assert len(names) == len(set(names)) == 3
 
 
@@ -184,4 +184,4 @@ def test_duplicate_canonical_view_names_rejected():
     with pytest.raises(ConversionError, match="two view files"):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            convert_omni_to_osi(files)
+            convert_omni_to_ossie(files)
