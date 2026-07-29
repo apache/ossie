@@ -1,0 +1,237 @@
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+-->
+
+# Apache Ossie <-> Cube converter
+
+Bidirectional, offline conversion between an [Apache Ossie](https://github.com/apache/ossie)
+semantic model and a [Cube](https://cube.dev/docs/product/data-modeling/overview)
+data model. No Cube deployment, API token, or network access required.
+
+> **Status:** the **import** direction (Cube -> Ossie) is implemented. The
+> **export** direction (Ossie -> Cube) is in progress; the mapping table below
+> describes the agreed behavior for both.
+
+A Cube data model is a *directory* of YAML files rather than a single document, so
+this converter maps one Ossie YAML document to/from the Cube model layout:
+
+```
+model/cubes/<name>.yml      # one per Ossie dataset
+model/views/<name>.yml      # the view the Ossie model maps to
+```
+
+Import accepts any layout: `cubes:` and `views:` may live in any `.yml`/`.yaml`
+file at any depth, several per file, and original file paths are preserved through
+a round trip.
+
+- **Import** (`ossie-cube import`): Cube files -> Ossie. Cube features Ossie has
+  no native field for are preserved in `custom_extensions[CUBE]`, so
+  **Cube -> Ossie -> Cube is lossless**.
+- **Export** (`ossie-cube export`): Ossie -> Cube files. Ossie features with no
+  Cube slot are parked under `meta.ossie` rather than dropped -- Cube has a `meta`
+  field at every level -- so **Ossie -> Cube -> Ossie is lossless too**.
+
+Any input that breaks a [requirement](#requirements) **raises a
+`ConversionError`** -- the converter never silently drops a field or produces an
+invalid result. Losses it *can* absorb are returned as structured
+[issues](#conversion-issues) rather than printed and forgotten.
+
+## Installation
+
+```bash
+pip install apache-ossie-cube        # once published to PyPI
+# or, from a checkout of this directory:
+pip install -e .
+```
+
+The only runtime dependency is `PyYAML`. Python 3.11+.
+
+## Usage
+
+### Command line
+
+```bash
+ossie-cube import -i model/ [-o model.yaml] [--name my_model] [--view sales]
+                            [--no-strict-fanout]
+```
+
+With no `-o` the Ossie YAML goes to stdout; issues always go to stderr. `--view`
+picks which view's name/description/AI context map onto the Ossie model when the
+directory holds several. `--name` overrides the model name.
+
+### Python API
+
+```python
+from ossie_cube import convert_cube_to_ossie
+
+ossie_yaml, issues = convert_cube_to_ossie(files)   # {relative filename: YAML str}
+for issue in issues:
+    print(issue)
+```
+
+## Mapping
+
+Each row maps in both directions; the **Notes** flag where a behavior is specific
+to **import** (Cube -> Ossie) or **export** (Ossie -> Cube).
+
+| Apache Ossie | Cube | Notes |
+|---|---|---|
+| `semantic_model` | a **view** | Cube users are view-first, and Cube's agent reads `meta.ai_context` only from views and members -- so the view, not any cube, is the model boundary. |
+| `semantic_model.name` | view name | Import: the mapped view's name (override with `--name`). |
+| `model.description` / `ai_context.instructions` | view `description` / `meta.ai_context` | Import: taken from the sole view, or `--view`. |
+| dataset | `cubes[]` entry in `model/cubes/<name>.yml` | Import: a non-canonical original path is stashed and restored on export. |
+| `dataset.source` (dotted) | `sql_table` | Passed through verbatim; Cube interpolates it straight into `FROM`, so no catalog/schema split is needed. |
+| `dataset.source` (`SELECT ...`) | `sql` | Cube requires exactly one of `sql` / `sql_table`. |
+| `dataset.description` | cube `description` | |
+| `dataset.ai_context` | cube `meta.ai_context` | Preserved for the round trip, but **inert in Cube** -- its agent ignores cube-level `ai_context`. Recorded as an issue. |
+| `dataset.primary_key` | dimension(s) with `primary_key: true` | Composite = several. Export: a key column no field covers becomes a `public: false` dimension. |
+| `dataset.unique_keys` | `meta.ossie.unique_keys` | No native Cube slot; parked rather than dropped. |
+| field | `dimensions[]` entry | Export: a name that is not a valid Cube identifier is sanitized; a case-insensitive collision is an error, never a silent merge. |
+| `field.expression` | dimension `sql` | Dataset-scoped, so `{CUBE}.col` <-> `col`. Export emits `{CUBE}.column` for a raw column and `{CUBE.member}` for a declared member, and never spells the cube's own name (which would break under `extends`). |
+| `field.datatype` | dimension `type` (**required**) | `String`->`string`, `Boolean`->`boolean`, `Date`/`Time`/`DateTime`/`DateTimeTz`->`time`, `Integer`/`Decimal`/`Float`->`number`, `Opaque`->`string`. Import maps back except for `number`, where it **omits `datatype`** -- Cube collapses three Ossie types into one, and the spec says to omit rather than assert. The original `type` is stashed. |
+| `field.dimension.is_time` | `type: time` | Import sets `is_time: true` for a time dimension. |
+| `field.label` / `description` | dimension `title` / `description` | |
+| `field.ai_context.instructions` | dimension `meta.ai_context` | Cube's documented AI-only context field. |
+| — | `type: geo` dimension | An Ossie field holds one expression and a geo dimension has two, so it **splits** into `<name>_latitude` / `<name>_longitude` (`Float`). Reconstruction data rides on the latitude half. |
+| relationship | `joins[]` on a cube | `many_to_one` on cube A -> `from: A`(many), `to: B`(one). `one_to_many` is flipped so Ossie's `from` is the many side; the declared side and type are stashed so export restores the original. |
+| `from_columns` / `to_columns` | join `sql` | Only an AND-chain of equalities between two member references maps. Anything else (non-equi, range, literal, third cube) is preserved verbatim in the stash. |
+| metric | `measures[]` on the cube its expression references | Import hoists cube-scoped measures to the model level, qualifying a colliding name as `<cube>__<measure>` and stashing the original name and owning cube. |
+| `SUM`/`AVG`/`MIN`/`MAX(x)` | `type: sum`/`avg`/`min`/`max` + `sql` | |
+| `COUNT(DISTINCT x)` | `type: count_distinct` | |
+| `APPROX_COUNT_DISTINCT(x)` | `type: count_distinct_approx` | Cube resolves the warehouse-specific function itself. |
+| `COUNT(DISTINCT <pk>)` | bare `type: count` | See [Fan-out](#fan-out) -- the primary key is load-bearing here. |
+| anything else | `type: number` (calculated) | A `{other_measure}` reference is **inlined**, because that is what Cube itself does; Ossie has no metric-to-metric reference. |
+| — | measure `filters` | Folded into `CASE WHEN … THEN … END` inside the aggregate, exactly as Cube's own `applyMeasureFilters` renders it. |
+| `metric.datatype` | — | Import emits `Integer` for the count family, whose result type Cube does know, and omits it otherwise. |
+| `metric.description` / `ai_context` | measure `description` / `meta.ai_context` | |
+| `custom_extensions[CUBE]` | everything Cube-only | Import stashes; export restores -- keeping `Cube -> Ossie -> Cube` lossless. |
+| foreign-vendor `custom_extensions` | `meta.ossie.custom_extensions` | Parked so a multi-vendor Ossie model survives the round trip. |
+
+**Stashed on import** (and restored on export): the views verbatim (minus the
+natively mapped description/AI context), the mapped view's identity, original file
+paths, cube extras (`title`, `sql_alias`, `data_source`, `public`, `refresh_key`,
+`segments`, `pre_aggregations`, `hierarchies`, `access_policy`, `calendar`, ...),
+dimension extras (`format`, `currency`, `granularities`, `case`, `sub_query`,
+`order`, `aliases`, `meta`, ...), measure extras and any non-reconstructible
+measure, joins with no Ossie form, Jinja-templated members, and files with no
+Ossie form (`.js`/`.ts` models, non-model YAML).
+
+**Expression dialects**: Cube SQL is the SQL of the model's data source, and the
+Ossie dialect enum has no `CUBE` entry -- so import emits `ANSI_SQL`, and export
+prefers `ANSI_SQL` with `--dialect` prepending a warehouse dialect (e.g.
+`SNOWFLAKE` for a Snowflake-backed Cube model).
+
+## Fan-out
+
+This is the one place where Cube carries semantics an Ossie expression cannot, and
+it is handled deliberately rather than papered over.
+
+When a cube sits on the multiplied side of a join, Cube does **not** aggregate over
+the flattened join. It builds `SELECT DISTINCT <primary key> FROM <join>`, joins
+that key set back to the measure's own cube, and aggregates there -- so each source
+row is counted once. If the measures themselves span cubes that fan out, Cube
+refuses the query outright. Correctness comes from a *runtime rewrite keyed on
+declared primary keys*, and a static SQL string has no way to inherit it.
+
+So the converter emits the fan-out-safe form wherever one exists, and refuses to
+emit a silently-wrong one:
+
+| Cube measure | Ossie expression | Safe under fan-out? |
+|---|---|---|
+| bare `count` | `COUNT(DISTINCT <pk>)` | **Yes, exactly.** Cube renders `count(pk)` normally and `count(distinct pk)` when multiplied; `COUNT(DISTINCT pk)` equals both. A composite key is concatenated with `CAST` + `CONCAT`, as Cube does. |
+| `count_distinct` | `COUNT(DISTINCT x)` | Yes, inherently |
+| `count_distinct_approx` | `APPROX_COUNT_DISTINCT(x)` | Yes, inherently |
+| `min` / `max` | `MIN(x)` / `MAX(x)` | Yes -- idempotent under duplication |
+| `sum`, `avg`, `count` + `sql` | `SUM(x)`, `AVG(x)`, `COUNT(x)` | **No** |
+
+Only the last row is at risk, and only when its own cube is the `to` (one) side of
+a relationship in the model. The converter computes that from the Ossie graph and,
+**by default, refuses** -- mirroring Cube's own refusal. Pass
+`--no-strict-fanout` to emit the metric with a `FANOUT_UNSAFE_METRIC` issue
+instead, naming the metric, the dataset, and the relationship responsible.
+
+Because a bare `count` maps through the primary key, a cube carrying one **must**
+declare `primary_key: true` on a dimension; its absence is an error, not a
+different number.
+
+> Ossie has no additivity or grain declaration to record this properly -- dbt's
+> `non_additive_dimension` is the nearest precedent, and this repo's dbt converter
+> already loses the same information. Worth raising on `dev@`.
+
+## Conversion issues
+
+`convert_cube_to_ossie` returns `(yaml, IssueLog)`. Each issue carries a type, the
+element it concerns, and a detail string.
+
+| Issue type | Meaning |
+|---|---|
+| `FANOUT_UNSAFE_METRIC` | A non-idempotent aggregate on a dataset the graph fans out; see [Fan-out](#fan-out) |
+| `MULTI_STAGE_MEASURE_DROPPED` | A `multi_stage` measure (`group_by`/`reduce_by`/`time_shift`/`rank`) renders as a window function over another grain |
+| `CUBE_LEVEL_AI_CONTEXT_INERT` | Cube's agent ignores cube-level `meta.ai_context` |
+| `GEO_DIMENSION_SPLIT` | A `type: geo` dimension became two Ossie fields |
+| `TEMPLATED_MEMBER_DROPPED` | Jinja templating, or a `.js`/`.ts` model file |
+| `NO_USABLE_DIALECT` | Export: no `ANSI_SQL` or preferred-dialect expression |
+| `PARKED_IN_META` | An element preserved in the stash with no native mapping |
+
+## Requirements
+
+Conversion raises a `ConversionError` (rather than guessing or emitting something
+invalid) when an input breaks one of these:
+
+- a cube has neither or both of `sql` / `sql_table` (Cube requires exactly one);
+- a cube uses `extends` -- resolving it means reproducing Cube's definition-merge
+  semantics exactly, so it is refused rather than half-applied;
+- a bare `type: count` measure's cube declares no primary key;
+- a join names a cube that is not in the model, or an unknown `relationship`;
+- a measure has an unknown `type`, or a measure reference cycle;
+- two cubes, two views, or two derived metric names collide;
+- a dimension has an unknown `type`, or a `geo` dimension is missing
+  `latitude.sql` / `longitude.sql`;
+- there are no convertible cubes at all; the input YAML is malformed.
+
+## Notes and limitations
+
+- **YAML data models only.** `.js`/`.ts` models and Jinja-templated YAML are
+  preserved verbatim for the round trip but no cube inside them is converted --
+  matching what Cube's own `CubeSchemaConverter` does for the Rollup Designer.
+- **camelCase is normalized.** Cube accepts `sqlTable` and `sql_table` alike;
+  import normalizes to snake_case and export always emits snake_case, so a
+  camelCase source file comes back snake_cased.
+- A filter or computed operand written with bare column names (rather than
+  `{CUBE}.col`) cannot be qualified into `dataset.column` form, so it is emitted
+  as-is. Cube's own idiom uses the reference form, which converts fully.
+- View curation (`prefix`, `alias`, `includes`/`excludes`, `folders`,
+  `default_filters`, `view_group`) is stash-and-restore only; Ossie field names
+  are always *cube* member names, so prefixed view members never leak into them.
+- `type: switch` dimensions, `hierarchies`, `pre_aggregations`, `access_policy`,
+  and multiple `data_source`s have no Ossie semantics and round-trip via the stash.
+
+## Development
+
+```bash
+uv sync
+uv run pytest
+```
+
+## Future effort
+
+Both the Apache Ossie specification and Cube's data model are still evolving. As
+either side adds or changes fields, this converter will be updated to track them.
+Known next steps: the export direction, offline `extends` resolution, and a
+first-class Ossie representation for measure additivity so the fan-out caveat can
+be recorded in the model instead of an issue log.
