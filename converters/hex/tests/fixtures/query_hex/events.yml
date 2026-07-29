@@ -1,0 +1,15 @@
+id: events
+base_sql_query: |
+  SELECT id, event_ts, payload
+  FROM raw.events
+dimensions:
+  - id: id
+    type: string
+    unique: true
+  - id: event_ts
+    type: timestamp_naive
+  - id: payload
+    type: other
+measures:
+  - id: event_count
+    func: count

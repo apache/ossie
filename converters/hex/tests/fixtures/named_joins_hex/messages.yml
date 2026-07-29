@@ -1,0 +1,28 @@
+id: messages
+base_sql_table: app.messages
+dimensions:
+  - id: message_id
+    type: string
+    unique: true
+  - id: sender_id
+    type: string
+  - id: receiver_id
+    type: string
+relations:
+  - id: sender
+    target: users
+    type: many_to_one
+    join_sql: "${sender_id} = ${sender.id}"
+  - id: receiver
+    target: users
+    type: many_to_one
+    join_sql: "${receiver_id} = ${receiver.id}"
+---
+id: users
+base_sql_table: app.users
+dimensions:
+  - id: id
+    type: string
+    unique: true
+  - id: name
+    type: string

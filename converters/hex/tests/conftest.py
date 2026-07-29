@@ -15,13 +15,35 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Bidirectional converter between Apache Ossie and Hex."""
+from pathlib import Path
 
-from ._common import ConversionError, ConversionWarning
-from .hex_to_ossie import convert_hex_to_ossie
+import pytest
 
-__all__ = [
-    "ConversionError",
-    "ConversionWarning",
-    "convert_hex_to_ossie",
-]
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+@pytest.fixture
+def minimal_hex_path() -> str:
+    return str(FIXTURES / "minimal_hex")
+
+
+@pytest.fixture
+def named_joins_hex_path() -> str:
+    return str(FIXTURES / "named_joins_hex")
+
+
+@pytest.fixture
+def query_hex_path() -> str:
+    return str(FIXTURES / "query_hex")
+
+
+@pytest.fixture(
+    params=[
+        pytest.param(str(FIXTURES / "minimal_hex"), id="minimal_hex"),
+        pytest.param(str(FIXTURES / "named_joins_hex"), id="named_joins_hex"),
+        pytest.param(str(FIXTURES / "query_hex"), id="query_hex"),
+    ]
+)
+def hex_project_path(request: pytest.FixtureRequest) -> str:
+    assert isinstance(request.param, str)
+    return request.param

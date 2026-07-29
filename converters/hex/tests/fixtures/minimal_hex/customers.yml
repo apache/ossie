@@ -1,0 +1,10 @@
+id: customers
+base_sql_table: analytics.public.customers
+dimensions:
+  - id: customer_id
+    type: string
+    unique: true
+  - id: email
+    type: string
+  - id: created_at
+    type: timestamp_tz

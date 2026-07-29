@@ -39,6 +39,16 @@ pip install ossie-hex
 
 Requires Python 3.11 or newer.
 
+## Usage
+
+### Python API
+
+```python
+from ossie_hex import convert_hex_to_ossie
+
+ossie_yaml, warnings = convert_hex_to_ossie("hex_project/", dialect="snowflake")
+```
+
 ## Conversion
 
 ### Data types
