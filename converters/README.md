@@ -75,6 +75,7 @@ The Ossie specification currently defines extensions for the following vendors:
 | `DATABRICKS` | Databricks semantic layer |
 | `OMNI` | Omni semantic model |
 | `WISDOM` | WisdomAI domain |
+| `NVIDIA_GSF` | NVIDIA Generative Semantic Fabric standalone YAML |
 
 Each vendor may define custom extensions (via the `custom_extensions` field in the Ossie spec) to carry vendor-specific metadata that does not have an equivalent in the core specification.
 

@@ -1,0 +1,143 @@
+data_layer:
+  databases:
+  - id: 7667e398-1abf-5314-9d5d-f91a6d5d0887
+    dialect: ''
+    schemas:
+    - id: f6930fd5-1fa4-518a-93e4-2eb9b68ef7a3
+      name: public
+      database_name: analytics
+      tables:
+      - id: 23494a50-4085-5c50-b824-3777fc32650a
+        name: customers
+        description: ''
+        pk:
+        - customer_id
+        type: ''
+        columns:
+        - id: d2dc27f6-a3a9-5d47-a081-2693cf29fc47
+          name: customer_id
+          description: ''
+          type: ''
+          sample_values: []
+          is_nullable: false
+          is_unique: true
+        - id: 8842de13-4e63-5140-9bd1-1f7a75ca9ca4
+          name: name
+          description: ''
+          type: ''
+          sample_values: []
+          is_nullable: true
+          is_unique: false
+      - id: 6863d3fc-fa02-50cd-8ec8-d026ed4bfc61
+        name: orders
+        description: Orders
+        pk:
+        - order_id
+        type: ''
+        columns:
+        - id: a65e4cd2-521c-5146-9e48-eb9418e73007
+          name: customer_id
+          description: ''
+          type: ''
+          sample_values: []
+          is_nullable: true
+          is_unique: false
+        - id: 8a9e2c90-d32e-5df3-a9cc-a599aaaf6cfc
+          name: order_id
+          description: ''
+          type: ''
+          sample_values: []
+          is_nullable: false
+          is_unique: true
+        - id: 91180d56-8e70-57ea-8973-3f8315741a7e
+          name: order_date
+          description: ''
+          type: ''
+          sample_values: []
+          is_nullable: true
+          is_unique: false
+        - id: 6db16cad-de44-50f4-8225-3c943e185f72
+          name: subtotal
+          description: ''
+          type: ''
+          sample_values: []
+          is_nullable: true
+          is_unique: false
+        - id: 94e89a19-b0e4-597d-a8e5-4e4f2c5432f9
+          name: discount
+          description: ''
+          type: ''
+          sample_values: []
+          is_nullable: true
+          is_unique: false
+  foreign_keys:
+  - source_column_id: a65e4cd2-521c-5146-9e48-eb9418e73007
+    target_column_id: d2dc27f6-a3a9-5d47-a081-2693cf29fc47
+  joins:
+  - source_table_id: 6863d3fc-fa02-50cd-8ec8-d026ed4bfc61
+    target_table_id: 23494a50-4085-5c50-b824-3777fc32650a
+    join_columns:
+    - source: customer_id
+      target: customer_id
+semantic_layer:
+  terms:
+  - id: e121e6fb-82bc-5daf-9926-5e0c42a6fca8
+    name: orders
+    description: Orders
+    represents:
+    - 6863d3fc-fa02-50cd-8ec8-d026ed4bfc61
+    columns_attributes:
+    - id: 97035227-36d5-564a-ba32-78d8f73a2ddc
+      name: order_id
+      description: ''
+      column_id: 8a9e2c90-d32e-5df3-a9cc-a599aaaf6cfc
+    - id: ec03aaa3-7abf-5484-9f13-1590e7cb37a5
+      name: customer_id
+      description: ''
+      column_id: a65e4cd2-521c-5146-9e48-eb9418e73007
+    - id: 74dc494d-d54d-55f0-ae8e-fa5826da2c3b
+      name: order_date
+      description: ''
+      column_id: 91180d56-8e70-57ea-8973-3f8315741a7e
+  - id: 4ca1db6b-c53a-5f97-949a-b466a92f5ce7
+    name: customers
+    description: ''
+    represents:
+    - 23494a50-4085-5c50-b824-3777fc32650a
+    columns_attributes:
+    - id: 0d6c3859-c00a-57d1-b297-e385ff6e1162
+      name: customer_id
+      description: ''
+      column_id: d2dc27f6-a3a9-5d47-a081-2693cf29fc47
+    - id: 6a1c1af4-f808-5b2e-86a2-1eae3b7c79d3
+      name: customer_name
+      description: ''
+      column_id: 8842de13-4e63-5140-9bd1-1f7a75ca9ca4
+  semantic_fks:
+  - column_attribute_id: 0d6c3859-c00a-57d1-b297-e385ff6e1162
+    column_id: a65e4cd2-521c-5146-9e48-eb9418e73007
+  sql_attributes:
+    manual:
+    - id: 02c68281-7f5c-59dc-8660-d3bef42fe78c
+      name: net_total
+      description: ''
+      sql: SELECT subtotal - discount AS "net_total" FROM "analytics"."public"."orders"
+        AS "orders"
+      sql_column_is:
+      - 6db16cad-de44-50f4-8225-3c943e185f72
+      - 94e89a19-b0e4-597d-a8e5-4e4f2c5432f9
+      term_id: e121e6fb-82bc-5daf-9926-5e0c42a6fca8
+    table: []
+    sql: []
+    bridge_table: []
+  custom_analyses:
+  - id: fde1d7f0-2234-5f63-8713-176b579be785
+    name: revenue_per_customer
+    description: Revenue per customer
+    sql: SELECT SUM(orders.subtotal) / COUNT(DISTINCT customers.customer_id) AS "revenue_per_customer"
+      FROM "analytics"."public"."orders" AS "orders" JOIN "analytics"."public"."customers"
+      AS "customers" ON "orders"."customer_id" = "customers"."customer_id"
+    sql_column_is:
+    - 6db16cad-de44-50f4-8225-3c943e185f72
+    - d2dc27f6-a3a9-5d47-a081-2693cf29fc47
+zones: []
