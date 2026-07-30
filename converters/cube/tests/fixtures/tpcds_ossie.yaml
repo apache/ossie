@@ -1,0 +1,645 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+# The Ossie form of tpcds_cube/, asserted as a whole-document snapshot.
+# Regenerate with: uv run ossie-cube import -i tests/fixtures/tpcds_cube
+
+version: 0.2.0.dev0
+semantic_model:
+- name: tpcds_retail_model
+  description: TPC-DS retail semantic model for sales and customer analytics
+  ai_context:
+    instructions: Use this semantic model for retail analytics. It provides comprehensive
+      sales, customer, product, and store data from the TPC-DS benchmark. The model
+      supports time-based analysis, customer segmentation, product performance, and
+      store operations metrics.
+  datasets:
+  - name: store_sales
+    source: tpcds.public.store_sales
+    description: Fact table containing all store sales transactions
+    ai_context:
+      synonyms:
+      - sales transactions
+      - store purchases
+      - retail sales
+      - POS data
+    unique_keys:
+    - - ss_item_sk
+      - ss_ticket_number
+    fields:
+    - name: ss_sold_date_sk
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: ss_sold_date_sk
+      description: Foreign key to date dimension
+      ai_context:
+        synonyms:
+        - sale date
+        - transaction date
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "ss_sold_date_sk", "type": "number"}'
+    - name: ss_item_sk
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: ss_item_sk
+      description: Foreign key to item dimension
+      ai_context:
+        synonyms:
+        - product
+        - item
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "ss_item_sk", "type": "number"}'
+    - name: ss_customer_sk
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: ss_customer_sk
+      description: Foreign key to customer dimension
+      ai_context:
+        synonyms:
+        - customer
+        - buyer
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "ss_customer_sk", "type": "number"}'
+    - name: ss_store_sk
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: ss_store_sk
+      description: Foreign key to store dimension
+      ai_context:
+        synonyms:
+        - store
+        - location
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "ss_store_sk", "type": "number"}'
+    - name: ss_quantity
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: ss_quantity
+      description: Quantity of items sold
+      ai_context:
+        synonyms:
+        - units sold
+        - quantity
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "ss_quantity", "type": "number"}'
+    - name: ss_sales_price
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: ss_sales_price
+      description: Sales price per unit
+      ai_context:
+        synonyms:
+        - unit price
+        - price
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "ss_sales_price", "type": "number"}'
+    - name: ss_ext_sales_price
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: ss_ext_sales_price
+      description: Extended sales price (quantity * price)
+      ai_context:
+        synonyms:
+        - total price
+        - line total
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "ss_ext_sales_price", "type": "number"}'
+    - name: ss_net_profit
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: ss_net_profit
+      description: Net profit from the sale
+      ai_context:
+        synonyms:
+        - profit
+        - margin
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "ss_net_profit", "type": "number"}'
+    - name: ss_ticket_number
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: ss_ticket_number
+      datatype: String
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "ss_ticket_number", "public": false}'
+    primary_key:
+    - ss_item_sk
+    - ss_ticket_number
+  - name: date_dim
+    source: tpcds.public.date_dim
+    description: Date dimension with calendar attributes
+    ai_context:
+      synonyms:
+      - calendar
+      - dates
+      - time periods
+    unique_keys:
+    - - d_date_sk
+    fields:
+    - name: d_date_sk
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: d_date_sk
+      description: Surrogate key for date
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "d_date_sk", "type": "number"}'
+    - name: d_date
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: d_date
+      datatype: DateTime
+      dimension:
+        is_time: true
+      description: Actual date value
+      ai_context:
+        synonyms:
+        - date
+        - calendar date
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "d_date"}'
+    - name: d_year
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: d_year
+      description: Year
+      ai_context:
+        synonyms:
+        - year
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "d_year", "type": "number"}'
+    - name: d_quarter_name
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: d_quarter_name
+      datatype: DateTime
+      dimension:
+        is_time: true
+      description: Quarter name (e.g., 2024Q1)
+      ai_context:
+        synonyms:
+        - quarter
+        - fiscal quarter
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "d_quarter_name"}'
+    - name: d_month_name
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: d_month_name
+      datatype: DateTime
+      dimension:
+        is_time: true
+      description: Month name
+      ai_context:
+        synonyms:
+        - month
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "d_month_name"}'
+    primary_key:
+    - d_date_sk
+  - name: customer
+    source: tpcds.public.customer
+    description: Customer dimension with demographic information
+    ai_context:
+      synonyms:
+      - customers
+      - shoppers
+      - buyers
+    unique_keys:
+    - - c_customer_sk
+    fields:
+    - name: c_customer_sk
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: c_customer_sk
+      description: Surrogate key for customer
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "c_customer_sk", "type": "number"}'
+    - name: c_customer_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: c_customer_id
+      datatype: String
+      description: Business key for customer
+      ai_context:
+        synonyms:
+        - customer ID
+        - customer number
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "c_customer_id"}'
+    - name: c_first_name
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: c_first_name
+      datatype: String
+      description: Customer first name
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "c_first_name"}'
+    - name: c_last_name
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: c_last_name
+      datatype: String
+      description: Customer last name
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "c_last_name"}'
+    - name: customer_full_name
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: c_first_name || ' ' || c_last_name
+      datatype: String
+      description: Customer full name (computed field)
+      ai_context:
+        synonyms:
+        - full name
+        - customer name
+    - name: c_email_address
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: c_email_address
+      datatype: String
+      description: Customer email address
+      ai_context:
+        synonyms:
+        - email
+        - contact
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "c_email_address"}'
+    primary_key:
+    - c_customer_sk
+  - name: item
+    source: tpcds.public.item
+    description: Item/Product dimension with product attributes
+    ai_context:
+      synonyms:
+      - products
+      - items
+      - merchandise
+    unique_keys:
+    - - i_item_sk
+    fields:
+    - name: i_item_sk
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: i_item_sk
+      description: Surrogate key for item
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "i_item_sk", "type": "number"}'
+    - name: i_item_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: i_item_id
+      datatype: String
+      description: Business key for item
+      ai_context:
+        synonyms:
+        - item ID
+        - product ID
+        - SKU
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "i_item_id"}'
+    - name: i_item_desc
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: i_item_desc
+      datatype: String
+      description: Item description
+      ai_context:
+        synonyms:
+        - product description
+        - item name
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "i_item_desc"}'
+    - name: i_brand
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: i_brand
+      datatype: String
+      description: Brand name
+      ai_context:
+        synonyms:
+        - brand
+        - manufacturer
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "i_brand"}'
+    - name: i_category
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: i_category
+      datatype: String
+      description: Item category
+      ai_context:
+        synonyms:
+        - product category
+        - department
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "i_category"}'
+    - name: i_current_price
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: i_current_price
+      description: Current price of the item
+      ai_context:
+        synonyms:
+        - price
+        - list price
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "i_current_price", "type": "number"}'
+    primary_key:
+    - i_item_sk
+  - name: store
+    source: tpcds.public.store
+    description: Store dimension with location and store attributes
+    ai_context:
+      synonyms:
+      - stores
+      - retail locations
+      - branches
+    unique_keys:
+    - - s_store_id
+    fields:
+    - name: s_store_sk
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: s_store_sk
+      description: Surrogate key for store
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "s_store_sk", "type": "number"}'
+    - name: s_store_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: s_store_id
+      datatype: String
+      description: Business key for store
+      ai_context:
+        synonyms:
+        - store ID
+        - store number
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "s_store_id"}'
+    - name: s_store_name
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: s_store_name
+      datatype: String
+      description: Store name
+      ai_context:
+        synonyms:
+        - store name
+        - location name
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "s_store_name"}'
+    - name: s_city
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: s_city
+      datatype: String
+      description: City where store is located
+      ai_context:
+        synonyms:
+        - city
+        - location
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "s_city"}'
+    - name: s_state
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: s_state
+      datatype: String
+      description: State where store is located
+      ai_context:
+        synonyms:
+        - state
+        - region
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "s_state"}'
+    - name: s_number_employees
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: s_number_employees
+      description: Number of employees at the store
+      ai_context:
+        synonyms:
+        - employee count
+        - staff size
+      custom_extensions:
+      - vendor_name: CUBE
+        data: '{"_v": 1, "sql": "s_number_employees", "type": "number"}'
+    primary_key:
+    - s_store_sk
+  relationships:
+  - name: store_sales_to_date_dim
+    from: store_sales
+    to: date_dim
+    from_columns:
+    - ss_sold_date_sk
+    to_columns:
+    - d_date_sk
+    custom_extensions:
+    - vendor_name: CUBE
+      data: '{"_v": 1, "declared_on": "store_sales", "relationship": "many_to_one"}'
+  - name: store_sales_to_customer
+    from: store_sales
+    to: customer
+    from_columns:
+    - ss_customer_sk
+    to_columns:
+    - c_customer_sk
+    custom_extensions:
+    - vendor_name: CUBE
+      data: '{"_v": 1, "declared_on": "store_sales", "relationship": "many_to_one"}'
+  - name: store_sales_to_item
+    from: store_sales
+    to: item
+    from_columns:
+    - ss_item_sk
+    to_columns:
+    - i_item_sk
+    custom_extensions:
+    - vendor_name: CUBE
+      data: '{"_v": 1, "declared_on": "store_sales", "relationship": "many_to_one"}'
+  - name: store_sales_to_store
+    from: store_sales
+    to: store
+    from_columns:
+    - ss_store_sk
+    to_columns:
+    - s_store_sk
+    custom_extensions:
+    - vendor_name: CUBE
+      data: '{"_v": 1, "declared_on": "store_sales", "relationship": "many_to_one"}'
+  metrics:
+  - name: total_sales
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(store_sales.ss_ext_sales_price)
+    description: Total sales revenue across all transactions
+    ai_context:
+      synonyms:
+      - total revenue
+      - gross sales
+      - sales amount
+    custom_extensions:
+    - vendor_name: CUBE
+      data: '{"_v": 1, "cube": "store_sales", "sql": "{CUBE.ss_ext_sales_price}"}'
+  - name: total_profit
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(store_sales.ss_net_profit)
+    description: Total net profit from store sales
+    ai_context:
+      synonyms:
+      - net profit
+      - total earnings
+      - profit
+    custom_extensions:
+    - vendor_name: CUBE
+      data: '{"_v": 1, "cube": "store_sales", "sql": "{CUBE.ss_net_profit}"}'
+  - name: customer_lifetime_value
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(store_sales.ss_ext_sales_price) / COUNT(DISTINCT customer.c_customer_sk)
+    description: Average lifetime sales value per customer
+    ai_context:
+      synonyms:
+      - CLV
+      - LTV
+      - customer value
+      - lifetime revenue
+    custom_extensions:
+    - vendor_name: CUBE
+      data: '{"_v": 1, "cube": "store_sales", "measure": {"name": "customer_lifetime_value",
+        "sql": "SUM({CUBE.ss_ext_sales_price}) / COUNT(DISTINCT {customer.c_customer_sk})",
+        "type": "number"}}'
+  - name: sales_by_brand
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(store_sales.ss_ext_sales_price)
+    description: Total sales by brand (requires grouping by item.i_brand)
+    ai_context:
+      synonyms:
+      - brand sales
+      - brand performance
+      - brand revenue
+    custom_extensions:
+    - vendor_name: CUBE
+      data: '{"_v": 1, "cube": "store_sales", "sql": "{CUBE.ss_ext_sales_price}"}'
+  - name: store_productivity
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(store_sales.ss_ext_sales_price) / NULLIF(SUM(store.s_number_employees),
+          0)
+    description: Sales per employee across stores
+    ai_context:
+      synonyms:
+      - sales per employee
+      - employee productivity
+      - revenue per employee
+    custom_extensions:
+    - vendor_name: CUBE
+      data: '{"_v": 1, "cube": "store_sales", "measure": {"name": "store_productivity",
+        "sql": "SUM({CUBE.ss_ext_sales_price}) / NULLIF(SUM({store.s_number_employees}),
+        0)", "type": "number"}}'
+  custom_extensions:
+  - vendor_name: CUBE
+    data: '{"_v": 1, "views": {"tpcds_retail_model": {"name": "tpcds_retail_model",
+      "cubes": [{"join_path": "store_sales", "includes": "*"}, {"join_path": "store_sales.date_dim",
+      "includes": "*"}, {"join_path": "store_sales.customer", "includes": "*"}, {"join_path":
+      "store_sales.item", "includes": "*"}, {"join_path": "store_sales.store", "includes":
+      "*"}]}}, "mapped_view": "tpcds_retail_model"}'
+  - vendor_name: SALESFORCE
+    data: |
+      {
+        "tableau_workbook_id": "tpcds_retail_dashboard",
+        "einstein_enabled": true,
+        "crm_sync": {
+          "enabled": true,
+          "sync_frequency": "daily",
+          "customer_mapping": "customer.c_customer_id -> Account.AccountNumber"
+        },
+        "tableau_semantics": {
+          "published": true,
+          "version": "0.1.1"
+        }
+      }
+  - vendor_name: DBT
+    data: '{"project_name": "tpcds_analytics", "models_path": "models/semantic"}'

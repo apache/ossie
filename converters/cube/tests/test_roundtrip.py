@@ -26,7 +26,8 @@
 import json
 
 import pytest
-from _util import REPO_ROOT, load_fixture_dir, parse, parse_files
+from _util import (REPO_ROOT, canon, load_fixture, load_fixture_dir, parse,
+                   parse_files)
 
 from ossie_cube import convert_cube_to_ossie, convert_ossie_to_cube
 
@@ -45,6 +46,32 @@ def test_cube_roundtrip_is_lossless(fixture):
     ossie, _ = convert_cube_to_ossie(files)
     files2, _ = convert_ossie_to_cube(ossie)
     assert parse_files(files2) == parse_files(files)
+
+
+@pytest.mark.parametrize("cube_dir,ossie_file", [
+    ("fixtureA_cube", "fixtureA_ossie.yaml"),
+    ("tpcds_cube", "tpcds_ossie.yaml"),
+])
+def test_import_matches_the_committed_ossie_fixture(cube_dir, ossie_file):
+    """Whole-document snapshot, so an unintended change anywhere in the output shows
+    up as a readable diff rather than slipping past field-level assertions.
+
+    Regenerate with `ossie-cube import -i tests/fixtures/<cube_dir>` when a change
+    to the output is intended.
+    """
+    ossie, _ = convert_cube_to_ossie(load_fixture_dir(cube_dir))
+    assert canon(parse(ossie)) == canon(parse(load_fixture(ossie_file)))
+
+
+@pytest.mark.parametrize("cube_dir,ossie_file", [
+    ("fixtureA_cube", "fixtureA_ossie.yaml"),
+    ("tpcds_cube", "tpcds_ossie.yaml"),
+])
+def test_export_of_the_ossie_fixture_matches_the_cube_fixture(cube_dir, ossie_file):
+    """The same snapshot in the other direction: the committed Ossie fixture has to
+    export back to the committed Cube fixture."""
+    files, _ = convert_ossie_to_cube(load_fixture(ossie_file))
+    assert parse_files(files) == parse_files(load_fixture_dir(cube_dir))
 
 
 @pytest.mark.parametrize("fixture", FIXTURES)
@@ -74,7 +101,7 @@ def test_ossie_roundtrip_is_lossless(fixture):
 def test_hand_authored_ossie_gets_a_generated_view():
     """A model with no stashed views is not from Cube, so export has to invent the
     view -- the model boundary Cube users work with."""
-    ossie = _HAND_AUTHORED
+    ossie = load_fixture("hand_authored_ossie.yaml")
     files, _ = convert_ossie_to_cube(ossie)
     assert set(files) == {
         "model/cubes/orders.yml", "model/cubes/customers.yml",
@@ -91,7 +118,7 @@ def test_hand_authored_ossie_gets_a_generated_view():
 
 
 def test_hand_authored_ossie_survives_the_round_trip():
-    files, _ = convert_ossie_to_cube(_HAND_AUTHORED)
+    files, _ = convert_ossie_to_cube(load_fixture("hand_authored_ossie.yaml"))
     ossie2, _ = convert_cube_to_ossie(files)
     model = parse(ossie2)["semantic_model"][0]
     assert model["name"] == "ecommerce"
@@ -106,7 +133,7 @@ def test_hand_authored_ossie_survives_the_round_trip():
 def test_ossie_only_constructs_are_parked_not_dropped():
     """`unique_keys` and a foreign vendor's extensions have no Cube field, so they
     ride under `meta.ossie` and come back intact."""
-    files, _ = convert_ossie_to_cube(_HAND_AUTHORED)
+    files, _ = convert_ossie_to_cube(load_fixture("hand_authored_ossie.yaml"))
     orders = parse(files["model/cubes/orders.yml"])["cubes"][0]
     parked = orders["meta"]["ossie"]
     assert parked["unique_keys"] == [["order_number"]]
@@ -117,78 +144,3 @@ def test_ossie_only_constructs_are_parked_not_dropped():
     assert ds["orders"]["unique_keys"] == [["order_number"]]
     vendors = {e["vendor_name"] for e in ds["orders"]["custom_extensions"]}
     assert "SNOWFLAKE" in vendors
-
-
-_HAND_AUTHORED = """
-version: 0.2.0.dev0
-semantic_model:
-- name: ecommerce
-  description: Orders and customers
-  ai_context:
-    instructions: Use for sales analysis.
-    synonyms:
-    - sales
-    - purchases
-  datasets:
-  - name: orders
-    source: sales.public.orders
-    primary_key:
-    - id
-    unique_keys:
-    - - order_number
-    fields:
-    - name: id
-      expression:
-        dialects:
-        - dialect: ANSI_SQL
-          expression: id
-      datatype: Integer
-    - name: customer_id
-      expression:
-        dialects:
-        - dialect: ANSI_SQL
-          expression: customer_id
-      datatype: Integer
-    - name: ordered_at
-      expression:
-        dialects:
-        - dialect: ANSI_SQL
-          expression: ordered_at
-      datatype: Date
-    custom_extensions:
-    - vendor_name: SNOWFLAKE
-      data: '{"warehouse": "ANALYTICS_WH"}'
-  - name: customers
-    source: sales.public.customers
-    primary_key:
-    - id
-    fields:
-    - name: id
-      expression:
-        dialects:
-        - dialect: ANSI_SQL
-          expression: id
-      datatype: Integer
-    - name: email
-      expression:
-        dialects:
-        - dialect: ANSI_SQL
-          expression: LOWER(email)
-      datatype: String
-  relationships:
-  - name: orders_to_customers
-    from: orders
-    to: customers
-    from_columns:
-    - customer_id
-    to_columns:
-    - id
-  metrics:
-  - name: total_revenue
-    expression:
-      dialects:
-      - dialect: ANSI_SQL
-        expression: SUM(orders.amount)
-    description: Total revenue
-    datatype: Decimal
-"""
