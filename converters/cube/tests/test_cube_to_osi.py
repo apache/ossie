@@ -360,7 +360,7 @@ def test_multi_stage_measure_is_dropped_with_an_issue():
     }
     out, issues = convert_cube_to_ossie(files)
     assert "metrics" not in model_of(out)
-    assert issues.of_type(IssueType.MULTI_STAGE_MEASURE_DROPPED)
+    assert issues.of_type(IssueType.MULTI_STAGE_MEASURE_PARKED)
 
 
 # --- fan-out --------------------------------------------------------------------

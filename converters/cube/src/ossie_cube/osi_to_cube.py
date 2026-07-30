@@ -303,8 +303,14 @@ def _build_cube(ds, cname, dim_names, inline_sql, joins, measures, dialect,
         joins.insert(min(item.get("index", 0), len(joins)), item["join"])
     if joins:
         cube["joins"] = joins
+    measures = [_ordered(m, _MEASURE_KEY_ORDER) for m in (measures or [])]
+    # Measures a prior import could not express in Ossie (multi-stage ones) go back
+    # at their original indices, interleaved with the ones rebuilt from metrics.
+    for item in sorted(stash.get("extra_measures") or [],
+                       key=lambda x: x.get("index", 0)):
+        measures.insert(min(item.get("index", 0), len(measures)), item["measure"])
     if measures:
-        cube["measures"] = [_ordered(m, _MEASURE_KEY_ORDER) for m in measures]
+        cube["measures"] = measures
 
     for key, value in cube_extras.items():
         cube[key] = value
@@ -632,16 +638,21 @@ def _measure_from_expression(expr, target, mname, stash, members, inline_sql_by_
                 measure["type"] = "count"
                 return measure
             func = "COUNT_DISTINCT"
-        if func == "COUNT" and inner == "*":
-            measure["type"] = "count"
-            return measure
-        agg = OSSIE_FUNC_TO_AGG.get(func) or ("count" if func == "COUNT" else None)
-        if agg is not None:
-            measure["sql"] = stash.get("sql") or ossie_expr_to_cube_sql(
-                inner, target, members, sanitized,
-                inline_sql=inline_sql_by_cube)
-            measure["type"] = agg
-            return measure
+        # `COUNT(*)` deliberately falls through to the calculated measure below.
+        # A bare Cube `type: count` is this converter's representation of
+        # `COUNT(DISTINCT <primary key>)` -- handled above -- so emitting one here
+        # would round-trip back as a different expression, and on a dataset with no
+        # primary key it would produce a measure the importer refuses. Cube renders
+        # `type: number` with `count(*)` natively (BaseQuery special-cases exactly
+        # that pair), so the expression survives intact either way.
+        if not (func == "COUNT" and inner == "*"):
+            agg = OSSIE_FUNC_TO_AGG.get(func) or ("count" if func == "COUNT" else None)
+            if agg is not None:
+                measure["sql"] = stash.get("sql") or ossie_expr_to_cube_sql(
+                    inner, target, members, sanitized,
+                    inline_sql=inline_sql_by_cube)
+                measure["type"] = agg
+                return measure
 
     # A ratio, a window expression, or a multi-dataset aggregate: Cube expresses
     # these as a calculated measure whose sql carries the aggregation.

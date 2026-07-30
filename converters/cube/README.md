@@ -228,7 +228,7 @@ element it concerns, and a detail string.
 | Issue type | Meaning |
 |---|---|
 | `FANOUT_UNSAFE_METRIC` | A non-idempotent aggregate on a dataset the graph fans out; see [Fan-out](#fan-out) |
-| `MULTI_STAGE_MEASURE_DROPPED` | A `multi_stage` measure (`group_by`/`reduce_by`/`time_shift`/`rank`) renders as a window function over another grain |
+| `MULTI_STAGE_MEASURE_PARKED` | A `multi_stage` measure (`group_by`/`reduce_by`/`time_shift`/`rank`) renders as a window function over another grain, so it gets no `metrics` entry — the original is preserved verbatim in the dataset's stash and restored on export |
 | `CUBE_LEVEL_AI_CONTEXT_INERT` | Cube's agent ignores cube-level `meta.ai_context` |
 | `GEO_DIMENSION_SPLIT` | A `type: geo` dimension became two Ossie fields |
 | `TEMPLATED_FILE_SKIPPED` | Jinja templating anywhere in a file, or a `.js`/`.ts` model file. Detected per file, as Cube's own tooling does, so the file is preserved whole rather than half-converted |

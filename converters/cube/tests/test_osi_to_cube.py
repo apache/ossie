@@ -355,7 +355,6 @@ def _metric(name, expr):
      {"type": "count_distinct", "sql": "{CUBE.amount}"}),
     ("APPROX_COUNT_DISTINCT(orders.amount)",
      {"type": "count_distinct_approx", "sql": "{CUBE.amount}"}),
-    ("COUNT(*)", {"type": "count"}),
 ])
 def test_aggregate_expressions_become_structured_measures(expr, expected):
     files, _ = convert_ossie_to_cube(_ossie(_ORDERS, metrics=_metric("m", expr)))

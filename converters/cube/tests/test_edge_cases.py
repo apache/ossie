@@ -156,6 +156,140 @@ def test_count_over_an_expression_is_fanout_unsafe():
     assert issues.of_type(IssueType.FANOUT_UNSAFE_METRIC)
 
 
+_MULTI_STAGE = _files(orders=(
+    "cubes:\n"
+    "  - name: orders\n"
+    "    sql_table: public.orders\n"
+    "    dimensions:\n"
+    "      - name: id\n"
+    "        sql: id\n"
+    "        type: number\n"
+    "        primary_key: true\n"
+    "    measures:\n"
+    "      - name: revenue\n"
+    "        sql: amount\n"
+    "        type: sum\n"
+    "      - name: rolling\n"
+    "        sql: amount\n"
+    "        type: sum\n"
+    "        multi_stage: true\n"
+    "        rolling_window:\n"
+    "          trailing: 3 month\n"
+    "      - name: cnt\n"
+    "        type: count\n"
+))
+
+
+def test_a_multi_stage_measure_is_not_an_ossie_metric():
+    """It renders as a window function over another grain, which an Ossie expression
+    has no form for -- so it gets no `metrics` entry, and that is reported."""
+    ossie, issues = convert_cube_to_ossie(_MULTI_STAGE)
+    assert [m["name"] for m in model_of(ossie)["metrics"]] == ["revenue", "cnt"]
+    parked = issues.of_type(IssueType.MULTI_STAGE_MEASURE_PARKED)
+    assert [i.element_name for i in parked] == ["orders.rolling"]
+
+
+def test_a_multi_stage_measure_survives_the_round_trip_in_place():
+    """It used to be lost outright: no metric, and `measures` is a natively-mapped key
+    so `cube_extras` did not carry it either -- while the issue claimed it had been
+    preserved. Now it rides on the dataset's stash with its position, like an
+    unconvertible join, and comes back interleaved with the rebuilt measures."""
+    ossie, _ = convert_cube_to_ossie(_MULTI_STAGE)
+    stashed = stash_of(by_name(model_of(ossie)["datasets"])["orders"])
+    assert stashed["extra_measures"] == [
+        {"index": 1, "measure": {
+            "name": "rolling", "sql": "amount", "type": "sum",
+            "multi_stage": True, "rolling_window": {"trailing": "3 month"}}}]
+
+    back, _ = convert_ossie_to_cube(ossie)
+    assert parse_files(back) == parse_files(_MULTI_STAGE)
+    # Order matters: it goes back between the two ordinary measures.
+    names = [m["name"] for m in parse(
+        back["model/cubes/orders.yml"])["cubes"][0]["measures"]]
+    assert names == ["revenue", "rolling", "cnt"]
+
+
+def test_count_star_is_not_emitted_as_a_bare_cube_count():
+    """A bare Cube `type: count` is this converter's form for
+    `COUNT(DISTINCT <pk>)`. Emitting one for `COUNT(*)` round-tripped back as a
+    different expression, and on a dataset with no primary key produced a measure
+    the importer refuses -- export generating what its own import rejects."""
+    ossie = (
+        "version: 0.2.0.dev0\n"
+        "semantic_model:\n"
+        "- name: shop\n"
+        "  datasets:\n"
+        "  - name: orders\n"
+        "    source: public.orders\n"
+        "  metrics:\n"
+        "  - name: n\n"
+        "    expression:\n"
+        "      dialects:\n"
+        "      - dialect: ANSI_SQL\n"
+        "        expression: COUNT(*)\n"
+    )
+    files, _ = convert_ossie_to_cube(ossie)
+    measure = parse(files["model/cubes/orders.yml"])["cubes"][0]["measures"][0]
+    assert measure == {"name": "n", "sql": "COUNT(*)", "type": "number"}
+
+    # And it survives the trip back, without a primary key anywhere in sight.
+    ossie2, _ = convert_cube_to_ossie(files)
+    assert expr_of(model_of(ossie2)["metrics"][0]) == "COUNT(*)"
+
+
+def test_field_and_metric_foreign_extensions_survive_the_round_trip():
+    """Foreign-vendor extensions are parked under `meta.ossie` at every level, but
+    only datasets were reading them back -- so field- and metric-level ones were
+    parked and then silently dropped on re-import."""
+    ossie = (
+        "version: 0.2.0.dev0\n"
+        "semantic_model:\n"
+        "- name: shop\n"
+        "  datasets:\n"
+        "  - name: orders\n"
+        "    source: public.orders\n"
+        "    fields:\n"
+        "    - name: status\n"
+        "      expression:\n"
+        "        dialects:\n"
+        "        - dialect: ANSI_SQL\n"
+        "          expression: status\n"
+        "      datatype: String\n"
+        "      custom_extensions:\n"
+        "      - vendor_name: SNOWFLAKE\n"
+        "        data: '{\"collation\": \"en\"}'\n"
+        "    - name: amount\n"
+        "      expression:\n"
+        "        dialects:\n"
+        "        - dialect: ANSI_SQL\n"
+        "          expression: amount\n"
+        "      datatype: Decimal\n"
+        "  metrics:\n"
+        "  - name: total\n"
+        "    expression:\n"
+        "      dialects:\n"
+        "      - dialect: ANSI_SQL\n"
+        "        expression: SUM(orders.amount)\n"
+        "    custom_extensions:\n"
+        "    - vendor_name: DBT\n"
+        "      data: '{\"model\": \"fct_orders\"}'\n"
+    )
+    files, _ = convert_ossie_to_cube(ossie)
+    ossie2, _ = convert_cube_to_ossie(files)
+    model = model_of(ossie2)
+
+    field = by_name(by_name(model["datasets"])["orders"]["fields"])["status"]
+    exts = {e["vendor_name"]: e["data"] for e in field["custom_extensions"]}
+    assert exts["SNOWFLAKE"] == '{"collation": "en"}'
+    # The CUBE stash is written first, foreign entries appended -- as for datasets.
+    assert field["custom_extensions"][0]["vendor_name"] == "CUBE"
+
+    metric = by_name(model["metrics"])["total"]
+    mexts = {e["vendor_name"]: e["data"] for e in metric["custom_extensions"]}
+    assert mexts["DBT"] == '{"model": "fct_orders"}'
+    assert metric["custom_extensions"][0]["vendor_name"] == "CUBE"
+
+
 # --- join orientation, both ways ------------------------------------------------
 
 _ONE_TO_MANY = _files(m=(
@@ -189,6 +323,73 @@ def test_one_to_many_is_flipped_back_onto_its_original_cube():
         "name": "orders", "sql": "{CUBE}.id = {orders}.user_id",
         "relationship": "one_to_many"}]
     assert "joins" not in cubes["orders"]
+
+
+@pytest.mark.parametrize("declared", ["one_to_one", "hasOne", "has_one"])
+def test_a_one_to_one_join_does_not_make_its_target_fanned_out(declared):
+    """A one-to-one join multiplies neither side, so a `sum` across it is safe. It was
+    being treated like any other relationship, whose `to` side *is* fanned out, and a
+    valid measure was refused under strict mode."""
+    files = _files(m=(
+        "cubes:\n"
+        "  - name: users\n"
+        "    sql_table: public.users\n"
+        "    joins:\n"
+        "      - name: profiles\n"
+        "        sql: \"{CUBE}.id = {profiles}.user_id\"\n"
+        f"        relationship: {declared}\n"
+        "    dimensions:\n"
+        "      - name: id\n"
+        "        sql: id\n"
+        "        type: number\n"
+        "        primary_key: true\n"
+        "  - name: profiles\n"
+        "    sql_table: public.profiles\n"
+        "    dimensions:\n"
+        "      - name: user_id\n"
+        "        sql: user_id\n"
+        "        type: number\n"
+        "        primary_key: true\n"
+        "    measures:\n"
+        "      - name: score_total\n"
+        "        sql: \"{CUBE}.score\"\n"
+        "        type: sum\n"
+    ))
+    # Strict mode is the default; this must simply convert.
+    ossie, issues = convert_cube_to_ossie(files)
+    assert not issues.of_type(IssueType.FANOUT_UNSAFE_METRIC)
+    assert expr_of(by_name(model_of(ossie)["metrics"])["score_total"]) == (
+        "SUM(profiles.score)")
+
+
+def test_a_many_to_one_join_still_makes_its_target_fanned_out():
+    """The counterpart: excluding one-to-one must not weaken the ordinary case."""
+    files = _files(m=(
+        "cubes:\n"
+        "  - name: orders\n"
+        "    sql_table: public.orders\n"
+        "    joins:\n"
+        "      - name: users\n"
+        "        sql: \"{CUBE}.user_id = {users}.id\"\n"
+        "        relationship: many_to_one\n"
+        "    dimensions:\n"
+        "      - name: user_id\n"
+        "        sql: user_id\n"
+        "        type: number\n"
+        "  - name: users\n"
+        "    sql_table: public.users\n"
+        "    dimensions:\n"
+        "      - name: id\n"
+        "        sql: id\n"
+        "        type: number\n"
+        "        primary_key: true\n"
+        "    measures:\n"
+        "      - name: ltv\n"
+        "        sql: \"{CUBE}.ltv\"\n"
+        "        type: sum\n"
+    ))
+    with pytest.raises(ConversionError, match="FANOUT_UNSAFE_METRIC"):
+        convert_cube_to_ossie(files)
 
 
 def test_one_to_one_keeps_its_declared_orientation():

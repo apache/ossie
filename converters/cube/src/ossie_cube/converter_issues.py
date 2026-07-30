@@ -39,10 +39,10 @@ class IssueType(Enum):
     FANOUT_UNSAFE_METRIC = "FANOUT_UNSAFE_METRIC"
 
     # A `multi_stage` measure (group_by / reduce_by / time_shift / rank). These
-    # render as window functions over a grain other than the query's, which an
-    # Ossie expression has no form for; the measure is preserved in the stash
-    # and omitted from `metrics`.
-    MULTI_STAGE_MEASURE_DROPPED = "MULTI_STAGE_MEASURE_DROPPED"
+    # render as window functions over a grain other than the query's, which an Ossie
+    # expression has no form for -- so the measure gets no `metrics` entry, and the
+    # original is preserved verbatim in the owning dataset's stash instead.
+    MULTI_STAGE_MEASURE_PARKED = "MULTI_STAGE_MEASURE_PARKED"
 
     # A cube-level `meta.ai_context`. Cube's own agent only consumes ai_context
     # on views and on individual members, so this value is inert in Cube; it is

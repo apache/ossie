@@ -57,6 +57,7 @@ from ._common import (
     snake,
     snake_keys,
     view_file,
+    read_stash,
     write_stash,
 )
 from .converter_issues import IssueLog, IssueType
@@ -128,25 +129,25 @@ def convert_cube_to_ossie(files, model_name=None, view=None, strict_fanout=True)
     if ai:
         model["ai_context"] = ai
 
-    # Joins are decomposed first: a join with no Ossie form is parked on its
-    # declaring cube's stash, which has to be known before the dataset is built.
+    # Anything a cube's stash has to carry is worked out before the dataset is
+    # built: joins with no Ossie form, and measures with no static Ossie
+    # expression. Primary keys are read straight off the dimensions so this
+    # ordering does not depend on the datasets existing yet.
     relationships, extra_joins = _convert_joins(cubes, sorted(extra_files), issues)
-
-    datasets = []
-    pk_by_cube = {}
-    for cname, cube in cubes.items():
-        ds, primary_key = _convert_cube(cname, cube, extra_joins.get(cname), issues)
-        datasets.append(ds)
-        pk_by_cube[cname] = primary_key
-    model["datasets"] = datasets
     if relationships:
         model["relationships"] = relationships
+    fanned_out = _fanned_out_datasets(relationships)
+    pk_by_cube = {cname: _primary_key_of(cube, cname)
+                  for cname, cube in cubes.items()}
 
-    # A dataset on the `to` (one) side of a relationship can be fanned out by rows
-    # from the `from` (many) side. Derived entirely from the Ossie graph.
-    fanned_out = {rel["to"]: rel["name"] for rel in relationships}
+    metrics, extra_measures = _convert_measures(
+        cubes, pk_by_cube, fanned_out, issues)
 
-    metrics = _convert_measures(cubes, pk_by_cube, fanned_out, issues)
+    model["datasets"] = [
+        _convert_cube(cname, cube, extra_joins.get(cname),
+                      extra_measures.get(cname), issues)
+        for cname, cube in cubes.items()
+    ]
     if metrics:
         model["metrics"] = metrics
 
@@ -393,10 +394,57 @@ def _meta_without_ai_context(meta):
     return {k: v for k, v in meta.items() if k not in ("ai_context", "ossie")}
 
 
+def _fanned_out_datasets(relationships):
+    """{dataset: relationship name} for datasets a join can multiply rows of.
+
+    A dataset on the `to` (one) side of a many-to-one join is fanned out by rows from
+    the `from` (many) side. A **one-to-one** join multiplies neither side, so it is
+    excluded -- otherwise a perfectly safe `sum` on either side would be refused
+    under strict fan-out mode. The cardinality comes from the stash Cube's join left
+    behind, in normalized form, so `one_to_one` and the legacy `has_one` both count.
+
+    A hand-authored Ossie relationship carries no Cube cardinality, and Ossie's own
+    `from`/`to` says only many/one -- so it keeps the conservative assumption.
+    """
+    out = {}
+    for rel in relationships:
+        declared = read_stash(rel).get("relationship")
+        if declared and _RELATIONSHIP_ALIASES.get(snake(declared)) == "one_to_one":
+            continue
+        out[rel["to"]] = rel["name"]
+    return out
+
+
+def _restore_parked_extensions(obj, meta):
+    """Reattach foreign-vendor extensions a previous export parked under
+    `meta.ossie.custom_extensions`.
+
+    Called after `write_stash`, so the CUBE entry stays first and the restored
+    foreign entries follow -- the ordering datasets already used. Without this the
+    parked entries are stripped by `_meta_without_ai_context` and never come back,
+    which would make `Ossie -> Cube -> Ossie` lose them.
+    """
+    parked = ((meta or {}).get("ossie") or {}).get("custom_extensions")
+    if parked:
+        obj.setdefault("custom_extensions", []).extend(parked)
+
+
 # --- cubes ----------------------------------------------------------------------
 
-def _convert_cube(cname, cube, extra_joins, issues):
-    """Build one Ossie dataset from a Cube cube. Returns (dataset, primary_key)."""
+def _primary_key_of(cube, cname):
+    """The names of a cube's `primary_key: true` dimensions.
+
+    Read directly off the dimensions so the stages that need it -- measures, and the
+    fan-out check -- do not have to wait for the dataset to be built.
+    """
+    return [require_str(dim, "name", f"cube '{cname}': dimension")
+            for dim in _as_named_list(cube.get("dimensions"),
+                                      f"cube '{cname}' dimensions")
+            if dim.get("primary_key")]
+
+
+def _convert_cube(cname, cube, extra_joins, extra_measures, issues):
+    """Build one Ossie dataset from a Cube cube."""
     scope = f"cube '{cname}'"
     ds = {"name": cname}
     stash = {}
@@ -418,18 +466,22 @@ def _convert_cube(cname, cube, extra_joins, issues):
         ds["unique_keys"] = [list(k) for k in parked["unique_keys"]]
 
     fields = []
-    primary_key = []
     for dim in _as_named_list(cube.get("dimensions"), f"{scope} dimensions"):
         dname = require_str(dim, "name", f"{scope}: dimension")
-        if dim.get("primary_key"):
-            primary_key.append(dname)
         fields.extend(_convert_dimension(cname, dname, dim, issues))
     if fields:
         ds["fields"] = fields
+    primary_key = _primary_key_of(cube, cname)
     if primary_key:
         ds["primary_key"] = primary_key
     if extra_joins:
         stash["extra_joins"] = extra_joins
+    if extra_measures:
+        # Measures with no static Ossie expression (multi-stage ones) ride here with
+        # their original positions, so export can put them back among the measures it
+        # rebuilds from metrics. Without this they would be lost outright: `measures`
+        # is a natively-mapped key, so `cube_extras` does not carry it.
+        stash["extra_measures"] = extra_measures
 
     extras = {snake(k): v for k, v in cube.items()
               if snake(k) not in _CUBE_NATIVE_KEYS}
@@ -444,7 +496,7 @@ def _convert_cube(cname, cube, extra_joins, issues):
     # stash is written, so the CUBE entry stays first and both survive.
     if parked.get("custom_extensions"):
         ds.setdefault("custom_extensions", []).extend(parked["custom_extensions"])
-    return ds, primary_key
+    return ds
 
 
 def _convert_dimension(cname, dname, dim, issues):
@@ -504,6 +556,10 @@ def _convert_dimension(cname, dname, dim, issues):
     if leftover_meta:
         stash["meta"] = leftover_meta
     write_stash(field, stash)
+    # Foreign-vendor extensions a previous export parked under the dimension's
+    # `meta.ossie` are restored after the stash is written, so the CUBE entry stays
+    # first -- the same ordering datasets use.
+    _restore_parked_extensions(field, dim.get("meta"))
     return [field]
 
 
@@ -734,7 +790,7 @@ class _MeasureResolver:
             # group_by / reduce_by / time_shift / rank render as window functions
             # over a grain other than the query's; Ossie has no form for that.
             self._issues.add(
-                IssueType.MULTI_STAGE_MEASURE_DROPPED, scope,
+                IssueType.MULTI_STAGE_MEASURE_PARKED, scope,
                 f"multi_stage measure (type '{mtype}'); preserved in "
                 f"custom_extensions only")
             return None
@@ -825,6 +881,12 @@ def _convert_measures(cubes, pk_by_cube, fanned_out, issues):
     A metric name is the measure name when globally unique, else
     `<cube>__<measure>`; the original name and owning cube are stashed so export
     puts the measure back where it came from.
+
+    Returns (metrics, {cube: [{"index": i, "measure": ...}]}). The second value holds
+    measures with no static Ossie expression -- a multi-stage measure renders as a
+    window function over another grain -- which have no `metrics` entry and would
+    otherwise vanish. They ride on the owning dataset's stash with their positions,
+    the same protocol unconvertible joins use.
     """
     resolver = _MeasureResolver(cubes, pk_by_cube, issues)
 
@@ -833,10 +895,12 @@ def _convert_measures(cubes, pk_by_cube, fanned_out, issues):
         counts[mname] = counts.get(mname, 0) + 1
 
     metrics = []
+    extra_measures = {}
     seen = set()
     for cname, cube in cubes.items():
-        for measure in _as_named_list(cube.get("measures"),
-                                      f"cube '{cname}' measures"):
+        for index, measure in enumerate(
+                _as_named_list(cube.get("measures"),
+                               f"cube '{cname}' measures")):
             mname = measure["name"]
             metric_name = mname if counts[mname] == 1 else f"{cname}__{mname}"
             if metric_name in seen:
@@ -848,7 +912,10 @@ def _convert_measures(cubes, pk_by_cube, fanned_out, issues):
                                       fanned_out, issues)
             if metric is not None:
                 metrics.append(metric)
-    return metrics
+            else:
+                extra_measures.setdefault(cname, []).append(
+                    {"index": index, "measure": measure})
+    return metrics, extra_measures
 
 
 def _convert_measure(cname, mname, metric_name, measure, resolver, fanned_out,
@@ -916,4 +983,5 @@ def _convert_measure(cname, mname, metric_name, measure, resolver, fanned_out,
     if leftover_meta:
         stash["meta"] = leftover_meta
     write_stash(metric, stash)
+    _restore_parked_extensions(metric, measure.get("meta"))
     return metric
