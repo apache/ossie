@@ -44,9 +44,10 @@ Requires Python 3.11 or newer.
 ### Python API
 
 ```python
-from ossie_hex import convert_hex_to_ossie
+from ossie_hex import convert_hex_to_ossie, convert_ossie_to_hex
 
 ossie_yaml, warnings = convert_hex_to_ossie("hex_project/", dialect="snowflake")
+files, warnings = convert_ossie_to_hex(ossie_yaml)  # {relative path: YAML str}
 ```
 
 ## Conversion
