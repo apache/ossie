@@ -46,6 +46,9 @@ dependencies = [
     "typing-extensions>=4.16.0",
 ]
 
+[project.scripts]
+ossie-hex = "ossie_hex.cli:main"
+
 [project.urls]
 homepage = "https://ossie.apache.org/"
 repository = "https://github.com/apache/ossie/"

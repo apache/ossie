@@ -34,20 +34,60 @@ cd converters/hex
 uv sync
 ```
 
+## Development workflow
+
+The implementation is split by responsibility:
+
+- `src/ossie_hex/hex_to_ossie.py`: Import (Hex → Ossie)
+- `src/ossie_hex/ossie_to_hex.py`: Export (Ossie → Hex)
+- `src/ossie_hex/hex_models.py`: Hex semantic spec definitions (incl. i/o validation)
+- `src/ossie_hex/ossie_models.py`: Ossie misc definitions
+- `src/ossie_hex/datatype_mapping.py`: Data type conversion (Ossie <-> Hex)
+- `src/ossie_hex/dialect_mapping.py`: Dialect mapping (Ossie <-> Hex)
+- `src/ossie_hex/expression_rewrite.py`: SQL reference and join rewriting
+- `src/ossie_hex/custom_extension.py`: Custom extension payloads
+- `src/ossie_hex/hex_project.py`: Hex project (multi-file) loading and writing
+- `src/ossie_hex/_common.py`: errors, warnings, and YAML 1.2 load/dump helpers
+- `src/ossie_hex/cli.py`: `import` and `export` commands
+
+Add or update fixtures under `tests/fixtures/` and keep conversion behavior
+covered in both directions. Hex-only information that has no Ossie equivalent
+should be stored in the `HEX` custom extension so that Hex → Ossie → Hex remains
+lossless.
+
+### Useful knowledge
+
+Three invariants are easy to break and worth keeping in mind when changing either
+direction:
+
+- **Ossie names are not Hex IDs.** Ossie names are free-form; Hex IDs are
+  lowercase and restricted. Every dataset and field name is resolved to its Hex
+  ID up front, and relationship targets, join columns, metric qualifiers, and
+  expression references all have to go through that mapping. Comparing a raw
+  Ossie name against an already-coerced ID silently produces refs that point at
+  nothing.
+- **Hex reaches another model through a relation, not a model ID.** Ossie
+  qualifies a foreign column as `dataset.field`, but the equivalent Hex ref is
+  `${relation.dimension}`, naming a relation declared on the model holding the
+  expression. Two relations can target the same model, so the mapping runs from
+  target dataset to relation ID and a dataset with no relation is simply
+  unreachable. This is why relations are built before dimensions and measures:
+  their IDs are needed to rewrite expressions.
+
 ## Verification
 
 Lint and check formatting:
 
 ```bash
-uv run ruff check src tests
-uv run ruff format --check src tests
+uv run ruff check
+uv run ruff format --check
 ```
 
 Apply automatic fixes and formatting:
 
 ```bash
-uv run ruff check src tests --fix
-uv run ruff format src tests
+uv run ruff check --fix
+uv run ruff format
 ```
 
 Run the complete converter test suite:
@@ -62,3 +102,59 @@ Run one file or test while iterating:
 uv run pytest tests/<file>.py
 uv run pytest tests/<file>.py::<test>
 ```
+
+The following commands exercise the installed CLI in both directions:
+
+```bash
+uv run ossie-hex import \
+  --input tests/fixtures/minimal_hex \
+  --dialect snowflake \
+  --name demo \
+  --output /tmp/ossie-hex-demo.yaml
+
+uv run ossie-hex export \
+  --input /tmp/ossie-hex-demo.yaml \
+  --dialect snowflake \
+  --output /tmp/ossie-hex-demo
+```
+
+These are the commands used to verify the initial converter implementation:
+
+```bash
+uv sync
+uv run pytest
+uv run ossie-hex import \
+  --input tests/fixtures/minimal_hex \
+  --dialect snowflake \
+  --name demo
+```
+
+## Building distributions
+
+Build the source distribution and wheel from this directory:
+
+```bash
+uv build
+```
+
+The artifacts are written to `dist/`. Before publishing, inspect their metadata
+and contents:
+
+```bash
+uvx twine check dist/*
+uv run python -m zipfile -l dist/*.whl
+tar -tf dist/*.tar.gz
+```
+
+Also test installation in a clean environment. This will only work from PyPI
+after the `apache-ossie` dependency has been published:
+
+```bash
+uv venv /tmp/ossie-hex-release-test
+uv pip install --python /tmp/ossie-hex-release-test/bin/python dist/*.whl
+/tmp/ossie-hex-release-test/bin/ossie-hex --help
+```
+
+## Publishing
+
+Publishing is deferred to the Apache Ossie project, which governs the broader release cycle. Contributors should not publish this package independently.
