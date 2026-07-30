@@ -129,6 +129,9 @@ uv run ossie-hex import \
   --name demo
 ```
 
+CI runs installation, linting, formatting, and testing on Python 3.11 through 3.14 using
+`.github/workflows/converter-hex-ci.yml`.
+
 ## Building distributions
 
 Build the source distribution and wheel from this directory:
