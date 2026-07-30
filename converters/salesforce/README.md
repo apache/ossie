@@ -27,7 +27,7 @@ Salesforce Semantic Model JSON. Unmapped Salesforce properties are preserved in
 
 ## Requirements
 
-- **Java 17+**
+- **Java 21+**
 - **Maven 3.6+** — required to build the jar
 
 ## Building

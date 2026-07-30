@@ -17,38 +17,47 @@
 # under the License.
 #
 
-name: Converters Salesforce CI
+name: Converters GSF CI
 
 on:
   push:
     branches: [ "main" ]
     paths:
-      - 'converters/salesforce/**'
-      - '.github/workflows/converter-salesforce-ci.yml'
+      - 'converters/gsf/**'
+      - '.github/workflows/converter-gsf-ci.yml'
   pull_request:
     branches: [ "main" ]
     paths:
-      - 'converters/salesforce/**'
-      - '.github/workflows/converter-salesforce-ci.yml'
+      - 'converters/gsf/**'
+      - '.github/workflows/converter-gsf-ci.yml'
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: converters/salesforce
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - name: Checkout project
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          java-version: '21'
-          distribution: 'temurin'
-          cache: 'maven'
+          python-version: ${{ matrix.python-version }}
 
-      - name: Build and test
+      - name: Install uv
         run: |
-          mvn -B verify
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+
+      - name: Sync dependencies
+        working-directory: converters/gsf
+        run: |
+          uv sync
+
+      - name: Unit Tests
+        working-directory: converters/gsf
+        run: |
+          uv run pytest

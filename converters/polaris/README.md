@@ -29,7 +29,7 @@ Apache Polaris is an open-source catalog for Apache Iceberg. This converter comm
 mvn clean package
 ```
 
-Requires Java 17+.
+Requires Java 21+.
 
 ## Usage
 
