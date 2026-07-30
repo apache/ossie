@@ -389,6 +389,7 @@ is not guaranteed identical across engines.
 **Fractional seconds** are available everywhere but the token and precision differ
 (Oracle `FF1`–`FF9`, `strftime` `%f`, Java `S`…`SSSSSS`); treat sub-second formatting as
 a dialect extension.
+
 ---
 
 ## String Functions
@@ -674,6 +675,7 @@ expression:
 ### Dialect-Specific Extensions
 
 Vendors may expose their own feature through extensions, however the default for Ossie should be to pass unknown values through.:  
+
 ---
 
 ## Cross-Reference: Tool Mappings
