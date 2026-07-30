@@ -121,7 +121,7 @@ to **import** (Cube -> Ossie) or **export** (Ossie -> Cube).
 | `dataset.source` (`SELECT ...`) | `sql` | Cube requires exactly one of `sql` / `sql_table`. |
 | `dataset.description` | cube `description` | |
 | `dataset.ai_context` | cube `meta.ai_context` | Preserved for the round trip, but **inert in Cube** -- its agent ignores cube-level `ai_context`. Recorded as an issue. |
-| `dataset.primary_key` | dimension(s) with `primary_key: true` | Composite = several. Export: a key column no field covers becomes a `public: false` dimension. |
+| `dataset.primary_key` | dimension(s) with `primary_key: true` | Composite = several. Export marks a dimension only when it is **scalar** — a single source column — since `primary_key: true` declares that dimension's own `sql` to be the key; a computed dimension or a merged `geo` one would declare the wrong thing even if its name matches. Anything left uncovered becomes a `public: false` scalar dimension, suffixed (`id_pk`) if the obvious name is taken. |
 | `dataset.unique_keys` | `meta.ossie.unique_keys` | No native Cube slot; parked rather than dropped. |
 | field | `dimensions[]` entry | Export: a name that is not a valid Cube identifier is sanitized; a case-insensitive collision is an error, never a silent merge. |
 | `field.expression` | dimension `sql` | Dataset-scoped, so `{CUBE}.col` <-> `col`. Export emits `{CUBE}.column` for a raw column and `{CUBE.member}` for a declared member, and never spells the cube's own name (which would break under `extends`). |

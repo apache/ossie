@@ -919,6 +919,118 @@ def _ossie_fields(*specs):
     return out
 
 
+def _ossie_pk(primary_key, *specs):
+    """An Ossie model with a primary_key and (name, expression, geo part) fields."""
+    out = ("version: 0.2.0.dev0\n"
+           "semantic_model:\n"
+           "- name: shop\n"
+           "  datasets:\n"
+           "  - name: orders\n"
+           "    source: public.orders\n"
+           "    primary_key:\n")
+    for col in primary_key:
+        out += f"    - {col}\n"
+    out += "    fields:\n"
+    for fname, expr, part in specs:
+        out += (f"    - name: {fname}\n"
+                "      expression:\n"
+                "        dialects:\n"
+                "        - dialect: ANSI_SQL\n"
+                f"          expression: {expr}\n"
+                "      datatype: String\n")
+        if part:
+            out += ("      custom_extensions:\n"
+                    "      - vendor_name: CUBE\n"
+                    f"        data: '{_geo_stash(part, of=fname.rsplit('_', 1)[0])}'\n")
+    return out
+
+
+def _dims(files):
+    return parse(files["model/cubes/orders.yml"])["cubes"][0]["dimensions"]
+
+
+def test_a_computed_dimension_does_not_cover_a_primary_key():
+    """`primary_key: true` in Cube declares that dimension's own sql to be the key.
+    Marking a computed dimension would declare `LOWER(email)` as the key when Ossie
+    named the `id` column -- so a name match alone must not count as coverage."""
+    files, issues = convert_ossie_to_cube(
+        _ossie_pk(["id"], ("id", "LOWER(email)", None)))
+    dims = by_name(_dims(files))
+    assert "primary_key" not in dims["id"]
+    assert dims["id"]["sql"] == "LOWER(email)"
+    # A private scalar dimension carries the key instead, under a free name.
+    assert dims["id_pk"] == {"name": "id_pk", "sql": "id", "type": "string",
+                             "primary_key": True, "public": False}
+    assert issues.of_type(IssueType.APPROXIMATED)
+
+
+def test_a_merged_geo_dimension_does_not_cover_a_primary_key():
+    """A geo dimension has two sql expressions and no single one, so it cannot be
+    the key even though its name matches."""
+    files, _ = convert_ossie_to_cube(_ossie_pk(
+        ["location"],
+        ("location_latitude", "lat", "latitude"),
+        ("location_longitude", "lon", "longitude")))
+    dims = by_name(_dims(files))
+    assert dims["location"]["type"] == "geo"
+    assert "primary_key" not in dims["location"]
+    assert dims["location_pk"] == {
+        "name": "location_pk", "sql": "location", "type": "string",
+        "primary_key": True, "public": False}
+
+
+def test_a_scalar_dimension_backed_by_the_key_column_covers_it():
+    """The legitimate case: a differently-named dimension whose sql *is* the key
+    column. It stays the key, and nothing is synthesized alongside it."""
+    files, issues = convert_ossie_to_cube(
+        _ossie_pk(["id"], ("order_id", "id", None)))
+    dims = _dims(files)
+    assert len(dims) == 1
+    assert dims[0]["name"] == "order_id"
+    assert dims[0]["primary_key"] is True
+    assert not issues.of_type(IssueType.APPROXIMATED)
+
+
+def test_a_scalar_dimension_named_as_the_key_covers_it():
+    """Import records the *dimension name* in `primary_key`, not the column, so a
+    scalar dimension matching by name has to keep covering it -- otherwise
+    `Cube -> Ossie -> Cube` would synthesize a bogus duplicate key."""
+    src = _files(orders=(
+        "cubes:\n"
+        "  - name: orders\n"
+        "    sql_table: public.orders\n"
+        "    dimensions:\n"
+        "      - name: order_id\n"
+        "        sql: id\n"
+        "        type: number\n"
+        "        primary_key: true\n"
+    ))
+    ossie, _ = convert_cube_to_ossie(src)
+    assert by_name(model_of(ossie)["datasets"])["orders"]["primary_key"] == [
+        "order_id"]
+    back, _ = convert_ossie_to_cube(ossie)
+    assert parse_files(back) == parse_files(src)
+
+
+def test_a_synthesized_key_name_avoids_every_existing_member():
+    """Suffixing has to keep going while names are taken, and the result must still
+    be a single non-public scalar dimension."""
+    files, _ = convert_ossie_to_cube(_ossie_pk(
+        ["id"],
+        ("id", "LOWER(email)", None),
+        ("id_pk", "UPPER(email)", None),
+        ("id_pk_2", "TRIM(email)", None)))
+    dims = by_name(_dims(files))
+    keys = [n for n, d in dims.items() if d.get("primary_key")]
+    assert keys == ["id_pk_3"]
+    assert dims["id_pk_3"] == {"name": "id_pk_3", "sql": "id", "type": "string",
+                               "primary_key": True, "public": False}
+    # Nothing was overwritten.
+    assert dims["id"]["sql"] == "LOWER(email)"
+    assert dims["id_pk"]["sql"] == "UPPER(email)"
+    assert dims["id_pk_2"]["sql"] == "TRIM(email)"
+
+
 def test_geo_halves_may_appear_in_any_order_without_clobbering_a_dimension():
     """The geo dimension is assembled from two fields that need not be adjacent and
     may come in either order. Holding its place with a list index computed mid-loop

@@ -271,25 +271,35 @@ def _build_cube(ds, cname, dim_names, inline_sql, joins, measures, dialect,
                        "Cube's agent reads ai_context only on views and members, "
                        "so this cube-level value has no effect in Cube")
 
-    dimensions, covered = _build_dimensions(
+    dimensions, by_name_scalar, by_column = _build_dimensions(
         ds, cname, dim_names, inline_sql, dialect, issues)
-    # A primary-key column no field covers still has to exist as a dimension for
-    # Cube to join or roll up the cube.
+    # Resolve each `primary_key` entry to the dimension Cube should mark. A
+    # dimension only qualifies when it is *scalar* -- backed by a single source
+    # column -- because `primary_key: true` in Cube declares that dimension's own
+    # sql to be the key. A computed dimension would declare the wrong expression,
+    # and a merged geo dimension has no single sql at all, so neither counts even
+    # when its name matches. Anything left uncovered gets a private dimension.
     pk_names = []
-    for col in (ds.get("primary_key") or []):
-        col = str(col)
-        if col in covered:
-            pk_names.append(covered[col])
+    taken = {d["name"].lower() for d in dimensions}
+    for entry in (ds.get("primary_key") or []):
+        entry = str(entry)
+        # Import records the *dimension name*, so the name match is checked first;
+        # a hand-authored model naming the source column resolves by column.
+        match = by_name_scalar.get(entry) or by_column.get(entry)
+        if match:
+            pk_names.append(match)
             continue
-        issues.add(IssueType.APPROXIMATED, scope,
-                   f"primary key column '{col}' has no field; emitted as a "
-                   f"non-public dimension with type 'string' (Cube requires a type "
-                   f"and Ossie carries none here)")
-        synth = {"name": col, "sql": col, "type": "string",
-                 "primary_key": True, "public": False}
-        dimensions.append(synth)
-        covered[col] = col
-        pk_names.append(col)
+        name = _unique_pk_dimension_name(entry, taken)
+        taken.add(name.lower())
+        detail = (f"primary key '{entry}' is not backed by a scalar dimension; "
+                  f"emitted as a non-public dimension with type 'string' (Cube "
+                  f"requires a type and Ossie carries none here)")
+        if name != entry:
+            detail += f", named '{name}' to avoid colliding with the existing member"
+        issues.add(IssueType.APPROXIMATED, scope, detail)
+        dimensions.append({"name": name, "sql": entry, "type": "string",
+                           "primary_key": True, "public": False})
+        pk_names.append(name)
     for dim in dimensions:
         if dim["name"] in pk_names:
             dim["primary_key"] = True
@@ -381,14 +391,19 @@ def _resolve_dimension_names(ds, scope):
 def _build_dimensions(ds, cname, dim_names, inline_sql, dialect, issues):
     """Build a cube's dimensions from an Ossie dataset's fields.
 
-    Returns (dimensions, {column or field name: dimension name}) -- the second
-    value is what primary-key resolution matches against. Fields carrying a `geo`
-    stash are re-merged into the single Cube dimension they were split from.
+    Returns (dimensions, by_name_scalar, by_column) -- the two maps are what
+    primary-key resolution matches against, and both hold only *scalar* dimensions
+    (those whose expression is a single source column). A computed dimension and a
+    merged geo dimension are deliberately absent from both: Cube's
+    `primary_key: true` declares that dimension's own sql to be the key, so marking
+    either would declare something other than the column Ossie named. Fields
+    carrying a `geo` stash are re-merged into the single Cube dimension they were
+    split from.
     Dimension names come from `dim_names` (see `_resolve_dimension_names`) rather
     than being sanitized again here.
     """
     ds_name = ds["name"]
-    covered = {}
+    by_name_scalar, by_column = {}, {}
     # Built by target dimension name rather than by list position: a geo dimension
     # is assembled from two fields that may appear in either order and need not be
     # adjacent, so an insertion index computed mid-loop is not a safe way to hold
@@ -440,9 +455,11 @@ def _build_dimensions(ds, cname, dim_names, inline_sql, dialect, issues):
             dim[key] = value
 
         built[dname] = dim
-        covered[dname] = dname
         if is_simple_identifier(expr):
-            covered[expr.strip()] = dname
+            # Scalar: this dimension is exactly one source column, so Cube can mark
+            # it as the key. Reachable by its own name and by that column's name.
+            by_name_scalar[dname] = dname
+            by_column.setdefault(expr.strip(), dname)
 
     # Both halves are guaranteed present by _resolve_dimension_names, which
     # validates the pair before anything is built.
@@ -453,11 +470,30 @@ def _build_dimensions(ds, cname, dim_names, inline_sql, dialect, issues):
         for key, value in (slot.get("host") or {}).items():
             dim[key] = value
         built[base] = dim
-        covered[base] = base
 
     # A name in `order` with nothing built is a field dropped for want of a usable
     # dialect; it simply does not appear.
-    return [built[n] for n in order if n in built], covered
+    return [built[n] for n in order if n in built], by_name_scalar, by_column
+
+
+def _unique_pk_dimension_name(entry, taken):
+    """A valid, unused Cube identifier for a synthesized primary-key dimension.
+
+    The obvious name is the primary-key entry itself, but a computed or geo
+    dimension may already own it -- in which case emitting a second dimension of
+    that name would produce an invalid cube, and overwriting the existing one would
+    lose a member. So a suffix is added until the name is free.
+    """
+    base = sanitize_name(entry, "primary key", set())
+    if base.lower() not in taken:
+        return base
+    for n in range(1, 100):
+        candidate = f"{base}_pk" if n == 1 else f"{base}_pk_{n}"
+        if candidate.lower() not in taken:
+            return candidate
+    raise ConversionError(
+        f"cannot find a free dimension name for primary key '{entry}'; rename the "
+        f"colliding members in the Ossie model.")
 
 
 def _dimension_type(field, stash, scope, issues):
