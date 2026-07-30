@@ -140,5 +140,9 @@ def _get_dataset_qualifier(expression: str) -> Optional[str]:
     except sqlglot.errors.ParseError:
         return None
 
-    qualifiers = {column.table for column in tree.find_all(exp.Column) if column.table}
+    qualifiers = {
+        ".".join(part.sql() for part in column.parts[:-1])
+        for column in tree.find_all(exp.Column)
+        if len(column.parts) > 1
+    }
     return qualifiers.pop() if len(qualifiers) == 1 else None
