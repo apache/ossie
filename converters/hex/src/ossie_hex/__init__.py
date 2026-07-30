@@ -19,9 +19,11 @@
 
 from ._common import ConversionError, ConversionWarning
 from .hex_to_ossie import convert_hex_to_ossie
+from .ossie_to_hex import convert_ossie_to_hex
 
 __all__ = [
     "ConversionError",
     "ConversionWarning",
     "convert_hex_to_ossie",
+    "convert_ossie_to_hex",
 ]

@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 FIXTURES = Path(__file__).parent / "fixtures"
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 @pytest.fixture
@@ -47,3 +48,9 @@ def query_hex_path() -> str:
 def hex_project_path(request: pytest.FixtureRequest) -> str:
     assert isinstance(request.param, str)
     return request.param
+
+
+@pytest.fixture
+def tpcds_ossie_yaml() -> str:
+    path = REPO_ROOT / "examples" / "tpcds_semantic_model.yaml"
+    return path.read_text(encoding="utf-8")
