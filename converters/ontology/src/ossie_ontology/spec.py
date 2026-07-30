@@ -1,3 +1,20 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -10,8 +27,8 @@ from pydantic import BaseModel, ConfigDict, Field
 DEFAULT_YAML_WIDTH = 1000
 
 
-class OsiObject(BaseModel):
-    """Base for all OSI DTOs. Strict (`extra=forbid`) to surface spec drift early."""
+class OssieObject(BaseModel):
+    """Base for all Ossie DTOs. Strict (`extra=forbid`) to surface spec drift early."""
     model_config = ConfigDict(
         populate_by_name=True,
         arbitrary_types_allowed=True,
@@ -24,7 +41,7 @@ class OsiObject(BaseModel):
 AiContext = str | dict[str, Any]
 
 
-class CustomExtension(OsiObject):
+class CustomExtension(OssieObject):
     """Vendor-specific metadata attached to any logical-model element (core.md).
 
     `data` is a JSON-encoded string so vendors can carry arbitrary payloads
@@ -36,7 +53,7 @@ class CustomExtension(OsiObject):
 
 # ---------- Ontology ----------
 
-class Role(OsiObject):
+class Role(OssieObject):
     """An additional role in a Relationship (the first role is implicit — the
     container concept). `name` is only required to disambiguate when the same
     concept plays multiple roles in the same relationship."""
@@ -44,7 +61,7 @@ class Role(OsiObject):
     name: str | None = None
 
 
-class Relationship(OsiObject):
+class Relationship(OssieObject):
     """A relationship grouped under its first-role concept.
 
     `roles` enumerates the *additional* roles (the first is the container
@@ -62,7 +79,7 @@ class Relationship(OsiObject):
     requires: list[str] = Field(default_factory=list)
 
 
-class ConceptComponent(OsiObject):
+class ConceptComponent(OssieObject):
     """A concept and the relationships grouped under it.
 
     A concept is a type-like node in the ontology — either an `EntityType`
@@ -90,26 +107,26 @@ class ConceptComponent(OsiObject):
     relationships: list[Relationship] = Field(default_factory=list)
 
 
-# ---------- Logical model (per osi/core.md) ----------
+# ---------- Logical model (per ossie/core.md) ----------
 
-class DialectExpression(OsiObject):
+class DialectExpression(OssieObject):
     """A scalar (non-aggregating) SQL/expression in a specific dialect."""
     dialect: str
     expression: str
 
 
-class Expression(OsiObject):
+class Expression(OssieObject):
     """Multi-dialect expression carrier — same logical expression rendered in
     one or more dialects (e.g. ANSI_SQL + SNOWFLAKE)."""
     dialects: list[DialectExpression] = Field(default_factory=list)
 
 
-class Dimension(OsiObject):
+class Dimension(OssieObject):
     """Dimensional metadata on a DatasetField."""
     is_time: bool | None = None
 
 
-class DatasetField(OsiObject):
+class DatasetField(OssieObject):
     """A row-level attribute of a Dataset. `expression` is scalar (no
     aggregations); use Metric for aggregates."""
     name: str
@@ -121,7 +138,7 @@ class DatasetField(OsiObject):
     custom_extensions: list[CustomExtension] = Field(default_factory=list)
 
 
-class Dataset(OsiObject):
+class Dataset(OssieObject):
     """A logical dataset (fact or dimension table) backed by `source` — a
     physical table/view reference or a query."""
     name: str
@@ -134,7 +151,7 @@ class Dataset(OsiObject):
     custom_extensions: list[CustomExtension] = Field(default_factory=list)
 
 
-class JoinPath(OsiObject):
+class JoinPath(OssieObject):
     """A foreign-key style join between two Datasets: rows in `from` reference
     rows in `to` by matching `from_columns` against `to_columns` in order.
     Same arity required on both sides."""
@@ -147,7 +164,7 @@ class JoinPath(OsiObject):
     custom_extensions: list[CustomExtension] = Field(default_factory=list)
 
 
-class Metric(OsiObject):
+class Metric(OssieObject):
     """A model-level quantitative measure defined as an aggregate expression.
     Can reference fields across multiple Datasets."""
     name: str
@@ -157,7 +174,7 @@ class Metric(OsiObject):
     custom_extensions: list[CustomExtension] = Field(default_factory=list)
 
 
-class SemanticModel(OsiObject):
+class SemanticModel(OssieObject):
     """A complete logical/semantic model (the body that the core spec calls
     `semantic_model`): datasets plus the join paths and metrics defined over
     them. One or more SemanticModels can feed a single OntologyMapping."""
@@ -172,7 +189,7 @@ class SemanticModel(OsiObject):
 
 # ---------- Ontology mapping ----------
 
-class ReferentMapping(OsiObject):
+class ReferentMapping(OssieObject):
     """Locates an entity object by walking one of its identifying
     relationships. Carries either a leaf `expression` (SQL over dataset
     fields) or a nested `referent_mappings` list when the referenced concept
@@ -182,7 +199,7 @@ class ReferentMapping(OsiObject):
     referent_mappings: list[ReferentMapping] | None = None
 
 
-class ObjectMapping(OsiObject):
+class ObjectMapping(OssieObject):
     """Maps to objects of some concept. Either a direct scalar `expression`
     (for value types or simple-id entities) or `referent_mappings` (for
     entities with compound identifiers). XOR — never both."""
@@ -191,7 +208,7 @@ class ObjectMapping(OsiObject):
     referent_mappings: list[ReferentMapping] | None = None
 
 
-class LinkMapping(OsiObject):
+class LinkMapping(OssieObject):
     """A node in the link-mapping tree. The arity of `relationship` equals
     the node's depth (top-level = unary, depth 2 = binary, etc.). `children`
     extend the mapped tuple by one role each, sharing this node's
@@ -201,7 +218,7 @@ class LinkMapping(OsiObject):
     children: list[LinkMapping] | None = None
 
 
-class ConceptMapping(OsiObject):
+class ConceptMapping(OssieObject):
     """Mappings that populate one concept and the relationships grouped under
     it. `object_mappings` populate the concept's objects; `link_mappings` is
     a forest of trees populating its relationships."""
@@ -210,7 +227,7 @@ class ConceptMapping(OsiObject):
     link_mappings: list[LinkMapping] = Field(default_factory=list)
 
 
-class OntologyMapping(OsiObject):
+class OntologyMapping(OssieObject):
     """Binds a semantic model to the document ontology, then declares how its
     fields populate the ontology's concepts and relationships."""
     name: str
@@ -221,8 +238,8 @@ class OntologyMapping(OsiObject):
 
 # ---------- Root ----------
 
-class OsiSpec(OsiObject):
-    """Root OSI document: a single ontology definition and the ontology
+class OssieSpec(OssieObject):
+    """Root Ossie document: a single ontology definition and the ontology
     mappings that wire semantic models into it."""
     version: str | None = None
     name: str
@@ -233,7 +250,7 @@ class OsiSpec(OsiObject):
     ontology_mappings: list[OntologyMapping] = Field(default_factory=list)
 
     @classmethod
-    def load_yaml(cls, text: str) -> OsiSpec:
+    def load_yaml(cls, text: str) -> OssieSpec:
         return cls.model_validate(yaml.safe_load(text))
 
     def dump_dict(self) -> dict:

@@ -1,3 +1,20 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 """Snapshot tests for the flights ontology.
 
 These lock in the converted structure and the round-tripped YAML so that any
@@ -10,11 +27,11 @@ Regenerate the snapshots after an intentional change with:
 
 from __future__ import annotations
 
-from osi.converter.osi_to_spec.converter import OsiToSpecConverter
-from osi.model import OntologyComponent, OsiOntology
+from ossie_ontology.converter.ossie_to_spec.converter import OssieToSpecConverter
+from ossie_ontology.model import OntologyComponent, OssieOntology
 
 
-def _render_structure(model: OsiOntology) -> str:
+def _render_structure(model: OssieOntology) -> str:
     """Render a compact, deterministic text summary of the ontology structure."""
     ontology: OntologyComponent = model.ontology
     lines: list[str] = [
@@ -54,5 +71,5 @@ def test_flights_structure_snapshot(flights_model, snapshot):
 
 
 def test_flights_roundtrip_yaml_snapshot(flights_model, snapshot):
-    spec = OsiToSpecConverter.convert(flights_model)
+    spec = OssieToSpecConverter.convert(flights_model)
     snapshot.assert_match(spec.dump_yaml(), "flights_roundtrip.yaml")

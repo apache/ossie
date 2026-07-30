@@ -1,11 +1,28 @@
-"""Reverse converter: OsiOntology (runtime) -> OsiSpec (Pydantic DTO).
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
 
-Pairs with spec_to_osi.SpecToOsiConverter so a full round-trip
+"""Reverse converter: OssieOntology (runtime) -> OssieSpec (Pydantic DTO).
+
+Pairs with spec_to_ossie.SpecToOssieConverter so a full round-trip
 yaml -> spec -> model -> spec -> yaml is structurally stable."""
 
 from __future__ import annotations
 
-from osi.model import (
+from ossie_ontology.model import (
     Concept,
     ConceptMapping,
     ConceptType,
@@ -23,9 +40,9 @@ from osi.model import (
     OntologyMapping,
     ReferentMapping,
     Relationship,
-    OsiOntology,
+    OssieOntology,
 )
-from osi.spec import (
+from ossie_ontology.spec import (
     ConceptComponent,
     ConceptMapping as SpecConceptMapping,
     CustomExtension as SpecCustomExtension,
@@ -40,21 +57,21 @@ from osi.spec import (
     Metric as SpecMetric,
     ObjectMapping as SpecObjectMapping,
     OntologyMapping as SpecOntologyMapping,
-    OsiSpec,
+    OssieSpec,
     ReferentMapping as SpecReferentMapping,
     Relationship as SpecRelationship,
     Role as SpecRole,
 )
 
 
-class OsiToSpecConverter:
+class OssieToSpecConverter:
     """Top-level reverse converter."""
 
     @staticmethod
-    def convert(model: OsiOntology) -> OsiSpec:
+    def convert(model: OssieOntology) -> OssieSpec:
         ont = model.ontology
         ontology_mappings = [_convert_ontology_mapping(ontology_mapping) for ontology_mapping in model.ontology_mappings]
-        return OsiSpec(
+        return OssieSpec(
             version=model.version,
             name=model.name,
             description=model.description,
@@ -244,7 +261,7 @@ def _render_mapping_expression(expr) -> str | None:
     string the forward converter saw in the spec."""
     if expr is None:
         return None
-    from osi.model import DatasetField as _DF, Formula as _F
+    from ossie_ontology.model import DatasetField as _DF, Formula as _F
     if isinstance(expr, _DF):
         ds = expr.dataset
         return f"{ds.name}.{expr.name}" if ds is not None else expr.name

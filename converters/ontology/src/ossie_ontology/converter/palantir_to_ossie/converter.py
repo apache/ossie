@@ -1,12 +1,29 @@
-"""Palantir `Ontology` -> `OsiOntology`."""
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+"""Palantir `Ontology` -> `OssieOntology`."""
 
 from __future__ import annotations
 
 import warnings
 
-from osi.common.graph import topological_sort_break_cycles
-from osi.common.utils import to_pascal_case, to_verbalization_string
-from osi.external.palantir.model import (
+from ossie_ontology.common.graph import topological_sort_break_cycles
+from ossie_ontology.common.utils import to_pascal_case, to_verbalization_string
+from ossie_ontology.external.palantir.model import (
     ArrayDataType,
     DataSet as PalantirDataSet,
     DataSetColumn,
@@ -19,7 +36,7 @@ from osi.external.palantir.model import (
     Property as PalantirProperty,
     Relation,
 )
-from osi.model import (
+from ossie_ontology.model import (
     Concept,
     ConceptMapping,
     ConceptType,
@@ -36,22 +53,22 @@ from osi.model import (
     ReferentMapping,
     Relationship,
     RelationshipMultiplicity,
-    OsiOntology
+    OssieOntology
 )
 
 
 _DEFAULT_DIALECT = "ANSI_SQL"
 
 
-class PalantirToOsiConverter:
-    """Converts a Palantir Ontology to OsiOntology.
+class PalantirToOssieConverter:
+    """Converts a Palantir Ontology to OssieOntology.
 
     Pass a *formula_factory* to control how Formula objects are created.
     The default produces plain ``Formula`` instances; downstream packages can
     inject a factory that returns enriched subclasses (e.g. with an AST).
 
-        model = PalantirToOsiConverter().convert(palantir_ontology)
-        model = PalantirToOsiConverter(formula_factory=my_parser).convert(palantir_ontology)
+        model = PalantirToOssieConverter().convert(palantir_ontology)
+        model = PalantirToOssieConverter(formula_factory=my_parser).convert(palantir_ontology)
     """
 
     depths_role_names = {1: "fst", 2: "snd", 3: "thd", 4: "frt"}
@@ -68,9 +85,9 @@ class PalantirToOsiConverter:
         palantir_ontology: PalantirOntology,
         db_name: str = "palantir",
         schema_name: str = "palantir",
-    ) -> OsiOntology:
+    ) -> OssieOntology:
         ontology = OntologyComponent()
-        model = OsiOntology(name="Palantir model", ontology=ontology, version="0.1.0")
+        model = OssieOntology(name="Palantir model", ontology=ontology, version="0.1.0")
 
         semantic_model = SemanticModel(name="Palantir semantic model")
 
@@ -145,7 +162,7 @@ class PalantirToOsiConverter:
         db_name: str,
         schema_name: str,
     ) -> None:
-        concept_name = PalantirToOsiConverter._concept_name(ot)
+        concept_name = PalantirToOssieConverter._concept_name(ot)
         relevant_props = [
             p for p in ot.properties().values() if p.active() or p.experimental() or p.intermediary()
         ]
@@ -160,7 +177,7 @@ class PalantirToOsiConverter:
 
             if is_subtype and not ignore_subtype:
                 parent_ot = subtype_relation.many_object_type()  # type: ignore[union-attr]
-                parent_name = PalantirToOsiConverter._concept_name(parent_ot)
+                parent_name = PalantirToOssieConverter._concept_name(parent_ot)
                 parent = ontology.lookup_concept(parent_name)
                 assert parent is not None, f"Parent concept '{parent_name}' not found (expected from topological order)"
                 concept = Concept(name=concept_name, type=ConceptType.ENTITY_TYPE, extends=[parent])
@@ -176,7 +193,7 @@ class PalantirToOsiConverter:
                 # primary_keys() is a set; sort by readable_id so identify_by
                 # ordering (and the resulting YAML) is stable across runs.
                 for prop in sorted(ot.primary_keys(), key=lambda p: p.readable_id()):
-                    prop_name = PalantirToOsiConverter._attribute_name(prop)
+                    prop_name = PalantirToOssieConverter._attribute_name(prop)
                     rel = ontology.lookup_concept_relationship(concept, prop_name)
                     if rel is None:
                         raise ValueError(
@@ -189,7 +206,7 @@ class PalantirToOsiConverter:
                 # A non-composite identifier is OneToOne; all others stay ManyToOne.
                 sole = next(iter(identifiers.values())) if len(identifiers) == 1 else None
                 for prop in relevant_props:
-                    prop_name = PalantirToOsiConverter._attribute_name(prop)
+                    prop_name = PalantirToOssieConverter._attribute_name(prop)
                     prop_rel = ontology.lookup_concept_relationship(concept, prop_name)
                     if prop_rel is not None:
                         mult = RelationshipMultiplicity.ONE_TO_ONE if prop_rel is sole else RelationshipMultiplicity.MANY_TO_ONE
@@ -202,7 +219,7 @@ class PalantirToOsiConverter:
             # otherwise the second dataset is contributing fields the first
             # didn't declare, which produces an asymmetric model.
             for prop in relevant_props:
-                prop_name = PalantirToOsiConverter._attribute_name(prop)
+                prop_name = PalantirToOssieConverter._attribute_name(prop)
                 if ontology.lookup_concept_relationship(concept, prop_name) is None:
                     raise ValueError(
                         f"Concept '{concept_name}' refers to multiple datasets but not all "
@@ -217,10 +234,10 @@ class PalantirToOsiConverter:
         def madlib_decl(c: Concept, p: PalantirProperty) -> str:
             return (
                 f"{{{c}}} {p.readable_id()} "
-                f"{PalantirToOsiConverter._type_to_madlib_suffix(p.type())}"
+                f"{PalantirToOssieConverter._type_to_madlib_suffix(p.type())}"
             )
 
-        prop_name = PalantirToOsiConverter._attribute_name(prop)
+        prop_name = PalantirToOssieConverter._attribute_name(prop)
         if ontology.lookup_concept_relationship(concept, prop_name) is not None:
             return
 
@@ -257,7 +274,7 @@ class PalantirToOsiConverter:
         if subtype_relation is not None:
             parent_ot = subtype_relation.many_object_type()
             parent_concept = ontology.lookup_concept(
-                PalantirToOsiConverter._concept_name(parent_ot)
+                PalantirToOssieConverter._concept_name(parent_ot)
             )
             property_map = subtype_relation.property_map()
             identifier_props = list(parent_ot.primary_keys())
@@ -278,13 +295,13 @@ class PalantirToOsiConverter:
             # dataset's columns.
             id_referents: list[ReferentMapping] = []
             for prop in identifier_props:
-                prop_name = PalantirToOsiConverter._attribute_name(prop)
+                prop_name = PalantirToOssieConverter._attribute_name(prop)
                 # For subtypes, identifying relationships live on the parent
                 # concept; the child reaches them via `lookup_concept_relationship`.
                 rel = ontology.lookup_concept_relationship(concept, prop_name)
                 if rel is None:
                     continue
-                field = PalantirToOsiConverter._get_dataset_field_by_palantir_property(
+                field = PalantirToOssieConverter._get_dataset_field_by_palantir_property(
                     resolve(prop), palantir_ds, dataset
                 )
                 if field is None:
@@ -327,11 +344,11 @@ class PalantirToOsiConverter:
                     )
                     continue
 
-                prop_name = PalantirToOsiConverter._attribute_name(prop)
+                prop_name = PalantirToOssieConverter._attribute_name(prop)
                 relationship = ontology.lookup_concept_relationship(concept, prop_name)
                 if relationship is None:
                     continue
-                field = PalantirToOsiConverter._get_dataset_field_by_palantir_property(
+                field = PalantirToOssieConverter._get_dataset_field_by_palantir_property(
                     prop, palantir_ds, dataset
                 )
                 if field is None:
@@ -410,14 +427,14 @@ class PalantirToOsiConverter:
         semantic_model: SemanticModel,
     ) -> None:
         mot = rel.many_object_type()
-        mot_name = PalantirToOsiConverter._concept_name(mot)
+        mot_name = PalantirToOssieConverter._concept_name(mot)
         mot_concept = ontology.lookup_concept(mot_name)
         oot = rel.one_object_type()
-        oot_name = PalantirToOsiConverter._concept_name(oot)
+        oot_name = PalantirToOssieConverter._concept_name(oot)
         oot_concept = ontology.lookup_concept(oot_name)
         if mot_concept is None or oot_concept is None:
             return
-        prop_name = PalantirToOsiConverter._attribute_name(rel)
+        prop_name = PalantirToOssieConverter._attribute_name(rel)
 
         if mot_concept is oot_concept:
             verbalize = f"{{{mot_concept}}} {prop_name} {{{oot_concept}:snd}}"
@@ -443,8 +460,8 @@ class PalantirToOsiConverter:
             # No many-side datasets: fall back to a derived_by formula that
             # equates FK columns.
             frags = [
-                f"{relationship.first_role.name}.{PalantirToOsiConverter._attribute_name(mprop)}"
-                f" == {relationship.last_role.name}.{PalantirToOsiConverter._attribute_name(oprop)}"
+                f"{relationship.first_role.name}.{PalantirToOssieConverter._attribute_name(mprop)}"
+                f" == {relationship.last_role.name}.{PalantirToOssieConverter._attribute_name(oprop)}"
                 for mprop, oprop in rel.property_map().items()
             ]
             if frags:
@@ -472,7 +489,7 @@ class PalantirToOsiConverter:
         # Resolve target (oot) identifying relationships once.
         target_id_rels: list[tuple[Relationship, PalantirProperty]] = []
         for mprop, oprop in property_map.items():
-            oot_attr = PalantirToOsiConverter._attribute_name(oprop)
+            oot_attr = PalantirToOssieConverter._attribute_name(oprop)
             id_rel = ontology.lookup_concept_relationship(oot_concept, oot_attr)
             if id_rel is None:
                 return
@@ -480,13 +497,13 @@ class PalantirToOsiConverter:
 
         for palantir_ds in mot.syncs_from():
             ds_name = (
-                f"{PalantirToOsiConverter._concept_name(mot)}_{palantir_ds.readable_id()}"
+                f"{PalantirToOssieConverter._concept_name(mot)}_{palantir_ds.readable_id()}"
             )
             dataset = semantic_model.lookup_dataset(ds_name)
             if dataset is None:
                 continue
 
-            cm = PalantirToOsiConverter._find_concept_mapping(concept_mappings, mot_concept, dataset)
+            cm = PalantirToOssieConverter._find_concept_mapping(concept_mappings, mot_concept, dataset)
             if cm is None:
                 warnings.warn(
                     f"No ConceptMapping for entity '{mot_concept.name}' and dataset "
@@ -498,7 +515,7 @@ class PalantirToOsiConverter:
             referents: list[ReferentMapping] = []
             resolved = True
             for id_rel, mprop in target_id_rels:
-                fk_field = PalantirToOsiConverter._get_dataset_field_by_palantir_property(
+                fk_field = PalantirToOssieConverter._get_dataset_field_by_palantir_property(
                     mprop, palantir_ds, dataset
                 )
                 if fk_field is None:
@@ -549,7 +566,7 @@ class PalantirToOsiConverter:
         if len(candidates) <= 1:
             return candidates[0] if candidates else None
         return next(
-            (cm for cm in candidates if PalantirToOsiConverter._references_dataset(cm, dataset)),
+            (cm for cm in candidates if PalantirToOssieConverter._references_dataset(cm, dataset)),
             candidates[0],
         )
 
@@ -564,12 +581,12 @@ class PalantirToOsiConverter:
 
     def _convert_many_to_many(self, ontology: OntologyComponent, rel: ManyToManyRelation) -> None:
         aot = rel.role_a_player()
-        aot_concept = ontology.lookup_concept(PalantirToOsiConverter._concept_name(aot))
+        aot_concept = ontology.lookup_concept(PalantirToOssieConverter._concept_name(aot))
         bot = rel.role_b_player()
-        bot_concept = ontology.lookup_concept(PalantirToOsiConverter._concept_name(bot))
+        bot_concept = ontology.lookup_concept(PalantirToOssieConverter._concept_name(bot))
         if aot_concept is None or bot_concept is None:
             return
-        rel_name = PalantirToOsiConverter._attribute_name(rel)
+        rel_name = PalantirToOssieConverter._attribute_name(rel)
 
         if aot_concept is bot_concept:
             verbalize = f"{{{aot_concept}}} {rel_name} {{{bot_concept}:snd}}"
@@ -594,14 +611,14 @@ class PalantirToOsiConverter:
         rel: IntermediaryRelation,
     ) -> None:
         aot = rel.role_a_player()
-        aot_name = PalantirToOsiConverter._concept_name(aot)
+        aot_name = PalantirToOssieConverter._concept_name(aot)
         aot_concept = ontology.lookup_concept(aot_name)
         bot = rel.role_b_player()
-        bot_name = PalantirToOsiConverter._concept_name(bot)
+        bot_name = PalantirToOssieConverter._concept_name(bot)
         bot_concept = ontology.lookup_concept(bot_name)
         if aot_concept is None or bot_concept is None:
             return
-        rel_name = PalantirToOsiConverter._attribute_name(rel)
+        rel_name = PalantirToOssieConverter._attribute_name(rel)
 
         if aot_concept is bot_concept:
             verbalize = f"{{{aot_concept}}} {rel_name} {{{bot_concept}:snd}}"
@@ -619,16 +636,16 @@ class PalantirToOsiConverter:
         ontology.add_relationship(relationship)
 
         rel_a = palantir_ontology.relations()[rel.relation_a()]
-        rel_a_name = PalantirToOsiConverter._attribute_name(rel_a)
+        rel_a_name = PalantirToOssieConverter._attribute_name(rel_a)
         rel_b = palantir_ontology.relations()[rel.relation_b()]
-        rel_b_name = PalantirToOsiConverter._attribute_name(rel_b)
+        rel_b_name = PalantirToOssieConverter._attribute_name(rel_b)
 
-        fp_a_ot, sp_a_ot = PalantirToOsiConverter._relation_players(rel_a)
-        fp_a = PalantirToOsiConverter._concept_name(fp_a_ot)
-        sp_a = PalantirToOsiConverter._concept_name(sp_a_ot)
-        fp_b_ot, sp_b_ot = PalantirToOsiConverter._relation_players(rel_b)
-        fp_b = PalantirToOsiConverter._concept_name(fp_b_ot)
-        sp_b = PalantirToOsiConverter._concept_name(sp_b_ot)
+        fp_a_ot, sp_a_ot = PalantirToOssieConverter._relation_players(rel_a)
+        fp_a = PalantirToOssieConverter._concept_name(fp_a_ot)
+        sp_a = PalantirToOssieConverter._concept_name(sp_a_ot)
+        fp_b_ot, sp_b_ot = PalantirToOssieConverter._relation_players(rel_b)
+        fp_b = PalantirToOssieConverter._concept_name(fp_b_ot)
+        sp_b = PalantirToOssieConverter._concept_name(sp_b_ot)
 
         assert (aot_name == fp_a and bot_name == fp_b) or (
             aot_name == sp_a and bot_name == sp_b
@@ -654,7 +671,7 @@ class PalantirToOsiConverter:
         db_name: str,
         schema_name: str,
     ) -> Dataset:
-        ds_name = f"{PalantirToOsiConverter._concept_name(ot)}_{palantir_ds.readable_id()}"
+        ds_name = f"{PalantirToOssieConverter._concept_name(ot)}_{palantir_ds.readable_id()}"
         existing = semantic_model.lookup_dataset(ds_name)
         if existing is not None:
             return existing
@@ -666,7 +683,7 @@ class PalantirToOsiConverter:
             col_type = column.type()
             if col_type is not None and col_type.upper() == "ARRAY":
                 continue
-            field_name = PalantirToOsiConverter._normalize_field_name(column.name())
+            field_name = PalantirToOssieConverter._normalize_field_name(column.name())
             fields.append(
                 DatasetField(
                     name=field_name,
@@ -675,7 +692,7 @@ class PalantirToOsiConverter:
                             DialectExpression(dialect=_DEFAULT_DIALECT, expression=field_name)
                         ]
                     ),
-                    type=PalantirToOsiConverter._resolve_field_type(ontology, palantir_ds, column),
+                    type=PalantirToOssieConverter._resolve_field_type(ontology, palantir_ds, column),
                 )
             )
 
@@ -720,8 +737,8 @@ class PalantirToOsiConverter:
         if isinstance(type_, ArrayDataType):
             depth = arr_depth
             return (
-                f"{{Integer:{PalantirToOsiConverter._depth_role_name(depth)}}} maps to "
-                f"{PalantirToOsiConverter._type_to_madlib_suffix(type_.base_type(), depth + 1)}"
+                f"{{Integer:{PalantirToOssieConverter._depth_role_name(depth)}}} maps to "
+                f"{PalantirToOssieConverter._type_to_madlib_suffix(type_.base_type(), depth + 1)}"
             )
         return f"{{{type_.to_type()}}}"
 
@@ -732,7 +749,7 @@ class PalantirToOsiConverter:
             integer = ontology.lookup_concept("Integer")
             if integer is None:
                 raise ValueError("Builtin 'Integer' could not be resolved for array role.")
-            roles.append((integer, PalantirToOsiConverter._depth_role_name(arr_depth)))
+            roles.append((integer, PalantirToOssieConverter._depth_role_name(arr_depth)))
             self._convert_property_type_roles(ontology, roles, type_.base_type(), arr_depth + 1)
         else:
             target = ontology.lookup_concept(type_.to_type())
@@ -757,7 +774,7 @@ class PalantirToOsiConverter:
 
     @staticmethod
     def _depth_role_name(depth: int) -> str:
-        name = PalantirToOsiConverter.depths_role_names.get(depth)
+        name = PalantirToOssieConverter.depths_role_names.get(depth)
         if not name:
             raise ValueError(f"Array types of depth {depth} are not supported")
         return name
@@ -773,12 +790,12 @@ class PalantirToOsiConverter:
             if ds_guid not in pk_mapping:
                 raise ValueError(
                     f"Primary key mapping for Palantir DataSet '{palantir_ds.readable_id()}' "
-                    f"is missing property '{PalantirToOsiConverter._attribute_name(prop)}'"
+                    f"is missing property '{PalantirToOssieConverter._attribute_name(prop)}'"
                 )
             column_name = pk_mapping[ds_guid]
         if not column_name:
             return None
-        field = dataset.field(PalantirToOsiConverter._normalize_field_name(column_name))
+        field = dataset.field(PalantirToOssieConverter._normalize_field_name(column_name))
         if not field:
             warnings.warn(f"Dataset '{dataset.name}' does not contain a field named '{column_name}'")
         return field

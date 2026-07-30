@@ -1,12 +1,31 @@
-# OSI Ontology Converters
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
 
-Converters between OSI, Palantir, and Spec ontology formats.
+    http://www.apache.org/licenses/LICENSE-2.0
 
-| Converter | Direction |
-|-----------|-----------|
-| `palantir_to_osi` | Palantir ontology → OSI model |
-| `osi_to_spec` | OSI model → Spec YAML |
-| `spec_to_osi` | Spec YAML → OSI model |
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+-->
+
+# Ossie Ontology Converters
+
+Converters between Ossie, Palantir, and Spec ontology formats.
+
+| Converter           | Direction |
+|---------------------|-----------|
+| `palantir_to_ossie` | Palantir ontology → Ossie model |
+| `ossie_to_spec`     | Ossie model → Spec YAML |
+| `spec_to_ossie`     | Spec YAML → Ossie model |
 
 ## Prerequisites
 
@@ -50,29 +69,29 @@ pip-compile --output-file requirements.lock pyproject.toml
 
 ## Usage
 
-The package is importable as `osi` after installation:
+The package is importable as `ossie_ontology` after installation:
 
 ```python
-from osi.converter.palantir_to_osi.converter import PalantirToOsiConverter
-from osi.converter.osi_to_spec.converter import OsiToSpecConverter
-from osi.converter.spec_to_osi.converter import SpecToOsiConverter
+from ossie_ontology.converter.palantir_to_ossie.converter import PalantirToOssieConverter
+from ossie_ontology.converter.ossie_to_spec.converter import OssieToSpecConverter
+from ossie_ontology.converter.spec_to_ossie.converter import SpecToOssieConverter
 ```
 
 ## Scripts
 
-### `scripts/palantir_to_osi.py`
+### `scripts/palantir_to_ossie.py`
 
-Converts a Palantir ontology export (a `.zip` archive or an already extracted folder containing a Palantir ontology JSON and a `data_sets` folder of one or more dataset spec JSON files) into an OSI-compliant YAML representation, printed to stdout.
+Converts a Palantir ontology export (a `.zip` archive or an already extracted folder containing a Palantir ontology JSON and a `data_sets` folder of one or more dataset spec JSON files) into an Ossie-compliant YAML representation, printed to stdout.
 
 **Usage:**
 
 ```bash
-python scripts/palantir_to_osi.py path/to/palantir_export.zip
+python scripts/palantir_to_ossie.py path/to/palantir_export.zip
 # or an extracted folder:
-python scripts/palantir_to_osi.py path/to/palantir_export/
+python scripts/palantir_to_ossie.py path/to/palantir_export/
 ```
 
-Warnings are written to stderr; the OSI YAML is written to stdout.
+Warnings are written to stderr; the Ossie YAML is written to stdout.
 
 **Environment variables (optional):**
 
@@ -85,7 +104,7 @@ If already set in your environment they will be picked up automatically. To over
 
 ```bash
 SNOWFLAKE_DATABASE_NAME=MY_DB SNOWFLAKE_SCHEMA_NAME=MY_SCHEMA \
-  python scripts/palantir_to_osi.py path/to/palantir_export.zip
+  python scripts/palantir_to_ossie.py path/to/palantir_export.zip
 ```
 
 ## Deactivating the environment

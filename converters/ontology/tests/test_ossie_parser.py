@@ -1,4 +1,21 @@
-"""Unit tests for OsiParser and the spec -> OsiOntology conversion, driven by
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+"""Unit tests for OssieParser and the spec -> OssieOntology conversion, driven by
 the `examples/flights.yaml` ontology."""
 
 from __future__ import annotations
@@ -9,9 +26,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from osi.converter.osi_to_spec.converter import OsiToSpecConverter
-from osi.model import ConceptType, OsiOntology, RelationshipMultiplicity
-from osi.parser import OsiParser
+from ossie_ontology.converter.ossie_to_spec.converter import OssieToSpecConverter
+from ossie_ontology.model import ConceptType, OssieOntology, RelationshipMultiplicity
+from ossie_ontology.parser import OssieParser
 
 
 # ----- Document-level metadata ------------------------------------------
@@ -111,13 +128,13 @@ def test_ontology_mapping(flights_model):
 def test_load_data_reads_yaml(tmp_path: Path):
     path = tmp_path / "spec.yaml"
     path.write_text("a: 1\nb:\n  - x\n  - y\n")
-    assert OsiParser.load_data(path) == {"a": 1, "b": ["x", "y"]}
+    assert OssieParser.load_data(path) == {"a": 1, "b": ["x", "y"]}
 
 
 def test_load_data_reads_json(tmp_path: Path):
     path = tmp_path / "spec.json"
     path.write_text(json.dumps({"a": 1, "b": ["x", "y"]}))
-    assert OsiParser.load_data(path) == {"a": 1, "b": ["x", "y"]}
+    assert OssieParser.load_data(path) == {"a": 1, "b": ["x", "y"]}
 
 
 def test_parse_of_flights_as_json(flights_path: Path, tmp_path: Path):
@@ -125,7 +142,7 @@ def test_parse_of_flights_as_json(flights_path: Path, tmp_path: Path):
     # the same spec must produce an equivalent model.
     json_path = tmp_path / "flights.json"
     json_path.write_text(json.dumps(yaml.safe_load(flights_path.read_text())))
-    model = OsiParser().parse(json_path)
+    model = OssieParser().parse(json_path)
     assert model.name == "Flights"
     assert len(model.ontology.concepts(exclude_builtin=True)) == 44
 
@@ -134,29 +151,29 @@ def test_parse_of_flights_as_json(flights_path: Path, tmp_path: Path):
 
 def test_parse_rejects_directory(tmp_path: Path):
     with pytest.raises(ValueError, match="is not a file"):
-        OsiParser().parse(tmp_path)
+        OssieParser().parse(tmp_path)
 
 
 def test_parse_rejects_missing_file(tmp_path: Path):
     with pytest.raises(ValueError, match="is not a file"):
-        OsiParser().parse(tmp_path / "does_not_exist.yaml")
+        OssieParser().parse(tmp_path / "does_not_exist.yaml")
 
 
 def test_spec_requires_parse_first():
-    parser = OsiParser()
+    parser = OssieParser()
     with pytest.raises(RuntimeError):
         parser.spec()
 
 
 def test_parsers_do_not_share_formula_factories():
-    a, b = OsiParser(), OsiParser()
+    a, b = OssieParser(), OssieParser()
     assert a._formula_factory is not b._formula_factory
     assert a._mapping_formula_factory is not b._mapping_formula_factory
 
 
 # ----- Round-trip invariants --------------------------------------------
 
-def _structure_sets(model: OsiOntology):
+def _structure_sets(model: OssieOntology):
     ontology = model.ontology
     return (
         {c.name for c in ontology.concepts(exclude_builtin=True)},
@@ -173,12 +190,12 @@ def test_roundtrip_preserves_structure(flights_path, tmp_path: Path):
     order), so we compare the sets of concepts, relationships, and requires
     rather than the raw YAML.
     """
-    model1 = OsiParser().parse(flights_path)
-    yaml1 = OsiToSpecConverter.convert(model1).dump_yaml()
+    model1 = OssieParser().parse(flights_path)
+    yaml1 = OssieToSpecConverter.convert(model1).dump_yaml()
 
     roundtrip_path = tmp_path / "roundtrip.yaml"
     roundtrip_path.write_text(yaml1)
-    model2 = OsiParser().parse(roundtrip_path)
+    model2 = OssieParser().parse(roundtrip_path)
 
     assert _structure_sets(model1) == _structure_sets(model2)
 
@@ -186,6 +203,6 @@ def test_roundtrip_preserves_structure(flights_path, tmp_path: Path):
 def test_dump_yaml_is_deterministic_for_fixed_input(flights_path):
     """The same input file always dumps to identical YAML (so the snapshot is
     stable across runs)."""
-    yaml_a = OsiToSpecConverter.convert(OsiParser().parse(flights_path)).dump_yaml()
-    yaml_b = OsiToSpecConverter.convert(OsiParser().parse(flights_path)).dump_yaml()
+    yaml_a = OssieToSpecConverter.convert(OssieParser().parse(flights_path)).dump_yaml()
+    yaml_b = OssieToSpecConverter.convert(OssieParser().parse(flights_path)).dump_yaml()
     assert yaml_a == yaml_b

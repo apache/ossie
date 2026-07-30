@@ -1,11 +1,28 @@
-"""Converter from OsiSpec (Pydantic DTOs) to OsiOntology (runtime semantic model)."""
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+"""Converter from OssieSpec (Pydantic DTOs) to OssieOntology (runtime semantic model)."""
 
 from __future__ import annotations
 
 import re
 
-from osi.common.graph import topological_sort
-from osi.model import (
+from ossie_ontology.common.graph import topological_sort
+from ossie_ontology.model import (
     Concept,
     ConceptMapping,
     ConceptType,
@@ -28,10 +45,10 @@ from osi.model import (
     ReferentMapping,
     Relationship,
     RelationshipMultiplicity,
-    OsiOntology,
+    OssieOntology,
     BUILTIN_CONCEPTS
 )
-from osi.spec import (
+from ossie_ontology.spec import (
     ConceptComponent as SpecConceptComponent,
     ConceptMapping as SpecConceptMapping,
     CustomExtension as SpecCustomExtension,
@@ -46,7 +63,7 @@ from osi.spec import (
     Metric as SpecMetric,
     ObjectMapping as SpecObjectMapping,
     OntologyMapping as SpecOntologyMapping,
-    OsiSpec,
+    OssieSpec,
     ReferentMapping as SpecReferentMapping,
     Relationship as SpecRelationship,
 )
@@ -58,15 +75,15 @@ _QUALIFIED_FIELD_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\.\s*([A-Za-z_
 _BARE_FIELD_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*$")
 
 
-class SpecToOsiConverter:
-    """Converts OsiSpec (Pydantic DTOs) to OsiOntology (runtime model).
+class SpecToOssieConverter:
+    """Converts OssieSpec (Pydantic DTOs) to OssieOntology (runtime model).
 
     Pass a *formula_factory* to control how Formula objects are created.
     The default produces plain ``Formula`` instances; downstream packages can
     inject a factory that returns enriched subclasses (e.g. with an AST).
 
-        model = SpecToOsiConverter().convert(spec)
-        model = SpecToOsiConverter(formula_factory=my_parser).convert(spec)
+        model = SpecToOssieConverter().convert(spec)
+        model = SpecToOssieConverter(formula_factory=my_parser).convert(spec)
     """
 
     def __init__(self, formula_factory: FormulaFactory | None = None,
@@ -74,9 +91,9 @@ class SpecToOsiConverter:
         self._formula_factory = formula_factory or FormulaFactory()
         self._mapping_formula_factory = mapping_formula_factory or MappingFormulaFactory()
 
-    def convert(self, spec: OsiSpec) -> OsiOntology:
+    def convert(self, spec: OssieSpec) -> OssieOntology:
         ontology = OntologyComponent()
-        model = OsiOntology(
+        model = OssieOntology(
             name=spec.name,
             ontology=ontology,
             description=spec.description,
@@ -93,7 +110,7 @@ class SpecToOsiConverter:
 
     # ----- Ontology ------------------------------------------------------
 
-    def _populate_ontology(self, ontology: OntologyComponent, spec: OsiSpec) -> None:
+    def _populate_ontology(self, ontology: OntologyComponent, spec: OssieSpec) -> None:
 
         concept_specs = {cc.concept: cc for cc in spec.ontology}
         sorted_names = self._sort_spec_dependency_graph(list(concept_specs.values()))
@@ -226,7 +243,7 @@ class SpecToOsiConverter:
 
     # ----- Ontology mapping ---------------------------------------------
 
-    def _convert_ontology_mapping(self, model: OsiOntology, om_spec: SpecOntologyMapping) -> None:
+    def _convert_ontology_mapping(self, model: OssieOntology, om_spec: SpecOntologyMapping) -> None:
         ontology = model.ontology
 
         semantic_model = self._convert_semantic_model(om_spec.semantic_model)
@@ -244,7 +261,7 @@ class SpecToOsiConverter:
 
     def _convert_concept_mapping(
         self,
-        model: OsiOntology,
+        model: OssieOntology,
         ontology: OntologyComponent,
         semantic_model: SemanticModel,
         cm_spec: SpecConceptMapping,
@@ -267,7 +284,7 @@ class SpecToOsiConverter:
 
     def _convert_object_mapping(
         self,
-        model: OsiOntology,
+        model: OssieOntology,
         ontology: OntologyComponent,
         semantic_model: SemanticModel,
         container: Concept,
@@ -295,7 +312,7 @@ class SpecToOsiConverter:
 
     def _convert_referent_mapping(
         self,
-        model: OsiOntology,
+        model: OssieOntology,
         ontology: OntologyComponent,
         semantic_model: SemanticModel,
         container: Concept,
@@ -321,7 +338,7 @@ class SpecToOsiConverter:
 
     def _convert_link_mapping(
         self,
-        model: OsiOntology,
+        model: OssieOntology,
         ontology: OntologyComponent,
         semantic_model: SemanticModel,
         container: Concept,

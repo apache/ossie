@@ -1,3 +1,20 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 import json
 import warnings
 import zipfile
@@ -5,10 +22,10 @@ from io import IOBase
 from pathlib import Path
 from typing import Any, Iterable
 
-from osi.common.utils import camel_to_snake
-from osi.external.palantir.model import DataSet, DataSetColumn, DataSetModel, ObjectType, Ontology, DataType, \
+from ossie_ontology.common.utils import camel_to_snake
+from ossie_ontology.external.palantir.model import DataSet, DataSetColumn, DataSetModel, ObjectType, Ontology, DataType, \
     ArrayDataType, Property, Status, ManyToOneRelation, Relation, ManyToManyRelation, IntermediaryRelation, DataSource
-from osi.common.file_utils import iter_json_files_from_dir_in_zip, open_top_level_file_from_zip, \
+from ossie_ontology.common.file_utils import iter_json_files_from_dir_in_zip, open_top_level_file_from_zip, \
     iter_json_files_from_dir, get_top_level_json_file_from_dir, validate_dir
 
 
