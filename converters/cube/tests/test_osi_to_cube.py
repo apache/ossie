@@ -218,6 +218,31 @@ def test_field_name_is_sanitized_and_collisions_are_rejected():
         convert_ossie_to_cube(_ossie(ds))
 
 
+def test_field_collision_is_rejected_before_any_metric_is_placed():
+    """Dimension names are resolved once, up front. Resolving them per stage let a
+    collision go undetected while measures were being placed -- so the member set
+    that decides `{CUBE.member}` vs `{CUBE}.column` could be silently short a name,
+    and the error surfaced later and less clearly."""
+    ds = (
+        "  - name: orders\n"
+        "    source: t\n"
+        "    fields:\n"
+        "    - name: Order Status\n"
+        "      expression:\n"
+        "        dialects:\n"
+        "        - dialect: ANSI_SQL\n"
+        "          expression: status\n"
+        "    - name: order status\n"
+        "      expression:\n"
+        "        dialects:\n"
+        "        - dialect: ANSI_SQL\n"
+        "          expression: status2\n"
+    )
+    metrics = _metric("m", "SUM(orders.amount)")
+    with pytest.raises(ConversionError, match="collides"):
+        convert_ossie_to_cube(_ossie(ds, metrics=metrics))
+
+
 def test_missing_dialect_drops_the_field_with_an_issue():
     ds = (
         "  - name: orders\n"

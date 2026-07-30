@@ -52,7 +52,13 @@ if HAVE_HYPOTHESIS:
             self.data = data
 
         def chance(self, p=0.5):
-            return self.data.draw(st.booleans())
+            # `st.booleans()` is unweighted, so it would ignore `p` and explore a
+            # different distribution than RandomRnd -- defeating the point of the
+            # two drivers sharing one generator. Drawn so the minimal value (0)
+            # means False, which shrinks toward the smallest model rather than the
+            # largest.
+            return self.data.draw(
+                st.integers(min_value=0, max_value=99)) >= 100 - round(p * 100)
 
         def count(self, lo, hi):
             return self.data.draw(st.integers(min_value=lo, max_value=hi))

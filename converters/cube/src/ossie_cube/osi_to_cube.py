@@ -131,14 +131,19 @@ def _convert_model(model, dialect, base_cube, issues):
     model_stash = read_stash(model)
 
     # Per-cube facts the join and measure stages need.
+    # Field -> dimension names are resolved once here and reused by every stage.
+    # Sanitizing per stage would let a collision go undetected in one place and be
+    # rejected in another, and would disagree about which members a cube actually
+    # has -- which decides `{CUBE.member}` vs `{CUBE}.column` and where a measure
+    # lands.
+    dim_names_by_cube = {}
     members_by_cube = {}
     pk_by_cube = {}
     for ds_name, ds in datasets.items():
         cname = cube_names[ds_name]
-        members_by_cube[cname] = {
-            sanitize_name(f["name"], f"dataset '{ds_name}': field", set())
-            for f in (ds.get("fields") or [])
-        }
+        dim_names_by_cube[cname] = _resolve_dimension_names(
+            ds, f"Model '{name}': dataset '{ds_name}'")
+        members_by_cube[cname] = set(dim_names_by_cube[cname].values())
         pk_by_cube[cname] = [str(c) for c in (ds.get("primary_key") or [])]
 
     joins_by_cube = _build_joins(relationships, cube_names, issues)
@@ -152,7 +157,7 @@ def _convert_model(model, dialect, base_cube, issues):
     files_content = {}
     for ds_name, ds in datasets.items():
         cname = cube_names[ds_name]
-        cube = _build_cube(ds, cname, members_by_cube[cname],
+        cube = _build_cube(ds, cname, dim_names_by_cube[cname],
                            joins_by_cube.get(cname), measures_by_cube.get(cname),
                            dialect, issues)
         path = stashed_paths.get(cname) or cube_file(cname)
@@ -233,7 +238,7 @@ def _ordered(obj, order):
 
 # --- cubes ----------------------------------------------------------------------
 
-def _build_cube(ds, cname, members, joins, measures, dialect, issues):
+def _build_cube(ds, cname, dim_names, joins, measures, dialect, issues):
     ds_name = ds["name"]
     scope = f"dataset '{ds_name}'"
     stash = read_stash(ds)
@@ -262,7 +267,8 @@ def _build_cube(ds, cname, members, joins, measures, dialect, issues):
                        "Cube's agent reads ai_context only on views and members, "
                        "so this cube-level value has no effect in Cube")
 
-    dimensions, covered = _build_dimensions(ds, cname, members, dialect, issues)
+    dimensions, covered = _build_dimensions(
+        ds, cname, dim_names, dialect, issues)
     # A primary-key column no field covers still has to exist as a dimension for
     # Cube to join or roll up the cube.
     pk_names = []
@@ -301,17 +307,47 @@ def _build_cube(ds, cname, members, joins, measures, dialect, issues):
     return _ordered(cube, _CUBE_KEY_ORDER)
 
 
-def _build_dimensions(ds, cname, members, dialect, issues):
+def _resolve_dimension_names(ds, scope):
+    """Map each of a dataset's fields to the Cube dimension name it becomes.
+
+    Sanitization and collision detection happen here and nowhere else, so every
+    stage agrees on the result. Two subtleties the mapping has to get right:
+
+    - A collision is an error, not a silent merge. Sanitizing with a fresh `taken`
+      set per field would hide one.
+    - The two halves of a split `geo` dimension map back to the *single* dimension
+      they merge into, so `location_latitude` resolves to `location`. Treating the
+      halves as members of their own would let a metric emit a `{CUBE.…}` reference
+      to a dimension the exported cube does not have.
+    """
+    names = {}
+    taken = set()
+    for field in (ds.get("fields") or []):
+        fname = require_str(field, "name", f"{scope}: field")
+        geo = read_stash(field).get("geo")
+        if geo:
+            base = geo["of"]
+            names[fname] = base
+            taken.add(base.lower())
+            continue
+        dname = sanitize_name(fname, f"{scope}: field", taken)
+        taken.add(dname.lower())
+        names[fname] = dname
+    return names
+
+
+def _build_dimensions(ds, cname, dim_names, dialect, issues):
     """Build a cube's dimensions from an Ossie dataset's fields.
 
     Returns (dimensions, {column or field name: dimension name}) -- the second
     value is what primary-key resolution matches against. Fields carrying a `geo`
     stash are re-merged into the single Cube dimension they were split from.
+    Dimension names come from `dim_names` (see `_resolve_dimension_names`) rather
+    than being sanitized again here.
     """
     ds_name = ds["name"]
     dimensions = []
     covered = {}
-    taken = set()
     geo_parts = {}
     for field in (ds.get("fields") or []):
         fname = require_str(field, "name", f"dataset '{ds_name}': field")
@@ -326,8 +362,7 @@ def _build_dimensions(ds, cname, members, dialect, issues):
                 dimensions.append(None)  # placeholder, filled in below
             continue
 
-        dname = sanitize_name(fname, f"dataset '{ds_name}': field", taken)
-        taken.add(dname.lower())
+        dname = dim_names[fname]
         expr = pick_expression(field.get("expression"), dialect)
         if expr is None:
             issues.add(IssueType.NO_USABLE_DIALECT, f"{ds_name}.{fname}",
@@ -339,7 +374,8 @@ def _build_dimensions(ds, cname, members, dialect, issues):
             # The exact Cube spelling a prior import saw.
             dim["sql"] = stash["sql"]
         else:
-            dim["sql"] = ossie_expr_to_cube_sql(expr, cname, members, ())
+            dim["sql"] = ossie_expr_to_cube_sql(
+                expr, cname, set(dim_names.values()), ())
         dim["type"] = _dimension_type(field, stash, f"{ds_name}.{fname}", issues)
         if field.get("label"):
             dim["title"] = field["label"]
