@@ -166,9 +166,9 @@ def _convert_model(model, dialect, base_cube, issues):
         path = stashed_paths.get(cname) or cube_file(cname)
         files_content.setdefault(path, {}).setdefault("cubes", []).append(cube)
 
-    for vpath, view in _build_views(model, model_stash, cube_names, relationships,
-                                   datasets, base_cube).items():
-        files_content.setdefault(vpath, {}).setdefault("views", []).append(view)
+    for vpath, views in _build_views(model, model_stash, cube_names, relationships,
+                                     datasets, base_cube).items():
+        files_content.setdefault(vpath, {}).setdefault("views", []).extend(views)
 
     files = {path: dump_yaml(content) for path, content in files_content.items()}
 
@@ -701,7 +701,10 @@ def _balanced(s):
 
 def _build_views(model, model_stash, cube_names, relationships, datasets,
                  base_cube):
-    """Return {file path: view dict}.
+    """Return {file path: [view dict, ...]}.
+
+    A list per path, not a single view: several views can share one YAML file, and
+    keying one view per path silently kept only the last.
 
     Stashed views restore verbatim, with the natively mapped description and AI
     context re-injected on the mapped one. The `views` stash key being *present* --
@@ -742,7 +745,8 @@ def _build_views(model, model_stash, cube_names, relationships, datasets,
                 meta = _build_meta(model.get("ai_context"), view.get("meta"), parked)
                 if meta:
                     view["meta"] = meta
-            out[paths.get(vname) or view_file(vname)] = view
+            path = paths.get(vname) or view_file(vname)
+            out.setdefault(path, []).append(view)
         return out
 
     vname = sanitize_name(model.get("name", "model"), "Model", set())
@@ -756,7 +760,7 @@ def _build_views(model, model_stash, cube_names, relationships, datasets,
         cube_names, relationships,
         cube_names[_pick_base_cube(model.get("name", "<unnamed>"), datasets,
                                   relationships, base_cube)])
-    out[view_file(vname)] = view
+    out[view_file(vname)] = [view]
     return out
 
 

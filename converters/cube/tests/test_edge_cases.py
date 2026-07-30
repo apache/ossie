@@ -1087,6 +1087,53 @@ def test_foreign_extensions_survive_once_a_view_is_mapped():
     assert "SNOWFLAKE" in vendors
 
 
+_TWO_VIEWS_ONE_FILE = {
+    "model/all.yml": (
+        "cubes:\n"
+        "  - name: orders\n"
+        "    sql_table: public.orders\n"
+        "views:\n"
+        "  - name: alpha\n"
+        "    description: A\n"
+        "    cubes:\n"
+        "      - join_path: orders\n"
+        "        includes: '*'\n"
+        "  - name: beta\n"
+        "    description: B\n"
+    ),
+}
+
+
+def test_several_views_in_one_file_all_survive():
+    """Views were keyed one-per-path on export, so two sharing a file meant the second
+    overwrote the first. The lost one here is `alpha` -- the *mapped* view, which is
+    where the model's own description and AI context live."""
+    ossie, _ = convert_cube_to_ossie(_TWO_VIEWS_ONE_FILE, view="alpha")
+    back, _ = convert_ossie_to_cube(ossie)
+    assert set(back) == {"model/all.yml"}
+    rebuilt = parse(back["model/all.yml"])
+    # Declaration order preserved, both present.
+    assert [v["name"] for v in rebuilt["views"]] == ["alpha", "beta"]
+    assert [c["name"] for c in rebuilt["cubes"]] == ["orders"]
+    assert parse_files(back) == parse_files(_TWO_VIEWS_ONE_FILE)
+
+
+def test_the_mapped_view_in_a_shared_file_still_carries_model_metadata():
+    """The mapped view is the model's home for description and AI context, so it has
+    to be the one updated -- not whichever view happens to be written last."""
+    ossie, _ = convert_cube_to_ossie(_TWO_VIEWS_ONE_FILE, view="alpha")
+    model = model_of(ossie)
+    assert model["name"] == "alpha"
+    assert model["description"] == "A"
+
+    model["description"] = "edited"
+    files, _ = convert_ossie_to_cube(dump_yaml({
+        "version": "0.2.0.dev0", "semantic_model": [model]}))
+    views = by_name(parse(files["model/all.yml"])["views"])
+    assert views["alpha"]["description"] == "edited"
+    assert views["beta"]["description"] == "B"
+
+
 def test_both_views_are_restored_on_export():
     ossie, _ = convert_cube_to_ossie(_TWO_VIEWS, view="b")
     back, _ = convert_ossie_to_cube(ossie)
