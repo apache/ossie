@@ -398,7 +398,7 @@ a dialect extension.
 | Function | Syntax | Description |
 | :---- | :---- | :---- |
 | `CONCAT` | `CONCAT(str1, str2, ...)` | Concatenate strings |
-| `||` | `str1 || str2` | Concatenation operator |
+| `\|\|` | `str1 \|\| str2` | Concatenation operator |
 | `LENGTH` | `LENGTH(str)` | String length in characters |
 | `LOWER` | `LOWER(str)` | Convert to lowercase |
 | `UPPER` | `UPPER(str)` | Convert to uppercase |
@@ -664,7 +664,7 @@ expression:
 | :---- | :---- | :---- | :---- | :---- | :---- |
 | Date truncation | `DATE_TRUNC('month', d)` | `DATE_TRUNC('month', d)` | `DATE_TRUNC(d, MONTH)` | `DATE_TRUNC('month', d)` | `DATE_TRUNC('month', d)` |
 | Date add | `DATEADD(day, 7, d)` | `DATEADD(day, 7, d)` | `DATE_ADD(d, INTERVAL 7 DAY)` | `DATE_ADD(d, 7)` | `d + INTERVAL '7 days'` |
-| String concat | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `a || b` |
+| String concat | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `a \|\| b` |
 | Null coalesce | `COALESCE(a, b)` | `COALESCE(a, b)` or `NVL(a, b)` | `COALESCE(a, b)` or `IFNULL(a, b)` | `COALESCE(a, b)` | `COALESCE(a, b)` |
 | Current timestamp | `CURRENT_TIMESTAMP` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP` |
 | Substring | `SUBSTRING(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTRING(s, start, len)` | `SUBSTRING(s, start, len)` |
