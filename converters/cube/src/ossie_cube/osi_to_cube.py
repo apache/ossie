@@ -32,6 +32,7 @@ Usage (CLI):
 """
 
 import re
+from collections import deque
 
 from ._common import (
     DATATYPE_TO_DIM_TYPE,
@@ -710,9 +711,9 @@ def _view_cubes(cube_names, relationships, base):
 
     entries = [{"join_path": base, "includes": "*"}]
     paths = {base: base}
-    queue = [base]
+    queue = deque([base])
     while queue:
-        current = queue.pop(0)
+        current = queue.popleft()
         for neighbor in adjacency.get(current, []):
             if neighbor in paths:
                 continue

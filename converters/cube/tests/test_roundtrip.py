@@ -39,7 +39,7 @@ def test_cube_roundtrip_is_lossless(fixture):
     """Cube -> Ossie -> Cube reproduces the original model, structurally.
 
     Compared parsed rather than byte-for-byte: YAML comments (including the
-    licence headers on the fixtures) are not part of the data model, and key order
+    license headers on the fixtures) are not part of the data model, and key order
     within a mapping is not semantic.
     """
     files = load_fixture_dir(fixture)
