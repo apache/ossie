@@ -129,7 +129,7 @@ to **import** (Cube -> Ossie) or **export** (Ossie -> Cube).
 | `field.dimension.is_time` | `type: time` | Import sets `is_time: true` for a time dimension. |
 | `field.label` / `description` | dimension `title` / `description` | |
 | `field.ai_context.instructions` | dimension `meta.ai_context` | Cube's documented AI-only context field. |
-| — | `type: geo` dimension | An Ossie field holds one expression and a geo dimension has two, so it **splits** into `<name>_latitude` / `<name>_longitude` (`Float`). Reconstruction data rides on the latitude half. |
+| — | `type: geo` dimension | An Ossie field holds one expression and a geo dimension has two, so it **splits** into `<name>_latitude` / `<name>_longitude` (`Float`). Reconstruction data rides on the latitude half. See [Geo dimensions](#geo-dimensions). |
 | relationship | `joins[]` on a cube | `many_to_one` on cube A -> `from: A`(many), `to: B`(one). `one_to_many` is flipped so Ossie's `from` is the many side; the declared side and type are stashed so export restores the original. |
 | `from_columns` / `to_columns` | join `sql` | Only an AND-chain of equalities between two member references maps. Anything else (non-equi, range, literal, third cube) is preserved verbatim in the stash. |
 | metric | `measures[]` on the cube its expression references | Import hoists cube-scoped measures to the model level, qualifying a colliding name as `<cube>__<measure>` and stashing the original name and owning cube. |
@@ -195,6 +195,31 @@ different number.
 > `non_additive_dimension` is the nearest precedent, and this repo's dbt converter
 > already loses the same information. Worth raising on `dev@`.
 
+## Geo dimensions
+
+A Cube `type: geo` dimension carries two SQL expressions where an Ossie field carries one, so it splits on import:
+
+```yaml
+# Cube                                  # Ossie
+- name: home                            - name: home_latitude   (expression: lat)
+  type: geo                             - name: home_longitude  (expression: lon)
+  latitude:  { sql: "{CUBE}.lat" }
+  longitude: { sql: "{CUBE}.lon" }
+```
+
+Export merges the halves back into the single geo dimension, so the round trip is exact.
+
+The half names exist **only in Ossie** — Cube has neither a column nor a member called `home_latitude`. So when an Ossie metric or field expression references a half, export substitutes the half's own SQL rather than emitting a reference Cube cannot resolve:
+
+```
+AVG(users.home_latitude)                    ->  sql: AVG({CUBE}.lat)
+AVG(users.home_latitude) - MIN(orders.amt)  ->  sql: AVG({users}.lat) - MIN({CUBE.amt})
+```
+
+`{CUBE}` means "the cube this is declared on", so an inlined snippet is requalified to name its original cube when it crosses into another cube's SQL.
+
+One documented normalization follows: after a round trip such a metric names the column the half actually reads (`users.lat`) rather than the Ossie-only field name (`users.home_latitude`). Same reference, and it is the form Cube can express.
+
 ## Conversion issues
 
 `convert_cube_to_ossie` returns `(yaml, IssueLog)`. Each issue carries a type, the
@@ -250,7 +275,7 @@ uv sync
 uv run pytest
 ```
 
-226 tests at 96% line coverage: example-based unit tests per direction, CLI
+234 tests at 96% line coverage: example-based unit tests per direction, CLI
 behavior tests, fixture round-trip tests (including the
 [TPC-DS model](../../examples/tpcds_semantic_model.yaml) the converter guide asks
 for as a baseline), core-spec JSON Schema validation of every emitted Ossie

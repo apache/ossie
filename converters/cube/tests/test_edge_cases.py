@@ -603,6 +603,92 @@ def test_geo_dimension_extras_survive_the_split_and_merge():
     assert issues.of_type(IssueType.GEO_DIMENSION_SPLIT)
 
 
+_GEO_MODEL = (
+    "version: 0.2.0.dev0\n"
+    "semantic_model:\n"
+    "- name: shop\n"
+    "  datasets:\n"
+    "  - name: users\n"
+    "    source: public.users\n"
+    "    fields:\n"
+    "    - name: home_latitude\n"
+    "      expression:\n"
+    "        dialects:\n"
+    "        - dialect: ANSI_SQL\n"
+    "          expression: lat\n"
+    "      datatype: Float\n"
+    "      custom_extensions:\n"
+    "      - vendor_name: CUBE\n"
+    "        data: '{\"_v\": 1, \"geo\": {\"of\": \"home\", \"part\": \"latitude\","
+    " \"sql\": \"{CUBE}.lat\"}}'\n"
+    "    - name: home_longitude\n"
+    "      expression:\n"
+    "        dialects:\n"
+    "        - dialect: ANSI_SQL\n"
+    "          expression: lon\n"
+    "      datatype: Float\n"
+    "      custom_extensions:\n"
+    "      - vendor_name: CUBE\n"
+    "        data: '{\"_v\": 1, \"geo\": {\"of\": \"home\", \"part\": \"longitude\","
+    " \"sql\": \"{CUBE}.lon\"}}'\n"
+    "  metrics:\n"
+    "  - name: avg_lat\n"
+    "    expression:\n"
+    "      dialects:\n"
+    "      - dialect: ANSI_SQL\n"
+    "        expression: AVG(users.home_latitude)\n"
+)
+
+
+def test_a_metric_referencing_a_geo_half_inlines_its_sql():
+    """A split geo half's name exists only in Ossie: Cube has neither a column nor a
+    member called `home_latitude`, since the halves merge into the `home` dimension.
+    So a reference to one is replaced by the half's own SQL, which is valid Cube."""
+    files, _ = convert_ossie_to_cube(_GEO_MODEL)
+    cube = parse(files["model/cubes/users.yml"])["cubes"][0]
+    assert cube["measures"] == [
+        {"name": "avg_lat", "sql": "{CUBE}.lat", "type": "avg"}]
+    # And the dimension itself still merges back to a single geo member.
+    assert cube["dimensions"] == [{
+        "name": "home", "type": "geo",
+        "latitude": {"sql": "{CUBE}.lat"},
+        "longitude": {"sql": "{CUBE}.lon"}}]
+
+
+def test_a_geo_half_reference_is_requalified_when_it_crosses_cubes():
+    """`{CUBE}` means "the cube this is declared on", so inlining a snippet into
+    another cube's SQL has to name the original cube explicitly."""
+    model = _GEO_MODEL.replace(
+        "  - name: users\n", "  - name: orders\n    source: public.orders\n"
+        "    fields:\n"
+        "    - name: amount\n"
+        "      expression:\n"
+        "        dialects:\n"
+        "        - dialect: ANSI_SQL\n"
+        "          expression: amount\n"
+        "      datatype: Decimal\n"
+        "  - name: users\n", 1
+    ).replace("        expression: AVG(users.home_latitude)\n",
+              "        expression: AVG(users.home_latitude) - MIN(orders.amount)\n")
+    files, _ = convert_ossie_to_cube(model, base_cube="orders")
+    measures = parse(files["model/cubes/orders.yml"])["cubes"][0]["measures"]
+    # `{users}.lat` names the cube explicitly, since `{CUBE}` here would mean
+    # `orders`. `{CUBE.amount}` stays a member reference because `amount` is a
+    # declared field of the cube the measure lands on.
+    assert measures[0]["sql"] == "AVG({users}.lat) - MIN({CUBE.amount})"
+    assert measures[0]["type"] == "number"
+
+
+def test_geo_half_references_normalize_to_the_underlying_column():
+    """Documented normalization: after a round trip the metric names the column the
+    geo half actually reads rather than the Ossie-only field name. Semantically the
+    same reference, and it is what Cube can express."""
+    files, _ = convert_ossie_to_cube(_GEO_MODEL)
+    ossie2, _ = convert_cube_to_ossie(files)
+    metric = model_of(ossie2)["metrics"][0]
+    assert expr_of(metric) == "AVG(users.lat)"
+
+
 def test_geo_dimension_missing_a_half_is_rejected():
     files = _files(users=(
         "cubes:\n"

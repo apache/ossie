@@ -385,7 +385,22 @@ def cube_sql_to_ossie(sql, own_cube, resolve_ref=None, self_prefix=None):
     return out, changed
 
 
-def ossie_expr_to_cube_sql(expr, own_cube, own_members=(), cube_names=()):
+def requalify_self_refs(sql, cube_name):
+    """Rewrite `{CUBE}` / `{TABLE}` in a Cube SQL snippet to name `cube_name`.
+
+    Needed when a snippet written for one cube is inlined into another cube's SQL:
+    `{CUBE}` means "the cube this is declared on", so it changes meaning on the
+    move, while `{orders}.col` is explicit and does not.
+    """
+    return re.sub(
+        r"\$?\{\s*(?:CUBE|TABLE)\s*(\.\s*[A-Za-z_][A-Za-z0-9_]*\s*)?\}",
+        lambda m: "{" + cube_name + (m.group(1).strip() if m.group(1) else "") + "}",
+        str(sql),
+    )
+
+
+def ossie_expr_to_cube_sql(expr, own_cube, own_members=(), cube_names=(),
+                           inline_sql=None):
     """Rewrite an Ossie expression into Cube member-reference form.
 
     Only *dotted* `cube.name` references are rewritten -- a bare identifier stays
@@ -403,13 +418,27 @@ def ossie_expr_to_cube_sql(expr, own_cube, own_members=(), cube_names=()):
     The own cube is always referenced as `{CUBE}` rather than by name, so the
     model keeps working when the cube is extended. Literal braces in the incoming
     expression are escaped.
+
+    `inline_sql` maps `{cube: {field: cube_sql}}` for Ossie fields that have no
+    addressable Cube counterpart, and whose SQL therefore has to be substituted
+    inline. The case that needs it is a split `geo` dimension: `location_latitude`
+    exists only in Ossie -- Cube has neither a column nor a member by that name --
+    so a reference to it becomes the half's own SQL (`{CUBE}.lat`), requalified when
+    it crosses cubes.
     """
     escaped = str(expr).replace("{", "\\{").replace("}", "\\}")
     known = set(cube_names)
     members = set(own_members)
+    inline = inline_sql or {}
 
     def repl(m):
         head, name = m.group(1), m.group(2)
+        substitute = (inline.get(head) or {}).get(name)
+        if substitute is not None:
+            # Already-Cube SQL, so it bypasses the escaping above; `{CUBE}` inside
+            # it means `head`, which only stays true while head is the own cube.
+            return (str(substitute) if head == own_cube
+                    else requalify_self_refs(substitute, head))
         if head == own_cube:
             return "{CUBE." + name + "}" if name in members else "{CUBE}." + name
         if head in known:
