@@ -328,18 +328,46 @@ def _resolve_dimension_names(ds, scope):
     """
     names, inline_sql = {}, {}
     taken = set()
+    geo_halves = {}  # base -> {part: field name}, for validating the pair
     for field in (ds.get("fields") or []):
         fname = require_str(field, "name", f"{scope}: field")
         geo = read_stash(field).get("geo")
         if geo:
-            base = geo["of"]
+            base, part = geo.get("of"), geo.get("part")
+            if part not in ("latitude", "longitude"):
+                raise ConversionError(
+                    f"{scope}: field '{fname}' has a geo part '{part}'; expected "
+                    f"'latitude' or 'longitude'")
+            if not base:
+                raise ConversionError(
+                    f"{scope}: field '{fname}' has a geo stash with no 'of'")
+            seen = geo_halves.setdefault(base, {})
+            if part in seen:
+                raise ConversionError(
+                    f"{scope}: fields '{seen[part]}' and '{fname}' both claim the "
+                    f"{part} of geo dimension '{base}'")
+            if not seen and base.lower() in taken:
+                # The base is the name of the merged Cube dimension, so it cannot
+                # also be an ordinary dimension -- that would emit two members of
+                # the same name. Order must not decide whether this is caught, so
+                # it is checked here rather than left to sanitize_name.
+                raise ConversionError(
+                    f"{scope}: geo dimension '{base}' collides with another field "
+                    f"of that name; rename one in the Ossie model.")
+            seen[part] = fname
+            taken.add(base.lower())
             names[fname] = base
             inline_sql[fname] = geo["sql"]
-            taken.add(base.lower())
             continue
         dname = sanitize_name(fname, f"{scope}: field", taken)
         taken.add(dname.lower())
         names[fname] = dname
+    for base, seen in geo_halves.items():
+        missing = {"latitude", "longitude"} - set(seen)
+        if missing:
+            raise ConversionError(
+                f"{scope}: geo dimension '{base}' is missing its "
+                f"{' and '.join(sorted(missing))} half")
     return names, inline_sql
 
 
@@ -353,23 +381,27 @@ def _build_dimensions(ds, cname, dim_names, inline_sql, dialect, issues):
     than being sanitized again here.
     """
     ds_name = ds["name"]
-    dimensions = []
     covered = {}
-    geo_parts = {}
+    # Built by target dimension name rather than by list position: a geo dimension
+    # is assembled from two fields that may appear in either order and need not be
+    # adjacent, so an insertion index computed mid-loop is not a safe way to hold
+    # its place. `order` records first appearance of each target name, which is
+    # well defined however the halves are arranged.
+    order, built, geo_parts = [], {}, {}
     for field in (ds.get("fields") or []):
         fname = require_str(field, "name", f"dataset '{ds_name}': field")
         stash = read_stash(field)
+        dname = dim_names[fname]
+        if dname not in order:
+            order.append(dname)
         if "geo" in stash:
             geo = stash["geo"]
-            slot = geo_parts.setdefault(geo["of"], {"index": len(dimensions)})
+            slot = geo_parts.setdefault(dname, {})
             slot[geo["part"]] = geo["sql"]
             if "host" in geo:
                 slot["host"] = geo["host"]
-            if geo["part"] == "latitude":
-                dimensions.append(None)  # placeholder, filled in below
             continue
 
-        dname = dim_names[fname]
         expr = pick_expression(field.get("expression"), dialect)
         if expr is None:
             issues.add(IssueType.NO_USABLE_DIALECT, f"{ds_name}.{fname}",
@@ -400,24 +432,25 @@ def _build_dimensions(ds, cname, dim_names, inline_sql, dialect, issues):
         for key, value in extras.items():
             dim[key] = value
 
-        dimensions.append(dim)
+        built[dname] = dim
         covered[dname] = dname
         if is_simple_identifier(expr):
             covered[expr.strip()] = dname
 
-    for of, slot in geo_parts.items():
-        if "latitude" not in slot or "longitude" not in slot:
-            raise ConversionError(
-                f"dataset '{ds_name}': geo dimension '{of}' is missing its "
-                f"{'longitude' if 'latitude' in slot else 'latitude'} half")
-        dim = {"name": of, "type": "geo",
+    # Both halves are guaranteed present by _resolve_dimension_names, which
+    # validates the pair before anything is built.
+    for base, slot in geo_parts.items():
+        dim = {"name": base, "type": "geo",
                "latitude": {"sql": slot["latitude"]},
                "longitude": {"sql": slot["longitude"]}}
         for key, value in (slot.get("host") or {}).items():
             dim[key] = value
-        dimensions[slot["index"]] = dim
-        covered[of] = of
-    return [d for d in dimensions if d is not None], covered
+        built[base] = dim
+        covered[base] = base
+
+    # A name in `order` with nothing built is a field dropped for want of a usable
+    # dialect; it simply does not appear.
+    return [built[n] for n in order if n in built], covered
 
 
 def _dimension_type(field, stash, scope, issues):

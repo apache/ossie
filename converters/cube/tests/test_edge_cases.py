@@ -690,6 +690,90 @@ def test_geo_half_references_normalize_to_the_underlying_column():
     assert expr_of(metric) == "AVG(users.lat)"
 
 
+def _geo_stash(part, of="home"):
+    return ('{"_v": 1, "geo": {"of": "' + of + '", "part": "' + part
+            + '", "sql": "{CUBE}.' + part[:3] + '"}}')
+
+
+def _ossie_fields(*specs):
+    """Build an Ossie model from (field name, expression, geo part or None) specs."""
+    out = ("version: 0.2.0.dev0\n"
+           "semantic_model:\n"
+           "- name: shop\n"
+           "  datasets:\n"
+           "  - name: users\n"
+           "    source: public.users\n"
+           "    fields:\n")
+    for fname, expr, part in specs:
+        out += (f"    - name: {fname}\n"
+                "      expression:\n"
+                "        dialects:\n"
+                "        - dialect: ANSI_SQL\n"
+                f"          expression: {expr}\n"
+                "      datatype: String\n")
+        if part:
+            out += ("      custom_extensions:\n"
+                    "      - vendor_name: CUBE\n"
+                    f"        data: '{_geo_stash(part)}'\n")
+    return out
+
+
+def test_geo_halves_may_appear_in_any_order_without_clobbering_a_dimension():
+    """The geo dimension is assembled from two fields that need not be adjacent and
+    may come in either order. Holding its place with a list index computed mid-loop
+    overwrote whatever real dimension already sat at that index -- here `city`
+    vanished entirely."""
+    model = _ossie_fields(
+        ("home_longitude", "lon", "longitude"),
+        ("city", "city", None),
+        ("home_latitude", "lat", "latitude"),
+    )
+    files, _ = convert_ossie_to_cube(model)
+    dims = parse(files["model/cubes/users.yml"])["cubes"][0]["dimensions"]
+    assert [d["name"] for d in dims] == ["home", "city"]
+    assert by_name(dims)["home"] == {
+        "name": "home", "type": "geo",
+        "latitude": {"sql": "{CUBE}.lat"},
+        "longitude": {"sql": "{CUBE}.lon"}}
+    assert by_name(dims)["city"]["sql"] == "city"
+
+
+def test_a_geo_base_colliding_with_a_field_is_rejected_in_either_order():
+    """The base is the merged dimension's name, so it cannot also be an ordinary
+    dimension -- that would emit two members of the same name. Whether the ordinary
+    field comes first must not decide whether this is caught."""
+    for specs in (
+        (("home", "home", None), ("home_latitude", "lat", "latitude"),
+         ("home_longitude", "lon", "longitude")),
+        (("home_latitude", "lat", "latitude"),
+         ("home_longitude", "lon", "longitude"), ("home", "home", None)),
+    ):
+        with pytest.raises(ConversionError, match="collides"):
+            convert_ossie_to_cube(_ossie_fields(*specs))
+
+
+def test_two_fields_claiming_the_same_geo_half_are_rejected():
+    model = _ossie_fields(
+        ("a_lat", "lat", "latitude"),
+        ("b_lat", "lat2", "latitude"),
+        ("home_longitude", "lon", "longitude"),
+    )
+    with pytest.raises(ConversionError, match="both claim the latitude"):
+        convert_ossie_to_cube(model)
+
+
+def test_a_geo_dimension_missing_a_half_is_rejected_on_export():
+    model = _ossie_fields(("home_latitude", "lat", "latitude"))
+    with pytest.raises(ConversionError, match="missing its longitude half"):
+        convert_ossie_to_cube(model)
+
+
+def test_an_unknown_geo_part_is_rejected():
+    model = _ossie_fields(("home_altitude", "alt", "altitude"))
+    with pytest.raises(ConversionError, match="geo part 'altitude'"):
+        convert_ossie_to_cube(model)
+
+
 def test_geo_dimension_missing_a_half_is_rejected():
     files = _files(users=(
         "cubes:\n"
