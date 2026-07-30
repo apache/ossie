@@ -62,8 +62,15 @@ class IssueType(Enum):
     # An Ossie field or metric with no usable expression dialect (export).
     NO_USABLE_DIALECT = "NO_USABLE_DIALECT"
 
-    # An Ossie construct Cube has no slot for, parked under `meta.ossie`.
+    # An Ossie construct Cube has no slot for, parked under `meta.ossie` -- so the
+    # value survives the round trip even though Cube itself cannot read it.
     PARKED_IN_META = "PARKED_IN_META"
+
+    # A value Cube has nowhere to hold *and* that cannot be parked, so it is gone
+    # from the output. Distinct from PARKED_IN_META on purpose: a caller gating on
+    # issue types has to be able to tell "preserved but invisible to Cube" from
+    # "actually lost".
+    DROPPED_NO_CUBE_EQUIVALENT = "DROPPED_NO_CUBE_EQUIVALENT"
 
 
 @dataclass(frozen=True)

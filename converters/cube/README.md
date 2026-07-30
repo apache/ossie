@@ -233,7 +233,8 @@ element it concerns, and a detail string.
 | `GEO_DIMENSION_SPLIT` | A `type: geo` dimension became two Ossie fields |
 | `TEMPLATED_FILE_SKIPPED` | Jinja templating anywhere in a file, or a `.js`/`.ts` model file. Detected per file, as Cube's own tooling does, so the file is preserved whole rather than half-converted |
 | `NO_USABLE_DIALECT` | Export: no `ANSI_SQL` or preferred-dialect expression |
-| `PARKED_IN_META` | An element preserved in the stash with no native mapping |
+| `PARKED_IN_META` | An element with no native mapping, preserved in the stash or under `meta.ossie` — invisible to Cube but intact through a round trip |
+| `DROPPED_NO_CUBE_EQUIVALENT` | A value Cube has nowhere to hold *and* that cannot be parked, so it is genuinely gone. Currently only relationship `ai_context`, since a Cube join entry has no `meta` field. Kept distinct from `PARKED_IN_META` so a caller can tell real loss from "preserved but unreadable by Cube" |
 
 ## Requirements
 
@@ -249,6 +250,10 @@ invalid) when an input breaks one of these:
 - two cubes, two views, or two derived metric names collide;
 - a dimension has an unknown `type`, or a `geo` dimension is missing
   `latitude.sql` / `longitude.sql`;
+- the model carries foreign-vendor `custom_extensions` but no view is mapped, so
+  there is nowhere to park them (re-import with `--view <name>`); model-level
+  metadata rides on the view representing the model, and picking one arbitrarily
+  would not survive a re-import;
 - there are no convertible cubes at all; the input YAML is malformed.
 
 ## Notes and limitations
@@ -275,7 +280,7 @@ uv sync
 uv run pytest
 ```
 
-234 tests at 96% line coverage: example-based unit tests per direction, CLI
+Example-based unit tests per direction, CLI
 behavior tests, fixture round-trip tests (including the
 [TPC-DS model](../../examples/tpcds_semantic_model.yaml) the converter guide asks
 for as a baseline), core-spec JSON Schema validation of every emitted Ossie

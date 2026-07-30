@@ -319,11 +319,17 @@ def test_composite_relationship_becomes_an_and_chain():
         "{CUBE}.user_id = {users.id} AND {CUBE}.region = {users.region}")
 
 
-def test_relationship_ai_context_has_no_cube_home():
+def test_relationship_ai_context_is_reported_as_dropped_not_parked():
+    """A Cube join entry takes only name/sql/relationship -- no `meta` -- so this is
+    one of the few things that genuinely cannot be preserved. It is reported under
+    DROPPED_NO_CUBE_EQUIVALENT rather than PARKED_IN_META, so a caller gating on
+    issue types can tell real loss from "preserved but invisible to Cube"."""
     rel = _REL + "    ai_context:\n      instructions: Join carefully.\n"
     _, issues = convert_ossie_to_cube(_ossie(_TWO_DATASETS, rel))
-    assert any("ai_context" in i.detail for i in issues.of_type(
-        IssueType.PARKED_IN_META))
+    dropped = issues.of_type(IssueType.DROPPED_NO_CUBE_EQUIVALENT)
+    assert [i.element_name for i in dropped] == ["relationship 'orders_to_users'"]
+    assert "ai_context" in dropped[0].detail
+    assert not issues.of_type(IssueType.PARKED_IN_META)
 
 
 # --- metrics --------------------------------------------------------------------

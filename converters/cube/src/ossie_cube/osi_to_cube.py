@@ -166,7 +166,7 @@ def _convert_model(model, dialect, base_cube, issues):
         files_content.setdefault(path, {}).setdefault("cubes", []).append(cube)
 
     for vpath, view in _build_views(model, model_stash, cube_names, relationships,
-                                   datasets, base_cube, issues).items():
+                                   datasets, base_cube).items():
         files_content.setdefault(vpath, {}).setdefault("views", []).append(view)
 
     files = {path: dump_yaml(content) for path, content in files_content.items()}
@@ -499,9 +499,12 @@ def _build_joins(relationships, cube_names, issues):
             if key not in ("declared_on", "relationship", "sql"):
                 join[key] = value
         if rel.get("ai_context"):
-            issues.add(IssueType.PARKED_IN_META, f"relationship '{rname}'",
-                       "Cube joins carry no metadata, so relationship ai_context "
-                       "has no home; dropped")
+            # A Cube join entry takes only name/sql/relationship -- no `meta` -- so
+            # unlike every other level there is nowhere to park this.
+            issues.add(IssueType.DROPPED_NO_CUBE_EQUIVALENT,
+                       f"relationship '{rname}'",
+                       "a Cube join carries no metadata field, so relationship "
+                       "ai_context has nowhere to go and is dropped")
         joins_by_cube.setdefault(own, []).append(
             _ordered(join, ["name", "sql", "relationship"]))
     return joins_by_cube
@@ -651,7 +654,7 @@ def _balanced(s):
 # --- views ----------------------------------------------------------------------
 
 def _build_views(model, model_stash, cube_names, relationships, datasets,
-                 base_cube, issues):
+                 base_cube):
     """Return {file path: view dict}.
 
     Stashed views restore verbatim, with the natively mapped description and AI
@@ -671,9 +674,20 @@ def _build_views(model, model_stash, cube_names, relationships, datasets,
         mapped = model_stash.get("mapped_view")
         paths = model_stash.get("view_files") or {}
         if foreign and mapped is None:
-            issues.add(IssueType.PARKED_IN_META, "model",
-                       "no mapped view to park foreign-vendor custom_extensions on; "
-                       "they have no Cube home and are dropped")
+            # The model's own metadata rides on the view that represents it, and
+            # there isn't one: the source Cube model had several views and none was
+            # chosen. Dropping the extensions would be silent data loss, and
+            # picking a view arbitrarily would not survive a re-import (only the
+            # mapped view's parked extensions are restored). So this is refused
+            # with the fix in the message.
+            vendors = ", ".join(
+                sorted({str(e.get("vendor_name")) for e in foreign}))
+            raise ConversionError(
+                f"Model carries custom_extensions for {vendors}, which have no Cube "
+                f"field and ride on the view representing the model -- but no view "
+                f"is mapped, so there is nowhere to put them without losing them. "
+                f"Re-import naming the view the model maps to (`--view <name>`), or "
+                f"remove the foreign-vendor extensions.")
         for vname, view in (model_stash["views"] or {}).items():
             view = dict(view)
             if vname == mapped:

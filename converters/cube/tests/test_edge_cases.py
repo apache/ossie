@@ -34,6 +34,7 @@ from ossie_cube import (
     convert_cube_to_ossie,
     convert_ossie_to_cube,
 )
+from ossie_cube._common import dump_yaml
 
 
 def _files(**named):
@@ -770,6 +771,35 @@ def test_choosing_a_view_maps_its_metadata_onto_the_model():
     assert model["description"] == "View B"
     # The unchosen view is still preserved whole.
     assert set(stash_of(model)["views"]) == {"a", "b"}
+
+
+def test_foreign_extensions_with_no_mapped_view_are_refused_not_dropped():
+    """Model-level foreign-vendor extensions ride on the view that represents the
+    model. With several views and none mapped there is no such view, and picking one
+    arbitrarily would not survive a re-import -- only the mapped view's parked
+    extensions are read back. So this is refused rather than silently losing them."""
+    ossie, _ = convert_cube_to_ossie(_TWO_VIEWS)
+    doc = parse(ossie)
+    doc["semantic_model"][0].setdefault("custom_extensions", []).append(
+        {"vendor_name": "SNOWFLAKE", "data": '{"warehouse": "ANALYTICS_WH"}'})
+    with pytest.raises(ConversionError, match="SNOWFLAKE"):
+        convert_ossie_to_cube(dump_yaml(doc))
+
+
+def test_foreign_extensions_survive_once_a_view_is_mapped():
+    """The fix the error message points at: choose the view the model maps to, and
+    the extensions have a home again."""
+    ossie, _ = convert_cube_to_ossie(_TWO_VIEWS, view="b")
+    doc = parse(ossie)
+    doc["semantic_model"][0].setdefault("custom_extensions", []).append(
+        {"vendor_name": "SNOWFLAKE", "data": '{"warehouse": "ANALYTICS_WH"}'})
+    files, _ = convert_ossie_to_cube(dump_yaml(doc))
+    parked = parse(files["model/views/b.yml"])["views"][0]["meta"]["ossie"]
+    assert parked["custom_extensions"][0]["vendor_name"] == "SNOWFLAKE"
+    # And they come back as Ossie extensions, not just stashed text.
+    ossie2, _ = convert_cube_to_ossie(files, view="b")
+    vendors = {e["vendor_name"] for e in model_of(ossie2)["custom_extensions"]}
+    assert "SNOWFLAKE" in vendors
 
 
 def test_both_views_are_restored_on_export():
