@@ -72,6 +72,13 @@ class IssueType(Enum):
     # "actually lost".
     DROPPED_NO_CUBE_EQUIVALENT = "DROPPED_NO_CUBE_EQUIVALENT"
 
+    # Something *was* emitted, but it is not an exact equivalent: a value Cube
+    # requires and Ossie does not carry (so the converter had to choose one), or a
+    # construct rendered in the nearest form Cube has. Nothing is lost and nothing
+    # is hidden -- but the output asserts a little more than the input did, so it
+    # is worth a look.
+    APPROXIMATED = "APPROXIMATED"
+
 
 @dataclass(frozen=True)
 class ConverterIssue:

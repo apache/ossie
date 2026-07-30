@@ -123,7 +123,8 @@ def test_every_dimension_declares_a_type():
     )
     files, issues = convert_ossie_to_cube(_ossie(no_type))
     assert _cubes(files)["orders"]["dimensions"][0]["type"] == "string"
-    assert issues.of_type(IssueType.PARKED_IN_META)
+    # A guess, not a loss and not a park: Cube demands a type Ossie never gave.
+    assert issues.of_type(IssueType.APPROXIMATED)
 
 
 @pytest.mark.parametrize("datatype,expected", [
@@ -172,7 +173,8 @@ def test_is_time_on_a_non_temporal_datatype_is_reported():
     files, issues = convert_ossie_to_cube(_ossie(ds))
     dim = parse(files["model/cubes/date_dim.yml"])["cubes"][0]["dimensions"][0]
     assert dim["type"] == "number"
-    detail = issues.of_type(IssueType.PARKED_IN_META)[0].detail
+    # The temporal role is gone from the output, so this is a drop.
+    detail = issues.of_type(IssueType.DROPPED_NO_CUBE_EQUIVALENT)[0].detail
     assert "temporal role is not carried" in detail
 
 
@@ -195,7 +197,8 @@ def test_primary_key_column_without_a_field_is_synthesized():
     assert dims["ticket_no"] == {
         "name": "ticket_no", "sql": "ticket_no", "type": "string",
         "primary_key": True, "public": False}
-    assert issues.of_type(IssueType.PARKED_IN_META)
+    # `type: string` is chosen by the converter, not carried by Ossie.
+    assert issues.of_type(IssueType.APPROXIMATED)
 
 
 def test_field_name_is_sanitized_and_collisions_are_rejected():
@@ -387,7 +390,7 @@ def test_ratio_becomes_a_calculated_measure():
     assert measure["type"] == "number"
     assert measure["sql"] == "SUM({CUBE.amount}) / COUNT(DISTINCT {users.id})"
     assert any("spans several datasets" in i.detail
-               for i in issues.of_type(IssueType.PARKED_IN_META))
+               for i in issues.of_type(IssueType.APPROXIMATED))
 
 
 def test_metric_lands_on_the_dataset_its_expression_references():

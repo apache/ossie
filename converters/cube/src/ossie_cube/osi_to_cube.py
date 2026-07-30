@@ -100,8 +100,9 @@ def convert_ossie_to_cube(ossie_yaml_str, dialect=None, base_cube=None):
 
     issues = IssueLog()
     if len(models) > 1:
-        issues.add(IssueType.PARKED_IN_META, "model",
-                   f"{len(models)} semantic models found; converting only the first")
+        issues.add(IssueType.DROPPED_NO_CUBE_EQUIVALENT, "model",
+                   f"{len(models)} semantic models found; only the first is "
+                   f"converted and the rest are not preserved anywhere")
     return _convert_model(models[0], dialect, base_cube, issues)
 
 
@@ -280,7 +281,7 @@ def _build_cube(ds, cname, dim_names, inline_sql, joins, measures, dialect,
         if col in covered:
             pk_names.append(covered[col])
             continue
-        issues.add(IssueType.PARKED_IN_META, scope,
+        issues.add(IssueType.APPROXIMATED, scope,
                    f"primary key column '{col}' has no field; emitted as a "
                    f"non-public dimension with type 'string' (Cube requires a type "
                    f"and Ossie carries none here)")
@@ -466,18 +467,19 @@ def _dimension_type(field, stash, scope, issues):
         if ctype is None:
             raise ConversionError(f"{scope}: unknown datatype '{datatype}'")
         if explicit_is_time is True and ctype != "time":
-            issues.add(IssueType.PARKED_IN_META, scope,
+            issues.add(IssueType.DROPPED_NO_CUBE_EQUIVALENT, scope,
                        f"is_time is true but datatype '{datatype}' maps to Cube "
                        f"type '{ctype}'; Cube marks time dimensions by type, so "
                        f"the temporal role is not carried")
         elif explicit_is_time is False and ctype == "time":
-            issues.add(IssueType.PARKED_IN_META, scope,
+            issues.add(IssueType.DROPPED_NO_CUBE_EQUIVALENT, scope,
                        f"is_time is false but datatype '{datatype}' maps to Cube "
-                       f"type 'time', which Cube always treats as a time dimension")
+                       f"type 'time', which Cube always treats as a time dimension; "
+                       f"the opt-out is not carried")
         return ctype
     if explicit_is_time:
         return "time"
-    issues.add(IssueType.PARKED_IN_META, scope,
+    issues.add(IssueType.APPROXIMATED, scope,
                "no datatype; emitted as Cube type 'string', which Cube requires")
     return "string"
 
@@ -652,7 +654,7 @@ def _measure_from_expression(expr, target, mname, stash, members, inline_sql_by_
             expr)
         if ref in sanitized
     }) > 1:
-        issues.add(IssueType.PARKED_IN_META, scope,
+        issues.add(IssueType.APPROXIMATED, scope,
                    f"expression spans several datasets; emitted as a calculated "
                    f"measure on cube '{target}' -- verify the join path")
     return measure

@@ -989,4 +989,6 @@ def test_several_semantic_models_convert_the_first_with_an_issue():
     )
     files, issues = convert_ossie_to_cube(ossie)
     assert set(files) == {"model/cubes/orders.yml", "model/views/first.yml"}
-    assert any("converting only the first" in i.detail for i in issues)
+    # The other models are not preserved anywhere, so this is a drop.
+    dropped = issues.of_type(IssueType.DROPPED_NO_CUBE_EQUIVALENT)
+    assert any("only the first is converted" in i.detail for i in dropped)

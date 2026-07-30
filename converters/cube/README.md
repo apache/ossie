@@ -233,8 +233,13 @@ element it concerns, and a detail string.
 | `GEO_DIMENSION_SPLIT` | A `type: geo` dimension became two Ossie fields |
 | `TEMPLATED_FILE_SKIPPED` | Jinja templating anywhere in a file, or a `.js`/`.ts` model file. Detected per file, as Cube's own tooling does, so the file is preserved whole rather than half-converted |
 | `NO_USABLE_DIALECT` | Export: no `ANSI_SQL` or preferred-dialect expression |
-| `PARKED_IN_META` | An element with no native mapping, preserved in the stash or under `meta.ossie` — invisible to Cube but intact through a round trip |
-| `DROPPED_NO_CUBE_EQUIVALENT` | A value Cube has nowhere to hold *and* that cannot be parked, so it is genuinely gone. Currently only relationship `ai_context`, since a Cube join entry has no `meta` field. Kept distinct from `PARKED_IN_META` so a caller can tell real loss from "preserved but unreadable by Cube" |
+| `PARKED_IN_META` | Preserved in the stash or under `meta.ossie` — invisible to Cube, but intact through a round trip |
+| `DROPPED_NO_CUBE_EQUIVALENT` | **Gone from the output.** Cube has nowhere to hold it and it cannot be parked: relationship `ai_context` (a Cube join entry has no `meta`), a `dimension.is_time` role or opt-out that Cube expresses only through `type`, and the second and later `semantic_model` entries |
+| `APPROXIMATED` | Emitted, but not an exact equivalent: a value Cube requires and Ossie does not carry (so the converter chose one), or a construct rendered in the nearest form Cube has |
+
+These three are kept distinct on purpose. A caller gating on issue types has to be
+able to tell "preserved but unreadable by Cube" from "actually lost" from "emitted,
+but asserting slightly more than the input did".
 
 ## Requirements
 
