@@ -133,22 +133,12 @@ def _try_parse_ratio(expr_str: str) -> Optional[Tuple[str, str]]:
     return num.sql(), den.sql()
 
 
-def _get_raw_inner_col(expression: str) -> Optional[str]:
-    """Extract the raw column reference from inside a simple aggregation, before stripping qualifiers."""
+def _get_dataset_qualifier(expression: str) -> Optional[str]:
+    """Return the sole dataset qualifier referenced by an expression, if present."""
     try:
         tree = sqlglot.parse_one(expression.strip())
     except sqlglot.errors.ParseError:
         return None
 
-    if not isinstance(tree, exp.AggFunc):
-        return None
-
-    inner = tree.this
-    if inner is None:
-        return None
-
-    # For COUNT(DISTINCT col), unwrap the Distinct node
-    if isinstance(inner, exp.Distinct) and inner.expressions:
-        return inner.expressions[0].sql()
-
-    return inner.sql()
+    qualifiers = {column.table for column in tree.find_all(exp.Column) if column.table}
+    return qualifiers.pop() if len(qualifiers) == 1 else None
