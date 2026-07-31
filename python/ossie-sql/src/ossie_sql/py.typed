@@ -14,9 +14,3 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
-# uv workspace root: shares one dependency resolution/lockfile across the
-# member packages below. This file is not itself a Python package -- see
-# each member's own pyproject.toml for its package metadata.
-[tool.uv.workspace]
-members = ["ossie", "ossie-sql"]
