@@ -15,13 +15,17 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from .hex_to_ossie import convert_hex_to_ossie
-from .ossie_to_hex import convert_ossie_to_hex
-from .util.errors import ConversionError, ConversionWarning
+from __future__ import annotations
 
-__all__ = [
-    "ConversionError",
-    "ConversionWarning",
-    "convert_hex_to_ossie",
-    "convert_ossie_to_hex",
-]
+from pathlib import Path
+
+
+def write_hex_project(
+    project_dir: str | Path,
+    files: dict[str, str],
+) -> None:
+    """Write a mapping of file names → YAML text into ``project_dir``."""
+    root = Path(project_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    for name, text in files.items():
+        (root / name).write_text(text, encoding="utf-8")

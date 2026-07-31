@@ -1,0 +1,185 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+from __future__ import annotations
+
+from ossie import OSIDataset, OSIDialect, OSIField, OSIMetric, OSIRelationship
+
+from ..hex_types import (
+    HexMeasure,
+    HexModel,
+    HexModelStash,
+    HexRelation,
+    maybe_write_extension,
+)
+from ..util.errors import ConversionWarning
+from ..util.rewrite_refs import RefResolver
+from .convert_hex_dimension import convert_hex_dimension
+from .convert_hex_measure import convert_hex_measure
+from .convert_hex_relation import convert_hex_relation
+from .ref_resolver import export_ref_resolver
+
+
+def convert_hex_model(
+    model: HexModel,
+    *,
+    ossie_dialect: OSIDialect,
+    metric_names: set[str],
+    dim_ids_by_model: dict[str, set[str]],
+) -> tuple[OSIDataset, list[OSIMetric], list[OSIRelationship], list[ConversionWarning]]:
+    """Convert a Hex model to an Ossie dataset and the document-level entries it adds."""
+    warnings: list[ConversionWarning] = []
+
+    # Relations are converted first because whether a dimension's reference to
+    # another model survives the trip back depends on which of them become
+    # relationships. Their warnings are held so the model reports in source order.
+    (
+        relationships,
+        undecomposable_relations,
+        relation_targets,
+        relation_warnings,
+    ) = convert_hex_model_relations(model)
+
+    resolve = export_ref_resolver(
+        model_id=model.id,
+        relation_targets=relation_targets,
+        dim_ids_by_model=dim_ids_by_model,
+    )
+
+    fields, unique_field_names, field_warnings = convert_hex_model_fields(
+        model,
+        ossie_dialect=ossie_dialect,
+        resolve=resolve,
+    )
+    warnings.extend(field_warnings)
+
+    primary_key: list[str] | None = None
+    unique_keys: list[list[str]] | None = None
+    if unique_field_names:
+        # Hex doesn't have a concept of a primary key, so just use the first
+        # unique field.
+        primary_key = [unique_field_names[0]]
+        # Hex marks each dimension unique on its own, and does not reflect composite keys
+        unique_keys = [[name] for name in unique_field_names[1:]] or None
+
+    metrics, unsupported_measures, measure_warnings = convert_hex_model_measures(
+        model,
+        ossie_dialect=ossie_dialect,
+        metric_names=metric_names,
+    )
+    warnings.extend(measure_warnings)
+
+    warnings.extend(relation_warnings)
+
+    # even though our parsing does well, it's better to be safe and preserve
+    source_kind = "table" if model.base_sql_table else "query"
+
+    stash = HexModelStash(
+        display_name=model.name,
+        source_kind=source_kind,
+        visibility=model.visibility,
+        measures=unsupported_measures or None,
+        undecomposable_relations=undecomposable_relations or None,
+    )
+
+    ds = OSIDataset(
+        name=model.id,
+        source=model.base_sql_table or model.base_sql_query or "",
+        primary_key=primary_key,
+        unique_keys=unique_keys,
+        description=model.description or None,
+        fields=fields or None,
+        custom_extensions=maybe_write_extension(stash),
+    )
+
+    return ds, metrics, relationships, warnings
+
+
+def convert_hex_model_relations(
+    model: HexModel,
+) -> tuple[
+    list[OSIRelationship],
+    list[HexRelation],
+    dict[str, str],
+    list[ConversionWarning],
+]:
+    """Convert a model's relations, and index the reachable ones by target model."""
+    relationships: list[OSIRelationship] = []
+    undecomposable_relations: list[HexRelation] = []
+    relation_targets: dict[str, str] = {}
+    warnings: list[ConversionWarning] = []
+    for relation in model.relations:
+        rel, undecomposable, rel_warnings = convert_hex_relation(
+            relation, base_model_id=model.id
+        )
+        warnings.extend(rel_warnings)
+        if rel is not None:
+            relationships.append(rel)
+            if relation.target != model.id:
+                relation_targets.setdefault(relation.target, relation.id)
+        elif undecomposable is not None:
+            undecomposable_relations.append(undecomposable)
+    return relationships, undecomposable_relations, relation_targets, warnings
+
+
+def convert_hex_model_fields(
+    model: HexModel,
+    *,
+    ossie_dialect: OSIDialect,
+    resolve: RefResolver,
+) -> tuple[list[OSIField], list[str], list[ConversionWarning]]:
+    """Convert a model's dimensions, collecting the ones marked unique."""
+    fields: list[OSIField] = []
+    unique_field_names: list[str] = []
+    warnings: list[ConversionWarning] = []
+    for dim in model.dimensions:
+        field, field_warnings = convert_hex_dimension(
+            dim,
+            model_id=model.id,
+            ossie_dialect=ossie_dialect,
+            resolve=resolve,
+        )
+        fields.append(field)
+        warnings.extend(field_warnings)
+        if dim.unique:
+            unique_field_names.append(dim.id)
+    return fields, unique_field_names, warnings
+
+
+def convert_hex_model_measures(
+    model: HexModel,
+    *,
+    ossie_dialect: OSIDialect,
+    metric_names: set[str],
+) -> tuple[list[OSIMetric], list[HexMeasure], list[ConversionWarning]]:
+    """Convert a model's measures, setting aside the ones Ossie cannot express."""
+    metrics: list[OSIMetric] = []
+    unsupported_measures: list[HexMeasure] = []
+    warnings: list[ConversionWarning] = []
+    for measure in model.measures:
+        metric, unsupported, metric_warnings = convert_hex_measure(
+            measure,
+            model_id=model.id,
+            ossie_dialect=ossie_dialect,
+            metric_names=metric_names,
+        )
+        warnings.extend(metric_warnings)
+        if metric is not None:
+            metrics.append(metric)
+        elif unsupported is not None:
+            unsupported_measures.append(unsupported)
+    return metrics, unsupported_measures, warnings

@@ -15,13 +15,24 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from .hex_to_ossie import convert_hex_to_ossie
-from .ossie_to_hex import convert_ossie_to_hex
-from .util.errors import ConversionError, ConversionWarning
+from __future__ import annotations
 
-__all__ = [
-    "ConversionError",
-    "ConversionWarning",
-    "convert_hex_to_ossie",
-    "convert_ossie_to_hex",
-]
+from ossie import OSIDataType
+
+from ..hex_types import OSSIE_TO_HEX, HexDataType
+
+
+def ossie_to_hex_datatype(
+    value: OSIDataType | None,
+    *,
+    default: HexDataType,
+    stash: HexDataType | None = None,
+) -> tuple[HexDataType, str | None]:
+    """Map an Ossie datatype to a Hex type."""
+    if stash is not None:
+        return stash, None
+
+    if value is None:
+        return default, (f"Ossie datatype not found. Using default '{default.value}'")
+
+    return OSSIE_TO_HEX.get(value, HexDataType.OTHER), None

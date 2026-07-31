@@ -15,13 +15,29 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from .hex_to_ossie import convert_hex_to_ossie
-from .ossie_to_hex import convert_ossie_to_hex
-from .util.errors import ConversionError, ConversionWarning
+from __future__ import annotations
 
-__all__ = [
-    "ConversionError",
-    "ConversionWarning",
-    "convert_hex_to_ossie",
-    "convert_ossie_to_hex",
-]
+from typing import Any
+
+from pydantic_core import PydanticCustomError
+
+from .hex_model import HexModel
+from .hex_view import HexView
+
+HexResource = HexModel | HexView
+
+DEFAULT_HEX_RESOURCE_TYPE = "model"
+
+
+def parse_hex_resource(data: dict[str, Any]) -> HexResource:
+    """Parse a single Hex resource document into a typed model."""
+    resource_type = data.get("type", DEFAULT_HEX_RESOURCE_TYPE)
+    if resource_type == "view":
+        return HexView.model_validate(data)
+    if resource_type == "model":
+        return HexModel.model_validate(data)
+    raise PydanticCustomError(
+        "custom.literal_error",
+        "Unknown Hex resource type '{resource_type}'",
+        {"resource_type": resource_type},
+    )

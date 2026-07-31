@@ -15,13 +15,28 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from .hex_to_ossie import convert_hex_to_ossie
-from .ossie_to_hex import convert_ossie_to_hex
-from .util.errors import ConversionError, ConversionWarning
+from __future__ import annotations
 
-__all__ = [
-    "ConversionError",
-    "ConversionWarning",
-    "convert_hex_to_ossie",
-    "convert_ossie_to_hex",
-]
+from ossie import OSIDataset, OSISemanticModel
+
+from ..hex_types import normalize_to_hex_id
+
+
+def dataset_hex_ids(
+    model: OSISemanticModel,
+    *,
+    taken: set[str],
+) -> dict[str, str]:
+    """Resolve each Ossie dataset of a model to the Hex model ID it takes."""
+    return {
+        ds.name: normalize_to_hex_id(ds.name, "dataset", taken) for ds in model.datasets
+    }
+
+
+def dimension_hex_ids(ossie_dataset: OSIDataset) -> dict[str, str]:
+    """Resolve each Ossie field of a dataset to the Hex dimension ID it takes."""
+    taken: set[str] = set()
+    return {
+        field.name: normalize_to_hex_id(field.name, "dimension", taken)
+        for field in ossie_dataset.fields or []
+    }

@@ -15,13 +15,28 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from .hex_to_ossie import convert_hex_to_ossie
-from .ossie_to_hex import convert_ossie_to_hex
-from .util.errors import ConversionError, ConversionWarning
+from __future__ import annotations
 
-__all__ = [
-    "ConversionError",
-    "ConversionWarning",
-    "convert_hex_to_ossie",
-    "convert_ossie_to_hex",
-]
+from ossie import OSIDialect, OSIExpression
+
+
+def pick_expression(
+    osi_expression: OSIExpression | None,
+    preferred: OSIDialect | None = None,
+) -> str | None:
+    """Choose an SQL string from an Ossie expression.
+
+    Preference: caller dialect, then ANSI_SQL, then first available.
+    """
+    dialects = {
+        entry.dialect: entry.expression
+        for entry in (osi_expression.dialects if osi_expression is not None else [])
+    }
+    if preferred and dialects.get(preferred):
+        return dialects[preferred]
+    if dialects.get(OSIDialect.ANSI_SQL):
+        return dialects[OSIDialect.ANSI_SQL]
+    for expression in dialects.values():
+        if expression:
+            return expression
+    return None

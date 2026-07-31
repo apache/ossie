@@ -1,0 +1,281 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+from __future__ import annotations
+
+import re
+from typing import Any, Literal, assert_never
+
+from ossie import OSIDataset, OSIDialect, OSIMetric, OSIRelationship
+
+from ..hex_types import (
+    HexDataType,
+    HexDimension,
+    HexMeasure,
+    HexModel,
+    HexModelStash,
+    HexRelation,
+    HexVisibility,
+    id_to_name,
+    normalize_to_hex_id,
+    read_stash,
+)
+from ..util.errors import ConversionWarning
+from ..util.rewrite_refs import RefResolver
+from .convert_ossie_field import convert_ossie_field
+from .convert_ossie_metric import convert_ossie_metric
+from .convert_ossie_relationship import convert_ossie_relationship
+from .ref_resolver import ref_resolver
+from .relationship_sides import relationship_sides
+
+
+def convert_ossie_dataset(
+    ds: OSIDataset,
+    *,
+    hex_id: str,
+    hex_ids_by_dataset: dict[str, str],
+    dim_ids_by_dataset: dict[str, dict[str, str]],
+    preferred_dialect: OSIDialect,
+    relations: list[OSIRelationship],
+    metrics: list[OSIMetric],
+    warnings: list[ConversionWarning],
+) -> HexModel:
+    """Convert an Ossie dataset, with its relationships and metrics, to a Hex model."""
+    stash = read_stash(ds.custom_extensions, HexModelStash)
+    resource: dict[str, Any] = {"id": hex_id}
+
+    source_kind = (
+        stash.source_kind if stash is not None else guess_source_kind(ds.source)
+    )
+    if source_kind == "table":
+        resource["base_sql_table"] = ds.source
+    elif source_kind == "query":
+        resource["base_sql_query"] = ds.source
+    else:
+        assert_never(source_kind)
+
+    if stash is not None and stash.display_name != id_to_name(hex_id):
+        resource["name"] = stash.display_name
+    if ds.description:
+        resource["description"] = ds.description
+    if stash is not None and stash.visibility is not None:
+        resource["visibility"] = stash.visibility
+
+    # Ordered so synthesized dimensions below land in a stable position; set
+    # iteration here would reorder the emitted YAML between runs.
+    unique_names = dict.fromkeys(ds.primary_key or [])
+    for key in ds.unique_keys or []:
+        unique_names.update(dict.fromkeys(key))
+
+    dim_id_by_field = dim_ids_by_dataset[ds.name]
+    # Dimensions, relations, and measures share one ID namespace, so they draw
+    # from a single set of taken names.
+    taken_ids = set(dim_id_by_field.values())
+
+    # Relations come first: Hex reaches another model through a relation ID, so
+    # measure and dimension expressions cannot be rewritten until these exist.
+    hex_relations, relation_ids_by_target = convert_ossie_dataset_relations(
+        relations,
+        ds=ds,
+        hex_id=hex_id,
+        hex_ids_by_dataset=hex_ids_by_dataset,
+        dim_ids_by_dataset=dim_ids_by_dataset,
+        taken_ids=taken_ids,
+        warnings=warnings,
+    )
+
+    resolve = ref_resolver(
+        dataset_name=ds.name,
+        dim_ids_by_dataset=dim_ids_by_dataset,
+        relation_ids_by_target=relation_ids_by_target,
+    )
+
+    dimensions = convert_ossie_dataset_dimensions(
+        ds,
+        hex_id=hex_id,
+        dim_id_by_field=dim_id_by_field,
+        unique_names=unique_names,
+        preferred_dialect=preferred_dialect,
+        resolve=resolve,
+        taken_ids=taken_ids,
+        warnings=warnings,
+    )
+    if dimensions:
+        resource["dimensions"] = dimensions
+
+    unsupported_measures = stash.measures if stash is not None else None
+    # Reserved before the metrics are converted so a metric cannot be coerced
+    # onto an ID a preserved measure is about to reclaim.
+    taken_ids.update(measure.id for measure in unsupported_measures or [])
+
+    measures = convert_ossie_dataset_measures(
+        metrics,
+        ds=ds,
+        hex_id=hex_id,
+        hex_ids_by_dataset=hex_ids_by_dataset,
+        relation_ids_by_target=relation_ids_by_target,
+        resolve=resolve,
+        preferred_dialect=preferred_dialect,
+        taken_ids=taken_ids,
+        warnings=warnings,
+    )
+    # Passing the recorded measures through untouched keeps ``exclude_unset``
+    # able to tell authored fields from derived defaults.
+    measures.extend(unsupported_measures or [])
+
+    if measures:
+        resource["measures"] = measures
+
+    undecomposable_relations = (
+        stash.undecomposable_relations if stash is not None else None
+    )
+    for undecomp in undecomposable_relations or []:
+        if undecomp.id in taken_ids:
+            continue
+        taken_ids.add(undecomp.id)
+        hex_relations.append(undecomp)
+
+    if hex_relations:
+        resource["relations"] = hex_relations
+
+    return HexModel(**resource)
+
+
+def convert_ossie_dataset_relations(
+    relations: list[OSIRelationship],
+    *,
+    ds: OSIDataset,
+    hex_id: str,
+    hex_ids_by_dataset: dict[str, str],
+    dim_ids_by_dataset: dict[str, dict[str, str]],
+    taken_ids: set[str],
+    warnings: list[ConversionWarning],
+) -> tuple[list[HexRelation], dict[str, str]]:
+    """Convert a dataset's relationships, and index them by the dataset they reach."""
+    hex_relations: list[HexRelation] = []
+    relation_ids_by_target: dict[str, str] = {}
+    for rel in relations:
+        hex_rel, rel_warnings = convert_ossie_relationship(
+            rel,
+            base_dataset=hex_id,
+            hex_ids_by_dataset=hex_ids_by_dataset,
+            dim_ids_by_dataset=dim_ids_by_dataset,
+            taken=taken_ids,
+        )
+        hex_relations.append(hex_rel)
+        warnings.extend(rel_warnings)
+        target_dataset = relationship_sides(rel).remote_dataset
+        if target_dataset != ds.name:
+            relation_ids_by_target.setdefault(target_dataset, hex_rel.id)
+    return hex_relations, relation_ids_by_target
+
+
+def convert_ossie_dataset_dimensions(
+    ds: OSIDataset,
+    *,
+    hex_id: str,
+    dim_id_by_field: dict[str, str],
+    unique_names: dict[str, None],
+    preferred_dialect: OSIDialect,
+    resolve: RefResolver,
+    taken_ids: set[str],
+    warnings: list[ConversionWarning],
+) -> list[HexDimension]:
+    """Convert a dataset's fields, adding any key column that has no field."""
+    dimensions: list[HexDimension] = []
+    for field in ds.fields or []:
+        # Ossie fields become Hex dimensions whether or not they carry a
+        # `dimension` block, so the Hex model keeps every column.
+        dim, dim_warnings = convert_ossie_field(
+            field,
+            dim_id=dim_id_by_field[field.name],
+            unique_names=unique_names.keys(),
+            preferred_dialect=preferred_dialect,
+            dataset_id=hex_id,
+            dataset_name=ds.name,
+            resolve=resolve,
+        )
+        dimensions.append(dim)
+        warnings.extend(dim_warnings)
+
+    # Ensure key columns exist as unique dimensions. Keys name Ossie fields, so
+    # match on the field name as well as the ID it was coerced to.
+    existing_ids = set(dim_id_by_field) | set(dim_id_by_field.values())
+    for key_name in unique_names:
+        if key_name not in existing_ids:
+            dim_id = normalize_to_hex_id(key_name, "dimension", taken_ids)
+            dimensions.append(
+                HexDimension(
+                    id=dim_id,
+                    type=HexDataType.STRING,
+                    unique=True,
+                    visibility=HexVisibility.INTERNAL,
+                )
+            )
+            warnings.append(
+                ConversionWarning(
+                    f"dataset '{ds.name}' key column '{key_name}' has no field; "
+                    f"added dimension '{dim_id}' typed as string"
+                )
+            )
+    return dimensions
+
+
+def convert_ossie_dataset_measures(
+    metrics: list[OSIMetric],
+    *,
+    ds: OSIDataset,
+    hex_id: str,
+    hex_ids_by_dataset: dict[str, str],
+    relation_ids_by_target: dict[str, str],
+    resolve: RefResolver,
+    preferred_dialect: OSIDialect,
+    taken_ids: set[str],
+    warnings: list[ConversionWarning],
+) -> list[HexMeasure]:
+    """Convert the metrics attached to a dataset into its Hex measures."""
+    foreign_names = {n for n in hex_ids_by_dataset if n != ds.name}
+    measures: list[HexMeasure] = []
+    for metric in metrics:
+        measure, measure_warnings = convert_ossie_metric(
+            metric,
+            dataset_id=hex_id,
+            foreign_names=foreign_names,
+            relation_ids_by_target=relation_ids_by_target,
+            resolve=resolve,
+            preferred_dialect=preferred_dialect,
+            taken=taken_ids,
+        )
+        measures.append(measure)
+        warnings.extend(measure_warnings)
+    return measures
+
+
+_TABLE_REF_PART = r'(?:"(?:[^"]|"")+"|`[^`]+`|[A-Za-z_][A-Za-z0-9_$-]*)'
+_TABLE_REF_RE = re.compile(rf"^{_TABLE_REF_PART}(?:\s*\.\s*{_TABLE_REF_PART}){{0,3}}$")
+
+
+def guess_source_kind(source: str) -> Literal["table", "query"]:
+    """Determine whether an Ossie Dataset source field is a reference to a table or view.
+
+    As opposed to a query (harder to match)."""
+    stripped = source.strip()
+    if not stripped:
+        return "query"
+    if _TABLE_REF_RE.match(stripped):
+        return "table"
+    return "query"

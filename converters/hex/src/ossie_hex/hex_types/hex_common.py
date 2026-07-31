@@ -15,13 +15,32 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from .hex_to_ossie import convert_hex_to_ossie
-from .ossie_to_hex import convert_ossie_to_hex
-from .util.errors import ConversionError, ConversionWarning
+from __future__ import annotations
 
-__all__ = [
-    "ConversionError",
-    "ConversionWarning",
-    "convert_hex_to_ossie",
-    "convert_ossie_to_hex",
-]
+from enum import Enum
+
+
+class HexDialect(str, Enum):
+    BIGQUERY = "bigquery"
+    DATABRICKS = "databricks"
+    DUCKDB = "duckdb"
+    SNOWFLAKE = "snowflake"
+    SPARK = "spark"
+
+
+HEX_DIALECTS = [d.value for d in HexDialect]
+
+
+class HexVisibility(str, Enum):
+    """Controls where a resource can be used and who can see it."""
+
+    PUBLIC = "public"
+    INTERNAL = "internal"
+    PRIVATE = "private"
+
+
+DEFAULT_HEX_VISIBILITY = HexVisibility.PUBLIC
+
+
+def is_default_hex_visibility(value: HexVisibility) -> bool:
+    return value == DEFAULT_HEX_VISIBILITY

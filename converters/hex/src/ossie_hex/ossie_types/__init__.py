@@ -15,13 +15,23 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from .hex_to_ossie import convert_hex_to_ossie
-from .ossie_to_hex import convert_ossie_to_hex
-from .util.errors import ConversionError, ConversionWarning
+from .ossie_common import OSI_DIALECTS, OSSIE_VERSION
+from .ossie_field import (
+    OSSIE_FIELD_PATTERN,
+    OSSIE_FIELD_RE,
+    OSSIE_QUALIFIED_FIELD_EXPR_PATTERN,
+    OSSIE_QUALIFIED_FIELD_EXPR_RE,
+    OSSIE_QUALIFIED_FIELD_EXPR_SCAN_RE,
+    is_ossie_field,
+)
 
 __all__ = [
-    "ConversionError",
-    "ConversionWarning",
-    "convert_hex_to_ossie",
-    "convert_ossie_to_hex",
+    "OSI_DIALECTS",
+    "OSSIE_FIELD_PATTERN",
+    "OSSIE_FIELD_RE",
+    "OSSIE_QUALIFIED_FIELD_EXPR_PATTERN",
+    "OSSIE_QUALIFIED_FIELD_EXPR_RE",
+    "OSSIE_QUALIFIED_FIELD_EXPR_SCAN_RE",
+    "OSSIE_VERSION",
+    "is_ossie_field",
 ]

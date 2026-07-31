@@ -21,11 +21,10 @@ from pathlib import Path
 import yaml
 from ossie import OSIDialect
 
-from ossie_hex._common import load_yaml
-from ossie_hex.hex_models import HexDialect, parse_hex_resource
-from ossie_hex.hex_project import write_hex_project
 from ossie_hex.hex_to_ossie import convert_hex_to_ossie
-from ossie_hex.ossie_to_hex import convert_ossie_to_hex
+from ossie_hex.hex_types import HexDialect, parse_hex_resource
+from ossie_hex.ossie_to_hex import convert_ossie_to_hex, write_hex_project
+from ossie_hex.util.yaml import load_yaml
 
 # A resource addresses each of these by `id`, never by position, so two projects
 # that differ only in the order they list them are the same model. A view's

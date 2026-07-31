@@ -15,13 +15,17 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from .hex_to_ossie import convert_hex_to_ossie
-from .ossie_to_hex import convert_ossie_to_hex
-from .util.errors import ConversionError, ConversionWarning
+from ossie_hex.util.rewrite_refs import hex_refs_to_ossie
 
-__all__ = [
-    "ConversionError",
-    "ConversionWarning",
-    "convert_hex_to_ossie",
-    "convert_ossie_to_hex",
-]
+
+def test_hex_refs_to_ossie() -> None:
+    assert hex_refs_to_ossie("${order_id}") == "order_id"
+    assert hex_refs_to_ossie("${order_id}", model="orders") == "orders.order_id"
+    assert hex_refs_to_ossie("${customers.id}") == "customers.id"
+
+
+def test_hex_refs_to_ossie_rewrites_multiple_references() -> None:
+    assert (
+        hex_refs_to_ossie("${subtotal} + ${tax}", model="orders")
+        == "orders.subtotal + orders.tax"
+    )

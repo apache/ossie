@@ -15,13 +15,25 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from .hex_to_ossie import convert_hex_to_ossie
-from .ossie_to_hex import convert_ossie_to_hex
-from .util.errors import ConversionError, ConversionWarning
+import pytest
+from ossie import OSIDialect
 
-__all__ = [
-    "ConversionError",
-    "ConversionWarning",
-    "convert_hex_to_ossie",
-    "convert_ossie_to_hex",
-]
+from ossie_hex.ossie_to_hex.convert_ossie_semantic_model import (
+    convert_ossie_semantic_model,
+)
+from ossie_hex.ossie_to_hex.load_ossie_document import load_ossie_document
+from ossie_hex.util.errors import ConversionError
+from tests.utils import one_metric_ossie
+
+
+def test_rejects_an_unknown_base_model() -> None:
+    """A name that matches no dataset would silently swallow the metrics it takes."""
+    document, _ = load_ossie_document(one_metric_ossie("COUNT(*)"))
+
+    with pytest.raises(ConversionError, match="--base-model 'nope'"):
+        convert_ossie_semantic_model(
+            document.semantic_model[0],
+            OSIDialect.ANSI_SQL,
+            base_model="nope",
+            warnings=[],
+        )

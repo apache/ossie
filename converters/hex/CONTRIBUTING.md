@@ -36,18 +36,18 @@ uv sync
 
 ## Development workflow
 
-The implementation is split by responsibility:
+The implementation is split by responsibility. The two conversion directions are
+packages of their own, each reading and writing its own formats and holding one
+module per resource it converts, sitting on two shared layers:
 
-- `src/ossie_hex/hex_to_ossie.py`: Import (Hex → Ossie)
-- `src/ossie_hex/ossie_to_hex.py`: Export (Ossie → Hex)
-- `src/ossie_hex/hex_models.py`: Hex semantic spec definitions (incl. i/o validation)
-- `src/ossie_hex/ossie_models.py`: Ossie misc definitions
-- `src/ossie_hex/datatype_mapping.py`: Data type conversion (Ossie <-> Hex)
-- `src/ossie_hex/dialect_mapping.py`: Dialect mapping (Ossie <-> Hex)
-- `src/ossie_hex/expression_rewrite.py`: SQL reference and join rewriting
-- `src/ossie_hex/custom_extension.py`: Custom extension payloads
-- `src/ossie_hex/hex_project.py`: Hex project (multi-file) loading and writing
-- `src/ossie_hex/_common.py`: errors, warnings, and YAML 1.2 load/dump helpers
+- `src/ossie_hex/hex_to_ossie/`: Import (Hex → Ossie)
+- `src/ossie_hex/ossie_to_hex/`: Export (Ossie → Hex)
+- `src/ossie_hex/hex_types/`: Hex semantic spec models, datatype correspondence,
+  and custom-extension payloads
+- `src/ossie_hex/ossie_types/`: Ossie patterns, constants, and loaded-document
+  types
+- `src/ossie_hex/util/`: errors, warnings, YAML 1.2 load/dump, dialect mapping,
+  and SQL reference and join rewriting
 - `src/ossie_hex/cli.py`: `import` and `export` commands
 
 Add or update fixtures under `tests/fixtures/` and keep conversion behavior

@@ -15,13 +15,22 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from .hex_to_ossie import convert_hex_to_ossie
-from .ossie_to_hex import convert_ossie_to_hex
-from .util.errors import ConversionError, ConversionWarning
+from __future__ import annotations
 
-__all__ = [
-    "ConversionError",
-    "ConversionWarning",
-    "convert_hex_to_ossie",
-    "convert_ossie_to_hex",
-]
+from ..hex_types import HEX_VENDOR, HexView, HexViewStash
+from ..util.errors import ConversionWarning
+
+
+def convert_hex_view(view: HexView) -> tuple[HexViewStash, list[ConversionWarning]]:
+    """Record a Hex view for the semantic model to carry through Ossie.
+
+    Ossie models the data, not the entry points onto it, so a view is kept whole
+    rather than converted and comes back verbatim on import.
+    """
+    warnings = [
+        ConversionWarning(
+            f"view '{view.id}' has no Ossie core equivalent; "
+            f"preserved in custom_extensions[{HEX_VENDOR}]"
+        )
+    ]
+    return HexViewStash(resource=view), warnings

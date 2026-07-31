@@ -15,13 +15,19 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from .hex_to_ossie import convert_hex_to_ossie
-from .ossie_to_hex import convert_ossie_to_hex
-from .util.errors import ConversionError, ConversionWarning
+from __future__ import annotations
 
-__all__ = [
-    "ConversionError",
-    "ConversionWarning",
-    "convert_hex_to_ossie",
-    "convert_ossie_to_hex",
-]
+from enum import Enum
+
+
+class HexDataType(str, Enum):
+    """The abstract type of the data."""
+
+    NUMBER = "number"
+    STRING = "string"
+    TIMESTAMP_TZ = "timestamp_tz"
+    TIMESTAMP_NAIVE = "timestamp_naive"
+    DATE = "date"
+    BOOLEAN = "boolean"
+    NULL = "null"
+    OTHER = "other"

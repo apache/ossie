@@ -32,12 +32,11 @@ import sys
 from pathlib import Path
 from typing import Any, NoReturn
 
-from ._common import ConversionError
-from .hex_models import HEX_DIALECTS
-from .hex_project import write_hex_project
 from .hex_to_ossie import convert_hex_to_ossie
-from .ossie_models import OSI_DIALECTS
-from .ossie_to_hex import convert_ossie_to_hex
+from .hex_types import HEX_DIALECTS
+from .ossie_to_hex import convert_ossie_to_hex, write_hex_project
+from .ossie_types import OSI_DIALECTS
+from .util.errors import ConversionError
 
 _OSI_DIALECT_LIST = ", ".join(OSI_DIALECTS)
 _HEX_DIALECT_LIST = ", ".join(HEX_DIALECTS)

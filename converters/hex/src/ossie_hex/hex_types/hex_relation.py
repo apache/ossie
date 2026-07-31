@@ -15,13 +15,29 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from .hex_to_ossie import convert_hex_to_ossie
-from .ossie_to_hex import convert_ossie_to_hex
-from .util.errors import ConversionError, ConversionWarning
+from __future__ import annotations
 
-__all__ = [
-    "ConversionError",
-    "ConversionWarning",
-    "convert_hex_to_ossie",
-    "convert_ossie_to_hex",
-]
+from enum import Enum
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from .hex_common import HexVisibility
+from .hex_id import HexID
+
+
+class HexRelationType(str, Enum):
+    MANY_TO_ONE = "many_to_one"
+    ONE_TO_ONE = "one_to_one"
+    ONE_TO_MANY = "one_to_many"
+
+
+class HexRelation(BaseModel):
+    """Defines how two models connect to each other."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: HexID
+    target: HexID = Field(default_factory=lambda data: data["id"])
+    type: HexRelationType
+    join_sql: str
+    visibility: HexVisibility = HexVisibility.PUBLIC

@@ -15,13 +15,18 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from .hex_to_ossie import convert_hex_to_ossie
-from .ossie_to_hex import convert_ossie_to_hex
-from .util.errors import ConversionError, ConversionWarning
+from __future__ import annotations
 
-__all__ = [
-    "ConversionError",
-    "ConversionWarning",
-    "convert_hex_to_ossie",
-    "convert_ossie_to_hex",
-]
+from pydantic import BaseModel, ConfigDict, Field
+
+from .hex_resource import HexResource
+
+
+class HexProject(BaseModel):
+    """In-memory Hex project: a name, dialect, and ordered resources."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    dialect: str
+    resources: list[HexResource] = Field(default_factory=list)
