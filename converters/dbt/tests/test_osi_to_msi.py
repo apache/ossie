@@ -342,6 +342,42 @@ class TestOSIToMSIMetricConversion:
         assert m.type_params.metric_aggregation_params.semantic_model == "orders"
         assert m.type_params.expr == "amount"
 
+    def test_sum_boolean_qualified_column_resolves_semantic_model(self) -> None:
+        doc = _osi_doc(
+            datasets=[
+                _osi_dataset("customers", fields=[_osi_field("customer_id")]),
+                _osi_dataset("orders", fields=[_osi_field("order_id")]),
+            ],
+            metrics=[
+                _osi_metric(
+                    "has_order",
+                    "SUM(CASE WHEN orders.order_id IS NOT NULL THEN 1 ELSE 0 END)",
+                )
+            ],
+        )
+        result = OSIToMSIConverter().convert(doc).output
+
+        metric = result.metrics[0]
+        assert metric.type_params.metric_aggregation_params is not None
+        assert metric.type_params.metric_aggregation_params.agg == AggregationType.SUM_BOOLEAN
+        assert metric.type_params.metric_aggregation_params.semantic_model == "orders"
+
+    def test_fully_qualified_column_preserves_dataset_name(self) -> None:
+        doc = _osi_doc(
+            datasets=[
+                _osi_dataset(
+                    "analytics.orders",
+                    fields=[_osi_field("order_id")],
+                )
+            ],
+            metrics=[_osi_metric("order_count", "COUNT(analytics.orders.order_id)")],
+        )
+        result = OSIToMSIConverter().convert(doc).output
+
+        metric = result.metrics[0]
+        assert metric.type_params.metric_aggregation_params is not None
+        assert metric.type_params.metric_aggregation_params.semantic_model == "analytics.orders"
+
     def test_percentile_cont_0_5_produces_median(self) -> None:
         doc = _osi_doc(
             datasets=[_osi_dataset("orders", fields=[_osi_field("amount")])],
