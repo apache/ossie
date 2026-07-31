@@ -234,9 +234,19 @@ Fields represent row-level attributes that can be used for grouping, filtering, 
 | `expression` | object | Yes | Expression definition with dialect support |
 | `dimension` | object | No | Dimension metadata (e.g., `is_time` flag) |
 | `label` | string | No | Label for categorization |
+| `display_label` | string | No | Human-readable display name for UI and AI interaction |
 | `description` | string | No | Human-readable description |
 | `datatype` | string (enum) | No | Logical data type for this field. See [Data types](#data-types). |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms) |
+| `semantic_type` | string | No | High-level semantic classification (see [Semantic Type](#semantic-type)) |
+| `measurement` | object | No | Unit and quantity metadata (see [Measurement](#measurement)) |
+| `display_format` | string | No | Excel-compatible format string (e.g., `$#,##0.00`, `0.0%`) |
+| `default_aggregation` | string | No | Default aggregation when used as a measure: `sum`, `avg`, `min`, `max`, `count`, `count_distinct` |
+| `default_sort` | object | No | Default sorting behavior (see [Default Sort](#default-sort)) |
+| `default_time_granularity` | string | No | Default time bucket for temporal fields: `day`, `week`, `month`, `quarter`, `year` |
+| `semantic_mappings` | array | No | Links to external ontologies (see [Semantic Mappings](#semantic-mappings)) |
+| `hidden` | boolean | No | Whether this field should be hidden from consumer UIs |
+| `group_label` | string | No | Organizational grouping label for UI presentation |
 | `custom_extensions` | array | No | Vendor-specific attributes |
 
 ### Expression Object
@@ -369,6 +379,15 @@ Quantitative measures defined on business data, representing key calculations li
 | `description` | string | No | Human-readable description of what the metric measures |
 | `datatype` | string (enum) | No | Logical data type for this metric. See [Data types](#data-types). |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms) |
+| `display_label` | string | No | Human-readable display name for UI and AI interaction |
+| `semantic_type` | string | No | High-level semantic classification (see [Semantic Type](#semantic-type)) |
+| `measurement` | object | No | Unit and quantity metadata (see [Measurement](#measurement)) |
+| `display_format` | string | No | Excel-compatible format string (e.g., `$#,##0.00`, `0.0%`) |
+| `desired_direction` | string | No | KPI polarity: `higher_is_better`, `lower_is_better`, `neutral` |
+| `default_sort` | object | No | Default sorting behavior (see [Default Sort](#default-sort)) |
+| `semantic_mappings` | array | No | Links to external ontologies (see [Semantic Mappings](#semantic-mappings)) |
+| `hidden` | boolean | No | Whether this metric should be hidden from consumer UIs |
+| `group_label` | string | No | Organizational grouping label for UI presentation |
 | `custom_extensions` | array | No | Vendor-specific attributes |
 
 ### Expression Object
@@ -413,6 +432,210 @@ expression:
   ai_context:
     synonyms:
       - "Order Average by customer"
+```
+
+---
+
+## Extended Metadata Types
+
+The following types are used by the extended metadata fields on both fields and metrics. All extended metadata is **optional** and **non-executional** — it does not affect query execution but enables consumers (BI tools, AI agents, developers) to correctly interpret, render, and present data.
+
+### Semantic Type
+
+High-level classification of a field or metric value. Accepts either a **well-known token** or a **URI** pointing to an external type system. Using URIs keeps the field registry-agnostic and allows governed external type systems to carry the long tail of domain-specific types.
+
+**Well-known tokens:**
+
+| Value | Description |
+|-------|-------------|
+| `categorical` | Unordered categorical values (e.g., status, color) |
+| `quantitative` | Numeric values representing quantities |
+| `monetary` | Currency/financial values |
+| `temporal` | Time or date values |
+| `geographic` | Location-related values (country, lat/lng, region) |
+| `ordinal` | Ordered categorical values (e.g., Low/Medium/High, ratings) |
+| `identifier` | Unique identifiers (e.g., IDs, codes) |
+
+**URI examples** (for regulated or domain-specific types):
+
+```yaml
+semantic_type: https://www.iso20022.org/glossary/LEI
+semantic_type: https://fpml.org/types/ISIN
+semantic_type: https://spec.edmcouncil.org/fibo/ontology/FBC/ProductsAndServices/FinancialProductsAndServices/UPI
+```
+
+### Measurement
+
+Describes what a numeric value represents. Enables unit-aware reasoning and formatting.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `quantity_kind` | string | The kind of quantity (e.g., `currency`, `length`, `weight`, `temperature`, `percentage`, `duration`) |
+| `unit` | string | Specific unit. For currency, use ISO 4217 codes (e.g., `usd`, `eur`, `gbp`). For others, use UCUM or descriptive strings (e.g., `meters`, `kg`, `celsius`) |
+| `unit_system` | string | Unit system: `si`, `imperial`, `custom` |
+
+**Example:**
+
+```yaml
+measurement:
+  quantity_kind: currency
+  unit: usd
+  unit_system: custom
+```
+
+### Default Sort
+
+Defines default sorting behavior for a field or metric.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `direction` | string | Sort direction: `asc`, `desc` |
+| `nulls` | string | Null positioning: `first`, `last` |
+| `by_field` | string | Sort by a different field (e.g., sort month names by month number) |
+
+**Example:**
+
+```yaml
+default_sort:
+  direction: desc
+  nulls: last
+```
+
+### Semantic Mappings
+
+Links a field or metric to external ontologies or standards using a SKOS-based predicate. The predicate vocabulary is **intentionally open** — the SKOS predicates provide a well-understood baseline, but non-standard predicates (e.g., `DISTINCT_FROM` for regulatory disambiguation) are permitted and can be expressed via extensions without being schema-invalid.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string (URI) | Yes | URI of the external concept |
+| `predicate` | string | No | Relationship type. Defaults to `exactMatch`. SKOS baseline predicates listed below. Vocabulary is open. |
+| `provenance` | string | No | Origin of this mapping (e.g., `"manual"`, `"FIBO 4.1"`, a tool name) |
+
+**SKOS baseline predicates:**
+
+| Predicate | Meaning |
+|-----------|--------|
+| `exactMatch` | Concepts are sufficiently similar to be used interchangeably (default) |
+| `closeMatch` | Concepts are similar enough to be useful in some contexts |
+| `broadMatch` | Target concept is broader (more general) |
+| `narrowMatch` | Target concept is narrower (more specific) |
+| `relatedMatch` | Concepts are associatively related |
+
+**Example — standard alignment:**
+
+```yaml
+semantic_mappings:
+  - target: https://schema.org/MonetaryAmount
+    predicate: exactMatch
+    provenance: manual
+```
+
+**Example — regulatory disambiguation (open predicate):**
+
+```yaml
+semantic_mappings:
+  - target: https://spec.edmcouncil.org/fibo/ontology/DER/RateDerivatives/IRSwaps/Counterparty
+    predicate: exactMatch
+    provenance: FIBO 4.1
+  - target: https://www.esma.europa.eu/emir/Counterparty
+    predicate: DISTINCT_FROM
+    provenance: EMIR-vs-MiFIR mapping review 2024
+```
+
+### Display Format
+
+The `display_format` string follows Excel-compatible custom number format conventions. Consumers MAY support a subset, but interoperability is improved when adhering to common patterns.
+
+**Common Patterns:**
+
+| Pattern | Description | Example Output |
+|---------|-------------|----------------|
+| `$#,##0.00` | Currency with 2 decimals | $1,234.56 |
+| `#,##0` | Integer with grouping | 12,345 |
+| `0.0%` | Percentage with 1 decimal | 12.3% |
+| `#,##0.00;(#,##0.00)` | Positive/negative | 1,234.56 or (1,234.56) |
+| `0.00E+00` | Scientific notation | 1.23E+04 |
+| `yyyy-mm-dd` | Date format | 2024-01-15 |
+
+---
+
+## Extended Metadata Examples
+
+**Field with full extended metadata:**
+
+```yaml
+- name: sales_amount
+  expression:
+    dialects:
+      - dialect: ANSI_SQL
+        expression: sales_amount
+  display_label: "Sales Amount"
+  semantic_type: monetary
+  measurement:
+    quantity_kind: currency
+    unit: usd
+  display_format: "$#,##0.00"
+  default_aggregation: sum
+  default_sort:
+    direction: desc
+    nulls: last
+  semantic_mappings:
+    - target: https://schema.org/MonetaryAmount
+      predicate: exactMatch
+  group_label: "Revenue"
+```
+
+**Metric with extended metadata:**
+
+```yaml
+- name: total_sales
+  expression:
+    dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(orders.sales_amount)
+  display_label: "Total Sales"
+  description: Total revenue from all completed orders
+  semantic_type: monetary
+  measurement:
+    quantity_kind: currency
+    unit: usd
+  display_format: "$#,##0.00"
+  desired_direction: higher_is_better
+  default_sort:
+    direction: desc
+  group_label: "Revenue"
+  semantic_mappings:
+    - target: https://schema.org/MonetaryAmount
+      predicate: exactMatch
+```
+
+**Temporal field with time granularity:**
+
+```yaml
+- name: order_date
+  expression:
+    dialects:
+      - dialect: ANSI_SQL
+        expression: order_date
+  dimension:
+    is_time: true
+  display_label: "Order Date"
+  semantic_type: temporal
+  default_time_granularity: month
+  default_sort:
+    direction: desc
+```
+
+**Hidden field used only in expressions:**
+
+```yaml
+- name: internal_cost_basis
+  expression:
+    dialects:
+      - dialect: ANSI_SQL
+        expression: raw_cost * adjustment_factor
+  hidden: true
+  description: Internal cost calculation used by margin metrics
 ```
 
 ---
