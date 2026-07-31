@@ -1,0 +1,58 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+package org.apache.ossie.converter;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.ossie.model.OsiModel;
+import org.apache.ossie.model.SemanticModel;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Binds the Salesforce converter's dynamic pipeline maps to the shared Ossie model.
+ */
+final class OsiModelBinding {
+
+    private OsiModelBinding() {
+    }
+
+    static OsiModel fromRootMap(ObjectMapper mapper, Map<String, Object> root) {
+        return mapper.convertValue(root, OsiModel.class);
+    }
+
+    static Map<String, Object> toPipelineMap(ObjectMapper mapper, SemanticModel semanticModel) {
+        return mapper.convertValue(
+                semanticModel, new TypeReference<LinkedHashMap<String, Object>>() {});
+    }
+
+    static OsiModel wrapPipelineYaml(
+            ObjectMapper yamlMapper, String semanticModelYaml, String version)
+            throws JsonProcessingException {
+        SemanticModel semanticModel = yamlMapper.readValue(semanticModelYaml, SemanticModel.class);
+        OsiModel root = new OsiModel();
+        root.setVersion(version);
+        root.setSemanticModel(List.of(semanticModel));
+        return root;
+    }
+}
