@@ -15,21 +15,26 @@
 # specific language governing permissions and limitations
 # under the License.
 
-**/__pycache__/
-**/.venv/
+name: Auto Label New Issues
 
-**/.pytest_cache/
-**/.ruff_cache/
-**/.coverage
-**/htmlcov/
-**/dist/
-**/target/
-*.py[cod]
+on:
+  issues:
+    types: [opened]
 
-# Go CLI
-cli/dist/
-cli/ossie
-cli/.tool-versions
+permissions:
+  issues: write
 
-# Apache RAT (downloaded by dev/check-license)
-dev/lib/
+jobs:
+  label:
+    if: github.repository_owner == 'apache'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['needs-triage']
+            });

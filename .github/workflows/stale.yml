@@ -1,0 +1,81 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: Close Stale Issues and PRs
+
+on:
+  schedule:
+    - cron: '0 0 * * 0' # Weekly on Sunday midnight UTC
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    if: github.repository_owner == 'apache'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+          days-before-issue-stale: 90
+          days-before-issue-close: 14
+          stale-issue-label: 'stale'
+          only-issue-labels: 'awaiting-response'
+          stale-issue-message: >
+            This issue has been automatically marked as stale because it has been
+            waiting for a response for 90 days. It will be closed in 14 days if
+            no further activity occurs.
+
+            If this is still relevant, please provide the requested information or
+            comment to keep it open. You can also reach out on the dev@ossie.apache.org
+            mailing list.
+          close-issue-message: >
+            This issue has been automatically closed due to inactivity.
+
+            If this is still relevant, please feel free to:
+            - Reopen this issue with the requested information
+            - Create a new issue with complete details
+            - Discuss on the dev@ossie.apache.org mailing list
+
+          days-before-pr-stale: 60
+          days-before-pr-close: 14
+          stale-pr-label: 'stale'
+          only-pr-labels: 'awaiting-response'
+          stale-pr-message: >
+            This pull request has been marked as stale because the requested
+            changes or feedback have not been addressed for 60 days. It will be
+            closed in 14 days if no activity occurs.
+
+            To keep this PR active, please address the review comments or respond
+            to questions from reviewers.
+          close-pr-message: >
+            This pull request has been automatically closed due to inactivity.
+
+            If you would like to continue this work, please reopen the PR and
+            address the outstanding feedback. We appreciate your contribution!
+
+          exempt-issue-labels: 'priority:critical,security,good-first-issue,in-progress,needs-review,needs-triage'
+          exempt-pr-labels: 'priority:critical,security,in-progress,needs-review'
+          exempt-all-issue-assignees: true
+          exempt-all-pr-assignees: true
+          exempt-all-issue-milestones: true
+          exempt-all-pr-milestones: true
+          operations-per-run: 100

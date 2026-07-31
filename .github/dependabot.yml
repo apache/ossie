@@ -15,21 +15,15 @@
 # specific language governing permissions and limitations
 # under the License.
 
-**/__pycache__/
-**/.venv/
-
-**/.pytest_cache/
-**/.ruff_cache/
-**/.coverage
-**/htmlcov/
-**/dist/
-**/target/
-*.py[cod]
-
-# Go CLI
-cli/dist/
-cli/ossie
-cli/.tool-versions
-
-# Apache RAT (downloaded by dev/check-license)
-dev/lib/
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+    groups:
+      actions-minor:
+        update-types:
+          - "minor"
+          - "patch"

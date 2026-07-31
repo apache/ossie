@@ -15,21 +15,48 @@
 # specific language governing permissions and limitations
 # under the License.
 
-**/__pycache__/
-**/.venv/
+# Files excluded from Apache RAT license header checks.
+# Keep this list minimal — only exclude files where a license header
+# is impossible or inappropriate (binary, generated, third-party).
 
-**/.pytest_cache/
-**/.ruff_cache/
-**/.coverage
-**/htmlcov/
-**/dist/
-**/target/
-*.py[cod]
+# Binary and generated files
+**/*.png
+**/*.jpg
+**/*.ico
+**/*.woff
+**/*.woff2
 
-# Go CLI
-cli/dist/
-cli/ossie
-cli/.tool-versions
+# Lock files and dependency manifests
+**/*.lock
+**/go.sum
 
-# Apache RAT (downloaded by dev/check-license)
-dev/lib/
+# Data/config files that cannot contain comments
+**/*.json
+**/*.csv
+
+# Snapshot/fixture test files
+**/snapshots/**
+**/__snapshots__/**
+
+# Git and IDE
+.git/**
+.idea/**
+.vscode/**
+**/.gitignore
+
+# Build output
+**/build/**
+**/dist/**
+**/*.egg-info/**
+**/__pycache__/**
+**/node_modules/**
+**/.venv/**
+**/target/**
+
+# Files that are themselves license/notice
+**/LICENSE
+**/NOTICE
+
+# Specific project files
+.editorconfig
+.python-version
