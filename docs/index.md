@@ -59,7 +59,7 @@ The Ossie core specification (current version: **0.2.0.dev0**, latest released: 
 | **Custom Extensions** | Vendor-specific metadata stored as JSON, allowing platforms to carry additional information without breaking core compatibility. |
 | **AI Context** | Optional annotations at every level (model, dataset, field, relationship, metric) to help AI tools understand business meaning — including instructions, synonyms, and example queries. |
 
-The specification supports multiple SQL dialects (`ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`, `MDX`, `TABLEAU`) so that expressions can be tailored to each platform while maintaining a common model structure.
+The specification supports multiple SQL dialects (`ANSI_SQL`, `SNOWFLAKE`, `MDX`, `TABLEAU`, `DATABRICKS`, `MAQL`, `BIGQUERY`) so that expressions can be tailored to each platform while maintaining a common model structure.
 
 For the full specification, see [core-spec/spec.md](../core-spec/spec.md). For validation tooling, see [validation/validate.py](../validation/validate.py). For a complete example, see the [TPC-DS semantic model](../examples/tpcds_semantic_model.yaml).
 
@@ -156,7 +156,7 @@ Community meetings are open to all participants and provide a forum for discussi
 
 Meeting schedules, agendas, and notes are published on the [Ossie website](https://ossie.apache.org/) and the project's GitHub repository. All community members are welcome to attend and participate.
 
-**Google Calendar**: _link TBD_
+**Google Calendar**: [Apache Ossie (incubating) Calendar](https://calendar.google.com/calendar/embed?src=a34f013e8d8f9cda419c66af89ab47488644d735fdfe3b0cb2ced90a880a2a95%40group.calendar.google.com&ctz=America%2FChicago)
 
 ---
 
@@ -251,7 +251,7 @@ Through `custom_extensions`. Each vendor can store arbitrary JSON metadata in ex
 Yes. Metrics are defined at the semantic model level (not within a dataset) and can reference fields from multiple datasets.
 
 **What SQL dialects are supported?**
-The current specification supports `ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`, `MDX`, and `TABLEAU`. New dialects can be proposed through the standard specification change process.
+The current specification supports `ANSI_SQL`, `SNOWFLAKE`, `MDX`, `TABLEAU`, `DATABRICKS`, `MAQL`, and `BIGQUERY`. New dialects can be proposed through the standard specification change process.
 
 ---
 
