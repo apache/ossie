@@ -643,6 +643,8 @@ a IS DISTINCT FROM b        -- TRUE if one is NULL and other isn't
 
 Ossie implementations MAY support additional functions through dialect-specific extensions. When using dialect extensions, the expression must specify the dialect.
 
+Standardized dialect identifiers in the core spec include `ANSI_SQL`, `SNOWFLAKE`, `MDX`, `DAX`, `TABLEAU`, `DATABRICKS`, `MAQL`, and `BIGQUERY`.
+
 The Ossie dialect should always be supported.  Other dialects MAY be ignored.  There is no guarantee that all different dialects for an expression will act the same, so implementations should be consistent with their dialect handling.  This means that if an Ossie model has an expression written in two dialects, the implementation should deterministically choose which dialect to use.  
 
 ### Declaring Dialect-Specific Expressions
@@ -656,18 +658,20 @@ expression:
       expression: DATE_TRUNC('month', order_date)
     - dialect: BIGQUERY
       expression: DATE_TRUNC(order_date, MONTH)
+    - dialect: DAX
+      expression: DATE(YEAR(order_date), MONTH(order_date), 1)
 ```
 
 ### Common Dialect Variations
 
-| Function | ANSI\_SQL | Snowflake | BigQuery | Databricks | PostgreSQL |
-| :---- | :---- | :---- | :---- | :---- | :---- |
-| Date truncation | `DATE_TRUNC('month', d)` | `DATE_TRUNC('month', d)` | `DATE_TRUNC(d, MONTH)` | `DATE_TRUNC('month', d)` | `DATE_TRUNC('month', d)` |
-| Date add | `DATEADD(day, 7, d)` | `DATEADD(day, 7, d)` | `DATE_ADD(d, INTERVAL 7 DAY)` | `DATE_ADD(d, 7)` | `d + INTERVAL '7 days'` |
-| String concat | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `a || b` |
-| Null coalesce | `COALESCE(a, b)` | `COALESCE(a, b)` or `NVL(a, b)` | `COALESCE(a, b)` or `IFNULL(a, b)` | `COALESCE(a, b)` | `COALESCE(a, b)` |
-| Current timestamp | `CURRENT_TIMESTAMP` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP` |
-| Substring | `SUBSTRING(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTRING(s, start, len)` | `SUBSTRING(s, start, len)` |
+| Function | ANSI\_SQL | Snowflake | BigQuery | Databricks | PostgreSQL | DAX |
+| :---- | :---- | :---- | :---- | :---- | :---- | :---- |
+| Date truncation | `DATE_TRUNC('month', d)` | `DATE_TRUNC('month', d)` | `DATE_TRUNC(d, MONTH)` | `DATE_TRUNC('month', d)` | `DATE_TRUNC('month', d)` | `DATE(YEAR(d), MONTH(d), 1)` |
+| Date add | `DATEADD(day, 7, d)` | `DATEADD(day, 7, d)` | `DATE_ADD(d, INTERVAL 7 DAY)` | `DATE_ADD(d, 7)` | `d + INTERVAL '7 days'` | `DATEADD(d, 7, DAY)` |
+| String concat | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT_WS('', a, b)` | `CONCATENATE(a, b)` or `a & b` |
+| Null coalesce | `COALESCE(a, b)` | `COALESCE(a, b)` or `NVL(a, b)` | `COALESCE(a, b)` or `IFNULL(a, b)` | `COALESCE(a, b)` | `COALESCE(a, b)` | `COALESCE(a, b)` |
+| Current timestamp | `CURRENT_TIMESTAMP` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP` | `NOW()` or `UTCNOW()` |
+| Substring | `SUBSTRING(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTRING(s, start, len)` | `SUBSTRING(s, start, len)` | `MID(s, start, len)` |
 
 ### 
 
