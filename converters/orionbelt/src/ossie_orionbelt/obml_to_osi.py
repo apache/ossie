@@ -405,11 +405,24 @@ class OBMLtoOSI:
             ext_data["obml_comment"] = col_obj["comment"]
         if col_obj.get("owner"):
             ext_data["obml_owner"] = col_obj["owner"]
-        # Preserve OBML-only dimension properties (timeGrain, format, resultType, etc.)
+        # Preserve OBML-only dimension properties (timeGrain, format, resultType, etc.).
+        # OBML allows N dimensions over one column (grain variants, role-playing
+        # via ``via``); OSI is field-centric (one dimension per field). The first
+        # match is the primary dimension carried on the field; any extras are
+        # preserved as descriptors so the reverse trip can rebuild them instead of
+        # dropping them silently.
         matched_dim: dict[str, Any] | None = None
+        extra_dims: list[dict[str, Any]] = []
         for _dim_name, dim_obj in obml_dimensions.items():
-            if dim_obj.get("dataObject") == do_name and dim_obj.get("column") == col_name:
+            if dim_obj.get("dataObject") != do_name or dim_obj.get("column") != col_name:
+                continue
+            if matched_dim is None:
                 matched_dim = dim_obj
+                # Preserve the dimension's OBML name explicitly. The OSI field
+                # name is the physical code, so without this the round-trip
+                # would rename the dimension to its column code. Authoritative
+                # (do not rely on synonyms, which mix names and user aliases).
+                ext_data["obml_dimension_name"] = _dim_name
                 if dim_obj.get("timeGrain"):
                     ext_data["obml_time_grain"] = dim_obj["timeGrain"]
                 if dim_obj.get("format"):
@@ -422,7 +435,38 @@ class OBMLtoOSI:
                     ext_data["obml_dimension_owner"] = dim_obj["owner"]
                 if dim_obj.get("via"):
                     ext_data["obml_dimension_via"] = dim_obj["via"]
-                break
+                # The dimension's own synonyms and vendor extensions have no
+                # native OSI slot (OSI has no dimension entity), so preserve them
+                # authoritatively here for the reverse trip. The customExtensions
+                # are also emitted as field foreign extensions below for OSI-tool
+                # visibility; that path lands them on the column on re-import,
+                # while this one restores them to the dimension.
+                if dim_obj.get("synonyms"):
+                    ext_data["obml_dimension_synonyms"] = dim_obj["synonyms"]
+                if dim_obj.get("customExtensions"):
+                    ext_data["obml_dimension_custom_extensions"] = dim_obj["customExtensions"]
+            else:
+                descriptor: dict[str, Any] = {"name": _dim_name}
+                for prop in ("resultType", "timeGrain", "format", "description", "owner", "via"):
+                    if dim_obj.get(prop):
+                        descriptor[prop] = dim_obj[prop]
+                # Carry the extra dimension's own synonyms and vendor extensions
+                # too, so it round-trips with the same fidelity as the primary.
+                if dim_obj.get("synonyms"):
+                    descriptor["synonyms"] = dim_obj["synonyms"]
+                if dim_obj.get("customExtensions"):
+                    descriptor["customExtensions"] = dim_obj["customExtensions"]
+                extra_dims.append(descriptor)
+        if extra_dims:
+            ext_data["obml_extra_dimensions"] = extra_dims
+            extra_names = ", ".join(d["name"] for d in extra_dims)
+            self.warnings.append(
+                f"Column '{do_name}.{col_name}' backs {len(extra_dims) + 1} OBML "
+                f"dimensions; OSI represents one dimension per field, so the "
+                f"{len(extra_dims)} additional dimension(s) ({extra_names}) are "
+                f"preserved via an OBSL extension for the reverse conversion but "
+                f"are not natively visible to other OSI tools."
+            )
         field["custom_extensions"] = [
             {
                 "vendor_name": _VENDOR_OBML,
