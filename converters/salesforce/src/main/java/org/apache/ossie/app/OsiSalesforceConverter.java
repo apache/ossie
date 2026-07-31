@@ -39,6 +39,8 @@ public class OsiSalesforceConverter {
 
     public static void main(String[] args) {
         if (args.length < 2) {
+            System.err.println("Usage: ossie-salesforce-converter <direction> <input-file>");
+            System.err.println("  direction: toSF | toOSI");
             System.exit(1);
         }
 
@@ -50,8 +52,10 @@ public class OsiSalesforceConverter {
             ConversionDirection direction = parseDirection(directionArg);
             app.convert(direction, inputPath);
         } catch (InvalidInputException e) {
+            System.err.println("Error: " + e.getMessage());
             System.exit(2);
         } catch (ConversionException e) {
+            System.err.println("Error: " + e.getMessage());
             System.exit(3);
         }
     }
