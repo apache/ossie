@@ -20,14 +20,11 @@ from pathlib import Path
 import pytest
 
 from ossie_hex.hex_to_ossie.load_hex_project import load_hex_project
-from ossie_hex.hex_types import HexDialect
 from ossie_hex.util.errors import ConversionError
 
 
 def test_load_multi_document_yaml(named_joins_hex_path: str) -> None:
-    project = load_hex_project(
-        named_joins_hex_path, dialect=HexDialect.DUCKDB.value, name="chat"
-    )
+    project = load_hex_project(named_joins_hex_path, name="chat")
 
     assert {resource.id for resource in project.resources} == {"messages", "users"}
 
@@ -37,16 +34,16 @@ def test_load_hex_project_rejects_duplicate_ids(tmp_path: Path) -> None:
     (tmp_path / "b.yml").write_text("id: orders\nbase_sql_table: b.orders\n")
 
     with pytest.raises(ConversionError, match="Duplicate Hex resource id 'orders'"):
-        load_hex_project(tmp_path, dialect=HexDialect.DUCKDB.value)
+        load_hex_project(tmp_path)
 
 
 def test_load_hex_project_rejects_non_mapping_document(tmp_path: Path) -> None:
     (tmp_path / "invalid.yml").write_text("- orders\n")
 
     with pytest.raises(ConversionError, match="expected a mapping"):
-        load_hex_project(tmp_path, dialect=HexDialect.DUCKDB.value)
+        load_hex_project(tmp_path)
 
 
 def test_load_empty_project_errors(tmp_path: Path) -> None:
     with pytest.raises(ConversionError, match="No Hex YAML"):
-        load_hex_project(tmp_path, dialect=HexDialect.DUCKDB.value)
+        load_hex_project(tmp_path)

@@ -46,8 +46,8 @@ module per resource it converts, sitting on two shared layers:
   and custom-extension payloads
 - `src/ossie_hex/ossie_types/`: Ossie patterns, constants, and loaded-document
   types
-- `src/ossie_hex/util/`: errors, warnings, YAML 1.2 load/dump, dialect mapping,
-  and SQL reference and join rewriting
+- `src/ossie_hex/util/`: errors, warnings, YAML 1.2 load/dump, and SQL reference
+  and join rewriting
 - `src/ossie_hex/cli.py`: `import` and `export` commands
 
 Add or update fixtures under `tests/fixtures/` and keep conversion behavior

@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from .ossie_common import OSI_DIALECTS, OSSIE_VERSION
+from .ossie_common import OSSIE_DIALECTS, OSSIE_VERSION, parse_ossie_dialect
 from .ossie_field import (
     OSSIE_FIELD_PATTERN,
     OSSIE_FIELD_RE,
@@ -26,7 +26,7 @@ from .ossie_field import (
 )
 
 __all__ = [
-    "OSI_DIALECTS",
+    "OSSIE_DIALECTS",
     "OSSIE_FIELD_PATTERN",
     "OSSIE_FIELD_RE",
     "OSSIE_QUALIFIED_FIELD_EXPR_PATTERN",
@@ -34,4 +34,5 @@ __all__ = [
     "OSSIE_QUALIFIED_FIELD_EXPR_SCAN_RE",
     "OSSIE_VERSION",
     "is_ossie_field",
+    "parse_ossie_dialect",
 ]

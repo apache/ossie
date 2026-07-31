@@ -67,7 +67,7 @@ Options:
 - `-o, --output <directory>` — Required. Directory where Hex YAML files are written.
 - `--model <name>` — Optional. Ossie semantic model to export. If omitted, the first model is exported and a warning is emitted when the document contains multiple models.
 - `--base-model <dataset>` — Optional. Dataset to receive metrics that cannot be attributed to a single dataset.
-- `-d, --dialect <dialect>` — Optional. OSI dialect to pick from Ossie expressions. If omitted, the dialect is restored from `HEX` metadata or inferred from the Ossie document.
+- `-d, --dialect <dialect>` — Optional. Ossie dialect to pick from Ossie expressions. If omitted, the dialect the document declares is used, falling back to `ANSI_SQL`.
 
 Example:
 
@@ -91,7 +91,7 @@ ossie-hex import -i <directory> --dialect <dialect> \
 Options:
 
 - `-i, --input <directory>` — Required. Directory containing the Hex YAML files.
-- `-d, --dialect <dialect>` — Required. Warehouse dialect for Ossie expressions.
+- `-d, --dialect <dialect>` — Required. Ossie dialect the project's SQL is written in. A Hex project does not record one, so the converted expressions can only be tagged with what you supply here, and it becomes the document's declared dialect.
 - `-o, --output <file>` — Optional. Ossie YAML output file. If omitted, output is written to stdout.
 - `--name <name>` — Optional. Name to assign to the imported Ossie model. If omitted, the project directory name is used.
 
@@ -123,6 +123,7 @@ Conversion raises a `ConversionError` when the process cannot produce reasonable
 In Hex → Ossie,
 
 - The Hex project directory is missing or contains no YAML resources.
+- No dialect is given, or the given dialect is not an Ossie dialect.
 
 In Ossie → Hex,
 
@@ -130,7 +131,7 @@ In Ossie → Hex,
 - Unique identifiers that normalize to the same Hex ID.
 - Metrics cannot be assigned to a model and `--base-model` is not given.
 - Custom extension data is malformed.
-- The given dialect is not one Hex supports.
+- The given dialect is not an Ossie dialect.
 
 Conversion emits a `ConversionWarning` when the output is lossy:
 
@@ -193,7 +194,7 @@ Hex features that Ossie cannot express are preserved in an Ossie custom extensio
 
 | Scope          | Keys                                                                                                     |
 | -------------- | -------------------------------------------------------------------------------------------------------- |
-| Semantic Model | `extension_version`, `hex_dialect`, `views`                                                              |
+| Semantic Model | `extension_version`, `views`                                                                             |
 | Dataset        | `display_name`, `source_kind`, `visibility`, `measures`, `undecomposable_relations`                      |
 | Field          | `type`, `visibility`, `expr_sql`, `expr_calc`                                                            |
 | Metric         | `model_id`, `measure_id`, `display_name`, `type`, `visibility`, `semi_additive`, `func`, `of`, `filters` |

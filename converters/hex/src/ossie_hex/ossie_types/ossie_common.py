@@ -19,5 +19,19 @@ from __future__ import annotations
 
 from ossie import OSIDialect
 
+from ..util.errors import ConversionError
+
 OSSIE_VERSION = "0.2.0.dev0"
-OSI_DIALECTS = [dialect.value for dialect in OSIDialect]
+OSSIE_DIALECTS = [dialect.value for dialect in OSIDialect]
+
+
+def parse_ossie_dialect(dialect: OSIDialect | str) -> OSIDialect:
+    """Coerce a dialect name to an ``OSIDialect``, rejecting anything unknown."""
+    raw = dialect.value if isinstance(dialect, OSIDialect) else str(dialect)
+    try:
+        return OSIDialect(raw.upper())
+    except ValueError:
+        supported = ", ".join(OSSIE_DIALECTS)
+        raise ConversionError(
+            f"Unknown OSI dialect '{dialect}'; expected one of {supported}"
+        ) from None

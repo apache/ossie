@@ -23,6 +23,10 @@
 ``export`` converts an Apache Ossie semantic model to a Hex project directory;
 ``import`` does the reverse. With no ``-o`` on import, the result is written to
 stdout. Conversions that drop information emit warnings to stderr.
+
+``--dialect`` names an OSI dialect in both directions: on import it is the
+dialect the project's SQL is written in, and on export it selects which of a
+multi-dialect expression's forms to read.
 """
 
 from __future__ import annotations
@@ -33,13 +37,14 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 from .hex_to_ossie import convert_hex_to_ossie
-from .hex_types import HEX_DIALECTS
 from .ossie_to_hex import convert_ossie_to_hex, write_hex_project
-from .ossie_types import OSI_DIALECTS
+from .ossie_types import OSSIE_DIALECTS
 from .util.errors import ConversionError
 
-_OSI_DIALECT_LIST = ", ".join(OSI_DIALECTS)
-_HEX_DIALECT_LIST = ", ".join(HEX_DIALECTS)
+# Ossie spells its dialects in upper case, but the CLI takes them in lower case;
+# `parse_ossie_dialect` maps them back.
+_OSSIE_DIALECT_CHOICES = [dialect.lower() for dialect in OSSIE_DIALECTS]
+_OSSIE_DIALECT_LIST = ", ".join(_OSSIE_DIALECT_CHOICES)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -54,7 +59,7 @@ def _build_parser() -> argparse.ArgumentParser:
     exp = sub.add_parser(
         "export",
         help="Apache Ossie semantic model -> Hex project directory",
-        dialect_list=_OSI_DIALECT_LIST,
+        dialect_list=_OSSIE_DIALECT_LIST,
     )
     exp.add_argument("-i", "--input", required=True, help="Apache Ossie YAML file")
     exp.add_argument(
@@ -74,19 +79,19 @@ def _build_parser() -> argparse.ArgumentParser:
     exp.add_argument(
         "-d",
         "--dialect",
-        type=str.upper,
-        choices=OSI_DIALECTS,
+        type=str.lower,
+        choices=_OSSIE_DIALECT_CHOICES,
         metavar="DIALECT",
         help=(
-            f"OSI expression dialect, one of: {_OSI_DIALECT_LIST} "
-            "(default: restored from the HEX custom extension or inferred)"
+            f"OSI expression dialect, one of: {_OSSIE_DIALECT_LIST} "
+            "(default: the (first) dialect the document declares)"
         ),
     )
 
     imp = sub.add_parser(
         "import",
         help="Hex project directory -> Apache Ossie semantic model",
-        dialect_list=_HEX_DIALECT_LIST,
+        dialect_list=_OSSIE_DIALECT_LIST,
     )
     imp.add_argument("-i", "--input", required=True, help="Hex project directory")
     imp.add_argument(
@@ -98,9 +103,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "-d",
         "--dialect",
         required=True,
-        choices=HEX_DIALECTS,
+        type=str.lower,
+        choices=_OSSIE_DIALECT_CHOICES,
         metavar="DIALECT",
-        help=f"Hex project warehouse dialect, one of: {_HEX_DIALECT_LIST}",
+        help=(
+            f"OSI dialect the project's SQL is written in, one of: {_OSSIE_DIALECT_LIST}"
+        ),
     )
     imp.add_argument(
         "--name",

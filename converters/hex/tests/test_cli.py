@@ -67,7 +67,10 @@ def test_cli_missing_dialect_on_import(
     assert exc.value.code == 2
     message = capsys.readouterr().err
     print(message)
-    assert "choose from bigquery, databricks, duckdb, snowflake, spark" in message
+    assert (
+        "choose from ansi_sql, snowflake, mdx, maql, tableau, databricks, bigquery"
+        in message
+    )
 
 
 def test_cli_export_invalid_dialect(
@@ -90,7 +93,7 @@ def test_cli_export_invalid_dialect(
     message = capsys.readouterr().err
     print(message)
     assert (
-        "error: argument -d/--dialect: invalid choice: 'INVALID' (choose from ANSI_SQL, SNOWFLAKE, MDX, MAQL, TABLEAU, DATABRICKS, BIGQUERY)"
+        "error: argument -d/--dialect: invalid choice: 'invalid' (choose from ansi_sql, snowflake, mdx, maql, tableau, databricks, bigquery)"
         in message
     )
 
@@ -104,6 +107,6 @@ def test_cli_import_invalid_dialect(
     assert exc.value.code == 2
     message = capsys.readouterr().err
     assert (
-        "error: argument -d/--dialect: invalid choice: 'invalid' (choose from bigquery, databricks, duckdb, snowflake, spark)"
+        "error: argument -d/--dialect: invalid choice: 'invalid' (choose from ansi_sql, snowflake, mdx, maql, tableau, databricks, bigquery)"
         in message
     )

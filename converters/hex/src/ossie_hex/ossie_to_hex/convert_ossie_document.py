@@ -19,9 +19,8 @@ from __future__ import annotations
 
 from ossie import OSIDialect, OSIDocument, OSISemanticModel
 
-from ..hex_types import HexProject, HexProjectStash, read_stash
-from ..ossie_types import OSI_DIALECTS
-from ..util.dialect import map_hex_dialect_to_ossie, map_ossie_dialect_to_hex
+from ..hex_types import HexProject
+from ..ossie_types import parse_ossie_dialect
 from ..util.errors import ConversionError, ConversionWarning
 from .convert_ossie_semantic_model import convert_ossie_semantic_model
 
@@ -45,26 +44,16 @@ def convert_ossie_document(
     ossie_semantic_model, warnings = _pick_ossie_semantic_model(
         ossie_document, model_name
     )
-    hex_project_stash = read_stash(
-        ossie_semantic_model.custom_extensions, HexProjectStash
-    )
-    ossie_dialect = _pick_ossie_dialect(ossie_document, hex_project_stash, dialect)
+    ossie_dialect = _pick_ossie_dialect(ossie_document, dialect)
     hex_resources, warnings = convert_ossie_semantic_model(
         ossie_semantic_model,
         ossie_dialect,
         base_model=base_model,
         warnings=warnings,
     )
-    hex_dialect = (
-        hex_project_stash.hex_dialect
-        if hex_project_stash
-        else map_ossie_dialect_to_hex(ossie_dialect)
-    )
-    hex_project_name = ossie_semantic_model.name
     hex_project = HexProject(
-        name=hex_project_name,
+        name=ossie_semantic_model.name,
         resources=hex_resources,
-        dialect=hex_dialect,
     )
 
     return hex_project, warnings
@@ -96,20 +85,10 @@ def _pick_ossie_semantic_model(
 
 def _pick_ossie_dialect(
     document: OSIDocument,
-    project_stash: HexProjectStash | None,
     requested: OSIDialect | str | None,
 ) -> OSIDialect:
     if requested is not None:
-        raw = requested.value if isinstance(requested, OSIDialect) else str(requested)
-        try:
-            return OSIDialect(raw.upper())
-        except ValueError:
-            supported = ", ".join(OSI_DIALECTS)
-            raise ConversionError(
-                f"Unknown OSI dialect '{requested}'; expected one of {supported}"
-            ) from None
-    if project_stash is not None and project_stash.hex_dialect:
-        return map_hex_dialect_to_ossie(project_stash.hex_dialect)
+        return parse_ossie_dialect(requested)
     if document.dialects:
         return document.dialects[0]
     return OSIDialect.ANSI_SQL

@@ -25,8 +25,6 @@ from .datatype_mapping import (
 )
 from .hex_common import (
     DEFAULT_HEX_VISIBILITY,
-    HEX_DIALECTS,
-    HexDialect,
     HexVisibility,
     is_default_hex_visibility,
 )
@@ -84,7 +82,6 @@ from .stash import (
 __all__ = [
     "DEFAULT_HEX_RESOURCE_TYPE",
     "DEFAULT_HEX_VISIBILITY",
-    "HEX_DIALECTS",
     "HEX_EXTENSION_VERSION",
     "HEX_EXTENSION_VERSION_KEY",
     "HEX_ID_PATTERN",
@@ -99,7 +96,6 @@ __all__ = [
     "OSSIE_TO_HEX",
     "TEMPORAL_HEX_TYPES",
     "HexDataType",
-    "HexDialect",
     "HexDimension",
     "HexDimensionStash",
     "HexExtensionData",

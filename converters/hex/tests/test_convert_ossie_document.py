@@ -16,9 +16,18 @@
 # under the License.
 
 import pytest
-from ossie import OSIDataset, OSIDialect, OSIDocument, OSISemanticModel
+from ossie import (
+    OSIDataset,
+    OSIDialect,
+    OSIDialectExpression,
+    OSIDimension,
+    OSIDocument,
+    OSIExpression,
+    OSIField,
+    OSISemanticModel,
+)
 
-from ossie_hex.hex_types import HexDialect
+from ossie_hex.hex_types import HexModel
 from ossie_hex.ossie_to_hex.convert_ossie_document import convert_ossie_document
 from ossie_hex.ossie_types import OSSIE_VERSION
 from ossie_hex.util.errors import ConversionError
@@ -81,30 +90,72 @@ def test_semantic_model_not_found() -> None:
 # region Ossie Dialect selection
 
 
-def test_document_dialect() -> None:
-    # document dialect should be used when no dialect is requested
-    document = OSIDocument(
-        version=OSSIE_VERSION,
-        dialects=[OSIDialect.SNOWFLAKE],
-        semantic_model=[OSISemanticModel(name="first", datasets=[])],
-    )
-    project, _ = convert_ossie_document(document, warnings=[])
+def _one_multi_dialect_field(*declared: OSIDialect) -> OSIDocument:
+    """A document whose only field spells its column differently per dialect.
 
-    assert project.dialect == HexDialect.SNOWFLAKE.value
+    Which spelling comes out the other side is what the selected dialect decides,
+    so it stands in for the choice itself.
+    """
+    return OSIDocument(
+        version=OSSIE_VERSION,
+        dialects=list(declared) or None,
+        semantic_model=[
+            OSISemanticModel(
+                name="m",
+                datasets=[
+                    OSIDataset(
+                        name="orders",
+                        source="s.orders",
+                        fields=[
+                            OSIField(
+                                name="amount",
+                                expression=OSIExpression(
+                                    dialects=[
+                                        OSIDialectExpression(
+                                            dialect=dialect,
+                                            expression=f"{dialect.value.lower()}_amount",
+                                        )
+                                        for dialect in (
+                                            OSIDialect.ANSI_SQL,
+                                            OSIDialect.SNOWFLAKE,
+                                            OSIDialect.BIGQUERY,
+                                        )
+                                    ]
+                                ),
+                                dimension=OSIDimension(),
+                            )
+                        ],
+                    )
+                ],
+            )
+        ],
+    )
+
+
+def _exported_expression(
+    document: OSIDocument, dialect: str | None = None
+) -> str | None:
+    project, _ = convert_ossie_document(document, dialect=dialect, warnings=[])
+    model = project.resources[0]
+    assert isinstance(model, HexModel)
+    return model.dimensions[0].expr_sql
+
+
+def test_document_dialect() -> None:
+    # the dialect the document declares should be used when none is requested
+    document = _one_multi_dialect_field(OSIDialect.SNOWFLAKE)
+
+    assert _exported_expression(document) == "snowflake_amount"
 
 
 def test_requested_dialect() -> None:
     # requested dialect should win over the document dialect
-    document = OSIDocument(
-        version=OSSIE_VERSION,
-        dialects=[OSIDialect.BIGQUERY],
-        semantic_model=[OSISemanticModel(name="first", datasets=[])],
-    )
-    project, _ = convert_ossie_document(
-        document, dialect=OSIDialect.BIGQUERY.value, warnings=[]
-    )
+    document = _one_multi_dialect_field(OSIDialect.SNOWFLAKE)
 
-    assert project.dialect == HexDialect.BIGQUERY.value
+    assert (
+        _exported_expression(document, dialect=OSIDialect.BIGQUERY.value)
+        == "bigquery_amount"
+    )
 
 
 def test_invalid_dialect() -> None:
@@ -114,14 +165,10 @@ def test_invalid_dialect() -> None:
 
 
 def test_document_without_dialect() -> None:
-    # document without dialect should fall back to ANSI SQL (Hex's DuckDB dialect)
-    document = OSIDocument(
-        version=OSSIE_VERSION,
-        semantic_model=[OSISemanticModel(name="m", datasets=[])],
-    )
-    project, _ = convert_ossie_document(document, warnings=[])
+    # document declaring no dialect should fall back to ANSI SQL
+    document = _one_multi_dialect_field()
 
-    assert project.dialect == HexDialect.DUCKDB.value
+    assert _exported_expression(document) == "ansi_sql_amount"
 
 
 # endregion Ossie Dialect selection

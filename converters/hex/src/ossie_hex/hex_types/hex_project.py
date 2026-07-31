@@ -23,10 +23,9 @@ from .hex_resource import HexResource
 
 
 class HexProject(BaseModel):
-    """In-memory Hex project: a name, dialect, and ordered resources."""
+    """In-memory Hex project: a name and ordered resources."""
 
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    dialect: str
     resources: list[HexResource] = Field(default_factory=list)

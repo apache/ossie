@@ -22,7 +22,7 @@ import yaml
 from ossie import OSIDialect
 
 from ossie_hex.hex_to_ossie import convert_hex_to_ossie
-from ossie_hex.hex_types import HexDialect, parse_hex_resource
+from ossie_hex.hex_types import parse_hex_resource
 from ossie_hex.ossie_to_hex import convert_ossie_to_hex, write_hex_project
 from ossie_hex.util.yaml import load_yaml
 
@@ -58,7 +58,7 @@ def test_hex_roundtrip_reproduces_source_project(
 ) -> None:
     ossie_yaml, _import_warnings = convert_hex_to_ossie(
         hex_project_path,
-        dialect=HexDialect.DUCKDB.value,
+        dialect=OSIDialect.ANSI_SQL.value,
         model_name="roundtrip",
     )
     files, _export_warnings = convert_ossie_to_hex(
@@ -76,7 +76,7 @@ def test_hex_roundtrip_reproduces_source_project(
 def test_hex_roundtrip_emits_expected_yaml(minimal_hex_path: str) -> None:
     ossie_yaml, _ = convert_hex_to_ossie(
         minimal_hex_path,
-        dialect=HexDialect.DUCKDB.value,
+        dialect=OSIDialect.ANSI_SQL.value,
         model_name="minimal_hex",
     )
     files, warnings = convert_ossie_to_hex(
@@ -147,7 +147,7 @@ description: Order fact table.
 
 def test_named_joins_roundtrip(named_joins_hex_path: str) -> None:
     ossie_yaml, _warnings = convert_hex_to_ossie(
-        named_joins_hex_path, dialect=HexDialect.DUCKDB.value
+        named_joins_hex_path, dialect=OSIDialect.ANSI_SQL.value
     )
     doc = load_yaml(ossie_yaml)
     rels = doc["semantic_model"][0].get("relationships") or []
@@ -187,7 +187,9 @@ measures:
         encoding="utf-8",
     )
 
-    ossie_yaml, _ = convert_hex_to_ossie(str(tmp_path), dialect=HexDialect.DUCKDB.value)
+    ossie_yaml, _ = convert_hex_to_ossie(
+        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
+    )
     files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL.value)
     measure = yaml.safe_load(files["orders.yml"])["measures"][0]
 
@@ -237,7 +239,9 @@ measures:
         encoding="utf-8",
     )
 
-    ossie_yaml, _ = convert_hex_to_ossie(str(tmp_path), dialect=HexDialect.DUCKDB.value)
+    ossie_yaml, _ = convert_hex_to_ossie(
+        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
+    )
     metrics = load_yaml(ossie_yaml)["semantic_model"][0]["metrics"]
     payloads = {
         metric["name"]: json.loads(metric["custom_extensions"][0]["data"])
@@ -301,7 +305,9 @@ dimensions:
         encoding="utf-8",
     )
 
-    ossie_yaml, _ = convert_hex_to_ossie(str(tmp_path), dialect=HexDialect.DUCKDB.value)
+    ossie_yaml, _ = convert_hex_to_ossie(
+        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
+    )
     files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL.value)
     relations = yaml.safe_load(files["orders.yml"])["relations"]
 
@@ -366,7 +372,9 @@ dimensions:
         encoding="utf-8",
     )
 
-    ossie_yaml, _ = convert_hex_to_ossie(str(tmp_path), dialect=HexDialect.DUCKDB.value)
+    ossie_yaml, _ = convert_hex_to_ossie(
+        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
+    )
     relationships = load_yaml(ossie_yaml)["semantic_model"][0]["relationships"]
     assert [rel.get("custom_extensions") for rel in relationships] == [None, None]
 
@@ -420,7 +428,7 @@ dimensions:
     )
 
     ossie_yaml, warnings = convert_hex_to_ossie(
-        str(tmp_path), dialect=HexDialect.DUCKDB.value
+        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
     )
     assert load_yaml(ossie_yaml)["semantic_model"][0].get("relationships") is None
     assert [str(w) for w in warnings] == [
@@ -461,7 +469,9 @@ dimensions:
         encoding="utf-8",
     )
 
-    ossie_yaml, _ = convert_hex_to_ossie(str(tmp_path), dialect=HexDialect.DUCKDB.value)
+    ossie_yaml, _ = convert_hex_to_ossie(
+        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
+    )
     files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL.value)
     dimensions = yaml.safe_load(files["events.yml"])["dimensions"]
 
@@ -522,7 +532,9 @@ dimensions:
         encoding="utf-8",
     )
 
-    ossie_yaml, _ = convert_hex_to_ossie(str(tmp_path), dialect=HexDialect.DUCKDB.value)
+    ossie_yaml, _ = convert_hex_to_ossie(
+        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
+    )
     files, _ = convert_ossie_to_hex(
         ossie_yaml, dialect=OSIDialect.ANSI_SQL.value, base_model="orders"
     )
@@ -552,7 +564,7 @@ def test_tpcds_export(tpcds_ossie_yaml: str, tmp_path: Path) -> None:
 
     # Re-import should validate as Ossie.
     ossie_yaml, _ = convert_hex_to_ossie(
-        str(out), dialect=HexDialect.DUCKDB.value, model_name="tpcds"
+        str(out), dialect=OSIDialect.ANSI_SQL.value, model_name="tpcds"
     )
     from ossie import OSIDocument
 

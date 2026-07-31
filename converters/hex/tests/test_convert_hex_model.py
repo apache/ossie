@@ -18,10 +18,9 @@
 from pathlib import Path
 
 import yaml
-from ossie import OSIDocument
+from ossie import OSIDialect, OSIDocument
 
 from ossie_hex.hex_to_ossie import convert_hex_to_ossie
-from ossie_hex.hex_types import HexDialect
 
 
 def test_independently_unique_dimensions_stay_separate_keys(tmp_path: Path) -> None:
@@ -44,7 +43,9 @@ dimensions:
         encoding="utf-8",
     )
 
-    yaml_text, _ = convert_hex_to_ossie(str(tmp_path), dialect=HexDialect.DUCKDB.value)
+    yaml_text, _ = convert_hex_to_ossie(
+        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
+    )
     dataset = OSIDocument.model_validate(yaml.safe_load(yaml_text)).semantic_model[0]
 
     assert dataset.datasets[0].primary_key == ["user_id"]

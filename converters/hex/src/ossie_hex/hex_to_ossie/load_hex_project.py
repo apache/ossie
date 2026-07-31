@@ -30,7 +30,6 @@ def load_hex_project(
     project_dir: str | Path,
     *,
     name: str | None = None,
-    dialect: str,
 ) -> HexProject:
     """Load a Hex project directory of ``.yml`` / ``.yaml`` resource files."""
     root = Path(project_dir)
@@ -73,6 +72,5 @@ def load_hex_project(
     project_name = name or root.name
     return HexProject(
         name=project_name,
-        dialect=dialect,
         resources=resources,
     )

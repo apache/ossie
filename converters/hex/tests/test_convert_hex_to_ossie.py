@@ -16,22 +16,22 @@
 # under the License.
 
 import yaml
-from ossie import OSIDataType, OSIDocument, OSIVendor
+from ossie import OSIDataType, OSIDialect, OSIDocument, OSIVendor
 
 from ossie_hex.hex_to_ossie import convert_hex_to_ossie
-from ossie_hex.hex_types import HexDialect
 from tests.utils import hex_extension
 
 
 def test_import_minimal_hex_project(minimal_hex_path: str) -> None:
     yaml_text, warnings = convert_hex_to_ossie(
         minimal_hex_path,
-        dialect=HexDialect.DUCKDB.value,
+        dialect=OSIDialect.SNOWFLAKE.value,
         model_name="demo",
     )
     doc = OSIDocument.model_validate(yaml.safe_load(yaml_text))
     assert doc.version == "0.2.0.dev0"
     assert doc.vendors == [OSIVendor.HEX]
+    assert doc.dialects == [OSIDialect.SNOWFLAKE]
 
     model = doc.semantic_model[0]
     assert model.name == "demo"
@@ -49,6 +49,13 @@ def test_import_minimal_hex_project(minimal_hex_path: str) -> None:
         "total_amount": "SUM(orders.amount)",
         "cancelled_orders": "COUNT(CASE WHEN orders.is_cancelled THEN 1 END)",
     }
+
+    # The requested dialect is what the converted SQL is claimed to be written in.
+    assert {
+        entry.dialect
+        for holder in [*(model.metrics or []), *(orders.fields or [])]
+        for entry in holder.expression.dialects
+    } == {OSIDialect.SNOWFLAKE}
 
     assert {f.name: f.datatype for f in orders.fields or []} == {
         "order_id": OSIDataType.STRING,
@@ -72,7 +79,7 @@ def test_import_minimal_hex_project(minimal_hex_path: str) -> None:
 def test_hex_extension_carries_only_non_ossie_data(minimal_hex_path: str) -> None:
     yaml_text, _ = convert_hex_to_ossie(
         minimal_hex_path,
-        dialect=HexDialect.DUCKDB.value,
+        dialect=OSIDialect.ANSI_SQL.value,
         model_name="demo",
     )
     model = yaml.safe_load(yaml_text)["semantic_model"][0]
@@ -83,7 +90,6 @@ def test_hex_extension_carries_only_non_ossie_data(minimal_hex_path: str) -> Non
     # creeping in, since those resurface as noise when converting back.
     assert hex_extension(model) == {
         "extension_version": 1,
-        "hex_dialect": HexDialect.DUCKDB.value,
         "views": [
             {
                 "resource": {
@@ -147,7 +153,9 @@ def test_hex_extension_carries_only_non_ossie_data(minimal_hex_path: str) -> Non
 
 
 def test_query_backed_model(query_hex_path: str) -> None:
-    yaml_text, _ = convert_hex_to_ossie(query_hex_path, dialect=HexDialect.DUCKDB.value)
+    yaml_text, _ = convert_hex_to_ossie(
+        query_hex_path, dialect=OSIDialect.ANSI_SQL.value
+    )
     doc = OSIDocument.model_validate(yaml.safe_load(yaml_text))
     events = doc.semantic_model[0].datasets[0]
     assert "SELECT" in events.source.upper()

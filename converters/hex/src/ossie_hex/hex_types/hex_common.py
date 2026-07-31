@@ -20,17 +20,6 @@ from __future__ import annotations
 from enum import Enum
 
 
-class HexDialect(str, Enum):
-    BIGQUERY = "bigquery"
-    DATABRICKS = "databricks"
-    DUCKDB = "duckdb"
-    SNOWFLAKE = "snowflake"
-    SPARK = "spark"
-
-
-HEX_DIALECTS = [d.value for d in HexDialect]
-
-
 class HexVisibility(str, Enum):
     """Controls where a resource can be used and who can see it."""
 

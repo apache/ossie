@@ -18,9 +18,9 @@
 from pathlib import Path
 
 import yaml
+from ossie import OSIDialect
 
 from ossie_hex.hex_to_ossie import convert_hex_to_ossie
-from ossie_hex.hex_types import HexDialect
 from tests.utils import hex_extension
 
 
@@ -91,7 +91,9 @@ dimensions:
         encoding="utf-8",
     )
 
-    yaml_text, _ = convert_hex_to_ossie(str(tmp_path), dialect=HexDialect.DUCKDB.value)
+    yaml_text, _ = convert_hex_to_ossie(
+        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
+    )
     datasets = yaml.safe_load(yaml_text)["semantic_model"][0]["datasets"]
     orders = next(ds for ds in datasets if ds["name"] == "orders")
 
@@ -132,7 +134,9 @@ dimensions:
         encoding="utf-8",
     )
 
-    yaml_text, _ = convert_hex_to_ossie(str(tmp_path), dialect=HexDialect.DUCKDB.value)
+    yaml_text, _ = convert_hex_to_ossie(
+        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
+    )
     fields = yaml.safe_load(yaml_text)["semantic_model"][0]["datasets"][0]["fields"]
     nothing, label = fields
 

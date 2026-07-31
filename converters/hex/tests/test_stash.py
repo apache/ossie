@@ -26,7 +26,6 @@ from ossie_hex.hex_types import (
     HEX_EXTENSION_VERSION_KEY,
     HEX_VENDOR,
     HexDataType,
-    HexDialect,
     HexDimensionStash,
     HexGroup,
     HexMeasureFuncName,
@@ -127,7 +126,7 @@ def test_stash_extension_omits_none_fields() -> None:
 
 
 def test_stash_extension_versions_project_payloads_only() -> None:
-    project = write_stash(HexProjectStash(hex_dialect=HexDialect.DUCKDB.value))
+    project = write_stash(HexProjectStash())
     dimension = write_stash(HexDimensionStash(type=HexDataType.STRING))
 
     assert json.loads(project.data)[HEX_EXTENSION_VERSION_KEY] == HEX_EXTENSION_VERSION
@@ -163,7 +162,6 @@ def test_stash_drops_values_matching_hex_defaults() -> None:
     "stash",
     [
         HexProjectStash(
-            hex_dialect=HexDialect.DUCKDB.value,
             views=[
                 HexViewStash(
                     resource=HexView(

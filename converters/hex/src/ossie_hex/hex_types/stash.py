@@ -79,7 +79,6 @@ class HexViewStash(_BaseHexStash):
 class HexProjectStash(_BaseHexStash):
     """Preserves Hex project semantics that Ossie does not model."""
 
-    hex_dialect: str
     views: list[HexViewStash] | None = None
 
 

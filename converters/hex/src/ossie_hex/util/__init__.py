@@ -15,5 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Left without re-exports: `hex_types` reaches into `util.errors`, so re-exporting
-# `util.dialect` here would import `hex_types` back before it finishes loading.
+# Left without re-exports: `hex_types` and `ossie_types` both reach into
+# `util.errors`, so re-exporting a sibling that depends on either of them would
+# import it back before it finishes loading.

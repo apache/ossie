@@ -18,9 +18,9 @@
 from pathlib import Path
 
 import yaml
+from ossie import OSIDialect
 
 from ossie_hex.hex_to_ossie import convert_hex_to_ossie
-from ossie_hex.hex_types import HexDialect
 from tests.utils import hex_extension
 
 
@@ -67,7 +67,9 @@ relations:
         encoding="utf-8",
     )
 
-    yaml_text, _ = convert_hex_to_ossie(str(tmp_path), dialect=HexDialect.DUCKDB.value)
+    yaml_text, _ = convert_hex_to_ossie(
+        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
+    )
     model = yaml.safe_load(yaml_text)["semantic_model"][0]
     payloads = {rel["name"]: hex_extension(rel) for rel in model["relationships"]}
 

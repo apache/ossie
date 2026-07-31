@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from ossie import (
     OSIDataset,
+    OSIDialect,
     OSIDocument,
     OSIMetric,
     OSIRelationship,
@@ -32,10 +33,9 @@ from ..hex_types import (
     HexProjectStash,
     HexView,
     HexViewStash,
-    maybe_write_extension,
+    write_stash,
 )
 from ..ossie_types import OSSIE_VERSION
-from ..util.dialect import map_hex_dialect_to_ossie
 from ..util.errors import ConversionError, ConversionWarning
 from .convert_hex_model import convert_hex_model
 from .convert_hex_view import convert_hex_view
@@ -43,15 +43,18 @@ from .convert_hex_view import convert_hex_view
 
 def convert_hex_project(
     hex_project: HexProject,
+    *,
+    ossie_dialect: OSIDialect,
 ) -> tuple[OSIDocument, list[ConversionWarning]]:
     """Convert a Hex project to an Ossie document.
+
+    ``ossie_dialect`` is the dialect the project's SQL is written in. A Hex
+    project does not record one, so it has to be supplied by the caller.
 
     Returns ``(ossie_document, warnings)``.
     """
 
     warnings: list[ConversionWarning] = []
-
-    ossie_dialect = map_hex_dialect_to_ossie(hex_project.dialect)
 
     models: list[OSIDataset] = []
     relationships: list[OSIRelationship] = []
@@ -87,20 +90,18 @@ def convert_hex_project(
     if not models:
         raise ConversionError("Hex project contains no convertible models")
 
-    project_stash = HexProjectStash(
-        hex_dialect=hex_project.dialect,
-        views=views_stash or None,
-    )
+    project_stash = HexProjectStash(views=views_stash or None)
 
     semantic_model = OSISemanticModel(
         name=hex_project.name,
         datasets=models,
         relationships=relationships or None,
         metrics=metrics or None,
-        custom_extensions=maybe_write_extension(project_stash),
+        custom_extensions=[write_stash(project_stash)],
     )
     document = OSIDocument(
         version=OSSIE_VERSION,
+        dialects=[ossie_dialect],
         vendors=[OSIVendor.HEX],
         semantic_model=[semantic_model],
     )
