@@ -42,5 +42,10 @@ def load_from_module(module_path: str, sys_path: str | None = None) -> SemanticL
     """
     if sys_path:
         sys.path.insert(0, str(Path(sys_path).resolve()))
-    importlib.import_module(module_path)
-    return SemanticDeclarativeBase.sync_semantic_layer()
+    module = importlib.import_module(module_path)
+    # Convention: a module-level CONCEPT_REGISTRY (semantido
+    # ConceptRegistry, v0.4.0+) is passed to the sync so concept
+    # bindings are validated and the registry — definitions,
+    # relations, external mappings, grain — travels with the layer.
+    registry = getattr(module, "CONCEPT_REGISTRY", None)
+    return SemanticDeclarativeBase.sync_semantic_layer(concept_registry=registry)

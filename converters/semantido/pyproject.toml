@@ -30,9 +30,15 @@ classifiers = [
 ]
 dependencies = [
     "apache-ossie>=0.2.0.dev0",
-    "semantido>=0.4.1",
+    "semantido>=0.5.2",
     "SQLAlchemy>=2.0",
     "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff==0.15.22"
 ]
 
 [project.license]
@@ -43,12 +49,6 @@ ossie-semantido = "ossie_semantido.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ossie_semantido"]
-
-[tool.uv]
-dev-dependencies = [
-    "pytest>=8.0",
-    "ruff==0.15.22"
-]
 
 [tool.uv.sources]
 apache-ossie = { path = "../../python", editable = true }

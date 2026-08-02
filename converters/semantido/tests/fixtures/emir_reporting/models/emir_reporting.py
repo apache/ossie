@@ -71,9 +71,7 @@ class Trade(SemanticDeclarativeBase):
     uti_description = "Unique Trade Identifier (Art. 9 REFIT). Canonical trade key."
 
     asset_class = Column(String(4), nullable=False)
-    asset_class_description = (
-        "EMIR asset class: 'IR' rates, 'CR' credit, 'EQ' equity, 'FX' FX, 'CO' commodity."
-    )
+    asset_class_description = "EMIR asset class: 'IR' rates, 'CR' credit, 'EQ' equity, 'FX' FX, 'CO' commodity."
     asset_class_sample_values = ["IR", "FX"]
 
     notional_amount = Column(Numeric(20, 2), nullable=False)
@@ -88,7 +86,9 @@ class Trade(SemanticDeclarativeBase):
     notional_currency_sample_values = ["EUR", "USD"]
 
     execution_timestamp = Column(DateTime, nullable=False)
-    execution_timestamp_description = "UTC execution time (Art. 9 REFIT). Primary time axis."
+    execution_timestamp_description = (
+        "UTC execution time (Art. 9 REFIT). Primary time axis."
+    )
     execution_timestamp_time_grain = TimeGrain.SECOND
 
     states = relationship("TradeState", back_populates="trade")
@@ -190,7 +190,9 @@ class CollateralReport(SemanticDeclarativeBase):
     reporting_date_time_grain = TimeGrain.DAY
 
     initial_margin_posted = Column(Numeric(20, 2))
-    initial_margin_posted_description = "IM posted BY the reporting counterparty. Unsigned."
+    initial_margin_posted_description = (
+        "IM posted BY the reporting counterparty. Unsigned."
+    )
     initial_margin_received = Column(Numeric(20, 2))
     initial_margin_received_description = (
         "IM received. Unsigned; do not sum with posted — subtract."

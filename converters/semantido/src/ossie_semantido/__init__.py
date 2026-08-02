@@ -23,14 +23,14 @@ from ossie_semantido.converter_issues import (
     ConverterResult,
 )
 from ossie_semantido.loaders import load_from_module
-from ossie_semantido.osi_to_semantido import osi_to_semantido_source
-from ossie_semantido.semantido_to_osi import semantic_layer_to_osi
+from ossie_semantido.ossie_to_semantido import ossie_to_semantido_source
+from ossie_semantido.semantido_to_ossie import semantic_layer_to_ossie
 
 __all__ = [
     "ConverterIssue",
     "ConverterIssueType",
     "ConverterResult",
     "load_from_module",
-    "osi_to_semantido_source",
-    "semantic_layer_to_osi",
+    "ossie_to_semantido_source",
+    "semantic_layer_to_ossie",
 ]

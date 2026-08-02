@@ -15,23 +15,26 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from ossie_semantido.osi_to_semantido import osi_to_semantido_source
-from ossie_semantido.semantido_to_osi import semantic_layer_to_osi
+from ossie_semantido.ossie_to_semantido import ossie_to_semantido_source
+from ossie_semantido.semantido_to_ossie import semantic_layer_to_ossie
 from tests.helpers import load_emir_layer
 
 
 def test_generated_source_compiles():
     layer = load_emir_layer()
-    document = semantic_layer_to_osi(layer, model_name="emir_reporting").output
-    result = osi_to_semantido_source(document)
+    document = semantic_layer_to_ossie(layer, model_name="emir_reporting").output
+    result = ossie_to_semantido_source(document)
     compile(result.output, "<generated>", "exec")
 
 
 def test_roundtrip_preserves_governance_annotations():
     layer = load_emir_layer()
-    document = semantic_layer_to_osi(layer, model_name="emir_reporting").output
-    source = osi_to_semantido_source(document).output
+    document = semantic_layer_to_ossie(layer, model_name="emir_reporting").output
+    source = ossie_to_semantido_source(document).output
     assert "sql_filters=" in source
     assert "PrivacyLevel.CONFIDENTIAL" in source
-    assert 'time_dimension="reporting_date"' in source or "time_dimension='reporting_date'" in source
+    assert (
+        'time_dimension="reporting_date"' in source
+        or "time_dimension='reporting_date'" in source
+    )
     assert "TimeGrain.DAY" in source

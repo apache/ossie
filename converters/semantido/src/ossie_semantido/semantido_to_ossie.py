@@ -93,6 +93,13 @@ def _column_to_field(column: Column) -> OSIField:
         extension_payload["data_type"] = column.data_type
     if column.references:
         extension_payload["references"] = column.references
+    if column.concept:  # semantido v0.4.0+
+        extension_payload["concept"] = column.concept
+    if column.application_rules:
+        # Also joined into ai_context.instructions above for Ossie-native
+        # consumers; kept verbatim here so the reverse direction can
+        # regenerate the authored list.
+        extension_payload["application_rules"] = list(column.application_rules)
 
     return OSIField(
         name=column.name,
@@ -122,6 +129,17 @@ def _table_to_dataset(table: Table) -> OSIDataset:
         extension_payload["sql_filters"] = table.sql_filters
     if table.time_dimension:
         extension_payload["time_dimension"] = table.time_dimension
+    if table.concept:  # semantido v0.4.0+
+        extension_payload["concept"] = table.concept
+    if table.unique_keys:  # semantido v0.5.0+
+        extension_payload["unique_keys"] = [list(k) for k in table.unique_keys]
+    # ai_context.instructions joins business + application context for
+    # Ossie-native consumers; the split is preserved here, so the reverse
+    # direction regenerates the authored attributes rather than merging.
+    if table.business_context:
+        extension_payload["business_context"] = table.business_context
+    if table.application_context:
+        extension_payload["application_context"] = table.application_context
 
     return OSIDataset(
         name=table.name,
@@ -136,7 +154,7 @@ def _table_to_dataset(table: Table) -> OSIDataset:
     )
 
 
-def _relationship_to_osi(
+def _relationship_to_ossie(
     rel: Relationship, issues: List[ConverterIssue]
 ) -> Optional[OSIRelationship]:
     match = _JOIN_RE.match(rel.join_condition or "")
@@ -188,7 +206,7 @@ def _relationship_to_osi(
     )
 
 
-def semantic_layer_to_osi(
+def semantic_layer_to_ossie(
     layer: SemanticLayer, model_name: str, description: Optional[str] = None
 ) -> ConverterResult[OSIDocument]:
     """Convert a synced semantido SemanticLayer into an Ossie document."""
@@ -198,15 +216,19 @@ def semantic_layer_to_osi(
 
     relationships = []
     for rel in layer.relationships:
-        converted = _relationship_to_osi(rel, issues)
+        converted = _relationship_to_ossie(rel, issues)
         if converted is not None:
             relationships.append(converted)
 
-    model_extensions = None
+    model_payload = {}
     if layer.application_glossary:
-        model_extensions = [
-            _extension({"application_glossary": layer.application_glossary})
-        ]
+        model_payload["application_glossary"] = layer.application_glossary
+    if layer.concept_registry is not None:  # semantido v0.4.0+
+        # The registry is the meaning artifact: definitions, relations,
+        # external mappings, and grain (v0.5.0). Serialized whole so a
+        # round-trip regenerates the authoring code.
+        model_payload["concept_registry"] = layer.concept_registry.to_dict()
+    model_extensions = [_extension(model_payload)] if model_payload else None
 
     model = OSISemanticModel(
         name=model_name,

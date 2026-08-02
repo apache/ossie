@@ -29,6 +29,13 @@ semantic layer, and emits Ossie YAML through the typed `apache-ossie`
 objects. The reverse direction is code generation: it produces a Python
 module of `@semantic_table`-decorated models from an Ossie document.
 
+Tracks the **semantido ≥ 0.5.2** surface: concept bindings (`concept=` /
+`<column>_concept`), the concept registry — definitions, relations,
+external mappings, and grain — carried as a model-level custom extension,
+and `unique_keys`. A module-level `CONCEPT_REGISTRY` in the loaded models
+module is passed to `sync_semantic_layer()` automatically; the reverse
+direction regenerates it as a `build_registry()` function.
+
 ## Usage
 
 ```bash
