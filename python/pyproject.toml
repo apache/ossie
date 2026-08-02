@@ -40,6 +40,12 @@ dependencies = [
 homepage = "https://ossie.apache.org/"
 repository = "https://github.com/apache/ossie/"
 
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "types-pyyaml>=6.0.12.20260724",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/ossie"]
 
