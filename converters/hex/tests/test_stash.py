@@ -180,7 +180,7 @@ def test_stash_drops_values_matching_hex_defaults() -> None:
             display_name="Orders",
             source_kind="query",
             visibility=HexVisibility.INTERNAL,
-            undecomposable_relations=[
+            relations=[
                 HexRelation(
                     id="users",
                     target="account",

@@ -103,7 +103,7 @@ class HexModelStash(_VisibilityMixin, _BaseHexStash):
     display_name: str
     source_kind: Literal["table", "query"]
     measures: list[HexMeasure] | None = None
-    undecomposable_relations: list[HexRelation] | None = None
+    relations: list[HexRelation] | None = None
 
 
 class HexDimensionStash(_TypeMixin, _VisibilityMixin, _BaseHexStash):

@@ -200,7 +200,7 @@ Hex features that Ossie cannot express are preserved in an Ossie custom extensio
 | Scope          | Keys                                                                                                     |
 | -------------- | -------------------------------------------------------------------------------------------------------- |
 | Semantic Model | `extension_version`, `views`                                                                             |
-| Dataset        | `display_name`, `source_kind`, `visibility`, `measures`, `undecomposable_relations`                      |
+| Dataset        | `display_name`, `source_kind`, `visibility`, `measures`, `relations`                                     |
 | Field          | `type`, `visibility`, `expr_sql`, `expr_calc`                                                            |
 | Metric         | `model_id`, `measure_id`, `display_name`, `type`, `visibility`, `semi_additive`, `func`, `of`, `filters` |
 | Relationship   | `relation_type`, `visibility`                                                                            |

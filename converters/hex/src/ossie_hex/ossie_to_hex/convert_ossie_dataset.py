@@ -140,14 +140,12 @@ def convert_ossie_dataset(
     if measures:
         resource["measures"] = measures
 
-    undecomposable_relations = (
-        stash.undecomposable_relations if stash is not None else None
-    )
-    for undecomp in undecomposable_relations or []:
-        if undecomp.id in taken_ids:
+    unsupported_relations = stash.relations if stash is not None else None
+    for relation in unsupported_relations or []:
+        if relation.id in taken_ids:
             continue
-        taken_ids.add(undecomp.id)
-        relations.append(undecomp)
+        taken_ids.add(relation.id)
+        relations.append(relation)
 
     if relations:
         resource["relations"] = relations

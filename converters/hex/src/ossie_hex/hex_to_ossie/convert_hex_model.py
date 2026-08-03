@@ -49,7 +49,7 @@ def convert_hex_model(
     # relationships.
     (
         relationships,
-        undecomposable_relations,
+        unsupported_relations,
         relation_targets,
         relation_warnings,
     ) = convert_hex_model_relations(model)
@@ -83,7 +83,7 @@ def convert_hex_model(
         source_kind=source_kind,
         visibility=model.visibility,
         measures=unsupported_measures or None,
-        undecomposable_relations=undecomposable_relations or None,
+        relations=unsupported_relations or None,
     )
 
     dataset = OSIDataset(
@@ -109,21 +109,21 @@ def convert_hex_model_relations(
 ]:
     """Convert a model's relations, and index the reachable ones by target model."""
     relationships: list[OSIRelationship] = []
-    undecomposable_relations: list[HexRelation] = []
+    unsupported_relations: list[HexRelation] = []
     relation_targets: dict[str, str] = {}
     warnings: list[ConversionWarning] = []
     for relation in model.relations:
-        rel, undecomposable, rel_warnings = convert_hex_relation(
+        relationship, unsupported_relation, relation_warnings = convert_hex_relation(
             relation, base_model_id=model.id
         )
-        warnings.extend(rel_warnings)
-        if rel is not None:
-            relationships.append(rel)
+        warnings.extend(relation_warnings)
+        if relationship is not None:
+            relationships.append(relationship)
             if relation.target != model.id:
                 relation_targets.setdefault(relation.target, relation.id)
-        elif undecomposable is not None:
-            undecomposable_relations.append(undecomposable)
-    return relationships, undecomposable_relations, relation_targets, warnings
+        elif unsupported_relation is not None:
+            unsupported_relations.append(unsupported_relation)
+    return relationships, unsupported_relations, relation_targets, warnings
 
 
 def convert_hex_model_dimensions(
@@ -150,14 +150,14 @@ def convert_hex_model_dimensions(
 
     warnings: list[ConversionWarning] = []
     for dim in model.dimensions:
-        field, field_warnings = convert_hex_dimension(
+        field, dimension_warnings = convert_hex_dimension(
             dim,
             model_id=model.id,
             ossie_dialect=ossie_dialect,
             resolve=resolve,
         )
         fields.append(field)
-        warnings.extend(field_warnings)
+        warnings.extend(dimension_warnings)
         if dim.unique:
             unique_field_names.append(dim.id)
 
@@ -184,15 +184,15 @@ def convert_hex_model_measures(
     unsupported_measures: list[HexMeasure] = []
     warnings: list[ConversionWarning] = []
     for measure in model.measures:
-        metric, unsupported, metric_warnings = convert_hex_measure(
+        metric, unsupported_measure, measure_warnings = convert_hex_measure(
             measure,
             model_id=model.id,
             ossie_dialect=ossie_dialect,
             metric_names=metric_names,
         )
-        warnings.extend(metric_warnings)
+        warnings.extend(measure_warnings)
         if metric is not None:
             metrics.append(metric)
-        elif unsupported is not None:
-            unsupported_measures.append(unsupported)
+        elif unsupported_measure is not None:
+            unsupported_measures.append(unsupported_measure)
     return metrics, unsupported_measures, warnings
