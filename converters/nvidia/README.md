@@ -46,14 +46,14 @@ converter targets.
 ## Setup
 
 ```bash
-cd converters/gsf
+cd converters/nvidia
 uv sync
 ```
 
 ## Ossie → GSF
 
 ```bash
-uv run ossie-gsf export \
+uv run ossie-nvidia-gsf export \
   --input ../../examples/tpcds_semantic_model.yaml \
   --output tpcds.gsf.yaml \
   --database-name tpcds
@@ -64,7 +64,7 @@ qualified `database.schema.table` sources do not require it. One document may
 contain multiple databases.
 
 ```python
-from ossie_gsf import convert_ossie_to_gsf
+from ossie_nvidia_gsf import convert_ossie_to_gsf
 
 gsf_yaml = convert_ossie_to_gsf(ossie_yaml, database_name="tpcds")
 ```
@@ -72,7 +72,7 @@ gsf_yaml = convert_ossie_to_gsf(ossie_yaml, database_name="tpcds")
 ## GSF → Ossie
 
 ```bash
-uv run ossie-gsf import \
+uv run ossie-nvidia-gsf import \
   --input tpcds.gsf.yaml \
   --output semantic_model.yaml \
   --name tpcds
@@ -82,7 +82,7 @@ uv run ossie-gsf import \
 single catalog database name when there is one, otherwise `gsf_model`.
 
 ```python
-from ossie_gsf import convert_gsf_to_ossie
+from ossie_nvidia_gsf import convert_gsf_to_ossie
 
 ossie_yaml = convert_gsf_to_ossie(gsf_yaml, model_name="tpcds")
 ```

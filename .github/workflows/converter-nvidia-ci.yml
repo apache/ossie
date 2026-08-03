@@ -17,19 +17,19 @@
 # under the License.
 #
 
-name: Converters GSF CI
+name: Converters NVIDIA GSF CI
 
 on:
   push:
     branches: [ "main" ]
     paths:
-      - 'converters/gsf/**'
-      - '.github/workflows/converter-gsf-ci.yml'
+      - 'converters/nvidia/**'
+      - '.github/workflows/converter-nvidia-ci.yml'
   pull_request:
     branches: [ "main" ]
     paths:
-      - 'converters/gsf/**'
-      - '.github/workflows/converter-gsf-ci.yml'
+      - 'converters/nvidia/**'
+      - '.github/workflows/converter-nvidia-ci.yml'
 
 jobs:
   build:
@@ -53,11 +53,11 @@ jobs:
           echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
 
       - name: Sync dependencies
-        working-directory: converters/gsf
+        working-directory: converters/nvidia
         run: |
           uv sync
 
       - name: Unit Tests
-        working-directory: converters/gsf
+        working-directory: converters/nvidia
         run: |
           uv run pytest

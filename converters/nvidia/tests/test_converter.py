@@ -29,13 +29,13 @@ from typing import Any
 import pytest
 import yaml
 
-from ossie_gsf.converter import (
+from ossie_nvidia_gsf.converter import (
     GSFConversionError,
     convert_gsf_to_ossie,
     convert_ossie_to_gsf,
     main,
 )
-from ossie_gsf.native_converter import (
+from ossie_nvidia_gsf.native_converter import (
     _SQL_TYPE_BY_OSSIE_DATATYPE,
     _index_native_document,
     _ossie_datatype,
