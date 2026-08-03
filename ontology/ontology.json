@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/open-semantic-interchange/OSI/core-spec/osi-schema.json",
-  "title": "OSI Ontology Metadata Specification",
-  "description": "JSON Schema for validating OSI (Open Semantic Interoperability) ontology definitions",
+  "$id": "https://github.com/apache/ossie/core-spec/osi-schema.json",
+  "title": "Apache Ossie Ontology Metadata Specification",
+  "description": "JSON Schema for validating Apache Ossie ontology definitions",
   "type": "object",
   "properties": {
     "version": {
@@ -19,7 +19,14 @@
       "description": "Human-readable description"
     },
     "ai_context": {
-      "$ref": "https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json#/$defs/AIContext"
+      "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/osi-schema.json#/$defs/AIContext"
+    },
+    "requires": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Expression"
+      },
+      "description": "Expressions that constrain the population of this ontology"
     },
     "ontology": {
       "type": "array",
@@ -44,75 +51,9 @@
       "type": "object",
       "description": "Ontology component that defines a single concept and any relationships that are keyed primarily by that concept",
       "properties": {
-        "description": {
-          "type": "string",
-          "description": "Human-readable description of the component"
-        },
         "concept": {
-          "$ref": "#/$defs/Concept"
-        },
-        "relationships": { 
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Relationship"
-          },
-          "description": "Defines relationships that pertain primarily to the concept defined in this component"
-        }
-      },
-      "required": ["concept"],
-      "additionalProperties": false
-    },
-    "Expression": {
-      "type": "string",
-      "description": "ANSI SQL expression"
-    },
-    "Relationship": {
-      "type": "object",
-      "description": "Relationship between concepts in the ontology",
-      "properties": {
-        "name": {
           "type": "string",
-          "description": "Name of the relationship"
-        },
-        "description": {
-          "type": "string",
-          "description": "Human-readable description of the relationship"
-        },
-        "roles": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Role"
-          },
-          "description": "Additional roles in this relationship"
-        },
-        "multiplicity": {
-          "$ref": "#/$defs/Multiplicity"
-        },
-        "derived_by": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Expression"
-          },
-          "description": "Expressions that define how this concept is derived"
-        },
-        "verbalizes": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "Natural language expressions that verbalize this relationship"
-        }
-      },
-      "required": ["name", "verbalizes"],
-      "additionalProperties": false
-    },
-    "Concept": {
-      "type": "object",
-      "description": "Defines a concept in the ontology",
-      "properties": {
-        "name": {
-          "type": "string",
-          "description": "Unique identifier for the concept"
+          "description": "Unique name of the concept defined by this component"
         },
         "type": {
           "$ref": "#/$defs/ConceptType"
@@ -148,9 +89,67 @@
             "$ref": "#/$defs/Expression"
           },
           "description": "Expressions that constrain the population of this concept"
+        },
+        "relationships": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Relationship"
+          },
+          "description": "Defines relationships that pertain primarily to the concept defined in this component"
         }
       },
-      "required": ["name", "type"],
+      "required": ["concept", "type"],
+      "additionalProperties": false
+    },
+    "Expression": {
+      "type": "string",
+      "description": "ANSI SQL expression"
+    },
+    "Relationship": {
+      "type": "object",
+      "description": "Relationship between concepts in the ontology",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the relationship"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of the relationship"
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Role"
+          },
+          "description": "Additional roles in this relationship"
+        },
+        "multiplicity": {
+          "$ref": "#/$defs/Multiplicity"
+        },
+        "derived_by": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Expression"
+          },
+          "description": "Expressions that define how this concept is derived"
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Expression"
+          },
+          "description": "Expressions that constrain the population of this relationship"
+        },
+        "verbalizes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Natural language expressions that verbalize this relationship"
+        }
+      },
+      "required": ["name", "verbalizes"],
       "additionalProperties": false
     },
     "ConceptMapping": {
@@ -167,7 +166,7 @@
             "$ref": "#/$defs/ObjectMapping"
           },
           "description": "Mappings from logical constructs that populate the concept in this component. Valid only when the concept is an entity type"
-        },         
+        },
         "link_mappings": {
           "type": "array",
           "items": {
@@ -282,7 +281,7 @@
           "description": "Human-readable description of this ontology map"
         },
         "semantic_model": {
-          "$ref": "https://raw.githubusercontent.com/open-semantic-interchange/OSI/main/core-spec/osi-schema.json#/$defs/SemanticModel"
+          "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/osi-schema.json#/$defs/SemanticModel"
         },
         "concept_mappings": {
           "type": "array",

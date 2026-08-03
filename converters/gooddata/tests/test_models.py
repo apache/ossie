@@ -1,8 +1,25 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 """Tests for GoodData declarative model serialization/deserialization."""
 
 from __future__ import annotations
 
-from gooddata_osi.models import GdDeclarativeModel, gd_model_from_dict, gd_model_to_dict
+from ossie_gooddata.models import GdDeclarativeModel, gd_model_from_dict, gd_model_to_dict
 
 
 def test_parse_gooddata_model(gooddata_tpcds_dict: dict, gooddata_tpcds_model: GdDeclarativeModel):
@@ -19,6 +36,8 @@ def test_parse_gooddata_model(gooddata_tpcds_dict: dict, gooddata_tpcds_model: G
     assert len(store_sales.facts) == 4
     assert len(store_sales.grain) == 2
     assert len(store_sales.references) == 4
+    assert store_sales.attributes[0].source_column_data_type is None
+    assert store_sales.facts[0].source_column_data_type is None
 
     # Check data source table id
     assert store_sales.data_source_table_id is not None
@@ -53,6 +72,8 @@ def test_roundtrip_serialization(gooddata_tpcds_dict: dict):
     assert len(ds["attributes"]) == 4
     assert len(ds["facts"]) == 4
     assert len(ds["references"]) == 4
+    assert "sourceColumnDataType" not in ds["attributes"][0]
+    assert "sourceColumnDataType" not in ds["facts"][0]
 
     # Check date instance preserved
     di = result["ldm"]["dateInstances"][0]

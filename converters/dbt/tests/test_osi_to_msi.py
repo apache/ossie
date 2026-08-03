@@ -1,10 +1,28 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 """Tests for OSIToMSIConverter."""
 
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
-from osi_dbt.msi_to_osi import MSIToOSIConverter
-from osi_dbt.osi_to_msi import OSIToMSIConverter
+from ossie import OSIDataType, OSIDimension
+from ossie_dbt.msi_to_osi import MSIToOSIConverter
+from ossie_dbt.osi_to_msi import OSIToMSIConverter
 from metricflow_semantic_interfaces.type_enums import (
     AggregationType,
     DimensionType,
@@ -137,6 +155,29 @@ class TestOSIToMSIFieldClassification:
 
         assert len(sm.dimensions) == 1
         assert sm.dimensions[0].name == field_name
+        assert sm.dimensions[0].type == expected_type
+
+    @pytest.mark.parametrize(
+        ("dimension", "datatype", "expected_type"),
+        [
+            (OSIDimension(), OSIDataType.DATE, DimensionType.TIME),
+            (OSIDimension(is_time=False), OSIDataType.DATE_TIME_TZ, DimensionType.CATEGORICAL),
+            (None, OSIDataType.DATE, DimensionType.CATEGORICAL),
+        ],
+    )
+    def test_field_becomes_dimension_by_effective_time_role(
+        self,
+        dimension: OSIDimension | None,
+        datatype: OSIDataType,
+        expected_type: DimensionType,
+    ) -> None:
+        field = _osi_field("occurred_at").model_copy(
+            update={"dimension": dimension, "datatype": datatype}
+        )
+        doc = _osi_doc(datasets=[_osi_dataset("events", fields=[field])])
+
+        sm = OSIToMSIConverter().convert(doc).output.semantic_models[0]
+
         assert sm.dimensions[0].type == expected_type
 
     def test_field_referenced_in_metric_stays_as_dimension(self) -> None:
@@ -301,6 +342,42 @@ class TestOSIToMSIMetricConversion:
         assert m.type_params.metric_aggregation_params.semantic_model == "orders"
         assert m.type_params.expr == "amount"
 
+    def test_sum_boolean_qualified_column_resolves_semantic_model(self) -> None:
+        doc = _osi_doc(
+            datasets=[
+                _osi_dataset("customers", fields=[_osi_field("customer_id")]),
+                _osi_dataset("orders", fields=[_osi_field("order_id")]),
+            ],
+            metrics=[
+                _osi_metric(
+                    "has_order",
+                    "SUM(CASE WHEN orders.order_id IS NOT NULL THEN 1 ELSE 0 END)",
+                )
+            ],
+        )
+        result = OSIToMSIConverter().convert(doc).output
+
+        metric = result.metrics[0]
+        assert metric.type_params.metric_aggregation_params is not None
+        assert metric.type_params.metric_aggregation_params.agg == AggregationType.SUM_BOOLEAN
+        assert metric.type_params.metric_aggregation_params.semantic_model == "orders"
+
+    def test_fully_qualified_column_preserves_dataset_name(self) -> None:
+        doc = _osi_doc(
+            datasets=[
+                _osi_dataset(
+                    "analytics.orders",
+                    fields=[_osi_field("order_id")],
+                )
+            ],
+            metrics=[_osi_metric("order_count", "COUNT(analytics.orders.order_id)")],
+        )
+        result = OSIToMSIConverter().convert(doc).output
+
+        metric = result.metrics[0]
+        assert metric.type_params.metric_aggregation_params is not None
+        assert metric.type_params.metric_aggregation_params.semantic_model == "analytics.orders"
+
     def test_percentile_cont_0_5_produces_median(self) -> None:
         doc = _osi_doc(
             datasets=[_osi_dataset("orders", fields=[_osi_field("amount")])],
@@ -331,7 +408,7 @@ class TestOSIToMSIMetricConversion:
 
 class TestOSIToMSIRoundTrip:
     def test_osi_to_msi_to_osi_preserves_structure(self, snapshot: SnapshotAssertion) -> None:
-        """OSI → MSI → OSI preserves dataset names, fields, and metric expressions."""
+        """Ossie → MSI → Ossie preserves dataset names, fields, and metric expressions."""
         original = _osi_doc(
             datasets=[
                 _osi_dataset(

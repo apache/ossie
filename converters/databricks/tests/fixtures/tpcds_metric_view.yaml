@@ -1,0 +1,67 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+version: '1.1'
+source: tpcds.public.store_sales
+comment: Store sales enriched with date, item, and customer dimensions
+filter: ss_net_profit > 0
+joins:
+- name: date_dim
+  source: tpcds.public.date_dim
+  on: source.ss_sold_date_sk = date_dim.d_date_sk
+  rely:
+    at_most_one_match: true
+- name: item
+  source: tpcds.public.item
+  on: source.ss_item_sk = item.i_item_sk
+  rely:
+    at_most_one_match: true
+- name: customer
+  source: tpcds.public.customer
+  on: source.ss_customer_sk = customer.c_customer_sk
+  rely:
+    at_most_one_match: true
+dimensions:
+- name: ticket_number
+  expr: ss_ticket_number
+- name: sold_year
+  expr: date_dim.d_year
+  display_name: Year
+  synonyms:
+  - year
+  - yr
+- name: sold_date
+  expr: date_dim.d_date
+- name: item_category
+  expr: item.i_category
+  synonyms:
+  - category
+  - product type
+- name: item_brand
+  expr: item.i_brand
+- name: birth_country
+  expr: customer.c_birth_country
+measures:
+- name: total_sales
+  expr: SUM(ss_ext_sales_price)
+  comment: Total sales revenue
+  format:
+    type: currency
+    currency_code: USD
+- name: total_quantity
+  expr: SUM(ss_quantity)
+  comment: Total units sold

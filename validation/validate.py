@@ -1,8 +1,35 @@
 #!/usr/bin/env python3
-"""
-OSI Semantic Model Validator
+#
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "jsonschema>=4.26.0",
+#     "pyyaml>=6.0.3",
+#     "sqlglot>=30.12.0",
+# ]
+# ///
 
-Validates OSI YAML files against:
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+"""
+Ossie Semantic Model Validator
+
+Validates Ossie YAML files against:
 1. JSON Schema (structure, types, enums)
 2. Unique names (datasets, fields, metrics, relationships)
 3. Valid relationship references
@@ -28,16 +55,17 @@ except ImportError:
 
 try:
     import sqlglot
-    from sqlglot.errors import ParseError
+    from sqlglot.errors import ParseError, TokenError
     SQLGLOT_AVAILABLE = True
 except ImportError:
     SQLGLOT_AVAILABLE = False
 
-# Map OSI dialects to sqlglot dialects
+# Map Ossie dialects to sqlglot dialects
 DIALECT_MAP = {
     "ANSI_SQL": None,  # sqlglot default
     "SNOWFLAKE": "snowflake",
     "DATABRICKS": "databricks",
+    "BIGQUERY": "bigquery",
     "MDX": None,  # Not supported by sqlglot, skip validation
     "TABLEAU": None,  # Not supported by sqlglot, skip validation
     "MAQL": None,  # Not supported by sqlglot, skip validation
@@ -114,9 +142,9 @@ def validate_references(data: dict) -> list[str]:
             to_ds = rel.get("to")
 
             if from_ds and from_ds not in dataset_names:
-                errors.append(f"[Reference] Relationship '{rel_name}' references unknown dataset '{from_ds}'")
+                errors.append(f"[Reference] Relationship '{rel_name}' in model '{model_name}' references unknown dataset '{from_ds}'")
             if to_ds and to_ds not in dataset_names:
-                errors.append(f"[Reference] Relationship '{rel_name}' references unknown dataset '{to_ds}'")
+                errors.append(f"[Reference] Relationship '{rel_name}' in model '{model_name}' references unknown dataset '{to_ds}'")
 
     return errors
 
@@ -135,14 +163,14 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
         # Try parsing as expression first (for field expressions like "column_name")
         sqlglot.parse_one(expr, dialect=sqlglot_dialect)
         return None
-    except ParseError:
+    except (ParseError, TokenError):
         pass
 
     try:
         # Try wrapping in SELECT for simple column references
         sqlglot.parse_one(f"SELECT {expr}", dialect=sqlglot_dialect)
         return None
-    except ParseError as e:
+    except (ParseError, TokenError) as e:
         return f"[SQL] {context}: {str(e).split(chr(10))[0]}"
 
 
@@ -170,7 +198,7 @@ def validate_sql(data: dict) -> list[str]:
                     dialect = dialect_expr.get("dialect", "ANSI_SQL")
                     expr = dialect_expr.get("expression", "")
                     if expr:
-                        context = f"Field '{dataset_name}.{field_name}' ({dialect})"
+                        context = f"Field '{dataset_name}.{field_name}' in model '{model_name}' ({dialect})"
                         error = validate_sql_expression(expr, dialect, context)
                         if error:
                             errors.append(error)
@@ -183,7 +211,7 @@ def validate_sql(data: dict) -> list[str]:
                 dialect = dialect_expr.get("dialect", "ANSI_SQL")
                 expr = dialect_expr.get("expression", "")
                 if expr:
-                    context = f"Metric '{metric_name}' ({dialect})"
+                    context = f"Metric '{metric_name}' in model '{model_name}' ({dialect})"
                     error = validate_sql_expression(expr, dialect, context)
                     if error:
                         errors.append(error)

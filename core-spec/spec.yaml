@@ -1,7 +1,24 @@
-# OSI - Core Metadata Spec (YAML Schema)
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Apache Ossie - Core Metadata Spec (YAML Schema)
 # DRAFT version - in development, schema may change before 0.2.0 is released
 version: 0.2.0.dev0
-# 
+#
 # Goals:
 # - Standardization: Establish uniform language and structure for semantic model definitions
 # - Extensibility: Support domain-specific extensions while maintaining core compatibility
@@ -19,14 +36,28 @@ dialects:
   - "TABLEAU"               # Tableau
   - "DATABRICKS"            # Databricks SQL
   - "MAQL"                  # GoodData MAQL (Multi-Dimensional Analytical Query Language)
+  - "BIGQUERY"              # Google BigQuery GoogleSQL
 
-
+# Supported logical data types for fields and metrics
+# TODO: Generate this list from the authoritative DataType enum in
+# osi-schema.json ($defs.DataType.enum); until then, keep them in sync.
+datatypes:
+  - "String"                # Variable-length Unicode character data
+  - "Integer"               # Exact integral number
+  - "Decimal"               # Exact base-10 number
+  - "Float"                 # Approximate floating-point number
+  - "Boolean"               # Logical two-valued truth type
+  - "Date"                  # Calendar date without time of day
+  - "Time"                  # Time of day without a date or timezone
+  - "DateTime"              # Date and time without a timezone or offset
+  - "DateTimeTz"            # Instant identified using offset or timezone context
+  - "Opaque"                # Known type outside the portable vocabulary
 
 # Vendor name for custom extensions (free-form string)
-# Examples: "COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA"
+# Examples: "COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA", "WISDOM"
 vendor_name: string
 
- 
+
 # Top-level semantic model definition
 semantic_model:
   # Required: Unique identifier for the semantic model
@@ -46,7 +77,7 @@ semantic_model:
     # See Relationships section below for detailed structure
     relationships: []
 
-    # Optional: 
+    # Optional:
     # These metrics can span one or more logical datasets and use relationships
     # See Metrics section below for detailed structure
     metrics: []
@@ -68,16 +99,14 @@ datasets:
     # Required: Reference to the underlying physical table/view or query
     # Format should be either database_name.schema_name.table_name or query
     source: string
-    
+
     # Optional: Primary key definition that uniquely identifies rows in this dataset
     # Can be a single column or a composite of multiple columns
     # This is the preferred unique identifier for this dataset and is used in relationships to determine many-to-one or one-to-one.
     # Examples:
-    # primary_key:
-    #   - [customer_id]           # Simple primary key
+    # primary_key: [customer_id]            # Simple primary key
     #
-    # primary_key:
-    #   - [order_id, line_number] # Composite primary key
+    # primary_key: [order_id, line_number]  # Composite primary key
     primary_key: []  # Array of column names (single or composite)
 
     # Optional: Array of unique key definitions that uniquely identify rows in this dataset
@@ -89,8 +118,8 @@ datasets:
     #   - [column2, column3]
     #
     # unique_keys:
-    #   - [column1, column2]      
-    #   - [column3, column4]     
+    #   - [column1, column2]
+    #   - [column3, column4]
     unique_keys:
       - []  # Array of column names (single or composite)
 
@@ -166,8 +195,17 @@ fields:
     # Optional: Dimension metadata
     # Indicates this field can be used as a dimension for grouping/filtering
     dimension:
-      # Optional: Indicates if this is a time-based dimension
-      # Used for time-series analysis and temporal filtering
+      # Optional: Temporal-role marker
+      # When true, consumers should treat this field as a time dimension
+      # for time-series analysis and temporal filtering. This is a *role*
+      # flag, independent of the field's data type. A field with
+      # is_time: true may carry any datatype (e.g. Integer for a year
+      # grain, String for a month name, Date/DateTime for a date column).
+      #
+      # Default: when unset, is_time defaults to true if datatype is one
+      # of Date, Time, DateTime, DateTimeTz, and false otherwise. Set
+      # is_time: false explicitly to opt a temporal-typed column out of
+      # time-dimension treatment.
       is_time: boolean
 
     # Optional: Label for categorization (e.g., "filter")
@@ -176,11 +214,19 @@ fields:
     # Optional: Human-readable description of the field
     description: string
 
+    # Optional: Logical data type for this field
+    # Must be one of the values from the 'datatypes' enum above.
+    # Decimal is exact base-10 with unspecified precision and scale;
+    # Float is approximate. Omit datatype when unknown or unspecified.
+    # Use Opaque + custom_extensions for a known type outside the
+    # portable vocabulary.
+    datatype: string
+
     # Optional: Additional context for AI tools (e.g., synonyms, business terms)
     # Helps LLMs understand the field meaning and generate better queries
     ai_context: string
 
-     # Optional: Vendor-specific attributes for extensibility
+    # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
       - vendor_name: string  # Free-form string identifying the vendor
         data: string
@@ -205,11 +251,19 @@ metrics:
     # Should explain what the metric measures and how it's used
     description: string
 
+    # Optional: Logical data type for this metric
+    # Must be one of the values from the 'datatypes' enum above.
+    # Decimal is exact base-10 with unspecified precision and scale;
+    # Float is approximate. Omit datatype when unknown or unspecified.
+    # Use Opaque + custom_extensions for a known type outside the
+    # portable vocabulary.
+    datatype: string
+
     # Optional: Additional context for AI tools (e.g., synonyms, business context)
     # Helps LLMs understand the metric meaning and suggest it appropriately
     ai_context: string
 
-     # Optional: Vendor-specific attributes for extensibility
+    # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
       - vendor_name: string  # Free-form string identifying the vendor
         data: string
