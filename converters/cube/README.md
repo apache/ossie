@@ -269,6 +269,52 @@ Error: Source 'public.orders' must be a fully qualified db.schema.table or a sub
 Import reports this as `SOURCE_NOT_FULLY_QUALIFIED` rather than guessing a catalog
 name, so it surfaces where the Ossie document is produced instead of three hops later.
 
+### Measuring it
+
+Both claims above are measurements, so they are reproducible:
+
+```bash
+uv run tools/interop_matrix.py                       # the committed TPC-DS fixture
+uv run tools/interop_matrix.py path/to/cube/model    # any Cube model directory
+uv run tools/interop_matrix.py --spokes omni --keep  # one spoke, keep its output
+```
+
+It converts a Cube model to Ossie, checks that intermediate against the repo's own
+`validation/validate.py`, then hands it to every other converter and reports what
+each made of it:
+
+```
+model:  converters/cube/tests/fixtures/tpcds_cube
+Ossie:  539 lines, 7 CUBE stash entries
+issues: 5x CUBE_LEVEL_AI_CONTEXT_INERT
+spec:   valid (validation/validate.py)
+
+spoke        result  warns  foreign   note
+----------------------------------------------------------------------------
+databricks   OK         22        2
+dbt          FAIL        0        0   AttributeError: 'PydanticSemanticManifes
+gooddata     OK          0        0
+gsf          OK          0        0
+honeydew     OK          0        0
+omni         OK         15        7
+orionbelt    OK          2        0
+snowflake    OK          7        7
+wisdom       OK         47        7
+polaris      --                       Java converter, needs Maven
+salesforce   --                       Java converter, needs Maven
+```
+
+`foreign` counts warnings that name a `custom_extensions` vendor — the cost this
+converter imposes on the others by stashing, and the number to watch when deciding
+whether something belongs in a stash at all. The dbt `FAIL` is unrelated to this
+converter: its CLI crashes on every input, including this repo's own examples
+([#296](https://github.com/apache/ossie/issues/296)).
+
+Each spoke runs in its own `uv` environment, so the first run resolves that
+converter's dependencies; the script is stdlib-only and needs none of its own. Nothing
+about it is Cube-specific except the first hop — if it is useful repo-wide it belongs
+somewhere like `compliance/`, which is a question for `dev@`.
+
 ## Conversion issues
 
 `convert_cube_to_ossie` returns `(yaml, IssueLog)`. Each issue carries a type, the
@@ -342,6 +388,11 @@ for as a baseline), core-spec JSON Schema validation of every emitted Ossie
 document, and Hypothesis property-based round-trip tests over generated Cube
 models -- which fall back to a seeded sweep when `hypothesis` is unavailable, so
 the properties still run.
+
+`tools/interop_matrix.py` checks the other half of the job — whether the Ossie this
+converter emits is any use to the other spokes. It is not part of `pytest`, because
+it drives the other converters' environments rather than this one's. See
+[Measuring it](#measuring-it).
 
 ## Future effort
 
