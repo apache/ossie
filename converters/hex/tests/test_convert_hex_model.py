@@ -20,6 +20,7 @@ from pathlib import Path
 import yaml
 from ossie import OSIDialect, OSIDocument
 
+from ossie_hex.cli.hex_project_io import read_hex_project
 from ossie_hex.hex_to_ossie import convert_hex_to_ossie
 
 
@@ -43,7 +44,12 @@ dimensions:
         encoding="utf-8",
     )
 
-    yaml_text, _ = convert_hex_to_ossie(str(tmp_path), dialect=OSIDialect.ANSI_SQL)
+    files = read_hex_project(tmp_path)
+    yaml_text, _ = convert_hex_to_ossie(
+        files,
+        dialect=OSIDialect.ANSI_SQL,
+        model_name="demo",
+    )
     dataset = OSIDocument.model_validate(yaml.safe_load(yaml_text)).semantic_model[0]
 
     assert dataset.datasets[0].primary_key == ["user_id"]

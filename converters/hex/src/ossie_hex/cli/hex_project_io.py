@@ -19,6 +19,36 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..util.errors import ConversionError
+
+_HEX_PROJECT_FILE_EXTENSIONS = {".yml", ".yaml"}
+
+
+def read_hex_project(project_dir: str | Path) -> dict[str, str]:
+    """Read a Hex project directory into a mapping of file names → contents text.
+
+    File names are relative to ``project_dir``, and come back in sorted order so
+    that a project reads the same way twice.
+    """
+    root = Path(project_dir)
+    if not root.is_dir():
+        raise ConversionError(f"Hex project path is not a directory: {root}")
+
+    paths = sorted(
+        path
+        for path in root.rglob("*")
+        if path.is_file() and path.suffix.lower() in _HEX_PROJECT_FILE_EXTENSIONS
+    )
+    if not paths:
+        raise ConversionError(
+            f"No Hex project files found under directory: {root}. Looked for extensions: {_HEX_PROJECT_FILE_EXTENSIONS}"
+        )
+
+    return {
+        path.relative_to(root).as_posix(): path.read_text(encoding="utf-8")
+        for path in paths
+    }
+
 
 def write_hex_project(
     project_dir: str | Path,

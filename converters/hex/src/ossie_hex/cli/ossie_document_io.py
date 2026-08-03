@@ -17,30 +17,30 @@
 
 from __future__ import annotations
 
-from ossie import OSIDocument
-from pydantic import ValidationError
+from pathlib import Path
 
-from ..util.errors import ConversionError, ConversionWarning
-from ..util.yaml import load_yaml
+from ..util.errors import ConversionError
 
 
-def load_ossie_document(
-    ossie_text: str,
-) -> tuple[OSIDocument, list[ConversionWarning]]:
-    """Parse file contents as an Ossie document.
+def read_ossie_document(document_path: str | Path) -> str:
+    """Read an Ossie file into text.
 
-    ``ossie_text`` the contents of a file, expected to be in Ossie YAML format.
+    ``document_path`` the path to the file.
 
-    Returns ``(ossie_document, warnings)``.
+    Returns the contents of the file.
     """
-    warnings: list[ConversionWarning] = []
-    raw = load_yaml(ossie_text, what="Ossie model")
-    if not isinstance(raw, dict):
-        raise ConversionError("Ossie document must be a mapping")
+    path = Path(document_path)
+    if not path.is_file():
+        raise ConversionError(f"Ossie document path is not a file: {path}")
 
-    try:
-        document = OSIDocument.model_validate(raw)
-    except ValidationError as e:
-        raise ConversionError(f"Invalid Ossie document: {e}") from e
+    return path.read_text(encoding="utf-8")
 
-    return document, warnings
+
+def write_ossie_document(document_path: str | Path, ossie_text: str) -> None:
+    """Write Ossie text to a file, creating the directories it sits in.
+
+    ``document_path`` the path to write to, ``ossie_text`` the contents.
+    """
+    path = Path(document_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(ossie_text, encoding="utf-8")

@@ -15,35 +15,38 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from pathlib import Path
-
 import pytest
 
 from ossie_hex.hex_to_ossie.load_hex_project import load_hex_project
 from ossie_hex.util.errors import ConversionError
 
 
-def test_load_multi_document_yaml(named_joins_hex_path: str) -> None:
-    project = load_hex_project(named_joins_hex_path, name="chat")
+def test_load_multi_document_yaml() -> None:
+    file = """id: messages
+base_sql_table: s.messages
+---
+id: users
+base_sql_table: s.users
+"""
+    project = load_hex_project(
+        {"chat.yml": file},
+        project_name="chat",
+    )
 
+    assert project.name == "chat"
     assert {resource.id for resource in project.resources} == {"messages", "users"}
 
 
-def test_load_hex_project_rejects_duplicate_ids(tmp_path: Path) -> None:
-    (tmp_path / "a.yml").write_text("id: orders\nbase_sql_table: a.orders\n")
-    (tmp_path / "b.yml").write_text("id: orders\nbase_sql_table: b.orders\n")
+def test_load_hex_project_rejects_duplicate_ids() -> None:
+    files = {
+        "a.yml": "id: orders\nbase_sql_table: a.orders\n",
+        "b.yml": "id: orders\nbase_sql_table: b.orders\n",
+    }
 
     with pytest.raises(ConversionError, match="Duplicate Hex resource id 'orders'"):
-        load_hex_project(tmp_path)
+        load_hex_project(files, project_name="demo")
 
 
-def test_load_hex_project_rejects_non_mapping_document(tmp_path: Path) -> None:
-    (tmp_path / "invalid.yml").write_text("- orders\n")
-
+def test_load_hex_project_rejects_non_mapping_document() -> None:
     with pytest.raises(ConversionError, match="expected a mapping"):
-        load_hex_project(tmp_path)
-
-
-def test_load_empty_project_errors(tmp_path: Path) -> None:
-    with pytest.raises(ConversionError, match="No Hex YAML"):
-        load_hex_project(tmp_path)
+        load_hex_project({"invalid.yml": "- orders\n"}, project_name="demo")

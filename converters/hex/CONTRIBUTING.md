@@ -48,7 +48,7 @@ module per resource it converts, sitting on two shared layers:
   types
 - `src/ossie_hex/util/`: errors, warnings, YAML 1.2 load/dump, and SQL reference
   and join rewriting
-- `src/ossie_hex/cli.py`: `import` and `export` commands
+- `src/ossie_hex/cli/`: the `import` and `export` commands, and respective file i/o — conversion only manipulates text in memory
 
 Add or update fixtures under `tests/fixtures/` and keep conversion behavior
 covered in both directions. Hex-only information that has no Ossie equivalent

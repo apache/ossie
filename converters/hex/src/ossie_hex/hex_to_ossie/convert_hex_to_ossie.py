@@ -26,19 +26,21 @@ from .load_hex_project import load_hex_project
 
 
 def convert_hex_to_ossie(
-    project: str,
+    files: dict[str, str],
     *,
     dialect: OSIDialect,
-    model_name: str | None = None,
+    model_name: str,
 ) -> tuple[str, list[ConversionWarning]]:
-    """Convert a Hex project directory to Ossie YAML.
+    """Convert Hex project files to an Ossie file.
 
+    ``files`` a mapping of file names to contents.
     ``dialect`` is the OSI dialect the project's SQL is written in; the converted
     expressions are tagged with it.
+    ``model_name`` names the Ossie semantic model.
 
-    Returns ``(ossie_yaml, warnings)``.
+    Returns ``(ossie_text, warnings)``.
     """
-    hex_project = load_hex_project(project, name=model_name)
+    hex_project = load_hex_project(files, project_name=model_name)
     document, warnings = convert_hex_project(hex_project, ossie_dialect=dialect)
     data = document.model_dump(by_alias=True, exclude_none=True, mode="json")
     return dump_yaml(data), warnings

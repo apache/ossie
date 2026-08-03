@@ -18,13 +18,15 @@
 import yaml
 from ossie import OSIDataType, OSIDialect, OSIDocument, OSIVendor
 
+from ossie_hex.cli.hex_project_io import read_hex_project
 from ossie_hex.hex_to_ossie import convert_hex_to_ossie
 from tests.utils import hex_extension
 
 
 def test_import_minimal_hex_project(minimal_hex_path: str) -> None:
+    files = read_hex_project(minimal_hex_path)
     yaml_text, warnings = convert_hex_to_ossie(
-        minimal_hex_path,
+        files,
         dialect=OSIDialect.SNOWFLAKE,
         model_name="demo",
     )
@@ -77,8 +79,9 @@ def test_import_minimal_hex_project(minimal_hex_path: str) -> None:
 
 
 def test_hex_extension_carries_only_non_ossie_data(minimal_hex_path: str) -> None:
+    files = read_hex_project(minimal_hex_path)
     yaml_text, _ = convert_hex_to_ossie(
-        minimal_hex_path,
+        files,
         dialect=OSIDialect.ANSI_SQL,
         model_name="demo",
     )
@@ -153,7 +156,12 @@ def test_hex_extension_carries_only_non_ossie_data(minimal_hex_path: str) -> Non
 
 
 def test_query_backed_model(query_hex_path: str) -> None:
-    yaml_text, _ = convert_hex_to_ossie(query_hex_path, dialect=OSIDialect.ANSI_SQL)
+    files = read_hex_project(query_hex_path)
+    yaml_text, _ = convert_hex_to_ossie(
+        files,
+        dialect=OSIDialect.ANSI_SQL,
+        model_name="demo",
+    )
     doc = OSIDocument.model_validate(yaml.safe_load(yaml_text))
     events = doc.semantic_model[0].datasets[0]
     assert "SELECT" in events.source.upper()

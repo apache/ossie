@@ -26,13 +26,13 @@ from .load_ossie_document import load_ossie_document
 
 
 def convert_ossie_to_hex(
-    ossie_yaml: str,
+    ossie_text: str,
     *,
     model_name: str | None = None,
     dialect: OSIDialect | None = None,
     base_model: str | None = None,
 ) -> tuple[dict[str, str], list[ConversionWarning]]:
-    """Convert Ossie YAML to a Hex project files.
+    """Convert an Ossie file to a Hex project files.
 
     ``base_model`` is the name of the base model to use for the Hex project.
     ``dialect`` selects the OSI dialect to use from multi-dialect expressions.
@@ -41,7 +41,7 @@ def convert_ossie_to_hex(
     Returns ``(files, warnings)``.
     """
     warnings: list[ConversionWarning] = []
-    ossie_document, warnings = load_ossie_document(ossie_yaml)
+    ossie_document, warnings = load_ossie_document(ossie_text)
     hex_project, warnings = convert_ossie_document(
         ossie_document,
         model_name=model_name,

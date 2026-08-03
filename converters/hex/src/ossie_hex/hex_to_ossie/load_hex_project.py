@@ -17,8 +17,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from pydantic import ValidationError
 
 from ..hex_types import HexProject, HexResource, parse_hex_resource
@@ -27,49 +25,41 @@ from ..util.yaml import load_yaml_all
 
 
 def load_hex_project(
-    project_dir: str | Path,
+    files: dict[str, str],
     *,
-    name: str | None = None,
+    project_name: str,
 ) -> HexProject:
-    """Load a Hex project directory of ``.yml`` / ``.yaml`` resource files."""
-    root = Path(project_dir)
-    if not root.is_dir():
-        raise ConversionError(f"Hex project path is not a directory: {root}")
+    """Interpret files as a Hex project.
 
-    files = sorted(
-        [
-            p
-            for p in root.rglob("*")
-            if p.is_file() and p.suffix.lower() in {".yml", ".yaml"}
-        ]
-    )
-    if not files:
-        raise ConversionError(f"No Hex YAML resources found under {root}")
+    ``files`` a mapping of file names to contents text.
+    ``project_name`` a name for the project.
 
+    Returns a `HexProject`.
+    """
     resources: list[HexResource] = []
     seen_ids: set[str] = set()
 
-    for path in files:
-        rel = path.relative_to(root).as_posix()
-        text = path.read_text(encoding="utf-8")
-        docs = load_yaml_all(text, what=rel)
+    for file_name, text in files.items():
+        docs = load_yaml_all(text, what=file_name)
         for idx, doc in enumerate(docs):
             if not isinstance(doc, dict):
                 raise ConversionError(
-                    f"{rel} document {idx}: expected a mapping, got {type(doc).__name__}"
+                    f"{file_name} document {idx}: expected a mapping, "
+                    f"got {type(doc).__name__}"
                 )
             try:
                 resource = parse_hex_resource(doc)
             except ValidationError as e:
-                raise ConversionError(f"Invalid Hex resource in {rel}: {e}") from e
+                raise ConversionError(
+                    f"Invalid Hex resource in {file_name}: {e}"
+                ) from e
             if resource.id in seen_ids:
                 raise ConversionError(
-                    f"Duplicate Hex resource id '{resource.id}' in {rel}"
+                    f"Duplicate Hex resource id '{resource.id}' in {file_name}"
                 )
             seen_ids.add(resource.id)
             resources.append(resource)
 
-    project_name = name or root.name
     return HexProject(
         name=project_name,
         resources=resources,

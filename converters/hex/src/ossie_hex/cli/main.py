@@ -36,10 +36,12 @@ import sys
 from pathlib import Path
 from typing import Any, NoReturn
 
-from .hex_to_ossie import convert_hex_to_ossie
-from .ossie_to_hex import convert_ossie_to_hex, write_hex_project
-from .ossie_types import OSSIE_DIALECTS, parse_ossie_dialect
-from .util.errors import ConversionError
+from ..hex_to_ossie import convert_hex_to_ossie
+from ..ossie_to_hex import convert_ossie_to_hex
+from ..ossie_types import OSSIE_DIALECTS, parse_ossie_dialect
+from ..util.errors import ConversionError
+from .hex_project_io import read_hex_project, write_hex_project
+from .ossie_document_io import read_ossie_document, write_ossie_document
 
 # Ossie spells its dialects in upper case, but it's a bit nicer to show/take them
 # in lowercase. Parsing will transform them back.
@@ -145,9 +147,9 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     try:
         if args.command == "export":
-            text = Path(args.input).read_text(encoding="utf-8")
+            text = read_ossie_document(args.input)
             dialect = parse_ossie_dialect(args.dialect) if args.dialect else None
-            files, warnings = convert_ossie_to_hex(
+            hex_files, warnings = convert_ossie_to_hex(
                 text,
                 model_name=args.model,
                 dialect=dialect,
@@ -155,26 +157,26 @@ def main(argv: list[str] | None = None) -> int:
             )
             for warning in warnings:
                 print(f"Warning: {warning}", file=sys.stderr)
-            write_hex_project(args.output, files)
-            print(f"Wrote {len(files)} file(s) to {args.output}", file=sys.stderr)
-        else:
+            write_hex_project(args.output, hex_files)
+            print(f"Wrote {len(hex_files)} file(s) to {args.output}", file=sys.stderr)
+        elif args.command == "import":
+            files = read_hex_project(args.input)
             dialect = parse_ossie_dialect(args.dialect)
-            out, warnings = convert_hex_to_ossie(
-                args.input,
+            model_name = args.name or Path(args.input).name
+            ossie_text, warnings = convert_hex_to_ossie(
+                files,
                 dialect=dialect,
-                model_name=args.name,
+                model_name=model_name,
             )
             for warning in warnings:
                 print(f"Warning: {warning}", file=sys.stderr)
             if args.output:
-                Path(args.output).write_text(out, encoding="utf-8")
+                write_ossie_document(args.output, ossie_text)
             else:
-                sys.stdout.write(out)
+                sys.stdout.write(ossie_text)
+        else:
+            raise ValueError(f"Unknown command: {args.command}")
     except (ConversionError, OSError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
     return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

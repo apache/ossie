@@ -113,8 +113,13 @@ ossie-hex import -i hex_project/ --dialect snowflake
 from ossie import OSIDialect
 from ossie_hex import convert_hex_to_ossie, convert_ossie_to_hex
 
-ossie_yaml, warnings = convert_hex_to_ossie("hex_project/", dialect=OSIDialect.ANSI_SQL)
-files, warnings = convert_ossie_to_hex(ossie_yaml)  # {relative path: YAML str}
+ossie_yaml, warnings = convert_hex_to_ossie(
+    hex_files,  # {file name: YAML str}
+    dialect=OSIDialect.ANSI_SQL,
+    model_name="my_model",
+)
+
+hex_files, warnings = convert_ossie_to_hex(ossie_yaml)  # {file name: YAML str}
 ```
 
 ## Problems
@@ -127,6 +132,7 @@ In Hex → Ossie,
 
 In Ossie → Hex,
 
+- The Ossie file is missing.
 - Compiled Hex resource fails validation.
 - Unique identifiers that normalize to the same Hex ID.
 - Metrics cannot be assigned to a model and `--base-model` is not given.
