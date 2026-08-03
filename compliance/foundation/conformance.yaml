@@ -1,0 +1,80 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# OSI Compliance Test Suite — Conformance Levels (updated Foundation)
+#
+# This file pins which subsets of the suite an engine MUST pass to claim
+# a particular Foundation conformance level. The Foundation spec lives
+# at ../../core-spec/foundational_semantics.md (osi_version: 0.1).
+#
+# Each level lists the test areas that contribute to it; an
+# implementation passes the level iff every must_pass case in those
+# areas is green.
+#
+# NOTE (current status): the `areas:` maps below are declarative — they
+# document the intended scope of each level. The runner does not yet
+# compute pass/fail per level from these maps; it filters tests by the
+# per-test `conformance_level` string (see harness/runner.py). Enforcing
+# the areas map is tracked as a follow-up.
+#
+# Cross-engine SQL determinism is NOT required by Foundation v0.1
+# (per D-014); cross-engine portability is observable behaviour
+# (rows or error code). The strict level adds per-engine SQL
+# determinism witnesses on top of the basic foundation level.
+
+version: "0.1"
+
+levels:
+  foundation_v0_1:
+    description: >
+      Foundation v0.1 conformance. Required for any engine that claims
+      to implement the updated OSI Foundation. Every D-NNN Conformance
+      Decision in foundational_semantics.md must produce the
+      expected outcome (row set or error code).
+    pass_threshold: 100%
+    areas:
+      query_shape: all
+      scalar_query: all
+      field_metric_grain: all
+      cross_grain: all
+      nested_aggregates: all
+      bridge: all
+      joins_default: all
+      predicate_routing: all
+      namespace: all
+      windows: all
+      null_ordering: all
+      empty_inputs: all
+      deferred: all
+      error_taxonomy: all
+
+  foundation_v0_1_strict:
+    description: >
+      Foundation v0.1 with per-engine SQL determinism witnesses
+      (D-014). Optional. Adds: same (model, query, dialect) compiled
+      twice on the same engine produces byte-identical SQL; outer
+      Order By and OVER ORDER BY emit explicit NULLS LAST per D-029.
+    pass_threshold: 100%
+    includes: [foundation_v0_1]
+    areas:
+      determinism:
+        all: all                    # D-014, D-029 SQL-text witnesses
+
+# Extension levels (e.g. foundation_v0_1_with_grain_modes) will be
+# added when their feature proposals (§10 of the Foundation spec)
+# are ratified. Each ratified proposal becomes a new level here that
+# requires foundation_v0_1 plus the proposal's tests.

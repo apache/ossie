@@ -15,19 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
-**/__pycache__/
-**/.venv/
+"""Allow running the harness as: python -m harness"""
 
-**/.pytest_cache/
-**/.ruff_cache/
-**/.coverage
-**/htmlcov/
-**/dist/
-**/target/
-**/*.egg-info/
-*.py[cod]
+from .runner import main
 
-# Go CLI
-cli/dist/
-cli/ossie
-cli/.tool-versions
+raise SystemExit(main())

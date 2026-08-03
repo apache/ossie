@@ -15,19 +15,4 @@
 # specific language governing permissions and limitations
 # under the License.
 
-**/__pycache__/
-**/.venv/
-
-**/.pytest_cache/
-**/.ruff_cache/
-**/.coverage
-**/htmlcov/
-**/dist/
-**/target/
-**/*.egg-info/
-*.py[cod]
-
-# Go CLI
-cli/dist/
-cli/ossie
-cli/.tool-versions
+"""OSI Compliance Test Suite — Test Harness."""

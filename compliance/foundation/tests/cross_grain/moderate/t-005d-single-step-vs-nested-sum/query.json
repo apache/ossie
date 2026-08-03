@@ -1,0 +1,12 @@
+{
+  "dataset": "customers",
+  "dimensions": [
+    "customers.region"
+  ],
+  "measures": [
+    {
+      "name": "sum_single",
+      "metric": "sum_single"
+    }
+  ]
+}
