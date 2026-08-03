@@ -62,6 +62,12 @@ class IssueType(Enum):
     # An Ossie field or metric with no usable expression dialect (export).
     NO_USABLE_DIALECT = "NO_USABLE_DIALECT"
 
+    # A dataset `source` that is a valid Cube `sql_table` but not a three-part
+    # `catalog.schema.table`. Nothing is lost and Cube is happy, but several other
+    # Ossie converters reject such a source outright, so the model will not travel
+    # past this hub. Reported so that is discovered here rather than downstream.
+    SOURCE_NOT_FULLY_QUALIFIED = "SOURCE_NOT_FULLY_QUALIFIED"
+
     # An Ossie construct Cube has no slot for, parked under `meta.ossie` -- so the
     # value survives the round trip even though Cube itself cannot read it.
     PARKED_IN_META = "PARKED_IN_META"

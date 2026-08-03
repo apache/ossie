@@ -385,6 +385,27 @@ def cube_sql_to_ossie(sql, own_cube, resolve_ref=None, self_prefix=None):
     return out, changed
 
 
+def source_part_count(source):
+    """How many identifier parts a dotted dataset `source` has, or None for a query.
+
+    Dots inside double quotes or backticks belong to a quoted identifier, not to the
+    path -- `"My.Catalog".public.t` is three parts, not four.
+    """
+    s = str(source).strip()
+    if re.match(r"(?i)(select|with)\b", s):
+        return None
+    parts, quote = 1, None
+    for ch in s:
+        if quote:
+            if ch == quote:
+                quote = None
+        elif ch in '"`':
+            quote = ch
+        elif ch == ".":
+            parts += 1
+    return parts
+
+
 def sql_is_reversible(sql, plain_members=(), own_cube=None):
     """True if translating this Cube SQL to Ossie and back reproduces it.
 

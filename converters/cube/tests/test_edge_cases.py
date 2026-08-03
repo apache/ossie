@@ -291,6 +291,41 @@ def test_field_and_metric_foreign_extensions_survive_the_round_trip():
     assert metric["custom_extensions"][0]["vendor_name"] == "CUBE"
 
 
+@pytest.mark.parametrize("sql_table,parts,warns", [
+    ("orders", 1, True),
+    ("public.orders", 2, True),
+    ("tpcds.public.orders", 3, False),
+    ('"My.Catalog".public.orders', 3, False),   # dots inside quotes are not parts
+    ("a.b.c.d", 4, False),
+])
+def test_a_source_that_other_converters_reject_is_reported(sql_table, parts, warns):
+    """Cube is happy with a one- or two-part `sql_table`, but the Databricks,
+    Snowflake and NVIDIA GSF converters all reject a source shorter than
+    `catalog.schema.table` -- so a model that converts cleanly here still cannot
+    travel. Reported at the point the Ossie document is produced, rather than being
+    discovered three hops later."""
+    files = _files(orders=(
+        "cubes:\n"
+        "  - name: orders\n"
+        # Single-quoted so a value containing double quotes stays one YAML scalar.
+        f"    sql_table: '{sql_table}'\n"))
+    _, issues = convert_cube_to_ossie(files)
+    reported = issues.of_type(IssueType.SOURCE_NOT_FULLY_QUALIFIED)
+    assert bool(reported) is warns
+    if warns:
+        assert f"{parts} part(s)" in reported[0].detail
+
+
+def test_a_sql_defined_cube_is_not_reported_as_unqualified():
+    """A `sql:` cube is a query, not a table path, and every converter accepts one."""
+    files = _files(orders=(
+        "cubes:\n"
+        "  - name: orders\n"
+        "    sql: SELECT * FROM public.orders\n"))
+    _, issues = convert_cube_to_ossie(files)
+    assert not issues.of_type(IssueType.SOURCE_NOT_FULLY_QUALIFIED)
+
+
 # --- join orientation, both ways ------------------------------------------------
 
 _ONE_TO_MANY = _files(m=(

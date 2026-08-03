@@ -220,6 +220,32 @@ AVG(users.home_latitude) - MIN(orders.amt)  ->  sql: AVG({users}.lat) - MIN({CUB
 
 One documented normalization follows: after a round trip such a metric names the column the half actually reads (`users.lat`) rather than the Ossie-only field name (`users.home_latitude`). Same reference, and it is the form Cube can express.
 
+## Onward conversion
+
+Ossie is a hub, so the useful question is not only whether `Cube → Ossie → Cube`
+round-trips but whether the Ossie model then reaches the other spokes. Two things
+matter in practice.
+
+**Keep Cube-only detail out of `custom_extensions`.** Converters that do not read
+foreign extensions warn about and discard every one, so anything placed there is
+noise to them. This converter therefore stashes only what is genuinely Cube-specific
+— segments, pre-aggregations, hierarchies, view curation, geo reconstruction — and
+maps everything else natively. On the TPC-DS model that is 7 stash entries rather
+than 41, and 2 Databricks warnings rather than 32.
+
+**Qualify your `sql_table`.** Cube accepts `orders` or `public.orders`, but the
+Databricks, Snowflake and NVIDIA GSF converters all require a three-part
+`catalog.schema.table` and reject anything shorter:
+
+```
+Error: Dataset 'orders': source 'public.orders' must be a 3-part catalog.schema.table
+Error: Dataset 'orders' source must resolve to database.schema.table
+Error: Source 'public.orders' must be a fully qualified db.schema.table or a subquery
+```
+
+Import reports this as `SOURCE_NOT_FULLY_QUALIFIED` rather than guessing a catalog
+name, so it surfaces where the Ossie document is produced instead of three hops later.
+
 ## Conversion issues
 
 `convert_cube_to_ossie` returns `(yaml, IssueLog)`. Each issue carries a type, the
@@ -233,6 +259,7 @@ element it concerns, and a detail string.
 | `GEO_DIMENSION_SPLIT` | A `type: geo` dimension became two Ossie fields |
 | `TEMPLATED_FILE_SKIPPED` | Jinja templating anywhere in a file, or a `.js`/`.ts` model file. Detected per file, as Cube's own tooling does, so the file is preserved whole rather than half-converted |
 | `NO_USABLE_DIALECT` | Export: no `ANSI_SQL` or preferred-dialect expression |
+| `SOURCE_NOT_FULLY_QUALIFIED` | A `sql_table` shorter than `catalog.schema.table`. Valid Cube and nothing is lost, but the Databricks, Snowflake and NVIDIA GSF converters reject such a source, so the model cannot convert onward — see [Onward conversion](#onward-conversion) |
 | `PARKED_IN_META` | Preserved in the stash or under `meta.ossie` — invisible to Cube, but intact through a round trip |
 | `DROPPED_NO_CUBE_EQUIVALENT` | **Gone from the output.** Cube has nowhere to hold it and it cannot be parked: relationship `ai_context` (a Cube join entry has no `meta`), a `dimension.is_time` role or opt-out that Cube expresses only through `type`, and the second and later `semantic_model` entries |
 | `APPROXIMATED` | Emitted, but not an exact equivalent: a value Cube requires and Ossie does not carry (so the converter chose one), or a construct rendered in the nearest form Cube has |
