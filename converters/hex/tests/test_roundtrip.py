@@ -58,11 +58,11 @@ def test_hex_roundtrip_reproduces_source_project(
 ) -> None:
     ossie_yaml, _import_warnings = convert_hex_to_ossie(
         hex_project_path,
-        dialect=OSIDialect.ANSI_SQL.value,
+        dialect=OSIDialect.ANSI_SQL,
         model_name="roundtrip",
     )
     files, _export_warnings = convert_ossie_to_hex(
-        ossie_yaml, dialect=OSIDialect.ANSI_SQL.value
+        ossie_yaml, dialect=OSIDialect.ANSI_SQL
     )
 
     out_dir = tmp_path / "roundtrip"
@@ -76,12 +76,10 @@ def test_hex_roundtrip_reproduces_source_project(
 def test_hex_roundtrip_emits_expected_yaml(minimal_hex_path: str) -> None:
     ossie_yaml, _ = convert_hex_to_ossie(
         minimal_hex_path,
-        dialect=OSIDialect.ANSI_SQL.value,
+        dialect=OSIDialect.ANSI_SQL,
         model_name="minimal_hex",
     )
-    files, warnings = convert_ossie_to_hex(
-        ossie_yaml, dialect=OSIDialect.ANSI_SQL.value
-    )
+    files, warnings = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL)
 
     assert warnings == []
     assert files == {
@@ -147,7 +145,7 @@ description: Order fact table.
 
 def test_named_joins_roundtrip(named_joins_hex_path: str) -> None:
     ossie_yaml, _warnings = convert_hex_to_ossie(
-        named_joins_hex_path, dialect=OSIDialect.ANSI_SQL.value
+        named_joins_hex_path, dialect=OSIDialect.ANSI_SQL
     )
     doc = load_yaml(ossie_yaml)
     rels = doc["semantic_model"][0].get("relationships") or []
@@ -155,7 +153,7 @@ def test_named_joins_roundtrip(named_joins_hex_path: str) -> None:
     names = {r["name"] for r in rels}
     assert names == {"sender", "receiver"}
 
-    files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL.value)
+    files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL)
     # The two models shared one multi-doc file on the way in and come back as a
     # file each, since it's functionally equivalent.
     assert set(files) == {"messages.yml", "users.yml"}
@@ -187,10 +185,8 @@ measures:
         encoding="utf-8",
     )
 
-    ossie_yaml, _ = convert_hex_to_ossie(
-        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
-    )
-    files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL.value)
+    ossie_yaml, _ = convert_hex_to_ossie(str(tmp_path), dialect=OSIDialect.ANSI_SQL)
+    files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL)
     measure = yaml.safe_load(files["orders.yml"])["measures"][0]
 
     assert measure == {
@@ -239,9 +235,7 @@ measures:
         encoding="utf-8",
     )
 
-    ossie_yaml, _ = convert_hex_to_ossie(
-        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
-    )
+    ossie_yaml, _ = convert_hex_to_ossie(str(tmp_path), dialect=OSIDialect.ANSI_SQL)
     metrics = load_yaml(ossie_yaml)["semantic_model"][0]["metrics"]
     payloads = {
         metric["name"]: json.loads(metric["custom_extensions"][0]["data"])
@@ -253,7 +247,7 @@ measures:
     assert "measure_id" not in payloads["orders__revenue"]
     assert payloads["sales__revenue"]["measure_id"] == "revenue"
 
-    files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL.value)
+    files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL)
     orders = yaml.safe_load(files["orders.yml"])
     sales = yaml.safe_load(files["sales.yml"])
 
@@ -305,10 +299,8 @@ dimensions:
         encoding="utf-8",
     )
 
-    ossie_yaml, _ = convert_hex_to_ossie(
-        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
-    )
-    files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL.value)
+    ossie_yaml, _ = convert_hex_to_ossie(str(tmp_path), dialect=OSIDialect.ANSI_SQL)
+    files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL)
     relations = yaml.safe_load(files["orders.yml"])["relations"]
 
     assert relations == [
@@ -372,13 +364,11 @@ dimensions:
         encoding="utf-8",
     )
 
-    ossie_yaml, _ = convert_hex_to_ossie(
-        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
-    )
+    ossie_yaml, _ = convert_hex_to_ossie(str(tmp_path), dialect=OSIDialect.ANSI_SQL)
     relationships = load_yaml(ossie_yaml)["semantic_model"][0]["relationships"]
     assert [rel.get("custom_extensions") for rel in relationships] == [None, None]
 
-    files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL.value)
+    files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL)
 
     assert yaml.safe_load(files["orders.yml"])["relations"] == [
         {
@@ -428,7 +418,7 @@ dimensions:
     )
 
     ossie_yaml, warnings = convert_hex_to_ossie(
-        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
+        str(tmp_path), dialect=OSIDialect.ANSI_SQL
     )
     assert load_yaml(ossie_yaml)["semantic_model"][0].get("relationships") is None
     assert [str(w) for w in warnings] == [
@@ -438,7 +428,7 @@ dimensions:
         )
     ]
 
-    files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL.value)
+    files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL)
 
     assert yaml.safe_load(files["orders.yml"])["relations"] == [
         {
@@ -469,10 +459,8 @@ dimensions:
         encoding="utf-8",
     )
 
-    ossie_yaml, _ = convert_hex_to_ossie(
-        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
-    )
-    files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL.value)
+    ossie_yaml, _ = convert_hex_to_ossie(str(tmp_path), dialect=OSIDialect.ANSI_SQL)
+    files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL)
     dimensions = yaml.safe_load(files["events.yml"])["dimensions"]
 
     assert [dimension["type"] for dimension in dimensions] == ["null", "string"]
@@ -532,11 +520,9 @@ dimensions:
         encoding="utf-8",
     )
 
-    ossie_yaml, _ = convert_hex_to_ossie(
-        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
-    )
+    ossie_yaml, _ = convert_hex_to_ossie(str(tmp_path), dialect=OSIDialect.ANSI_SQL)
     files, _ = convert_ossie_to_hex(
-        ossie_yaml, dialect=OSIDialect.ANSI_SQL.value, base_model="orders"
+        ossie_yaml, dialect=OSIDialect.ANSI_SQL, base_model="orders"
     )
     expressions = {
         dimension["id"]: dimension.get("expr_sql")
@@ -552,7 +538,7 @@ dimensions:
 def test_tpcds_export(tpcds_ossie_yaml: str, tmp_path: Path) -> None:
     files, _warnings = convert_ossie_to_hex(
         tpcds_ossie_yaml,
-        dialect=OSIDialect.ANSI_SQL.value,
+        dialect=OSIDialect.ANSI_SQL,
         base_model="store_sales",
     )
     assert files
@@ -564,7 +550,7 @@ def test_tpcds_export(tpcds_ossie_yaml: str, tmp_path: Path) -> None:
 
     # Re-import should validate as Ossie.
     ossie_yaml, _ = convert_hex_to_ossie(
-        str(out), dialect=OSIDialect.ANSI_SQL.value, model_name="tpcds"
+        str(out), dialect=OSIDialect.ANSI_SQL, model_name="tpcds"
     )
     from ossie import OSIDocument
 

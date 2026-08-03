@@ -133,7 +133,7 @@ def _one_multi_dialect_field(*declared: OSIDialect) -> OSIDocument:
 
 
 def _exported_expression(
-    document: OSIDocument, dialect: str | None = None
+    document: OSIDocument, dialect: OSIDialect | None = None
 ) -> str | None:
     project, _ = convert_ossie_document(document, dialect=dialect, warnings=[])
     model = project.resources[0]
@@ -153,15 +153,8 @@ def test_requested_dialect() -> None:
     document = _one_multi_dialect_field(OSIDialect.SNOWFLAKE)
 
     assert (
-        _exported_expression(document, dialect=OSIDialect.BIGQUERY.value)
-        == "bigquery_amount"
+        _exported_expression(document, dialect=OSIDialect.BIGQUERY) == "bigquery_amount"
     )
-
-
-def test_invalid_dialect() -> None:
-    # invalid dialect should be rejected
-    with pytest.raises(ConversionError, match="Unknown OSI dialect 'klingon'"):
-        convert_ossie_document(_TWO_MODELS, dialect="klingon", warnings=[])
 
 
 def test_document_without_dialect() -> None:

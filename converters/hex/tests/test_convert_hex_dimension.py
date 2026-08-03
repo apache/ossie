@@ -91,9 +91,7 @@ dimensions:
         encoding="utf-8",
     )
 
-    yaml_text, _ = convert_hex_to_ossie(
-        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
-    )
+    yaml_text, _ = convert_hex_to_ossie(str(tmp_path), dialect=OSIDialect.ANSI_SQL)
     datasets = yaml.safe_load(yaml_text)["semantic_model"][0]["datasets"]
     orders = next(ds for ds in datasets if ds["name"] == "orders")
 
@@ -134,9 +132,7 @@ dimensions:
         encoding="utf-8",
     )
 
-    yaml_text, _ = convert_hex_to_ossie(
-        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
-    )
+    yaml_text, _ = convert_hex_to_ossie(str(tmp_path), dialect=OSIDialect.ANSI_SQL)
     fields = yaml.safe_load(yaml_text)["semantic_model"][0]["datasets"][0]["fields"]
     nothing, label = fields
 

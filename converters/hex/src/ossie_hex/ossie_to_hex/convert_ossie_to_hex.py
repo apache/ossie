@@ -29,7 +29,7 @@ def convert_ossie_to_hex(
     ossie_yaml: str,
     *,
     model_name: str | None = None,
-    dialect: OSIDialect | str | None = None,
+    dialect: OSIDialect | None = None,
     base_model: str | None = None,
 ) -> tuple[dict[str, str], list[ConversionWarning]]:
     """Convert Ossie YAML to a Hex project files.

@@ -73,9 +73,7 @@ dimensions:
         encoding="utf-8",
     )
 
-    yaml_text, _ = convert_hex_to_ossie(
-        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
-    )
+    yaml_text, _ = convert_hex_to_ossie(str(tmp_path), dialect=OSIDialect.ANSI_SQL)
     metrics = yaml.safe_load(yaml_text)["semantic_model"][0]["metrics"]
     expressions = {
         metric["name"]: metric["expression"]["dialects"][0]["expression"]
@@ -93,7 +91,7 @@ def test_hex_measure_with_func_calc_is_preserved(
 ) -> None:
     """A Hex formula names other measures, which an Ossie metric cannot do."""
     yaml_text, warnings = convert_hex_to_ossie(
-        formula_measure_hex_path, dialect=OSIDialect.ANSI_SQL.value
+        formula_measure_hex_path, dialect=OSIDialect.ANSI_SQL
     )
     model = yaml.safe_load(yaml_text)["semantic_model"][0]
 

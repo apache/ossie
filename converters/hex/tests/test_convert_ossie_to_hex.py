@@ -42,7 +42,7 @@ semantic_model:
                   expression: snowflake_amount
             dimension: {}
 """
-    files, _ = convert_ossie_to_hex(ossie, dialect=OSIDialect.SNOWFLAKE.value)
+    files, _ = convert_ossie_to_hex(ossie, dialect=OSIDialect.SNOWFLAKE)
 
     # `snowflake_amount` is a column of `s.orders`, not a dimension of the model,
     # so it stays raw SQL. Wrapping it would name a dimension that is not there.
@@ -85,10 +85,10 @@ semantic_model:
               expression: "1 + 1"
 """
     with pytest.raises(ConversionError, match="Could not assign metric"):
-        convert_ossie_to_hex(ossie, dialect=OSIDialect.ANSI_SQL.value)
+        convert_ossie_to_hex(ossie, dialect=OSIDialect.ANSI_SQL)
 
     files, warnings = convert_ossie_to_hex(
-        ossie, dialect=OSIDialect.ANSI_SQL.value, base_model="a"
+        ossie, dialect=OSIDialect.ANSI_SQL, base_model="a"
     )
 
     # The unassignable metric lands on --base-model, not on the other dataset.
@@ -155,7 +155,7 @@ semantic_model:
           - vendor_name: DBT
             data: '{}'
 """
-    files, warnings = convert_ossie_to_hex(ossie, dialect=OSIDialect.ANSI_SQL.value)
+    files, warnings = convert_ossie_to_hex(ossie, dialect=OSIDialect.ANSI_SQL)
 
     assert files
     assert warnings == []
@@ -201,7 +201,7 @@ semantic_model:
               expression: "SUM(Order Items.Amount)"
 """
     files, _ = convert_ossie_to_hex(
-        ossie, dialect=OSIDialect.ANSI_SQL.value, base_model="Order Items"
+        ossie, dialect=OSIDialect.ANSI_SQL, base_model="Order Items"
     )
     items = yaml.safe_load(files["order_items.yml"])
 

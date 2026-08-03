@@ -43,9 +43,7 @@ dimensions:
         encoding="utf-8",
     )
 
-    yaml_text, _ = convert_hex_to_ossie(
-        str(tmp_path), dialect=OSIDialect.ANSI_SQL.value
-    )
+    yaml_text, _ = convert_hex_to_ossie(str(tmp_path), dialect=OSIDialect.ANSI_SQL)
     dataset = OSIDocument.model_validate(yaml.safe_load(yaml_text)).semantic_model[0]
 
     assert dataset.datasets[0].primary_key == ["user_id"]

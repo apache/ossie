@@ -20,7 +20,6 @@ from __future__ import annotations
 from ossie import OSIDialect, OSIDocument, OSISemanticModel
 
 from ..hex_types import HexProject
-from ..ossie_types import parse_ossie_dialect
 from ..util.errors import ConversionError, ConversionWarning
 from .convert_ossie_semantic_model import convert_ossie_semantic_model
 
@@ -29,7 +28,7 @@ def convert_ossie_document(
     ossie_document: OSIDocument,
     *,
     model_name: str | None = None,
-    dialect: OSIDialect | str | None = None,
+    dialect: OSIDialect | None = None,
     base_model: str | None = None,
     warnings: list[ConversionWarning],
 ) -> tuple[HexProject, list[ConversionWarning]]:
@@ -85,10 +84,10 @@ def _pick_ossie_semantic_model(
 
 def _pick_ossie_dialect(
     document: OSIDocument,
-    requested: OSIDialect | str | None,
+    requested: OSIDialect | None,
 ) -> OSIDialect:
     if requested is not None:
-        return parse_ossie_dialect(requested)
+        return requested
     if document.dialects:
         return document.dialects[0]
     return OSIDialect.ANSI_SQL

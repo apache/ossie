@@ -25,7 +25,7 @@ from tests.utils import hex_extension
 def test_import_minimal_hex_project(minimal_hex_path: str) -> None:
     yaml_text, warnings = convert_hex_to_ossie(
         minimal_hex_path,
-        dialect=OSIDialect.SNOWFLAKE.value,
+        dialect=OSIDialect.SNOWFLAKE,
         model_name="demo",
     )
     doc = OSIDocument.model_validate(yaml.safe_load(yaml_text))
@@ -79,7 +79,7 @@ def test_import_minimal_hex_project(minimal_hex_path: str) -> None:
 def test_hex_extension_carries_only_non_ossie_data(minimal_hex_path: str) -> None:
     yaml_text, _ = convert_hex_to_ossie(
         minimal_hex_path,
-        dialect=OSIDialect.ANSI_SQL.value,
+        dialect=OSIDialect.ANSI_SQL,
         model_name="demo",
     )
     model = yaml.safe_load(yaml_text)["semantic_model"][0]
@@ -153,9 +153,7 @@ def test_hex_extension_carries_only_non_ossie_data(minimal_hex_path: str) -> Non
 
 
 def test_query_backed_model(query_hex_path: str) -> None:
-    yaml_text, _ = convert_hex_to_ossie(
-        query_hex_path, dialect=OSIDialect.ANSI_SQL.value
-    )
+    yaml_text, _ = convert_hex_to_ossie(query_hex_path, dialect=OSIDialect.ANSI_SQL)
     doc = OSIDocument.model_validate(yaml.safe_load(yaml_text))
     events = doc.semantic_model[0].datasets[0]
     assert "SELECT" in events.source.upper()

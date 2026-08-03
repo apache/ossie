@@ -110,9 +110,10 @@ ossie-hex import -i hex_project/ --dialect snowflake
 ### Python API
 
 ```python
+from ossie import OSIDialect
 from ossie_hex import convert_hex_to_ossie, convert_ossie_to_hex
 
-ossie_yaml, warnings = convert_hex_to_ossie("hex_project/", dialect="snowflake")
+ossie_yaml, warnings = convert_hex_to_ossie("hex_project/", dialect=OSIDialect.ANSI_SQL)
 files, warnings = convert_ossie_to_hex(ossie_yaml)  # {relative path: YAML str}
 ```
 
@@ -123,7 +124,6 @@ Conversion raises a `ConversionError` when the process cannot produce reasonable
 In Hex → Ossie,
 
 - The Hex project directory is missing or contains no YAML resources.
-- No dialect is given, or the given dialect is not an Ossie dialect.
 
 In Ossie → Hex,
 
@@ -131,7 +131,6 @@ In Ossie → Hex,
 - Unique identifiers that normalize to the same Hex ID.
 - Metrics cannot be assigned to a model and `--base-model` is not given.
 - Custom extension data is malformed.
-- The given dialect is not an Ossie dialect.
 
 Conversion emits a `ConversionWarning` when the output is lossy:
 

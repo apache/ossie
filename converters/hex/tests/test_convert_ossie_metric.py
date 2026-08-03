@@ -30,7 +30,7 @@ def _measure_for(metric_expression: str) -> dict[str, Any]:
     """Convert one metric on an `orders` model whose only field is `amount`."""
     files, _ = convert_ossie_to_hex(
         one_metric_ossie(metric_expression),
-        dialect=OSIDialect.ANSI_SQL.value,
+        dialect=OSIDialect.ANSI_SQL,
         base_model="orders",
     )
     return yaml.safe_load(files["orders.yml"])["measures"][0]
@@ -97,7 +97,7 @@ semantic_model:
           dialects: [{dialect: ANSI_SQL, expression: "MAX(orders.order_date)"}]
 """
     files, _ = convert_ossie_to_hex(
-        ossie, dialect=OSIDialect.ANSI_SQL.value, base_model="orders"
+        ossie, dialect=OSIDialect.ANSI_SQL, base_model="orders"
     )
 
     assert yaml.safe_load(files["orders.yml"])["measures"][0] == {
@@ -134,7 +134,7 @@ def test_a_stashed_func_keeps_its_number_type_over_a_conflicting_datatype() -> N
     )
 
     files, _ = convert_ossie_to_hex(
-        ossie, dialect=OSIDialect.ANSI_SQL.value, base_model="orders"
+        ossie, dialect=OSIDialect.ANSI_SQL, base_model="orders"
     )
 
     assert yaml.safe_load(files["orders.yml"])["measures"][0] == {
@@ -181,7 +181,7 @@ semantic_model:
           dialects: [{dialect: ANSI_SQL, expression: "SUM(orders.amount)"}]
 """
 
-    files, _ = convert_ossie_to_hex(ossie, dialect=OSIDialect.ANSI_SQL.value)
+    files, _ = convert_ossie_to_hex(ossie, dialect=OSIDialect.ANSI_SQL)
     measure = yaml.safe_load(files["orders.yml"])["measures"][0]
 
     assert measure == {"id": "orders__revenue", "func_sql": "SUM(${amount})"}
@@ -192,7 +192,7 @@ def _cross_dataset_measure(
 ) -> tuple[dict[str, Any], list[str]]:
     files, warnings = convert_ossie_to_hex(
         two_dataset_ossie(metric_expression, related=related),
-        dialect=OSIDialect.ANSI_SQL.value,
+        dialect=OSIDialect.ANSI_SQL,
         base_model="orders",
     )
     measure = yaml.safe_load(files["orders.yml"])["measures"][0]

@@ -38,11 +38,11 @@ from typing import Any, NoReturn
 
 from .hex_to_ossie import convert_hex_to_ossie
 from .ossie_to_hex import convert_ossie_to_hex, write_hex_project
-from .ossie_types import OSSIE_DIALECTS
+from .ossie_types import OSSIE_DIALECTS, parse_ossie_dialect
 from .util.errors import ConversionError
 
-# Ossie spells its dialects in upper case, but the CLI takes them in lower case;
-# `parse_ossie_dialect` maps them back.
+# Ossie spells its dialects in upper case, but it's a bit nicer to show/take them
+# in lowercase. Parsing will transform them back.
 _OSSIE_DIALECT_CHOICES = [dialect.lower() for dialect in OSSIE_DIALECTS]
 _OSSIE_DIALECT_LIST = ", ".join(_OSSIE_DIALECT_CHOICES)
 
@@ -146,10 +146,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "export":
             text = Path(args.input).read_text(encoding="utf-8")
+            dialect = parse_ossie_dialect(args.dialect) if args.dialect else None
             files, warnings = convert_ossie_to_hex(
                 text,
                 model_name=args.model,
-                dialect=args.dialect,
+                dialect=dialect,
                 base_model=args.base_model,
             )
             for warning in warnings:
@@ -157,9 +158,10 @@ def main(argv: list[str] | None = None) -> int:
             write_hex_project(args.output, files)
             print(f"Wrote {len(files)} file(s) to {args.output}", file=sys.stderr)
         else:
+            dialect = parse_ossie_dialect(args.dialect)
             out, warnings = convert_hex_to_ossie(
                 args.input,
-                dialect=args.dialect,
+                dialect=dialect,
                 model_name=args.name,
             )
             for warning in warnings:

@@ -53,7 +53,7 @@ def test_time_role_survives_only_when_the_hex_type_carries_it(
 ) -> None:
     files, warnings = convert_ossie_to_hex(
         field_ossie(datatype=datatype, is_time=is_time),
-        dialect=OSIDialect.ANSI_SQL.value,
+        dialect=OSIDialect.ANSI_SQL,
     )
     dimension = yaml.safe_load(files["orders.yml"])["dimensions"][0]
 
@@ -84,7 +84,7 @@ semantic_model:
             expression:
               dialects: [{dialect: ANSI_SQL, expression: created_at}]
 """
-    _, warnings = convert_ossie_to_hex(ossie, dialect=OSIDialect.ANSI_SQL.value)
+    _, warnings = convert_ossie_to_hex(ossie, dialect=OSIDialect.ANSI_SQL)
 
     assert warnings == []
 
@@ -93,7 +93,7 @@ def _dimension_for(field_expression: str, *, related: bool = True) -> dict[str, 
     """Convert an `orders.label` field, with `customers` reachable as `buyer`."""
     files, _ = convert_ossie_to_hex(
         labelled_field_ossie(field_expression, related=related),
-        dialect=OSIDialect.ANSI_SQL.value,
+        dialect=OSIDialect.ANSI_SQL,
         base_model="orders",
     )
     dimensions = yaml.safe_load(files["orders.yml"])["dimensions"]

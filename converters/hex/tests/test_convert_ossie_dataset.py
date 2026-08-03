@@ -58,7 +58,7 @@ semantic_model:
       - name: orders
         source: {json.dumps(source)}
 """
-    files, warnings = convert_ossie_to_hex(ossie, dialect=OSIDialect.ANSI_SQL.value)
+    files, warnings = convert_ossie_to_hex(ossie, dialect=OSIDialect.ANSI_SQL)
 
     resource = load_yaml(files["orders.yml"])
     assert resource.get(base_key) == source
@@ -80,7 +80,7 @@ semantic_model:
               dialects: [{dialect: ANSI_SQL, expression: v}]
             dimension: {}
 """
-    files, _ = convert_ossie_to_hex(ossie, dialect=OSIDialect.ANSI_SQL.value)
+    files, _ = convert_ossie_to_hex(ossie, dialect=OSIDialect.ANSI_SQL)
     ids = [d["id"] for d in yaml.safe_load(files["facts.yml"])["dimensions"]]
 
     # Declaration order, not set-iteration order, which varies per process.

@@ -19,8 +19,7 @@ from __future__ import annotations
 
 from ossie import OSIDialect
 
-from ..ossie_types import parse_ossie_dialect
-from ..util.errors import ConversionError, ConversionWarning
+from ..util.errors import ConversionWarning
 from ..util.yaml import dump_yaml
 from .convert_hex_project import convert_hex_project
 from .load_hex_project import load_hex_project
@@ -29,7 +28,7 @@ from .load_hex_project import load_hex_project
 def convert_hex_to_ossie(
     project: str,
     *,
-    dialect: OSIDialect | str | None = None,
+    dialect: OSIDialect,
     model_name: str | None = None,
 ) -> tuple[str, list[ConversionWarning]]:
     """Convert a Hex project directory to Ossie YAML.
@@ -39,12 +38,7 @@ def convert_hex_to_ossie(
 
     Returns ``(ossie_yaml, warnings)``.
     """
-    if dialect is None:
-        raise ConversionError(
-            "--dialect is required when importing a Hex project directory"
-        )
     hex_project = load_hex_project(project, name=model_name)
-    ossie_dialect = parse_ossie_dialect(dialect)
-    document, warnings = convert_hex_project(hex_project, ossie_dialect=ossie_dialect)
+    document, warnings = convert_hex_project(hex_project, ossie_dialect=dialect)
     data = document.model_dump(by_alias=True, exclude_none=True, mode="json")
     return dump_yaml(data), warnings
