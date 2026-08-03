@@ -893,10 +893,9 @@ def test_a_metric_referencing_a_geo_half_inlines_its_sql():
         "longitude": {"sql": "{CUBE}.lon"}}]
 
 
-def test_a_geo_half_reference_is_requalified_when_it_crosses_cubes():
-    """`{CUBE}` means "the cube this is declared on", so inlining a snippet into
-    another cube's SQL has to name the original cube explicitly."""
-    model = _GEO_MODEL.replace(
+def _two_cube_geo_model(expression):
+    """`_GEO_MODEL` plus an `orders.amount` field, and `expression` as the metric."""
+    return _GEO_MODEL.replace(
         "  - name: users\n", "  - name: orders\n    source: public.orders\n"
         "    fields:\n"
         "    - name: amount\n"
@@ -907,14 +906,40 @@ def test_a_geo_half_reference_is_requalified_when_it_crosses_cubes():
         "      datatype: Decimal\n"
         "  - name: users\n", 1
     ).replace("        expression: AVG(users.home_latitude)\n",
-              "        expression: AVG(users.home_latitude) - MIN(orders.amount)\n")
+              f"        expression: {expression}\n")
+
+
+def test_a_geo_half_reference_is_requalified_when_it_crosses_cubes():
+    """`{CUBE}` means "the cube this is declared on", so inlining a snippet into
+    another cube's SQL has to name the original cube explicitly.
+
+    One aggregate reading two datasets cannot be decomposed, so it lands on the base
+    cube and the `users` half travels there with it.
+    """
+    model = _two_cube_geo_model("AVG(users.home_latitude - orders.amount)")
     files, _ = convert_ossie_to_cube(model, base_cube="orders")
-    measures = parse(files["model/cubes/orders.yml"])["cubes"][0]["measures"]
-    # `{users}.lat` names the cube explicitly, since `{CUBE}` here would mean
-    # `orders`. `{CUBE.amount}` stays a member reference because `amount` is a
-    # declared field of the cube the measure lands on.
-    assert measures[0]["sql"] == "AVG({users}.lat) - MIN({CUBE}.amount)"
-    assert measures[0]["type"] == "number"
+    cube = parse(files["model/cubes/orders.yml"])["cubes"][0]
+    assert cube["measures"] == [
+        {"name": "avg_lat", "sql": "{users}.lat - {CUBE}.amount", "type": "avg"}]
+
+
+def test_a_decomposed_part_lands_on_the_cube_its_operand_reads():
+    """Two aggregates over two datasets: each part is declared on the cube it reads,
+    which is what lets Cube correct row multiplication for each independently. So the
+    geo half needs no requalification -- its part lives on `users` already."""
+    model = _two_cube_geo_model(
+        "AVG(users.home_latitude) - MIN(orders.amount)")
+    files, _ = convert_ossie_to_cube(model, base_cube="orders")
+    on_users = by_name(parse(files["model/cubes/users.yml"])["cubes"][0]["measures"])
+    on_orders = by_name(parse(files["model/cubes/orders.yml"])["cubes"][0]["measures"])
+    assert on_users["avg_lat_part_1"]["sql"] == "{CUBE}.lat"
+    assert on_users["avg_lat_part_1"]["public"] is False
+    assert on_orders["avg_lat_part_2"]["sql"] == "{CUBE}.amount"
+    # The public measure stays on the base cube, naming the foreign part by its cube
+    # and its own with `{CUBE.x}`.
+    assert on_orders["avg_lat"]["sql"] == (
+        "{users.avg_lat_part_1} - {CUBE.avg_lat_part_2}")
+    assert "public" not in on_orders["avg_lat"]
 
 
 def test_geo_half_references_normalize_to_the_underlying_column():

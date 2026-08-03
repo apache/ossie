@@ -63,6 +63,7 @@ from ._common import (
     write_stash,
 )
 from .converter_issues import IssueLog, IssueType
+from .expressions import has_top_level_operator
 
 # Cube keys the converter maps natively at the cube level; everything else is
 # stashed verbatim in the dataset's `cube_extras` and restored on export.
@@ -903,7 +904,10 @@ class _MeasureResolver:
             raise ConversionError(
                 f"measure '{cname}': references '{target_cube}.{target_name}', "
                 f"which has no static Ossie form")
-        return f"({inner})"
+        # A lone `SUM(x)` needs no parentheses; only a term with its own top-level
+        # operators does. Keeping them off means a decomposed metric inlines back to
+        # exactly the expression it was split from.
+        return f"({inner})" if has_top_level_operator(inner) else inner
 
     def _operand(self, cname, sql, stack):
         """Translate an aggregate's operand into an Ossie reference.
@@ -917,6 +921,12 @@ class _MeasureResolver:
         if is_simple_identifier(translated):
             return f"{cname}.{translated}"
         return translated
+
+
+def _is_generated_part(measure):
+    """True for a `public: false` measure a previous export created to hold one
+    aggregate of a composite metric (marked `meta.ossie.part_of`)."""
+    return bool(((measure.get("meta") or {}).get("ossie") or {}).get("part_of"))
 
 
 def _convert_measures(cubes, pk_by_cube, fanned_out, issues):
@@ -935,8 +945,9 @@ def _convert_measures(cubes, pk_by_cube, fanned_out, issues):
     resolver = _MeasureResolver(cubes, pk_by_cube, issues)
 
     counts = {}
-    for (_, mname) in resolver.measures():
-        counts[mname] = counts.get(mname, 0) + 1
+    for (cname, mname), measure in resolver.measures().items():
+        if not _is_generated_part(measure):
+            counts[mname] = counts.get(mname, 0) + 1
 
     metrics = []
     extra_measures = {}
@@ -946,6 +957,12 @@ def _convert_measures(cubes, pk_by_cube, fanned_out, issues):
                 _as_named_list(cube.get("measures"),
                                f"cube '{cname}' measures")):
             mname = measure["name"]
+            if _is_generated_part(measure):
+                # Emitted by a previous export to split a composite metric across
+                # cubes. It has no Ossie metric of its own -- the public measure's
+                # references inline back to the whole expression -- and export
+                # regenerates it, so it is not stashed either.
+                continue
             metric_name = mname if counts[mname] == 1 else f"{cname}__{mname}"
             if metric_name in seen:
                 raise ConversionError(

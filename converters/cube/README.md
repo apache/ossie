@@ -55,7 +55,9 @@ pip install apache-ossie-cube        # once published to PyPI
 pip install -e .
 ```
 
-The only runtime dependency is `PyYAML`. Python 3.11+.
+Runtime dependencies are `PyYAML` and `sqlglot` (already a runtime dependency of
+the dbt and NVIDIA GSF converters, used here to locate the aggregate calls inside a
+composite metric). Python 3.11+.
 
 ## Usage
 
@@ -125,7 +127,7 @@ to **import** (Cube -> Ossie) or **export** (Ossie -> Cube).
 | `dataset.unique_keys` | `meta.ossie.unique_keys` | No native Cube slot; parked rather than dropped. |
 | field | `dimensions[]` entry | Export: a name that is not a valid Cube identifier is sanitized; a case-insensitive collision is an error, never a silent merge. |
 | `field.expression` | dimension `sql` | Dataset-scoped, so `{CUBE}.col` <-> `col`. Export emits `{CUBE}.column` for a raw column and `{CUBE.member}` for a declared member, and never spells the cube's own name (which would break under `extends`). |
-| `field.datatype` | dimension `type` (**required**) | `String`->`string`, `Boolean`->`boolean`, `Date`/`Time`/`DateTime`/`DateTimeTz`->`time`, `Integer`/`Decimal`/`Float`->`number`, `Opaque`->`string`. Import maps back except for `number`, where it **omits `datatype`** -- Cube collapses three Ossie types into one, and the spec says to omit rather than assert. The original `type` is stashed. |
+| `field.datatype` | dimension `type` (**required**) | `String`->`string`, `Boolean`->`boolean`, `Date`/`Time`/`DateTime`/`DateTimeTz`->`time`, `Integer`/`Decimal`/`Float`->`number`, `Opaque`->`string`. Import maps back, choosing `Decimal` for `number` -- Cube collapses three Ossie types into one, so any single answer is a guess, and a stated datatype is what another converter can act on. Export parks the exact one in `meta.ossie.datatype`, which import prefers when present, so `Integer` and `Float` still survive a round trip. |
 | `field.dimension.is_time` | `type: time` | Import sets `is_time: true` for a time dimension. |
 | `field.label` / `description` | dimension `title` / `description` | |
 | `field.ai_context.instructions` | dimension `meta.ai_context` | Cube's documented AI-only context field. |
@@ -137,6 +139,7 @@ to **import** (Cube -> Ossie) or **export** (Ossie -> Cube).
 | `COUNT(DISTINCT x)` | `type: count_distinct` | |
 | `APPROX_COUNT_DISTINCT(x)` | `type: count_distinct_approx` | Cube resolves the warehouse-specific function itself. |
 | `COUNT(DISTINCT <pk>)` | bare `type: count` | See [Fan-out](#fan-out) -- the primary key is load-bearing here. |
+| several aggregates in one expression | one `public: false` measure per aggregate + a `type: number` measure referencing them | Each part is declared on the cube its own operand reads, so Cube corrects row multiplication per aggregate rather than once for the whole expression. The parts carry `meta.ossie.part_of`, and import skips them and inlines their SQL back through the references -- recovering the original expression exactly. |
 | anything else | `type: number` (calculated) | A `{other_measure}` reference is **inlined**, because that is what Cube itself does; Ossie has no metric-to-metric reference. |
 | — | measure `filters` | Folded into `CASE WHEN … THEN … END` inside the aggregate, exactly as Cube's own `applyMeasureFilters` renders it. |
 | `metric.datatype` | — | Import emits `Integer` for the count family, whose result type Cube does know, and omits it otherwise. |
@@ -190,6 +193,21 @@ instead, naming the metric, the dataset, and the relationship responsible.
 Because a bare `count` maps through the primary key, a cube carrying one **must**
 declare `primary_key: true` on a dimension; its absence is an error, not a
 different number.
+
+Going the other way, an Ossie metric combining several aggregates is **decomposed**
+rather than emitted as one calculated measure, so Cube's correction applies to each
+aggregate on its own cube:
+
+```yaml
+# Ossie                                         # Cube
+SUM(store_sales.amount)                         store_sales: clv_part_1 (sum, public: false)
+  / COUNT(DISTINCT customer.id)                 customer:    clv_part_2 (count, public: false)
+                                                store_sales: clv = {CUBE.clv_part_1}
+                                                                 / {customer.clv_part_2}
+```
+
+A single aggregate reading two datasets cannot be split this way and still lands on
+one cube.
 
 > Ossie has no additivity or grain declaration to record this properly -- dbt's
 > `non_additive_dimension` is the nearest precedent, and this repo's dbt converter

@@ -38,6 +38,10 @@ classifiers = [
 ]
 dependencies = [
     "PyYAML>=6.0",
+    # Expression handling: locating the aggregate calls inside a composite metric so
+    # each can become its own Cube measure. Already a runtime dependency of the dbt
+    # and NVIDIA GSF converters, which use it for the same purpose.
+    "sqlglot>=20.0",
 ]
 
 [dependency-groups]

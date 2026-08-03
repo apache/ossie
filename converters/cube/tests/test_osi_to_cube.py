@@ -18,9 +18,14 @@
 """Apache Ossie semantic model -> Cube data model."""
 
 import pytest
-from _util import by_name, parse
+from _util import by_name, expr_of, model_of, parse
 
-from ossie_cube import ConversionError, IssueType, convert_ossie_to_cube
+from ossie_cube import (
+    ConversionError,
+    IssueType,
+    convert_cube_to_ossie,
+    convert_ossie_to_cube,
+)
 from ossie_cube._common import OSSIE_VERSION
 
 
@@ -383,15 +388,43 @@ def test_declared_member_gets_a_member_reference_and_a_raw_column_does_not():
     assert _cubes(files)["orders"]["measures"][0]["sql"] == "{CUBE}.shipping_fee"
 
 
-def test_ratio_becomes_a_calculated_measure():
-    files, issues = convert_ossie_to_cube(_ossie(
+def test_a_ratio_is_split_into_one_measure_per_aggregate():
+    """Each aggregate becomes its own `public: false` measure on the cube its operand
+    comes from, and the public measure references them. Cube corrects for row
+    multiplication per measure, so splitting is what lets each aggregate be corrected
+    on its own cube instead of the whole ratio being one opaque expression."""
+    files, _ = convert_ossie_to_cube(_ossie(
         _TWO_DATASETS, _REL,
         _metric("aov", "SUM(orders.amount) / COUNT(DISTINCT users.id)")))
-    measure = _cubes(files)["orders"]["measures"][0]
-    assert measure["type"] == "number"
-    assert measure["sql"] == "SUM({CUBE}.amount) / COUNT(DISTINCT {users.id})"
-    assert any("spans several datasets" in i.detail
-               for i in issues.of_type(IssueType.APPROXIMATED))
+    orders = by_name(_cubes(files)["orders"]["measures"])
+    users = by_name(parse(files["model/cubes/users.yml"])["cubes"][0]["measures"])
+
+    assert orders["aov_part_1"] == {
+        "name": "aov_part_1", "sql": "{CUBE}.amount", "type": "sum",
+        "meta": {"ossie": {"part_of": "aov"}}, "public": False}
+    # `users.id` is that cube's primary key, so its aggregate is a bare Cube count --
+    # the form Cube corrects for fan-out.
+    assert users["aov_part_2"] == {
+        "name": "aov_part_2", "type": "count",
+        "meta": {"ossie": {"part_of": "aov"}}, "public": False}
+    # `{CUBE.aov_part_1}` rather than `{orders.aov_part_1}`: an own-cube reference
+    # stays correct when the cube is extended.
+    assert orders["aov"] == {
+        "name": "aov", "type": "number",
+        "sql": "{CUBE.aov_part_1} / {users.aov_part_2}"}
+
+
+def test_a_split_ratio_comes_back_as_the_metric_it_was_split_from():
+    """The split is an implementation detail of the Cube side: the parts are marked
+    generated, so import skips them and inlines their SQL back through the public
+    measure's references, recovering the original expression verbatim."""
+    expression = "SUM(orders.amount) / COUNT(DISTINCT users.id)"
+    files, _ = convert_ossie_to_cube(
+        _ossie(_TWO_DATASETS, _REL, _metric("aov", expression)))
+    ossie, _ = convert_cube_to_ossie(files, strict_fanout=False)
+    metrics = model_of(ossie)["metrics"]
+    assert [m["name"] for m in metrics] == ["aov"]
+    assert expr_of(metrics[0]) == expression
 
 
 def test_metric_lands_on_the_dataset_its_expression_references():

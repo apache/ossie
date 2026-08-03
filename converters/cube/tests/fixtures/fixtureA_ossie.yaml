@@ -151,7 +151,7 @@ semantic_model:
     expression:
       dialects:
       - dialect: ANSI_SQL
-        expression: (SUM(orders.amount)) / (COUNT(DISTINCT orders.id))
+        expression: SUM(orders.amount) / COUNT(DISTINCT orders.id)
     custom_extensions:
     - vendor_name: CUBE
       data: '{"_v": 1, "cube": "orders", "measure": {"name": "avg_order_value", "sql":

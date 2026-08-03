@@ -326,7 +326,9 @@ def test_calculated_measure_inlines_its_measure_references(model_a):
     aggregate SQL; Ossie has no metric-to-metric reference, so it is inlined."""
     model, _ = model_a
     metric = by_name(model["metrics"])["avg_order_value"]
-    assert expr_of(metric) == "(SUM(orders.amount)) / (COUNT(DISTINCT orders.id))"
+    # No redundant parentheses: a lone aggregate is already a single term, so an
+    # inlined reference reads exactly as the expression it stands for.
+    assert expr_of(metric) == "SUM(orders.amount) / COUNT(DISTINCT orders.id)"
 
 
 def test_measure_reference_cycle_is_rejected():

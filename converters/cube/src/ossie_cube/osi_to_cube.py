@@ -36,6 +36,7 @@ from collections import deque
 
 from ._common import (
     DATATYPE_TO_DIM_TYPE,
+    DOTTED_REF_RE,
     DEFAULT_DATATYPE_FOR_CUBE_TYPE,
     OSSIE_FUNC_TO_AGG,
     OSSIE_VERSION,
@@ -58,6 +59,7 @@ from ._common import (
     view_file,
 )
 from .converter_issues import IssueLog, IssueType
+from .expressions import aggregate_spans
 
 # An aggregate call the exporter can turn back into a structured Cube measure.
 _AGG_CALL_RE = re.compile(
@@ -666,13 +668,81 @@ def _build_measures(model, cube_names, members_by_cube, inline_sql_by_cube,
         }
         target = stash.get("cube") or (
             next(iter(referenced)) if len(referenced) == 1 else resolve_base())
-        measure = _measure_from_expression(
-            expr, target, mname, stash, members_by_cube.get(target, set()),
-            inline_sql_by_cube, pk_by_cube.get(target, []), sanitized, scope,
-            issues)
+
+        spans = [] if stash.get("sql") else aggregate_spans(expr)
+        if len(spans) > 1:
+            # A composite metric: give each aggregate its own measure on the cube its
+            # operand belongs to, and let the public measure reference them. Cube then
+            # applies its row-multiplication correction per aggregate instead of
+            # seeing one opaque expression -- see _decompose_measure.
+            public_sql = _decompose_measure(
+                expr, spans, mname, target, measures_by_cube, members_by_cube,
+                inline_sql_by_cube, pk_by_cube, sanitized, name, scope, issues)
+            measure = {"name": mname, "sql": public_sql, "type": "number"}
+        else:
+            measure = _measure_from_expression(
+                expr, target, mname, stash, members_by_cube.get(target, set()),
+                inline_sql_by_cube, pk_by_cube.get(target, []), sanitized, scope,
+                issues)
         _apply_measure_metadata(metric, measure, stash)
         _place(measures_by_cube, target, measure, name)
     return measures_by_cube
+
+
+def _decompose_measure(expr, spans, mname, fallback, measures_by_cube,
+                       members_by_cube, inline_sql_by_cube, pk_by_cube, sanitized,
+                       model_name, scope, issues):
+    """Emit one `public: false` measure per aggregate; return the sql referencing them.
+
+    Cube corrects for row multiplication per measure, keyed on the cube that measure
+    sits on. A cross-dataset ratio emitted as a single calculated measure gets one
+    correction for the whole expression; split into a measure per aggregate, each on
+    the cube its operand comes from, each aggregate is corrected on its own terms.
+    That is why this is a correctness change and not a formatting one.
+
+    Each part carries `meta.ossie.part_of` so import knows it is generated and skips
+    it, recovering the original expression by inlining the references instead.
+    """
+    # A part name has to be free on whichever cube it lands on, and a Cube member name
+    # is unique across dimensions and measures alike -- so the check is over both, and
+    # over every cube rather than the one part it happens to land on.
+    taken = {m["name"].lower() for ms in measures_by_cube.values() for m in ms}
+    taken |= {n.lower() for ns in members_by_cube.values() for n in ns}
+    out, cursor, index = [], 0, 0
+    for start, end in spans:
+        piece = expr[start:end]
+        # Each aggregate lands on the cube its own operand references.
+        refs = {m.group(1) for m in DOTTED_REF_RE.finditer(piece)
+                if m.group(1) in sanitized}
+        part_target = next(iter(refs)) if len(refs) == 1 else fallback
+
+        index += 1
+        part_name = f"{mname}_part_{index}"
+        while part_name.lower() in taken:
+            index += 1
+            part_name = f"{mname}_part_{index}"
+        taken.add(part_name.lower())
+
+        part = _measure_from_expression(
+            piece, part_target, part_name, {},
+            members_by_cube.get(part_target, set()), inline_sql_by_cube,
+            pk_by_cube.get(part_target, []), sanitized, scope, issues)
+        part["public"] = False
+        part["meta"] = {"ossie": {"part_of": mname}}
+        _place(measures_by_cube, part_target, part, model_name)
+
+        out.append(ossie_expr_to_cube_sql(
+            expr[cursor:start], fallback, members_by_cube.get(fallback, set()),
+            sanitized, inline_sql=inline_sql_by_cube))
+        # `{CUBE.x}` for a part on the same cube as the public measure: an explicit
+        # name pins the reference to this cube and breaks if it is extended.
+        qualifier = "CUBE" if part_target == fallback else part_target
+        out.append("{" + f"{qualifier}.{part_name}" + "}")
+        cursor = end
+    out.append(ossie_expr_to_cube_sql(
+        expr[cursor:], fallback, members_by_cube.get(fallback, set()), sanitized,
+        inline_sql=inline_sql_by_cube))
+    return "".join(out)
 
 
 def _place(measures_by_cube, target, measure, model_name):
