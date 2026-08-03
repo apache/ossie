@@ -69,10 +69,11 @@ DIALECT_MAP = {
     "MDX": None,  # Not supported by sqlglot, skip validation
     "TABLEAU": None,  # Not supported by sqlglot, skip validation
     "MAQL": None,  # Not supported by sqlglot, skip validation
+    "SIGMA": None,  # Sigma's spreadsheet-style formula language, not SQL; skip validation
 }
 
 # Dialects that sqlglot cannot parse
-SKIP_SQL_VALIDATION = {"MDX", "TABLEAU", "MAQL"}
+SKIP_SQL_VALIDATION = {"MDX", "TABLEAU", "MAQL", "SIGMA"}
 
 
 def validate_schema(data: dict, schema: dict) -> list[str]:
