@@ -38,6 +38,8 @@ dependency of the dbt and NVIDIA GSF converters for the same purpose.
 import sqlglot
 import sqlglot.expressions as exp
 
+from ._common import quoted_char_mask
+
 # sqlglot node types for the aggregates this converter maps to a Cube measure type.
 # `Count` covers COUNT / COUNT(DISTINCT x); ApproxDistinct covers
 # APPROX_COUNT_DISTINCT.
@@ -91,6 +93,10 @@ def aggregate_spans(expr):
     inside another span is not returned, so `SUM(x) / NULLIF(SUM(y), 0)` gives two
     and `SUM(SUM(x))` gives one. Returns [] when the expression does not parse, or is
     itself a single aggregate needing no decomposition.
+
+    A name inside a string literal is not a call: `SUM(x) || ' per COUNT(y) unit'`
+    has one aggregate, not two. Taking the second would splice a measure reference
+    into the literal.
     """
     text = str(expr)
     if parse(text) is None or is_single_aggregate(text):
@@ -98,6 +104,7 @@ def aggregate_spans(expr):
 
     candidates = []
     upper = text.upper()
+    quoted = quoted_char_mask(text)
     for name in _AGGREGATE_NAMES:
         at = 0
         while True:
@@ -106,6 +113,8 @@ def aggregate_spans(expr):
                 break
             start, after = at, at + len(name)
             at = after
+            if quoted[start]:
+                continue
             # A call, not part of a longer identifier: boundary before, `(` after.
             if start and (text[start - 1].isalnum() or text[start - 1] == "_"):
                 continue

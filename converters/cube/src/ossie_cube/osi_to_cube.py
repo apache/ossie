@@ -36,7 +36,6 @@ from collections import deque
 
 from ._common import (
     DATATYPE_TO_DIM_TYPE,
-    DOTTED_REF_RE,
     DEFAULT_DATATYPE_FOR_CUBE_TYPE,
     OSSIE_FUNC_TO_AGG,
     OSSIE_VERSION,
@@ -53,6 +52,7 @@ from ._common import (
     pick_expression,
     primary_key_operand,
     read_stash,
+    referenced_datasets,
     require_str,
     sanitize_name,
     synonyms_of,
@@ -660,14 +660,21 @@ def _build_measures(model, cube_names, members_by_cube, inline_sql_by_cube,
                        "no ANSI_SQL or preferred-dialect expression; metric dropped")
             continue
 
-        referenced = {
-            m.group(1) for m in re.finditer(
-                r"(?<![\w.$])([A-Za-z_][A-Za-z0-9_]*)\.[A-Za-z_][A-Za-z0-9_]*"
-                r"(?![\w.])", expr)
-            if m.group(1) in sanitized
-        }
+        referenced = referenced_datasets(expr, sanitized)
         target = stash.get("cube") or (
             next(iter(referenced)) if len(referenced) == 1 else resolve_base())
+
+        if len(referenced) > 1:
+            # Cube resolves a cross-cube member reference by adding an implicit join,
+            # so the model needs a join path between these cubes -- which Ossie's
+            # expression does not state and this converter cannot verify. Reported for
+            # every shape the measure can take: it used to be raised only from the
+            # calculated-measure fallback, so a decomposed metric (the shape with the
+            # *most* cross-cube references) reported nothing at all.
+            issues.add(IssueType.APPROXIMATED, scope,
+                       f"expression spans datasets {', '.join(sorted(referenced))}; "
+                       f"Cube reaches the others from '{target}' through an implicit "
+                       f"join, so verify a join path exists")
 
         spans = [] if stash.get("sql") else aggregate_spans(expr)
         if len(spans) > 1:
@@ -677,13 +684,12 @@ def _build_measures(model, cube_names, members_by_cube, inline_sql_by_cube,
             # seeing one opaque expression -- see _decompose_measure.
             public_sql = _decompose_measure(
                 expr, spans, mname, target, measures_by_cube, members_by_cube,
-                inline_sql_by_cube, pk_by_cube, sanitized, name, scope, issues)
+                inline_sql_by_cube, pk_by_cube, sanitized, name)
             measure = {"name": mname, "sql": public_sql, "type": "number"}
         else:
             measure = _measure_from_expression(
                 expr, target, mname, stash, members_by_cube.get(target, set()),
-                inline_sql_by_cube, pk_by_cube.get(target, []), sanitized, scope,
-                issues)
+                inline_sql_by_cube, pk_by_cube.get(target, []), sanitized)
         _apply_measure_metadata(metric, measure, stash)
         _place(measures_by_cube, target, measure, name)
     return measures_by_cube
@@ -691,7 +697,7 @@ def _build_measures(model, cube_names, members_by_cube, inline_sql_by_cube,
 
 def _decompose_measure(expr, spans, mname, fallback, measures_by_cube,
                        members_by_cube, inline_sql_by_cube, pk_by_cube, sanitized,
-                       model_name, scope, issues):
+                       model_name):
     """Emit one `public: false` measure per aggregate; return the sql referencing them.
 
     Cube corrects for row multiplication per measure, keyed on the cube that measure
@@ -712,8 +718,7 @@ def _decompose_measure(expr, spans, mname, fallback, measures_by_cube,
     for start, end in spans:
         piece = expr[start:end]
         # Each aggregate lands on the cube its own operand references.
-        refs = {m.group(1) for m in DOTTED_REF_RE.finditer(piece)
-                if m.group(1) in sanitized}
+        refs = referenced_datasets(piece, sanitized)
         part_target = next(iter(refs)) if len(refs) == 1 else fallback
 
         index += 1
@@ -726,7 +731,7 @@ def _decompose_measure(expr, spans, mname, fallback, measures_by_cube,
         part = _measure_from_expression(
             piece, part_target, part_name, {},
             members_by_cube.get(part_target, set()), inline_sql_by_cube,
-            pk_by_cube.get(part_target, []), sanitized, scope, issues)
+            pk_by_cube.get(part_target, []), sanitized)
         part["public"] = False
         part["meta"] = {"ossie": {"part_of": mname}}
         _place(measures_by_cube, part_target, part, model_name)
@@ -755,7 +760,7 @@ def _place(measures_by_cube, target, measure, model_name):
 
 
 def _measure_from_expression(expr, target, mname, stash, members, inline_sql_by_cube,
-                             primary_key, sanitized, scope, issues):
+                             primary_key, sanitized):
     """Turn an Ossie metric expression back into a structured Cube measure.
 
     `COUNT(DISTINCT <the cube's primary key>)` is Cube's bare `type: count` --
@@ -796,15 +801,6 @@ def _measure_from_expression(expr, target, mname, stash, members, inline_sql_by_
     measure["sql"] = stash.get("sql") or ossie_expr_to_cube_sql(
         expr, target, members, sanitized, inline_sql=inline_sql_by_cube)
     measure["type"] = "number"
-    if len({
-        ref for ref in re.findall(
-            r"(?<![\w.$])([A-Za-z_][A-Za-z0-9_]*)\.[A-Za-z_][A-Za-z0-9_]*(?![\w.])",
-            expr)
-        if ref in sanitized
-    }) > 1:
-        issues.add(IssueType.APPROXIMATED, scope,
-                   f"expression spans several datasets; emitted as a calculated "
-                   f"measure on cube '{target}' -- verify the join path")
     return measure
 
 

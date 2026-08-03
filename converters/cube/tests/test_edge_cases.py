@@ -1413,3 +1413,101 @@ def test_several_semantic_models_convert_the_first_with_an_issue():
     # The other models are not preserved anywhere, so this is a drop.
     dropped = issues.of_type(IssueType.DROPPED_NO_CUBE_EQUIVALENT)
     assert any("only the first is converted" in i.detail for i in dropped)
+
+
+# --- string literals ------------------------------------------------------------
+#
+# The two directions are deliberately asymmetric, so both are pinned here. A Cube
+# YAML `sql` is compiled as a Python f-string (`f"<sql>"` in YamlCompiler), which
+# interpolates `{...}` anywhere in the value -- SQL's own quotes mean nothing to it.
+# So on import a reference inside a literal is a real reference, while on export a
+# rewrite must stop at the quotes or it would destroy the literal's text.
+
+@pytest.mark.parametrize("sql,expected", [
+    ("a = 'x'", [("a = ", False), ("'x'", True)]),
+    ("'x' = a", [("'x'", True), (" = a", False)]),
+    ("'it''s'", [("'it'", True), ("'s'", True)]),
+    ('"col" = `c`', [('"col"', True), (" = ", False), ("`c`", True)]),
+    ("a = 'unterminated", [("a = ", False), ("'unterminated", True)]),
+    ("plain", [("plain", False)]),
+])
+def test_quoted_runs_splits_sql_into_code_and_quoted_text(sql, expected):
+    from ossie_cube._common import quoted_runs
+    assert quoted_runs(sql) == expected
+
+
+@pytest.mark.parametrize("expr,expected", [
+    ("SUM(orders.amount)", {"orders"}),
+    ("SUM(orders.amount) / COUNT(users.id)", {"orders", "users"}),
+    ("SUM(orders.amount) || ' per users.id unit'", {"orders"}),
+    ("'orders.amount'", set()),
+    ("SUM(ghost.amount)", set()),
+])
+def test_referenced_datasets_ignores_quoted_text(expr, expected):
+    from ossie_cube._common import referenced_datasets
+    assert referenced_datasets(expr, {"orders", "users"}) == expected
+
+
+def test_a_reference_inside_a_literal_is_still_translated_on_import():
+    """Not an oversight: Cube would have interpolated it, so dropping it would lose a
+    reference the model really does resolve."""
+    files = _files(orders=(
+        "cubes:\n"
+        "  - name: orders\n"
+        "    sql_table: a.b.orders\n"
+        "    dimensions:\n"
+        "      - name: note\n"
+        "        sql: \"CONCAT({CUBE}.status, ' {CUBE}.status ')\"\n"
+        "        type: string\n"
+    ))
+    ossie, _ = convert_cube_to_ossie(files)
+    field = by_name(by_name(model_of(ossie)["datasets"])["orders"]["fields"])["note"]
+    assert expr_of(field) == "CONCAT(status, ' status ')"
+
+
+# --- aggregate span scanning -----------------------------------------------------
+#
+# The scanner decides whether a metric is decomposed into one measure per aggregate,
+# so its rejection paths matter as much as its matches: a false positive splices a
+# measure reference into text that was never a call.
+
+@pytest.mark.parametrize("expr,expected", [
+    # Two aggregates -- the case decomposition exists for.
+    ("SUM(a.x) / COUNT(b.y)", ["SUM(a.x)", "COUNT(b.y)"]),
+    # Only the outermost of a nested pair.
+    ("SUM(a.x) / NULLIF(SUM(b.y), 0)", ["SUM(a.x)", "SUM(b.y)"]),
+    # A closing paren inside a literal does not end the call.
+    ("SUM(a.x || ')') / COUNT(b.y)", ["SUM(a.x || ')')", "COUNT(b.y)"]),
+    # Part of a longer identifier, not a call.
+    ("MY_SUM(a.x) / 2", []),
+    ("SUMMARY(a.x) - MIN(b.y)", ["MIN(b.y)"]),
+    # A name with no argument list at all.
+    ("a.count / b.total", []),
+    # Whitespace between the name and its parens is still a call.
+    ("SUM (a.x) - MIN (b.y)", ["SUM (a.x)", "MIN (b.y)"]),
+    # Unbalanced parens: not a span, and not a crash.
+    ("SUM(a.x / MIN(b.y)", []),
+    # A single aggregate needs no decomposition.
+    ("SUM(a.x)", []),
+    # Unparseable input falls back to one opaque measure.
+    ("SUM(a.x) /// COUNT(", []),
+])
+def test_aggregate_spans_only_matches_real_calls(expr, expected):
+    from ossie_cube.expressions import aggregate_spans
+    assert [expr[s:e] for s, e in aggregate_spans(expr)] == expected
+
+
+@pytest.mark.parametrize("expr,expected", [
+    ("SUM(a.x)", False),
+    # One self-contained term: the space is inside the parens, so inlining it into a
+    # larger expression needs no parentheses.
+    ("COUNT(DISTINCT a.x)", False),
+    ("SUM(a.x) / 2", True),
+    ("CASE WHEN a.x THEN 1 END", True),   # a top-level space is structure
+    ("'a + b'", False),                   # operators inside a literal are text
+    ("'a b'", False),
+    ('"a b"', False),
+])
+def test_has_top_level_operator_ignores_quoted_text(expr, expected):
+    from ossie_cube.expressions import has_top_level_operator
+    assert has_top_level_operator(expr) is expected

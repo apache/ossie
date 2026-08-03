@@ -414,6 +414,55 @@ def test_a_ratio_is_split_into_one_measure_per_aggregate():
         "sql": "{CUBE.aov_part_1} / {users.aov_part_2}"}
 
 
+def test_a_dotted_token_inside_a_string_literal_is_left_alone():
+    """Cube compiles a YAML `sql` as a Python f-string, so a `{...}` written into a
+    string literal is still interpolated -- it would replace the literal's own text
+    with a column reference. So the rewrite has to stop at the quotes."""
+    files, _ = convert_ossie_to_cube(_ossie(_ORDERS, metrics=_metric(
+        "m", "CONCAT(CAST(SUM(orders.amount) AS VARCHAR), ' orders.amount ')")))
+    assert _cubes(files)["orders"]["measures"][0]["sql"] == (
+        "CONCAT(CAST(SUM({CUBE}.amount) AS VARCHAR), ' orders.amount ')")
+
+
+def test_an_aggregate_name_inside_a_string_literal_is_not_an_aggregate():
+    """Otherwise the literal is treated as a second aggregate and gets a measure
+    reference spliced into the middle of it."""
+    files, issues = convert_ossie_to_cube(_ossie(_TWO_DATASETS, _REL, _metric(
+        "label", "SUM(orders.amount) || ' per COUNT(users.id) unit'")))
+    measures = _cubes(files)["orders"]["measures"]
+    # One measure, not a decomposed pair, and the literal survives verbatim.
+    assert [m["name"] for m in measures] == ["label"]
+    assert measures[0]["sql"] == (
+        "SUM({CUBE}.amount) || ' per COUNT(users.id) unit'")
+    assert "measures" not in _cubes(files, "model/cubes/users.yml")["users"]
+    # `users` is named only inside the literal, so this is not a cross-cube metric.
+    assert not issues.of_type(IssueType.APPROXIMATED)
+
+
+@pytest.mark.parametrize("shape,expr", [
+    ("decomposed", "SUM(orders.amount) / COUNT(DISTINCT users.id)"),
+    ("single aggregate", "SUM(orders.amount - users.id)"),
+    ("calculated", "SUM(orders.amount) + users.id"),
+])
+def test_a_cross_dataset_metric_is_reported_whatever_shape_it_takes(shape, expr):
+    """Cube reaches another cube's members through an implicit join, so the model
+    needs a join path this converter cannot verify. The report used to come only from
+    the calculated-measure fallback, which meant the decomposed shape -- the one with
+    the *most* cross-cube references -- reported nothing."""
+    _, issues = convert_ossie_to_cube(
+        _ossie(_TWO_DATASETS, _REL, _metric("m", expr)))
+    reported = issues.of_type(IssueType.APPROXIMATED)
+    assert len(reported) == 1, shape
+    assert "orders, users" in reported[0].detail
+    assert "join path" in reported[0].detail
+
+
+def test_a_single_dataset_metric_is_not_reported():
+    _, issues = convert_ossie_to_cube(_ossie(
+        _TWO_DATASETS, _REL, _metric("m", "SUM(orders.amount)")))
+    assert not issues.of_type(IssueType.APPROXIMATED)
+
+
 def test_a_split_ratio_comes_back_as_the_metric_it_was_split_from():
     """The split is an implementation detail of the Cube side: the parts are marked
     generated, so import skips them and inlines their SQL back through the public

@@ -385,6 +385,73 @@ def cube_sql_to_ossie(sql, own_cube, resolve_ref=None, self_prefix=None):
     return out, changed
 
 
+def quoted_runs(sql):
+    """Split SQL into (text, is_quoted) runs, delimiters included in the quoted run.
+
+    Used by the **export** direction only, to keep a rewrite out of string literals
+    and delimited identifiers. Import deliberately does not do this: a Cube YAML
+    `sql` is compiled as a Python f-string (`f"<sql>"` in YamlCompiler), so `{CUBE}`
+    interpolates anywhere in the value -- SQL's own quotes are ordinary characters to
+    it. Skipping quoted text on the way in would therefore *lose* a reference Cube
+    really does resolve.
+
+    `'`, `"` and backtick all open a run; a run is closed by its own delimiter, and
+    an unterminated one runs to the end (reported quoted, so nothing in it is
+    rewritten). SQL's `''` doubling needs no special case: it reads as a close
+    immediately followed by an open, leaving an empty unquoted run between.
+    """
+    runs, buf, quote = [], [], None
+    for ch in str(sql):
+        if quote:
+            buf.append(ch)
+            if ch == quote:
+                runs.append(("".join(buf), True))
+                buf, quote = [], None
+        elif ch in "'\"`":
+            if buf:
+                runs.append(("".join(buf), False))
+            buf, quote = [ch], ch
+        else:
+            buf.append(ch)
+    if buf:
+        runs.append(("".join(buf), quote is not None))
+    return runs
+
+
+def sub_outside_quotes(sql, transform):
+    """Apply `transform` to the parts of `sql` outside quoted runs."""
+    return "".join(text if quoted else transform(text)
+                   for text, quoted in quoted_runs(sql))
+
+
+def referenced_datasets(expr, known):
+    """The dataset names an Ossie expression references, ignoring quoted text.
+
+    Decides which cube a measure lands on and whether it crosses cubes, so a name
+    that only appears inside a string literal must not count -- otherwise
+    `SUM(orders.amount) || ' per users.id unit'` reads as a two-dataset metric and
+    gets attributed to the base cube rather than to `orders`.
+    """
+    found = set()
+    for text, quoted in quoted_runs(expr):
+        if quoted:
+            continue
+        found |= {m.group(1) for m in DOTTED_REF_RE.finditer(text)
+                  if m.group(1) in known}
+    return found
+
+
+def quoted_char_mask(sql):
+    """One flag per character of `sql`: True where it sits inside a quoted run.
+
+    For a caller that needs offsets into the original string rather than a rewrite.
+    """
+    mask = []
+    for text, quoted in quoted_runs(sql):
+        mask.extend([quoted] * len(text))
+    return mask
+
+
 def source_part_count(source):
     """How many identifier parts a dotted dataset `source` has, or None for a query.
 
@@ -488,6 +555,11 @@ def ossie_expr_to_cube_sql(expr, own_cube, own_members=(), cube_names=(),
     exists only in Ossie -- Cube has neither a column nor a member by that name --
     so a reference to it becomes the half's own SQL (`{CUBE}.lat`), requalified when
     it crosses cubes.
+
+    A dotted token inside a string literal is left alone. This matters more than it
+    looks: Cube compiles a YAML `sql` as a Python f-string, so a `{...}` it emitted
+    into a literal would be interpolated at compile time and replace the literal's
+    own text with a column reference.
     """
     escaped = str(expr).replace("{", "\\{").replace("}", "\\}")
     known = set(cube_names)
@@ -510,7 +582,7 @@ def ossie_expr_to_cube_sql(expr, own_cube, own_members=(), cube_names=(),
         # reference or an unrelated dotted token. Leave it alone.
         return m.group(0)
 
-    return DOTTED_REF_RE.sub(repl, escaped)
+    return sub_outside_quotes(escaped, lambda run: DOTTED_REF_RE.sub(repl, run))
 
 
 # --- source ---------------------------------------------------------------------

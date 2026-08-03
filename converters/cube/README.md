@@ -161,6 +161,15 @@ Ossie dialect enum has no `CUBE` entry -- so import emits `ANSI_SQL`, and export
 prefers `ANSI_SQL` with `--dialect` prepending a warehouse dialect (e.g.
 `SNOWFLAKE` for a Snowflake-backed Cube model).
 
+**String literals** are handled asymmetrically, on purpose. Cube compiles a YAML
+`sql` value as a Python f-string (`f"<sql>"` in `YamlCompiler`), so `{CUBE}.col`
+interpolates *anywhere* in the value -- SQL's own quotes mean nothing to it. So on
+import a reference inside a literal is a real reference and is translated, while on
+export nothing is rewritten inside a literal: emitting `{CUBE.col}` there would make
+Cube replace the literal's own text with a column reference. The same rule decides
+which dataset a metric belongs to, so a name mentioned only inside a literal does not
+attribute the metric or make it look cross-dataset.
+
 ## Fan-out
 
 This is the one place where Cube carries semantics an Ossie expression cannot, and
