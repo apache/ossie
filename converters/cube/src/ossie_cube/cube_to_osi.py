@@ -432,6 +432,23 @@ def _restore_parked_extensions(obj, meta):
 
 # --- cubes ----------------------------------------------------------------------
 
+def _plain_members(cube, cname):
+    """Dimension names whose `sql` is just the same-named column.
+
+    For those, `{CUBE.member}`, `{CUBE}.member` and a bare `member` all mean the
+    same thing, so the spelling carries no information worth stashing. Any other
+    member inlines its own SQL when referenced, which a column name would not
+    reproduce.
+    """
+    plain = set()
+    for dim in _as_named_list(cube.get("dimensions"), f"cube '{cname}' dimensions"):
+        name = dim.get("name")
+        sql = dim.get("sql")
+        if name and (sql is None or str(sql).strip() == name):
+            plain.add(name)
+    return plain
+
+
 def _primary_key_of(cube, cname):
     """The names of a cube's `primary_key: true` dimensions.
 
@@ -445,6 +462,7 @@ def _primary_key_of(cube, cname):
 
 
 def _convert_cube(cname, cube, extra_joins, extra_measures, issues):
+    plain = _plain_members(cube, cname)
     """Build one Ossie dataset from a Cube cube."""
     scope = f"cube '{cname}'"
     ds = {"name": cname}
@@ -469,7 +487,7 @@ def _convert_cube(cname, cube, extra_joins, extra_measures, issues):
     fields = []
     for dim in _as_named_list(cube.get("dimensions"), f"{scope} dimensions"):
         dname = require_str(dim, "name", f"{scope}: dimension")
-        fields.extend(_convert_dimension(cname, dname, dim, issues))
+        fields.extend(_convert_dimension(cname, dname, dim, plain, issues))
     if fields:
         ds["fields"] = fields
     primary_key = _primary_key_of(cube, cname)
@@ -500,7 +518,7 @@ def _convert_cube(cname, cube, extra_joins, extra_measures, issues):
     return ds
 
 
-def _convert_dimension(cname, dname, dim, issues):
+def _convert_dimension(cname, dname, dim, plain, issues):
     """Build the Ossie field(s) for one Cube dimension.
 
     Returns a list because a `type: geo` dimension carries two SQL expressions
@@ -518,7 +536,7 @@ def _convert_dimension(cname, dname, dim, issues):
         expr = dname
     else:
         expr, _ = cube_sql_to_ossie(sql, cname)
-        if not sql_is_reversible(sql):
+        if not sql_is_reversible(sql, plain, cname):
             # Only a *member* reference needs the original spelling kept: Cube
             # inlines the referenced member's own SQL, which a bare column name in
             # the Ossie expression would not reproduce. A plain `{CUBE}.column` (or
@@ -532,16 +550,13 @@ def _convert_dimension(cname, dname, dim, issues):
         "expression": {"dialects": [{"dialect": DIALECT_ANSI, "expression": expr}]},
     }
     datatype = DIM_TYPE_TO_DATATYPE.get(dtype)
-    if datatype:
-        field["datatype"] = datatype
-    elif dtype == "number":
-        # Cube collapses Integer/Decimal/Float into `number`, so no Ossie datatype
-        # is asserted -- the spec says to omit it when unknown. The original type
-        # rides in the stash so export reproduces it.
-        stash["type"] = dtype
-    else:
+    if not datatype:
         raise ConversionError(
             f"cube '{cname}': dimension '{dname}' has unknown type '{dtype}'")
+    # A precise datatype parked by a previous export wins over the default the Cube
+    # type maps to, since Cube itself cannot hold the distinction.
+    parked_dt = ((dim.get("meta") or {}).get("ossie") or {}).get("datatype")
+    field["datatype"] = parked_dt or datatype
     if dtype == "time":
         field["dimension"] = {"is_time": True}
     if dim.get("title"):
@@ -924,7 +939,8 @@ def _convert_measures(cubes, pk_by_cube, fanned_out, issues):
                     f"colliding measures in Cube")
             seen.add(metric_name)
             metric = _convert_measure(cname, mname, metric_name, measure, resolver,
-                                      fanned_out, issues)
+                                      fanned_out, _plain_members(cube, cname),
+                                      issues)
             if metric is not None:
                 metrics.append(metric)
             else:
@@ -934,7 +950,7 @@ def _convert_measures(cubes, pk_by_cube, fanned_out, issues):
 
 
 def _convert_measure(cname, mname, metric_name, measure, resolver, fanned_out,
-                     issues):
+                     plain, issues):
     scope = f"{cname}.{mname}"
     expr = resolver.expression(cname, mname)
     if expr is None:
@@ -985,10 +1001,10 @@ def _convert_measure(cname, mname, metric_name, measure, resolver, fanned_out,
             snake(k): v for k, v in measure.items()
             if snake(k) not in ("description", "meta")
         }
-    elif sql is not None:
-        # The operand's exact Cube spelling: `{CUBE}.city` and `{CUBE.city}` are
-        # equivalent but not interchangeable byte-for-byte, and export cannot tell
-        # which one the author wrote from the Ossie expression alone.
+    elif sql is not None and not sql_is_reversible(sql, plain, cname):
+        # Only a reference export cannot regenerate needs the original spelling: a
+        # non-plain member (whose own SQL is inlined) or a cross-cube reference
+        # (which is what adds the implicit join).
         stash["sql"] = sql
     if metric_name != mname:
         stash["name"] = mname

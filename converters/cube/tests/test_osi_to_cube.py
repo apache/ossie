@@ -349,14 +349,14 @@ def _metric(name, expr):
 
 
 @pytest.mark.parametrize("expr,expected", [
-    ("SUM(orders.amount)", {"type": "sum", "sql": "{CUBE.amount}"}),
-    ("AVG(orders.amount)", {"type": "avg", "sql": "{CUBE.amount}"}),
-    ("MIN(orders.amount)", {"type": "min", "sql": "{CUBE.amount}"}),
-    ("MAX(orders.amount)", {"type": "max", "sql": "{CUBE.amount}"}),
+    ("SUM(orders.amount)", {"type": "sum", "sql": "{CUBE}.amount"}),
+    ("AVG(orders.amount)", {"type": "avg", "sql": "{CUBE}.amount"}),
+    ("MIN(orders.amount)", {"type": "min", "sql": "{CUBE}.amount"}),
+    ("MAX(orders.amount)", {"type": "max", "sql": "{CUBE}.amount"}),
     ("COUNT(DISTINCT orders.amount)",
-     {"type": "count_distinct", "sql": "{CUBE.amount}"}),
+     {"type": "count_distinct", "sql": "{CUBE}.amount"}),
     ("APPROX_COUNT_DISTINCT(orders.amount)",
-     {"type": "count_distinct_approx", "sql": "{CUBE.amount}"}),
+     {"type": "count_distinct_approx", "sql": "{CUBE}.amount"}),
 ])
 def test_aggregate_expressions_become_structured_measures(expr, expected):
     files, _ = convert_ossie_to_cube(_ossie(_ORDERS, metrics=_metric("m", expr)))
@@ -389,7 +389,7 @@ def test_ratio_becomes_a_calculated_measure():
         _metric("aov", "SUM(orders.amount) / COUNT(DISTINCT users.id)")))
     measure = _cubes(files)["orders"]["measures"][0]
     assert measure["type"] == "number"
-    assert measure["sql"] == "SUM({CUBE.amount}) / COUNT(DISTINCT {users.id})"
+    assert measure["sql"] == "SUM({CUBE}.amount) / COUNT(DISTINCT {users.id})"
     assert any("spans several datasets" in i.detail
                for i in issues.of_type(IssueType.APPROXIMATED))
 

@@ -111,13 +111,15 @@ def test_dimension_types_map_to_datatypes(model_a):
     assert fields["created_at"]["dimension"]["is_time"] is True
 
 
-def test_number_dimension_asserts_no_datatype(model_a):
-    """Cube collapses Integer/Decimal/Float into `number`, so the converter omits
-    `datatype` rather than assert a precision the model does not carry."""
+def test_number_dimension_maps_to_a_native_datatype(model_a):
+    """Cube collapses Integer/Decimal/Float into `number`, so no mapping back is
+    exact. `Decimal` is asserted anyway, because a downstream converter can act on it
+    -- where omitting it and stashing Cube's `type` in a custom_extension gave every
+    other spoke a warning and nothing else."""
     model, _ = model_a
     fields = by_name(by_name(model["datasets"])["orders"]["fields"])
-    assert "datatype" not in fields["id"]
-    assert stash_of(fields["id"])["type"] == "number"
+    assert fields["id"]["datatype"] == "Decimal"
+    assert stash_of(fields["id"]) == {}
 
 
 def test_dimension_title_becomes_label_and_ai_context_maps(model_a):

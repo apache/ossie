@@ -385,30 +385,45 @@ def cube_sql_to_ossie(sql, own_cube, resolve_ref=None, self_prefix=None):
     return out, changed
 
 
-def sql_is_reversible(sql):
+def sql_is_reversible(sql, plain_members=(), own_cube=None):
     """True if translating this Cube SQL to Ossie and back reproduces it.
 
-    Only `{CUBE}.column` / `{TABLE}.column` -- a raw physical column of the owning
-    cube -- survives the trip, because Ossie expressions address columns and the
-    exporter re-emits them bare. A *member* reference (`{CUBE.member}`, `{member}`,
-    `{other.member}`) does not: Cube inlines the referenced member's own SQL, which
-    can differ from a column of that name, so the original spelling has to be kept.
+    `{CUBE}.column` / `{TABLE}.column` -- a raw physical column of the owning cube --
+    always survives, because Ossie expressions address columns and the exporter
+    re-emits them in that form.
 
-    Used to decide whether the exact Cube `sql` needs stashing at all -- most
-    dimensions reference plain columns, so most need nothing.
+    A *member* reference (`{CUBE.member}`, `{member}`) survives only when the member
+    is **plain**: its own `sql` is just the same-named column, so the reference and
+    the raw column are the same thing. Otherwise Cube inlines the member's own SQL,
+    which a bare column name would not reproduce, and the original spelling has to be
+    kept.
+
+    A **cross-cube** reference never survives: `{other.member}` is what makes Cube
+    add the implicit join, and the raw `{other}.column` form does not, so the two are
+    not interchangeable.
     """
     if not isinstance(sql, str):
         sql = str(sql)
+    plain = set(plain_members)
     protected = sql.replace("\\{", "").replace("\\}", "")
     for m in _CUBE_REF_RE.finditer(protected):
         body = m.group(1).strip()
-        if body not in _SELF_REFS:
-            return False
-        # `{CUBE}` on its own (no trailing `.column`) is the cube's alias, which an
-        # Ossie expression cannot express either.
-        rest = protected[m.end():]
-        if not rest.startswith("."):
-            return False
+        head, _, rest = body.partition(".")
+        if not rest:
+            if body in _SELF_REFS or (own_cube and body == own_cube):
+                # A bare alias only makes sense followed by `.column`.
+                if not protected[m.end():].startswith("."):
+                    return False
+                continue
+            # `{member}` -- an unqualified own-cube member reference.
+            if body not in plain:
+                return False
+            continue
+        if head in _SELF_REFS or (own_cube and head == own_cube):
+            if rest not in plain:
+                return False
+            continue
+        return False  # cross-cube reference; carries join semantics
     return True
 
 
@@ -530,7 +545,21 @@ DIM_TYPE_TO_DATATYPE = {
     "boolean": "Boolean",
     "time": "DateTime",
     "switch": "String",
+    # Cube collapses Integer/Decimal/Float into one type, so no mapping back is
+    # exact. `Decimal` is chosen over omitting a datatype because a downstream
+    # converter can use it: exact base-10 is the safe reading for the money and
+    # quantity columns `number` overwhelmingly holds, and asserting it beats
+    # emitting nothing plus a Cube-only extension no other spoke reads. When the
+    # model came from Ossie in the first place, the precise datatype is recovered
+    # from `meta.ossie.datatype` instead of guessed.
+    "number": "Decimal",
 }
+
+# The datatype each Cube type maps back to by default. Export parks the original in
+# `meta.ossie.datatype` only when it is *not* the default -- Cube cannot hold the
+# distinction, and `meta.ossie` is Cube-side, so this keeps Ossie -> Cube -> Ossie
+# exact without putting anything in `custom_extensions`.
+DEFAULT_DATATYPE_FOR_CUBE_TYPE = dict(DIM_TYPE_TO_DATATYPE)
 
 # Ossie `datatype` -> Cube dimension `type`, which is required on every
 # dimension. Lossy in the numeric and temporal directions by construction.

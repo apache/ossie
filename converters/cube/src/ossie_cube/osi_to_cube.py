@@ -36,6 +36,7 @@ from collections import deque
 
 from ._common import (
     DATATYPE_TO_DIM_TYPE,
+    DEFAULT_DATATYPE_FOR_CUBE_TYPE,
     OSSIE_FUNC_TO_AGG,
     OSSIE_VERSION,
     ConversionError,
@@ -146,7 +147,9 @@ def _convert_model(model, dialect, base_cube, issues):
         cname = cube_names[ds_name]
         dim_names_by_cube[cname], inline_sql_by_cube[cname] = (
             _resolve_dimension_names(ds, f"Model '{name}': dataset '{ds_name}'"))
-        members_by_cube[cname] = set(dim_names_by_cube[cname].values())
+        # Not every member: only those the `{CUBE.member}` form is required for.
+        members_by_cube[cname] = _reference_members(
+            ds, dim_names_by_cube[cname], dialect)
         pk_by_cube[cname] = [str(c) for c in (ds.get("primary_key") or [])]
 
     joins_by_cube = _build_joins(relationships, cube_names, issues)
@@ -161,8 +164,9 @@ def _convert_model(model, dialect, base_cube, issues):
     for ds_name, ds in datasets.items():
         cname = cube_names[ds_name]
         cube = _build_cube(ds, cname, dim_names_by_cube[cname],
-                           inline_sql_by_cube[cname], joins_by_cube.get(cname),
-                           measures_by_cube.get(cname), dialect, issues)
+                           inline_sql_by_cube[cname], members_by_cube[cname],
+                           joins_by_cube.get(cname), measures_by_cube.get(cname),
+                           dialect, issues)
         path = stashed_paths.get(cname) or cube_file(cname)
         files_content.setdefault(path, {}).setdefault("cubes", []).append(cube)
 
@@ -241,8 +245,8 @@ def _ordered(obj, order):
 
 # --- cubes ----------------------------------------------------------------------
 
-def _build_cube(ds, cname, dim_names, inline_sql, joins, measures, dialect,
-                issues):
+def _build_cube(ds, cname, dim_names, inline_sql, ref_members, joins, measures,
+                dialect, issues):
     ds_name = ds["name"]
     scope = f"dataset '{ds_name}'"
     stash = read_stash(ds)
@@ -272,7 +276,7 @@ def _build_cube(ds, cname, dim_names, inline_sql, joins, measures, dialect,
                        "so this cube-level value has no effect in Cube")
 
     dimensions, by_name_scalar, by_column = _build_dimensions(
-        ds, cname, dim_names, inline_sql, dialect, issues)
+        ds, cname, dim_names, inline_sql, ref_members, dialect, issues)
     # Resolve each `primary_key` entry to the dimension Cube should mark. A
     # dimension only qualifies when it is *scalar* -- backed by a single source
     # column -- because `primary_key: true` in Cube declares that dimension's own
@@ -325,6 +329,26 @@ def _build_cube(ds, cname, dim_names, inline_sql, joins, measures, dialect,
     for key, value in cube_extras.items():
         cube[key] = value
     return _ordered(cube, _CUBE_KEY_ORDER)
+
+
+def _reference_members(ds, dim_names, dialect):
+    """Members that must be addressed as `{CUBE.member}` rather than `{CUBE}.column`.
+
+    Only a member whose expression is something other than its own same-named column
+    needs the reference form, because that form makes Cube inline the member's SQL. A
+    plain member is identical either way, and the raw-column form is what survives a
+    round trip without stashing the spelling.
+    """
+    needed = set()
+    for field in (ds.get("fields") or []):
+        fname = field.get("name")
+        dname = dim_names.get(fname)
+        if not dname:
+            continue
+        expr = pick_expression(field.get("expression"), dialect)
+        if expr is None or not is_simple_identifier(expr) or expr.strip() != dname:
+            needed.add(dname)
+    return needed
 
 
 def _resolve_dimension_names(ds, scope):
@@ -388,7 +412,8 @@ def _resolve_dimension_names(ds, scope):
     return names, inline_sql
 
 
-def _build_dimensions(ds, cname, dim_names, inline_sql, dialect, issues):
+def _build_dimensions(ds, cname, dim_names, inline_sql, ref_members, dialect,
+                      issues):
     """Build a cube's dimensions from an Ossie dataset's fields.
 
     Returns (dimensions, by_name_scalar, by_column) -- the two maps are what
@@ -436,8 +461,7 @@ def _build_dimensions(ds, cname, dim_names, inline_sql, dialect, issues):
             dim["sql"] = stash["sql"]
         else:
             dim["sql"] = ossie_expr_to_cube_sql(
-                expr, cname, set(dim_names.values()), (),
-                inline_sql={cname: inline_sql})
+                expr, cname, ref_members, (), inline_sql={cname: inline_sql})
         dim["type"] = _dimension_type(field, stash, f"{ds_name}.{fname}", issues)
         if field.get("label"):
             dim["title"] = field["label"]
@@ -447,6 +471,14 @@ def _build_dimensions(ds, cname, dim_names, inline_sql, dialect, issues):
         foreign = foreign_vendor_extensions(field)
         if foreign:
             parked["custom_extensions"] = foreign
+        # Cube's `type` is coarser than Ossie's `datatype` (Integer/Decimal/Float all
+        # become `number`), so the precise one is parked whenever importing would not
+        # recover it. `meta.ossie` is Cube-side, so this costs the Ossie document
+        # nothing -- unlike a custom_extension, which every other spoke would warn
+        # about and discard.
+        dt = field.get("datatype")
+        if dt and DEFAULT_DATATYPE_FOR_CUBE_TYPE.get(dim["type"]) != dt:
+            parked["datatype"] = dt
         extras = {k: v for k, v in stash.items() if k not in ("sql", "type", "meta")}
         meta = _build_meta(field.get("ai_context"), stash.get("meta"), parked)
         if meta:
@@ -499,8 +531,7 @@ def _unique_pk_dimension_name(entry, taken):
 def _dimension_type(field, stash, scope, issues):
     """Choose the Cube `type`, which every dimension must declare."""
     if "type" in stash:
-        # Cube collapses Integer/Decimal/Float into `number`, so import parks the
-        # original rather than asserting an Ossie datatype; restore it here.
+        # An older stash from before datatypes were mapped natively.
         return stash["type"]
     datatype = field.get("datatype")
     explicit_is_time = (field.get("dimension") or {}).get("is_time")

@@ -43,17 +43,13 @@ semantic_model:
         dialects:
         - dialect: ANSI_SQL
           expression: id
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "type": "number"}'
+      datatype: Decimal
     - name: user_id
       expression:
         dialects:
         - dialect: ANSI_SQL
           expression: user_id
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "type": "number"}'
+      datatype: Decimal
     - name: status
       expression:
         dialects:
@@ -88,9 +84,7 @@ semantic_model:
         dialects:
         - dialect: ANSI_SQL
           expression: id
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "type": "number"}'
+      datatype: Decimal
     - name: city
       expression:
         dialects:
@@ -179,7 +173,7 @@ semantic_model:
     datatype: Integer
     custom_extensions:
     - vendor_name: CUBE
-      data: '{"_v": 1, "cube": "users", "sql": "{CUBE}.city"}'
+      data: '{"_v": 1, "cube": "users"}'
   custom_extensions:
   - vendor_name: CUBE
     data: '{"_v": 1, "views": {"sales": {"name": "sales", "cubes": [{"join_path":

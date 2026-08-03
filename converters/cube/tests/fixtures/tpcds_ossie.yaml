@@ -34,9 +34,6 @@ semantic_model:
     - ss_sold_date_sk
     to_columns:
     - d_date_sk
-    custom_extensions:
-    - vendor_name: CUBE
-      data: '{"_v": 1, "sql": "{CUBE}.ss_sold_date_sk = {date_dim.d_date_sk}"}'
   - name: store_sales_to_customer
     from: store_sales
     to: customer
@@ -44,9 +41,6 @@ semantic_model:
     - ss_customer_sk
     to_columns:
     - c_customer_sk
-    custom_extensions:
-    - vendor_name: CUBE
-      data: '{"_v": 1, "sql": "{CUBE}.ss_customer_sk = {customer.c_customer_sk}"}'
   - name: store_sales_to_item
     from: store_sales
     to: item
@@ -54,9 +48,6 @@ semantic_model:
     - ss_item_sk
     to_columns:
     - i_item_sk
-    custom_extensions:
-    - vendor_name: CUBE
-      data: '{"_v": 1, "sql": "{CUBE}.ss_item_sk = {item.i_item_sk}"}'
   - name: store_sales_to_store
     from: store_sales
     to: store
@@ -64,9 +55,6 @@ semantic_model:
     - ss_store_sk
     to_columns:
     - s_store_sk
-    custom_extensions:
-    - vendor_name: CUBE
-      data: '{"_v": 1, "sql": "{CUBE}.ss_store_sk = {store.s_store_sk}"}'
   datasets:
   - name: store_sales
     source: tpcds.public.store_sales
@@ -86,105 +74,89 @@ semantic_model:
         dialects:
         - dialect: ANSI_SQL
           expression: ss_sold_date_sk
+      datatype: Decimal
       description: Foreign key to date dimension
       ai_context:
         synonyms:
         - sale date
         - transaction date
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "type": "number"}'
     - name: ss_item_sk
       expression:
         dialects:
         - dialect: ANSI_SQL
           expression: ss_item_sk
+      datatype: Decimal
       description: Foreign key to item dimension
       ai_context:
         synonyms:
         - product
         - item
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "type": "number"}'
     - name: ss_customer_sk
       expression:
         dialects:
         - dialect: ANSI_SQL
           expression: ss_customer_sk
+      datatype: Decimal
       description: Foreign key to customer dimension
       ai_context:
         synonyms:
         - customer
         - buyer
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "type": "number"}'
     - name: ss_store_sk
       expression:
         dialects:
         - dialect: ANSI_SQL
           expression: ss_store_sk
+      datatype: Decimal
       description: Foreign key to store dimension
       ai_context:
         synonyms:
         - store
         - location
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "type": "number"}'
     - name: ss_quantity
       expression:
         dialects:
         - dialect: ANSI_SQL
           expression: ss_quantity
+      datatype: Decimal
       description: Quantity of items sold
       ai_context:
         synonyms:
         - units sold
         - quantity
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "type": "number"}'
     - name: ss_sales_price
       expression:
         dialects:
         - dialect: ANSI_SQL
           expression: ss_sales_price
+      datatype: Decimal
       description: Sales price per unit
       ai_context:
         synonyms:
         - unit price
         - price
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "type": "number"}'
     - name: ss_ext_sales_price
       expression:
         dialects:
         - dialect: ANSI_SQL
           expression: ss_ext_sales_price
+      datatype: Decimal
       description: Extended sales price (quantity * price)
       ai_context:
         synonyms:
         - total price
         - line total
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "type": "number"}'
     - name: ss_net_profit
       expression:
         dialects:
         - dialect: ANSI_SQL
           expression: ss_net_profit
+      datatype: Decimal
       description: Net profit from the sale
       ai_context:
         synonyms:
         - profit
         - margin
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "type": "number"}'
     - name: ss_ticket_number
       expression:
         dialects:
@@ -213,10 +185,8 @@ semantic_model:
         dialects:
         - dialect: ANSI_SQL
           expression: d_date_sk
+      datatype: Decimal
       description: Surrogate key for date
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "type": "number"}'
     - name: d_date
       expression:
         dialects:
@@ -235,13 +205,11 @@ semantic_model:
         dialects:
         - dialect: ANSI_SQL
           expression: d_year
+      datatype: Decimal
       description: Year
       ai_context:
         synonyms:
         - year
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "type": "number"}'
     - name: d_quarter_name
       expression:
         dialects:
@@ -285,10 +253,8 @@ semantic_model:
         dialects:
         - dialect: ANSI_SQL
           expression: c_customer_sk
+      datatype: Decimal
       description: Surrogate key for customer
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "type": "number"}'
     - name: c_customer_id
       expression:
         dialects:
@@ -354,10 +320,8 @@ semantic_model:
         dialects:
         - dialect: ANSI_SQL
           expression: i_item_sk
+      datatype: Decimal
       description: Surrogate key for item
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "type": "number"}'
     - name: i_item_id
       expression:
         dialects:
@@ -408,14 +372,12 @@ semantic_model:
         dialects:
         - dialect: ANSI_SQL
           expression: i_current_price
+      datatype: Decimal
       description: Current price of the item
       ai_context:
         synonyms:
         - price
         - list price
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "type": "number"}'
     primary_key:
     - i_item_sk
   - name: store
@@ -434,10 +396,8 @@ semantic_model:
         dialects:
         - dialect: ANSI_SQL
           expression: s_store_sk
+      datatype: Decimal
       description: Surrogate key for store
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "type": "number"}'
     - name: s_store_id
       expression:
         dialects:
@@ -487,14 +447,12 @@ semantic_model:
         dialects:
         - dialect: ANSI_SQL
           expression: s_number_employees
+      datatype: Decimal
       description: Number of employees at the store
       ai_context:
         synonyms:
         - employee count
         - staff size
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "type": "number"}'
     primary_key:
     - s_store_sk
   metrics:
@@ -511,7 +469,7 @@ semantic_model:
       - sales amount
     custom_extensions:
     - vendor_name: CUBE
-      data: '{"_v": 1, "cube": "store_sales", "sql": "{CUBE.ss_ext_sales_price}"}'
+      data: '{"_v": 1, "cube": "store_sales"}'
   - name: total_profit
     expression:
       dialects:
@@ -525,7 +483,7 @@ semantic_model:
       - profit
     custom_extensions:
     - vendor_name: CUBE
-      data: '{"_v": 1, "cube": "store_sales", "sql": "{CUBE.ss_net_profit}"}'
+      data: '{"_v": 1, "cube": "store_sales"}'
   - name: customer_lifetime_value
     expression:
       dialects:
@@ -541,7 +499,7 @@ semantic_model:
     custom_extensions:
     - vendor_name: CUBE
       data: '{"_v": 1, "cube": "store_sales", "measure": {"name": "customer_lifetime_value",
-        "sql": "SUM({CUBE.ss_ext_sales_price}) / COUNT(DISTINCT {customer.c_customer_sk})",
+        "sql": "SUM({CUBE}.ss_ext_sales_price) / COUNT(DISTINCT {customer.c_customer_sk})",
         "type": "number"}}'
   - name: sales_by_brand
     expression:
@@ -556,7 +514,7 @@ semantic_model:
       - brand revenue
     custom_extensions:
     - vendor_name: CUBE
-      data: '{"_v": 1, "cube": "store_sales", "sql": "{CUBE.ss_ext_sales_price}"}'
+      data: '{"_v": 1, "cube": "store_sales"}'
   - name: store_productivity
     expression:
       dialects:
@@ -572,7 +530,7 @@ semantic_model:
     custom_extensions:
     - vendor_name: CUBE
       data: '{"_v": 1, "cube": "store_sales", "measure": {"name": "store_productivity",
-        "sql": "SUM({CUBE.ss_ext_sales_price}) / NULLIF(SUM({store.s_number_employees}),
+        "sql": "SUM({CUBE}.ss_ext_sales_price) / NULLIF(SUM({store.s_number_employees}),
         0)", "type": "number"}}'
   custom_extensions:
   - vendor_name: CUBE

@@ -878,7 +878,7 @@ def test_a_geo_half_reference_is_requalified_when_it_crosses_cubes():
     # `{users}.lat` names the cube explicitly, since `{CUBE}` here would mean
     # `orders`. `{CUBE.amount}` stays a member reference because `amount` is a
     # declared field of the cube the measure lands on.
-    assert measures[0]["sql"] == "AVG({users}.lat) - MIN({CUBE.amount})"
+    assert measures[0]["sql"] == "AVG({users}.lat) - MIN({CUBE}.amount)"
     assert measures[0]["type"] == "number"
 
 
