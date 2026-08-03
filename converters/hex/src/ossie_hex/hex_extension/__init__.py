@@ -15,23 +15,38 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from __future__ import annotations
+from .stash import (
+    HEX_EXTENSION_VERSION,
+    HEX_EXTENSION_VERSION_KEY,
+    HEX_VENDOR,
+    HexDimensionStash,
+    HexExtensionData,
+    HexMeasureStash,
+    HexModelStash,
+    HexProjectStash,
+    HexRelationStash,
+    HexStash,
+    HexStashT,
+    HexViewStash,
+    maybe_write_extension,
+    read_stash,
+    write_stash,
+)
 
-from ..hex_extension import HEX_VENDOR, HexViewStash
-from ..hex_types import HexView
-from ..util.errors import ConversionWarning
-
-
-def convert_hex_view(view: HexView) -> tuple[HexViewStash, list[ConversionWarning]]:
-    """Record a Hex view for the semantic model to carry through Ossie.
-
-    Ossie models the data, not the entry points onto it, so a view is kept whole
-    rather than converted and comes back verbatim on import.
-    """
-    warnings = [
-        ConversionWarning(
-            f"view '{view.id}' has no Ossie core equivalent; "
-            f"preserved in custom_extensions[{HEX_VENDOR}]"
-        )
-    ]
-    return HexViewStash(resource=view), warnings
+__all__ = [
+    "HEX_EXTENSION_VERSION",
+    "HEX_EXTENSION_VERSION_KEY",
+    "HEX_VENDOR",
+    "HexDimensionStash",
+    "HexExtensionData",
+    "HexMeasureStash",
+    "HexModelStash",
+    "HexProjectStash",
+    "HexRelationStash",
+    "HexStash",
+    "HexStashT",
+    "HexViewStash",
+    "maybe_write_extension",
+    "read_stash",
+    "write_stash",
+]

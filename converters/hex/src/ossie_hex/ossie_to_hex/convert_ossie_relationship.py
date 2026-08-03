@@ -21,7 +21,8 @@ from typing import Any
 
 from ossie import OSIRelationship
 
-from ..hex_types import HexRelation, HexRelationStash, normalize_to_hex_id, read_stash
+from ..hex_extension import HexRelationStash, read_stash
+from ..hex_types import HexRelation, normalize_to_hex_id
 from ..util.equi_join import synthesize_join_sql
 from ..util.errors import ConversionError, ConversionWarning
 from .relationship_sides import relationship_sides

@@ -19,14 +19,12 @@ from __future__ import annotations
 
 from ossie import OSIDialect, OSIDialectExpression, OSIExpression, OSIMetric
 
+from ..hex_extension import HEX_VENDOR, HexMeasureStash, maybe_write_extension
 from ..hex_types import (
-    HEX_VENDOR,
     HexMeasure,
     HexMeasureFuncName,
-    HexMeasureStash,
     HexScalarExpressionDefaultBoolean,
     HexScalarExpressionDefaultNumber,
-    maybe_write_extension,
 )
 from ..util.errors import ConversionError, ConversionWarning
 from ..util.rewrite_refs import hex_refs_to_ossie, qualify_hex_ref

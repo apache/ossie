@@ -21,7 +21,8 @@ from typing import NamedTuple
 
 from ossie import OSIRelationship
 
-from ..hex_types import HexRelationStash, HexRelationType, read_stash
+from ..hex_extension import HexRelationStash, read_stash
+from ..hex_types import HexRelationType
 
 
 class RelationshipSides(NamedTuple):

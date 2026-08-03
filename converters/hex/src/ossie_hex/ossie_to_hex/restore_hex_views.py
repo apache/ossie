@@ -17,7 +17,8 @@
 
 from __future__ import annotations
 
-from ..hex_types import HexProjectStash, HexView
+from ..hex_extension import HexProjectStash
+from ..hex_types import HexView
 from ..util.errors import ConversionError
 
 

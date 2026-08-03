@@ -21,13 +21,12 @@ from typing import Any
 
 from ossie import OSIDialect, OSIMetric
 
+from ..hex_extension import HexMeasureStash, read_stash
 from ..hex_types import (
     HexDataType,
     HexMeasure,
-    HexMeasureStash,
     id_to_name,
     normalize_to_hex_id,
-    read_stash,
 )
 from ..util.errors import ConversionError, ConversionWarning
 from ..util.pick_expression import pick_expression

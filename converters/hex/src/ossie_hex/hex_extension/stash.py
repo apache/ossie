@@ -23,18 +23,22 @@ from typing import Literal, TypeVar
 from ossie import OSICustomExtension, OSIVendor
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
-from ..util.errors import ConversionError
-from .datatype_mapping import is_lossless_hex_type
-from .hex_common import HexVisibility, is_default_hex_visibility
-from .hex_datatype import HexDataType
-from .hex_dimension import HexDimension
-from .hex_expression import (
+from ..hex_types import (
+    HexDataType,
+    HexDimension,
+    HexMeasure,
+    HexMeasureFuncName,
+    HexRelation,
+    HexRelationType,
     HexScalarExpressionDefaultBoolean,
     HexScalarExpressionDefaultNumber,
+    HexSemiAdditive,
+    HexView,
+    HexVisibility,
+    is_default_hex_visibility,
+    is_lossless_hex_type,
 )
-from .hex_measure import HexMeasure, HexMeasureFuncName, HexSemiAdditive
-from .hex_relation import HexRelation, HexRelationType
-from .hex_view import HexView
+from ..util.errors import ConversionError
 
 HEX_VENDOR = OSIVendor.HEX.value
 HEX_EXTENSION_VERSION = 1
@@ -184,7 +188,7 @@ HexExtensionData = HexStash
 
 
 def maybe_write_extension(data: HexExtensionData) -> list[OSICustomExtension] | None:
-    """Seralize a payload as an Ossies ``custom_extensions`` list.
+    """Serialize a payload as an Ossie's ``custom_extensions`` list.
 
     Empty payloads are omitted.
     """

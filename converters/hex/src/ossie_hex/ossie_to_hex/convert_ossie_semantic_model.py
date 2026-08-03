@@ -19,7 +19,8 @@ from __future__ import annotations
 
 from ossie import OSIDialect, OSIRelationship, OSISemanticModel
 
-from ..hex_types import HexModel, HexProjectStash, HexResource, read_stash
+from ..hex_extension import HexProjectStash, read_stash
+from ..hex_types import HexModel, HexResource
 from ..util.errors import ConversionError, ConversionWarning
 from .assign_ossie_metrics import assign_ossie_metrics
 from .convert_ossie_dataset import convert_ossie_dataset

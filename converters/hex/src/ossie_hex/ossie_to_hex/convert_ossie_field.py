@@ -22,12 +22,11 @@ from typing import Any
 
 from ossie import OSIDialect, OSIField
 
+from ..hex_extension import HexDimensionStash, read_stash
 from ..hex_types import (
     HexDataType,
     HexDimension,
-    HexDimensionStash,
     id_to_name,
-    read_stash,
 )
 from ..util.errors import ConversionWarning
 from ..util.pick_expression import pick_expression

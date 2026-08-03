@@ -27,14 +27,8 @@ from ossie import (
     OSIVendor,
 )
 
-from ..hex_types import (
-    HexModel,
-    HexProject,
-    HexProjectStash,
-    HexView,
-    HexViewStash,
-    write_stash,
-)
+from ..hex_extension import HexProjectStash, HexViewStash, write_stash
+from ..hex_types import HexModel, HexProject, HexView
 from ..ossie_types import OSSIE_VERSION
 from ..util.errors import ConversionError, ConversionWarning
 from .convert_hex_model import convert_hex_model

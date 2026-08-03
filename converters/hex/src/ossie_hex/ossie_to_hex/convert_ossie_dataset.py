@@ -22,17 +22,16 @@ from typing import Any, Literal, assert_never
 
 from ossie import OSIDataset, OSIDialect, OSIMetric, OSIRelationship
 
+from ..hex_extension import HexModelStash, read_stash
 from ..hex_types import (
     HexDataType,
     HexDimension,
     HexMeasure,
     HexModel,
-    HexModelStash,
     HexRelation,
     HexVisibility,
     id_to_name,
     normalize_to_hex_id,
-    read_stash,
 )
 from ..util.errors import ConversionWarning
 from ..util.rewrite_refs import RefResolver

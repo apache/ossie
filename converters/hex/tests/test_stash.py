@@ -21,31 +21,33 @@ import pytest
 from ossie import OSICustomExtension
 from pydantic import ValidationError
 
-from ossie_hex.hex_types import (
+from ossie_hex.hex_extension import (
     HEX_EXTENSION_VERSION,
     HEX_EXTENSION_VERSION_KEY,
     HEX_VENDOR,
-    HexDataType,
-    HexDimension,
     HexDimensionStash,
-    HexGroup,
-    HexMeasureFuncName,
     HexMeasureStash,
     HexModelStash,
     HexProjectStash,
-    HexRelation,
     HexRelationStash,
+    HexStash,
+    HexViewStash,
+    read_stash,
+    write_stash,
+)
+from ossie_hex.hex_types import (
+    HexDataType,
+    HexDimension,
+    HexGroup,
+    HexMeasureFuncName,
+    HexRelation,
     HexRelationType,
     HexScalarExpressionDefaultBoolean,
     HexScalarExpressionDefaultNumber,
     HexSemiAdditive,
     HexSemiAdditiveOverMember,
-    HexStash,
     HexView,
-    HexViewStash,
     HexVisibility,
-    read_stash,
-    write_stash,
 )
 from ossie_hex.util.errors import ConversionError
 

@@ -19,14 +19,8 @@ from __future__ import annotations
 
 from ossie import OSIDataset, OSIDialect, OSIField, OSIMetric, OSIRelationship
 
-from ..hex_types import (
-    HexDimension,
-    HexMeasure,
-    HexModel,
-    HexModelStash,
-    HexRelation,
-    maybe_write_extension,
-)
+from ..hex_extension import HexModelStash, maybe_write_extension
+from ..hex_types import HexDimension, HexMeasure, HexModel, HexRelation
 from ..util.errors import ConversionWarning
 from ..util.rewrite_refs import RefResolver
 from .convert_hex_dimension import convert_hex_dimension

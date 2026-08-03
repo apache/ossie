@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from ossie import OSIDialect, OSIMetric, OSISemanticModel
 
-from ..hex_types import HexMeasureStash, read_stash
+from ..hex_extension import HexMeasureStash, read_stash
 from ..util.errors import ConversionError
 from .references import datasets_referenced
 

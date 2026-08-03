@@ -19,13 +19,8 @@ from __future__ import annotations
 
 from ossie import OSIRelationship
 
-from ..hex_types import (
-    HEX_VENDOR,
-    HexRelation,
-    HexRelationStash,
-    HexRelationType,
-    maybe_write_extension,
-)
+from ..hex_extension import HEX_VENDOR, HexRelationStash, maybe_write_extension
+from ..hex_types import HexRelation, HexRelationType
 from ..util.equi_join import parse_equi_join
 from ..util.errors import ConversionWarning
 
