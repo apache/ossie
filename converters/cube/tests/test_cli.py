@@ -227,7 +227,7 @@ def test_issues_go_to_stderr_so_stdout_stays_pipeable(tmp_path, capsys):
     parse(captured.out)  # stdout is still clean YAML
 
 
-def test_fanout_refusal_exits_nonzero_and_the_flag_downgrades_it(tmp_path, capsys):
+def test_fanout_warns_by_default_and_the_flag_exits_nonzero(tmp_path, capsys):
     model = _write(tmp_path / "model", **{"cubes|m.yml": (
         "cubes:\n"
         "  - name: orders\n"
@@ -248,13 +248,13 @@ def test_fanout_refusal_exits_nonzero_and_the_flag_downgrades_it(tmp_path, capsy
         "        sql: \"{CUBE}.ltv\"\n"
         "        type: sum\n"
     )})
-    assert main(["import", "-i", str(model)]) == 1
-    assert "FANOUT_UNSAFE_METRIC" in capsys.readouterr().err
-
-    assert main(["import", "-i", str(model), "--no-strict-fanout"]) == 0
+    assert main(["import", "-i", str(model)]) == 0
     captured = capsys.readouterr()
     assert "FANOUT_UNSAFE_METRIC" in captured.err
     assert parse(captured.out)["semantic_model"][0]["metrics"]
+
+    assert main(["import", "-i", str(model), "--strict-fanout"]) == 1
+    assert "FANOUT_UNSAFE_METRIC" in capsys.readouterr().err
 
 
 def test_view_and_name_flags_take_effect(tmp_path, capsys):

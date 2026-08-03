@@ -42,7 +42,7 @@ def _files(**named):
 
 
 def _roundtrip(files):
-    ossie, issues = convert_cube_to_ossie(files, strict_fanout=False)
+    ossie, issues = convert_cube_to_ossie(files)
     back, _ = convert_ossie_to_cube(ossie)
     return ossie, back, issues
 
@@ -150,10 +150,10 @@ def test_count_over_an_expression_is_fanout_unsafe():
         "        sql: \"{CUBE}.email\"\n"
         "        type: count\n"
     ))
-    with pytest.raises(ConversionError, match="FANOUT_UNSAFE_METRIC"):
-        convert_cube_to_ossie(files)
-    _, issues = convert_cube_to_ossie(files, strict_fanout=False)
+    _, issues = convert_cube_to_ossie(files)
     assert issues.of_type(IssueType.FANOUT_UNSAFE_METRIC)
+    with pytest.raises(ConversionError, match="FANOUT_UNSAFE_METRIC"):
+        convert_cube_to_ossie(files, strict_fanout=True)
 
 
 _MULTI_STAGE = _files(orders=(
@@ -425,7 +425,7 @@ def test_a_many_to_one_join_still_makes_its_target_fanned_out():
         "        type: sum\n"
     ))
     with pytest.raises(ConversionError, match="FANOUT_UNSAFE_METRIC"):
-        convert_cube_to_ossie(files)
+        convert_cube_to_ossie(files, strict_fanout=True)
 
 
 def test_one_to_one_keeps_its_declared_orientation():

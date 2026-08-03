@@ -28,10 +28,12 @@ model does not mean assembling a directory first. `export` does the reverse and
 always needs `-o` (a directory). Conversions that could not carry something across
 print an issue list to stderr.
 
-By default a metric whose value a static Ossie expression cannot keep correct
-under row multiplication is refused on import, mirroring Cube's own refusal to
-answer such a query; pass `--no-strict-fanout` to emit it with a recorded issue
-instead.
+A metric whose value a static Ossie expression cannot keep correct under row
+multiplication is converted with a `FANOUT_UNSAFE_METRIC` issue naming the metric,
+the dataset and the relationship responsible -- a hub-and-spoke converter that
+refuses a whole model over one such metric is not much use to the spoke on the
+other side. Pass `--strict-fanout` to refuse instead, mirroring Cube's own refusal
+to answer such a query.
 """
 
 import argparse
@@ -64,10 +66,10 @@ def _build_parser():
     imp.add_argument("--view",
                      help="view whose name/description/AI context map onto the "
                           "Ossie model (default: the sole view, if there is one)")
-    imp.add_argument("--no-strict-fanout", dest="strict_fanout",
-                     action="store_false", default=True,
-                     help="record fan-out-unsafe metrics as issues instead of "
-                          "refusing the conversion")
+    imp.add_argument("--strict-fanout", dest="strict_fanout",
+                     action="store_true", default=False,
+                     help="refuse the conversion when a metric is fan-out-unsafe, "
+                          "instead of converting it and recording an issue")
 
     exp = sub.add_parser(
         "export", help="Apache Ossie semantic model -> Cube data model directory")

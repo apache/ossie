@@ -103,10 +103,11 @@ class ConverterIssue:
 class IssueLog:
     """Collects issues during a conversion.
 
-    `strict_types` names the issue types that should abort the conversion
-    instead of being recorded. The CLI puts `FANOUT_UNSAFE_METRIC` in there by
-    default, mirroring Cube's own refusal to answer a query whose measures
-    reference cubes that lead to row multiplication.
+    `strict_types` names the issue types that should abort the conversion instead of
+    being recorded. Nothing is in there by default: a converter that refuses a whole
+    model over one metric leaves the spoke on the other side with nothing. Passing
+    `--strict-fanout` adds `FANOUT_UNSAFE_METRIC`, mirroring Cube's own refusal to
+    answer a query whose measures reference cubes that lead to row multiplication.
     """
 
     issues: list = field(default_factory=list)

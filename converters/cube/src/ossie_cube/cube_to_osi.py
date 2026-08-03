@@ -98,15 +98,17 @@ _RELATIONSHIP_ALIASES = {
 _AND_SPLIT_RE = re.compile(r"\s+AND\s+", re.IGNORECASE)
 
 
-def convert_cube_to_ossie(files, model_name=None, view=None, strict_fanout=True):
+def convert_cube_to_ossie(files, model_name=None, view=None, strict_fanout=False):
     """Convert Cube model files ({relative filename: YAML str}) to Ossie YAML.
 
     Returns (ossie_yaml_str, IssueLog). `model_name` overrides the Ossie model
     name (default: the mapped view's name, else 'cube_model'). `view` names the
     view whose name/description/AI context map onto the Ossie model when the
-    directory holds more than one. `strict_fanout` refuses metrics whose value a
-    static Ossie expression cannot keep correct under row multiplication -- see
-    README "Fan-out".
+    directory holds more than one.
+
+    A metric whose value a static Ossie expression cannot keep correct under row
+    multiplication is converted with a FANOUT_UNSAFE_METRIC issue; `strict_fanout`
+    refuses it instead -- see README "Fan-out".
     """
     if not isinstance(files, dict) or not files:
         raise ConversionError("expected a non-empty mapping of {filename: YAML}")

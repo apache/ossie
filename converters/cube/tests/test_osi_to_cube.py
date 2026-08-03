@@ -421,7 +421,7 @@ def test_a_split_ratio_comes_back_as_the_metric_it_was_split_from():
     expression = "SUM(orders.amount) / COUNT(DISTINCT users.id)"
     files, _ = convert_ossie_to_cube(
         _ossie(_TWO_DATASETS, _REL, _metric("aov", expression)))
-    ossie, _ = convert_cube_to_ossie(files, strict_fanout=False)
+    ossie, _ = convert_cube_to_ossie(files)
     metrics = model_of(ossie)["metrics"]
     assert [m["name"] for m in metrics] == ["aov"]
     assert expr_of(metrics[0]) == expression

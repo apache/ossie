@@ -65,7 +65,7 @@ composite metric). Python 3.11+.
 
 ```bash
 ossie-cube import -i model/ [-o model.yaml] [--name my_model] [--view sales]
-                            [--no-strict-fanout]
+                            [--strict-fanout]
 ossie-cube export -i model.yaml -o model/ [--dialect SNOWFLAKE] [--base-cube orders]
 ```
 
@@ -185,10 +185,15 @@ emit a silently-wrong one:
 | `sum`, `avg`, `count` + `sql` | `SUM(x)`, `AVG(x)`, `COUNT(x)` | **No** |
 
 Only the last row is at risk, and only when its own cube is the `to` (one) side of
-a relationship in the model. The converter computes that from the Ossie graph and,
-**by default, refuses** -- mirroring Cube's own refusal. Pass
-`--no-strict-fanout` to emit the metric with a `FANOUT_UNSAFE_METRIC` issue
-instead, naming the metric, the dataset, and the relationship responsible.
+a relationship in the model. The converter computes that from the Ossie graph and
+**records a `FANOUT_UNSAFE_METRIC` issue** naming the metric, the dataset and the
+relationship responsible -- refusing a whole model over one such metric would leave
+the spoke on the other side with nothing. Pass `--strict-fanout` to refuse instead,
+mirroring Cube's own refusal.
+
+The issue is reported to the caller, not written into the Ossie model: the spec has
+no additivity declaration to write it into (see below), and a `custom_extensions`
+entry would only give every other converter something to warn about and discard.
 
 Because a bare `count` maps through the primary key, a cube carrying one **must**
 declare `primary_key: true` on a dimension; its absence is an error, not a

@@ -398,17 +398,13 @@ _FANOUT_MODEL = {
 }
 
 
-def test_fanout_unsafe_metric_is_refused_by_default():
+def test_fanout_unsafe_metric_is_recorded_by_default():
     """`users` is the one side of a many-to-one join, so summing over it after the
-    join over-counts. Cube deduplicates on the primary key at query time; a static
-    Ossie expression cannot, so the default is to refuse rather than emit a number
-    that silently disagrees with Cube."""
-    with pytest.raises(ConversionError, match="FANOUT_UNSAFE_METRIC"):
-        convert_cube_to_ossie(_FANOUT_MODEL)
-
-
-def test_fanout_unsafe_metric_is_recorded_when_not_strict():
-    out, issues = convert_cube_to_ossie(_FANOUT_MODEL, strict_fanout=False)
+    join over-counts. Cube deduplicates on the primary key at query time and a static
+    Ossie expression cannot -- so the metric converts and the risk is reported, named
+    down to the relationship responsible. Refusing the whole model over one metric
+    would leave the spoke on the other side with nothing to convert."""
+    out, issues = convert_cube_to_ossie(_FANOUT_MODEL)
     metric = by_name(model_of(out)["metrics"])["lifetime_value"]
     assert expr_of(metric) == "SUM(users.ltv)"
     recorded = issues.of_type(IssueType.FANOUT_UNSAFE_METRIC)
@@ -417,10 +413,17 @@ def test_fanout_unsafe_metric_is_recorded_when_not_strict():
     assert "over-count" in recorded[0].detail
 
 
+def test_fanout_unsafe_metric_is_refused_under_strict_fanout():
+    """Mirrors Cube's own refusal, for a caller who would rather have nothing than a
+    number that disagrees with Cube."""
+    with pytest.raises(ConversionError, match="FANOUT_UNSAFE_METRIC"):
+        convert_cube_to_ossie(_FANOUT_MODEL, strict_fanout=True)
+
+
 def test_idempotent_aggregates_are_never_flagged(fixture_a):
     """count / count_distinct / min / max are unaffected by duplicate rows, so a
-    fanned-out dataset carrying only those converts cleanly under strict mode."""
-    _, issues = convert_cube_to_ossie(fixture_a)
+    fanned-out dataset carrying only those raises nothing even under strict mode."""
+    _, issues = convert_cube_to_ossie(fixture_a, strict_fanout=True)
     assert not issues.of_type(IssueType.FANOUT_UNSAFE_METRIC)
 
 
