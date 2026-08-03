@@ -66,31 +66,28 @@ def convert_ossie_field(
         "type": hex_type,
     }
 
-    if stash is not None and stash.expr_calc:
-        dim["expr_calc"] = stash.expr_calc
+    expr = pick_expression(field.expression, preferred=preferred_dialect)
+    if expr is None:
+        warnings.append(
+            ConversionWarning(
+                f"Field '{dataset_id}.{field.name}' has no usable dialect "
+                f"expression; defaulting expr_sql to id"
+            )
+        )
+    elif stash is not None and stash.expr_sql is not None:
+        # The export only records an expression this rewrite cannot rebuild,
+        # so it is taken as authored rather than derived again.
+        dim["expr_sql"] = stash.expr_sql
     else:
-        expr = pick_expression(field.expression, preferred=preferred_dialect)
-        if expr is None:
-            warnings.append(
-                ConversionWarning(
-                    f"Field '{dataset_id}.{field.name}' has no usable dialect "
-                    f"expression; defaulting expr_sql to id"
-                )
-            )
-        elif stash is not None and stash.expr_sql is not None:
-            # The export only records an expression this rewrite cannot rebuild,
-            # so it is taken as authored rather than derived again.
-            dim["expr_sql"] = stash.expr_sql
-        else:
-            rebuilt = rebuild_hex_expr_sql(
-                expr,
-                model=dataset_name,
-                field=field.name,
-                dimension_id=dim_id,
-                resolve=resolve,
-            )
-            if rebuilt is not None:
-                dim["expr_sql"] = rebuilt
+        rebuilt = rebuild_hex_expr_sql(
+            expr,
+            model=dataset_name,
+            field=field.name,
+            dimension_id=dim_id,
+            resolve=resolve,
+        )
+        if rebuilt is not None:
+            dim["expr_sql"] = rebuilt
 
     if field.name in unique_names or dim_id in unique_names:
         dim["unique"] = True

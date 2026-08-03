@@ -121,6 +121,31 @@ dimensions:
     }
 
 
+def test_hex_dimension_with_expr_calc_is_preserved(
+    calc_dimension_hex_path: str,
+) -> None:
+    """A Hex formula names other fields, which an Ossie expression cannot do."""
+    files = read_hex_project(calc_dimension_hex_path)
+    yaml_text, warnings = convert_hex_to_ossie(
+        files,
+        dialect=OSIDialect.ANSI_SQL,
+        model_name="demo",
+    )
+    dataset = yaml.safe_load(yaml_text)["semantic_model"][0]["datasets"][0]
+
+    assert [field["name"] for field in dataset["fields"]] == [
+        "first_name",
+        "last_name",
+    ]
+
+    payload = hex_extension(dataset)
+    assert payload is not None
+    (preserved,) = payload["dimensions"]
+    assert preserved["id"] == "full_name"
+    assert preserved["expr_calc"] == "Concat(first_name, ' ', last_name)"
+    assert any("full_name" in w.message for w in warnings)
+
+
 def test_preserves_lossy_types(tmp_path: Path) -> None:
     """Some Hex types have no Ossie datatype, so the custom extension must hold them."""
 

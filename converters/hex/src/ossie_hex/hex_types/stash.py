@@ -27,6 +27,7 @@ from ..util.errors import ConversionError
 from .datatype_mapping import is_lossless_hex_type
 from .hex_common import HexVisibility, is_default_hex_visibility
 from .hex_datatype import HexDataType
+from .hex_dimension import HexDimension
 from .hex_expression import (
     HexScalarExpressionDefaultBoolean,
     HexScalarExpressionDefaultNumber,
@@ -102,6 +103,7 @@ class HexModelStash(_VisibilityMixin, _BaseHexStash):
 
     display_name: str
     source_kind: Literal["table", "query"]
+    dimensions: list[HexDimension] | None = None
     measures: list[HexMeasure] | None = None
     relations: list[HexRelation] | None = None
 
@@ -109,7 +111,6 @@ class HexModelStash(_VisibilityMixin, _BaseHexStash):
 class HexDimensionStash(_TypeMixin, _VisibilityMixin, _BaseHexStash):
     """Preserves Hex dimension semantics that Ossie does not model."""
 
-    expr_calc: str | None = None
     expr_sql: str | None = None
 
 

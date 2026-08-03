@@ -37,19 +37,25 @@ def convert_hex_dimension(
     model_id: str,
     ossie_dialect: OSIDialect,
     resolve: RefResolver,
-) -> tuple[OSIField, list[ConversionWarning]]:
-    """Convert a Hex dimension to an Ossie field."""
+) -> tuple[OSIField | None, HexDimension | None, list[ConversionWarning]]:
+    """Convert a Hex dimension to an Ossie field, or hand it back whole.
+
+
+    Returns either an Ossie Field or, for a dimension Ossie cannot express, the
+    dimension itself to preserve whole.
+    """
     warnings: list[ConversionWarning] = []
 
     if dim.expr_calc:
         warnings.append(
             ConversionWarning(
-                f"dimension '{model_id}.{dim.id}' uses expr_calc; "
-                f"preserved in custom_extensions[{HEX_VENDOR}] with a placeholder expression"
+                f"dimension '{model_id}.{dim.id}' uses Hex calculation formula "
+                f"syntax, which conversion to Ossie is not supported."
             )
         )
-        expression_sql = dim.id
-    elif dim.expr_sql is None:
+        return None, dim, warnings
+
+    if dim.expr_sql is None:
         expression_sql = dim.id
     else:
         # Qualifying a `${dim}` ref as `model.dim` is what lets the export tell it
@@ -59,7 +65,6 @@ def convert_hex_dimension(
     stash = HexDimensionStash(
         type=dim.type,
         visibility=dim.visibility,
-        expr_calc=dim.expr_calc,
         expr_sql=None
         if ossie_expression_restores(
             dim, expression_sql, model_id=model_id, resolve=resolve
@@ -85,4 +90,4 @@ def convert_hex_dimension(
         datatype=datatype,
         custom_extensions=maybe_write_extension(stash),
     )
-    return field, warnings
+    return field, None, warnings

@@ -1,0 +1,14 @@
+id: customers
+base_sql_table: s.customers
+dimensions:
+  - id: first_name
+    type: string
+  - id: last_name
+    type: string
+  - id: full_name
+    type: string
+    expr_calc: Concat(first_name, ' ', last_name)
+    description: First and last name, as one.
+measures:
+  - id: customer_count
+    func: count

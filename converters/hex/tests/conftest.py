@@ -43,12 +43,18 @@ def formula_measure_hex_path() -> str:
     return str(FIXTURES / "formula_measure_hex")
 
 
+@pytest.fixture
+def calc_dimension_hex_path() -> str:
+    return str(FIXTURES / "calc_dimension_hex")
+
+
 @pytest.fixture(
     params=[
         pytest.param(str(FIXTURES / "minimal_hex"), id="minimal_hex"),
         pytest.param(str(FIXTURES / "named_joins_hex"), id="named_joins_hex"),
         pytest.param(str(FIXTURES / "query_hex"), id="query_hex"),
         pytest.param(str(FIXTURES / "formula_measure_hex"), id="formula_measure_hex"),
+        pytest.param(str(FIXTURES / "calc_dimension_hex"), id="calc_dimension_hex"),
     ]
 )
 def hex_project_path(request: pytest.FixtureRequest) -> str:

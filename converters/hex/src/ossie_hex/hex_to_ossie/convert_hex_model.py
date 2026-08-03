@@ -20,6 +20,7 @@ from __future__ import annotations
 from ossie import OSIDataset, OSIDialect, OSIField, OSIMetric, OSIRelationship
 
 from ..hex_types import (
+    HexDimension,
     HexMeasure,
     HexModel,
     HexModelStash,
@@ -61,7 +62,13 @@ def convert_hex_model(
         dim_ids_by_model=dim_ids_by_model,
     )
 
-    fields, primary_key, unique_keys, dimension_warnings = convert_hex_model_dimensions(
+    (
+        fields,
+        unsupported_dimensions,
+        primary_key,
+        unique_keys,
+        dimension_warnings,
+    ) = convert_hex_model_dimensions(
         model,
         ossie_dialect=ossie_dialect,
         resolve=resolve,
@@ -82,6 +89,7 @@ def convert_hex_model(
         display_name=model.name,
         source_kind=source_kind,
         visibility=model.visibility,
+        dimensions=unsupported_dimensions or None,
         measures=unsupported_measures or None,
         relations=unsupported_relations or None,
     )
@@ -133,6 +141,7 @@ def convert_hex_model_dimensions(
     resolve: RefResolver,
 ) -> tuple[
     list[OSIField],
+    list[HexDimension],
     list[str] | None,
     list[list[str]] | None,
     list[ConversionWarning],
@@ -141,25 +150,30 @@ def convert_hex_model_dimensions(
 
     Returns a tuple of:
     - ``fields``: Ossie fields.
+    - ``unsupported_dimensions``: dimensions Ossie cannot express.
     - ``primary_key``: Ossie primary key, if any.
     - ``unique_keys``: Ossie unique keys, if any.
     - ``warnings``: Conversion warnings.
     """
     fields: list[OSIField] = []
+    unsupported_dimensions: list[HexDimension] = []
     unique_field_names: list[str] = []
 
     warnings: list[ConversionWarning] = []
     for dim in model.dimensions:
-        field, dimension_warnings = convert_hex_dimension(
+        field, unsupported_dimension, dimension_warnings = convert_hex_dimension(
             dim,
             model_id=model.id,
             ossie_dialect=ossie_dialect,
             resolve=resolve,
         )
-        fields.append(field)
         warnings.extend(dimension_warnings)
-        if dim.unique:
-            unique_field_names.append(dim.id)
+        if field is not None:
+            fields.append(field)
+            if dim.unique:
+                unique_field_names.append(dim.id)
+        elif unsupported_dimension is not None:
+            unsupported_dimensions.append(unsupported_dimension)
 
     primary_key: list[str] | None = None
     unique_keys: list[list[str]] | None = None
@@ -170,7 +184,7 @@ def convert_hex_model_dimensions(
         # Hex marks each dimension unique on its own, and does not reflect composite keys
         unique_keys = [[name] for name in unique_field_names[1:]] or None
 
-    return fields, primary_key, unique_keys, warnings
+    return fields, unsupported_dimensions, primary_key, unique_keys, warnings
 
 
 def convert_hex_model_measures(

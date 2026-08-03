@@ -86,6 +86,12 @@ def convert_ossie_dataset(
     # from a single set of taken names.
     taken_ids = set(dim_id_by_field.values())
 
+    unsupported_dimensions = stash.dimensions if stash is not None else None
+    # Reserved before anything else is converted so a relation, metric, or
+    # synthesized key dimension cannot be coerced onto an ID a preserved
+    # dimension is about to reclaim.
+    taken_ids.update(dimension.id for dimension in unsupported_dimensions or [])
+
     # Relations come first: Hex reaches another model through a relation ID, so
     # measure and dimension expressions cannot be rewritten until these exist.
     relations, relation_ids_by_target = convert_ossie_relationships_by_dataset(
@@ -114,6 +120,8 @@ def convert_ossie_dataset(
         taken_ids=taken_ids,
         warnings=warnings,
     )
+    dimensions.extend(unsupported_dimensions or [])
+
     if dimensions:
         resource["dimensions"] = dimensions
 

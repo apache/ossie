@@ -26,6 +26,7 @@ from ossie_hex.hex_types import (
     HEX_EXTENSION_VERSION_KEY,
     HEX_VENDOR,
     HexDataType,
+    HexDimension,
     HexDimensionStash,
     HexGroup,
     HexMeasureFuncName,
@@ -180,6 +181,13 @@ def test_stash_drops_values_matching_hex_defaults() -> None:
             display_name="Orders",
             source_kind="query",
             visibility=HexVisibility.INTERNAL,
+            dimensions=[
+                HexDimension(
+                    id="full_name",
+                    type=HexDataType.STRING,
+                    expr_calc="Concat(first_name, ' ', last_name)",
+                )
+            ],
             relations=[
                 HexRelation(
                     id="users",
@@ -199,7 +207,6 @@ def test_stash_drops_values_matching_hex_defaults() -> None:
             visibility=HexVisibility.INTERNAL,
             expr_sql="amount_usd",
         ),
-        HexDimensionStash(type=HexDataType.STRING, expr_calc="concat(first, last)"),
         HexMeasureStash(
             model_id="orders",
             measure_id="order_revenue",
