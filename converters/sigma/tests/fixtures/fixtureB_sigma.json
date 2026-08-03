@@ -1,0 +1,84 @@
+{
+  "kind": "data-model",
+  "name": "Events",
+  "dataModelId": "33333333-3333-3333-3333-333333333333",
+  "pages": [
+    {
+      "id": "pageB",
+      "name": "Model",
+      "elements": [
+        {
+          "id": "elemEvents",
+          "kind": "table",
+          "name": "Events",
+          "source": {
+            "connectionId": "conn-2",
+            "kind": "warehouse-table",
+            "path": ["ANALYTICS", "PUBLIC", "EVENTS"]
+          },
+          "columns": [
+            {"id": "colEventId", "formula": "[EVENTS/EVENT_ID]", "name": "Event ID"},
+            {"id": "colOrgId", "formula": "[EVENTS/ORG_ID]", "name": "Org ID"},
+            {"id": "colUserId", "formula": "[EVENTS/USER_ID]", "name": "User ID"},
+            {
+              "id": "colPayload",
+              "formula": "[EVENTS/PAYLOAD]",
+              "name": "Payload",
+              "format": {"kind": "variant"}
+            },
+            {
+              "id": "colRunningTotal",
+              "formula": "RunningSum([EVENTS/AMOUNT])",
+              "name": "Running Total"
+            }
+          ],
+          "relationships": [
+            {
+              "id": "relEventsToOrgUser",
+              "name": "Org And User",
+              "targetElementId": "elemOrgUsers",
+              "keys": [
+                {
+                  "sourceColumnId": "inode-abc123/ORG_ID",
+                  "targetColumnId": "inode-def456/ORGANIZATION_UUID"
+                },
+                {
+                  "sourceColumnId": "colUserId",
+                  "targetColumnId": "inode-def456/USER_UUID"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "elemOrgUsers",
+          "kind": "table",
+          "name": "Org Users",
+          "source": {
+            "connectionId": "conn-2",
+            "kind": "warehouse-table",
+            "path": ["ANALYTICS", "PUBLIC", "ORG_USERS"]
+          },
+          "columns": [
+            {"id": "colOrgUuid", "formula": "[ORG_USERS/ORGANIZATION_UUID]"},
+            {"id": "colUserUuid", "formula": "[ORG_USERS/USER_UUID]"},
+            {"id": "colPlanTier", "formula": "[ORG_USERS/PLAN_TIER]", "name": "Plan Tier"}
+          ]
+        },
+        {
+          "id": "elemActiveEvents",
+          "kind": "table",
+          "name": "Active Events",
+          "description": "Derived view layered on Events, not a direct warehouse table",
+          "source": {
+            "kind": "table",
+            "elementId": "elemEvents"
+          },
+          "columns": [
+            {"id": "colActiveEventId", "formula": "[Event ID]", "name": "Event ID"}
+          ]
+        }
+      ]
+    }
+  ]
+}

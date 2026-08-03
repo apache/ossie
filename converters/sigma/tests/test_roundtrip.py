@@ -1,0 +1,63 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+"""End-to-end round trips through the same serialization boundary the CLI uses
+(OSIDocument -> YAML text -> re-parsed OSIDocument), for both fixtures."""
+
+import pytest
+import yaml
+from ossie import OSIDocument
+
+from ossie_sigma.osi_to_sigma import OSIToSigmaConverter
+from ossie_sigma.sigma_to_osi import SigmaToOSIConverter
+
+from .helpers import load_fixture, normalize
+
+
+@pytest.mark.parametrize("fixture_name", ["fixtureA_sigma.json", "fixtureB_sigma.json"])
+def test_sigma_osi_sigma_roundtrip_through_yaml_serialization(fixture_name):
+    spec = load_fixture(fixture_name)
+
+    document = SigmaToOSIConverter().convert(spec).output
+    yaml_text = document.to_osi_yaml()
+
+    reparsed_document = OSIDocument.model_validate(yaml.safe_load(yaml_text))
+    reconstructed_spec = OSIToSigmaConverter().convert(reparsed_document).output
+
+    assert normalize(reconstructed_spec) == normalize(spec)
+
+
+@pytest.mark.parametrize("fixture_name", ["fixtureA_sigma.json", "fixtureB_sigma.json"])
+def test_osi_sigma_osi_roundtrip_preserves_portable_fields(fixture_name):
+    """Sigma -> Ossie -> Sigma -> Ossie: the second Ossie document's portable
+    (non-custom_extensions) content must match the first, even though the Sigma
+    spec in between round-trips through JSON."""
+    spec = load_fixture(fixture_name)
+
+    document_1 = SigmaToOSIConverter().convert(spec).output
+    spec_2 = OSIToSigmaConverter().convert(document_1).output
+    document_2 = SigmaToOSIConverter().convert(spec_2).output
+
+    def portable(document):
+        model = document.semantic_model[0]
+        return {
+            "datasets": [(d.name, d.source, [(f.name, f.datatype) for f in d.fields or []]) for d in model.datasets],
+            "relationships": [(r.name, r.from_dataset, r.to, r.from_columns, r.to_columns) for r in model.relationships or []],
+            "metrics": [(m.name,) for m in model.metrics or []],
+        }
+
+    assert portable(document_1) == portable(document_2)
