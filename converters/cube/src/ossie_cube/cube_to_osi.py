@@ -144,12 +144,16 @@ def convert_cube_to_ossie(files, model_name=None, view=None, strict_fanout=False
     fanned_out = _fanned_out_datasets(relationships)
     pk_by_cube = {cname: _primary_key_of(cube, cname)
                   for cname, cube in cubes.items()}
+    # Which members regenerate from a bare column name, worked out once per cube:
+    # both the measure and the dimension stage need the same answer.
+    plain_by_cube = {cname: _plain_members(cube, cname)
+                     for cname, cube in cubes.items()}
 
     metrics, extra_measures = _convert_measures(
-        cubes, pk_by_cube, fanned_out, issues)
+        cubes, pk_by_cube, plain_by_cube, fanned_out, issues)
 
     model["datasets"] = [
-        _convert_cube(cname, cube, extra_joins.get(cname),
+        _convert_cube(cname, cube, plain_by_cube[cname], extra_joins.get(cname),
                       extra_measures.get(cname), issues)
         for cname, cube in cubes.items()
     ]
@@ -184,10 +188,7 @@ def convert_cube_to_ossie(files, model_name=None, view=None, strict_fanout=False
 
     # Foreign-vendor extensions a previous export parked on the mapped view are
     # restored after the stash is written, so the CUBE entry stays first.
-    parked_exts = ((mapped_view.get("meta") or {}).get("ossie") or {}).get(
-        "custom_extensions")
-    if parked_exts:
-        model.setdefault("custom_extensions", []).extend(parked_exts)
+    _restore_parked_extensions(model, mapped_view.get("meta"))
 
     return dump_yaml({"version": OSSIE_VERSION, "semantic_model": [model]}), issues
 
@@ -465,8 +466,7 @@ def _primary_key_of(cube, cname):
             if dim.get("primary_key")]
 
 
-def _convert_cube(cname, cube, extra_joins, extra_measures, issues):
-    plain = _plain_members(cube, cname)
+def _convert_cube(cname, cube, plain, extra_joins, extra_measures, issues):
     """Build one Ossie dataset from a Cube cube."""
     scope = f"cube '{cname}'"
     ds = {"name": cname}
@@ -480,8 +480,7 @@ def _convert_cube(cname, cube, extra_joins, extra_measures, issues):
         # GSF converters all reject anything shorter -- so a model that converts
         # cleanly here still cannot reach them. Better to say so at the point the
         # Ossie document is produced than to have it fail three hops later.
-        ds_scope = f"cube '{cname}'"
-        issues.add(IssueType.SOURCE_NOT_FULLY_QUALIFIED, ds_scope,
+        issues.add(IssueType.SOURCE_NOT_FULLY_QUALIFIED, scope,
                    f"source '{ds['source']}' has {parts} part(s); several Ossie "
                    f"converters (Databricks, Snowflake, NVIDIA GSF) require a "
                    f"3-part catalog.schema.table, so qualify the cube's `sql_table` "
@@ -530,8 +529,7 @@ def _convert_cube(cname, cube, extra_joins, extra_measures, issues):
 
     # Foreign-vendor extensions parked by a previous export are restored after the
     # stash is written, so the CUBE entry stays first and both survive.
-    if parked.get("custom_extensions"):
-        ds.setdefault("custom_extensions", []).extend(parked["custom_extensions"])
+    _restore_parked_extensions(ds, cube.get("meta"))
     return ds
 
 
@@ -686,10 +684,10 @@ def _convert_joins(cubes, skipped_files, issues):
             # common case. Only an orientation Ossie cannot express on its own --
             # one_to_many (flipped) or one_to_one (no many side) -- needs recording.
             stash = {}
-            if (rel_type != "many_to_one" or cname != from_cube
-                    or raw_rel != "many_to_one"):
-                # The last clause keeps a legacy spelling (`belongsTo`) exact
-                # without costing the modern spelling a stash entry.
+            # Testing the *declared* spelling, not the normalized one: a legacy
+            # `belongsTo` normalizes to many_to_one but has to come back spelled the
+            # way it was written, while the modern spelling costs no stash entry.
+            if raw_rel != "many_to_one":
                 stash["declared_on"] = cname
                 stash["relationship"] = raw_rel
             if rel_type == "one_to_many":
@@ -792,23 +790,26 @@ class _MeasureResolver:
     Kept as a class because a calculated measure (`type: number`, and the other
     types in `CALCULATED_MEASURE_TYPES`) can reference other measures, which Cube
     resolves by inlining their full aggregate SQL -- so producing one measure's
-    expression may require producing another's first. Results are memoized and
-    reference cycles are rejected rather than recursed into.
+    expression may require producing another's first. Each measure's expression is
+    computed once and cached; a reference cycle is rejected rather than recursed
+    into.
+
+    Note that inlining is inherently exponential in reference depth -- a chain where
+    each measure names the previous one twice doubles the SQL at every step -- and
+    that is Cube's own behaviour, not this converter's choice. The cache makes the
+    work proportional to the output rather than to the output times the depth; it
+    cannot make the output smaller. No limit is imposed, since any threshold would
+    reject a legitimate model to guard against a hand-written pathological one.
     """
 
     def __init__(self, cubes, pk_by_cube, issues):
         self._pk = pk_by_cube
         self._issues = issues
         self._raw = {}
-        self._dimensions = {}
+        self._cache = {}
         for cname, cube in cubes.items():
             for m in _as_named_list(cube.get("measures"), f"cube '{cname}' measures"):
                 self._raw[(cname, require_str(m, "name", f"cube '{cname}': measure"))] = m
-            self._dimensions[cname] = {
-                d["name"]
-                for d in _as_named_list(cube.get("dimensions"),
-                                        f"cube '{cname}' dimensions")
-            }
 
     def measures(self):
         return self._raw
@@ -827,6 +828,8 @@ class _MeasureResolver:
         if key in stack:
             chain = " -> ".join(f"{c}.{m}" for c, m in stack + (key,))
             raise ConversionError(f"measure reference cycle: {chain}")
+        if key in self._cache:
+            return self._cache[key]
         measure = self._raw[key]
         scope = f"{cname}.{mname}"
         mtype = snake(measure.get("type") or "")
@@ -840,7 +843,7 @@ class _MeasureResolver:
                 IssueType.MULTI_STAGE_MEASURE_PARKED, scope,
                 f"multi_stage measure (type '{mtype}'); preserved in "
                 f"custom_extensions only")
-            return None
+            return self._remember(key, None)
         sql = measure.get("sql")
         filter_exprs = [
             self._translate(f["sql"], cname, stack + (key,))
@@ -853,14 +856,14 @@ class _MeasureResolver:
                 raise ConversionError(
                     f"measure '{scope}': type '{mtype}' requires 'sql'")
             expr = self._translate(sql, cname, stack + (key,))
-            return filtered_operand(expr, filter_exprs)
+            return self._remember(key, filtered_operand(expr, filter_exprs))
         if mtype == "count":
             if sql is None:
-                return primary_key_count_expression(
-                    cname, self._pk.get(cname) or [], filter_exprs)
+                return self._remember(key, primary_key_count_expression(
+                    cname, self._pk.get(cname) or [], filter_exprs))
             operand = filtered_operand(
                 self._operand(cname, sql, stack + (key,)), filter_exprs)
-            return f"COUNT({operand})"
+            return self._remember(key, f"COUNT({operand})")
         func = AGG_TO_OSSIE_FUNC.get(mtype)
         if func is None:
             raise ConversionError(
@@ -870,8 +873,20 @@ class _MeasureResolver:
                 f"measure '{scope}': type '{mtype}' requires 'sql'")
         operand = filtered_operand(
             self._operand(cname, sql, stack + (key,)), filter_exprs)
-        return (f"COUNT(DISTINCT {operand})" if func == "COUNT_DISTINCT"
-                else f"{func}({operand})")
+        return self._remember(
+            key, f"COUNT(DISTINCT {operand})" if func == "COUNT_DISTINCT"
+            else f"{func}({operand})")
+
+    def _remember(self, key, expr):
+        """Cache one measure's expression.
+
+        A calculated measure inlines each reference's full SQL, so a measure
+        referenced from several places was recomputed once per reference -- and
+        recursively, so a chain of them cost O(depth * 2**depth) instead of the
+        O(2**depth) the inlined output is inherently worth.
+        """
+        self._cache[key] = expr
+        return expr
 
     def _translate(self, sql, cname, stack):
         """Translate a Cube SQL string, inlining any measure reference.
@@ -931,7 +946,7 @@ def _is_generated_part(measure):
     return bool(((measure.get("meta") or {}).get("ossie") or {}).get("part_of"))
 
 
-def _convert_measures(cubes, pk_by_cube, fanned_out, issues):
+def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, issues):
     """Hoist every cube's measures into Ossie model-level metrics.
 
     A metric name is the measure name when globally unique, else
@@ -955,6 +970,7 @@ def _convert_measures(cubes, pk_by_cube, fanned_out, issues):
     extra_measures = {}
     seen = set()
     for cname, cube in cubes.items():
+        plain = plain_by_cube[cname]
         for index, measure in enumerate(
                 _as_named_list(cube.get("measures"),
                                f"cube '{cname}' measures")):
@@ -972,8 +988,7 @@ def _convert_measures(cubes, pk_by_cube, fanned_out, issues):
                     f"colliding measures in Cube")
             seen.add(metric_name)
             metric = _convert_measure(cname, mname, metric_name, measure, resolver,
-                                      fanned_out, _plain_members(cube, cname),
-                                      issues)
+                                      fanned_out, plain, issues)
             if metric is not None:
                 metrics.append(metric)
             else:

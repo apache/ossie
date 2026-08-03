@@ -641,6 +641,9 @@ def _build_measures(model, cube_names, members_by_cube, inline_sql_by_cube,
         mname_raw = require_str(metric, "name", "metric")
         scope = f"metric '{mname_raw}'"
         stash = read_stash(metric)
+        # An empty `taken` on purpose: a measure name only has to be unique within
+        # its own cube, and which cube this lands on is not known yet. `_place`
+        # rejects a collision once the target is decided.
         mname = stash.get("name") or sanitize_name(mname_raw, scope, set())
 
         if "measure" in stash:

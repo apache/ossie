@@ -86,14 +86,28 @@ _FOREIGN_RE = re.compile(r"custom_extension|vendor|foreign", re.I)
 
 
 def repo_root():
-    for parent in [Path(__file__).resolve(), *Path(__file__).resolve().parents]:
+    for parent in Path(__file__).resolve().parents:
         if (parent / "converters").is_dir() and (parent / "core-spec").is_dir():
             return parent
     sys.exit("cannot locate the repository root from this script's path")
 
 
+# Resolving a converter's dependencies on a cold cache is the slow part; a spoke that
+# has not finished by then is hung rather than working. Without a timeout one such
+# spoke takes the whole run down with it and prints nothing.
+_TIMEOUT_S = 600
+
+
 def run(cwd, argv):
-    return subprocess.run(argv, cwd=cwd, capture_output=True, text=True)
+    """Run `argv` in `cwd`, or return a synthetic failure rather than raising."""
+    try:
+        return subprocess.run(argv, cwd=cwd, capture_output=True, text=True,
+                              timeout=_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(
+            argv, 1, "", f"timed out after {_TIMEOUT_S}s")
+    except FileNotFoundError as e:
+        return subprocess.CompletedProcess(argv, 1, "", f"{argv[0]}: {e.strerror}")
 
 
 def count_warnings(stderr):
@@ -119,6 +133,22 @@ def import_issues(stderr):
         if m:
             found[m.group(1)] = found.get(m.group(1), 0) + 1
     return found
+
+
+# uv's wording for "this converter's environment could not be built", which is not
+# the converter rejecting the model. Matching on message text is unavoidable (uv exits
+# 1 either way) and will drift, so a message that stops matching shows up as a FAIL
+# with the reason in the note column rather than as a silent mislabel.
+_ENV_FAILURE_MARKERS = (
+    "No solution found",
+    "no such command",
+    "Failed to spawn",
+    "does not exist",
+)
+
+
+def _is_environment_failure(stderr):
+    return any(marker in stderr for marker in _ENV_FAILURE_MARKERS)
 
 
 def produced_output(dest, is_dir):
@@ -225,9 +255,7 @@ def main():
             note = ""
             if r.returncode != 0:
                 tail = (r.stderr.strip().splitlines() or [""])[-1]
-                # A missing environment is not the converter rejecting the model.
-                skipped = "No solution found" in r.stderr or "no such command" in tail
-                result = "SKIP" if skipped else "FAIL"
+                result = "SKIP" if _is_environment_failure(r.stderr) else "FAIL"
                 note = tail[:40]
                 failures += result == "FAIL"
             else:
