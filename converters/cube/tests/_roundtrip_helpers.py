@@ -185,7 +185,10 @@ def _build_dimension(rnd, name):
 
 
 def _parse_files(files):
-    return {name: load_yaml(text, name) for name, text in files.items()}
+    # Same documented normalization the fixture tests use; see _util.canon_sql.
+    from _util import canon_sql
+    return {name: canon_sql(load_yaml(text, name))
+            for name, text in files.items()}
 
 
 def assert_cube_roundtrip_is_lossless(files):

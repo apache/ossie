@@ -570,7 +570,7 @@ def _build_joins(relationships, cube_names, issues):
             join["sql"] = stash["sql"]
         else:
             join["sql"] = " AND ".join(
-                "{CUBE}." + str(a) + " = {" + other + "." + str(b) + "}"
+                "{CUBE}." + str(a) + " = {" + other + "}." + str(b)
                 for a, b in zip(own_cols, other_cols))
         for key, value in stash.items():
             if key not in ("declared_on", "relationship", "sql"):

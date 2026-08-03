@@ -25,6 +25,14 @@ semantic_model:
   ai_context:
     instructions: |
       Primary view for revenue analysis. Use it for any question about sales, orders, or customer spend.
+  relationships:
+  - name: orders_to_users
+    from: orders
+    to: users
+    from_columns:
+    - user_id
+    to_columns:
+    - id
   datasets:
   - name: orders
     source: public.orders
@@ -37,7 +45,7 @@ semantic_model:
           expression: id
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "id", "type": "number"}'
+        data: '{"_v": 1, "type": "number"}'
     - name: user_id
       expression:
         dialects:
@@ -45,7 +53,7 @@ semantic_model:
           expression: user_id
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "user_id", "type": "number"}'
+        data: '{"_v": 1, "type": "number"}'
     - name: status
       expression:
         dialects:
@@ -56,9 +64,6 @@ semantic_model:
       description: Current order status
       ai_context:
         instructions: Values are pending, shipped, and completed.
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "status"}'
     - name: created_at
       expression:
         dialects:
@@ -67,18 +72,12 @@ semantic_model:
       datatype: DateTime
       dimension:
         is_time: true
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "created_at"}'
     - name: is_large
       expression:
         dialects:
         - dialect: ANSI_SQL
           expression: amount > 500
       datatype: Boolean
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "{CUBE}.amount > 500"}'
     primary_key:
     - id
   - name: users
@@ -91,16 +90,13 @@ semantic_model:
           expression: id
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "id", "type": "number"}'
+        data: '{"_v": 1, "type": "number"}'
     - name: city
       expression:
         dialects:
         - dialect: ANSI_SQL
           expression: city
       datatype: String
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "city"}'
     - name: location_latitude
       expression:
         dialects:
@@ -125,18 +121,6 @@ semantic_model:
     - vendor_name: CUBE
       data: '{"_v": 1, "cube_extras": {"segments": [{"name": "active", "sql": "{CUBE}.status
         = ''active''"}]}}'
-  relationships:
-  - name: orders_to_users
-    from: orders
-    to: users
-    from_columns:
-    - user_id
-    to_columns:
-    - id
-    custom_extensions:
-    - vendor_name: CUBE
-      data: '{"_v": 1, "declared_on": "orders", "relationship": "many_to_one", "sql":
-        "{CUBE}.user_id = {users}.id"}'
   metrics:
   - name: orders__count
     expression:

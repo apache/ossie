@@ -155,9 +155,10 @@ def test_many_to_one_join_becomes_a_relationship(model_a):
     assert rel["to"] == "users"
     assert rel["from_columns"] == ["user_id"]
     assert rel["to_columns"] == ["id"]
-    # The declaring side and the exact Cube spelling round-trip via the stash.
-    assert stash_of(rel)["declared_on"] == "orders"
-    assert stash_of(rel)["relationship"] == "many_to_one"
+    # Nothing is stashed: a many_to_one join declared on the many side is exactly
+    # what `from`(many) -> `to`(one) already says, so recording it again would only
+    # add a custom_extension for every other converter to warn about and discard.
+    assert stash_of(rel) == {}
 
 
 def test_one_to_many_join_is_flipped_to_many_side_first():

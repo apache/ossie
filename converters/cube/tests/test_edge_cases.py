@@ -281,8 +281,9 @@ def test_field_and_metric_foreign_extensions_survive_the_round_trip():
     field = by_name(by_name(model["datasets"])["orders"]["fields"])["status"]
     exts = {e["vendor_name"]: e["data"] for e in field["custom_extensions"]}
     assert exts["SNOWFLAKE"] == '{"collation": "en"}'
-    # The CUBE stash is written first, foreign entries appended -- as for datasets.
-    assert field["custom_extensions"][0]["vendor_name"] == "CUBE"
+    # A plain scalar field needs no CUBE stash at all any more, so the foreign
+    # extension is the only entry -- which is the point of the reduction.
+    assert list(exts) == ["SNOWFLAKE"]
 
     metric = by_name(model["metrics"])["total"]
     mexts = {e["vendor_name"]: e["data"] for e in metric["custom_extensions"]}

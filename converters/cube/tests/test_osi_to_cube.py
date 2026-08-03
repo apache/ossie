@@ -306,7 +306,9 @@ _REL = ("  relationships:\n"
 def test_relationship_lands_on_the_many_side_as_many_to_one():
     files, _ = convert_ossie_to_cube(_ossie(_TWO_DATASETS, _REL))
     join = _cubes(files)["orders"]["joins"][0]
-    assert join == {"name": "users", "sql": "{CUBE}.user_id = {users.id}",
+    # Alias-dot on both sides: Ossie's from_columns/to_columns name columns, so the
+    # far side is a raw column reference too, not a member reference.
+    assert join == {"name": "users", "sql": "{CUBE}.user_id = {users}.id",
                     "relationship": "many_to_one"}
     # The one side declares nothing; Cube needs the join on one side only.
     assert "joins" not in _cubes(files, "model/cubes/users.yml")["users"]
@@ -319,7 +321,7 @@ def test_composite_relationship_becomes_an_and_chain():
            "    to_columns: [id, region]\n")
     files, _ = convert_ossie_to_cube(_ossie(_TWO_DATASETS, rel))
     assert _cubes(files)["orders"]["joins"][0]["sql"] == (
-        "{CUBE}.user_id = {users.id} AND {CUBE}.region = {users.region}")
+        "{CUBE}.user_id = {users}.id AND {CUBE}.region = {users}.region")
 
 
 def test_relationship_ai_context_is_reported_as_dropped_not_parked():

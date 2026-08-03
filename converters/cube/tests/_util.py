@@ -20,6 +20,7 @@
 import copy
 import json
 import pathlib
+import re
 
 from ossie_cube._common import load_yaml  # src is on sys.path via conftest.py
 
@@ -46,17 +47,46 @@ def parse(yaml_str):
     return load_yaml(yaml_str)
 
 
-def parse_files(files):
-    """Parse every file of a Cube model dict for structural comparison.
+_ALIAS_DOT_RE = re.compile(r"\$?\{\s*(?:CUBE|TABLE)\s*\}\s*\.")
 
-    Comments and key order are not part of the data model, so round-trip fidelity
-    is asserted on the parsed structures. A non-YAML file (a `.js` model preserved
-    verbatim) is compared as text.
+
+def canon_sql(node):
+    """Canonicalize the one documented Cube SQL normalization, in place-ish.
+
+    `{CUBE}.column` and a bare `column` are the same thing -- a raw physical column
+    of the owning cube -- so the converter no longer stashes the original spelling
+    just to reproduce it. Round-trip assertions therefore compare with the alias
+    prefix removed.
+
+    Deliberately narrow: `{CUBE.member}` is a *member* reference and means something
+    else, so it is left alone (and is still stashed, so it round-trips exactly).
+    """
+    if isinstance(node, dict):
+        return {k: (_ALIAS_DOT_RE.sub("", v)
+                    if k == "sql" and isinstance(v, str) else canon_sql(v))
+                for k, v in node.items()}
+    if isinstance(node, list):
+        return [canon_sql(v) for v in node]
+    return node
+
+
+def parse_files(files):
+    """Parse a Cube model dict into the form round-trip fidelity is asserted on.
+
+    Comments and key order are not part of the data model, so comparison happens on
+    parsed structures. A non-YAML file (a `.js` model preserved verbatim) is
+    compared as text.
+
+    Also applies `canon_sql`: the converter no longer stashes a member's exact SQL
+    spelling just to reproduce `{CUBE}.column` over a bare `column`, since the two
+    mean the same thing and stashing it put noise into every other converter's view
+    of the model. That spelling is therefore a documented normalization, not a
+    difference worth failing on.
     """
     out = {}
     for name, text in files.items():
-        out[name] = (load_yaml(text, name) if name.lower().endswith((".yml", ".yaml"))
-                     else text)
+        out[name] = (canon_sql(load_yaml(text, name))
+                     if name.lower().endswith((".yml", ".yaml")) else text)
     return out
 
 

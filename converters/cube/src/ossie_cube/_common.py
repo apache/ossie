@@ -385,6 +385,33 @@ def cube_sql_to_ossie(sql, own_cube, resolve_ref=None, self_prefix=None):
     return out, changed
 
 
+def sql_is_reversible(sql):
+    """True if translating this Cube SQL to Ossie and back reproduces it.
+
+    Only `{CUBE}.column` / `{TABLE}.column` -- a raw physical column of the owning
+    cube -- survives the trip, because Ossie expressions address columns and the
+    exporter re-emits them bare. A *member* reference (`{CUBE.member}`, `{member}`,
+    `{other.member}`) does not: Cube inlines the referenced member's own SQL, which
+    can differ from a column of that name, so the original spelling has to be kept.
+
+    Used to decide whether the exact Cube `sql` needs stashing at all -- most
+    dimensions reference plain columns, so most need nothing.
+    """
+    if not isinstance(sql, str):
+        sql = str(sql)
+    protected = sql.replace("\\{", "").replace("\\}", "")
+    for m in _CUBE_REF_RE.finditer(protected):
+        body = m.group(1).strip()
+        if body not in _SELF_REFS:
+            return False
+        # `{CUBE}` on its own (no trailing `.column`) is the cube's alias, which an
+        # Ossie expression cannot express either.
+        rest = protected[m.end():]
+        if not rest.startswith("."):
+            return False
+    return True
+
+
 def requalify_self_refs(sql, cube_name):
     """Rewrite `{CUBE}` / `{TABLE}` in a Cube SQL snippet to name `cube_name`.
 

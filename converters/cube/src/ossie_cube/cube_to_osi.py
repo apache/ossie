@@ -56,6 +56,7 @@ from ._common import (
     require_str,
     snake,
     snake_keys,
+    sql_is_reversible,
     view_file,
     read_stash,
     write_stash,
@@ -516,11 +517,14 @@ def _convert_dimension(cname, dname, dim, issues):
         # No `sql` means the same-named physical column.
         expr = dname
     else:
-        expr, changed = cube_sql_to_ossie(sql, cname)
-        if changed or str(sql).strip() == dname:
-            # Stashed when the Ossie expression differs from the Cube sql, and also
-            # when the sql is an explicit same-named bare column -- which export
-            # would otherwise normalize away to the implicit form.
+        expr, _ = cube_sql_to_ossie(sql, cname)
+        if not sql_is_reversible(sql):
+            # Only a *member* reference needs the original spelling kept: Cube
+            # inlines the referenced member's own SQL, which a bare column name in
+            # the Ossie expression would not reproduce. A plain `{CUBE}.column` (or
+            # a bare column) regenerates faithfully, so nothing is stashed -- which
+            # is the common case, and stashing it only added noise for every other
+            # converter reading the model.
             stash["sql"] = sql
 
     field = {
@@ -645,7 +649,17 @@ def _convert_joins(cubes, skipped_files, issues):
             from_cube, to_cube = cname, target
             from_cols = [p[0] for p in pairs]
             to_cols = [p[1] for p in pairs]
-            stash = {"declared_on": cname, "relationship": raw_rel}
+            # A `many_to_one` join declared on the many side is exactly what Ossie's
+            # `from`(many) -> `to`(one) already says, so nothing is stashed for the
+            # common case. Only an orientation Ossie cannot express on its own --
+            # one_to_many (flipped) or one_to_one (no many side) -- needs recording.
+            stash = {}
+            if (rel_type != "many_to_one" or cname != from_cube
+                    or raw_rel != "many_to_one"):
+                # The last clause keeps a legacy spelling (`belongsTo`) exact
+                # without costing the modern spelling a stash entry.
+                stash["declared_on"] = cname
+                stash["relationship"] = raw_rel
             if rel_type == "one_to_many":
                 from_cube, to_cube = to_cube, from_cube
                 from_cols, to_cols = to_cols, from_cols
@@ -730,9 +744,10 @@ def _ref_target(side, own_cube, target):
 def _rebuild_join_sql(target, pairs):
     """The canonical form export emits, used to decide whether the original has to
     be stashed. The own side is always `{CUBE}` so the join keeps working when the
-    cube is extended."""
+    cube is extended, and both sides use the alias-dot raw-column form because
+    Ossie's from_columns/to_columns name columns, not members."""
     return " AND ".join(
-        "{CUBE}." + own + " = {" + target + "." + other + "}"
+        "{CUBE}." + own + " = {" + target + "}." + other
         for own, other in pairs
     )
 

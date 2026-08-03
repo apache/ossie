@@ -26,6 +26,47 @@ semantic_model:
       sales, customer, product, and store data from the TPC-DS benchmark. The model
       supports time-based analysis, customer segmentation, product performance, and
       store operations metrics.
+  relationships:
+  - name: store_sales_to_date_dim
+    from: store_sales
+    to: date_dim
+    from_columns:
+    - ss_sold_date_sk
+    to_columns:
+    - d_date_sk
+    custom_extensions:
+    - vendor_name: CUBE
+      data: '{"_v": 1, "sql": "{CUBE}.ss_sold_date_sk = {date_dim.d_date_sk}"}'
+  - name: store_sales_to_customer
+    from: store_sales
+    to: customer
+    from_columns:
+    - ss_customer_sk
+    to_columns:
+    - c_customer_sk
+    custom_extensions:
+    - vendor_name: CUBE
+      data: '{"_v": 1, "sql": "{CUBE}.ss_customer_sk = {customer.c_customer_sk}"}'
+  - name: store_sales_to_item
+    from: store_sales
+    to: item
+    from_columns:
+    - ss_item_sk
+    to_columns:
+    - i_item_sk
+    custom_extensions:
+    - vendor_name: CUBE
+      data: '{"_v": 1, "sql": "{CUBE}.ss_item_sk = {item.i_item_sk}"}'
+  - name: store_sales_to_store
+    from: store_sales
+    to: store
+    from_columns:
+    - ss_store_sk
+    to_columns:
+    - s_store_sk
+    custom_extensions:
+    - vendor_name: CUBE
+      data: '{"_v": 1, "sql": "{CUBE}.ss_store_sk = {store.s_store_sk}"}'
   datasets:
   - name: store_sales
     source: tpcds.public.store_sales
@@ -52,7 +93,7 @@ semantic_model:
         - transaction date
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "ss_sold_date_sk", "type": "number"}'
+        data: '{"_v": 1, "type": "number"}'
     - name: ss_item_sk
       expression:
         dialects:
@@ -65,7 +106,7 @@ semantic_model:
         - item
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "ss_item_sk", "type": "number"}'
+        data: '{"_v": 1, "type": "number"}'
     - name: ss_customer_sk
       expression:
         dialects:
@@ -78,7 +119,7 @@ semantic_model:
         - buyer
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "ss_customer_sk", "type": "number"}'
+        data: '{"_v": 1, "type": "number"}'
     - name: ss_store_sk
       expression:
         dialects:
@@ -91,7 +132,7 @@ semantic_model:
         - location
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "ss_store_sk", "type": "number"}'
+        data: '{"_v": 1, "type": "number"}'
     - name: ss_quantity
       expression:
         dialects:
@@ -104,7 +145,7 @@ semantic_model:
         - quantity
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "ss_quantity", "type": "number"}'
+        data: '{"_v": 1, "type": "number"}'
     - name: ss_sales_price
       expression:
         dialects:
@@ -117,7 +158,7 @@ semantic_model:
         - price
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "ss_sales_price", "type": "number"}'
+        data: '{"_v": 1, "type": "number"}'
     - name: ss_ext_sales_price
       expression:
         dialects:
@@ -130,7 +171,7 @@ semantic_model:
         - line total
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "ss_ext_sales_price", "type": "number"}'
+        data: '{"_v": 1, "type": "number"}'
     - name: ss_net_profit
       expression:
         dialects:
@@ -143,7 +184,7 @@ semantic_model:
         - margin
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "ss_net_profit", "type": "number"}'
+        data: '{"_v": 1, "type": "number"}'
     - name: ss_ticket_number
       expression:
         dialects:
@@ -152,7 +193,7 @@ semantic_model:
       datatype: String
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "ss_ticket_number", "public": false}'
+        data: '{"_v": 1, "public": false}'
     primary_key:
     - ss_item_sk
     - ss_ticket_number
@@ -175,7 +216,7 @@ semantic_model:
       description: Surrogate key for date
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "d_date_sk", "type": "number"}'
+        data: '{"_v": 1, "type": "number"}'
     - name: d_date
       expression:
         dialects:
@@ -189,9 +230,6 @@ semantic_model:
         synonyms:
         - date
         - calendar date
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "d_date"}'
     - name: d_year
       expression:
         dialects:
@@ -203,7 +241,7 @@ semantic_model:
         - year
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "d_year", "type": "number"}'
+        data: '{"_v": 1, "type": "number"}'
     - name: d_quarter_name
       expression:
         dialects:
@@ -217,9 +255,6 @@ semantic_model:
         synonyms:
         - quarter
         - fiscal quarter
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "d_quarter_name"}'
     - name: d_month_name
       expression:
         dialects:
@@ -232,9 +267,6 @@ semantic_model:
       ai_context:
         synonyms:
         - month
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "d_month_name"}'
     primary_key:
     - d_date_sk
   - name: customer
@@ -256,7 +288,7 @@ semantic_model:
       description: Surrogate key for customer
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "c_customer_sk", "type": "number"}'
+        data: '{"_v": 1, "type": "number"}'
     - name: c_customer_id
       expression:
         dialects:
@@ -268,9 +300,6 @@ semantic_model:
         synonyms:
         - customer ID
         - customer number
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "c_customer_id"}'
     - name: c_first_name
       expression:
         dialects:
@@ -278,9 +307,6 @@ semantic_model:
           expression: c_first_name
       datatype: String
       description: Customer first name
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "c_first_name"}'
     - name: c_last_name
       expression:
         dialects:
@@ -288,9 +314,6 @@ semantic_model:
           expression: c_last_name
       datatype: String
       description: Customer last name
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "c_last_name"}'
     - name: customer_full_name
       expression:
         dialects:
@@ -313,9 +336,6 @@ semantic_model:
         synonyms:
         - email
         - contact
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "c_email_address"}'
     primary_key:
     - c_customer_sk
   - name: item
@@ -337,7 +357,7 @@ semantic_model:
       description: Surrogate key for item
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "i_item_sk", "type": "number"}'
+        data: '{"_v": 1, "type": "number"}'
     - name: i_item_id
       expression:
         dialects:
@@ -350,9 +370,6 @@ semantic_model:
         - item ID
         - product ID
         - SKU
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "i_item_id"}'
     - name: i_item_desc
       expression:
         dialects:
@@ -364,9 +381,6 @@ semantic_model:
         synonyms:
         - product description
         - item name
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "i_item_desc"}'
     - name: i_brand
       expression:
         dialects:
@@ -378,9 +392,6 @@ semantic_model:
         synonyms:
         - brand
         - manufacturer
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "i_brand"}'
     - name: i_category
       expression:
         dialects:
@@ -392,9 +403,6 @@ semantic_model:
         synonyms:
         - product category
         - department
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "i_category"}'
     - name: i_current_price
       expression:
         dialects:
@@ -407,7 +415,7 @@ semantic_model:
         - list price
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "i_current_price", "type": "number"}'
+        data: '{"_v": 1, "type": "number"}'
     primary_key:
     - i_item_sk
   - name: store
@@ -429,7 +437,7 @@ semantic_model:
       description: Surrogate key for store
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "s_store_sk", "type": "number"}'
+        data: '{"_v": 1, "type": "number"}'
     - name: s_store_id
       expression:
         dialects:
@@ -441,9 +449,6 @@ semantic_model:
         synonyms:
         - store ID
         - store number
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "s_store_id"}'
     - name: s_store_name
       expression:
         dialects:
@@ -455,9 +460,6 @@ semantic_model:
         synonyms:
         - store name
         - location name
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "s_store_name"}'
     - name: s_city
       expression:
         dialects:
@@ -469,9 +471,6 @@ semantic_model:
         synonyms:
         - city
         - location
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "s_city"}'
     - name: s_state
       expression:
         dialects:
@@ -483,9 +482,6 @@ semantic_model:
         synonyms:
         - state
         - region
-      custom_extensions:
-      - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "s_state"}'
     - name: s_number_employees
       expression:
         dialects:
@@ -498,50 +494,9 @@ semantic_model:
         - staff size
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "sql": "s_number_employees", "type": "number"}'
+        data: '{"_v": 1, "type": "number"}'
     primary_key:
     - s_store_sk
-  relationships:
-  - name: store_sales_to_date_dim
-    from: store_sales
-    to: date_dim
-    from_columns:
-    - ss_sold_date_sk
-    to_columns:
-    - d_date_sk
-    custom_extensions:
-    - vendor_name: CUBE
-      data: '{"_v": 1, "declared_on": "store_sales", "relationship": "many_to_one"}'
-  - name: store_sales_to_customer
-    from: store_sales
-    to: customer
-    from_columns:
-    - ss_customer_sk
-    to_columns:
-    - c_customer_sk
-    custom_extensions:
-    - vendor_name: CUBE
-      data: '{"_v": 1, "declared_on": "store_sales", "relationship": "many_to_one"}'
-  - name: store_sales_to_item
-    from: store_sales
-    to: item
-    from_columns:
-    - ss_item_sk
-    to_columns:
-    - i_item_sk
-    custom_extensions:
-    - vendor_name: CUBE
-      data: '{"_v": 1, "declared_on": "store_sales", "relationship": "many_to_one"}'
-  - name: store_sales_to_store
-    from: store_sales
-    to: store
-    from_columns:
-    - ss_store_sk
-    to_columns:
-    - s_store_sk
-    custom_extensions:
-    - vendor_name: CUBE
-      data: '{"_v": 1, "declared_on": "store_sales", "relationship": "many_to_one"}'
   metrics:
   - name: total_sales
     expression:
