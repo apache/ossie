@@ -82,15 +82,15 @@ def convert_ossie_semantic_model(
     )
 
     hex_models: list[HexModel] = []
-    for ds in ossie_semantic_model.datasets:
-        hex_id = hex_ids_by_dataset[ds.name]
+    for dataset in ossie_semantic_model.datasets:
+        hex_id = hex_ids_by_dataset[dataset.name]
         hex_model = convert_ossie_dataset(
-            ds,
+            dataset,
             hex_id=hex_id,
             hex_ids_by_dataset=hex_ids_by_dataset,
             dim_ids_by_dataset=dim_ids_by_dataset,
             preferred_dialect=ossie_dialect,
-            relations=relations_by_dataset.get(hex_id, []),
+            relationships=relations_by_dataset.get(hex_id, []),
             metrics=metrics_by_dataset.get(hex_id, []),
             warnings=warnings,
         )

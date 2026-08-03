@@ -46,13 +46,14 @@ def convert_hex_model(
 
     # Relations are converted first because whether a dimension's reference to
     # another model survives the trip back depends on which of them become
-    # relationships. Their warnings are held so the model reports in source order.
+    # relationships.
     (
         relationships,
         undecomposable_relations,
         relation_targets,
         relation_warnings,
     ) = convert_hex_model_relations(model)
+    warnings.extend(relation_warnings)
 
     resolve = export_ref_resolver(
         model_id=model.id,
@@ -60,21 +61,12 @@ def convert_hex_model(
         dim_ids_by_model=dim_ids_by_model,
     )
 
-    fields, unique_field_names, field_warnings = convert_hex_model_fields(
+    fields, primary_key, unique_keys, dimension_warnings = convert_hex_model_dimensions(
         model,
         ossie_dialect=ossie_dialect,
         resolve=resolve,
     )
-    warnings.extend(field_warnings)
-
-    primary_key: list[str] | None = None
-    unique_keys: list[list[str]] | None = None
-    if unique_field_names:
-        # Hex doesn't have a concept of a primary key, so just use the first
-        # unique field.
-        primary_key = [unique_field_names[0]]
-        # Hex marks each dimension unique on its own, and does not reflect composite keys
-        unique_keys = [[name] for name in unique_field_names[1:]] or None
+    warnings.extend(dimension_warnings)
 
     metrics, unsupported_measures, measure_warnings = convert_hex_model_measures(
         model,
@@ -82,8 +74,6 @@ def convert_hex_model(
         metric_names=metric_names,
     )
     warnings.extend(measure_warnings)
-
-    warnings.extend(relation_warnings)
 
     # even though our parsing does well, it's better to be safe and preserve
     source_kind = "table" if model.base_sql_table else "query"
@@ -96,7 +86,7 @@ def convert_hex_model(
         undecomposable_relations=undecomposable_relations or None,
     )
 
-    ds = OSIDataset(
+    dataset = OSIDataset(
         name=model.id,
         source=model.base_sql_table or model.base_sql_query or "",
         primary_key=primary_key,
@@ -106,7 +96,7 @@ def convert_hex_model(
         custom_extensions=maybe_write_extension(stash),
     )
 
-    return ds, metrics, relationships, warnings
+    return dataset, metrics, relationships, warnings
 
 
 def convert_hex_model_relations(
@@ -136,15 +126,28 @@ def convert_hex_model_relations(
     return relationships, undecomposable_relations, relation_targets, warnings
 
 
-def convert_hex_model_fields(
+def convert_hex_model_dimensions(
     model: HexModel,
     *,
     ossie_dialect: OSIDialect,
     resolve: RefResolver,
-) -> tuple[list[OSIField], list[str], list[ConversionWarning]]:
-    """Convert a model's dimensions, collecting the ones marked unique."""
+) -> tuple[
+    list[OSIField],
+    list[str] | None,
+    list[list[str]] | None,
+    list[ConversionWarning],
+]:
+    """Convert a model's dimensions, collecting the ones marked unique.
+
+    Returns a tuple of:
+    - ``fields``: Ossie fields.
+    - ``primary_key``: Ossie primary key, if any.
+    - ``unique_keys``: Ossie unique keys, if any.
+    - ``warnings``: Conversion warnings.
+    """
     fields: list[OSIField] = []
     unique_field_names: list[str] = []
+
     warnings: list[ConversionWarning] = []
     for dim in model.dimensions:
         field, field_warnings = convert_hex_dimension(
@@ -157,7 +160,17 @@ def convert_hex_model_fields(
         warnings.extend(field_warnings)
         if dim.unique:
             unique_field_names.append(dim.id)
-    return fields, unique_field_names, warnings
+
+    primary_key: list[str] | None = None
+    unique_keys: list[list[str]] | None = None
+    if unique_field_names:
+        # Hex doesn't have a concept of a primary key, so just use the first
+        # unique field.
+        primary_key = [unique_field_names[0]]
+        # Hex marks each dimension unique on its own, and does not reflect composite keys
+        unique_keys = [[name] for name in unique_field_names[1:]] or None
+
+    return fields, primary_key, unique_keys, warnings
 
 
 def convert_hex_model_measures(

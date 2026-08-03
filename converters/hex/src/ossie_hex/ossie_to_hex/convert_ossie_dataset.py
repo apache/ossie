@@ -44,53 +44,53 @@ from .relationship_sides import relationship_sides
 
 
 def convert_ossie_dataset(
-    ds: OSIDataset,
+    dataset: OSIDataset,
     *,
     hex_id: str,
     hex_ids_by_dataset: dict[str, str],
     dim_ids_by_dataset: dict[str, dict[str, str]],
     preferred_dialect: OSIDialect,
-    relations: list[OSIRelationship],
+    relationships: list[OSIRelationship],
     metrics: list[OSIMetric],
     warnings: list[ConversionWarning],
 ) -> HexModel:
     """Convert an Ossie dataset, with its relationships and metrics, to a Hex model."""
-    stash = read_stash(ds.custom_extensions, HexModelStash)
+    stash = read_stash(dataset.custom_extensions, HexModelStash)
     resource: dict[str, Any] = {"id": hex_id}
 
     source_kind = (
-        stash.source_kind if stash is not None else guess_source_kind(ds.source)
+        stash.source_kind if stash is not None else guess_source_kind(dataset.source)
     )
     if source_kind == "table":
-        resource["base_sql_table"] = ds.source
+        resource["base_sql_table"] = dataset.source
     elif source_kind == "query":
-        resource["base_sql_query"] = ds.source
+        resource["base_sql_query"] = dataset.source
     else:
         assert_never(source_kind)
 
     if stash is not None and stash.display_name != id_to_name(hex_id):
         resource["name"] = stash.display_name
-    if ds.description:
-        resource["description"] = ds.description
+    if dataset.description:
+        resource["description"] = dataset.description
     if stash is not None and stash.visibility is not None:
         resource["visibility"] = stash.visibility
 
     # Ordered so synthesized dimensions below land in a stable position; set
     # iteration here would reorder the emitted YAML between runs.
-    unique_names = dict.fromkeys(ds.primary_key or [])
-    for key in ds.unique_keys or []:
+    unique_names = dict.fromkeys(dataset.primary_key or [])
+    for key in dataset.unique_keys or []:
         unique_names.update(dict.fromkeys(key))
 
-    dim_id_by_field = dim_ids_by_dataset[ds.name]
+    dim_id_by_field = dim_ids_by_dataset[dataset.name]
     # Dimensions, relations, and measures share one ID namespace, so they draw
     # from a single set of taken names.
     taken_ids = set(dim_id_by_field.values())
 
     # Relations come first: Hex reaches another model through a relation ID, so
     # measure and dimension expressions cannot be rewritten until these exist.
-    hex_relations, relation_ids_by_target = convert_ossie_dataset_relations(
-        relations,
-        ds=ds,
+    relations, relation_ids_by_target = convert_ossie_relationships_by_dataset(
+        relationships,
+        dataset=dataset,
         hex_id=hex_id,
         hex_ids_by_dataset=hex_ids_by_dataset,
         dim_ids_by_dataset=dim_ids_by_dataset,
@@ -99,13 +99,13 @@ def convert_ossie_dataset(
     )
 
     resolve = ref_resolver(
-        dataset_name=ds.name,
+        dataset_name=dataset.name,
         dim_ids_by_dataset=dim_ids_by_dataset,
         relation_ids_by_target=relation_ids_by_target,
     )
 
-    dimensions = convert_ossie_dataset_dimensions(
-        ds,
+    dimensions = convert_ossie_dataset_fields(
+        dataset,
         hex_id=hex_id,
         dim_id_by_field=dim_id_by_field,
         unique_names=unique_names,
@@ -122,9 +122,9 @@ def convert_ossie_dataset(
     # onto an ID a preserved measure is about to reclaim.
     taken_ids.update(measure.id for measure in unsupported_measures or [])
 
-    measures = convert_ossie_dataset_measures(
+    measures = convert_ossie_metrics_by_dataset(
         metrics,
-        ds=ds,
+        dataset=dataset,
         hex_id=hex_id,
         hex_ids_by_dataset=hex_ids_by_dataset,
         relation_ids_by_target=relation_ids_by_target,
@@ -147,45 +147,45 @@ def convert_ossie_dataset(
         if undecomp.id in taken_ids:
             continue
         taken_ids.add(undecomp.id)
-        hex_relations.append(undecomp)
+        relations.append(undecomp)
 
-    if hex_relations:
-        resource["relations"] = hex_relations
+    if relations:
+        resource["relations"] = relations
 
     return HexModel(**resource)
 
 
-def convert_ossie_dataset_relations(
-    relations: list[OSIRelationship],
+def convert_ossie_relationships_by_dataset(
+    relationships: list[OSIRelationship],
     *,
-    ds: OSIDataset,
+    dataset: OSIDataset,
     hex_id: str,
     hex_ids_by_dataset: dict[str, str],
     dim_ids_by_dataset: dict[str, dict[str, str]],
     taken_ids: set[str],
     warnings: list[ConversionWarning],
 ) -> tuple[list[HexRelation], dict[str, str]]:
-    """Convert a dataset's relationships, and index them by the dataset they reach."""
-    hex_relations: list[HexRelation] = []
+    """Convert Ossie Relationships to Hex Relations according to the dataset they reach."""
+    relations: list[HexRelation] = []
     relation_ids_by_target: dict[str, str] = {}
-    for rel in relations:
-        hex_rel, rel_warnings = convert_ossie_relationship(
-            rel,
+    for relationship in relationships:
+        relation, relationship_warnings = convert_ossie_relationship(
+            relationship,
             base_dataset=hex_id,
             hex_ids_by_dataset=hex_ids_by_dataset,
             dim_ids_by_dataset=dim_ids_by_dataset,
             taken=taken_ids,
         )
-        hex_relations.append(hex_rel)
-        warnings.extend(rel_warnings)
-        target_dataset = relationship_sides(rel).remote_dataset
-        if target_dataset != ds.name:
-            relation_ids_by_target.setdefault(target_dataset, hex_rel.id)
-    return hex_relations, relation_ids_by_target
+        relations.append(relation)
+        warnings.extend(relationship_warnings)
+        target_dataset = relationship_sides(relationship).remote_dataset
+        if target_dataset != dataset.name:
+            relation_ids_by_target.setdefault(target_dataset, relation.id)
+    return relations, relation_ids_by_target
 
 
-def convert_ossie_dataset_dimensions(
-    ds: OSIDataset,
+def convert_ossie_dataset_fields(
+    dataset: OSIDataset,
     *,
     hex_id: str,
     dim_id_by_field: dict[str, str],
@@ -195,22 +195,22 @@ def convert_ossie_dataset_dimensions(
     taken_ids: set[str],
     warnings: list[ConversionWarning],
 ) -> list[HexDimension]:
-    """Convert a dataset's fields, adding any key column that has no field."""
+    """Convert Ossie Fields to Hex Dimensions, adding any key column that has no field."""
     dimensions: list[HexDimension] = []
-    for field in ds.fields or []:
+    for field in dataset.fields or []:
         # Ossie fields become Hex dimensions whether or not they carry a
         # `dimension` block, so the Hex model keeps every column.
-        dim, dim_warnings = convert_ossie_field(
+        dimension, field_warnings = convert_ossie_field(
             field,
             dim_id=dim_id_by_field[field.name],
             unique_names=unique_names.keys(),
             preferred_dialect=preferred_dialect,
             dataset_id=hex_id,
-            dataset_name=ds.name,
+            dataset_name=dataset.name,
             resolve=resolve,
         )
-        dimensions.append(dim)
-        warnings.extend(dim_warnings)
+        dimensions.append(dimension)
+        warnings.extend(field_warnings)
 
     # Ensure key columns exist as unique dimensions. Keys name Ossie fields, so
     # match on the field name as well as the ID it was coerced to.
@@ -228,17 +228,17 @@ def convert_ossie_dataset_dimensions(
             )
             warnings.append(
                 ConversionWarning(
-                    f"dataset '{ds.name}' key column '{key_name}' has no field; "
+                    f"dataset '{dataset.name}' key column '{key_name}' has no field; "
                     f"added dimension '{dim_id}' typed as string"
                 )
             )
     return dimensions
 
 
-def convert_ossie_dataset_measures(
+def convert_ossie_metrics_by_dataset(
     metrics: list[OSIMetric],
     *,
-    ds: OSIDataset,
+    dataset: OSIDataset,
     hex_id: str,
     hex_ids_by_dataset: dict[str, str],
     relation_ids_by_target: dict[str, str],
@@ -247,11 +247,11 @@ def convert_ossie_dataset_measures(
     taken_ids: set[str],
     warnings: list[ConversionWarning],
 ) -> list[HexMeasure]:
-    """Convert the metrics attached to a dataset into its Hex measures."""
-    foreign_names = {n for n in hex_ids_by_dataset if n != ds.name}
+    """Convert Ossie Metrics to Hex Measures according to the dataset they reach."""
+    foreign_names = {n for n in hex_ids_by_dataset if n != dataset.name}
     measures: list[HexMeasure] = []
     for metric in metrics:
-        measure, measure_warnings = convert_ossie_metric(
+        measure, metric_warnings = convert_ossie_metric(
             metric,
             dataset_id=hex_id,
             foreign_names=foreign_names,
@@ -261,7 +261,7 @@ def convert_ossie_dataset_measures(
             taken=taken_ids,
         )
         measures.append(measure)
-        warnings.extend(measure_warnings)
+        warnings.extend(metric_warnings)
     return measures
 
 

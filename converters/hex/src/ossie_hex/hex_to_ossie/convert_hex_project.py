@@ -56,7 +56,7 @@ def convert_hex_project(
 
     warnings: list[ConversionWarning] = []
 
-    models: list[OSIDataset] = []
+    datasets: list[OSIDataset] = []
     relationships: list[OSIRelationship] = []
     metrics: list[OSIMetric] = []
     views_stash: list[HexViewStash] = []
@@ -76,25 +76,25 @@ def convert_hex_project(
             continue
 
         assert isinstance(resource, HexModel)
-        ds, ds_metrics, ds_rels, ds_warnings = convert_hex_model(
+        dataset, ds_metrics, ds_rels, ds_warnings = convert_hex_model(
             resource,
             ossie_dialect=ossie_dialect,
             metric_names=metric_names,
             dim_ids_by_model=dim_ids_by_model,
         )
-        models.append(ds)
+        datasets.append(dataset)
         metrics.extend(ds_metrics)
         relationships.extend(ds_rels)
         warnings.extend(ds_warnings)
 
-    if not models:
+    if not datasets:
         raise ConversionError("Hex project contains no convertible models")
 
     project_stash = HexProjectStash(views=views_stash or None)
 
     semantic_model = OSISemanticModel(
         name=hex_project.name,
-        datasets=models,
+        datasets=datasets,
         relationships=relationships or None,
         metrics=metrics or None,
         custom_extensions=[write_stash(project_stash)],
