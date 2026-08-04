@@ -17,7 +17,13 @@
 
 from __future__ import annotations
 
-from ossie import OSIDialect, OSIDialectExpression, OSIExpression, OSIMetric
+from ossie import (
+    OSIDataType,
+    OSIDialect,
+    OSIDialectExpression,
+    OSIExpression,
+    OSIMetric,
+)
 
 from ..hex_extension import HEX_VENDOR, HexMeasureStash, maybe_write_extension
 from ..hex_types import (
@@ -114,7 +120,11 @@ def convert_hex_measure(
             )
         )
 
-    datatype = hex_to_ossie_datatype(measure.type)
+    datatype = (
+        OSIDataType.INTEGER
+        if measure.func == HexMeasureFuncName.COUNT
+        else hex_to_ossie_datatype(measure.type)
+    )
     metric = OSIMetric(
         name=metric_name,
         expression=OSIExpression(
@@ -141,7 +151,7 @@ def compile_func_measure(measure: HexMeasure, *, model_id: str) -> str:
     if measure.func == HexMeasureFuncName.COUNT and measure.of is None:
         if filters_sql:
             return f"COUNT(CASE WHEN {filters_sql} THEN 1 END)"
-        return "COUNT(*)"
+        return f"COUNT({model_id}.*)"
 
     target = compile_of(measure.of, model_id=model_id)
     if measure.func == HexMeasureFuncName.COUNT_DISTINCT:

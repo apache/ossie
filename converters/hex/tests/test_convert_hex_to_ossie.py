@@ -44,13 +44,17 @@ def test_import_minimal_hex_project(minimal_hex_path: str) -> None:
     assert orders.primary_key == ["order_id"]
 
     # Hex measures compile down to plain Ossie SQL, including the filtered form.
+    metrics = {m.name: m for m in model.metrics or []}
     assert {
-        m.name: m.expression.dialects[0].expression for m in model.metrics or []
+        name: metric.expression.dialects[0].expression
+        for name, metric in metrics.items()
     } == {
-        "order_count": "COUNT(*)",
+        "order_count": "COUNT(orders.*)",
         "total_amount": "SUM(orders.amount)",
         "cancelled_orders": "COUNT(CASE WHEN orders.is_cancelled THEN 1 END)",
     }
+    assert metrics["order_count"].datatype == OSIDataType.INTEGER
+    assert metrics["cancelled_orders"].datatype == OSIDataType.INTEGER
 
     # The requested dialect is what the converted SQL is claimed to be written in.
     assert {
