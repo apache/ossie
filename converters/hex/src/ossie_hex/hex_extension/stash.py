@@ -150,7 +150,9 @@ def write_stash(data: HexStash) -> OSICustomExtension:
     if isinstance(data, HexProjectStash):
         # version key is only needed once for the whole document
         payload = {HEX_EXTENSION_VERSION_KEY: HEX_EXTENSION_VERSION, **payload}
-    return OSICustomExtension(vendor_name=HEX_VENDOR, data=json.dumps(payload))
+    return OSICustomExtension(
+        vendor_name=HEX_VENDOR, data=json.dumps(payload, indent=2)
+    )
 
 
 def read_stash(

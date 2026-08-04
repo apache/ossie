@@ -128,6 +128,12 @@ def test_stash_extension_omits_none_fields() -> None:
     assert json.loads(extension.data) == {"type": "null"}
 
 
+def test_stash_extension_pretty_prints_json() -> None:
+    extension = write_stash(HexDimensionStash(type=HexDataType.NULL))
+
+    assert extension.data == '{\n  "type": "null"\n}'
+
+
 def test_stash_extension_versions_project_payloads_only() -> None:
     project = write_stash(HexProjectStash())
     dimension = write_stash(HexDimensionStash(type=HexDataType.STRING))
