@@ -2349,3 +2349,74 @@ def test_a_measure_depending_on_a_windowed_one_is_parked_too():
     # Both come back, in their original positions.
     cube = parse(back["model/cubes/m.yml"])["cubes"][0]
     assert [m["name"] for m in cube["measures"]] == ["rolling", "rolling_ratio"]
+
+
+# --- review round eight ----------------------------------------------------------
+
+@pytest.mark.parametrize("sql,flagged", [
+    # `users` is the fanned-out side; `orders` (the declaring cube) is not.
+    #
+    # An aggregate can read a qualified *and* an unqualified operand, and the two were
+    # not tracked independently: this reported `users` only, leaving the declaring cube
+    # -- which the bare `amount` belongs to -- unmentioned. Here it is `users` that must
+    # appear, which it did; the reverse case is covered below.
+    ("SUM({users}.ltv + {CUBE}.amount)", True),
+    # An *ordered-set* aggregate keeps its value-bearing column in the ORDER BY, on the
+    # wrapper rather than the inner function -- so examining only the inner one blamed
+    # the declaring cube and let this through.
+    ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {users}.ltv)", True),
+    # sqlglot models LISTAGG as an unnamed call, so this vanished from the analysis
+    # entirely rather than merely being misattributed.
+    ("LISTAGG({users}.name, ',') WITHIN GROUP (ORDER BY {users}.name)", True),
+    # BOOL_OR / BOOL_AND cannot change when a row is duplicated, and were rejected.
+    ("BOOL_OR({users}.flag)", False),
+    ("BOOL_AND({users}.flag)", False),
+    ("BIT_OR({users}.mask)", False),
+    ("MAX({users}.ltv) - MIN({users}.ltv)", False),
+])
+def test_fanout_covers_every_aggregate_shape(sql, flagged):
+    files = _files(m=_TWO_CUBE_CALC.replace("{SQL}", sql))
+    _, issues = convert_cube_to_ossie(files)
+    assert bool(issues.of_type(IssueType.FANOUT_UNSAFE_METRIC)) is flagged
+    if flagged:
+        with pytest.raises(ConversionError, match="FANOUT_UNSAFE_METRIC"):
+            convert_cube_to_ossie(files, strict_fanout=True)
+
+
+@pytest.mark.parametrize("expr,datasets,unqualified", [
+    # Both kinds of operand, reported independently.
+    ("SUM(amount + line_items.qty)", {"line_items"}, True),
+    ("SUM(line_items.qty)", {"line_items"}, False),
+    ("SUM(amount)", set(), True),
+    # No columns at all is read as the declaring cube, which is what `COUNT(*)` means.
+    ("COUNT(*)", set(), True),
+    # An ordered-set aggregate's column is found on the wrapper.
+    ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY users.ltv)", {"users"}, False),
+    # An unrecognized call is treated as an aggregate: a warning if it is not one is
+    # cheaper than a silently inflated number if it is.
+    ("MY_UDF(users.x)", {"users"}, False),
+    # A nested aggregate is one scope, not two, so the inner one does not also report
+    # the declaring cube.
+    ("SUM(MY_UDF(users.x))", {"users"}, False),
+    # Idempotent, so nothing is attributed.
+    ("BOOL_OR(users.flag)", set(), False),
+    ("SUM(DISTINCT users.ltv)", set(), False),
+])
+def test_aggregate_attribution(expr, datasets, unqualified):
+    from ossie_cube.expressions import unsafe_aggregate_datasets
+
+    assert unsafe_aggregate_datasets(expr) == (datasets, unqualified)
+
+
+def test_a_quoted_geo_half_reference_still_inlines_its_sql():
+    """A split geo half exists only in Ossie, so a reference to it has to be replaced by
+    the half's own SQL. The inline table was keyed by the normalized form alone, unlike
+    every other table, so an exact-quoted reference missed the substitution and came out
+    as a raw column of a name the database does not have."""
+    from _util import to_cube_sql
+
+    for reference in ('users.home_latitude', 'users."HOME_LATITUDE"',
+                      'users."home_latitude"'):
+        assert to_cube_sql(f"AVG({reference})", "users", {"home"},
+                           inline_sql={"home_latitude": "{CUBE}.lat"}) == (
+            "AVG({CUBE}.lat)")

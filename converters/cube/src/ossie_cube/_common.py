@@ -762,10 +762,14 @@ class ReferenceTables:
             datasets=lookup_map(cube_names),
             references=per_cube(references_by_cube, lookup_map),
             columns=per_cube(columns_by_cube, lookup_map),
+            # Keyed with the same match logic as every other table. Using only the
+            # normalized form meant an exact-quoted reference to a split geo half --
+            # `users."home_latitude"` -- missed its substitution and came out as a raw
+            # column of that name, which exists in Ossie and not in the database.
             inline_sql=per_cube(
                 inline_sql_by_cube,
-                lambda fields: {normalize_identifier(f): sql
-                                for f, sql in fields.items()}),
+                lambda fields: {key: sql for f, sql in fields.items()
+                                for key in match_keys(f)}),
         )
 
     def for_cube(self, cube, attribute):

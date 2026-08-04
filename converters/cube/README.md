@@ -227,14 +227,19 @@ the measure's Cube type, and not on the cube it is declared on. Both shortcuts w
 wrong: a calculated `type: number` measure's type says nothing about the aggregates
 inside it, and the cube a measure is declared on is not necessarily the one an aggregate
 inside it *reads*. `SUM(users.ltv) / SUM(orders.amount)` sits on `orders` while `users`
-is the fanned-out side. The idempotent set is an **allowlist** — `MIN`, `MAX`, `APPROX_COUNT_DISTINCT`, and
-*any* aggregate over a `DISTINCT` set (which collapses duplicates before the aggregate
-sees them, so `SUM(DISTINCT x)` is as safe as `COUNT(DISTINCT x)`) — because the set of
-aggregate functions is open-ended, and listing the unsafe ones silently declared
-`STDDEV`, `MEDIAN` and `ARRAY_AGG` safe. Attribution walks the parse tree rather than
-matching aggregate names in text, so an aggregate with no Cube mapping is attributed like
-any other: `SUM(orders.amount) + STDDEV(users.ltv)` reports `users`, which name-matching
-missed once it had found the `SUM`.
+is the fanned-out side. The idempotent set is an **allowlist** — `MIN`, `MAX`, `APPROX_COUNT_DISTINCT`,
+`BOOL_OR`/`BOOL_AND`/`BIT_OR`/`BIT_AND`, and *any* aggregate over a `DISTINCT` set (which
+collapses duplicates before the aggregate sees them, so `SUM(DISTINCT x)` is as safe as
+`COUNT(DISTINCT x)`) — because the set of aggregate functions is open-ended, and listing
+the unsafe ones silently declared `STDDEV`, `MEDIAN` and `ARRAY_AGG` safe.
+
+Attribution walks the parse tree rather than matching aggregate names in text, and counts
+three shapes as one aggregate: an ordinary call, an *ordered-set* one (`PERCENTILE_CONT(…)
+WITHIN GROUP (ORDER BY x)`, whose value-bearing column sits on the wrapper), and a call
+SQL parsing does not model at all (`LISTAGG`, `APPROX_PERCENTILE`). The last of those may
+equally be a scalar UDF, so treating it as an aggregate over-reports — the cheaper error,
+since the default is to warn rather than refuse. Qualified and unqualified operands are
+counted independently, because one aggregate can read both.
 
 The TPC-DS fixture carries a real example: `store_productivity` is
 `SUM(store_sales.ss_ext_sales_price) / NULLIF(SUM(store.s_number_employees), 0)`, and

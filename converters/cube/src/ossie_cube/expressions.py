@@ -172,11 +172,46 @@ def _match_paren(text, open_at):
 # treated as unsafe -- an allowlist rather than a blocklist, because the set of
 # aggregate functions is open-ended (STDDEV, VARIANCE, MEDIAN, ARRAY_AGG, PERCENTILE...)
 # and listing the unsafe ones meant every unlisted one was silently declared safe.
-_IDEMPOTENT_NODES = (exp.Min, exp.Max, exp.ApproxDistinct)
+_IDEMPOTENT_NODES = (
+    exp.Min, exp.Max, exp.ApproxDistinct,
+    # BOOL_OR / BOOL_AND: a duplicated row cannot change whether *any* or *all* rows
+    # satisfy the predicate.
+    exp.LogicalOr, exp.LogicalAnd,
+)
+
+# Aggregates sqlglot leaves as an unmodelled call (`Anonymous`) but which duplication
+# cannot affect either. Bitwise OR/AND of a value set is idempotent for the same reason
+# the logical ones are.
+_IDEMPOTENT_CALLS = frozenset({"BIT_OR", "BIT_AND", "BOOL_OR", "BOOL_AND"})
+
+
+def _is_aggregate_scope(node):
+    """True for a node that constitutes one aggregate, whatever shape sqlglot gave it.
+
+    Three shapes, all of which have to count:
+    - `AggFunc`, the modelled aggregates (SUM, COUNT, PERCENTILE_CONT, ...);
+    - `WithinGroup`, an *ordered-set* aggregate -- the value-bearing column lives in the
+      ORDER BY, on the wrapper rather than on the inner function, so examining only the
+      inner one attributed `PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY users.ltv)` to
+      the declaring cube instead of `users`;
+    - `Anonymous`, a call sqlglot does not model at all -- which is how LISTAGG,
+      APPROX_PERCENTILE and BIT_OR arrive, and how `LISTAGG(...) WITHIN GROUP (...)`
+      vanished from the analysis entirely.
+
+    An `Anonymous` may equally be a scalar UDF, so treating it as an aggregate
+    over-reports. That is the cheaper error: a warning by default (the fan-out policy
+    warns rather than refuses), against a silently inflated number the other way.
+    """
+    return isinstance(node, (exp.AggFunc, exp.WithinGroup, exp.Anonymous))
 
 
 def is_idempotent_aggregate(node):
     """True if duplicating input rows cannot change this aggregate's value."""
+    if isinstance(node, exp.WithinGroup):
+        # An ordered-set aggregate is exactly as safe as the function being ordered.
+        return bool(node.this) and is_idempotent_aggregate(node.this)
+    if isinstance(node, exp.Anonymous):
+        return str(node.this or "").upper() in _IDEMPOTENT_CALLS
     if isinstance(node, _IDEMPOTENT_NODES):
         return True
     # DISTINCT collapses duplicates before the aggregate sees them, so *any* aggregate
@@ -216,16 +251,34 @@ def unsafe_aggregate_datasets(expr):
     if tree is None:
         return None
     datasets, unqualified = set(), False
-    for node in tree.walk():
-        if not isinstance(node, exp.AggFunc) or is_idempotent_aggregate(node):
+    for scope in _outermost_aggregate_scopes(tree):
+        if is_idempotent_aggregate(scope):
             continue
-        tables = {column.table for column in node.find_all(exp.Column)
-                  if column.table}
-        if tables:
-            datasets |= tables
-        else:
+        columns = list(scope.find_all(exp.Column))
+        # Qualified and unqualified operands are tracked *independently*: an aggregate can
+        # read both, and `SUM(amount + line_items.qty)` reported only `line_items` while
+        # the declaring cube -- which `amount` belongs to -- went unmentioned.
+        datasets |= {column.table for column in columns if column.table}
+        if not columns or any(not column.table for column in columns):
             unqualified = True
     return datasets, unqualified
+
+
+def _outermost_aggregate_scopes(tree):
+    """Aggregate scopes that are not inside another one.
+
+    Nesting is resolved so an ordered-set aggregate is counted once: `WithinGroup` and
+    the `PercentileCont` inside it are one aggregate, and treating the inner one as its
+    own scope would find no columns there and blame the declaring cube.
+    """
+    scopes = []
+    for node in tree.walk():
+        if not _is_aggregate_scope(node):
+            continue
+        if any(any(inner is node for inner in scope.walk()) for scope in scopes):
+            continue
+        scopes.append(node)
+    return scopes
 
 
 def has_top_level_operator(expr):
