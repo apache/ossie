@@ -1428,7 +1428,9 @@ def test_several_semantic_models_convert_the_first_with_an_issue():
     ("a = 'x'", [("a = ", False), ("'x'", True)]),
     ("'x' = a", [("'x'", True), (" = a", False)]),
     ("'it''s'", [("'it'", True), ("'s'", True)]),
-    ('"col" = `c`', [('"col"', True), (" = ", False), ("`c`", True)]),
+    # A double-quoted run is an *identifier*, not a literal, so it stays parseable --
+    # `QUOTED_DOTTED_REF_RE` matches it as one identifier part.
+    ('"col" = `c`', [('"col" = ', False), ("`c`", True)]),
     ("a = 'unterminated", [("a = ", False), ("'unterminated", True)]),
     ("plain", [("plain", False)]),
 ])
@@ -1923,3 +1925,194 @@ def test_is_time_without_a_datatype_does_not_acquire_one():
         "occurred_at"]
     assert "datatype" not in field
     assert field["dimension"]["is_time"] is True
+
+
+# --- review round five -----------------------------------------------------------
+
+_FANOUT_CALC = _files(m=(
+    "cubes:\n"
+    "  - name: orders\n"
+    "    sql_table: a.b.orders\n"
+    "    joins:\n"
+    "      - name: users\n"
+    "        sql: \"{CUBE}.user_id = {users}.id\"\n"
+    "        relationship: many_to_one\n"
+    "    dimensions:\n"
+    "      - name: user_id\n        sql: user_id\n        type: number\n"
+    "  - name: users\n"
+    "    sql_table: a.b.users\n"
+    "    dimensions:\n"
+    "      - name: id\n        sql: id\n        type: number\n        primary_key: true\n"
+    "    measures:\n"
+    "      - name: ltv_pct\n"
+    "        sql: \"SUM({CUBE}.ltv) / 100\"\n"
+    "        type: number\n"
+))
+
+
+def test_a_calculated_measure_is_judged_on_its_aggregates_not_its_type():
+    """A Cube calculated measure is classified by its outer type, which says nothing
+    about the aggregates inside: `SUM({CUBE}.ltv) / 100` is a `number` measure whose
+    value is still a sum. Judging it by `type` alone let an unsafe expression through
+    unreported -- even under strict mode."""
+    _, issues = convert_cube_to_ossie(_FANOUT_CALC)
+    assert issues.of_type(IssueType.FANOUT_UNSAFE_METRIC)
+    with pytest.raises(ConversionError, match="FANOUT_UNSAFE_METRIC"):
+        convert_cube_to_ossie(_FANOUT_CALC, strict_fanout=True)
+
+
+@pytest.mark.parametrize("expr,unsafe", [
+    ("SUM(users.ltv) / 100", True),
+    ("AVG(users.ltv)", True),
+    ("COUNT(users.id)", True),              # no DISTINCT: duplication counts twice
+    ("COUNT(DISTINCT users.id)", False),    # idempotent under duplication
+    ("MIN(users.x) + MAX(users.y)", False),
+    ("COUNT(DISTINCT users.id) / MAX(users.x)", False),
+    ("users.a + users.b", False),           # no aggregate at all
+    ("not valid sql (((", True),            # unparseable: assume the worse
+])
+def test_non_idempotent_aggregate_detection(expr, unsafe):
+    from ossie_cube.expressions import has_non_idempotent_aggregate
+
+    assert has_non_idempotent_aggregate(expr) is unsafe
+
+
+def test_a_cross_cube_member_gets_the_target_cubes_own_spelling():
+    """`{users.ID}` does not resolve when the member is declared `id` -- Cube's member
+    lookup is case-sensitive even though Ossie's identifiers are not."""
+    ossie = (
+        "version: 0.2.0.dev0\n"
+        "semantic_model:\n"
+        "- name: shop\n"
+        "  datasets:\n"
+        "  - name: orders\n"
+        "    source: a.b.orders\n"
+        "    fields:\n"
+        "    - name: amount\n      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: amount\n"
+        "      datatype: Decimal\n"
+        "  - name: users\n"
+        "    source: a.b.users\n"
+        "    primary_key:\n    - id\n"
+        "    fields:\n"
+        "    - name: id\n      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: id\n"
+        "      datatype: Integer\n"
+        "  relationships:\n"
+        "  - name: r\n    from: orders\n    to: users\n"
+        "    from_columns: [amount]\n    to_columns: [id]\n"
+        "  metrics:\n"
+        "  - name: m\n    expression:\n      dialects:\n"
+        "      - dialect: ANSI_SQL\n        expression: SUM(orders.amount + USERS.ID)\n"
+    )
+    files, _ = convert_ossie_to_cube(ossie)
+    assert parse(files["model/cubes/orders.yml"])["cubes"][0][
+        "measures"][0]["sql"] == "{CUBE}.amount + {users.id}"
+
+
+@pytest.mark.parametrize("reference,expected", [
+    # An ANSI double-quoted identifier is a *name*, not a string literal, so it is
+    # parsed. Per core-spec, a quoted identifier is force-matched to the normalized
+    # (upper) case: `"AMOUNT"` is the field `amount`, `"Amount"` is not.
+    ('orders."AMOUNT"', "SUM({CUBE.amount})"),
+    ('"ORDERS"."AMOUNT"', "SUM({CUBE.amount})"),
+    ('orders."Amount"', 'SUM({CUBE}."Amount")'),
+    ('orders."amount"', 'SUM({CUBE}."amount")'),
+])
+def test_quoted_identifiers_are_parsed_not_skipped(reference, expected):
+    """The whole double-quoted region used to be treated as opaque -- the same handling
+    string literals get -- so a quoted reference was never rewritten and bypassed the
+    member it named."""
+    from ossie_cube._common import ossie_expr_to_cube_sql
+
+    assert ossie_expr_to_cube_sql(
+        f"SUM({reference})", "orders", {"amount"}, {"orders"}) == expected
+
+
+def test_a_single_quoted_literal_is_still_opaque():
+    """The change above must not weaken literal handling: Cube compiles every string as
+    an f-string, so a `{...}` emitted into a literal would be interpolated."""
+    from ossie_cube._common import ossie_expr_to_cube_sql
+
+    assert ossie_expr_to_cube_sql(
+        "SUM(orders.amount) || ' orders.amount '", "orders", {"amount"},
+        {"orders"}) == "SUM({CUBE.amount}) || ' orders.amount '"
+
+
+_CHAIN = (
+    "cubes:\n"
+    "  - name: orders\n"
+    "    sql_table: a.b.orders\n"
+    "    joins:\n"
+    "      - name: users\n"
+    "        sql: \"{CUBE.user_key} = {users.id}\"\n"
+    "        relationship: many_to_one\n"
+    "    dimensions:\n"
+    "      - name: user_key\n        sql: \"{CUBE.mid}\"\n        type: string\n"
+    "      - name: mid\n        sql: \"{MID_SQL}\"\n        type: string\n"
+    "  - name: users\n"
+    "    sql_table: a.b.users\n"
+    "    dimensions:\n"
+    "      - name: id\n        sql: id\n        type: number\n        primary_key: true\n"
+)
+
+
+@pytest.mark.parametrize("mid_sql,expected", [
+    # The chain ends in a real column, so the relationship names that column.
+    ("user_id", ["user_id"]),
+    # It ends in an expression, so there is no column to name: the join is parked.
+    ("CONCAT({CUBE}.a, {CUBE}.b)", None),
+    # A cycle Cube would reject must not hang the walk either.
+    ("{CUBE.user_key}", None),
+])
+def test_a_join_member_chain_is_followed_to_its_end(mid_sql, expected):
+    """`{CUBE.x}` flattens to the bare name `x`, which *looks* like a column but is only
+    one if `x` itself reads one. Resolving a single level treated a computed dimension at
+    the end of the chain as a physical column."""
+    files = _files(m=_CHAIN.replace("{MID_SQL}", mid_sql))
+    ossie, back, _ = _roundtrip(files)
+    rels = model_of(ossie).get("relationships")
+    if expected is None:
+        assert rels is None
+    else:
+        assert rels[0]["from_columns"] == expected
+    # Either way Cube gets its own model back.
+    assert parse_files(back) == parse_files(files)
+
+
+def test_a_generated_part_name_avoids_a_stashed_member():
+    """A stashed segment, `switch` dimension or multi-stage measure is restored verbatim
+    on export, so a part name colliding with one failed the conversion at the very end
+    rather than picking the next free name."""
+    import json
+
+    stash = {"_v": 1,
+             "cube_extras": {"segments": [{"name": "ratio_part_1", "sql": "x"}]}}
+    ossie = (
+        "version: 0.2.0.dev0\n"
+        "semantic_model:\n"
+        "- name: shop\n"
+        "  datasets:\n"
+        "  - name: orders\n"
+        "    source: a.b.orders\n"
+        "    primary_key:\n    - id\n"
+        "    fields:\n"
+        "    - name: id\n      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: id\n"
+        "      datatype: Integer\n"
+        "    - name: amount\n      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: amount\n"
+        "      datatype: Decimal\n"
+        "    custom_extensions:\n"
+        "    - vendor_name: CUBE\n"
+        f"      data: '{json.dumps(stash)}'\n"
+        "  metrics:\n"
+        "  - name: ratio\n    expression:\n      dialects:\n"
+        "      - dialect: ANSI_SQL\n"
+        "        expression: SUM(orders.amount) / COUNT(DISTINCT orders.id)\n"
+    )
+    files, _ = convert_ossie_to_cube(ossie)
+    cube = parse(files["model/cubes/orders.yml"])["cubes"][0]
+    assert [m["name"] for m in cube["measures"]] == [
+        "ratio_part_2", "ratio_part_3", "ratio"]
+    assert [s["name"] for s in cube["segments"]] == ["ratio_part_1"]

@@ -65,7 +65,7 @@ from ._common import (
     write_stash,
 )
 from .converter_issues import IssueLog, IssueType
-from .expressions import has_top_level_operator
+from .expressions import has_non_idempotent_aggregate, has_top_level_operator
 
 # Cube keys the converter maps natively at the cube level; everything else is
 # stashed verbatim in the dataset's `cube_extras` and restored on export.
@@ -922,14 +922,22 @@ _JOIN_SIDE_RE = re.compile(
     r"^\s*\$?\{\s*([^{}]*?)\s*\}\s*(?:\.\s*([A-Za-z_][A-Za-z0-9_]*))?\s*$")
 
 
-def _column_of(cubes, cname, member):
+def _column_of(cubes, cname, member, seen=()):
     """The physical column a dimension reads, or None when it reads more than one.
 
     Cube's "no `sql` means the same-named column" rule applies, and a dimension whose
     sql is a single column resolves to that column -- so `user_key` with `sql: user_id`
     resolves to `user_id`. A computed dimension (`CONCAT(...)`), a geo one, or an
     unknown name has no single column and returns None.
+
+    A member may point at another member (`sql: "{CUBE.tenant_user_id}"`), so the chain
+    is followed to its end: `{CUBE.x}` flattens to the bare name `x`, which *looks* like
+    a column but is only one if `x` itself reads one. Resolving one level treated a
+    computed dimension at the end of the chain as a physical column. A cycle -- which
+    Cube would reject, but which must not hang this -- ends the walk.
     """
+    if (cname, member) in seen:
+        return None
     for dim in _as_named_list((cubes.get(cname) or {}).get("dimensions"),
                               f"cube '{cname}' dimensions"):
         if dim.get("name") != member:
@@ -941,8 +949,24 @@ def _column_of(cubes, cname, member):
             return member
         translated, _ = cube_sql_to_ossie(sql, cname)
         translated = translated.strip()
-        return translated if is_simple_identifier(translated) else None
+        if not is_simple_identifier(translated):
+            return None
+        if translated != member and _is_member(cubes, cname, translated):
+            # The dimension reads *another* member, not a column: keep walking. A
+            # dimension whose sql is its own name (`id` with `sql: id`) is the plain
+            # case, not a chain -- treating it as one made every such join unresolvable.
+            return _column_of(cubes, cname, translated,
+                              seen + ((cname, member),))
+        return translated
     return None
+
+
+def _is_member(cubes, cname, name):
+    """True if `name` is a dimension of `cname` (so not a physical column)."""
+    return any(dim.get("name") == name
+               for dim in _as_named_list(
+                   (cubes.get(cname) or {}).get("dimensions"),
+                   f"cube '{cname}' dimensions"))
 
 
 def _ref_target(side, own_cube, target, cubes):
@@ -1261,6 +1285,11 @@ def _convert_measure(cname, mname, metric_name, measure, resolver, fanned_out,
     # Cube fixes this at query time by deduplicating on the primary key; a static
     # expression cannot, so the caller has to be told.
     unsafe = mtype in FANOUT_UNSAFE_AGGS or (mtype == "count" and sql is not None)
+    if not unsafe and mtype in CALCULATED_MEASURE_TYPES:
+        # A calculated measure is classified by its outer type, which says nothing
+        # about the aggregates inside it: `SUM({CUBE}.ltv) / 100` is a `number` measure
+        # whose value is still a sum. Judged on the resolved expression instead.
+        unsafe = has_non_idempotent_aggregate(expr)
     if unsafe and cname in fanned_out:
         issues.add(
             IssueType.FANOUT_UNSAFE_METRIC, scope,

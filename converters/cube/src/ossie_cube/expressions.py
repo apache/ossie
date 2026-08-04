@@ -162,6 +162,44 @@ def _match_paren(text, open_at):
     return None
 
 
+# Aggregates whose value changes when input rows are duplicated. `Count` is here only
+# in its non-DISTINCT form -- COUNT(DISTINCT x) is idempotent under duplication.
+_NON_IDEMPOTENT_NODES = (exp.Sum, exp.Avg)
+
+
+def has_non_idempotent_aggregate(expr):
+    """True if `expr` contains an aggregate that over-counts duplicated rows.
+
+    A Cube *calculated* measure (`type: number`) is classified by its outer type, which
+    says nothing about the aggregates inside it -- `SUM({CUBE}.ltv) / 100` is a `number`
+    measure whose value is still a sum. So fan-out safety has to be judged on the
+    resolved expression, not on the measure type.
+
+    Conservative when sqlglot cannot parse the expression: an unparseable expression is
+    reported as unsafe rather than assumed safe, since the whole point is not to emit a
+    silently-inflated number.
+    """
+    tree = parse(expr)
+    if tree is None:
+        return True
+    for node in tree.walk():
+        if isinstance(node, _NON_IDEMPOTENT_NODES):
+            return True
+        if isinstance(node, exp.Count) and not _counts_distinct(node):
+            return True
+    return False
+
+
+def _counts_distinct(node):
+    """True for `COUNT(DISTINCT x)`, which duplication does not affect."""
+    inner = node.this
+    if isinstance(inner, exp.Distinct):
+        return True
+    # sqlglot may hang the DISTINCT off the function's argument list instead.
+    return any(isinstance(arg, exp.Distinct)
+               for arg in (node.args.get("expressions") or []))
+
+
 def has_top_level_operator(expr):
     """True if `expr` is not a single self-contained term.
 

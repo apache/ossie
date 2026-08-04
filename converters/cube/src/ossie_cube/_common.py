@@ -61,6 +61,16 @@ DOTTED_REF_RE = re.compile(
     r"(?<![\w.$])([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)(?![\w.])"
 )
 
+# One identifier: a regular one, or an ANSI double-quoted one (with `""` escaping an
+# embedded quote). Kept in step with DOTTED_REF_RE below.
+_IDENT_PART = r'(?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_]*)'
+
+# `cube.member` where either part may be quoted: `orders.amount`, `"Orders"."Amount"`,
+# `orders."Amount"`. The guards stop `a.b.c` and `1.5` from matching, as before.
+QUOTED_DOTTED_REF_RE = re.compile(
+    rf'(?<![\w.$"]){_IDENT_PART}\s*\.\s*{_IDENT_PART}(?![\w.])'
+)
+
 # A Cube member reference: `{...}` in YAML models, `${...}` in JavaScript ones --
 # the YAML compiler rewrites the former into the latter, so they mean the same
 # thing. Group 1 is the reference body.
@@ -471,10 +481,15 @@ def quoted_runs(sql):
     it. Skipping quoted text on the way in would therefore *lose* a reference Cube
     really does resolve.
 
-    `'`, `"` and backtick all open a run; a run is closed by its own delimiter, and
-    an unterminated one runs to the end (reported quoted, so nothing in it is
-    rewritten). SQL's `''` doubling needs no special case: it reads as a close
-    immediately followed by an open, leaving an empty unquoted run between.
+    Only a *string literal* counts: `'` and backtick open a run. An ANSI double-quoted
+    run is a quoted *identifier* -- a name, not text -- so it stays parseable, and
+    `QUOTED_DOTTED_REF_RE` matches it as one identifier part. Treating it as opaque left
+    a valid `SUM("Orders"."Amount")` as raw SQL, bypassing the member it names.
+
+    A run is closed by its own delimiter, and an unterminated one runs to the end
+    (reported quoted, so nothing in it is rewritten). SQL's `''` doubling needs no
+    special case: it reads as a close immediately followed by an open, leaving an empty
+    unquoted run between.
     """
     runs, buf, quote = [], [], None
     for ch in str(sql):
@@ -483,7 +498,7 @@ def quoted_runs(sql):
             if ch == quote:
                 runs.append(("".join(buf), True))
                 buf, quote = [], None
-        elif ch in "'\"`":
+        elif ch in "'`":
             if buf:
                 runs.append(("".join(buf), False))
             buf, quote = [ch], ch
@@ -536,11 +551,30 @@ def referenced_datasets(expr, known):
     for text, quoted in quoted_runs(expr):
         if quoted:
             continue
-        for match in DOTTED_REF_RE.finditer(text):
-            name = canonical.get(normalize_identifier(match.group(1)))
+        for match in QUOTED_DOTTED_REF_RE.finditer(text):
+            head, _ = split_dotted_ref(match.group(0))
+            name = canonical.get(normalize_identifier(head))
             if name is not None:
                 found.add(name)
     return found
+
+
+def split_dotted_ref(text):
+    """Split a matched `cube.member` reference into its two identifier parts.
+
+    Done on the match rather than with capture groups because either part may be a
+    quoted identifier containing a dot (`"My.Cube".amount`).
+    """
+    depth_quote, split_at = False, None
+    for i, ch in enumerate(text):
+        if ch == '"':
+            depth_quote = not depth_quote
+        elif ch == "." and not depth_quote:
+            split_at = i
+            break
+    if split_at is None:
+        return text.strip(), ""
+    return text[:split_at].strip(), text[split_at + 1:].strip()
 
 
 def quoted_char_mask(sql):
@@ -632,7 +666,7 @@ def requalify_self_refs(sql, cube_name):
 
 
 def ossie_expr_to_cube_sql(expr, own_cube, own_members=(), cube_names=(),
-                           inline_sql=None):
+                           inline_sql=None, members_by_cube=None):
     """Rewrite an Ossie expression into Cube member-reference form.
 
     Only *dotted* `cube.name` references are rewritten -- a bare identifier stays
@@ -673,8 +707,13 @@ def ossie_expr_to_cube_sql(expr, own_cube, own_members=(), cube_names=(),
         for cube, fields in (inline_sql or {}).items()
     }
 
+    foreign_members = {
+        normalize_identifier(cube): canonical_map(names)
+        for cube, names in (members_by_cube or {}).items()
+    }
+
     def repl(m):
-        head, name = m.group(1), m.group(2)
+        head, name = split_dotted_ref(m.group(0))
         # Ossie regular identifiers are case-insensitive, so the reference is matched
         # in normalized form; what is *emitted* is the canonical Cube spelling, since
         # Cube's own member lookup is case-sensitive.
@@ -690,12 +729,17 @@ def ossie_expr_to_cube_sql(expr, own_cube, own_members=(), cube_names=(),
             return ("{CUBE." + members[name_n] + "}" if name_n in members
                     else "{CUBE}." + name)
         if head_n in known:
-            return "{" + known[head_n] + "." + name + "}"
+            # A cross-cube member needs the target cube's own spelling for the same
+            # reason: `{users.ID}` does not resolve when the member is declared `id`.
+            target = known[head_n]
+            member = (foreign_members.get(head_n) or {}).get(name_n, name)
+            return "{" + target + "." + member + "}"
         # Not a dataset in this model -- a genuine schema-qualified table
         # reference or an unrelated dotted token. Leave it alone.
         return m.group(0)
 
-    return sub_outside_quotes(escaped, lambda run: DOTTED_REF_RE.sub(repl, run))
+    return sub_outside_quotes(
+        escaped, lambda run: QUOTED_DOTTED_REF_RE.sub(repl, run))
 
 
 # --- source ---------------------------------------------------------------------

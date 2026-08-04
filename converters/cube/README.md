@@ -166,10 +166,15 @@ Ossie form (`.js`/`.ts` models, non-model YAML).
 **Identifier case**: Ossie regular (unquoted) identifiers are case-insensitive — the
 core spec's *normalized* form upper-cases them and strips quotes from quoted ones — so
 `orders.AMOUNT` addresses the field `amount`. Lookups use that form, and what is
-emitted is the canonical **Cube** spelling, because Cube's own member resolution *is*
-case-sensitive. Matching exactly, as this converter first did, emitted `{CUBE}.AMOUNT`:
-a raw column that bypasses the member's expression, so a metric silently aggregated the
-wrong thing.
+emitted is the canonical **Cube** spelling (for the target cube's members too, not just
+its own), because Cube's own member resolution *is* case-sensitive. Matching exactly, as
+this converter first did, emitted `{CUBE}.AMOUNT`: a raw column that bypasses the
+member's expression, so a metric silently aggregated the wrong thing.
+
+A **quoted** identifier is a name, not a string literal, so it is parsed rather than
+skipped — and the spec's table decides what it matches: `orders."AMOUNT"` is the field
+`amount` (force-matched to the normalized case), while `orders."Amount"` is not, and
+stays a raw quoted column.
 
 **Expression dialects**: Cube SQL is the SQL of the model's data source, and the
 Ossie dialect enum has no `CUBE` entry -- so import emits `ANSI_SQL`, and export
@@ -215,6 +220,7 @@ emit a silently-wrong one:
 | `count_distinct_approx` | `APPROX_COUNT_DISTINCT(x)` | Yes, inherently |
 | `min` / `max` | `MIN(x)` / `MAX(x)` | Yes -- idempotent under duplication |
 | `sum`, `avg`, `count` + `sql` | `SUM(x)`, `AVG(x)`, `COUNT(x)` | **No** |
+| `number` (calculated) containing one of those | the expression verbatim | **No** — and judged on the *resolved expression*, not the measure type: `SUM({CUBE}.ltv) / 100` is a `number` measure whose value is still a sum. |
 
 Only the last row is at risk, and only when its own cube is the `to` (one) side of
 a relationship in the model. The converter computes that from the Ossie graph and
