@@ -2039,20 +2039,18 @@ def test_quoted_identifiers_are_parsed_not_skipped(reference, expected):
     """The whole double-quoted region used to be treated as opaque -- the same handling
     string literals get -- so a quoted reference was never rewritten and bypassed the
     member it named."""
-    from ossie_cube._common import ossie_expr_to_cube_sql
+    from _util import to_cube_sql
 
-    assert ossie_expr_to_cube_sql(
-        f"SUM({reference})", "orders", {"amount"}, {"orders"}) == expected
+    assert to_cube_sql(f"SUM({reference})", "orders", {"amount"}) == expected
 
 
 def test_a_single_quoted_literal_is_still_opaque():
     """The change above must not weaken literal handling: Cube compiles every string as
     an f-string, so a `{...}` emitted into a literal would be interpolated."""
-    from ossie_cube._common import ossie_expr_to_cube_sql
+    from _util import to_cube_sql
 
-    assert ossie_expr_to_cube_sql(
-        "SUM(orders.amount) || ' orders.amount '", "orders", {"amount"},
-        {"orders"}) == "SUM({CUBE.amount}) || ' orders.amount '"
+    assert to_cube_sql("SUM(orders.amount) || ' orders.amount '", "orders",
+                       {"amount"}) == "SUM({CUBE.amount}) || ' orders.amount '"
 
 
 _CHAIN = (

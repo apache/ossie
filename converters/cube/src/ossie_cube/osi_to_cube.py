@@ -50,6 +50,7 @@ from ._common import (
     instructions_of,
     is_simple_identifier,
     load_yaml,
+    ReferenceTables,
     ossie_expr_to_cube_sql,
     parse_source,
     pick_expression,
@@ -58,7 +59,7 @@ from ._common import (
     referenced_datasets,
     DOTTED_REF_RE,
     lookup_map,
-    normalize_identifier,
+    resolve_identifier,
     quoted_runs,
     split_dotted_ref,
     require_str,
@@ -152,10 +153,13 @@ def _convert_model(model, dialect, base_cube, issues):
                                               f"Model '{name}': dataset '{ds_name}'")
             for ds_name, ds in datasets.items()}
 
+    tables = _reference_tables(plan, cube_names)
+
     joins_by_cube, join_parked_by_cube = _build_joins(
         relationships, cube_names, issues)
     measures_by_cube = _build_measures(
-        model, cube_names, plan, datasets, relationships, base_cube, dialect, issues)
+        model, cube_names, plan, tables, datasets, relationships, base_cube, dialect,
+        issues)
 
     # Cubes, grouped by the file they belong in: several datasets can share one
     # stashed original path, in which case they go back into the same file.
@@ -164,7 +168,7 @@ def _convert_model(model, dialect, base_cube, issues):
     emitted_members = {}
     for ds_name, ds in datasets.items():
         cname = cube_names[ds_name]
-        cube = _build_cube(ds, plan[cname], joins_by_cube.get(cname),
+        cube = _build_cube(ds, plan[cname], tables, joins_by_cube.get(cname),
                            measures_by_cube.get(cname),
                            join_parked_by_cube.get(cname), dialect, issues)
         stashed = stashed_paths.get(cname)
@@ -268,7 +272,8 @@ def _ordered(obj, order):
 
 # --- cubes ----------------------------------------------------------------------
 
-def _build_cube(ds, plan, joins, measures, join_extensions, dialect, issues):
+def _build_cube(ds, plan, tables, joins, measures, join_extensions, dialect,
+                issues):
     cname = plan.cname
     ds_name = ds["name"]
     scope = f"dataset '{ds_name}'"
@@ -305,7 +310,7 @@ def _build_cube(ds, plan, joins, measures, join_extensions, dialect, issues):
                        "so this cube-level value has no effect in Cube")
 
     dimensions, by_name_scalar, by_column, by_name_computed = _build_dimensions(
-        ds, plan, dialect, issues)
+        ds, plan, tables, dialect, issues)
     # Resolve each `primary_key` entry to the dimension Cube should mark. A
     # dimension only qualifies when it is *scalar* -- backed by a single source
     # column -- because `primary_key: true` in Cube declares that dimension's own
@@ -557,7 +562,7 @@ def _resolve_dimension_names(ds, scope):
     return names, inline_sql
 
 
-def _build_dimensions(ds, plan, dialect, issues):
+def _build_dimensions(ds, plan, tables, dialect, issues):
     """Build a cube's dimensions from an Ossie dataset's fields.
 
     Returns (dimensions, by_name_scalar, by_column, by_name_computed).
@@ -608,9 +613,7 @@ def _build_dimensions(ds, plan, dialect, issues):
             # The exact Cube spelling a prior import saw.
             dim["sql"] = stash["sql"]
         else:
-            dim["sql"] = ossie_expr_to_cube_sql(
-                expr, cname, plan.references, (),
-                inline_sql={cname: plan.inline_sql})
+            dim["sql"] = ossie_expr_to_cube_sql(expr, cname, tables)
         if stash.get("case") is not None:
             # A `case` dimension carries its conditions instead of `sql`, and Cube
             # rejects a dimension declaring both ("dimensions.size does not match any
@@ -844,16 +847,10 @@ def _build_joins(relationships, cube_names, issues):
 
 # --- measures -------------------------------------------------------------------
 
-def _build_measures(model, cube_names, plan, datasets, relationships, base_cube,
-                    dialect, issues):
+def _build_measures(model, cube_names, plan, tables, datasets, relationships,
+                    base_cube, dialect, issues):
     """Group Ossie metrics into per-cube `measures` lists."""
     name = model.get("name", "<unnamed>")
-    # A metric is authored against Ossie names, and a name needing sanitization has a
-    # different Cube name -- dataset `Order Items` becomes cube `order_items`. Accept
-    # either spelling and emit the Cube one. Passing only the Cube names left
-    # `SUM("ORDER ITEMS".amount)` as raw SQL naming a table that does not exist.
-    sanitized = dict(cube_names)
-    sanitized.update({cname: cname for cname in cube_names.values()})
     base_cache = []
 
     def resolve_base():
@@ -906,7 +903,7 @@ def _build_measures(model, cube_names, plan, datasets, relationships, base_cube,
                        "no ANSI_SQL or preferred-dialect expression; metric dropped")
             continue
 
-        missing = _references_a_dropped_field(expr, sanitized, cube_names, plan)
+        missing = _references_a_dropped_field(expr, tables, cube_names, plan)
         if missing:
             # The field has no expression in a usable dialect, so Cube gets no
             # dimension for it -- and a measure referencing one it did not get is a
@@ -916,7 +913,7 @@ def _build_measures(model, cube_names, plan, datasets, relationships, base_cube,
                        f"expression in a usable dialect and so becomes no Cube "
                        f"dimension; the metric is dropped with it")
             continue
-        referenced = referenced_datasets(expr, sanitized)
+        referenced = tables.datasets_in(expr)
         target = stash.get("cube") or (
             next(iter(referenced)) if len(referenced) == 1 else resolve_base())
 
@@ -939,21 +936,21 @@ def _build_measures(model, cube_names, plan, datasets, relationships, base_cube,
             # applies its row-multiplication correction per aggregate instead of
             # seeing one opaque expression -- see _decompose_measure.
             public_sql = _decompose_measure(
-                expr, spans, mname, target, measures_by_cube, plan, sanitized,
+                expr, spans, mname, target, measures_by_cube, plan, tables,
                 name, reserved)
             measure = {"name": mname, "sql": public_sql, "type": "number"}
         else:
             measure = _measure_from_expression(
-                expr, target, mname, stash, plan, sanitized)
+                expr, target, mname, stash, plan, tables)
         _apply_measure_metadata(metric, measure, stash)
         _place(measures_by_cube, target, measure, name)
     return measures_by_cube
 
 
-def _references_a_dropped_field(expr, sanitized, cube_names, plan):
+def _references_a_dropped_field(expr, tables, cube_names, plan):
     """`dataset.field` references in `expr` naming a field that becomes no dimension."""
     by_cube_name = {cname: ds_name for ds_name, cname in cube_names.items()}
-    canonical = lookup_map(sanitized)
+    canonical = tables.datasets
     dropped_norm = {
         cname: lookup_map(fields)
         for cname, fields in ((c, p.dropped) for c, p in plan.items())
@@ -967,17 +964,17 @@ def _references_a_dropped_field(expr, sanitized, cube_names, plan):
         # with a reference to a dimension that was never created.
         for match in DOTTED_REF_RE.finditer(text):
             head, field = split_dotted_ref(match.group(0))
-            cname = canonical.get(normalize_identifier(head))
+            cname = resolve_identifier(canonical, head)
             if cname is None:
                 continue
-            fname = (dropped_norm.get(cname) or {}).get(normalize_identifier(field))
+            fname = resolve_identifier(dropped_norm.get(cname) or {}, field)
             if fname is not None:
                 missing.add(f"'{by_cube_name.get(cname, cname)}.{fname}'")
     return missing
 
 
 def _decompose_measure(expr, spans, mname, fallback, measures_by_cube, plan,
-                       sanitized, model_name, reserved):
+                       tables, model_name, reserved):
     """Emit one `public: false` measure per aggregate; return the sql referencing them.
 
     Cube corrects for row multiplication per measure, keyed on the cube that measure
@@ -1000,7 +997,7 @@ def _decompose_measure(expr, spans, mname, fallback, measures_by_cube, plan,
     for start, end in spans:
         piece = expr[start:end]
         # Each aggregate lands on the cube its own operand references.
-        refs = referenced_datasets(piece, sanitized)
+        refs = tables.datasets_in(piece)
         part_target = next(iter(refs)) if len(refs) == 1 else fallback
 
         index += 1
@@ -1011,20 +1008,18 @@ def _decompose_measure(expr, spans, mname, fallback, measures_by_cube, plan,
         taken.add(part_name.lower())
 
         part = _measure_from_expression(
-            piece, part_target, part_name, {}, plan, sanitized)
+            piece, part_target, part_name, {}, plan, tables)
         part["public"] = False
         part["meta"] = {"ossie": {"part_of": mname}}
         _place(measures_by_cube, part_target, part, model_name)
 
-        out.append(_to_cube_sql(
-            expr[cursor:start], fallback, plan, sanitized))
+        out.append(ossie_expr_to_cube_sql(expr[cursor:start], fallback, tables))
         # `{CUBE.x}` for a part on the same cube as the public measure: an explicit
         # name pins the reference to this cube and breaks if it is extended.
         qualifier = "CUBE" if part_target == fallback else part_target
         out.append("{" + f"{qualifier}.{part_name}" + "}")
         cursor = end
-    out.append(_to_cube_sql(
-        expr[cursor:], fallback, plan, sanitized))
+    out.append(ossie_expr_to_cube_sql(expr[cursor:], fallback, tables))
     return "".join(out)
 
 
@@ -1037,24 +1032,23 @@ def _place(measures_by_cube, target, measure, model_name):
     bucket.append(measure)
 
 
-def _to_cube_sql(text, target, plan, sanitized):
-    """One Ossie expression fragment as Cube SQL, resolved against the whole plan.
+def _reference_tables(plan, cube_names):
+    """The prepared reference lookups for a whole model.
 
-    Every measure rewrite needs the same four lookups -- the target's reference members,
-    its full name lookup, every cube's members, and the inline SQL of split geo halves --
-    so they are assembled here rather than spelled out at each call site.
+    A dataset resolves from either spelling -- its Ossie name or the Cube name it
+    sanitizes to -- because a metric is authored against the former and everything
+    downstream needs the latter.
     """
-    own = plan.get(target)
-    return ossie_expr_to_cube_sql(
-        text, target,
-        own.references if own else (),
-        sanitized,
-        inline_sql={c: p.inline_sql for c, p in plan.items()},
-        members_by_cube={c: p.lookup for c, p in plan.items()},
-        own_lookup=own.lookup if own else None)
+    datasets = dict(cube_names)
+    datasets.update({cname: cname for cname in cube_names.values()})
+    return ReferenceTables.of(
+        cube_names=datasets,
+        references_by_cube={c: p.references for c, p in plan.items()},
+        columns_by_cube={c: p.lookup for c, p in plan.items()},
+        inline_sql_by_cube={c: p.inline_sql for c, p in plan.items()})
 
 
-def _measure_from_expression(expr, target, mname, stash, plan, sanitized):
+def _measure_from_expression(expr, target, mname, stash, plan, tables):
     """Turn an Ossie metric expression back into a structured Cube measure.
 
     `COUNT(DISTINCT <the cube's primary key>)` is Cube's bare `type: count` --
@@ -1085,15 +1079,15 @@ def _measure_from_expression(expr, target, mname, stash, plan, sanitized):
         if not (func == "COUNT" and inner == "*"):
             agg = OSSIE_FUNC_TO_AGG.get(func) or ("count" if func == "COUNT" else None)
             if agg is not None:
-                measure["sql"] = stash.get("sql") or _to_cube_sql(
-                    inner, target, plan, sanitized)
+                measure["sql"] = stash.get("sql") or ossie_expr_to_cube_sql(
+                    inner, target, tables)
                 measure["type"] = agg
                 return measure
 
     # A ratio, a window expression, or a multi-dataset aggregate: Cube expresses
     # these as a calculated measure whose sql carries the aggregation.
-    measure["sql"] = stash.get("sql") or _to_cube_sql(
-        expr, target, plan, sanitized)
+    measure["sql"] = stash.get("sql") or ossie_expr_to_cube_sql(
+        expr, target, tables)
     measure["type"] = "number"
     return measure
 

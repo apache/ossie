@@ -24,6 +24,7 @@ and the member-reference translation between Cube's f-string SQL and the plain
 column references Ossie expressions use.
 """
 
+import dataclasses
 import datetime
 import json
 import re
@@ -517,39 +518,68 @@ def sub_outside_quotes(sql, transform):
                    for text, quoted in quoted_runs(sql))
 
 
-def _lookup_keys(written):
-    """The keys a written identifier may match: its exact spelling, then normalized."""
-    text = str(written).strip()
+# --- identifiers -----------------------------------------------------------------
+#
+# Resolving a reference means matching what someone *wrote* against what the model
+# *declares*, and Ossie's rules make those two different strings: a regular identifier is
+# case-insensitive while a quoted one is exact. Both sides are reduced to the same small
+# set of match keys, so there is one notion of "could these be the same identifier"
+# rather than one per call site.
+
+def _unquoted(text):
+    """(content, was_quoted) for an ANSI-quoted identifier, with `""` unescaped."""
     if len(text) >= 2 and text.startswith('"') and text.endswith('"'):
-        inner = text[1:-1].replace('""', '"')
-        return (inner, normalize_identifier(text))
-    return (text, normalize_identifier(text))
-
-
-def _first(mapping, keys):
-    """The first of `keys` present in `mapping`, or None."""
-    for key in keys:
-        if key in mapping:
-            return mapping[key]
-    return None
+        return text[1:-1].replace('""', '"'), True
+    return text, False
 
 
 def normalize_identifier(name):
-    """An Ossie identifier in the spec's *normalized* form, for matching.
+    """An Ossie identifier in the spec's *normalized* form.
 
     From core-spec/expression_language.md: "Regular identifiers (unquoted) should be
     case insensitive [...] Regular identifiers are upper cased; quoted identifiers have
-    their quotes stripped". So `orders.AMOUNT` addresses the field `amount`, and
-    matching them exactly -- as this converter used to -- emitted `{CUBE}.AMOUNT`, a raw
-    column that bypasses the member's own expression entirely.
+    their quotes stripped". So `orders.AMOUNT` addresses the field `amount`, and matching
+    them exactly -- as this converter used to -- emitted `{CUBE}.AMOUNT`, a raw column
+    that bypasses the member's own expression entirely.
 
     Cube identifiers, by contrast, *are* case-sensitive, so the canonical Cube spelling
     is what gets emitted; this form is only used to find it.
     """
-    text = str(name).strip()
-    if len(text) >= 2 and text.startswith('"') and text.endswith('"'):
-        return text[1:-1].replace('""', '"')
-    return text.upper()
+    content, quoted = _unquoted(str(name).strip())
+    return content if quoted else content.upper()
+
+
+def match_keys(identifier):
+    """Every key this identifier can be matched by, most specific first.
+
+    A quoted identifier matches on its content alone -- that is what "exact" means, and
+    it is also how a name that *must* be quoted stays referenceable: `"Order Items"` is
+    the only way to write that dataset's name. An unquoted one matches its own spelling
+    (so a declared name spelled the same way is found) and its normalized form (so any
+    casing is).
+    """
+    content, quoted = _unquoted(str(identifier).strip())
+    if quoted:
+        return (content,)
+    return (content, content.upper())
+
+
+def datasets_in_expression(expr, prepared):
+    """Dataset names referenced in `expr`, resolved against a prepared lookup map.
+
+    Split from `referenced_datasets` so a caller holding prepared tables does not rebuild
+    the map for every expression.
+    """
+    found = set()
+    for text, quoted in quoted_runs(expr):
+        if quoted:
+            continue
+        for match in DOTTED_REF_RE.finditer(text):
+            head, _ = split_dotted_ref(match.group(0))
+            name = resolve_identifier(prepared, head)
+            if name is not None:
+                found.add(name)
+    return found
 
 
 def referenced_datasets(expr, known):
@@ -560,21 +590,10 @@ def referenced_datasets(expr, known):
     `SUM(orders.amount) || ' per users.id unit'` reads as a two-dataset metric and
     gets attributed to the base cube rather than to `orders`.
     """
-    # `lookup_map`, not `canonical_map`: `known` may map an accepted spelling to the
-    # canonical name, and what callers need back is the canonical one -- a name they can
-    # place a measure under. Returning the spelling as written filed it under a cube that
-    # does not exist, and the measure vanished with no issue reported.
-    canonical = lookup_map(known)
-    found = set()
-    for text, quoted in quoted_runs(expr):
-        if quoted:
-            continue
-        for match in DOTTED_REF_RE.finditer(text):
-            head, _ = split_dotted_ref(match.group(0))
-            name = canonical.get(normalize_identifier(head))
-            if name is not None:
-                found.add(name)
-    return found
+    # What callers need back is the *canonical* name -- one they can place a measure
+    # under. Returning the spelling as written filed it under a cube that does not exist,
+    # and the measure vanished with no issue reported.
+    return datasets_in_expression(expr, lookup_map(known))
 
 
 def split_dotted_ref(text):
@@ -619,24 +638,25 @@ def quoted_char_mask(sql):
 
 
 def lookup_map(names):
-    """{lookup key: the name to emit}, keyed both ways an identifier can be written.
+    """{match key: the name to emit}, from a set of names or a mapping of spellings.
 
-    Accepts a set of names (each maps to itself) or a mapping of *any* accepted spelling
-    to the canonical one -- which is what lets an Ossie name and the Cube name it
-    sanitizes to both resolve to the Cube spelling.
-
-    Each name gets two keys: its normalized form (upper-cased, matching an unquoted
-    reference) and its exact spelling (matching a quoted one). The second is needed
-    because a name containing a space or mixed case *cannot* be written unquoted at all --
-    `"Order Items"` is the only way to reference a dataset of that name, so exact-quoted
-    has to resolve or the name is unusable.
+    A mapping lets several accepted spellings resolve to one canonical name -- which is
+    how an Ossie dataset name and the Cube name it sanitizes to both reach the Cube one.
     """
     pairs = names.items() if isinstance(names, dict) else ((n, n) for n in names)
     out = {}
     for spelling, canonical in pairs:
-        out.setdefault(str(spelling), canonical)
-        out.setdefault(normalize_identifier(spelling), canonical)
+        for key in match_keys(spelling):
+            out.setdefault(key, canonical)
     return out
+
+
+def resolve_identifier(mapping, written):
+    """What `written` names in a `lookup_map`, or None."""
+    for key in match_keys(written):
+        if key in mapping:
+            return mapping[key]
+    return None
 
 
 def source_part_count(source):
@@ -716,8 +736,47 @@ def requalify_self_refs(sql, cube_name):
     )
 
 
-def ossie_expr_to_cube_sql(expr, own_cube, own_members=(), cube_names=(),
-                           inline_sql=None, members_by_cube=None, own_lookup=None):
+@dataclasses.dataclass(frozen=True)
+class ReferenceTables:
+    """The prepared lookups `ossie_expr_to_cube_sql` resolves a reference against.
+
+    Built once per model rather than per expression. Passing the raw name collections
+    instead meant every measure rewrite rebuilt a lookup map for every cube's members --
+    six maps per call, over the same names each time -- which is the cost of threading
+    collections through a signature rather than preparing them once.
+    """
+
+    datasets: dict           # match key -> Cube cube name
+    references: dict         # cube -> match key -> member needing `{CUBE.member}`
+    columns: dict            # cube -> match key -> canonical column/dimension name
+    inline_sql: dict         # cube -> match key -> Cube SQL to substitute
+
+    @classmethod
+    def of(cls, cube_names=(), references_by_cube=None, columns_by_cube=None,
+           inline_sql_by_cube=None):
+        def per_cube(source, prepare):
+            return {normalize_identifier(cube): prepare(value)
+                    for cube, value in (source or {}).items()}
+
+        return cls(
+            datasets=lookup_map(cube_names),
+            references=per_cube(references_by_cube, lookup_map),
+            columns=per_cube(columns_by_cube, lookup_map),
+            inline_sql=per_cube(
+                inline_sql_by_cube,
+                lambda fields: {normalize_identifier(f): sql
+                                for f, sql in fields.items()}),
+        )
+
+    def for_cube(self, cube, attribute):
+        return getattr(self, attribute).get(normalize_identifier(cube)) or {}
+
+    def datasets_in(self, expr):
+        """The datasets `expr` references, by canonical Cube name."""
+        return datasets_in_expression(expr, self.datasets)
+
+
+def ossie_expr_to_cube_sql(expr, own_cube, tables):
     """Rewrite an Ossie expression into Cube member-reference form.
 
     Only *dotted* `cube.name` references are rewritten -- a bare identifier stays
@@ -749,60 +808,46 @@ def ossie_expr_to_cube_sql(expr, own_cube, own_members=(), cube_names=(),
     own text with a column reference.
     """
     escaped = str(expr).replace("{", "\\{").replace("}", "\\}")
-    known = lookup_map(cube_names)
-    members = lookup_map(own_members)
+    known = tables.datasets
+    members = tables.for_cube(own_cube, "references")
+    own_columns = tables.for_cube(own_cube, "columns")
     own_norm = normalize_identifier(own_cube) if own_cube else None
-    inline_sql_by_norm = {
-        normalize_identifier(cube): {normalize_identifier(f): sql
-                                     for f, sql in fields.items()}
-        for cube, fields in (inline_sql or {}).items()
-    }
-
-    own_columns = lookup_map(own_lookup or {})
-    foreign_members = {
-        normalize_identifier(cube): lookup_map(names)
-        for cube, names in (members_by_cube or {}).items()
-    }
 
     def repl(m):
         head, name = split_dotted_ref(m.group(0))
         # Ossie regular identifiers are case-insensitive, so the reference is matched
         # in normalized form; what is *emitted* is the canonical Cube spelling, since
         # Cube's own member lookup is case-sensitive.
-        head_n, name_n = _lookup_keys(head), _lookup_keys(name)
+        head_keys, name_keys = match_keys(head), match_keys(name)
         # Resolve the dataset first, then decide which branch applies. Comparing the
         # written spelling against `own_cube` directly was wrong once the two could
         # differ: dataset `Order Items` becomes cube `order_items`, so a reference to
         # `"ORDER ITEMS"` took the cross-cube branch on its own cube.
-        target = _first(known, head_n)
-        is_own = target == own_cube or (target is None and own_norm in head_n)
+        target = resolve_identifier(known, head)
+        is_own = target == own_cube or (target is None and own_norm in head_keys)
         # Keyed on the *resolved* cube, not the token as written: a sanitized dataset name
         # differs from the Ossie one, and looking inline SQL up by the written token meant
         # a split geo half referenced through the Ossie name was never substituted.
-        inline_for = inline_sql_by_norm.get(
-            normalize_identifier(target)) if target else None
-        if inline_for is None:
-            inline_for = _first(inline_sql_by_norm, head_n) or {}
-        substitute = _first(inline_for, name_n)
+        inline_for = tables.for_cube(target, "inline_sql") if target else {}
+        substitute = resolve_identifier(inline_for, name)
         if substitute is not None:
             # Already-Cube SQL, so it bypasses the escaping above; `{CUBE}` inside
             # it means `head`, which only stays true while head is the own cube.
             return (str(substitute) if is_own
                     else requalify_self_refs(substitute, target or head))
         if is_own:
-            member = _first(members, name_n)
+            member = resolve_identifier(members, name)
             if member is not None:
                 return "{CUBE." + member + "}"
             # A plain member is the same thing either way, but the *column* still has a
             # canonical spelling -- emitting `"AMOUNT"` as written would force an exact
             # uppercase match in the database against a column named `amount`.
-            column = _first(own_columns, name_n)
+            column = resolve_identifier(own_columns, name)
             return "{CUBE}." + (column if column is not None else name)
         if target is not None:
             # A cross-cube member needs the target cube's own spelling for the same
             # reason: `{users.ID}` does not resolve when the member is declared `id`.
-            member = _first(foreign_members.get(normalize_identifier(target)) or {},
-                            name_n)
+            member = resolve_identifier(tables.for_cube(target, "columns"), name)
             return "{" + target + "." + (member if member is not None else name) + "}"
         # Not a dataset in this model -- a genuine schema-qualified table
         # reference or an unrelated dotted token. Leave it alone.

@@ -32,6 +32,7 @@ Usage (CLI):
     ossie-cube import -i model/ [-o model.yaml] [--name NAME] [--view VIEW]
 """
 
+import dataclasses
 import re
 
 from ._common import (
@@ -50,7 +51,7 @@ from ._common import (
     filtered_operand,
     is_simple_identifier,
     lookup_map,
-    normalize_identifier,
+    resolve_identifier,
     referenced_datasets,
     join_source,
     load_yaml,
@@ -1253,8 +1254,8 @@ def _fanout_unsafe_datasets(expr, own_cube, dataset_names):
         return referenced_datasets(expr, dataset_names) or {own_cube}
     tables, unqualified = analysed
     canonical = lookup_map(dataset_names)
-    found = {canonical[normalize_identifier(table)] for table in tables
-             if normalize_identifier(table) in canonical}
+    found = {resolve_identifier(canonical, table) for table in tables}
+    found.discard(None)
     if unqualified:
         # An unsafe aggregate over an unqualified column reads the declaring cube.
         found.add(own_cube)
@@ -1275,6 +1276,27 @@ def _is_generated_part(measure):
     return bool(((measure.get("meta") or {}).get("ossie") or {}).get("part_of"))
 
 
+@dataclasses.dataclass(frozen=True)
+class _MeasureContext:
+    """Model-wide facts every measure conversion needs.
+
+    `resolver` produces a measure's Ossie expression, `fanned_out` says which datasets a
+    relationship multiplies, `dataset_names` is what a reference can resolve to, and
+    `plain_by_cube` says which members regenerate from a bare column name. Passing them
+    one at a time made `_convert_measure` a nine-parameter function whose signature said
+    nothing about what it does.
+    """
+
+    resolver: object
+    fanned_out: dict
+    dataset_names: frozenset
+    plain_by_cube: dict
+    issues: object
+
+    def plain(self, cname):
+        return self.plain_by_cube.get(cname) or set()
+
+
 def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, issues):
     """Hoist every cube's measures into Ossie model-level metrics.
 
@@ -1288,7 +1310,13 @@ def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, issues):
     otherwise vanish. They ride on the owning dataset's stash with their positions,
     the same protocol unconvertible joins use.
     """
-    resolver = _MeasureResolver(cubes, pk_by_cube, issues)
+    context = _MeasureContext(
+        resolver=_MeasureResolver(cubes, pk_by_cube, issues),
+        fanned_out=fanned_out,
+        dataset_names=frozenset(cubes),
+        plain_by_cube=plain_by_cube,
+        issues=issues)
+    resolver = context.resolver
 
     counts = {}
     for (cname, mname), measure in resolver.measures().items():
@@ -1316,8 +1344,7 @@ def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, issues):
                     f"metric name '{metric_name}' derived twice; rename the "
                     f"colliding measures in Cube")
             seen.add(metric_name)
-            metric = _convert_measure(cname, mname, metric_name, measure, resolver,
-                                      fanned_out, plain, set(cubes), issues)
+            metric = _convert_measure(cname, mname, metric_name, measure, context)
             if metric is not None:
                 metrics.append(metric)
             else:
@@ -1326,8 +1353,9 @@ def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, issues):
     return metrics, extra_measures
 
 
-def _convert_measure(cname, mname, metric_name, measure, resolver, fanned_out,
-                     plain, dataset_names, issues):
+def _convert_measure(cname, mname, metric_name, measure, context):
+    resolver, issues = context.resolver, context.issues
+    plain = context.plain(cname)
     scope = f"{cname}.{mname}"
     expr = resolver.expression(cname, mname)
     if expr is None:
@@ -1356,13 +1384,15 @@ def _convert_measure(cname, mname, metric_name, measure, resolver, fanned_out,
     # nothing about the aggregates inside it, and the cube a measure is *declared* on is
     # not necessarily the one an aggregate inside it *reads* -- `SUM(users.ltv) /
     # SUM(orders.amount)` sits on `orders` while `users` is the fanned-out side.
-    for dataset in sorted(_fanout_unsafe_datasets(expr, cname, dataset_names)):
-        if dataset not in fanned_out:
+    for dataset in sorted(
+            _fanout_unsafe_datasets(expr, cname, context.dataset_names)):
+        if dataset not in context.fanned_out:
             continue
         issues.add(
             IssueType.FANOUT_UNSAFE_METRIC, scope,
             f"a non-idempotent aggregate reads dataset '{dataset}', which "
-            f"relationship '{fanned_out[dataset]}' fans out; Cube deduplicates on "
+            f"relationship '{context.fanned_out[dataset]}' fans out; Cube "
+            f"deduplicates on "
             f"the primary key at query time but a static Ossie expression cannot, so "
             f"a consumer joining through that relationship may over-count")
 

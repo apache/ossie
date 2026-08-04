@@ -140,3 +140,20 @@ def canon(obj):
 
     walk(obj)
     return obj
+
+
+def to_cube_sql(expr, own_cube, members=(), cube_names=(), inline_sql=None):
+    """`ossie_expr_to_cube_sql` for a single-cube model, for the direct unit tests.
+
+    The converter prepares its reference tables once per model; these tests care about
+    one expression, so the tables are assembled here rather than in each test.
+    """
+    from ossie_cube._common import ReferenceTables, ossie_expr_to_cube_sql
+
+    names = set(cube_names) | {own_cube}
+    tables = ReferenceTables.of(
+        cube_names=names,
+        references_by_cube={own_cube: members},
+        columns_by_cube={own_cube: members},
+        inline_sql_by_cube={own_cube: inline_sql or {}})
+    return ossie_expr_to_cube_sql(expr, own_cube, tables)
