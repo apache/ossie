@@ -974,3 +974,25 @@ def test_a_join_with_no_key_at_all_says_what_cube_will_refuse():
     dropped = issues.of_type(IssueType.DROPPED_NO_CUBE_EQUIVALENT)
     assert any("requires a primary key on any cube with a join" in i.detail
                for i in dropped)
+
+
+@pytest.mark.parametrize("dialect", ["SNOWFLAKE", "DATABRICKS", "BIGQUERY"])
+def test_any_warehouse_dialect_alone_is_enough_to_convert(dialect):
+    """The fallback is not Databricks-specific: a model carrying only Snowflake or
+    BigQuery SQL converts too, since Cube passes SQL to whatever the data source is."""
+    ds = (
+        "  - name: orders\n"
+        "    source: shop.public.orders\n"
+        "    primary_key:\n    - id\n"
+        "    fields:\n"
+        "    - name: id\n      expression:\n        dialects:\n"
+        f"        - dialect: {dialect}\n          expression: id\n"
+        "      datatype: Integer\n"
+    )
+    files, issues = convert_ossie_to_cube(_ossie(ds, metrics=_metric(
+        "n", "COUNT(DISTINCT orders.id)")))
+    cube = _cubes(files)["orders"]
+    assert [d["name"] for d in cube["dimensions"]] == ["id"]
+    assert cube["measures"] == [{"name": "n", "type": "count"}]
+    assert any(dialect in i.detail
+               for i in issues.of_type(IssueType.APPROXIMATED))

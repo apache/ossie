@@ -690,8 +690,14 @@ def _finish_dimension_field(cname, dname, dim, field, stash, issues):
     # With no datatype there is nothing to regenerate from, so the type is recorded.
     if DATATYPE_TO_DIM_TYPE.get(field.get("datatype")) != dtype:
         stash["dim_type"] = dtype
-    if dtype == "time":
-        field["dimension"] = {"is_time": True}
+    # Every Cube `dimensions:` entry is a dimension, so the role block is always
+    # emitted. Its *absence* is what other converters read as "not a dimension" -- the
+    # Snowflake converter classifies a field with no `dimension` block as a fact
+    # "regardless of datatype", so omitting it turned every non-time dimension into a
+    # Cortex Analyst fact. Left empty for a non-time one, which lets the consumer apply
+    # the spec's default (`is_time` false for a non-temporal datatype) rather than this
+    # converter asserting it.
+    field["dimension"] = {"is_time": True} if dtype == "time" else {}
     if dim.get("title"):
         field["label"] = unescape_braces_from_cube(dim["title"])
     if dim.get("description"):
@@ -782,6 +788,9 @@ def _convert_geo_dimension(cname, dname, dim, issues):
                 "dialects": [{"dialect": DIALECT_ANSI, "expression": expr}]
             },
             "datatype": "Float",
+            # A coordinate is a dimension like any other; this path builds its fields
+            # directly, so it needs the role block spelled out here too.
+            "dimension": {},
         }
         geo = {"of": dname, "part": part, "sql": sub}
         if part == "latitude" and host_extras:

@@ -44,18 +44,21 @@ semantic_model:
         - dialect: ANSI_SQL
           expression: id
       datatype: Decimal
+      dimension: {}
     - name: user_id
       expression:
         dialects:
         - dialect: ANSI_SQL
           expression: user_id
       datatype: Decimal
+      dimension: {}
     - name: status
       expression:
         dialects:
         - dialect: ANSI_SQL
           expression: status
       datatype: String
+      dimension: {}
       label: Order Status
       description: Current order status
       ai_context:
@@ -74,6 +77,7 @@ semantic_model:
         - dialect: ANSI_SQL
           expression: amount > 500
       datatype: Boolean
+      dimension: {}
     primary_key:
     - id
   - name: users
@@ -85,18 +89,21 @@ semantic_model:
         - dialect: ANSI_SQL
           expression: id
       datatype: Decimal
+      dimension: {}
     - name: city
       expression:
         dialects:
         - dialect: ANSI_SQL
           expression: city
       datatype: String
+      dimension: {}
     - name: location_latitude
       expression:
         dialects:
         - dialect: ANSI_SQL
           expression: lat
       datatype: Float
+      dimension: {}
       custom_extensions:
       - vendor_name: CUBE
         data: '{"_v": 1, "geo": {"of": "location", "part": "latitude", "sql": "{CUBE}.lat"}}'
@@ -106,6 +113,7 @@ semantic_model:
         - dialect: ANSI_SQL
           expression: lon
       datatype: Float
+      dimension: {}
       custom_extensions:
       - vendor_name: CUBE
         data: '{"_v": 1, "geo": {"of": "location", "part": "longitude", "sql": "{CUBE}.lon"}}'

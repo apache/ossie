@@ -580,3 +580,21 @@ def test_metric_name_collisions_are_detected_case_insensitively(first, second, e
     out, _ = convert_cube_to_ossie(_two_cube_measures(first, second))
     # The comparison is normalized; the emitted name keeps its original spelling.
     assert [m["name"] for m in model_of(out)["metrics"]] == expected
+
+
+def test_every_dimension_carries_the_role_block(model_a):
+    """A Cube `dimensions:` entry is a dimension, and the `dimension` block is what says
+    so. Its *absence* is what other converters read as "not a dimension": the Snowflake
+    converter classifies a field with no block as a fact "regardless of datatype", so
+    emitting it for time fields only turned every other dimension into a Cortex Analyst
+    fact -- 0 dimensions and 27 facts across the TPC-DS model.
+
+    Left empty for a non-time dimension, so the consumer applies the spec's default
+    rather than this converter asserting `is_time: false`.
+    """
+    model, _ = model_a
+    fields = by_name(by_name(model["datasets"])["orders"]["fields"])
+    assert fields["created_at"]["dimension"] == {"is_time": True}
+    assert fields["status"]["dimension"] == {}
+    assert all("dimension" in f
+               for ds in model["datasets"] for f in ds.get("fields", []))
