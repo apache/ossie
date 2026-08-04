@@ -1429,7 +1429,7 @@ def test_several_semantic_models_convert_the_first_with_an_issue():
     ("'x' = a", [("'x'", True), (" = a", False)]),
     ("'it''s'", [("'it'", True), ("'s'", True)]),
     # A double-quoted run is an *identifier*, not a literal, so it stays parseable --
-    # `QUOTED_DOTTED_REF_RE` matches it as one identifier part.
+    # `DOTTED_REF_RE` matches it as one identifier part.
     ('"col" = `c`', [('"col" = ', False), ("`c`", True)]),
     ("a = 'unterminated", [("a = ", False), ("'unterminated", True)]),
     ("plain", [("plain", False)]),
@@ -1969,12 +1969,20 @@ def test_a_calculated_measure_is_judged_on_its_aggregates_not_its_type():
     ("MIN(users.x) + MAX(users.y)", False),
     ("COUNT(DISTINCT users.id) / MAX(users.x)", False),
     ("users.a + users.b", False),           # no aggregate at all
-    ("not valid sql (((", True),            # unparseable: assume the worse
 ])
 def test_non_idempotent_aggregate_detection(expr, unsafe):
-    from ossie_cube.expressions import has_non_idempotent_aggregate
+    from ossie_cube.expressions import unsafe_aggregate_datasets
 
-    assert has_non_idempotent_aggregate(expr) is unsafe
+    datasets, unqualified = unsafe_aggregate_datasets(expr)
+    assert bool(datasets or unqualified) is unsafe
+
+
+def test_an_unparseable_expression_is_assumed_unsafe():
+    """`None` means "cannot tell", and the caller then attributes every dataset the
+    expression names -- the point being not to emit a silently inflated number."""
+    from ossie_cube.expressions import unsafe_aggregate_datasets
+
+    assert unsafe_aggregate_datasets("not valid sql (((") is None
 
 
 def test_a_cross_cube_member_gets_the_target_cubes_own_spelling():
@@ -2185,9 +2193,12 @@ def test_fanout_is_judged_per_aggregate_and_per_dataset(sql, flagged):
     ("APPROX_COUNT_DISTINCT(users.x)", False),
 ])
 def test_only_provably_idempotent_aggregates_are_treated_as_safe(expr, unsafe):
-    from ossie_cube.expressions import has_non_idempotent_aggregate
+    """Exercised through the function the converter actually calls, so the allowlist is
+    pinned on the production path rather than on a wrapper beside it."""
+    from ossie_cube.expressions import unsafe_aggregate_datasets
 
-    assert has_non_idempotent_aggregate(expr) is unsafe
+    datasets, unqualified = unsafe_aggregate_datasets(expr)
+    assert bool(datasets or unqualified) is unsafe
 
 
 def test_a_cross_cube_alias_is_not_prefixed_with_the_own_cube():

@@ -428,14 +428,14 @@ def _normalize_refs(expression):
     spelling -- so comparing raw text would report intended behaviour as a change. The
     normalization rules themselves are pinned by targeted tests, not by this one.
     """
-    from ossie_cube._common import (QUOTED_DOTTED_REF_RE, normalize_identifier,
+    from ossie_cube._common import (DOTTED_REF_RE, normalize_identifier,
                                     split_dotted_ref)
 
     def repl(match):
         head, name = split_dotted_ref(match.group(0))
         return f"{normalize_identifier(head)}.{normalize_identifier(name)}"
 
-    return QUOTED_DOTTED_REF_RE.sub(repl, expression)
+    return DOTTED_REF_RE.sub(repl, expression)
 
 
 def check_ossie_model(ossie_yaml):

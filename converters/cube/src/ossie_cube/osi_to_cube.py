@@ -31,13 +31,13 @@ Usage (CLI):
     ossie-cube export -i model.yaml -o model/ [--dialect SNOWFLAKE] [--base-cube orders]
 """
 
+import dataclasses
 import re
 from collections import deque
 
 from ._common import (
     AGG_TO_RESULT_DATATYPE,
     DATATYPE_TO_DIM_TYPE,
-    DOTTED_REF_RE,
     DEFAULT_DATATYPE_FOR_CUBE_TYPE,
     OSSIE_FUNC_TO_AGG,
     OSSIE_VERSION,
@@ -56,7 +56,7 @@ from ._common import (
     primary_key_operand,
     read_stash,
     referenced_datasets,
-    QUOTED_DOTTED_REF_RE,
+    DOTTED_REF_RE,
     lookup_map,
     normalize_identifier,
     quoted_runs,
@@ -144,54 +144,18 @@ def _convert_model(model, dialect, base_cube, issues):
 
     model_stash = read_stash(model)
 
-    # Per-cube facts the join and measure stages need.
-    # Field -> dimension names are resolved once here and reused by every stage.
-    # Sanitizing per stage would let a collision go undetected in one place and be
-    # rejected in another, and would disagree about which members a cube actually
-    # has -- which decides `{CUBE.member}` vs `{CUBE}.column` and where a measure
-    # lands.
-    dim_names_by_cube = {}
-    members_by_cube = {}
-    all_members_by_cube = {}
-    member_lookup_by_cube = {}
-    dropped_by_cube = {}
-    inline_sql_by_cube = {}
-    pk_by_cube = {}
-    for ds_name, ds in datasets.items():
-        cname = cube_names[ds_name]
-        dim_names_by_cube[cname], inline_sql_by_cube[cname] = (
-            _resolve_dimension_names(ds, f"Model '{name}': dataset '{ds_name}'"))
-        # Not every member: only those the `{CUBE.member}` form is required for.
-        members_by_cube[cname] = _reference_members(
-            ds, dim_names_by_cube[cname], dialect)
-        # Every dimension name the cube will carry, and the fields that will not
-        # become one. A generated measure name has to avoid the first, and a metric
-        # over the second cannot be rendered at all.
-        # Every member the cube will carry, stashed ones included: a `switch` dimension
-        # or a multi-stage measure is restored verbatim on export, and a generated part
-        # name colliding with one fails the conversion at the very end.
-        ds_stash = read_stash(ds)
-        member_lookup_by_cube[cname] = dict(dim_names_by_cube[cname])
-        member_lookup_by_cube[cname].update(
-            {dname: dname for dname in dim_names_by_cube[cname].values()})
-        all_members_by_cube[cname] = (
-            set(dim_names_by_cube[cname].values())
-            | {str(item["dimension"]["name"])
-               for item in (ds_stash.get("extra_dimensions") or [])
-               if (item.get("dimension") or {}).get("name")}
-            | {str(item["measure"]["name"])
-               for item in (ds_stash.get("extra_measures") or [])
-               if (item.get("measure") or {}).get("name")}
-            | _stashed_segment_names(ds_stash))
-        dropped_by_cube[cname] = _undialected_fields(ds, dialect)
-        pk_by_cube[cname] = [str(c) for c in (ds.get("primary_key") or [])]
+    # What every later stage needs to know about each cube, worked out once. Resolving
+    # any of it per stage would let the stages disagree -- about which names collide,
+    # about which members exist, and so about `{CUBE.member}` vs `{CUBE}.column` and
+    # where a measure lands.
+    plan = {cube_names[ds_name]: _CubePlan.of(ds, cube_names[ds_name], dialect,
+                                              f"Model '{name}': dataset '{ds_name}'")
+            for ds_name, ds in datasets.items()}
 
     joins_by_cube, join_parked_by_cube = _build_joins(
         relationships, cube_names, issues)
     measures_by_cube = _build_measures(
-        model, cube_names, members_by_cube, all_members_by_cube,
-        member_lookup_by_cube, dropped_by_cube, inline_sql_by_cube, pk_by_cube,
-        datasets, relationships, base_cube, dialect, issues)
+        model, cube_names, plan, datasets, relationships, base_cube, dialect, issues)
 
     # Cubes, grouped by the file they belong in: several datasets can share one
     # stashed original path, in which case they go back into the same file.
@@ -200,9 +164,8 @@ def _convert_model(model, dialect, base_cube, issues):
     emitted_members = {}
     for ds_name, ds in datasets.items():
         cname = cube_names[ds_name]
-        cube = _build_cube(ds, cname, dim_names_by_cube[cname],
-                           inline_sql_by_cube[cname], members_by_cube[cname],
-                           joins_by_cube.get(cname), measures_by_cube.get(cname),
+        cube = _build_cube(ds, plan[cname], joins_by_cube.get(cname),
+                           measures_by_cube.get(cname),
                            join_parked_by_cube.get(cname), dialect, issues)
         stashed = stashed_paths.get(cname)
         path = (safe_relative_path(stashed, f"cube '{cname}'") if stashed
@@ -305,8 +268,8 @@ def _ordered(obj, order):
 
 # --- cubes ----------------------------------------------------------------------
 
-def _build_cube(ds, cname, dim_names, inline_sql, ref_members, joins, measures,
-                join_extensions, dialect, issues):
+def _build_cube(ds, plan, joins, measures, join_extensions, dialect, issues):
+    cname = plan.cname
     ds_name = ds["name"]
     scope = f"dataset '{ds_name}'"
     stash = read_stash(ds)
@@ -342,7 +305,7 @@ def _build_cube(ds, cname, dim_names, inline_sql, ref_members, joins, measures,
                        "so this cube-level value has no effect in Cube")
 
     dimensions, by_name_scalar, by_column, by_name_computed = _build_dimensions(
-        ds, cname, dim_names, inline_sql, ref_members, dialect, issues)
+        ds, plan, dialect, issues)
     # Resolve each `primary_key` entry to the dimension Cube should mark. A
     # dimension only qualifies when it is *scalar* -- backed by a single source
     # column -- because `primary_key: true` in Cube declares that dimension's own
@@ -439,6 +402,62 @@ def _reject_member_collisions(cname, dimensions, measures, cube_extras, issues):
                     f"'{member['name']}' share a name; Cube keeps one member "
                     f"namespace per cube, so rename one in the Ossie model.")
             seen[key] = (kind, member["name"])
+
+
+@dataclasses.dataclass(frozen=True)
+class _CubePlan:
+    """Everything the later stages need to know about one cube.
+
+    These seven facts were seven parallel dicts keyed by cube name, threaded through the
+    build functions one parameter at a time -- `_build_measures` took thirteen. They are
+    all answers about the same cube, so they travel together.
+
+    `names`     Ossie field name -> the Cube dimension name it becomes.
+    `inline_sql` Ossie field name -> Cube SQL to substitute for it (a split geo half,
+                which exists only in Ossie and so has no member to reference).
+    `references` the members that must be addressed as `{CUBE.member}`, keyed by every
+                accepted spelling.
+    `lookup`    every field/dimension name, keyed by every accepted spelling, for
+                canonicalizing a reference.
+    `members`   every member name the cube will carry, stashed ones included -- what a
+                generated name has to avoid.
+    `dropped`   fields with no expression in a usable dialect, which become no dimension.
+    `primary_key` the dataset's declared key columns.
+    """
+
+    cname: str
+    names: dict
+    inline_sql: dict
+    references: dict
+    lookup: dict
+    members: frozenset
+    dropped: frozenset
+    primary_key: tuple
+
+    @classmethod
+    def of(cls, ds, cname, dialect, scope):
+        names, inline_sql = _resolve_dimension_names(ds, scope)
+        stash = read_stash(ds)
+        lookup = dict(names)
+        lookup.update({dname: dname for dname in names.values()})
+        return cls(
+            cname=cname,
+            names=names,
+            inline_sql=inline_sql,
+            references=_reference_members(ds, names, dialect),
+            lookup=lookup,
+            members=frozenset(
+                set(names.values())
+                | {str(item["dimension"]["name"])
+                   for item in (stash.get("extra_dimensions") or [])
+                   if (item.get("dimension") or {}).get("name")}
+                | {str(item["measure"]["name"])
+                   for item in (stash.get("extra_measures") or [])
+                   if (item.get("measure") or {}).get("name")}
+                | _stashed_segment_names(stash)),
+            dropped=frozenset(_undialected_fields(ds, dialect)),
+            primary_key=tuple(str(c) for c in (ds.get("primary_key") or [])),
+        )
 
 
 def _reference_members(ds, dim_names, dialect):
@@ -538,8 +557,7 @@ def _resolve_dimension_names(ds, scope):
     return names, inline_sql
 
 
-def _build_dimensions(ds, cname, dim_names, inline_sql, ref_members, dialect,
-                      issues):
+def _build_dimensions(ds, plan, dialect, issues):
     """Build a cube's dimensions from an Ossie dataset's fields.
 
     Returns (dimensions, by_name_scalar, by_column, by_name_computed).
@@ -552,10 +570,12 @@ def _build_dimensions(ds, cname, dim_names, inline_sql, ref_members, dialect,
     writes dimension *names* there and a computed key has no column to name instead.
     Fields carrying a `geo` stash are re-merged into the single Cube dimension they
     were split from.
-    Dimension names come from `dim_names` (see `_resolve_dimension_names`) rather
+    Dimension names come from `plan.names` (see `_resolve_dimension_names`) rather
     than being sanitized again here.
     """
     ds_name = ds["name"]
+    cname = plan.cname
+    dim_names = plan.names
     by_name_scalar, by_column, by_name_computed = {}, {}, {}
     # Built by target dimension name rather than by list position: a geo dimension
     # is assembled from two fields that may appear in either order and need not be
@@ -589,7 +609,8 @@ def _build_dimensions(ds, cname, dim_names, inline_sql, ref_members, dialect,
             dim["sql"] = stash["sql"]
         else:
             dim["sql"] = ossie_expr_to_cube_sql(
-                expr, cname, ref_members, (), inline_sql={cname: inline_sql})
+                expr, cname, plan.references, (),
+                inline_sql={cname: plan.inline_sql})
         if stash.get("case") is not None:
             # A `case` dimension carries its conditions instead of `sql`, and Cube
             # rejects a dimension declaring both ("dimensions.size does not match any
@@ -823,9 +844,8 @@ def _build_joins(relationships, cube_names, issues):
 
 # --- measures -------------------------------------------------------------------
 
-def _build_measures(model, cube_names, members_by_cube, all_members_by_cube,
-                    member_lookup_by_cube, dropped_by_cube, inline_sql_by_cube,
-                    pk_by_cube, datasets, relationships, base_cube, dialect, issues):
+def _build_measures(model, cube_names, plan, datasets, relationships, base_cube,
+                    dialect, issues):
     """Group Ossie metrics into per-cube `measures` lists."""
     name = model.get("name", "<unnamed>")
     # A metric is authored against Ossie names, and a name needing sanitization has a
@@ -886,8 +906,7 @@ def _build_measures(model, cube_names, members_by_cube, all_members_by_cube,
                        "no ANSI_SQL or preferred-dialect expression; metric dropped")
             continue
 
-        missing = _references_a_dropped_field(expr, sanitized, cube_names,
-                                              dropped_by_cube)
+        missing = _references_a_dropped_field(expr, sanitized, cube_names, plan)
         if missing:
             # The field has no expression in a usable dialect, so Cube gets no
             # dimension for it -- and a measure referencing one it did not get is a
@@ -920,27 +939,24 @@ def _build_measures(model, cube_names, members_by_cube, all_members_by_cube,
             # applies its row-multiplication correction per aggregate instead of
             # seeing one opaque expression -- see _decompose_measure.
             public_sql = _decompose_measure(
-                expr, spans, mname, target, measures_by_cube, members_by_cube,
-                all_members_by_cube, member_lookup_by_cube, inline_sql_by_cube,
-                pk_by_cube, sanitized, name, reserved)
+                expr, spans, mname, target, measures_by_cube, plan, sanitized,
+                name, reserved)
             measure = {"name": mname, "sql": public_sql, "type": "number"}
         else:
             measure = _measure_from_expression(
-                expr, target, mname, stash, members_by_cube.get(target, set()),
-                inline_sql_by_cube, pk_by_cube.get(target, []), sanitized,
-                member_lookup_by_cube)
+                expr, target, mname, stash, plan, sanitized)
         _apply_measure_metadata(metric, measure, stash)
         _place(measures_by_cube, target, measure, name)
     return measures_by_cube
 
 
-def _references_a_dropped_field(expr, sanitized, cube_names, dropped_by_cube):
+def _references_a_dropped_field(expr, sanitized, cube_names, plan):
     """`dataset.field` references in `expr` naming a field that becomes no dimension."""
     by_cube_name = {cname: ds_name for ds_name, cname in cube_names.items()}
     canonical = lookup_map(sanitized)
     dropped_norm = {
         cname: lookup_map(fields)
-        for cname, fields in dropped_by_cube.items()
+        for cname, fields in ((c, p.dropped) for c, p in plan.items())
     }
     missing = set()
     for text, quoted in quoted_runs(expr):
@@ -949,7 +965,7 @@ def _references_a_dropped_field(expr, sanitized, cube_names, dropped_by_cube):
         # The quoted-reference parser, so `orders."LEGACY_AMOUNT"` is seen as well:
         # matching only unquoted references let a metric over a dropped field survive
         # with a reference to a dimension that was never created.
-        for match in QUOTED_DOTTED_REF_RE.finditer(text):
+        for match in DOTTED_REF_RE.finditer(text):
             head, field = split_dotted_ref(match.group(0))
             cname = canonical.get(normalize_identifier(head))
             if cname is None:
@@ -960,10 +976,8 @@ def _references_a_dropped_field(expr, sanitized, cube_names, dropped_by_cube):
     return missing
 
 
-def _decompose_measure(expr, spans, mname, fallback, measures_by_cube,
-                       members_by_cube, all_members_by_cube, member_lookup,
-                       inline_sql_by_cube, pk_by_cube, sanitized, model_name,
-                       reserved):
+def _decompose_measure(expr, spans, mname, fallback, measures_by_cube, plan,
+                       sanitized, model_name, reserved):
     """Emit one `public: false` measure per aggregate; return the sql referencing them.
 
     Cube corrects for row multiplication per measure, keyed on the cube that measure
@@ -979,7 +993,7 @@ def _decompose_measure(expr, spans, mname, fallback, measures_by_cube,
     # is unique across dimensions and measures alike -- so the check is over both, and
     # over every cube rather than the one part it happens to land on.
     taken = {m["name"].lower() for ms in measures_by_cube.values() for m in ms}
-    taken |= {n.lower() for ns in all_members_by_cube.values() for n in ns}
+    taken |= {n.lower() for p in plan.values() for n in p.members}
     # Names later metrics will claim, so allocation does not depend on metric order.
     taken |= {n for n in reserved if n != mname.lower()}
     out, cursor, index = [], 0, 0
@@ -997,25 +1011,20 @@ def _decompose_measure(expr, spans, mname, fallback, measures_by_cube,
         taken.add(part_name.lower())
 
         part = _measure_from_expression(
-            piece, part_target, part_name, {},
-            members_by_cube.get(part_target, set()), inline_sql_by_cube,
-            pk_by_cube.get(part_target, []), sanitized, member_lookup)
+            piece, part_target, part_name, {}, plan, sanitized)
         part["public"] = False
         part["meta"] = {"ossie": {"part_of": mname}}
         _place(measures_by_cube, part_target, part, model_name)
 
-        out.append(ossie_expr_to_cube_sql(
-            expr[cursor:start], fallback, members_by_cube.get(fallback, set()),
-            sanitized, inline_sql=inline_sql_by_cube,
-            members_by_cube=member_lookup))
+        out.append(_to_cube_sql(
+            expr[cursor:start], fallback, plan, sanitized))
         # `{CUBE.x}` for a part on the same cube as the public measure: an explicit
         # name pins the reference to this cube and breaks if it is extended.
         qualifier = "CUBE" if part_target == fallback else part_target
         out.append("{" + f"{qualifier}.{part_name}" + "}")
         cursor = end
-    out.append(ossie_expr_to_cube_sql(
-        expr[cursor:], fallback, members_by_cube.get(fallback, set()), sanitized,
-        inline_sql=inline_sql_by_cube, members_by_cube=member_lookup))
+    out.append(_to_cube_sql(
+        expr[cursor:], fallback, plan, sanitized))
     return "".join(out)
 
 
@@ -1028,8 +1037,24 @@ def _place(measures_by_cube, target, measure, model_name):
     bucket.append(measure)
 
 
-def _measure_from_expression(expr, target, mname, stash, members, inline_sql_by_cube,
-                             primary_key, sanitized, member_lookup=None):
+def _to_cube_sql(text, target, plan, sanitized):
+    """One Ossie expression fragment as Cube SQL, resolved against the whole plan.
+
+    Every measure rewrite needs the same four lookups -- the target's reference members,
+    its full name lookup, every cube's members, and the inline SQL of split geo halves --
+    so they are assembled here rather than spelled out at each call site.
+    """
+    own = plan.get(target)
+    return ossie_expr_to_cube_sql(
+        text, target,
+        own.references if own else (),
+        sanitized,
+        inline_sql={c: p.inline_sql for c, p in plan.items()},
+        members_by_cube={c: p.lookup for c, p in plan.items()},
+        own_lookup=own.lookup if own else None)
+
+
+def _measure_from_expression(expr, target, mname, stash, plan, sanitized):
     """Turn an Ossie metric expression back into a structured Cube measure.
 
     `COUNT(DISTINCT <the cube's primary key>)` is Cube's bare `type: count` --
@@ -1045,7 +1070,8 @@ def _measure_from_expression(expr, target, mname, stash, members, inline_sql_by_
         distinct = _DISTINCT_RE.match(inner)
         if func == "COUNT" and distinct:
             inner = distinct.group(1).strip()
-            if primary_key and inner == primary_key_operand(target, primary_key):
+            key = list((plan.get(target).primary_key if target in plan else ()))
+            if key and inner == primary_key_operand(target, key):
                 measure["type"] = "count"
                 return measure
             func = "COUNT_DISTINCT"
@@ -1059,20 +1085,15 @@ def _measure_from_expression(expr, target, mname, stash, members, inline_sql_by_
         if not (func == "COUNT" and inner == "*"):
             agg = OSSIE_FUNC_TO_AGG.get(func) or ("count" if func == "COUNT" else None)
             if agg is not None:
-                measure["sql"] = stash.get("sql") or ossie_expr_to_cube_sql(
-                    inner, target, members, sanitized,
-                    inline_sql=inline_sql_by_cube,
-                    members_by_cube=member_lookup,
-                    own_lookup=(member_lookup or {}).get(target))
+                measure["sql"] = stash.get("sql") or _to_cube_sql(
+                    inner, target, plan, sanitized)
                 measure["type"] = agg
                 return measure
 
     # A ratio, a window expression, or a multi-dataset aggregate: Cube expresses
     # these as a calculated measure whose sql carries the aggregation.
-    measure["sql"] = stash.get("sql") or ossie_expr_to_cube_sql(
-        expr, target, members, sanitized, inline_sql=inline_sql_by_cube,
-        members_by_cube=member_lookup,
-        own_lookup=(member_lookup or {}).get(target))
+    measure["sql"] = stash.get("sql") or _to_cube_sql(
+        expr, target, plan, sanitized)
     measure["type"] = "number"
     return measure
 

@@ -41,8 +41,6 @@ from ._common import (
     DIALECT_ANSI,
     DATATYPE_TO_DIM_TYPE,
     DIM_TYPE_TO_DATATYPE,
-    DOTTED_REF_RE,
-    FANOUT_UNSAFE_AGGS,
     JINJA_RE,
     OSSIE_VERSION,
     ConversionError,

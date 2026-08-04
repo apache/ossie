@@ -186,25 +186,6 @@ def is_idempotent_aggregate(node):
     return _aggregates_distinct(node)
 
 
-def has_non_idempotent_aggregate(expr):
-    """True if `expr` contains an aggregate that over-counts duplicated rows.
-
-    A Cube *calculated* measure (`type: number`) is classified by its outer type, which
-    says nothing about the aggregates inside it -- `SUM({CUBE}.ltv) / 100` is a `number`
-    measure whose value is still a sum. So fan-out safety has to be judged on the
-    resolved expression, not on the measure type.
-
-    Conservative when sqlglot cannot parse the expression: an unparseable expression is
-    reported as unsafe rather than assumed safe, since the whole point is not to emit a
-    silently-inflated number.
-    """
-    tree = parse(expr)
-    if tree is None:
-        return True
-    return any(isinstance(node, exp.AggFunc) and not is_idempotent_aggregate(node)
-               for node in tree.walk())
-
-
 def _aggregates_distinct(node):
     """True when this aggregate is applied to a DISTINCT set."""
     if isinstance(node.this, exp.Distinct):

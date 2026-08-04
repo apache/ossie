@@ -55,19 +55,13 @@ _CUBE_NAME_RE = re.compile(r"^[_a-zA-Z][_a-zA-Z0-9]*$")
 # A bare SQL identifier (single column reference), e.g. `c_name`.
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
-# `cube.member` -- a dotted reference an Ossie expression uses to point into a
-# dataset. Guarded so `a.b.c` and `1.5` do not match.
-DOTTED_REF_RE = re.compile(
-    r"(?<![\w.$])([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)(?![\w.])"
-)
-
 # One identifier: a regular one, or an ANSI double-quoted one (with `""` escaping an
-# embedded quote). Kept in step with DOTTED_REF_RE below.
+# embedded quote).
 _IDENT_PART = r'(?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_]*)'
 
-# `cube.member` where either part may be quoted: `orders.amount`, `"Orders"."Amount"`,
-# `orders."Amount"`. The guards stop `a.b.c` and `1.5` from matching, as before.
-QUOTED_DOTTED_REF_RE = re.compile(
+# `cube.member`, where either part may be quoted: `orders.amount`, `"Orders"."Amount"`,
+# `orders."Amount"`. The guards stop `a.b.c` and `1.5` from matching.
+DOTTED_REF_RE = re.compile(
     rf'(?<![\w.$"]){_IDENT_PART}\s*\.\s*{_IDENT_PART}(?![\w.])'
 )
 
@@ -491,7 +485,7 @@ def quoted_runs(sql):
 
     Only a *string literal* counts: `'` and backtick open a run. An ANSI double-quoted
     run is a quoted *identifier* -- a name, not text -- so it stays parseable, and
-    `QUOTED_DOTTED_REF_RE` matches it as one identifier part. Treating it as opaque left
+    `DOTTED_REF_RE` matches it as one identifier part. Treating it as opaque left
     a valid `SUM("Orders"."Amount")` as raw SQL, bypassing the member it names.
 
     A run is closed by its own delimiter, and an unterminated one runs to the end
@@ -575,7 +569,7 @@ def referenced_datasets(expr, known):
     for text, quoted in quoted_runs(expr):
         if quoted:
             continue
-        for match in QUOTED_DOTTED_REF_RE.finditer(text):
+        for match in DOTTED_REF_RE.finditer(text):
             head, _ = split_dotted_ref(match.group(0))
             name = canonical.get(normalize_identifier(head))
             if name is not None:
@@ -815,7 +809,7 @@ def ossie_expr_to_cube_sql(expr, own_cube, own_members=(), cube_names=(),
         return m.group(0)
 
     return sub_outside_quotes(
-        escaped, lambda run: QUOTED_DOTTED_REF_RE.sub(repl, run))
+        escaped, lambda run: DOTTED_REF_RE.sub(repl, run))
 
 
 # --- source ---------------------------------------------------------------------
@@ -926,17 +920,6 @@ OSSIE_FUNC_TO_AGG = {
 # Cube measure types whose aggregation is written out in the `sql` itself
 # (CubeSymbols.isCalculatedMeasureType). Their sql is emitted verbatim.
 CALCULATED_MEASURE_TYPES = frozenset({"number", "string", "boolean", "time"})
-
-# Aggregates whose value is unaffected by duplicate input rows, so a static Ossie
-# expression stays correct even when the relationship graph fans the dataset out.
-# `count` belongs here only in its bare form, which maps to COUNT(DISTINCT <pk>).
-FANOUT_SAFE_AGGS = frozenset({
-    "count_distinct", "count_distinct_approx", "min", "max",
-})
-
-# Aggregates that over-count under row multiplication. Cube corrects for these at
-# query time by deduplicating on the primary key; an Ossie expression cannot.
-FANOUT_UNSAFE_AGGS = frozenset({"sum", "avg"})
 
 # The Ossie result datatype Cube itself declares for each aggregate. Only the
 # count family is listed: those are exactly the aggregates whose result type does
