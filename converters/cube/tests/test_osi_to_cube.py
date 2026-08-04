@@ -625,3 +625,94 @@ def test_relationship_extensions_are_parked_on_the_declaring_cube():
     ossie2, _ = convert_cube_to_ossie(files)
     restored = model_of(ossie2)["relationships"][0]["custom_extensions"]
     assert {"vendor_name": "DBT", "data": "keep-me"} in restored
+
+
+# --- review round three ----------------------------------------------------------
+
+def test_a_wrapped_single_aggregate_stays_one_calculated_measure():
+    """Deliberately *not* decomposed, and the reason is worth recording: Cube applies
+    its row-multiplication correction to a calculated measure exactly as it does to a
+    structured one. Asked directly, `SUM({CUBE}.amount) / 100` as `type: number` and the
+    same thing split into a hidden `type: sum` plus a ratio produce identical SQL under
+    fan-out -- both go through `SELECT DISTINCT <pk>` and the `keys` subquery, differing
+    only in whether Cube renders the aggregate as `SUM` or `sum`. Splitting it would add
+    a hidden measure and buy nothing."""
+    files, _ = convert_ossie_to_cube(
+        _ossie(_ORDERS, metrics=_metric("pct", "SUM(orders.amount) / 100")))
+    measures = _cubes(files)["orders"]["measures"]
+    assert measures == [
+        {"name": "pct", "sql": "SUM({CUBE}.amount) / 100", "type": "number"}]
+
+
+def test_a_metric_over_a_field_with_no_usable_dialect_is_dropped_too():
+    """The field becomes no dimension, so a measure referencing it is a model Cube
+    refuses: "orders.legacy_amount cannot be resolved. There's no such member or cube."
+    """
+    ds = (
+        "  - name: orders\n"
+        "    source: sales.public.orders\n"
+        "    primary_key:\n    - id\n"
+        "    fields:\n"
+        "    - name: id\n"
+        "      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: id\n"
+        "      datatype: Integer\n"
+        "    - name: legacy_amount\n"
+        "      expression:\n        dialects:\n"
+        "        - dialect: TABLEAU\n          expression: amount\n"
+        "      datatype: Decimal\n"
+    )
+    files, issues = convert_ossie_to_cube(
+        _ossie(ds, metrics=_metric("total", "SUM(orders.legacy_amount)")))
+    assert "measures" not in _cubes(files)["orders"]
+    assert any("dropped with it" in i.detail
+               for i in issues.of_type(IssueType.NO_USABLE_DIALECT))
+
+
+def test_a_generated_part_name_avoids_an_existing_dimension():
+    """The suffix loop only sees names it is told about. It used to be given the
+    *reference* members rather than every dimension, so a plain field named
+    `ratio_part_1` collided and the conversion failed instead of picking the next
+    free name."""
+    ds = _ORDERS + (
+        "    - name: ratio_part_1\n"
+        "      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: ratio_part_1\n"
+        "      datatype: Decimal\n"
+    )
+    files, _ = convert_ossie_to_cube(_ossie(ds, metrics=_metric(
+        "ratio", "SUM(orders.amount) / COUNT(DISTINCT orders.id)")))
+    names = [m["name"] for m in _cubes(files)["orders"]["measures"]]
+    assert names == ["ratio_part_2", "ratio_part_3", "ratio"]
+    # And the dimension of that name is untouched.
+    assert "ratio_part_1" in by_name(_cubes(files)["orders"]["dimensions"])
+
+
+def test_two_relationships_to_one_dataset_are_refused():
+    """A cube's `joins` are keyed by target, so Cube can hold one join per target.
+    Emitting two does not fail -- the transpiler keeps the last and silently discards
+    the first, so every query through the lost relationship joins on the surviving
+    predicate. Verified against Cube: with `buyer` and `seller` both declared, the SQL
+    joins on `seller_id` and `buyer` is simply gone."""
+    rel = ("  relationships:\n"
+           "  - name: buyer\n    from: orders\n    to: users\n"
+           "    from_columns: [id]\n    to_columns: [id]\n"
+           "  - name: seller\n    from: orders\n    to: users\n"
+           "    from_columns: [amount]\n    to_columns: [id]\n")
+    with pytest.raises(ConversionError, match="one join per target"):
+        convert_ossie_to_cube(_ossie(_TWO_DATASETS, rel))
+
+
+def test_a_stashed_measure_title_is_not_escaped_twice():
+    """It came out of the stash, so it is already whatever Cube needs. Escaping it
+    again turned a valid `Revenue \\{USD\\}` into `Revenue \\\\{USD\\\\}`."""
+    src = {"model/cubes/orders.yml": (
+        "cubes:\n  - name: orders\n    sql_table: a.b.orders\n    dimensions:\n"
+        "      - name: id\n        sql: id\n        type: number\n"
+        "        primary_key: true\n"
+        "    measures:\n      - name: revenue\n        sql: amount\n        type: sum\n"
+        "        title: 'Revenue \\{USD\\}'\n")}
+    ossie, _ = convert_cube_to_ossie(src)
+    back, _ = convert_ossie_to_cube(ossie)
+    measure = parse(back["model/cubes/orders.yml"])["cubes"][0]["measures"][0]
+    assert measure["title"] == "Revenue \\{USD\\}"

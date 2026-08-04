@@ -741,7 +741,7 @@ def _case_label(cname, dname, holder):
                 f"`sql`")
         translated, _ = cube_sql_to_ossie(label["sql"], cname)
         return translated
-    text = str(label if label is not None else "")
+    text = unescape_braces_from_cube(str(label if label is not None else ""))
     return "'" + text.replace("'", "''") + "'"
 
 

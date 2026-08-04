@@ -1710,3 +1710,21 @@ def test_a_parked_foreign_extension_is_escaped_and_restored():
     ossie2, _ = convert_cube_to_ossie(files)
     restored = by_name(model_of(ossie2)["datasets"])["orders"]["custom_extensions"]
     assert {"vendor_name": "DBT", "data": '{"project": "x"}'} in restored
+
+
+def test_a_case_label_is_unescaped_on_the_way_into_an_expression():
+    """A Cube label is escaped text; the Ossie CASE expression wants a plain SQL
+    literal. Leaving the backslashes in put them inside the literal, so a consumer
+    would compare against `large \\{special\\}` rather than `large {special}`."""
+    files = _files(products=(
+        "cubes:\n  - name: products\n    sql_table: a.b.products\n    dimensions:\n"
+        "      - name: size\n        type: string\n        case:\n          when:\n"
+        "            - sql: \"{CUBE}.v = 'x'\"\n"
+        "              label: 'large \\{special\\}'\n"))
+    ossie, _ = convert_cube_to_ossie(files)
+    size = by_name(by_name(model_of(ossie)["datasets"])["products"]["fields"])["size"]
+    assert expr_of(size) == "CASE WHEN v = 'x' THEN 'large {special}' END"
+    # The stashed `case` block still restores the Cube spelling exactly.
+    _, back, _ = _roundtrip(files)
+    dim = by_name(parse(back["model/cubes/products.yml"])["cubes"][0]["dimensions"])
+    assert dim["size"]["case"]["when"][0]["label"] == "large \\{special\\}"

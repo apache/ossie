@@ -37,6 +37,7 @@ from collections import deque
 from ._common import (
     AGG_TO_RESULT_DATATYPE,
     DATATYPE_TO_DIM_TYPE,
+    DOTTED_REF_RE,
     DEFAULT_DATATYPE_FOR_CUBE_TYPE,
     OSSIE_FUNC_TO_AGG,
     OSSIE_VERSION,
@@ -55,6 +56,7 @@ from ._common import (
     primary_key_operand,
     read_stash,
     referenced_datasets,
+    quoted_runs,
     require_str,
     safe_relative_path,
     sanitize_name,
@@ -146,6 +148,8 @@ def _convert_model(model, dialect, base_cube, issues):
     # lands.
     dim_names_by_cube = {}
     members_by_cube = {}
+    all_members_by_cube = {}
+    dropped_by_cube = {}
     inline_sql_by_cube = {}
     pk_by_cube = {}
     for ds_name, ds in datasets.items():
@@ -155,13 +159,19 @@ def _convert_model(model, dialect, base_cube, issues):
         # Not every member: only those the `{CUBE.member}` form is required for.
         members_by_cube[cname] = _reference_members(
             ds, dim_names_by_cube[cname], dialect)
+        # Every dimension name the cube will carry, and the fields that will not
+        # become one. A generated measure name has to avoid the first, and a metric
+        # over the second cannot be rendered at all.
+        all_members_by_cube[cname] = set(dim_names_by_cube[cname].values())
+        dropped_by_cube[cname] = _undialected_fields(ds, dialect)
         pk_by_cube[cname] = [str(c) for c in (ds.get("primary_key") or [])]
 
     joins_by_cube, join_parked_by_cube = _build_joins(
         relationships, cube_names, issues)
     measures_by_cube = _build_measures(
-        model, cube_names, members_by_cube, inline_sql_by_cube, pk_by_cube,
-        datasets, relationships, base_cube, dialect, issues)
+        model, cube_names, members_by_cube, all_members_by_cube, dropped_by_cube,
+        inline_sql_by_cube, pk_by_cube, datasets, relationships, base_cube, dialect,
+        issues)
 
     # Cubes, grouped by the file they belong in: several datasets can share one
     # stashed original path, in which case they go back into the same file.
@@ -414,9 +424,21 @@ def _reference_members(ds, dim_names, dialect):
         if not dname:
             continue
         expr = pick_expression(field.get("expression"), dialect)
-        if expr is None or not is_simple_identifier(expr) or expr.strip() != dname:
+        if expr is None:
+            # No usable dialect: this field becomes no dimension at all, so claiming
+            # it as a member would make a metric over it emit `{CUBE.name}` --
+            # "orders.legacy_amount cannot be resolved", in Cube's words.
+            continue
+        if not is_simple_identifier(expr) or expr.strip() != dname:
             needed.add(dname)
     return needed
+
+
+def _undialected_fields(ds, dialect):
+    """Field names with no expression in a usable dialect, so no Cube dimension."""
+    return {field.get("name") for field in (ds.get("fields") or [])
+            if field.get("name")
+            and pick_expression(field.get("expression"), dialect) is None}
 
 
 def _resolve_dimension_names(ds, scope):
@@ -660,6 +682,7 @@ def _build_joins(relationships, cube_names, issues):
     """
     joins_by_cube = {}
     parked_by_cube = {}
+    declared_targets = {}
     for rel in relationships:
         rname = rel.get("name", "<unnamed>")
         from_cols = rel.get("from_columns") or []
@@ -709,6 +732,21 @@ def _build_joins(relationships, cube_names, issues):
         foreign = foreign_vendor_extensions(rel)
         if foreign:
             parked_by_cube.setdefault(own, {})[other] = foreign
+        # A Cube cube's `joins` are keyed by target cube name, so it can hold exactly
+        # one join per target. Emitting two does not fail: the transpiler keeps the
+        # last and silently discards the first, and every query through the lost
+        # relationship then joins on the surviving predicate instead -- so a `buyer`
+        # query returns seller-joined numbers. Wrong numbers are worse than no output,
+        # which is the same reasoning the fan-out mapping follows.
+        existing = declared_targets.setdefault(own, {})
+        if other in existing:
+            raise ConversionError(
+                f"Model: relationships '{existing[other]}' and '{rname}' both join "
+                f"dataset '{own}' to '{other}'. A Cube cube can declare one join per "
+                f"target, and emitting both would silently keep only the second. "
+                f"Model the second path as its own dataset (a view over the same "
+                f"table) so each join has a distinct target.")
+        existing[other] = rname
         joins_by_cube.setdefault(own, []).append(
             _ordered(join, ["name", "sql", "relationship"]))
     return joins_by_cube, parked_by_cube
@@ -716,9 +754,9 @@ def _build_joins(relationships, cube_names, issues):
 
 # --- measures -------------------------------------------------------------------
 
-def _build_measures(model, cube_names, members_by_cube, inline_sql_by_cube,
-                    pk_by_cube, datasets, relationships, base_cube, dialect,
-                    issues):
+def _build_measures(model, cube_names, members_by_cube, all_members_by_cube,
+                    dropped_by_cube, inline_sql_by_cube, pk_by_cube, datasets,
+                    relationships, base_cube, dialect, issues):
     """Group Ossie metrics into per-cube `measures` lists."""
     name = model.get("name", "<unnamed>")
     sanitized = set(cube_names.values())
@@ -757,6 +795,17 @@ def _build_measures(model, cube_names, members_by_cube, inline_sql_by_cube,
                        "no ANSI_SQL or preferred-dialect expression; metric dropped")
             continue
 
+        missing = _references_a_dropped_field(expr, sanitized, cube_names,
+                                              dropped_by_cube)
+        if missing:
+            # The field has no expression in a usable dialect, so Cube gets no
+            # dimension for it -- and a measure referencing one it did not get is a
+            # model Cube refuses to compile. The metric goes with the field.
+            issues.add(IssueType.NO_USABLE_DIALECT, scope,
+                       f"references {', '.join(sorted(missing))}, which has no "
+                       f"expression in a usable dialect and so becomes no Cube "
+                       f"dimension; the metric is dropped with it")
+            continue
         referenced = referenced_datasets(expr, sanitized)
         target = stash.get("cube") or (
             next(iter(referenced)) if len(referenced) == 1 else resolve_base())
@@ -781,7 +830,8 @@ def _build_measures(model, cube_names, members_by_cube, inline_sql_by_cube,
             # seeing one opaque expression -- see _decompose_measure.
             public_sql = _decompose_measure(
                 expr, spans, mname, target, measures_by_cube, members_by_cube,
-                inline_sql_by_cube, pk_by_cube, sanitized, name)
+                all_members_by_cube, inline_sql_by_cube, pk_by_cube, sanitized,
+                name)
             measure = {"name": mname, "sql": public_sql, "type": "number"}
         else:
             measure = _measure_from_expression(
@@ -792,9 +842,23 @@ def _build_measures(model, cube_names, members_by_cube, inline_sql_by_cube,
     return measures_by_cube
 
 
+def _references_a_dropped_field(expr, sanitized, cube_names, dropped_by_cube):
+    """`dataset.field` references in `expr` naming a field that becomes no dimension."""
+    by_cube_name = {cname: ds_name for ds_name, cname in cube_names.items()}
+    missing = set()
+    for text, quoted in quoted_runs(expr):
+        if quoted:
+            continue
+        for match in DOTTED_REF_RE.finditer(text):
+            cname, fname = match.group(1), match.group(2)
+            if cname in sanitized and fname in (dropped_by_cube.get(cname) or ()):
+                missing.add(f"'{by_cube_name.get(cname, cname)}.{fname}'")
+    return missing
+
+
 def _decompose_measure(expr, spans, mname, fallback, measures_by_cube,
-                       members_by_cube, inline_sql_by_cube, pk_by_cube, sanitized,
-                       model_name):
+                       members_by_cube, all_members_by_cube, inline_sql_by_cube,
+                       pk_by_cube, sanitized, model_name):
     """Emit one `public: false` measure per aggregate; return the sql referencing them.
 
     Cube corrects for row multiplication per measure, keyed on the cube that measure
@@ -810,7 +874,7 @@ def _decompose_measure(expr, spans, mname, fallback, measures_by_cube,
     # is unique across dimensions and measures alike -- so the check is over both, and
     # over every cube rather than the one part it happens to land on.
     taken = {m["name"].lower() for ms in measures_by_cube.values() for m in ms}
-    taken |= {n.lower() for ns in members_by_cube.values() for n in ns}
+    taken |= {n.lower() for ns in all_members_by_cube.values() for n in ns}
     out, cursor, index = [], 0, 0
     for start, end in spans:
         piece = expr[start:end]
@@ -903,7 +967,10 @@ def _measure_from_expression(expr, target, mname, stash, members, inline_sql_by_
 
 def _apply_measure_metadata(metric, measure, stash):
     if stash.get("title"):
-        measure["title"] = escape_braces_for_cube(stash["title"])
+        # Not escaped: this came out of the stash, so it is already whatever Cube
+        # needs it to be. Escaping it again turned a valid `Revenue \{USD\}` into
+        # `Revenue \\{USD\\}`. Only Ossie-sourced strings are escaped.
+        measure["title"] = stash["title"]
     if metric.get("description"):
         measure["description"] = escape_braces_for_cube(metric["description"])
     parked = {}
