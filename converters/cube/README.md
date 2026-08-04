@@ -124,7 +124,7 @@ to **import** (Cube -> Ossie) or **export** (Ossie -> Cube).
 | `dataset.description` | cube `description` | |
 | `dataset.ai_context` | cube `meta.ai_context` | Preserved for the round trip, but **inert in Cube** -- its agent ignores cube-level `ai_context`. Recorded as an issue. |
 | `dataset.primary_key` | dimension(s) with `primary_key: true` | Composite = several. A Cube key can be an *expression*, and then the only name Ossie can carry is the dimension's -- which the Ossie document alone cannot tell apart from a column name afterwards, so import records it (`computed_primary_key`) and export puts `primary_key: true` back on that dimension instead of synthesizing one that reads a column of that name. Export marks a dimension only when it is **scalar** — a single source column — since `primary_key: true` declares that dimension's own `sql` to be the key; a computed dimension or a merged `geo` one would declare the wrong thing even if its name matches. Anything left uncovered becomes a `public: false` scalar dimension, suffixed (`id_pk`) if the obvious name is taken. |
-| `dataset.unique_keys` | `meta.ossie.unique_keys` | No native Cube slot; parked rather than dropped. |
+| `dataset.unique_keys` | `meta.ossie.unique_keys` | No native Cube slot, so parked — and used as the Cube primary key when the dataset declares none. Cube refuses a cube that declares a join without one, and several source formats have no primary-key concept: a Databricks metric view does not. A dataset with a relationship and neither is reported, naming Cube's requirement, since nothing can be invented. |
 | field | `dimensions[]` entry | Export: a name that is not a valid Cube identifier is sanitized; a case-insensitive collision is an error, never a silent merge. |
 | `field.expression` | dimension `sql` | Dataset-scoped, so `{CUBE}.col` <-> `col`. Export emits `{CUBE}.column` for a raw column and `{CUBE.member}` for a declared member, and never spells the cube's own name (which would break under `extends`). |
 | `field.datatype` | dimension `type` (**required**) | `String`->`string`, `Boolean`->`boolean`, `Date`/`Time`/`DateTime`/`DateTimeTz`->`time`, `Integer`/`Decimal`/`Float`->`number`, `Opaque`->`string`. Import maps back, choosing `Decimal` for `number` -- Cube collapses three Ossie types into one, so any single answer is a guess, and a stated datatype is what another converter can act on. Export parks the exact one in `meta.ossie.datatype`, which import prefers when present, so `Integer` and `Float` still survive a round trip. |
@@ -180,6 +180,14 @@ stays a raw quoted column.
 Ossie dialect enum has no `CUBE` entry -- so import emits `ANSI_SQL`, and export
 prefers `ANSI_SQL` with `--dialect` prepending a warehouse dialect (e.g.
 `SNOWFLAKE` for a Snowflake-backed Cube model).
+
+Failing both, export falls back to the expression's **only** dialect when that dialect
+is warehouse SQL (`SNOWFLAKE`, `DATABRICKS`, `BIGQUERY`), and reports it. This is what
+makes another converter's output usable: everything the Databricks converter emits is
+`DATABRICKS` with no ANSI alternative, and requiring ANSI dropped every field and metric
+— producing an *empty* Cube model, which Cube compiles, so nothing downstream noticed.
+`MDX`, `TABLEAU` and `MAQL` are query or calculation languages rather than warehouse SQL,
+so those still drop.
 
 **Braces are escaped in free text.** Cube compiles *every* string in a YAML model as
 a Python f-string (`f"<sql>"` in `YamlCompiler`; only the handful of boolean-ish keys

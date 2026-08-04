@@ -906,3 +906,71 @@ def test_a_mapping_form_segment_is_counted_when_disambiguating_a_view():
     entry = parse(files["model/views/shop.yml"])["views"][0]["cubes"][1]
     assert entry["excludes"] == ["id"]
     assert issues.of_type(IssueType.APPROXIMATED)
+
+
+# --- a model from another converter -----------------------------------------------
+#
+# Everything else here starts from a Cube model or from Ossie written for this test
+# suite. A document another converter produced is shaped differently, and the two
+# differences below both used to end the conversion in silence.
+
+def _databricks_ossie():
+    from _util import load_fixture
+
+    return load_fixture("databricks_ossie.yaml")
+
+
+def test_a_model_with_only_a_warehouse_dialect_still_converts():
+    """The Databricks converter emits `DATABRICKS` and no ANSI_SQL. Requiring ANSI meant
+    every field and metric was dropped and the export was an *empty* Cube model -- which
+    Cube compiles, so nothing downstream noticed either."""
+    files, issues = convert_ossie_to_cube(_databricks_ossie())
+    cube = _cubes(files)["orders"]
+    assert [d["name"] for d in cube["dimensions"]] == ["o_orderkey", "o_orderdate"]
+    assert [m["name"] for m in cube["measures"]] == ["total_revenue", "order_count"]
+    # Reported, because Cube will pass that SQL to whatever the data source is.
+    assert any("only dialect on offer" in i.detail
+               for i in issues.of_type(IssueType.APPROXIMATED))
+
+
+def test_a_non_sql_dialect_is_still_not_usable():
+    """The fallback is to warehouse SQL only. MDX, TABLEAU and MAQL are query or
+    calculation languages, so there is nothing for Cube to pass through."""
+    ds = (
+        "  - name: orders\n"
+        "    source: shop.public.orders\n"
+        "    fields:\n"
+        "    - name: note\n      expression:\n        dialects:\n"
+        "        - dialect: TABLEAU\n          expression: note\n"
+    )
+    files, issues = convert_ossie_to_cube(_ossie(ds))
+    assert "dimensions" not in _cubes(files)["orders"]
+    assert issues.of_type(IssueType.NO_USABLE_DIALECT)
+
+
+def test_unique_keys_supply_the_primary_key_cube_requires_for_a_join():
+    """Cube refuses a cube that declares a join without a primary key, and several source
+    formats have no primary-key concept -- a Databricks metric view does not. The first
+    `unique_keys` entry identifies a row just as well, and was sitting parked in
+    `meta.ossie` while Cube rejected the model for want of exactly it."""
+    files, issues = convert_ossie_to_cube(_databricks_ossie())
+    keys = [d for d in _cubes(files)["orders"]["dimensions"] if d.get("primary_key")]
+    assert [d["sql"] for d in keys] == ["o_orderkey"]
+    assert any("unique_keys entry" in i.detail
+               for i in issues.of_type(IssueType.APPROXIMATED))
+    # And it is still parked, so the round trip keeps it.
+    assert _cubes(files)["orders"]["meta"]["ossie"]["unique_keys"] == [["o_orderkey"]]
+
+
+def test_a_join_with_no_key_at_all_says_what_cube_will_refuse():
+    """Nothing can be invented here, so the issue names Cube's requirement and the
+    remedy rather than leaving a model that quietly will not load."""
+    import yaml as _yaml
+
+    doc = _yaml.safe_load(_databricks_ossie())
+    for ds in doc["semantic_model"][0]["datasets"]:
+        ds.pop("unique_keys", None)
+    _, issues = convert_ossie_to_cube(_yaml.dump(doc, sort_keys=False))
+    dropped = issues.of_type(IssueType.DROPPED_NO_CUBE_EQUIVALENT)
+    assert any("requires a primary key on any cube with a join" in i.detail
+               for i in dropped)

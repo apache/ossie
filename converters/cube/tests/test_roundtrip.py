@@ -111,6 +111,20 @@ def test_the_fixture_and_its_round_trip_both_compile_in_cube(fixture):
     assert_cube_compiles(back, f"{fixture} (after a round trip)")
 
 
+@validator_gate
+def test_a_model_from_another_converter_is_valid_ossie():
+    assert_ossie_is_valid(load_fixture("databricks_ossie.yaml"), "databricks_ossie.yaml")
+
+
+@cube_gate
+def test_a_model_from_another_converter_exports_to_a_model_cube_accepts():
+    """The Databricks path end to end. Nothing here was written for Cube: the dialect is
+    `DATABRICKS` throughout and the primary key comes from `unique_keys`, because a
+    metric view has no primary-key concept and Cube demands one for a join."""
+    files, _ = convert_ossie_to_cube(load_fixture("databricks_ossie.yaml"))
+    assert_cube_compiles(files, "databricks_ossie.yaml")
+
+
 @cube_gate
 def test_a_hand_authored_ossie_model_exports_to_a_model_cube_accepts():
     """Nothing here came from Cube, so nothing is restored from a stash -- every key is

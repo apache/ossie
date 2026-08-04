@@ -68,7 +68,11 @@ def assert_cube_compiles(files, label=""):
                 # A `.js`/`.ts` model needs Cube's transpiler and a `.py` one is
                 # Jinja-driven; the converter preserves both without parsing them.
                 continue
-            dest = pathlib.Path(tmp) / pathlib.Path(name).name
+            # The relative directory is kept. Flattening to the basename let a cube and
+            # a view of the same name overwrite each other -- `model/cubes/orders.yml`
+            # and `model/views/orders.yml` -- which made a valid model look malformed.
+            dest = pathlib.Path(tmp) / name
+            dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(text)
             paths.append(str(dest))
         assert paths, f"{label}: nothing to compile"

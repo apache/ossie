@@ -42,6 +42,12 @@ VENDOR = "CUBE"
 # the caller prepend a warehouse dialect the actual data source would accept.
 DIALECT_ANSI = "ANSI_SQL"
 
+# Dialects whose expressions are SQL a warehouse executes, so Cube can pass them
+# straight to the data source. The spec's enum also contains MDX, TABLEAU and MAQL,
+# which are query or calculation languages rather than warehouse SQL -- an expression
+# in one of those is not usable as a Cube `sql` at all.
+WAREHOUSE_DIALECTS = frozenset({DIALECT_ANSI, "SNOWFLAKE", "DATABRICKS", "BIGQUERY"})
+
 # Bump when the shape of a stashed `data` blob changes.
 STASH_VERSION = 1
 
@@ -301,23 +307,37 @@ def foreign_vendor_extensions(obj):
 # --- expressions ----------------------------------------------------------------
 
 def pick_expression(ossie_expression, preferred=None):
-    """Choose the SQL string for an Ossie expression.
+    """Choose the SQL string for an Ossie expression. Returns (sql, dialect).
 
-    Preference order: the caller-chosen warehouse dialect (Cube passes SQL
-    through to the data source, so e.g. SNOWFLAKE SQL is valid on a
-    Snowflake-backed Cube model), then ANSI_SQL. Returns None if neither is
-    present (the caller records an issue and skips).
+    Preference order: the caller-chosen warehouse dialect (Cube passes SQL through to
+    the data source, so e.g. SNOWFLAKE SQL is valid on a Snowflake-backed Cube model),
+    then ANSI_SQL, then -- if the expression offers exactly one dialect and that dialect
+    is warehouse SQL -- that one.
+
+    The last step matters for real interop. Converters commonly emit their own dialect
+    and no ANSI: everything from the Databricks converter is `DATABRICKS`. Requiring
+    ANSI meant a Databricks-authored model exported to an *empty* Cube model, every
+    field and metric dropped.
+
+    Only `WAREHOUSE_DIALECTS` qualify. An expression in MDX, TABLEAU or MAQL is not SQL
+    a warehouse can run, so there is nothing to fall back *to* -- those still drop, with
+    the issue saying so. `(None, None)` means nothing usable was found.
     """
-    dialects = {
-        d.get("dialect"): d.get("expression")
-        for d in (ossie_expression or {}).get("dialects") or []
-    }
-    expr = None
-    if preferred:
-        expr = dialects.get(preferred)
-    if expr is None:
-        expr = dialects.get(DIALECT_ANSI)
-    if expr is not None and not isinstance(expr, str):
+    dialects = [(d.get("dialect"), d.get("expression"))
+                for d in (ossie_expression or {}).get("dialects") or []
+                if d.get("expression") is not None]
+    by_dialect = dict(dialects)
+    for candidate in (preferred, DIALECT_ANSI):
+        if candidate and candidate in by_dialect:
+            return _checked_expression(by_dialect[candidate]), candidate
+    if len(dialects) == 1 and dialects[0][0] in WAREHOUSE_DIALECTS:
+        dialect, expr = dialects[0]
+        return _checked_expression(expr), dialect
+    return None, None
+
+
+def _checked_expression(expr):
+    if not isinstance(expr, str):
         raise ConversionError(
             f"expression must be a string, got {type(expr).__name__}")
     return expr

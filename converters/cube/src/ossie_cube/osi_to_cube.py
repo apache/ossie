@@ -39,6 +39,7 @@ from ._common import (
     AGG_TO_RESULT_DATATYPE,
     DATATYPE_TO_DIM_TYPE,
     DEFAULT_DATATYPE_FOR_CUBE_TYPE,
+    DIALECT_ANSI,
     OSSIE_FUNC_TO_AGG,
     OSSIE_VERSION,
     ConversionError,
@@ -320,7 +321,9 @@ def _build_cube(ds, plan, tables, joins, measures, join_extensions, dialect,
     pk_names = []
     computed_keys = set(stash.get("computed_primary_key") or [])
     taken = {d["name"].lower() for d in dimensions}
-    for entry in (ds.get("primary_key") or []):
+    # `plan.primary_key`, not the dataset's own field: the plan is where the fallback to
+    # `unique_keys` is resolved, and every stage has to agree on the answer.
+    for entry in plan.primary_key:
         entry = str(entry)
         # Import records the *dimension name*, so the name match is checked first;
         # a hand-authored model naming the source column resolves by column.
@@ -350,6 +353,17 @@ def _build_cube(ds, plan, tables, joins, measures, join_extensions, dialect,
     for dim in dimensions:
         if dim["name"] in pk_names:
             dim["primary_key"] = True
+    if plan.key_from_unique_keys and pk_names:
+        issues.add(IssueType.APPROXIMATED, scope,
+                   f"no primary_key, so the first unique_keys entry "
+                   f"({', '.join(plan.primary_key)}) is marked as the Cube primary key; "
+                   f"Cube requires one on any cube that declares a join")
+    if joins and not pk_names:
+        issues.add(IssueType.DROPPED_NO_CUBE_EQUIVALENT, scope,
+                   "declares a relationship but no primary_key or unique_keys, and Cube "
+                   "requires a primary key on any cube with a join ('primary key for "
+                   "<cube> is required when join is defined') -- the model will not "
+                   "compile until the dataset declares one")
 
     # Dimensions a prior import could not express as an Ossie field (a `switch` one,
     # which has no sql) go back at their original positions.
@@ -438,11 +452,13 @@ class _CubePlan:
     members: frozenset
     dropped: frozenset
     primary_key: tuple
+    key_from_unique_keys: bool
 
     @classmethod
     def of(cls, ds, cname, dialect, scope):
         names, inline_sql = _resolve_dimension_names(ds, scope)
         stash = read_stash(ds)
+        key, from_unique = _primary_key_columns(ds)
         lookup = dict(names)
         lookup.update({dname: dname for dname in names.values()})
         return cls(
@@ -461,8 +477,28 @@ class _CubePlan:
                    if (item.get("measure") or {}).get("name")}
                 | _stashed_segment_names(stash)),
             dropped=frozenset(_undialected_fields(ds, dialect)),
-            primary_key=tuple(str(c) for c in (ds.get("primary_key") or [])),
+            primary_key=key,
+            key_from_unique_keys=from_unique,
         )
+
+
+def _primary_key_columns(ds):
+    """(key columns, whether they came from `unique_keys`).
+
+    Cube needs a primary key on any cube that declares a join, and several source
+    formats have no primary-key concept at all -- a Databricks metric view does not --
+    so the converter falls back to the first `unique_keys` entry, which identifies a row
+    just as well. Without that fallback the information sat parked in `meta.ossie` while
+    Cube refused the model for want of exactly it.
+    """
+    declared = [str(c) for c in (ds.get("primary_key") or [])]
+    if declared:
+        return tuple(declared), False
+    for candidate in (ds.get("unique_keys") or []):
+        columns = [str(c) for c in (candidate or [])]
+        if columns:
+            return tuple(columns), True
+    return (), False
 
 
 def _reference_members(ds, dim_names, dialect):
@@ -479,7 +515,7 @@ def _reference_members(ds, dim_names, dialect):
         dname = dim_names.get(fname)
         if not dname:
             continue
-        expr = pick_expression(field.get("expression"), dialect)
+        expr, _ = pick_expression(field.get("expression"), dialect)
         if expr is None:
             # No usable dialect: this field becomes no dimension at all, so claiming
             # it as a member would make a metric over it emit `{CUBE.name}` --
@@ -494,11 +530,26 @@ def _reference_members(ds, dim_names, dialect):
     return needed
 
 
+def _report_dialect_fallback(issues, scope, used, preferred):
+    """Note when an expression came from a dialect that was not asked for.
+
+    Emitted rather than dropped: a model whose only expressions are `DATABRICKS` still
+    converts, and Cube passes SQL through to the data source, so it is right whenever the
+    Cube model reads that warehouse. Pass `--dialect` to make the choice explicit.
+    """
+    if used in (None, DIALECT_ANSI, preferred):
+        return
+    issues.add(IssueType.APPROXIMATED, scope,
+               f"no ANSI_SQL expression; used the only dialect on offer ('{used}'). "
+               f"Cube passes SQL to the data source, so this is correct where the "
+               f"model reads that warehouse -- pass --dialect {used} to say so.")
+
+
 def _undialected_fields(ds, dialect):
     """Field names with no expression in a usable dialect, so no Cube dimension."""
     return {field.get("name") for field in (ds.get("fields") or [])
             if field.get("name")
-            and pick_expression(field.get("expression"), dialect) is None}
+            and pick_expression(field.get("expression"), dialect)[0] is None}
 
 
 def _resolve_dimension_names(ds, scope):
@@ -602,11 +653,13 @@ def _build_dimensions(ds, plan, tables, dialect, issues):
                 slot["host"] = geo["host"]
             continue
 
-        expr = pick_expression(field.get("expression"), dialect)
+        expr, used = pick_expression(field.get("expression"), dialect)
         if expr is None:
             issues.add(IssueType.NO_USABLE_DIALECT, f"{ds_name}.{fname}",
-                       "no ANSI_SQL or preferred-dialect expression; field dropped")
+                       "no ANSI_SQL expression and no warehouse dialect Cube could "
+                       "pass through; field dropped")
             continue
+        _report_dialect_fallback(issues, f"{ds_name}.{fname}", used, dialect)
 
         dim = {"name": dname}
         if "sql" in stash:
@@ -897,11 +950,13 @@ def _build_measures(model, cube_names, plan, tables, datasets, relationships,
             _place(measures_by_cube, target, measure, name)
             continue
 
-        expr = pick_expression(metric.get("expression"), dialect)
+        expr, used = pick_expression(metric.get("expression"), dialect)
         if expr is None:
             issues.add(IssueType.NO_USABLE_DIALECT, scope,
-                       "no ANSI_SQL or preferred-dialect expression; metric dropped")
+                       "no ANSI_SQL expression and no warehouse dialect Cube could "
+                       "pass through; metric dropped")
             continue
+        _report_dialect_fallback(issues, scope, used, dialect)
 
         missing = _references_a_dropped_field(expr, tables, cube_names, plan)
         if missing:
