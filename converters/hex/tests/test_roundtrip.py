@@ -19,7 +19,9 @@ import json
 from pathlib import Path
 
 import yaml
+from inline_snapshot import snapshot as inline_snapshot
 from ossie import OSIDialect
+from syrupy.assertion import SnapshotAssertion
 
 from ossie_hex.cli.hex_project_io import read_hex_project, write_hex_project
 from ossie_hex.hex_to_ossie import convert_hex_to_ossie
@@ -113,14 +115,19 @@ def test_compiled_metric_sql_survives_a_roundtrip(minimal_hex_path: str) -> None
     }
 
     assert second_metrics == first_metrics
-    assert first_metrics == {
-        "order_count": "COUNT(orders.*)",
-        "total_amount": "SUM(orders.amount)",
-        "cancelled_orders": "COUNT(CASE WHEN orders.is_cancelled THEN 1 END)",
-    }
+    assert first_metrics == inline_snapshot(
+        {
+            "order_count": "COUNT(orders.*)",
+            "total_amount": "SUM(orders.amount)",
+            "cancelled_orders": "COUNT(CASE WHEN orders.is_cancelled THEN 1 END)",
+        }
+    )
 
 
-def test_hex_roundtrip_emits_expected_yaml(minimal_hex_path: str) -> None:
+def test_hex_roundtrip_emits_expected_yaml(
+    minimal_hex_path: str,
+    snapshot: SnapshotAssertion,
+) -> None:
     files = read_hex_project(minimal_hex_path)
     ossie_yaml, _ = convert_hex_to_ossie(
         files,
@@ -130,65 +137,13 @@ def test_hex_roundtrip_emits_expected_yaml(minimal_hex_path: str) -> None:
     files, warnings = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL)
 
     assert warnings == []
-    assert files == {
-        "customers.yml": """\
-id: customers
-base_sql_table: analytics.public.customers
-dimensions:
-- id: customer_id
-  type: string
-  unique: true
-- id: email
-  type: string
-- id: created_at
-  type: timestamp_tz
-""",
-        "order_overview.yml": """\
-id: order_overview
-type: view
-base: orders
-contents:
-- dimensions:
-  - '...'
-  measures:
-  - order_count
-  - total_amount
-""",
-        "orders.yml": """\
-id: orders
-base_sql_table: analytics.public.orders
-dimensions:
-- id: order_id
-  type: string
-  unique: true
-  visibility: internal
-- id: customer_id
-  type: string
-- id: order_date
-  type: date
-- id: amount
-  type: number
-  expr_sql: amount_usd
-- id: is_cancelled
-  type: boolean
-  expr_sql: status = 'cancelled'
-measures:
-- id: order_count
-  func_sql: COUNT(orders.*)
-- id: total_amount
-  func_sql: SUM(${amount})
-- id: cancelled_orders
-  func_sql: COUNT(CASE WHEN ${is_cancelled} THEN 1 END)
-relations:
-- id: customers
-  type: many_to_one
-  join_sql: ${customer_id} = ${customers.customer_id}
-description: Order fact table.
-""",
-    }
+    assert files == snapshot
 
 
-def test_named_joins_roundtrip(named_joins_hex_path: str) -> None:
+def test_named_joins_roundtrip(
+    named_joins_hex_path: str,
+    snapshot: SnapshotAssertion,
+) -> None:
     files = read_hex_project(named_joins_hex_path)
     ossie_yaml, _warnings = convert_hex_to_ossie(
         files,
@@ -204,13 +159,7 @@ def test_named_joins_roundtrip(named_joins_hex_path: str) -> None:
     files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL)
     # The two models shared one multi-doc file on the way in and come back as a
     # file each, since it's functionally equivalent.
-    assert set(files) == {"messages.yml", "users.yml"}
-    messages = yaml.safe_load(files["messages.yml"])
-    rel_ids = {r["id"] for r in messages.get("relations", [])}
-    assert rel_ids == {"sender", "receiver"}
-    for rel in messages["relations"]:
-        assert rel["target"] == "users"
-        assert rel["id"] in rel["join_sql"] or "users" in rel["join_sql"]
+    assert files == snapshot
 
 
 def test_a_non_numeric_func_sql_measure_keeps_its_type(tmp_path: Path) -> None:
@@ -242,11 +191,13 @@ measures:
     files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL)
     measure = yaml.safe_load(files["orders.yml"])["measures"][0]
 
-    assert measure == {
-        "id": "latest_order",
-        "func_sql": "MAX(${order_date})",
-        "type": "date",
-    }
+    assert measure == inline_snapshot(
+        {
+            "id": "latest_order",
+            "func_sql": "MAX(${order_date})",
+            "type": "date",
+        }
+    )
 
 
 def test_measure_ids_ride_along_in_the_metric_name(tmp_path: Path) -> None:
@@ -301,9 +252,23 @@ measures:
     }
 
     assert set(payloads) == {"revenue", "orders__revenue", "sales__revenue"}
-    assert "measure_id" not in payloads["revenue"]
-    assert "measure_id" not in payloads["orders__revenue"]
-    assert payloads["sales__revenue"]["measure_id"] == "revenue"
+    assert payloads == inline_snapshot(
+        {
+            "revenue": {
+                "model_id": "orders",
+                "display_name": "Revenue",
+            },
+            "orders__revenue": {
+                "model_id": "orders",
+                "display_name": "Orders  revenue",
+            },
+            "sales__revenue": {
+                "model_id": "sales",
+                "measure_id": "revenue",
+                "display_name": "Revenue",
+            },
+        }
+    )
 
     files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL)
     orders = yaml.safe_load(files["orders.yml"])
@@ -366,18 +331,20 @@ dimensions:
     files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL)
     relations = yaml.safe_load(files["orders.yml"])["relations"]
 
-    assert relations == [
-        {
-            "id": "customers",
-            "type": "many_to_one",
-            "join_sql": "${customer_id} = ${customers.id}",
-        },
-        {
-            "id": "sales",
-            "type": "one_to_many",
-            "join_sql": "${id} = ${sales.order_id}",
-        },
-    ]
+    assert relations == inline_snapshot(
+        [
+            {
+                "id": "customers",
+                "type": "many_to_one",
+                "join_sql": "${customer_id} = ${customers.id}",
+            },
+            {
+                "id": "sales",
+                "type": "one_to_many",
+                "join_sql": "${id} = ${sales.order_id}",
+            },
+        ]
+    )
 
 
 def test_a_decomposable_join_comes_back_canonicalized(tmp_path: Path) -> None:
@@ -438,19 +405,21 @@ dimensions:
 
     files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL)
 
-    assert yaml.safe_load(files["orders.yml"])["relations"] == [
-        {
-            "id": "regions",
-            "type": "many_to_one",
-            "join_sql": "${region_id} = ${regions.id}",
-        },
-        {
-            "id": "buyer",
-            "target": "customers",
-            "type": "many_to_one",
-            "join_sql": "${customer_id} = ${buyer.id}",
-        },
-    ]
+    assert yaml.safe_load(files["orders.yml"])["relations"] == inline_snapshot(
+        [
+            {
+                "id": "regions",
+                "type": "many_to_one",
+                "join_sql": "${region_id} = ${regions.id}",
+            },
+            {
+                "id": "buyer",
+                "target": "customers",
+                "type": "many_to_one",
+                "join_sql": "${customer_id} = ${buyer.id}",
+            },
+        ]
+    )
 
 
 def test_an_undecomposable_join_survives_the_roundtrip(tmp_path: Path) -> None:
@@ -501,15 +470,17 @@ dimensions:
 
     files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL)
 
-    assert yaml.safe_load(files["orders.yml"])["relations"] == [
-        {
-            "id": "tier",
-            "target": "price_tiers",
-            "type": "one_to_many",
-            "visibility": "internal",
-            "join_sql": "${amount} > ${tier.floor}",
-        }
-    ]
+    assert yaml.safe_load(files["orders.yml"])["relations"] == inline_snapshot(
+        [
+            {
+                "id": "tier",
+                "target": "price_tiers",
+                "type": "one_to_many",
+                "visibility": "internal",
+                "join_sql": "${amount} > ${tier.floor}",
+            }
+        ]
+    )
 
 
 def test_null_typed_dimension_survives_the_roundtrip(tmp_path: Path) -> None:
@@ -610,19 +581,29 @@ dimensions:
         for dimension in yaml.safe_load(files["orders.yml"])["dimensions"]
     }
 
-    assert expressions["doubled"] == "${amount} * 2"
-    assert expressions["buyer_name"] == "UPPER(${buyer.name})"
-    assert expressions["label"] == "order_label"
-    assert expressions["raw_label"] == "label"
+    assert expressions == inline_snapshot(
+        {
+            "customer_id": None,
+            "amount": None,
+            "doubled": "${amount} * 2",
+            "label": "order_label",
+            "raw_label": "label",
+            "buyer_name": "UPPER(${buyer.name})",
+        }
+    )
 
 
-def test_tpcds_export(tpcds_ossie_yaml: str, tmp_path: Path) -> None:
+def test_tpcds_export(
+    tpcds_ossie_yaml: str,
+    tmp_path: Path,
+    snapshot: SnapshotAssertion,
+) -> None:
     files, _warnings = convert_ossie_to_hex(
         tpcds_ossie_yaml,
         dialect=OSIDialect.ANSI_SQL,
         base_model="store_sales",
     )
-    assert files
+    assert files == snapshot
     out = tmp_path / "tpcds_hex"
     write_hex_project(out, files)
     # Every file validates as a Hex resource.

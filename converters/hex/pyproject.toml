@@ -23,6 +23,8 @@ build-backend = "hatchling.build"
 dev = [
     "pytest>=8.0",
     "ruff>=0.16.0",
+    "syrupy>=4.0",
+    "inline-snapshot>=0.23",
 ]
 
 [project]
@@ -62,6 +64,13 @@ pythonpath = ["src"]
 
 [tool.ruff]
 target-version = "py311"
+
+[tool.pyright]
+include = ["src", "tests"]
+extraPaths = ["src", "../../python/src"]
+pythonVersion = "3.11"
+venvPath = "."
+venv = ".venv"
 
 [tool.uv]
 default-groups = ["dev"]

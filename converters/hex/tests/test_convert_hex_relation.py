@@ -18,6 +18,7 @@
 from pathlib import Path
 
 import yaml
+from inline_snapshot import snapshot as inline_snapshot
 from ossie import OSIDialect
 
 from ossie_hex.cli.hex_project_io import read_hex_project
@@ -77,20 +78,20 @@ relations:
     model = yaml.safe_load(yaml_text)["semantic_model"][0]
     payloads = {rel["name"]: hex_extension(rel) for rel in model["relationships"]}
 
-    assert payloads["customers"] is None
-
-    # An inverted relation is stored with `from` and `to` swapped, which reads
-    # back as an ordinary many-to-one pointing the other way. The cardinality is
-    # what tells the export to turn the relationship inside out again, so the
-    # target and the join follow from it.
-    assert payloads["sales"] == {"relation_type": "one_to_many"}
-
-    # One-to-one keeps Ossie's orientation but not its cardinality.
-    assert payloads["shipment"] == {"relation_type": "one_to_one"}
-
-    # Ossie has no field for visibility.
-    assert payloads["hidden"] == {"visibility": "internal"}
-
-    # Decomposing to column pairs loses which side was written first, but the
-    # flipped equality it comes back as says the same thing.
-    assert payloads["regions"] is None
+    # - An inverted relation is stored with `from` and `to` swapped, which reads
+    #   back as an ordinary many-to-one pointing the other way. The cardinality is
+    #   what tells the export to turn the relationship inside out again, so the
+    #   target and the join follow from it.
+    # - One-to-one keeps Ossie's orientation but not its cardinality.
+    # - Ossie has no field for visibility.
+    # - Decomposing to column pairs loses which side was written first, but the flipped equality
+    #   it comes back as says the same thing.
+    assert payloads == inline_snapshot(
+        {
+            "customers": None,
+            "sales": {"relation_type": "one_to_many"},
+            "shipment": {"relation_type": "one_to_one"},
+            "hidden": {"visibility": "internal"},
+            "regions": None,
+        }
+    )

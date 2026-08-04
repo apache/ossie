@@ -18,6 +18,7 @@
 from pathlib import Path
 
 import yaml
+from inline_snapshot import snapshot as inline_snapshot
 from ossie import OSIDialect
 
 from ossie_hex.cli.hex_project_io import read_hex_project
@@ -101,24 +102,25 @@ dimensions:
     datasets = yaml.safe_load(yaml_text)["semantic_model"][0]["datasets"]
     orders = next(ds for ds in datasets if ds["name"] == "orders")
 
-    assert {field["name"]: hex_extension(field) for field in orders["fields"]} == {
-        "is_delivery": None,
-        "amount": None,
-        "status": None,
-        "status_upper": None,
-        "qualified_amount": None,
-        "doubled_amount": None,
-        "label": None,
-        # `label` the column and `label` the dimension are different things, and
-        # the dimension reads `order_label`, so the reference the rewrite would
-        # return in place of the bare column names the wrong one. Same for the
-        # qualified form of it inside a larger expression.
-        "raw_label": {"expr_sql": "label"},
-        "shouty_label": {"expr_sql": "UPPER(orders.label)"},
-        # Hex reaches another model through a relation ID, which is not a dataset
-        # name, so `buyer.name` is not something the import can resolve.
-        "buyer_name": {"expr_sql": "${buyer.name}"},
-    }
+    # `label` the column and `label` the dimension differ: rewriting bare
+    # `label` / `orders.label` would point at the wrong thing. `buyer.name` is a
+    # relation-qualified Hex ref, not a dataset name Ossie can resolve.
+    assert {
+        field["name"]: hex_extension(field) for field in orders["fields"]
+    } == inline_snapshot(
+        {
+            "is_delivery": None,
+            "amount": None,
+            "status": None,
+            "status_upper": None,
+            "qualified_amount": None,
+            "doubled_amount": None,
+            "label": None,
+            "raw_label": {"expr_sql": "label"},
+            "shouty_label": {"expr_sql": "UPPER(orders.label)"},
+            "buyer_name": {"expr_sql": "${buyer.name}"},
+        }
+    )
 
 
 def test_hex_dimension_with_expr_calc_is_preserved(

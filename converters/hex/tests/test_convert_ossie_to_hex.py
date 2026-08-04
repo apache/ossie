@@ -17,7 +17,9 @@
 
 import pytest
 import yaml
+from inline_snapshot import snapshot as inline_snapshot
 from ossie import OSIDialect
+from syrupy.assertion import SnapshotAssertion
 
 from ossie_hex.ossie_to_hex import convert_ossie_to_hex
 from ossie_hex.util.errors import ConversionError
@@ -50,7 +52,9 @@ semantic_model:
     assert dimension["expr_sql"] == "snowflake_amount"
 
 
-def test_export_ambiguous_metrics_require_base_model() -> None:
+def test_export_ambiguous_metrics_require_base_model(
+    snapshot: SnapshotAssertion,
+) -> None:
     ossie = """
 version: "0.2.0.dev0"
 semantic_model:
@@ -93,29 +97,7 @@ semantic_model:
 
     # The unassignable metric lands on --base-model, not on the other dataset.
     # Single-character Ossie names are padded, since Hex IDs need two characters.
-    assert (
-        files["a_.yml"]
-        == """\
-id: a_
-base_sql_table: s.a
-dimensions:
-- id: x_
-  type: number
-measures:
-- id: weird
-  func_sql: 1 + 1
-"""
-    )
-    assert (
-        files["b_.yml"]
-        == """\
-id: b_
-base_sql_table: s.b
-dimensions:
-- id: y_
-  type: number
-"""
-    )
+    assert files == snapshot
     assert warnings == []
 
 
@@ -207,11 +189,13 @@ semantic_model:
 
     assert items["id"] == "order_items"
     # `target` must name the coerced Hex model, not the original Ossie name.
-    assert items["relations"] == [
-        {
-            "id": "items_to_customers",
-            "target": "customers",
-            "type": "many_to_one",
-            "join_sql": "${customerid} = ${items_to_customers.customerid}",
-        }
-    ]
+    assert items["relations"] == inline_snapshot(
+        [
+            {
+                "id": "items_to_customers",
+                "target": "customers",
+                "type": "many_to_one",
+                "join_sql": "${customerid} = ${items_to_customers.customerid}",
+            }
+        ]
+    )

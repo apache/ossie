@@ -16,14 +16,19 @@
 # under the License.
 
 import yaml
+from inline_snapshot import snapshot as inline_snapshot
 from ossie import OSIDataType, OSIDialect, OSIDocument, OSIVendor
+from syrupy.assertion import SnapshotAssertion
 
 from ossie_hex.cli.hex_project_io import read_hex_project
 from ossie_hex.hex_to_ossie import convert_hex_to_ossie
 from tests.utils import hex_extension
 
 
-def test_import_minimal_hex_project(minimal_hex_path: str) -> None:
+def test_import_minimal_hex_project(
+    minimal_hex_path: str,
+    snapshot: SnapshotAssertion,
+) -> None:
     files = read_hex_project(minimal_hex_path)
     yaml_text, warnings = convert_hex_to_ossie(
         files,
@@ -34,6 +39,7 @@ def test_import_minimal_hex_project(minimal_hex_path: str) -> None:
     assert doc.version == "0.2.0.dev0"
     assert doc.vendors == [OSIVendor.HEX]
     assert doc.dialects == [OSIDialect.SNOWFLAKE]
+    assert yaml_text == snapshot
 
     model = doc.semantic_model[0]
     assert model.name == "demo"
@@ -95,58 +101,66 @@ def test_hex_extension_carries_only_non_ossie_data(minimal_hex_path: str) -> Non
     # Stashes carry only what Ossie cannot express. Asserting the whole payload
     # keeps derived defaults (a Hex `name`, an empty `description`) from
     # creeping in, since those resurface as noise when converting back.
-    assert hex_extension(model) == {
-        "extension_version": 1,
-        "views": [
-            {
-                "resource": {
-                    "id": "order_overview",
-                    "type": "view",
-                    "base": "orders",
-                    "contents": [
-                        {
-                            "dimensions": ["..."],
-                            "measures": ["order_count", "total_amount"],
-                        }
-                    ],
+    assert hex_extension(model) == inline_snapshot(
+        {
+            "extension_version": 1,
+            "views": [
+                {
+                    "resource": {
+                        "id": "order_overview",
+                        "type": "view",
+                        "base": "orders",
+                        "contents": [
+                            {
+                                "dimensions": ["..."],
+                                "measures": ["order_count", "total_amount"],
+                            }
+                        ],
+                    }
                 }
-            }
-        ],
-    }
+            ],
+        }
+    )
 
-    assert hex_extension(orders) == {
-        "display_name": "Orders",
-        "source_kind": "table",
-    }
+    assert hex_extension(orders) == inline_snapshot(
+        {
+            "display_name": "Orders",
+            "source_kind": "table",
+        }
+    )
 
     # A plain typed column has nothing Ossie is missing, so it gets no extension.
     # Both expressions here are raw SQL over the source table, which is exactly
     # what the Ossie expression holds, so the visibility Ossie has no field for
     # is all that is left to record.
-    assert [hex_extension(field) for field in orders["fields"]] == [
-        {"visibility": "internal"},
-        None,
-        None,
-        None,
-        None,
-    ]
+    assert [hex_extension(field) for field in orders["fields"]] == inline_snapshot(
+        [
+            {"visibility": "internal"},
+            None,
+            None,
+            None,
+            None,
+        ]
+    )
 
     # No `measure_id`: nothing on this model collides, so each metric is named
     # for its measure and the export reads the ID back off the metric name.
-    assert [hex_extension(metric) for metric in model["metrics"]] == [
-        {
-            "model_id": "orders",
-            "display_name": "Order count",
-        },
-        {
-            "model_id": "orders",
-            "display_name": "Total amount",
-        },
-        {
-            "model_id": "orders",
-            "display_name": "Cancelled orders",
-        },
-    ]
+    assert [hex_extension(metric) for metric in model["metrics"]] == inline_snapshot(
+        [
+            {
+                "model_id": "orders",
+                "display_name": "Order count",
+            },
+            {
+                "model_id": "orders",
+                "display_name": "Total amount",
+            },
+            {
+                "model_id": "orders",
+                "display_name": "Cancelled orders",
+            },
+        ]
+    )
 
     # A many-to-one join is what the Ossie column pairs already describe, so the
     # whole payload would be a restatement of `from`, `to`, and the two column

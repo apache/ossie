@@ -106,7 +106,6 @@ semantic_model:
     }
 
 
-
 def test_a_qualifier_inside_a_string_literal_is_not_a_reference() -> None:
     # The same text twice: rewritten as a reference, left alone as a literal.
     measure = _measure_for(

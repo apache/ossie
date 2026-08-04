@@ -1,0 +1,276 @@
+# serializer version: 1
+# name: test_hex_roundtrip_emits_expected_yaml
+  dict({
+    'customers.yml': '''
+      id: customers
+      base_sql_table: analytics.public.customers
+      dimensions:
+      - id: customer_id
+        type: string
+        unique: true
+      - id: email
+        type: string
+      - id: created_at
+        type: timestamp_tz
+  
+    ''',
+    'order_overview.yml': '''
+      id: order_overview
+      type: view
+      base: orders
+      contents:
+      - dimensions:
+        - '...'
+        measures:
+        - order_count
+        - total_amount
+  
+    ''',
+    'orders.yml': '''
+      id: orders
+      base_sql_table: analytics.public.orders
+      dimensions:
+      - id: order_id
+        type: string
+        unique: true
+        visibility: internal
+      - id: customer_id
+        type: string
+      - id: order_date
+        type: date
+      - id: amount
+        type: number
+        expr_sql: amount_usd
+      - id: is_cancelled
+        type: boolean
+        expr_sql: status = 'cancelled'
+      measures:
+      - id: order_count
+        func_sql: COUNT(orders.*)
+      - id: total_amount
+        func_sql: SUM(${amount})
+      - id: cancelled_orders
+        func_sql: COUNT(CASE WHEN ${is_cancelled} THEN 1 END)
+      relations:
+      - id: customers
+        type: many_to_one
+        join_sql: ${customer_id} = ${customers.customer_id}
+      description: Order fact table.
+  
+    ''',
+  })
+# ---
+# name: test_named_joins_roundtrip
+  dict({
+    'messages.yml': '''
+      id: messages
+      base_sql_table: app.messages
+      dimensions:
+      - id: message_id
+        type: string
+        unique: true
+      - id: sender_id
+        type: string
+      - id: receiver_id
+        type: string
+      relations:
+      - id: sender
+        target: users
+        type: many_to_one
+        join_sql: ${sender_id} = ${sender.id}
+      - id: receiver
+        target: users
+        type: many_to_one
+        join_sql: ${receiver_id} = ${receiver.id}
+  
+    ''',
+    'users.yml': '''
+      id: users
+      base_sql_table: app.users
+      dimensions:
+      - id: id
+        type: string
+        unique: true
+      - id: name
+        type: string
+  
+    ''',
+  })
+# ---
+# name: test_tpcds_export
+  dict({
+    'customer.yml': '''
+      id: customer
+      base_sql_table: tpcds.public.customer
+      dimensions:
+      - id: c_customer_sk
+        type: number
+        unique: true
+        description: Surrogate key for customer
+      - id: c_customer_id
+        type: string
+        description: Business key for customer
+      - id: c_first_name
+        type: string
+        description: Customer first name
+      - id: c_last_name
+        type: string
+        description: Customer last name
+      - id: customer_full_name
+        type: string
+        expr_sql: c_first_name || ' ' || c_last_name
+        description: Customer full name (computed field)
+      - id: c_email_address
+        type: string
+        description: Customer email address
+      description: Customer dimension with demographic information
+  
+    ''',
+    'date_dim.yml': '''
+      id: date_dim
+      base_sql_table: tpcds.public.date_dim
+      dimensions:
+      - id: d_date_sk
+        type: number
+        unique: true
+        description: Surrogate key for date
+      - id: d_date
+        type: date
+        description: Actual date value
+      - id: d_year
+        type: number
+        description: Year
+      - id: d_quarter_name
+        type: string
+        description: Quarter name (e.g., 2024Q1)
+      - id: d_month_name
+        type: string
+        description: Month name
+      description: Date dimension with calendar attributes
+  
+    ''',
+    'item.yml': '''
+      id: item
+      base_sql_table: tpcds.public.item
+      dimensions:
+      - id: i_item_sk
+        type: number
+        unique: true
+        description: Surrogate key for item
+      - id: i_item_id
+        type: string
+        description: Business key for item
+      - id: i_item_desc
+        type: string
+        description: Item description
+      - id: i_brand
+        type: string
+        description: Brand name
+      - id: i_category
+        type: string
+        description: Item category
+      - id: i_current_price
+        type: number
+        description: Current price of the item
+      description: Item/Product dimension with product attributes
+  
+    ''',
+    'store.yml': '''
+      id: store
+      base_sql_table: tpcds.public.store
+      dimensions:
+      - id: s_store_sk
+        type: number
+        unique: true
+        description: Surrogate key for store
+      - id: s_store_id
+        type: string
+        unique: true
+        description: Business key for store
+      - id: s_store_name
+        type: string
+        description: Store name
+      - id: s_city
+        type: string
+        description: City where store is located
+      - id: s_state
+        type: string
+        description: State where store is located
+      - id: s_number_employees
+        type: number
+        description: Number of employees at the store
+      description: Store dimension with location and store attributes
+  
+    ''',
+    'store_sales.yml': '''
+      id: store_sales
+      base_sql_table: tpcds.public.store_sales
+      dimensions:
+      - id: ss_sold_date_sk
+        type: number
+        description: Foreign key to date dimension
+      - id: ss_item_sk
+        type: number
+        unique: true
+        description: Foreign key to item dimension
+      - id: ss_customer_sk
+        type: number
+        description: Foreign key to customer dimension
+      - id: ss_store_sk
+        type: number
+        description: Foreign key to store dimension
+      - id: ss_quantity
+        type: number
+        description: Quantity of items sold
+      - id: ss_sales_price
+        type: number
+        description: Sales price per unit
+      - id: ss_ext_sales_price
+        type: number
+        description: Extended sales price (quantity * price)
+      - id: ss_net_profit
+        type: number
+        description: Net profit from the sale
+      - id: ss_ticket_number
+        type: string
+        unique: true
+        visibility: internal
+      measures:
+      - id: total_sales
+        func_sql: SUM(${ss_ext_sales_price})
+        description: Total sales revenue across all transactions
+      - id: total_profit
+        func_sql: SUM(${ss_net_profit})
+        description: Total net profit from store sales
+      - id: sales_by_brand
+        func_sql: SUM(${ss_ext_sales_price})
+        description: Total sales by brand (requires grouping by item.i_brand)
+      - id: customer_lifetime_value
+        func_sql: SUM(${ss_ext_sales_price}) / COUNT(DISTINCT ${store_sales_to_customer.c_customer_sk})
+        description: Average lifetime sales value per customer
+      - id: store_productivity
+        func_sql: SUM(${ss_ext_sales_price}) / NULLIF(SUM(${store_sales_to_store.s_number_employees}),
+          0)
+        description: Sales per employee across stores
+      relations:
+      - id: store_sales_to_date
+        target: date_dim
+        type: many_to_one
+        join_sql: ${ss_sold_date_sk} = ${store_sales_to_date.d_date_sk}
+      - id: store_sales_to_customer
+        target: customer
+        type: many_to_one
+        join_sql: ${ss_customer_sk} = ${store_sales_to_customer.c_customer_sk}
+      - id: store_sales_to_item
+        target: item
+        type: many_to_one
+        join_sql: ${ss_item_sk} = ${store_sales_to_item.i_item_sk}
+      - id: store_sales_to_store
+        target: store
+        type: many_to_one
+        join_sql: ${ss_store_sk} = ${store_sales_to_store.s_store_sk}
+      description: Fact table containing all store sales transactions
+  
+    ''',
+  })
+# ---

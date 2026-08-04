@@ -19,6 +19,7 @@ import json
 from pathlib import Path
 
 import yaml
+from inline_snapshot import snapshot as inline_snapshot
 from ossie import OSIDataType, OSIDialect
 
 from ossie_hex.cli.hex_project_io import read_hex_project
@@ -89,23 +90,29 @@ dimensions:
         for metric in metrics
     }
 
-    assert expressions == {
-        "delivered_revenue": "SUM(CASE WHEN orders.is_delivery THEN sales.value END)",
-        "total_delivery_fee": "SUM(orders.delivery_fee)",
-    }
+    assert expressions == inline_snapshot(
+        {
+            "delivered_revenue": "SUM(CASE WHEN orders.is_delivery THEN sales.value END)",
+            "total_delivery_fee": "SUM(orders.delivery_fee)",
+        }
+    )
 
     payloads = {
         metric["name"]: json.loads(metric["custom_extensions"][0]["data"])
         for metric in metrics
     }
-    assert payloads["delivered_revenue"] == {
-        "model_id": "sales",
-        "display_name": "Delivered revenue",
-    }
-    assert payloads["total_delivery_fee"] == {
-        "model_id": "sales",
-        "display_name": "Total delivery fee",
-    }
+    assert payloads == inline_snapshot(
+        {
+            "delivered_revenue": {
+                "model_id": "sales",
+                "display_name": "Delivered revenue",
+            },
+            "total_delivery_fee": {
+                "model_id": "sales",
+                "display_name": "Total delivery fee",
+            },
+        }
+    )
 
 
 def test_hex_measure_with_func_calc_is_preserved(

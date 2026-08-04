@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from inline_snapshot import snapshot as inline_snapshot
+
 from ossie_hex.hex_types import HexModel, HexView, parse_hex_resource
 from ossie_hex.ossie_to_hex.dump_hex_resource import hex_resource_to_yaml
 from ossie_hex.util.yaml import load_yaml
@@ -56,19 +58,21 @@ def test_resource_to_yaml_omits_model_defaults() -> None:
             }
         ],
     }
-    expected = {
-        "id": "orders",
-        "base_sql_table": "orders",
-        "dimensions": [{"id": "order_id", "type": "number"}],
-        "measures": [{"id": "order_count", "func": "count"}],
-        "relations": [
-            {
-                "id": "users",
-                "type": "many_to_one",
-                "join_sql": "${user_id} = ${users.id}",
-            }
-        ],
-    }
+    expected = inline_snapshot(
+        {
+            "id": "orders",
+            "base_sql_table": "orders",
+            "dimensions": [{"id": "order_id", "type": "number"}],
+            "measures": [{"id": "order_count", "func": "count"}],
+            "relations": [
+                {
+                    "id": "users",
+                    "type": "many_to_one",
+                    "join_sql": "${user_id} = ${users.id}",
+                }
+            ],
+        }
+    )
 
     assert load_yaml(hex_resource_to_yaml(resource_data)) == expected
     assert (
@@ -82,10 +86,12 @@ def test_resource_to_yaml_preserves_view_type() -> None:
 
     data = load_yaml(hex_resource_to_yaml(resource))
 
-    assert data == {
-        "id": "orders_view",
-        "type": "view",
-        "base": "orders",
-        "contents": [],
-    }
+    assert data == inline_snapshot(
+        {
+            "id": "orders_view",
+            "type": "view",
+            "base": "orders",
+            "contents": [],
+        }
+    )
     assert parse_hex_resource(data) == resource

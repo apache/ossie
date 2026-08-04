@@ -91,18 +91,20 @@ uv run ruff check --fix
 uv run ruff format
 ```
 
-Run the complete converter test suite:
+### Testing
+
+Run the complete converter test suite or a single file or test while iterating:
 
 ```bash
+# complete test suite
 uv run pytest
-```
 
-Run one file or test while iterating:
-
-```bash
+# single file/test
 uv run pytest tests/<file>.py
 uv run pytest tests/<file>.py::<test>
 ```
+
+### CLI
 
 The following commands exercise the installed CLI in both directions:
 
@@ -119,16 +121,30 @@ uv run ossie-hex export \
   --output /tmp/ossie-hex-demo
 ```
 
-These are the commands used to verify the initial converter implementation:
+### Snapshots
+
+Full Hex/Ossie translations use [Syrupy](https://github.com/syrupy-project/syrupy)
+and live under `tests/__snapshots__/`. Smaller structured expectations use
+[inline-snapshot](https://15r10nk.github.io/inline-snapshot/) and are stored
+beside the assertion in the test source.
+
+When converter output changes intentionally, regenerate Syrupy snapshots:
 
 ```bash
-uv sync
-uv run pytest
-uv run ossie-hex import \
-  --input tests/fixtures/minimal_hex \
-  --dialect snowflake \
-  --name demo
+# Regenerate large snapshots
+uv run pytest --snapshot-update
+
+# Interactively update small snapshots
+uv run pytest --inline-snapshot=review
+
+# Apply fixes non-interactively
+uv run pytest --inline-snapshot=fix
 ```
+
+Inspect the resulting diffs before committing. Do not pass snapshot-update
+flags in CI; a normal `uv run pytest` must fail when snapshots drift.
+
+### CI/CD
 
 CI runs installation, linting, formatting, and testing on Python 3.11 through 3.14 using
 `.github/workflows/converter-hex-ci.yml`.

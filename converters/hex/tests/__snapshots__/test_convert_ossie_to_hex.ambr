@@ -1,0 +1,24 @@
+# serializer version: 1
+# name: test_export_ambiguous_metrics_require_base_model
+  dict({
+    'a_.yml': '''
+      id: a_
+      base_sql_table: s.a
+      dimensions:
+      - id: x_
+        type: number
+      measures:
+      - id: weird
+        func_sql: 1 + 1
+  
+    ''',
+    'b_.yml': '''
+      id: b_
+      base_sql_table: s.b
+      dimensions:
+      - id: y_
+        type: number
+  
+    ''',
+  })
+# ---

@@ -1,0 +1,175 @@
+# serializer version: 1
+# name: test_import_minimal_hex_project
+  '''
+  version: 0.2.0.dev0
+  dialects:
+  - SNOWFLAKE
+  vendors:
+  - HEX
+  semantic_model:
+  - name: demo
+    datasets:
+    - name: customers
+      source: analytics.public.customers
+      primary_key:
+      - customer_id
+      fields:
+      - name: customer_id
+        expression:
+          dialects:
+          - dialect: SNOWFLAKE
+            expression: customer_id
+        label: Customer id
+        datatype: String
+      - name: email
+        expression:
+          dialects:
+          - dialect: SNOWFLAKE
+            expression: email
+        label: Email
+        datatype: String
+      - name: created_at
+        expression:
+          dialects:
+          - dialect: SNOWFLAKE
+            expression: created_at
+        label: Created at
+        datatype: DateTimeTz
+      custom_extensions:
+      - vendor_name: HEX
+        data: |-
+          {
+            "display_name": "Customers",
+            "source_kind": "table"
+          }
+    - name: orders
+      source: analytics.public.orders
+      primary_key:
+      - order_id
+      description: Order fact table.
+      fields:
+      - name: order_id
+        expression:
+          dialects:
+          - dialect: SNOWFLAKE
+            expression: order_id
+        label: Order id
+        datatype: String
+        custom_extensions:
+        - vendor_name: HEX
+          data: |-
+            {
+              "visibility": "internal"
+            }
+      - name: customer_id
+        expression:
+          dialects:
+          - dialect: SNOWFLAKE
+            expression: customer_id
+        label: Customer id
+        datatype: String
+      - name: order_date
+        expression:
+          dialects:
+          - dialect: SNOWFLAKE
+            expression: order_date
+        label: Order date
+        datatype: Date
+      - name: amount
+        expression:
+          dialects:
+          - dialect: SNOWFLAKE
+            expression: amount_usd
+        label: Amount
+        datatype: Decimal
+      - name: is_cancelled
+        expression:
+          dialects:
+          - dialect: SNOWFLAKE
+            expression: status = 'cancelled'
+        label: Is cancelled
+        datatype: Boolean
+      custom_extensions:
+      - vendor_name: HEX
+        data: |-
+          {
+            "display_name": "Orders",
+            "source_kind": "table"
+          }
+    relationships:
+    - name: customers
+      from: orders
+      to: customers
+      from_columns:
+      - customer_id
+      to_columns:
+      - customer_id
+    metrics:
+    - name: order_count
+      expression:
+        dialects:
+        - dialect: SNOWFLAKE
+          expression: COUNT(orders.*)
+      datatype: Integer
+      custom_extensions:
+      - vendor_name: HEX
+        data: |-
+          {
+            "model_id": "orders",
+            "display_name": "Order count"
+          }
+    - name: total_amount
+      expression:
+        dialects:
+        - dialect: SNOWFLAKE
+          expression: SUM(orders.amount)
+      datatype: Decimal
+      custom_extensions:
+      - vendor_name: HEX
+        data: |-
+          {
+            "model_id": "orders",
+            "display_name": "Total amount"
+          }
+    - name: cancelled_orders
+      expression:
+        dialects:
+        - dialect: SNOWFLAKE
+          expression: COUNT(CASE WHEN orders.is_cancelled THEN 1 END)
+      datatype: Integer
+      custom_extensions:
+      - vendor_name: HEX
+        data: |-
+          {
+            "model_id": "orders",
+            "display_name": "Cancelled orders"
+          }
+    custom_extensions:
+    - vendor_name: HEX
+      data: |-
+        {
+          "extension_version": 1,
+          "views": [
+            {
+              "resource": {
+                "id": "order_overview",
+                "type": "view",
+                "base": "orders",
+                "contents": [
+                  {
+                    "dimensions": [
+                      "..."
+                    ],
+                    "measures": [
+                      "order_count",
+                      "total_amount"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+  
+  '''
+# ---
