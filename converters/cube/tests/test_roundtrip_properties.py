@@ -76,12 +76,21 @@ if HAVE_HYPOTHESIS:
             # containing them as templated and preserves it whole, exactly as
             # Cube's own CubeSchemaConverter does. That behavior has its own
             # targeted test.
+            #
+            # Braces are excluded for a different reason: an *unescaped* brace in a
+            # Cube string is not valid input at all. Cube compiles every string in a
+            # model as a Python f-string, so `{` there fails to compile -- the escaped
+            # `\{` is the only spelling that works, and that is what export emits. A
+            # generated model with a bare brace is therefore not a Cube model this
+            # converter should reproduce verbatim; normalizing it to the escaped form
+            # is the correct outcome, and `test_a_brace_in_free_text_is_escaped`
+            # pins it.
             return self.data.draw(st.text(
                 alphabet=st.characters(min_codepoint=32, max_codepoint=126),
                 min_size=1, max_size=24,
             ).map(str.strip).filter(
                 lambda s: s and not s.startswith("#")
-                and not any(t in s for t in ("{{", "}}", "{%", "%}"))))
+                and "{" not in s and "}" not in s))
 
     @settings(max_examples=150, deadline=None,
               suppress_health_check=[HealthCheck.too_slow])

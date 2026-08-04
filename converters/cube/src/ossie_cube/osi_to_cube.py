@@ -35,6 +35,7 @@ import re
 from collections import deque
 
 from ._common import (
+    AGG_TO_RESULT_DATATYPE,
     DATATYPE_TO_DIM_TYPE,
     DEFAULT_DATATYPE_FOR_CUBE_TYPE,
     OSSIE_FUNC_TO_AGG,
@@ -42,6 +43,7 @@ from ._common import (
     ConversionError,
     cube_file,
     dump_yaml,
+    escape_braces_for_cube,
     examples_of,
     foreign_vendor_extensions,
     instructions_of,
@@ -54,6 +56,7 @@ from ._common import (
     read_stash,
     referenced_datasets,
     require_str,
+    safe_relative_path,
     sanitize_name,
     synonyms_of,
     view_file,
@@ -154,7 +157,8 @@ def _convert_model(model, dialect, base_cube, issues):
             ds, dim_names_by_cube[cname], dialect)
         pk_by_cube[cname] = [str(c) for c in (ds.get("primary_key") or [])]
 
-    joins_by_cube = _build_joins(relationships, cube_names, issues)
+    joins_by_cube, join_parked_by_cube = _build_joins(
+        relationships, cube_names, issues)
     measures_by_cube = _build_measures(
         model, cube_names, members_by_cube, inline_sql_by_cube, pk_by_cube,
         datasets, relationships, base_cube, dialect, issues)
@@ -168,8 +172,10 @@ def _convert_model(model, dialect, base_cube, issues):
         cube = _build_cube(ds, cname, dim_names_by_cube[cname],
                            inline_sql_by_cube[cname], members_by_cube[cname],
                            joins_by_cube.get(cname), measures_by_cube.get(cname),
-                           dialect, issues)
-        path = stashed_paths.get(cname) or cube_file(cname)
+                           join_parked_by_cube.get(cname), dialect, issues)
+        stashed = stashed_paths.get(cname)
+        path = (safe_relative_path(stashed, f"cube '{cname}'") if stashed
+                else cube_file(cname))
         files_content.setdefault(path, {}).setdefault("cubes", []).append(cube)
 
     for vpath, views in _build_views(model, model_stash, cube_names, relationships,
@@ -181,7 +187,7 @@ def _convert_model(model, dialect, base_cube, issues):
     # Files a prior import could not convert (`.js` models, Jinja-templated YAML,
     # non-model YAML) restore verbatim.
     for fname, text in (model_stash.get("extra_files") or {}).items():
-        files[fname] = text
+        files[safe_relative_path(fname, "stashed extra file")] = text
     return files, issues
 
 
@@ -220,18 +226,24 @@ def _ai_context_to_meta(ai_context):
 
 def _build_meta(ai_context, stashed_meta, parked_extra):
     """Assemble a Cube `meta` from the Ossie AI context, a stashed original meta,
-    and anything Ossie-only that needs parking."""
+    and anything Ossie-only that needs parking.
+
+    Braces are escaped in everything sourced from Ossie: Cube compiles every string in
+    a model as a Python f-string, so an unescaped `{` -- routine in a parked JSON blob,
+    and plausible in AI instructions -- makes the whole model fail to compile. The
+    stashed original meta is left byte-identical; it was written for Cube already.
+    """
     prose, parked_ai = _ai_context_to_meta(ai_context)
     meta = {}
     if prose:
-        meta["ai_context"] = prose
+        meta["ai_context"] = escape_braces_for_cube(prose)
     for key, value in (stashed_meta or {}).items():
         meta[key] = value
     parked = dict(parked_extra or {})
     if parked_ai is not None:
         parked["ai_context"] = parked_ai
     if parked:
-        meta["ossie"] = parked
+        meta["ossie"] = escape_braces_for_cube(parked)
     return meta
 
 
@@ -248,7 +260,7 @@ def _ordered(obj, order):
 # --- cubes ----------------------------------------------------------------------
 
 def _build_cube(ds, cname, dim_names, inline_sql, ref_members, joins, measures,
-                dialect, issues):
+                join_extensions, dialect, issues):
     ds_name = ds["name"]
     scope = f"dataset '{ds_name}'"
     stash = read_stash(ds)
@@ -257,7 +269,7 @@ def _build_cube(ds, cname, dim_names, inline_sql, ref_members, joins, measures,
     kind, value = parse_source(ds.get("source"), ds_name)
     cube[kind] = value
     if ds.get("description"):
-        cube["description"] = ds["description"]
+        cube["description"] = escape_braces_for_cube(ds["description"])
 
     parked = {}
     if ds.get("unique_keys"):
@@ -267,6 +279,12 @@ def _build_cube(ds, cname, dim_names, inline_sql, ref_members, joins, measures,
     foreign = foreign_vendor_extensions(ds)
     if foreign:
         parked["custom_extensions"] = foreign
+    if join_extensions:
+        parked["join_extensions"] = join_extensions
+        issues.add(IssueType.PARKED_IN_META, scope,
+                   f"a Cube join carries no metadata field, so relationship "
+                   f"custom_extensions for {', '.join(sorted(join_extensions))} are "
+                   f"parked under meta.ossie.join_extensions")
     cube_extras = dict(stash.get("cube_extras") or {})
     stashed_meta = cube_extras.pop("meta", None)
     meta = _build_meta(ds.get("ai_context"), stashed_meta, parked)
@@ -277,7 +295,7 @@ def _build_cube(ds, cname, dim_names, inline_sql, ref_members, joins, measures,
                        "Cube's agent reads ai_context only on views and members, "
                        "so this cube-level value has no effect in Cube")
 
-    dimensions, by_name_scalar, by_column = _build_dimensions(
+    dimensions, by_name_scalar, by_column, by_name_computed = _build_dimensions(
         ds, cname, dim_names, inline_sql, ref_members, dialect, issues)
     # Resolve each `primary_key` entry to the dimension Cube should mark. A
     # dimension only qualifies when it is *scalar* -- backed by a single source
@@ -286,6 +304,7 @@ def _build_cube(ds, cname, dim_names, inline_sql, ref_members, joins, measures,
     # and a merged geo dimension has no single sql at all, so neither counts even
     # when its name matches. Anything left uncovered gets a private dimension.
     pk_names = []
+    computed_keys = set(stash.get("computed_primary_key") or [])
     taken = {d["name"].lower() for d in dimensions}
     for entry in (ds.get("primary_key") or []):
         entry = str(entry)
@@ -294,6 +313,14 @@ def _build_cube(ds, cname, dim_names, inline_sql, ref_members, joins, measures,
         match = by_name_scalar.get(entry) or by_column.get(entry)
         if match:
             pk_names.append(match)
+            continue
+        # A dimension name import recorded because the Cube key was an expression:
+        # `primary_key: true` goes back on that dimension, so Cube keys on the same
+        # expression the source model did. Synthesizing one instead would read a column
+        # that does not exist. Only entries import flagged qualify -- for anything else
+        # a name match is not evidence, since Ossie `primary_key` names columns.
+        if entry in computed_keys and entry in by_name_computed:
+            pk_names.append(by_name_computed[entry])
             continue
         name = _unique_pk_dimension_name(entry, taken)
         taken.add(name.lower())
@@ -328,9 +355,34 @@ def _build_cube(ds, cname, dim_names, inline_sql, ref_members, joins, measures,
     if measures:
         cube["measures"] = measures
 
+    # Cube keeps one namespace per cube for dimensions, measures and segments alike
+    # ("orders cube: revenue defined more than once"), so a field and a metric of the
+    # same name make a model Cube refuses to compile. Checked here, where every
+    # member the cube will carry is known -- including a synthesized primary key, a
+    # merged geo dimension, and measures restored from the stash.
+    _reject_member_collisions(cname, dimensions, measures, cube_extras, issues)
+
     for key, value in cube_extras.items():
         cube[key] = value
     return _ordered(cube, _CUBE_KEY_ORDER)
+
+
+def _reject_member_collisions(cname, dimensions, measures, cube_extras, issues):
+    seen = {}
+    groups = [("dimension", dimensions), ("measure", measures),
+              ("segment", cube_extras.get("segments") or [])]
+    for kind, members in groups:
+        for member in members:
+            if not isinstance(member, dict) or not member.get("name"):
+                continue
+            key = str(member["name"]).lower()
+            if key in seen:
+                first_kind, first_name = seen[key]
+                raise ConversionError(
+                    f"Cube '{cname}': {first_kind} '{first_name}' and {kind} "
+                    f"'{member['name']}' share a name; Cube keeps one member "
+                    f"namespace per cube, so rename one in the Ossie model.")
+            seen[key] = (kind, member["name"])
 
 
 def _reference_members(ds, dim_names, dialect):
@@ -418,19 +470,21 @@ def _build_dimensions(ds, cname, dim_names, inline_sql, ref_members, dialect,
                       issues):
     """Build a cube's dimensions from an Ossie dataset's fields.
 
-    Returns (dimensions, by_name_scalar, by_column) -- the two maps are what
-    primary-key resolution matches against, and both hold only *scalar* dimensions
-    (those whose expression is a single source column). A computed dimension and a
-    merged geo dimension are deliberately absent from both: Cube's
-    `primary_key: true` declares that dimension's own sql to be the key, so marking
-    either would declare something other than the column Ossie named. Fields
-    carrying a `geo` stash are re-merged into the single Cube dimension they were
-    split from.
+    Returns (dimensions, by_name_scalar, by_column, by_name_computed).
+
+    The first two maps hold only *scalar* dimensions (those whose expression is a
+    single source column), which are the ones Cube's `primary_key: true` can mark
+    without declaring something other than the column Ossie named. `by_name_computed`
+    holds the rest by name, except merged geo dimensions -- a computed dimension is
+    still the right thing to mark when Ossie's `primary_key` names it, because import
+    writes dimension *names* there and a computed key has no column to name instead.
+    Fields carrying a `geo` stash are re-merged into the single Cube dimension they
+    were split from.
     Dimension names come from `dim_names` (see `_resolve_dimension_names`) rather
     than being sanitized again here.
     """
     ds_name = ds["name"]
-    by_name_scalar, by_column = {}, {}
+    by_name_scalar, by_column, by_name_computed = {}, {}, {}
     # Built by target dimension name rather than by list position: a geo dimension
     # is assembled from two fields that may appear in either order and need not be
     # adjacent, so an insertion index computed mid-loop is not a safe way to hold
@@ -464,11 +518,17 @@ def _build_dimensions(ds, cname, dim_names, inline_sql, ref_members, dialect,
         else:
             dim["sql"] = ossie_expr_to_cube_sql(
                 expr, cname, ref_members, (), inline_sql={cname: inline_sql})
+        if stash.get("case") is not None:
+            # A `case` dimension carries its conditions instead of `sql`, and Cube
+            # rejects a dimension declaring both ("dimensions.size does not match any
+            # of the allowed types"). The generated sql is redundant anyway: the CASE
+            # expression it holds is what `case` says.
+            dim.pop("sql", None)
         dim["type"] = _dimension_type(field, stash, f"{ds_name}.{fname}", issues)
         if field.get("label"):
-            dim["title"] = field["label"]
+            dim["title"] = escape_braces_for_cube(field["label"])
         if field.get("description"):
-            dim["description"] = field["description"]
+            dim["description"] = escape_braces_for_cube(field["description"])
         parked = {}
         foreign = foreign_vendor_extensions(field)
         if foreign:
@@ -481,7 +541,11 @@ def _build_dimensions(ds, cname, dim_names, inline_sql, ref_members, dialect,
         dt = field.get("datatype")
         if dt and DEFAULT_DATATYPE_FOR_CUBE_TYPE.get(dim["type"]) != dt:
             parked["datatype"] = dt
-        extras = {k: v for k, v in stash.items() if k not in ("sql", "type", "meta")}
+        # Keys the exporter consumes itself rather than writing onto the dimension:
+        # `sql`/`type` are an older stash shape, `dim_type` supplies the Cube type,
+        # and `geo` was used to merge the halves back together.
+        extras = {k: v for k, v in stash.items()
+                  if k not in ("sql", "type", "dim_type", "meta", "geo")}
         meta = _build_meta(field.get("ai_context"), stash.get("meta"), parked)
         if meta:
             dim["meta"] = meta
@@ -494,6 +558,8 @@ def _build_dimensions(ds, cname, dim_names, inline_sql, ref_members, dialect,
             # it as the key. Reachable by its own name and by that column's name.
             by_name_scalar[dname] = dname
             by_column.setdefault(expr.strip(), dname)
+        else:
+            by_name_computed[dname] = dname
 
     # Both halves are guaranteed present by _resolve_dimension_names, which
     # validates the pair before anything is built.
@@ -507,7 +573,8 @@ def _build_dimensions(ds, cname, dim_names, inline_sql, ref_members, dialect,
 
     # A name in `order` with nothing built is a field dropped for want of a usable
     # dialect; it simply does not appear.
-    return [built[n] for n in order if n in built], by_name_scalar, by_column
+    return ([built[n] for n in order if n in built], by_name_scalar, by_column,
+            by_name_computed)
 
 
 def _unique_pk_dimension_name(entry, taken):
@@ -535,6 +602,10 @@ def _dimension_type(field, stash, scope, issues):
     if "type" in stash:
         # An older stash from before datatypes were mapped natively.
         return stash["type"]
+    if stash.get("dim_type"):
+        # A Cube type the datatype cannot regenerate (`switch` maps to String like an
+        # ordinary dimension, and String maps back to `string`), recorded on import.
+        return stash["dim_type"]
     datatype = field.get("datatype")
     explicit_is_time = (field.get("dimension") or {}).get("is_time")
     if datatype:
@@ -567,8 +638,14 @@ def _build_joins(relationships, cube_names, issues):
     A stashed `declared_on`/`relationship` restores the original declaring side and
     type. A hand-authored relationship is declared on its `from` (many) cube as
     `many_to_one`, which is the orientation Ossie already guarantees.
+
+    Returns (joins_by_cube, parked_by_cube). A Cube join entry takes only
+    name/sql/relationship, so a relationship's foreign-vendor extensions have nowhere
+    to go on the join itself; they ride on the declaring cube's `meta.ossie` keyed by
+    the join target, which keeps a multi-vendor model lossless.
     """
     joins_by_cube = {}
+    parked_by_cube = {}
     for rel in relationships:
         rname = rel.get("name", "<unnamed>")
         from_cols = rel.get("from_columns") or []
@@ -615,9 +692,12 @@ def _build_joins(relationships, cube_names, issues):
                        f"relationship '{rname}'",
                        "a Cube join carries no metadata field, so relationship "
                        "ai_context has nowhere to go and is dropped")
+        foreign = foreign_vendor_extensions(rel)
+        if foreign:
+            parked_by_cube.setdefault(own, {})[other] = foreign
         joins_by_cube.setdefault(own, []).append(
             _ordered(join, ["name", "sql", "relationship"]))
-    return joins_by_cube
+    return joins_by_cube, parked_by_cube
 
 
 # --- measures -------------------------------------------------------------------
@@ -809,13 +889,19 @@ def _measure_from_expression(expr, target, mname, stash, members, inline_sql_by_
 
 def _apply_measure_metadata(metric, measure, stash):
     if stash.get("title"):
-        measure["title"] = stash["title"]
+        measure["title"] = escape_braces_for_cube(stash["title"])
     if metric.get("description"):
-        measure["description"] = metric["description"]
+        measure["description"] = escape_braces_for_cube(metric["description"])
     parked = {}
     foreign = foreign_vendor_extensions(metric)
     if foreign:
         parked["custom_extensions"] = foreign
+    # Cube has no field for a measure's result type. Import infers one only for the
+    # count family, whose result type does not depend on the operand, so anything else
+    # (a `Decimal` sum) would be lost without parking it.
+    datatype = metric.get("datatype")
+    if datatype and datatype != AGG_TO_RESULT_DATATYPE.get(measure.get("type")):
+        parked["datatype"] = datatype
     meta = _build_meta(metric.get("ai_context"), stash.get("meta"), parked)
     if meta:
         measure["meta"] = meta
@@ -877,18 +963,21 @@ def _build_views(model, model_stash, cube_names, relationships, datasets,
             view = dict(view)
             if vname == mapped:
                 if model.get("description"):
-                    view["description"] = model["description"]
+                    view["description"] = escape_braces_for_cube(
+                        model["description"])
                 meta = _build_meta(model.get("ai_context"), view.get("meta"), parked)
                 if meta:
                     view["meta"] = meta
-            path = paths.get(vname) or view_file(vname)
+            stashed = paths.get(vname)
+            path = (safe_relative_path(stashed, f"view '{vname}'") if stashed
+                    else view_file(vname))
             out.setdefault(path, []).append(view)
         return out
 
     vname = sanitize_name(model.get("name", "model"), "Model", set())
     view = {"name": vname}
     if model.get("description"):
-        view["description"] = model["description"]
+        view["description"] = escape_braces_for_cube(model["description"])
     meta = _build_meta(model.get("ai_context"), None, parked)
     if meta:
         view["meta"] = meta

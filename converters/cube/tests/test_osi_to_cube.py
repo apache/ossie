@@ -544,3 +544,81 @@ def test_synonyms_reach_cube_as_prose_and_are_parked_structurally():
     meta = _cubes(files)["orders"]["meta"]
     assert meta["ai_context"] == "Order facts.\nAlso known as: purchases, sales."
     assert meta["ossie"]["ai_context"]["synonyms"] == ["purchases", "sales"]
+
+
+# --- review findings: export side -----------------------------------------------
+
+@pytest.mark.parametrize("key,path", [
+    ("cube_files", "../../outside.yml"),
+    ("cube_files", "/etc/outside.yml"),
+    ("view_files", "../escaped.yml"),
+    ("extra_files", "../../notes.txt"),
+])
+def test_a_stashed_path_may_not_escape_the_output_directory(key, path):
+    """The stash is part of the input document, so a path in it is untrusted. Export
+    used to join it onto `--output` unchecked, which wrote outside that directory."""
+    import json
+    stash = {"_v": 1, "views": {}}
+    if key == "view_files":
+        # The path is only consulted for a view the stash actually carries.
+        stash["views"] = {"shop": {"name": "shop",
+                                  "cubes": [{"join_path": "orders",
+                                             "includes": "*"}]}}
+        stash["view_files"] = {"shop": path}
+    elif key == "extra_files":
+        stash["extra_files"] = {path: "x"}
+    else:
+        stash["cube_files"] = {"orders": path}
+    ossie = _ossie(_ORDERS) + (
+        "  custom_extensions:\n"
+        "  - vendor_name: CUBE\n"
+        f"    data: '{json.dumps(stash)}'\n")
+    with pytest.raises(ConversionError, match="absolute|escapes the output"):
+        convert_ossie_to_cube(ossie)
+
+
+def test_a_field_and_a_metric_sharing_a_name_are_rejected():
+    """Cube keeps one member namespace per cube ("orders cube: revenue defined more
+    than once"), so this produced a model Cube refuses to compile."""
+    ossie = _ossie(_ORDERS, metrics=_metric("amount", "SUM(orders.amount)"))
+    with pytest.raises(ConversionError, match="share a name"):
+        convert_ossie_to_cube(ossie)
+
+
+def test_a_metric_datatype_survives_the_round_trip():
+    """Cube has no field for a measure's result type, and import can infer one only
+    for the count family -- so anything else has to be parked or it is lost."""
+    ossie = _ossie(_ORDERS, metrics=(
+        "  metrics:\n  - name: total\n    datatype: Decimal\n"
+        "    expression:\n      dialects:\n      - dialect: ANSI_SQL\n"
+        "        expression: SUM(orders.amount)\n"))
+    files, _ = convert_ossie_to_cube(ossie)
+    measure = _cubes(files)["orders"]["measures"][0]
+    assert measure["meta"]["ossie"]["datatype"] == "Decimal"
+    ossie2, _ = convert_cube_to_ossie(files)
+    assert model_of(ossie2)["metrics"][0]["datatype"] == "Decimal"
+
+
+def test_a_count_metric_datatype_is_not_parked_because_import_infers_it():
+    ossie = _ossie(_ORDERS, metrics=(
+        "  metrics:\n  - name: n\n    datatype: Integer\n"
+        "    expression:\n      dialects:\n      - dialect: ANSI_SQL\n"
+        "        expression: COUNT(DISTINCT orders.id)\n"))
+    files, _ = convert_ossie_to_cube(ossie)
+    assert "meta" not in _cubes(files)["orders"]["measures"][0]
+
+
+def test_relationship_extensions_are_parked_on_the_declaring_cube():
+    """A Cube join entry takes only name/sql/relationship, so a relationship's foreign
+    extensions have nowhere to go on the join itself. They used to vanish silently."""
+    rel = ("  relationships:\n  - name: r\n    from: orders\n    to: users\n"
+           "    from_columns: [user_id]\n    to_columns: [id]\n"
+           "    custom_extensions:\n    - vendor_name: DBT\n      data: keep-me\n")
+    files, issues = convert_ossie_to_cube(_ossie(_TWO_DATASETS, rel))
+    parked = _cubes(files)["orders"]["meta"]["ossie"]["join_extensions"]
+    assert parked["users"] == [{"vendor_name": "DBT", "data": "keep-me"}]
+    assert issues.of_type(IssueType.PARKED_IN_META)
+    # And they come back onto the relationship.
+    ossie2, _ = convert_cube_to_ossie(files)
+    restored = model_of(ossie2)["relationships"][0]["custom_extensions"]
+    assert {"vendor_name": "DBT", "data": "keep-me"} in restored

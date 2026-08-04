@@ -15,11 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Generated from examples/tpcds_semantic_model.yaml by `ossie-cube export`, then
-# kept as a fixture: the converter guide asks every converter to use the TPC-DS
-# model as its baseline. Exercises a five-cube star, cross-cube calculated
-# measures, a synthesized primary-key dimension, and meta.ossie parking.
-
 cubes:
 - name: date_dim
   sql_table: tpcds.public.date_dim

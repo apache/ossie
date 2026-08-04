@@ -1511,3 +1511,202 @@ def test_aggregate_spans_only_matches_real_calls(expr, expected):
 def test_has_top_level_operator_ignores_quoted_text(expr, expected):
     from ossie_cube.expressions import has_top_level_operator
     assert has_top_level_operator(expr) is expected
+
+
+# --- review findings: model features that were silently mistranslated ------------
+
+def test_a_case_dimension_becomes_a_real_case_expression():
+    """A `case` dimension carries conditions instead of `sql`, so there is no column
+    to name. Emitting the dimension's own name claimed a physical column that does not
+    exist; Ossie expresses this natively."""
+    files = _files(products=(
+        "cubes:\n  - name: products\n    sql_table: a.b.products\n    dimensions:\n"
+        "      - name: id\n        sql: id\n        type: number\n"
+        "        primary_key: true\n"
+        "      - name: size\n        type: string\n        case:\n          when:\n"
+        "            - sql: \"{CUBE}.size_value = 'xl'\"\n              label: xl\n"
+        "            - sql: \"{CUBE}.size_value = 'xxl'\"\n"
+        "              label: \"it's big\"\n"
+        "          else:\n            label: Unknown\n"))
+    ossie, _ = convert_cube_to_ossie(files)
+    size = by_name(by_name(model_of(ossie)["datasets"])["products"]["fields"])["size"]
+    # A string label becomes a SQL literal, with quotes doubled as SQL requires.
+    assert expr_of(size) == (
+        "CASE WHEN size_value = 'xl' THEN 'xl' "
+        "WHEN size_value = 'xxl' THEN 'it''s big' ELSE 'Unknown' END")
+
+
+def test_a_case_dimension_restores_without_a_redundant_sql():
+    """Cube rejects a dimension declaring both `case` and `sql` ("does not match any
+    of the allowed types"), so the generated sql is dropped when `case` comes back."""
+    files = _files(products=(
+        "cubes:\n  - name: products\n    sql_table: a.b.products\n    dimensions:\n"
+        "      - name: size\n        type: string\n        case:\n          when:\n"
+        "            - sql: \"{CUBE}.v = 'xl'\"\n              label: xl\n"))
+    _, back, _ = _roundtrip(files)
+    dim = by_name(parse(back["model/cubes/products.yml"])["cubes"][0]["dimensions"])
+    assert "sql" not in dim["size"]
+    assert dim["size"]["case"]["when"][0]["label"] == "xl"
+
+
+def test_a_case_label_may_be_an_expression():
+    files = _files(products=(
+        "cubes:\n  - name: products\n    sql_table: a.b.products\n    dimensions:\n"
+        "      - name: size\n        type: string\n        case:\n          when:\n"
+        "            - sql: \"{CUBE}.v = 'xl'\"\n"
+        "              label:\n                sql: \"{CUBE}.english_size\"\n"))
+    ossie, _ = convert_cube_to_ossie(files)
+    size = by_name(by_name(model_of(ossie)["datasets"])["products"]["fields"])["size"]
+    assert expr_of(size) == "CASE WHEN v = 'xl' THEN english_size END"
+
+
+def test_a_sub_query_dimension_is_reported():
+    """`sub_query: true` means the sql references a *measure*, which an Ossie field
+    expression has no form for. It used to convert silently."""
+    files = _files(products=(
+        "cubes:\n  - name: products\n    sql_table: a.b.products\n    dimensions:\n"
+        "      - name: users_count\n        sql: \"{users.count}\"\n"
+        "        type: number\n        sub_query: true\n"
+        "  - name: users\n    sql_table: a.b.users\n    dimensions:\n"
+        "      - name: id\n        sql: id\n        type: number\n"
+        "        primary_key: true\n"
+        "    measures:\n      - name: count\n        type: count\n"))
+    _, issues = convert_cube_to_ossie(files)
+    assert any("sub_query" in i.detail
+               for i in issues.of_type(IssueType.APPROXIMATED))
+
+
+def test_duplicate_member_names_in_one_cube_are_rejected():
+    """Cube refuses this too ("orders cube: d defined more than once"). Converting it
+    anyway emitted two Ossie fields of one name -- which the spec's own validator
+    rejects for a duplicate field name."""
+    files = _files(o=(
+        "cubes:\n  - name: o\n    sql_table: a.b.t\n    dimensions:\n"
+        "      - name: d\n        sql: a\n        type: string\n"
+        "      - name: d\n        sql: b\n        type: string\n"))
+    with pytest.raises(ConversionError, match="defined more than once"):
+        convert_cube_to_ossie(files)
+
+
+def test_a_dimension_and_a_measure_sharing_a_name_are_rejected_on_import():
+    files = _files(o=(
+        "cubes:\n  - name: o\n    sql_table: a.b.t\n    dimensions:\n"
+        "      - name: revenue\n        sql: amount\n        type: number\n"
+        "    measures:\n      - name: revenue\n        sql: amount\n        type: sum\n"))
+    with pytest.raises(ConversionError, match="defined more than once"):
+        convert_cube_to_ossie(files)
+
+
+def test_an_empty_dimension_sql_is_reported():
+    """Cube compiles `sql: ''` without complaint, so it is not refused -- but the Ossie
+    expression is empty and no consumer can evaluate it."""
+    files = _files(o=(
+        "cubes:\n  - name: o\n    sql_table: a.b.t\n    dimensions:\n"
+        "      - name: d\n        sql: ''\n        type: string\n"))
+    _, issues = convert_cube_to_ossie(files)
+    assert any("empty" in i.detail for i in issues.of_type(IssueType.APPROXIMATED))
+
+
+def test_a_switch_dimension_keeps_its_type():
+    """`switch` maps to String like an ordinary dimension and String maps back to
+    `string`, so the type has to be recorded or the dimension returns as a plain
+    string one carrying an orphaned `case` block."""
+    files = _files(o=(
+        "cubes:\n  - name: o\n    sql_table: a.b.t\n    dimensions:\n"
+        "      - name: kind\n        sql: kind\n        type: switch\n"))
+    _, back, _ = _roundtrip(files)
+    dim = by_name(parse(back["model/cubes/o.yml"])["cubes"][0]["dimensions"])
+    assert dim["kind"]["type"] == "switch"
+    # And the recording is not itself emitted as a Cube key.
+    assert "dim_type" not in dim["kind"]
+
+
+def test_a_computed_primary_key_stays_on_its_own_dimension():
+    """A Cube key can be an expression, and then the only name Ossie can carry is the
+    dimension's. Re-export used to synthesize a dimension reading a column of that
+    name -- which does not exist -- and move `primary_key: true` onto it, changing
+    what Cube counts."""
+    files = _files(orders=(
+        "cubes:\n  - name: orders\n    sql_table: a.b.orders\n    dimensions:\n"
+        "      - name: order_key\n"
+        "        sql: \"CONCAT({CUBE}.tenant_id, {CUBE}.id)\"\n"
+        "        type: string\n        primary_key: true\n"
+        "    measures:\n      - name: count\n        type: count\n"))
+    ossie, back, _ = _roundtrip(files)
+    dims = parse(back["model/cubes/orders.yml"])["cubes"][0]["dimensions"]
+    assert len(dims) == 1
+    assert dims[0]["name"] == "order_key"
+    assert dims[0]["primary_key"] is True
+    assert dims[0]["sql"] == "CONCAT(tenant_id, id)"
+    # Import records which entries are dimension names rather than columns, because
+    # the Ossie document alone cannot tell them apart afterwards.
+    assert stash_of(by_name(model_of(ossie)["datasets"])["orders"])[
+        "computed_primary_key"] == ["order_key"]
+
+
+# --- brace escaping -------------------------------------------------------------
+#
+# Cube compiles every string in a model as a Python f-string, so an unescaped `{`
+# anywhere -- a description, an AI context, a parked JSON blob -- makes the model fail
+# to compile. `\{` is Cube's escape for a literal brace.
+
+def test_a_brace_in_free_text_is_escaped():
+    ossie = (
+        "version: 0.2.0.dev0\n"
+        "semantic_model:\n"
+        "- name: shop\n"
+        "  description: 'sales in {region}'\n"
+        "  datasets:\n"
+        "  - name: orders\n"
+        "    source: a.b.orders\n"
+        "    description: 'holds {json} notes'\n"
+        "    fields:\n"
+        "    - name: id\n"
+        "      expression:\n"
+        "        dialects:\n"
+        "        - dialect: ANSI_SQL\n"
+        "          expression: id\n"
+        "      datatype: Integer\n"
+        "      description: 'the {id}'\n"
+    )
+    files, _ = convert_ossie_to_cube(ossie)
+    cube = parse(files["model/cubes/orders.yml"])["cubes"][0]
+    assert cube["description"] == "holds \\{json\\} notes"
+    assert cube["dimensions"][0]["description"] == "the \\{id\\}"
+    view = parse(files["model/views/shop.yml"])["views"][0]
+    assert view["description"] == "sales in \\{region\\}"
+    # And reading it back returns the original text, not the escaped spelling.
+    ossie2, _ = convert_cube_to_ossie(files)
+    model = model_of(ossie2)
+    assert model["description"] == "sales in {region}"
+    assert by_name(model["datasets"])["orders"]["description"] == "holds {json} notes"
+
+
+def test_a_parked_foreign_extension_is_escaped_and_restored():
+    """The headline multi-vendor case: a foreign vendor's `data` is JSON, so it always
+    contains braces. Parking it unescaped made every such model fail to compile."""
+    ossie = (
+        "version: 0.2.0.dev0\n"
+        "semantic_model:\n"
+        "- name: shop\n"
+        "  datasets:\n"
+        "  - name: orders\n"
+        "    source: a.b.orders\n"
+        "    fields:\n"
+        "    - name: id\n"
+        "      expression:\n"
+        "        dialects:\n"
+        "        - dialect: ANSI_SQL\n"
+        "          expression: id\n"
+        "      datatype: Integer\n"
+        "    custom_extensions:\n"
+        "    - vendor_name: DBT\n"
+        "      data: '{\"project\": \"x\"}'\n"
+    )
+    files, _ = convert_ossie_to_cube(ossie)
+    parked = parse(files["model/cubes/orders.yml"])["cubes"][0][
+        "meta"]["ossie"]["custom_extensions"]
+    assert parked[0]["data"] == '\\{"project": "x"\\}'
+    ossie2, _ = convert_cube_to_ossie(files)
+    restored = by_name(model_of(ossie2)["datasets"])["orders"]["custom_extensions"]
+    assert {"vendor_name": "DBT", "data": '{"project": "x"}'} in restored

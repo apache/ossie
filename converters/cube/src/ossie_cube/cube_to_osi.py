@@ -39,6 +39,7 @@ from ._common import (
     AGG_TO_RESULT_DATATYPE,
     CALCULATED_MEASURE_TYPES,
     DIALECT_ANSI,
+    DATATYPE_TO_DIM_TYPE,
     DIM_TYPE_TO_DATATYPE,
     DOTTED_REF_RE,
     FANOUT_UNSAFE_AGGS,
@@ -58,6 +59,7 @@ from ._common import (
     snake_keys,
     source_part_count,
     sql_is_reversible,
+    unescape_braces_from_cube,
     view_file,
     read_stash,
     write_stash,
@@ -129,7 +131,8 @@ def convert_cube_to_ossie(files, model_name=None, view=None, strict_fanout=False
 
     model = {"name": model_name or mapped_name or "cube_model"}
     if mapped_view.get("description"):
-        model["description"] = mapped_view["description"]
+        model["description"] = unescape_braces_from_cube(
+            mapped_view["description"])
     ai = _ai_context_from_meta(mapped_view.get("meta"))
     if ai:
         model["ai_context"] = ai
@@ -235,6 +238,7 @@ def _collect(files, issues):
                 raise ConversionError(
                     f"cube '{name}' uses `extends`, which this converter does not "
                     f"resolve yet; flatten the cube or exclude the file")
+            _reject_duplicate_members(name, entry)
             cubes[name] = entry
             cube_paths[name] = fname
         for entry in _as_named_list(parsed.get("views"), f"'{fname}' views"):
@@ -246,6 +250,29 @@ def _collect(files, issues):
             views[name] = entry
             view_paths[name] = fname
     return cubes, cube_paths, views, view_paths, extra_files
+
+
+def _reject_duplicate_members(cname, cube):
+    """Refuse a cube whose members collide, which Cube refuses too.
+
+    Cube keeps one namespace per cube for dimensions, measures and segments
+    ("orders cube: d defined more than once"). Converting such a cube anyway emitted
+    two Ossie fields of the same name -- a document the spec's own validator rejects
+    for a duplicate field name -- so it is caught here instead.
+    """
+    seen = {}
+    for kind in ("dimensions", "measures", "segments"):
+        for member in _as_named_list(cube.get(kind), f"cube '{cname}' {kind}"):
+            mname = member.get("name")
+            if not mname:
+                continue
+            key = str(mname).lower()
+            if key in seen:
+                raise ConversionError(
+                    f"cube '{cname}': '{mname}' is defined more than once "
+                    f"({seen[key]} and {kind[:-1]}); Cube keeps one member namespace "
+                    f"per cube, so rename one.")
+            seen[key] = kind[:-1]
 
 
 def _as_named_list(value, what):
@@ -377,16 +404,28 @@ def _ai_context_from_meta(meta):
     """
     if not isinstance(meta, dict):
         return None
-    parked = (meta.get("ossie") or {}).get("ai_context")
+    parked = parked_of(meta).get("ai_context")
     if parked:
         return parked
-    text = meta.get("ai_context")
+    text = unescape_braces_from_cube(meta.get("ai_context"))
     if isinstance(text, str) and text.strip():
         # Kept verbatim rather than stripped: a folded block scalar carries a
         # trailing newline, and normalizing it away here would make the round trip
         # lossy for the sake of cosmetics.
         return {"instructions": text}
     return None
+
+
+def parked_of(meta):
+    """The `meta.ossie` subtree, with Cube's brace escaping undone.
+
+    Export escapes `{`/`}` in everything it parks, because Cube compiles every string
+    in a model as a Python f-string and an unescaped brace breaks compilation. Reading
+    it back has to undo that, or a parked JSON blob comes home with backslashes in it.
+    """
+    if not isinstance(meta, dict):
+        return {}
+    return unescape_braces_from_cube(meta.get("ossie") or {})
 
 
 def _meta_without_ai_context(meta):
@@ -430,7 +469,7 @@ def _restore_parked_extensions(obj, meta):
     parked entries are stripped by `_meta_without_ai_context` and never come back,
     which would make `Ossie -> Cube -> Ossie` lose them.
     """
-    parked = ((meta or {}).get("ossie") or {}).get("custom_extensions")
+    parked = parked_of(meta).get("custom_extensions")
     if parked:
         obj.setdefault("custom_extensions", []).extend(parked)
 
@@ -486,10 +525,10 @@ def _convert_cube(cname, cube, plain, extra_joins, extra_measures, issues):
                    f"3-part catalog.schema.table, so qualify the cube's `sql_table` "
                    f"if the model needs to convert onward")
     if cube.get("description"):
-        ds["description"] = cube["description"]
+        ds["description"] = unescape_braces_from_cube(cube["description"])
 
     meta = cube.get("meta") if isinstance(cube.get("meta"), dict) else {}
-    parked = meta.get("ossie") or {}
+    parked = parked_of(meta)
     ai = _ai_context_from_meta(meta)
     if ai:
         ds["ai_context"] = ai
@@ -509,6 +548,15 @@ def _convert_cube(cname, cube, plain, extra_joins, extra_measures, issues):
     primary_key = _primary_key_of(cube, cname)
     if primary_key:
         ds["primary_key"] = primary_key
+        # Ossie's `primary_key` names columns, but a Cube key can be an expression
+        # (`CONCAT(tenant_id, id)`), and then the only name there is to write is the
+        # dimension's. Which of the two an entry is cannot be told from the Ossie
+        # document afterwards -- a hand-authored model may name a real column that a
+        # computed field happens to share a name with -- so it is recorded here rather
+        # than guessed on the way back.
+        computed = [n for n in primary_key if n not in plain]
+        if computed:
+            stash["computed_primary_key"] = computed
     if extra_joins:
         stash["extra_joins"] = extra_joins
     if extra_measures:
@@ -546,6 +594,36 @@ def _convert_dimension(cname, dname, dim, plain, issues):
 
     stash = {}
     sql = dim.get("sql")
+    case = dim.get("case")
+    if case is not None:
+        # A `case` dimension carries conditions instead of `sql` (Cube rejects both
+        # together), so there is no column to name. Ossie expresses this natively as a
+        # CASE expression -- emitting the dimension's own name instead, as this used to,
+        # claimed a physical column that does not exist. The `case` block still rides in
+        # the stash, so export restores the Cube form exactly.
+        expr = _case_expression(cname, dname, case)
+        field = {
+            "name": dname,
+            "expression": {
+                "dialects": [{"dialect": DIALECT_ANSI, "expression": expr}]},
+        }
+        return [_finish_dimension_field(cname, dname, dim, field, stash, issues)]
+    if dim.get("sub_query"):
+        # `sub_query: true` means the sql references a *measure* (`{users.count}`),
+        # which Cube resolves by aggregating in a subquery. An Ossie field expression
+        # is dataset-scoped SQL over columns, so the reference survives as text but
+        # nothing downstream can resolve it. The flag rides in the stash, so export
+        # restores the working Cube form.
+        issues.add(IssueType.APPROXIMATED, f"{cname}.{dname}",
+                   "sub_query dimension references a measure, which an Ossie field "
+                   "expression has no form for; the reference is emitted as text and "
+                   "only Cube can resolve it")
+    if sql is not None and not str(sql).strip():
+        # Cube compiles `sql: ''` without complaint, so this is not refused -- but the
+        # resulting Ossie expression is empty, which no consumer can evaluate.
+        issues.add(IssueType.APPROXIMATED, f"{cname}.{dname}",
+                   "dimension sql is empty, so the Ossie expression is empty too; "
+                   "Cube accepts this but no consumer can evaluate it")
     if sql is None:
         # No `sql` means the same-named physical column.
         expr = dname
@@ -564,20 +642,32 @@ def _convert_dimension(cname, dname, dim, plain, issues):
         "name": dname,
         "expression": {"dialects": [{"dialect": DIALECT_ANSI, "expression": expr}]},
     }
+    return [_finish_dimension_field(cname, dname, dim, field, stash, issues)]
+
+
+def _finish_dimension_field(cname, dname, dim, field, stash, issues):
+    """Attach the datatype, labels, AI context and stash shared by every dimension."""
+    dtype = snake(dim.get("type") or "string")
     datatype = DIM_TYPE_TO_DATATYPE.get(dtype)
     if not datatype:
         raise ConversionError(
             f"cube '{cname}': dimension '{dname}' has unknown type '{dtype}'")
     # A precise datatype parked by a previous export wins over the default the Cube
     # type maps to, since Cube itself cannot hold the distinction.
-    parked_dt = ((dim.get("meta") or {}).get("ossie") or {}).get("datatype")
+    parked_dt = parked_of(dim.get("meta")).get("datatype")
     field["datatype"] = parked_dt or datatype
+    # `type` is normally regenerated from the datatype, so it costs no stash entry.
+    # A `switch` dimension is the exception: it maps to String like an ordinary one,
+    # and String maps back to `string`, so the type has to be recorded or the
+    # dimension comes back as a plain string one carrying an orphaned `case` block.
+    if DATATYPE_TO_DIM_TYPE.get(field["datatype"]) != dtype:
+        stash["dim_type"] = dtype
     if dtype == "time":
         field["dimension"] = {"is_time": True}
     if dim.get("title"):
-        field["label"] = dim["title"]
+        field["label"] = unescape_braces_from_cube(dim["title"])
     if dim.get("description"):
-        field["description"] = dim["description"]
+        field["description"] = unescape_braces_from_cube(dim["description"])
     ai = _ai_context_from_meta(dim.get("meta"))
     if ai:
         field["ai_context"] = ai
@@ -594,7 +684,48 @@ def _convert_dimension(cname, dname, dim, plain, issues):
     # `meta.ossie` are restored after the stash is written, so the CUBE entry stays
     # first -- the same ordering datasets use.
     _restore_parked_extensions(field, dim.get("meta"))
-    return [field]
+    return field
+
+
+def _case_expression(cname, dname, case):
+    """Translate a Cube `case` dimension into an Ossie CASE expression.
+
+    A string `label` becomes a SQL literal; the `{sql: ...}` form becomes that
+    expression. Both are exactly what Cube itself renders, so nothing is approximated.
+    """
+    if not isinstance(case, dict):
+        raise ConversionError(
+            f"cube '{cname}': dimension '{dname}' has a non-mapping `case`")
+    parts = []
+    for branch in (case.get("when") or []):
+        if not isinstance(branch, dict) or branch.get("sql") is None:
+            raise ConversionError(
+                f"cube '{cname}': dimension '{dname}' has a `case.when` entry with "
+                f"no `sql`")
+        condition, _ = cube_sql_to_ossie(branch["sql"], cname)
+        parts.append(f"WHEN {condition} THEN {_case_label(cname, dname, branch)}")
+    if not parts:
+        raise ConversionError(
+            f"cube '{cname}': dimension '{dname}' has a `case` with no `when` "
+            f"branches")
+    otherwise = case.get("else")
+    if isinstance(otherwise, dict) and "label" in otherwise:
+        parts.append(f"ELSE {_case_label(cname, dname, otherwise)}")
+    return "CASE " + " ".join(parts) + " END"
+
+
+def _case_label(cname, dname, holder):
+    """One `label`, as SQL: a plain value is a literal, `{sql: ...}` an expression."""
+    label = holder.get("label")
+    if isinstance(label, dict):
+        if label.get("sql") is None:
+            raise ConversionError(
+                f"cube '{cname}': dimension '{dname}' has a `label` object with no "
+                f"`sql`")
+        translated, _ = cube_sql_to_ossie(label["sql"], cname)
+        return translated
+    text = str(label if label is not None else "")
+    return "'" + text.replace("'", "''") + "'"
 
 
 def _convert_geo_dimension(cname, dname, dim, issues):
@@ -717,6 +848,12 @@ def _convert_joins(cubes, skipped_files, issues):
             rel = {"name": name, "from": from_cube, "to": to_cube,
                    "from_columns": from_cols, "to_columns": to_cols}
             write_stash(rel, stash)
+            # Foreign-vendor extensions a previous export parked on the declaring
+            # cube, keyed by join target -- a Cube join entry has no `meta` of its own.
+            parked_joins = parked_of(cube.get("meta")).get(
+                "join_extensions") or {}
+            if parked_joins.get(target):
+                rel.setdefault("custom_extensions", []).extend(parked_joins[target])
             relationships.append(rel)
     return relationships, extra_joins
 
@@ -1034,11 +1171,14 @@ def _convert_measure(cname, mname, metric_name, measure, resolver, fanned_out,
         "name": metric_name,
         "expression": {"dialects": [{"dialect": DIALECT_ANSI, "expression": expr}]},
     }
-    datatype = AGG_TO_RESULT_DATATYPE.get(mtype)
+    # A datatype parked by a previous export wins: Cube has no field for a measure's
+    # result type, and only the count family can be inferred from the aggregate.
+    parked_dt = parked_of(measure.get("meta")).get("datatype")
+    datatype = parked_dt or AGG_TO_RESULT_DATATYPE.get(mtype)
     if datatype:
         metric["datatype"] = datatype
     if measure.get("description"):
-        metric["description"] = measure["description"]
+        metric["description"] = unescape_braces_from_cube(measure["description"])
     ai = _ai_context_from_meta(measure.get("meta"))
     if ai:
         metric["ai_context"] = ai

@@ -385,6 +385,63 @@ def cube_sql_to_ossie(sql, own_cube, resolve_ref=None, self_prefix=None):
     return out, changed
 
 
+def safe_relative_path(path, what):
+    """Validate a stashed file path before it is used as an output filename.
+
+    The stash is part of the input document, so a path in it is untrusted: an entry
+    like `../../etc/thing.yml` in `cube_files` would make export write outside the
+    directory the caller named. Refuses anything that is not a plain relative path
+    inside the output root.
+    """
+    raw = str(path)
+    if not raw.strip():
+        raise ConversionError(f"{what}: stashed file path is empty")
+    if raw.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:", raw):
+        raise ConversionError(
+            f"{what}: stashed file path '{raw}' is absolute; expected a path "
+            f"relative to the output directory")
+    parts = [p for p in raw.replace("\\", "/").split("/") if p not in ("", ".")]
+    if any(p == ".." for p in parts):
+        raise ConversionError(
+            f"{what}: stashed file path '{raw}' escapes the output directory")
+    if not parts:
+        raise ConversionError(f"{what}: stashed file path '{raw}' names no file")
+    return "/".join(parts)
+
+
+def escape_braces_for_cube(value):
+    """Escape `{`/`}` in every string of `value` (recursing into lists and dicts).
+
+    Cube compiles *every* string in a YAML model as a Python f-string -- only the
+    handful of boolean-ish keys in the compiler's `nonStringFields` are exempt -- so
+    an unescaped brace in a description, an AI context, or a parked JSON blob is read
+    as an interpolation and the model fails to compile. `\\{` / `\\}` is Cube's escape
+    for a literal brace.
+
+    Applied only to strings this converter puts there from Ossie. Content restored
+    from a Cube stash is left byte-identical: it was written for Cube in the first
+    place, so its braces are already whatever Cube needs them to be.
+    """
+    if isinstance(value, str):
+        return value.replace("{", "\\{").replace("}", "\\}")
+    if isinstance(value, list):
+        return [escape_braces_for_cube(v) for v in value]
+    if isinstance(value, dict):
+        return {k: escape_braces_for_cube(v) for k, v in value.items()}
+    return value
+
+
+def unescape_braces_from_cube(value):
+    """Undo `escape_braces_for_cube` when reading a Cube model back."""
+    if isinstance(value, str):
+        return value.replace("\\{", "{").replace("\\}", "}")
+    if isinstance(value, list):
+        return [unescape_braces_from_cube(v) for v in value]
+    if isinstance(value, dict):
+        return {k: unescape_braces_from_cube(v) for k, v in value.items()}
+    return value
+
+
 def quoted_runs(sql):
     """Split SQL into (text, is_quoted) runs, delimiters included in the quoted run.
 
