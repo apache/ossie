@@ -45,3 +45,15 @@ packages = ["src/ossie"]
 
 [tool.uv]
 required-version = ">=0.9.0"
+
+[tool.uv.sources]
+apache-ossie = { workspace = true }
+
+[tool.uv.workspace]
+members = [
+    ".",
+    "converters/databricks",
+]
+exclude = [
+    "cli"
+]
