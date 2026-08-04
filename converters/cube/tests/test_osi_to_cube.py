@@ -201,7 +201,8 @@ def test_primary_key_column_without_a_field_is_synthesized():
     dims = by_name(_cubes(files)["orders"]["dimensions"])
     assert dims["ticket_no"] == {
         "name": "ticket_no", "sql": "ticket_no", "type": "string",
-        "primary_key": True, "public": False}
+        "primary_key": True, "public": False,
+        "meta": {"ossie": {"synthetic_key": True}}}
     # `type: string` is chosen by the converter, not carried by Ossie.
     assert issues.of_type(IssueType.APPROXIMATED)
 

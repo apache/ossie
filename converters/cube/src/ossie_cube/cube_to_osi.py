@@ -569,7 +569,7 @@ def _convert_cube(cname, cube, plain, extra_joins, extra_measures, issues):
     if extra_dimensions:
         stash["extra_dimensions"] = extra_dimensions
     primary_key = _primary_key_of(cube, cname)
-    if primary_key:
+    if primary_key and not parked.get("key_from_unique_keys"):
         ds["primary_key"] = primary_key
         # Ossie's `primary_key` names columns, but a Cube key can be an expression
         # (`CONCAT(tenant_id, id)`), and then the only name there is to write is the
@@ -630,7 +630,8 @@ def _convert_dimension(cname, dname, dim, plain, issues):
             "expression": {
                 "dialects": [{"dialect": DIALECT_ANSI, "expression": expr}]},
         }
-        return [_finish_dimension_field(cname, dname, dim, field, stash, issues)]
+        built = _finish_dimension_field(cname, dname, dim, field, stash, issues)
+        return [built] if built is not None else []
     if dim.get("sub_query"):
         # `sub_query: true` means the sql references a *measure* (`{users.count}`),
         # which Cube resolves by aggregating in a subquery. An Ossie field expression
@@ -665,7 +666,8 @@ def _convert_dimension(cname, dname, dim, plain, issues):
         "name": dname,
         "expression": {"dialects": [{"dialect": DIALECT_ANSI, "expression": expr}]},
     }
-    return [_finish_dimension_field(cname, dname, dim, field, stash, issues)]
+    built = _finish_dimension_field(cname, dname, dim, field, stash, issues)
+    return [built] if built is not None else []
 
 
 def _finish_dimension_field(cname, dname, dim, field, stash, issues):
@@ -678,6 +680,14 @@ def _finish_dimension_field(cname, dname, dim, field, stash, issues):
     # A precise datatype parked by a previous export wins over the default the Cube
     # type maps to, since Cube itself cannot hold the distinction.
     parked = parked_of(dim.get("meta"))
+    if parked.get("synthetic_key"):
+        # A dimension export added only to carry Cube's primary key; the Ossie model had
+        # no field for that column, so it gets none back.
+        return None
+    if parked.get("dialect"):
+        # The expression came from a warehouse dialect, so it is labelled as that one --
+        # calling vendor SQL `ANSI_SQL` would mislead the next converter.
+        field["expression"]["dialects"][0]["dialect"] = parked["dialect"]
     # A field that carried no datatype keeps carrying none: Ossie says not to infer a
     # scalar type from `is_time` alone, so emitting DateTime for a `type: time`
     # dimension would assert something the model never said.
@@ -690,14 +700,16 @@ def _finish_dimension_field(cname, dname, dim, field, stash, issues):
     # With no datatype there is nothing to regenerate from, so the type is recorded.
     if DATATYPE_TO_DIM_TYPE.get(field.get("datatype")) != dtype:
         stash["dim_type"] = dtype
-    # Every Cube `dimensions:` entry is a dimension, so the role block is always
-    # emitted. Its *absence* is what other converters read as "not a dimension" -- the
-    # Snowflake converter classifies a field with no `dimension` block as a fact
-    # "regardless of datatype", so omitting it turned every non-time dimension into a
-    # Cortex Analyst fact. Left empty for a non-time one, which lets the consumer apply
-    # the spec's default (`is_time` false for a non-temporal datatype) rather than this
-    # converter asserting it.
-    field["dimension"] = {"is_time": True} if dtype == "time" else {}
+    # A Cube `dimensions:` entry is a dimension, and the block's *absence* is what other
+    # converters read as "not one" -- the Snowflake converter classifies a field without
+    # it as a fact regardless of datatype, so omitting it turned every non-time dimension
+    # into a Cortex Analyst fact. Empty for a non-time one, leaving the consumer to apply
+    # the spec's default rather than this converter asserting `is_time: false`.
+    #
+    # Unless export recorded that the Ossie field had no role of its own: that field was a
+    # fact, and handing back a dimension would change what it means.
+    if not parked.get("no_role"):
+        field["dimension"] = {"is_time": True} if dtype == "time" else {}
     if dim.get("title"):
         field["label"] = unescape_braces_from_cube(dim["title"])
     if dim.get("description"):
@@ -1416,9 +1428,12 @@ def _convert_measure(cname, mname, metric_name, measure, context):
             f"the primary key at query time but a static Ossie expression cannot, so "
             f"a consumer joining through that relationship may over-count")
 
+    parked_measure = parked_of(measure.get("meta"))
     metric = {
         "name": metric_name,
-        "expression": {"dialects": [{"dialect": DIALECT_ANSI, "expression": expr}]},
+        "expression": {"dialects": [
+            {"dialect": parked_measure.get("dialect") or DIALECT_ANSI,
+             "expression": expr}]},
     }
     # A datatype parked by a previous export wins: Cube has no field for a measure's
     # result type, and only the count family can be inferred from the aggregate.

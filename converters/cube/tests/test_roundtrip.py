@@ -196,3 +196,38 @@ def test_ossie_only_constructs_are_parked_not_dropped():
     assert ds["orders"]["unique_keys"] == [["order_number"]]
     vendors = {e["vendor_name"] for e in ds["orders"]["custom_extensions"]}
     assert "SNOWFLAKE" in vendors
+
+
+@validator_gate
+def test_a_model_from_another_converter_survives_the_round_trip_exactly():
+    """`Ossie -> Cube -> Ossie` on a document written by another converter.
+
+    Everything this fixture exercises is a place where the *forward* direction has to
+    make a Cube-shaped choice, and each of those choices was one-way until provenance was
+    recorded: a warehouse dialect became `ANSI_SQL`, a `unique_keys` promoted to satisfy
+    Cube's join requirement came back as a declared `primary_key`, the dimension the
+    promotion synthesized came back as a field, and a fact came back as a dimension
+    because Cube has only the one kind.
+    """
+    src = load_fixture("databricks_ossie.yaml")
+    files, _ = convert_ossie_to_cube(src)
+    back, _ = convert_cube_to_ossie(files)
+    assert_ossie_is_valid(back, "databricks_ossie.yaml round trip")
+
+    before = parse(src)["semantic_model"][0]
+    after = parse(back)["semantic_model"][0]
+
+    def shape(model):
+        return {
+            "datasets": {ds["name"]: {
+                "primary_key": ds.get("primary_key"),
+                "unique_keys": ds.get("unique_keys"),
+                "fields": {f["name"]: (f["expression"]["dialects"][0]["dialect"],
+                                       "dimension" in f, f.get("datatype"))
+                           for f in ds.get("fields", [])}}
+                for ds in model["datasets"]},
+            "metrics": {m["name"]: m["expression"]["dialects"][0]["dialect"]
+                        for m in model.get("metrics", [])},
+        }
+
+    assert shape(after) == shape(before)

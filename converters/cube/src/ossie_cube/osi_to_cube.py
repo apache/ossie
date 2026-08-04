@@ -294,6 +294,12 @@ def _build_cube(ds, plan, tables, joins, measures, join_extensions, dialect,
     foreign = foreign_vendor_extensions(ds)
     if foreign:
         parked["custom_extensions"] = foreign
+    if plan.key_from_unique_keys:
+        # Recorded before the meta is assembled, so re-import does not hand back a
+        # `primary_key` the Ossie model never declared: `unique_keys` is restored on its
+        # own, and promoting it was a Cube requirement rather than something the document
+        # said.
+        parked["key_from_unique_keys"] = True
     if join_extensions:
         parked["join_extensions"] = join_extensions
         issues.add(IssueType.PARKED_IN_META, scope,
@@ -347,8 +353,13 @@ def _build_cube(ds, plan, tables, joins, measures, join_extensions, dialect,
         if name != entry:
             detail += f", named '{name}' to avoid colliding with the existing member"
         issues.add(IssueType.APPROXIMATED, scope, detail)
-        dimensions.append({"name": name, "sql": entry, "type": "string",
-                           "primary_key": True, "public": False})
+        dimensions.append({
+            "name": name, "sql": entry, "type": "string",
+            "primary_key": True, "public": False,
+            # This dimension exists only to carry Cube's primary key; the Ossie model
+            # had no field for the column. Marked so re-import does not invent one.
+            "meta": {"ossie": {"synthetic_key": True}},
+        })
         pk_names.append(name)
     for dim in dimensions:
         if dim["name"] in pk_names:
@@ -687,6 +698,16 @@ def _build_dimensions(ds, plan, tables, dialect, issues):
         # recover it. `meta.ossie` is Cube-side, so this costs the Ossie document
         # nothing -- unlike a custom_extension, which every other spoke would warn
         # about and discard.
+        if "dimension" not in field:
+            # The Ossie field carried no dimension role -- it is a fact. Cube has one
+            # kind of dimension, so the block is emitted regardless; recording its
+            # absence is what stops re-import handing back a dimension.
+            parked["no_role"] = True
+        if used not in (None, DIALECT_ANSI):
+            # The expression came from a warehouse dialect, not ANSI. Re-import would
+            # otherwise label vendor-specific SQL as ANSI_SQL and mislead the next
+            # converter.
+            parked["dialect"] = used
         dt = field.get("datatype")
         if dt and DEFAULT_DATATYPE_FOR_CUBE_TYPE.get(dim["type"]) != dt:
             parked["datatype"] = dt
@@ -997,7 +1018,7 @@ def _build_measures(model, cube_names, plan, tables, datasets, relationships,
         else:
             measure = _measure_from_expression(
                 expr, target, mname, stash, plan, tables)
-        _apply_measure_metadata(metric, measure, stash)
+        _apply_measure_metadata(metric, measure, stash, used)
         _place(measures_by_cube, target, measure, name)
     return measures_by_cube
 
@@ -1147,7 +1168,7 @@ def _measure_from_expression(expr, target, mname, stash, plan, tables):
     return measure
 
 
-def _apply_measure_metadata(metric, measure, stash):
+def _apply_measure_metadata(metric, measure, stash, used_dialect=None):
     if stash.get("title"):
         # Not escaped: this came out of the stash, so it is already whatever Cube
         # needs it to be. Escaping it again turned a valid `Revenue \{USD\}` into
@@ -1165,6 +1186,10 @@ def _apply_measure_metadata(metric, measure, stash):
     datatype = metric.get("datatype")
     if datatype and datatype != AGG_TO_RESULT_DATATYPE.get(measure.get("type")):
         parked["datatype"] = datatype
+    if used_dialect not in (None, DIALECT_ANSI):
+        # The expression came from a warehouse dialect; re-import would otherwise label
+        # vendor-specific SQL as ANSI_SQL.
+        parked["dialect"] = used_dialect
     meta = _build_meta(metric.get("ai_context"), stash.get("meta"), parked)
     if meta:
         measure["meta"] = meta

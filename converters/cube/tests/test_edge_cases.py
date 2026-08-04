@@ -1021,8 +1021,9 @@ def test_a_computed_dimension_does_not_cover_a_primary_key():
     assert "primary_key" not in dims["id"]
     assert dims["id"]["sql"] == "LOWER(email)"
     # A private scalar dimension carries the key instead, under a free name.
-    assert dims["id_pk"] == {"name": "id_pk", "sql": "id", "type": "string",
-                             "primary_key": True, "public": False}
+    assert dims["id_pk"] == {
+        "name": "id_pk", "sql": "id", "type": "string", "primary_key": True,
+        "public": False, "meta": {"ossie": {"synthetic_key": True}}}
     assert issues.of_type(IssueType.APPROXIMATED)
 
 
@@ -1038,7 +1039,8 @@ def test_a_merged_geo_dimension_does_not_cover_a_primary_key():
     assert "primary_key" not in dims["location"]
     assert dims["location_pk"] == {
         "name": "location_pk", "sql": "location", "type": "string",
-        "primary_key": True, "public": False}
+        "primary_key": True, "public": False,
+        "meta": {"ossie": {"synthetic_key": True}}}
 
 
 def test_a_scalar_dimension_backed_by_the_key_column_covers_it():
@@ -1085,8 +1087,9 @@ def test_a_synthesized_key_name_avoids_every_existing_member():
     dims = by_name(_dims(files))
     keys = [n for n, d in dims.items() if d.get("primary_key")]
     assert keys == ["id_pk_3"]
-    assert dims["id_pk_3"] == {"name": "id_pk_3", "sql": "id", "type": "string",
-                               "primary_key": True, "public": False}
+    assert dims["id_pk_3"] == {
+        "name": "id_pk_3", "sql": "id", "type": "string", "primary_key": True,
+        "public": False, "meta": {"ossie": {"synthetic_key": True}}}
     # Nothing was overwritten.
     assert dims["id"]["sql"] == "LOWER(email)"
     assert dims["id_pk"]["sql"] == "UPPER(email)"
