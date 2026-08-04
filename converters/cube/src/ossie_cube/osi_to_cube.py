@@ -213,7 +213,8 @@ def _convert_model(model, dialect, base_cube, issues):
         # generated view has to disambiguate against.
         emitted_members[cname] = [
             m["name"] for key in ("dimensions", "measures", "segments")
-            for m in (cube.get(key) or []) if isinstance(m, dict) and m.get("name")]
+            for m in _member_entries(cube.get(key))
+            if isinstance(m, dict) and m.get("name")]
 
     for vpath, views in _build_views(model, model_stash, cube_names, relationships,
                                      datasets, base_cube, emitted_members,
@@ -708,6 +709,19 @@ def _dimension_type(field, stash, scope, issues):
 
 # --- joins ----------------------------------------------------------------------
 
+def _member_entries(collection):
+    """A member collection as a list of entries, from either Cube spelling.
+
+    `dimensions`/`measures`/`segments` may be a list of entries carrying `name` or a
+    mapping keyed by name. Assuming a list meant mapping-form segments were skipped when
+    collecting the members a generated view has to disambiguate -- so a segment named
+    `users_id` and a prefixed `users.id` both reached the view as `users_id`.
+    """
+    if isinstance(collection, dict):
+        return [{"name": name} for name in collection]
+    return list(collection or [])
+
+
 def _stashed_segment_names(stash):
     """Names of the segments a stash carries, in either Cube spelling.
 
@@ -1048,7 +1062,8 @@ def _measure_from_expression(expr, target, mname, stash, members, inline_sql_by_
                 measure["sql"] = stash.get("sql") or ossie_expr_to_cube_sql(
                     inner, target, members, sanitized,
                     inline_sql=inline_sql_by_cube,
-                    members_by_cube=member_lookup)
+                    members_by_cube=member_lookup,
+                    own_lookup=(member_lookup or {}).get(target))
                 measure["type"] = agg
                 return measure
 
@@ -1056,7 +1071,8 @@ def _measure_from_expression(expr, target, mname, stash, members, inline_sql_by_
     # these as a calculated measure whose sql carries the aggregation.
     measure["sql"] = stash.get("sql") or ossie_expr_to_cube_sql(
         expr, target, members, sanitized, inline_sql=inline_sql_by_cube,
-        members_by_cube=member_lookup)
+        members_by_cube=member_lookup,
+        own_lookup=(member_lookup or {}).get(target))
     measure["type"] = "number"
     return measure
 

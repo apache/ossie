@@ -523,6 +523,23 @@ def sub_outside_quotes(sql, transform):
                    for text, quoted in quoted_runs(sql))
 
 
+def _lookup_keys(written):
+    """The keys a written identifier may match: its exact spelling, then normalized."""
+    text = str(written).strip()
+    if len(text) >= 2 and text.startswith('"') and text.endswith('"'):
+        inner = text[1:-1].replace('""', '"')
+        return (inner, normalize_identifier(text))
+    return (text, normalize_identifier(text))
+
+
+def _first(mapping, keys):
+    """The first of `keys` present in `mapping`, or None."""
+    for key in keys:
+        if key in mapping:
+            return mapping[key]
+    return None
+
+
 def normalize_identifier(name):
     """An Ossie identifier in the spec's *normalized* form, for matching.
 
@@ -608,15 +625,24 @@ def quoted_char_mask(sql):
 
 
 def lookup_map(names):
-    """{normalized identifier: the name to emit}.
+    """{lookup key: the name to emit}, keyed both ways an identifier can be written.
 
     Accepts a set of names (each maps to itself) or a mapping of *any* accepted spelling
     to the canonical one -- which is what lets an Ossie name and the Cube name it
     sanitizes to both resolve to the Cube spelling.
+
+    Each name gets two keys: its normalized form (upper-cased, matching an unquoted
+    reference) and its exact spelling (matching a quoted one). The second is needed
+    because a name containing a space or mixed case *cannot* be written unquoted at all --
+    `"Order Items"` is the only way to reference a dataset of that name, so exact-quoted
+    has to resolve or the name is unusable.
     """
-    if isinstance(names, dict):
-        return {normalize_identifier(k): v for k, v in names.items()}
-    return {normalize_identifier(n): n for n in names}
+    pairs = names.items() if isinstance(names, dict) else ((n, n) for n in names)
+    out = {}
+    for spelling, canonical in pairs:
+        out.setdefault(str(spelling), canonical)
+        out.setdefault(normalize_identifier(spelling), canonical)
+    return out
 
 
 def source_part_count(source):
@@ -697,7 +723,7 @@ def requalify_self_refs(sql, cube_name):
 
 
 def ossie_expr_to_cube_sql(expr, own_cube, own_members=(), cube_names=(),
-                           inline_sql=None, members_by_cube=None):
+                           inline_sql=None, members_by_cube=None, own_lookup=None):
     """Rewrite an Ossie expression into Cube member-reference form.
 
     Only *dotted* `cube.name` references are rewritten -- a bare identifier stays
@@ -738,6 +764,7 @@ def ossie_expr_to_cube_sql(expr, own_cube, own_members=(), cube_names=(),
         for cube, fields in (inline_sql or {}).items()
     }
 
+    own_columns = lookup_map(own_lookup or {})
     foreign_members = {
         normalize_identifier(cube): lookup_map(names)
         for cube, names in (members_by_cube or {}).items()
@@ -748,28 +775,41 @@ def ossie_expr_to_cube_sql(expr, own_cube, own_members=(), cube_names=(),
         # Ossie regular identifiers are case-insensitive, so the reference is matched
         # in normalized form; what is *emitted* is the canonical Cube spelling, since
         # Cube's own member lookup is case-sensitive.
-        head_n, name_n = normalize_identifier(head), normalize_identifier(name)
+        head_n, name_n = _lookup_keys(head), _lookup_keys(name)
         # Resolve the dataset first, then decide which branch applies. Comparing the
         # written spelling against `own_cube` directly was wrong once the two could
         # differ: dataset `Order Items` becomes cube `order_items`, so a reference to
         # `"ORDER ITEMS"` took the cross-cube branch on its own cube.
-        target = known.get(head_n)
-        is_own = target == own_cube or (target is None and head_n == own_norm)
-        substitute = (inline_sql_by_norm.get(head_n) or {}).get(name_n)
+        target = _first(known, head_n)
+        is_own = target == own_cube or (target is None and own_norm in head_n)
+        # Keyed on the *resolved* cube, not the token as written: a sanitized dataset name
+        # differs from the Ossie one, and looking inline SQL up by the written token meant
+        # a split geo half referenced through the Ossie name was never substituted.
+        inline_for = inline_sql_by_norm.get(
+            normalize_identifier(target)) if target else None
+        if inline_for is None:
+            inline_for = _first(inline_sql_by_norm, head_n) or {}
+        substitute = _first(inline_for, name_n)
         if substitute is not None:
             # Already-Cube SQL, so it bypasses the escaping above; `{CUBE}` inside
             # it means `head`, which only stays true while head is the own cube.
             return (str(substitute) if is_own
                     else requalify_self_refs(substitute, target or head))
         if is_own:
-            return ("{CUBE." + members[name_n] + "}" if name_n in members
-                    else "{CUBE}." + name)
+            member = _first(members, name_n)
+            if member is not None:
+                return "{CUBE." + member + "}"
+            # A plain member is the same thing either way, but the *column* still has a
+            # canonical spelling -- emitting `"AMOUNT"` as written would force an exact
+            # uppercase match in the database against a column named `amount`.
+            column = _first(own_columns, name_n)
+            return "{CUBE}." + (column if column is not None else name)
         if target is not None:
             # A cross-cube member needs the target cube's own spelling for the same
             # reason: `{users.ID}` does not resolve when the member is declared `id`.
-            member = (foreign_members.get(normalize_identifier(target))
-                      or {}).get(name_n, name)
-            return "{" + target + "." + member + "}"
+            member = _first(foreign_members.get(normalize_identifier(target)) or {},
+                            name_n)
+            return "{" + target + "." + (member if member is not None else name) + "}"
         # Not a dataset in this model -- a genuine schema-qualified table
         # reference or an unrelated dotted token. Leave it alone.
         return m.group(0)

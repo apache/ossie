@@ -51,6 +51,8 @@ from ._common import (
     dump_yaml,
     filtered_operand,
     is_simple_identifier,
+    lookup_map,
+    normalize_identifier,
     referenced_datasets,
     join_source,
     load_yaml,
@@ -67,9 +69,8 @@ from ._common import (
 )
 from .converter_issues import IssueLog, IssueType
 from .expressions import (
-    has_non_idempotent_aggregate,
     has_top_level_operator,
-    unsafe_aggregate_spans,
+    unsafe_aggregate_datasets,
 )
 
 # Cube keys the converter maps natively at the cube level; everything else is
@@ -923,10 +924,12 @@ def _decompose_join_sql(sql, own_cube, target, what, cubes, issues):
     return pairs or None
 
 
-# The alias-dot form: `{CUBE}.column` / `{TABLE}.column` / `{cube}.column`. Whatever
-# follows the dot is a raw physical column, not a member.
+# The alias-dot form: `{CUBE}.column`. Group 1 is the alias, group 2 the raw physical
+# column. The alias has to be checked against the *owning* cube -- `{users}.region_id`
+# matches the same shape but reads another cube's column, and treating it as this cube's
+# turned a transitive join into a relationship naming a column this dataset lacks.
 _ALIAS_COLUMN_RE = re.compile(
-    r"^\$?\{\s*[A-Za-z_][A-Za-z0-9_]*\s*\}\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)\s*$")
+    r"^\$?\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)\s*$")
 
 _JOIN_SIDE_RE = re.compile(
     r"^\s*\$?\{\s*([^{}]*?)\s*\}\s*(?:\.\s*([A-Za-z_][A-Za-z0-9_]*))?\s*$")
@@ -954,15 +957,24 @@ def _column_of(cubes, cname, member, seen=()):
             continue
         if snake(dim.get("type") or "") == "geo":
             return None
+        if dim.get("case") is not None or snake(dim.get("type") or "") == "switch":
+            # A `case` or `switch` dimension carries conditions or enumerated values and
+            # no sql at all, so "no sql means the same-named column" does not apply --
+            # there is no column of that name to name.
+            return None
         sql = dim.get("sql")
         if sql is None:
             return member
-        if _ALIAS_COLUMN_RE.match(str(sql).strip()):
+        alias = _ALIAS_COLUMN_RE.match(str(sql).strip())
+        if alias:
             # The explicit raw-column form (`{CUBE}.tenant_user_id`) names a column, full
             # stop -- even if a dimension of that name also exists. Deciding on the
             # *translated* text lost that distinction, since both forms flatten to the
             # same bare name, and the join was parked over a column that was right there.
-            return _ALIAS_COLUMN_RE.match(str(sql).strip()).group(1)
+            # Only this cube's own alias counts, though.
+            if alias.group(1) in ("CUBE", "TABLE", cname):
+                return alias.group(2)
+            return None
         translated, _ = cube_sql_to_ossie(sql, cname)
         translated = translated.strip()
         if not is_simple_identifier(translated):
@@ -1041,6 +1053,14 @@ def _rebuild_join_sql(target, pairs):
 
 # --- measures -------------------------------------------------------------------
 
+class _NoStaticForm(Exception):
+    """A measure this one depends on has no static Ossie form, so nor does this one."""
+
+    def __init__(self, dependency):
+        super().__init__(dependency)
+        self.dependency = dependency
+
+
 class _MeasureResolver:
     """Computes the Ossie expression for a Cube measure.
 
@@ -1118,7 +1138,15 @@ class _MeasureResolver:
             if sql is None:
                 raise ConversionError(
                     f"measure '{scope}': type '{mtype}' requires 'sql'")
-            expr = self._translate(sql, cname, stack + (key,))
+            try:
+                expr = self._translate(sql, cname, stack + (key,))
+            except _NoStaticForm as missing:
+                self._issues.add(
+                    IssueType.MULTI_STAGE_MEASURE_PARKED, scope,
+                    f"references '{missing.dependency}', which is computed over a grain "
+                    f"other than the query's and has no Ossie form; this measure has "
+                    f"none either and is preserved in custom_extensions only")
+                return self._remember(key, None)
             return self._remember(key, filtered_operand(expr, filter_exprs))
         if mtype == "count":
             if sql is None:
@@ -1181,9 +1209,11 @@ class _MeasureResolver:
             return None
         inner = self.expression(target_cube, target_name, stack)
         if inner is None:
-            raise ConversionError(
-                f"measure '{cname}': references '{target_cube}.{target_name}', "
-                f"which has no static Ossie form")
+            # The referenced measure has no static Ossie form (it is windowed), so
+            # neither does this one. Aborting the whole conversion over it was wrong: the
+            # dependent is parked alongside its dependency, the same as any other measure
+            # Ossie cannot express.
+            raise _NoStaticForm(f"{target_cube}.{target_name}")
         # A lone `SUM(x)` needs no parentheses; only a term with its own top-level
         # operators does. Keeping them off means a decomposed metric inlines back to
         # exactly the expression it was split from.
@@ -1219,18 +1249,18 @@ def _fanout_unsafe_datasets(expr, own_cube, dataset_names):
     different datasets. An aggregate naming no dataset is read as being over the cube the
     measure is declared on.
     """
-    spans = unsafe_aggregate_spans(expr)
-    if spans:
-        found = set()
-        for start, end in spans:
-            found |= (referenced_datasets(expr[start:end], dataset_names)
-                      or {own_cube})
-        return found
-    if has_non_idempotent_aggregate(expr):
-        # An aggregate the span scanner does not know (STDDEV, MEDIAN, ARRAY_AGG...):
-        # there is no span to attribute, so every dataset the expression reads counts.
+    analysed = unsafe_aggregate_datasets(expr)
+    if analysed is None:
+        # Unparseable, so nothing can be attributed: assume every dataset it names.
         return referenced_datasets(expr, dataset_names) or {own_cube}
-    return set()
+    tables, unqualified = analysed
+    canonical = lookup_map(dataset_names)
+    found = {canonical[normalize_identifier(table)] for table in tables
+             if normalize_identifier(table) in canonical}
+    if unqualified:
+        # An unsafe aggregate over an unqualified column reads the declaring cube.
+        found.add(own_cube)
+    return found
 
 
 def _windowing_key(measure):

@@ -828,3 +828,81 @@ def test_mapping_form_stashed_segments_are_reserved_and_checked():
     assert [m["name"] for m in cube["measures"]] == [
         "ratio_part_2", "ratio_part_3", "ratio"]
     assert set(cube["segments"]) == {"ratio_part_1"}
+
+
+def test_a_name_that_must_be_quoted_resolves_when_quoted_exactly():
+    """`Order Items` cannot be written unquoted at all, so `"Order Items"` is the only
+    way to reference it -- exact-quoted has to resolve or the name is unusable."""
+    ossie = (
+        f"version: {OSSIE_VERSION}\n"
+        "semantic_model:\n"
+        "- name: shop\n"
+        "  datasets:\n"
+        "  - name: Order Items\n"
+        "    source: shop.public.oi\n"
+        "    fields:\n"
+        "    - name: Gross Amount\n      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: gross_raw * 2\n"
+        "      datatype: Decimal\n"
+        "  metrics:\n"
+        "  - name: m\n    expression:\n      dialects:\n"
+        '      - dialect: ANSI_SQL\n        expression: SUM("Order Items"."Gross Amount")\n'
+    )
+    files, _ = convert_ossie_to_cube(ossie)
+    assert parse(files["model/cubes/order_items.yml"])["cubes"][0][
+        "measures"] == [{"name": "m", "sql": "{CUBE.gross_amount}", "type": "sum"}]
+
+
+def test_a_plain_field_reference_is_canonicalized_to_its_column():
+    """A plain member is the same thing either way, but the column has a canonical
+    spelling: emitting `"AMOUNT"` as written would force an exact uppercase match in the
+    database against a column named `amount`."""
+    ds = (
+        "  - name: orders\n"
+        "    source: shop.public.orders\n"
+        "    fields:\n"
+        "    - name: amount\n      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: amount\n"
+        "      datatype: Decimal\n"
+    )
+    files, _ = convert_ossie_to_cube(
+        _ossie(ds, metrics=_metric("m", 'SUM(orders."AMOUNT")')))
+    assert _cubes(files)["orders"]["measures"][0]["sql"] == "{CUBE}.amount"
+
+
+def test_a_mapping_form_segment_is_counted_when_disambiguating_a_view():
+    """Collecting the members a generated view must disambiguate assumed every collection
+    was a list, so a mapping-form segment was skipped -- and a segment named `users_id`
+    plus a prefixed `users.id` both reached the view under that one name."""
+    import json
+
+    stash = {"_v": 1, "cube_extras": {"segments": {"users_id": {"sql": "x"}}}}
+    datasets = (
+        "  - name: orders\n"
+        "    source: shop.public.orders\n"
+        "    primary_key:\n    - id\n"
+        "    fields:\n"
+        "    - name: id\n      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: id\n"
+        "      datatype: Integer\n"
+        "    - name: user_id\n      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: user_id\n"
+        "      datatype: Integer\n"
+        "    custom_extensions:\n"
+        "    - vendor_name: CUBE\n"
+        f"      data: '{json.dumps(stash)}'\n"
+        "  - name: users\n"
+        "    source: shop.public.users\n"
+        "    primary_key:\n    - id\n"
+        "    fields:\n"
+        "    - name: id\n      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: id\n"
+        "      datatype: Integer\n"
+    )
+    rel = ("  relationships:\n"
+           "  - name: r\n    from: orders\n    to: users\n"
+           "    from_columns: [user_id]\n    to_columns: [id]\n")
+    files, issues = convert_ossie_to_cube(_ossie(datasets, rel))
+    entry = parse(files["model/views/shop.yml"])["views"][0]["cubes"][1]
+    assert entry["excludes"] == ["id"]
+    assert issues.of_type(IssueType.APPROXIMATED)

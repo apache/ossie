@@ -139,7 +139,7 @@ to **import** (Cube -> Ossie) or **export** (Ossie -> Cube).
 | relationship `custom_extensions` | cube `meta.ossie.join_extensions` | A Cube join entry takes only name/sql/relationship, so a relationship's foreign-vendor extensions ride on the declaring cube keyed by join target. |
 | — | `type: geo` dimension | An Ossie field holds one expression and a geo dimension has two, so it **splits** into `<name>_latitude` / `<name>_longitude` (`Float`). Reconstruction data rides on the latitude half. See [Geo dimensions](#geo-dimensions). |
 | relationship | `joins[]` on a cube | `many_to_one` on cube A -> `from: A`(many), `to: B`(one). `one_to_many` is flipped so Ossie's `from` is the many side; the declared side and type are stashed so export restores the original. |
-| `from_columns` / `to_columns` | join `sql` | Only an AND-chain of equalities mapping to **physical columns** converts. `{CUBE}.user_id` is already one; `{CUBE.user_key}` names a *member*, so it resolves to the column that member reads (`user_id`). A member reading an expression (`CONCAT(...)`) has no column for Ossie to name, so the whole join is preserved verbatim in the stash rather than described wrongly — as is anything else (non-equi, range, literal, third cube). |
+| `from_columns` / `to_columns` | join `sql` | Only an AND-chain of equalities mapping to **physical columns of that dataset** converts. `{CUBE}.user_id` is already one; `{CUBE.user_key}` names a *member*, so it resolves to the column that member reads (`user_id`), following a chain of member references to its end with cycle detection. Everything else preserves the whole join verbatim in the stash rather than describing it wrongly: a member reading an expression (`CONCAT(...)`), a `case`/`switch` dimension (which reads no column at all), an alias belonging to another cube (`{users}.region_id`), or a clause that is not a two-column equality. |
 | metric | `measures[]` on the cube its expression references | Import hoists cube-scoped measures to the model level, qualifying a colliding name as `<cube>__<measure>` and stashing the original name and owning cube. |
 | `SUM`/`AVG`/`MIN`/`MAX(x)` | `type: sum`/`avg`/`min`/`max` + `sql` | |
 | `COUNT(DISTINCT x)` | `type: count_distinct` | |
@@ -227,10 +227,14 @@ the measure's Cube type, and not on the cube it is declared on. Both shortcuts w
 wrong: a calculated `type: number` measure's type says nothing about the aggregates
 inside it, and the cube a measure is declared on is not necessarily the one an aggregate
 inside it *reads*. `SUM(users.ltv) / SUM(orders.amount)` sits on `orders` while `users`
-is the fanned-out side. The idempotent set is an **allowlist** (`MIN`, `MAX`,
-`COUNT(DISTINCT …)`, `APPROX_COUNT_DISTINCT`) because the set of aggregate functions is
-open-ended — listing the unsafe ones silently declared `STDDEV`, `MEDIAN` and
-`ARRAY_AGG` safe.
+is the fanned-out side. The idempotent set is an **allowlist** — `MIN`, `MAX`, `APPROX_COUNT_DISTINCT`, and
+*any* aggregate over a `DISTINCT` set (which collapses duplicates before the aggregate
+sees them, so `SUM(DISTINCT x)` is as safe as `COUNT(DISTINCT x)`) — because the set of
+aggregate functions is open-ended, and listing the unsafe ones silently declared
+`STDDEV`, `MEDIAN` and `ARRAY_AGG` safe. Attribution walks the parse tree rather than
+matching aggregate names in text, so an aggregate with no Cube mapping is attributed like
+any other: `SUM(orders.amount) + STDDEV(users.ltv)` reports `users`, which name-matching
+missed once it had found the `SUM`.
 
 The TPC-DS fixture carries a real example: `store_productivity` is
 `SUM(store_sales.ss_ext_sales_price) / NULLIF(SUM(store.s_number_employees), 0)`, and

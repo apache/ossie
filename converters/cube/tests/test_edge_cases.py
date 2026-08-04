@@ -2012,12 +2012,20 @@ def test_a_cross_cube_member_gets_the_target_cubes_own_spelling():
 
 @pytest.mark.parametrize("reference,expected", [
     # An ANSI double-quoted identifier is a *name*, not a string literal, so it is
-    # parsed. Per core-spec, a quoted identifier is force-matched to the normalized
-    # (upper) case: `"AMOUNT"` is the field `amount`, `"Amount"` is not.
+    # parsed. A quoted reference resolves against the normalized (upper) form, per
+    # core-spec, *and* against the name's exact spelling.
+    #
+    # The exact-spelling key is a deliberate superset of the spec's column-matching
+    # table, which says `"id"` does not match a column created as `id`. That rule is
+    # about physical database columns, folded by the database; an Ossie member name is
+    # whatever the model declares. And a name containing a space or mixed case cannot be
+    # written unquoted at all -- `"Order Items"` is the only way to reference a dataset
+    # of that name -- so without it such a name would be unreferenceable.
     ('orders."AMOUNT"', "SUM({CUBE.amount})"),
     ('"ORDERS"."AMOUNT"', "SUM({CUBE.amount})"),
+    ('orders."amount"', "SUM({CUBE.amount})"),
+    # Neither the exact spelling nor the normalized form, so it stays a raw column.
     ('orders."Amount"', 'SUM({CUBE}."Amount")'),
-    ('orders."amount"', 'SUM({CUBE}."amount")'),
 ])
 def test_quoted_identifiers_are_parsed_not_skipped(reference, expected):
     """The whole double-quoted region used to be treated as opaque -- the same handling
@@ -2233,3 +2241,102 @@ def test_an_explicit_raw_column_wins_over_a_dimension_of_that_name():
     member = _files(m=model.replace("{KEY}", "{CUBE.tenant_user_id}"))
     ossie2, _, _ = _roundtrip(member)
     assert "relationships" not in model_of(ossie2)
+
+
+# --- review round seven ----------------------------------------------------------
+
+@pytest.mark.parametrize("sql,flagged", [
+    # One recognized aggregate used to stop the search, leaving an unrecognized one
+    # elsewhere in the same expression unattributed.
+    ("SUM({CUBE}.amount) + STDDEV({users}.ltv)", True),
+    ("STDDEV({CUBE}.amount) + SUM({users}.ltv)", True),
+    ("MEDIAN({users}.ltv) - MIN({CUBE}.amount)", True),
+    # Only the safe cube is read unsafely.
+    ("STDDEV({CUBE}.amount) + MAX({users}.ltv)", False),
+    # DISTINCT collapses duplicates before the aggregate, so fan-out cannot change it.
+    ("SUM(DISTINCT {users}.ltv)", False),
+    ("AVG(DISTINCT {users}.ltv) / 2", False),
+])
+def test_every_aggregate_is_attributed_including_unrecognized_ones(sql, flagged):
+    files = _files(m=_TWO_CUBE_CALC.replace("{SQL}", sql))
+    _, issues = convert_cube_to_ossie(files)
+    assert bool(issues.of_type(IssueType.FANOUT_UNSAFE_METRIC)) is flagged
+    if flagged:
+        with pytest.raises(ConversionError, match="FANOUT_UNSAFE_METRIC"):
+            convert_cube_to_ossie(files, strict_fanout=True)
+
+
+def _join_key_model(key, dims):
+    return _files(m=(
+        "cubes:\n"
+        "  - name: orders\n"
+        "    sql_table: a.b.orders\n"
+        "    joins:\n"
+        "      - name: users\n"
+        f"        sql: \"{{CUBE.{key}}} = {{users.id}}\"\n"
+        "        relationship: many_to_one\n"
+        "    dimensions:\n" + dims +
+        "  - name: users\n"
+        "    sql_table: a.b.users\n"
+        "    dimensions:\n"
+        "      - name: id\n        sql: id\n        type: number\n"
+        "        primary_key: true\n"
+        "      - name: region_id\n        sql: region_id\n        type: number\n"
+    ))
+
+
+@pytest.mark.parametrize("key,dims,expected", [
+    # A `case` dimension has conditions and no sql, so "no sql means the same-named
+    # column" does not apply -- there is no column of that name.
+    ("tier",
+     "      - name: tier\n        type: string\n        case:\n          when:\n"
+     "            - sql: \"{CUBE}.x > 1\"\n              label: hi\n", None),
+    # A `switch` dimension enumerates values and reads nothing.
+    ("tier",
+     "      - name: tier\n        type: switch\n        values:\n          - a\n", None),
+    # `{users}.region_id` reads *another* cube's column, so it is not this dataset's.
+    ("region_key",
+     "      - name: region_key\n        sql: \"{users}.region_id\"\n"
+     "        type: number\n", None),
+    # This cube's own alias is a genuine raw column and still resolves.
+    ("k",
+     "      - name: k\n        sql: \"{CUBE}.user_id\"\n        type: number\n",
+     ["user_id"]),
+])
+def test_only_this_cubes_own_columns_resolve_a_join_key(key, dims, expected):
+    """Ossie relationship columns are physical columns of the dataset. Anything that is
+    not one has to park the join rather than name a column that does not exist."""
+    files = _join_key_model(key, dims)
+    ossie, back, _ = _roundtrip(files)
+    rels = model_of(ossie).get("relationships")
+    if expected is None:
+        assert rels is None
+    else:
+        assert rels[0]["from_columns"] == expected
+    assert parse_files(back) == parse_files(files)
+
+
+def test_a_measure_depending_on_a_windowed_one_is_parked_too():
+    """A rolling/multi-stage measure has no static Ossie form, and neither does anything
+    referencing it. Raising aborted the whole import over one measure; both are parked
+    and restored together."""
+    files = _files(m=(
+        "cubes:\n"
+        "  - name: orders\n"
+        "    sql_table: a.b.orders\n"
+        "    dimensions:\n"
+        "      - name: id\n        sql: id\n        type: number\n"
+        "        primary_key: true\n"
+        "    measures:\n"
+        "      - name: rolling\n        sql: amount\n        type: sum\n"
+        "        rolling_window:\n          trailing: 3 month\n"
+        "      - name: rolling_ratio\n        sql: \"{rolling} / 100\"\n"
+        "        type: number\n"))
+    ossie, back, issues = _roundtrip(files)
+    assert "metrics" not in model_of(ossie)
+    parked = {i.element_name for i in issues.of_type(
+        IssueType.MULTI_STAGE_MEASURE_PARKED)}
+    assert parked == {"orders.rolling", "orders.rolling_ratio"}
+    # Both come back, in their original positions.
+    cube = parse(back["model/cubes/m.yml"])["cubes"][0]
+    assert [m["name"] for m in cube["measures"]] == ["rolling", "rolling_ratio"]

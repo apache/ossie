@@ -179,7 +179,11 @@ def is_idempotent_aggregate(node):
     """True if duplicating input rows cannot change this aggregate's value."""
     if isinstance(node, _IDEMPOTENT_NODES):
         return True
-    return isinstance(node, exp.Count) and _counts_distinct(node)
+    # DISTINCT collapses duplicates before the aggregate sees them, so *any* aggregate
+    # over a distinct set is duplication-invariant -- `SUM(DISTINCT ltv)` as much as
+    # `COUNT(DISTINCT id)`. Honouring it only for COUNT rejected the others in strict
+    # mode over a value fan-out cannot change.
+    return _aggregates_distinct(node)
 
 
 def has_non_idempotent_aggregate(expr):
@@ -201,29 +205,46 @@ def has_non_idempotent_aggregate(expr):
                for node in tree.walk())
 
 
-def unsafe_aggregate_spans(expr):
-    """(start, end) of every aggregate in `expr` that duplication would inflate.
-
-    Offsets index the original string, so a caller can ask which datasets each unsafe
-    aggregate reads -- the measure's own cube is not necessarily the fanned-out one.
-    """
-    return [(start, end) for start, end in _scan_aggregates(str(expr))
-            if not _parses_to_idempotent(str(expr)[start:end])]
-
-
-def _parses_to_idempotent(text):
-    node = parse(text)
-    return node is not None and is_idempotent_aggregate(node)
-
-
-def _counts_distinct(node):
-    """True for `COUNT(DISTINCT x)`, which duplication does not affect."""
-    inner = node.this
-    if isinstance(inner, exp.Distinct):
+def _aggregates_distinct(node):
+    """True when this aggregate is applied to a DISTINCT set."""
+    if isinstance(node.this, exp.Distinct):
+        return True
+    if node.args.get("distinct"):
         return True
     # sqlglot may hang the DISTINCT off the function's argument list instead.
     return any(isinstance(arg, exp.Distinct)
                for arg in (node.args.get("expressions") or []))
+
+
+def unsafe_aggregate_datasets(expr):
+    """Which datasets each non-idempotent aggregate in `expr` reads.
+
+    Returns `(datasets, unqualified)` -- the dataset names appearing inside an unsafe
+    aggregate, and whether any unsafe aggregate named none (so it reads the cube the
+    measure is declared on). Returns None when the expression does not parse, leaving the
+    caller to be conservative.
+
+    Walks the parse tree rather than matching aggregate names in the text, so an
+    aggregate this converter has no Cube mapping for -- STDDEV, MEDIAN, ARRAY_AGG -- is
+    attributed like any other. Scanning for known names meant one recognized aggregate
+    was enough to stop the search, and an unrecognized one elsewhere in the same
+    expression went unattributed: `SUM(orders.amount) + STDDEV(users.ltv)` reported only
+    `orders`.
+    """
+    tree = parse(expr)
+    if tree is None:
+        return None
+    datasets, unqualified = set(), False
+    for node in tree.walk():
+        if not isinstance(node, exp.AggFunc) or is_idempotent_aggregate(node):
+            continue
+        tables = {column.table for column in node.find_all(exp.Column)
+                  if column.table}
+        if tables:
+            datasets |= tables
+        else:
+            unqualified = True
+    return datasets, unqualified
 
 
 def has_top_level_operator(expr):
