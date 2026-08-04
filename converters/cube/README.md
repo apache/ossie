@@ -123,7 +123,7 @@ to **import** (Cube -> Ossie) or **export** (Ossie -> Cube).
 | `dataset.source` (`SELECT ...`) | `sql` | Cube requires exactly one of `sql` / `sql_table`. |
 | `dataset.description` | cube `description` | |
 | `dataset.ai_context` | cube `meta.ai_context` | Preserved for the round trip, but **inert in Cube** -- its agent ignores cube-level `ai_context`. Recorded as an issue. |
-| `dataset.primary_key` | dimension(s) with `primary_key: true` | Composite = several. A Cube key can be an *expression*, and then the only name Ossie can carry is the dimension's -- which the Ossie document alone cannot tell apart from a column name afterwards, so import records it (`computed_primary_key`) and export puts `primary_key: true` back on that dimension instead of synthesizing one that reads a column of that name. Export marks a dimension only when it is **scalar** — a single source column — since `primary_key: true` declares that dimension's own `sql` to be the key; a computed dimension or a merged `geo` one would declare the wrong thing even if its name matches. Anything left uncovered becomes a `public: false` scalar dimension, suffixed (`id_pk`) if the obvious name is taken. |
+| `dataset.primary_key` | dimension(s) with `primary_key: true` | Composite = several. Ossie names the key by *column* while Cube marks a *dimension*, and the two differ whenever the dimension carrying the key is not named after its column — so the column list is recorded (`meta.ossie.primary_key`) when it cannot be read back off the dimensions. It is what the rebuilt `COUNT(DISTINCT …)` uses too, which otherwise named a member the Ossie model does not have. A Cube key can be an *expression*, and then the only name Ossie can carry is the dimension's -- which the Ossie document alone cannot tell apart from a column name afterwards, so import records it (`computed_primary_key`) and export puts `primary_key: true` back on that dimension instead of synthesizing one that reads a column of that name. Export marks a dimension only when it is **scalar** — a single source column — since `primary_key: true` declares that dimension's own `sql` to be the key; a computed dimension or a merged `geo` one would declare the wrong thing even if its name matches. Anything left uncovered becomes a `public: false` scalar dimension, suffixed (`id_pk`) if the obvious name is taken. |
 | `dataset.unique_keys` | `meta.ossie.unique_keys` | No native Cube slot, so parked — and used as the Cube primary key when the dataset declares none, recorded as `meta.ossie.key_from_unique_keys` so re-import does not hand back a `primary_key` the model never declared. Cube refuses a cube that declares a join without one, and several source formats have no primary-key concept: a Databricks metric view does not. A dataset with a relationship and neither is reported, naming Cube's requirement, since nothing can be invented. |
 | field | `dimensions[]` entry | Export: a name that is not a valid Cube identifier is sanitized; a case-insensitive collision is an error, never a silent merge. |
 | `field.expression` | dimension `sql` | Dataset-scoped, so `{CUBE}.col` <-> `col`. Export emits `{CUBE}.column` for a raw column and `{CUBE.member}` for a declared member, and never spells the cube's own name (which would break under `extends`). |
@@ -182,10 +182,14 @@ Ossie dialect enum has no `CUBE` entry -- so import emits `ANSI_SQL`, and export
 prefers `ANSI_SQL` with `--dialect` prepending a warehouse dialect (e.g.
 `SNOWFLAKE` for a Snowflake-backed Cube model).
 
-Failing both, export falls back to the expression's **only** dialect when that dialect
-is warehouse SQL (`SNOWFLAKE`, `DATABRICKS`, `BIGQUERY`), records which one in
-`meta.ossie.dialect`, and reports it. The record matters: without it re-import would
-label vendor-specific SQL as `ANSI_SQL` and mislead the next converter. This is what
+Failing both, export falls back to the **first** dialect on offer that is warehouse SQL
+(`SNOWFLAKE`, `DATABRICKS`, `BIGQUERY`), records which one in `meta.ossie.dialect`, and
+reports it. The record matters: without it re-import would label vendor-specific SQL as
+`ANSI_SQL` and mislead the next converter.
+
+Cube holds one `sql` per member, so an expression offering **several** dialects cannot
+keep its alternatives natively — the whole expression object is parked and restored, since
+nothing less brings them back. This is what
 makes another converter's output usable: everything the Databricks converter emits is
 `DATABRICKS` with no ANSI alternative, and requiring ANSI dropped every field and metric
 — producing an *empty* Cube model, which Cube compiles, so nothing downstream noticed.

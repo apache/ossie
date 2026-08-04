@@ -311,8 +311,7 @@ def pick_expression(ossie_expression, preferred=None):
 
     Preference order: the caller-chosen warehouse dialect (Cube passes SQL through to
     the data source, so e.g. SNOWFLAKE SQL is valid on a Snowflake-backed Cube model),
-    then ANSI_SQL, then -- if the expression offers exactly one dialect and that dialect
-    is warehouse SQL -- that one.
+    then ANSI_SQL, then the first dialect on offer that is warehouse SQL.
 
     The last step matters for real interop. Converters commonly emit their own dialect
     and no ANSI: everything from the Databricks converter is `DATABRICKS`. Requiring
@@ -322,6 +321,12 @@ def pick_expression(ossie_expression, preferred=None):
     Only `WAREHOUSE_DIALECTS` qualify. An expression in MDX, TABLEAU or MAQL is not SQL
     a warehouse can run, so there is nothing to fall back *to* -- those still drop, with
     the issue saying so. `(None, None)` means nothing usable was found.
+
+    Taking the *first* rather than insisting on a sole candidate matters: an expression
+    offering SNOWFLAKE and BIGQUERY but no ANSI has no single obvious choice, and requiring
+    one dropped the field altogether. Cube passes SQL to one data source, so picking in
+    document order and reporting it keeps the model; the alternatives are parked, so
+    nothing is lost on the way back.
     """
     dialects = [(d.get("dialect"), d.get("expression"))
                 for d in (ossie_expression or {}).get("dialects") or []
@@ -330,9 +335,9 @@ def pick_expression(ossie_expression, preferred=None):
     for candidate in (preferred, DIALECT_ANSI):
         if candidate and candidate in by_dialect:
             return _checked_expression(by_dialect[candidate]), candidate
-    if len(dialects) == 1 and dialects[0][0] in WAREHOUSE_DIALECTS:
-        dialect, expr = dialects[0]
-        return _checked_expression(expr), dialect
+    for dialect, expr in dialects:
+        if dialect in WAREHOUSE_DIALECTS:
+            return _checked_expression(expr), dialect
     return None, None
 
 

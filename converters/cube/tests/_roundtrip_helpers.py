@@ -339,12 +339,13 @@ def build_ossie_model(rnd):
         if rnd.chance(0.4):
             lines.append(f"    description: {_yaml_text(rnd.text())}")
         lines.append("    fields:")
-        for fname, expr, datatype, dialect, has_role in fields:
+        for fname, expr, datatype, forms, has_role in fields:
             lines.append(f"    - name: {fname}")
             lines.append("      expression:")
             lines.append("        dialects:")
-            lines.append(f"        - dialect: {dialect}")
-            lines.append(f"          expression: {expr}")
+            for dialect, text in forms:
+                lines.append(f"        - dialect: {dialect}")
+                lines.append(f"          expression: {text}")
             lines.append(f"      datatype: {datatype}")
             if has_role:
                 lines.append("      dimension:")
@@ -372,16 +373,33 @@ def build_ossie_model(rnd):
 OSSIE_DIALECTS = ["ANSI_SQL", "ANSI_SQL", "DATABRICKS", "SNOWFLAKE", "BIGQUERY"]
 
 
+def _dialect_forms(rnd, expr):
+    """[(dialect, expression)] for one Ossie expression -- sometimes more than one.
+
+    Cube has room for a single `sql` per member, so every dialect but the one export picks
+    has nowhere to go. Generating one dialect per expression could never show that.
+    """
+    forms = [(rnd.pick(OSSIE_DIALECTS), expr)]
+    if rnd.chance(0.3):
+        # Sorted, not set order: a set iterates differently between processes, which
+        # made the seeded sweep generate different models per run and cost it the one
+        # thing it is for -- naming a seed a failure can be reproduced from.
+        alternative = rnd.pick(sorted(set(OSSIE_DIALECTS) - {forms[0][0]}))
+        forms.append((alternative, f"CAST({expr} AS VARCHAR)"))
+    return forms
+
+
 def _ossie_fields(rnd, dataset, dim_names):
-    """(name, expression, datatype, dialect, has_dimension_role) per field.
+    """(name, expression, datatype, dialects, has_dimension_role) per field.
 
     The last two are drawn rather than fixed, because both are places where export must
     make a Cube-shaped choice and then be able to undo it. A field with no `dimension`
     block is a *fact*; Cube has one kind of dimension, so export marks every member as one
-    and has to remember which were not.
+    and has to remember which were not. And Cube holds one `sql` per member, so an
+    expression offering several dialects loses the alternatives unless they are kept.
     """
     def entry(name, expr, datatype):
-        return (name, expr, datatype, rnd.pick(OSSIE_DIALECTS), rnd.chance(0.5))
+        return (name, expr, datatype, _dialect_forms(rnd, expr), rnd.chance(0.5))
 
     fields = [entry("id", "id", "Integer")]
     for d in dim_names:
@@ -403,11 +421,10 @@ def _ossie_metrics(rnd, fact, dim_names, fields_by_dataset):
     out = []
 
     def block(name, expression):
-        entry = [f"  - name: {name}",
-                 "    expression:",
-                 "      dialects:",
-                 f"      - dialect: {rnd.pick(OSSIE_DIALECTS)}",
-                 f"        expression: {expression}"]
+        entry = [f"  - name: {name}", "    expression:", "      dialects:"]
+        for dialect, text in _dialect_forms(rnd, expression):
+            entry.append(f"      - dialect: {dialect}")
+            entry.append(f"        expression: {text}")
         if rnd.chance(0.3):
             entry.insert(1, f"    description: {_yaml_text(rnd.text())}")
         out.append(entry)
@@ -497,6 +514,11 @@ def check_ossie_model(ossie_yaml):
 
 
 def _dialected(entry):
-    """(normalized expression, dialect) for a field or metric."""
-    dialect = entry["expression"]["dialects"][0]
-    return _normalize_refs(dialect["expression"]), dialect["dialect"]
+    """Every dialect of a field or metric expression, as (dialect, expression) pairs.
+
+    All of them, not just the first: Cube keeps one `sql` per member, so the alternatives
+    are exactly what a round trip can quietly drop -- and comparing `dialects[0]` alone
+    would not notice.
+    """
+    return tuple((d.get("dialect"), _normalize_refs(d.get("expression", "")))
+                 for d in entry["expression"]["dialects"])

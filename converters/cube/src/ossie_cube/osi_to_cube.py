@@ -308,13 +308,6 @@ def _build_cube(ds, plan, tables, joins, measures, join_extensions, dialect,
                    f"parked under meta.ossie.join_extensions")
     cube_extras = dict(stash.get("cube_extras") or {})
     stashed_meta = cube_extras.pop("meta", None)
-    meta = _build_meta(ds.get("ai_context"), stashed_meta, parked)
-    if meta:
-        cube["meta"] = meta
-        if "ai_context" in meta:
-            issues.add(IssueType.CUBE_LEVEL_AI_CONTEXT_INERT, scope,
-                       "Cube's agent reads ai_context only on views and members, "
-                       "so this cube-level value has no effect in Cube")
 
     dimensions, by_name_scalar, by_column, by_name_computed = _build_dimensions(
         ds, plan, tables, dialect, issues)
@@ -364,6 +357,17 @@ def _build_cube(ds, plan, tables, joins, measures, join_extensions, dialect,
     for dim in dimensions:
         if dim["name"] in pk_names:
             dim["primary_key"] = True
+    # Whichever way the key arrived -- declared, or promoted from `unique_keys` -- what
+    # matters is whether the columns can be read back off the dimensions carrying them.
+    key_columns = list(plan.primary_key)
+    if key_columns and pk_names != key_columns:
+        # Import rebuilds the key from Cube *dimension* names, which are the columns only
+        # when they happen to coincide: a field `order_id` reading column `id` is marked
+        # as the key and comes back named `order_id`, and a synthesized `id_pk` comes back
+        # as `id_pk`. Both name something the table need not have, so the column list is
+        # recorded -- and only then, so a model whose names already agree keeps a clean
+        # round trip.
+        parked["primary_key"] = key_columns
     if plan.key_from_unique_keys and pk_names:
         issues.add(IssueType.APPROXIMATED, scope,
                    f"no primary_key, so the first unique_keys entry "
@@ -375,6 +379,14 @@ def _build_cube(ds, plan, tables, joins, measures, join_extensions, dialect,
                    "requires a primary key on any cube with a join ('primary key for "
                    "<cube> is required when join is defined') -- the model will not "
                    "compile until the dataset declares one")
+
+    meta = _build_meta(ds.get("ai_context"), stashed_meta, parked)
+    if meta:
+        cube["meta"] = meta
+        if "ai_context" in meta:
+            issues.add(IssueType.CUBE_LEVEL_AI_CONTEXT_INERT, scope,
+                       "Cube's agent reads ai_context only on views and members, "
+                       "so this cube-level value has no effect in Cube")
 
     # Dimensions a prior import could not express as an Ossie field (a `switch` one,
     # which has no sql) go back at their original positions.
@@ -541,6 +553,25 @@ def _reference_members(ds, dim_names, dialect):
     return needed
 
 
+def _park_expression(parked, expression, used):
+    """Record what it takes to hand this expression back unchanged.
+
+    Cube holds one `sql` per member, so only the dialect export chose survives natively.
+    Two things can be lost on the way back:
+
+    - the *label*: vendor SQL emitted as Cube's `sql` would be re-imported as `ANSI_SQL`,
+      which misleads the next converter. Recording the dialect name is enough for that.
+    - the *alternatives*: an Ossie expression may carry several dialects, and the others
+      have nowhere to go in Cube at all. Nothing short of the whole object brings them
+      back, so a multi-dialect expression is parked entire.
+    """
+    dialects = (expression or {}).get("dialects") or []
+    if len(dialects) > 1:
+        parked["expression"] = expression
+    elif used not in (None, DIALECT_ANSI):
+        parked["dialect"] = used
+
+
 def _report_dialect_fallback(issues, scope, used, preferred):
     """Note when an expression came from a dialect that was not asked for.
 
@@ -703,11 +734,7 @@ def _build_dimensions(ds, plan, tables, dialect, issues):
             # kind of dimension, so the block is emitted regardless; recording its
             # absence is what stops re-import handing back a dimension.
             parked["no_role"] = True
-        if used not in (None, DIALECT_ANSI):
-            # The expression came from a warehouse dialect, not ANSI. Re-import would
-            # otherwise label vendor-specific SQL as ANSI_SQL and mislead the next
-            # converter.
-            parked["dialect"] = used
+        _park_expression(parked, field.get("expression"), used)
         dt = field.get("datatype")
         if dt and DEFAULT_DATATYPE_FOR_CUBE_TYPE.get(dim["type"]) != dt:
             parked["datatype"] = dt
@@ -1186,10 +1213,7 @@ def _apply_measure_metadata(metric, measure, stash, used_dialect=None):
     datatype = metric.get("datatype")
     if datatype and datatype != AGG_TO_RESULT_DATATYPE.get(measure.get("type")):
         parked["datatype"] = datatype
-    if used_dialect not in (None, DIALECT_ANSI):
-        # The expression came from a warehouse dialect; re-import would otherwise label
-        # vendor-specific SQL as ANSI_SQL.
-        parked["dialect"] = used_dialect
+    _park_expression(parked, metric.get("expression"), used_dialect)
     meta = _build_meta(metric.get("ai_context"), stash.get("meta"), parked)
     if meta:
         measure["meta"] = meta

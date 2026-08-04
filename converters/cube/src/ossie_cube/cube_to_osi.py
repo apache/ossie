@@ -500,11 +500,21 @@ def _plain_members(cube, cname):
 
 
 def _primary_key_of(cube, cname):
-    """The names of a cube's `primary_key: true` dimensions.
+    """A cube's primary key, as the *columns* Ossie names it by.
 
-    Read directly off the dimensions so the stages that need it -- measures, and the
-    fan-out check -- do not have to wait for the dataset to be built.
+    Read off the cube rather than the built dataset, so the stages that need it -- the
+    dataset, measures, and the fan-out check -- all get the same answer without waiting
+    for each other.
+
+    A recorded column list wins over the dimension names. The two differ whenever the key
+    is not a same-named scalar dimension: a field `order_id` reading column `id` carries
+    the key, and export synthesizes `id_pk` when a computed field shadows the column. Using
+    the dimension name then put that name in the rebuilt `COUNT(DISTINCT ...)` too, so the
+    metric referenced a member that does not exist on the Ossie side.
     """
+    recorded = parked_of(cube.get("meta")).get("primary_key")
+    if recorded:
+        return [str(column) for column in recorded]
     return [require_str(dim, "name", f"cube '{cname}': dimension")
             for dim in _as_named_list(cube.get("dimensions"),
                                       f"cube '{cname}' dimensions")
@@ -684,10 +694,7 @@ def _finish_dimension_field(cname, dname, dim, field, stash, issues):
         # A dimension export added only to carry Cube's primary key; the Ossie model had
         # no field for that column, so it gets none back.
         return None
-    if parked.get("dialect"):
-        # The expression came from a warehouse dialect, so it is labelled as that one --
-        # calling vendor SQL `ANSI_SQL` would mislead the next converter.
-        field["expression"]["dialects"][0]["dialect"] = parked["dialect"]
+    _restore_expression(field, parked)
     # A field that carried no datatype keeps carrying none: Ossie says not to infer a
     # scalar type from `is_time` alone, so emitting DateTime for a `type: time`
     # dimension would assert something the model never said.
@@ -772,6 +779,19 @@ def _case_label(cname, dname, holder):
         return translated
     text = unescape_braces_from_cube(str(label if label is not None else ""))
     return "'" + text.replace("'", "''") + "'"
+
+
+def _restore_expression(target, parked):
+    """Put back the dialect, or the whole expression, that export had to set aside.
+
+    Cube holds one `sql` per member, so an Ossie expression carrying several dialects
+    cannot survive natively -- export parks it whole, and it comes back as it went in.
+    A single non-ANSI dialect needs only its label restored.
+    """
+    if parked.get("expression"):
+        target["expression"] = parked["expression"]
+    elif parked.get("dialect"):
+        target["expression"]["dialects"][0]["dialect"] = parked["dialect"]
 
 
 def _convert_geo_dimension(cname, dname, dim, issues):
@@ -1428,13 +1448,11 @@ def _convert_measure(cname, mname, metric_name, measure, context):
             f"the primary key at query time but a static Ossie expression cannot, so "
             f"a consumer joining through that relationship may over-count")
 
-    parked_measure = parked_of(measure.get("meta"))
     metric = {
         "name": metric_name,
-        "expression": {"dialects": [
-            {"dialect": parked_measure.get("dialect") or DIALECT_ANSI,
-             "expression": expr}]},
+        "expression": {"dialects": [{"dialect": DIALECT_ANSI, "expression": expr}]},
     }
+    _restore_expression(metric, parked_of(measure.get("meta")))
     # A datatype parked by a previous export wins: Cube has no field for a measure's
     # result type, and only the count family can be inferred from the aggregate.
     parked_dt = parked_of(measure.get("meta")).get("datatype")
