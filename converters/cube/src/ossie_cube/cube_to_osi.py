@@ -51,6 +51,7 @@ from ._common import (
     filtered_operand,
     is_simple_identifier,
     lookup_map,
+    normalize_identifier,
     resolve_identifier,
     referenced_datasets,
     join_source,
@@ -1318,10 +1319,16 @@ def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, issues):
         issues=issues)
     resolver = context.resolver
 
+    # Counted by *normalized* name: Ossie regular identifiers are case-insensitive, so
+    # `revenue` on one cube and `Revenue` on another are one name in the model-level
+    # metric namespace. Counting them separately emitted both unqualified, which is a
+    # document a consumer may reject or resolve to the wrong metric -- and which the
+    # spec's own validator misses, since its duplicate check compares exact strings.
     counts = {}
     for (cname, mname), measure in resolver.measures().items():
         if not _is_generated_part(measure):
-            counts[mname] = counts.get(mname, 0) + 1
+            key = normalize_identifier(mname)
+            counts[key] = counts.get(key, 0) + 1
 
     metrics = []
     extra_measures = {}
@@ -1338,12 +1345,16 @@ def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, issues):
                 # references inline back to the whole expression -- and export
                 # regenerates it, so it is not stashed either.
                 continue
-            metric_name = mname if counts[mname] == 1 else f"{cname}__{mname}"
-            if metric_name in seen:
+            unique = counts[normalize_identifier(mname)] == 1
+            # The emitted name keeps its original spelling; only the *comparison* is
+            # normalized.
+            metric_name = mname if unique else f"{cname}__{mname}"
+            derived = normalize_identifier(metric_name)
+            if derived in seen:
                 raise ConversionError(
-                    f"metric name '{metric_name}' derived twice; rename the "
-                    f"colliding measures in Cube")
-            seen.add(metric_name)
+                    f"metric name '{metric_name}' derived twice (Ossie identifiers are "
+                    f"case-insensitive); rename the colliding measures in Cube")
+            seen.add(derived)
             metric = _convert_measure(cname, mname, metric_name, measure, context)
             if metric is not None:
                 metrics.append(metric)

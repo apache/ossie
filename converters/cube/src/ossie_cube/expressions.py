@@ -211,7 +211,10 @@ def is_idempotent_aggregate(node):
         # An ordered-set aggregate is exactly as safe as the function being ordered.
         return bool(node.this) and is_idempotent_aggregate(node.this)
     if isinstance(node, exp.Anonymous):
-        return str(node.this or "").upper() in _IDEMPOTENT_CALLS
+        # DISTINCT applies here for the same reason it does to a modelled aggregate:
+        # `LISTAGG(DISTINCT name)` cannot be changed by a duplicated row.
+        return (str(node.this or "").upper() in _IDEMPOTENT_CALLS
+                or _aggregates_distinct(node))
     if isinstance(node, _IDEMPOTENT_NODES):
         return True
     # DISTINCT collapses duplicates before the aggregate sees them, so *any* aggregate
@@ -227,9 +230,12 @@ def _aggregates_distinct(node):
         return True
     if node.args.get("distinct"):
         return True
-    # sqlglot may hang the DISTINCT off the function's argument list instead.
-    return any(isinstance(arg, exp.Distinct)
-               for arg in (node.args.get("expressions") or []))
+    # sqlglot may hang the DISTINCT off the argument list instead -- and for a call it
+    # does not model, `Anonymous.expressions` is where the arguments live.
+    arguments = list(node.args.get("expressions") or [])
+    if isinstance(node.this, list):
+        arguments += node.this
+    return any(isinstance(arg, exp.Distinct) for arg in arguments)
 
 
 def unsafe_aggregate_datasets(expr):

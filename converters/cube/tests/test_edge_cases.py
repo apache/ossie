@@ -2420,3 +2420,18 @@ def test_a_quoted_geo_half_reference_still_inlines_its_sql():
         assert to_cube_sql(f"AVG({reference})", "users", {"home"},
                            inline_sql={"home_latitude": "{CUBE}.lat"}) == (
             "AVG({CUBE}.lat)")
+
+
+@pytest.mark.parametrize("expr,unsafe", [
+    # DISTINCT applies to a call SQL parsing does not model, for the same reason it
+    # applies to a modelled aggregate: a duplicated row cannot change the distinct set.
+    ("LISTAGG(DISTINCT users.name, ',')", False),
+    ("LISTAGG(users.name, ',')", True),
+    ("APPROX_PERCENTILE(DISTINCT users.x, 0.5)", False),
+    ("APPROX_PERCENTILE(users.x, 0.5)", True),
+])
+def test_distinct_inside_an_unmodelled_call_is_idempotent(expr, unsafe):
+    from ossie_cube.expressions import unsafe_aggregate_datasets
+
+    datasets, unqualified = unsafe_aggregate_datasets(expr)
+    assert bool(datasets or unqualified) is unsafe

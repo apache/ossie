@@ -545,3 +545,38 @@ def test_reference_translation_in_a_field_context(sql, expected):
 def test_reference_translation_in_a_metric_context(sql, expected):
     """A metric expression is model-level, so own-cube references are qualified."""
     assert cube_sql_to_ossie(sql, "orders", self_prefix="orders")[0] == expected
+
+
+def _two_cube_measures(first, second):
+    return {"model/cubes/m.yml": (
+        "cubes:\n"
+        "  - name: orders\n"
+        "    sql_table: a.b.orders\n"
+        "    dimensions:\n"
+        "      - name: id\n        sql: id\n        type: number\n"
+        "        primary_key: true\n"
+        f"    measures:\n      - name: {first}\n        sql: amount\n        type: sum\n"
+        "  - name: users\n"
+        "    sql_table: a.b.users\n"
+        "    dimensions:\n"
+        "      - name: id\n        sql: id\n        type: number\n"
+        "        primary_key: true\n"
+        f"    measures:\n      - name: {second}\n        sql: ltv\n        type: sum\n")}
+
+
+@pytest.mark.parametrize("first,second,expected", [
+    # Ossie regular identifiers are case-insensitive, so these are *one* name in the
+    # model-level metric namespace and both have to be qualified. Comparing exact strings
+    # emitted `revenue` and `Revenue` side by side -- a document a consumer may reject or
+    # resolve to the wrong metric, and one the spec's own validator passes because its
+    # duplicate check is exact too.
+    ("revenue", "Revenue", ["orders__revenue", "users__Revenue"]),
+    ("revenue", "revenue", ["orders__revenue", "users__revenue"]),
+    ("REVENUE", "revenue", ["orders__REVENUE", "users__revenue"]),
+    # Genuinely distinct names stay unqualified.
+    ("revenue", "lifetime", ["revenue", "lifetime"]),
+])
+def test_metric_name_collisions_are_detected_case_insensitively(first, second, expected):
+    out, _ = convert_cube_to_ossie(_two_cube_measures(first, second))
+    # The comparison is normalized; the emitted name keeps its original spelling.
+    assert [m["name"] for m in model_of(out)["metrics"]] == expected
