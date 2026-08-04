@@ -18,10 +18,12 @@
 from pathlib import Path
 
 import yaml
-from ossie import OSIDialect
+from ossie import OSIDataType, OSIDialect
 
 from ossie_hex.cli.hex_project_io import read_hex_project
 from ossie_hex.hex_to_ossie import convert_hex_to_ossie
+from ossie_hex.hex_to_ossie.convert_hex_measure import convert_hex_measure_type
+from ossie_hex.hex_types import HexMeasure, HexMeasureFuncName
 from tests.utils import hex_extension
 
 
@@ -115,3 +117,125 @@ def test_hex_measure_with_func_calc_is_preserved(
     assert preserved["id"] == "revenue_per_order"
     assert preserved["func_calc"] == "revenue / order_count"
     assert any("revenue_per_order" in w.message for w in warnings)
+
+
+def test_count_func_result_types_are_integer() -> None:
+    row_count = HexMeasure(id="row_count", func=HexMeasureFuncName.COUNT)
+    distinct_count = HexMeasure(
+        id="distinct_count",
+        func=HexMeasureFuncName.COUNT_DISTINCT,
+        of="customer_id",
+    )
+    boolean_sum = HexMeasure(
+        id="boolean_sum",
+        func=HexMeasureFuncName.SUM_BOOLEAN,
+        of="is_customer",
+    )
+
+    row_count_datatype = convert_hex_measure_type(
+        row_count, ossie_dialect=OSIDialect.ANSI_SQL
+    )
+    distinct_count_datatype = convert_hex_measure_type(
+        distinct_count, ossie_dialect=OSIDialect.ANSI_SQL
+    )
+    boolean_sum_datatype = convert_hex_measure_type(
+        boolean_sum, ossie_dialect=OSIDialect.ANSI_SQL
+    )
+
+    assert row_count_datatype == OSIDataType.INTEGER
+    assert distinct_count_datatype == OSIDataType.INTEGER
+    assert boolean_sum_datatype == OSIDataType.INTEGER
+
+
+def test_standard_deviation_result_types_are_float() -> None:
+    sample = HexMeasure(
+        id="sample_stddev",
+        func=HexMeasureFuncName.STDDEV,
+        of="amount",
+    )
+    population = HexMeasure(
+        id="population_stddev",
+        func=HexMeasureFuncName.STDDEV_POP,
+        of="amount",
+    )
+
+    sample_ansi_datatype = convert_hex_measure_type(
+        sample, ossie_dialect=OSIDialect.ANSI_SQL
+    )
+    population_ansi_datatype = convert_hex_measure_type(
+        population, ossie_dialect=OSIDialect.ANSI_SQL
+    )
+
+    assert sample_ansi_datatype == OSIDataType.FLOAT
+    assert population_ansi_datatype == OSIDataType.FLOAT
+
+
+def test_variance_result_types_depend_on_dialect() -> None:
+    sample = HexMeasure(
+        id="sample_variance",
+        func=HexMeasureFuncName.VARIANCE,
+        of="amount",
+    )
+    population = HexMeasure(
+        id="population_variance",
+        func=HexMeasureFuncName.VARIANCE_POP,
+        of="amount",
+    )
+
+    sample_ansi_datatype = convert_hex_measure_type(
+        sample, ossie_dialect=OSIDialect.ANSI_SQL
+    )
+    sample_snowflake_datatype = convert_hex_measure_type(
+        sample, ossie_dialect=OSIDialect.SNOWFLAKE
+    )
+    sample_bigquery_datatype = convert_hex_measure_type(
+        sample, ossie_dialect=OSIDialect.BIGQUERY
+    )
+    sample_databricks_datatype = convert_hex_measure_type(
+        sample, ossie_dialect=OSIDialect.DATABRICKS
+    )
+    population_ansi_datatype = convert_hex_measure_type(
+        population, ossie_dialect=OSIDialect.ANSI_SQL
+    )
+    population_snowflake_datatype = convert_hex_measure_type(
+        population, ossie_dialect=OSIDialect.SNOWFLAKE
+    )
+    population_bigquery_datatype = convert_hex_measure_type(
+        population, ossie_dialect=OSIDialect.BIGQUERY
+    )
+    population_databricks_datatype = convert_hex_measure_type(
+        population, ossie_dialect=OSIDialect.DATABRICKS
+    )
+
+    assert sample_ansi_datatype == OSIDataType.DECIMAL
+    assert sample_snowflake_datatype == OSIDataType.DECIMAL
+    assert sample_bigquery_datatype == OSIDataType.FLOAT
+    assert sample_databricks_datatype == OSIDataType.FLOAT
+    assert sample_databricks_datatype == OSIDataType.FLOAT
+    assert population_ansi_datatype == OSIDataType.DECIMAL
+    assert population_snowflake_datatype == OSIDataType.DECIMAL
+    assert population_bigquery_datatype == OSIDataType.FLOAT
+    assert population_databricks_datatype == OSIDataType.FLOAT
+    assert population_databricks_datatype == OSIDataType.FLOAT
+
+
+def test_median_result_type_depends_on_dialect() -> None:
+    median = HexMeasure(
+        id="median",
+        func=HexMeasureFuncName.MEDIAN,
+        of="amount",
+    )
+
+    median_ansi_datatype = convert_hex_measure_type(
+        median, ossie_dialect=OSIDialect.ANSI_SQL
+    )
+    median_snowflake_datatype = convert_hex_measure_type(
+        median, ossie_dialect=OSIDialect.SNOWFLAKE
+    )
+    median_databricks_datatype = convert_hex_measure_type(
+        median, ossie_dialect=OSIDialect.DATABRICKS
+    )
+
+    assert median_ansi_datatype == OSIDataType.DECIMAL
+    assert median_snowflake_datatype == OSIDataType.DECIMAL
+    assert median_databricks_datatype == OSIDataType.FLOAT

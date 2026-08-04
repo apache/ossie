@@ -27,6 +27,7 @@ from ossie import (
 
 from ..hex_extension import HEX_VENDOR, HexMeasureStash, maybe_write_extension
 from ..hex_types import (
+    HexDataType,
     HexMeasure,
     HexMeasureFuncName,
     HexScalarExpressionDefaultBoolean,
@@ -120,11 +121,8 @@ def convert_hex_measure(
             )
         )
 
-    datatype = (
-        OSIDataType.INTEGER
-        if measure.func == HexMeasureFuncName.COUNT
-        else hex_to_ossie_datatype(measure.type)
-    )
+    datatype = convert_hex_measure_type(measure, ossie_dialect=ossie_dialect)
+
     metric = OSIMetric(
         name=metric_name,
         expression=OSIExpression(
@@ -219,3 +217,42 @@ def qualified_metric_name(measure_id: str, model_id: str) -> str:
     and mean it literally.
     """
     return f"{model_id}__{measure_id}"
+
+
+def convert_hex_measure_type(
+    measure: HexMeasure,
+    *,
+    ossie_dialect: OSIDialect,
+) -> OSIDataType:
+    """Derive the Ossie data type for a Hex measure."""
+    if measure.type != HexDataType.NUMBER:
+        return hex_to_ossie_datatype(measure.type)
+
+    # Hex has one numeric type, so retain Decimal unless the aggregate has a
+    # fixed result type or the target dialect defines a more precise answer.
+    if measure.func in (
+        HexMeasureFuncName.COUNT,
+        HexMeasureFuncName.COUNT_DISTINCT,
+        HexMeasureFuncName.SUM_BOOLEAN,
+    ):
+        return OSIDataType.INTEGER
+    elif measure.func in (
+        HexMeasureFuncName.STDDEV,
+        HexMeasureFuncName.STDDEV_POP,
+    ):
+        return OSIDataType.FLOAT
+    elif measure.func in (
+        HexMeasureFuncName.VARIANCE,
+        HexMeasureFuncName.VARIANCE_POP,
+    ):
+        if ossie_dialect in (OSIDialect.BIGQUERY, OSIDialect.DATABRICKS):
+            return OSIDataType.FLOAT
+        else:
+            pass
+    elif measure.func == HexMeasureFuncName.MEDIAN:
+        if ossie_dialect == OSIDialect.DATABRICKS:
+            return OSIDataType.FLOAT
+        else:
+            pass
+
+    return hex_to_ossie_datatype(measure.type)
