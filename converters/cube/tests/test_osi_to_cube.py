@@ -503,7 +503,10 @@ def test_generated_view_is_rooted_at_the_fk_sink():
     view = parse(files["model/views/shop.yml"])["views"][0]
     assert view["cubes"] == [
         {"join_path": "orders", "includes": "*"},
-        {"join_path": "orders.users", "includes": "*"},
+        # `prefix: true` because both cubes have an `id`: a view flattens every
+        # included member into one namespace and Cube refuses a collision, so this is
+        # Cube's own remedy rather than a stylistic choice.
+        {"join_path": "orders.users", "includes": "*", "prefix": True},
     ]
 
 

@@ -26,6 +26,12 @@
 import json
 
 import pytest
+from _cube_gate import (
+    assert_cube_compiles,
+    assert_ossie_is_valid,
+    cube_gate,
+    validator_gate,
+)
 from _util import (REPO_ROOT, canon, load_fixture, load_fixture_dir, parse,
                    parse_files)
 
@@ -83,6 +89,37 @@ def test_imported_ossie_validates_against_core_spec_schema(fixture):
     jsonschema.validate(parse(ossie), schema)
 
 
+@validator_gate
+@pytest.mark.parametrize("fixture", FIXTURES)
+def test_imported_ossie_passes_the_repo_validator(fixture):
+    """More than the schema: unique names across the document, relationship references
+    that resolve, and every expression parseable as SQL."""
+    ossie, _ = convert_cube_to_ossie(load_fixture_dir(fixture))
+    assert_ossie_is_valid(ossie, fixture)
+
+
+@cube_gate
+@pytest.mark.parametrize("fixture", FIXTURES)
+def test_the_fixture_and_its_round_trip_both_compile_in_cube(fixture):
+    """The question a YAML comparison cannot ask. Both directions are checked, because
+    the committed fixture being valid Cube is itself an assertion worth holding: the
+    tpcds one was not, and nothing noticed until Cube was asked."""
+    files = load_fixture_dir(fixture)
+    assert_cube_compiles(files, f"{fixture} (as committed)")
+    ossie, _ = convert_cube_to_ossie(files)
+    back, _ = convert_ossie_to_cube(ossie)
+    assert_cube_compiles(back, f"{fixture} (after a round trip)")
+
+
+@cube_gate
+def test_a_hand_authored_ossie_model_exports_to_a_model_cube_accepts():
+    """Nothing here came from Cube, so nothing is restored from a stash -- every key is
+    one the exporter chose. That makes it the case most likely to produce something Cube
+    rejects."""
+    files, _ = convert_ossie_to_cube(load_fixture("hand_authored_ossie.yaml"))
+    assert_cube_compiles(files, "hand_authored_ossie.yaml")
+
+
 @pytest.mark.parametrize("fixture", FIXTURES)
 def test_ossie_roundtrip_is_lossless(fixture):
     """Ossie -> Cube -> Ossie reproduces the model too.
@@ -113,7 +150,8 @@ def test_hand_authored_ossie_gets_a_generated_view():
     # Rooted at the FK sink, with the joined cube addressed by its join path.
     assert view["cubes"] == [
         {"join_path": "orders", "includes": "*"},
-        {"join_path": "orders.customers", "includes": "*"},
+        # Both cubes carry an `id`, which a view cannot include twice.
+        {"join_path": "orders.customers", "includes": "*", "prefix": True},
     ]
 
 

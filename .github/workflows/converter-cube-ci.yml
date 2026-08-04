@@ -59,5 +59,7 @@ jobs:
 
       - name: Unit Tests
         working-directory: converters/cube
+        # The Cube-compiles-it gate needs a built Cube checkout (OSSIE_CUBE_REPO) and
+        # skips without one, so CI runs everything else. See converters/cube/README.md.
         run: |
           uv run pytest

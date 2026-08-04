@@ -167,6 +167,7 @@ def _convert_model(model, dialect, base_cube, issues):
     # stashed original path, in which case they go back into the same file.
     stashed_paths = model_stash.get("cube_files") or {}
     files_content = {}
+    emitted_members = {}
     for ds_name, ds in datasets.items():
         cname = cube_names[ds_name]
         cube = _build_cube(ds, cname, dim_names_by_cube[cname],
@@ -177,9 +178,16 @@ def _convert_model(model, dialect, base_cube, issues):
         path = (safe_relative_path(stashed, f"cube '{cname}'") if stashed
                 else cube_file(cname))
         files_content.setdefault(path, {}).setdefault("cubes", []).append(cube)
+        # The members the cube really carries -- including a synthesized primary key, a
+        # merged geo dimension and measures restored from the stash -- which is what a
+        # generated view has to disambiguate against.
+        emitted_members[cname] = [
+            m["name"] for key in ("dimensions", "measures", "segments")
+            for m in (cube.get(key) or []) if isinstance(m, dict) and m.get("name")]
 
     for vpath, views in _build_views(model, model_stash, cube_names, relationships,
-                                     datasets, base_cube).items():
+                                     datasets, base_cube,
+                                     emitted_members).items():
         files_content.setdefault(vpath, {}).setdefault("views", []).extend(views)
 
     files = {path: dump_yaml(content) for path, content in files_content.items()}
@@ -337,6 +345,12 @@ def _build_cube(ds, cname, dim_names, inline_sql, ref_members, joins, measures,
         if dim["name"] in pk_names:
             dim["primary_key"] = True
 
+    # Dimensions a prior import could not express as an Ossie field (a `switch` one,
+    # which has no sql) go back at their original positions.
+    for item in sorted(stash.get("extra_dimensions") or [],
+                       key=lambda x: x.get("index", 0)):
+        dimensions.insert(min(item.get("index", 0), len(dimensions)),
+                          item["dimension"])
     if dimensions:
         cube["dimensions"] = [_ordered(d, _DIM_KEY_ORDER) for d in dimensions]
 
@@ -922,7 +936,7 @@ def _balanced(s):
 # --- views ----------------------------------------------------------------------
 
 def _build_views(model, model_stash, cube_names, relationships, datasets,
-                 base_cube):
+                 base_cube, emitted_members):
     """Return {file path: [view dict, ...]}.
 
     A list per path, not a single view: several views can share one YAML file, and
@@ -984,21 +998,33 @@ def _build_views(model, model_stash, cube_names, relationships, datasets,
     view["cubes"] = _view_cubes(
         cube_names, relationships,
         cube_names[_pick_base_cube(model.get("name", "<unnamed>"), datasets,
-                                  relationships, base_cube)])
+                                  relationships, base_cube)],
+        emitted_members)
     out[view_file(vname)] = [view]
     return out
 
 
-def _view_cubes(cube_names, relationships, base):
+def _view_cubes(cube_names, relationships, base, emitted_members):
     """Build a generated view's `cubes:` list: the base cube plus every cube
-    reachable from it, each addressed by its full `join_path`."""
+    reachable from it, each addressed by its full `join_path`.
+
+    A view flattens every included member into one namespace, and Cube refuses one
+    where two members collide ("Included member 'id' conflicts with existing member").
+    Two datasets both having an `id` is the normal case, not a corner one, so a cube
+    whose members would collide gets `prefix: true` -- Cube's own remedy, which renames
+    its members to `<cube>_<member>` within the view only.
+    """
     adjacency = {}
     for rel in relationships:
         a, b = cube_names[rel["from"]], cube_names[rel["to"]]
         adjacency.setdefault(a, []).append(b)
         adjacency.setdefault(b, []).append(a)
 
+    def members(cname):
+        return emitted_members.get(cname) or []
+
     entries = [{"join_path": base, "includes": "*"}]
+    claimed = {m.lower() for m in members(base)}
     paths = {base: base}
     queue = deque([base])
     while queue:
@@ -1007,7 +1033,22 @@ def _view_cubes(cube_names, relationships, base):
             if neighbor in paths:
                 continue
             paths[neighbor] = f"{paths[current]}.{neighbor}"
-            entries.append({"join_path": paths[neighbor], "includes": "*"})
+            own = members(neighbor)
+            entry = {"join_path": paths[neighbor], "includes": "*"}
+            if any(m.lower() in claimed for m in own):
+                entry["prefix"] = True
+                names = [f"{neighbor}_{m}" for m in own]
+            else:
+                names = list(own)
+            still_colliding = sorted(n for n in names if n.lower() in claimed)
+            if still_colliding:
+                raise ConversionError(
+                    f"generated view: member(s) {', '.join(still_colliding)} from "
+                    f"dataset '{neighbor}' collide with another dataset's even with a "
+                    f"prefix; Cube views keep one namespace, so rename one in the "
+                    f"Ossie model.")
+            claimed.update(n.lower() for n in names)
+            entries.append(entry)
             queue.append(neighbor)
     # A cube no relationship reaches cannot be addressed by a join path, so it is
     # simply not part of the generated view; it is still exported and joinable.

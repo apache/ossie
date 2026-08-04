@@ -410,13 +410,47 @@ uv sync
 uv run pytest
 ```
 
-Example-based unit tests per direction, CLI
-behavior tests, fixture round-trip tests (including the
-[TPC-DS model](../../examples/tpcds_semantic_model.yaml) the converter guide asks
-for as a baseline), core-spec JSON Schema validation of every emitted Ossie
-document, and Hypothesis property-based round-trip tests over generated Cube
-models -- which fall back to a seeded sweep when `hypothesis` is unavailable, so
-the properties still run.
+Example-based unit tests per direction, CLI behavior tests, fixture round-trip tests
+(including the [TPC-DS model](../../examples/tpcds_semantic_model.yaml) the converter
+guide asks for as a baseline), a **feature matrix** of one fixture per Cube data-model
+feature, core-spec validation of every emitted Ossie document, and Hypothesis
+property-based round-trip tests over generated Cube models -- which fall back to a
+seeded sweep when `hypothesis` is unavailable, so the properties still run.
+
+`tests/fixtures/features/` holds the feature matrix: `case`/`switch` dimensions,
+custom granularities, presentation and masking metadata, measure variants
+(`rolling_window`, `multi_stage`, `time_shift`, filters, `drill_members`),
+hierarchies, segments, pre-aggregations, access policies, view curation, `sub_query`
+dimensions and a computed primary key. Each fixture is a *valid Cube model* — verified
+by compiling it — and each is asked the same four questions: does it convert, is the
+Ossie spec-valid, does `Cube -> Ossie -> Cube` reproduce it, does Cube still compile
+the result. Adding a feature means adding a fixture; the four assertions come for
+free. The layout follows Cube's own suite, which keeps a fixture per feature.
+
+### Gates beyond the assertions
+
+Two checks the YAML assertions cannot replace, both wired into `pytest`:
+
+**The spec's own validator** runs over every Ossie document the suite produces —
+including the ones Hypothesis generates — not just the committed fixtures. It checks
+what a field-level assertion structurally cannot: unique names across the document,
+relationship references that resolve, and every expression parseable as SQL. It is
+imported in-process from `validation/validate.py`, so it costs nothing per document.
+
+**Cube itself** compiles every fixture and every converted model:
+
+```bash
+OSSIE_CUBE_REPO=~/src/cube uv run pytest          # runs the compile gate too
+OSSIE_CUBE_REPO=~/src/cube node tools/cube_compile.js model/cubes/*.yml
+```
+
+This is the only check that can answer "would Cube load this?", and it earns its
+keep: Cube compiles every string in a model as a Python f-string, resolves every
+member reference, and enforces one member namespace per cube — so a model can
+round-trip through Ossie byte-for-byte and still be one Cube refuses. Four defects
+were found by asking, including an exported model that failed to compile at all and a
+generated view whose `id` members collided. It needs a built Cube checkout and skips
+without one, so it gates local and release runs rather than CI.
 
 `tools/interop_matrix.py` checks the other half of the job — whether the Ossie this
 converter emits is any use to the other spokes. It is not part of `pytest`, because

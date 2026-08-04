@@ -24,6 +24,7 @@ and the member-reference translation between Cube's f-string SQL and the plain
 column references Ossie expressions use.
 """
 
+import datetime
 import json
 import re
 
@@ -241,6 +242,24 @@ def read_stash(obj):
     return {}
 
 
+def json_safe(value):
+    """Coerce YAML scalars JSON cannot hold into strings, recursively.
+
+    The stash is a JSON blob, and PyYAML resolves an unquoted `2022-01-01` to a
+    `datetime.date` -- which `json.dumps` refuses, so a Cube model with a date in an
+    access policy used to abort the conversion with a raw TypeError. Dates become ISO
+    strings, which is what Cube compares against anyway (every value in a policy
+    filter reaches SQL as text).
+    """
+    if isinstance(value, (datetime.date, datetime.datetime, datetime.time)):
+        return value.isoformat()
+    if isinstance(value, list):
+        return [json_safe(v) for v in value]
+    if isinstance(value, dict):
+        return {k: json_safe(v) for k, v in value.items()}
+    return value
+
+
 def write_stash(obj, data):
     """Attach a CUBE `custom_extensions` entry holding `data` (a dict).
 
@@ -250,7 +269,7 @@ def write_stash(obj, data):
     if not data:
         return
     payload = {"_v": STASH_VERSION}
-    payload.update(data)
+    payload.update(json_safe(data))
     blob = json.dumps(payload)
     exts = obj.setdefault("custom_extensions", [])
     for ext in exts:

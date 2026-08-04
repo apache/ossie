@@ -540,11 +540,28 @@ def _convert_cube(cname, cube, plain, extra_joins, extra_measures, issues):
         ds["unique_keys"] = [list(k) for k in parked["unique_keys"]]
 
     fields = []
-    for dim in _as_named_list(cube.get("dimensions"), f"{scope} dimensions"):
+    extra_dimensions = []
+    for index, dim in enumerate(
+            _as_named_list(cube.get("dimensions"), f"{scope} dimensions")):
         dname = require_str(dim, "name", f"{scope}: dimension")
+        if snake(dim.get("type") or "") == "switch":
+            # A `switch` dimension enumerates `values` and has no `sql` at all -- it
+            # exists so `case` measures can pivot on it. An Ossie field *requires* an
+            # expression, and there is no column to name, so emitting one would invent
+            # a column (and re-export would give Cube a `sql` it rejects alongside
+            # `values`). It rides on the stash with its position instead, the same
+            # protocol multi-stage measures and unconvertible joins use.
+            issues.add(IssueType.PARKED_IN_META, f"{cname}.{dname}",
+                       "switch dimension enumerates values rather than reading a "
+                       "column, and an Ossie field requires an expression; preserved "
+                       "in custom_extensions only")
+            extra_dimensions.append({"index": index, "dimension": dim})
+            continue
         fields.extend(_convert_dimension(cname, dname, dim, plain, issues))
     if fields:
         ds["fields"] = fields
+    if extra_dimensions:
+        stash["extra_dimensions"] = extra_dimensions
     primary_key = _primary_key_of(cube, cname)
     if primary_key:
         ds["primary_key"] = primary_key
@@ -973,13 +990,18 @@ class _MeasureResolver:
         if not mtype:
             raise ConversionError(f"measure '{scope}': missing required 'type'")
 
-        if measure.get("multi_stage"):
-            # group_by / reduce_by / time_shift / rank render as window functions
-            # over a grain other than the query's; Ossie has no form for that.
+        windowed = _windowing_key(measure)
+        if windowed:
+            # These all compute over a grain other than the query's -- a trailing
+            # range, a shifted period, an inner GROUP BY -- which renders as a window
+            # function. Ossie has no form for that, and emitting the bare aggregate
+            # would claim something else entirely: a `rolling_window` sum would read as
+            # a plain SUM, identical to an ordinary sum measure over the same column.
             self._issues.add(
                 IssueType.MULTI_STAGE_MEASURE_PARKED, scope,
-                f"multi_stage measure (type '{mtype}'); preserved in "
-                f"custom_extensions only")
+                f"'{windowed}' measure (type '{mtype}') is computed over a grain other "
+                f"than the query's, which an Ossie expression has no form for; "
+                f"preserved in custom_extensions only")
             return self._remember(key, None)
         sql = measure.get("sql")
         filter_exprs = [
@@ -1075,6 +1097,23 @@ class _MeasureResolver:
         if is_simple_identifier(translated):
             return f"{cname}.{translated}"
         return translated
+
+
+# Measure keys that make the value depend on a grain other than the query's. Cube
+# renders each as a window function, so none has a static Ossie expression.
+_WINDOWING_KEYS = (
+    "multi_stage", "rolling_window", "time_shift",
+    # The legacy spelling of the multi-stage directives.
+    "group_by", "reduce_by", "add_group_by",
+)
+
+
+def _windowing_key(measure):
+    """The first windowing key present on a measure, or None."""
+    for key in _WINDOWING_KEYS:
+        if measure.get(key):
+            return key
+    return None
 
 
 def _is_generated_part(measure):

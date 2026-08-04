@@ -208,6 +208,20 @@ def assert_ossie_roundtrip_is_lossless(files):
         "Ossie -> Cube -> Ossie changed the model")
 
 
+def assert_ossie_is_spec_valid(files):
+    """The Ossie a Cube model converts to satisfies the spec's own validator.
+
+    Structural, so a field-level assertion cannot replace it: a Cube cube with two
+    dimensions of one name used to produce two Ossie fields of one name, which every
+    per-field assertion happily passed.
+    """
+    from _cube_gate import assert_ossie_is_valid
+
+    ossie, _ = convert_cube_to_ossie(files)
+    assert_ossie_is_valid(ossie, "generated model")
+
+
 def check_model(files):
     assert_cube_roundtrip_is_lossless(files)
     assert_ossie_roundtrip_is_lossless(files)
+    assert_ossie_is_spec_valid(files)
