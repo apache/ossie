@@ -326,18 +326,29 @@ def build_ossie_model(rnd):
         fields_by_dataset[name] = fields
         lines.append(f"  - name: {name}")
         lines.append(f"    source: shop.public.{name}")
-        lines.append("    primary_key:")
-        lines.append("    - id")
+        # Either way of declaring the key. `unique_keys` is what a source format with no
+        # primary-key concept produces -- a Databricks metric view has none -- and export
+        # has to promote it, because Cube demands a key on any cube with a join. One of
+        # the two is always present: with neither, Cube rightly refuses the model.
+        if rnd.chance(0.7):
+            lines.append("    primary_key:")
+            lines.append("    - id")
+        else:
+            lines.append("    unique_keys:")
+            lines.append("    - - id")
         if rnd.chance(0.4):
             lines.append(f"    description: {_yaml_text(rnd.text())}")
         lines.append("    fields:")
-        for fname, expr, datatype in fields:
+        for fname, expr, datatype, dialect, has_role in fields:
             lines.append(f"    - name: {fname}")
             lines.append("      expression:")
             lines.append("        dialects:")
-            lines.append("        - dialect: ANSI_SQL")
+            lines.append(f"        - dialect: {dialect}")
             lines.append(f"          expression: {expr}")
             lines.append(f"      datatype: {datatype}")
+            if has_role:
+                lines.append("      dimension:")
+                lines.append("        is_time: false")
 
     # Every dimension dataset is reachable from the fact, so a generated view has an
     # unambiguous root and cross-dataset metrics have a join path.
@@ -355,20 +366,35 @@ def build_ossie_model(rnd):
     return "\n".join(lines) + "\n"
 
 
+# Dialects whose SQL Cube can pass to a data source. A converter commonly emits its own
+# and no ANSI -- everything from the Databricks converter is `DATABRICKS` -- so export has
+# to use it and record which one, or vendor SQL comes back labelled `ANSI_SQL`.
+OSSIE_DIALECTS = ["ANSI_SQL", "ANSI_SQL", "DATABRICKS", "SNOWFLAKE", "BIGQUERY"]
+
+
 def _ossie_fields(rnd, dataset, dim_names):
-    """(name, ANSI expression, datatype) for one dataset's fields."""
-    fields = [("id", "id", "Integer")]
+    """(name, expression, datatype, dialect, has_dimension_role) per field.
+
+    The last two are drawn rather than fixed, because both are places where export must
+    make a Cube-shaped choice and then be able to undo it. A field with no `dimension`
+    block is a *fact*; Cube has one kind of dimension, so export marks every member as one
+    and has to remember which were not.
+    """
+    def entry(name, expr, datatype):
+        return (name, expr, datatype, rnd.pick(OSSIE_DIALECTS), rnd.chance(0.5))
+
+    fields = [entry("id", "id", "Integer")]
     for d in dim_names:
-        fields.append((f"{d}_id", f"{d}_id", "Integer"))
+        fields.append(entry(f"{d}_id", f"{d}_id", "Integer"))
     for i in range(rnd.count(1, 2)):
         name = f"attr_{i}" if rnd.chance(0.7) else f"Attr{i}"
         if rnd.chance(0.3):
             # A computed field, which must be referenced as `{CUBE.member}` so Cube
             # inlines its expression rather than reading a column of that name.
-            fields.append((name, f"LOWER({name}_raw)", "String"))
+            fields.append(entry(name, f"LOWER({name}_raw)", "String"))
         else:
-            fields.append((name, name, "String"))
-    fields.append(("value", "value", "Decimal"))
+            fields.append(entry(name, name, "String"))
+    fields.append(entry("value", "value", "Decimal"))
     return fields
 
 
@@ -380,7 +406,7 @@ def _ossie_metrics(rnd, fact, dim_names, fields_by_dataset):
         entry = [f"  - name: {name}",
                  "    expression:",
                  "      dialects:",
-                 "      - dialect: ANSI_SQL",
+                 f"      - dialect: {rnd.pick(OSSIE_DIALECTS)}",
                  f"        expression: {expression}"]
         if rnd.chance(0.3):
             entry.insert(1, f"    description: {_yaml_text(rnd.text())}")
@@ -443,24 +469,34 @@ def check_ossie_model(ossie_yaml):
     original = load_yaml(ossie_yaml)["semantic_model"][0]
     returned = load_yaml(back)["semantic_model"][0]
 
-    # Metrics must come back with the same names and the same expressions: a composite
+    # Metrics must come back with the same names, expressions *and* dialects. A composite
     # one is split into hidden measures on the way out and inlined back on the way in,
-    # which is the most intricate path in the converter and had no generated coverage.
+    # which is the most intricate path in the converter.
     def metrics(model):
-        return {m["name"]: _normalize_refs(m["expression"]["dialects"][0]["expression"])
-                for m in (model.get("metrics") or [])}
+        return {m["name"]: _dialected(m) for m in (model.get("metrics") or [])}
 
     assert metrics(returned) == metrics(original), (
         "Ossie -> Cube -> Ossie changed the metrics")
 
-    # And the fields, which is where a computed expression has to survive as a member
-    # reference rather than being flattened to a column of the same name.
-    def fields(model):
-        return {ds["name"]: {f["name"]: _normalize_refs(
-                    f["expression"]["dialects"][0]["expression"])
-                for f in (ds.get("fields") or [])}
-                for ds in model["datasets"]}
+    # Fields likewise, plus the two things Cube forces a choice about: it has one kind of
+    # dimension, so a field with no role has to be recorded as having none; and it needs a
+    # key on any cube with a join, so a `unique_keys` promoted to supply one must not come
+    # back as a declared `primary_key`.
+    def datasets(model):
+        return {ds["name"]: {
+            "primary_key": ds.get("primary_key"),
+            "unique_keys": ds.get("unique_keys"),
+            "fields": {f["name"]: (_dialected(f), "dimension" in f,
+                                   f.get("datatype"))
+                       for f in (ds.get("fields") or [])},
+        } for ds in model["datasets"]}
 
-    assert fields(returned) == fields(original), (
-        "Ossie -> Cube -> Ossie changed the fields")
+    assert datasets(returned) == datasets(original), (
+        "Ossie -> Cube -> Ossie changed the datasets")
     return files
+
+
+def _dialected(entry):
+    """(normalized expression, dialect) for a field or metric."""
+    dialect = entry["expression"]["dialects"][0]
+    return _normalize_refs(dialect["expression"]), dialect["dialect"]

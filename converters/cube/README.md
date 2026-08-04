@@ -480,7 +480,14 @@ composite metrics (the decomposition path), mixed-case and quoted references, co
 fields, and join keys in all three reference forms. It asserts the generated document is
 spec-valid, that `Ossie -> Cube -> Ossie` preserves every metric and field expression
 modulo the identifier-case canonicalization, and -- when a Cube checkout is available --
-that Cube compiles the export. It found a defect on its first run: a generated view over
+that Cube compiles the export.
+
+It draws the shapes a converter's output has and hand-written test models do not: a
+warehouse dialect with no ANSI alternative, `unique_keys` in place of `primary_key`, and
+fields with no `dimension` role. Each is a place where export has to make a choice Cube
+requires and then be able to undo it, and the property compares dialects, keys and roles
+rather than expressions alone -- reverting any one of those three provenance records fails
+it. It found a defect on its first run: a generated view over
 an ordinary star schema, where the fact's `users_id` foreign key collides with `users.id`
 once prefixed.
 
