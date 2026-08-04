@@ -19,15 +19,10 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[dependency-groups]
-dev = [
-    "pytest>=8.0",
-]
-
 [project]
-name = "apache-ossie-wisdom"
+name = "apache-ossie"
 version = "0.2.0.dev0"
-description = "WisdomAI domain export <> Apache Ossie converter"
+description = "Python types for the Apache Ossie semantic model specification"
 authors = [{ name = "Apache Software Foundation", email = "dev@ossie.apache.org" }]
 requires-python = ">=3.11"
 readme = "README.md"
@@ -35,28 +30,50 @@ license = "Apache-2.0"
 keywords = [
     "Apache Ossie",
     "Ossie",
-    "WisdomAI"
 ]
 dependencies = [
-    "apache-ossie>=0.2.0.dev0",
+    "pydantic>=2.0",
     "PyYAML>=6.0",
 ]
-
-[project.scripts]
-ossie-wisdom = "ossie_wisdom.cli:main"
 
 [project.urls]
 homepage = "https://ossie.apache.org/"
 repository = "https://github.com/apache/ossie/"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ossie_wisdom"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
+packages = ["src/ossie"]
 
 [tool.uv]
 required-version = ">=0.9.0"
-default-groups = [
-    "dev"
+
+[tool.uv.sources]
+apache-ossie = { workspace = true }
+apache-ossie-dbt = { workspace = true }
+apache-ossie-gooddata = { workspace = true }
+apache-ossie-gsf = { workspace = true }
+apache-ossie-honeydew = { workspace = true }
+apache-ossie-omni = { workspace = true }
+apache-ossie-orionbelt = { workspace = true }
+apache-ossie-polaris = { workspace = true }
+apache-ossie-salesforce = { workspace = true }
+apache-ossie-snowflake = { workspace = true }
+apache-ossie-wisdom = { workspace = true }
+
+[tool.uv.workspace]
+members = [
+    ".",
+    "converters/databricks",
+    "converters/dbt",
+    "converters/gooddata",
+    "converters/gsf",
+    "converters/honeydew",
+    "converters/omni",
+    "converters/orionbelt",
+    "converters/polaris",
+    "converters/salesforce",
+    "converters/snowflake",
+    "converters/wisdom",
+]
+exclude = [
+    "cli"
 ]

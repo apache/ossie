@@ -19,10 +19,16 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "syrupy>=4.0",
+]
+
 [project]
-name = "apache-ossie"
+name = "apache-ossie-salesforce"
 version = "0.2.0.dev0"
-description = "Python types for the Apache Ossie semantic model specification"
+description = "Salesforce (MetricFlow Semantic Interface) <> Apache Ossie converter"
 authors = [{ name = "Apache Software Foundation", email = "dev@ossie.apache.org" }]
 requires-python = ">=3.11"
 readme = "README.md"
@@ -30,18 +36,28 @@ license = "Apache-2.0"
 keywords = [
     "Apache Ossie",
     "Ossie",
+    "salesforce"
 ]
 dependencies = [
-    "pydantic>=2.0",
-    "PyYAML>=6.0",
+    "apache-ossie>=0.2.0.dev0",
 ]
+
+[project.scripts]
+ossie-salesforce = "ossie_salesforce.cli:main"
 
 [project.urls]
 homepage = "https://ossie.apache.org/"
 repository = "https://github.com/apache/ossie/"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ossie"]
+packages = ["src/ossie_salesforce"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.uv]
 required-version = ">=0.9.0"
+default-groups = [
+    "dev"
+]
+
