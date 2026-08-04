@@ -412,7 +412,11 @@ def test_a_ratio_is_split_into_one_measure_per_aggregate():
     # stays correct when the cube is extended.
     assert orders["aov"] == {
         "name": "aov", "type": "number",
-        "sql": "{CUBE.aov_part_1} / {users.aov_part_2}"}
+        "sql": "{CUBE.aov_part_1} / {users.aov_part_2}",
+        # Marked as the public half of a decomposition, so a re-import rebuilds it from
+        # its expression rather than restoring sql that names parts the next export has
+        # not generated yet.
+        "meta": {"ossie": {"decomposed": True}}}
 
 
 def test_a_dotted_token_inside_a_string_literal_is_left_alone():
@@ -930,7 +934,7 @@ def test_a_model_with_only_a_warehouse_dialect_still_converts():
     assert [d["name"] for d in cube["dimensions"]] == ["o_orderkey", "o_orderdate"]
     assert [m["name"] for m in cube["measures"]] == ["total_revenue", "order_count"]
     # Reported, because Cube will pass that SQL to whatever the data source is.
-    assert any("only dialect on offer" in i.detail
+    assert any("first warehouse dialect on offer" in i.detail
                for i in issues.of_type(IssueType.APPROXIMATED))
 
 

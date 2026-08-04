@@ -589,6 +589,20 @@ def match_keys(identifier):
     return (content, content.upper())
 
 
+def normalized_expression(expr):
+    """`expr` with every `dataset.member` reference in its normalized form.
+
+    For comparing two expressions that mean the same thing. Ossie identifiers are
+    case-insensitive, so `COUNT(DISTINCT DIM_0.ID)` and `COUNT(DISTINCT dim_0.id)` are one
+    expression -- and comparing them exactly made the primary-key count go unrecognized
+    whenever the metric spelled the key in another case.
+    """
+    return DOTTED_REF_RE.sub(
+        lambda m: ".".join(normalize_identifier(part)
+                           for part in split_dotted_ref(m.group(0))),
+        str(expr))
+
+
 def datasets_in_expression(expr, prepared):
     """Dataset names referenced in `expr`, resolved against a prepared lookup map.
 

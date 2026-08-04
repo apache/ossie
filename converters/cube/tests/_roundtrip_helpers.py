@@ -510,7 +510,20 @@ def check_ossie_model(ossie_yaml):
 
     assert datasets(returned) == datasets(original), (
         "Ossie -> Cube -> Ossie changed the datasets")
+
+    # A second cycle has to produce the same Cube model as the first. Comparing only the
+    # Ossie ends misses a whole class: a record meant to be read one way that the next
+    # export reads another. `primary_key` recorded as *columns* was inferred back as
+    # *dimension names*, which moved Cube's deduplication key onto a computed dimension --
+    # invisible in the Ossie comparison, and a different number out of Cube.
+    again, _ = convert_ossie_to_cube(back)
+    assert load_yaml_files(again) == load_yaml_files(files), (
+        "Ossie -> Cube -> Ossie -> Cube did not reproduce the first Cube model")
     return files
+
+
+def load_yaml_files(files):
+    return {name: load_yaml(text, name) for name, text in files.items()}
 
 
 def _dialected(entry):

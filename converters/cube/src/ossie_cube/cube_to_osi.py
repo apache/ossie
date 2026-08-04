@@ -587,9 +587,15 @@ def _convert_cube(cname, cube, plain, extra_joins, extra_measures, issues):
         # document afterwards -- a hand-authored model may name a real column that a
         # computed field happens to share a name with -- so it is recorded here rather
         # than guessed on the way back.
-        computed = [n for n in primary_key if n not in plain]
-        if computed:
-            stash["computed_primary_key"] = computed
+        #
+        # Not inferred when `meta.ossie.primary_key` supplied the key: those entries are
+        # Ossie *columns* by construction, and reading them as dimension names moved the
+        # key onto a computed dimension of the same name on the next cycle -- changing what
+        # Cube deduplicates on, and so the counts it returns.
+        if not parked.get("primary_key"):
+            computed = [n for n in primary_key if n not in plain]
+            if computed:
+                stash["computed_primary_key"] = computed
     if extra_joins:
         stash["extra_joins"] = extra_joins
     if extra_measures:
@@ -1426,6 +1432,13 @@ def _convert_measure(cname, mname, metric_name, measure, context):
         and mtype not in CALCULATED_MEASURE_TYPES
         and not measure.get("filters")
     )
+    decomposed = bool(parked_of(measure.get("meta")).get("decomposed"))
+    if decomposed:
+        # The public half of a decomposition. Its expression is the whole metric -- the
+        # references to its hidden parts inline back into it -- so export can rebuild both
+        # halves from that. Stashing the measure verbatim instead kept references to parts
+        # the next export does not generate, and Cube refused the result.
+        reconstructible = True
 
     # Fan-out: a non-idempotent aggregate over a dataset the graph can multiply. Cube
     # fixes this at query time by deduplicating on the primary key; a static expression
@@ -1471,6 +1484,12 @@ def _convert_measure(cname, mname, metric_name, measure, context):
             snake(k): v for k, v in measure.items()
             if snake(k) not in ("description", "meta")
         }
+    elif decomposed:
+        # Nothing about the Cube spelling is worth keeping: its references point at hidden
+        # parts, and the next export regenerates both halves from the expression. Keeping
+        # the sql suppressed that regeneration, so the parts were never rebuilt and the
+        # measure referenced members that no longer existed.
+        pass
     elif sql is not None and not sql_is_reversible(sql, plain, cname):
         # Only a reference export cannot regenerate needs the original spelling: a
         # non-plain member (whose own SQL is inlined) or a cross-cube reference

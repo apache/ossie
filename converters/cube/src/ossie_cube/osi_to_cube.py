@@ -61,6 +61,7 @@ from ._common import (
     DOTTED_REF_RE,
     lookup_map,
     resolve_identifier,
+    normalized_expression,
     quoted_runs,
     split_dotted_ref,
     require_str,
@@ -582,7 +583,8 @@ def _report_dialect_fallback(issues, scope, used, preferred):
     if used in (None, DIALECT_ANSI, preferred):
         return
     issues.add(IssueType.APPROXIMATED, scope,
-               f"no ANSI_SQL expression; used the only dialect on offer ('{used}'). "
+               f"no ANSI_SQL expression; used the first warehouse dialect on offer "
+               f"('{used}'). "
                f"Cube passes SQL to the data source, so this is correct where the "
                f"model reads that warehouse -- pass --dialect {used} to say so.")
 
@@ -1045,7 +1047,8 @@ def _build_measures(model, cube_names, plan, tables, datasets, relationships,
         else:
             measure = _measure_from_expression(
                 expr, target, mname, stash, plan, tables)
-        _apply_measure_metadata(metric, measure, stash, used)
+        _apply_measure_metadata(metric, measure, stash, used,
+                                decomposed=len(spans) > 1)
         _place(measures_by_cube, target, measure, name)
     return measures_by_cube
 
@@ -1168,7 +1171,8 @@ def _measure_from_expression(expr, target, mname, stash, plan, tables):
         if func == "COUNT" and distinct:
             inner = distinct.group(1).strip()
             key = list((plan.get(target).primary_key if target in plan else ()))
-            if key and inner == primary_key_operand(target, key):
+            if key and (normalized_expression(inner)
+                        == normalized_expression(primary_key_operand(target, key))):
                 measure["type"] = "count"
                 return measure
             func = "COUNT_DISTINCT"
@@ -1195,7 +1199,8 @@ def _measure_from_expression(expr, target, mname, stash, plan, tables):
     return measure
 
 
-def _apply_measure_metadata(metric, measure, stash, used_dialect=None):
+def _apply_measure_metadata(metric, measure, stash, used_dialect=None,
+                            decomposed=False):
     if stash.get("title"):
         # Not escaped: this came out of the stash, so it is already whatever Cube
         # needs it to be. Escaping it again turned a valid `Revenue \{USD\}` into
@@ -1214,6 +1219,12 @@ def _apply_measure_metadata(metric, measure, stash, used_dialect=None):
     if datatype and datatype != AGG_TO_RESULT_DATATYPE.get(measure.get("type")):
         parked["datatype"] = datatype
     _park_expression(parked, metric.get("expression"), used_dialect)
+    if decomposed:
+        # The public half of a decomposition. Recorded so a re-import rebuilds it from its
+        # expression instead of restoring it verbatim: restoring kept its references to
+        # hidden parts the next export no longer generates, and Cube then refused the
+        # model -- "fact.crossing_part_1 cannot be resolved".
+        parked["decomposed"] = True
     meta = _build_meta(metric.get("ai_context"), stash.get("meta"), parked)
     if meta:
         measure["meta"] = meta

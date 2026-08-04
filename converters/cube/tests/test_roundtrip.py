@@ -36,6 +36,7 @@ from _util import (REPO_ROOT, canon, load_fixture, load_fixture_dir, parse,
                    parse_files)
 
 from ossie_cube import convert_cube_to_ossie, convert_ossie_to_cube
+from ossie_cube._common import OSSIE_VERSION
 
 FIXTURES = ["fixtureA_cube", "tpcds_cube"]
 
@@ -231,3 +232,36 @@ def test_a_model_from_another_converter_survives_the_round_trip_exactly():
         }
 
     assert shape(after) == shape(before)
+
+
+@cube_gate
+def test_two_export_cycles_produce_the_same_cube_model():
+    """`Ossie -> Cube -> Ossie -> Cube`, on the collision that made the first differ from
+    the second: a key column `id` alongside a computed field also named `id`.
+
+    Comparing only the Ossie ends cannot see this class. A record meant to be read one way
+    that the next export reads another leaves both Ossie documents identical while the Cube
+    model changes -- here the key moved off the column and onto `LOWER(email)`, so Cube
+    deduplicated on a different value and returned different counts.
+    """
+    ossie = (
+        f"version: {OSSIE_VERSION}\n"
+        "semantic_model:\n"
+        "- name: shop\n"
+        "  datasets:\n"
+        "  - name: orders\n"
+        "    source: shop.public.orders\n"
+        "    primary_key:\n    - id\n"
+        "    fields:\n"
+        "    - name: id\n      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: LOWER(email)\n"
+        "      datatype: String\n"
+    )
+    first, _ = convert_ossie_to_cube(ossie)
+    second, _ = convert_ossie_to_cube(convert_cube_to_ossie(first)[0])
+    assert parse_files(second) == parse_files(first)
+
+    keys = [d for d in parse_files(first)["model/cubes/orders.yml"]["cubes"][0][
+        "dimensions"] if d.get("primary_key")]
+    assert [(d["name"], d["sql"]) for d in keys] == [("id_pk", "id")]
+    assert_cube_compiles(second, "second export cycle")
