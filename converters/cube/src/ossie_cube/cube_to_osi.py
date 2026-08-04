@@ -671,13 +671,18 @@ def _finish_dimension_field(cname, dname, dim, field, stash, issues):
             f"cube '{cname}': dimension '{dname}' has unknown type '{dtype}'")
     # A precise datatype parked by a previous export wins over the default the Cube
     # type maps to, since Cube itself cannot hold the distinction.
-    parked_dt = parked_of(dim.get("meta")).get("datatype")
-    field["datatype"] = parked_dt or datatype
+    parked = parked_of(dim.get("meta"))
+    # A field that carried no datatype keeps carrying none: Ossie says not to infer a
+    # scalar type from `is_time` alone, so emitting DateTime for a `type: time`
+    # dimension would assert something the model never said.
+    if not parked.get("untyped"):
+        field["datatype"] = parked.get("datatype") or datatype
     # `type` is normally regenerated from the datatype, so it costs no stash entry.
     # A `switch` dimension is the exception: it maps to String like an ordinary one,
     # and String maps back to `string`, so the type has to be recorded or the
     # dimension comes back as a plain string one carrying an orphaned `case` block.
-    if DATATYPE_TO_DIM_TYPE.get(field["datatype"]) != dtype:
+    # With no datatype there is nothing to regenerate from, so the type is recorded.
+    if DATATYPE_TO_DIM_TYPE.get(field.get("datatype")) != dtype:
         stash["dim_type"] = dtype
     if dtype == "time":
         field["dimension"] = {"is_time": True}
@@ -818,7 +823,7 @@ def _convert_joins(cubes, skipped_files, issues):
                     f"{what}: unknown relationship '{join['relationship']}'")
             sql = require_str(join, "sql", what)
 
-            pairs = _decompose_join_sql(sql, cname, target, what, issues)
+            pairs = _decompose_join_sql(sql, cname, target, what, cubes, issues)
             if pairs is None:
                 extra_joins.setdefault(cname, []).append(
                     {"index": index, "join": join})
@@ -875,7 +880,7 @@ def _convert_joins(cubes, skipped_files, issues):
     return relationships, extra_joins
 
 
-def _decompose_join_sql(sql, own_cube, target, what, issues):
+def _decompose_join_sql(sql, own_cube, target, what, cubes, issues):
     """Split a Cube join `sql` into (own_column, target_column) pairs.
 
     Only an AND-chain of equalities between one own-cube reference and one
@@ -891,12 +896,14 @@ def _decompose_join_sql(sql, own_cube, target, what, issues):
                        f"join clause '{clause.strip()}' is not a single equality; "
                        f"preserved in custom_extensions only")
             return None
-        left = _ref_target(sides[0], own_cube, target)
-        right = _ref_target(sides[1], own_cube, target)
+        left = _ref_target(sides[0], own_cube, target, cubes)
+        right = _ref_target(sides[1], own_cube, target, cubes)
         if left is None or right is None:
             issues.add(IssueType.PARKED_IN_META, what,
-                       f"join clause '{clause.strip()}' is not between two member "
-                       f"references; preserved in custom_extensions only")
+                       f"join clause '{clause.strip()}' does not resolve to two "
+                       f"physical columns -- Ossie relationship columns are columns, so "
+                       f"a member reading an expression has none to name; preserved in "
+                       f"custom_extensions only")
             return None
         (lcube, lcol), (rcube, rcol) = left, right
         if lcube == own_cube and rcube == target:
@@ -911,18 +918,74 @@ def _decompose_join_sql(sql, own_cube, target, what, issues):
     return pairs or None
 
 
-def _ref_target(side, own_cube, target):
-    """Resolve one side of a join equality to (cube_name, column), or None."""
-    translated, _ = cube_sql_to_ossie(side, own_cube)
-    translated = translated.strip()
-    if is_simple_identifier(translated):
-        # A bare name came from `{CUBE}.col`, `{CUBE.col}`, or `{col}` -- all of
-        # which address the cube the join is declared on.
-        return (own_cube, translated)
-    m = DOTTED_REF_RE.fullmatch(translated)
-    if m and m.group(1) in (own_cube, target):
-        return (m.group(1), m.group(2))
+_JOIN_SIDE_RE = re.compile(
+    r"^\s*\$?\{\s*([^{}]*?)\s*\}\s*(?:\.\s*([A-Za-z_][A-Za-z0-9_]*))?\s*$")
+
+
+def _column_of(cubes, cname, member):
+    """The physical column a dimension reads, or None when it reads more than one.
+
+    Cube's "no `sql` means the same-named column" rule applies, and a dimension whose
+    sql is a single column resolves to that column -- so `user_key` with `sql: user_id`
+    resolves to `user_id`. A computed dimension (`CONCAT(...)`), a geo one, or an
+    unknown name has no single column and returns None.
+    """
+    for dim in _as_named_list((cubes.get(cname) or {}).get("dimensions"),
+                              f"cube '{cname}' dimensions"):
+        if dim.get("name") != member:
+            continue
+        if snake(dim.get("type") or "") == "geo":
+            return None
+        sql = dim.get("sql")
+        if sql is None:
+            return member
+        translated, _ = cube_sql_to_ossie(sql, cname)
+        translated = translated.strip()
+        return translated if is_simple_identifier(translated) else None
     return None
+
+
+def _ref_target(side, own_cube, target, cubes):
+    """Resolve one side of a join equality to (cube_name, physical column), or None.
+
+    Ossie's `from_columns`/`to_columns` name *columns*, so the two Cube reference forms
+    cannot be treated alike. `{CUBE}.user_id` is a raw column and passes straight
+    through; `{CUBE.user_key}` names a *member*, whose own sql is what Cube joins on --
+    so it has to be resolved to the column that member reads. A member that reads an
+    expression rather than a column has no Ossie column to name at all, and returning
+    None here parks the whole join instead of inventing one.
+    """
+    text = str(side).strip()
+    if is_simple_identifier(text):
+        # Bare SQL, no reference: a column of the cube the join is declared on.
+        return (own_cube, text)
+    m = _JOIN_SIDE_RE.match(text)
+    if not m:
+        return None
+    body, suffix = m.group(1).strip(), m.group(2)
+    head, _, rest = body.partition(".")
+    aliases = {"CUBE", "TABLE", own_cube}
+
+    if suffix:
+        # `{X}.column` -- an alias plus a raw column.
+        if rest or head not in aliases | {target}:
+            return None
+        cube = own_cube if head in aliases else target
+        return (cube, suffix)
+
+    if rest:
+        # `{X.member}` -- a member reference.
+        cube = own_cube if head in aliases else head if head == target else None
+        if cube is None:
+            return None
+        column = _column_of(cubes, cube, rest)
+        return (cube, column) if column else None
+
+    # `{member}` -- an unqualified member of the declaring cube.
+    if body in aliases:
+        return None  # a bare alias with no column means nothing here
+    column = _column_of(cubes, own_cube, body)
+    return (own_cube, column) if column else None
 
 
 def _rebuild_join_sql(target, pairs):

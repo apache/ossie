@@ -568,7 +568,8 @@ def test_join_clause_reaching_an_unrelated_cube_is_preserved():
     ))
     ossie, back, issues = _roundtrip(files)
     assert "relationships" not in model_of(ossie)
-    assert any("not between two member references" in i.detail for i in issues)
+    assert any("does not resolve to two physical columns" in i.detail
+               for i in issues)
     assert parse_files(back) == parse_files(files)
 
 
@@ -1728,3 +1729,197 @@ def test_a_case_label_is_unescaped_on_the_way_into_an_expression():
     _, back, _ = _roundtrip(files)
     dim = by_name(parse(back["model/cubes/products.yml"])["cubes"][0]["dimensions"])
     assert dim["size"]["case"]["when"][0]["label"] == "large \\{special\\}"
+
+
+# --- review round four -----------------------------------------------------------
+
+_JOIN_MEMBERS = (
+    "cubes:\n"
+    "  - name: orders\n"
+    "    sql_table: a.b.orders\n"
+    "    joins:\n"
+    "      - name: users\n"
+    "        sql: \"{JOINSQL}\"\n"
+    "        relationship: many_to_one\n"
+    "    dimensions:\n"
+    "      - name: id\n        sql: id\n        type: number\n        primary_key: true\n"
+    "      - name: user_key\n        sql: user_id\n        type: number\n"
+    "      - name: tenant_user_id\n"
+    "        sql: \"CONCAT({CUBE}.tenant, {CUBE}.user_id)\"\n        type: string\n"
+    "  - name: users\n"
+    "    sql_table: a.b.users\n"
+    "    dimensions:\n"
+    "      - name: id\n        sql: id\n        type: number\n        primary_key: true\n"
+)
+
+
+def _join_model(join_sql):
+    return _files(m=_JOIN_MEMBERS.replace("{JOINSQL}", join_sql))
+
+
+@pytest.mark.parametrize("join_sql,expected", [
+    # A raw column passes straight through.
+    ("{CUBE}.user_id = {users}.id", ["user_id"]),
+    # A *member* reference names a dimension, not a column -- so it resolves to the
+    # column that dimension reads. `user_key` reads `user_id`.
+    ("{CUBE.user_key} = {users.id}", ["user_id"]),
+    ("{user_key} = {users.id}", ["user_id"]),
+])
+def test_a_join_member_resolves_to_the_column_it_reads(join_sql, expected):
+    """Ossie's from_columns/to_columns are physical columns. Emitting the *member* name
+    gave downstream converters a column that need not exist -- `user_key` is a dimension,
+    the column is `user_id`."""
+    ossie, back, _ = _roundtrip(_join_model(join_sql))
+    rel = model_of(ossie)["relationships"][0]
+    assert rel["from_columns"] == expected
+    assert rel["to_columns"] == ["id"]
+    # The original spelling is stashed, so Cube gets its own form back.
+    assert parse_files(back) == parse_files(_join_model(join_sql))
+
+
+def test_a_join_on_a_computed_member_is_parked_whole():
+    """`tenant_user_id` is `CONCAT(...)`, so there is no column for Ossie to name. The
+    join has no Ossie form and is preserved rather than described wrongly."""
+    ossie, back, issues = _roundtrip(
+        _join_model("{CUBE.tenant_user_id} = {users.id}"))
+    assert "relationships" not in model_of(ossie)
+    assert any("does not resolve to two physical columns" in i.detail
+               for i in issues)
+    assert parse_files(back) == parse_files(
+        _join_model("{CUBE.tenant_user_id} = {users.id}"))
+
+
+@pytest.mark.parametrize("reference", [
+    # Ossie regular identifiers are case-insensitive (core-spec: "Regular identifiers
+    # are upper cased"), so all of these address the same computed field.
+    "orders.amount",
+    "orders.AMOUNT",
+    "ORDERS.amount",
+    "Orders.Amount",
+])
+def test_identifiers_match_case_insensitively(reference):
+    """Matching exactly emitted `{CUBE}.AMOUNT` -- a raw column that bypasses the
+    member's own expression, so the metric silently summed the wrong thing."""
+    ossie = (
+        "version: 0.2.0.dev0\n"
+        "semantic_model:\n"
+        "- name: shop\n"
+        "  datasets:\n"
+        "  - name: orders\n"
+        "    source: a.b.orders\n"
+        "    fields:\n"
+        "    - name: amount\n"
+        "      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: amount * 2\n"
+        "      datatype: Decimal\n"
+        "  metrics:\n"
+        "  - name: total\n"
+        "    expression:\n      dialects:\n"
+        f"      - dialect: ANSI_SQL\n        expression: SUM({reference})\n"
+    )
+    files, _ = convert_ossie_to_cube(ossie)
+    measure = parse(files["model/cubes/orders.yml"])["cubes"][0]["measures"][0]
+    # The member reference, which inlines `amount * 2` -- not `{CUBE}.AMOUNT`, a raw
+    # column that would bypass the member's expression and sum the wrong thing.
+    assert measure == {"name": "total", "sql": "{CUBE.amount}", "type": "sum"}
+
+
+def test_a_quoted_identifier_keeps_its_exact_case():
+    """The spec's normalization strips quotes without upper-casing, so a quoted
+    identifier stays an exact match -- `"Amount"` is not the field `amount`."""
+    from ossie_cube._common import normalize_identifier
+
+    assert normalize_identifier("amount") == "AMOUNT"
+    assert normalize_identifier('"Amount"') == "Amount"
+    assert normalize_identifier('"a""b"') == 'a"b'
+
+
+@pytest.mark.parametrize("order", [
+    ["ratio", "ratio_part_1"],
+    ["ratio_part_1", "ratio"],
+])
+def test_generated_part_names_do_not_depend_on_metric_order(order):
+    """Allocating against only the measures built *so far* made this order-dependent:
+    the composite metric first took `ratio_part_1` and the later metric of that name
+    then collided, while the reverse order worked."""
+    def metric(name):
+        expr = ("SUM(orders.amount) / COUNT(DISTINCT orders.id)"
+                if name == "ratio" else "SUM(orders.amount)")
+        return (f"  - name: {name}\n    expression:\n      dialects:\n"
+                f"      - dialect: ANSI_SQL\n        expression: {expr}\n")
+
+    ossie = (
+        "version: 0.2.0.dev0\n"
+        "semantic_model:\n"
+        "- name: shop\n"
+        "  datasets:\n"
+        "  - name: orders\n"
+        "    source: a.b.orders\n"
+        "    primary_key:\n    - id\n"
+        "    fields:\n"
+        "    - name: id\n      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: id\n"
+        "      datatype: Integer\n"
+        "    - name: amount\n      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: amount\n"
+        "      datatype: Decimal\n"
+        "  metrics:\n" + "".join(metric(n) for n in order)
+    )
+    files, _ = convert_ossie_to_cube(ossie)
+    names = [m["name"] for m in
+             parse(files["model/cubes/orders.yml"])["cubes"][0]["measures"]]
+    # Same generated names either way, and the user's own metric keeps its name.
+    assert sorted(names) == ["ratio", "ratio_part_1", "ratio_part_2", "ratio_part_3"]
+
+
+def test_a_stashed_extra_file_may_not_overwrite_generated_output():
+    """`extra_files` restore verbatim, so one landing on a generated path replaced a
+    converted cube with arbitrary text and reported nothing."""
+    import json
+
+    stash = {"_v": 1, "views": {},
+             "extra_files": {"model/cubes/orders.yml": "# hijacked\n"}}
+    ossie = (
+        "version: 0.2.0.dev0\n"
+        "semantic_model:\n"
+        "- name: shop\n"
+        "  datasets:\n"
+        "  - name: orders\n"
+        "    source: a.b.orders\n"
+        "    fields:\n"
+        "    - name: id\n      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: id\n"
+        "      datatype: Integer\n"
+        "  custom_extensions:\n"
+        "  - vendor_name: CUBE\n"
+        f"    data: '{json.dumps(stash)}'\n"
+    )
+    with pytest.raises(ConversionError, match="would overwrite the generated"):
+        convert_ossie_to_cube(ossie)
+
+
+def test_is_time_without_a_datatype_does_not_acquire_one():
+    """Ossie says not to infer a scalar type from `is_time` alone, so a field that
+    carried no datatype must not come back asserting DateTime."""
+    ossie = (
+        "version: 0.2.0.dev0\n"
+        "semantic_model:\n"
+        "- name: shop\n"
+        "  datasets:\n"
+        "  - name: events\n"
+        "    source: a.b.events\n"
+        "    fields:\n"
+        "    - name: occurred_at\n"
+        "      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: occurred_at\n"
+        "      dimension:\n        is_time: true\n"
+    )
+    files, _ = convert_ossie_to_cube(ossie)
+    dim = parse(files["model/cubes/events.yml"])["cubes"][0]["dimensions"][0]
+    assert dim["type"] == "time"
+    assert dim["meta"]["ossie"]["untyped"] is True
+    ossie2, _ = convert_cube_to_ossie(files)
+    field = by_name(by_name(model_of(ossie2)["datasets"])["events"]["fields"])[
+        "occurred_at"]
+    assert "datatype" not in field
+    assert field["dimension"]["is_time"] is True

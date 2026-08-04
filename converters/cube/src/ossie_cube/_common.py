@@ -500,6 +500,29 @@ def sub_outside_quotes(sql, transform):
                    for text, quoted in quoted_runs(sql))
 
 
+def normalize_identifier(name):
+    """An Ossie identifier in the spec's *normalized* form, for matching.
+
+    From core-spec/expression_language.md: "Regular identifiers (unquoted) should be
+    case insensitive [...] Regular identifiers are upper cased; quoted identifiers have
+    their quotes stripped". So `orders.AMOUNT` addresses the field `amount`, and
+    matching them exactly -- as this converter used to -- emitted `{CUBE}.AMOUNT`, a raw
+    column that bypasses the member's own expression entirely.
+
+    Cube identifiers, by contrast, *are* case-sensitive, so the canonical Cube spelling
+    is what gets emitted; this form is only used to find it.
+    """
+    text = str(name).strip()
+    if len(text) >= 2 and text.startswith('"') and text.endswith('"'):
+        return text[1:-1].replace('""', '"')
+    return text.upper()
+
+
+def canonical_map(names):
+    """{normalized identifier: the name as spelled}, for case-insensitive lookup."""
+    return {normalize_identifier(n): n for n in names}
+
+
 def referenced_datasets(expr, known):
     """The dataset names an Ossie expression references, ignoring quoted text.
 
@@ -508,12 +531,15 @@ def referenced_datasets(expr, known):
     `SUM(orders.amount) || ' per users.id unit'` reads as a two-dataset metric and
     gets attributed to the base cube rather than to `orders`.
     """
+    canonical = canonical_map(known)
     found = set()
     for text, quoted in quoted_runs(expr):
         if quoted:
             continue
-        found |= {m.group(1) for m in DOTTED_REF_RE.finditer(text)
-                  if m.group(1) in known}
+        for match in DOTTED_REF_RE.finditer(text):
+            name = canonical.get(normalize_identifier(match.group(1)))
+            if name is not None:
+                found.add(name)
     return found
 
 
@@ -638,22 +664,33 @@ def ossie_expr_to_cube_sql(expr, own_cube, own_members=(), cube_names=(),
     own text with a column reference.
     """
     escaped = str(expr).replace("{", "\\{").replace("}", "\\}")
-    known = set(cube_names)
-    members = set(own_members)
-    inline = inline_sql or {}
+    known = canonical_map(cube_names)
+    members = canonical_map(own_members)
+    own_norm = normalize_identifier(own_cube) if own_cube else None
+    inline_sql_by_norm = {
+        normalize_identifier(cube): {normalize_identifier(f): sql
+                                     for f, sql in fields.items()}
+        for cube, fields in (inline_sql or {}).items()
+    }
 
     def repl(m):
         head, name = m.group(1), m.group(2)
-        substitute = (inline.get(head) or {}).get(name)
+        # Ossie regular identifiers are case-insensitive, so the reference is matched
+        # in normalized form; what is *emitted* is the canonical Cube spelling, since
+        # Cube's own member lookup is case-sensitive.
+        head_n, name_n = normalize_identifier(head), normalize_identifier(name)
+        substitute = (inline_sql_by_norm.get(head_n) or {}).get(name_n)
         if substitute is not None:
             # Already-Cube SQL, so it bypasses the escaping above; `{CUBE}` inside
             # it means `head`, which only stays true while head is the own cube.
-            return (str(substitute) if head == own_cube
-                    else requalify_self_refs(substitute, head))
-        if head == own_cube:
-            return "{CUBE." + name + "}" if name in members else "{CUBE}." + name
-        if head in known:
-            return "{" + head + "." + name + "}"
+            cube = known.get(head_n, head)
+            return (str(substitute) if head_n == own_norm
+                    else requalify_self_refs(substitute, cube))
+        if head_n == own_norm:
+            return ("{CUBE." + members[name_n] + "}" if name_n in members
+                    else "{CUBE}." + name)
+        if head_n in known:
+            return "{" + known[head_n] + "." + name + "}"
         # Not a dataset in this model -- a genuine schema-qualified table
         # reference or an unrelated dotted token. Leave it alone.
         return m.group(0)

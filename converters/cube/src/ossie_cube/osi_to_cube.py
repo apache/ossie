@@ -56,6 +56,8 @@ from ._common import (
     primary_key_operand,
     read_stash,
     referenced_datasets,
+    canonical_map,
+    normalize_identifier,
     quoted_runs,
     require_str,
     safe_relative_path,
@@ -205,7 +207,14 @@ def _convert_model(model, dialect, base_cube, issues):
     # Files a prior import could not convert (`.js` models, Jinja-templated YAML,
     # non-model YAML) restore verbatim.
     for fname, text in (model_stash.get("extra_files") or {}).items():
-        files[safe_relative_path(fname, "stashed extra file")] = text
+        path = safe_relative_path(fname, "stashed extra file")
+        if path in files:
+            # These restore verbatim, so letting one land on a generated path would
+            # replace a converted cube or view with arbitrary text and report nothing.
+            raise ConversionError(
+                f"stashed extra file '{path}' would overwrite the generated model "
+                f"file of the same name; rename the dataset or the stashed file.")
+        files[path] = text
     return files, issues
 
 
@@ -577,6 +586,11 @@ def _build_dimensions(ds, cname, dim_names, inline_sql, ref_members, dialect,
         dt = field.get("datatype")
         if dt and DEFAULT_DATATYPE_FOR_CUBE_TYPE.get(dim["type"]) != dt:
             parked["datatype"] = dt
+        elif not dt:
+            # Ossie says not to infer a scalar type from `is_time` alone, so the
+            # absence is recorded: Cube's `type: time` would otherwise come back as
+            # `datatype: DateTime`, asserting something the model never said.
+            parked["untyped"] = True
         # Keys the exporter consumes itself rather than writing onto the dimension:
         # `sql`/`type` are an older stash shape, `dim_type` supplies the Cube type,
         # and `geo` was used to merge the halves back together.
@@ -768,6 +782,23 @@ def _build_measures(model, cube_names, members_by_cube, all_members_by_cube,
                 name, datasets, relationships, base_cube)])
         return base_cache[0]
 
+    # Every measure name the metrics will produce, reserved up front. Allocating part
+    # names against only the measures built *so far* made the conversion order-
+    # dependent: a composite `ratio` ahead of a metric named `ratio_part_1` took that
+    # name first and the later metric then collided, while the reverse order worked.
+    reserved = set()
+    for metric in (model.get("metrics") or []):
+        mstash = read_stash(metric)
+        raw = metric.get("name")
+        if not isinstance(raw, str):
+            continue
+        reserved.add((mstash.get("name")
+                      or sanitize_name(raw, "metric", set())).lower())
+        if isinstance(mstash.get("measure"), dict):
+            stashed_name = mstash["measure"].get("name")
+            if stashed_name:
+                reserved.add(str(stashed_name).lower())
+
     measures_by_cube = {}
     for metric in (model.get("metrics") or []):
         mname_raw = require_str(metric, "name", "metric")
@@ -831,7 +862,7 @@ def _build_measures(model, cube_names, members_by_cube, all_members_by_cube,
             public_sql = _decompose_measure(
                 expr, spans, mname, target, measures_by_cube, members_by_cube,
                 all_members_by_cube, inline_sql_by_cube, pk_by_cube, sanitized,
-                name)
+                name, reserved)
             measure = {"name": mname, "sql": public_sql, "type": "number"}
         else:
             measure = _measure_from_expression(
@@ -845,20 +876,29 @@ def _build_measures(model, cube_names, members_by_cube, all_members_by_cube,
 def _references_a_dropped_field(expr, sanitized, cube_names, dropped_by_cube):
     """`dataset.field` references in `expr` naming a field that becomes no dimension."""
     by_cube_name = {cname: ds_name for ds_name, cname in cube_names.items()}
+    canonical = canonical_map(sanitized)
+    dropped_norm = {
+        cname: canonical_map(fields)
+        for cname, fields in dropped_by_cube.items()
+    }
     missing = set()
     for text, quoted in quoted_runs(expr):
         if quoted:
             continue
         for match in DOTTED_REF_RE.finditer(text):
-            cname, fname = match.group(1), match.group(2)
-            if cname in sanitized and fname in (dropped_by_cube.get(cname) or ()):
+            cname = canonical.get(normalize_identifier(match.group(1)))
+            if cname is None:
+                continue
+            fname = (dropped_norm.get(cname) or {}).get(
+                normalize_identifier(match.group(2)))
+            if fname is not None:
                 missing.add(f"'{by_cube_name.get(cname, cname)}.{fname}'")
     return missing
 
 
 def _decompose_measure(expr, spans, mname, fallback, measures_by_cube,
                        members_by_cube, all_members_by_cube, inline_sql_by_cube,
-                       pk_by_cube, sanitized, model_name):
+                       pk_by_cube, sanitized, model_name, reserved):
     """Emit one `public: false` measure per aggregate; return the sql referencing them.
 
     Cube corrects for row multiplication per measure, keyed on the cube that measure
@@ -875,6 +915,8 @@ def _decompose_measure(expr, spans, mname, fallback, measures_by_cube,
     # over every cube rather than the one part it happens to land on.
     taken = {m["name"].lower() for ms in measures_by_cube.values() for m in ms}
     taken |= {n.lower() for ns in all_members_by_cube.values() for n in ns}
+    # Names later metrics will claim, so allocation does not depend on metric order.
+    taken |= {n for n in reserved if n != mname.lower()}
     out, cursor, index = [], 0, 0
     for start, end in spans:
         piece = expr[start:end]

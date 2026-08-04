@@ -128,7 +128,7 @@ to **import** (Cube -> Ossie) or **export** (Ossie -> Cube).
 | field | `dimensions[]` entry | Export: a name that is not a valid Cube identifier is sanitized; a case-insensitive collision is an error, never a silent merge. |
 | `field.expression` | dimension `sql` | Dataset-scoped, so `{CUBE}.col` <-> `col`. Export emits `{CUBE}.column` for a raw column and `{CUBE.member}` for a declared member, and never spells the cube's own name (which would break under `extends`). |
 | `field.datatype` | dimension `type` (**required**) | `String`->`string`, `Boolean`->`boolean`, `Date`/`Time`/`DateTime`/`DateTimeTz`->`time`, `Integer`/`Decimal`/`Float`->`number`, `Opaque`->`string`. Import maps back, choosing `Decimal` for `number` -- Cube collapses three Ossie types into one, so any single answer is a guess, and a stated datatype is what another converter can act on. Export parks the exact one in `meta.ossie.datatype`, which import prefers when present, so `Integer` and `Float` still survive a round trip. |
-| `field.dimension.is_time` | `type: time` | Import sets `is_time: true` for a time dimension. |
+| `field.dimension.is_time` | `type: time` | Import sets `is_time: true` for a time dimension. A field carrying `is_time` but *no* `datatype` records the absence (`meta.ossie.untyped`), since the spec says not to infer a scalar type from `is_time` alone — otherwise `type: time` would come back asserting `DateTime`. |
 | `field.label` / `description` | dimension `title` / `description` | |
 | `field.ai_context.instructions` | dimension `meta.ai_context` | Cube's documented AI-only context field. |
 | `field.expression` (`CASE WHEN …`) | dimension `case` | A Cube `case` dimension carries conditions instead of `sql` (Cube rejects both together), so it has no column to name. It maps to a real Ossie `CASE WHEN … THEN … ELSE … END`: a string `label` becomes a SQL literal, the `{sql: …}` form becomes that expression. The `case` block still rides in the stash, so export restores the Cube form exactly and drops the generated `sql`. |
@@ -139,7 +139,7 @@ to **import** (Cube -> Ossie) or **export** (Ossie -> Cube).
 | relationship `custom_extensions` | cube `meta.ossie.join_extensions` | A Cube join entry takes only name/sql/relationship, so a relationship's foreign-vendor extensions ride on the declaring cube keyed by join target. |
 | — | `type: geo` dimension | An Ossie field holds one expression and a geo dimension has two, so it **splits** into `<name>_latitude` / `<name>_longitude` (`Float`). Reconstruction data rides on the latitude half. See [Geo dimensions](#geo-dimensions). |
 | relationship | `joins[]` on a cube | `many_to_one` on cube A -> `from: A`(many), `to: B`(one). `one_to_many` is flipped so Ossie's `from` is the many side; the declared side and type are stashed so export restores the original. |
-| `from_columns` / `to_columns` | join `sql` | Only an AND-chain of equalities between two member references maps. Anything else (non-equi, range, literal, third cube) is preserved verbatim in the stash. |
+| `from_columns` / `to_columns` | join `sql` | Only an AND-chain of equalities mapping to **physical columns** converts. `{CUBE}.user_id` is already one; `{CUBE.user_key}` names a *member*, so it resolves to the column that member reads (`user_id`). A member reading an expression (`CONCAT(...)`) has no column for Ossie to name, so the whole join is preserved verbatim in the stash rather than described wrongly — as is anything else (non-equi, range, literal, third cube). |
 | metric | `measures[]` on the cube its expression references | Import hoists cube-scoped measures to the model level, qualifying a colliding name as `<cube>__<measure>` and stashing the original name and owning cube. |
 | `SUM`/`AVG`/`MIN`/`MAX(x)` | `type: sum`/`avg`/`min`/`max` + `sql` | |
 | `COUNT(DISTINCT x)` | `type: count_distinct` | |
@@ -162,6 +162,14 @@ dimension extras (`format`, `currency`, `granularities`, `case`, `sub_query`,
 `order`, `aliases`, `meta`, ...), measure extras and any non-reconstructible
 measure, joins with no Ossie form, Jinja-templated members, and files with no
 Ossie form (`.js`/`.ts` models, non-model YAML).
+
+**Identifier case**: Ossie regular (unquoted) identifiers are case-insensitive — the
+core spec's *normalized* form upper-cases them and strips quotes from quoted ones — so
+`orders.AMOUNT` addresses the field `amount`. Lookups use that form, and what is
+emitted is the canonical **Cube** spelling, because Cube's own member resolution *is*
+case-sensitive. Matching exactly, as this converter first did, emitted `{CUBE}.AMOUNT`:
+a raw column that bypasses the member's expression, so a metric silently aggregated the
+wrong thing.
 
 **Expression dialects**: Cube SQL is the SQL of the model's data source, and the
 Ossie dialect enum has no `CUBE` entry -- so import emits `ANSI_SQL`, and export
@@ -374,6 +382,9 @@ invalid) when an input breaks one of these:
   validator rejects for a duplicate field name;
 - a stashed file path is absolute or escapes the output directory: the stash is part
   of the input document, so a path in it is untrusted;
+- a stashed extra file would overwrite a generated cube or view file: those restore
+  verbatim, so one landing on a generated path would replace a converted model with
+  arbitrary text;
 - a cube uses `extends` -- resolving it means reproducing Cube's definition-merge
   semantics exactly, so it is refused rather than half-applied;
 - a bare `type: count` measure's cube declares no primary key;
