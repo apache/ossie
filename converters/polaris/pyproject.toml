@@ -22,12 +22,13 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "syrupy>=4.0",
 ]
 
 [project]
-name = "apache-ossie-wisdom"
+name = "apache-ossie-polaris"
 version = "0.2.0.dev0"
-description = "WisdomAI domain export <> Apache Ossie converter"
+description = "Polaris (MetricFlow Semantic Interface) <> Apache Ossie converter"
 authors = [{ name = "Apache Software Foundation", email = "dev@ossie.apache.org" }]
 requires-python = ">=3.11"
 readme = "README.md"
@@ -35,22 +36,21 @@ license = "Apache-2.0"
 keywords = [
     "Apache Ossie",
     "Ossie",
-    "WisdomAI"
+    "polaris"
 ]
 dependencies = [
     "apache-ossie>=0.2.0.dev0",
-    "PyYAML>=6.0",
 ]
 
 [project.scripts]
-ossie-wisdom = "ossie_wisdom.cli:main"
+ossie-polaris = "ossie_polaris.cli:main"
 
 [project.urls]
 homepage = "https://ossie.apache.org/"
 repository = "https://github.com/apache/ossie/"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ossie_wisdom"]
+packages = ["src/ossie_polaris"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -60,3 +60,4 @@ required-version = ">=0.9.0"
 default-groups = [
     "dev"
 ]
+

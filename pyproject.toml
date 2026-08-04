@@ -48,6 +48,16 @@ required-version = ">=0.9.0"
 
 [tool.uv.sources]
 apache-ossie = { workspace = true }
+apache-ossie-dbt = { workspace = true }
+apache-ossie-gooddata = { workspace = true }
+apache-ossie-gsf = { workspace = true }
+apache-ossie-honeydew = { workspace = true }
+apache-ossie-omni = { workspace = true }
+apache-ossie-orionbelt = { workspace = true }
+apache-ossie-polaris = { workspace = true }
+apache-ossie-salesforce = { workspace = true }
+apache-ossie-snowflake = { workspace = true }
+apache-ossie-wisdom = { workspace = true }
 
 [tool.uv.workspace]
 members = [
@@ -58,6 +68,11 @@ members = [
     "converters/gsf",
     "converters/honeydew",
     "converters/omni",
+    "converters/orionbelt",
+    "converters/polaris",
+    "converters/salesforce",
+    "converters/snowflake",
+    "converters/wisdom",
 ]
 exclude = [
     "cli"
