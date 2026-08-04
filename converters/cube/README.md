@@ -222,8 +222,24 @@ emit a silently-wrong one:
 | `sum`, `avg`, `count` + `sql` | `SUM(x)`, `AVG(x)`, `COUNT(x)` | **No** |
 | `number` (calculated) containing one of those | the expression verbatim | **No** — and judged on the *resolved expression*, not the measure type: `SUM({CUBE}.ltv) / 100` is a `number` measure whose value is still a sum. |
 
-Only the last row is at risk, and only when its own cube is the `to` (one) side of
-a relationship in the model. The converter computes that from the Ossie graph and
+Safety is judged on the **resolved expression, per aggregate, per dataset** — not on
+the measure's Cube type, and not on the cube it is declared on. Both shortcuts were
+wrong: a calculated `type: number` measure's type says nothing about the aggregates
+inside it, and the cube a measure is declared on is not necessarily the one an aggregate
+inside it *reads*. `SUM(users.ltv) / SUM(orders.amount)` sits on `orders` while `users`
+is the fanned-out side. The idempotent set is an **allowlist** (`MIN`, `MAX`,
+`COUNT(DISTINCT …)`, `APPROX_COUNT_DISTINCT`) because the set of aggregate functions is
+open-ended — listing the unsafe ones silently declared `STDDEV`, `MEDIAN` and
+`ARRAY_AGG` safe.
+
+The TPC-DS fixture carries a real example: `store_productivity` is
+`SUM(store_sales.ss_ext_sales_price) / NULLIF(SUM(store.s_number_employees), 0)`, and
+summing a `store` column across a fanning join inflates it. Cube corrects that at query
+time; a static expression cannot, so it is reported.
+
+Only the last row is at risk, and only when the dataset the aggregate reads is the `to`
+(one) side of a relationship in the model. The converter computes that from the Ossie
+graph and
 **records a `FANOUT_UNSAFE_METRIC` issue** naming the metric, the dataset and the
 relationship responsible -- refusing a whole model over one such metric would leave
 the spoke on the other side with nothing. Pass `--strict-fanout` to refuse instead,

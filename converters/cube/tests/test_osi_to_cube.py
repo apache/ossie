@@ -756,3 +756,75 @@ def test_a_generated_view_excludes_members_a_prefix_cannot_disambiguate():
     ]
     assert any("excluded from the generated view" in i.detail
                for i in issues.of_type(IssueType.APPROXIMATED))
+
+
+@pytest.mark.parametrize("reference,expected", [
+    # A metric is authored against *Ossie* names, which for a name needing sanitization
+    # is not the Cube name: dataset `Order Items` becomes cube `order_items`.
+    ('"ORDER ITEMS"."GROSS AMOUNT"', "{CUBE.gross_amount}"),
+    ("order_items.gross_amount", "{CUBE.gross_amount}"),
+])
+def test_a_reference_may_use_either_the_ossie_or_the_cube_name(reference, expected):
+    ossie = (
+        f"version: {OSSIE_VERSION}\n"
+        "semantic_model:\n"
+        "- name: shop\n"
+        "  datasets:\n"
+        "  - name: Order Items\n"
+        "    source: shop.public.oi\n"
+        "    fields:\n"
+        "    - name: Gross Amount\n      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: gross_raw * 2\n"
+        "      datatype: Decimal\n"
+        "  metrics:\n"
+        "  - name: m\n    expression:\n      dialects:\n"
+        f"      - dialect: ANSI_SQL\n        expression: SUM({reference})\n"
+    )
+    files, _ = convert_ossie_to_cube(ossie)
+    cube = parse(files["model/cubes/order_items.yml"])["cubes"][0]
+    assert cube["measures"] == [{"name": "m", "sql": expected, "type": "sum"}]
+
+
+def test_a_quoted_reference_to_a_dropped_field_drops_its_metric_too():
+    """The dropped-field check matched only unquoted references, so a metric over a
+    field that became no dimension survived with a dangling reference."""
+    ds = (
+        "  - name: orders\n"
+        "    source: shop.public.orders\n"
+        "    primary_key:\n    - id\n"
+        "    fields:\n"
+        "    - name: id\n      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: id\n"
+        "      datatype: Integer\n"
+        "    - name: legacy_amount\n      expression:\n        dialects:\n"
+        "        - dialect: TABLEAU\n          expression: amount\n"
+        "      datatype: Decimal\n"
+    )
+    files, issues = convert_ossie_to_cube(
+        _ossie(ds, metrics=_metric("t", 'SUM(orders."LEGACY_AMOUNT")')))
+    assert "measures" not in _cubes(files)["orders"]
+    assert any("dropped with it" in i.detail
+               for i in issues.of_type(IssueType.NO_USABLE_DIALECT))
+
+
+def test_mapping_form_stashed_segments_are_reserved_and_checked():
+    """Cube accepts `segments:` as a list *or* as a mapping keyed by name. Handling only
+    the list form meant a mapping iterated as bare strings and was skipped -- so a
+    generated part could take a restored segment's name, and the collision check missed
+    it too, emitting a model Cube rejects."""
+    import json
+
+    stash = {"_v": 1,
+             "cube_extras": {"segments": {"ratio_part_1": {"sql": "x"}}}}
+    ds = _ORDERS.replace(
+        "      datatype: Decimal\n",
+        "      datatype: Decimal\n"
+        "    custom_extensions:\n"
+        "    - vendor_name: CUBE\n"
+        f"      data: '{json.dumps(stash)}'\n", 1)
+    files, _ = convert_ossie_to_cube(_ossie(ds, metrics=_metric(
+        "ratio", "SUM(orders.amount) / COUNT(DISTINCT orders.id)")))
+    cube = _cubes(files)["orders"]
+    assert [m["name"] for m in cube["measures"]] == [
+        "ratio_part_2", "ratio_part_3", "ratio"]
+    assert set(cube["segments"]) == {"ratio_part_1"}

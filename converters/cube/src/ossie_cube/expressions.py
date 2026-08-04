@@ -101,7 +101,13 @@ def aggregate_spans(expr):
     text = str(expr)
     if parse(text) is None or is_single_aggregate(text):
         return []
+    return _scan_aggregates(text)
 
+
+def _scan_aggregates(text):
+    """Every outermost aggregate call in `text`, as (start, end) offsets."""
+    if parse(text) is None:
+        return []
     candidates = []
     upper = text.upper()
     quoted = quoted_char_mask(text)
@@ -162,9 +168,18 @@ def _match_paren(text, open_at):
     return None
 
 
-# Aggregates whose value changes when input rows are duplicated. `Count` is here only
-# in its non-DISTINCT form -- COUNT(DISTINCT x) is idempotent under duplication.
-_NON_IDEMPOTENT_NODES = (exp.Sum, exp.Avg)
+# The only aggregates whose value survives duplicate input rows. Everything else is
+# treated as unsafe -- an allowlist rather than a blocklist, because the set of
+# aggregate functions is open-ended (STDDEV, VARIANCE, MEDIAN, ARRAY_AGG, PERCENTILE...)
+# and listing the unsafe ones meant every unlisted one was silently declared safe.
+_IDEMPOTENT_NODES = (exp.Min, exp.Max, exp.ApproxDistinct)
+
+
+def is_idempotent_aggregate(node):
+    """True if duplicating input rows cannot change this aggregate's value."""
+    if isinstance(node, _IDEMPOTENT_NODES):
+        return True
+    return isinstance(node, exp.Count) and _counts_distinct(node)
 
 
 def has_non_idempotent_aggregate(expr):
@@ -182,12 +197,23 @@ def has_non_idempotent_aggregate(expr):
     tree = parse(expr)
     if tree is None:
         return True
-    for node in tree.walk():
-        if isinstance(node, _NON_IDEMPOTENT_NODES):
-            return True
-        if isinstance(node, exp.Count) and not _counts_distinct(node):
-            return True
-    return False
+    return any(isinstance(node, exp.AggFunc) and not is_idempotent_aggregate(node)
+               for node in tree.walk())
+
+
+def unsafe_aggregate_spans(expr):
+    """(start, end) of every aggregate in `expr` that duplication would inflate.
+
+    Offsets index the original string, so a caller can ask which datasets each unsafe
+    aggregate reads -- the measure's own cube is not necessarily the fanned-out one.
+    """
+    return [(start, end) for start, end in _scan_aggregates(str(expr))
+            if not _parses_to_idempotent(str(expr)[start:end])]
+
+
+def _parses_to_idempotent(text):
+    node = parse(text)
+    return node is not None and is_idempotent_aggregate(node)
 
 
 def _counts_distinct(node):

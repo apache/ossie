@@ -51,6 +51,7 @@ from ._common import (
     dump_yaml,
     filtered_operand,
     is_simple_identifier,
+    referenced_datasets,
     join_source,
     load_yaml,
     primary_key_count_expression,
@@ -65,7 +66,11 @@ from ._common import (
     write_stash,
 )
 from .converter_issues import IssueLog, IssueType
-from .expressions import has_non_idempotent_aggregate, has_top_level_operator
+from .expressions import (
+    has_non_idempotent_aggregate,
+    has_top_level_operator,
+    unsafe_aggregate_spans,
+)
 
 # Cube keys the converter maps natively at the cube level; everything else is
 # stashed verbatim in the dataset's `cube_extras` and restored on export.
@@ -918,6 +923,11 @@ def _decompose_join_sql(sql, own_cube, target, what, cubes, issues):
     return pairs or None
 
 
+# The alias-dot form: `{CUBE}.column` / `{TABLE}.column` / `{cube}.column`. Whatever
+# follows the dot is a raw physical column, not a member.
+_ALIAS_COLUMN_RE = re.compile(
+    r"^\$?\{\s*[A-Za-z_][A-Za-z0-9_]*\s*\}\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)\s*$")
+
 _JOIN_SIDE_RE = re.compile(
     r"^\s*\$?\{\s*([^{}]*?)\s*\}\s*(?:\.\s*([A-Za-z_][A-Za-z0-9_]*))?\s*$")
 
@@ -947,6 +957,12 @@ def _column_of(cubes, cname, member, seen=()):
         sql = dim.get("sql")
         if sql is None:
             return member
+        if _ALIAS_COLUMN_RE.match(str(sql).strip()):
+            # The explicit raw-column form (`{CUBE}.tenant_user_id`) names a column, full
+            # stop -- even if a dimension of that name also exists. Deciding on the
+            # *translated* text lost that distinction, since both forms flatten to the
+            # same bare name, and the join was parked over a column that was right there.
+            return _ALIAS_COLUMN_RE.match(str(sql).strip()).group(1)
         translated, _ = cube_sql_to_ossie(sql, cname)
         translated = translated.strip()
         if not is_simple_identifier(translated):
@@ -1048,6 +1064,7 @@ class _MeasureResolver:
         self._issues = issues
         self._raw = {}
         self._cache = {}
+        self._cube_names = set(cubes)
         for cname, cube in cubes.items():
             for m in _as_named_list(cube.get("measures"), f"cube '{cname}' measures"):
                 self._raw[(cname, require_str(m, "name", f"cube '{cname}': measure"))] = m
@@ -1143,7 +1160,7 @@ class _MeasureResolver:
         """
         out, _ = cube_sql_to_ossie(
             sql, cname, resolve_ref=lambda body: self._inline(body, cname, stack),
-            self_prefix=cname)
+            self_prefix=cname, cube_names=self._cube_names)
         return out
 
     def _inline(self, body, cname, stack):
@@ -1193,6 +1210,27 @@ _WINDOWING_KEYS = (
     # The legacy spelling of the multi-stage directives.
     "group_by", "reduce_by", "add_group_by",
 )
+
+
+def _fanout_unsafe_datasets(expr, own_cube, dataset_names):
+    """Datasets read by an aggregate in `expr` that duplicate rows would inflate.
+
+    Per aggregate, because a single expression can mix safe and unsafe ones over
+    different datasets. An aggregate naming no dataset is read as being over the cube the
+    measure is declared on.
+    """
+    spans = unsafe_aggregate_spans(expr)
+    if spans:
+        found = set()
+        for start, end in spans:
+            found |= (referenced_datasets(expr[start:end], dataset_names)
+                      or {own_cube})
+        return found
+    if has_non_idempotent_aggregate(expr):
+        # An aggregate the span scanner does not know (STDDEV, MEDIAN, ARRAY_AGG...):
+        # there is no span to attribute, so every dataset the expression reads counts.
+        return referenced_datasets(expr, dataset_names) or {own_cube}
+    return set()
 
 
 def _windowing_key(measure):
@@ -1251,7 +1289,7 @@ def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, issues):
                     f"colliding measures in Cube")
             seen.add(metric_name)
             metric = _convert_measure(cname, mname, metric_name, measure, resolver,
-                                      fanned_out, plain, issues)
+                                      fanned_out, plain, set(cubes), issues)
             if metric is not None:
                 metrics.append(metric)
             else:
@@ -1261,7 +1299,7 @@ def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, issues):
 
 
 def _convert_measure(cname, mname, metric_name, measure, resolver, fanned_out,
-                     plain, issues):
+                     plain, dataset_names, issues):
     scope = f"{cname}.{mname}"
     expr = resolver.expression(cname, mname)
     if expr is None:
@@ -1281,22 +1319,24 @@ def _convert_measure(cname, mname, metric_name, measure, resolver, fanned_out,
         and not measure.get("filters")
     )
 
-    # Fan-out: a non-idempotent aggregate on a dataset the graph can multiply.
-    # Cube fixes this at query time by deduplicating on the primary key; a static
-    # expression cannot, so the caller has to be told.
-    unsafe = mtype in FANOUT_UNSAFE_AGGS or (mtype == "count" and sql is not None)
-    if not unsafe and mtype in CALCULATED_MEASURE_TYPES:
-        # A calculated measure is classified by its outer type, which says nothing
-        # about the aggregates inside it: `SUM({CUBE}.ltv) / 100` is a `number` measure
-        # whose value is still a sum. Judged on the resolved expression instead.
-        unsafe = has_non_idempotent_aggregate(expr)
-    if unsafe and cname in fanned_out:
+    # Fan-out: a non-idempotent aggregate over a dataset the graph can multiply. Cube
+    # fixes this at query time by deduplicating on the primary key; a static expression
+    # cannot, so the caller has to be told.
+    #
+    # Judged on the resolved expression and per aggregate, not on the measure's Cube
+    # type and its own cube. Both shortcuts were wrong: a calculated measure's type says
+    # nothing about the aggregates inside it, and the cube a measure is *declared* on is
+    # not necessarily the one an aggregate inside it *reads* -- `SUM(users.ltv) /
+    # SUM(orders.amount)` sits on `orders` while `users` is the fanned-out side.
+    for dataset in sorted(_fanout_unsafe_datasets(expr, cname, dataset_names)):
+        if dataset not in fanned_out:
+            continue
         issues.add(
             IssueType.FANOUT_UNSAFE_METRIC, scope,
-            f"'{mtype}' over dataset '{cname}', which relationship "
-            f"'{fanned_out[cname]}' fans out; Cube deduplicates on the primary key "
-            f"at query time but a static Ossie expression cannot, so a consumer "
-            f"joining through that relationship may over-count")
+            f"a non-idempotent aggregate reads dataset '{dataset}', which "
+            f"relationship '{fanned_out[dataset]}' fans out; Cube deduplicates on "
+            f"the primary key at query time but a static Ossie expression cannot, so "
+            f"a consumer joining through that relationship may over-count")
 
     metric = {
         "name": metric_name,

@@ -2116,3 +2116,120 @@ def test_a_generated_part_name_avoids_a_stashed_member():
     assert [m["name"] for m in cube["measures"]] == [
         "ratio_part_2", "ratio_part_3", "ratio"]
     assert [s["name"] for s in cube["segments"]] == ["ratio_part_1"]
+
+
+# --- review round six ------------------------------------------------------------
+
+_TWO_CUBE_CALC = (
+    "cubes:\n"
+    "  - name: orders\n"
+    "    sql_table: a.b.orders\n"
+    "    joins:\n"
+    "      - name: users\n"
+    "        sql: \"{CUBE}.user_id = {users}.id\"\n"
+    "        relationship: many_to_one\n"
+    "    dimensions:\n"
+    "      - name: user_id\n        sql: user_id\n        type: number\n"
+    "      - name: id\n        sql: id\n        type: number\n        primary_key: true\n"
+    "    measures:\n"
+    "      - name: m\n        sql: \"{SQL}\"\n        type: number\n"
+    "  - name: users\n"
+    "    sql_table: a.b.users\n"
+    "    dimensions:\n"
+    "      - name: id\n        sql: id\n        type: number\n        primary_key: true\n"
+)
+
+
+@pytest.mark.parametrize("sql,flagged", [
+    # The measure sits on `orders`; `users` is the fanned-out side. Checking only the
+    # cube a measure is *declared* on reported nothing at all.
+    ("SUM({users}.ltv) / SUM({CUBE}.amount)", True),
+    # An aggregate the span scanner does not know still has to be caught.
+    ("STDDEV({users}.ltv)", True),
+    ("VARIANCE({users}.ltv) + 1", True),
+    # Unsafe, but only over the cube that is not fanned out.
+    ("SUM({CUBE}.amount) / 100", False),
+    # Idempotent under duplication, so safe on any cube.
+    ("MAX({users}.ltv) - MIN({users}.ltv)", False),
+    ("COUNT(DISTINCT {users}.id) / 2", False),
+])
+def test_fanout_is_judged_per_aggregate_and_per_dataset(sql, flagged):
+    files = _files(m=_TWO_CUBE_CALC.replace("{SQL}", sql))
+    _, issues = convert_cube_to_ossie(files)
+    assert bool(issues.of_type(IssueType.FANOUT_UNSAFE_METRIC)) is flagged
+    if flagged:
+        with pytest.raises(ConversionError, match="FANOUT_UNSAFE_METRIC"):
+            convert_cube_to_ossie(files, strict_fanout=True)
+
+
+@pytest.mark.parametrize("expr,unsafe", [
+    # An allowlist, because the set of aggregate functions is open-ended: listing the
+    # unsafe ones declared every unlisted one safe.
+    ("STDDEV(users.x)", True),
+    ("VARIANCE(users.x)", True),
+    ("MEDIAN(users.x)", True),
+    ("ARRAY_AGG(users.x)", True),
+    ("SUM(users.x)", True),
+    ("COUNT(users.id)", True),
+    ("MIN(users.x)", False),
+    ("MAX(users.x)", False),
+    ("COUNT(DISTINCT users.id)", False),
+    ("APPROX_COUNT_DISTINCT(users.x)", False),
+])
+def test_only_provably_idempotent_aggregates_are_treated_as_safe(expr, unsafe):
+    from ossie_cube.expressions import has_non_idempotent_aggregate
+
+    assert has_non_idempotent_aggregate(expr) is unsafe
+
+
+def test_a_cross_cube_alias_is_not_prefixed_with_the_own_cube():
+    """`{users}.ltv` is a raw column of the *joined* cube, so the trailing column hangs
+    off `users`. Prefixing it with the declaring cube produced `orders.users.ltv` -- a
+    three-part name no reference matches, which also hid it from the fan-out analysis."""
+    files = _files(m=_TWO_CUBE_CALC.replace(
+        "{SQL}", "MAX({users}.ltv) - MIN({CUBE}.amount)"))
+    ossie, _ = convert_cube_to_ossie(files)
+    assert expr_of(by_name(model_of(ossie)["metrics"])["m"]) == (
+        "MAX(users.ltv) - MIN(orders.amount)")
+
+
+def test_an_aggregate_name_inside_a_quoted_identifier_is_not_a_call():
+    """`orders."SUM(X)"` is a column whose name happens to contain `SUM(`. Reference
+    rewriting has to look inside a quoted identifier -- it is a name -- but aggregate
+    *discovery* must not, or it splits out a hidden measure and emits malformed SQL."""
+    from ossie_cube.expressions import aggregate_spans
+
+    expr = 'MAX(orders.value) + orders."SUM(X)"'
+    assert [expr[s:e] for s, e in aggregate_spans(expr)] == ["MAX(orders.value)"]
+
+
+def test_an_explicit_raw_column_wins_over_a_dimension_of_that_name():
+    """`{CUBE}.tenant_user_id` names a column, full stop -- even where a computed
+    dimension of that name also exists. Deciding on the translated text lost the
+    distinction, because both reference forms flatten to the same bare name."""
+    model = (
+        "cubes:\n"
+        "  - name: orders\n"
+        "    sql_table: a.b.orders\n"
+        "    joins:\n"
+        "      - name: users\n"
+        "        sql: \"{CUBE.user_key} = {users.id}\"\n"
+        "        relationship: many_to_one\n"
+        "    dimensions:\n"
+        "      - name: user_key\n        sql: \"{KEY}\"\n        type: string\n"
+        "      - name: tenant_user_id\n"
+        "        sql: \"CONCAT({CUBE}.a, {CUBE}.b)\"\n        type: string\n"
+        "  - name: users\n"
+        "    sql_table: a.b.users\n"
+        "    dimensions:\n"
+        "      - name: id\n        sql: id\n        type: number\n"
+        "        primary_key: true\n"
+    )
+    raw = _files(m=model.replace("{KEY}", "{CUBE}.tenant_user_id"))
+    ossie, back, _ = _roundtrip(raw)
+    assert model_of(ossie)["relationships"][0]["from_columns"] == ["tenant_user_id"]
+    assert parse_files(back) == parse_files(raw)
+    # The member form still parks: that one really does read an expression.
+    member = _files(m=model.replace("{KEY}", "{CUBE.tenant_user_id}"))
+    ossie2, _, _ = _roundtrip(member)
+    assert "relationships" not in model_of(ossie2)
