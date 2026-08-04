@@ -53,6 +53,11 @@ apache-ossie = { workspace = true }
 members = [
     ".",
     "converters/databricks",
+    "converters/dbt",
+    "converters/gooddata",
+    "converters/gsf",
+    "converters/honeydew",
+    "converters/omni",
 ]
 exclude = [
     "cli"
