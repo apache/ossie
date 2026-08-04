@@ -39,11 +39,8 @@ from ossie_hex.hex_types import (
     HexDataType,
     HexDimension,
     HexGroup,
-    HexMeasureFuncName,
     HexRelation,
     HexRelationType,
-    HexScalarExpressionDefaultBoolean,
-    HexScalarExpressionDefaultNumber,
     HexSemiAdditive,
     HexSemiAdditiveOverMember,
     HexView,
@@ -224,12 +221,6 @@ def test_stash_drops_values_matching_hex_defaults() -> None:
             semi_additive=HexSemiAdditive(
                 over=[HexSemiAdditiveOverMember(dimension="order_date", pick="min")]
             ),
-            func=HexMeasureFuncName.SUM,
-            of=HexScalarExpressionDefaultNumber(expr_sql="amount_usd"),
-            filters=[
-                "status = 'paid'",
-                HexScalarExpressionDefaultBoolean(expr_calc="is_active"),
-            ],
         ),
     ],
     ids=lambda stash: type(stash).__name__,

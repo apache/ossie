@@ -15,7 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import json
 from typing import Any
 
 import pytest
@@ -39,8 +38,8 @@ def _measure_for(metric_expression: str) -> dict[str, Any]:
 def test_a_metric_becomes_func_sql() -> None:
     """An Ossie metric is SQL, and `func_sql` is the Hex measure that holds SQL.
 
-    A Hex-authored measure recovers its `func`/`of` from the stash instead, so
-    nothing is served by parsing the aggregate back out of the expression here.
+    Hex `func`/`of`/`filters` compile into that same expression on import, so the
+    export path does not try to recover a structured aggregate from it.
     """
     assert _measure_for("SUM(orders.amount)") == {
         "id": "total",
@@ -106,42 +105,6 @@ semantic_model:
         "type": "date",
     }
 
-
-def test_a_stashed_func_keeps_its_number_type_over_a_conflicting_datatype() -> None:
-    """A stashed `func` is only reachable if Hex typed the measure as a number.
-
-    The `Date` here is deliberately impossible: `MAX` over the numeric `amount`
-    is a number, and Hex would not have accepted a `func` measure typed anything
-    else. It stands for a datatype edited after export, which is the only way
-    the two can disagree. Carrying it across builds a measure `HexMeasure`
-    rejects, which surfaced as a raw pydantic error rather than a
-    ConversionError.
-    """
-    stash = json.dumps(
-        {
-            "model_id": "orders",
-            "display_name": "Total",
-            "func": "max",
-            "of": "amount",
-        }
-    )
-    ossie = one_metric_ossie("MAX(orders.amount)", datatype="Date").replace(
-        '          dialects: [{dialect: ANSI_SQL, expression: "MAX(orders.amount)"}]',
-        '          dialects: [{dialect: ANSI_SQL, expression: "MAX(orders.amount)"}]\n'
-        "        custom_extensions:\n"
-        "          - vendor_name: HEX\n"
-        f"            data: '{stash}'",
-    )
-
-    files, _ = convert_ossie_to_hex(
-        ossie, dialect=OSIDialect.ANSI_SQL, base_model="orders"
-    )
-
-    assert yaml.safe_load(files["orders.yml"])["measures"][0] == {
-        "id": "total",
-        "func": "max",
-        "of": "amount",
-    }
 
 
 def test_a_qualifier_inside_a_string_literal_is_not_a_reference() -> None:

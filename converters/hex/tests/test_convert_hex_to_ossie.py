@@ -137,19 +137,14 @@ def test_hex_extension_carries_only_non_ossie_data(minimal_hex_path: str) -> Non
         {
             "model_id": "orders",
             "display_name": "Order count",
-            "func": "count",
         },
         {
             "model_id": "orders",
             "display_name": "Total amount",
-            "func": "sum",
-            "of": "amount",
         },
         {
             "model_id": "orders",
             "display_name": "Cancelled orders",
-            "func": "count",
-            "filters": ["is_cancelled"],
         },
     ]
 

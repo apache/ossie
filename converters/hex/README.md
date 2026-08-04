@@ -17,6 +17,8 @@
   under the License.
 -->
 
+<!-- markdownlint-disable MD033 -->
+
 # Ossie ↔ Hex converter
 
 Bidirectional, offline conversion between [Apache Ossie](https://ossie.apache.org/) and [Hex](https://learn.hex.tech/docs/connect-to-data/semantic-models/semantic-authoring/modeling-specification).
@@ -28,7 +30,9 @@ A Hex semantic project is a directory of YAML resource files (models and views).
 
 During export, datasets and fields become models and dimensions, relationships become per-model relations, and metrics become per-model measures. Import performs the reverse conversion.
 
-**Hex → Ossie → Hex is lossless.** The reverse is not.
+**Hex → Ossie → Hex is lossless<sup>†</sup>.** The reverse is not.
+
+<sup>†</sup> Lossless in the semantic sense. Syntactic sugar may be lost, but the underlying SQL is preserved.
 
 Invalid input raises a `ConversionError`. Anything Hex cannot represent is
 reported as a warning rather than dropped quietly.
@@ -197,10 +201,10 @@ Data types translate between the two formats as follows, with notes where conver
 
 Hex features that Ossie cannot express are preserved in an Ossie custom extension (vendor name `HEX`) so they survive a round trip. The extension data is a JSON object. Data contents are versioned with a key at the document's top-level custom extensions field. The keys used at each scope are listed below.
 
-| Scope          | Keys                                                                                                     |
-| -------------- | -------------------------------------------------------------------------------------------------------- |
-| Semantic Model | `extension_version`, `views`                                                                             |
-| Dataset        | `display_name`, `source_kind`, `visibility`, `dimensions`, `measures`, `relations`                       |
-| Field          | `type`, `visibility`, `expr_sql`                                                                         |
-| Metric         | `model_id`, `measure_id`, `display_name`, `type`, `visibility`, `semi_additive`, `func`, `of`, `filters` |
-| Relationship   | `relation_type`, `visibility`                                                                            |
+| Scope          | Keys                                                                               |
+| -------------- | ---------------------------------------------------------------------------------- |
+| Semantic Model | `extension_version`, `views`                                                       |
+| Dataset        | `display_name`, `source_kind`, `visibility`, `dimensions`, `measures`, `relations` |
+| Field          | `type`, `visibility`, `expr_sql`                                                   |
+| Metric         | `model_id`, `measure_id`, `display_name`, `type`, `visibility`, `semi_additive`    |
+| Relationship   | `relation_type`, `visibility`                                                      |

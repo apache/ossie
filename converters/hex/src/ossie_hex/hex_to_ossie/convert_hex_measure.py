@@ -109,9 +109,6 @@ def convert_hex_measure(
         type=measure.type,
         visibility=measure.visibility,
         semi_additive=measure.semi_additive,
-        func=measure.func,
-        of=measure.of if measure.func else None,
-        filters=(measure.filters or None) if measure.func else None,
     )
     if measure.semi_additive is not None:
         warnings.append(

@@ -27,11 +27,8 @@ from ..hex_types import (
     HexDataType,
     HexDimension,
     HexMeasure,
-    HexMeasureFuncName,
     HexRelation,
     HexRelationType,
-    HexScalarExpressionDefaultBoolean,
-    HexScalarExpressionDefaultNumber,
     HexSemiAdditive,
     HexView,
     HexVisibility,
@@ -125,9 +122,6 @@ class HexMeasureStash(_TypeMixin, _VisibilityMixin, _BaseHexStash):
     measure_id: str | None = None
     display_name: str
     semi_additive: HexSemiAdditive | None = None
-    func: HexMeasureFuncName | None = None
-    of: str | HexScalarExpressionDefaultNumber | None = None
-    filters: list[str | HexScalarExpressionDefaultBoolean] | None = None
 
 
 HexStash = (

@@ -65,35 +65,26 @@ def convert_ossie_metric(
 
     measure: dict[str, Any] = {"id": measure_id}
 
-    if stash is not None and stash.func is not None:
-        measure["func"] = stash.func
-        if stash.of is not None:
-            measure["of"] = stash.of
-        if stash.filters:
-            measure["filters"] = list(stash.filters)
-        # No `type`: a stashed `func` means Hex accepted the measure as a number,
-        # since it allows nothing else.
-    else:
-        expr = pick_expression(metric.expression, preferred=preferred_dialect)
-        if expr is None:
-            raise ConversionError(
-                f"metric '{metric.name}' has no usable dialect expression"
-            )
-        measure["func_sql"] = ossie_refs_to_hex(expr, resolve=resolve)
-        measure["type"] = hex_type
-        unreachable = sorted(
-            name
-            for name in foreign_names
-            if references(expr, name) and name not in relation_ids_by_target
+    expr = pick_expression(metric.expression, preferred=preferred_dialect)
+    if expr is None:
+        raise ConversionError(
+            f"metric '{metric.name}' has no usable dialect expression"
         )
-        if unreachable:
-            warnings.append(
-                ConversionWarning(
-                    f"metric '{metric.name}' references "
-                    f"{', '.join(unreachable)}, which '{dataset_id}' has no "
-                    f"relation to; the SQL was kept verbatim and needs review"
-                )
+    measure["func_sql"] = ossie_refs_to_hex(expr, resolve=resolve)
+    measure["type"] = hex_type
+    unreachable = sorted(
+        name
+        for name in foreign_names
+        if references(expr, name) and name not in relation_ids_by_target
+    )
+    if unreachable:
+        warnings.append(
+            ConversionWarning(
+                f"metric '{metric.name}' references "
+                f"{', '.join(unreachable)}, which '{dataset_id}' has no "
+                f"relation to; the SQL was kept verbatim and needs review"
             )
+        )
 
     if stash is not None and stash.semi_additive is not None:
         measure["semi_additive"] = stash.semi_additive

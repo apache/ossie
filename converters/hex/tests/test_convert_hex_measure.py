@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import json
 from pathlib import Path
 
 import yaml
@@ -91,6 +92,19 @@ dimensions:
     assert expressions == {
         "delivered_revenue": "SUM(CASE WHEN orders.is_delivery THEN sales.value END)",
         "total_delivery_fee": "SUM(orders.delivery_fee)",
+    }
+
+    payloads = {
+        metric["name"]: json.loads(metric["custom_extensions"][0]["data"])
+        for metric in metrics
+    }
+    assert payloads["delivered_revenue"] == {
+        "model_id": "sales",
+        "display_name": "Delivered revenue",
+    }
+    assert payloads["total_delivery_fee"] == {
+        "model_id": "sales",
+        "display_name": "Total delivery fee",
     }
 
 

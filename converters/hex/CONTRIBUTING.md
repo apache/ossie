@@ -53,7 +53,8 @@ module per resource it converts, sitting on two shared layers:
 Add or update fixtures under `tests/fixtures/` and keep conversion behavior
 covered in both directions. Hex-only information that has no Ossie equivalent
 should be stored in the `HEX` custom extension so that Hex → Ossie → Hex remains
-lossless.
+semantically lossless. Prefer the Ossie representation when it already encodes
+the same meaning.
 
 ### Useful knowledge
 

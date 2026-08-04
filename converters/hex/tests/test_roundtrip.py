@@ -53,10 +53,16 @@ def _resources_by_id(project_dir: str | Path) -> dict[str, dict]:
     return resources
 
 
-def test_hex_roundtrip_reproduces_source_project(
+def test_hex_roundtrip_reaches_a_fixed_point(
     hex_project_path: str,
     tmp_path: Path,
 ) -> None:
+    """Hex → Ossie → Hex may rewrite `func` measures as equivalent `func_sql`.
+
+    A second pass must leave that canonical form alone. Comparing authoring
+    syntax to the source would reject a faithful SQL representation of the same
+    aggregate.
+    """
     files = read_hex_project(hex_project_path)
     ossie_yaml, _import_warnings = convert_hex_to_ossie(
         files,
@@ -70,9 +76,48 @@ def test_hex_roundtrip_reproduces_source_project(
     out_dir = tmp_path / "roundtrip"
     write_hex_project(out_dir, files)
 
-    # Emitted YAML differs from the source in list indentation and quote style,
-    # so compare parsed resources rather than raw text.
-    assert _resources_by_id(out_dir) == _resources_by_id(hex_project_path)
+    ossie_yaml_again, _ = convert_hex_to_ossie(
+        read_hex_project(out_dir),
+        dialect=OSIDialect.ANSI_SQL,
+        model_name="roundtrip",
+    )
+    files_again, _ = convert_ossie_to_hex(ossie_yaml_again, dialect=OSIDialect.ANSI_SQL)
+    again_dir = tmp_path / "roundtrip_again"
+    write_hex_project(again_dir, files_again)
+
+    assert _resources_by_id(again_dir) == _resources_by_id(out_dir)
+
+
+def test_compiled_metric_sql_survives_a_roundtrip(minimal_hex_path: str) -> None:
+    """The SQL compiled from `func`/`of`/`filters` is what the next import sees."""
+    files = read_hex_project(minimal_hex_path)
+    ossie_yaml, _ = convert_hex_to_ossie(
+        files,
+        dialect=OSIDialect.ANSI_SQL,
+        model_name="roundtrip",
+    )
+    first_metrics = {
+        metric["name"]: metric["expression"]["dialects"][0]["expression"]
+        for metric in load_yaml(ossie_yaml)["semantic_model"][0]["metrics"]
+    }
+
+    files, _ = convert_ossie_to_hex(ossie_yaml, dialect=OSIDialect.ANSI_SQL)
+    ossie_yaml, _ = convert_hex_to_ossie(
+        files,
+        dialect=OSIDialect.ANSI_SQL,
+        model_name="roundtrip",
+    )
+    second_metrics = {
+        metric["name"]: metric["expression"]["dialects"][0]["expression"]
+        for metric in load_yaml(ossie_yaml)["semantic_model"][0]["metrics"]
+    }
+
+    assert second_metrics == first_metrics
+    assert first_metrics == {
+        "order_count": "COUNT(orders.*)",
+        "total_amount": "SUM(orders.amount)",
+        "cancelled_orders": "COUNT(CASE WHEN orders.is_cancelled THEN 1 END)",
+    }
 
 
 def test_hex_roundtrip_emits_expected_yaml(minimal_hex_path: str) -> None:
@@ -129,14 +174,11 @@ dimensions:
   expr_sql: status = 'cancelled'
 measures:
 - id: order_count
-  func: count
+  func_sql: COUNT(orders.*)
 - id: total_amount
-  func: sum
-  of: amount
+  func_sql: SUM(${amount})
 - id: cancelled_orders
-  func: count
-  filters:
-  - is_cancelled
+  func_sql: COUNT(CASE WHEN ${is_cancelled} THEN 1 END)
 relations:
 - id: customers
   type: many_to_one
