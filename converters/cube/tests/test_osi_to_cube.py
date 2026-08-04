@@ -716,3 +716,43 @@ def test_a_stashed_measure_title_is_not_escaped_twice():
     back, _ = convert_ossie_to_cube(ossie)
     measure = parse(back["model/cubes/orders.yml"])["cubes"][0]["measures"][0]
     assert measure["title"] == "Revenue \\{USD\\}"
+
+
+def test_a_generated_view_excludes_members_a_prefix_cannot_disambiguate():
+    """The ordinary star schema: the fact carries `users_id` as its foreign key, and
+    prefixing `users`' own `id` produces that same name -- so the prefix remedy collides
+    in its own right. Refusing was wrong; the model is as standard as they come. The
+    clashing member is excluded from the view and reported, and stays queryable on the
+    cube itself."""
+    datasets = (
+        "  - name: orders\n"
+        "    source: shop.public.orders\n"
+        "    primary_key:\n    - id\n"
+        "    fields:\n"
+        "    - name: id\n      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: id\n"
+        "      datatype: Integer\n"
+        "    - name: users_id\n      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: users_id\n"
+        "      datatype: Integer\n"
+        "  - name: users\n"
+        "    source: shop.public.users\n"
+        "    primary_key:\n    - id\n"
+        "    fields:\n"
+        "    - name: id\n      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: id\n"
+        "      datatype: Integer\n"
+    )
+    rel = ("  relationships:\n"
+           "  - name: r\n    from: orders\n    to: users\n"
+           "    from_columns: [users_id]\n    to_columns: [id]\n")
+    files, issues = convert_ossie_to_cube(_ossie(datasets, rel))
+    view = parse(files["model/views/shop.yml"])["views"][0]
+    assert view["cubes"] == [
+        {"join_path": "orders", "includes": "*"},
+        # `users.id` would become `users_id`, which `orders` already has.
+        {"join_path": "orders.users", "includes": "*", "prefix": True,
+         "excludes": ["id"]},
+    ]
+    assert any("excluded from the generated view" in i.detail
+               for i in issues.of_type(IssueType.APPROXIMATED))

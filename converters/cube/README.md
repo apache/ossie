@@ -433,8 +433,20 @@ Example-based unit tests per direction, CLI behavior tests, fixture round-trip t
 (including the [TPC-DS model](../../examples/tpcds_semantic_model.yaml) the converter
 guide asks for as a baseline), a **feature matrix** of one fixture per Cube data-model
 feature, core-spec validation of every emitted Ossie document, and Hypothesis
-property-based round-trip tests over generated Cube models -- which fall back to a
-seeded sweep when `hypothesis` is unavailable, so the properties still run.
+property-based round-trip tests **from both ends** -- which fall back to a seeded
+sweep when `hypothesis` is unavailable, so the properties still run.
+
+Generating from Cube only proves things about models that came *out* of a Cube file, and
+therefore carry a stash. A hand-authored Ossie model has none, so every key the exporter
+writes is one it chose rather than restored -- which is the harder direction, and where
+review findings kept landing. So there is a second generator for that direction, drawing
+composite metrics (the decomposition path), mixed-case and quoted references, computed
+fields, and join keys in all three reference forms. It asserts the generated document is
+spec-valid, that `Ossie -> Cube -> Ossie` preserves every metric and field expression
+modulo the identifier-case canonicalization, and -- when a Cube checkout is available --
+that Cube compiles the export. It found a defect on its first run: a generated view over
+an ordinary star schema, where the fact's `users_id` foreign key collides with `users.id`
+once prefixed.
 
 `tests/fixtures/features/` holds the feature matrix: `case`/`switch` dimensions,
 custom granularities, presentation and masking metadata, measure variants

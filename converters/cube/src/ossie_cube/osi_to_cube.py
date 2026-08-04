@@ -212,8 +212,8 @@ def _convert_model(model, dialect, base_cube, issues):
             for m in (cube.get(key) or []) if isinstance(m, dict) and m.get("name")]
 
     for vpath, views in _build_views(model, model_stash, cube_names, relationships,
-                                     datasets, base_cube,
-                                     emitted_members).items():
+                                     datasets, base_cube, emitted_members,
+                                     issues).items():
         files_content.setdefault(vpath, {}).setdefault("views", []).extend(views)
 
     files = {path: dump_yaml(content) for path, content in files_content.items()}
@@ -1063,7 +1063,7 @@ def _balanced(s):
 # --- views ----------------------------------------------------------------------
 
 def _build_views(model, model_stash, cube_names, relationships, datasets,
-                 base_cube, emitted_members):
+                 base_cube, emitted_members, issues):
     """Return {file path: [view dict, ...]}.
 
     A list per path, not a single view: several views can share one YAML file, and
@@ -1126,12 +1126,13 @@ def _build_views(model, model_stash, cube_names, relationships, datasets,
         cube_names, relationships,
         cube_names[_pick_base_cube(model.get("name", "<unnamed>"), datasets,
                                   relationships, base_cube)],
-        emitted_members)
+        emitted_members, vname, issues)
     out[view_file(vname)] = [view]
     return out
 
 
-def _view_cubes(cube_names, relationships, base, emitted_members):
+def _view_cubes(cube_names, relationships, base, emitted_members, view_name,
+                issues):
     """Build a generated view's `cubes:` list: the base cube plus every cube
     reachable from it, each addressed by its full `join_path`.
 
@@ -1162,19 +1163,30 @@ def _view_cubes(cube_names, relationships, base, emitted_members):
             paths[neighbor] = f"{paths[current]}.{neighbor}"
             own = members(neighbor)
             entry = {"join_path": paths[neighbor], "includes": "*"}
-            if any(m.lower() in claimed for m in own):
+            prefixed = any(m.lower() in claimed for m in own)
+            if prefixed:
                 entry["prefix"] = True
-                names = [f"{neighbor}_{m}" for m in own]
-            else:
-                names = list(own)
-            still_colliding = sorted(n for n in names if n.lower() in claimed)
-            if still_colliding:
-                raise ConversionError(
-                    f"generated view: member(s) {', '.join(still_colliding)} from "
-                    f"dataset '{neighbor}' collide with another dataset's even with a "
-                    f"prefix; Cube views keep one namespace, so rename one in the "
-                    f"Ossie model.")
-            claimed.update(n.lower() for n in names)
+            # A prefix can collide in its own right: in a star schema the fact carries
+            # `dim_0_id` as its foreign key, and prefixing `dim_0`'s `id` produces that
+            # same name. Cube holds one member per name, so the ones that still clash are
+            # excluded rather than refused -- the model is ordinary, and the excluded
+            # member is reachable on the cube itself.
+            kept, dropped = [], []
+            for member in own:
+                emitted = f"{neighbor}_{member}" if prefixed else member
+                if emitted.lower() in claimed:
+                    dropped.append(member)
+                else:
+                    kept.append(emitted)
+            if dropped:
+                entry["excludes"] = sorted(dropped)
+                issues.add(
+                    IssueType.APPROXIMATED, f"view '{view_name}'",
+                    f"member(s) {', '.join(sorted(dropped))} of dataset '{neighbor}' "
+                    f"are excluded from the generated view: their names collide with "
+                    f"another dataset's and a Cube view keeps one member namespace. "
+                    f"They remain queryable on the cube itself.")
+            claimed.update(n.lower() for n in kept)
             entries.append(entry)
             queue.append(neighbor)
     # A cube no relationship reaches cannot be addressed by a join path, so it is

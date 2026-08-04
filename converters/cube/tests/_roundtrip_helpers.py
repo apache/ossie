@@ -124,19 +124,49 @@ def _build_cube(rnd, name, is_fact, dim_names):
     if rnd.chance(0.5):
         cube["description"] = rnd.text()
 
+    join_keys = {}
     if is_fact and dim_names:
-        cube["joins"] = [
-            {"name": d, "sql": "{CUBE}." + f"{d}_id" + " = {" + f"{d}.id" + "}",
-             "relationship": "many_to_one"}
-            for d in dim_names
-        ]
+        joins = []
+        for d in dim_names:
+            # The three reference forms a join key can take. Only the raw column is a
+            # column; the others name *members*, and Ossie relationship columns are
+            # columns -- so the converter has to resolve or park them. Generating only
+            # the raw form left both paths to the targeted tests.
+            form = rnd.pick(("raw", "member", "chained"))
+            join_keys[d] = form
+            if form == "raw":
+                left = "{CUBE}." + f"{d}_id"
+            elif form == "member":
+                left = "{CUBE." + f"{d}_key" + "}"
+            else:
+                left = "{CUBE." + f"{d}_via" + "}"
+            joins.append({"name": d, "sql": left + " = {" + f"{d}.id" + "}",
+                          "relationship": "many_to_one"})
+        cube["joins"] = joins
 
     dimensions = [{"name": "id", "sql": "id", "type": "number",
                    "primary_key": True}]
     for d in dim_names:
         dimensions.append({"name": f"{d}_id", "sql": f"{d}_id", "type": "number"})
+        form = join_keys.get(d)
+        if form == "member":
+            # A renamed dimension: the join names the member, the column is `<d>_id`.
+            dimensions.append({"name": f"{d}_key", "sql": f"{d}_id",
+                               "type": "number"})
+        elif form == "chained":
+            # A member pointing at another member, which is where single-level
+            # resolution used to stop and hand back a member name as a column.
+            dimensions.append({"name": f"{d}_via",
+                               "sql": "{CUBE." + f"{d}_key" + "}",
+                               "type": "number"})
+            dimensions.append({"name": f"{d}_key", "sql": f"{d}_id",
+                               "type": "number"})
     for i in range(rnd.count(0, 3)):
-        dimensions.append(_build_dimension(rnd, f"attr_{i}"))
+        # Cube identifiers *are* case-sensitive, so a mixed-case member name has to come
+        # back spelled exactly as written -- the converter normalizes case only when
+        # matching Ossie references, never when emitting a Cube name.
+        name = f"Attr{i}" if rnd.chance(0.3) else f"attr_{i}"
+        dimensions.append(_build_dimension(rnd, name))
     if rnd.chance(0.25):
         dimensions.append({
             "name": "place", "type": "geo",
@@ -158,6 +188,16 @@ def _build_cube(rnd, name, is_fact, dim_names):
         if rnd.chance(0.25):
             measure["format"] = "currency"
         measures.append(measure)
+    # A calculated measure: classified by its outer type, which says nothing about the
+    # aggregates inside it. Only idempotent ones here -- a `SUM` inside a calculated
+    # measure on a fanned-out cube is reported rather than converted silently, and that
+    # refusal has its own targeted test.
+    if rnd.chance(0.3):
+        measures.append({
+            "name": "calc",
+            "sql": "MAX({CUBE}.value) - MIN({CUBE}.value)",
+            "type": "number",
+        })
     cube["measures"] = measures
     return cube
 
@@ -225,3 +265,202 @@ def check_model(files):
     assert_cube_roundtrip_is_lossless(files)
     assert_ossie_roundtrip_is_lossless(files)
     assert_ossie_is_spec_valid(files)
+
+
+# --- hand-authored Ossie ---------------------------------------------------------
+#
+# The builders above all start from Cube, so every property they assert is about a
+# model that came *out* of a Cube file -- and therefore carries a stash. A
+# hand-authored Ossie model has none, so every key the exporter writes is one it
+# chose rather than restored, which is the harder direction and the one review
+# findings kept landing in: cross-cube member spelling, quoted identifiers, generated
+# view members, part-name allocation. None of it had generated coverage.
+
+# Aggregates safe on any dataset, so a generated metric never depends on fan-out.
+OSSIE_AGGS = ["MIN", "MAX", "COUNT_DISTINCT"]
+
+
+def _ossie_agg(func, reference):
+    return (f"COUNT(DISTINCT {reference})" if func == "COUNT_DISTINCT"
+            else f"{func}({reference})")
+
+
+def _yaml_text(value):
+    """A single-quoted YAML scalar, so a generated `61` stays the string "61".
+
+    Emitting text unquoted made the generator produce documents the spec rejects
+    (`description: 61` is an integer), which the validity check on the *input* caught --
+    the reason that check is there.
+    """
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _cased(rnd, name):
+    """The same identifier, sometimes spelled in another case or quoted.
+
+    Ossie regular identifiers are case-insensitive and the spec's normalized form
+    upper-cases them, so all of these address the same field -- and a quoted upper-case
+    one does too ("force-matched to normalized case"). Generating only lowercase left
+    the whole matching path to targeted tests.
+    """
+    if rnd.chance(0.15):
+        return name.upper()
+    if rnd.chance(0.1):
+        return '"' + name.upper() + '"'
+    return name
+
+
+def build_ossie_model(rnd):
+    """Generate a hand-authored Ossie model (no stash) as a YAML string."""
+    dim_names = [f"dim_{i}" for i in range(rnd.count(1, 2))]
+    fact = "fact"
+
+    lines = ["version: 0.2.0.dev0", "semantic_model:", "- name: shop"]
+    if rnd.chance(0.5):
+        lines.append(f"  description: {_yaml_text(rnd.text())}")
+    lines.append("  datasets:")
+
+    fields_by_dataset = {}
+    for name in [fact] + dim_names:
+        fields = _ossie_fields(rnd, name, dim_names if name == fact else ())
+        fields_by_dataset[name] = fields
+        lines.append(f"  - name: {name}")
+        lines.append(f"    source: shop.public.{name}")
+        lines.append("    primary_key:")
+        lines.append("    - id")
+        if rnd.chance(0.4):
+            lines.append(f"    description: {_yaml_text(rnd.text())}")
+        lines.append("    fields:")
+        for fname, expr, datatype in fields:
+            lines.append(f"    - name: {fname}")
+            lines.append("      expression:")
+            lines.append("        dialects:")
+            lines.append("        - dialect: ANSI_SQL")
+            lines.append(f"          expression: {expr}")
+            lines.append(f"      datatype: {datatype}")
+
+    # Every dimension dataset is reachable from the fact, so a generated view has an
+    # unambiguous root and cross-dataset metrics have a join path.
+    lines.append("  relationships:")
+    for d in dim_names:
+        lines.append(f"  - name: {fact}_to_{d}")
+        lines.append(f"    from: {fact}")
+        lines.append(f"    to: {d}")
+        lines.append(f"    from_columns: [{d}_id]")
+        lines.append("    to_columns: [id]")
+
+    lines.append("  metrics:")
+    for text in _ossie_metrics(rnd, fact, dim_names, fields_by_dataset):
+        lines.extend(text)
+    return "\n".join(lines) + "\n"
+
+
+def _ossie_fields(rnd, dataset, dim_names):
+    """(name, ANSI expression, datatype) for one dataset's fields."""
+    fields = [("id", "id", "Integer")]
+    for d in dim_names:
+        fields.append((f"{d}_id", f"{d}_id", "Integer"))
+    for i in range(rnd.count(1, 2)):
+        name = f"attr_{i}" if rnd.chance(0.7) else f"Attr{i}"
+        if rnd.chance(0.3):
+            # A computed field, which must be referenced as `{CUBE.member}` so Cube
+            # inlines its expression rather than reading a column of that name.
+            fields.append((name, f"LOWER({name}_raw)", "String"))
+        else:
+            fields.append((name, name, "String"))
+    fields.append(("value", "value", "Decimal"))
+    return fields
+
+
+def _ossie_metrics(rnd, fact, dim_names, fields_by_dataset):
+    """Metric blocks: single aggregates, and composites that decomposition splits."""
+    out = []
+
+    def block(name, expression):
+        entry = [f"  - name: {name}",
+                 "    expression:",
+                 "      dialects:",
+                 "      - dialect: ANSI_SQL",
+                 f"        expression: {expression}"]
+        if rnd.chance(0.3):
+            entry.insert(1, f"    description: {_yaml_text(rnd.text())}")
+        out.append(entry)
+
+    # One aggregate over a field of the fact, sometimes referenced in another case.
+    field = rnd.pick([f[0] for f in fields_by_dataset[fact]])
+    block("single", _ossie_agg(rnd.pick(OSSIE_AGGS),
+                               f"{_cased(rnd, fact)}.{_cased(rnd, field)}"))
+
+    # A composite over one dataset: two aggregates, so export splits it into a measure
+    # per aggregate plus a ratio referencing them, and import inlines it back.
+    if rnd.chance(0.6):
+        block("composite", "{} / {}".format(
+            _ossie_agg("MAX", f"{fact}.value"),
+            _ossie_agg("COUNT_DISTINCT", f"{fact}.id")))
+
+    # A composite spanning two datasets, which puts each part on its own cube -- the
+    # case cross-cube member spelling has to get right.
+    if dim_names and rnd.chance(0.6):
+        other = rnd.pick(dim_names)
+        block("crossing", "{} / {}".format(
+            _ossie_agg("MAX", f"{_cased(rnd, fact)}.value"),
+            _ossie_agg("COUNT_DISTINCT", f"{_cased(rnd, other)}.{_cased(rnd, 'id')}")))
+    return out
+
+
+def assert_ossie_first_roundtrip(ossie_yaml):
+    """A hand-authored Ossie model exports and re-imports unchanged."""
+    from _cube_gate import assert_ossie_is_valid
+
+    # The generator itself has to produce a valid document, or the rest proves nothing.
+    assert_ossie_is_valid(ossie_yaml, "generated Ossie model")
+    files, _ = convert_ossie_to_cube(ossie_yaml)
+    back, _ = convert_cube_to_ossie(files)
+    assert_ossie_is_valid(back, "re-imported Ossie model")
+    return files, back
+
+
+def _normalize_refs(expression):
+    """An expression with every `dataset.field` reference in the spec's normalized form.
+
+    Identifier case is *deliberately* canonicalized by the converter -- `MAX(FACT.value)`
+    and `MAX(fact.value)` are the same expression, and what comes back is the canonical
+    spelling -- so comparing raw text would report intended behaviour as a change. The
+    normalization rules themselves are pinned by targeted tests, not by this one.
+    """
+    from ossie_cube._common import (QUOTED_DOTTED_REF_RE, normalize_identifier,
+                                    split_dotted_ref)
+
+    def repl(match):
+        head, name = split_dotted_ref(match.group(0))
+        return f"{normalize_identifier(head)}.{normalize_identifier(name)}"
+
+    return QUOTED_DOTTED_REF_RE.sub(repl, expression)
+
+
+def check_ossie_model(ossie_yaml):
+    files, back = assert_ossie_first_roundtrip(ossie_yaml)
+    original = load_yaml(ossie_yaml)["semantic_model"][0]
+    returned = load_yaml(back)["semantic_model"][0]
+
+    # Metrics must come back with the same names and the same expressions: a composite
+    # one is split into hidden measures on the way out and inlined back on the way in,
+    # which is the most intricate path in the converter and had no generated coverage.
+    def metrics(model):
+        return {m["name"]: _normalize_refs(m["expression"]["dialects"][0]["expression"])
+                for m in (model.get("metrics") or [])}
+
+    assert metrics(returned) == metrics(original), (
+        "Ossie -> Cube -> Ossie changed the metrics")
+
+    # And the fields, which is where a computed expression has to survive as a member
+    # reference rather than being flattened to a column of the same name.
+    def fields(model):
+        return {ds["name"]: {f["name"]: _normalize_refs(
+                    f["expression"]["dialects"][0]["expression"])
+                for f in (ds.get("fields") or [])}
+                for ds in model["datasets"]}
+
+    assert fields(returned) == fields(original), (
+        "Ossie -> Cube -> Ossie changed the fields")
+    return files

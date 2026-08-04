@@ -24,7 +24,14 @@ properties are still checked in CI on a Python where hypothesis fails to build.
 """
 
 import pytest
-from _roundtrip_helpers import RandomRnd, build_cube_model, check_model
+from _cube_gate import assert_cube_compiles, cube_gate
+from _roundtrip_helpers import (
+    RandomRnd,
+    build_cube_model,
+    build_ossie_model,
+    check_model,
+    check_ossie_model,
+)
 
 try:
     from hypothesis import HealthCheck, given, settings
@@ -42,6 +49,23 @@ SEEDS = list(range(60))
 def test_seeded_models_roundtrip(seed):
     """A deterministic sweep, so a failure names a reproducible seed."""
     check_model(build_cube_model(RandomRnd(seed)))
+
+
+@pytest.mark.parametrize("seed", SEEDS)
+def test_seeded_ossie_models_roundtrip(seed):
+    """The same sweep from the other end: a hand-authored Ossie model, which carries no
+    stash, so every key the exporter writes is one it chose rather than restored."""
+    check_ossie_model(build_ossie_model(RandomRnd(seed)))
+
+
+@cube_gate
+@pytest.mark.parametrize("seed", SEEDS[:12])
+def test_seeded_ossie_models_compile_in_cube(seed):
+    """The export path is where Cube's own verdict matters most: nothing is restored
+    from a stash, so every member reference, view entry and measure name was chosen by
+    this converter. A slice of the sweep, since each case spawns a Cube compile."""
+    files = check_ossie_model(build_ossie_model(RandomRnd(seed)))
+    assert_cube_compiles(files, f"generated Ossie model (seed {seed})")
 
 
 if HAVE_HYPOTHESIS:
@@ -97,3 +121,9 @@ if HAVE_HYPOTHESIS:
     @given(st.data())
     def test_generated_models_roundtrip(data):
         check_model(build_cube_model(_HypothesisRnd(data)))
+
+    @settings(max_examples=150, deadline=None,
+              suppress_health_check=[HealthCheck.too_slow])
+    @given(st.data())
+    def test_generated_ossie_models_roundtrip(data):
+        check_ossie_model(build_ossie_model(_HypothesisRnd(data)))
