@@ -206,11 +206,9 @@ class OSISemanticModel(BaseModel):
 class OSIDocument(BaseModel):
     """Root Ossie document."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     version: str = "0.2.0.dev0"
-    dialects: Optional[list[OSIDialect]] = None
-    vendors: Optional[list[OSIVendor]] = None
     semantic_model: list[OSISemanticModel]
 
     def to_osi_yaml(self, **kwargs: Any) -> str:

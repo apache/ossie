@@ -19,6 +19,7 @@ import json
 from typing import List, Optional
 
 import pytest
+import yaml
 from syrupy.assertion import SnapshotAssertion
 
 from ossie_dbt.converter_issues import ConverterIssueType
@@ -125,6 +126,19 @@ class TestBasicConversion:
 
         names = [ds.name for ds in result.semantic_model[0].datasets]
         assert names == ["orders", "users"]
+
+    def test_serialized_output_omits_schema_invalid_root_advertisement_fields(self) -> None:
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            dimensions=[_dimension("status")],
+        )
+        result = MSIToOSIConverter().convert(_manifest(semantic_models=[sm])).output
+
+        data = yaml.safe_load(result.to_osi_yaml())
+
+        assert "dialects" not in data
+        assert "vendors" not in data
+        assert _fields(result)[0].expression.dialects[0].dialect == OSIDialect.ANSI_SQL
 
 
 class TestDimensionConversion:
@@ -302,7 +316,6 @@ class TestDialectConfiguration:
         )
         result = MSIToOSIConverter().convert(_manifest(semantic_models=[sm])).output
 
-        assert result.dialects == [OSIDialect.ANSI_SQL]
         assert _fields(result)[0].expression.dialects[0].dialect == OSIDialect.ANSI_SQL
 
     def test_configurable_dialect(self) -> None:
@@ -312,7 +325,6 @@ class TestDialectConfiguration:
         )
         result = MSIToOSIConverter(dialect=OSIDialect.SNOWFLAKE).convert(_manifest(semantic_models=[sm])).output
 
-        assert result.dialects == [OSIDialect.SNOWFLAKE]
         assert _fields(result)[0].expression.dialects[0].dialect == OSIDialect.SNOWFLAKE
 
 
