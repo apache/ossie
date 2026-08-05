@@ -285,18 +285,92 @@ def test_a_model_named_after_one_of_its_datasets_does_not_collide_in_cube():
     assert parse(back)["semantic_model"][0]["name"] == "orders"
 
 
-@cube_gate
-def test_a_renamed_view_still_compiles_and_stays_renamed():
+def test_a_renamed_view_stays_renamed_on_the_second_export():
     """The rename has to survive a second export too. It is not re-derived from the
     stash -- `meta.ossie` is stripped when a view is stashed -- so the recorded model
     name is what keeps cycle two from emitting a colliding view again."""
     files, _ = convert_ossie_to_cube(load_fixture("databricks_ossie.yaml"))
-    assert_cube_compiles(files, "model named after its own dataset")
     second, _ = convert_ossie_to_cube(convert_cube_to_ossie(files)[0])
     assert set(second) == set(files)
     assert parse(second["model/views/orders_view.yml"])["views"][0][
         "name"] == "orders_view"
+
+
+@cube_gate
+def test_a_renamed_view_compiles_on_both_cycles():
+    files, _ = convert_ossie_to_cube(load_fixture("databricks_ossie.yaml"))
+    assert_cube_compiles(files, "model named after its own dataset")
+    second, _ = convert_ossie_to_cube(convert_cube_to_ossie(files)[0])
     assert_cube_compiles(second, "model named after its own dataset (cycle 2)")
+
+
+_SALES_MODEL = (
+    f"version: {OSSIE_VERSION}\n"
+    "semantic_model:\n"
+    "- name: Sales Model\n"
+    "  datasets:\n"
+    "  - name: orders\n"
+    "    source: shop.public.orders\n"
+    "    primary_key:\n    - id\n"
+    "    fields:\n"
+    "    - name: id\n      dimension: {}\n      datatype: Integer\n"
+    "      expression:\n        dialects:\n"
+    "        - dialect: ANSI_SQL\n          expression: id\n"
+)
+
+
+def test_a_model_name_needing_sanitizing_is_preserved():
+    """`Sales Model` is a legal Ossie name and cannot be a Cube identifier, so the view is
+    `sales_model` -- and the model came back named `sales_model` too.
+
+    The record was scoped to cube/view collisions, which is the rarer cause; plain
+    sanitization is the common one and went unrecorded. Three cycles because the value has
+    to survive being read back out of the stash, not just written once.
+    """
+    files, issues = convert_ossie_to_cube(_SALES_MODEL)
+    view = parse(files["model/views/sales_model.yml"])["views"][0]
+    assert view["name"] == "sales_model"
+    assert view["meta"]["ossie"]["model_name"] == "Sales Model"
+    assert any("preserved under meta.ossie.model_name" in i.detail
+               for i in issues.of_type(IssueType.PARKED_IN_META))
+
+    ossie = _SALES_MODEL
+    for cycle in range(3):
+        ossie, _ = convert_cube_to_ossie(convert_ossie_to_cube(ossie)[0])
+        assert parse(ossie)["semantic_model"][0]["name"] == "Sales Model", (
+            f"lost on cycle {cycle + 1}")
+
+
+def test_a_name_override_that_sanitizes_to_the_view_name_is_preserved():
+    """`--name 'Sales Model'` over a Cube model whose view is already `sales_model`.
+
+    Both sides sanitize to `sales_model`, so comparing the *sanitized* forms saw no
+    difference and recorded nothing -- the override was silently undone on the way back.
+    The comparison is against the raw name for exactly this case.
+    """
+    cube = {
+        "model/cubes/orders.yml":
+            "cubes:\n- name: orders\n  sql_table: shop.public.orders\n"
+            "  dimensions:\n  - name: id\n    sql: id\n    type: number\n"
+            "    primary_key: true\n",
+        "model/views/sales_model.yml":
+            "views:\n- name: sales_model\n  cubes:\n  - join_path: orders\n"
+            "    includes: '*'\n",
+    }
+    ossie, _ = convert_cube_to_ossie(cube, model_name="Sales Model")
+    assert parse(ossie)["semantic_model"][0]["name"] == "Sales Model"
+    for cycle in range(3):
+        ossie, _ = convert_cube_to_ossie(convert_ossie_to_cube(ossie)[0])
+        assert parse(ossie)["semantic_model"][0]["name"] == "Sales Model", (
+            f"lost on cycle {cycle + 1}")
+
+
+def test_a_model_name_already_matching_its_view_records_nothing():
+    """The record only appears when the names actually differ, so an ordinary model keeps
+    a clean Cube document with no `meta.ossie` on its view at all."""
+    files, _ = convert_ossie_to_cube(_SALES_MODEL.replace("Sales Model", "sales_model"))
+    view = parse(files["model/views/sales_model.yml"])["views"][0]
+    assert "meta" not in view
 
 
 def test_a_model_from_another_converter_is_stable_after_one_cycle():
@@ -313,7 +387,27 @@ def test_a_model_from_another_converter_is_stable_after_one_cycle():
     assert second == first
 
 
-@cube_gate
+_SHADOWED_KEY_COLUMN = (
+    f"version: {OSSIE_VERSION}\n"
+    "semantic_model:\n"
+    "- name: shop\n"
+    "  datasets:\n"
+    "  - name: orders\n"
+    "    source: shop.public.orders\n"
+    "    primary_key:\n    - id\n"
+    "    fields:\n"
+    "    - name: id\n      expression:\n        dialects:\n"
+    "        - dialect: ANSI_SQL\n          expression: LOWER(email)\n"
+    "      datatype: String\n"
+)
+
+
+def _two_export_cycles(ossie):
+    first, _ = convert_ossie_to_cube(ossie)
+    second, _ = convert_ossie_to_cube(convert_cube_to_ossie(first)[0])
+    return first, second
+
+
 def test_two_export_cycles_produce_the_same_cube_model():
     """`Ossie -> Cube -> Ossie -> Cube`, on the collision that made the first differ from
     the second: a key column `id` alongside a computed field also named `id`.
@@ -322,25 +416,21 @@ def test_two_export_cycles_produce_the_same_cube_model():
     that the next export reads another leaves both Ossie documents identical while the Cube
     model changes -- here the key moved off the column and onto `LOWER(email)`, so Cube
     deduplicated on a different value and returned different counts.
+
+    Ungated: comparing two exports needs no Cube installation, and putting the whole test
+    behind the optional gate meant the regression it exists for went unchecked on every
+    machine without a built Cube checkout -- including CI.
     """
-    ossie = (
-        f"version: {OSSIE_VERSION}\n"
-        "semantic_model:\n"
-        "- name: shop\n"
-        "  datasets:\n"
-        "  - name: orders\n"
-        "    source: shop.public.orders\n"
-        "    primary_key:\n    - id\n"
-        "    fields:\n"
-        "    - name: id\n      expression:\n        dialects:\n"
-        "        - dialect: ANSI_SQL\n          expression: LOWER(email)\n"
-        "      datatype: String\n"
-    )
-    first, _ = convert_ossie_to_cube(ossie)
-    second, _ = convert_ossie_to_cube(convert_cube_to_ossie(first)[0])
+    first, second = _two_export_cycles(_SHADOWED_KEY_COLUMN)
     assert parse_files(second) == parse_files(first)
 
     keys = [d for d in parse_files(first)["model/cubes/orders.yml"]["cubes"][0][
         "dimensions"] if d.get("primary_key")]
     assert [(d["name"], d["sql"]) for d in keys] == [("id_pk", "id")]
+
+
+@cube_gate
+def test_the_second_export_cycle_still_compiles():
+    """The half of the above that genuinely needs Cube."""
+    _, second = _two_export_cycles(_SHADOWED_KEY_COLUMN)
     assert_cube_compiles(second, "second export cycle")
