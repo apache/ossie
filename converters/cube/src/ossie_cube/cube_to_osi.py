@@ -39,6 +39,7 @@ from ._common import (
     AGG_TO_OSSIE_FUNC,
     AGG_TO_RESULT_DATATYPE,
     CALCULATED_MEASURE_TYPES,
+    DEFAULT_MODEL_NAME,
     DIALECT_ANSI,
     DATATYPE_TO_DIM_TYPE,
     DIM_TYPE_TO_DATATYPE,
@@ -140,13 +141,23 @@ def convert_cube_to_ossie(files, model_name=None, view=None, strict_fanout=False
     # its datasets has its view renamed. Without this the name would silently become
     # the renamed view's on the way back.
     parked_model_name = parked_of(mapped_view.get("meta")).get("model_name")
-    model = {"name": model_name or parked_model_name or mapped_name or "cube_model"}
+    # With no view mapped there is nothing to take an identity from, so a previous export
+    # parked the model's metadata on a cube instead. Read before the datasets are built,
+    # because building them strips `meta.ossie` from the cube.
+    carried = _model_carried_by_a_cube(cubes) if mapped_name is None else {}
+
+    model = {"name": (model_name or parked_model_name or mapped_name
+                      or carried.get("name") or DEFAULT_MODEL_NAME)}
     if mapped_view.get("description"):
         model["description"] = unescape_braces_from_cube(
             mapped_view["description"])
+    elif carried.get("description"):
+        model["description"] = carried["description"]
     ai = _ai_context_from_meta(mapped_view.get("meta"))
     if ai:
         model["ai_context"] = ai
+    elif carried.get("ai_context"):
+        model["ai_context"] = carried["ai_context"]
 
     # Anything a cube's stash has to carry is worked out before the dataset is
     # built: joins with no Ossie form, and measures with no static Ossie
@@ -425,6 +436,23 @@ def _ai_context_from_meta(meta):
         # lossy for the sake of cosmetics.
         return {"instructions": text}
     return None
+
+
+def _model_carried_by_a_cube(cubes):
+    """Model-level metadata a previous export parked on a cube, or {}.
+
+    Takes the `{name: cube}` mapping and reads the first cube that carries the record, so
+    the result does not depend on which cube export chose as the carrier. In practice there
+    is exactly one: the record is consumed here and stripped from the stash, so it cannot
+    accumulate across cycles.
+    """
+    for cube in cubes.values():
+        if not isinstance(cube, dict):
+            continue
+        carried = parked_of(cube.get("meta")).get("model")
+        if isinstance(carried, dict) and carried:
+            return carried
+    return {}
 
 
 def parked_of(meta):

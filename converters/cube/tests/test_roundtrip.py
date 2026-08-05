@@ -26,6 +26,7 @@
 import json
 
 import pytest
+import yaml
 from _cube_gate import (
     assert_cube_compiles,
     assert_ossie_is_valid,
@@ -363,6 +364,104 @@ def test_a_name_override_that_sanitizes_to_the_view_name_is_preserved():
         ossie, _ = convert_cube_to_ossie(convert_ossie_to_cube(ossie)[0])
         assert parse(ossie)["semantic_model"][0]["name"] == "Sales Model", (
             f"lost on cycle {cycle + 1}")
+
+
+_CUBE_ONLY = {
+    "model/cubes/orders.yml":
+        "cubes:\n- name: orders\n  sql_table: shop.public.orders\n"
+        "  dimensions:\n  - name: id\n    sql: id\n    type: number\n"
+        "    primary_key: true\n",
+}
+_TWO_VIEWS = {
+    **_CUBE_ONLY,
+    "model/views/a.yml":
+        "views:\n- name: view_a\n  cubes:\n  - join_path: orders\n"
+        "    includes: '*'\n",
+    "model/views/b.yml":
+        "views:\n- name: view_b\n  cubes:\n  - join_path: orders\n"
+        "    includes: '*'\n",
+}
+
+
+def _with_model_metadata(cube_files):
+    """Import, then add the model-level metadata a user would edit in on the Ossie side."""
+    ossie, _ = convert_cube_to_ossie(cube_files, model_name="Sales Model")
+    doc = parse(ossie)
+    model = doc["semantic_model"][0]
+    model["description"] = "Sales overview with a {brace}"
+    model["ai_context"] = {"instructions": "Prefer completed orders"}
+    return json.loads(json.dumps(doc)), model
+
+
+def _dump(doc):
+    return yaml.safe_dump(doc, sort_keys=False)
+
+
+@pytest.mark.parametrize("label,cube_files", [
+    ("no views at all", _CUBE_ONLY),
+    ("two views, none selected", _TWO_VIEWS),
+])
+def test_model_metadata_survives_when_no_view_can_carry_it(label, cube_files):
+    """Model-level metadata has no Cube field; it rides on the view representing the model.
+
+    A Cube model need not contain a view, and one with several views need not say which is
+    the model -- and in both cases export emitted no view at all, so the name, description
+    and AI context were dropped without a word. `--name 'Sales Model'` came back as the
+    synthesized `cube_model`. They ride on a deterministic cube instead now.
+
+    Three cycles, since the value has to survive being read back out of a cube's stash;
+    and a literal brace, because Cube compiles every string in a model as an f-string.
+    """
+    doc, _ = _with_model_metadata(cube_files)
+    ossie = _dump(doc)
+    for cycle in range(3):
+        files, issues = convert_ossie_to_cube(ossie)
+        ossie, _ = convert_cube_to_ossie(files)
+        model = parse(ossie)["semantic_model"][0]
+        assert model["name"] == "Sales Model", f"{label}: lost on cycle {cycle + 1}"
+        assert model["description"] == "Sales overview with a {brace}"
+        assert model["ai_context"]["instructions"] == "Prefer completed orders"
+
+    # Reported, not silent -- the whole complaint about the old behaviour.
+    assert any(i.element_name == "cube 'orders'" and "no view to carry" in i.detail
+               for i in issues.of_type(IssueType.PARKED_IN_META))
+
+
+def test_the_carrier_is_the_alphabetically_first_cube():
+    """Deterministic, and independent of dataset order and of the relationship graph, so
+    every export picks the same cube. Import does not depend on the choice."""
+    cube_files = {
+        "model/cubes/zeta.yml":
+            "cubes:\n- name: zeta\n  sql_table: s.p.zeta\n  dimensions:\n"
+            "  - name: id\n    sql: id\n    type: number\n    primary_key: true\n",
+        "model/cubes/alpha.yml":
+            "cubes:\n- name: alpha\n  sql_table: s.p.alpha\n  dimensions:\n"
+            "  - name: id\n    sql: id\n    type: number\n    primary_key: true\n",
+    }
+    doc, _ = _with_model_metadata(cube_files)
+    files, _ = convert_ossie_to_cube(_dump(doc))
+    carried = {
+        name: parse(text)["cubes"][0].get("meta", {}).get("ossie", {}).get("model")
+        for name, text in files.items()}
+    assert carried["model/cubes/alpha.yml"]["name"] == "Sales Model"
+    assert carried["model/cubes/zeta.yml"] is None
+
+
+def test_a_cube_only_model_without_metadata_gains_nothing():
+    """The record appears only when there is something unrecoverable to keep, so a Cube
+    model that never had model-level metadata still round-trips byte-identical instead of
+    acquiring a `meta.ossie` key it never had. Every feature fixture is cube-only, so this
+    is what keeps their structural round trips honest."""
+    files, _ = convert_ossie_to_cube(convert_cube_to_ossie(_CUBE_ONLY)[0])
+    assert parse_files(files) == parse_files(_CUBE_ONLY)
+
+
+@cube_gate
+def test_a_model_carried_on_a_cube_still_compiles():
+    """The carrier is new YAML in the emitted model, and it holds a literal brace."""
+    doc, _ = _with_model_metadata(_CUBE_ONLY)
+    files, _ = convert_ossie_to_cube(_dump(doc))
+    assert_cube_compiles(files, "model metadata carried on a cube")
 
 
 def test_a_model_name_already_matching_its_view_records_nothing():

@@ -39,6 +39,7 @@ from ._common import (
     AGG_TO_RESULT_DATATYPE,
     DATATYPE_TO_DIM_TYPE,
     DEFAULT_DATATYPE_FOR_CUBE_TYPE,
+    DEFAULT_MODEL_NAME,
     DIALECT_ANSI,
     OSSIE_FUNC_TO_AGG,
     OSSIE_VERSION,
@@ -168,11 +169,13 @@ def _convert_model(model, dialect, base_cube, issues):
     stashed_paths = model_stash.get("cube_files") or {}
     files_content = {}
     emitted_members = {}
+    cubes_by_name = {}
     for ds_name, ds in datasets.items():
         cname = cube_names[ds_name]
         cube = _build_cube(ds, plan[cname], tables, joins_by_cube.get(cname),
                            measures_by_cube.get(cname),
                            join_parked_by_cube.get(cname), dialect, issues)
+        cubes_by_name[cname] = cube
         stashed = stashed_paths.get(cname)
         path = (safe_relative_path(stashed, f"cube '{cname}'") if stashed
                 else cube_file(cname))
@@ -189,6 +192,9 @@ def _convert_model(model, dialect, base_cube, issues):
                                      datasets, base_cube, emitted_members,
                                      issues).items():
         files_content.setdefault(vpath, {}).setdefault("views", []).extend(views)
+
+    if not _a_view_carries_the_model(model_stash):
+        _carry_model_on_a_cube(model, cubes_by_name, issues)
 
     files = {path: dump_yaml(content) for path, content in files_content.items()}
 
@@ -1251,6 +1257,64 @@ def _balanced(s):
 
 
 # --- views ----------------------------------------------------------------------
+
+def _a_view_carries_the_model(model_stash):
+    """Whether some view will hold the model's own name, description and AI context.
+
+    Model-level metadata has no Cube field of its own, so it rides on the view that
+    represents the model. There are two ways that happens: a hand-authored Ossie document
+    has no stashed view set, so export generates a view; or a stashed set records which
+    view the model was mapped from. Neither holds for a Cube model that has no views at
+    all -- which Cube does not require -- or one with several where none was chosen.
+    """
+    if "views" not in model_stash:
+        return True  # export generates one
+    return model_stash.get("mapped_view") is not None
+
+
+def _carry_model_on_a_cube(model, cubes_by_name, issues):
+    """Park model-level metadata on a cube when no view can hold it.
+
+    Without this the metadata was dropped in silence: a cube-only Cube model imported with
+    `--name 'Sales Model'` exported to cubes alone, and re-importing had nothing to read
+    the name from, so it came back as the synthesized `cube_model`. A description or AI
+    context added on the Ossie side went the same way. That contradicts the documented
+    lossless `Ossie -> Cube -> Ossie` round trip, and Cube models without views are
+    ordinary.
+
+    The carrier is the alphabetically first cube -- deterministic, and independent of both
+    dataset ordering and the relationship graph, so export picks the same one every time.
+    Import does not depend on the choice: it reads whichever cube carries the record.
+
+    Only genuinely unrecoverable values are parked, so a Cube model that had no
+    model-level metadata to begin with still round-trips to a byte-identical document
+    rather than gaining a `meta.ossie` key it never had. A name equal to the one import
+    synthesizes is recoverable by definition.
+    """
+    metadata = {}
+    if model.get("name") and model["name"] != DEFAULT_MODEL_NAME:
+        metadata["name"] = model["name"]
+    if model.get("description"):
+        metadata["description"] = model["description"]
+    if model.get("ai_context"):
+        metadata["ai_context"] = model["ai_context"]
+    if not metadata or not cubes_by_name:
+        return
+
+    carrier = sorted(cubes_by_name)[0]
+    cube = cubes_by_name[carrier]
+    # Escaped here rather than by `_build_meta`, which has already run for this cube:
+    # Cube compiles every string in a model as a Python f-string, so an unescaped brace
+    # in a description or in AI instructions fails the whole compile.
+    cube.setdefault("meta", {}).setdefault("ossie", {})["model"] = (
+        escape_braces_for_cube(metadata))
+    issues.add(
+        IssueType.PARKED_IN_META, f"cube '{carrier}'",
+        f"the model has no view to carry its metadata ("
+        f"{', '.join(sorted(metadata))}), because the Cube model it came from has no "
+        f"view mapped to it; parked on this cube under meta.ossie.model so a re-import "
+        f"can recover it")
+
 
 def _uncollided_view_name(vname, cube_names):
     """A generated view name that no cube already owns.

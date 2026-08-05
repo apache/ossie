@@ -37,6 +37,11 @@ OSSIE_VERSION = "0.2.0.dev0"
 # Vendor id used for the `custom_extensions` stash.
 VENDOR = "CUBE"
 
+# The Ossie model name import synthesizes when the Cube model offers none -- no view is
+# mapped and `--name` was not given. Shared so export can recognize a name it did *not*
+# synthesize and therefore has to preserve; two copies of the literal would drift.
+DEFAULT_MODEL_NAME = "cube_model"
+
 # Cube SQL is the SQL of the model's data source, so there is no CUBE entry in
 # the Ossie dialect enum. Import emits ANSI_SQL; export prefers ANSI_SQL and lets
 # the caller prepend a warehouse dialect the actual data source would accept.

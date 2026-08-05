@@ -115,9 +115,9 @@ to **import** (Cube -> Ossie) or **export** (Ossie -> Cube).
 
 | Apache Ossie | Cube | Notes |
 |---|---|---|
-| `semantic_model` | a **view** | Cube users are view-first, and Cube's agent reads `meta.ai_context` only from views and members -- so the view, not any cube, is the model boundary. |
+| `semantic_model` | a **view** | Cube users are view-first, and Cube's agent reads `meta.ai_context` only from views and members -- so the view, not any cube, is the model boundary. A Cube model need not contain a view, though, and one with several need not say which is the model; when no view can carry the model's metadata it is parked on the alphabetically first cube under `meta.ossie.model` and import reads it back from there. |
 | `semantic_model.name` | view name | Import: the mapped view's name (override with `--name`). Export: whenever the emitted view cannot carry the name exactly, the original is recorded in `meta.ossie.model_name` and import hands that back instead of the view's. Three causes — the name is not a valid Cube identifier (`Sales Model` → view `sales_model`); a `--name` override the stashed view does not match; or the name is also a dataset's, since Cube keeps cubes and views in one namespace and would refuse a model with two members of one name (what a Databricks metric view over a same-named table produces), so the generated view becomes `<name>_view`. |
-| `model.description` / `ai_context.instructions` | view `description` / `meta.ai_context` | Import: taken from the sole view, or `--view`. |
+| `model.description` / `ai_context.instructions` | view `description` / `meta.ai_context` | Import: taken from the sole view, or `--view`; or from `meta.ossie.model` on a cube when no view is mapped. |
 | dataset | `cubes[]` entry in `model/cubes/<name>.yml` | Import: a non-canonical original path is stashed and restored on export. |
 | `dataset.source` (dotted) | `sql_table` | Passed through verbatim; Cube interpolates it straight into `FROM`, so no catalog/schema split is needed. |
 | `dataset.source` (`SELECT ...`) | `sql` | Cube requires exactly one of `sql` / `sql_table`. |
@@ -440,9 +440,10 @@ invalid) when an input breaks one of these:
 - a dimension has an unknown `type`, or a `geo` dimension is missing
   `latitude.sql` / `longitude.sql`;
 - the model carries foreign-vendor `custom_extensions` but no view is mapped, so
-  there is nowhere to park them (re-import with `--view <name>`); model-level
-  metadata rides on the view representing the model, and picking one arbitrarily
-  would not survive a re-import;
+  there is nowhere to park them (re-import with `--view <name>`). The model's own
+  name, description and AI context are carried on a cube in this case; foreign
+  extensions are not, because import restores those only from the mapped view --
+  so this refuses loudly rather than dropping them;
 - there are no convertible cubes at all; the input YAML is malformed.
 
 ## Notes and limitations
