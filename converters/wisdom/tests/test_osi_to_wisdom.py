@@ -209,6 +209,32 @@ def test_one_to_one_note_restores_relationship_type():
     assert edges[0]["properties"]["relationshipType"] == "ONE_TO_ONE"
 
 
+def test_relationship_column_count_mismatch_raises():
+    document = OSIDocument(
+        semantic_model=[
+            OSISemanticModel(
+                name="m",
+                datasets=[
+                    OSIDataset(name="orders", source="db.s.orders"),
+                    OSIDataset(name="customers", source="db.s.customers"),
+                ],
+                relationships=[
+                    OSIRelationship(
+                        name="orders_to_customers",
+                        from_dataset="orders",
+                        to="customers",
+                        from_columns=["customer_id", "region_id"],
+                        to_columns=["id"],
+                    )
+                ],
+            )
+        ]
+    )
+
+    with pytest.raises(ValueError, match="from_columns.*to_columns.*same length"):
+        OSIToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
+
+
 def test_unresolved_metric_attaches_to_first_dataset():
     from ossie import OSIMetric
 
