@@ -140,11 +140,18 @@ def validate_references(data: dict) -> list[str]:
             rel_name = rel.get("name", "<unnamed>")
             from_ds = rel.get("from")
             to_ds = rel.get("to")
+            from_columns = rel.get("from_columns") or []
+            to_columns = rel.get("to_columns") or []
 
             if from_ds and from_ds not in dataset_names:
                 errors.append(f"[Reference] Relationship '{rel_name}' in model '{model_name}' references unknown dataset '{from_ds}'")
             if to_ds and to_ds not in dataset_names:
                 errors.append(f"[Reference] Relationship '{rel_name}' in model '{model_name}' references unknown dataset '{to_ds}'")
+            if len(from_columns) != len(to_columns):
+                errors.append(
+                    f"[Relationship] Relationship '{rel_name}' in model '{model_name}' has "
+                    f"{len(from_columns)} from_columns but {len(to_columns)} to_columns"
+                )
 
     return errors
 
