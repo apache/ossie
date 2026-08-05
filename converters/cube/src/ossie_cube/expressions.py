@@ -294,7 +294,10 @@ def has_top_level_operator(expr):
     parentheses: a lone `SUM(x)` does not, `SUM(x) / 2` does.
     """
     depth, quote = 0, None
-    for ch in str(expr):
+    # Stripped first: interior whitespace is what implies structure, so a trailing
+    # newline off a YAML block scalar (`expression: |`) is not evidence of any, and
+    # counting it wrapped a lone `SUM(x)\n` in parentheses it did not need.
+    for ch in str(expr).strip():
         if quote:
             if ch == quote:
                 quote = None

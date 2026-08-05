@@ -50,7 +50,7 @@ import random
 import string
 
 from ossie_cube import convert_cube_to_ossie, convert_ossie_to_cube
-from ossie_cube._common import dump_yaml, load_yaml
+from ossie_cube._common import OSSIE_VERSION, dump_yaml, load_yaml
 
 # Aggregates whose value survives duplicate rows, so they are safe on any cube.
 IDEMPOTENT_AGGS = ["count_distinct", "count_distinct_approx", "min", "max"]
@@ -315,7 +315,7 @@ def build_ossie_model(rnd):
     dim_names = [f"dim_{i}" for i in range(rnd.count(1, 2))]
     fact = "fact"
 
-    lines = ["version: 0.2.0.dev0", "semantic_model:", "- name: shop"]
+    lines = [f"version: {OSSIE_VERSION}", "semantic_model:", "- name: shop"]
     if rnd.chance(0.5):
         lines.append(f"  description: {_yaml_text(rnd.text())}")
     lines.append("  datasets:")

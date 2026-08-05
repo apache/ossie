@@ -29,8 +29,8 @@
  * exactly that kind were found by running this.
  *
  * Needs a built Cube checkout (`yarn build` in the monorepo, or an installed
- * node_modules with dist/). `tests/test_cube_compiles.py` skips when there isn't one,
- * so this is a local and release-time gate rather than a CI one.
+ * node_modules with dist/). The tests behind `cube_gate` skip when there isn't one, so
+ * this is a local and release-time gate rather than a CI one.
  */
 
 const fs = require('fs');
@@ -76,15 +76,44 @@ if (!files.length) {
   process.exit(2);
 }
 
-// Cube keys models by file name, and its loader does not care about directories, so a
-// flat list is enough -- `cubes/orders.yml` and `views/sales.yml` compile together.
+/* The deepest directory containing every input, which is what the relative keys are
+ * relative to. One file has no shared prefix to find, so its own directory is the root. */
+function commonRoot(paths) {
+  const dirs = paths.map((p) => path.dirname(path.resolve(p)).split(path.sep));
+  let shared = dirs[0];
+  for (const parts of dirs.slice(1)) {
+    let i = 0;
+    while (i < shared.length && i < parts.length && shared[i] === parts[i]) i += 1;
+    shared = shared.slice(0, i);
+  }
+  return shared.join(path.sep) || path.sep;
+}
+
+// Cube keys model files by their path *relative to the model root* -- its own
+// FileRepository walks the tree and joins the directory back on, so a cube at
+// `cubes/orders.yml` is keyed by exactly that. Using the basename instead let two files
+// of one name collide, and the loser was dropped without a word: `cubes/orders.yml` plus
+// an invalid `views/orders.yml` reported COMPILED OK, while the same two files under
+// distinct names failed as they should. A gate that quietly drops half its input is
+// worse than no gate, and the Databricks fixture emits that exact pair.
+const root = commonRoot(files);
 const dataSchemaFiles = files.map((p) => ({
-  fileName: path.basename(p),
+  fileName: path.relative(root, path.resolve(p)),
   content: fs.readFileSync(p, 'utf8'),
 }));
 
+// Nothing may share a key, or Cube silently sees fewer files than we passed.
+const seen = new Map();
+for (const f of dataSchemaFiles) {
+  if (seen.has(f.fileName)) {
+    console.log(`COMPILE FAILED\nduplicate model key '${f.fileName}'`);
+    process.exit(1);
+  }
+  seen.set(f.fileName, true);
+}
+
 const { compiler } = prepareCompiler(
-  { localPath: () => path.dirname(files[0]), dataSchemaFiles: () => Promise.resolve(dataSchemaFiles) },
+  { localPath: () => root, dataSchemaFiles: () => Promise.resolve(dataSchemaFiles) },
   { adapter: 'postgres' });
 
 compiler.compile()

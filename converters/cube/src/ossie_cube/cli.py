@@ -141,7 +141,7 @@ def _collect_file(files, path, anchor):
         raise ConversionError(
             f"two inputs both resolve to '{rel}'; pass their common parent "
             f"directory instead, or rename one")
-    with open(path) as fh:
+    with open(path, encoding="utf-8") as fh:
         files[rel] = fh.read()
 
 
@@ -157,14 +157,14 @@ def main(argv=None):
     args = _build_parser().parse_args(argv)
     try:
         if args.command == "export":
-            with open(args.input) as fh:
+            with open(args.input, encoding="utf-8") as fh:
                 ossie_yaml = fh.read()
             files, issues = convert_ossie_to_cube(
                 ossie_yaml, dialect=args.dialect, base_cube=args.base_cube)
             for rel, text in files.items():
                 dest = os.path.join(args.output, *rel.split("/"))
                 os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
-                with open(dest, "w") as fh:
+                with open(dest, "w", encoding="utf-8") as fh:
                     fh.write(text)
             print(f"Wrote {len(files)} file(s) to {args.output}", file=sys.stderr)
             _report(issues)
@@ -175,7 +175,7 @@ def main(argv=None):
             files, model_name=args.name, view=args.view,
             strict_fanout=args.strict_fanout)
         if args.output:
-            with open(args.output, "w") as fh:
+            with open(args.output, "w", encoding="utf-8") as fh:
                 fh.write(out)
         else:
             sys.stdout.write(out)

@@ -569,7 +569,15 @@ def _park_expression(parked, expression, used):
     dialects = (expression or {}).get("dialects") or []
     if len(dialects) > 1:
         parked["expression"] = expression
-    elif used not in (None, DIALECT_ANSI):
+        return
+    if used is None and len(dialects) == 1:
+        # The verbatim-restore path hands back the Cube SQL a previous import stashed
+        # rather than picking a dialect, so it has no `used` to pass -- but the label
+        # still has to survive, or Cube's `sql` is re-imported as ANSI_SQL. A
+        # `DATABRICKS` metric restored from the stash lost its label on exactly this
+        # path, one cycle later than the label loss already fixed for the direct one.
+        used = dialects[0].get("dialect")
+    if used not in (None, DIALECT_ANSI):
         parked["dialect"] = used
 
 
@@ -1244,6 +1252,32 @@ def _balanced(s):
 
 # --- views ----------------------------------------------------------------------
 
+def _uncollided_view_name(vname, cube_names, model, parked, issues):
+    """A generated view name that no cube already owns.
+
+    Returns `vname` untouched when it is free. Otherwise appends `_view` (then
+    `_view_2`, ...) and records the model's real name under `meta.ossie.model_name`, so
+    the next import restores it rather than adopting the renamed view's.
+
+    Renaming rather than refusing: an Ossie model whose name matches one of its own
+    datasets is a perfectly ordinary document -- every Databricks metric view over a
+    same-named table produces one -- and it is the model most worth converting.
+    """
+    taken = {str(name).lower() for name in cube_names.values()}
+    if vname.lower() not in taken:
+        return vname
+    candidate, suffix = f"{vname}_view", 2
+    while candidate.lower() in taken:
+        candidate, suffix = f"{vname}_view_{suffix}", suffix + 1
+    parked["model_name"] = model.get("name")
+    issues.add(
+        IssueType.PARKED_IN_META, f"view '{candidate}'",
+        f"the model name '{vname}' is also a cube name, and Cube keeps cubes and "
+        f"views in one namespace, so the view is emitted as '{candidate}'; the "
+        f"model's name is preserved under meta.ossie.model_name")
+    return candidate
+
+
 def _build_views(model, model_stash, cube_names, relationships, datasets,
                  base_cube, emitted_members, issues):
     """Return {file path: [view dict, ...]}.
@@ -1263,10 +1297,25 @@ def _build_views(model, model_stash, cube_names, relationships, datasets,
     if foreign:
         parked["custom_extensions"] = foreign
 
+    # Cube keeps cubes and views in one global namespace, so a view may not share a
+    # name with a cube. The model name and a dataset name being equal is not exotic --
+    # it is what the Databricks metric-view converter produces, a metric view `orders`
+    # over a table `orders` -- and the collision made Cube reject the whole model with
+    # `Cannot read properties of undefined`. The view is what gets renamed: cubes are
+    # referred to by joins and by every member reference, the view by nothing.
+    model_vname = sanitize_name(model.get("name", "model"), "Model", set())
+
     out = {}
     if "views" in model_stash:
         mapped = model_stash.get("mapped_view")
         paths = model_stash.get("view_files") or {}
+        # The mapped view's name is the model's name on re-import, so a difference
+        # between them has to be recorded or the next import adopts the view's name.
+        # This is also what keeps a renamed view stable across a second cycle: the
+        # rename below is not re-derived from the stash, and `meta.ossie` does not
+        # survive stashing.
+        if mapped is not None and mapped != model_vname:
+            parked["model_name"] = model.get("name")
         if foreign and mapped is None:
             # The model's own metadata rides on the view that represents it, and
             # there isn't one: the source Cube model had several views and none was
@@ -1297,7 +1346,7 @@ def _build_views(model, model_stash, cube_names, relationships, datasets,
             out.setdefault(path, []).append(view)
         return out
 
-    vname = sanitize_name(model.get("name", "model"), "Model", set())
+    vname = _uncollided_view_name(model_vname, cube_names, model, parked, issues)
     view = {"name": vname}
     if model.get("description"):
         view["description"] = escape_braces_for_cube(model["description"])

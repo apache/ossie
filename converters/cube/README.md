@@ -116,7 +116,7 @@ to **import** (Cube -> Ossie) or **export** (Ossie -> Cube).
 | Apache Ossie | Cube | Notes |
 |---|---|---|
 | `semantic_model` | a **view** | Cube users are view-first, and Cube's agent reads `meta.ai_context` only from views and members -- so the view, not any cube, is the model boundary. |
-| `semantic_model.name` | view name | Import: the mapped view's name (override with `--name`). |
+| `semantic_model.name` | view name | Import: the mapped view's name (override with `--name`). Cube keeps cubes and views in one namespace, so a model named after one of its own datasets — what a Databricks metric view over a same-named table produces — would emit two members of one name and Cube refuses the model. The generated view becomes `<name>_view` and the model's own name is recorded in `meta.ossie.model_name`, so import hands back the original rather than the renamed view's. |
 | `model.description` / `ai_context.instructions` | view `description` / `meta.ai_context` | Import: taken from the sole view, or `--view`. |
 | dataset | `cubes[]` entry in `model/cubes/<name>.yml` | Import: a non-canonical original path is stashed and restored on export. |
 | `dataset.source` (dotted) | `sql_table` | Passed through verbatim; Cube interpolates it straight into `FROM`, so no catalog/schema split is needed. |

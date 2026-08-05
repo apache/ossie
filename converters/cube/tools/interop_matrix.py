@@ -257,7 +257,8 @@ def main():
                 tail = (r.stderr.strip().splitlines() or [""])[-1]
                 result = "SKIP" if _is_environment_failure(r.stderr) else "FAIL"
                 note = tail[:40]
-                failures += result == "FAIL"
+                if result == "FAIL":
+                    failures += 1
             else:
                 result = "OK" if produced_output(dest, is_dir) else "EMPTY"
             print(f"{name:<12} {result:<7} {warns:>5} {foreign:>8}   {note}")

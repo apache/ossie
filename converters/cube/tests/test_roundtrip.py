@@ -35,7 +35,7 @@ from _cube_gate import (
 from _util import (REPO_ROOT, canon, load_fixture, load_fixture_dir, parse,
                    parse_files)
 
-from ossie_cube import convert_cube_to_ossie, convert_ossie_to_cube
+from ossie_cube import IssueType, convert_cube_to_ossie, convert_ossie_to_cube
 from ossie_cube._common import OSSIE_VERSION
 
 FIXTURES = ["fixtureA_cube", "tpcds_cube"]
@@ -232,6 +232,85 @@ def test_a_model_from_another_converter_survives_the_round_trip_exactly():
         }
 
     assert shape(after) == shape(before)
+
+
+@cube_gate
+def test_the_compile_gate_does_not_silently_drop_a_same_named_file():
+    """A meta-test: the gate has to actually see every file it is handed.
+
+    Cube keys model files by their path relative to the model root, and the gate passed
+    basenames instead -- so `cubes/orders.yml` and `views/orders.yml` collided and one was
+    dropped without a word. An invalid model then reported COMPILED OK, which is how the
+    cube/view namespace collision above went unnoticed. The converter emits exactly this
+    pair of names, so this is the arrangement that has to fail loudly.
+    """
+    files = {
+        "model/cubes/orders.yml":
+            "cubes:\n- name: orders\n  sql_table: public.orders\n"
+            "  dimensions:\n  - name: id\n    sql: id\n    type: number\n"
+            "    primary_key: true\n",
+        # Same basename, different directory, and invalid: it includes a member no cube
+        # defines. If the gate drops this file, it reports success.
+        "model/views/orders.yml":
+            "views:\n- name: orders_view\n  cubes:\n  - join_path: orders\n"
+            "    includes:\n    - id\n    - no_such_member\n",
+    }
+    with pytest.raises(AssertionError, match="Cube refused the model"):
+        assert_cube_compiles(files, "same-basename files")
+
+
+def test_a_model_named_after_one_of_its_datasets_does_not_collide_in_cube():
+    """Cube keeps cubes and views in one namespace, so a model named `orders` over a
+    dataset named `orders` cannot emit both under that name -- Cube rejected the whole
+    model with `Cannot read properties of undefined (reading 'toString')`.
+
+    This is the shape every Databricks metric view over a same-named table produces, so
+    the view is renamed rather than the model refused, and the model's own name is
+    recorded so the trip back does not adopt the renamed view's.
+    """
+    src = load_fixture("databricks_ossie.yaml")
+    assert parse(src)["semantic_model"][0]["name"] == "orders"
+
+    files, issues = convert_ossie_to_cube(src)
+    assert set(files) == {"model/cubes/orders.yml", "model/cubes/customer.yml",
+                          "model/views/orders_view.yml"}
+    view = parse(files["model/views/orders_view.yml"])["views"][0]
+    assert view["name"] == "orders_view"
+    assert view["meta"]["ossie"]["model_name"] == "orders"
+    assert any("one namespace" in i.detail
+               for i in issues.of_type(IssueType.PARKED_IN_META))
+
+    # And the name comes back, rather than becoming `orders_view`.
+    back, _ = convert_cube_to_ossie(files)
+    assert parse(back)["semantic_model"][0]["name"] == "orders"
+
+
+@cube_gate
+def test_a_renamed_view_still_compiles_and_stays_renamed():
+    """The rename has to survive a second export too. It is not re-derived from the
+    stash -- `meta.ossie` is stripped when a view is stashed -- so the recorded model
+    name is what keeps cycle two from emitting a colliding view again."""
+    files, _ = convert_ossie_to_cube(load_fixture("databricks_ossie.yaml"))
+    assert_cube_compiles(files, "model named after its own dataset")
+    second, _ = convert_ossie_to_cube(convert_cube_to_ossie(files)[0])
+    assert set(second) == set(files)
+    assert parse(second["model/views/orders_view.yml"])["views"][0][
+        "name"] == "orders_view"
+    assert_cube_compiles(second, "model named after its own dataset (cycle 2)")
+
+
+def test_a_model_from_another_converter_is_stable_after_one_cycle():
+    """`Ossie -> Cube -> Ossie` twice, compared byte-for-byte.
+
+    The one-cycle comparison above cannot see a value that survives the first trip and
+    is dropped on the second: the `DATABRICKS` label on a metric restored verbatim from
+    the stash came back as `ANSI_SQL` on cycle two, because the verbatim path hands back
+    stashed Cube SQL instead of picking a dialect and so had no label to re-park.
+    """
+    first, _ = convert_cube_to_ossie(
+        convert_ossie_to_cube(load_fixture("databricks_ossie.yaml"))[0])
+    second, _ = convert_cube_to_ossie(convert_ossie_to_cube(first)[0])
+    assert second == first
 
 
 @cube_gate

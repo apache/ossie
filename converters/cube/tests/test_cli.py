@@ -22,6 +22,11 @@ file, and (a common mistake) just the view -- plus the exit codes and where outp
 goes, since those are the converter's contract with a shell script.
 """
 
+import os
+import pathlib
+import subprocess
+import sys
+
 import pytest
 from _util import REPO_ROOT, load_fixture_dir, parse
 
@@ -310,3 +315,37 @@ def test_no_subcommand_is_a_usage_error():
     with pytest.raises(SystemExit) as excinfo:
         main([])
     assert excinfo.value.code == 2
+
+
+def test_a_non_ascii_model_converts_under_a_non_utf8_locale(tmp_path):
+    """A German title or a Russian description must not depend on the machine's locale.
+
+    Python's `open()` defaults to the locale's preferred encoding, so on any host that is
+    not UTF-8 -- a Windows console, a container with `LC_ALL=C` -- reading the model died
+    with `UnicodeDecodeError: 'ascii' codec can't decode byte 0xc3`. Run in a subprocess
+    because the encoding is fixed from the environment at interpreter start, so an
+    in-process check would only ever see the test runner's own UTF-8.
+    """
+    model = tmp_path / "model"
+    model.mkdir()
+    (model / "orders.yml").write_text(
+        _ORDERS.replace("        primary_key: true\n",
+                        "        primary_key: true\n        title: Größe\n"),
+        encoding="utf-8")
+    out = tmp_path / "out.yaml"
+
+    env = {
+        **os.environ,
+        "LC_ALL": "C", "LANG": "C",
+        # Both would otherwise put the interpreter back into UTF-8 and hide the point.
+        "PYTHONUTF8": "0", "PYTHONCOERCECLOCALE": "0",
+        "PYTHONPATH": str(pathlib.Path(__file__).resolve().parents[1] / "src"),
+    }
+    result = subprocess.run(
+        [sys.executable, "-c",
+         "import sys; from ossie_cube.cli import main; sys.exit(main(sys.argv[1:]))",
+         "import", "-i", str(model), "-o", str(out)],
+        capture_output=True, text=True, env=env)
+
+    assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
+    assert "Größe" in out.read_text(encoding="utf-8")

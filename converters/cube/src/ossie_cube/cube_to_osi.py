@@ -135,7 +135,12 @@ def convert_cube_to_ossie(files, model_name=None, view=None, strict_fanout=False
     mapped_view = views.get(mapped_name) or {}
     cubes = _order_by_view(cubes, mapped_view)
 
-    model = {"name": model_name or mapped_name or "cube_model"}
+    # A previous export records the model's own name when it could not also be the
+    # view's -- Cube gives cubes and views one namespace, so a model named after one of
+    # its datasets has its view renamed. Without this the name would silently become
+    # the renamed view's on the way back.
+    parked_model_name = parked_of(mapped_view.get("meta")).get("model_name")
+    model = {"name": model_name or parked_model_name or mapped_name or "cube_model"}
     if mapped_view.get("description"):
         model["description"] = unescape_braces_from_cube(
             mapped_view["description"])

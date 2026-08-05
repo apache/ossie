@@ -108,7 +108,12 @@ try:
         _VALIDATOR_MODULE = _load_validator()
         _SCHEMA = json.loads(
             (_REPO_ROOT / "core-spec" / "osi-schema.json").read_text())
-except Exception as exc:  # missing jsonschema, a moved schema, a changed script
+# SystemExit is deliberately included: `validate.py` reports a missing `jsonschema` by
+# calling `sys.exit(1)` at import time, and SystemExit derives from BaseException, so an
+# `except Exception` let it escape and abort pytest *collection* -- the entire suite
+# refused to run on any machine without jsonschema, which is the exact situation this
+# gate is supposed to skip over.
+except (Exception, SystemExit) as exc:  # missing dep, a moved schema, a changed script
     _VALIDATOR_ERROR = f"{type(exc).__name__}: {exc}"
 
 
