@@ -517,6 +517,42 @@ def test_an_unqualified_column_is_attributed_to_its_sole_declaring_dataset():
         "{CUBE.value_per_user_part_1} / {users.value_per_user_part_2}")
 
 
+def test_the_metric_namespace_wins_over_field_attribution():
+    """`score` here is both a metric (over orders) and a field of users. A bare
+    identifier resolves in the metric namespace first -- so `score * 2` becomes a
+    measure reference on the metric's cube, not a `{users.score}` column read that
+    would silently bypass the metric's definition."""
+    users = (
+        "  - name: users\n"
+        "    source: sales.public.users\n"
+        "    primary_key:\n"
+        "    - id\n"
+        "    fields:\n"
+        "    - name: id\n"
+        "      expression:\n"
+        "        dialects:\n"
+        "        - dialect: ANSI_SQL\n"
+        "          expression: id\n"
+        "      datatype: Integer\n"
+        "    - name: score\n"
+        "      expression:\n"
+        "        dialects:\n"
+        "        - dialect: ANSI_SQL\n"
+        "          expression: score\n"
+        "      datatype: Decimal\n"
+    )
+    files, _ = convert_ossie_to_cube(_ossie(_ORDERS + users, _REL, _metrics(
+        ("score", "SUM(orders.amount)"),
+        ("doubled", "score * 2"))))
+    orders = by_name(_cubes(files)["orders"]["measures"])
+    # Both land on orders (the metric's cube), and the reference is a measure
+    # reference -- not an attribution to the users.score column.
+    assert orders["score"] == {
+        "name": "score", "sql": "{CUBE}.amount", "type": "sum"}
+    assert orders["doubled"] == {
+        "name": "doubled", "sql": "{score} * 2", "type": "number"}
+
+
 def test_an_ambiguous_unqualified_column_is_not_attributed():
     """`id` is declared on both datasets, so no attribution is possible: the metric
     lands on the base cube and the name reads as that cube's raw column -- the same

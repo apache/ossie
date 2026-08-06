@@ -360,6 +360,47 @@ def test_a_declared_type_the_expression_would_not_regenerate_is_recorded():
     assert stash_of(metrics["exact_ids"])["type"] == "count_distinct"
 
 
+def test_a_cross_cube_member_reference_travels_with_no_stash():
+    """`{customer.c_sk}` in measure SQL regenerates verbatim from the model-level
+    expression `customer.c_sk`, so the spelling needs no record -- but only the
+    *canonical* spelling does. A case-variant reference (`{CUSTOMER.c_sk}`) would
+    come back canonicalized, so that one keeps the original in the stash."""
+    def files(ref):
+        return {"model/cubes/m.yml": (
+            "cubes:\n"
+            "  - name: orders\n"
+            "    sql_table: a.b.orders\n"
+            "    dimensions:\n"
+            "      - name: id\n        sql: id\n        type: number\n"
+            "        primary_key: true\n"
+            "    joins:\n"
+            "      - name: customer\n"
+            "        sql: \"{CUBE}.c_id = {customer}.c_sk\"\n"
+            "        relationship: many_to_one\n"
+            "    measures:\n"
+            "      - name: reach\n"
+            f"        sql: \"COUNT(DISTINCT {ref})\"\n"
+            "        type: number\n"
+            "  - name: customer\n"
+            "    sql_table: a.b.customer\n"
+            "    dimensions:\n"
+            "      - name: c_sk\n        sql: c_sk\n        type: number\n"
+            "        primary_key: true\n"
+        )}
+
+    ossie, _ = convert_cube_to_ossie(files("{customer.c_sk}"))
+    metric = by_name(model_of(ossie)["metrics"])["reach"]
+    assert "sql" not in stash_of(metric)
+    back, _ = convert_ossie_to_cube(ossie)
+    measure = by_name(parse(back["model/cubes/m.yml"])["cubes"])[
+        "orders"]["measures"][0]
+    assert measure["sql"] == "COUNT(DISTINCT {customer.c_sk})"
+
+    ossie, _ = convert_cube_to_ossie(files("{CUSTOMER.c_sk}"))
+    metric = by_name(model_of(ossie)["metrics"])["reach"]
+    assert stash_of(metric)["sql"] == "COUNT(DISTINCT {CUSTOMER.c_sk})"
+
+
 def test_an_uninvertible_filter_fold_keeps_both_spellings():
     """A measure whose own sql is a CASE defeats the unfold -- the folded expression
     cannot say where the filters end and the operand begins -- so the operand and the

@@ -455,8 +455,10 @@ def _ossie_metrics(rnd, fact, dim_names, fields_by_dataset):
     block("single", _ossie_agg(rnd.pick(OSSIE_AGGS),
                                f"{_cased(rnd, fact)}.{_cased(rnd, field)}"))
 
-    # A composite over one dataset: two aggregates, so export splits it into a measure
-    # per aggregate plus a ratio referencing them, and import inlines it back.
+    # A composite over one dataset: both aggregates read the cube it lands on, so
+    # export deliberately does NOT split it -- hidden parts would key Cube's fan-out
+    # correction on the same cube either way -- and it round-trips as one measure.
+    # (The cross-cube `crossing` metric below is the one decomposition splits.)
     if rnd.chance(0.6):
         block("composite", "{} / {}".format(
             _ossie_agg("MAX", f"{fact}.value"),

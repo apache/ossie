@@ -93,8 +93,9 @@ _DIM_NATIVE_KEYS = frozenset({
     "latitude", "longitude",
 })
 
-# Measure keys an Ossie metric represents natively. Any other key forces the
-# full-measure stash, because export could not rebuild the measure without it.
+# Measure keys an Ossie metric represents natively. Any other key rides flat in
+# the metric's stash (the same protocol dimension extras use) and goes back onto
+# the rebuilt measure as written.
 _MEASURE_NATIVE_KEYS = frozenset({
     "name", "sql", "type", "filters", "title", "description", "meta",
 })

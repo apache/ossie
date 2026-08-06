@@ -162,8 +162,9 @@ to **import** (Cube -> Ossie) or **export** (Ossie -> Cube).
 natively mapped description/AI context), the mapped view's identity, original file
 paths, cube extras (`title`, `sql_alias`, `data_source`, `public`, `refresh_key`,
 `segments`, `pre_aggregations`, `hierarchies`, `access_policy`, `calendar`, ...),
-dimension extras (`format`, `currency`, `granularities`, `case`, `sub_query`,
-`order`, `aliases`, `meta`, ...), measure extras (flat, same protocol) plus any
+dimension extras (`format`, `currency`, `granularities`, `case`, `order`,
+`aliases`, `meta`, ...), dimensions with no Ossie form parked whole at their
+positions (`switch`, `sub_query`), measure extras (flat, same protocol) plus any
 `sql`/`filters`/`type` spelling regeneration would not reproduce, joins with no
 Ossie form, Jinja-templated members, and files with no Ossie form (`.js`/`.ts`
 models, non-model YAML).
@@ -343,7 +344,7 @@ noise to them. This converter therefore stashes only what is genuinely Cube-spec
 — segments, pre-aggregations, hierarchies, view curation, geo reconstruction, and
 spellings regeneration would not reproduce — and everything derivable from the
 document itself (a measure's `sql`, `type` and `filters`, the cube a single-dataset
-metric belongs on) is derived rather than recorded. On the TPC-DS model that is 4
+metric belongs on) is derived rather than recorded. On the TPC-DS model that is 2
 stash entries rather than 41, and 2 Databricks warnings rather than 32.
 
 **Qualify your `sql_table`.** Cube accepts `orders` or `public.orders`, but the
