@@ -73,8 +73,8 @@ from ._common import (
     view_file,
 )
 from .converter_issues import IssueLog, IssueType
-from .expressions import (aggregate_spans, replace_bare_identifiers,
-                          unqualified_column_names)
+from .expressions import (aggregate_spans, qualify_bare_columns,
+                          replace_bare_identifiers, unqualified_column_names)
 
 # The order Cube's own YAML documentation and generators use, so exported files
 # read the way a hand-authored model does.
@@ -718,8 +718,19 @@ def _build_dimensions(ds, plan, tables, dialect, issues):
         if "sql" in stash:
             # The exact Cube spelling a prior import saw.
             dim["sql"] = stash["sql"]
-        else:
+        elif is_simple_identifier(expr):
+            # A single-column dimension keeps the bare form (`sql: status`), the
+            # style Cube's own documentation uses for plain dimensions.
             dim["sql"] = ossie_expr_to_cube_sql(expr, cname, tables)
+        else:
+            # A computed expression qualifies its raw columns as `{CUBE}.column`:
+            # Cube interpolates the sql verbatim into generated queries, so a bare
+            # column is ambiguous the moment the cube is joined against a table
+            # sharing the name. `{CUBE}` is the reference Cube's documentation
+            # recommends -- and, unlike a `{member}` reference, it means the same
+            # thing whether or not a field shadows the column's name.
+            dim["sql"] = qualify_bare_columns(
+                ossie_expr_to_cube_sql(expr, cname, tables))
         if stash.get("case") is not None:
             # A `case` dimension carries its conditions instead of `sql`, and Cube
             # rejects a dimension declaring both ("dimensions.size does not match any
@@ -1203,7 +1214,8 @@ class _MetricReferences:
         referenced = self._referenced_in(
             context if context is not None else text)
         if not referenced:
-            return ossie_expr_to_cube_sql(text, target, self._tables)
+            return qualify_bare_columns(
+                ossie_expr_to_cube_sql(text, target, self._tables))
         masks, substitutions = {}, {}
         for i, (written, key) in enumerate(sorted(referenced.items())):
             sentinel = f"__ossie_mref_{i}__"
@@ -1215,6 +1227,10 @@ class _MetricReferences:
                 else "{" + cube + "." + detail["measure"] + "}")
         out = ossie_expr_to_cube_sql(
             replace_bare_identifiers(text, masks), target, self._tables)
+        # Whatever bare identifiers remain are raw columns (the metric references
+        # are sentinels at this point), so they get the same `{CUBE}.column`
+        # qualification every other generated member SQL does.
+        out = qualify_bare_columns(out)
         for sentinel, replacement in substitutions.items():
             out = out.replace(sentinel, replacement)
         return out

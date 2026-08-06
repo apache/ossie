@@ -1021,7 +1021,7 @@ def test_a_computed_dimension_does_not_cover_a_primary_key():
         _ossie_pk(["id"], ("id", "LOWER(email)", None)))
     dims = by_name(_dims(files))
     assert "primary_key" not in dims["id"]
-    assert dims["id"]["sql"] == "LOWER(email)"
+    assert dims["id"]["sql"] == "LOWER({CUBE}.email)"
     # A private scalar dimension carries the key instead, under a free name.
     assert dims["id_pk"] == {
         "name": "id_pk", "sql": "id", "type": "string", "primary_key": True,
@@ -1093,9 +1093,9 @@ def test_a_synthesized_key_name_avoids_every_existing_member():
         "name": "id_pk_3", "sql": "id", "type": "string", "primary_key": True,
         "public": False, "meta": {"ossie": {"synthetic_key": True}}}
     # Nothing was overwritten.
-    assert dims["id"]["sql"] == "LOWER(email)"
-    assert dims["id_pk"]["sql"] == "UPPER(email)"
-    assert dims["id_pk_2"]["sql"] == "TRIM(email)"
+    assert dims["id"]["sql"] == "LOWER({CUBE}.email)"
+    assert dims["id_pk"]["sql"] == "UPPER({CUBE}.email)"
+    assert dims["id_pk_2"]["sql"] == "TRIM({CUBE}.email)"
 
 
 def test_geo_halves_may_appear_in_any_order_without_clobbering_a_dimension():
@@ -1645,7 +1645,9 @@ def test_a_computed_primary_key_stays_on_its_own_dimension():
     assert len(dims) == 1
     assert dims[0]["name"] == "order_key"
     assert dims[0]["primary_key"] is True
-    assert dims[0]["sql"] == "CONCAT(tenant_id, id)"
+    # The original spelling, exactly: qualification makes the regenerated form
+    # match the `{CUBE}`-referenced sql the model was written with.
+    assert dims[0]["sql"] == "CONCAT({CUBE}.tenant_id, {CUBE}.id)"
     # Import records which entries are dimension names rather than columns, because
     # the Ossie document alone cannot tell them apart afterwards.
     assert stash_of(by_name(model_of(ossie)["datasets"])["orders"])[

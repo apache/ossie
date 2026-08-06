@@ -101,6 +101,36 @@ def test_mismatched_relationship_columns_are_rejected():
 
 # --- datasets and fields --------------------------------------------------------
 
+def test_computed_dimension_sql_qualifies_its_columns():
+    """Cube interpolates a dimension's sql verbatim into generated queries, so a
+    bare column in a computed expression is ambiguous once the cube is joined
+    against a table sharing the name. Raw columns are qualified as `{CUBE}.column`
+    -- the reference Cube's documentation recommends -- while a single-column
+    dimension keeps the bare form Cube models conventionally use."""
+    ds = (
+        "  - name: customer\n"
+        "    source: t\n"
+        "    fields:\n"
+        "    - name: c_first_name\n"
+        "      expression:\n"
+        "        dialects:\n"
+        "        - dialect: ANSI_SQL\n"
+        "          expression: c_first_name\n"
+        "      datatype: String\n"
+        "    - name: full_name\n"
+        "      expression:\n"
+        "        dialects:\n"
+        "        - dialect: ANSI_SQL\n"
+        "          expression: c_first_name || ' ' || c_last_name\n"
+        "      datatype: String\n"
+    )
+    files, _ = convert_ossie_to_cube(_ossie(ds))
+    dims = by_name(parse(files["model/cubes/customer.yml"])["cubes"][0]["dimensions"])
+    assert dims["c_first_name"]["sql"] == "c_first_name"
+    assert dims["full_name"]["sql"] == (
+        "{CUBE}.c_first_name || ' ' || {CUBE}.c_last_name")
+
+
 def test_source_becomes_sql_table_or_sql():
     files, _ = convert_ossie_to_cube(_ossie(_ORDERS))
     assert _cubes(files)["orders"]["sql_table"] == "sales.public.orders"
@@ -283,7 +313,8 @@ def test_preferred_dialect_wins_over_ansi():
         "      datatype: String\n"
     )
     files, _ = convert_ossie_to_cube(_ossie(ds), dialect="SNOWFLAKE")
-    assert _cubes(files)["orders"]["dimensions"][0]["sql"] == "LOWER(email)::VARCHAR"
+    assert _cubes(files)["orders"]["dimensions"][0]["sql"] == (
+        "LOWER({CUBE}.email)::VARCHAR")
 
 
 # --- joins ----------------------------------------------------------------------

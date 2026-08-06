@@ -55,7 +55,7 @@ cubes:
     type: string
     description: Customer last name
   - name: customer_full_name
-    sql: c_first_name || ' ' || c_last_name
+    sql: "{CUBE}.c_first_name || ' ' || {CUBE}.c_last_name"
     type: string
     description: Customer full name (computed field)
     meta:

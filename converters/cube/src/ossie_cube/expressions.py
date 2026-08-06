@@ -292,7 +292,9 @@ def _outermost_aggregate_scopes(tree):
 # A Cube `{...}` member reference, masked while sqlglot parses -- braces are not SQL.
 _REF_RE = re.compile(r"\$?\{[^{}]*\}")
 _REF_SENTINEL = "__ossie_ref_{}__"
-_SENTINEL_RE = re.compile(r"^__ossie_ref_(\d+)__$")
+# Any converter-owned sentinel identifier (the exporter masks metric references as
+# `__ossie_mref_N__` before this module sees the text), never a column.
+_SENTINEL_RE = re.compile(r"^__ossie_\w+__$")
 
 
 def _mask_references(text):
