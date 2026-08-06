@@ -15,6 +15,13 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from importlib.metadata import version, PackageNotFoundError
+
+try:
+    __version__ = version("apache-ossie")
+except PackageNotFoundError:
+    __version__ = "unknown"
+
 from ossie.models import (
     OSIAIContext,
     OSIAIContextObject,
