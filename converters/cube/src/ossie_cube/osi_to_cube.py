@@ -481,7 +481,7 @@ class _CubePlan:
 
     @classmethod
     def of(cls, ds, cname, dialect, scope):
-        names, inline_sql = _resolve_dimension_names(ds, scope)
+        names, inline_sql = _resolve_dimension_names(ds, dialect, scope)
         stash = read_stash(ds)
         key, from_unique = _primary_key_columns(ds)
         lookup = dict(names)
@@ -605,7 +605,29 @@ def _undialected_fields(ds, dialect):
             and pick_expression(field.get("expression"), dialect)[0] is None}
 
 
-def _resolve_dimension_names(ds, scope):
+def _geo_half_sql(field, geo, dialect, scope):
+    """The Cube SQL a split geo half reads: the stashed spelling when import
+    recorded one, else the raw column the field's expression names.
+
+    Import records the spelling only when the expression would not regenerate it,
+    so the common `{CUBE}.lat` case travels with no `sql` in the stash at all.
+    `{CUBE}` rather than bare on the way back, so the snippet stays correct when a
+    reference inlines it into another cube's SQL (`requalify_self_refs` renames
+    the alias as it crosses)."""
+    if geo.get("sql") is not None:
+        return geo["sql"]
+    expr, _ = pick_expression(field.get("expression"), dialect)
+    if expr is None:
+        raise ConversionError(
+            f"{scope}: geo half '{field.get('name')}' has no stashed sql and no "
+            f"expression in a usable dialect")
+    expr = expr.strip()
+    if is_simple_identifier(expr):
+        return "{CUBE}." + expr
+    return qualify_bare_columns(expr)
+
+
+def _resolve_dimension_names(ds, dialect, scope):
     """Map each of a dataset's fields to the Cube dimension name it becomes.
 
     Sanitization and collision detection happen here and nowhere else, so every
@@ -652,7 +674,7 @@ def _resolve_dimension_names(ds, scope):
             seen[part] = fname
             taken.add(base.lower())
             names[fname] = base
-            inline_sql[fname] = geo["sql"]
+            inline_sql[fname] = _geo_half_sql(field, geo, dialect, scope)
             continue
         dname = sanitize_name(fname, f"{scope}: field", taken)
         taken.add(dname.lower())
@@ -701,7 +723,8 @@ def _build_dimensions(ds, plan, tables, dialect, issues):
         if "geo" in stash:
             geo = stash["geo"]
             slot = geo_parts.setdefault(dname, {})
-            slot[geo["part"]] = geo["sql"]
+            slot[geo["part"]] = _geo_half_sql(field, geo, dialect,
+                                              f"dataset '{ds_name}'")
             if "host" in geo:
                 slot["host"] = geo["host"]
             continue
@@ -1075,11 +1098,15 @@ def _build_measures(model, cube_names, plan, tables, datasets, relationships,
                        f"join, so verify a join path exists")
 
         spans = [] if stash.get("sql") else aggregate_spans(expr)
-        if len(spans) > 1:
-            # A composite metric: give each aggregate its own measure on the cube its
-            # operand belongs to, and let the public measure reference them. Cube then
-            # applies its row-multiplication correction per aggregate instead of
-            # seeing one opaque expression -- see _decompose_measure.
+        # Decompose only when some aggregate belongs on another cube than the
+        # public measure's. That is where splitting buys correctness: each part is
+        # corrected for row multiplication on its own cube. A composite whose
+        # aggregates all read the public cube gains nothing from hidden parts --
+        # the correction would key on the same cube either way -- so it stays one
+        # calculated measure and round-trips verbatim.
+        decomposed = len(spans) > 1 and any(
+            _span_target(refs, expr[s:e], target) != target for s, e in spans)
+        if decomposed:
             public_sql = _decompose_measure(
                 expr, spans, mname, target, measures_by_cube, plan,
                 name, reserved, refs)
@@ -1088,7 +1115,7 @@ def _build_measures(model, cube_names, plan, tables, datasets, relationships,
             measure = _measure_from_expression(
                 expr, target, mname, stash, plan, refs)
         _apply_measure_metadata(metric, measure, stash, used,
-                                decomposed=len(spans) > 1)
+                                decomposed=decomposed)
         # Cube-only keys import found on the measure (`format`, `drill_members`,
         # `public`, ...) ride flat in the stash -- the same protocol dimensions
         # use -- and go back onto the rebuilt measure as written.
@@ -1321,6 +1348,13 @@ def _references_a_dropped_field(expr, tables, cube_names, plan):
     return missing
 
 
+def _span_target(refs, piece, fallback):
+    """The cube one aggregate span belongs on: the sole dataset its operand
+    reads (dotted or attributed), else the public measure's own cube."""
+    pointed = refs.datasets_pointed_at(piece)
+    return next(iter(pointed)) if len(pointed) == 1 else fallback
+
+
 def _decompose_measure(expr, spans, mname, fallback, measures_by_cube, plan,
                        model_name, reserved, refs):
     """Emit one `public: false` measure per aggregate; return the sql referencing them.
@@ -1346,8 +1380,7 @@ def _decompose_measure(expr, spans, mname, fallback, measures_by_cube, plan,
         piece = expr[start:end]
         # Each aggregate lands on the cube its own operand references -- an
         # unqualified column included, when exactly one dataset declares it.
-        pointed = refs.datasets_pointed_at(piece)
-        part_target = next(iter(pointed)) if len(pointed) == 1 else fallback
+        part_target = _span_target(refs, piece, fallback)
 
         index += 1
         part_name = f"{mname}_part_{index}"

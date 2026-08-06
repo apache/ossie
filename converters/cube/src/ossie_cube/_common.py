@@ -748,7 +748,7 @@ def source_part_count(source):
 
 
 def sql_is_reversible(sql, plain_members=(), own_cube=None, own_measures=(),
-                      measures_by_cube=None):
+                      measures_by_cube=None, member_lookup_by_cube=None):
     """True if translating this Cube SQL to Ossie and back reproduces it.
 
     `{CUBE}.column` / `{TABLE}.column` -- a raw physical column of the owning cube --
@@ -768,9 +768,16 @@ def sql_is_reversible(sql, plain_members=(), own_cube=None, own_measures=(),
     as exactly these two forms -- so `{CUBE.measure}`, which means the same thing in
     Cube but is not the canonical spelling, is kept in the stash instead.
 
-    Any other **cross-cube** reference never survives: `{other.member}` is what makes
-    Cube add the implicit join, and the raw `{other}.column` form does not, so the
-    two are not interchangeable.
+    A **cross-cube member** reference (`{other.member}`) survives when the caller
+    supplies `member_lookup_by_cube` ({exact cube name: lookup_map of its member
+    names}) and the spelling is already export's canonical one: the head names the
+    cube exactly, and the member either resolves to itself (the canonical spelling
+    was written) or resolves to nothing (export passes it through verbatim). This is
+    only sound for *model-level* metric SQL, where export renders `other.member`
+    back as `{other.member}` -- a dataset-scoped dimension expression stays
+    conservative, so callers for those simply omit the parameter. The raw
+    `{other}.column` form never survives: it flattens to the same Ossie text as the
+    member form, and export re-emits the member form.
     """
     if not isinstance(sql, str):
         sql = str(sql)
@@ -798,6 +805,10 @@ def sql_is_reversible(sql, plain_members=(), own_cube=None, own_measures=(),
             continue
         if measures_by_cube and rest in (measures_by_cube.get(head) or ()):
             continue
+        if member_lookup_by_cube is not None and head in member_lookup_by_cube:
+            resolved = resolve_identifier(member_lookup_by_cube[head], rest)
+            if resolved is None or resolved == rest:
+                continue
         return False  # cross-cube reference; carries join semantics
     return True
 

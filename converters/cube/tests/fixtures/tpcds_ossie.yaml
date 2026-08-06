@@ -519,10 +519,6 @@ semantic_model:
       - LTV
       - customer value
       - lifetime revenue
-    custom_extensions:
-    - vendor_name: CUBE
-      data: '{"_v": 1, "cube": "store_sales", "sql": "SUM({CUBE}.ss_ext_sales_price)
-        / COUNT(DISTINCT {customer.c_customer_sk})"}'
   - name: sales_by_brand
     expression:
       dialects:
@@ -546,10 +542,6 @@ semantic_model:
       - sales per employee
       - employee productivity
       - revenue per employee
-    custom_extensions:
-    - vendor_name: CUBE
-      data: '{"_v": 1, "cube": "store_sales", "sql": "SUM({CUBE}.ss_ext_sales_price)
-        / NULLIF(SUM({store.s_number_employees}), 0)"}'
   custom_extensions:
   - vendor_name: CUBE
     data: '{"_v": 1, "views": {"tpcds_retail_model": {"name": "tpcds_retail_model",

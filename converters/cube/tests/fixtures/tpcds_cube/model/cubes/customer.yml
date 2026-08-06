@@ -76,3 +76,10 @@ cubes:
           synonyms:
           - email
           - contact
+  measures:
+  - name: customer_lifetime_value_part_2
+    type: count
+    meta:
+      ossie:
+        part_of: customer_lifetime_value
+    public: false

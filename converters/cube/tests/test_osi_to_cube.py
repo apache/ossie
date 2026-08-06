@@ -863,16 +863,19 @@ def test_a_generated_part_name_avoids_an_existing_dimension():
     *reference* members rather than every dimension, so a plain field named
     `ratio_part_1` collided and the conversion failed instead of picking the next
     free name."""
-    ds = _ORDERS + (
+    ds = _TWO_DATASETS.replace(
+        "      datatype: Decimal\n",
+        "      datatype: Decimal\n"
         "    - name: ratio_part_1\n"
         "      expression:\n        dialects:\n"
         "        - dialect: ANSI_SQL\n          expression: ratio_part_1\n"
-        "      datatype: Decimal\n"
-    )
-    files, _ = convert_ossie_to_cube(_ossie(ds, metrics=_metric(
-        "ratio", "SUM(orders.amount) / COUNT(DISTINCT orders.id)")))
+        "      datatype: Decimal\n", 1)
+    files, _ = convert_ossie_to_cube(_ossie(ds, _REL, _metric(
+        "ratio", "SUM(orders.amount) / COUNT(DISTINCT users.id)")))
     names = [m["name"] for m in _cubes(files)["orders"]["measures"]]
-    assert names == ["ratio_part_2", "ratio_part_3", "ratio"]
+    assert names == ["ratio_part_2", "ratio"]
+    users = parse(files["model/cubes/users.yml"])["cubes"][0]
+    assert [m["name"] for m in users["measures"]] == ["ratio_part_3"]
     # And the dimension of that name is untouched.
     assert "ratio_part_1" in by_name(_cubes(files)["orders"]["dimensions"])
 
@@ -1005,17 +1008,18 @@ def test_mapping_form_stashed_segments_are_reserved_and_checked():
 
     stash = {"_v": 1,
              "cube_extras": {"segments": {"ratio_part_1": {"sql": "x"}}}}
-    ds = _ORDERS.replace(
+    ds = _TWO_DATASETS.replace(
         "      datatype: Decimal\n",
         "      datatype: Decimal\n"
         "    custom_extensions:\n"
         "    - vendor_name: CUBE\n"
         f"      data: '{json.dumps(stash)}'\n", 1)
-    files, _ = convert_ossie_to_cube(_ossie(ds, metrics=_metric(
-        "ratio", "SUM(orders.amount) / COUNT(DISTINCT orders.id)")))
+    files, _ = convert_ossie_to_cube(_ossie(ds, _REL, _metric(
+        "ratio", "SUM(orders.amount) / COUNT(DISTINCT users.id)")))
     cube = _cubes(files)["orders"]
-    assert [m["name"] for m in cube["measures"]] == [
-        "ratio_part_2", "ratio_part_3", "ratio"]
+    assert [m["name"] for m in cube["measures"]] == ["ratio_part_2", "ratio"]
+    users = parse(files["model/cubes/users.yml"])["cubes"][0]
+    assert [m["name"] for m in users["measures"]] == ["ratio_part_3"]
     assert set(cube["segments"]) == {"ratio_part_1"}
 
 

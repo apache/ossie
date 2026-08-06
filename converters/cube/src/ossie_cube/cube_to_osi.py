@@ -54,6 +54,7 @@ from ._common import (
     is_referenceable_name,
     is_simple_identifier,
     lookup_map,
+    match_keys,
     normalize_identifier,
     resolve_identifier,
     referenced_datasets,
@@ -73,7 +74,6 @@ from ._common import (
 )
 from .converter_issues import IssueLog, IssueType
 from .expressions import (
-    aggregate_spans,
     has_top_level_operator,
     qualify_bare_columns,
     unqualified_column_names,
@@ -181,7 +181,7 @@ def convert_cube_to_ossie(files, model_name=None, view=None, strict_fanout=False
                      for cname, cube in cubes.items()}
 
     metrics, extra_measures = _convert_measures(
-        cubes, pk_by_cube, plain_by_cube, fanned_out, issues)
+        cubes, pk_by_cube, plain_by_cube, fanned_out, relationships, issues)
 
     model["datasets"] = [
         _convert_cube(cname, cube, plain_by_cube[cname], extra_joins.get(cname),
@@ -869,7 +869,13 @@ def _convert_geo_dimension(cname, dname, dim, issues):
             # directly, so it needs the role block spelled out here too.
             "dimension": {},
         }
-        geo = {"of": dname, "part": part, "sql": sub}
+        geo = {"of": dname, "part": part}
+        # The half's SQL rides along only when the field's expression would not
+        # regenerate it: a raw column of the own cube (`{CUBE}.lat`, `lat`) is
+        # exactly what the expression already says, so recording it again put a
+        # rendered copy of the expression into the extension.
+        if sub.strip() not in (expr, "{CUBE}." + expr, "{TABLE}." + expr):
+            geo["sql"] = sub
         if part == "latitude" and host_extras:
             geo["host"] = host_extras
         write_stash(field, {"geo": geo})
@@ -1431,9 +1437,10 @@ class _MeasureContext:
     relationship multiplies, `dataset_names` is what a reference can resolve to,
     `plain_by_cube` says which members regenerate from a bare column name,
     `pk_by_cube` is what the bare-count prediction compares against, and
-    `metric_cubes`/`referenceable_measures` describe the metric namespace a bare
-    identifier resolves in. Passing them one at a time made `_convert_measure` a
-    nine-parameter function whose signature said nothing about what it does.
+    `metric_cubes`/`referenceable_measures`/`field_owners`/`base_cube` describe the
+    namespaces a model-level expression resolves in. Passing them one at a time made
+    `_convert_measure` a nine-parameter function whose signature said nothing about
+    what it does.
     """
 
     resolver: object
@@ -1443,10 +1450,37 @@ class _MeasureContext:
     pk_by_cube: dict
     metric_cubes: dict
     referenceable_measures: dict
+    field_owners: dict
+    member_lookups: dict
+    base_cube: object
     issues: object
 
     def plain(self, cname):
         return self.plain_by_cube.get(cname) or set()
+
+    def derived_cube(self, expr):
+        """The cube export's fallback would place a metric with this expression on.
+
+        The exact mirror of export's `_cube_of`: dataset references, metric
+        references (bare identifiers resolving in the metric namespace) and
+        attributed bare fields (declared on exactly one dataset), reduced to the
+        sole cube they point at -- else the model's base cube, or None when the
+        model has no unambiguous base (export refuses then, so the record stays).
+        """
+        pointed = set(referenced_datasets(expr, self.dataset_names))
+        for name in (unqualified_column_names(expr) or ()):
+            cube = resolve_identifier(self.metric_cubes, name)
+            if cube is None:
+                owners = None
+                for key in match_keys(name):
+                    if key in self.field_owners:
+                        owners = self.field_owners[key]
+                        break
+                if owners is not None and len(owners) == 1:
+                    cube = next(iter(owners))
+            if cube is not None:
+                pointed.add(cube)
+        return next(iter(pointed)) if len(pointed) == 1 else self.base_cube
 
 
 def _pk_operand_of(cname, pk_by_cube):
@@ -1455,23 +1489,65 @@ def _pk_operand_of(cname, pk_by_cube):
     return primary_key_operand(cname, key) if key else None
 
 
-def _metric_reference_cubes(expr, metric_cubes):
-    """The cubes whose measures the expression's metric references point at.
+def _base_cube_of(cubes, relationships):
+    """The cube export's `resolve_base` would pick with no hint, or None.
 
-    Bare identifiers in an emitted metric expression are metric references --
-    columns are dataset-qualified there -- so this is the reference-side half of
-    deriving which cube a metric belongs on. Unparseable expressions contribute
-    nothing, which errs toward recording the cube rather than omitting it.
+    The mirror of `_pick_base_cube`: a single dataset is its own base; otherwise
+    the unique dataset that is never a relationship `to` (the FK sink of a
+    many-to-one star). None when there is no unambiguous answer -- export refuses
+    or needs `--base-cube` then, so nothing is omitted on the strength of it.
     """
-    found = set()
-    for name in (unqualified_column_names(expr) or ()):
-        cube = resolve_identifier(metric_cubes, name)
-        if cube is not None:
-            found.add(cube)
-    return found
+    if len(cubes) == 1:
+        return next(iter(cubes))
+    if not relationships:
+        return None
+    incoming = {name: 0 for name in cubes}
+    for rel in relationships:
+        incoming[rel["to"]] += 1
+    roots = [name for name in cubes if incoming[name] == 0]
+    return roots[0] if len(roots) == 1 else None
 
 
-def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, issues):
+def _member_names_of(cubes):
+    """{cube: the field names its exported Ossie dataset declares}.
+
+    Every dimension that becomes an Ossie field (a `switch` one does not), plus
+    the two half names a `geo` dimension splits into. This is what export's
+    reference machinery resolves against, so both the attribution mirror and the
+    cross-cube reversibility check read from it.
+    """
+    out = {}
+    for cname, cube in cubes.items():
+        names = set()
+        for dim in _as_named_list(cube.get("dimensions"),
+                                  f"cube '{cname}' dimensions"):
+            dname = dim.get("name")
+            if not dname:
+                continue
+            dtype = snake(dim.get("type") or "")
+            if dtype == "switch":
+                continue
+            names.add(dname)
+            if dtype == "geo":
+                names.add(f"{dname}_latitude")
+                names.add(f"{dname}_longitude")
+        out[cname] = names
+    return out
+
+
+def _field_owners_of(member_names):
+    """{match key of a field name -> the cubes declaring it}, the import-side
+    mirror of export's attribution table."""
+    owners = {}
+    for cname, names in member_names.items():
+        for fname in names:
+            for key in match_keys(fname):
+                owners.setdefault(key, set()).add(cname)
+    return owners
+
+
+def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, relationships,
+                      issues):
     """Hoist every cube's measures into Ossie model-level metrics.
 
     A metric name is the measure name when globally unique, else
@@ -1485,6 +1561,7 @@ def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, issues):
     the same protocol unconvertible joins use.
     """
     resolver = _MeasureResolver(cubes, pk_by_cube, issues)
+    member_names = _member_names_of(cubes)
 
     # Which measures produce a metric at all, decided before any expression is
     # emitted: a measure reference resolves to the referenced measure's *metric
@@ -1534,6 +1611,10 @@ def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, issues):
         pk_by_cube=pk_by_cube,
         metric_cubes=metric_cubes,
         referenceable_measures=referenceable,
+        field_owners=_field_owners_of(member_names),
+        member_lookups={cname: lookup_map(names)
+                        for cname, names in member_names.items()},
+        base_cube=_base_cube_of(cubes, relationships),
         issues=issues)
 
     metrics = []
@@ -1622,15 +1703,14 @@ def _convert_measure(cname, mname, metric_name, measure, context):
         metric["ai_context"] = ai
 
     stash = {}
-    derivable_cubes = referenced_datasets(expr, context.dataset_names) \
-        | _metric_reference_cubes(expr, context.metric_cubes)
-    if derivable_cubes != {cname}:
-        # The owning cube, recorded only when export cannot derive it from the
-        # expression itself -- its fallback places a metric on the sole cube the
-        # expression's dataset references and metric references point at, which for
-        # a cube-scoped measure is the cube it was declared on. Anything else (a
-        # cross-dataset expression, an expression reading only another cube's
-        # columns) needs the record.
+    if context.derived_cube(expr) != cname:
+        # The owning cube, recorded only when export would not place the measure
+        # here on its own. The mirror of export's derivation: the sole cube the
+        # expression's dataset references, metric references and attributed bare
+        # fields point at -- or, when that is not a single cube, the model's base
+        # cube (the FK sink a generated view is rooted at). A cross-dataset
+        # expression on a non-base cube, or one reading only another cube's
+        # columns, needs the record.
         stash["cube"] = cname
     if decomposed:
         # The public half of a decomposition. Its expression is the whole metric -- the
@@ -1650,12 +1730,11 @@ def _convert_measure(cname, mname, metric_name, measure, context):
             # (whose expression is exactly the bare-count form). The declared type is
             # recorded so the measure comes back spelled the way it was written.
             stash["type"] = mtype
-        if sql is not None and (
-                not sql_is_reversible(
-                    sql, plain, cname,
-                    own_measures=context.referenceable_measures.get(cname) or (),
-                    measures_by_cube=context.referenceable_measures)
-                or len(aggregate_spans(expr)) > 1):
+        if sql is not None and not sql_is_reversible(
+                sql, plain, cname,
+                own_measures=context.referenceable_measures.get(cname) or (),
+                measures_by_cube=context.referenceable_measures,
+                member_lookup_by_cube=context.member_lookups):
             # Only a reference export cannot regenerate needs the original spelling:
             # a non-plain member (whose own SQL is inlined), a cross-cube member
             # reference (which is what adds the implicit join), or a measure
@@ -1663,10 +1742,13 @@ def _convert_measure(cname, mname, metric_name, measure, context):
             # measure whose references all regenerate -- `{total_amount} / {count}`
             # -- needs nothing: its expression carries them as metric names.
             #
-            # A multi-aggregate expression needs it for another reason: export
-            # decomposes one of those into hidden per-aggregate parts, and this
-            # measure was authored as a single one -- the recorded spelling is what
-            # keeps it one.
+            # Deliberately *not* recorded for a multi-aggregate expression, even
+            # though export decomposes a cross-cube one into hidden parts and the
+            # round trip then hands back the decomposed form rather than this
+            # spelling. Keeping the spelling meant the extension carried a rendered
+            # copy of the expression; the decomposed form is the fan-out-correct
+            # one, so the normalization is the point, not a loss. (A single-cube
+            # composite is not decomposed at all and round-trips verbatim.)
             stash["sql"] = sql
         filters = measure.get("filters") or []
         if filters and predicted_filters != resolver.filters_of(cname, mname):

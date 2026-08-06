@@ -113,6 +113,89 @@ def test_the_fixture_and_its_round_trip_both_compile_in_cube(fixture):
     assert_cube_compiles(back, f"{fixture} (after a round trip)")
 
 
+_INLINE_COMPOSITE = {
+    "model/cubes/orders.yml": (
+        "cubes:\n"
+        "  - name: orders\n"
+        "    sql_table: shop.public.orders\n"
+        "    joins:\n"
+        "      - name: users\n"
+        "        sql: \"{CUBE}.user_id = {users}.id\"\n"
+        "        relationship: many_to_one\n"
+        "    dimensions:\n"
+        "      - name: id\n        sql: id\n        type: number\n"
+        "        primary_key: true\n"
+        "      - name: user_id\n        sql: user_id\n        type: number\n"
+        "    measures:\n"
+        "      - name: spread\n"
+        "        sql: \"MAX({CUBE}.amount) - MIN({CUBE}.amount)\"\n"
+        "        type: number\n"
+        "      - name: value_per_user\n"
+        "        sql: \"SUM({CUBE}.amount) / COUNT(DISTINCT {users.id})\"\n"
+        "        type: number\n"
+    ),
+    "model/cubes/users.yml": (
+        "cubes:\n"
+        "  - name: users\n"
+        "    sql_table: shop.public.users\n"
+        "    dimensions:\n"
+        "      - name: id\n        sql: id\n        type: number\n"
+        "        primary_key: true\n"
+    ),
+}
+
+
+def test_an_inline_composite_measure_travels_with_no_extension():
+    """Both composite shapes carry nothing in custom_extensions: the expression is
+    the whole record. This is the review principle -- everything parseable from
+    the expression stays out of the stash -- applied to the last measure shape
+    that used to keep a rendered copy of its own SQL."""
+    from _util import by_name, model_of
+
+    ossie, _ = convert_cube_to_ossie(_INLINE_COMPOSITE)
+    metrics = by_name(model_of(ossie)["metrics"])
+    assert "custom_extensions" not in metrics["spread"]
+    assert "custom_extensions" not in metrics["value_per_user"]
+
+
+def test_a_single_cube_composite_round_trips_verbatim():
+    """All of `spread`'s aggregates read the cube it is declared on, so hidden
+    parts would buy nothing -- Cube's fan-out correction keys on the same cube
+    either way -- and the measure comes back exactly as written."""
+    ossie, _ = convert_cube_to_ossie(_INLINE_COMPOSITE)
+    files2, _ = convert_ossie_to_cube(ossie)
+    measures = {m["name"]: m
+                for m in parse(files2["model/cubes/orders.yml"])["cubes"][0]["measures"]}
+    assert measures["spread"] == {
+        "name": "spread", "sql": "MAX({CUBE}.amount) - MIN({CUBE}.amount)",
+        "type": "number"}
+
+
+def test_a_cross_cube_composite_normalizes_to_the_decomposed_fixed_point():
+    """`value_per_user` spans two cubes, so the round trip hands back the
+    decomposed form -- one hidden measure per aggregate, each on its own cube --
+    which is the fan-out-correct shape, not a loss. The normalization converges:
+    the second cycle reproduces both the Cube files and the Ossie document
+    exactly, and the committed tpcds fixture is this fixed point."""
+    ossie, _ = convert_cube_to_ossie(_INLINE_COMPOSITE)
+    files2, _ = convert_ossie_to_cube(ossie)
+    orders = {m["name"]: m
+              for m in parse(files2["model/cubes/orders.yml"])["cubes"][0]["measures"]}
+    users = {m["name"]: m
+             for m in parse(files2["model/cubes/users.yml"])["cubes"][0]["measures"]}
+    assert orders["value_per_user"]["sql"] == (
+        "{CUBE.value_per_user_part_1} / {users.value_per_user_part_2}")
+    assert orders["value_per_user_part_1"]["public"] is False
+    assert users["value_per_user_part_2"]["type"] == "count"
+
+    # One step to the fixed point: the next cycle changes nothing on either side.
+    ossie2, _ = convert_cube_to_ossie(files2)
+    assert canon(parse(ossie2))["semantic_model"][0]["metrics"] == \
+        canon(parse(ossie))["semantic_model"][0]["metrics"]
+    files3, _ = convert_ossie_to_cube(ossie2)
+    assert parse_files(files3) == parse_files(files2)
+
+
 @validator_gate
 def test_a_model_from_another_converter_is_valid_ossie():
     assert_ossie_is_valid(load_fixture("databricks_ossie.yaml"), "databricks_ossie.yaml")

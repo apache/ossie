@@ -90,3 +90,11 @@ cubes:
           synonyms:
           - employee count
           - staff size
+  measures:
+  - name: store_productivity_part_2
+    sql: '{CUBE}.s_number_employees'
+    type: sum
+    meta:
+      ossie:
+        part_of: store_productivity
+    public: false

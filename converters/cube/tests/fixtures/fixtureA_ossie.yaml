@@ -106,7 +106,7 @@ semantic_model:
       dimension: {}
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "geo": {"of": "location", "part": "latitude", "sql": "{CUBE}.lat"}}'
+        data: '{"_v": 1, "geo": {"of": "location", "part": "latitude"}}'
     - name: location_longitude
       expression:
         dialects:
@@ -116,7 +116,7 @@ semantic_model:
       dimension: {}
       custom_extensions:
       - vendor_name: CUBE
-        data: '{"_v": 1, "geo": {"of": "location", "part": "longitude", "sql": "{CUBE}.lon"}}'
+        data: '{"_v": 1, "geo": {"of": "location", "part": "longitude"}}'
     primary_key:
     - id
     custom_extensions:

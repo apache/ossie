@@ -1852,7 +1852,7 @@ def test_generated_part_names_do_not_depend_on_metric_order(order):
     the composite metric first took `ratio_part_1` and the later metric of that name
     then collided, while the reverse order worked."""
     def metric(name):
-        expr = ("SUM(orders.amount) / COUNT(DISTINCT orders.id)"
+        expr = ("SUM(orders.amount) / COUNT(DISTINCT users.id)"
                 if name == "ratio" else "SUM(orders.amount)")
         return (f"  - name: {name}\n    expression:\n      dialects:\n"
                 f"      - dialect: ANSI_SQL\n        expression: {expr}\n")
@@ -1872,13 +1872,26 @@ def test_generated_part_names_do_not_depend_on_metric_order(order):
         "    - name: amount\n      expression:\n        dialects:\n"
         "        - dialect: ANSI_SQL\n          expression: amount\n"
         "      datatype: Decimal\n"
+        "  - name: users\n"
+        "    source: a.b.users\n"
+        "    primary_key:\n    - id\n"
+        "    fields:\n"
+        "    - name: id\n      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: id\n"
+        "      datatype: Integer\n"
+        "  relationships:\n"
+        "  - name: r\n    from: orders\n    to: users\n"
+        "    from_columns: [id]\n    to_columns: [id]\n"
         "  metrics:\n" + "".join(metric(n) for n in order)
     )
     files, _ = convert_ossie_to_cube(ossie)
     names = [m["name"] for m in
              parse(files["model/cubes/orders.yml"])["cubes"][0]["measures"]]
+    users = [m["name"] for m in
+             parse(files["model/cubes/users.yml"])["cubes"][0]["measures"]]
     # Same generated names either way, and the user's own metric keeps its name.
-    assert sorted(names) == ["ratio", "ratio_part_1", "ratio_part_2", "ratio_part_3"]
+    assert sorted(names) == ["ratio", "ratio_part_1", "ratio_part_2"]
+    assert users == ["ratio_part_3"]
 
 
 def test_a_stashed_extra_file_may_not_overwrite_generated_output():
@@ -2127,15 +2140,26 @@ def test_a_generated_part_name_avoids_a_stashed_member():
         "    custom_extensions:\n"
         "    - vendor_name: CUBE\n"
         f"      data: '{json.dumps(stash)}'\n"
+        "  - name: users\n"
+        "    source: a.b.users\n"
+        "    primary_key:\n    - id\n"
+        "    fields:\n"
+        "    - name: id\n      expression:\n        dialects:\n"
+        "        - dialect: ANSI_SQL\n          expression: id\n"
+        "      datatype: Integer\n"
+        "  relationships:\n"
+        "  - name: r\n    from: orders\n    to: users\n"
+        "    from_columns: [id]\n    to_columns: [id]\n"
         "  metrics:\n"
         "  - name: ratio\n    expression:\n      dialects:\n"
         "      - dialect: ANSI_SQL\n"
-        "        expression: SUM(orders.amount) / COUNT(DISTINCT orders.id)\n"
+        "        expression: SUM(orders.amount) / COUNT(DISTINCT users.id)\n"
     )
     files, _ = convert_ossie_to_cube(ossie)
     cube = parse(files["model/cubes/orders.yml"])["cubes"][0]
-    assert [m["name"] for m in cube["measures"]] == [
-        "ratio_part_2", "ratio_part_3", "ratio"]
+    assert [m["name"] for m in cube["measures"]] == ["ratio_part_2", "ratio"]
+    users = parse(files["model/cubes/users.yml"])["cubes"][0]
+    assert [m["name"] for m in users["measures"]] == ["ratio_part_3"]
     assert [s["name"] for s in cube["segments"]] == ["ratio_part_1"]
 
 
