@@ -1568,9 +1568,13 @@ def test_a_case_label_may_be_an_expression():
     assert expr_of(size) == "CASE WHEN v = 'xl' THEN english_size END"
 
 
-def test_a_sub_query_dimension_is_reported():
-    """`sub_query: true` means the sql references a *measure*, which an Ossie field
-    expression has no form for. It used to convert silently."""
+def test_a_sub_query_dimension_is_parked_whole():
+    """`sub_query: true` means the sql references a *measure* through a correlated
+    subquery, which an Ossie field expression has no form for. It used to be
+    emitted anyway as the flattened reference (`users.count`) -- text that reads
+    as a column no dataset has and computes nothing anywhere -- so it is parked
+    like a switch dimension instead, and the referenced measure still reaches the
+    model as an ordinary metric."""
     files = _files(products=(
         "cubes:\n  - name: products\n    sql_table: a.b.products\n    dimensions:\n"
         "      - name: users_count\n        sql: \"{users.count}\"\n"
@@ -1579,9 +1583,16 @@ def test_a_sub_query_dimension_is_reported():
         "      - name: id\n        sql: id\n        type: number\n"
         "        primary_key: true\n"
         "    measures:\n      - name: count\n        type: count\n"))
-    _, issues = convert_cube_to_ossie(files)
+    ossie, issues = convert_cube_to_ossie(files)
     assert any("sub_query" in i.detail
-               for i in issues.of_type(IssueType.APPROXIMATED))
+               for i in issues.of_type(IssueType.PARKED_IN_META))
+    products = by_name(model_of(ossie)["datasets"])["products"]
+    assert not products.get("fields")
+    assert stash_of(products)["extra_dimensions"][0]["dimension"]["name"] == (
+        "users_count")
+    # The aggregate itself is still in the model, as the hoisted metric.
+    assert expr_of(by_name(model_of(ossie)["metrics"])["count"]) == (
+        "COUNT(DISTINCT users.id)")
 
 
 def test_duplicate_member_names_in_one_cube_are_rejected():

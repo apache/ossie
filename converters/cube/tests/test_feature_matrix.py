@@ -123,10 +123,25 @@ def test_a_switch_dimension_has_no_ossie_field():
                for i in issues.of_type(IssueType.PARKED_IN_META))
 
 
-def test_a_sub_query_dimension_is_reported_not_silently_converted():
-    _, _, _, issues = _roundtrip("sub_query_dimension.yml")
+def test_a_sub_query_dimension_is_parked_not_emitted_as_a_field():
+    """`{orders.count}` reads a *measure* through a correlated subquery. Emitting
+    the flattened reference as an Ossie expression claimed a column no dataset has
+    -- text that reads as valid SQL and computes nothing anywhere -- so the
+    dimension rides whole on the stash, the same protocol switch dimensions use,
+    and comes back at its original position."""
+    files, ossie, back, issues = _roundtrip("sub_query_dimension.yml")
     assert any("sub_query" in i.detail
-               for i in issues.of_type(IssueType.APPROXIMATED))
+               for i in issues.of_type(IssueType.PARKED_IN_META))
+    products = by_name(model_of(ossie)["datasets"])["products"]
+    assert "order_count" not in by_name(products.get("fields") or [])
+    parked = stash_of(products)["extra_dimensions"]
+    assert parked[0]["dimension"]["name"] == "order_count"
+    # And it returns to Cube exactly as written.
+    cube = parse_files(back)["model/cubes/sub_query_dimension.yml"]["cubes"]
+    dims = by_name(by_name(cube)["products"]["dimensions"])
+    assert dims["order_count"] == {
+        "name": "order_count", "sql": "{orders.count}", "type": "number",
+        "sub_query": True}
 
 
 def test_a_computed_primary_key_returns_to_its_own_dimension():

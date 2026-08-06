@@ -612,6 +612,22 @@ def _convert_cube(cname, cube, plain, extra_joins, extra_measures, issues):
                        "in custom_extensions only")
             extra_dimensions.append({"index": index, "dimension": dim})
             continue
+        if dim.get("sub_query"):
+            # `sub_query: true` means the sql references a *measure* (`{orders.count}`),
+            # which Cube resolves by aggregating in a correlated subquery. An Ossie
+            # field expression is dataset-scoped SQL over columns -- emitting the
+            # flattened reference (`orders.count`) claimed a column no dataset has,
+            # which reads as valid SQL and computes nothing anywhere. The aggregate
+            # itself already reaches the model as a metric (the referenced measure is
+            # hoisted like any other); the row-grain wrapper is Cube-only, so it rides
+            # whole on the stash with its position -- the same protocol switch
+            # dimensions and multi-stage measures use.
+            issues.add(IssueType.PARKED_IN_META, f"{cname}.{dname}",
+                       "sub_query dimension reads a measure through a correlated "
+                       "subquery, which an Ossie field expression has no form for; "
+                       "preserved in custom_extensions only")
+            extra_dimensions.append({"index": index, "dimension": dim})
+            continue
         fields.extend(_convert_dimension(cname, dname, dim, plain, issues))
     if fields:
         ds["fields"] = fields
@@ -687,16 +703,6 @@ def _convert_dimension(cname, dname, dim, plain, issues):
         }
         built = _finish_dimension_field(cname, dname, dim, field, stash, issues)
         return [built] if built is not None else []
-    if dim.get("sub_query"):
-        # `sub_query: true` means the sql references a *measure* (`{users.count}`),
-        # which Cube resolves by aggregating in a subquery. An Ossie field expression
-        # is dataset-scoped SQL over columns, so the reference survives as text but
-        # nothing downstream can resolve it. The flag rides in the stash, so export
-        # restores the working Cube form.
-        issues.add(IssueType.APPROXIMATED, f"{cname}.{dname}",
-                   "sub_query dimension references a measure, which an Ossie field "
-                   "expression has no form for; the reference is emitted as text and "
-                   "only Cube can resolve it")
     if sql is not None and not str(sql).strip():
         # Cube compiles `sql: ''` without complaint, so this is not refused -- but the
         # resulting Ossie expression is empty, which no consumer can evaluate.
@@ -1511,10 +1517,11 @@ def _base_cube_of(cubes, relationships):
 def _member_names_of(cubes):
     """{cube: the field names its exported Ossie dataset declares}.
 
-    Every dimension that becomes an Ossie field (a `switch` one does not), plus
-    the two half names a `geo` dimension splits into. This is what export's
-    reference machinery resolves against, so both the attribution mirror and the
-    cross-cube reversibility check read from it.
+    Every dimension that becomes an Ossie field (a `switch` or `sub_query` one
+    does not -- both are parked whole), plus the two half names a `geo` dimension
+    splits into. This is what export's reference machinery resolves against, so
+    both the attribution mirror and the cross-cube reversibility check read from
+    it.
     """
     out = {}
     for cname, cube in cubes.items():
@@ -1525,7 +1532,7 @@ def _member_names_of(cubes):
             if not dname:
                 continue
             dtype = snake(dim.get("type") or "")
-            if dtype == "switch":
+            if dtype == "switch" or dim.get("sub_query"):
                 continue
             names.add(dname)
             if dtype == "geo":
