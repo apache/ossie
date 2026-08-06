@@ -46,6 +46,7 @@ from ._common import (
     JINJA_RE,
     OSSIE_VERSION,
     ConversionError,
+    classify_metric_expression,
     cube_file,
     cube_sql_to_ossie,
     dump_yaml,
@@ -58,6 +59,7 @@ from ._common import (
     join_source,
     load_yaml,
     primary_key_count_expression,
+    primary_key_operand,
     require_str,
     snake,
     snake_keys,
@@ -1179,6 +1181,19 @@ class _MeasureResolver:
         """The normalized Cube `type` of a measure."""
         return snake(self._raw[(cname, mname)].get("type") or "")
 
+    def filters_of(self, cname, mname):
+        """The measure's `filters`, translated -- the texts the expression folds.
+
+        What the stash decision compares against the unfold's prediction: when the
+        two agree, `filters` regenerate from the expression and need no record.
+        """
+        key = (cname, mname)
+        return [
+            self._translate(f["sql"], cname, (key,))
+            for f in (self._raw[key].get("filters") or [])
+            if isinstance(f, dict) and f.get("sql")
+        ]
+
     def expression(self, cname, mname, stack=()):
         """The Ossie expression reproducing this measure, or None when the measure
         has no static form (multi-stage, Jinja-templated)."""
@@ -1362,8 +1377,9 @@ class _MeasureContext:
     """Model-wide facts every measure conversion needs.
 
     `resolver` produces a measure's Ossie expression, `fanned_out` says which datasets a
-    relationship multiplies, `dataset_names` is what a reference can resolve to, and
-    `plain_by_cube` says which members regenerate from a bare column name. Passing them
+    relationship multiplies, `dataset_names` is what a reference can resolve to,
+    `plain_by_cube` says which members regenerate from a bare column name, and
+    `pk_by_cube` is what the bare-count prediction compares against. Passing them
     one at a time made `_convert_measure` a nine-parameter function whose signature said
     nothing about what it does.
     """
@@ -1372,10 +1388,17 @@ class _MeasureContext:
     fanned_out: dict
     dataset_names: frozenset
     plain_by_cube: dict
+    pk_by_cube: dict
     issues: object
 
     def plain(self, cname):
         return self.plain_by_cube.get(cname) or set()
+
+
+def _pk_operand_of(cname, pk_by_cube):
+    """The scalar expression standing for a cube's primary key, or None without one."""
+    key = pk_by_cube.get(cname) or []
+    return primary_key_operand(cname, key) if key else None
 
 
 def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, issues):
@@ -1396,6 +1419,7 @@ def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, issues):
         fanned_out=fanned_out,
         dataset_names=frozenset(cubes),
         plain_by_cube=plain_by_cube,
+        pk_by_cube=pk_by_cube,
         issues=issues)
     resolver = context.resolver
 
@@ -1454,24 +1478,7 @@ def _convert_measure(cname, mname, metric_name, measure, context):
         return None
     mtype = resolver.aggregate_of(cname, mname)
     sql = measure.get("sql")
-
-    # Reconstructible = export can rebuild this measure from the Ossie expression
-    # alone. A calculated measure never is: export would re-parse its expression
-    # into a structured measure, and the inlined references cannot be un-inlined.
-    # Neither is a filtered one -- recovering `filters` would mean parsing the
-    # folded CASE back apart, so the original rides along instead.
-    reconstructible = (
-        {snake(k) for k in measure} <= _MEASURE_NATIVE_KEYS
-        and mtype not in CALCULATED_MEASURE_TYPES
-        and not measure.get("filters")
-    )
     decomposed = bool(parked_of(measure.get("meta")).get("decomposed"))
-    if decomposed:
-        # The public half of a decomposition. Its expression is the whole metric -- the
-        # references to its hidden parts inline back into it -- so export can rebuild both
-        # halves from that. Stashing the measure verbatim instead kept references to parts
-        # the next export does not generate, and Cube refused the result.
-        reconstructible = True
 
     # Fan-out: a non-idempotent aggregate over a dataset the graph can multiply. Cube
     # fixes this at query time by deduplicating on the primary key; a static expression
@@ -1511,23 +1518,62 @@ def _convert_measure(cname, mname, metric_name, measure, context):
     if ai:
         metric["ai_context"] = ai
 
-    stash = {"cube": cname}
-    if not reconstructible:
-        stash["measure"] = {
-            snake(k): v for k, v in measure.items()
-            if snake(k) not in ("description", "meta")
-        }
-    elif decomposed:
-        # Nothing about the Cube spelling is worth keeping: its references point at hidden
-        # parts, and the next export regenerates both halves from the expression. Keeping
-        # the sql suppressed that regeneration, so the parts were never rebuilt and the
-        # measure referenced members that no longer existed.
+    stash = {}
+    if referenced_datasets(expr, context.dataset_names) != {cname}:
+        # The owning cube, recorded only when export cannot derive it from the
+        # expression itself -- its fallback places a metric on the sole dataset the
+        # expression references, which for a cube-scoped measure is the cube it was
+        # declared on. Anything else (a cross-dataset expression, an expression
+        # reading only another cube's columns) needs the record.
+        stash["cube"] = cname
+    if decomposed:
+        # The public half of a decomposition. Its expression is the whole metric -- the
+        # references to its hidden parts inline back into it -- so export regenerates
+        # both halves from that. Nothing about the Cube spelling is worth keeping:
+        # its references point at hidden parts the next export re-creates itself, and
+        # restoring the original sql suppressed that regeneration, so the measure
+        # referenced members that no longer existed.
         pass
-    elif sql is not None and not sql_is_reversible(sql, plain, cname):
-        # Only a reference export cannot regenerate needs the original spelling: a
-        # non-plain member (whose own SQL is inlined) or a cross-cube reference
-        # (which is what adds the implicit join).
-        stash["sql"] = sql
+    else:
+        predicted, _, predicted_filters = classify_metric_expression(
+            expr, _pk_operand_of(cname, context.pk_by_cube))
+        if predicted != mtype:
+            # Regeneration would classify the expression as another Cube type that
+            # computes the same value -- a `type: number` measure whose sql is a
+            # single aggregate, or a `count_distinct` declared over the primary key
+            # (whose expression is exactly the bare-count form). The declared type is
+            # recorded so the measure comes back spelled the way it was written.
+            stash["type"] = mtype
+        if mtype in CALCULATED_MEASURE_TYPES:
+            # The references in a calculated measure's sql are inlined into the
+            # expression and cannot be un-inlined, so the spelling has to ride along.
+            stash["sql"] = sql
+        elif sql is not None and not sql_is_reversible(sql, plain, cname):
+            # Only a reference export cannot regenerate needs the original spelling: a
+            # non-plain member (whose own SQL is inlined) or a cross-cube reference
+            # (which is what adds the implicit join).
+            stash["sql"] = sql
+        filters = measure.get("filters") or []
+        if filters and predicted_filters != resolver.filters_of(cname, mname):
+            # The fold is not invertible here -- an operand that is itself a CASE
+            # defeats the unfold -- so neither the operand nor the filters can be
+            # read back off the expression. Both spellings ride along.
+            stash["filters"] = filters
+            if sql is not None:
+                stash["sql"] = sql
+        elif filters and not all(
+                isinstance(f, dict) and {snake(k) for k in f} == {"sql"}
+                and sql_is_reversible(str(f["sql"]), plain, cname)
+                for f in filters):
+            # `filters` regenerate from the folded CASE in the expression; only
+            # spellings the canonical unfold would not reproduce are recorded.
+            stash["filters"] = filters
+        for key, value in measure.items():
+            # Cube-only measure keys (`format`, `drill_members`, `public`, ...) ride
+            # flat, the same protocol dimensions use -- not as a copy of the whole
+            # measure, which would duplicate the sql and type the expression carries.
+            if snake(key) not in _MEASURE_NATIVE_KEYS:
+                stash[snake(key)] = value
     if metric_name != mname:
         stash["name"] = mname
     if measure.get("title"):

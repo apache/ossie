@@ -379,6 +379,57 @@ def test_count_distinct_over_the_primary_key_becomes_a_bare_count():
     assert measure == {"name": "m", "type": "count"}
 
 
+def test_a_canonical_filter_fold_unfolds_into_structured_filters():
+    """The fold import writes (`AGG(CASE WHEN (…) THEN … END)`, exactly Cube's own
+    `applyMeasureFilters` shape) is deterministic, so `filters` regenerate from the
+    expression itself -- a filtered measure needs no stash at all."""
+    files, _ = convert_ossie_to_cube(_ossie(_ORDERS, metrics=_metric(
+        "m", "SUM(CASE WHEN (orders.status = 'active') THEN orders.amount END)")))
+    measure = _cubes(files)["orders"]["measures"][0]
+    assert measure == {
+        "name": "m", "sql": "{CUBE}.amount", "type": "sum",
+        "filters": [{"sql": "{CUBE}.status = 'active'"}]}
+
+
+def test_several_anded_filters_unfold_one_entry_each():
+    files, _ = convert_ossie_to_cube(_ossie(_ORDERS, metrics=_metric(
+        "m", "SUM(CASE WHEN (orders.status = 'active') AND (orders.amount > 0) "
+             "THEN orders.amount END)")))
+    measure = _cubes(files)["orders"]["measures"][0]
+    assert measure["filters"] == [
+        {"sql": "{CUBE}.status = 'active'"},
+        {"sql": "{CUBE}.amount > 0"},
+    ]
+
+
+def test_a_filtered_bare_count_recovers_both_the_count_and_the_filters():
+    """Filters fold *inside* the DISTINCT, so the unfold has to run before the
+    primary-key match -- otherwise the filtered count comes back as a
+    count_distinct over a CASE expression."""
+    files, _ = convert_ossie_to_cube(_ossie(_ORDERS, metrics=_metric(
+        "m", "COUNT(DISTINCT CASE WHEN (orders.status = 'active') "
+             "THEN orders.id END)")))
+    measure = _cubes(files)["orders"]["measures"][0]
+    assert measure == {
+        "name": "m", "type": "count",
+        "filters": [{"sql": "{CUBE}.status = 'active'"}]}
+
+
+@pytest.mark.parametrize("expr", [
+    # An ELSE branch is not the canonical fold, so it is not filters.
+    "SUM(CASE WHEN (orders.status = 'a') THEN orders.amount ELSE 0 END)",
+    # Unparenthesized conditions are not either -- refolding would not reproduce
+    # the spelling, so unfolding would restructure a hand-written expression.
+    "SUM(CASE WHEN orders.status = 'a' THEN orders.amount END)",
+])
+def test_a_non_canonical_case_stays_a_single_expression(expr):
+    files, _ = convert_ossie_to_cube(_ossie(_ORDERS, metrics=_metric("m", expr)))
+    measure = _cubes(files)["orders"]["measures"][0]
+    assert measure["type"] == "sum"
+    assert "filters" not in measure
+    assert measure["sql"].startswith("CASE WHEN ")
+
+
 def test_declared_member_gets_a_member_reference_and_a_raw_column_does_not():
     """`{CUBE.member}` reuses a declared member's SQL and is compile-time checked;
     `{CUBE}.column` passes a raw column through. The choice follows from whether

@@ -288,7 +288,9 @@ def test_field_and_metric_foreign_extensions_survive_the_round_trip():
     metric = by_name(model["metrics"])["total"]
     mexts = {e["vendor_name"]: e["data"] for e in metric["custom_extensions"]}
     assert mexts["DBT"] == '{"model": "fct_orders"}'
-    assert metric["custom_extensions"][0]["vendor_name"] == "CUBE"
+    # A single-dataset aggregate needs no CUBE stash at all -- the owning cube is
+    # derivable from the expression -- so the foreign extension is the only entry.
+    assert list(mexts) == ["DBT"]
 
 
 @pytest.mark.parametrize("sql_table,parts,warns", [

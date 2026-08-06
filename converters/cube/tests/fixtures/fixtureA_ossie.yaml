@@ -132,7 +132,7 @@ semantic_model:
     datatype: Integer
     custom_extensions:
     - vendor_name: CUBE
-      data: '{"_v": 1, "cube": "orders", "name": "count"}'
+      data: '{"_v": 1, "name": "count"}'
   - name: total_amount
     expression:
       dialects:
@@ -143,18 +143,13 @@ semantic_model:
       instructions: Use this for revenue questions.
     custom_extensions:
     - vendor_name: CUBE
-      data: '{"_v": 1, "cube": "orders", "measure": {"name": "total_amount", "sql":
-        "{CUBE}.amount", "type": "sum", "format": "currency"}}'
+      data: '{"_v": 1, "format": "currency"}'
   - name: completed_amount
     expression:
       dialects:
       - dialect: ANSI_SQL
         expression: SUM(CASE WHEN (orders.status = 'completed') THEN orders.amount
           END)
-    custom_extensions:
-    - vendor_name: CUBE
-      data: '{"_v": 1, "cube": "orders", "measure": {"name": "completed_amount", "sql":
-        "{CUBE}.amount", "type": "sum", "filters": [{"sql": "{CUBE}.status = ''completed''"}]}}'
   - name: avg_order_value
     expression:
       dialects:
@@ -162,8 +157,7 @@ semantic_model:
         expression: SUM(orders.amount) / COUNT(DISTINCT orders.id)
     custom_extensions:
     - vendor_name: CUBE
-      data: '{"_v": 1, "cube": "orders", "measure": {"name": "avg_order_value", "sql":
-        "{total_amount} / {count}", "type": "number"}}'
+      data: '{"_v": 1, "sql": "{total_amount} / {count}"}'
   - name: users__count
     expression:
       dialects:
@@ -172,16 +166,13 @@ semantic_model:
     datatype: Integer
     custom_extensions:
     - vendor_name: CUBE
-      data: '{"_v": 1, "cube": "users", "name": "count"}'
+      data: '{"_v": 1, "name": "count"}'
   - name: cities
     expression:
       dialects:
       - dialect: ANSI_SQL
         expression: COUNT(DISTINCT users.city)
     datatype: Integer
-    custom_extensions:
-    - vendor_name: CUBE
-      data: '{"_v": 1, "cube": "users"}'
   custom_extensions:
   - vendor_name: CUBE
     data: '{"_v": 1, "views": {"sales": {"name": "sales", "cubes": [{"join_path":

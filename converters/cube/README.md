@@ -141,7 +141,7 @@ to **import** (Cube -> Ossie) or **export** (Ossie -> Cube).
 | — | `type: geo` dimension | An Ossie field holds one expression and a geo dimension has two, so it **splits** into `<name>_latitude` / `<name>_longitude` (`Float`). Reconstruction data rides on the latitude half. See [Geo dimensions](#geo-dimensions). |
 | relationship | `joins[]` on a cube | `many_to_one` on cube A -> `from: A`(many), `to: B`(one). `one_to_many` is flipped so Ossie's `from` is the many side; the declared side and type are stashed so export restores the original. |
 | `from_columns` / `to_columns` | join `sql` | Only an AND-chain of equalities mapping to **physical columns of that dataset** converts. `{CUBE}.user_id` is already one; `{CUBE.user_key}` names a *member*, so it resolves to the column that member reads (`user_id`), following a chain of member references to its end with cycle detection. Everything else preserves the whole join verbatim in the stash rather than describing it wrongly: a member reading an expression (`CONCAT(...)`), a `case`/`switch` dimension (which reads no column at all), an alias belonging to another cube (`{users}.region_id`), or a clause that is not a two-column equality. |
-| metric | `measures[]` on the cube its expression references | Import hoists cube-scoped measures to the model level, qualifying a colliding name as `<cube>__<measure>` and stashing the original name and owning cube. Collision is judged on the **normalized** identifier, since Ossie's are case-insensitive: `orders.revenue` and `users.Revenue` are one name in the model-level namespace and both get qualified. The emitted name keeps its original spelling. |
+| metric | `measures[]` on the cube its expression references | Import hoists cube-scoped measures to the model level, qualifying a colliding name as `<cube>__<measure>` and stashing the original name. The owning cube is stashed only when the expression does not say it — export places a metric on the sole dataset its expression references, which for a cube-scoped measure is the cube it was declared on. Collision is judged on the **normalized** identifier, since Ossie's are case-insensitive: `orders.revenue` and `users.Revenue` are one name in the model-level namespace and both get qualified. The emitted name keeps its original spelling. |
 | `SUM`/`AVG`/`MIN`/`MAX(x)` | `type: sum`/`avg`/`min`/`max` + `sql` | |
 | `COUNT(DISTINCT x)` | `type: count_distinct` | |
 | `APPROX_COUNT_DISTINCT(x)` | `type: count_distinct_approx` | Cube resolves the warehouse-specific function itself. |
@@ -149,7 +149,9 @@ to **import** (Cube -> Ossie) or **export** (Ossie -> Cube).
 | one aggregate inside a larger expression | `type: number` (calculated) | Deliberately not decomposed: Cube applies its row-multiplication correction to a calculated measure just as it does to a structured one. `SUM({CUBE}.amount) / 100` and the same split into a hidden `type: sum` plus a ratio generate *identical* SQL under fan-out. Splitting would add a hidden member and buy nothing. |
 | several aggregates in one expression | one `public: false` measure per aggregate + a `type: number` measure referencing them | Each part is declared on the cube its own operand reads, so Cube corrects row multiplication per aggregate rather than once for the whole expression. The parts carry `meta.ossie.part_of`, and import skips them and inlines their SQL back through the references -- recovering the original expression exactly. |
 | anything else | `type: number` (calculated) | A `{other_measure}` reference is **inlined**, because that is what Cube itself does; Ossie has no metric-to-metric reference. |
-| — | measure `filters` | Folded into `CASE WHEN … THEN … END` inside the aggregate, exactly as Cube's own `applyMeasureFilters` renders it. |
+| `AGG(CASE WHEN (…) THEN … END)` | measure `filters` | Folded into `CASE WHEN … THEN … END` inside the aggregate, exactly as Cube's own `applyMeasureFilters` renders it — and **unfolded back** into structured `filters` on export, so a filtered measure travels with *no stash at all*. Only the exact canonical fold unfolds, verified by refolding; a hand-written CASE with an ELSE, unparenthesized conditions, or an operand that is itself a CASE stays one expression (and in the last case the original `sql`/`filters` spellings ride in the stash, since the fold is not invertible there). |
+| declared `type` the expression would not regenerate | `type` stash entry | A `type: number` measure whose sql is a single aggregate, or a `count_distinct` declared over the primary key, computes the same value as another Cube spelling — classification would emit that other spelling, so the declared type is recorded and the measure comes back written the way it was written. |
+| Cube-only measure keys (`format`, `drill_members`, `public`, …) | flat stash entries | The same protocol dimensions use. Import used to stash a *copy of the whole measure* whenever any extra key was present, which duplicated the `sql`/`type`/`filters` the expression already carries; now only the keys the expression cannot carry ride along. |
 | `metric.datatype` | — | Import emits `Integer` for the count family, whose result type Cube does know, and reads a parked one otherwise. |
 | `metric.description` / `ai_context` | measure `description` / `meta.ai_context` | |
 | `custom_extensions[CUBE]` | everything Cube-only | Import stashes; export restores -- keeping `Cube -> Ossie -> Cube` lossless. |
@@ -160,9 +162,10 @@ natively mapped description/AI context), the mapped view's identity, original fi
 paths, cube extras (`title`, `sql_alias`, `data_source`, `public`, `refresh_key`,
 `segments`, `pre_aggregations`, `hierarchies`, `access_policy`, `calendar`, ...),
 dimension extras (`format`, `currency`, `granularities`, `case`, `sub_query`,
-`order`, `aliases`, `meta`, ...), measure extras and any non-reconstructible
-measure, joins with no Ossie form, Jinja-templated members, and files with no
-Ossie form (`.js`/`.ts` models, non-model YAML).
+`order`, `aliases`, `meta`, ...), measure extras (flat, same protocol) plus any
+`sql`/`filters`/`type` spelling regeneration would not reproduce, joins with no
+Ossie form, Jinja-templated members, and files with no Ossie form (`.js`/`.ts`
+models, non-model YAML).
 
 **Identifier case**: Ossie regular (unquoted) identifiers are case-insensitive — the
 core spec's *normalized* form upper-cases them and strips quotes from quoted ones — so
@@ -330,9 +333,11 @@ matter in practice.
 **Keep Cube-only detail out of `custom_extensions`.** Converters that do not read
 foreign extensions warn about and discard every one, so anything placed there is
 noise to them. This converter therefore stashes only what is genuinely Cube-specific
-— segments, pre-aggregations, hierarchies, view curation, geo reconstruction — and
-maps everything else natively. On the TPC-DS model that is 7 stash entries rather
-than 41, and 2 Databricks warnings rather than 32.
+— segments, pre-aggregations, hierarchies, view curation, geo reconstruction, and
+spellings regeneration would not reproduce — and everything derivable from the
+document itself (a measure's `sql`, `type` and `filters`, the cube a single-dataset
+metric belongs on) is derived rather than recorded. On the TPC-DS model that is 4
+stash entries rather than 41, and 2 Databricks warnings rather than 32.
 
 **Qualify your `sql_table`.** Cube accepts `orders` or `public.orders`, but the
 Databricks, Snowflake and NVIDIA GSF converters all require a three-part

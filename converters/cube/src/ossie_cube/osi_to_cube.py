@@ -37,13 +37,14 @@ from collections import deque
 
 from ._common import (
     AGG_TO_RESULT_DATATYPE,
+    CALCULATED_MEASURE_TYPES,
     DATATYPE_TO_DIM_TYPE,
     DEFAULT_DATATYPE_FOR_CUBE_TYPE,
     DEFAULT_MODEL_NAME,
     DIALECT_ANSI,
-    OSSIE_FUNC_TO_AGG,
     OSSIE_VERSION,
     ConversionError,
+    classify_metric_expression,
     cube_file,
     dump_yaml,
     escape_braces_for_cube,
@@ -58,11 +59,9 @@ from ._common import (
     pick_expression,
     primary_key_operand,
     read_stash,
-    referenced_datasets,
     DOTTED_REF_RE,
     lookup_map,
     resolve_identifier,
-    normalized_expression,
     quoted_runs,
     split_dotted_ref,
     require_str,
@@ -73,13 +72,6 @@ from ._common import (
 )
 from .converter_issues import IssueLog, IssueType
 from .expressions import aggregate_spans
-
-# An aggregate call the exporter can turn back into a structured Cube measure.
-_AGG_CALL_RE = re.compile(
-    r"^\s*(SUM|AVG|MIN|MAX|COUNT|APPROX_COUNT_DISTINCT)\s*\((.*)\)\s*$",
-    re.IGNORECASE | re.DOTALL,
-)
-_DISTINCT_RE = re.compile(r"^DISTINCT\s+(.+)$", re.IGNORECASE | re.DOTALL)
 
 # The order Cube's own YAML documentation and generators use, so exported files
 # read the way a hand-authored model does.
@@ -1004,9 +996,9 @@ def _build_measures(model, cube_names, plan, tables, datasets, relationships,
         mname = stash.get("name") or sanitize_name(mname_raw, scope, set())
 
         if "measure" in stash:
-            # A prior import stashed the original measure (a filtered, calculated,
-            # or otherwise non-reconstructible one); restore it verbatim and
-            # re-inject the natively mapped metadata.
+            # The whole-measure record older documents carry (current imports record
+            # only the spellings regeneration would not reproduce); restore it
+            # verbatim and re-inject the natively mapped metadata.
             measure = dict(stash["measure"])
             measure["name"] = mname
             _apply_measure_metadata(metric, measure, stash)
@@ -1063,8 +1055,22 @@ def _build_measures(model, cube_names, plan, tables, datasets, relationships,
                 expr, target, mname, stash, plan, tables)
         _apply_measure_metadata(metric, measure, stash, used,
                                 decomposed=len(spans) > 1)
+        # Cube-only keys import found on the measure (`format`, `drill_members`,
+        # `public`, ...) ride flat in the stash -- the same protocol dimensions
+        # use -- and go back onto the rebuilt measure as written.
+        for key, value in stash.items():
+            if key not in _METRIC_STASH_CONSUMED:
+                measure[key] = value
         _place(measures_by_cube, target, measure, name)
     return measures_by_cube
+
+
+# Metric stash keys the exporter consumes itself rather than writing onto the
+# measure: identity (`cube`, `name`), spellings regeneration would not reproduce
+# (`sql`, `filters`, `type`), natively mapped metadata (`title`, `meta`), and the
+# legacy whole-measure record (`measure`).
+_METRIC_STASH_CONSUMED = frozenset(
+    {"cube", "measure", "sql", "filters", "type", "name", "title", "meta"})
 
 
 def _references_a_dropped_field(expr, tables, cube_names, plan):
@@ -1174,42 +1180,45 @@ def _measure_from_expression(expr, target, mname, stash, plan, tables):
     `COUNT(DISTINCT <the cube's primary key>)` is Cube's bare `type: count` --
     which is how import renders it, precisely because that form stays correct
     whether or not the cube is fanned out. A recognized aggregate over a single
-    operand becomes the matching `type` plus `sql`; anything else becomes a
-    calculated `type: number` measure carrying the whole expression.
+    operand becomes the matching `type` plus `sql`; a canonical filter fold
+    (`AGG(CASE WHEN (…) THEN … END)`, exactly the shape Cube's own
+    `applyMeasureFilters` renders) is unfolded back into structured `filters`;
+    anything else becomes a calculated `type: number` measure carrying the whole
+    expression.
+
+    A stashed `type` wins over the classified one. It is recorded only when the
+    two differ -- a `type: number` measure whose sql is a single aggregate, or a
+    `count_distinct` declared over the primary key, both of which would otherwise
+    come back as the other spelling of the same value.
     """
     measure = {"name": mname}
-    m = _AGG_CALL_RE.match(expr)
-    if m and _balanced(m.group(2)):
-        func, inner = m.group(1).upper(), m.group(2).strip()
-        distinct = _DISTINCT_RE.match(inner)
-        if func == "COUNT" and distinct:
-            inner = distinct.group(1).strip()
-            key = list((plan.get(target).primary_key if target in plan else ()))
-            if key and (normalized_expression(inner)
-                        == normalized_expression(primary_key_operand(target, key))):
-                measure["type"] = "count"
-                return measure
-            func = "COUNT_DISTINCT"
-        # `COUNT(*)` deliberately falls through to the calculated measure below.
-        # A bare Cube `type: count` is this converter's representation of
-        # `COUNT(DISTINCT <primary key>)` -- handled above -- so emitting one here
-        # would round-trip back as a different expression, and on a dataset with no
-        # primary key it would produce a measure the importer refuses. Cube renders
-        # `type: number` with `count(*)` natively (BaseQuery special-cases exactly
-        # that pair), so the expression survives intact either way.
-        if not (func == "COUNT" and inner == "*"):
-            agg = OSSIE_FUNC_TO_AGG.get(func) or ("count" if func == "COUNT" else None)
-            if agg is not None:
-                measure["sql"] = stash.get("sql") or ossie_expr_to_cube_sql(
-                    inner, target, tables)
-                measure["type"] = agg
-                return measure
-
-    # A ratio, a window expression, or a multi-dataset aggregate: Cube expresses
-    # these as a calculated measure whose sql carries the aggregation.
-    measure["sql"] = stash.get("sql") or ossie_expr_to_cube_sql(
-        expr, target, tables)
-    measure["type"] = "number"
+    key = list(plan[target].primary_key) if target in plan else []
+    pk_operand = primary_key_operand(target, key) if key else None
+    mtype, operand, filters = classify_metric_expression(expr, pk_operand)
+    declared = stash.get("type")
+    if declared:
+        if declared in CALCULATED_MEASURE_TYPES and not filters:
+            # A single aggregate the declared type overrides: the whole expression
+            # rides as the calculated measure's sql.
+            operand = str(expr).strip()
+        elif mtype == "count" and operand is None:
+            # Declared `count_distinct` over the primary key: the operand is the key
+            # itself, which the bare-count collapse set aside.
+            operand = pk_operand
+        mtype = declared
+    if mtype == "count" and operand is None:
+        measure["type"] = "count"
+    else:
+        measure["sql"] = stash.get("sql") or ossie_expr_to_cube_sql(
+            operand, target, tables)
+        measure["type"] = mtype
+    if stash.get("filters"):
+        # The original spellings, recorded because regeneration would not
+        # reproduce them (a non-canonical reference, an extra key on an entry).
+        measure["filters"] = stash["filters"]
+    elif filters:
+        measure["filters"] = [
+            {"sql": ossie_expr_to_cube_sql(f, target, tables)} for f in filters]
     return measure
 
 
@@ -1242,18 +1251,6 @@ def _apply_measure_metadata(metric, measure, stash, used_dialect=None,
     meta = _build_meta(metric.get("ai_context"), stash.get("meta"), parked)
     if meta:
         measure["meta"] = meta
-
-
-def _balanced(s):
-    depth = 0
-    for ch in s:
-        if ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth -= 1
-            if depth < 0:
-                return False
-    return depth == 0
 
 
 # --- views ----------------------------------------------------------------------

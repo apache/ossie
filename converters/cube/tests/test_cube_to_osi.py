@@ -18,9 +18,10 @@
 """Cube data model -> Apache Ossie semantic model."""
 
 import pytest
-from _util import by_name, expr_of, load_fixture_dir, model_of, stash_of
+from _util import by_name, expr_of, load_fixture_dir, model_of, parse, stash_of
 
-from ossie_cube import ConversionError, IssueType, convert_cube_to_ossie
+from ossie_cube import (ConversionError, IssueType, convert_cube_to_ossie,
+                        convert_ossie_to_cube)
 from ossie_cube._common import OSSIE_VERSION, cube_sql_to_ossie
 
 
@@ -248,13 +249,14 @@ def test_join_to_unknown_cube_is_rejected():
 
 def test_measures_are_hoisted_and_disambiguated(model_a):
     """`count` exists on both cubes, so both are qualified and the original names
-    stashed; a globally unique measure keeps its own name."""
+    stashed; a globally unique measure keeps its own name. The owning cube is *not*
+    stashed: the expression references exactly one dataset, which is where export
+    places the measure on its own."""
     model, _ = model_a
     metrics = by_name(model["metrics"])
     assert "orders__count" in metrics
     assert "users__count" in metrics
-    assert stash_of(metrics["orders__count"])["name"] == "count"
-    assert stash_of(metrics["orders__count"])["cube"] == "orders"
+    assert stash_of(metrics["orders__count"]) == {"name": "count"}
     assert "total_amount" in metrics
 
 
@@ -308,17 +310,84 @@ def test_measure_filters_fold_into_a_case_expression(model_a):
         "SUM(CASE WHEN (orders.status = 'completed') THEN orders.amount END)")
 
 
-def test_filtered_and_calculated_measures_keep_the_original(model_a):
-    """Export cannot recover `filters` from the folded CASE, nor un-inline a
-    calculated measure's references, so both keep the original measure verbatim --
-    which is what makes Cube -> Ossie -> Cube lossless."""
+def test_extensions_carry_only_what_the_expression_cannot(model_a):
+    """A filtered measure regenerates whole from the folded CASE -- operand, type
+    *and* filters -- so it carries no extension at all. A calculated measure's
+    inlined references cannot be un-inlined, so only its original `sql` spelling
+    rides along, not a copy of the measure. A Cube-only key (`format`) rides flat,
+    without duplicating the sql and type the expression already carries."""
     model, _ = model_a
     metrics = by_name(model["metrics"])
-    assert stash_of(metrics["completed_amount"])["measure"]["filters"]
-    assert stash_of(metrics["avg_order_value"])["measure"]["sql"] == (
-        "{total_amount} / {count}")
-    # A plain aggregate needs no such copy.
-    assert "measure" not in stash_of(metrics["orders__count"])
+    assert "custom_extensions" not in metrics["completed_amount"]
+    assert stash_of(metrics["avg_order_value"]) == {
+        "sql": "{total_amount} / {count}"}
+    assert stash_of(metrics["total_amount"]) == {"format": "currency"}
+    assert "custom_extensions" not in metrics["cities"]
+
+
+def test_a_declared_type_the_expression_would_not_regenerate_is_recorded():
+    """`type: number` over a single aggregate and `count_distinct` over the primary
+    key both compute the same value as another Cube spelling -- the classification
+    export uses would emit that other spelling, so the declared type is recorded and
+    the measure comes back written the way it was written."""
+    files = {
+        "model/cubes/m.yml": (
+            "cubes:\n"
+            "  - name: orders\n"
+            "    sql_table: public.orders\n"
+            "    dimensions:\n"
+            "      - name: id\n"
+            "        sql: id\n"
+            "        type: number\n"
+            "        primary_key: true\n"
+            "    measures:\n"
+            "      - name: wrapped\n"
+            "        sql: \"SUM({CUBE}.amount)\"\n"
+            "        type: number\n"
+            "      - name: exact_ids\n"
+            "        sql: id\n"
+            "        type: count_distinct\n"
+        )
+    }
+    ossie, _ = convert_cube_to_ossie(files)
+    back, _ = convert_ossie_to_cube(ossie)
+    measures = by_name(parse(back["model/cubes/m.yml"])["cubes"][0]["measures"])
+    assert measures["wrapped"]["type"] == "number"
+    assert measures["wrapped"]["sql"] == "SUM({CUBE}.amount)"
+    assert measures["exact_ids"]["type"] == "count_distinct"
+
+    metrics = by_name(model_of(ossie)["metrics"])
+    assert stash_of(metrics["wrapped"])["type"] == "number"
+    assert stash_of(metrics["exact_ids"])["type"] == "count_distinct"
+
+
+def test_an_uninvertible_filter_fold_keeps_both_spellings():
+    """A measure whose own sql is a CASE defeats the unfold -- the folded expression
+    cannot say where the filters end and the operand begins -- so the operand and the
+    filters both ride in the stash, and the measure comes back structured."""
+    files = {
+        "model/cubes/m.yml": (
+            "cubes:\n"
+            "  - name: orders\n"
+            "    sql_table: public.orders\n"
+            "    measures:\n"
+            "      - name: bucketed\n"
+            "        sql: \"CASE WHEN {CUBE}.amount > 100 THEN {CUBE}.amount END\"\n"
+            "        type: sum\n"
+            "        filters:\n"
+            "          - sql: \"{CUBE}.status = 'active'\"\n"
+        )
+    }
+    ossie, _ = convert_cube_to_ossie(files)
+    stash = stash_of(model_of(ossie)["metrics"][0])
+    assert stash["sql"] == "CASE WHEN {CUBE}.amount > 100 THEN {CUBE}.amount END"
+    assert stash["filters"] == [{"sql": "{CUBE}.status = 'active'"}]
+
+    back, _ = convert_ossie_to_cube(ossie)
+    measure = parse(back["model/cubes/m.yml"])["cubes"][0]["measures"][0]
+    assert measure["sql"] == "CASE WHEN {CUBE}.amount > 100 THEN {CUBE}.amount END"
+    assert measure["filters"] == [{"sql": "{CUBE}.status = 'active'"}]
+    assert measure["type"] == "sum"
 
 
 def test_calculated_measure_inlines_its_measure_references(model_a):

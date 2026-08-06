@@ -1069,3 +1069,153 @@ def filtered_operand(operand, filter_sqls):
         return operand
     where = " AND ".join(f"({f})" for f in filter_sqls)
     return f"CASE WHEN {where} THEN {operand} END"
+
+
+def unfold_filtered_operand(text):
+    """Invert `filtered_operand`: (operand, [filter exprs]) or None.
+
+    The fold is deterministic, so `filters` are recoverable from the expression
+    itself -- which is what lets a filtered measure travel with no stash at all.
+    Only the exact canonical shape unfolds, and every candidate split is verified
+    by refolding: a hand-written CASE that merely looks similar (an ELSE branch,
+    unparenthesized conditions, a THEN inside a literal picked by mistake) fails
+    the refold and stays a single opaque expression rather than coming back
+    subtly restructured.
+    """
+    s = str(text)
+    if not (s.startswith("CASE WHEN ") and s.endswith(" END")):
+        return None
+    body = s[len("CASE WHEN "):-len(" END")]
+    for m in re.finditer(" THEN ", body):
+        conditions = _split_top_level_and(body[:m.start()])
+        if conditions is None:
+            continue
+        operand = body[m.end():]
+        # Refolding alone cannot reject an ELSE: `CASE WHEN (f) THEN x ELSE 0 END`
+        # refolds exactly with `x ELSE 0` as the "operand", which is not a value at
+        # all. Any CASE keyword at the operand's top level means this THEN was not
+        # the fold's.
+        if _CASE_KEYWORD_RE.search(sub_outside_quotes(
+                operand, lambda run: _mask_parenthesized(run))):
+            continue
+        if filtered_operand(operand, conditions) == s:
+            return operand, conditions
+    return None
+
+
+_CASE_KEYWORD_RE = re.compile(r"\b(WHEN|THEN|ELSE|END|CASE)\b", re.IGNORECASE)
+
+
+def _mask_parenthesized(run):
+    """Blank out everything inside parentheses, leaving only depth-0 text."""
+    out, depth = [], 0
+    for ch in run:
+        if ch == "(":
+            depth += 1
+            out.append(" ")
+        elif ch == ")":
+            depth -= 1
+            out.append(" ")
+        else:
+            out.append(ch if depth == 0 else " ")
+    return "".join(out)
+
+
+def _split_top_level_and(where):
+    """Split `(f1) AND (f2)` into [f1, f2], or None when not that exact shape."""
+    pieces, start, depth, quote = [], 0, 0, None
+    i = 0
+    while i < len(where):
+        ch = where[i]
+        if quote:
+            if ch == quote:
+                quote = None
+        elif ch in "'\"":
+            quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif depth == 0 and where.startswith(" AND ", i):
+            pieces.append(where[start:i])
+            i += len(" AND ")
+            start = i
+            continue
+        i += 1
+    pieces.append(where[start:])
+    out = []
+    for piece in pieces:
+        if not (piece.startswith("(") and piece.endswith(")")):
+            return None
+        out.append(piece[1:-1])
+    return out
+
+
+# An aggregate call that maps back onto a structured Cube measure.
+AGG_CALL_RE = re.compile(
+    r"^\s*(SUM|AVG|MIN|MAX|COUNT|APPROX_COUNT_DISTINCT)\s*\((.*)\)\s*$",
+    re.IGNORECASE | re.DOTALL,
+)
+DISTINCT_RE = re.compile(r"^DISTINCT\s+(.+)$", re.IGNORECASE | re.DOTALL)
+
+
+def balanced_parens(s):
+    depth = 0
+    for ch in s:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0
+
+
+def classify_metric_expression(expr, pk_operand=None):
+    """How an Ossie metric expression maps onto a structured Cube measure.
+
+    Returns (cube type, operand, filters), all Ossie-side expression texts. An
+    operand of None means the type carries no `sql` (a bare `count`, recognized
+    when the counted operand is `pk_operand`); type "number" with the whole
+    expression as operand means a calculated measure.
+
+    Shared by both directions on purpose: export *builds* the measure from this,
+    and import uses it to *predict* what export will build -- which is what
+    decides whether the original `type` has to be recorded or regenerates on its
+    own. Two copies of the logic would let the two directions disagree.
+    """
+    text = str(expr).strip()
+    m = AGG_CALL_RE.match(text)
+    if m and balanced_parens(m.group(2)):
+        func, inner = m.group(1).upper(), m.group(2).strip()
+        distinct = DISTINCT_RE.match(inner)
+        if func == "COUNT" and distinct:
+            operand, filters = _operand_and_filters(distinct.group(1).strip())
+            if pk_operand is not None and (normalized_expression(operand)
+                                           == normalized_expression(pk_operand)):
+                return "count", None, filters
+            return "count_distinct", operand, filters
+        # `COUNT(*)` deliberately falls through to the calculated measure below.
+        # A bare Cube `type: count` is this converter's representation of
+        # `COUNT(DISTINCT <primary key>)` -- handled above -- so emitting one here
+        # would round-trip back as a different expression, and on a dataset with no
+        # primary key it would produce a measure the importer refuses. Cube renders
+        # `type: number` with `count(*)` natively (BaseQuery special-cases exactly
+        # that pair), so the expression survives intact either way.
+        if not (func == "COUNT" and inner == "*"):
+            agg = OSSIE_FUNC_TO_AGG.get(func) or ("count" if func == "COUNT" else None)
+            if agg is not None:
+                operand, filters = _operand_and_filters(inner)
+                return agg, operand, filters
+    # A ratio, a window expression, or a multi-dataset aggregate: a calculated
+    # measure whose sql carries the aggregation. A top-level filter fold still
+    # unfolds -- a filtered calculated measure wraps the whole expression.
+    operand, filters = _operand_and_filters(text)
+    if filters:
+        return "number", operand, filters
+    return "number", text, []
+
+
+def _operand_and_filters(inner):
+    unfolded = unfold_filtered_operand(inner)
+    return unfolded if unfolded else (inner, [])

@@ -178,6 +178,10 @@ def _build_cube(rnd, name, is_fact, dim_names):
     # Every cube carries a bare `count`, which collides across cubes and so
     # exercises the `<cube>__<measure>` qualification on import.
     measures = [{"name": "count", "type": "count"}]
+    if rnd.chance(0.2):
+        # A filtered bare count: the filters fold inside the DISTINCT and have to
+        # unfold back out, or the count comes back as a count_distinct over a CASE.
+        measures[0]["filters"] = [{"sql": "{CUBE}.status = 'active'"}]
     aggs = IDEMPOTENT_AGGS + (FACT_ONLY_AGGS if is_fact else [])
     for i in range(rnd.count(0, 2)):
         measure = {"name": f"m_{i}", "sql": "{CUBE}.value", "type": rnd.pick(aggs)}
@@ -187,6 +191,13 @@ def _build_cube(rnd, name, is_fact, dim_names):
             measure["meta"] = {"ai_context": rnd.text()}
         if rnd.chance(0.25):
             measure["format"] = "currency"
+        if rnd.chance(0.3):
+            # `filters` regenerate from the folded CASE in the expression, so a
+            # filtered measure travels with no stash -- which only stays true if
+            # generated models keep exercising the unfold.
+            measure["filters"] = [{"sql": "{CUBE}.value > 0"}]
+            if rnd.chance(0.3):
+                measure["filters"].append({"sql": "{CUBE}.status = 'active'"})
         measures.append(measure)
     # A calculated measure: classified by its outer type, which says nothing about the
     # aggregates inside it. Only idempotent ones here -- a `SUM` inside a calculated
@@ -440,6 +451,12 @@ def _ossie_metrics(rnd, fact, dim_names, fields_by_dataset):
         block("composite", "{} / {}".format(
             _ossie_agg("MAX", f"{fact}.value"),
             _ossie_agg("COUNT_DISTINCT", f"{fact}.id")))
+
+    # The canonical filter fold, hand-authored: export unfolds it into structured
+    # Cube `filters`, and import folds those back into this exact expression.
+    if rnd.chance(0.4):
+        block("filtered",
+              f"MAX(CASE WHEN ({fact}.value > 0) THEN {fact}.value END)")
 
     # A composite spanning two datasets, which puts each part on its own cube -- the
     # case cross-cube member spelling has to get right.

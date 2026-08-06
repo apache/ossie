@@ -496,9 +496,6 @@ semantic_model:
       - total revenue
       - gross sales
       - sales amount
-    custom_extensions:
-    - vendor_name: CUBE
-      data: '{"_v": 1, "cube": "store_sales"}'
   - name: total_profit
     expression:
       dialects:
@@ -510,9 +507,6 @@ semantic_model:
       - net profit
       - total earnings
       - profit
-    custom_extensions:
-    - vendor_name: CUBE
-      data: '{"_v": 1, "cube": "store_sales"}'
   - name: customer_lifetime_value
     expression:
       dialects:
@@ -527,9 +521,8 @@ semantic_model:
       - lifetime revenue
     custom_extensions:
     - vendor_name: CUBE
-      data: '{"_v": 1, "cube": "store_sales", "measure": {"name": "customer_lifetime_value",
-        "sql": "SUM({CUBE}.ss_ext_sales_price) / COUNT(DISTINCT {customer.c_customer_sk})",
-        "type": "number"}}'
+      data: '{"_v": 1, "cube": "store_sales", "sql": "SUM({CUBE}.ss_ext_sales_price)
+        / COUNT(DISTINCT {customer.c_customer_sk})"}'
   - name: sales_by_brand
     expression:
       dialects:
@@ -541,9 +534,6 @@ semantic_model:
       - brand sales
       - brand performance
       - brand revenue
-    custom_extensions:
-    - vendor_name: CUBE
-      data: '{"_v": 1, "cube": "store_sales"}'
   - name: store_productivity
     expression:
       dialects:
@@ -558,9 +548,8 @@ semantic_model:
       - revenue per employee
     custom_extensions:
     - vendor_name: CUBE
-      data: '{"_v": 1, "cube": "store_sales", "measure": {"name": "store_productivity",
-        "sql": "SUM({CUBE}.ss_ext_sales_price) / NULLIF(SUM({store.s_number_employees}),
-        0)", "type": "number"}}'
+      data: '{"_v": 1, "cube": "store_sales", "sql": "SUM({CUBE}.ss_ext_sales_price)
+        / NULLIF(SUM({store.s_number_employees}), 0)"}'
   custom_extensions:
   - vendor_name: CUBE
     data: '{"_v": 1, "views": {"tpcds_retail_model": {"name": "tpcds_retail_model",
