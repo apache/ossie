@@ -51,10 +51,13 @@ from ._common import (
     cube_sql_to_ossie,
     dump_yaml,
     filtered_operand,
+    generated_view_cubes,
     is_referenceable_name,
     is_simple_identifier,
     lookup_map,
     match_keys,
+    sanitize_name,
+    uncollided_view_name,
     normalize_identifier,
     resolve_identifier,
     referenced_datasets,
@@ -196,24 +199,36 @@ def convert_cube_to_ossie(files, model_name=None, view=None, strict_fanout=False
     # the mapped view's identity, non-canonical file paths, and any file with no
     # Ossie form. `views` is stashed even when empty, so a lossless re-export does
     # not invent a view the original model never had.
-    stash = {"views": {}}
-    for vname, vdict in views.items():
-        vdict = dict(vdict)
-        if vname == mapped_name:
-            vdict.pop("description", None)
-            leftover = _meta_without_ai_context(vdict.get("meta"))
-            vdict.pop("meta", None)
-            if leftover:
-                vdict["meta"] = leftover
-        stash["views"][vname] = vdict
-    off_layout_views = {v: p for v, p in view_paths.items() if p != view_file(v)}
-    if off_layout_views:
-        stash["view_files"] = off_layout_views
+    #
+    # Except when the sole view is exactly the one export would generate for this
+    # model: that view is derivable by construction -- a previous export built it
+    # for a hand-authored document -- so recording it would put a rendered copy of
+    # regeneration's own output into the extension, and Ossie -> Cube -> Ossie
+    # gained a stash the original never had. Skipped, the `views` key stays absent
+    # and the next export generates the same view again. A view the user has since
+    # edited no longer matches the prediction and is stashed verbatim, as before.
+    stash = {}
+    if not _the_view_is_the_generated_one(model, cubes, views, view_paths,
+                                          mapped_name, relationships):
+        stash["views"] = {}
+        for vname, vdict in views.items():
+            vdict = dict(vdict)
+            if vname == mapped_name:
+                vdict.pop("description", None)
+                leftover = _meta_without_ai_context(vdict.get("meta"))
+                vdict.pop("meta", None)
+                if leftover:
+                    vdict["meta"] = leftover
+            stash["views"][vname] = vdict
+        off_layout_views = {v: p for v, p in view_paths.items()
+                            if p != view_file(v)}
+        if off_layout_views:
+            stash["view_files"] = off_layout_views
+        if mapped_name is not None:
+            stash["mapped_view"] = mapped_name
     off_layout_cubes = {c: p for c, p in cube_paths.items() if p != cube_file(c)}
     if off_layout_cubes:
         stash["cube_files"] = off_layout_cubes
-    if mapped_name is not None:
-        stash["mapped_view"] = mapped_name
     if extra_files:
         stash["extra_files"] = extra_files
     write_stash(model, stash)
@@ -483,6 +498,50 @@ def _meta_without_ai_context(meta):
     if not isinstance(meta, dict):
         return {}
     return {k: v for k, v in meta.items() if k not in ("ai_context", "ossie")}
+
+
+def _the_view_is_the_generated_one(model, cubes, views, view_paths, mapped_name,
+                                   relationships):
+    """Whether the model's sole view is exactly the one export would generate.
+
+    The prediction reuses export's own builder (`generated_view_cubes`,
+    `uncollided_view_name`), so the two cannot drift: same base cube, same member
+    lists, same prefix/exclude decisions. Anything off the generated shape -- a
+    second view, an off-layout path, leftover view meta, curated includes, an
+    edited prefix -- fails the comparison and the view set is stashed verbatim,
+    exactly as before.
+    """
+    if mapped_name is None or set(views) != {mapped_name}:
+        return False
+    if view_paths.get(mapped_name) != view_file(mapped_name):
+        return False
+    view = views[mapped_name]
+    if _meta_without_ai_context(view.get("meta")):
+        return False
+    base = _base_cube_of(cubes, relationships)
+    if base is None:
+        return False
+    identity = {cname: cname for cname in cubes}
+    name = uncollided_view_name(
+        sanitize_name(model.get("name", "model"), "Model", set()), identity)
+    if name != mapped_name:
+        return False
+    members = {
+        cname: [m["name"]
+                for key in ("dimensions", "measures", "segments")
+                for m in _as_named_list(cube.get(key), f"cube '{cname}' {key}")
+                if m.get("name")]
+        for cname, cube in cubes.items()
+    }
+    predicted = {
+        "name": name,
+        # A throwaway issue log: the real report was made when the view was
+        # generated; predicting it again is not a second event.
+        "cubes": generated_view_cubes(identity, relationships, base, members,
+                                      name, IssueLog()),
+    }
+    body = {k: v for k, v in view.items() if k not in ("description", "meta")}
+    return body == predicted
 
 
 def _fanned_out_datasets(relationships):

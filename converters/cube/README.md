@@ -159,7 +159,9 @@ to **import** (Cube -> Ossie) or **export** (Ossie -> Cube).
 | foreign-vendor `custom_extensions` | `meta.ossie.custom_extensions` | Parked so a multi-vendor Ossie model survives the round trip. |
 
 **Stashed on import** (and restored on export): the views verbatim (minus the
-natively mapped description/AI context), the mapped view's identity, original file
+natively mapped description/AI context) -- unless the sole view is exactly the one
+export generates for a hand-authored model, which is derivable by construction and
+therefore regenerated rather than recorded -- the mapped view's identity, original file
 paths, cube extras (`title`, `sql_alias`, `data_source`, `public`, `refresh_key`,
 `segments`, `pre_aggregations`, `hierarchies`, `access_policy`, `calendar`, ...),
 dimension extras (`format`, `currency`, `granularities`, `case`, `order`,

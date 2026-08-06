@@ -543,12 +543,6 @@ semantic_model:
       - employee productivity
       - revenue per employee
   custom_extensions:
-  - vendor_name: CUBE
-    data: '{"_v": 1, "views": {"tpcds_retail_model": {"name": "tpcds_retail_model",
-      "cubes": [{"join_path": "store_sales", "includes": "*"}, {"join_path": "store_sales.date_dim",
-      "includes": "*"}, {"join_path": "store_sales.customer", "includes": "*"}, {"join_path":
-      "store_sales.item", "includes": "*"}, {"join_path": "store_sales.store", "includes":
-      "*"}]}}, "mapped_view": "tpcds_retail_model"}'
   - vendor_name: SALESFORCE
     data: |
       {

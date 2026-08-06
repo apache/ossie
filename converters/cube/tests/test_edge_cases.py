@@ -677,9 +677,11 @@ def test_a_view_file_may_also_define_cubes():
     # ...and the cube in the same file became the dataset.
     assert [d["name"] for d in model["datasets"]] == ["orders"]
     assert expr_of(model["metrics"][0]) == "SUM(orders.amount)"
-    # The view's include list round-trips as curation, not as a dataset.
-    assert stash_of(model)["views"]["sales"]["cubes"] == [
-        {"join_path": "orders", "includes": "*"}]
+    # The view is exactly the shape export generates (every cube, includes "*",
+    # no curation), so it is *not* stashed -- export regenerates it. Only the
+    # non-canonical file layout is recorded.
+    assert "views" not in stash_of(model)
+    assert stash_of(model)["cube_files"] == {"orders": "model/views/sales.yml"}
 
 
 def test_a_mixed_file_is_rebuilt_as_one_file():

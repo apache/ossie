@@ -254,17 +254,29 @@ def test_hand_authored_ossie_gets_a_generated_view():
     ]
 
 
-def test_hand_authored_ossie_survives_the_round_trip():
-    files, _ = convert_ossie_to_cube(load_fixture("hand_authored_ossie.yaml"))
+def test_hand_authored_ossie_survives_the_round_trip_identically():
+    """The whole document, not chosen fields: a hand-authored model must come back
+    *exactly* as written -- in particular with no stash it never had. The view a
+    prior export generated is derivable by construction, so import predicts it
+    (with export's own builder) and skips recording it."""
+    source = load_fixture("hand_authored_ossie.yaml")
+    files, _ = convert_ossie_to_cube(source)
     ossie2, _ = convert_cube_to_ossie(files)
-    model = parse(ossie2)["semantic_model"][0]
-    assert model["name"] == "ecommerce"
-    assert model["description"] == "Orders and customers"
-    assert [d["name"] for d in model["datasets"]] == ["orders", "customers"]
-    assert model["relationships"][0]["from_columns"] == ["customer_id"]
-    metrics = {m["name"]: m for m in model["metrics"]}
-    assert metrics["total_revenue"]["expression"]["dialects"][0]["expression"] == (
-        "SUM(orders.amount)")
+    assert parse(ossie2) == parse(source)
+
+
+def test_an_edited_generated_view_is_stashed_verbatim_again():
+    """The skip is exact-match only: once a user curates the generated view in
+    Cube, it is no longer derivable and rides in the stash like any other view."""
+    files, _ = convert_ossie_to_cube(load_fixture("hand_authored_ossie.yaml"))
+    files = dict(files)
+    files["model/views/ecommerce.yml"] = files["model/views/ecommerce.yml"].replace(
+        "includes: '*'", "includes: [id]", 1)
+    ossie2, _ = convert_cube_to_ossie(files)
+    from _util import stash_of
+    stash = stash_of(parse(ossie2)["semantic_model"][0])
+    assert stash["views"]["ecommerce"]["cubes"][0]["includes"] == ["id"]
+    assert stash["mapped_view"] == "ecommerce"
 
 
 def test_ossie_only_constructs_are_parked_not_dropped():

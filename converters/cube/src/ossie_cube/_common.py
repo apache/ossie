@@ -28,8 +28,11 @@ import dataclasses
 import datetime
 import json
 import re
+from collections import deque
 
 import yaml
+
+from .converter_issues import IssueType
 
 # Ossie semantic model spec version this converter targets (see core-spec).
 OSSIE_VERSION = "0.2.0.dev0"
@@ -950,6 +953,95 @@ def ossie_expr_to_cube_sql(expr, own_cube, tables):
 
     return sub_outside_quotes(
         escaped, lambda run: DOTTED_REF_RE.sub(repl, run))
+
+
+# --- generated view ---------------------------------------------------------------
+#
+# Lives here rather than in the exporter because *both* directions need it:
+# export builds the view a hand-authored model lacks, and import predicts that
+# exact view so a round trip does not stash a record of something regeneration
+# produces on its own -- the same predict-what-export-does pattern the measure
+# classification uses.
+
+def generated_view_cubes(cube_names, relationships, base, emitted_members, view_name,
+                issues):
+    """Build a generated view's `cubes:` list: the base cube plus every cube
+    reachable from it, each addressed by its full `join_path`.
+
+    A view flattens every included member into one namespace, and Cube refuses one
+    where two members collide ("Included member 'id' conflicts with existing member").
+    Two datasets both having an `id` is the normal case, not a corner one, so a cube
+    whose members would collide gets `prefix: true` -- Cube's own remedy, which renames
+    its members to `<cube>_<member>` within the view only.
+    """
+    adjacency = {}
+    for rel in relationships:
+        a, b = cube_names[rel["from"]], cube_names[rel["to"]]
+        adjacency.setdefault(a, []).append(b)
+        adjacency.setdefault(b, []).append(a)
+
+    def members(cname):
+        return emitted_members.get(cname) or []
+
+    entries = [{"join_path": base, "includes": "*"}]
+    claimed = {m.lower() for m in members(base)}
+    paths = {base: base}
+    queue = deque([base])
+    while queue:
+        current = queue.popleft()
+        for neighbor in adjacency.get(current, []):
+            if neighbor in paths:
+                continue
+            paths[neighbor] = f"{paths[current]}.{neighbor}"
+            own = members(neighbor)
+            entry = {"join_path": paths[neighbor], "includes": "*"}
+            prefixed = any(m.lower() in claimed for m in own)
+            if prefixed:
+                entry["prefix"] = True
+            # A prefix can collide in its own right: in a star schema the fact carries
+            # `dim_0_id` as its foreign key, and prefixing `dim_0`'s `id` produces that
+            # same name. Cube holds one member per name, so the ones that still clash are
+            # excluded rather than refused -- the model is ordinary, and the excluded
+            # member is reachable on the cube itself.
+            kept, dropped = [], []
+            for member in own:
+                emitted = f"{neighbor}_{member}" if prefixed else member
+                if emitted.lower() in claimed:
+                    dropped.append(member)
+                else:
+                    kept.append(emitted)
+            if dropped:
+                entry["excludes"] = sorted(dropped)
+                issues.add(
+                    IssueType.APPROXIMATED, f"view '{view_name}'",
+                    f"member(s) {', '.join(sorted(dropped))} of dataset '{neighbor}' "
+                    f"are excluded from the generated view: their names collide with "
+                    f"another dataset's and a Cube view keeps one member namespace. "
+                    f"They remain queryable on the cube itself.")
+            claimed.update(n.lower() for n in kept)
+            entries.append(entry)
+            queue.append(neighbor)
+    # A cube no relationship reaches cannot be addressed by a join path, so it is
+    # simply not part of the generated view; it is still exported and joinable.
+    return entries
+
+
+def uncollided_view_name(vname, cube_names):
+    """A generated view name that no cube already owns.
+
+    Returns `vname` untouched when it is free, otherwise appends `_view` (then
+    `_view_2`, ...). Renaming rather than refusing: an Ossie model whose name matches one
+    of its own datasets is a perfectly ordinary document -- every Databricks metric view
+    over a same-named table produces one -- and it is the model most worth converting.
+    """
+    taken = {str(name).lower() for name in cube_names.values()}
+    if vname.lower() not in taken:
+        return vname
+    candidate, suffix = f"{vname}_view", 2
+    while candidate.lower() in taken:
+        candidate, suffix = f"{vname}_view_{suffix}", suffix + 1
+    return candidate
+
 
 
 # --- source ---------------------------------------------------------------------
