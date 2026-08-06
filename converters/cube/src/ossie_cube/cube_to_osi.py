@@ -51,6 +51,7 @@ from ._common import (
     cube_sql_to_ossie,
     dump_yaml,
     filtered_operand,
+    is_referenceable_name,
     is_simple_identifier,
     lookup_map,
     normalize_identifier,
@@ -72,7 +73,10 @@ from ._common import (
 )
 from .converter_issues import IssueLog, IssueType
 from .expressions import (
+    aggregate_spans,
     has_top_level_operator,
+    qualify_bare_columns,
+    unqualified_column_names,
     unsafe_aggregate_datasets,
 )
 
@@ -1144,14 +1148,31 @@ class _NoStaticForm(Exception):
 
 
 class _MeasureResolver:
-    """Computes the Ossie expression for a Cube measure.
+    """Computes the Ossie expressions for a Cube measure.
 
     Kept as a class because a calculated measure (`type: number`, and the other
-    types in `CALCULATED_MEASURE_TYPES`) can reference other measures, which Cube
-    resolves by inlining their full aggregate SQL -- so producing one measure's
-    expression may require producing another's first. Each measure's expression is
-    computed once and cached; a reference cycle is rejected rather than recursed
-    into.
+    types in `CALCULATED_MEASURE_TYPES`) can reference other measures -- so
+    producing one measure's expression may require producing another's first. Each
+    measure's expression is computed once and cached; a reference cycle is rejected
+    rather than recursed into.
+
+    Each measure has *two* Ossie forms, cached separately:
+
+    - `expression()` is what the metric carries. A reference to another public
+      measure stays a reference -- the referenced measure's own Ossie *metric
+      name*, which is how the expression language addresses a metric (bare
+      identifiers resolve in the model-level metric namespace). Inlining instead
+      rendered a copy of the referenced definition into every dependent, which is
+      exactly the metric drift a semantic model exists to prevent.
+    - `inlined()` is the fully resolved SQL -- what Cube itself renders -- used
+      for the fan-out analysis, which has to see the aggregates a reference
+      stands for.
+
+    A reference to a *generated part* (`meta.ossie.part_of`) is inlined in both
+    forms: parts are artifacts of a previous export's decomposition and produce no
+    metric, so inlining through them is what recovers the original expression. A
+    measure whose name cannot stand as a bare SQL identifier (a keyword, say) is
+    inlined too, and the original spelling then rides in the stash.
 
     Note that inlining is inherently exponential in reference depth -- a chain where
     each measure names the previous one twice doubles the SQL at every step -- and
@@ -1165,11 +1186,17 @@ class _MeasureResolver:
         self._pk = pk_by_cube
         self._issues = issues
         self._raw = {}
-        self._cache = {}
+        self._caches = {False: {}, True: {}}
+        self._metric_names = {}
         self._cube_names = set(cubes)
         for cname, cube in cubes.items():
             for m in _as_named_list(cube.get("measures"), f"cube '{cname}' measures"):
                 self._raw[(cname, require_str(m, "name", f"cube '{cname}': measure"))] = m
+
+    def set_metric_names(self, metric_names):
+        """{(cube, measure): the Ossie metric name it becomes} -- what a measure
+        reference resolves to in the emitted expression."""
+        self._metric_names = metric_names
 
     def measures(self):
         return self._raw
@@ -1189,20 +1216,28 @@ class _MeasureResolver:
         """
         key = (cname, mname)
         return [
-            self._translate(f["sql"], cname, (key,))
+            self._translate(f["sql"], cname, (key,), inline_refs=False)
             for f in (self._raw[key].get("filters") or [])
             if isinstance(f, dict) and f.get("sql")
         ]
 
     def expression(self, cname, mname, stack=()):
-        """The Ossie expression reproducing this measure, or None when the measure
-        has no static form (multi-stage, Jinja-templated)."""
+        """The Ossie expression the metric carries (measure references preserved
+        as metric names), or None when the measure has no static form."""
+        return self._expression(cname, mname, stack, inline_refs=False)
+
+    def inlined(self, cname, mname, stack=()):
+        """The fully resolved SQL -- what Cube itself renders -- for analysis."""
+        return self._expression(cname, mname, stack, inline_refs=True)
+
+    def _expression(self, cname, mname, stack, inline_refs):
         key = (cname, mname)
         if key in stack:
             chain = " -> ".join(f"{c}.{m}" for c, m in stack + (key,))
             raise ConversionError(f"measure reference cycle: {chain}")
-        if key in self._cache:
-            return self._cache[key]
+        cache = self._caches[inline_refs]
+        if key in cache:
+            return cache[key]
         measure = self._raw[key]
         scope = f"{cname}.{mname}"
         mtype = snake(measure.get("type") or "")
@@ -1216,15 +1251,16 @@ class _MeasureResolver:
             # function. Ossie has no form for that, and emitting the bare aggregate
             # would claim something else entirely: a `rolling_window` sum would read as
             # a plain SUM, identical to an ordinary sum measure over the same column.
-            self._issues.add(
-                IssueType.MULTI_STAGE_MEASURE_PARKED, scope,
-                f"'{windowed}' measure (type '{mtype}') is computed over a grain other "
-                f"than the query's, which an Ossie expression has no form for; "
-                f"preserved in custom_extensions only")
-            return self._remember(key, None)
+            if not inline_refs:
+                self._issues.add(
+                    IssueType.MULTI_STAGE_MEASURE_PARKED, scope,
+                    f"'{windowed}' measure (type '{mtype}') is computed over a grain "
+                    f"other than the query's, which an Ossie expression has no form "
+                    f"for; preserved in custom_extensions only")
+            return self._remember(cache, key, None)
         sql = measure.get("sql")
         filter_exprs = [
-            self._translate(f["sql"], cname, stack + (key,))
+            self._translate(f["sql"], cname, stack + (key,), inline_refs)
             for f in (measure.get("filters") or [])
             if isinstance(f, dict) and f.get("sql")
         ]
@@ -1234,22 +1270,24 @@ class _MeasureResolver:
                 raise ConversionError(
                     f"measure '{scope}': type '{mtype}' requires 'sql'")
             try:
-                expr = self._translate(sql, cname, stack + (key,))
+                expr = self._translate(sql, cname, stack + (key,), inline_refs)
             except _NoStaticForm as missing:
-                self._issues.add(
-                    IssueType.MULTI_STAGE_MEASURE_PARKED, scope,
-                    f"references '{missing.dependency}', which is computed over a grain "
-                    f"other than the query's and has no Ossie form; this measure has "
-                    f"none either and is preserved in custom_extensions only")
-                return self._remember(key, None)
-            return self._remember(key, filtered_operand(expr, filter_exprs))
+                if not inline_refs:
+                    self._issues.add(
+                        IssueType.MULTI_STAGE_MEASURE_PARKED, scope,
+                        f"references '{missing.dependency}', which is computed over a "
+                        f"grain other than the query's and has no Ossie form; this "
+                        f"measure has none either and is preserved in "
+                        f"custom_extensions only")
+                return self._remember(cache, key, None)
+            return self._remember(cache, key, filtered_operand(expr, filter_exprs))
         if mtype == "count":
             if sql is None:
-                return self._remember(key, primary_key_count_expression(
+                return self._remember(cache, key, primary_key_count_expression(
                     cname, self._pk.get(cname) or [], filter_exprs))
             operand = filtered_operand(
-                self._operand(cname, sql, stack + (key,)), filter_exprs)
-            return self._remember(key, f"COUNT({operand})")
+                self._operand(cname, sql, stack + (key,), inline_refs), filter_exprs)
+            return self._remember(cache, key, f"COUNT({operand})")
         func = AGG_TO_OSSIE_FUNC.get(mtype)
         if func is None:
             raise ConversionError(
@@ -1258,41 +1296,48 @@ class _MeasureResolver:
             raise ConversionError(
                 f"measure '{scope}': type '{mtype}' requires 'sql'")
         operand = filtered_operand(
-            self._operand(cname, sql, stack + (key,)), filter_exprs)
+            self._operand(cname, sql, stack + (key,), inline_refs), filter_exprs)
         return self._remember(
-            key, f"COUNT(DISTINCT {operand})" if func == "COUNT_DISTINCT"
+            cache, key, f"COUNT(DISTINCT {operand})" if func == "COUNT_DISTINCT"
             else f"{func}({operand})")
 
-    def _remember(self, key, expr):
+    def _remember(self, cache, key, expr):
         """Cache one measure's expression.
 
-        A calculated measure inlines each reference's full SQL, so a measure
-        referenced from several places was recomputed once per reference -- and
-        recursively, so a chain of them cost O(depth * 2**depth) instead of the
-        O(2**depth) the inlined output is inherently worth.
+        A measure referenced from several places was recomputed once per
+        reference -- and recursively, so a chain of them cost O(depth * 2**depth)
+        instead of the O(2**depth) a fully inlined output is inherently worth.
         """
-        self._cache[key] = expr
+        cache[key] = expr
         return expr
 
-    def _translate(self, sql, cname, stack):
-        """Translate a Cube SQL string, inlining any measure reference.
+    def _translate(self, sql, cname, stack, inline_refs):
+        """Translate a Cube SQL string, resolving any measure reference.
 
-        `self_prefix` is the owning cube: Ossie metrics are model-level, so a
-        column reads as `dataset.column` here, unlike in a dataset-scoped field
+        Bare columns are qualified first (`amount` -> `{CUBE}.amount`), so the
+        model-level expression says which dataset a column belongs to -- an
+        unqualified identifier there resolves in the metric namespace, not as a
+        column. `self_prefix` is the owning cube: Ossie metrics are model-level, so
+        a column reads as `dataset.column` here, unlike in a dataset-scoped field
         expression.
         """
         out, _ = cube_sql_to_ossie(
-            sql, cname, resolve_ref=lambda body: self._inline(body, cname, stack),
+            qualify_bare_columns(sql), cname,
+            resolve_ref=lambda body: self._resolve(body, cname, stack, inline_refs),
             self_prefix=cname, cube_names=self._cube_names)
         return out
 
-    def _inline(self, body, cname, stack):
+    def _resolve(self, body, cname, stack, inline_refs):
         """Resolve one `{...}` body when it names a measure, else fall through.
 
-        Cube inlines a measure reference to that measure's own aggregate SQL
-        (`isCalculatedMeasureType` emits the sql as-is), so `{revenue} / {count}`
-        becomes a complete ratio expression -- which is exactly the shape Ossie
-        metrics use. Parenthesized to keep the referenced measure's precedence.
+        In the emitted form a public measure's reference becomes its Ossie metric
+        name -- a bare identifier, which is how the expression language addresses a
+        model-level metric. Cube's own semantics (inlining the referenced measure's
+        aggregate SQL, `isCalculatedMeasureType` emits the sql as-is) are kept for
+        the `inlined()` form, for generated decomposition parts (which produce no
+        metric to reference), and for a measure whose metric name cannot stand as a
+        bare identifier. Inlined text is parenthesized to keep the referenced
+        measure's precedence.
         """
         head, _, rest = body.partition(".")
         if rest:
@@ -1302,19 +1347,25 @@ class _MeasureResolver:
             target_cube, target_name = cname, body
         if not self.is_measure(target_cube, target_name):
             return None
-        inner = self.expression(target_cube, target_name, stack)
+        target = (target_cube, target_name)
+        inner = self._expression(target_cube, target_name, stack,
+                                 inline_refs=inline_refs)
         if inner is None:
             # The referenced measure has no static Ossie form (it is windowed), so
             # neither does this one. Aborting the whole conversion over it was wrong: the
             # dependent is parked alongside its dependency, the same as any other measure
             # Ossie cannot express.
             raise _NoStaticForm(f"{target_cube}.{target_name}")
+        metric_name = self._metric_names.get(target)
+        if not inline_refs and metric_name is not None \
+                and is_referenceable_name(metric_name):
+            return metric_name
         # A lone `SUM(x)` needs no parentheses; only a term with its own top-level
         # operators does. Keeping them off means a decomposed metric inlines back to
         # exactly the expression it was split from.
         return f"({inner})" if has_top_level_operator(inner) else inner
 
-    def _operand(self, cname, sql, stack):
+    def _operand(self, cname, sql, stack, inline_refs):
         """Translate an aggregate's operand into an Ossie reference.
 
         A same-cube member or bare column becomes `cube.name` -- the qualified form
@@ -1322,7 +1373,7 @@ class _MeasureResolver:
         and is emitted as-is; the owning cube rides in the stash either way, so
         export still puts the measure back on the right cube.
         """
-        translated = self._translate(sql, cname, stack).strip()
+        translated = self._translate(sql, cname, stack, inline_refs).strip()
         if is_simple_identifier(translated):
             return f"{cname}.{translated}"
         return translated
@@ -1376,12 +1427,13 @@ def _is_generated_part(measure):
 class _MeasureContext:
     """Model-wide facts every measure conversion needs.
 
-    `resolver` produces a measure's Ossie expression, `fanned_out` says which datasets a
+    `resolver` produces a measure's Ossie expressions, `fanned_out` says which datasets a
     relationship multiplies, `dataset_names` is what a reference can resolve to,
-    `plain_by_cube` says which members regenerate from a bare column name, and
-    `pk_by_cube` is what the bare-count prediction compares against. Passing them
-    one at a time made `_convert_measure` a nine-parameter function whose signature said
-    nothing about what it does.
+    `plain_by_cube` says which members regenerate from a bare column name,
+    `pk_by_cube` is what the bare-count prediction compares against, and
+    `metric_cubes`/`referenceable_measures` describe the metric namespace a bare
+    identifier resolves in. Passing them one at a time made `_convert_measure` a
+    nine-parameter function whose signature said nothing about what it does.
     """
 
     resolver: object
@@ -1389,6 +1441,8 @@ class _MeasureContext:
     dataset_names: frozenset
     plain_by_cube: dict
     pk_by_cube: dict
+    metric_cubes: dict
+    referenceable_measures: dict
     issues: object
 
     def plain(self, cname):
@@ -1401,12 +1455,28 @@ def _pk_operand_of(cname, pk_by_cube):
     return primary_key_operand(cname, key) if key else None
 
 
+def _metric_reference_cubes(expr, metric_cubes):
+    """The cubes whose measures the expression's metric references point at.
+
+    Bare identifiers in an emitted metric expression are metric references --
+    columns are dataset-qualified there -- so this is the reference-side half of
+    deriving which cube a metric belongs on. Unparseable expressions contribute
+    nothing, which errs toward recording the cube rather than omitting it.
+    """
+    found = set()
+    for name in (unqualified_column_names(expr) or ()):
+        cube = resolve_identifier(metric_cubes, name)
+        if cube is not None:
+            found.add(cube)
+    return found
+
+
 def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, issues):
     """Hoist every cube's measures into Ossie model-level metrics.
 
     A metric name is the measure name when globally unique, else
-    `<cube>__<measure>`; the original name and owning cube are stashed so export
-    puts the measure back where it came from.
+    `<cube>__<measure>`; the original name is stashed so export puts the measure
+    back where it came from.
 
     Returns (metrics, {cube: [{"index": i, "measure": ...}]}). The second value holds
     measures with no static Ossie expression -- a multi-stage measure renders as a
@@ -1414,14 +1484,15 @@ def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, issues):
     otherwise vanish. They ride on the owning dataset's stash with their positions,
     the same protocol unconvertible joins use.
     """
-    context = _MeasureContext(
-        resolver=_MeasureResolver(cubes, pk_by_cube, issues),
-        fanned_out=fanned_out,
-        dataset_names=frozenset(cubes),
-        plain_by_cube=plain_by_cube,
-        pk_by_cube=pk_by_cube,
-        issues=issues)
-    resolver = context.resolver
+    resolver = _MeasureResolver(cubes, pk_by_cube, issues)
+
+    # Which measures produce a metric at all, decided before any expression is
+    # emitted: a measure reference resolves to the referenced measure's *metric
+    # name*, so the names have to exist first -- and only measures that convert
+    # get one. The `inlined()` form is name-independent, which is what breaks the
+    # circularity (it also warms the cache the fan-out analysis reads).
+    converts = {key: resolver.inlined(*key) is not None
+                for key in resolver.measures()}
 
     # Counted by *normalized* name: Ossie regular identifiers are case-insensitive, so
     # `revenue` on one cube and `Revenue` on another are one name in the model-level
@@ -1429,16 +1500,46 @@ def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, issues):
     # document a consumer may reject or resolve to the wrong metric -- and which the
     # spec's own validator misses, since its duplicate check compares exact strings.
     counts = {}
-    for (cname, mname), measure in resolver.measures().items():
-        if not _is_generated_part(measure):
-            key = normalize_identifier(mname)
-            counts[key] = counts.get(key, 0) + 1
+    for key, measure in resolver.measures().items():
+        if converts[key] and not _is_generated_part(measure):
+            norm = normalize_identifier(key[1])
+            counts[norm] = counts.get(norm, 0) + 1
+    metric_names = {}
+    for key, measure in resolver.measures().items():
+        if not converts[key] or _is_generated_part(measure):
+            continue
+        cname, mname = key
+        # The emitted name keeps its original spelling; only the *comparison* is
+        # normalized.
+        metric_names[key] = (mname if counts[normalize_identifier(mname)] == 1
+                             else f"{cname}__{mname}")
+    resolver.set_metric_names(metric_names)
+
+    # What the stash decisions need to know about the metric namespace: which cube
+    # each referenceable metric's measure sits on (so a single-cube expression can
+    # omit the cube), and which measure names a reference can regenerate.
+    metric_cubes = lookup_map(
+        {name: key[0] for key, name in metric_names.items()
+         if is_referenceable_name(name)})
+    referenceable = {}
+    for (mcube, mmname), name in metric_names.items():
+        if is_referenceable_name(name):
+            referenceable.setdefault(mcube, set()).add(mmname)
+
+    context = _MeasureContext(
+        resolver=resolver,
+        fanned_out=fanned_out,
+        dataset_names=frozenset(cubes),
+        plain_by_cube=plain_by_cube,
+        pk_by_cube=pk_by_cube,
+        metric_cubes=metric_cubes,
+        referenceable_measures=referenceable,
+        issues=issues)
 
     metrics = []
     extra_measures = {}
     seen = set()
     for cname, cube in cubes.items():
-        plain = plain_by_cube[cname]
         for index, measure in enumerate(
                 _as_named_list(cube.get("measures"),
                                f"cube '{cname}' measures")):
@@ -1449,16 +1550,15 @@ def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, issues):
                 # references inline back to the whole expression -- and export
                 # regenerates it, so it is not stashed either.
                 continue
-            unique = counts[normalize_identifier(mname)] == 1
-            # The emitted name keeps its original spelling; only the *comparison* is
-            # normalized.
-            metric_name = mname if unique else f"{cname}__{mname}"
-            derived = normalize_identifier(metric_name)
-            if derived in seen:
-                raise ConversionError(
-                    f"metric name '{metric_name}' derived twice (Ossie identifiers are "
-                    f"case-insensitive); rename the colliding measures in Cube")
-            seen.add(derived)
+            metric_name = metric_names.get((cname, mname), mname)
+            if (cname, mname) in metric_names:
+                derived = normalize_identifier(metric_name)
+                if derived in seen:
+                    raise ConversionError(
+                        f"metric name '{metric_name}' derived twice (Ossie "
+                        f"identifiers are case-insensitive); rename the colliding "
+                        f"measures in Cube")
+                seen.add(derived)
             metric = _convert_measure(cname, mname, metric_name, measure, context)
             if metric is not None:
                 metrics.append(metric)
@@ -1484,13 +1584,16 @@ def _convert_measure(cname, mname, metric_name, measure, context):
     # fixes this at query time by deduplicating on the primary key; a static expression
     # cannot, so the caller has to be told.
     #
-    # Judged on the resolved expression and per aggregate, not on the measure's Cube
-    # type and its own cube. Both shortcuts were wrong: a calculated measure's type says
-    # nothing about the aggregates inside it, and the cube a measure is *declared* on is
-    # not necessarily the one an aggregate inside it *reads* -- `SUM(users.ltv) /
-    # SUM(orders.amount)` sits on `orders` while `users` is the fanned-out side.
+    # Judged on the *fully inlined* expression and per aggregate, not on the measure's
+    # Cube type, the emitted expression, or its own cube. All three shortcuts were
+    # wrong: a calculated measure's type says nothing about the aggregates inside it,
+    # a metric reference in the emitted form hides the aggregates it stands for, and
+    # the cube a measure is *declared* on is not necessarily the one an aggregate
+    # inside it *reads* -- `SUM(users.ltv) / SUM(orders.amount)` sits on `orders`
+    # while `users` is the fanned-out side.
     for dataset in sorted(
-            _fanout_unsafe_datasets(expr, cname, context.dataset_names)):
+            _fanout_unsafe_datasets(resolver.inlined(cname, mname), cname,
+                                    context.dataset_names)):
         if dataset not in context.fanned_out:
             continue
         issues.add(
@@ -1519,12 +1622,15 @@ def _convert_measure(cname, mname, metric_name, measure, context):
         metric["ai_context"] = ai
 
     stash = {}
-    if referenced_datasets(expr, context.dataset_names) != {cname}:
+    derivable_cubes = referenced_datasets(expr, context.dataset_names) \
+        | _metric_reference_cubes(expr, context.metric_cubes)
+    if derivable_cubes != {cname}:
         # The owning cube, recorded only when export cannot derive it from the
-        # expression itself -- its fallback places a metric on the sole dataset the
-        # expression references, which for a cube-scoped measure is the cube it was
-        # declared on. Anything else (a cross-dataset expression, an expression
-        # reading only another cube's columns) needs the record.
+        # expression itself -- its fallback places a metric on the sole cube the
+        # expression's dataset references and metric references point at, which for
+        # a cube-scoped measure is the cube it was declared on. Anything else (a
+        # cross-dataset expression, an expression reading only another cube's
+        # columns) needs the record.
         stash["cube"] = cname
     if decomposed:
         # The public half of a decomposition. Its expression is the whole metric -- the
@@ -1544,14 +1650,23 @@ def _convert_measure(cname, mname, metric_name, measure, context):
             # (whose expression is exactly the bare-count form). The declared type is
             # recorded so the measure comes back spelled the way it was written.
             stash["type"] = mtype
-        if mtype in CALCULATED_MEASURE_TYPES:
-            # The references in a calculated measure's sql are inlined into the
-            # expression and cannot be un-inlined, so the spelling has to ride along.
-            stash["sql"] = sql
-        elif sql is not None and not sql_is_reversible(sql, plain, cname):
-            # Only a reference export cannot regenerate needs the original spelling: a
-            # non-plain member (whose own SQL is inlined) or a cross-cube reference
-            # (which is what adds the implicit join).
+        if sql is not None and (
+                not sql_is_reversible(
+                    sql, plain, cname,
+                    own_measures=context.referenceable_measures.get(cname) or (),
+                    measures_by_cube=context.referenceable_measures)
+                or len(aggregate_spans(expr)) > 1):
+            # Only a reference export cannot regenerate needs the original spelling:
+            # a non-plain member (whose own SQL is inlined), a cross-cube member
+            # reference (which is what adds the implicit join), or a measure
+            # reference spelled other than the way export re-emits it. A calculated
+            # measure whose references all regenerate -- `{total_amount} / {count}`
+            # -- needs nothing: its expression carries them as metric names.
+            #
+            # A multi-aggregate expression needs it for another reason: export
+            # decomposes one of those into hidden per-aggregate parts, and this
+            # measure was authored as a single one -- the recorded spelling is what
+            # keeps it one.
             stash["sql"] = sql
         filters = measure.get("filters") or []
         if filters and predicted_filters != resolver.filters_of(cname, mname):

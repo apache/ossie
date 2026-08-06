@@ -35,10 +35,12 @@ tell a top-level call from one inside another argument. sqlglot is already a run
 dependency of the dbt and NVIDIA GSF converters for the same purpose.
 """
 
+import re
+
 import sqlglot
 import sqlglot.expressions as exp
 
-from ._common import quoted_char_mask
+from ._common import quoted_char_mask, sub_outside_quotes
 
 # sqlglot node types for the aggregates this converter maps to a Cube measure type.
 # `Count` covers COUNT / COUNT(DISTINCT x); ApproxDistinct covers
@@ -285,6 +287,96 @@ def _outermost_aggregate_scopes(tree):
             continue
         scopes.append(node)
     return scopes
+
+
+# A Cube `{...}` member reference, masked while sqlglot parses -- braces are not SQL.
+_REF_RE = re.compile(r"\$?\{[^{}]*\}")
+_REF_SENTINEL = "__ossie_ref_{}__"
+_SENTINEL_RE = re.compile(r"^__ossie_ref_(\d+)__$")
+
+
+def _mask_references(text):
+    """Replace `{...}` references with sentinel identifiers sqlglot can parse.
+
+    Returns (masked text, [original references]). `\\{`/`\\}` (Cube's escape for a
+    literal brace) is masked too, so an escaped brace in raw SQL does not read as a
+    reference -- both come back verbatim on unmask.
+    """
+    saved = []
+
+    def keep(m):
+        saved.append(m.group(0))
+        return _REF_SENTINEL.format(len(saved) - 1)
+
+    masked = _REF_RE.sub(keep, text.replace("\\{", "\x00lb\x00")
+                         .replace("\\}", "\x00rb\x00"))
+    return masked.replace("\x00lb\x00", "\\{").replace("\x00rb\x00", "\\}"), saved
+
+
+def unqualified_column_names(sql_text):
+    """The bare (unqualified, unquoted) column names in a SQL snippet, or None.
+
+    Parser-based on purpose: only sqlglot can tell a column from a keyword, a
+    function name, or an EXTRACT unit -- a regex over identifier tokens cannot.
+    `{...}` references are masked first so Cube SQL parses too. None means the
+    text does not parse, and the caller should leave it alone.
+    """
+    masked, _ = _mask_references(str(sql_text))
+    tree = parse(masked)
+    if tree is None:
+        return None
+    names = set()
+    for column in tree.find_all(exp.Column):
+        if column.table:
+            continue
+        ident = column.this
+        if not isinstance(ident, exp.Identifier) or ident.args.get("quoted"):
+            continue
+        name = ident.name
+        if _SENTINEL_RE.match(name) or not re.fullmatch(r"[A-Za-z_]\w*", name):
+            continue
+        names.add(name)
+    return names
+
+
+def replace_bare_identifiers(text, mapping):
+    """Replace whole-word occurrences of `mapping`'s keys outside string literals.
+
+    A match must stand alone: not part of a dotted reference (either side), not a
+    function call, not adjacent to a quote or brace. The keys come from
+    `unqualified_column_names`, so they are known to be column tokens -- the guards
+    only keep a same-named token in another role (a table head, a call) untouched.
+    """
+    if not mapping:
+        return text
+    alternation = "|".join(re.escape(name) for name in sorted(mapping, key=len,
+                                                              reverse=True))
+    pattern = re.compile(
+        rf'(?<![\w.$"{{])({alternation})(?!\s*[.(])(?![\w"}}])')
+    return sub_outside_quotes(
+        text, lambda run: pattern.sub(lambda m: mapping[m.group(1)], run))
+
+
+def qualify_bare_columns(cube_sql):
+    """Qualify bare column references in Cube SQL as `{CUBE}.column`.
+
+    Cube compiles a member's `sql` as raw SQL of the data source, so a bare
+    identifier is a physical column -- but an *ambiguous* one once the cube is
+    joined, and in a model-level Ossie metric an unqualified name is not a column
+    reference at all (the model-level namespace resolves bare identifiers as
+    metrics). Qualifying here makes the translated expression say what Cube meant:
+    `SUM(amount * 2)` becomes `SUM({CUBE}.amount * 2)`, which the reference
+    machinery renders as `orders.amount * 2`.
+
+    Unparseable SQL is returned unchanged -- the previous behaviour for every
+    expression.
+    """
+    text = str(cube_sql)
+    names = unqualified_column_names(text)
+    if not names:
+        return text
+    return replace_bare_identifiers(
+        text, {name: "{CUBE}." + name for name in names})
 
 
 def has_top_level_operator(expr):

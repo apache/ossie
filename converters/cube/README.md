@@ -148,7 +148,8 @@ to **import** (Cube -> Ossie) or **export** (Ossie -> Cube).
 | `COUNT(DISTINCT <pk>)` | bare `type: count` | See [Fan-out](#fan-out) -- the primary key is load-bearing here. |
 | one aggregate inside a larger expression | `type: number` (calculated) | Deliberately not decomposed: Cube applies its row-multiplication correction to a calculated measure just as it does to a structured one. `SUM({CUBE}.amount) / 100` and the same split into a hidden `type: sum` plus a ratio generate *identical* SQL under fan-out. Splitting would add a hidden member and buy nothing. |
 | several aggregates in one expression | one `public: false` measure per aggregate + a `type: number` measure referencing them | Each part is declared on the cube its own operand reads, so Cube corrects row multiplication per aggregate rather than once for the whole expression. The parts carry `meta.ossie.part_of`, and import skips them and inlines their SQL back through the references -- recovering the original expression exactly. |
-| anything else | `type: number` (calculated) | A `{other_measure}` reference is **inlined**, because that is what Cube itself does; Ossie has no metric-to-metric reference. |
+| `{other_measure}` reference | metric reference by name | The expression language lists **Metric references** among its supported constructs: a bare identifier in a model-level metric expression resolves in the metric namespace. So `{total_amount} / {count}` becomes `total_amount / orders__count` — the referenced metrics' *Ossie names* (qualified where the measure name collides) — and export renders a bare metric name back as `{measure}` on the same cube or `{cube.measure}` across cubes. Inlining instead rendered a copy of every referenced definition into the dependent, which is the metric drift a shared model exists to prevent. Because bare identifiers are metric references at the model level, import qualifies raw columns in measure SQL (`SUM(amount * 2)` → `SUM(orders.amount * 2)`), parser-based. Inlining still happens where a reference cannot: a generated decomposition part (which produces no metric), a windowed dependency (both park), or a metric whose name cannot stand as a bare identifier (a SQL keyword) — the original spelling then rides in the stash. A reference cycle is refused in both directions, as Cube itself refuses it. |
+| anything else | `type: number` (calculated) | The whole expression rides as the measure's `sql`. A multi-aggregate expression that was *authored* as one Cube measure keeps its spelling in the stash, since export would otherwise decompose it. |
 | `AGG(CASE WHEN (…) THEN … END)` | measure `filters` | Folded into `CASE WHEN … THEN … END` inside the aggregate, exactly as Cube's own `applyMeasureFilters` renders it — and **unfolded back** into structured `filters` on export, so a filtered measure travels with *no stash at all*. Only the exact canonical fold unfolds, verified by refolding; a hand-written CASE with an ELSE, unparenthesized conditions, or an operand that is itself a CASE stays one expression (and in the last case the original `sql`/`filters` spellings ride in the stash, since the fold is not invertible there). |
 | declared `type` the expression would not regenerate | `type` stash entry | A `type: number` measure whose sql is a single aggregate, or a `count_distinct` declared over the primary key, computes the same value as another Cube spelling — classification would emit that other spelling, so the declared type is recorded and the measure comes back written the way it was written. |
 | Cube-only measure keys (`format`, `drill_members`, `public`, …) | flat stash entries | The same protocol dimensions use. Import used to stash a *copy of the whole measure* whenever any extra key was present, which duplicated the `sql`/`type`/`filters` the expression already carries; now only the keys the expression cannot carry ride along. |
@@ -240,12 +241,13 @@ emit a silently-wrong one:
 | `sum`, `avg`, `count` + `sql` | `SUM(x)`, `AVG(x)`, `COUNT(x)` | **No** |
 | `number` (calculated) containing one of those | the expression verbatim | **No** — and judged on the *resolved expression*, not the measure type: `SUM({CUBE}.ltv) / 100` is a `number` measure whose value is still a sum. |
 
-Safety is judged on the **resolved expression, per aggregate, per dataset** — not on
-the measure's Cube type, and not on the cube it is declared on. Both shortcuts were
-wrong: a calculated `type: number` measure's type says nothing about the aggregates
-inside it, and the cube a measure is declared on is not necessarily the one an aggregate
-inside it *reads*. `SUM(users.ltv) / SUM(orders.amount)` sits on `orders` while `users`
-is the fanned-out side. The idempotent set is an **allowlist** — `MIN`, `MAX`, `APPROX_COUNT_DISTINCT`,
+Safety is judged on the **fully inlined expression, per aggregate, per dataset** — not
+on the measure's Cube type, not on the emitted expression (whose metric references hide
+the aggregates they stand for), and not on the cube it is declared on. All three
+shortcuts were wrong: a calculated `type: number` measure's type says nothing about the
+aggregates inside it, and the cube a measure is declared on is not necessarily the one
+an aggregate inside it *reads*. `SUM(users.ltv) / SUM(orders.amount)` sits on `orders`
+while `users` is the fanned-out side. The idempotent set is an **allowlist** — `MIN`, `MAX`, `APPROX_COUNT_DISTINCT`,
 `BOOL_OR`/`BOOL_AND`/`BIT_OR`/`BIT_AND`, and *any* aggregate over a `DISTINCT` set (which
 collapses duplicates before the aggregate sees them, so `SUM(DISTINCT x)` is as safe as
 `COUNT(DISTINCT x)`) — because the set of aggregate functions is open-ended, and listing

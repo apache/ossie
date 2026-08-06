@@ -209,6 +209,16 @@ def _build_cube(rnd, name, is_fact, dim_names):
             "sql": "MAX({CUBE}.value) - MIN({CUBE}.value)",
             "type": "number",
         })
+    # A calculated measure that *references* another measure: the reference has to
+    # survive as the referenced metric's name in Ossie and come back as exactly this
+    # spelling. `{count}` collides across cubes, so the reference also exercises the
+    # qualified (`<cube>__count`) metric name on the way through.
+    if rnd.chance(0.3):
+        measures.append({
+            "name": "per_row",
+            "sql": "MAX({CUBE}.value) / {count}",
+            "type": "number",
+        })
     cube["measures"] = measures
     return cube
 
@@ -457,6 +467,12 @@ def _ossie_metrics(rnd, fact, dim_names, fields_by_dataset):
     if rnd.chance(0.4):
         block("filtered",
               f"MAX(CASE WHEN ({fact}.value > 0) THEN {fact}.value END)")
+
+    # A metric defined over another metric: the bare name is a metric reference
+    # (the expression language's model-level namespace), which export renders as a
+    # Cube measure reference and import resolves back to this exact name.
+    if rnd.chance(0.5):
+        block("doubled", "single * 2")
 
     # A composite spanning two datasets, which puts each part on its own cube -- the
     # case cross-cube member spelling has to get right.

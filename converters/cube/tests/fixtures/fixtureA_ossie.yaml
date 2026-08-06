@@ -154,10 +154,7 @@ semantic_model:
     expression:
       dialects:
       - dialect: ANSI_SQL
-        expression: SUM(orders.amount) / COUNT(DISTINCT orders.id)
-    custom_extensions:
-    - vendor_name: CUBE
-      data: '{"_v": 1, "sql": "{total_amount} / {count}"}'
+        expression: total_amount / orders__count
   - name: users__count
     expression:
       dialects:

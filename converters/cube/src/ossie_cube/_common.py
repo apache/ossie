@@ -190,6 +190,29 @@ def is_simple_identifier(expr):
     return isinstance(expr, str) and bool(_IDENTIFIER_RE.match(expr.strip()))
 
 
+# Reserved words a bare identifier cannot stand as in an expression. A metric whose
+# name is one of these cannot be addressed by name -- rewriting `END * 2` would
+# corrupt every CASE in the model -- so its references are inlined instead.
+_SQL_KEYWORDS = frozenset("""
+    ALL AND ANY AS ASC BETWEEN BY CASE CAST COLLATE CROSS CURRENT DESC DISTINCT
+    ELSE END ESCAPE EXCEPT EXISTS FALSE FILTER FOLLOWING FROM FULL GROUP HAVING
+    ILIKE IN INNER INTERSECT INTERVAL IS JOIN LEFT LIKE LIMIT NATURAL NOT NULL
+    ON OR ORDER OUTER OVER PARTITION PRECEDING RANGE RIGHT ROW ROWS SELECT SOME
+    THEN TRUE UNBOUNDED UNION USING WHEN WHERE WINDOW WITH WITHIN
+""".split())
+
+
+def is_referenceable_name(name):
+    """Whether a metric name can stand as a bare identifier in an expression.
+
+    The expression language resolves a bare identifier in a model-level metric
+    expression against the metric namespace, so this is what decides whether a
+    metric can be *referenced* rather than inlined.
+    """
+    return bool(_IDENTIFIER_RE.match(str(name))) \
+        and str(name).upper() not in _SQL_KEYWORDS
+
+
 def sanitize_name(name, what, taken):
     """Coerce an Ossie name into a valid Cube identifier.
 
@@ -724,7 +747,8 @@ def source_part_count(source):
     return parts
 
 
-def sql_is_reversible(sql, plain_members=(), own_cube=None):
+def sql_is_reversible(sql, plain_members=(), own_cube=None, own_measures=(),
+                      measures_by_cube=None):
     """True if translating this Cube SQL to Ossie and back reproduces it.
 
     `{CUBE}.column` / `{TABLE}.column` -- a raw physical column of the owning cube --
@@ -737,13 +761,21 @@ def sql_is_reversible(sql, plain_members=(), own_cube=None):
     which a bare column name would not reproduce, and the original spelling has to be
     kept.
 
-    A **cross-cube** reference never survives: `{other.member}` is what makes Cube
-    add the implicit join, and the raw `{other}.column` form does not, so the two are
-    not interchangeable.
+    A **measure** reference survives when it is spelled the way export re-emits it:
+    `{measure}` for a referenceable measure of the own cube (`own_measures`), and
+    `{other.measure}` for one on another cube (`measures_by_cube`). The Ossie
+    expression carries the referenced metric's *name*, and export renders that back
+    as exactly these two forms -- so `{CUBE.measure}`, which means the same thing in
+    Cube but is not the canonical spelling, is kept in the stash instead.
+
+    Any other **cross-cube** reference never survives: `{other.member}` is what makes
+    Cube add the implicit join, and the raw `{other}.column` form does not, so the
+    two are not interchangeable.
     """
     if not isinstance(sql, str):
         sql = str(sql)
     plain = set(plain_members)
+    measures = set(own_measures)
     protected = sql.replace("\\{", "").replace("\\}", "")
     for m in _CUBE_REF_RE.finditer(protected):
         body = m.group(1).strip()
@@ -755,12 +787,16 @@ def sql_is_reversible(sql, plain_members=(), own_cube=None):
                     return False
                 continue
             # `{member}` -- an unqualified own-cube member reference.
+            if body in measures:
+                continue
             if body not in plain:
                 return False
             continue
         if head in _SELF_REFS or (own_cube and head == own_cube):
             if rest not in plain:
                 return False
+            continue
+        if measures_by_cube and rest in (measures_by_cube.get(head) or ()):
             continue
         return False  # cross-cube reference; carries join semantics
     return True

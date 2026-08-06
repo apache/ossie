@@ -312,15 +312,14 @@ def test_measure_filters_fold_into_a_case_expression(model_a):
 
 def test_extensions_carry_only_what_the_expression_cannot(model_a):
     """A filtered measure regenerates whole from the folded CASE -- operand, type
-    *and* filters -- so it carries no extension at all. A calculated measure's
-    inlined references cannot be un-inlined, so only its original `sql` spelling
-    rides along, not a copy of the measure. A Cube-only key (`format`) rides flat,
-    without duplicating the sql and type the expression already carries."""
+    *and* filters -- and a calculated measure regenerates from its metric
+    references, so neither carries an extension at all. A Cube-only key (`format`)
+    rides flat, without duplicating the sql and type the expression already
+    carries."""
     model, _ = model_a
     metrics = by_name(model["metrics"])
     assert "custom_extensions" not in metrics["completed_amount"]
-    assert stash_of(metrics["avg_order_value"]) == {
-        "sql": "{total_amount} / {count}"}
+    assert "custom_extensions" not in metrics["avg_order_value"]
     assert stash_of(metrics["total_amount"]) == {"format": "currency"}
     assert "custom_extensions" not in metrics["cities"]
 
@@ -390,14 +389,42 @@ def test_an_uninvertible_filter_fold_keeps_both_spellings():
     assert measure["type"] == "sum"
 
 
-def test_calculated_measure_inlines_its_measure_references(model_a):
-    """Cube resolves `{total_amount} / {count}` to the referenced measures' own
-    aggregate SQL; Ossie has no metric-to-metric reference, so it is inlined."""
+def test_calculated_measure_keeps_its_references_as_metric_names(model_a):
+    """`{total_amount} / {count}` references other measures, and the expression
+    language's model-level namespace addresses a metric by its bare name -- so the
+    references survive as the referenced metrics' *Ossie* names (`{count}` is
+    qualified to `orders__count`, since `count` exists on both cubes). Inlining
+    instead rendered a copy of each referenced definition into the dependent,
+    which is exactly the metric drift a shared semantic model exists to prevent."""
     model, _ = model_a
     metric = by_name(model["metrics"])["avg_order_value"]
-    # No redundant parentheses: a lone aggregate is already a single term, so an
-    # inlined reference reads exactly as the expression it stands for.
-    assert expr_of(metric) == "SUM(orders.amount) / COUNT(DISTINCT orders.id)"
+    assert expr_of(metric) == "total_amount / orders__count"
+
+
+def test_a_reference_to_a_windowed_measure_parks_the_dependent():
+    """A referenced measure with no static form gives the dependent none either --
+    a dangling metric name would be worse than parking both."""
+    files = {
+        "model/cubes/m.yml": (
+            "cubes:\n"
+            "  - name: orders\n"
+            "    sql_table: public.orders\n"
+            "    measures:\n"
+            "      - name: rolling\n"
+            "        sql: amount\n"
+            "        type: sum\n"
+            "        rolling_window:\n"
+            "          trailing: 3 month\n"
+            "      - name: doubled\n"
+            "        sql: \"{rolling} * 2\"\n"
+            "        type: number\n"
+        )
+    }
+    ossie, issues = convert_cube_to_ossie(files)
+    assert not model_of(ossie).get("metrics")
+    parked = [i.element_name for i in issues.of_type(
+        IssueType.MULTI_STAGE_MEASURE_PARKED)]
+    assert set(parked) == {"orders.rolling", "orders.doubled"}
 
 
 def test_measure_reference_cycle_is_rejected():

@@ -61,6 +61,8 @@ from ._common import (
     read_stash,
     DOTTED_REF_RE,
     lookup_map,
+    match_keys,
+    normalize_identifier,
     resolve_identifier,
     quoted_runs,
     split_dotted_ref,
@@ -71,7 +73,8 @@ from ._common import (
     view_file,
 )
 from .converter_issues import IssueLog, IssueType
-from .expressions import aggregate_spans
+from .expressions import (aggregate_spans, replace_bare_identifiers,
+                          unqualified_column_names)
 
 # The order Cube's own YAML documentation and generators use, so exported files
 # read the way a hand-authored model does.
@@ -985,6 +988,8 @@ def _build_measures(model, cube_names, plan, tables, datasets, relationships,
             if stashed_name:
                 reserved.add(str(stashed_name).lower())
 
+    refs = _MetricReferences(model, dialect, tables, resolve_base, name)
+
     measures_by_cube = {}
     for metric in (model.get("metrics") or []):
         mname_raw = require_str(metric, "name", "metric")
@@ -1024,9 +1029,17 @@ def _build_measures(model, cube_names, plan, tables, datasets, relationships,
                        f"expression in a usable dialect and so becomes no Cube "
                        f"dimension; the metric is dropped with it")
             continue
+        dropped_refs = refs.dropped_references(expr)
+        if dropped_refs:
+            # Same reasoning one level up: the referenced *metric* produces no
+            # measure, so a `{name}` reference to it is a model Cube refuses.
+            issues.add(IssueType.NO_USABLE_DIALECT, scope,
+                       f"references metric(s) {', '.join(sorted(dropped_refs))}, "
+                       f"which drop for want of a usable dialect and so become no "
+                       f"Cube measure; the metric is dropped with them")
+            continue
         referenced = tables.datasets_in(expr)
-        target = stash.get("cube") or (
-            next(iter(referenced)) if len(referenced) == 1 else resolve_base())
+        target = stash.get("cube") or refs.cube_of_metric(mname_raw)
 
         if len(referenced) > 1:
             # Cube resolves a cross-cube member reference by adding an implicit join,
@@ -1048,11 +1061,11 @@ def _build_measures(model, cube_names, plan, tables, datasets, relationships,
             # seeing one opaque expression -- see _decompose_measure.
             public_sql = _decompose_measure(
                 expr, spans, mname, target, measures_by_cube, plan, tables,
-                name, reserved)
+                name, reserved, refs)
             measure = {"name": mname, "sql": public_sql, "type": "number"}
         else:
             measure = _measure_from_expression(
-                expr, target, mname, stash, plan, tables)
+                expr, target, mname, stash, plan, refs)
         _apply_measure_metadata(metric, measure, stash, used,
                                 decomposed=len(spans) > 1)
         # Cube-only keys import found on the measure (`format`, `drill_members`,
@@ -1071,6 +1084,140 @@ def _build_measures(model, cube_names, plan, tables, datasets, relationships,
 # legacy whole-measure record (`measure`).
 _METRIC_STASH_CONSUMED = frozenset(
     {"cube", "measure", "sql", "filters", "type", "name", "title", "meta"})
+
+
+class _MetricReferences:
+    """The metric namespace a model-level expression's bare identifiers resolve in.
+
+    The expression language's namespacing: a bare identifier in a metric expression
+    is a reference to another metric (columns are addressed as `dataset.column`
+    there). Cube's form for that is a *measure* reference -- `{measure}` on the same
+    cube, `{cube.measure}` across cubes -- so rendering an expression needs to know,
+    for every metric name, the measure name it becomes and the cube that measure
+    lands on.
+
+    The cube is resolved recursively: a metric defined purely over other metrics
+    (`avg_order_value = total_amount / orders__count`) belongs where its references
+    point, when they all point one place. A reference cycle is rejected -- Cube
+    itself refuses cyclic member references.
+    """
+
+    def __init__(self, model, dialect, tables, resolve_base, model_name):
+        self._tables = tables
+        self._resolve_base = resolve_base
+        self._model_name = model_name
+        self._index = {}     # match key -> canonical key
+        self._details = {}   # canonical key -> {measure, stash_cube, expr, cube}
+        for metric in (model.get("metrics") or []):
+            raw = metric.get("name")
+            if not isinstance(raw, str):
+                continue
+            stash = read_stash(metric)
+            expr = None
+            if "measure" not in stash:
+                expr, _ = pick_expression(metric.get("expression"), dialect)
+            canonical = normalize_identifier(raw)
+            for key in match_keys(raw):
+                self._index.setdefault(key, canonical)
+            self._details[canonical] = {
+                "name": raw,
+                "measure": stash.get("name") or sanitize_name(
+                    raw, f"metric '{raw}'", set()),
+                "stash_cube": stash.get("cube"),
+                # None means no usable dialect; a verbatim-restored measure has no
+                # expression to scan but still exists to be referenced.
+                "expr": expr,
+                "verbatim": "measure" in stash,
+                "cube": None,
+            }
+
+    def _referenced_in(self, text):
+        """{bare identifier -> canonical metric key} for `text`'s metric references.
+
+        Parser-based: only names sqlglot reads as unqualified columns count, so a
+        keyword, a function name, or a `dataset.column` head is never mistaken for
+        a metric. An unparseable expression yields nothing, leaving its bare names
+        as the raw SQL they already were.
+        """
+        found = {}
+        for name in (unqualified_column_names(text) or ()):
+            canonical = resolve_identifier(self._index, name)
+            if canonical is not None:
+                found[name] = canonical
+        return found
+
+    def dropped_references(self, expr):
+        """Names of referenced metrics that produce no measure, transitively."""
+        return {self._details[key]["name"]
+                for key in self._referenced_in(expr).values()
+                if self._drops(key, ())}
+
+    def _drops(self, key, visiting):
+        detail = self._details[key]
+        if key in visiting:
+            self._cycle(visiting + (key,))
+        if detail["verbatim"]:
+            return False
+        if detail["expr"] is None:
+            return True
+        return any(self._drops(ref, visiting + (key,))
+                   for ref in self._referenced_in(detail["expr"]).values())
+
+    def cube_of_metric(self, written_name):
+        key = resolve_identifier(self._index, written_name)
+        return self._cube_of(key, ()) if key else self._resolve_base()
+
+    def _cube_of(self, key, visiting):
+        detail = self._details[key]
+        if detail["cube"] is not None:
+            return detail["cube"]
+        if key in visiting:
+            self._cycle(visiting + (key,))
+        cube = detail["stash_cube"]
+        if not cube and detail["expr"] is not None:
+            pointed = set(self._tables.datasets_in(detail["expr"]))
+            for ref in set(self._referenced_in(detail["expr"]).values()):
+                pointed.add(self._cube_of(ref, visiting + (key,)))
+            cube = next(iter(pointed)) if len(pointed) == 1 else None
+        detail["cube"] = cube or self._resolve_base()
+        return detail["cube"]
+
+    def _cycle(self, chain):
+        named = " -> ".join(self._details[k]["name"] for k in chain)
+        raise ConversionError(
+            f"Model '{self._model_name}': metric reference cycle: {named}. Cube "
+            f"refuses cyclic member references; break the cycle in the Ossie model.")
+
+    def to_cube_sql(self, text, target, context=None):
+        """`ossie_expr_to_cube_sql`, with metric references rendered as measures.
+
+        Each referenced name is masked with a sentinel identifier first, so the
+        dataset/column rewriting (and its brace escaping) cannot touch it, then the
+        sentinel becomes `{measure}` or `{cube.measure}` -- cross-cube when the
+        referenced metric's measure lands somewhere other than `target`.
+
+        `context` supplies the parseable whole when `text` is a fragment of it --
+        a decomposition segment such as `" / ("` cannot be parsed for references
+        on its own, but the names found in the whole apply to every fragment.
+        """
+        referenced = self._referenced_in(
+            context if context is not None else text)
+        if not referenced:
+            return ossie_expr_to_cube_sql(text, target, self._tables)
+        masks, substitutions = {}, {}
+        for i, (written, key) in enumerate(sorted(referenced.items())):
+            sentinel = f"__ossie_mref_{i}__"
+            masks[written] = sentinel
+            detail = self._details[key]
+            cube = self._cube_of(key, ())
+            substitutions[sentinel] = (
+                "{" + detail["measure"] + "}" if cube == target
+                else "{" + cube + "." + detail["measure"] + "}")
+        out = ossie_expr_to_cube_sql(
+            replace_bare_identifiers(text, masks), target, self._tables)
+        for sentinel, replacement in substitutions.items():
+            out = out.replace(sentinel, replacement)
+        return out
 
 
 def _references_a_dropped_field(expr, tables, cube_names, plan):
@@ -1100,7 +1247,7 @@ def _references_a_dropped_field(expr, tables, cube_names, plan):
 
 
 def _decompose_measure(expr, spans, mname, fallback, measures_by_cube, plan,
-                       tables, model_name, reserved):
+                       tables, model_name, reserved, refs):
     """Emit one `public: false` measure per aggregate; return the sql referencing them.
 
     Cube corrects for row multiplication per measure, keyed on the cube that measure
@@ -1123,8 +1270,8 @@ def _decompose_measure(expr, spans, mname, fallback, measures_by_cube, plan,
     for start, end in spans:
         piece = expr[start:end]
         # Each aggregate lands on the cube its own operand references.
-        refs = tables.datasets_in(piece)
-        part_target = next(iter(refs)) if len(refs) == 1 else fallback
+        pointed = tables.datasets_in(piece)
+        part_target = next(iter(pointed)) if len(pointed) == 1 else fallback
 
         index += 1
         part_name = f"{mname}_part_{index}"
@@ -1134,18 +1281,18 @@ def _decompose_measure(expr, spans, mname, fallback, measures_by_cube, plan,
         taken.add(part_name.lower())
 
         part = _measure_from_expression(
-            piece, part_target, part_name, {}, plan, tables)
+            piece, part_target, part_name, {}, plan, refs)
         part["public"] = False
         part["meta"] = {"ossie": {"part_of": mname}}
         _place(measures_by_cube, part_target, part, model_name)
 
-        out.append(ossie_expr_to_cube_sql(expr[cursor:start], fallback, tables))
+        out.append(refs.to_cube_sql(expr[cursor:start], fallback, context=expr))
         # `{CUBE.x}` for a part on the same cube as the public measure: an explicit
         # name pins the reference to this cube and breaks if it is extended.
         qualifier = "CUBE" if part_target == fallback else part_target
         out.append("{" + f"{qualifier}.{part_name}" + "}")
         cursor = end
-    out.append(ossie_expr_to_cube_sql(expr[cursor:], fallback, tables))
+    out.append(refs.to_cube_sql(expr[cursor:], fallback, context=expr))
     return "".join(out)
 
 
@@ -1174,7 +1321,7 @@ def _reference_tables(plan, cube_names):
         inline_sql_by_cube={c: p.inline_sql for c, p in plan.items()})
 
 
-def _measure_from_expression(expr, target, mname, stash, plan, tables):
+def _measure_from_expression(expr, target, mname, stash, plan, refs):
     """Turn an Ossie metric expression back into a structured Cube measure.
 
     `COUNT(DISTINCT <the cube's primary key>)` is Cube's bare `type: count` --
@@ -1184,7 +1331,7 @@ def _measure_from_expression(expr, target, mname, stash, plan, tables):
     (`AGG(CASE WHEN (…) THEN … END)`, exactly the shape Cube's own
     `applyMeasureFilters` renders) is unfolded back into structured `filters`;
     anything else becomes a calculated `type: number` measure carrying the whole
-    expression.
+    expression, with metric references rendered as `{measure}` references.
 
     A stashed `type` wins over the classified one. It is recorded only when the
     two differ -- a `type: number` measure whose sql is a single aggregate, or a
@@ -1209,8 +1356,8 @@ def _measure_from_expression(expr, target, mname, stash, plan, tables):
     if mtype == "count" and operand is None:
         measure["type"] = "count"
     else:
-        measure["sql"] = stash.get("sql") or ossie_expr_to_cube_sql(
-            operand, target, tables)
+        measure["sql"] = stash.get("sql") or refs.to_cube_sql(
+            operand, target, context=expr)
         measure["type"] = mtype
     if stash.get("filters"):
         # The original spellings, recorded because regeneration would not
@@ -1218,7 +1365,7 @@ def _measure_from_expression(expr, target, mname, stash, plan, tables):
         measure["filters"] = stash["filters"]
     elif filters:
         measure["filters"] = [
-            {"sql": ossie_expr_to_cube_sql(f, target, tables)} for f in filters]
+            {"sql": refs.to_cube_sql(f, target, context=expr)} for f in filters]
     return measure
 
 

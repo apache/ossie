@@ -430,6 +430,77 @@ def test_a_non_canonical_case_stays_a_single_expression(expr):
     assert measure["sql"].startswith("CASE WHEN ")
 
 
+def _metrics(*pairs):
+    out = ["  metrics:"]
+    for name, expr in pairs:
+        out += [f"  - name: {name}",
+                "    expression:",
+                "      dialects:",
+                "      - dialect: ANSI_SQL",
+                f"        expression: {expr}"]
+    return "\n".join(out) + "\n"
+
+
+def test_a_metric_reference_becomes_a_measure_reference():
+    """A bare identifier in a model-level metric expression resolves in the metric
+    namespace (the expression language's Metric references), and Cube's form for
+    that is a measure reference. The referencing measure lands on the cube its
+    references point at, so nothing needs a stash."""
+    files, _ = convert_ossie_to_cube(_ossie(_ORDERS, metrics=_metrics(
+        ("revenue", "SUM(orders.amount)"),
+        ("revenue_share", "revenue / 100"))))
+    measures = by_name(_cubes(files)["orders"]["measures"])
+    assert measures["revenue_share"] == {
+        "name": "revenue_share", "sql": "{revenue} / 100", "type": "number"}
+
+
+def test_a_cross_cube_metric_reference_names_the_cube():
+    """The reference form follows where the referenced metric's measure lands:
+    `{measure}` on the same cube, `{cube.measure}` across cubes."""
+    files, _ = convert_ossie_to_cube(_ossie(_TWO_DATASETS, _REL, _metrics(
+        ("revenue", "SUM(orders.amount)"),
+        ("customers", "COUNT(DISTINCT users.id)"),
+        ("value_per_customer", "revenue / customers"))))
+    # The ratio's references span two cubes, so it lands on the base cube (the FK
+    # sink, `orders`) and reaches the other through a qualified reference.
+    measures = by_name(_cubes(files)["orders"]["measures"])
+    assert measures["value_per_customer"]["sql"] == "{revenue} / {users.customers}"
+
+
+def test_a_metric_reference_cycle_is_rejected():
+    with pytest.raises(ConversionError, match="metric reference cycle"):
+        convert_ossie_to_cube(_ossie(_ORDERS, metrics=_metrics(
+            ("a", "b * 2"), ("b", "a * 2"))))
+
+
+def test_a_metric_referencing_a_dropped_metric_is_dropped_too():
+    """A `{name}` reference to a measure that was never emitted is a model Cube
+    refuses to compile, so the metric goes with its reference -- transitively."""
+    metrics = (
+        "  metrics:\n"
+        "  - name: tableau_only\n"
+        "    expression:\n"
+        "      dialects:\n"
+        "      - dialect: TABLEAU\n"
+        "        expression: SUM([Amount])\n"
+        "  - name: doubled\n"
+        "    expression:\n"
+        "      dialects:\n"
+        "      - dialect: ANSI_SQL\n"
+        "        expression: tableau_only * 2\n"
+        "  - name: quadrupled\n"
+        "    expression:\n"
+        "      dialects:\n"
+        "      - dialect: ANSI_SQL\n"
+        "        expression: doubled * 2\n"
+    )
+    files, issues = convert_ossie_to_cube(_ossie(_ORDERS, metrics=metrics))
+    assert "measures" not in _cubes(files)["orders"]
+    dropped = {i.element_name for i in issues.of_type(IssueType.NO_USABLE_DIALECT)}
+    assert dropped == {"metric 'tableau_only'", "metric 'doubled'",
+                       "metric 'quadrupled'"}
+
+
 def test_declared_member_gets_a_member_reference_and_a_raw_column_does_not():
     """`{CUBE.member}` reuses a declared member's SQL and is compile-time checked;
     `{CUBE}.column` passes a raw column through. The choice follows from whether
