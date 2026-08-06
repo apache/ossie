@@ -1,0 +1,99 @@
+###Relational
+Database org::finos::osi::generated::tpcds_retail_model
+(
+  Schema public
+  (
+    Table store_sales (
+    ss_sold_date_sk TIMESTAMP,
+    ss_item_sk VARCHAR(256) PRIMARY KEY,
+    ss_customer_sk VARCHAR(256),
+    ss_store_sk VARCHAR(256),
+    ss_quantity VARCHAR(256),
+    ss_sales_price VARCHAR(256),
+    ss_ext_sales_price VARCHAR(256),
+    ss_net_profit VARCHAR(256)
+    )
+
+    Table date_dim (
+    d_date_sk TIMESTAMP PRIMARY KEY,
+    d_date TIMESTAMP,
+    d_year TIMESTAMP,
+    d_quarter_name TIMESTAMP,
+    d_month_name TIMESTAMP
+    )
+
+    Table customer (
+    c_customer_sk VARCHAR(256) PRIMARY KEY,
+    c_customer_id VARCHAR(256),
+    c_first_name VARCHAR(256),
+    c_last_name VARCHAR(256),
+    customer_full_name VARCHAR(256),
+    c_email_address VARCHAR(256)
+    )
+  )
+)
+
+function model::osi::semantic_model::tpcds_retail_model::dataset::store_sales(): Relation<Any>[1]
+{
+  #>{org::finos::osi::generated::tpcds_retail_model.public.store_sales}#
+    ->select(~[ss_sold_date_sk, ss_item_sk, ss_customer_sk, ss_store_sk, ss_quantity, ss_sales_price, ss_ext_sales_price, ss_net_profit])
+}
+
+function model::osi::semantic_model::tpcds_retail_model::dataset::date_dim(): Relation<Any>[1]
+{
+  #>{org::finos::osi::generated::tpcds_retail_model.public.date_dim}#
+    ->select(~[d_date_sk, d_date, d_year, d_quarter_name, d_month_name])
+}
+
+function model::osi::semantic_model::tpcds_retail_model::dataset::customer(): Relation<Any>[1]
+{
+  #>{org::finos::osi::generated::tpcds_retail_model.public.customer}#
+    ->select(~[c_customer_sk, c_customer_id, c_first_name, c_last_name, customer_full_name, c_email_address])
+}
+
+function model::osi::semantic_model::tpcds_retail_model::relationship::store_sales_to_date(): Relation<Any>[1]
+{
+  #>{org::finos::osi::generated::tpcds_retail_model.public.store_sales}#
+    ->join(#>{org::finos::osi::generated::tpcds_retail_model.public.date_dim}#, JoinKind.INNER, {x,y| $x.ss_sold_date_sk == $y.d_date_sk});
+}
+
+###Pure
+Class model::osi::semantic_model::tpcds_retail_model::ontology::StoreSales extends Any
+{
+  <<equality.Key>>
+  id: StoreSalesNr[*];
+  ticket: TicketNr[*];
+}
+
+Class model::osi::semantic_model::tpcds_retail_model::ontology::StoreSalesNr extends Integer
+{
+}
+
+Class model::osi::semantic_model::tpcds_retail_model::ontology::TicketNr extends Integer
+{
+}
+
+Class model::osi::semantic_model::tpcds_retail_model::ontology::Customer extends Any
+{
+  name: CustomerName[*];
+}
+
+Class model::osi::semantic_model::tpcds_retail_model::ontology::CustomerName extends String
+{
+}
+
+###Mapping
+Mapping model::osi::semantic_model::tpcds_retail_model::ontology::mapping::OntologyMapping
+(
+  *model::osi::semantic_model::tpcds_retail_model::ontology::StoreSales[]: Relation
+  {
+    ~func model::osi::semantic_model::tpcds_retail_model::dataset::store_sales__Relation_1_
+    id: ss_item_sk,
+    ticket: ss_sold_date_sk
+  }
+  *model::osi::semantic_model::tpcds_retail_model::ontology::Customer[]: Relation
+  {
+    ~func model::osi::semantic_model::tpcds_retail_model::dataset::customer__Relation_1_
+    name: customer_full_name
+  }
+)
