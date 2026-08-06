@@ -999,7 +999,17 @@ def _build_measures(model, cube_names, plan, tables, datasets, relationships,
             if stashed_name:
                 reserved.add(str(stashed_name).lower())
 
-    refs = _MetricReferences(model, dialect, tables, resolve_base, name)
+    # Which datasets declare each field name, for attributing an unqualified
+    # column in a metric expression. Both spellings count -- the Ossie field name
+    # and the Cube dimension name it becomes -- since either may be written.
+    field_owners = {}
+    for cname, cube_plan in plan.items():
+        for fname in set(cube_plan.names) | set(cube_plan.names.values()):
+            for key in match_keys(fname):
+                field_owners.setdefault(key, set()).add(cname)
+
+    refs = _MetricReferences(model, dialect, tables, resolve_base, name,
+                             field_owners)
 
     measures_by_cube = {}
     for metric in (model.get("metrics") or []):
@@ -1071,7 +1081,7 @@ def _build_measures(model, cube_names, plan, tables, datasets, relationships,
             # applies its row-multiplication correction per aggregate instead of
             # seeing one opaque expression -- see _decompose_measure.
             public_sql = _decompose_measure(
-                expr, spans, mname, target, measures_by_cube, plan, tables,
+                expr, spans, mname, target, measures_by_cube, plan,
                 name, reserved, refs)
             measure = {"name": mname, "sql": public_sql, "type": "number"}
         else:
@@ -1098,7 +1108,7 @@ _METRIC_STASH_CONSUMED = frozenset(
 
 
 class _MetricReferences:
-    """The metric namespace a model-level expression's bare identifiers resolve in.
+    """The namespace a model-level expression's bare identifiers resolve in.
 
     The expression language's namespacing: a bare identifier in a metric expression
     is a reference to another metric (columns are addressed as `dataset.column`
@@ -1107,16 +1117,27 @@ class _MetricReferences:
     for every metric name, the measure name it becomes and the cube that measure
     lands on.
 
+    A bare identifier that is *not* a metric but is a declared field of exactly one
+    dataset is attributed to that dataset. Converters commonly emit a source table's
+    columns unqualified -- the Databricks importer writes `SUM(ss_ext_sales_price)`,
+    because in a metric view an unqualified column *means* the source -- and reading
+    that as opaque SQL placed the aggregate on whatever cube the rest of the
+    expression suggested: a measure over a column that cube does not even have. The
+    declared fields say which dataset the name can only belong to; a name declared
+    on several datasets stays untouched.
+
     The cube is resolved recursively: a metric defined purely over other metrics
     (`avg_order_value = total_amount / orders__count`) belongs where its references
     point, when they all point one place. A reference cycle is rejected -- Cube
     itself refuses cyclic member references.
     """
 
-    def __init__(self, model, dialect, tables, resolve_base, model_name):
+    def __init__(self, model, dialect, tables, resolve_base, model_name,
+                 field_owners):
         self._tables = tables
         self._resolve_base = resolve_base
         self._model_name = model_name
+        self._field_owners = field_owners  # match key -> {cubes declaring the field}
         self._index = {}     # match key -> canonical key
         self._details = {}   # canonical key -> {measure, stash_cube, expr, cube}
         for metric in (model.get("metrics") or []):
@@ -1157,6 +1178,36 @@ class _MetricReferences:
                 found[name] = canonical
         return found
 
+    def _fields_in(self, text):
+        """{bare identifier -> the sole dataset declaring it} for `text`.
+
+        The metric namespace wins -- a name that resolves as a metric is never
+        read as a field -- and only an unambiguous owner counts: a name declared
+        on several datasets is left as the raw SQL it was.
+        """
+        found = {}
+        for name in (unqualified_column_names(text) or ()):
+            if resolve_identifier(self._index, name) is not None:
+                continue
+            owners = None
+            for key in match_keys(name):
+                if key in self._field_owners:
+                    owners = self._field_owners[key]
+                    break
+            if owners is not None and len(owners) == 1:
+                found[name] = next(iter(owners))
+        return found
+
+    def datasets_pointed_at(self, text):
+        """Every dataset `text` reads: dotted references plus attributed fields.
+
+        What decides which cube an aggregate lands on when a metric is decomposed
+        -- so an unqualified source column places its aggregate on the dataset
+        that declares it, not on whichever cube the rest of the expression named.
+        """
+        return (set(self._tables.datasets_in(text))
+                | set(self._fields_in(text).values()))
+
     def dropped_references(self, expr):
         """Names of referenced metrics that produce no measure, transitively."""
         return {self._details[key]["name"]
@@ -1186,7 +1237,7 @@ class _MetricReferences:
             self._cycle(visiting + (key,))
         cube = detail["stash_cube"]
         if not cube and detail["expr"] is not None:
-            pointed = set(self._tables.datasets_in(detail["expr"]))
+            pointed = self.datasets_pointed_at(detail["expr"])
             for ref in set(self._referenced_in(detail["expr"]).values()):
                 pointed.add(self._cube_of(ref, visiting + (key,)))
             cube = next(iter(pointed)) if len(pointed) == 1 else None
@@ -1207,12 +1258,20 @@ class _MetricReferences:
         sentinel becomes `{measure}` or `{cube.measure}` -- cross-cube when the
         referenced metric's measure lands somewhere other than `target`.
 
+        An attributed field is rewritten to its dotted form first (`ss_ext` ->
+        `store_sales.ss_ext`), so the ordinary reference machinery renders it --
+        `{CUBE}.column`, `{CUBE.member}`, or the cross-cube `{other.member}` that
+        carries the implicit join, whichever the name turns out to be.
+
         `context` supplies the parseable whole when `text` is a fragment of it --
         a decomposition segment such as `" / ("` cannot be parsed for references
         on its own, but the names found in the whole apply to every fragment.
         """
-        referenced = self._referenced_in(
-            context if context is not None else text)
+        whole = context if context is not None else text
+        attributed = self._fields_in(whole)
+        text = replace_bare_identifiers(
+            text, {name: f"{cube}.{name}" for name, cube in attributed.items()})
+        referenced = self._referenced_in(whole)
         if not referenced:
             return qualify_bare_columns(
                 ossie_expr_to_cube_sql(text, target, self._tables))
@@ -1263,7 +1322,7 @@ def _references_a_dropped_field(expr, tables, cube_names, plan):
 
 
 def _decompose_measure(expr, spans, mname, fallback, measures_by_cube, plan,
-                       tables, model_name, reserved, refs):
+                       model_name, reserved, refs):
     """Emit one `public: false` measure per aggregate; return the sql referencing them.
 
     Cube corrects for row multiplication per measure, keyed on the cube that measure
@@ -1285,8 +1344,9 @@ def _decompose_measure(expr, spans, mname, fallback, measures_by_cube, plan,
     out, cursor, index = [], 0, 0
     for start, end in spans:
         piece = expr[start:end]
-        # Each aggregate lands on the cube its own operand references.
-        pointed = tables.datasets_in(piece)
+        # Each aggregate lands on the cube its own operand references -- an
+        # unqualified column included, when exactly one dataset declares it.
+        pointed = refs.datasets_pointed_at(piece)
         part_target = next(iter(pointed)) if len(pointed) == 1 else fallback
 
         index += 1

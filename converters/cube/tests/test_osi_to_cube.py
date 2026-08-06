@@ -498,6 +498,37 @@ def test_a_cross_cube_metric_reference_names_the_cube():
     assert measures["value_per_customer"]["sql"] == "{revenue} / {users.customers}"
 
 
+def test_an_unqualified_column_is_attributed_to_its_sole_declaring_dataset():
+    """The shape the Databricks importer produces: a metric view's source columns
+    arrive unqualified (`SUM(amount)`), because unqualified *means* the source
+    there. Reading that as opaque SQL placed the aggregate on whatever cube the
+    rest of the expression named -- a measure over a column that cube does not
+    have. A bare identifier that is no metric but a declared field of exactly one
+    dataset can only mean that dataset's column, so the aggregate lands there and
+    the public ratio reaches it through a real cross-cube reference."""
+    files, _ = convert_ossie_to_cube(_ossie(_TWO_DATASETS, _REL, _metrics(
+        ("value_per_user", "SUM(amount) / COUNT(DISTINCT users.id)"))))
+    orders = by_name(_cubes(files)["orders"]["measures"])
+    users = by_name(parse(files["model/cubes/users.yml"])["cubes"][0]["measures"])
+    # `amount` is declared only on orders, so its aggregate lands there.
+    assert orders["value_per_user_part_1"]["sql"] == "{CUBE}.amount"
+    assert users["value_per_user_part_2"]["type"] == "count"
+    assert orders["value_per_user"]["sql"] == (
+        "{CUBE.value_per_user_part_1} / {users.value_per_user_part_2}")
+
+
+def test_an_ambiguous_unqualified_column_is_not_attributed():
+    """`id` is declared on both datasets, so no attribution is possible: the metric
+    lands on the base cube and the name reads as that cube's raw column -- the same
+    fallback as before, made explicit by the `{CUBE}` qualification rather than
+    guessed onto another dataset."""
+    files, _ = convert_ossie_to_cube(_ossie(_TWO_DATASETS, _REL, _metrics(
+        ("ids", "COUNT(DISTINCT id)"))))
+    orders = by_name(_cubes(files)["orders"]["measures"])
+    assert orders["ids"]["sql"] == "{CUBE}.id"
+    assert orders["ids"]["type"] == "count_distinct"
+
+
 def test_a_metric_reference_cycle_is_rejected():
     with pytest.raises(ConversionError, match="metric reference cycle"):
         convert_ossie_to_cube(_ossie(_ORDERS, metrics=_metrics(
