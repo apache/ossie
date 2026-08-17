@@ -1,0 +1,106 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# A small Solid export whose type vocabulary is Databricks': LONG, STRING, DOUBLE, MAP.
+# Used to check that dialect inference resolves DATABRICKS from types alone, and that
+# TIMESTAMP is read as an instant here (unlike Snowflake, where it is not).
+semantic_model:
+  name: 'orders_analytics'
+
+  business_context:
+    business_questions:
+      - 'How many orders shipped late last month?'
+
+  model_llm_description: |
+    Order fulfilment analytics over the warehouse order stream.
+
+  tables:
+    - name: 'main.sales.orders'
+      description: |
+        One row per order.
+      synonyms:
+        - 'order stream'
+      primary_key: 'order_id'
+      quality_rank: 'high'
+      dimensions:
+        - name: 'order_id'
+          type: 'LONG'
+          description: Order identifier.
+        - name: 'customer_id'
+          type: 'LONG'
+          description: Customer who placed the order.
+        - name: 'status'
+          type: 'STRING'
+          description: Fulfilment status.
+          sample_values:
+            - 'shipped'
+            - 'pending'
+        - name: 'placed_at'
+          type: 'TIMESTAMP'
+          description: Instant the order was placed.
+        - name: 'ingested_at'
+          type: 'TIMESTAMP_NTZ'
+          description: Pipeline load time, with no timezone.
+        - name: 'attributes'
+          type: 'MAP<STRING, STRING>'
+          description: Free-form order attributes.
+      facts:
+        - name: 'order_total'
+          type: 'DOUBLE'
+          description: Order total in USD.
+        - name: 'line_count'
+          type: 'INT'
+          description: Number of lines on the order.
+
+    - name: 'main.sales.customers'
+      description: |
+        Customer master.
+      primary_key: 'customer_id'
+      quality_rank: 'mediocre'
+      dimensions:
+        - name: 'customer_id'
+          type: 'LONG'
+          description: Customer identifier.
+        - name: 'region'
+          type: 'STRING'
+          description: Sales region.
+      facts: []
+
+  metrics:
+    - name: 'LATE_ORDER_COUNT'
+      description: |
+        Orders whose status is still pending.
+      expression: "COUNT(CASE WHEN status = 'pending' THEN order_id END)"
+      tables:
+        - 'main.sales.orders'
+    - name: 'GROSS_REVENUE'
+      description: |
+        Sum of order totals.
+      expression: 'SUM(order_total)'
+      synonyms:
+        - 'revenue'
+      tables:
+        - 'main.sales.orders'
+
+  relationships:
+    - left_table: 'main.sales.orders'
+      right_table: 'main.sales.customers'
+      join_keys:
+        left:
+          - 'customer_id'
+        right:
+          - 'customer_id'

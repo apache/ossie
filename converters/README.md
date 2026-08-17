@@ -91,6 +91,7 @@ The Ossie specification currently defines extensions for the following vendors:
 | `CUBE` | Cube data model |
 | `HEX` | Hex semantic project |
 | `HOLISTICS` | Holistics AML dataset |
+| `SOLID` | Solid semantic model |
 
 [`wisdom-semantic-view`](wisdom-semantic-view/README.md) is a separate, fixture-scoped spoke. It reads one Snowflake semantic view, writes one Ossie document, writes a Wisdom domain-export JSON (format `1.0`), and reverses that path. It keeps metric synonyms and `module_custom_instructions.sql_generation`. It does not call `converters/snowflake` (Cortex Analyst export only) or `converters/wisdom` (that spoke drops synonyms and field or metric `ai_context`).
 

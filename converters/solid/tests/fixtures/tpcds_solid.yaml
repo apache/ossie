@@ -1,0 +1,424 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# The TPC-DS retail model from ../../../examples/tpcds_semantic_model.yaml, expressed
+# as a Solid semantic model export. Types use Snowflake's vocabulary, which is also what
+# the converter's dialect inference reads to recover SNOWFLAKE from this file.
+#
+# Deliberately exercises the Solid constructs that have no Apache Ossie core equivalent
+# (quality_rank, indexes, sample_values, example_queries, benchmark_questions,
+# manual_description, asset-link markup) and the ones that need reshaping (a composite
+# primary key written as one comma-joined scalar, a relationship whose primary key sits
+# on the left, an expression-only fact, and both single- and multi-table metrics).
+semantic_model:
+  name: 'tpcds_retail_model'
+
+  business_context:
+    business_questions:
+      - 'What were total sales and net profit by month for the last four quarters?'
+      - 'Which brands drove the most revenue in the Electronics category?'
+      - 'How does sales per employee compare across stores in each state?'
+    model_description: |
+      Retail analytics for the TPC-DS benchmark schema: store sales transactions joined
+      to their date, customer, item, and store dimensions.
+    custom_instructions: |
+      - Always join through @<assetlink id='11111111-1111-4111-8111-111111111111' type='table' name='public.store_sales'> rather than aggregating a dimension on its own.
+      - Revenue means @<assetlink id='22222222-2222-4222-8222-222222222222' type='column' name='store_sales.ss_ext_sales_price'>, not ss_sales_price, which is a per-unit figure.
+      - Exclude rows where ss_sold_date_sk is null; those are unshipped orders.
+
+  model_llm_description: |
+    TPC-DS retail semantic model for sales and customer analytics. Supports time-based
+    analysis, customer segmentation, product performance, and store operations metrics.
+
+  tables:
+    - name: 'tpcds.public.store_sales'
+      description: |
+        Fact table containing all store sales transactions, one row per line item.
+      manual_description: |
+        Grain is (ss_item_sk, ss_ticket_number). Loaded nightly from the POS extract.
+      synonyms:
+        - 'sales transactions'
+        - 'store purchases'
+        - 'retail sales'
+        - 'POS data'
+      primary_key: 'ss_item_sk, ss_ticket_number'
+      quality_rank: 'high'
+      indexes:
+        - 'ss_sold_date_sk'
+        - 'ss_customer_sk'
+      dimensions:
+        - name: 'ss_sold_date_sk'
+          type: 'NUMBER(38,0)'
+          description: |
+            Foreign key to the date dimension.
+          synonyms:
+            - 'sale date'
+            - 'transaction date'
+        - name: 'ss_item_sk'
+          type: 'NUMBER(38,0)'
+          description: |
+            Foreign key to the item dimension.
+          synonyms:
+            - 'product'
+            - 'item'
+        - name: 'ss_ticket_number'
+          type: 'NUMBER(38,0)'
+          description: |
+            Ticket number identifying the sale the line item belongs to.
+        - name: 'ss_customer_sk'
+          type: 'NUMBER(38,0)'
+          description: |
+            Foreign key to the customer dimension.
+          synonyms:
+            - 'customer'
+            - 'buyer'
+        - name: 'ss_store_sk'
+          type: 'NUMBER(38,0)'
+          description: |
+            Foreign key to the store dimension.
+          synonyms:
+            - 'store'
+            - 'location'
+        - name: 'ss_sold_at'
+          type: 'TIMESTAMP_NTZ'
+          description: |
+            Wall-clock time the sale was rung up, in the store's local time.
+      facts:
+        - name: 'ss_quantity'
+          type: 'NUMBER(38,0)'
+          description: Quantity of items sold.
+          synonyms:
+            - 'units sold'
+            - 'quantity'
+        - name: 'ss_sales_price'
+          type: 'NUMBER(7,2)'
+          description: Sales price per unit.
+          manual_description: Per-unit price. Use ss_ext_sales_price for line revenue.
+          synonyms:
+            - 'unit price'
+            - 'price'
+        - name: 'ss_ext_sales_price'
+          type: 'NUMBER(7,2)'
+          description: Extended sales price (quantity * price).
+          synonyms:
+            - 'total price'
+            - 'line total'
+        - name: 'ss_net_profit'
+          type: 'NUMBER(7,2)'
+          description: Net profit from the sale.
+          synonyms:
+            - 'profit'
+            - 'margin'
+        - name: 'ss_discount_pct'
+          description: Discount applied to the line, as a fraction of list price.
+          expression: '1 - (ss_sales_price / NULLIF(ss_list_price, 0))'
+          synonyms:
+            - 'discount rate'
+
+    - name: 'tpcds.public.date_dim'
+      description: |
+        Date dimension with calendar attributes.
+      synonyms:
+        - 'calendar'
+        - 'dates'
+        - 'time periods'
+      primary_key: 'd_date_sk'
+      quality_rank: 'high'
+      dimensions:
+        - name: 'd_date_sk'
+          type: 'NUMBER(38,0)'
+          description: Surrogate key for date.
+        - name: 'd_date'
+          type: 'DATE'
+          description: Calendar date.
+          synonyms:
+            - 'date'
+            - 'day'
+        - name: 'd_year'
+          type: 'NUMBER(38,0)'
+          description: Calendar year.
+          synonyms:
+            - 'year'
+          sample_values:
+            - '2022'
+            - '2023'
+            - '2024'
+        - name: 'd_quarter_name'
+          type: 'TEXT'
+          description: Quarter name, for example 2024Q1.
+          synonyms:
+            - 'quarter'
+            - 'fiscal quarter'
+          sample_values:
+            - '2024Q1'
+            - '2024Q2'
+        - name: 'd_month_name'
+          type: 'TEXT'
+          description: Month name.
+          synonyms:
+            - 'month'
+      facts: []
+
+    - name: 'tpcds.public.customer'
+      description: |
+        Customer dimension with demographic information.
+      synonyms:
+        - 'customers'
+        - 'shoppers'
+        - 'buyers'
+      primary_key: 'c_customer_sk'
+      quality_rank: 'mediocre'
+      dimensions:
+        - name: 'c_customer_sk'
+          type: 'NUMBER(38,0)'
+          description: Surrogate key for customer.
+        - name: 'c_customer_id'
+          type: 'TEXT'
+          description: Business key for customer.
+          synonyms:
+            - 'customer ID'
+            - 'customer number'
+        - name: 'c_first_name'
+          type: 'TEXT'
+          description: Customer first name.
+        - name: 'c_last_name'
+          type: 'TEXT'
+          description: Customer last name.
+        - name: 'c_email_address'
+          type: 'TEXT'
+          description: Customer email address.
+          manual_description: Nullable. Roughly 12% of rows have no email on file.
+          synonyms:
+            - 'email'
+            - 'contact'
+        - name: 'c_preferences'
+          type: 'VARIANT'
+          description: Semi-structured marketing preference document.
+      facts: []
+
+    - name: 'tpcds.public.item'
+      description: |
+        Item dimension with product attributes.
+      synonyms:
+        - 'products'
+        - 'items'
+        - 'merchandise'
+      primary_key: 'i_item_sk'
+      quality_rank: 'high'
+      dimensions:
+        - name: 'i_item_sk'
+          type: 'NUMBER(38,0)'
+          description: Surrogate key for item.
+        - name: 'i_item_id'
+          type: 'TEXT'
+          description: Business key for item.
+          synonyms:
+            - 'item ID'
+            - 'product ID'
+            - 'SKU'
+        - name: 'i_item_desc'
+          type: 'TEXT'
+          description: Item description.
+          synonyms:
+            - 'product description'
+            - 'item name'
+        - name: 'i_brand'
+          type: 'TEXT'
+          description: Brand name.
+          synonyms:
+            - 'brand'
+            - 'manufacturer'
+        - name: 'i_category'
+          type: 'TEXT'
+          description: Item category.
+          synonyms:
+            - 'product category'
+            - 'department'
+          sample_values:
+            - 'Electronics'
+            - 'Home'
+            - 'Sports'
+      facts:
+        - name: 'i_current_price'
+          type: 'NUMBER(7,2)'
+          description: Current price of the item.
+          synonyms:
+            - 'price'
+            - 'list price'
+
+    - name: 'tpcds.public.store'
+      description: |
+        Store dimension with location and store attributes.
+      synonyms:
+        - 'stores'
+        - 'retail locations'
+        - 'branches'
+      primary_key: 's_store_sk'
+      quality_rank: 'high'
+      dimensions:
+        - name: 's_store_sk'
+          type: 'NUMBER(38,0)'
+          description: Surrogate key for store.
+        - name: 's_store_id'
+          type: 'TEXT'
+          description: Business key for store.
+          synonyms:
+            - 'store ID'
+            - 'store number'
+        - name: 's_store_name'
+          type: 'TEXT'
+          description: Store name.
+          synonyms:
+            - 'store name'
+            - 'location name'
+        - name: 's_city'
+          type: 'TEXT'
+          description: City where the store is located.
+          synonyms:
+            - 'city'
+            - 'location'
+        - name: 's_state'
+          type: 'TEXT'
+          description: State where the store is located.
+          synonyms:
+            - 'state'
+            - 'region'
+          sample_values:
+            - 'CA'
+            - 'NY'
+            - 'TX'
+        - name: 's_is_franchise'
+          type: 'BOOLEAN'
+          description: Whether the location is franchise-operated.
+      facts:
+        - name: 's_number_employees'
+          type: 'NUMBER(38,0)'
+          description: Number of employees at the store.
+          synonyms:
+            - 'employee count'
+            - 'staff size'
+
+  metrics:
+    - name: 'TOTAL_SALES'
+      description: |
+        Total sales revenue across all transactions.
+      expression: 'SUM(ss_ext_sales_price)'
+      synonyms:
+        - 'total revenue'
+        - 'gross sales'
+        - 'sales amount'
+      tables:
+        - 'tpcds.public.store_sales'
+    - name: 'TOTAL_PROFIT'
+      description: |
+        Total net profit from store sales.
+      expression: 'SUM(ss_net_profit)'
+      synonyms:
+        - 'net profit'
+        - 'total earnings'
+      tables:
+        - 'tpcds.public.store_sales'
+    - name: 'TRANSACTION_COUNT'
+      description: |
+        Number of distinct sales tickets.
+      expression: 'COUNT(DISTINCT ss_ticket_number)'
+      tables:
+        - 'tpcds.public.store_sales'
+    - name: 'ROW_COUNT'
+      description: |
+        Row count, used as a denominator in coverage checks.
+      expression: 'COUNT(*)'
+      tables:
+        - 'tpcds.public.store_sales'
+    - name: 'CUSTOMER_LIFETIME_VALUE'
+      description: |
+        Average lifetime sales value per customer. Spans two tables, so Solid stores the
+        formula with bare column names and resolves them at query time.
+      expression: 'SUM(ss_ext_sales_price) / COUNT(DISTINCT c_customer_sk)'
+      synonyms:
+        - 'CLV'
+        - 'LTV'
+      tables:
+        - 'tpcds.public.store_sales'
+        - 'tpcds.public.customer'
+
+  relationships:
+    - left_table: 'tpcds.public.date_dim'
+      right_table: 'tpcds.public.store_sales'
+      join_keys:
+        left:
+          - 'd_date_sk'
+        right:
+          - 'ss_sold_date_sk'
+    - left_table: 'tpcds.public.store_sales'
+      right_table: 'tpcds.public.customer'
+      join_keys:
+        left:
+          - 'ss_customer_sk'
+        right:
+          - 'c_customer_sk'
+    - left_table: 'tpcds.public.store_sales'
+      right_table: 'tpcds.public.item'
+      join_keys:
+        left:
+          - 'ss_item_sk'
+        right:
+          - 'i_item_sk'
+    - left_table: 'tpcds.public.store_sales'
+      right_table: 'tpcds.public.store'
+      join_keys:
+        left:
+          - 'ss_store_sk'
+        right:
+          - 's_store_sk'
+
+  example_queries:
+    - name: 'Monthly revenue and profit'
+      description: |
+        Revenue and profit by calendar month for the trailing twelve months.
+      sql: |
+        SELECT d.d_year,
+               d.d_month_name,
+               SUM(ss.ss_ext_sales_price) AS revenue,
+               SUM(ss.ss_net_profit)      AS profit
+        FROM tpcds.public.store_sales ss
+        JOIN tpcds.public.date_dim d ON d.d_date_sk = ss.ss_sold_date_sk
+        WHERE d.d_date >= DATEADD(month, -12, CURRENT_DATE())
+        GROUP BY 1, 2
+        ORDER BY 1, 2
+    - name: 'Sales per employee by state'
+      description: |
+        Store productivity, ranked within each state.
+      sql: |
+        SELECT s.s_state,
+               s.s_store_name,
+               SUM(ss.ss_ext_sales_price) / NULLIF(MAX(s.s_number_employees), 0) AS sales_per_employee
+        FROM tpcds.public.store_sales ss
+        JOIN tpcds.public.store s ON s.s_store_sk = ss.ss_store_sk
+        GROUP BY 1, 2
+        ORDER BY 1, 3 DESC
+
+  benchmark_questions:
+    - question: 'What was total revenue in 2024Q1?'
+      is_enabled: true
+      expected_sql: |
+        SELECT SUM(ss.ss_ext_sales_price) AS revenue
+        FROM tpcds.public.store_sales ss
+        JOIN tpcds.public.date_dim d ON d.d_date_sk = ss.ss_sold_date_sk
+        WHERE d.d_quarter_name = '2024Q1'
+    - question: 'Which brand had the highest revenue in the Electronics category?'
+      is_enabled: false
