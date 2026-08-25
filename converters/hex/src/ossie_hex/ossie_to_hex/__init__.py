@@ -15,15 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from inline_snapshot import snapshot
+from .convert_ossie_to_hex import convert_ossie_to_hex
 
-import ossie_hex
-from ossie_hex.cli.main import main
-
-
-def test_import() -> None:
-    assert ossie_hex.__all__ == snapshot(["convert_ossie_to_hex"])
-
-
-def test_cli_exits_zero() -> None:
-    assert main() == 0
+__all__ = ["convert_ossie_to_hex"]

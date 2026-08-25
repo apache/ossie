@@ -15,15 +15,21 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from inline_snapshot import snapshot
+from dataclasses import dataclass
 
-import ossie_hex
-from ossie_hex.cli.main import main
-
-
-def test_import() -> None:
-    assert ossie_hex.__all__ == snapshot(["convert_ossie_to_hex"])
+from hex_sl_utils._vendor.sqlglot import Dialects as SQLGlotDialect
+from hex_sl_utils._vendor.sqlglot import exp, parse_one
 
 
-def test_cli_exits_zero() -> None:
-    assert main() == 0
+@dataclass
+class ParsedExpr:
+    expr: exp.Expression
+    dialect: SQLGlotDialect | None
+
+
+__all__ = [
+    "ParsedExpr",
+    "SQLGlotDialect",
+    "exp",
+    "parse_one",
+]

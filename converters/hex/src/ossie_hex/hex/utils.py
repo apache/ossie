@@ -15,15 +15,16 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from inline_snapshot import snapshot
+from ._brand import HexDataType
 
-import ossie_hex
-from ossie_hex.cli.main import main
+_TEMPORAL_TYPES = frozenset(
+    [
+        HexDataType.DATE,
+        HexDataType.TIMESTAMP_NAIVE,
+        HexDataType.TIMESTAMP_TZ,
+    ]
+)
 
 
-def test_import() -> None:
-    assert ossie_hex.__all__ == snapshot(["convert_ossie_to_hex"])
-
-
-def test_cli_exits_zero() -> None:
-    assert main() == 0
+def is_temporal_hex_datatype(value: HexDataType) -> bool:
+    return value in _TEMPORAL_TYPES
