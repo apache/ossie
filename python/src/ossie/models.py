@@ -75,6 +75,7 @@ class OssieVendor(str, Enum):
     SEMANTIDO = "SEMANTIDO"
     WISDOM = "WISDOM"
     SIGMA = "SIGMA"
+    HEX = "HEX"
 
 
 class OssieAIContextObject(BaseModel):
@@ -218,7 +219,9 @@ class OssieDocument(OssieSemanticModel):
     def to_ossie_yaml(self, **kwargs: Any) -> str:
         """Serialize to Ossie-compliant YAML (uses field aliases and excludes None values)."""
         data = self.model_dump(by_alias=True, exclude_none=True, mode="json", **kwargs)
-        return yaml.dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        return yaml.dump(
+            data, default_flow_style=False, sort_keys=False, allow_unicode=True
+        )
 
     def to_ossie_json(self, **kwargs: Any) -> str:
         """Serialize to Ossie-compliant JSON (uses field aliases and excludes None values)."""
