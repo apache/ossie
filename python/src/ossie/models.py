@@ -172,7 +172,7 @@ class OssieRelationship(BaseModel):
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
     name: str
-    from_dataset: str = Field(..., alias="from")
+    from_dataset: str = Field(..., validation_alias="from", serialization_alias="from")
     to: str
     from_columns: list[str]
     to_columns: list[str]

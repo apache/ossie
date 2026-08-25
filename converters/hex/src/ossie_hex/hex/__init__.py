@@ -15,15 +15,36 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from inline_snapshot import snapshot
+from ._brand import (
+    HexDataType,
+    HexDialect,
+    HexDialectName,
+    HexDimension,
+    HexEntityId,
+    HexMeasure,
+    HexModel,
+    HexProject,
+    HexRelation,
+    HexRelationType,
+    HexResource,
+    HexVisibility,
+)
+from .hex_sql import HexSql
+from .utils import is_temporal_hex_datatype
 
-import ossie_hex
-from ossie_hex.cli.main import main
-
-
-def test_import() -> None:
-    assert ossie_hex.__all__ == snapshot(["convert_ossie_to_hex"])
-
-
-def test_cli_exits_zero() -> None:
-    assert main() == 0
+__all__ = [
+    "HexDataType",
+    "HexDialect",
+    "HexDialectName",
+    "HexDimension",
+    "HexEntityId",
+    "HexMeasure",
+    "HexModel",
+    "HexProject",
+    "HexRelation",
+    "HexRelationType",
+    "HexResource",
+    "HexSql",
+    "HexVisibility",
+    "is_temporal_hex_datatype",
+]

@@ -15,15 +15,26 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from inline_snapshot import snapshot
+from ossie import OssieDataType, OssieField
 
-import ossie_hex
-from ossie_hex.cli.main import main
-
-
-def test_import() -> None:
-    assert ossie_hex.__all__ == snapshot(["convert_ossie_to_hex"])
+from .context import ExportContext
+from .load_ossie_datatype import load_ossie_datatype
+from .load_ossie_expression import load_ossie_field_expression
 
 
-def test_cli_exits_zero() -> None:
-    assert main() == 0
+def load_ossie_field(
+    field: OssieField,
+    *,
+    ctx: ExportContext,
+) -> OssieField | None:
+    with ctx.problem_scope(field.name):
+        with ctx.problem_scope("expression"):
+            expression = load_ossie_field_expression(field.expression, ctx=ctx)
+        with ctx.problem_scope("datatype"):
+            datatype = load_ossie_datatype(
+                field.datatype, default=OssieDataType.STRING, ctx=ctx
+            )
+
+    if expression is None:
+        return None
+    return field.model_copy(update={"expression": expression, "datatype": datatype})
