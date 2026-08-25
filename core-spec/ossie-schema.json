@@ -42,7 +42,7 @@
     },
     "Vendor": {
       "type": "string",
-      "examples": ["COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA", "WISDOM", "POWER_BI"],
+      "examples": ["COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA", "WISDOM", "POWER_BI", "HEX"],
       "description": "Vendor name for custom extensions. Any string value is accepted."
     },
     "AIContext": {
