@@ -15,15 +15,22 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from inline_snapshot import snapshot
+from typing import Annotated
 
-import ossie_hex
-from ossie_hex.cli.main import main
+HexSql = Annotated[
+    str,
+    """A SQL expression in the context of a Hex entity.
 
+    Possibly contains Hex semantic references. 
+    
+    Dimension `expr_sql` examples:
+        - local logical, unqualified: `${dimension}`
+        - foreign logical, qualified: `${relation.dimension}`
+        - foreign physical, qualified: `${relation}.column`
 
-def test_import() -> None:
-    assert ossie_hex.__all__ == snapshot(["convert_ossie_to_hex"])
-
-
-def test_cli_exits_zero() -> None:
-    assert main() == 0
+    Measure `func_sql` examples:
+        - local logical, unqualified: `${dimension}` or `${measure}`
+        - foreign logical, qualified: `${relation.dimension}` or `${relation.measure}`
+        - foreign physical, qualified: `${relation}.column`
+    """,
+]
