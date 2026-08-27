@@ -548,12 +548,29 @@ datasets:
 
 **Prior art**
 
-This two-placement model follows established practice in comparable semantic layers:
+Scoping metrics to an entity is established practice across comparable semantic layers, though they differ in how names resolve and how strictly scope is enforced.
 
-- **dbt MetricFlow** (v1.12+) supports the same split: metrics defined within a semantic model for those using dimensions from a single semantic model ("recommended for simple metrics"), and top-level metrics for those referencing metrics across different semantic models. MetricFlow explicitly disallows simple metrics at the top level.
-- **Cube** defines measures only within cubes, requiring member names to be unique within their cube and referenced as `cube_name.member`.
+| System | Placement model | Name uniqueness | Reference form |
+|---|---|---|---|
+| **Snowflake semantic views** | `tables[].metrics` (table-level) and top-level `metrics` (derived, view-level) | Scoped to the logical table | Qualified — `table.metric` |
+| **dbt MetricFlow** (v1.12+) | Metrics inside a semantic model, and top-level metrics | Globally unique across the project | Bare name |
+| **Cube** | Measures only within cubes | Scoped to the cube | Qualified — `cube.member` |
+| **Databricks Unity Catalog metric views** | Single flat scope per metric view; joins declared within the view | Unique within the metric view | `MEASURE(name)` |
 
-Ossie adopts Cube's scoped-uniqueness and qualified-reference convention because it matches how Ossie already treats fields: field names are unique within a dataset, and metric expressions already reference them as `dataset.field`.
+Notes on each:
+
+- **Snowflake semantic views** are the closest analogue. Table-level metrics are "scoped to a specific logical table, aggregating data within that table," while top-level derived metrics are "view-level metrics not tied to a specific table" that "combine metrics from multiple tables." Derived metrics reference table-scoped ones with qualified names, e.g. `orders.total_revenue / customers.customer_count`.
+- **dbt MetricFlow** reserves in-model metrics for those using dimensions from a single semantic model ("recommended for simple metrics") and top-level metrics for those spanning semantic models — it explicitly disallows simple metrics at the top level. Its namespace is flat, so metric names must be globally unique.
+- **Cube** has no model-level measure concept at all; every measure belongs to a cube, and members must be unique within their cube.
+- **Databricks Unity Catalog metric views** take a different approach: a metric view has one `source` plus optional `joins`, and all measures live in that single flat scope. Cross-table access happens through joins declared inside the view rather than through a separate cross-entity placement.
+
+**How this proposal relates**
+
+Ossie adopts the Snowflake/Cube convention of scoped uniqueness with qualified `dataset.metric` references, rather than MetricFlow's flat global namespace. This matches how Ossie already treats fields: field names are unique within a dataset, and metric expressions already reference them as `dataset.field` (e.g. `SUM(orders.amount)`).
+
+On scope enforcement, this proposal is deliberately stricter than Snowflake. Snowflake permits a table-level metric to traverse relationships — it provides `using_relationships` specifically to disambiguate when multiple join paths exist between two logical tables. This proposal instead requires that a dataset-scoped metric resolve entirely within its own dataset, and reserves traversal for model-scoped metrics.
+
+The rationale is that a strict boundary makes the guarantee legible: a dataset-scoped metric is verifiably self-contained, so a dataset plus its metrics can be reasoned about, reused, or exchanged without resolving the surrounding join graph. Relaxing this later would be backward compatible; tightening it would not. Whether Ossie should eventually follow Snowflake in allowing declared traversal from dataset-scoped metrics is left as an open question for the community.
 
 ---
 
