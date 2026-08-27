@@ -548,29 +548,41 @@ datasets:
 
 **Prior art**
 
-Scoping metrics to an entity is established practice across comparable semantic layers, though they differ in how names resolve and how strictly scope is enforced.
+Separating an aggregation anchored to a single entity from a calculation that spans entities is established practice, though systems differ in where the single-entity metric lives, how names resolve, and how strictly scope is enforced.
 
-| System | Placement model | Name uniqueness | Reference form |
-|---|---|---|---|
-| **Snowflake semantic views** | `tables[].metrics` (table-level) and top-level `metrics` (derived, view-level) | Scoped to the logical table | Qualified — `table.metric` |
-| **dbt MetricFlow** (v1.12+) | Metrics inside a semantic model, and top-level metrics | Globally unique across the project | Bare name |
-| **Cube** | Measures only within cubes | Scoped to the cube | Qualified — `cube.member` |
-| **Databricks Unity Catalog metric views** | Single flat scope per metric view; joins declared within the view | Unique within the metric view | `MEASURE(name)` |
+| System | Single-entity metric | Cross-entity mechanism | Name uniqueness | Reference form |
+|---|---|---|---|---|
+| **Snowflake semantic views** | `tables[].metrics` | Top-level `metrics` (derived) | Per logical table | Qualified — `table.metric` |
+| **AtScale SML** | Standalone `metric` object bound to one `dataset` + `column` | Separate `metric_calc` object type | Global across all repositories | Bare `unique_name` |
+| **dbt MetricFlow** (v1.12+) | Metrics inside a semantic model | Top-level `metrics` | Global across the project | Bare name |
+| **Cube** | Measures within cubes | Calculated measures referencing other measures | Per cube | Qualified — `cube.member` |
+| **Databricks UC metric views** | Measures in the view (one flat scope) | Joins declared inside the view | Per metric view | `MEASURE(name)` |
 
 Notes on each:
 
-- **Snowflake semantic views** are the closest analogue. Table-level metrics are "scoped to a specific logical table, aggregating data within that table," while top-level derived metrics are "view-level metrics not tied to a specific table" that "combine metrics from multiple tables." Derived metrics reference table-scoped ones with qualified names, e.g. `orders.total_revenue / customers.customer_count`.
-- **dbt MetricFlow** reserves in-model metrics for those using dimensions from a single semantic model ("recommended for simple metrics") and top-level metrics for those spanning semantic models — it explicitly disallows simple metrics at the top level. Its namespace is flat, so metric names must be globally unique.
-- **Cube** has no model-level measure concept at all; every measure belongs to a cube, and members must be unique within their cube.
-- **Databricks Unity Catalog metric views** take a different approach: a metric view has one `source` plus optional `joins`, and all measures live in that single flat scope. Cross-table access happens through joins declared inside the view rather than through a separate cross-entity placement.
+- **Snowflake semantic views** are the closest structural analogue. Table-level metrics are "scoped to a specific logical table, aggregating data within that table," while top-level derived metrics are "view-level metrics not tied to a specific table" that "combine metrics from multiple tables," referenced with qualified names such as `orders.total_revenue / customers.customer_count`.
+- **AtScale SML** demonstrates a third pattern: a metric is a standalone, globally-named object that nonetheless declares its binding by property. Both `dataset` and `column` are required, so a plain SML metric is a single `calculation_method` over a single column of a single fact dataset. Anything combining metrics is a distinct object type (`metric_calc`) with an `expression` and no dataset binding at all.
+- **dbt MetricFlow** reserves in-model metrics for those using dimensions from a single semantic model ("recommended for simple metrics") and top-level metrics for those spanning semantic models — it explicitly disallows simple metrics at the top level. Its namespace is flat, so names must be globally unique.
+- **Cube** has no model-level measure concept; every measure belongs to a cube and must be unique within it.
+- **Databricks UC metric views** take a different approach: one `source` plus optional `joins`, with all measures in a single flat scope. Cross-table access happens through joins declared inside the view rather than a separate cross-entity placement.
 
 **How this proposal relates**
 
-Ossie adopts the Snowflake/Cube convention of scoped uniqueness with qualified `dataset.metric` references, rather than MetricFlow's flat global namespace. This matches how Ossie already treats fields: field names are unique within a dataset, and metric expressions already reference them as `dataset.field` (e.g. `SUM(orders.amount)`).
+Four of the five systems above structurally distinguish a single-entity aggregation from a cross-entity calculation. Ossie currently provides only the cross-entity placement, which is the gap this section addresses.
 
-On scope enforcement, this proposal is deliberately stricter than Snowflake. Snowflake permits a table-level metric to traverse relationships — it provides `using_relationships` specifically to disambiguate when multiple join paths exist between two logical tables. This proposal instead requires that a dataset-scoped metric resolve entirely within its own dataset, and reserves traversal for model-scoped metrics.
+On naming, Ossie follows Snowflake and Cube — scoped uniqueness with qualified `dataset.metric` references — rather than the global flat namespace used by SML and MetricFlow. This matches how Ossie already treats fields: field names are unique within a dataset, and metric expressions already reference them as `dataset.field` (e.g. `SUM(orders.amount)`).
 
-The rationale is that a strict boundary makes the guarantee legible: a dataset-scoped metric is verifiably self-contained, so a dataset plus its metrics can be reasoned about, reused, or exchanged without resolving the surrounding join graph. Relaxing this later would be backward compatible; tightening it would not. Whether Ossie should eventually follow Snowflake in allowing declared traversal from dataset-scoped metrics is left as an open question for the community.
+On strictness, this proposal sits between the two extremes. SML is more restrictive: a plain metric binds to exactly one column with one aggregation method. Snowflake is more permissive: a table-level metric may traverse relationships, and `using_relationships` exists specifically to disambiguate when multiple join paths connect two logical tables. Ossie permits an arbitrary expression over the declaring dataset's fields, but no traversal.
+
+The rationale for disallowing traversal is that a strict boundary makes the guarantee legible: a dataset-scoped metric is verifiably self-contained, so a dataset together with its metrics can be reasoned about, reused, or exchanged without resolving the surrounding join graph. Relaxing this later would be backward compatible; tightening it would not. Whether Ossie should eventually adopt a `using_relationships` equivalent is left as an open question.
+
+**Consumer guidance: flattening to a single metric namespace**
+
+Consumers whose native model has only model-level metrics do not need to represent the two placements separately. Because a dataset-scoped metric's expression resolves entirely within its declaring dataset, that expression is already valid as a model-scoped metric — hoisting requires no expression rewriting.
+
+The one concern when flattening is naming. Two datasets may each declare a metric with the same local name, so a flat target namespace requires qualification; use the canonical `dataset_name.metric_name` form, or an equivalent encoding if the target namespace disallows dots.
+
+Consumers that read only `semantic_model.metrics` remain valid, but will not observe dataset-scoped metrics. Producers requiring maximum compatibility with such consumers may continue declaring all metrics at the model level.
 
 ---
 
