@@ -478,8 +478,8 @@ A metric may be defined at the semantic model level or on an individual dataset.
 
 | | Model-scoped (`semantic_model.metrics`) | Dataset-scoped (`datasets[].metrics`) |
 |---|---|---|
-| May reference fields from | Any dataset in the model | Only its own dataset |
-| May traverse relationships | Yes | No |
+| Expression may reference fields from | Any dataset in the model | Only its own dataset |
+| Expression may traverse relationships | Yes | No |
 | Name uniqueness | Unique across the semantic model | Unique within its dataset |
 | Referenced as | `metric_name` | `dataset_name.metric_name` |
 
@@ -489,6 +489,12 @@ A metric may be defined at the semantic model level or on an individual dataset.
 2. Dataset-scoped metric names MUST be unique within their dataset. Two different datasets MAY each declare a metric with the same name (e.g. `orders.item_count` and `shipments.item_count`).
 3. A dataset-scoped metric name MUST NOT collide with the name of any model-scoped metric in the same semantic model. This keeps an unqualified metric reference unambiguous.
 4. Dataset-scoped metrics are referenced from outside their dataset using `dataset_name.metric_name`, mirroring how a dataset's fields are already referenced in metric expressions (e.g. `SUM(orders.amount)`).
+
+**Scope restricts the expression, not the query**
+
+Rule 1 constrains only what a metric's *expression* may reference. It does not restrict how the metric may be queried. A dataset-scoped metric can still be grouped by, or filtered on, dimensions from other datasets reached through relationships — grouping dimensions are supplied by the consumer at query time and are not part of the metric definition.
+
+For example, a metric declared on `store_sales` as `SUM(store_sales.ss_ext_sales_price)` is dataset-scoped because its expression touches only `store_sales`, yet it remains valid to group that metric by `item.i_brand` or `store.s_state` via the model's relationships. Only a metric whose own expression must reach into another dataset — such as `SUM(store_sales.amount) / COUNT(DISTINCT customer.id)` — needs to be model-scoped.
 
 **Choosing a placement**
 

@@ -158,6 +158,10 @@ datasets:
     # Scoping rules:
     # - The expression MUST only reference fields of this dataset. It MUST NOT
     #   traverse relationships or reference fields of another dataset.
+    # - This constrains the EXPRESSION only, not the query. A dataset-scoped
+    #   metric may still be grouped by or filtered on dimensions of other
+    #   datasets reached through relationships, since grouping dimensions are
+    #   supplied by the consumer at query time.
     # - Names must be unique within this dataset, and must not collide with the
     #   name of any model-scoped metric.
     # - Referenced from outside the dataset as dataset_name.metric_name, mirroring

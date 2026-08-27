@@ -147,6 +147,50 @@ datasets:
             - "profit"
             - "margin"
 
+    # Dataset-scoped metrics: expressions resolve entirely within
+    # store_sales. These may still be grouped by dimensions of other
+    # datasets (for example item.i_brand or store.s_state) through the
+    # model's relationships. Referenced as store_sales.<metric_name>.
+    metrics:
+      - name: total_sales
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(store_sales.ss_ext_sales_price)
+        description: Total sales revenue across all transactions
+        datatype: Decimal
+        ai_context:
+          synonyms:
+            - "total revenue"
+            - "gross sales"
+            - "sales amount"
+
+      - name: total_profit
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(store_sales.ss_net_profit)
+        description: Total net profit from store sales
+        datatype: Decimal
+        ai_context:
+          synonyms:
+            - "net profit"
+            - "total earnings"
+            - "profit"
+
+      - name: sales_by_brand
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(store_sales.ss_ext_sales_price)
+        description: Total sales by brand (requires grouping by item.i_brand)
+        datatype: Decimal
+        ai_context:
+          synonyms:
+            - "brand sales"
+            - "brand performance"
+            - "brand revenue"
+
   # Dimension table: Date
   - name: date_dim
     source: tpcds.public.date_dim
@@ -543,33 +587,11 @@ relationships:
         - "where sale occurred"
 
 # Semantic model-level metrics spanning multiple datasets
+# Model-scoped metrics: these span multiple datasets via relationships and
+# therefore cannot be dataset-scoped. Simple aggregations that resolve
+# within a single dataset are declared on that dataset instead — see
+# store_sales.metrics above.
 metrics:
-  - name: total_sales
-    expression:
-      dialects:
-        - dialect: ANSI_SQL
-          expression: SUM(store_sales.ss_ext_sales_price)
-    description: Total sales revenue across all transactions
-    datatype: Decimal
-    ai_context:
-      synonyms:
-        - "total revenue"
-        - "gross sales"
-        - "sales amount"
-
-  - name: total_profit
-    expression:
-      dialects:
-        - dialect: ANSI_SQL
-          expression: SUM(store_sales.ss_net_profit)
-    description: Total net profit from store sales
-    datatype: Decimal
-    ai_context:
-      synonyms:
-        - "net profit"
-        - "total earnings"
-        - "profit"
-
   - name: customer_lifetime_value
     expression:
       dialects:
@@ -583,19 +605,6 @@ metrics:
         - "LTV"
         - "customer value"
         - "lifetime revenue"
-
-  - name: sales_by_brand
-    expression:
-      dialects:
-        - dialect: ANSI_SQL
-          expression: SUM(store_sales.ss_ext_sales_price)
-    description: Total sales by brand (requires grouping by item.i_brand)
-    datatype: Decimal
-    ai_context:
-      synonyms:
-        - "brand sales"
-        - "brand performance"
-        - "brand revenue"
 
   - name: store_productivity
     expression:
