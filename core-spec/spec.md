@@ -37,7 +37,8 @@
 4. [Relationships](#relationships)
 5. [Fields](#fields)
 6. [Metrics](#metrics)
-7. [Examples](#examples)
+7. [Metric Scoping](#metric-scoping)
+8. [Examples](#examples)
 
 ---
 
@@ -109,7 +110,7 @@ not define a bundle format or cross-model references.
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., custom instructions) |
 | `datasets` | array | Yes | Collection of logical datasets (fact and dimension tables) |
 | `relationships` | array | No | Defines how logical datasets are connected |
-| `metrics` | array | No | Quantifiable measures defined as aggregate expressions on fields from logical datasets |
+| `metrics` | array | No | Model-scoped metrics: aggregate expressions that may span multiple datasets and traverse relationships. See [Metric Scoping](#metric-scoping). |
 | `custom_extensions` | array | No | Vendor-specific attributes for extensibility |
 
 ### Example
@@ -178,6 +179,7 @@ Logical datasets represent business entities or concepts (fact and dimension tab
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms, common terms) |
 | `fields` | array | No | Row-level attributes for grouping, filtering, and metric expressions |
+| `metrics` | array | No | Dataset-scoped metrics whose expressions resolve entirely within this dataset. See [Metric Scoping](#metric-scoping). |
 | `custom_extensions` | array | No | Vendor-specific attributes |
 
 ### Primary Key Examples
@@ -406,7 +408,14 @@ Common combinations:
 
 ## Metrics
 
-Quantitative measures defined on business data, representing key calculations like sums, averages, ratios, etc. Metrics are defined at the semantic model level and can  span multiple datasets.
+Quantitative measures defined on business data, representing key calculations like sums, averages, ratios, etc.
+
+Metrics may be defined in two placements, using the same structure in both:
+
+- **Model-scoped** (`semantic_model.metrics`) — may span multiple datasets and traverse relationships.
+- **Dataset-scoped** (`datasets[].metrics`) — must resolve entirely within a single dataset.
+
+See [Metric Scoping](#metric-scoping) for the rules governing each.
 
 ### Schema
 
@@ -462,6 +471,89 @@ expression:
     synonyms:
       - "Order Average by customer"
 ```
+
+### Metric Scoping
+
+A metric may be defined at the semantic model level or on an individual dataset. Both placements use the identical metric structure; only the resolution rules differ.
+
+| | Model-scoped (`semantic_model.metrics`) | Dataset-scoped (`datasets[].metrics`) |
+|---|---|---|
+| May reference fields from | Any dataset in the model | Only its own dataset |
+| May traverse relationships | Yes | No |
+| Name uniqueness | Unique across the semantic model | Unique within its dataset |
+| Referenced as | `metric_name` | `dataset_name.metric_name` |
+
+**Rules**
+
+1. A dataset-scoped metric's expression MUST only reference fields of the dataset that declares it. It MUST NOT traverse relationships or reference fields belonging to another dataset. A metric that needs to span datasets MUST be model-scoped.
+2. Dataset-scoped metric names MUST be unique within their dataset. Two different datasets MAY each declare a metric with the same name (e.g. `orders.item_count` and `shipments.item_count`).
+3. A dataset-scoped metric name MUST NOT collide with the name of any model-scoped metric in the same semantic model. This keeps an unqualified metric reference unambiguous.
+4. Dataset-scoped metrics are referenced from outside their dataset using `dataset_name.metric_name`, mirroring how a dataset's fields are already referenced in metric expressions (e.g. `SUM(orders.amount)`).
+
+**Choosing a placement**
+
+Prefer dataset-scoped for simple aggregations that belong conceptually to one entity — they keep the metric next to the fields it depends on and make the dataset independently interpretable. Use model-scoped for anything requiring a join.
+
+**Example — dataset-scoped metrics**
+
+```yaml
+datasets:
+  - name: orders
+    source: sales.public.orders
+    primary_key: [order_id]
+    fields:
+      - name: amount
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: amount
+        description: Order amount
+
+    metrics:
+      # Valid: resolves entirely within the orders dataset
+      - name: total_amount
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(orders.amount)
+        description: Total order amount
+        datatype: Decimal
+
+      # Also valid: unqualified reference to a field of the declaring dataset
+      - name: order_count
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(order_id)
+        description: Number of orders
+        datatype: Integer
+```
+
+Referenced from a consumer as `orders.total_amount` and `orders.order_count`.
+
+**Example — invalid dataset-scoped metric**
+
+```yaml
+datasets:
+  - name: orders
+    source: sales.public.orders
+    metrics:
+      # INVALID: references the customers dataset, so it must be model-scoped
+      - name: revenue_per_customer
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(orders.amount) / COUNT(DISTINCT customers.id)
+```
+
+**Prior art**
+
+This two-placement model follows established practice in comparable semantic layers:
+
+- **dbt MetricFlow** (v1.12+) supports the same split: metrics defined within a semantic model for those using dimensions from a single semantic model ("recommended for simple metrics"), and top-level metrics for those referencing metrics across different semantic models. MetricFlow explicitly disallows simple metrics at the top level.
+- **Cube** defines measures only within cubes, requiring member names to be unique within their cube and referenced as `cube_name.member`.
+
+Ossie adopts Cube's scoped-uniqueness and qualified-reference convention because it matches how Ossie already treats fields: field names are unique within a dataset, and metric expressions already reference them as `dataset.field`.
 
 ---
 
@@ -597,6 +689,16 @@ datasets:
               expression: amount
         description: Order amount
 
+    # Dataset-scoped: resolves entirely within the orders dataset
+    metrics:
+      - name: total_amount
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(orders.amount)
+        description: Total order amount
+        datatype: Decimal
+
   - name: customers
     source: sales.public.customers
     primary_key: [id]
@@ -624,16 +726,14 @@ relationships:
     to_columns: [id]
 
 metrics:
-  - name: total_revenue
+  # Model-scoped: spans orders and customers via the relationship
+  - name: revenue_per_customer
     expression:
       dialects:
         - dialect: ANSI_SQL
-          expression: SUM(orders.amount)
-    description: Total revenue from all orders
-    ai_context:
-      synonyms:
-        - "total sales"
-        - "revenue"
+          expression: SUM(orders.amount) / COUNT(DISTINCT customers.id)
+    description: Average revenue per customer
+    datatype: Decimal
 
   - name: customer_count
     expression:

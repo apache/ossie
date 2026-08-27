@@ -235,6 +235,13 @@
             "$ref": "#/$defs/Field"
           }
         },
+        "metrics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Metric"
+          },
+          "description": "Dataset-scoped metrics. Expressions must resolve entirely within this dataset and must not traverse relationships or reference fields of another dataset. Names must be unique within the dataset and must not collide with any model-scoped metric name. Referenced from outside the dataset as dataset_name.metric_name. Metrics that span datasets belong in semantic_model.metrics."
+        },
         "custom_extensions": {
           "type": "array",
           "items": {
@@ -361,7 +368,7 @@
           "items": {
             "$ref": "#/$defs/Metric"
           },
-          "description": "Quantifiable measures spanning datasets"
+          "description": "Model-scoped metrics. May span multiple datasets and traverse relationships. Names must be unique across the semantic model and must not collide with any dataset-scoped metric name. Metrics that resolve entirely within a single dataset may instead be defined on that dataset (datasets[].metrics)."
         },
         "custom_extensions": {
           "type": "array",

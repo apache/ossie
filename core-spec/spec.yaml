@@ -91,8 +91,10 @@ datasets: []
 # See Relationships section below for detailed structure
 relationships: []
 
-# Optional:
+# Optional: Model-scoped metrics
 # These metrics can span one or more logical datasets and use relationships
+# Metric names must be unique across the semantic model, and must not collide
+# with the name of any dataset-scoped metric
 # See Metrics section below for detailed structure
 metrics: []
 
@@ -147,6 +149,23 @@ datasets:
     # Optional: Row-level calculations for grouping, filtering, and in metric expressions
     # See Fields section below for detailed structure
     fields: []
+
+    # Optional: Dataset-scoped metrics
+    # Metrics whose expressions resolve entirely within this dataset. Use these for
+    # simple aggregations over a single dataset's fields; use model-scoped metrics
+    # (semantic_model.metrics) for anything that spans datasets via relationships.
+    #
+    # Scoping rules:
+    # - The expression MUST only reference fields of this dataset. It MUST NOT
+    #   traverse relationships or reference fields of another dataset.
+    # - Names must be unique within this dataset, and must not collide with the
+    #   name of any model-scoped metric.
+    # - Referenced from outside the dataset as dataset_name.metric_name, mirroring
+    #   how fields of a dataset are referenced (e.g., orders.total_revenue).
+    #
+    # Entries use the same structure as model-scoped metrics.
+    # See Metrics section below for detailed structure
+    metrics: []
 
     # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
@@ -253,6 +272,10 @@ fields:
 # Metrics Schema
 # Quantitative measures defined on business data
 # Represents key calculations like sums, averages, ratios, etc.
+#
+# The same structure is used in two placements:
+# - semantic_model.metrics  (model-scoped): may span datasets via relationships
+# - datasets[].metrics      (dataset-scoped): must resolve within one dataset
 metrics:
   # Required: Unique identifier for the metric
   - name: string
