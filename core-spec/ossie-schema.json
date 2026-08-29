@@ -240,7 +240,7 @@
           "items": {
             "$ref": "#/$defs/Metric"
           },
-          "description": "Metrics that aggregate data held by this dataset, at this dataset's grain. The expression must aggregate only fields of this dataset, must not reference a field of another dataset, and must reference fields by unqualified name (SUM(amount), not SUM(orders.amount)). This constrains the expression only, not the query: the metric is joined and grouped like any other, using the model's relationships. Names must be unique within the dataset and must not collide with a field name of this dataset. Referenced from outside the dataset as dataset_name.metric_name. See core-spec/spec.md#metric-scoping."
+          "description": "Metrics that aggregate data held by this dataset. The expression must reference fields of this dataset by unqualified name (SUM(amount), not SUM(orders.amount)); an expression referencing fields of more than one dataset is model-scoped and belongs in semantic_model.metrics. This constrains the expression only, not the query: the metric is joined and grouped like any other, using the model's relationships. Names must be unique within the dataset and must not collide with a field name of this dataset. Referenced from outside the dataset as dataset_name.metric_name. See core-spec/spec.md#metric-scoping."
         },
         "custom_extensions": {
           "type": "array",

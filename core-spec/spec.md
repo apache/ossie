@@ -482,32 +482,20 @@ A metric may be defined at the semantic model level or on an individual dataset.
 |---|---|---|
 | Expression may reference fields from | Any dataset in the model | Only its own dataset |
 | Expression namespace | Qualified — `dataset.field` | Unqualified — `field` |
-| Aggregation grain | Determined by the expression | The declaring dataset's grain |
 | Name uniqueness | Unique across the semantic model | Unique within its dataset, and distinct from that dataset's field names |
 | Referenced as | `metric_name` | `dataset_name.metric_name` |
 
 **Rules**
 
-1. A dataset-scoped metric's expression MUST aggregate only fields of the dataset that declares it, and MUST NOT reference a field of another dataset. Model-scoped metrics carry no equivalent restriction.
-2. A dataset-scoped metric's expression MUST reference fields by unqualified name: `SUM(ss_ext_sales_price)`, not `SUM(store_sales.ss_ext_sales_price)`.
-3. Dataset-scoped metric names MUST be unique within their dataset. Two datasets MAY each declare a metric with the same name.
-4. A dataset-scoped metric name MUST NOT collide with the name of a field of the same dataset, which under rule 6 would leave `orders.amount` ambiguous.
-5. A model-scoped metric SHOULD NOT reuse the name of a dataset-scoped metric in the same semantic model. Validators SHOULD warn, and SHOULD attribute the warning to the model rather than to the dataset.
-6. An unqualified metric reference resolves to a model-scoped metric. A dataset-scoped metric is referenced as `dataset_name.metric_name`.
+1. A dataset-scoped metric's expression MUST reference fields of its declaring dataset by unqualified name: `SUM(ss_ext_sales_price)`, not `SUM(store_sales.ss_ext_sales_price)`. An expression that references fields of more than one dataset MUST be declared in `semantic_model.metrics`.
+2. Dataset-scoped metric names MUST be unique within their dataset. Two datasets MAY each declare a metric with the same name.
+3. A dataset-scoped metric name MUST NOT collide with the name of a field of the same dataset, which under rule 5 would leave `orders.amount` ambiguous.
+4. A model-scoped metric SHOULD NOT reuse the name of a dataset-scoped metric in the same semantic model. Validators SHOULD warn, and SHOULD attribute the warning to the model rather than to the dataset.
+5. An unqualified metric reference resolves to a model-scoped metric. A dataset-scoped metric is referenced as `dataset_name.metric_name`.
 
 Rule 1 means declared fields, not any column the dataset's `source` exposes: a column used by a dataset-scoped metric must be declared as a field. This is not checked automatically, because an expression may also contain function names, literals, and struct or variant paths.
 
-Rule 1 places no limit on the complexity of the aggregation. Any expression that resolves within the declaring dataset is eligible.
-
-**Scope describes the aggregation, not the query**
-
-A dataset-scoped metric aggregates data held by its own dataset. That is all the placement asserts. It does not limit how the metric may be queried: the metric is joined and grouped like any other, using the relationships declared in the model, so it can be sliced by dimensions of any dataset the model connects. Rules 1 and 2 constrain what an expression may reference, never what may be joined to the result.
-
-Presenting many datasets and their metrics through one queryable interface is the concern of a layer above this one. This section defines only where an aggregation is anchored.
-
-**Aggregation grain**
-
-A dataset-scoped metric aggregates at its dataset's grain. That grain does not depend on a declared `primary_key`: it is the grain of the rows the `source` produces. `primary_key` and `unique_keys` let consumers reason about fan-out when the dataset participates in relationships, but are not a prerequisite.
+Rule 1 places no limit on the complexity of the aggregation, and constrains the expression rather than the query. Any expression that resolves within the declaring dataset is eligible, and a dataset-scoped metric is joined and grouped like any other using the relationships declared in the model, so a metric declared on `store_sales` as `SUM(ss_ext_sales_price)` may still be grouped by `item.i_brand` or `store.s_state`.
 
 **Which names may repeat**
 
@@ -520,7 +508,7 @@ Names are addressed in three ways, so a name may repeat across them without ambi
 | Field | Qualified — `orders.revenue` |
 | Dataset | Only ever as a qualifier |
 
-A model-scoped metric MAY therefore share a name with a field, or with a dataset. Rule 4 is an error because a field and a metric of one dataset share the same qualified namespace, so `orders.revenue` would resolve two ways. Rule 5 is a warning because the two names remain separately addressable, and because a dataset may be authored independently of the model that includes it.
+A model-scoped metric MAY therefore share a name with a field, or with a dataset. Rule 3 is an error because a field and a metric of one dataset share the same qualified namespace; rule 4 is a warning because the two names remain separately addressable.
 
 **Example — dataset-scoped metrics**
 
@@ -570,42 +558,21 @@ datasets:
   - name: orders
     source: sales.public.orders
     metrics:
-      # INVALID (rule 1): references a field of the customers dataset
+      # INVALID (rule 1): references a field of the customers dataset, so this
+      # metric is model-scoped and belongs in semantic_model.metrics
       - name: revenue_per_customer
         expression:
           dialects:
             - dialect: ANSI_SQL
               expression: SUM(amount) / COUNT(DISTINCT customers.id)
 
-      # INVALID (rule 2): qualifies a field with the declaring dataset's own name
+      # INVALID (rule 1): qualifies a field with the declaring dataset's own name
       - name: total_amount
         expression:
           dialects:
             - dialect: ANSI_SQL
               expression: SUM(orders.amount)
 ```
-
-**Prior art**
-
-Systems in this space differ in where a single-entity aggregation lives, how names resolve, and how strictly scope is enforced.
-
-| System | Single-entity metric | Cross-entity mechanism | Name uniqueness | Reference form |
-|---|---|---|---|---|
-| **AtScale SML** | Standalone `metric` object bound to one `dataset` + `column` | Separate `metric_calc` object type | Global across all repositories | Bare `unique_name` |
-| **Cube** | Measures within cubes | Calculated measures referencing other measures | Per cube | Qualified — `cube.member` |
-| **Databricks UC metric views** | Measures in the view (one flat scope) | Joins declared inside the view | Per metric view | `MEASURE(name)` |
-| **dbt MetricFlow** (v1.12+) | Metrics inside a semantic model | Top-level `metrics` | Global across the project | Bare name |
-| **Snowflake semantic views** | `tables[].metrics` | Top-level `metrics` (derived) | Per logical table | Qualified — `table.metric` |
-
-Four of the five distinguish the two structurally. Ossie has so far provided only the model-level placement, which is the gap this section addresses.
-
-Two points of comparison worth recording. Databricks UC metric views are closest to the namespace rules above: a metric view has one `source` plus optional `joins`, sources are named so a column is addressed as `source_name.column_name`, and the metric view itself exposes a flat schema. Snowflake semantic views let a table-scoped metric's own expression reach through a relationship, so the boundary between their two placements is softer than rule 1.
-
-Scoped uniqueness with qualified references, rather than the flat global namespace used by AtScale SML and dbt MetricFlow, follows Ossie's existing convention: field names are already scoped to a dataset. Rule 2 follows the same convention, since a field's own expression is written without naming its dataset.
-
-Rule 1 is the conservative choice. It keeps a dataset-scoped metric verifiably anchored to one dataset, so a dataset and its metrics can be exchanged without resolving the surrounding join graph. Relaxing it later would be backward compatible; tightening it would not. Whether a dataset-scoped metric's expression should be permitted to reach through an explicitly declared path is left open.
-
-Choosing between multiple relationship paths, where more than one connects the same pair of datasets, is a separate gap that Ossie does not currently address. It applies to model-scoped expressions and consumer queries alike.
 
 **Consumer guidance: flattening to a single metric namespace**
 
