@@ -186,8 +186,8 @@ means `from.product_id = to.id AND from.variant_id = to.variant_id`. The convert
 
 Metrics are aggregate measures. They appear in two places, and **a converter must read both**:
 
-- `semantic_model.metrics` — model-scoped. May span multiple datasets via relationships. Expressions reference fields by qualified name (`SUM(orders.amount)`).
-- `datasets[].metrics` — dataset-scoped. The expression resolves entirely within the declaring dataset and references fields by unqualified name (`SUM(amount)`).
+- `semantic_model.metrics`: model-scoped. May span multiple datasets via relationships. Expressions reference fields by qualified name (`SUM(orders.amount)`).
+- `datasets[].metrics`: dataset-scoped. The expression is written against the declaring dataset's `source` and references its columns by unqualified name (`SUM(amount)`).
 
 Both placements use the identical metric structure, so the field mapping below applies to each.
 

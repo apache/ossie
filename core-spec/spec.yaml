@@ -161,9 +161,11 @@ datasets:
     # model-scoped metrics; see the Metrics section below.
     #
     # Rules (see core-spec/spec.md#metric-scoping):
-    # - The expression MUST reference fields of this dataset by unqualified name:
-    #   SUM(amount), not SUM(orders.amount). An expression referencing fields of
-    #   more than one dataset belongs in semantic_model.metrics.
+    # - The expression is written against this dataset's source and MUST
+    #   reference its columns by unqualified name: SUM(amount), not
+    #   SUM(orders.amount). A column used only inside a metric does not need to
+    #   be declared as a field. An expression referencing columns of more than
+    #   one dataset belongs in semantic_model.metrics.
     # - Names MUST be unique within this dataset and MUST NOT collide with a
     #   field name of this dataset.
     # - Referenced from outside the dataset as dataset_name.metric_name. An
