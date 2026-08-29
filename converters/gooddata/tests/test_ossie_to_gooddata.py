@@ -330,6 +330,50 @@ def test_grain_from_primary_key(ossie_tpcds_dict: dict):
     assert len(grain_ids) == 2
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        {
+            "name": "customer_key",
+            "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "customer_id"}]},
+            "dimension": {},
+        },
+        {
+            "name": "customer_key",
+            "expression": {
+                "dialects": [
+                    {"dialect": "ANSI_SQL", "expression": "customer_id"},
+                    {"dialect": "MAQL", "expression": "{label/customers.customer_key}"},
+                ]
+            },
+        },
+    ],
+    ids=["dimension", "maql-attribute"],
+)
+def test_grain_uses_source_column_for_aliased_attribute(field: dict):
+    """Verify physical primary keys select aliased GoodData grain attributes."""
+    model = {
+        "semantic_model": [
+            {
+                "name": "m",
+                "datasets": [
+                    {
+                        "name": "customers",
+                        "source": "db.s.customers",
+                        "primary_key": ["customer_id"],
+                        "fields": [field],
+                    }
+                ],
+            }
+        ]
+    }
+
+    customer = ossie_to_gooddata(model).ldm.datasets[0]
+
+    assert customer.attributes[0].source_column == "customer_id"
+    assert [grain.id for grain in customer.grain] == ["attr.customers.customer_key"]
+
+
 def test_relationships_become_references(ossie_tpcds_dict: dict):
     """Verify Ossie relationships become GoodData references."""
     result = ossie_to_gooddata(ossie_tpcds_dict)

@@ -162,13 +162,12 @@ def _convert_ossie_dataset(
     pk_columns = set(ds.get("primary_key", []))
 
     for field_def in fields:
-        field_name = field_def["name"]
         is_dimension = field_def.get("dimension") is not None
 
         if is_dimension:
             attr = _convert_to_attribute(field_def, ds_name)
             attributes.append(attr)
-            if field_name in pk_columns:
+            if attr.source_column in pk_columns:
                 grain_ids.append(attr.id)
         else:
             # Check MAQL expression to determine if fact or attribute
@@ -176,7 +175,7 @@ def _convert_ossie_dataset(
             if maql_type == "attribute":
                 attr = _convert_to_attribute(field_def, ds_name)
                 attributes.append(attr)
-                if field_name in pk_columns:
+                if attr.source_column in pk_columns:
                     grain_ids.append(attr.id)
             else:
                 facts.append(_convert_to_fact(field_def, ds_name))
