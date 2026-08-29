@@ -480,21 +480,23 @@ A metric may be defined at the semantic model level or on an individual dataset.
 
 | | Model-scoped (`semantic_model.metrics`) | Dataset-scoped (`datasets[].metrics`) |
 |---|---|---|
-| Expression references | Fields of any dataset in the model, qualified: `dataset.field` | Columns of its own dataset's `source`, unqualified: `column` |
+| Expression references | Fields of any dataset in the model, qualified: `dataset.field` | Fields of its own dataset, qualified: `dataset.field`; columns of its `source`, unqualified: `column` |
 | Name uniqueness | Unique across the semantic model | Unique within its dataset, and distinct from that dataset's field names |
 | Referenced as | `metric_name` | `dataset_name.metric_name` |
 
 **Rules**
 
-1. A dataset-scoped metric's expression is written against its dataset's `source` and MUST reference columns by unqualified name: `SUM(ss_ext_sales_price)`, not `SUM(store_sales.ss_ext_sales_price)`. An expression that references columns of more than one dataset MUST be declared in `semantic_model.metrics`.
+1. A dataset-scoped metric's expression MAY reference the declared fields of its dataset and the columns of its `source`. A declared field is written `dataset_name.field_name`; a column of the `source` is written unqualified: `SUM(orders.net_amount) / COUNT(DISTINCT tax_id)`. A qualified reference MUST name a declared field of the declaring dataset. An expression that references another dataset MUST be declared in `semantic_model.metrics`.
 2. Dataset-scoped metric names MUST be unique within their dataset. Two datasets MAY each declare a metric with the same name.
 3. A dataset-scoped metric name MUST NOT collide with the name of a field of the same dataset, which under rule 5 would leave `orders.amount` ambiguous.
 4. A model-scoped metric SHOULD NOT reuse the name of a dataset-scoped metric in the same semantic model. Validators SHOULD warn, and SHOULD attribute the warning to the model rather than to the dataset.
 5. An unqualified metric reference resolves to a model-scoped metric. A dataset-scoped metric is referenced as `dataset_name.metric_name`.
 
-Rule 1 refers to the columns the dataset's `source` exposes, not to its declared fields. A column used only inside a metric does not need to be declared as a field first. This matches how a field's own expression is written: the field `customer_id` with expression `customer_id` refers to the source column, not to itself.
+A column used only inside a metric does not need to be declared as a field. Declaring one is how a metric reuses a field's expression instead of repeating it.
 
-A declared field therefore does not shadow a source column of the same name. If a dataset declares a field `foo` whose expression is not simply `foo`, then `SUM(foo)` in a metric of that dataset still refers to the source column `foo`. Reusing a declared field's expression inside a metric is the same composability question as a metric referencing another metric, and is left to a separate proposal.
+Because the two are spelled differently, a field and a source column MAY share a name without ambiguity. In a metric of `orders`, `orders.foo` is the declared field and `foo` is the source column, so declaring a field named after an existing column does not change the meaning of an expression already using the bare name.
+
+Whether a bare name is a real column of the `source` is not checked, because that requires catalog metadata the model does not carry. A qualified reference is checked, because the field list is in the model.
 
 Rule 1 places no limit on the complexity of the aggregation, and constrains the expression rather than the query. A dataset-scoped metric is joined and grouped like any other using the relationships declared in the model, so a metric declared on `store_sales` as `SUM(ss_ext_sales_price)` may still be grouped by `item.i_brand` or `store.s_state`.
 
@@ -525,20 +527,31 @@ datasets:
             - dialect: ANSI_SQL
               expression: order_id
         description: Order identifier
-      - name: amount
+      - name: net_amount
         expression:
           dialects:
             - dialect: ANSI_SQL
-              expression: amount
-        description: Order amount
+              expression: amount - discount
+        description: Order amount after discount
 
     metrics:
-      - name: total_amount
+      # Qualified, so this references the declared field net_amount
+      - name: total_net_amount
         expression:
           dialects:
             - dialect: ANSI_SQL
-              expression: SUM(amount)
-        description: Total order amount
+              expression: SUM(orders.net_amount)
+        description: Total order amount after discount
+        datatype: Decimal
+
+      # Unqualified, so this references tax, a column of the source that is
+      # not declared as a field
+      - name: total_tax
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(tax)
+        description: Total tax collected
         datatype: Decimal
 
       - name: order_count
@@ -550,7 +563,7 @@ datasets:
         datatype: Integer
 ```
 
-Referenced from a consumer as `orders.total_amount` and `orders.order_count`.
+Referenced from a consumer as `orders.total_net_amount`, `orders.total_tax` and `orders.order_count`.
 
 **Example: invalid dataset-scoped metrics**
 
@@ -558,21 +571,28 @@ Referenced from a consumer as `orders.total_amount` and `orders.order_count`.
 datasets:
   - name: orders
     source: sales.public.orders
+    fields:
+      - name: net_amount
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: amount - discount
     metrics:
-      # INVALID (rule 1): references a column of the customers dataset, so this
-      # metric is model-scoped and belongs in semantic_model.metrics
+      # INVALID (rule 1): references the customers dataset, so this metric is
+      # model-scoped and belongs in semantic_model.metrics
       - name: revenue_per_customer
         expression:
           dialects:
             - dialect: ANSI_SQL
-              expression: SUM(amount) / COUNT(DISTINCT customers.id)
+              expression: SUM(net_amount) / COUNT(DISTINCT customers.id)
 
-      # INVALID (rule 1): qualifies a column with the declaring dataset's own name
-      - name: total_amount
+      # INVALID (rule 1): a qualified reference must name a declared field, and
+      # tax is only a column of the source. Write it unqualified as SUM(tax)
+      - name: total_tax
         expression:
           dialects:
             - dialect: ANSI_SQL
-              expression: SUM(orders.amount)
+              expression: SUM(orders.tax)
 ```
 
 **Consumer guidance: flattening to a single metric namespace**
