@@ -55,7 +55,7 @@ The Ossie core specification (current version: **0.2.0.dev0**, latest released: 
 | **Datasets** | Logical datasets representing business entities (fact and dimension tables), with fields, primary keys, and unique keys. |
 | **Fields** | Row-level attributes for grouping, filtering, and metric expressions. Fields support multiple SQL dialects for cross-platform compatibility. |
 | **Relationships** | Foreign key connections between datasets, supporting both simple and composite keys. |
-| **Metrics** | Quantitative measures (sums, averages, ratios, etc.) defined at the model level, capable of spanning multiple datasets. |
+| **Metrics** | Quantitative measures (sums, averages, ratios, etc.). A model-scoped metric's expression may combine fields from several datasets; a dataset-scoped metric aggregates data held by one dataset. Either is joined and grouped through the model's relationships. |
 | **Custom Extensions** | Vendor-specific metadata stored as JSON, allowing platforms to carry additional information without breaking core compatibility. |
 | **AI Context** | Optional annotations at every level (model, dataset, field, relationship, metric) to help AI tools understand business meaning — including instructions, synonyms, and example queries. |
 
@@ -248,7 +248,7 @@ YAML is more human-readable and easier to author by hand, which is important for
 Through `custom_extensions`. Each vendor can store arbitrary JSON metadata in extension blocks tagged with their vendor name. This metadata is preserved during round-trip conversions and ignored by tools that don't understand it — ensuring that no information is lost.
 
 **Can metrics reference multiple datasets?**
-Yes. Metrics are defined at the semantic model level (not within a dataset) and can reference fields from multiple datasets.
+Any metric can be *grouped and filtered* by fields from other datasets, using the relationships declared in the model. The placement affects only what the metric's own **expression** may reference. A model-scoped metric (`semantic_model.metrics`) may combine fields from several datasets in one expression, for example `SUM(orders.amount) / COUNT(DISTINCT customers.id)`. A dataset-scoped metric (`datasets[].metrics`) aggregates data held by a single dataset, and is still sliceable by any dataset the model connects. See [Metric Scoping](https://github.com/apache/ossie/blob/main/core-spec/spec.md#metric-scoping).
 
 **What SQL dialects are supported?**
 The current specification supports `ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`, `MDX`, and `TABLEAU`. New dialects can be proposed through the standard specification change process.
@@ -318,7 +318,7 @@ A practical guide for organizations looking to adopt Ossie.
 | **Dataset** | A logical representation of a business entity, typically corresponding to a fact table or dimension table in a data warehouse. |
 | **Field** | A row-level attribute within a dataset, used for grouping, filtering, or as part of metric expressions. Fields can be simple column references or computed expressions. A field's logical data type is declared by the optional top-level `datatype` field (one of `String`, `Integer`, `Decimal`, `Float`, `Boolean`, `Date`, `Time`, `DateTime`, `DateTimeTz`, or `Opaque`). |
 | **Dimension** | A categorical attribute used to slice and filter data (e.g., region, product category, date). In Ossie, dimensions are represented as fields with optional metadata such as `is_time`. |
-| **Metric** | A quantitative measure computed by aggregating data across one or more datasets (e.g., total revenue, average order value). Metrics are defined at the semantic model level. |
+| **Metric** | A quantitative measure computed by aggregating data across one or more datasets (e.g., total revenue, average order value). Metrics may be defined at the semantic model level, or on an individual dataset when the expression resolves entirely within it. |
 | **Relationship** | A foreign key connection between two datasets, defining how they can be joined. Relationships are always many-to-one (from the referencing dataset to the referenced dataset). |
 | **Dialect** | A specific SQL or expression language variant (e.g., `ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`). Ossie supports multiple dialects so expressions can be tailored to each platform. |
 | **Custom Extension** | Vendor-specific metadata attached to any Ossie construct as a JSON string. Extensions allow platforms to carry additional information without modifying the core specification. |

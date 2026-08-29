@@ -240,7 +240,7 @@
           "items": {
             "$ref": "#/$defs/Metric"
           },
-          "description": "Dataset-scoped metrics. Expressions must resolve entirely within this dataset and must not traverse relationships or reference fields of another dataset. Names must be unique within the dataset and must not collide with any model-scoped metric name. Referenced from outside the dataset as dataset_name.metric_name. Metrics that span datasets belong in semantic_model.metrics."
+          "description": "Metrics that aggregate data held by this dataset, at this dataset's grain. The expression must aggregate only fields of this dataset, must not reference a field of another dataset, and must reference fields by unqualified name (SUM(amount), not SUM(orders.amount)). This constrains the expression only, not the query: the metric is joined and grouped like any other, using the model's relationships. Names must be unique within the dataset and must not collide with a field name of this dataset. Referenced from outside the dataset as dataset_name.metric_name. See core-spec/spec.md#metric-scoping."
         },
         "custom_extensions": {
           "type": "array",
@@ -368,7 +368,7 @@
           "items": {
             "$ref": "#/$defs/Metric"
           },
-          "description": "Model-scoped metrics. May span multiple datasets and traverse relationships. Names must be unique across the semantic model and must not collide with any dataset-scoped metric name. Metrics that resolve entirely within a single dataset may instead be defined on that dataset (datasets[].metrics)."
+          "description": "Model-scoped metrics. Expressions reference fields by qualified name (dataset.field). Names must be unique across the semantic model; reusing the name of a dataset-scoped metric should produce a warning rather than an error. An unqualified metric reference resolves to a model-scoped metric. See core-spec/spec.md#metric-scoping."
         },
         "custom_extensions": {
           "type": "array",

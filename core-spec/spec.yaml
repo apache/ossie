@@ -92,9 +92,15 @@ datasets: []
 relationships: []
 
 # Optional: Model-scoped metrics
-# These metrics can span one or more logical datasets and use relationships
-# Metric names must be unique across the semantic model, and must not collide
-# with the name of any dataset-scoped metric
+# Expressions reference fields by qualified name (e.g., SUM(orders.amount)),
+# unlike dataset-scoped metrics, which use unqualified names
+# Names MUST be unique across the semantic model
+# A model-scoped metric SHOULD NOT reuse the name of a dataset-scoped metric;
+# validators warn rather than fail, and attribute the warning to the model
+# An unqualified metric reference resolves to a model-scoped metric
+#
+# Whether a metric expression may reference another metric is not yet defined
+# by this specification and is being handled as a separate proposal
 # See Metrics section below for detailed structure
 metrics: []
 
@@ -151,24 +157,24 @@ datasets:
     fields: []
 
     # Optional: Dataset-scoped metrics
-    # Metrics whose expressions resolve entirely within this dataset. Use these for
-    # simple aggregations over a single dataset's fields; use model-scoped metrics
-    # (semantic_model.metrics) for anything that spans datasets via relationships.
+    # Metrics that aggregate data held by this dataset. Same structure as
+    # model-scoped metrics; see the Metrics section below.
     #
-    # Scoping rules:
-    # - The expression MUST only reference fields of this dataset. It MUST NOT
-    #   traverse relationships or reference fields of another dataset.
-    # - This constrains the EXPRESSION only, not the query. A dataset-scoped
-    #   metric may still be grouped by or filtered on dimensions of other
-    #   datasets reached through relationships, since grouping dimensions are
-    #   supplied by the consumer at query time.
-    # - Names must be unique within this dataset, and must not collide with the
-    #   name of any model-scoped metric.
-    # - Referenced from outside the dataset as dataset_name.metric_name, mirroring
-    #   how fields of a dataset are referenced (e.g., orders.total_revenue).
+    # Rules (see core-spec/spec.md#metric-scoping):
+    # - The expression MUST aggregate only fields of this dataset, and MUST NOT
+    #   reference a field of another dataset.
+    # - The expression MUST reference fields by unqualified name:
+    #   SUM(amount), not SUM(orders.amount).
+    # - Aggregates at this dataset's grain, which does not depend on a declared
+    #   primary_key.
+    # - Names MUST be unique within this dataset and MUST NOT collide with a
+    #   field name of this dataset.
+    # - Referenced from outside the dataset as dataset_name.metric_name. An
+    #   unqualified metric name refers to a model-scoped metric.
     #
-    # Entries use the same structure as model-scoped metrics.
-    # See Metrics section below for detailed structure
+    # These rules constrain the EXPRESSION only, not the query. The metric is
+    # joined and grouped like any other, using the model's relationships, so it
+    # can be sliced by dimensions of any dataset the model connects.
     metrics: []
 
     # Optional: Vendor-specific attributes for extensibility

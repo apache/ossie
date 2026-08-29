@@ -111,7 +111,7 @@ The top-level container. Maps to the root object in each vendor's format.
 | `ai_context` | Instructions, synonyms for AI tools | Map if vendor supports AI/LLM annotations |
 | `datasets` | Logical datasets (fact/dimension tables) | See dataset mapping below |
 | `relationships` | Foreign key connections | See relationship mapping below |
-| `metrics` | Aggregate measures | See metric mapping below |
+| `metrics` | Model-scoped aggregate measures | See metric mapping below |
 | `custom_extensions` | Vendor-specific metadata | Extract extensions matching the target vendor |
 
 ### Datasets
@@ -125,6 +125,7 @@ Datasets represent logical tables (fact or dimension tables). They contain field
 | `primary_key` | Single or composite primary key | Map to vendor's PK syntax; note composite keys use arrays like `[order_id, line_number]` |
 | `unique_keys` | Alternative unique identifiers | Map if vendor supports unique constraints |
 | `fields` | Row-level attributes (columns) | See field mapping below |
+| `metrics` | Dataset-scoped aggregate measures whose expressions resolve entirely within this dataset | See metric mapping below. A converter that reads only `semantic_model.metrics` will silently drop these |
 | `ai_context` | Synonyms and context for AI | Map if vendor supports semantic annotations |
 | `custom_extensions` | Vendor-specific metadata | Extract extensions matching the target vendor |
 
@@ -183,7 +184,18 @@ means `from.product_id = to.id AND from.variant_id = to.variant_id`. The convert
 
 ### Metrics
 
-Metrics are aggregate measures defined at the semantic model level. They can span multiple datasets via relationships.
+Metrics are aggregate measures. They appear in two places, and **a converter must read both**:
+
+- `semantic_model.metrics` — model-scoped. May span multiple datasets via relationships. Expressions reference fields by qualified name (`SUM(orders.amount)`).
+- `datasets[].metrics` — dataset-scoped. The expression resolves entirely within the declaring dataset and references fields by unqualified name (`SUM(amount)`).
+
+Both placements use the identical metric structure, so the field mapping below applies to each.
+
+A converter that reads only `semantic_model.metrics` produces an incomplete model. That is a lossy conversion, not a valid one: it SHOULD warn, naming the metrics it dropped, and MUST NOT present the output as a faithful representation of the source.
+
+When the target format has only one metric namespace, hoist dataset-scoped metrics to the model level. This requires two changes: qualify the expression's field references with the dataset name, and qualify the metric's own name as `dataset_name.metric_name`, since two datasets may each declare a metric with the same local name. If the target namespace disallows dots, use an equivalent encoding.
+
+See [Metric Scoping](../core-spec/spec.md#metric-scoping) for the full rules.
 
 | Ossie Field | Description | Converter Consideration |
 |-----------|-------------|------------------------|
