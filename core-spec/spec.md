@@ -412,8 +412,8 @@ Quantitative measures defined on business data, representing key calculations li
 
 Metrics may be defined in two placements, using the same structure in both:
 
-- **Model-scoped** (`semantic_model.metrics`) — for expressions that must combine fields from more than one dataset.
-- **Dataset-scoped** (`datasets[].metrics`) — aggregates data held by one dataset. Still joined and grouped through the model's relationships like any other metric.
+- **Model-scoped** (`semantic_model.metrics`): for expressions that must combine fields from more than one dataset.
+- **Dataset-scoped** (`datasets[].metrics`): aggregates data held by one dataset. Still joined and grouped through the model's relationships like any other metric.
 
 See [Metric Scoping](#metric-scoping) for the rules governing each.
 
@@ -481,7 +481,7 @@ A metric may be defined at the semantic model level or on an individual dataset.
 | | Model-scoped (`semantic_model.metrics`) | Dataset-scoped (`datasets[].metrics`) |
 |---|---|---|
 | Expression may reference fields from | Any dataset in the model | Only its own dataset |
-| Expression namespace | Qualified — `dataset.field` | Unqualified — `field` |
+| Expression namespace | Qualified: `dataset.field` | Unqualified: `field` |
 | Name uniqueness | Unique across the semantic model | Unique within its dataset, and distinct from that dataset's field names |
 | Referenced as | `metric_name` | `dataset_name.metric_name` |
 
@@ -503,14 +503,14 @@ Names are addressed in three ways, so a name may repeat across them without ambi
 
 | Kind | Addressed as |
 |---|---|
-| Model-scoped metric | Bare — `revenue` |
-| Dataset-scoped metric | Qualified — `orders.revenue` |
-| Field | Qualified — `orders.revenue` |
+| Model-scoped metric | Bare: `revenue` |
+| Dataset-scoped metric | Qualified: `orders.revenue` |
+| Field | Qualified: `orders.revenue` |
 | Dataset | Only ever as a qualifier |
 
 A model-scoped metric MAY therefore share a name with a field, or with a dataset. Rule 3 is an error because a field and a metric of one dataset share the same qualified namespace; rule 4 is a warning because the two names remain separately addressable.
 
-**Example — dataset-scoped metrics**
+**Example: dataset-scoped metrics**
 
 ```yaml
 datasets:
@@ -551,7 +551,7 @@ datasets:
 
 Referenced from a consumer as `orders.total_amount` and `orders.order_count`.
 
-**Example — invalid dataset-scoped metrics**
+**Example: invalid dataset-scoped metrics**
 
 ```yaml
 datasets:
