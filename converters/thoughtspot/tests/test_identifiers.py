@@ -39,21 +39,24 @@ def test_normalise_rejects_a_name_that_normalises_to_nothing():
 
 
 @pytest.mark.parametrize("display,expected", [
-    # KNOWN LIMITATION, not a spec — see the module docstring's "Known
-    # limitation — ASCII only" note. These pin the *current* behaviour so a
-    # future change can't silently make it worse; they do not bless it as
-    # correct. A real fix needs a transliteration policy decision.
-    ("Café", "caf"),           # accented Latin dropped silently, no error
-    ("Ürün", "r_n"),           # mostly non-Latin: near-meaningless, collision-prone
+    # R14: diacritics are now folded via NFKD decomposition (not the earlier
+    # ASCII-only drop) — see the module docstring's "Known limitation" note.
+    # These pin the *current* behaviour so a future change can't silently
+    # regress it; they do not bless the remaining non-Latin-script limitation
+    # as correct.
+    ("Café", "cafe"),
+    ("Ürün", "urun"),
+    ("Zürich", "zurich"),
+    ("İstanbul", "istanbul"),
+    ("naïve", "naive"),
 ])
-def test_normalise_is_ascii_only_known_limitation(display, expected):
+def test_normalise_folds_diacritics_known_limitation(display, expected):
     assert identifiers.normalise(display) == expected
 
 
-def test_normalise_on_a_cjk_only_name_is_ascii_only_known_limitation():
-    # Same limitation as above, but here nothing ASCII-alphanumeric survives,
-    # so it fails loudly instead of silently — the inconsistency the finding
-    # flagged: accented Latin fails quietly, whole-non-Latin fails loudly.
+def test_normalise_on_a_cjk_only_name_is_non_latin_script_known_limitation():
+    # R14: NFKD decomposition has no ASCII form for non-Latin scripts, so a
+    # CJK-only name still raises — the narrower residual of the limitation.
     with pytest.raises(ValueError, match="normalises to an empty identifier"):
         identifiers.normalise("北京市")
 
@@ -98,5 +101,25 @@ def test_split_column_ref_rejects_a_reference_formatted_from_a_delimiter_contain
     # the table/column boundary.
     ref = identifiers.format_column_ref("A::B", "C")
     assert ref == "[A::B::C]"
+    with pytest.raises(ValueError, match="ambiguous"):
+        identifiers.split_column_ref(ref)
+
+
+def test_split_column_ref_rejects_a_table_with_a_trailing_colon():
+    # M3: str.count("::") is non-overlapping, so a run of three consecutive
+    # colons ("ORDERS" + trailing ":" + the "::" delimiter) only counts as
+    # one match and previously slipped through, silently mis-splitting to
+    # ("ORDERS", ":Col") instead of raising.
+    ref = identifiers.format_column_ref("ORDERS:", "Col")
+    assert ref == "[ORDERS:::Col]"
+    with pytest.raises(ValueError, match="ambiguous"):
+        identifiers.split_column_ref(ref)
+
+
+def test_split_column_ref_rejects_a_column_with_a_leading_colon():
+    # M3: the same three-colon-run string is equally producible from a column
+    # that itself starts with ':' — genuinely ambiguous either way.
+    ref = identifiers.format_column_ref("ORDERS", ":Col")
+    assert ref == "[ORDERS:::Col]"
     with pytest.raises(ValueError, match="ambiguous"):
         identifiers.split_column_ref(ref)

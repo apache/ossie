@@ -64,12 +64,17 @@ structured `ConverterIssue` at conversion time — nothing is dropped silently.
 Separate from the coverage matrix above — that covers TML constructs not carried
 (NM1-NM6); this covers identifier derivation correctness.
 
-`identifiers.py`'s `normalise()` is **ASCII-only**: after lowercasing, any character
-outside `[0-9a-z]` is *dropped*, not transliterated — the same treatment as a space or
-punctuation mark. For example: `"Café"` -> `"caf"`, `"Ürün"` -> `"r_n"`, and a
-CJK-only name raises `ValueError` once nothing ASCII-alphanumeric survives. Choosing a
-transliteration policy is an unresolved product decision; this is a stated boundary,
-not intended design.
+`identifiers.py`'s `normalise()` folds diacritics via Unicode NFKD decomposition before
+lowercasing and substituting — a stdlib operation, not a policy choice — so accented
+Latin now normalises correctly: `"Café"` -> `"cafe"`, `"Ürün"` -> `"urun"`, `"Zürich"` ->
+`"zurich"`. The residual limitation is narrower: a character with **no ASCII
+decomposition** (Cyrillic, CJK, and similarly non-Latin scripts) is still dropped, not
+transliterated, and a name with no ASCII alphanumerics surviving still raises
+`ValueError` (a CJK-only name, for example). There is also an open question NFKD does
+not settle: some accented Latin folds to a *conventional* ASCII expansion rather than
+the bare decomposed letter — German `"Müller"` decomposes to `"Muller"` here, not the
+conventional `"Mueller"` — and choosing between them is a product decision left to a
+later change.
 
 ## Rules
 
