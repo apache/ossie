@@ -15,11 +15,13 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""YAML 1.2 codec.
+"""YAML codec with the boolean resolver narrowed to YAML 1.2.
 
 PyYAML implements YAML 1.1, in which `on`, `off`, `yes`, `no`, `y` and `n`
 resolve to booleans. TML uses such tokens as ordinary strings, so a bare
 `yaml.safe_load` corrupts them silently (learnings report P7, fidelity F8).
+Only the boolean resolver is narrowed here — no other YAML 1.1/1.2 divergence
+(e.g. octal/sexagesimal number parsing) is addressed.
 
 Both directions matter. The loader stops 1.1 bool tokens becoming booleans; the
 dumper quotes them on the way out so the next reader — which may be a 1.1
@@ -28,6 +30,8 @@ implementation — cannot re-resolve them.
 import re
 
 import yaml
+
+from .errors import ConversionError
 
 #: YAML 1.2 core schema: only these spellings are booleans.
 _YAML12_BOOL = re.compile(r"^(?:true|True|TRUE|false|False|FALSE)$")
@@ -65,10 +69,29 @@ Yaml12Dumper.add_representer(str, _represent_str)
 
 
 def load(text: str) -> object:
-    """Parse YAML text under YAML 1.2 boolean rules."""
-    return yaml.load(text, Loader=Yaml12Loader)
+    """Parse YAML text under YAML 1.2 boolean rules.
+
+    A malformed document raises `ConversionError` naming the failure, never a
+    bare `yaml.YAMLError` traceback — the same never-a-bare-traceback contract
+    `stash.py` (rule X4) holds for malformed `custom_extensions` JSON.
+    """
+    try:
+        return yaml.load(text, Loader=Yaml12Loader)
+    except yaml.YAMLError as exc:
+        raise ConversionError(f"malformed YAML: {exc}") from exc
 
 
 def dump(data: object) -> str:
-    """Serialise to YAML, preserving insertion order and quoting 1.1 bool tokens."""
-    return yaml.dump(data, Dumper=Yaml12Dumper, sort_keys=False, default_flow_style=False)
+    """Serialise to YAML, preserving insertion order and quoting 1.1 bool tokens.
+
+    `allow_unicode=True` so a non-ASCII value (e.g. a display label) emits as
+    a literal character rather than a `\\xXX`/`\\uXXXX` escape — Ossie
+    documents are human-read YAML.
+    """
+    return yaml.dump(
+        data,
+        Dumper=Yaml12Dumper,
+        sort_keys=False,
+        default_flow_style=False,
+        allow_unicode=True,
+    )

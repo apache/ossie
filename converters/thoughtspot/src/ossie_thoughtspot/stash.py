@@ -26,7 +26,9 @@ from typing import Any
 from .constants import STASH_VERSION, VENDOR_KEY
 from .errors import ConversionError
 
-#: X8 — instance-local identity never travels in a portable document.
+#: X8 — instance-local identity never travels in a portable document. This
+#: check is top-level only: a forbidden key nested inside a value (e.g.
+#: `{"detail": {"guid": ...}}`) is not scanned and passes through unchecked.
 _FORBIDDEN_KEYS = frozenset({"guid", "obj_id", "fqn"})
 
 
