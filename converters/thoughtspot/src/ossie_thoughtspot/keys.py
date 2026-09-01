@@ -22,6 +22,12 @@ join graph. Upstream PR #330 checks that a relationship's to_columns covers a
 declared key, and converters/databricks turns a declared key into a
 `rely.at_most_one_match` join hint — so a fabricated key becomes another
 vendor's wrong numbers, not just a cosmetic error in ours.
+
+KD3 — orientation is re-checked downstream, so do not rely on ours surviving.
+`converters/databricks` (`ossie_to_metric_view.py:446-478`) silently swaps
+`from`/`to` and their column arrays when the *from* side covers a key and the
+*to* side does not, carrying any `custom_extensions` payload onto the reversed
+relationship.
 """
 from dataclasses import dataclass
 
@@ -42,8 +48,13 @@ class Relationship:
 
 
 def _qualifies(rel: Relationship) -> bool:
-    """KD1 — key evidence requires a to-one join whose condition is wholly equality."""
-    return rel.cardinality in _TO_ONE and not rel.has_residual_predicates
+    """KD1 — key evidence requires a to-one join whose condition is wholly
+    equality, and columns actually present to name as the key."""
+    return (
+        rel.cardinality in _TO_ONE
+        and not rel.has_residual_predicates
+        and bool(rel.to_columns)
+    )
 
 
 def derive_keys(
@@ -61,34 +72,45 @@ def derive_keys(
     seen: list[list[str]] = []
     for rel in qualifying:
         cols = list(rel.to_columns)
-        if cols and cols not in seen:
+        if cols not in seen:
             seen.append(cols)
 
     # KD2 — a disqualified sibling will trip upstream's key-coverage warning.
-    # That warning is correct. Explain it rather than widening the key to silence it.
-    if seen:
-        for rel in inbound:
-            if _qualifies(rel):
-                continue
-            reason = (
-                "its condition carries residual (non-equality) predicates"
-                if rel.has_residual_predicates
-                else f"its cardinality is {rel.cardinality}"
-            )
-            log.add(
-                code="TS_KEY_COVERAGE",
-                severity=Severity.WARNING,
-                message=(
-                    f"Relationship {rel.name!r} targets {dataset_name!r} on columns that are "
-                    f"not a declared key, because {reason}. Ossie validation will report a "
-                    f"to_columns coverage warning for it."
-                ),
-                object_ref=f"relationship:{rel.name}",
-                remedy=(
-                    "Expected. The relationship is genuinely not a key join; declaring a key "
-                    "to silence the warning would assert uniqueness that does not hold."
-                ),
-            )
+    # That warning is correct. Explain it rather than widening the key to
+    # silence it. A cardinality/residual-predicate disqualification only
+    # trips that warning when a key exists for it to fail to cover, so it is
+    # reported only once one has been derived (`seen`). An empty to_columns
+    # is reported unconditionally — it is invisible to both key derivation
+    # and that warning otherwise, which is exactly the silent-drop #325
+    # exists to forbid.
+    for rel in inbound:
+        if _qualifies(rel):
+            continue
+
+        if not rel.to_columns:
+            reason = "its to_columns is empty"
+        elif rel.has_residual_predicates:
+            reason = "its condition carries residual (non-equality) predicates"
+        else:
+            reason = f"its cardinality is {rel.cardinality}"
+
+        if not seen and rel.to_columns:
+            continue
+
+        log.add(
+            code="TS_KEY_COVERAGE",
+            severity=Severity.WARNING,
+            message=(
+                f"Relationship {rel.name!r} targets {dataset_name!r} on columns that are "
+                f"not a declared key, because {reason}. Ossie validation will report a "
+                f"to_columns coverage warning for it."
+            ),
+            object_ref=f"relationship:{rel.name}",
+            remedy=(
+                "Expected. The relationship is genuinely not a key join; declaring a key "
+                "to silence the warning would assert uniqueness that does not hold."
+            ),
+        )
 
     primary_key = seen[0] if len(seen) == 1 else None
     return primary_key, seen
