@@ -19,6 +19,7 @@ import pytest
 import yaml
 
 from ossie_thoughtspot import _yaml
+from ossie_thoughtspot.errors import ConversionError
 
 YAML11_BOOL_TOKENS = ["y", "Y", "n", "N", "yes", "Yes", "YES", "no", "No", "NO",
                       "on", "On", "ON", "off", "Off", "OFF"]
@@ -71,3 +72,22 @@ def test_dumper_quotes_what_plain_pyyaml_leaves_bare(token):
     bare. Another 1.1 reader would resolve them as booleans, which is why we quote."""
     assert f"'{token}'" in _yaml.dump({"value": token})
     assert f"'{token}'" not in yaml.dump({"value": token}, Dumper=yaml.SafeDumper, sort_keys=False)
+
+
+def test_load_wraps_a_parser_error_in_conversion_error():
+    # I4: never let a bare yaml.YAMLError escape — same never-a-bare-traceback
+    # contract stash.py (X4) holds for malformed custom_extensions JSON.
+    with pytest.raises(ConversionError, match="malformed YAML"):
+        _yaml.load("a: [1, 2\nb: 3")
+
+
+def test_load_does_not_wrap_a_clean_document():
+    assert _yaml.load("a: 1") == {"a": 1}
+
+
+def test_dump_allow_unicode_round_trips_and_does_not_escape():
+    # I5: without allow_unicode=True, PyYAML escapes non-ASCII as \xE9 etc.
+    text = _yaml.dump({"label": "Café"})
+    assert "Café" in text
+    assert "\\x" not in text and "\\u" not in text
+    assert _yaml.load(text) == {"label": "Café"}
