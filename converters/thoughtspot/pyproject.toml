@@ -16,21 +16,43 @@
 # under the License.
 
 [build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
 
 [project]
 name = "apache-ossie-thoughtspot"
 version = "0.1.0"
 description = "Convert between ThoughtSpot TML and the Apache Ossie semantic model"
+authors = [{ name = "Apache Software Foundation", email = "dev@ossie.apache.org" }]
 requires-python = ">=3.10"
-dependencies = ["PyYAML>=6.0"]
-
-[project.optional-dependencies]
-dev = ["pytest>=7.0", "hypothesis>=6.0"]
+readme = "README.md"
+license = "Apache-2.0"
+keywords = [
+    "Apache Ossie",
+    "Ossie",
+    "ThoughtSpot"
+]
+dependencies = [
+    "PyYAML>=6.0",
+]
 
 [project.urls]
 homepage = "https://ossie.apache.org/"
+repository = "https://github.com/apache/ossie/"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/ossie_thoughtspot"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.uv]
+required-version = ">=0.9.0"
+default-groups = [
+    "dev"
+]
