@@ -16,10 +16,12 @@
 # under the License.
 
 import pytest
+import yaml
 
 from ossie_thoughtspot import _yaml
 
-YAML11_BOOL_TOKENS = ["on", "On", "ON", "off", "Off", "yes", "Yes", "no", "No", "y", "n"]
+YAML11_BOOL_TOKENS = ["y", "Y", "n", "N", "yes", "Yes", "YES", "no", "No", "NO",
+                      "on", "On", "ON", "off", "Off", "OFF"]
 
 
 @pytest.mark.parametrize("token", YAML11_BOOL_TOKENS)
@@ -47,3 +49,25 @@ def test_ordinary_strings_are_not_gratuitously_quoted():
 def test_round_trip_preserves_key_order():
     src = {"z": 1, "a": 2, "m": 3}
     assert list(_yaml.load(_yaml.dump(src))) == ["z", "a", "m"]
+
+
+PLAIN_PYYAML_MISREADS = ["yes", "Yes", "YES", "no", "No", "NO",
+                         "on", "On", "ON", "off", "Off", "OFF"]
+
+
+@pytest.mark.parametrize("token", PLAIN_PYYAML_MISREADS)
+def test_loader_fixes_what_plain_pyyaml_gets_wrong(token):
+    """The loader is load-bearing exactly here: plain PyYAML returns a bool."""
+    assert isinstance(yaml.safe_load(f"value: {token}")["value"], bool)
+    assert _yaml.load(f"value: {token}") == {"value": token}
+
+
+PLAIN_PYYAML_LEAVES_BARE = ["y", "Y", "n", "N"]
+
+
+@pytest.mark.parametrize("token", PLAIN_PYYAML_LEAVES_BARE)
+def test_dumper_quotes_what_plain_pyyaml_leaves_bare(token):
+    """YAML 1.1 booleans PyYAML's own resolver omits, so plain SafeDumper emits them
+    bare. Another 1.1 reader would resolve them as booleans, which is why we quote."""
+    assert f"'{token}'" in _yaml.dump({"value": token})
+    assert f"'{token}'" not in yaml.dump({"value": token}, Dumper=yaml.SafeDumper, sort_keys=False)
