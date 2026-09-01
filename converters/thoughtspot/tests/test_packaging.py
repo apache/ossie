@@ -40,3 +40,23 @@ def test_every_source_file_carries_the_asf_header():
         if LICENSE_MARKER not in p.read_text(encoding="utf-8")
     ]
     assert missing == [], f"ASF header missing from: {missing}"
+
+
+def test_non_python_packaging_files_carry_the_asf_header():
+    # M4: the glob above only covers src/**/*.py and tests/**/*.py, so
+    # pyproject.toml, .gitignore, README.md, and the CI workflow were
+    # ungated. Each uses a different comment syntax ('#', HTML comment,
+    # YAML '#'), so this checks for the licence text itself, not an exact
+    # comment-prefixed line.
+    repo_root = ROOT.parent.parent
+    files = {
+        "pyproject.toml": ROOT / "pyproject.toml",
+        ".gitignore": ROOT / ".gitignore",
+        "README.md": ROOT / "README.md",
+        "CI workflow": repo_root / ".github" / "workflows" / "converter-thoughtspot-ci.yml",
+    }
+    missing = [
+        label for label, path in files.items()
+        if not path.is_file() or LICENSE_MARKER not in path.read_text(encoding="utf-8")
+    ]
+    assert missing == [], f"ASF header missing from: {missing}"
