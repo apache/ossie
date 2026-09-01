@@ -20,6 +20,18 @@
 ThoughtSpot has one `name` per column, serving as display name, search token and
 cross-document key at once (gap G2). Ossie splits identifier from label, so the
 identifier has to be derived — and derivation collides.
+
+**Known limitation — ASCII only.** `normalise` folds on `[0-9a-z]` after
+lowercasing; any character outside that range (accented Latin, Cyrillic, CJK,
+or a combining mark produced by locale-sensitive lowercasing) is *dropped*,
+not transliterated — the same treatment as a space or punctuation mark. This
+is silent and plausible-looking for accented Latin (`"Café"` -> `"caf"`), can
+produce a near-meaningless, collision-prone identifier for names that are
+mostly non-Latin (`"Ürün"` -> `"r_n"`), and only fails loudly when *nothing*
+ASCII-alphanumeric survives (a CJK-only name raises `ValueError`). This is a
+stated boundary, not a design choice: choosing a transliteration policy is a
+product decision left to a later change, and a later reader should not take
+the current behaviour as intended design.
 """
 import re
 
@@ -28,7 +40,12 @@ _COLUMN_REF = re.compile(r"^\[(?P<table>[^\]:]+)::(?P<column>[^\]]+)\]$")
 
 
 def normalise(display_name: str) -> str:
-    """Fold a ThoughtSpot display name to an Ossie identifier (rule ID1)."""
+    """Fold a ThoughtSpot display name to an Ossie identifier (rule ID1).
+
+    ASCII-only — see the module docstring's "Known limitation" note. A
+    character outside `[0-9a-z]` after lowercasing is dropped, not
+    transliterated; a name with no ASCII alphanumerics raises.
+    """
     folded = _NON_ALNUM.sub("_", display_name.strip().lower()).strip("_")
     if not folded:
         raise ValueError(f"{display_name!r} normalises to an empty identifier")
@@ -61,10 +78,25 @@ class Allocator:
 
 
 def split_column_ref(ref: str) -> tuple[str, str]:
-    """`[TABLE::Column]` -> `("TABLE", "Column")` (rule ID3)."""
-    match = _COLUMN_REF.match(ref.strip())
+    """`[TABLE::Column]` -> `("TABLE", "Column")` (rule ID3).
+
+    Raises if `ref` doesn't match the `[TABLE::Column]` shape at all, and also
+    if it is *ambiguous* — contains more than one `::` — rather than silently
+    taking the first delimiter and mis-splitting a table or column name that
+    itself contains `::` (e.g. one produced by `format_column_ref("A::B", "C")`).
+    Whether the right fix is an escaping scheme or a different delimiter is a
+    real design question against live ThoughtSpot display names, left to a
+    later change; loud failure is the correct interim behaviour.
+    """
+    stripped = ref.strip()
+    match = _COLUMN_REF.match(stripped)
     if match is None:
         raise ValueError(f"{ref!r} is not a ThoughtSpot column reference")
+    if stripped.count("::") > 1:
+        raise ValueError(
+            f"{ref!r} is an ambiguous ThoughtSpot column reference: "
+            "contains more than one '::' delimiter"
+        )
     return match.group("table"), match.group("column")
 
 

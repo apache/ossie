@@ -38,6 +38,26 @@ def test_normalise_rejects_a_name_that_normalises_to_nothing():
         identifiers.normalise("!!!")
 
 
+@pytest.mark.parametrize("display,expected", [
+    # KNOWN LIMITATION, not a spec — see the module docstring's "Known
+    # limitation — ASCII only" note. These pin the *current* behaviour so a
+    # future change can't silently make it worse; they do not bless it as
+    # correct. A real fix needs a transliteration policy decision.
+    ("Café", "caf"),           # accented Latin dropped silently, no error
+    ("Ürün", "r_n"),           # mostly non-Latin: near-meaningless, collision-prone
+])
+def test_normalise_is_ascii_only_known_limitation(display, expected):
+    assert identifiers.normalise(display) == expected
+
+
+def test_normalise_on_a_cjk_only_name_is_ascii_only_known_limitation():
+    # Same limitation as above, but here nothing ASCII-alphanumeric survives,
+    # so it fails loudly instead of silently — the inconsistency the finding
+    # flagged: accented Latin fails quietly, whole-non-Latin fails loudly.
+    with pytest.raises(ValueError, match="normalises to an empty identifier"):
+        identifiers.normalise("北京市")
+
+
 def test_allocator_resolves_a_collision_with_a_numeric_suffix():
     # ID2: two distinct display names folding onto one identifier.
     alloc = identifiers.Allocator()
@@ -63,3 +83,20 @@ def test_split_and_format_column_refs_round_trip():
 def test_split_column_ref_rejects_a_malformed_reference():
     with pytest.raises(ValueError, match="not a ThoughtSpot column reference"):
         identifiers.split_column_ref("ORDERS::Order Date")
+
+
+def test_split_column_ref_rejects_an_ambiguous_reference():
+    # ID3: more than one '::' must raise rather than silently taking the
+    # first delimiter and mis-splitting table/column.
+    with pytest.raises(ValueError, match="ambiguous"):
+        identifiers.split_column_ref("[A::B::C]")
+
+
+def test_split_column_ref_rejects_a_reference_formatted_from_a_delimiter_containing_name():
+    # Reproduces the finding: a table name that itself contains '::' formats
+    # into a reference that must fail loudly on split, not silently mis-split
+    # the table/column boundary.
+    ref = identifiers.format_column_ref("A::B", "C")
+    assert ref == "[A::B::C]"
+    with pytest.raises(ValueError, match="ambiguous"):
+        identifiers.split_column_ref(ref)
