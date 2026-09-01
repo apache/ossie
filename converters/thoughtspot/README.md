@@ -19,13 +19,13 @@
 
 # Apache Ossie ThoughtSpot Converter
 
-Converts between **ThoughtSpot TML** and the Apache Ossie semantic model, in both
-directions:
+Will convert between **ThoughtSpot TML** and the Apache Ossie semantic model, in both
+directions — neither direction is implemented yet; see Status below:
 
-- **ThoughtSpot TML → Ossie** — reads a Model TML document plus the Table and SQL View
-  documents it references, and emits one Ossie semantic model.
-- **Ossie → ThoughtSpot TML** — reads one Ossie semantic model and emits the corresponding
-  set of TML documents.
+- **ThoughtSpot TML → Ossie** — will read a Model TML document plus the Table and SQL
+  View documents it references, and emit one Ossie semantic model.
+- **Ossie → ThoughtSpot TML** — will read one Ossie semantic model and emit the
+  corresponding set of TML documents.
 
 A single Ossie semantic model corresponds to **1 + N TML documents**, not one file: one
 `model:` document plus one `table:` or `sql_view:` document per dataset. The converter reads
@@ -47,13 +47,14 @@ fails schema validation.
 
 ## Coverage matrix
 
-Every construct this converter does not carry, with its consequence. Each row raises a
-structured `ConverterIssue` at conversion time — nothing is dropped silently.
+Every construct this converter does not carry, with its consequence. Each row is
+required to raise a structured `ConverterIssue` at conversion time once the conversion
+directions land — nothing may be dropped silently.
 
 | # | Construct | Limitation | Consequence |
 |---|---|---|---|
 | L1 | Object identity (`guid`, `obj_id`, `fqn`) | Not carried — instance-local by construction | A round-tripped document imports as a new object |
-| L2 | Row-level security (`rls_rules`) | Not carried — rule expressions name instance-local groups. **ERROR severity**: a single issue is raised, its message naming every affected table | Table RLS is ThoughtSpot's primary security mechanism, and the mechanism customers are actively migrating onto; rules must be re-applied in the target for each table named in the error |
+| L2 | Row-level security (`rls_rules`) | Not carried — rule expressions name instance-local groups. **ERROR severity**: a single issue is raised, its message naming every affected table | RLS is unrepresentable in Ossie core and is security-bearing; rules must be re-applied in the target for each table named in the error |
 | L3 | Presentation artifacts (Answers, Liveboards, charts) | Out of scope — Ossie models semantics, not visualisations | No loss to the semantic model |
 | L4 | Spotter coaching objects | Separate object types; `ai_context.examples` is not interchangeable | Coaching must be re-created in the target |
 | L5 | Aggregate-model associations (`aggregated_models`) | Entries are GUIDs of other Models — instance-local | Query routing is silently disabled; the issue is the only signal |
@@ -78,9 +79,18 @@ later change.
 
 ## Rules
 
-The full construct and expression mappings live in the ThoughtSpot skills repository and are
-the normative source for this converter's behaviour. Rule identifiers referenced in the code
-(`ID1`-`ID4`, `X1`-`X9`, `KD1`-`KD3`, `R1`-`R11`, `E1`-`E13`, `NM1`-`NM6`) are defined there.
+Rule identifiers referenced in the source (`ID1`-`ID4`, `X1`-`X9`, `KD1`-`KD3`, `R1`-`R11`,
+`E1`-`E13`, `NM1`-`NM6`, and others) refer to an external specification: the construct and
+expression mapping tables maintained in ThoughtSpot's own internal `thoughtspot-agent-skills`
+repository, which today is the normative source for this converter's behaviour. That
+repository is not ASF-hosted and is not publicly readable, so a rule identifier in this
+source tree is currently **unresolvable from inside this repository** — a real gap against
+the project's vendor-neutrality goal, and no other converter in this monorepo defers its
+normative behaviour to an external, vendor-controlled document. The intent is to contribute
+those mapping tables into this repository, under `docs/` or alongside this converter, so the
+normative source becomes ASF-hosted like every sibling converter's. That is a larger change
+needing its own review and is not done in this change; this section exists so the gap is
+acknowledged rather than silent.
 
 **Before declaring any expression untranslatable, consult the function mapping.** Many window
 and LOD constructs have exact native equivalents; declaring one untranslatable without
