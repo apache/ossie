@@ -53,11 +53,23 @@ structured `ConverterIssue` at conversion time — nothing is dropped silently.
 | # | Construct | Limitation | Consequence |
 |---|---|---|---|
 | L1 | Object identity (`guid`, `obj_id`, `fqn`) | Not carried — instance-local by construction | A round-tripped document imports as a new object |
-| L2 | Row-level security (`rls_rules`) | Not carried — rule expressions name instance-local groups. **ERROR severity**, raised for every affected table | Table RLS is ThoughtSpot's primary security mechanism, and the mechanism customers are actively migrating onto; rules must be re-applied in the target for each table named in the error |
+| L2 | Row-level security (`rls_rules`) | Not carried — rule expressions name instance-local groups. **ERROR severity**: a single issue is raised, its message naming every affected table | Table RLS is ThoughtSpot's primary security mechanism, and the mechanism customers are actively migrating onto; rules must be re-applied in the target for each table named in the error |
 | L3 | Presentation artifacts (Answers, Liveboards, charts) | Out of scope — Ossie models semantics, not visualisations | No loss to the semantic model |
 | L4 | Spotter coaching objects | Separate object types; `ai_context.examples` is not interchangeable | Coaching must be re-created in the target |
 | L5 | Aggregate-model associations (`aggregated_models`) | Entries are GUIDs of other Models — instance-local | Query routing is silently disabled; the issue is the only signal |
 | L6 | Worksheets, Views, Sets, Alerts, Model Aliases | Predecessors or layers, not models | Convert the Model the alias points at instead |
+
+## Known limitations
+
+Separate from the coverage matrix above — that covers TML constructs not carried
+(NM1-NM6); this covers identifier derivation correctness.
+
+`identifiers.py`'s `normalise()` is **ASCII-only**: after lowercasing, any character
+outside `[0-9a-z]` is *dropped*, not transliterated — the same treatment as a space or
+punctuation mark. For example: `"Café"` -> `"caf"`, `"Ürün"` -> `"r_n"`, and a
+CJK-only name raises `ValueError` once nothing ASCII-alphanumeric survives. Choosing a
+transliteration policy is an unresolved product decision; this is a stated boundary,
+not intended design.
 
 ## Rules
 
