@@ -79,3 +79,29 @@ def test_column_order_within_a_composite_key_is_preserved():
     log = IssueLog()
     pk, _ = derive_keys("customers", [rel("r", ["region", "customer_id"])], log)
     assert pk == ["region", "customer_id"]
+
+
+def test_empty_to_columns_yields_no_key_but_raises_an_issue():
+    # A to-one, non-residual relationship with no columns at all would
+    # otherwise vanish: no key evidence, and (before this fix) no issue
+    # either, since nothing else qualifies to gate the KD2 loop open.
+    log = IssueLog()
+    pk, uniques = derive_keys("customers", [rel("blank", [])], log)
+    assert pk is None
+    assert uniques == []
+    issues = log.as_dicts()
+    assert len(issues) == 1
+    assert "blank" in issues[0]["message"]
+    assert issues[0]["severity"] == Severity.WARNING.value
+
+
+def test_agreeing_qualifying_relationships_collapse_to_one_unique_key():
+    # A dimension joined from several fact tables on the same foreign key is
+    # a common shape — it must not be mistaken for disagreement.
+    log = IssueLog()
+    pk, uniques = derive_keys(
+        "customers", [rel("from_orders", ["customer_id"]), rel("from_invoices", ["customer_id"])], log
+    )
+    assert pk == ["customer_id"]
+    assert uniques == [["customer_id"]]
+    assert log.as_dicts() == []
