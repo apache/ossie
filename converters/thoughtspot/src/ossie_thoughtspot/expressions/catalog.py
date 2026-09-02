@@ -1244,6 +1244,353 @@ CATALOG.update(
     }
 )
 
+# --------------------------------------------------------------------------
+# Window functions (Task 8) — 14 rows: 5 direct / 9 passthrough / 0 unmappable.
+# Source: docs/ossie/ts-ossie-function-mapping.md, "Window functions" section, plus
+# "Window rows live-confirmed — 2026-07-30" (thoughtspot-agent-skills repo — not
+# vendored here; prose above/below the table read in full, per rule E1-E4).
+#
+# This is the hardest family, and the last one — it completes the 146-row catalog.
+# Three rules govern it:
+#
+# - E5 — a raw aggregate cannot be nested inside a ThoughtSpot window function. The
+#   argument must be a column reference or a group_aggregate ( ... ). Live-confirmed
+#   both directions: the raw-aggregate form is rejected, the group_aggregate form
+#   validates, for moving_* and cumulative_* alike.
+# - E6 — ThoughtSpot's ORDER BY column must be a physical column reference, not a
+#   formula. A formula column in the sort position fails to resolve.
+# - E13 — a ThoughtSpot window formula cannot declare its own PARTITION BY; the
+#   window shape is completed from the search context. There is no argument slot
+#   for a partition and none can be added — live-confirmed by rejection on
+#   se-thoughtspot, 2026-07-30 (a fifth { [attr] } or query_groups ( ) argument to
+#   moving_sum, and a third to cumulative_sum, are both rejected at the parser).
+#   rank / rank_percentile are the stricter case: arity fixed at exactly two,
+#   enforced ("Function rank expects only 2 arguments"), so they are always global.
+#   This is why LAG, LEAD, the OVER clause and window aggregation moved
+#   direct -> passthrough in the 2026-07-30 rework (52 live probes, 31 accepted /
+#   21 rejected on se-thoughtspot) — a native idiom (moving_sum as the LAG/LEAD
+#   idiom) exists but is NOT equivalent to any OVER shape, because it has no
+#   partition slot and ThoughtSpot's partition is never empty.
+#
+# FIRST_VALUE/LAST_VALUE are the section's one exception: they take a genuine,
+# explicit partition argument and a genuine, explicit order axis — both
+# live-confirmed accepted, including a multi-column fixed partition — so the
+# formula does define its own window, and they stay direct. RANK/PERCENT_RANK and
+# the frame-clause boundaries also stay direct, with their native reach now proven
+# by rejection rather than asserted.
+#
+# PERCENT_RANK is direct via rank_percentile (both the 0-100 scale and the
+# inversion are required); CUME_DIST is NOT a rank_percentile substitute —
+# PERCENT_RANK divides by n-1 and starts at 0, CUME_DIST divides by n and ends at
+# 1 — so CUME_DIST stays passthrough with no native fallback at all.
+#
+# RANK, PERCENT_RANK, FIRST_VALUE and LAST_VALUE record the document's own worked
+# example verbatim — symbolic bracket names ([m], [dim], [ord], [attr], [T::date]),
+# not numbered {0}/{1} substitution slots — because resolving which actual column
+# fills each slot needs model metadata not known at catalog-construction time; same
+# out-of-scope-dispatch treatment as CASE WHEN's c1/r1 names and CAST's per-type
+# table. FIRST_VALUE/LAST_VALUE's worked example carries ThoughtSpot's literal
+# `{ [T::date] }` list syntax for the axis argument; since these are DIRECT rows
+# rendered via emit_direct's str.format, the literal braces are doubled ({{ }})
+# per Task 7's IN/NOT IN fix — verified here by actually calling emit_direct and
+# checking the rendered output has single braces again (see
+# test_catalog_window.py).
+#
+# Three of the 14 rows have no discrete row of their own in the upstream spec —
+# the OVER clause, the frame clause and window aggregation are keyed via the
+# pre-existing CONVENTION_DIVERGENCES entries (copied verbatim, not retyped, to
+# avoid an em-dash/ellipsis mismatch) rather than spec_construct_names(). The
+# other 11 key on spec_construct_names()'s own extraction from the "Ranking
+# Functions" and "Offset Functions" tables' Syntax column — confirmed live before
+# writing this block.
+# --------------------------------------------------------------------------
+CATALOG.update(
+    {
+        "ROW_NUMBER() OVER (...)": Construct(
+            "ROW_NUMBER() OVER (...)", Classification.PASSTHROUGH,
+            template="ROW_NUMBER() OVER (PARTITION BY {0} ORDER BY {1})",
+            variant=Variant.INT_AGGREGATE,
+            note=(
+                "ThoughtSpot's rank is competition rank, not a row number, so it "
+                "is not a substitute. Wrap in group_aggregate per E8 so the "
+                "partition column reaches the GROUP BY even when the user's "
+                "search omits it."
+            ),
+        ),
+        "RANK() OVER (...)": Construct(
+            "RANK() OVER (...)", Classification.DIRECT,
+            template="rank ( sum ( [m] ) , 'desc' )",
+            note=(
+                "direct for one shape only, and the boundary is proven rather "
+                "than asserted: the global, ORDER BY-only form over an "
+                "aggregate. Live-confirmed 2026-07-30: rank ( sum ( [m] ) , "
+                "'desc' ) and 'asc' both validate, and the arity is enforced at "
+                "exactly two — a third argument in any shape (bare attribute, "
+                "{ [attr] }, or query_groups ( )) is rejected with 'Function "
+                "rank expects only 2 arguments', so an explicit PARTITION BY is "
+                "provably not expressible (E13). Two further live-proven "
+                "restrictions: the first argument must be aggregated (rank "
+                "( [m] , 'desc' ) -> 'Function rank expects 1st argument to be "
+                "aggregated'), so an Ossie ORDER BY <non-aggregated column> has "
+                "no native target either; and it may not be a "
+                "group_aggregate ( ... ), so the partition cannot be smuggled "
+                "in through the measure. Every non-covered shape falls back to "
+                "sql_int_aggregate_op ( \"RANK() OVER (PARTITION BY {0} ORDER "
+                "BY SUM({1}) DESC)\" , ... ) (E3), wrapped per E8. Query-context "
+                "caveat: rank carries no dynamic partition (E13) but it is "
+                "evaluated over the query's result rows, so the covered shape "
+                "is faithful to RANK() OVER (ORDER BY ...) only when the search "
+                "returns the grain the expression assumed — a query-time "
+                "semantic no import probe can observe, taken from ThoughtSpot's "
+                "formula documentation rather than this run. The direction "
+                "string is not validated at import ('descending' was "
+                "accepted), so acceptance proves the call shape, never the "
+                "ordering."
+            ),
+        ),
+        "DENSE_RANK() OVER (...)": Construct(
+            "DENSE_RANK() OVER (...)", Classification.PASSTHROUGH,
+            template="dense_rank() over (order by sum({0}) desc)",
+            variant=Variant.INT_AGGREGATE,
+            note=(
+                "ThoughtSpot's rank skips ranks after a tie; dense ranking has "
+                "no native form — live-confirmed 2026-07-30, dense_rank ( ... ) "
+                "rejected with 'Search did not find \"dense_rank ( sum (\"'. "
+                "This settles the doubt raised by the internal Tableau mapping, "
+                "which uses a SQL pass-through for DENSE_RANK: the two "
+                "references agree, and for the right reason."
+            ),
+        ),
+        "NTILE(n) OVER (...)": Construct(
+            "NTILE(n) OVER (...)", Classification.PASSTHROUGH,
+            template="NTILE(4) OVER (ORDER BY SUM({0}))",
+            variant=Variant.INT_AGGREGATE,
+            note="n is a literal, baked into the template, as the aggregate percentiles are.",
+        ),
+        "PERCENT_RANK() OVER (...)": Construct(
+            "PERCENT_RANK() OVER (...)", Classification.DIRECT,
+            template="1 - rank_percentile ( sum ( [m] ) , 'asc' ) / 100",
+            note=(
+                "ThoughtSpot's rank_percentile is documented as "
+                "(1.0 - PERCENT_RANK() OVER (ORDER BY ...)) * 100, so the "
+                "inverse is exact. Two adjustments are both required: the "
+                "scale (ThoughtSpot 0-100, specification 0-1) and the "
+                "inversion. Dropping either produces a plausible-looking "
+                "column that is wrong everywhere. Same shape restriction as "
+                "RANK, and the same live-proven boundary — rank_percentile is "
+                "also fixed at exactly two arguments ('Function rank_percentile "
+                "expects only 2 arguments', se-thoughtspot 2026-07-30), so it "
+                "too is global-only and an explicit PARTITION BY falls back to "
+                "sql_number_aggregate_op ( \"PERCENT_RANK() OVER (PARTITION BY "
+                "{0} ORDER BY SUM({1}))\" , ... ) (E3, E13). Same evidence-class "
+                "caveat as RANK: the arity is probe-proven, the global-window "
+                "semantic is documentation-derived. CUME_DIST is deliberately "
+                "NOT given this same composition — see that row."
+            ),
+        ),
+        "CUME_DIST() OVER (...)": Construct(
+            "CUME_DIST() OVER (...)", Classification.PASSTHROUGH,
+            template="CUME_DIST() OVER (ORDER BY SUM({0}))",
+            variant=Variant.NUMBER_AGGREGATE,
+            note=(
+                "rank_percentile is NOT a substitute, despite PERCENT_RANK's "
+                "row looking equivalent: PERCENT_RANK divides by n - 1 and "
+                "starts at 0; CUME_DIST divides by n and ends at 1. They agree "
+                "on no row of a tie-free window except the last, so there is no "
+                "native fallback at all for this row."
+            ),
+        ),
+        "LAG(expr, offset, default) OVER (...)": Construct(
+            "LAG(expr, offset, default) OVER (...)", Classification.PASSTHROUGH,
+            template="LAG({0}, 1) OVER (PARTITION BY {1} ORDER BY {2})",
+            variant=Variant.NUMBER_AGGREGATE,
+            note=(
+                "Reclassified direct -> passthrough 2026-07-30 (E13). The "
+                "native idiom moving_sum ( [m] , n , -n , [ord] ) is real and "
+                "validates (a frame of n PRECEDING to n PRECEDING) but is not "
+                "equivalent to any OVER shape: moving_sum has no partition "
+                "slot, and ThoughtSpot completes the partition from the "
+                "query's own dimensions instead. So an Ossie LAG with a "
+                "PARTITION BY cannot be expressed, and one without a "
+                "PARTITION BY still cannot, because ThoughtSpot's partition is "
+                "not empty. The converter emits the pass-through by default "
+                "and offers the native moving_sum idiom as a documented "
+                "downgrade the user must accept: correct exactly when the "
+                "search's dimensions are the intended partition. The default "
+                "argument has no equivalent in the native idiom — ThoughtSpot "
+                "yields null outside the frame — a second reason the native "
+                "form is a downgrade (the pass-through carries default fine). "
+                "Subject to E5 and E6."
+            ),
+        ),
+        "LEAD(expr, offset, default) OVER (...)": Construct(
+            "LEAD(expr, offset, default) OVER (...)", Classification.PASSTHROUGH,
+            template="LEAD({0}, 1) OVER (PARTITION BY {1} ORDER BY {2})",
+            variant=Variant.NUMBER_AGGREGATE,
+            note=(
+                "Mirror of LAG, reclassified for the same reason and on the "
+                "same date. The native downgrade is "
+                "moving_sum ( [m] , -n , n , [ord] ) — ThoughtSpot's start/end "
+                "arguments use opposite sign conventions, so a forward offset "
+                "is a negative start (both live-confirmed 2026-07-30). Same "
+                "default limitation as LAG."
+            ),
+        ),
+        "FIRST_VALUE(expr) OVER (...)": Construct(
+            "FIRST_VALUE(expr) OVER (...)", Classification.DIRECT,
+            template="first_value ( sum ( [m] ) , query_groups ( ) , {{ [T::date] }} )",
+            note=(
+                "The section's exception, and the only window row whose direct "
+                "verdict survived the 2026-07-30 rework — first_value takes a "
+                "genuine explicit partition argument and a genuine explicit "
+                "order axis, so the formula does define its own window (E13). "
+                "Live-confirmed on se-thoughtspot, 2026-07-30: query_groups ( ), "
+                "a fixed single-column { [attr] }, a multi-column "
+                "{ [a] , [b] }, the grand-total { } and the dynamic "
+                "query_groups ( ) - { [attr] } all validate in the partition "
+                "slot, so a static Ossie PARTITION BY list maps straight onto "
+                "it. The axis slot is typed and enforced — a bare column "
+                "reference is rejected with 'Function last_value expects 3rd "
+                "argument to be List', so the { } braces are mandatory (and "
+                "force >- block-scalar YAML on the document side; doubled here "
+                "as {{ }} because emit_direct renders via str.format, the same "
+                "fix as Task 7's IN/NOT IN — verified by calling emit_direct "
+                "and checking the rendered output has single braces again). "
+                "Two boundaries remain: ThoughtSpot's first_value is a "
+                "semi-additive function over a date axis rather than a general "
+                "window function, so an OVER shape with a row frame other than "
+                "the whole partition falls back to "
+                "sql_number_aggregate_op ( \"FIRST_VALUE({0}) OVER (...)\" , "
+                "... ) (E3); and the axis column's type is not validated at "
+                "import (a VARCHAR axis was accepted), so acceptance proves "
+                "the call shape, not that the axis is temporal."
+            ),
+        ),
+        "LAST_VALUE(expr) OVER (...)": Construct(
+            "LAST_VALUE(expr) OVER (...)", Classification.DIRECT,
+            template="last_value ( sum ( [m] ) , query_groups ( ) , {{ [T::date] }} )",
+            note=(
+                "Same conditions, same live evidence and same fallback as "
+                "FIRST_VALUE. last_value_in_period and first_value_in_period "
+                "also validate in the identical three-argument shape and are "
+                "the period-completeness variants (see the reverse-direction "
+                "table) — out of this row's scope. Braces doubled on the axis "
+                "argument for the same str.format reason as FIRST_VALUE."
+            ),
+        ),
+        "NTH_VALUE(expr, n) OVER (...)": Construct(
+            "NTH_VALUE(expr, n) OVER (...)", Classification.PASSTHROUGH,
+            template="NTH_VALUE({0}, 2) OVER (ORDER BY {1})",
+            variant=Variant.NUMBER_AGGREGATE,
+            note=(
+                "ThoughtSpot's semi-additive functions reach only the first "
+                "and last values of the axis — live-confirmed 2026-07-30, "
+                "nth_value ( ... ) rejected with 'Search did not find "
+                "\"nth_value ( sum (\"'. n is a literal, baked into the "
+                "template, as NTILE's."
+            ),
+        ),
+        "OVER (PARTITION BY ... ORDER BY ...) clause": Construct(
+            "OVER (PARTITION BY ... ORDER BY ...) clause", Classification.PASSTHROUGH,
+            template="per-clause-shape — see note",
+            variant=Variant.NUMBER_AGGREGATE,
+            note=(
+                "CONVENTION_DIVERGENCE: the generic OVER syntax template is a "
+                "fenced code block, not a table. Reclassified direct -> "
+                "passthrough 2026-07-30. The previous verdict claimed a clean "
+                "structural rewrite — 'PARTITION BY attrs becomes the "
+                "group_aggregate grouping argument; ORDER BY becomes the "
+                "window function's trailing attribute arguments' — but that "
+                "holds for PARTITION BY alone and breaks the moment an "
+                "ORDER BY is present, which is most window use. There are two "
+                "disjoint targets and only one accepts a partition: an OVER "
+                "clause with a PARTITION BY and no ORDER BY/frame is "
+                "group_aggregate ( agg ( [m] ) , { [T::a] , [T::b] } , "
+                "query_filters ( ) ) and is lossless; an OVER clause with an "
+                "ORDER BY must target moving_*/cumulative_*, which have no "
+                "partition slot at all (E13). Live-confirmed accepted: a "
+                "fixed single-column grouping { [T::pk] } inside "
+                "group_aggregate (as a moving_* and a cumulative_* argument), "
+                "and query_groups ( ) - { [attr] } / "
+                "query_groups ( ) + { [attr] } inside group_aggregate. "
+                "Live-confirmed rejected: moving_sum ( ... , [ord] , "
+                "{ [attr] } ) and moving_sum ( ... , [ord] , query_groups ( ) "
+                "), plus cumulative_sum ( ... , [ord] , { [attr] } ). Not "
+                "probed: a bare { } or a bare query_groups ( ) as the "
+                "group_aggregate grouping argument, and the query_groups ( ) "
+                "form of the cumulative_sum rejection — those three cells rest "
+                "on the formula reference, not this run. A partitioned, "
+                "ordered window therefore has no native home and the whole "
+                "clause is out of catalog scope for the general case — "
+                "template records the dispatch rather than one substitutable "
+                "body, same treatment as CAST's per-type table. Variant "
+                "recorded here is the documented default "
+                "(sql_number_aggregate_op); the typed sibling applies for a "
+                "non-numeric aggregate. The reverse direction is lossy for the "
+                "mirror-image reason — ThoughtSpot's ordered window functions "
+                "add the query's own dimensions to the partition dynamically, "
+                "which the specification cannot express (ask A10)."
+            ),
+        ),
+        "Frame clause — ROWS BETWEEN ... / RANGE BETWEEN ...": Construct(
+            "Frame clause — ROWS BETWEEN ... / RANGE BETWEEN ...", Classification.DIRECT,
+            template="per-frame-shape — see note",
+            note=(
+                "CONVENTION_DIVERGENCE: frame options are a bullet list under "
+                "the OVER syntax section, not a table. direct for the frame "
+                "boundaries only — deliberately scoped, so the partition loss "
+                "is counted once, on the OVER clause row, and not twice. "
+                "ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW -> "
+                "cumulative_*. Bounded ROWS frames -> moving_* with "
+                "n PRECEDING -> positive n, CURRENT ROW -> 0, n FOLLOWING -> "
+                "negative -n. All four boundary shapes were live-confirmed on "
+                "se-thoughtspot, 2026-07-30 (moving_sum ( [m] , 2 , 0 , [ord] "
+                "), ( ... , 1 , -1 , ... ), ( ... , -1 , 1 , ... ), "
+                "cumulative_sum ( [m] , [ord] )), and the positional signature "
+                "is enforced — moving_sum ( [m] , [ord] ) is rejected with "
+                "'Function moving_sum expects 2nd argument to be Numeric'. "
+                "RANGE frames fall back to sql_number_aggregate_op (the same "
+                "variant the window-aggregation row below falls back to): "
+                "ThoughtSpot's frames are row-positional, not value-ranged — "
+                "live-verified on gapped dates, moving_* counts surviving rows "
+                "regardless of the calendar distance between them — so a "
+                "RANGE frame over a gapped sort column would silently return "
+                "different numbers (E3). A frame reaches ThoughtSpot natively "
+                "only when the accompanying OVER clause declares no "
+                "PARTITION BY; otherwise it is emitted verbatim inside the "
+                "pass-through template the OVER row selects. Per-shape "
+                "dispatch out of catalog scope, same treatment as CAST's "
+                "per-type table."
+            ),
+        ),
+        "Window aggregation — AGG(expr) OVER (...)": Construct(
+            "Window aggregation — AGG(expr) OVER (...)", Classification.PASSTHROUGH,
+            template="SUM({0}) OVER (PARTITION BY {1} ORDER BY {2} ROWS BETWEEN …)",
+            variant=Variant.NUMBER_AGGREGATE,
+            note=(
+                "CONVENTION_DIVERGENCE: the Window Aggregations section is "
+                "prose and code examples, not a table. Reclassified direct -> "
+                "passthrough 2026-07-30, inheriting the OVER row's problem: "
+                "the specification allows every aggregate as a window "
+                "function, but every ordered ThoughtSpot target "
+                "(cumulative_*, moving_*) completes its partition from the "
+                "query (E13). The unordered case remains lossless and is the "
+                "group_aggregate path on the OVER row. The native family is "
+                "also narrower than the specification's: cumulative_*/"
+                "moving_* cover SUM, AVG, MIN and MAX only — live-confirmed "
+                "2026-07-30 that moving_count, moving_stddev and "
+                "cumulative_count do not exist ('Search did not find "
+                "\"moving_count (\"' and siblings) — so a windowed COUNT, "
+                "MEDIAN, STDDEV or VARIANCE has a partitioned form via "
+                "group_count/group_stddev/group_variance and no ordered or "
+                "framed form of any kind. Variant recorded here is the "
+                "documented default (sql_number_aggregate_op); the typed "
+                "sibling applies for a non-numeric aggregate. Subject to E5."
+            ),
+        ),
+    }
+)
+
 #: Constructs the mapping document (docs/ossie/ts-ossie-function-mapping.md in the
 #: thoughtspot-agent-skills repo) counts separately under rule E1 ("one row per
 #: construct") that core-spec/expression_language.md does not give a discrete
