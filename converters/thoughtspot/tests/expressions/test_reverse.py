@@ -541,7 +541,7 @@ def test_unrecognised_name_returns_none_with_no_issue():
 
 def test_thoughtspot_dialect_entry_reconstructs_the_verbatim_call():
     entry = thoughtspot_dialect_entry("ts_username", [])
-    assert entry == {"dialect": "THOUGHTSPOT", "expression": "ts_username (  )"}
+    assert entry == {"dialect": "THOUGHTSPOT", "expression": "ts_username ( )"}
 
     entry2 = thoughtspot_dialect_entry("moving_sum", ["m", "2", "0", "ord"])
     assert entry2 == {"dialect": "THOUGHTSPOT", "expression": "moving_sum ( m , 2 , 0 , ord )"}
@@ -555,9 +555,33 @@ def test_portable_dialect_entry_pairs_with_ansi_sql():
     }
 
 
-def test_custom_extensions_fragment_is_keyed_under_the_vendor():
-    fragment = custom_extensions_fragment("ts_username", [])
-    assert fragment == {"THOUGHTSPOT": {"reverse_thoughtspot_call": "ts_username (  )"}}
+def test_custom_extensions_fragment_is_keyed_by_the_ossie_column_name():
+    # Not by VENDOR_KEY: write_stash(obj, payload) treats payload as the *contents* of
+    # the object's THOUGHTSPOT entry, so a fragment keyed by VENDOR_KEY would nest the
+    # vendor key inside its own entry instead of producing a valid write_stash payload.
+    fragment = custom_extensions_fragment("revenue_per_user", "ts_username", [])
+    assert fragment == {"revenue_per_user": {"reverse_thoughtspot_call": "ts_username ( )"}}
+
+
+def test_custom_extensions_fragment_merges_losslessly_across_columns():
+    # The whole point of keying by column: {**f1, **f2} must keep both columns' calls,
+    # not collapse to whichever fragment merged last (the VENDOR_KEY-keyed bug this
+    # replaces would silently drop the first column here).
+    f1 = custom_extensions_fragment("revenue_per_user", "ts_username", [])
+    f2 = custom_extensions_fragment("org_label", "ts_org", [])
+    merged = {**f1, **f2}
+    assert merged == {
+        "revenue_per_user": {"reverse_thoughtspot_call": "ts_username ( )"},
+        "org_label": {"reverse_thoughtspot_call": "ts_org ( )"},
+    }
+
+    # And the merged fragment is a valid write_stash payload: write_stash treats its
+    # `payload` argument as the entry's own contents, so merged must round-trip through
+    # it without collapsing either column.
+    from ossie_thoughtspot.stash import read_stash, write_stash
+
+    obj = write_stash({"name": "revenue_model"}, merged)
+    assert read_stash(obj) == {**merged, "_v": 1}
 
 
 # ---------------------------------------------------------------------------

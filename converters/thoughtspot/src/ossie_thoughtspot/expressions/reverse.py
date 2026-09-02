@@ -110,7 +110,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable
 
-from ..constants import DIALECT, PORTABLE_DIALECT, VENDOR_KEY
+from ..constants import DIALECT, PORTABLE_DIALECT
 from ..issues import IssueLog, Severity
 
 
@@ -903,7 +903,8 @@ def thoughtspot_dialect_entry(name: str, args: list[str]) -> dict[str, str]:
     STASH construct still round-trips losslessly through a THOUGHTSPOT dialect entry even
     where no full — or no — portable Ossie expression exists.
     """
-    return {"dialect": DIALECT, "expression": f"{name} ( {' , '.join(args)} )"}
+    inner = f" {' , '.join(args)} " if args else " "
+    return {"dialect": DIALECT, "expression": f"{name} ({inner})"}
 
 
 def portable_dialect_entry(expression: str) -> dict[str, str]:
@@ -917,12 +918,20 @@ def portable_dialect_entry(expression: str) -> dict[str, str]:
     return {"dialect": PORTABLE_DIALECT, "expression": expression}
 
 
-def custom_extensions_fragment(name: str, args: list[str]) -> dict[str, dict[str, str]]:
+def custom_extensions_fragment(column: str, name: str, args: list[str]) -> dict[str, dict[str, str]]:
     """The payload fragment this module contributes toward an object's
     `custom_extensions[VENDOR_KEY]` entry (`stash.write_stash`, rule X1) for one construct
-    this module could not fully compose. This module operates at the single-expression
-    level and has no access to the enclosing object, so the caller merges fragments across
-    an object's columns (typically keyed by the Ossie metric/column name) before calling
-    `stash.write_stash` once per object.
+    this module could not fully compose.
+
+    `write_stash(obj, payload)` treats `payload` as the *contents* of the object's
+    THOUGHTSPOT entry, not as `{VENDOR_KEY: contents}` — `write_stash` already owns the
+    vendor-key wrapping (rule X1). So this fragment must be keyed by `column`, the caller's
+    Ossie metric/column name, not by `VENDOR_KEY`: this module operates at the
+    single-expression level and has no access to the enclosing object, so the caller merges
+    fragments across an object's columns — `{**fragment_for_col_a, **fragment_for_col_b}` —
+    before calling `stash.write_stash` once per object. Keying by `VENDOR_KEY` instead would
+    make that merge lossy (`{**f1, **f2}` collapses to whichever fragment merged last) and
+    would nest the vendor key inside its own entry when passed to `write_stash` directly.
     """
-    return {VENDOR_KEY: {"reverse_thoughtspot_call": f"{name} ( {' , '.join(args)} )"}}
+    inner = f" {' , '.join(args)} " if args else " "
+    return {column: {"reverse_thoughtspot_call": f"{name} ({inner})"}}
