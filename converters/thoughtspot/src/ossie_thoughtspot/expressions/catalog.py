@@ -502,7 +502,7 @@ CATALOG.update(
 # This family is over half passthrough, and the reasons run against intuition
 # rather than with it: LOWER/UPPER/TRIM/LTRIM/RTRIM/REPLACE are passthrough not
 # because they behave differently in ThoughtSpot but because ThoughtSpot has no
-# native equivalent at all (live-verified 2026-07-29 on se-thoughtspot, BL-170 —
+# native equivalent at all (live-verified 2026-07-29 on se-thoughtspot —
 # TRIM and REPLACE were rejected with "Search did not find ...", moving them
 # from an earlier direct/conservative-passthrough reading to confirmed
 # passthrough). STARTSWITH/ENDSWITH run the other way: also no native function,
@@ -545,7 +545,7 @@ CATALOG.update(
             template="TRIM({0})", variant=Variant.STRING,
             note=(
                 "There is no native trim in ThoughtSpot — live-verified "
-                "2026-07-29 on se-thoughtspot (BL-170), rejected with "
+                "2026-07-29 on se-thoughtspot, rejected with "
                 "'Search did not find \"trim (\"'. The whole trim family is a "
                 "pass-through, not just the one-sided forms."
             ),
@@ -554,8 +554,8 @@ CATALOG.update(
             "LTRIM(str)", Classification.PASSTHROUGH,
             template="LTRIM({0})", variant=Variant.STRING,
             note=(
-                "No native ltrim — live-verified 2026-07-29, se-thoughtspot "
-                "(BL-170). This row was already passthrough on the "
+                "No native ltrim — live-verified 2026-07-29, se-thoughtspot. "
+                "This row was already passthrough on the "
                 "conservative reading that trim was two-sided-only; the "
                 "verification confirms the classification and strengthens the "
                 "reason — there is no trim to substitute at all."
@@ -589,7 +589,7 @@ CATALOG.update(
             variant=Variant.STRING,
             note=(
                 "There is no native replace in ThoughtSpot — live-verified "
-                "2026-07-29 on se-thoughtspot (BL-170), rejected with "
+                "2026-07-29 on se-thoughtspot, rejected with "
                 "'Search did not find \"replace (\"'. This row was direct on "
                 "documentation; the live pass moved it to the documented "
                 "fallback."
@@ -632,7 +632,7 @@ CATALOG.update(
             template="strpos ( {0} , {1} ) = 1",
             note=(
                 "There is no native starts_with — live-verified 2026-07-29, "
-                "se-thoughtspot (BL-170). Still direct because the composition "
+                "se-thoughtspot. Still direct because the composition "
                 "is exact and uses only native functions (per the "
                 "classification definition): strpos is 1-based, so a true "
                 "prefix sits at position 1. The composition itself was "
@@ -644,7 +644,7 @@ CATALOG.update(
             template="substr ( {0} , strlen ( {0} ) - strlen ( {1} ) , strlen ( {1} ) ) = {1}",
             note=(
                 "There is no native ends_with — live-verified 2026-07-29, "
-                "se-thoughtspot (BL-170). Direct by composition, as "
+                "se-thoughtspot. Direct by composition, as "
                 "STARTSWITH; verified to import."
             ),
         ),
@@ -1051,7 +1051,7 @@ CATALOG.update(
             note=(
                 "Literal lists only on both sides — no subqueries. The "
                 "curly-brace delimiter is confirmed, live-verified "
-                "2026-07-29 on se-thoughtspot (BL-170): the round-parenthesis "
+                "2026-07-29 on se-thoughtspot: the round-parenthesis "
                 "form is rejected with 'Expecting one of the valid keywords, "
                 "such as, \"ts_var\", \"{\"'. It forces >- block-scalar YAML. "
                 "The braces are doubled ({{ }}) in the template because "
@@ -1080,7 +1080,7 @@ CATALOG.update(
                 ") , strlen ( 'foo' ) ) = 'foo'; contains ('%foo%') -> "
                 "contains ( {0} , 'foo' ). Only contains is a native "
                 "function — starts_with and ends_with do not exist "
-                "(live-verified 2026-07-29, se-thoughtspot — BL-170), so the "
+                "(live-verified 2026-07-29, se-thoughtspot), so the "
                 "first two shapes are compositions of native functions "
                 "(rule E2), same as the STARTSWITH/ENDSWITH rows. These "
                 "three shapes are the overwhelming majority of LIKE use. "
@@ -1146,9 +1146,9 @@ CATALOG.update(
                 "'Unknown data type', and a CASE with no ELSE (legal in the "
                 "specification, yielding NULL) therefore needs one "
                 "synthesised. The branch count is unbounded, so the "
-                "template is transcribed with the document's own symbolic "
-                "c1/r1/c2/r2/d names rather than forced into a fixed "
-                "{0}/{1} scheme — the same out-of-scope-dispatch treatment "
+                "template uses symbolic c1/r1/c2/r2/d names rather than "
+                "being forced into a fixed {0}/{1} scheme — the same "
+                "out-of-scope-dispatch treatment "
                 "as CAST's per-type table."
             ),
         ),

@@ -99,7 +99,7 @@ def split_column_ref(ref: str) -> tuple[str, str]:
     shapes are checked: more than one non-overlapping `::` delimiter in the
     whole reference (`str.count` is non-overlapping, which correctly catches
     two separated delimiters), and a captured column that itself starts with
-    `:` (M3) — the signature of a *run* of three or more consecutive colons,
+    `:` — the signature of a *run* of three or more consecutive colons,
     which `str.count("::") > 1` cannot see because the run has only one
     non-overlapping match. `format_column_ref("ORDERS:", "Col")` produces
     `"[ORDERS:::Col]"`, which is exactly as ambiguous as

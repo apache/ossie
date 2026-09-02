@@ -536,7 +536,7 @@ def test_unrecognised_name_returns_none_with_no_issue():
 
 
 # ---------------------------------------------------------------------------
-# E11/P8 — dialect-entry and stash-payload helpers.
+# E11 — dialect-entry and stash-payload helpers.
 # ---------------------------------------------------------------------------
 
 def test_thoughtspot_dialect_entry_reconstructs_the_verbatim_call():
