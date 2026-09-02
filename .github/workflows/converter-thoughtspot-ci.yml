@@ -24,11 +24,18 @@ on:
     paths:
       - 'converters/thoughtspot/**'
       - '.github/workflows/converter-thoughtspot-ci.yml'
+      # catalog.py's spec_construct_names() parses this file directly (it is the
+      # upstream-spec coverage oracle, not vendored into converters/thoughtspot/),
+      # so a change here must trigger this workflow even though it touches no
+      # converter file. No sibling workflow parses the spec, hence this addition
+      # is not mirrored anywhere else.
+      - 'core-spec/expression_language.md'
   pull_request:
     branches: [ "main" ]
     paths:
       - 'converters/thoughtspot/**'
       - '.github/workflows/converter-thoughtspot-ci.yml'
+      - 'core-spec/expression_language.md'
 
 jobs:
   build:
