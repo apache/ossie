@@ -16,10 +16,9 @@
 # under the License.
 
 
-"""Tests for the expression emitters (Task 2 of the expression-translation plan).
+"""Tests for the expression emitters.
 
-The brief's own Interfaces block disagreed with its test snippets on three
-signatures. The tests below use the corrected, more precise shape:
+Three emitter signatures, one per `Classification`:
 
     emit_direct(construct, args) -> str
     emit_passthrough(construct, args, log, *, object_ref, has_parameter=False) -> str
@@ -29,6 +28,8 @@ signatures. The tests below use the corrected, more precise shape:
 the function, the object and the reason — an emitter that cannot name the object
 structurally cannot satisfy it).
 """
+import re
+
 import pytest
 
 from ossie_thoughtspot.expressions import CATALOG
@@ -207,18 +208,18 @@ def test_emit_passthrough_detects_partition_by_with_irregular_whitespace():
 
 # --------------------------------------------------------------------------
 # Catalog-wide sweep: every DIRECT row must actually render, not merely read
-# correctly. This is the check that caught the Task 7 `IN`/`NOT IN` bug: both
-# templates embedded ThoughtSpot's literal `{ ... }` set syntax unescaped in a
-# Python format string, so the call with the CORRECT, natural-arity argument
-# count (the one a real caller makes) crashed with `ValueError: unexpected
-# '{' in field name` — a non-obvious failure, not a clean domain error, and
-# invisible to any test that only inspects `construct.template` as a string
-# (e.g. `"{" in row.template`) rather than executing it. A catalog author can
-# transcribe a document cell containing a literal brace, parenthesis, or any
-# other str.format metacharacter for any future family (this plan's Task 8,
-# or Plans C/D) and reintroduce exactly this shape of bug; this sweep is
-# general over every DIRECT row in CATALOG, not scoped to Task 7, precisely
-# so that it does.
+# correctly. This is the check that caught the IN/NOT IN brace-escaping bug:
+# both templates embedded ThoughtSpot's literal `{ ... }` set syntax unescaped
+# in a Python format string, so the call with the CORRECT, natural-arity
+# argument count (the one a real caller makes) crashed with `ValueError:
+# unexpected '{' in field name` — a non-obvious failure, not a clean domain
+# error, and invisible to any test that only inspects `construct.template` as
+# a string (e.g. `"{" in row.template`) rather than executing it. A catalog
+# author can transcribe a document cell containing a literal brace,
+# parenthesis, or any other str.format metacharacter for any future family
+# and reintroduce exactly this shape of bug; this sweep is general over every
+# DIRECT row in CATALOG, not scoped to the rows that caught it originally,
+# precisely so that it does.
 # --------------------------------------------------------------------------
 
 def test_every_direct_catalog_row_renders_with_its_own_natural_arity():
@@ -233,5 +234,38 @@ def test_every_direct_catalog_row_renders_with_its_own_natural_arity():
         except Exception as exc:  # noqa: BLE001 - want to report every failure, not stop at the first
             failures.append(f"{name!r} ({arity} args): {exc!r}")
     assert not failures, "DIRECT rows that fail to render with their own natural arity:\n" + "\n".join(
+        failures
+    )
+
+
+# --------------------------------------------------------------------------
+# The passthrough counterpart to the sweep above: every PASSTHROUGH row must
+# actually render with its own natural arity, not merely read correctly. A
+# catalog edit that desyncs a template's `{n}` placeholders from its intended
+# arity — on any passthrough row, not just the one pinned regression case
+# above — would otherwise go uncaught until something later tried to emit
+# that specific row. Whether a row needs `partition_column` is derived from
+# its own template (the same `PARTITION BY` check emit_passthrough itself
+# makes, E8), not hardcoded, so a row that gains or loses a PARTITION BY
+# stays in sync with this sweep automatically.
+# --------------------------------------------------------------------------
+
+def test_every_passthrough_catalog_row_renders_with_its_own_natural_arity():
+    failures = []
+    for name, construct in CATALOG.items():
+        if construct.classification is not Classification.PASSTHROUGH:
+            continue
+        arity = _placeholder_count(construct.template)
+        args = [f"arg{i}" for i in range(arity)]
+        carries_partition_by = bool(re.search(r"partition\s+by", construct.template, re.IGNORECASE))
+        partition_column = "[partition_col]" if carries_partition_by else None
+        log = IssueLog()
+        try:
+            emit_passthrough(
+                construct, args, log, object_ref="metric:sweep", partition_column=partition_column
+            )
+        except Exception as exc:  # noqa: BLE001 - want to report every failure, not stop at the first
+            failures.append(f"{name!r} ({arity} args): {exc!r}")
+    assert not failures, "PASSTHROUGH rows that fail to render with their own natural arity:\n" + "\n".join(
         failures
     )

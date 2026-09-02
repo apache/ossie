@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Task 9: the reverse-direction inventory (ThoughtSpot -> Ossie).
+"""The reverse-direction inventory (ThoughtSpot -> Ossie).
 
 Source: the "Reverse direction (ThoughtSpot -> Ossie)" section of
 docs/ossie/ts-ossie-function-mapping.md (thoughtspot-agent-skills repo, not

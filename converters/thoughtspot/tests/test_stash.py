@@ -80,8 +80,8 @@ def test_read_stash_returns_empty_when_there_is_no_own_entry():
 
 
 def test_restore_returns_the_stashed_value_with_no_witness_key():
-    # X5, degraded (stash-if-present) shape — the most common form Plans C/D
-    # will use: no witness_key, so a present key always wins regardless of
+    # X5, degraded (stash-if-present) shape — the most common form in
+    # practice: no witness_key, so a present key always wins regardless of
     # `witness`. Correct only for values nothing downstream can edit.
     payload = {"some_key": "stashed_value"}
     assert stash.restore(payload, "some_key", "DERIVED") == "stashed_value"

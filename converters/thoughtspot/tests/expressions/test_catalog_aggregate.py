@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Catalog coverage for Task 3: Aggregate functions + Type conversion.
+"""Catalog coverage: Aggregate functions + Type conversion.
 
 Source: the `Aggregate functions` and `Type conversion` sections of
 docs/ossie/ts-ossie-function-mapping.md (thoughtspot-agent-skills repo, not

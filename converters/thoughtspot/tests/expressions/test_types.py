@@ -69,13 +69,13 @@ def test_passthrough_construct_with_a_template_and_variant_is_valid():
 
 
 def test_passthrough_construct_rejects_a_template_that_wraps_itself():
-    # Task 5's own first draft made exactly this mistake: it stored a
+    # An early catalog draft made exactly this mistake: it stored a
     # passthrough template as the FULL wrapped form (copied verbatim from the
     # mapping document's ThoughtSpot-column cell) instead of the bare inner
     # call. emit_passthrough builds the `variant ( "..." , args )` wrapper
     # itself, so a template that already contains it double-wraps at emission
     # time — a bug invisible from a static read of the catalog file. Pin the
-    # regression so a future family (Tasks 7-8) can't reintroduce it.
+    # regression so a future catalog family can't reintroduce it.
     with pytest.raises(ValueError, match="STDDEV_POP.*double-wrap"):
         Construct(
             spec_name="STDDEV_POP(expr)",

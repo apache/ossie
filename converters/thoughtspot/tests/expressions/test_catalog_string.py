@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Catalog coverage for Task 5: String functions.
+"""Catalog coverage: String functions.
 
 Source: the `String functions` section of docs/ossie/ts-ossie-function-mapping.md
 (thoughtspot-agent-skills repo, not vendored here). 21 rows total — 10 direct /

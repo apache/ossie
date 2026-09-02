@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Catalog coverage for Task 8: Window functions - the last family, completing the catalog.
+"""Catalog coverage: Window functions - the last family, completing the catalog.
 
 Source: the `Window functions` section of docs/ossie/ts-ossie-function-mapping.md
 (thoughtspot-agent-skills repo, not vendored here), plus the "Window rows
@@ -216,9 +216,10 @@ def test_only_the_documented_rows_carry_partition_by_for_e8():
 # Brace escaping: FIRST_VALUE/LAST_VALUE are DIRECT rows whose ThoughtSpot
 # rendering uses `{ ... }` list syntax for the axis argument. DIRECT templates
 # render via str.format (emit_direct), so a literal brace must be doubled or
-# the call raises "unexpected '{' in field name" - exactly the Task 7 IN/NOT IN
-# bug. This exercises emit_direct directly, not just a substring check on the
-# template text, so it would have caught that bug.
+# the call raises "unexpected '{' in field name" - exactly the IN/NOT IN
+# brace-escaping bug the catalog hit earlier. This exercises emit_direct
+# directly, not just a substring check on the template text, so it would have
+# caught that bug.
 # --------------------------------------------------------------------------
 
 def test_first_value_and_last_value_render_with_single_braces():

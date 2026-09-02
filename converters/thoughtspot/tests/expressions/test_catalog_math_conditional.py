@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Catalog coverage for Task 6: Mathematical and Conditional functions.
+"""Catalog coverage: Mathematical and Conditional functions.
 
 Source: the `Mathematical functions` and `Conditional functions` sections of
 docs/ossie/ts-ossie-function-mapping.md (thoughtspot-agent-skills repo, not
@@ -38,9 +38,10 @@ defined where x = 0, so it is not a two-argument ATAN composition).
 
 Construct names in this family are spelled identically to the mapping
 document's own row headers, with the same alias-merge convention as CEIL/
-CEILING and TRUNC/TRUNCATE established in Task 3 — the merged spelling
-(`CEIL(x)`, `TRUNC(x, d)`) is what `spec_construct_names()` actually extracts,
-confirmed live before writing this file.
+CEILING and TRUNC/TRUNCATE (see catalog.py's module docstring, "Spelling"
+section) — the merged spelling (`CEIL(x)`, `TRUNC(x, d)`) is what
+`spec_construct_names()` actually extracts, confirmed live before writing
+this file.
 """
 from ossie_thoughtspot.expressions import CATALOG
 from ossie_thoughtspot.expressions._types import Classification, Variant

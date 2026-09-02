@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Catalog coverage for Task 7: Operators and constructs.
+"""Catalog coverage: Operators and constructs.
 
 Source: the `Operators and constructs` section of
 docs/ossie/ts-ossie-function-mapping.md (thoughtspot-agent-skills repo, not
