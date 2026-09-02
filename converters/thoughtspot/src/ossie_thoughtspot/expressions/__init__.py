@@ -23,8 +23,11 @@ Public surface, grown across the expression-translation plan:
     - `spec_construct_names()` — the upstream-spec coverage oracle (Task 1).
     - `CONVENTION_DIVERGENCES` — constructs the mapping document counts by rule
       E1 that have no discrete row in the upstream spec (Task 1).
+    - `emit_direct`, `emit_passthrough`, `emit_unmappable` — render a `Construct`
+      into an actual ThoughtSpot formula, one function per `Classification` (Task 2).
 """
 from .catalog import CATALOG, CONVENTION_DIVERGENCES, spec_construct_names
+from .emit import emit_direct, emit_passthrough, emit_unmappable
 from ._types import Classification, Construct, Variant
 
 __all__ = [
@@ -33,5 +36,8 @@ __all__ = [
     "Classification",
     "Construct",
     "Variant",
+    "emit_direct",
+    "emit_passthrough",
+    "emit_unmappable",
     "spec_construct_names",
 ]
