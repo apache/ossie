@@ -162,3 +162,17 @@ def test_emit_passthrough_refuses_a_partition_column_for_a_template_with_no_part
             STDDEV_POP, ["[x]"], log,
             object_ref="metric:Revenue", partition_column="[T::Region]",
         )
+
+
+def test_emit_passthrough_detects_partition_by_with_irregular_whitespace():
+    # A plain substring match on "partition by" misses "PARTITION  BY" (two
+    # spaces) or a newline between the words, which would silently leave the
+    # E8 guard defeated in both directions. Regex with \s+ must still catch it.
+    irregular = Construct(
+        "IRREGULAR_WHITESPACE(expr)", Classification.PASSTHROUGH,
+        template="SOME_FUNC({0}) OVER (PARTITION  BY {0} ORDER BY {1})",
+        variant=Variant.NUMBER_AGGREGATE,
+    )
+    log = IssueLog()
+    with pytest.raises(ValueError, match="PARTITION BY"):
+        emit_passthrough(irregular, ["[dim]", "[ord]"], log, object_ref="metric:X")
