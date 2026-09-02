@@ -22,7 +22,6 @@ from ..hex import HexDataType, HexDimension, is_temporal_hex_datatype
 from .context import ExportContext
 from .convert_ossie_datatype import convert_ossie_datatype
 from .convert_ossie_expression import convert_ossie_expression
-from .convert_ossie_name import convert_ossie_name
 
 
 def convert_ossie_field(
@@ -33,8 +32,8 @@ def convert_ossie_field(
     with ctx.problem_scope(ossie_field.name):
         spec: dict[str, Any] = {}
 
-        with ctx.problem_scope("name"):
-            spec["id"] = convert_ossie_name(ossie_field.name, ctx=ctx)
+        dataset_name = ctx.dataset_name
+        spec["id"] = ctx.hex_ids.for_field(dataset_name, ossie_field.name)
 
         if ossie_field.label:
             # this property is described by the spec as "label for categorization". that
