@@ -56,7 +56,8 @@ file.
 """
 from ossie_thoughtspot.expressions import CATALOG
 from ossie_thoughtspot.expressions._types import Classification, Variant
-from ossie_thoughtspot.expressions.emit import emit_direct
+from ossie_thoughtspot.expressions.emit import emit_direct, emit_passthrough
+from ossie_thoughtspot.issues import IssueLog
 
 EXPECTED: dict[str, Classification] = {
     # Ranking functions (spec_construct_names() extracts the Syntax-column value)
@@ -226,6 +227,33 @@ def test_first_value_and_last_value_render_with_single_braces():
         rendered = emit_direct(row, [])
         assert "{{" not in rendered and "}}" not in rendered
         assert "{" in rendered and "}" in rendered
+
+
+# --------------------------------------------------------------------------
+# F5: the window-aggregation template previously carried a literal U+2026
+# ellipsis ("ROWS BETWEEN …") — the mapping document's own prose shorthand for
+# "a frame clause goes here", not renderable SQL. It passed __post_init__, the
+# E8 partition check and declared a satisfiable 3-argument arity, so
+# emit_passthrough rendered it as-is: a warehouse SQL syntax error far from the
+# converter. The fix supplies a concrete, valid exemplar frame instead (the
+# same convention as NTILE's literal 4).
+# --------------------------------------------------------------------------
+
+def test_window_aggregation_template_has_no_literal_ellipsis():
+    row = CATALOG["Window aggregation — AGG(expr) OVER (...)"]
+    assert "…" not in row.template
+
+
+def test_window_aggregation_renders_valid_sql_via_emit_passthrough():
+    row = CATALOG["Window aggregation — AGG(expr) OVER (...)"]
+    log = IssueLog()
+    out = emit_passthrough(
+        row, ["[T::Amount]", "[T::Region]", "[T::OrderDate]"], log,
+        object_ref="metric:RunningTotal", partition_column="[T::Region]",
+    )
+    assert "…" not in out
+    assert "ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW" in out
+    assert out.startswith("group_aggregate (")
 
 
 def test_every_direct_row_in_this_family_has_natural_arity_zero():
