@@ -36,6 +36,6 @@ def test_readme_carries_a_coverage_matrix_with_rows():
     assert len(rows) >= 1, "coverage matrix has no L-numbered limitation rows"
 
 
-def test_readme_states_the_dialect_caveat():
-    # The THOUGHTSPOT dialect is not registered until apache/ossie#351 merges.
+def test_readme_states_the_dialect_registration():
+    # The THOUGHTSPOT dialect was registered by apache/ossie#351 (merged 2026-09-01).
     assert "351" in README.read_text(encoding="utf-8")

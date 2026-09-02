@@ -40,10 +40,10 @@ far are: a YAML 1.2 codec (`_yaml.py`), structured issue reporting (`issues.py`)
 `custom_extensions` stash for data a conversion cannot carry natively (`stash.py`),
 identifier derivation (`identifiers.py`), and key derivation (`keys.py`).
 
-**The `THOUGHTSPOT` dialect is not yet registered upstream** — see apache/ossie#351. Until
-that merges, expressions are emitted under `ANSI_SQL` with the real dialect preserved in the
-`custom_extensions` stash, because the `Dialect` enum is closed and a `THOUGHTSPOT` entry
-fails schema validation.
+**The `THOUGHTSPOT` dialect is registered upstream** — apache/ossie#351 merged 2026-09-01.
+Expressions are emitted under `THOUGHTSPOT`, with an `ANSI_SQL` entry alongside it where the
+expression is portable, so consumers that do not implement our dialect still get something
+they can execute.
 
 ## Coverage matrix
 

@@ -20,23 +20,25 @@
 VENDOR_KEY and DIALECT hold the same string today and are deliberately separate
 names (learnings report P6). They are governed differently upstream: the vendor
 key needs no spec change because `Vendor` is an `examples` list that accepts any
-string, while the dialect is a closed enum and is pending apache/ossie#351.
+string, while the dialect is a closed enum — it was a pending apache/ossie#351
+change, now merged (see DIALECT_IS_REGISTERED).
 """
 
 #: `custom_extensions[].vendor_name` value for ThoughtSpot-owned entries.
 VENDOR_KEY = "THOUGHTSPOT"
 
-#: Expression-language dialect label. NOT yet a member of the Ossie Dialect enum.
+#: Expression-language dialect label. A registered member of the Ossie Dialect enum.
 DIALECT = "THOUGHTSPOT"
 
-#: Flip to True only when apache/ossie#351 merges. Until then, emitting DIALECT
-#: produces a hard schema-validation failure, so expressions ship under the
-#: fallback with the real dialect preserved in the stash (the converters/nvidia
-#: pattern).
-DIALECT_IS_REGISTERED = False
+#: apache/ossie#351 merged 2026-09-01: THOUGHTSPOT is now in the closed `Dialect`
+#: enum (core-spec/ossie-schema.json) and in validation/validate.py's
+#: SKIP_SQL_VALIDATION set, so emitting DIALECT no longer fails schema validation.
+DIALECT_IS_REGISTERED = True
 
-#: Dialect used while DIALECT_IS_REGISTERED is False.
-FALLBACK_DIALECT = "ANSI_SQL"
+#: Dialect emitted alongside DIALECT (not instead of it) for portable expressions,
+#: per learnings finding P8: consumers that do not implement our dialect still get
+#: something they can execute.
+PORTABLE_DIALECT = "ANSI_SQL"
 
 #: Ossie spec series this converter targets, matched on major.minor. Not an exact
 #: version: upstream's first release is proposed as 0.3.0, not 0.2.0.
