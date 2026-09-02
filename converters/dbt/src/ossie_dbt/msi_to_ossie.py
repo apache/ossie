@@ -355,10 +355,10 @@ class MSIToOssieConverter:
             return expr
 
         # The `\b` anchors already stop a short reference from matching inside a
-        # longer identifier; sorting by length keeps the alternation order stable
+        # longer identifier; sorting by length (then name) keeps the alternation order stable
         # and independent of the order metrics happen to be declared in.
         pattern = re.compile(
-            r"\b(" + "|".join(re.escape(ref) for ref in sorted(replacements, key=len, reverse=True)) + r")\b"
+            r"\b(" + "|".join(re.escape(ref) for ref in sorted(replacements, key=lambda ref: (-len(ref), ref))) + r")\b"
         )
         return pattern.sub(lambda match: replacements[match.group(0)], expr)
 
