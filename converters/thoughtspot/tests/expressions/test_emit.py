@@ -31,8 +31,9 @@ structurally cannot satisfy it).
 """
 import pytest
 
+from ossie_thoughtspot.expressions import CATALOG
 from ossie_thoughtspot.expressions._types import Classification, Construct, Variant
-from ossie_thoughtspot.expressions.emit import emit_direct, emit_passthrough, emit_unmappable
+from ossie_thoughtspot.expressions.emit import _placeholder_count, emit_direct, emit_passthrough, emit_unmappable
 from ossie_thoughtspot.issues import IssueLog, Severity
 
 SUM = Construct("SUM(expr)", Classification.DIRECT, template="sum ( {0} )")
@@ -176,3 +177,35 @@ def test_emit_passthrough_detects_partition_by_with_irregular_whitespace():
     log = IssueLog()
     with pytest.raises(ValueError, match="PARTITION BY"):
         emit_passthrough(irregular, ["[dim]", "[ord]"], log, object_ref="metric:X")
+
+
+# --------------------------------------------------------------------------
+# Catalog-wide sweep: every DIRECT row must actually render, not merely read
+# correctly. This is the check that caught the Task 7 `IN`/`NOT IN` bug: both
+# templates embedded ThoughtSpot's literal `{ ... }` set syntax unescaped in a
+# Python format string, so the call with the CORRECT, natural-arity argument
+# count (the one a real caller makes) crashed with `ValueError: unexpected
+# '{' in field name` — a non-obvious failure, not a clean domain error, and
+# invisible to any test that only inspects `construct.template` as a string
+# (e.g. `"{" in row.template`) rather than executing it. A catalog author can
+# transcribe a document cell containing a literal brace, parenthesis, or any
+# other str.format metacharacter for any future family (this plan's Task 8,
+# or Plans C/D) and reintroduce exactly this shape of bug; this sweep is
+# general over every DIRECT row in CATALOG, not scoped to Task 7, precisely
+# so that it does.
+# --------------------------------------------------------------------------
+
+def test_every_direct_catalog_row_renders_with_its_own_natural_arity():
+    failures = []
+    for name, construct in CATALOG.items():
+        if construct.classification is not Classification.DIRECT:
+            continue
+        arity = _placeholder_count(construct.template)
+        args = [f"arg{i}" for i in range(arity)]
+        try:
+            emit_direct(construct, args)
+        except Exception as exc:  # noqa: BLE001 - want to report every failure, not stop at the first
+            failures.append(f"{name!r} ({arity} args): {exc!r}")
+    assert not failures, "DIRECT rows that fail to render with their own natural arity:\n" + "\n".join(
+        failures
+    )
