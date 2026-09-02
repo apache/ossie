@@ -71,7 +71,10 @@ def _scan(text: str):
     quote-toggling is suppressed for as long as the innermost open bracket is `[`; a bracket
     stack (not just the depth counter) tracks which opener is innermost so this only applies
     to `[...]`, not `(...)` or `{...}`, and correctly un-suppresses again once that `[`
-    closes, however deeply it is nested inside calls.
+    closes, however deeply it is nested inside calls. The stack pops only when a closer
+    matches the type of its top entry — a mismatched or stray closer leaves the stack
+    untouched rather than popping the wrong entry and desynchronising which bracket type is
+    considered innermost for the rest of the scan.
     """
     depth = 0
     quote: str | None = None
@@ -94,7 +97,7 @@ def _scan(text: str):
             continue
         if ch in (")", "]", "}"):
             depth -= 1
-            if bracket_stack:
+            if bracket_stack and _CLOSERS[bracket_stack[-1]] == ch:
                 bracket_stack.pop()
             yield i, ch, depth, False
             continue

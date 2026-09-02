@@ -123,3 +123,25 @@ def test_split_column_ref_rejects_a_column_with_a_leading_colon():
     assert ref == "[ORDERS:::Col]"
     with pytest.raises(ValueError, match="ambiguous"):
         identifiers.split_column_ref(ref)
+
+
+def test_split_column_ref_accepts_a_table_name_with_a_single_colon():
+    # A single ':' in the table position is not the same as the genuinely
+    # ambiguous '::'/leading-colon shapes above — the table group matches
+    # lazily up to the first '::', it does not reject colons outright.
+    assert identifiers.split_column_ref("[A:B::x]") == ("A:B", "x")
+
+
+def test_split_column_ref_accepts_a_column_name_with_a_single_colon():
+    assert identifiers.split_column_ref("[A::x:y]") == ("A", "x:y")
+
+
+def test_split_and_format_round_trip_a_table_name_containing_a_colon():
+    # Regression: format_column_ref("A:B", "x") -> "[A:B::x]", which
+    # split_column_ref used to refuse (the table group excluded colons
+    # outright, a stricter grammar than the documented ambiguity rule). Not
+    # ambiguous — there is exactly one '::' — so it must round-trip.
+    table, column = "A:B", "x"
+    ref = identifiers.format_column_ref(table, column)
+    assert ref == "[A:B::x]"
+    assert identifiers.split_column_ref(ref) == (table, column)
