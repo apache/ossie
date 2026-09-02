@@ -17,10 +17,11 @@
 
 """The catalog: every specification construct mapped to a ThoughtSpot rendering.
 
-`CATALOG` is populated across Tasks 2-7 of the expression-translation plan; here
-it is deliberately empty. What this module provides *now* is
-`spec_construct_names()` — an oracle read from the **upstream**
-`core-spec/expression_language.md`, not from any document of our own, so that a
+`CATALOG` is populated across Tasks 3-8 of the expression-translation plan, one
+family per task; Task 3 (Aggregate functions + Type conversion) is the first.
+Until Task 8 lands the rest, `spec_construct_names()` — an oracle read from the
+**upstream** `core-spec/expression_language.md`, not from any document of our
+own — still reports every construct `CATALOG` has not yet covered, so that a
 construct added upstream fails this package's build instead of silently going
 unsupported (see `test_catalog_covers_the_spec.py`).
 
@@ -107,12 +108,167 @@ have no entry in `spec_construct_names()` at all and are exempted instead.
 import re
 from pathlib import Path
 
-from ._types import Construct
+from ._types import Classification, Construct, Variant
 
 # --------------------------------------------------------------------------
-# CATALOG: empty until Tasks 3-7 populate it, one family per task.
+# CATALOG: populated across Tasks 3-8, one family per task.
 # --------------------------------------------------------------------------
 CATALOG: dict[str, Construct] = {}
+
+# --------------------------------------------------------------------------
+# Aggregate functions (Task 3) — 18 rows: 12 direct / 6 passthrough / 0 unmappable.
+# Source: docs/ossie/ts-ossie-function-mapping.md, "Aggregate functions" section
+# (thoughtspot-agent-skills repo — not vendored here; prose above/below the table
+# read in full, per rule E1-E4).
+# --------------------------------------------------------------------------
+CATALOG.update(
+    {
+        "SUM(expr)": Construct(
+            "SUM(expr)", Classification.DIRECT, template="sum ( {0} )",
+        ),
+        "COUNT(expr)": Construct(
+            "COUNT(expr)", Classification.DIRECT, template="count ( {0} )",
+            note="Counts non-null values on both sides.",
+        ),
+        "COUNT(*)": Construct(
+            "COUNT(*)", Classification.DIRECT, template="count ( {0} )",
+            note=(
+                "ThoughtSpot has no count(*); the row count is count() over a column "
+                "known to be non-null. The converter uses the dataset's primary_key "
+                "when the model declares one, and raises an issue rather than "
+                "guessing a column when it does not."
+            ),
+        ),
+        "COUNT(DISTINCT expr)": Construct(
+            "COUNT(DISTINCT expr)", Classification.DIRECT, template="unique count ( {0} )",
+            note=(
+                "A space, not an underscore. count_distinct(...) is rejected by the "
+                "formula parser. See ask A9 on DISTINCT as a general modifier."
+            ),
+        ),
+        "AVG(expr)": Construct(
+            "AVG(expr)", Classification.DIRECT, template="average ( {0} )",
+        ),
+        "MIN(expr)": Construct(
+            "MIN(expr)", Classification.DIRECT, template="min ( {0} )",
+            note=(
+                "ThoughtSpot min is aggregate-only — it never compares two columns "
+                "row-wise. Scalar two-argument minima are LEAST, a separate row."
+            ),
+        ),
+        "MAX(expr)": Construct(
+            "MAX(expr)", Classification.DIRECT, template="max ( {0} )",
+            note="Aggregate-only, as MIN.",
+        ),
+        "STDDEV(expr)": Construct(
+            "STDDEV(expr)", Classification.DIRECT, template="stddev ( {0} )",
+            note="Sample standard deviation on both sides.",
+        ),
+        "STDDEV_POP(expr)": Construct(
+            "STDDEV_POP(expr)", Classification.PASSTHROUGH,
+            template="STDDEV_POP({0})", variant=Variant.NUMBER_AGGREGATE,
+            note=(
+                "ThoughtSpot stddev is sample-only; there is no population form, and "
+                "substituting it would change the divisor from n-1 to n."
+            ),
+        ),
+        "STDDEV_SAMP(expr)": Construct(
+            "STDDEV_SAMP(expr)", Classification.DIRECT, template="stddev ( {0} )",
+            note="Specification alias for STDDEV (:171).",
+        ),
+        "VARIANCE(expr)": Construct(
+            "VARIANCE(expr)", Classification.DIRECT, template="variance ( {0} )",
+            note="Sample variance on both sides.",
+        ),
+        "VAR_POP(expr)": Construct(
+            "VAR_POP(expr)", Classification.PASSTHROUGH,
+            template="VAR_POP({0})", variant=Variant.NUMBER_AGGREGATE,
+            note="Same divisor reason as STDDEV_POP.",
+        ),
+        "VAR_SAMP(expr)": Construct(
+            "VAR_SAMP(expr)", Classification.DIRECT, template="variance ( {0} )",
+            note="Specification alias for VARIANCE (:174).",
+        ),
+        "MEDIAN(expr)": Construct(
+            "MEDIAN(expr)", Classification.DIRECT, template="median ( {0} )",
+        ),
+        "PERCENTILE_CONT(p) WITHIN GROUP (ORDER BY expr)": Construct(
+            "PERCENTILE_CONT(p) WITHIN GROUP (ORDER BY expr)", Classification.PASSTHROUGH,
+            template="PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY {0})",
+            variant=Variant.NUMBER_AGGREGATE,
+            note=(
+                "No native percentile function. p is a literal in the specification's "
+                "syntax, so it is baked into the template rather than passed as a "
+                "placeholder. p = 0.5 is the one case with a native equivalent — "
+                "median ( [x] ) — and the converter should prefer it."
+            ),
+        ),
+        "PERCENTILE_DISC(p) WITHIN GROUP (ORDER BY expr)": Construct(
+            "PERCENTILE_DISC(p) WITHIN GROUP (ORDER BY expr)", Classification.PASSTHROUGH,
+            template="PERCENTILE_DISC(0.75) WITHIN GROUP (ORDER BY {0})",
+            variant=Variant.NUMBER_AGGREGATE,
+            note=(
+                "As PERCENTILE_CONT; the discrete/interpolated distinction is "
+                "preserved only because the template is emitted verbatim."
+            ),
+        ),
+        "APPROX_COUNT_DISTINCT(expr)": Construct(
+            "APPROX_COUNT_DISTINCT(expr)", Classification.PASSTHROUGH,
+            template="APPROX_COUNT_DISTINCT({0})", variant=Variant.INT_AGGREGATE,
+            note=(
+                "ThoughtSpot's unique count ( [x] ) is the exact-semantics "
+                "alternative: same answer to within the sketch's ~2% error, at "
+                "exact-count cost. The converter emits the pass-through by default "
+                "— the specification chose approximate deliberately — and offers "
+                "the exact form as a documented downgrade."
+            ),
+        ),
+        "APPROX_PERCENTILE(expr, p)": Construct(
+            "APPROX_PERCENTILE(expr, p)", Classification.PASSTHROUGH,
+            template="APPROX_PERCENTILE({0}, 0.5)", variant=Variant.NUMBER_AGGREGATE,
+            note="p baked into the template as for the exact percentiles.",
+        ),
+    }
+)
+
+# --------------------------------------------------------------------------
+# Type conversion (Task 3) — 2 rows: 2 direct / 0 passthrough / 0 unmappable.
+# Source: docs/ossie/ts-ossie-function-mapping.md, "Type conversion" section.
+#
+# CAST/TRY_CAST are, per rule E3, direct rows whose target-type argument
+# vocabulary is only partly covered (5 of 8 types direct, 3 fall back to a
+# pass-through) — the per-type dispatch is not counted as its own construct
+# (rule E1: the target-type table is an argument vocabulary, marked "not
+# counted" in the mapping document) and is not resolved here. Resolving a
+# `CAST` occurrence to an actual formula from its target type is out of this
+# plan's scope (see task-9-brief.md, "The expression parser and the sqlglot
+# question"); `template` records the document's own ThoughtSpot-column text
+# for traceability rather than a directly-substitutable formula.
+# --------------------------------------------------------------------------
+CATALOG.update(
+    {
+        "CAST": Construct(
+            "CAST", Classification.DIRECT,
+            template="per-type — see the target-type table below",
+            note=(
+                "5 of the 8 specified target types are direct; the other three — "
+                "BOOLEAN, TIMESTAMP and TIME — fall back to a pass-through (E3)."
+            ),
+        ),
+        "TRY_CAST": Construct(
+            "TRY_CAST", Classification.DIRECT,
+            template="the same functions as CAST",
+            note=(
+                "ThoughtSpot's to_integer / to_double / to_string already return "
+                "NULL on failure, which is exactly TRY_CAST semantics — so the two "
+                "rows share a mapping and it is CAST, not TRY_CAST, that is the "
+                "imprecise one. A strict CAST that must error rather than null is "
+                "not expressible; the converter records that in the issue log when "
+                "the source distinguishes them."
+            ),
+        ),
+    }
+)
 
 #: Constructs the mapping document (docs/ossie/ts-ossie-function-mapping.md in the
 #: thoughtspot-agent-skills repo) counts separately under rule E1 ("one row per
