@@ -49,13 +49,27 @@ Requires Python 3.11 or newer.
 
 #### `export`
 
-TODO(export): {description}
+Convert an Ossie semantic model(s) into a Hex semantic project(s).
 
-TODO(export): {code-signature}
+```bash
+ossie-hex export -i <file> -o <directory> \
+  [--dialect <dialect>]
+```
 
-TODO(export): {options}
+Options:
 
-TODO(export): {code-example}
+- `-i, --input <file>` — Required. Ossie YAML file to export.
+- `-o, --output <directory>` — Optional. Directory where Hex YAML files are
+  written. If omitted, the current working directory is used.
+- `-d, --dialect <dialect>` — Optional. Ossie dialect to pick from Ossie
+  expressions. If omitted, the first dialect an expression declares is used,
+  falling back to `ANSI_SQL`.
+
+Example:
+
+```bash
+ossie-hex export -i ossie.yaml -o hex/ --dialect snowflake
+```
 
 #### `import`
 
