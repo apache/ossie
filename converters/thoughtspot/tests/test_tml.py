@@ -158,6 +158,108 @@ class TestDumpDocumentSet:
             load_document(text)
 
 
+class TestFilenameSafety:
+    """A table or model name is user-controlled data, and `dump_document_set` turns it
+    into a filename. What matters is not the string shape but that joining the result
+    onto an output directory and resolving it can never land outside that directory —
+    checked with `Path.resolve()` on both sides so a symlinked temp directory (e.g. on
+    macOS, where `/tmp` itself is a symlink) can't produce a false positive.
+    """
+
+    @staticmethod
+    def _table(name):
+        # Single-quoted YAML scalar: the only escape it needs is doubling a literal
+        # single quote, so a backslash in `name` (the Windows-style cases) survives
+        # unmangled — a double-quoted scalar would try to interpret it as an escape.
+        escaped = name.replace("'", "''")
+        return f"table:\n  name: '{escaped}'\n  db: SALES\n"
+
+    @pytest.mark.parametrize("name", [
+        "../../etc/passwd",
+        "/etc/passwd",
+        "..\\..\\x",
+        "A B",
+        "..",
+        "",
+    ])
+    def test_stays_inside_the_output_directory(self, tmp_path, name):
+        ds = load_document_set([("t", self._table(name)), ("m", MODEL)])
+        out_dir = (tmp_path / "intended_output")
+        out_dir.mkdir()
+        resolved_out_dir = out_dir.resolve()
+        for filename, _text in dump_document_set(ds):
+            target = (out_dir / filename).resolve()
+            assert target.is_relative_to(resolved_out_dir)
+
+    def test_a_normal_name_is_unchanged(self, tmp_path):
+        ds = load_document_set([("t", self._table("ORDERS")), ("m", MODEL)])
+        names = [name for name, _text in dump_document_set(ds)]
+        assert names[0] == "ORDERS.table.tml"
+
+    def test_distinct_names_that_collide_after_sanitising_do_not_overwrite_each_other(self):
+        # `A/B` and `A\B` both lose their separator to the same replacement character.
+        ds = load_document_set([
+            ("a", self._table("A/B")),
+            ("b", self._table("A\\B")),
+            ("m", MODEL),
+        ])
+        names = [name for name, _text in dump_document_set(ds)]
+        table_names = names[:-1]
+        assert len(table_names) == len(set(table_names))
+        assert table_names == ["A_B.table.tml", "A_B-2.table.tml"]
+
+
+class TestNestedGuidStripping:
+    """The guid rule applies at every depth of the body, not only the document root —
+    a nested guid is silently ignored on import, and ThoughtSpot creates a duplicate
+    object rather than updating the one that already exists.
+    """
+
+    def test_a_guid_one_level_deep_is_stripped(self):
+        doc = TmlDocument(kind="table", body={"name": "T", "guid": "should-not-survive"}, guid=None)
+        out = dump_document(doc)
+        assert "should-not-survive" not in out
+        assert "guid" not in out
+
+    def test_a_guid_inside_a_list_of_column_entries_is_stripped(self):
+        doc = TmlDocument(kind="table", body={
+            "name": "T",
+            "columns": [
+                {"name": "A", "guid": "col-a-guid"},
+                {"name": "B", "guid": "col-b-guid"},
+            ],
+        }, guid=None)
+        out = dump_document(doc)
+        assert "col-a-guid" not in out
+        assert "col-b-guid" not in out
+        assert load_document(out).body["columns"] == [{"name": "A"}, {"name": "B"}]
+
+    def test_a_document_with_no_guid_anywhere_is_unchanged(self):
+        doc = TmlDocument(kind="table", body={"name": "T", "columns": [{"name": "A"}]}, guid=None)
+        out = dump_document(doc)
+        assert load_document(out).body == doc.body
+
+    def test_dump_document_does_not_mutate_the_callers_body(self):
+        body = {
+            "name": "T",
+            "guid": "root-level-in-body",
+            "columns": [{"name": "A", "guid": "col-guid"}],
+        }
+        doc = TmlDocument(kind="table", body=body, guid=None)
+        dump_document(doc)
+        assert body["guid"] == "root-level-in-body"
+        assert body["columns"][0]["guid"] == "col-guid"
+
+    def test_fqn_is_left_alone(self):
+        doc = TmlDocument(kind="model", body={
+            "name": "M",
+            "model_tables": [{"name": "T", "fqn": "db.schema.t", "guid": "should-strip"}],
+        }, guid=None)
+        out = dump_document(doc)
+        assert "db.schema.t" in out
+        assert "should-strip" not in out
+
+
 class TestAdditionalCoverage:
     """Two cases judged most likely to bite in practice, beyond the transcribed set.
 
@@ -167,25 +269,26 @@ class TestAdditionalCoverage:
 
     Duplicate table names in one document set are a plausible real-world input (the same
     physical table re-emitted by an upstream step, or two directories merged without a
-    dedupe pass) and they hit two silent failure modes at once: `table_by_name` returns
-    only the first match with no signal that a second exists, and `dump_document_set`
-    produces two `(filename, text)` pairs with the identical filename — a caller that
-    writes these to disk loses one table's document with no error raised anywhere in
-    this module.
+    dedupe pass). `table_by_name` still silently returns only the first match on such a
+    duplicate — an accepted gap owned by whichever task assembles a document set, not
+    this module's filename layer. The filename collision duplicate names used to also
+    cause is gone: it is resolved by the same counter-suffix scheme `dump_document_set`
+    uses for any other filename collision (see `TestFilenameSafety`).
     """
 
     def test_a_document_whose_body_is_a_list_raises(self):
         with pytest.raises(ConversionError, match="must be a mapping"):
             load_document("table:\n- name: A\n- name: B\n")
 
-    def test_duplicate_table_names_shadow_on_lookup_and_collide_on_dump(self):
+    def test_duplicate_table_names_still_shadow_on_lookup_but_no_longer_collide_on_dump(self):
         table_a = "table:\n  name: ORDERS\n  db: SALES_A\n"
         table_b = "table:\n  name: ORDERS\n  db: SALES_B\n"
         ds = load_document_set([("a", table_a), ("b", table_b), ("m", MODEL)])
 
-        # Lookup silently returns only the first match.
+        # Lookup still silently returns only the first match — an accepted, separate gap.
         assert ds.table_by_name("ORDERS").body["db"] == "SALES_A"
 
-        # Both documents are still dumped, but under the identical filename.
+        # But dumping no longer loses one of them to a filename collision.
         names = [name for name, _text in dump_document_set(ds)]
-        assert names.count("ORDERS.table.tml") == 2
+        assert names.count("ORDERS.table.tml") == 1
+        assert names.count("ORDERS-2.table.tml") == 1
