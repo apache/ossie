@@ -39,7 +39,7 @@ def test_normalise_rejects_a_name_that_normalises_to_nothing():
 
 
 @pytest.mark.parametrize("display,expected", [
-    # R14: diacritics are now folded via NFKD decomposition (not the earlier
+    # Diacritics are folded via NFKD decomposition (not an earlier
     # ASCII-only drop) — see the module docstring's "Known limitation" note.
     # These pin the *current* behaviour so a future change can't silently
     # regress it; they do not bless the remaining non-Latin-script limitation
@@ -55,7 +55,7 @@ def test_normalise_folds_diacritics_known_limitation(display, expected):
 
 
 def test_normalise_on_a_cjk_only_name_is_non_latin_script_known_limitation():
-    # R14: NFKD decomposition has no ASCII form for non-Latin scripts, so a
+    # NFKD decomposition has no ASCII form for non-Latin scripts, so a
     # CJK-only name still raises — the narrower residual of the limitation.
     with pytest.raises(ValueError, match="normalises to an empty identifier"):
         identifiers.normalise("北京市")
