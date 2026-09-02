@@ -95,6 +95,32 @@ def test_emit_passthrough_refuses_a_non_passthrough_construct():
         emit_passthrough(SUM, ["[x]"], IssueLog(), object_ref="metric:Revenue")
 
 
+def test_emit_passthrough_rejects_an_argument_count_mismatch():
+    # emit_direct already refuses a mismatch (test_emit_direct_rejects_an_argument_count_
+    # mismatch above); emit_passthrough previously had no equivalent guard. Reproduces the
+    # concrete failure on a real catalog row: TIMESTAMP_NTZ's template is a zero-placeholder
+    # exemplar (its literal 2024-01-15 date is baked in — see the Construct.template
+    # docstring's "exemplar" case), so passing it a real value silently appended an unused
+    # sql_date_time_op argument the template never consumes, keeping the hardcoded date in
+    # the rendered SQL instead of failing loudly.
+    literal_timestamp = CATALOG["TIMESTAMP_NTZ '2024-01-15 10:30:00'"]
+    log = IssueLog()
+    with pytest.raises(ValueError, match="expects 0 arguments"):
+        emit_passthrough(
+            literal_timestamp, ["'2026-03-04 09:00:00'"], log, object_ref="metric:X",
+        )
+    # Same discipline as the E9 refusal above: no misleading WARNING for a call that
+    # was refused.
+    assert log.as_dicts() == []
+
+
+def test_emit_passthrough_renders_the_exemplar_with_its_own_natural_arity():
+    literal_timestamp = CATALOG["TIMESTAMP_NTZ '2024-01-15 10:30:00'"]
+    log = IssueLog()
+    out = emit_passthrough(literal_timestamp, [], log, object_ref="metric:X")
+    assert out == 'sql_date_time_op ( "CAST(\'2024-01-15 10:30:00\' AS TIMESTAMP)" )'
+
+
 def test_emit_unmappable_raises_an_issue_and_returns_nothing():
     c = Construct("EXISTS_IN(x)", Classification.UNMAPPABLE)
     log = IssueLog()
