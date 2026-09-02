@@ -23,7 +23,6 @@ from ..hex import HexModel
 from ..util.database_table import is_table_name
 from .context import ExportContext
 from .convert_ossie_field import convert_ossie_field
-from .convert_ossie_name import convert_ossie_name
 
 
 def convert_ossie_dataset(
@@ -34,12 +33,7 @@ def convert_ossie_dataset(
     with ctx.problem_scope(ossie_dataset.name):
         spec: dict[str, Any] = {}
 
-        with ctx.problem_scope("name"):
-            hex_entity_id = convert_ossie_name(ossie_dataset.name, ctx=ctx)
-            if hex_entity_id is None:
-                return None
-            spec["id"] = hex_entity_id
-
+        spec["id"] = ctx.hex_ids.for_dataset(ossie_dataset.name)
         spec["type"] = "model"
 
         if ossie_dataset.description:
@@ -83,7 +77,10 @@ def convert_ossie_dataset(
                         code="composite-unique-key",
                     )
 
-        with ctx.fields_scope(unique_field_names=unique_field_names):
+        with ctx.fields_scope(
+            unique_field_names=unique_field_names,
+            dataset_name=ossie_dataset.name,
+        ):
             if ossie_dataset.fields:
                 spec["dimensions"] = []
                 for ossie_field in ossie_dataset.fields:

@@ -72,6 +72,40 @@ resources:
     description: Net profit from the sale
     type: number
     expr_sql: ss_net_profit
+  measures:
+  - id: total_sales
+    description: Total sales revenue across all transactions
+    func_sql: SUM(${ss_ext_sales_price})
+  - id: total_profit
+    description: Total net profit from store sales
+    func_sql: SUM(${ss_net_profit})
+  - id: customer_lifetime_value
+    description: Average lifetime sales value per customer
+    func_sql: SUM(${ss_ext_sales_price}) / COUNT(DISTINCT ${store_sales_to_customer.c_customer_sk})
+  - id: sales_by_brand
+    description: Total sales by brand (requires grouping by item.i_brand)
+    func_sql: SUM(${ss_ext_sales_price})
+  - id: store_productivity
+    description: Sales per employee across stores
+    func_sql: SUM(${ss_ext_sales_price}) / NULLIF(SUM(${store_sales_to_store.s_number_employees}),
+      0)
+  relations:
+  - id: store_sales_to_date
+    target: date_dim
+    type: many_to_one
+    join_sql: ss_sold_date_sk = ${store_sales_to_date}.d_date_sk
+  - id: store_sales_to_customer
+    target: customer
+    type: many_to_one
+    join_sql: ss_customer_sk = ${store_sales_to_customer}.c_customer_sk
+  - id: store_sales_to_item
+    target: item
+    type: many_to_one
+    join_sql: ss_item_sk = ${store_sales_to_item}.i_item_sk
+  - id: store_sales_to_store
+    target: store
+    type: many_to_one
+    join_sql: ss_store_sk = ${store_sales_to_store}.s_store_sk
 - id: date_dim
   description: Date dimension with calendar attributes
   base_sql_table: tpcds.public.date_dim
