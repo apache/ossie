@@ -21,7 +21,7 @@ from collections.abc import Callable
 from ossie import OssieDialectExpression
 
 from ..hex import HexSql
-from ..util.parse_sql import exp
+from ..util.parse_sql import SQLGlotDialect, exp
 from .context import ExportContext
 from .load_ossie_dialect_expression import parse_ossie_dialect_expression
 
@@ -51,6 +51,24 @@ def convert_ossie_dialect_expression(
         sql: HexSql = ossie_dialect_expression.expression
         return sql
 
+    parsed = parse_ossie_dialect_expression(ossie_dialect_expression, ctx=ctx)
+    if parsed is None:
+        return None
+    return convert_parsed_ossie_dialect_expression(
+        parsed.expr,
+        parsed.dialect,
+        resolve=resolve,
+    )
+
+
+def convert_parsed_ossie_dialect_expression(
+    expr: exp.Expression,
+    dialect: SQLGlotDialect | None,
+    *,
+    resolve: OssieRefResolver,
+) -> HexSql:
+    """Convert an already parsed Ossie expression to Hex SQL."""
+
     def replace_reference(node: exp.Expression) -> exp.Expression:
         if not isinstance(node, exp.Column) or not node.table:
             return node
@@ -61,9 +79,5 @@ def convert_ossie_dialect_expression(
             replacement = f"${{{hex_relation_id}.{hex_item_id}}}"
         return exp.Var(this=replacement)
 
-    parsed = parse_ossie_dialect_expression(ossie_dialect_expression, ctx=ctx)
-    if parsed is None:
-        return None
-    transformed = parsed.expr.transform(replace_reference)
-    sql = transformed.sql(dialect=parsed.dialect)
-    return sql
+    transformed = expr.transform(replace_reference)
+    return transformed.sql(dialect=dialect)

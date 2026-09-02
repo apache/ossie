@@ -32,6 +32,8 @@ def ctx() -> Iterator[ExportContext]:
     ctx = ExportContext()
     ctx._set_dialects("ANSI_SQL", "duckdb")
     with ctx.semantic_model_scope("model"):
+        ctx.hex_ids.set_for_dataset("foo", "foo")
+        ctx.hex_ids.set_for_field("foo", "id", "id")
         yield ctx
 
 

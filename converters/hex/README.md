@@ -106,12 +106,15 @@ the source can be identified and problem understood from the message alone.
 
 ### Phases
 
-Conversion proceeds in three distinct phases.
+Conversion proceeds in three distinct phases, sometimes with sub-phases.
 
 - `load`: Read file(s) from disk. Deserialize and parse file contents. Validate
   and construct in-memory representation(s).
 - `convert`: Transform syntax. Validate and construct target domain
   model(s).
+  - `analyze`: Parse expressions and validate semantic references.
+  - `assign`: Decide where incongruities between source and target data should
+    be resolved.
 - `dump`: Serialize and encode in-memory representation(s) into the target
   format. Write file(s) to disk.
 
