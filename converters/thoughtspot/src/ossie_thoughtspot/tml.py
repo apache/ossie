@@ -29,9 +29,11 @@ each one by name, so ordering is load-bearing. And everything goes through the Y
 so a column, synonym, or parameter value of `on`, `off`, `yes`, or `no` survives as the string
 it is instead of being coerced to a boolean.
 
-Filenames minted for a document set are sanitised: a table name is user-controlled data and
-may contain characters a filesystem treats specially — a path separator, a `..` component, a
-Windows-reserved device name — so `dump_document_set` never writes one through unexamined.
+Filenames minted for a document set are sanitised and length-capped: a table name is
+user-controlled data and may contain characters a filesystem treats specially — a path
+separator, a `..` component, a Windows-reserved device name, more bytes than a single path
+component allows — so `dump_document_set` never writes one through unexamined, and never
+lets two documents land on the same filename.
 """
 from __future__ import annotations
 
@@ -63,6 +65,11 @@ _RESERVED_WINDOWS_NAMES = frozenset(
     | {f"COM{i}" for i in range(1, 10)}
     | {f"LPT{i}" for i in range(1, 10)}
 )
+
+#: Most filesystems cap a single path component at 255 bytes. A ThoughtSpot table or
+#: model name carries no length limit of its own, so a name at or past that boundary
+#: has to be shortened before it becomes a filename, not left to fail at write time.
+_MAX_FILENAME_BYTES = 255
 
 
 class _BlockScalar(str):
@@ -176,7 +183,8 @@ def _safe_filename_component(name: object) -> str:
     invisibly. A name that is empty, `.`, or `..` after that, and a Windows-reserved
     device name (`CON`, `COM1`, ...) regardless of what follows the first dot, each get
     a safe fallback. An ordinary name such as `ORDERS` or `store_sales` is returned
-    exactly as given.
+    exactly as given. Length is not handled here — `dump_document_set` caps it once it
+    knows how much room the suffix and a possible disambiguating counter need.
     """
     text = name if isinstance(name, str) else ""
     cleaned = _FORBIDDEN_FILENAME_CHARS.sub("_", text).rstrip(" .")
@@ -187,27 +195,53 @@ def _safe_filename_component(name: object) -> str:
     return cleaned
 
 
+def _truncate_utf8(text: str, max_bytes: int) -> str:
+    """`text`, cut down to at most `max_bytes` UTF-8 bytes, never splitting a
+    multi-byte character in half."""
+    encoded = text.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return text
+    cut = max_bytes
+    while cut > 0:
+        try:
+            return encoded[:cut].decode("utf-8")
+        except UnicodeDecodeError:
+            cut -= 1
+    return ""
+
+
 def dump_document_set(document_set: DocumentSet) -> list[tuple[str, str]]:
     """`(filename, text)` for every document, tables first — the model references them
     by name, so they must exist before it does.
 
-    Each filename's stem is sanitised (`_safe_filename_component`). Two source names
-    that are distinct before sanitising but collide after it — e.g. `A/B` and `A\\B`,
-    which both lose their separator to the same replacement character — are not
-    allowed to overwrite each other: the second (and any further) occurrence of an
-    already-used filename gets a `-2`, `-3`, ... counter spliced in before the suffix,
-    in the order the documents are processed. That order is fixed for a given
-    `DocumentSet`, so the result is reproducible for the same input.
+    Each filename's stem is sanitised (`_safe_filename_component`) and truncated to
+    leave room, within the 255-byte filesystem component limit, for both the suffix and
+    a disambiguating counter. Every candidate filename is reserved as it is minted: if
+    it is already taken — two source names sanitising to the same stem, a truncated
+    long name colliding with another, or a counter-suffixed name happening to land on
+    some other document's plain name — the counter advances and a fresh candidate is
+    tried until one is free. No two documents in one `DocumentSet` can ever be handed
+    the same filename.
     """
-    seen: dict[str, int] = {}
+    documents = list(document_set.tables) + [document_set.model]
+    # However many documents there are, that is also the most candidates any single one
+    # could need to try before finding a free filename (there are only that many
+    # filenames already claimed to collide with) — one extra digit of headroom besides.
+    counter_reserve = len(f"-{len(documents) + 1}")
 
-    def filename_for(document: TmlDocument) -> str:
-        stem = _safe_filename_component(document.body.get("name", document.kind))
+    used: set[str] = set()
+    out = []
+    for document in documents:
         suffix = _SUFFIX[document.kind]
-        base = f"{stem}.{suffix}"
-        occurrence = seen[base] = seen.get(base, 0) + 1
-        return base if occurrence == 1 else f"{stem}-{occurrence}.{suffix}"
+        max_stem_bytes = _MAX_FILENAME_BYTES - len(f".{suffix}") - counter_reserve
+        stem = _safe_filename_component(document.body.get("name", document.kind))
+        stem = _truncate_utf8(stem, max_stem_bytes).rstrip(" .") or "_unnamed"
 
-    out = [(filename_for(table), dump_document(table)) for table in document_set.tables]
-    out.append((filename_for(document_set.model), dump_document(document_set.model)))
+        candidate = f"{stem}.{suffix}"
+        counter = 1
+        while candidate in used:
+            counter += 1
+            candidate = f"{stem}-{counter}.{suffix}"
+        used.add(candidate)
+        out.append((candidate, dump_document(document)))
     return out

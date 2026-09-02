@@ -57,6 +57,15 @@ model:
 """
 
 
+def _table_named(name):
+    # Single-quoted YAML scalar: the only escape it needs is doubling a literal
+    # single quote, so a backslash in `name` (used for Windows-style path cases)
+    # survives unmangled — a double-quoted scalar would try to interpret it as an
+    # escape.
+    escaped = name.replace("'", "''")
+    return f"table:\n  name: '{escaped}'\n  db: SALES\n"
+
+
 class TestLoad:
     def test_detects_a_table_document(self):
         doc = load_document(TABLE)
@@ -166,14 +175,6 @@ class TestFilenameSafety:
     macOS, where `/tmp` itself is a symlink) can't produce a false positive.
     """
 
-    @staticmethod
-    def _table(name):
-        # Single-quoted YAML scalar: the only escape it needs is doubling a literal
-        # single quote, so a backslash in `name` (the Windows-style cases) survives
-        # unmangled — a double-quoted scalar would try to interpret it as an escape.
-        escaped = name.replace("'", "''")
-        return f"table:\n  name: '{escaped}'\n  db: SALES\n"
-
     @pytest.mark.parametrize("name", [
         "../../etc/passwd",
         "/etc/passwd",
@@ -183,7 +184,7 @@ class TestFilenameSafety:
         "",
     ])
     def test_stays_inside_the_output_directory(self, tmp_path, name):
-        ds = load_document_set([("t", self._table(name)), ("m", MODEL)])
+        ds = load_document_set([("t", _table_named(name)), ("m", MODEL)])
         out_dir = (tmp_path / "intended_output")
         out_dir.mkdir()
         resolved_out_dir = out_dir.resolve()
@@ -191,22 +192,105 @@ class TestFilenameSafety:
             target = (out_dir / filename).resolve()
             assert target.is_relative_to(resolved_out_dir)
 
-    def test_a_normal_name_is_unchanged(self, tmp_path):
-        ds = load_document_set([("t", self._table("ORDERS")), ("m", MODEL)])
+    def test_a_normal_name_is_unchanged(self):
+        ds = load_document_set([("t", _table_named("ORDERS")), ("m", MODEL)])
         names = [name for name, _text in dump_document_set(ds)]
         assert names[0] == "ORDERS.table.tml"
 
     def test_distinct_names_that_collide_after_sanitising_do_not_overwrite_each_other(self):
         # `A/B` and `A\B` both lose their separator to the same replacement character.
         ds = load_document_set([
-            ("a", self._table("A/B")),
-            ("b", self._table("A\\B")),
+            ("a", _table_named("A/B")),
+            ("b", _table_named("A\\B")),
             ("m", MODEL),
         ])
         names = [name for name, _text in dump_document_set(ds)]
         table_names = names[:-1]
         assert len(table_names) == len(set(table_names))
         assert table_names == ["A_B.table.tml", "A_B-2.table.tml"]
+
+
+class TestFilenameCollisionSafety:
+    """Sanitising two distinct names onto the same stem is not enough to guarantee
+    distinct filenames by itself — a disambiguating counter has to be checked against
+    every filename actually being emitted in this call, not just against how many
+    times its own stem has been seen, or a counter-suffixed name can land on another
+    document's real name and one document silently overwrites the other on disk. Every
+    case below asserts only that the emitted filenames are pairwise distinct, not any
+    particular suffix, so it keeps holding if the disambiguation scheme changes.
+    """
+
+    def test_a_third_name_matching_the_second_names_disambiguated_filename(self):
+        # `A/B` and `A\B` both sanitise to `A_B` and would naively disambiguate to
+        # `A_B` and `A_B-2`; a third table literally named `A_B-2` must not be handed
+        # that same filename.
+        ds = load_document_set([
+            ("a", _table_named("A/B")),
+            ("b", _table_named("A\\B")),
+            ("c", _table_named("A_B-2")),
+            ("m", MODEL),
+        ])
+        names = [name for name, _text in dump_document_set(ds)]
+        assert len(names) == len(set(names))
+
+    def test_the_same_three_names_in_a_different_processing_order(self):
+        ds = load_document_set([
+            ("c", _table_named("A_B-2")),
+            ("a", _table_named("A/B")),
+            ("b", _table_named("A\\B")),
+            ("m", MODEL),
+        ])
+        names = [name for name, _text in dump_document_set(ds)]
+        assert len(names) == len(set(names))
+
+    def test_four_names_that_all_sanitise_to_the_same_stem(self):
+        ds = load_document_set([
+            ("a", _table_named("A/B")),
+            ("b", _table_named("A\\B")),
+            ("c", _table_named("A:B")),
+            ("d", _table_named("A|B")),
+            ("m", MODEL),
+        ])
+        names = [name for name, _text in dump_document_set(ds)]
+        assert len(names) == len(set(names))
+
+    def test_a_table_sharing_the_models_raw_name(self):
+        # A table's suffix (`.table.tml`) and the model's (`.model.tml`) differ, so this
+        # pair can't collide under the current suffix scheme — but both filenames are
+        # still minted from the same reservation set, and this proves that holds when
+        # the raw names match too, not only when they happen to differ.
+        ds = load_document_set([("t", _table_named("Sales")), ("m", MODEL)])
+        names = [name for name, _text in dump_document_set(ds)]
+        assert len(names) == len(set(names))
+
+
+class TestFilenameLengthCap:
+    """A ThoughtSpot table or model name has no length limit of its own, but a
+    filename component does — 255 bytes on most filesystems. A name at or past that
+    boundary is truncated at mint time rather than left to fail when something tries
+    to write the file.
+    """
+
+    def test_a_very_long_name_is_truncated_to_fit(self):
+        ds = load_document_set([("t", _table_named("y" * 1000)), ("m", MODEL)])
+        names = [name for name, _text in dump_document_set(ds)]
+        assert len(names[0].encode("utf-8")) <= 255
+
+    def test_two_long_names_sharing_a_prefix_stay_distinct_after_truncation(self):
+        # Identical for long enough that truncation collapses them to the same stem —
+        # the two names differ only in their last four characters, well past where a
+        # 255-byte cap cuts them off.
+        name_a = ("x" * 250) + "AAAA"
+        name_b = ("x" * 250) + "BBBB"
+        ds = load_document_set([
+            ("a", _table_named(name_a)),
+            ("b", _table_named(name_b)),
+            ("m", MODEL),
+        ])
+        names = [name for name, _text in dump_document_set(ds)]
+        assert len(names) == len(set(names))
+        for name in names:
+            assert len(name.encode("utf-8")) <= 255
 
 
 class TestNestedGuidStripping:
@@ -261,19 +345,20 @@ class TestNestedGuidStripping:
 
 
 class TestAdditionalCoverage:
-    """Two cases judged most likely to bite in practice, beyond the transcribed set.
+    """Two cases judged most likely to bite in practice.
 
     A document whose body is a list rather than a mapping exercises a defensive branch
-    in `load_document` that the transcribed tests never reach — worth proving the guard
+    in `load_document` that no other test here reaches — worth proving the guard
     actually fires rather than trusting it by inspection.
 
     Duplicate table names in one document set are a plausible real-world input (the same
     physical table re-emitted by an upstream step, or two directories merged without a
     dedupe pass). `table_by_name` still silently returns only the first match on such a
-    duplicate — an accepted gap owned by whichever task assembles a document set, not
-    this module's filename layer. The filename collision duplicate names used to also
-    cause is gone: it is resolved by the same counter-suffix scheme `dump_document_set`
-    uses for any other filename collision (see `TestFilenameSafety`).
+    duplicate — a known limitation of set assembly, not of this module's filename layer,
+    since nothing here can tell two identically-named tables apart. The filename
+    collision duplicate names used to also cause is gone: it is resolved by the same
+    scheme `dump_document_set` uses for any other filename collision (see
+    `TestFilenameCollisionSafety`).
     """
 
     def test_a_document_whose_body_is_a_list_raises(self):
@@ -285,10 +370,10 @@ class TestAdditionalCoverage:
         table_b = "table:\n  name: ORDERS\n  db: SALES_B\n"
         ds = load_document_set([("a", table_a), ("b", table_b), ("m", MODEL)])
 
-        # Lookup still silently returns only the first match — an accepted, separate gap.
+        # Lookup still silently returns only the first match — a known limitation of
+        # set assembly, unrelated to the filename layer this module owns.
         assert ds.table_by_name("ORDERS").body["db"] == "SALES_A"
 
         # But dumping no longer loses one of them to a filename collision.
         names = [name for name, _text in dump_document_set(ds)]
-        assert names.count("ORDERS.table.tml") == 1
-        assert names.count("ORDERS-2.table.tml") == 1
+        assert len(names) == len(set(names))
