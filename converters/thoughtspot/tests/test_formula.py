@@ -74,6 +74,22 @@ class TestSplitCall:
     def test_unbalanced_parens_return_none_rather_than_raising(self):
         assert split_call("sum ( [A::x]") is None
 
+    def test_a_keyword_prefix_is_not_mistaken_for_a_function_name(self):
+        # `_CALL_HEAD` allows unbounded space-separated words because some
+        # real ThoughtSpot function names are multi-word (`unique count`).
+        # But an operator/control-flow keyword can never be part of a
+        # function name, so `true and count (...)` is an operator expression
+        # ending in something that merely looks like a call head — not a
+        # call named "true and count".
+        assert split_call("true and count ( [B::y] )") is None
+
+    def test_a_real_multi_word_function_name_still_works(self):
+        # The keyword blocklist must not catch legitimate multi-word names.
+        assert split_call("unique count ( [B::y] )") == (
+            "unique count",
+            ["[B::y]"],
+        )
+
 
 class TestFindColumnRefs:
     def test_finds_each_reference_in_order(self):
@@ -88,6 +104,16 @@ class TestFindColumnRefs:
 
     def test_no_references(self):
         assert find_column_refs("42") == []
+
+    def test_an_ambiguous_reference_raises_rather_than_silently_misreading(self):
+        # `identifiers.split_column_ref` raises on a reference with more than
+        # one `::` delimiter rather than silently taking the first one. This
+        # module delegates to it instead of a bare `str.split("::", 1)`, so
+        # the same failure must surface here too — even when the ambiguous
+        # reference sits among otherwise-valid ones in a longer expression.
+        # Silently misreading one reference is worse than failing the call.
+        with pytest.raises(ValueError):
+            find_column_refs("[A::x] + [ORDERS:::Col] + [B::y]")
 
 
 class TestFindParameterRefs:
@@ -178,3 +204,48 @@ class TestAdditionalEdgeCases:
             "[Orders::Order Date]", lambda t, c: f"{t}.{c.replace(' ', '_')}"
         )
         assert out == "Orders.Order_Date"
+
+
+class TestQuoteInsideBracketBody:
+    """A `[...]` body is an opaque identifier, not code — a quote character inside one
+    (a display name like `Manager's Bonus`, entirely routine in real ThoughtSpot data) is
+    part of the name, not a string delimiter. Before the fix, `_scan` toggled quote state
+    on any `'`/`"` anywhere in the text, including inside brackets, which desynchronised
+    quote tracking for everything after the apostrophe — silently dropping a later
+    reference, leaving it unrewritten, or rejecting a valid single call.
+    """
+
+    def test_find_column_refs_does_not_lose_a_later_reference(self):
+        assert find_column_refs("[Managers::Manager's Bonus] + [B::y]") == [
+            ("Managers", "Manager's Bonus"),
+            ("B", "y"),
+        ]
+
+    def test_rewrite_column_refs_still_rewrites_a_later_reference(self):
+        out = rewrite_column_refs(
+            "[Managers::Manager's Bonus] + [B::y]", lambda t, c: f"{t}.{c}"
+        )
+        assert out == "Managers.Manager's Bonus + B.y"
+
+    def test_split_call_still_recognises_a_valid_single_call(self):
+        assert split_call("sum ( [Managers::Manager's Bonus] )") == (
+            "sum",
+            ["[Managers::Manager's Bonus]"],
+        )
+
+    def test_apostrophe_name_nested_two_calls_deep(self):
+        # The bracket stack must un-suppress correctly on each `]` no matter
+        # how many enclosing `(` it is nested inside.
+        outer = split_call("sum ( count ( [Managers::Manager's Bonus] ) )")
+        assert outer is not None
+        name, args = outer
+        assert name == "sum"
+        assert args == ["count ( [Managers::Manager's Bonus] )"]
+        inner = split_call(args[0])
+        assert inner == ("count", ["[Managers::Manager's Bonus]"])
+
+    def test_column_name_containing_a_double_quote(self):
+        assert find_column_refs('[A::Say "Hi"] + [B::y]') == [
+            ("A", 'Say "Hi"'),
+            ("B", "y"),
+        ]

@@ -28,16 +28,35 @@ Three ThoughtSpot syntax features drive the implementation and are why an off-th
 tokenizer is not usable here: column references are bracketed and doubly-colon-qualified
 (`[TABLE::Column]`), grouping uses braces (`{ }`), and a bare bracketed name with no `::` is
 a runtime parameter rather than a column.
+
+**Quoting note — doubling works, backslash-escaping is out of scope on purpose.**
+ThoughtSpot's own convention for an embedded quote in a string literal is doubling it
+(`'it''s'`), and `_scan` handles that correctly even though it has no explicit doubling
+case: the character that closes a quote and the character that immediately reopens it are
+both reported as quoted, so nothing in between ever reads as outside the literal. A
+backslash before a quote is *not* an escape in ThoughtSpot's grammar — it is an ordinary
+character — so `'a\'b'` genuinely ends the literal at the escaped quote, and `_scan`
+splitting there is correct behaviour for this language, not a bug to fix.
 """
 from __future__ import annotations
 
 import re
 from typing import Callable
 
+from . import identifiers
+
 _CALL_HEAD = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*(?:\s+[A-Za-z_][A-Za-z0-9_]*)*)\s*\(")
 _BRACKETED = re.compile(r"\[([^\]]*)\]")
 _CLOSERS = {"(": ")", "[": "]", "{": "}"}
 _QUOTES = ("'", '"')
+
+# An operator/control-flow keyword can never be part of a function name, so a call head
+# that includes one of these as a space-separated word is not a call — see
+# `test_a_keyword_prefix_is_not_mistaken_for_a_function_name`. This is a blocklist, not a
+# catalog lookup, so this leaf module stays free of an import edge to the function catalog.
+_KEYWORDS = frozenset(
+    {"and", "or", "not", "if", "then", "else", "true", "false", "in", "between", "like"}
+)
 
 
 def _scan(text: str):
@@ -46,25 +65,37 @@ def _scan(text: str):
     One pass shared by every function here so that quoting and nesting are treated
     identically everywhere — a divergence between two hand-rolled scanners is exactly the
     kind of bug that would surface as a mis-split argument list months later.
+
+    A `[...]` body is an opaque identifier, not code — a quote character inside one (a
+    display name like `Manager's Bonus`) is part of the name, not a string delimiter. So
+    quote-toggling is suppressed for as long as the innermost open bracket is `[`; a bracket
+    stack (not just the depth counter) tracks which opener is innermost so this only applies
+    to `[...]`, not `(...)` or `{...}`, and correctly un-suppresses again once that `[`
+    closes, however deeply it is nested inside calls.
     """
     depth = 0
     quote: str | None = None
+    bracket_stack: list[str] = []
     for i, ch in enumerate(text):
         if quote is not None:
             yield i, ch, depth, True
             if ch == quote:
                 quote = None
             continue
-        if ch in _QUOTES:
+        in_bracket_body = bool(bracket_stack) and bracket_stack[-1] == "["
+        if not in_bracket_body and ch in _QUOTES:
             quote = ch
             yield i, ch, depth, True
             continue
         if ch in _CLOSERS:
             yield i, ch, depth, False
+            bracket_stack.append(ch)
             depth += 1
             continue
         if ch in (")", "]", "}"):
             depth -= 1
+            if bracket_stack:
+                bracket_stack.pop()
             yield i, ch, depth, False
             continue
         yield i, ch, depth, False
@@ -94,6 +125,12 @@ def split_call(expression: str) -> tuple[str, list[str]] | None:
     text = expression.strip()
     head = _CALL_HEAD.match(text)
     if head is None:
+        return None
+    name = head.group(1)
+    if any(word.lower() in _KEYWORDS for word in name.split()):
+        # `true and count (...)` is an operator expression whose last operand happens to
+        # look like a call head, not a call named "true and count". `unique count (...)`
+        # is unaffected — none of its words are in the blocklist.
         return None
     open_at = head.end() - 1
     close_at = None
@@ -125,10 +162,14 @@ def find_column_refs(expression: str) -> list[tuple[str, str]]:
     """Every `[TABLE::Column]` reference, in order, duplicates kept.
 
     A bracketed name with no `::` is a runtime parameter, not a column — see
-    `find_parameter_refs`.
+    `find_parameter_refs`. Splitting delegates to `identifiers.split_column_ref` rather
+    than a bare `str.split("::", 1)`, so an ambiguous reference (more than one `::`
+    delimiter) raises `ValueError` instead of silently taking the first one — consistent
+    with every other reader of this reference shape, and because silently misreading one
+    reference in an otherwise-valid expression is worse than failing the whole call.
     """
     return [
-        (body.split("::", 1)[0], body.split("::", 1)[1])
+        identifiers.split_column_ref(f"[{body}]")
         for _s, _e, body in _bracketed_spans(expression)
         if "::" in body
     ]
@@ -156,8 +197,7 @@ def is_bare_column_ref(expression: str) -> tuple[str, str] | None:
     start, end, body = spans[0]
     if start != 0 or end != len(text) or "::" not in body:
         return None
-    table, column = body.split("::", 1)
-    return table, column
+    return identifiers.split_column_ref(f"[{body}]")
 
 
 def rewrite_column_refs(
@@ -174,7 +214,7 @@ def rewrite_column_refs(
     for start, end, body in _bracketed_spans(expression):
         if "::" not in body:
             continue
-        table, column = body.split("::", 1)
+        table, column = identifiers.split_column_ref(f"[{body}]")
         out.append(expression[cursor:start])
         out.append(rename(table, column))
         cursor = end
