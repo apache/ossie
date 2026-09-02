@@ -332,7 +332,7 @@ REVERSE["to_date"] = ReverseConstruct(
         "through the TO_DATE/TO_CHAR format-token table — no expression parser exists yet "
         "to do that translation. TO_DATE(s, format) is EXPERIMENTAL on the Ossie side."
     ),
-    note="Judgment call: format-token reversal deferred to Plans C/D's parser.",
+    note="Judgment call: format-token reversal is deferred until an expression parser exists to do the translation.",
 )
 REVERSE["if"] = ReverseConstruct(
     thoughtspot_name="if",

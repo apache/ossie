@@ -23,8 +23,8 @@ Three emitters, one per `Classification` (see `_types.py`):
 - `emit_direct`      — substitutes `args` into the construct's native ThoughtSpot
                         template positionally. Rule E2: a `direct` row may itself be
                         a composition of native functions, not only a rename — that
-                        composition is baked into `construct.template` by the family
-                        tasks (3-8), not by this function.
+                        composition is baked into `construct.template` by the
+                        catalog, not by this function.
 - `emit_passthrough` — renders a `sql_*_op` call. Rule E4/E7: the row's `variant`
                         fixes both the emitted function name and, through it, the
                         emitted column's type and measure/attribute role. Every call
