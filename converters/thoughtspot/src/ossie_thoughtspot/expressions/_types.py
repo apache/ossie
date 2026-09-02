@@ -78,3 +78,7 @@ class Construct:
             raise ValueError(f"{self.spec_name}: only a passthrough row may name a variant")
         if self.classification is Classification.UNMAPPABLE and self.template is not None:
             raise ValueError(f"{self.spec_name}: an unmappable row has no template")
+        if self.classification is not Classification.UNMAPPABLE and not self.template:
+            raise ValueError(
+                f"{self.spec_name}: a {self.classification.value} row must have a template"
+            )

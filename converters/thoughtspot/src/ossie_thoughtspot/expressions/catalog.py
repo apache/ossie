@@ -43,37 +43,61 @@ The spec document mixes three kinds of content that must be told apart:
    appear only there are not Ossie constructs.
 
 The exclusions are keyed off the document's own structure — a table's own
-header naming ("Token" columns, a "Form" cell reading "Cast"), the section
+header naming ("Token" columns, a "Form" cell reading "Cast") and the section
 heading text ("Not Supported in Expressions", "Common Dialect Variations",
-"Cross-Reference"), and a "Supported ... :" prose cue immediately preceding a
-bullet list — rather than a hardcoded list of names to drop. A hardcoded list
-would go stale the moment upstream renamed or added a construct, which is
-exactly the failure mode this gate exists to catch.
+"Cross-Reference") — rather than a hardcoded list of names to drop. A hardcoded
+list would go stale the moment upstream renamed or added a construct, which is
+exactly the failure mode this gate exists to catch. The `EXTRACT`/`DATE_PART`
+date-part list, the `DATE_TRUNC` precision list and the `CAST` target-type list
+need no such marker at all: `_extract_tables()` only ever looks at lines
+starting with "|", so a plain bullet list is simply invisible to it, argument
+vocabulary or not.
 
 Spelling: `CATALOG` keys must match `spec_construct_names()` exactly (READ THIS
-BEFORE TASKS 3-8)
+BEFORE TASKS 3-8, AND WHEN IN DOUBT DO NOT TRUST THIS LIST FROM MEMORY)
 ------------------------------------------------------------------------------
-`spec_construct_names()` is the oracle, not the mapping document's prose. Several
-rows write their Ossie-side syntax differently than this parser extracts it, and
-a `CATALOG` entry keyed on the mapping document's own wording — not this
-function's output — will read as an "invented" construct even though it is a
-real, intended row:
+`spec_construct_names()` is the oracle, not the mapping document's prose, and not
+this list. Several rows write their Ossie-side syntax differently than this
+parser extracts it, and a `CATALOG` entry keyed on the mapping document's own
+wording — not this function's output — will read as an "invented" construct
+even though it is a real, intended row. **The authoritative check is always:
+run `spec_construct_names()`, print it, and match a member of it exactly** —
+this list is a convenience audited against that output, not a substitute for
+it, and a previous version of this list both omitted a case and misattributed
+another's source (both listed below, corrected). If this list and a live run
+of `spec_construct_names()` ever disagree, the live run wins.
 
-- Alias pairs the spec merges into ONE table row keep this parser's single
-  extracted spelling, not a "/"-joined pair: `CEIL(x)` (not `CEIL(x) /
-  CEILING(x)`), `TRUNC(x, d)` (not `.../ TRUNCATE(x, d)`), `TRY_CAST` and `CAST`
-  (bare — the heading token, not `CAST(expression AS target_type)`).
-- The top-level "Supported SQL Constructs" table contributes several operators
-  by their bare backtick token, not the mapping document's `a`/`b`-style
-  example: `BETWEEN`, `IN`, `NOT IN`, `IS NULL`, `IS NOT NULL`, `IS DISTINCT
-  FROM`, `IS NOT DISTINCT FROM`, `CASE WHEN`, and the raw symbols `+ - * / % = <>
-  != < > <= >=`.
-- Two-alternative-syntax rows keep the literal joining word from the spec's own
-  cell, "or" — not the mapping document's "/": `"CURRENT_DATE or
-  CURRENT_DATE()"`, `"CURRENT_TIMESTAMP or CURRENT_TIMESTAMP()"`,
-  `"CURRENT_TIME or CURRENT_TIME()"`.
-- The merged boolean-literal row is one entry, comma-joined: `"TRUE, FALSE"`.
-- `EXTRACT` and `DATE_PART` are bare tokens (no `(part FROM date_expr)` suffix).
+Grouped by which extractor produces the divergent spelling, so the source is
+never ambiguous:
+
+- **`_extract_tables()`** (an ordinary table with a `Syntax` column — the key is
+  that column's value, not the mapping document's `Ossie`-column header):
+    - Alias pairs the spec merges into ONE table row keep this parser's single
+      extracted spelling: `CEIL(x)` (not `CEIL(x) / CEILING(x)`), `TRUNC(x, d)`
+      (not `.../ TRUNCATE(x, d)`).
+    - Two-alternative-syntax rows keep the spec's own joining word, "or" — not
+      the mapping document's "/": `"CURRENT_DATE or CURRENT_DATE()"`,
+      `"CURRENT_TIMESTAMP or CURRENT_TIMESTAMP()"`, `"CURRENT_TIME or
+      CURRENT_TIME()"`.
+    - The merged boolean-literal row (`BOOLEAN`'s `Syntax` cell) is one entry,
+      comma-joined: `"TRUE, FALSE"` (mapping document header: `` `TRUE` /
+      `FALSE` (boolean literals) ``).
+    - The Boolean Functions table's `AND`/`OR` rows keep the spec's own
+      `expr1`/`expr2` placeholder names, not the mapping document's `a`/`b`:
+      `"expr1 AND expr2"` (mapping document header: `` `a AND b` ``),
+      `"expr1 OR expr2"` (mapping document header: `` `a OR b` ``).
+- **`_extract_summary_rows()`** (the top-level "Supported SQL Constructs"
+  table, bare backtick token — not the mapping document's `a`/`b`/`x`-style
+  worked example): `BETWEEN`, `IN`, `NOT IN`, `IS NULL`, `IS NOT NULL`, `CASE
+  WHEN`, and the raw symbols `+ - * / % = <> != < > <= >=`.
+- **`_extract_null_safe_comparison_operators()`** (the "Null-Safe Comparison"
+  code fence — NOT the summary table, despite reading like one more row of it):
+  `IS DISTINCT FROM`, `IS NOT DISTINCT FROM`.
+- **`_extract_extraction_syntax_functions()`** (the "Alternative Extraction
+  Syntax" code fence, bare token, no argument list): `EXTRACT`, `DATE_PART`.
+- **`_extract_single_construct_headings()`** (a standalone heading with no
+  table, bare token): `CAST`, `TRY_CAST` (not `CAST(expression AS
+  target_type)`).
 
 When adding a row, cross-check its key against `spec_construct_names()`'s output
 rather than transcribing the mapping document's column text verbatim. See
@@ -159,7 +183,6 @@ CONVENTION_DIVERGENCES: dict[str, str] = {
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _CODE_SPAN_RE = re.compile(r"`([^`]+)`")
-_SUPPORTED_LIST_CUE_RE = re.compile(r"^Supported .*:$")
 
 # A section whose entire content is about something *other than* an Ossie
 # construct in its own right. Matched case-insensitively as a substring of
@@ -384,8 +407,9 @@ def _extract_extraction_syntax_functions(text: str) -> set[str]:
 
     The "Alternative Extraction Syntax" section is the only place either
     function is named; the bullet list immediately below it enumerates the
-    date parts they accept, which rule E1 excludes as an argument vocabulary
-    (caught separately by the "Supported ...:" cue - see the module docstring).
+    date parts they accept (rule E1: an argument vocabulary, not a construct).
+    That list needs no special exclusion - it is a bullet list, not a table,
+    so `_extract_tables()` never looks at it in the first place.
     """
     section = re.search(
         r"### Alternative Extraction Syntax.*?\n(.*?)\n###", text, re.S
