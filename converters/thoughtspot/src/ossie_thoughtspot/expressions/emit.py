@@ -39,7 +39,8 @@ Three emitters, one per `Classification` (Task 1's `_types.py`):
                         `partition_column` when the passthrough carries a
                         `PARTITION BY` and the wrapped result guarantees that column
                         reaches ThoughtSpot's GROUP BY regardless of what the user's
-                        search selects.
+                        search selects — enforced by a template/kwarg cross-check in
+                        both directions, not left to caller convention.
 - `emit_unmappable`  — no formula exists; raises an ERROR issue and returns nothing
                         (the two-bucket rule: never a silent drop — the caller is
                         responsible for preserving the construct in custom_extensions).
@@ -118,7 +119,12 @@ def emit_passthrough(
     pass the column it partitions on and the result comes back wrapped in
     `group_aggregate ( <passthrough> , query_groups ( ) + { <partition_column> } ,
     query_filters ( ) )`, so the partition column reaches ThoughtSpot's GROUP BY
-    even when the user's search omits it.
+    even when the user's search omits it. This is enforced, not left to caller
+    convention: a template that carries `PARTITION BY` (case-insensitive) but no
+    `partition_column` raises, and a `partition_column` supplied for a template
+    with no `PARTITION BY` raises too — a mis-transcribed catalog row (Tasks 3-8)
+    fails loudly here instead of silently emitting an unwrapped, only-sometimes-
+    correct pass-through.
     """
     if construct.classification is not Classification.PASSTHROUGH:
         raise ValueError(
@@ -129,6 +135,24 @@ def emit_passthrough(
         raise ValueError(
             f"{construct.spec_name}: a passthrough cannot carry a runtime parameter "
             "(E9) — it cannot resolve to static SQL"
+        )
+
+    # E8, enforced rather than left to caller convention: every passthrough row
+    # that needs the group_aggregate wrap carries the literal string "PARTITION BY"
+    # in its SQL template (ROW_NUMBER, LAG, LEAD, the OVER fallback, window
+    # aggregation, and the RANK/PERCENT_RANK/CUME_DIST fallbacks all do). Checking
+    # the template against the kwarg in both directions turns "Tasks 3-8 must
+    # remember to pass this" into something this function refuses to get wrong.
+    carries_partition_by = "partition by" in construct.template.lower()
+    if carries_partition_by and partition_column is None:
+        raise ValueError(
+            f"{construct.spec_name}: template carries PARTITION BY but no "
+            "partition_column was supplied — the E8 group_aggregate wrapper is required"
+        )
+    if partition_column is not None and not carries_partition_by:
+        raise ValueError(
+            f"{construct.spec_name}: partition_column was supplied but the template "
+            "carries no PARTITION BY — there is nothing to wrap"
         )
 
     # E4: variant is guaranteed non-None for a PASSTHROUGH row by Construct.__post_init__.
