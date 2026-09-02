@@ -241,10 +241,11 @@ CATALOG.update(
 # pass-through) — the per-type dispatch is not counted as its own construct
 # (rule E1: the target-type table is an argument vocabulary, marked "not
 # counted" in the mapping document) and is not resolved here. Resolving a
-# `CAST` occurrence to an actual formula from its target type is out of this
-# plan's scope (see task-9-brief.md, "The expression parser and the sqlglot
-# question"); `template` records the document's own ThoughtSpot-column text
-# for traceability rather than a directly-substitutable formula.
+# `CAST` occurrence to an actual formula from its target type would need an
+# expression parser, which is out of scope, and whether to take on a sqlglot
+# dependency for that is still unresolved; `template` records the document's
+# own ThoughtSpot-column text for traceability rather than a
+# directly-substitutable formula.
 # --------------------------------------------------------------------------
 CATALOG.update(
     {

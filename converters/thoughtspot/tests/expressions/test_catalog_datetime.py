@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Catalog coverage for Task 4: Date/time functions.
+"""Catalog coverage: Date/time functions.
 
 Source: the `Date/time functions` section of
 docs/ossie/ts-ossie-function-mapping.md (thoughtspot-agent-skills repo, not
