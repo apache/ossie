@@ -270,6 +270,227 @@ CATALOG.update(
     }
 )
 
+# --------------------------------------------------------------------------
+# Date/time functions (Task 4) — 24 rows: 17 direct / 7 passthrough / 0 unmappable.
+# Source: docs/ossie/ts-ossie-function-mapping.md, "Date/time functions" section
+# (thoughtspot-agent-skills repo — not vendored here; prose above/below the table
+# read in full, per rule E1-E4).
+#
+# EXTRACT/DATE_PART date-parts, DATE_TRUNC precisions, DATEADD/DATEDIFF parts and
+# TO_DATE/TO_CHAR format tokens are argument vocabularies under rule E1 and get no
+# entry of their own (see the mapping document's "(not counted — arguments)"
+# sub-tables). EXTRACT, DATE_PART, DATE_TRUNC(part, date_expr),
+# DATEADD(part, amount, date_expr) and DATEDIFF(part, start_date, end_date) are
+# themselves still DIRECT rows in the 24 — the per-argument dispatch happens for
+# each, but the dispatch table itself is out of catalog scope (same pattern as
+# Task 3's CAST/TRY_CAST): `template` records the mapping document's own
+# ThoughtSpot-column text for traceability, and the real per-argument content
+# (which native function each part/precision rewrites to, and the argument-order
+# caveats) is recorded in `note`.
+# --------------------------------------------------------------------------
+CATALOG.update(
+    {
+        "CURRENT_DATE or CURRENT_DATE()": Construct(
+            "CURRENT_DATE or CURRENT_DATE()", Classification.DIRECT, template="today ( )",
+            note="Both specification spellings map to the same function.",
+        ),
+        "CURRENT_TIMESTAMP or CURRENT_TIMESTAMP()": Construct(
+            "CURRENT_TIMESTAMP or CURRENT_TIMESTAMP()", Classification.DIRECT, template="now ( )",
+        ),
+        "CURRENT_TIME or CURRENT_TIME()": Construct(
+            "CURRENT_TIME or CURRENT_TIME()", Classification.DIRECT,
+            template="time ( now ( ) )",
+            note=(
+                "ThoughtSpot has no current-time function, but time ( ) extracts "
+                "the time part of a datetime, so the composition is exact (E2)."
+            ),
+        ),
+        "YEAR(date_expr)": Construct(
+            "YEAR(date_expr)", Classification.DIRECT, template="year ( {0} )",
+        ),
+        "QUARTER(date_expr)": Construct(
+            "QUARTER(date_expr)", Classification.DIRECT, template="quarter_number ( {0} )",
+            note="The function is quarter_number, not quarter.",
+        ),
+        "MONTH(date_expr)": Construct(
+            "MONTH(date_expr)", Classification.DIRECT, template="month_number ( {0} )",
+            note=(
+                "Not month ( ) — ThoughtSpot's month returns the month NAME "
+                "('January'); month_number returns 1-12, which is what the "
+                "specification means. Mapping to month would silently change "
+                "the column's type from integer to string."
+            ),
+        ),
+        "DAY(date_expr)": Construct(
+            "DAY(date_expr)", Classification.DIRECT, template="day ( {0} )",
+            note="Day of month, 1-31 on both sides.",
+        ),
+        "DAYOFYEAR(date_expr)": Construct(
+            "DAYOFYEAR(date_expr)", Classification.DIRECT,
+            template="day_number_of_year ( {0} )",
+            note="The function is day_number_of_year, not day_of_year.",
+        ),
+        "HOUR(timestamp_expr)": Construct(
+            "HOUR(timestamp_expr)", Classification.DIRECT, template="hour_of_day ( {0} )",
+            note="The function is hour_of_day, not hour.",
+        ),
+        "MINUTE(timestamp_expr)": Construct(
+            "MINUTE(timestamp_expr)", Classification.PASSTHROUGH,
+            template="MINUTE({0})", variant=Variant.INT,
+            note=(
+                "No native minute-of-hour extractor; add_minutes and "
+                "diff_minutes exist but neither extracts."
+            ),
+        ),
+        "SECOND(timestamp_expr)": Construct(
+            "SECOND(timestamp_expr)", Classification.PASSTHROUGH,
+            template="SECOND({0})", variant=Variant.INT,
+            note="As MINUTE.",
+        ),
+        "EXTRACT": Construct(
+            "EXTRACT", Classification.DIRECT,
+            template="per-part — see the date-part table below",
+            note=(
+                "Rewritten to the part's own ThoughtSpot function; there is no "
+                "generic extractor. 8 of the 11 specified parts are direct "
+                "(YEAR->year, QUARTER->quarter_number, MONTH->month_number, "
+                "WEEK->week_number_of_year, DAY->day, "
+                "DAYOFWEEK->day_number_of_week, DAYOFYEAR->day_number_of_year, "
+                "HOUR->hour_of_day); MINUTE, SECOND and MILLISECOND fall back "
+                "to sql_int_op (E3)."
+            ),
+        ),
+        "DATE_PART": Construct(
+            "DATE_PART", Classification.DIRECT,
+            template="per-part — see the date-part table below",
+            note="Identical treatment to EXTRACT; the two spellings collapse onto one rewrite (:276-279).",
+        ),
+        "DATE_TRUNC(part, date_expr)": Construct(
+            "DATE_TRUNC(part, date_expr)", Classification.DIRECT,
+            template="per-precision — see the truncation table below",
+            note=(
+                "ThoughtSpot has no date_trunc. The start_of_* family covers 7 "
+                "of the 8 specified precisions ('year'->start_of_year, "
+                "'quarter'->start_of_quarter, 'month'->start_of_month, "
+                "'week'->start_of_week, 'day'->date ( ), 'hour'->start_of_hour, "
+                "'minute'->start_of_min — the function is start_of_min, not "
+                "start_of_minute); 'second' falls back to sql_date_time_op "
+                "(E3). The specification says week truncation is Monday-start; "
+                "ThoughtSpot's week start is an instance setting, so the "
+                "converter verifies alignment and raises an issue when it cannot."
+            ),
+        ),
+        "DATEADD(part, amount, date_expr)": Construct(
+            "DATEADD(part, amount, date_expr)", Classification.DIRECT,
+            template="per-part add_* — see the arithmetic table below",
+            note=(
+                "Argument order differs: ThoughtSpot is add_days ( [d] , n ), "
+                "the specification is DATEADD(day, n, d). Every specified part "
+                "is reachable: day->add_days, week->add_weeks, "
+                "month->add_months, year->add_years, minute->add_minutes, "
+                "second->add_seconds, plus two by arithmetic on a coarser unit "
+                "since there is no native add_quarters or add_hours: "
+                "quarter->add_months ( [d] , 3 * n ), "
+                "hour->add_minutes ( [d] , 60 * n )."
+            ),
+        ),
+        "DATEDIFF(part, start_date, end_date)": Construct(
+            "DATEDIFF(part, start_date, end_date)", Classification.DIRECT,
+            template="per-part diff_* — see the arithmetic table below",
+            note=(
+                "Argument order is reversed: ThoughtSpot is "
+                "diff_days ( [end] , [start] ) — end first. Getting this wrong "
+                "silently negates every duration in the model. day->diff_days, "
+                "week->diff_weeks, month->diff_months, quarter->diff_quarters, "
+                "year->diff_years, hour->diff_hours, minute->diff_minutes, "
+                "second->diff_time (returns seconds)."
+            ),
+        ),
+        "DATE '2024-01-15'": Construct(
+            "DATE '2024-01-15'", Classification.DIRECT,
+            template="to_date ( '{0}' , 'yyyy-MM-dd' )",
+            note=(
+                "A bare '2024-01-15' in a ThoughtSpot formula is parsed as "
+                "arithmetic (2024 - 1 - 15), so the typed literal must always "
+                "be wrapped. to_date takes exactly two arguments, so the "
+                "converter supplies the ISO format model; {0} is the literal "
+                "date string."
+            ),
+        ),
+        "TIMESTAMP_NTZ '2024-01-15 10:30:00'": Construct(
+            "TIMESTAMP_NTZ '2024-01-15 10:30:00'", Classification.PASSTHROUGH,
+            template="CAST('2024-01-15 10:30:00' AS TIMESTAMP)",
+            variant=Variant.DATE_TIME,
+            note=(
+                "to_date returns a DATE and drops the time part, so there is "
+                "no native way to construct a wall-clock timestamp. A "
+                "zero-placeholder template is a documented form of the "
+                "pass-through — the document's own worked example is recorded "
+                "verbatim here; a real occurrence's literal value is "
+                "substituted per-occurrence when the template is built, out of "
+                "this catalog's scope (same as CAST's per-type dispatch)."
+            ),
+        ),
+        "TIME '10:30:00'": Construct(
+            "TIME '10:30:00'", Classification.PASSTHROUGH,
+            template="CAST('10:30:00' AS TIME)",
+            variant=Variant.DATE_TIME,
+            note=(
+                "ThoughtSpot has no TIME column type — time ( ) extracts a "
+                "time FROM a datetime, it does not construct one — so the "
+                "pass-through returns DATETIME and the date part is whatever "
+                "the warehouse defaults to. Flagged with an issue for that "
+                "reason, not only for the dialect."
+            ),
+        ),
+        "TO_DATE(string)": Construct(
+            "TO_DATE(string)", Classification.DIRECT,
+            template="to_date ( {0} , 'yyyy-MM-dd' )",
+            note=(
+                "The single-argument ISO form. ThoughtSpot's to_date is "
+                "strictly two-argument, so the converter supplies 'yyyy-MM-dd'."
+            ),
+        ),
+        "TO_TIMESTAMP(string)": Construct(
+            "TO_TIMESTAMP(string)", Classification.PASSTHROUGH,
+            template="TO_TIMESTAMP({0})", variant=Variant.DATE_TIME,
+            note="to_date is date-only; parsing to a timestamp would drop the time silently.",
+        ),
+        "TO_DATE(string, format)": Construct(
+            "TO_DATE(string, format)", Classification.DIRECT,
+            template="to_date ( {0} , <translated format> )",
+            note=(
+                "EXPERIMENTAL. Format tokens are translated, not passed "
+                "through — see the format-token table. ThoughtSpot accepts "
+                "Java/LDML tokens (yyyy-MM-dd) and strptime %-codes, which "
+                "between them cover the specification's entire portable core."
+            ),
+        ),
+        "TO_TIMESTAMP(string, format)": Construct(
+            "TO_TIMESTAMP(string, format)", Classification.PASSTHROUGH,
+            template="TO_TIMESTAMP({0}, 'YYYY-MM-DD HH24:MI:SS')",
+            variant=Variant.DATE_TIME,
+            note=(
+                "EXPERIMENTAL. Date-only to_date again. The format model "
+                "inside the template is the warehouse's, not Ossie's, so the "
+                "token translation table does not apply — this is the "
+                "sharpest case of the pass-through caveat."
+            ),
+        ),
+        "TO_CHAR(date_expr, format)": Construct(
+            "TO_CHAR(date_expr, format)", Classification.PASSTHROUGH,
+            template="TO_CHAR({0}, 'YYYY-MM')", variant=Variant.STRING,
+            note=(
+                "EXPERIMENTAL. ThoughtSpot has no general date formatter. "
+                "Single-token formats do have native equivalents and the "
+                "converter prefers them: 'YYYY' -> year_name ( [d] ), "
+                "'MONTH' -> month ( [d] ), 'DAY' -> day_of_week ( [d] ). Those "
+                "three return locale-dependent text on both sides."
+            ),
+        ),
+    }
+)
+
 #: Constructs the mapping document (docs/ossie/ts-ossie-function-mapping.md in the
 #: thoughtspot-agent-skills repo) counts separately under rule E1 ("one row per
 #: construct") that core-spec/expression_language.md does not give a discrete
