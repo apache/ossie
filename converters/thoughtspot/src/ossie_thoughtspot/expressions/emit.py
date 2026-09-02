@@ -143,7 +143,7 @@ def emit_passthrough(
     # aggregation, and the RANK/PERCENT_RANK/CUME_DIST fallbacks all do). Checking
     # the template against the kwarg in both directions turns "Tasks 3-8 must
     # remember to pass this" into something this function refuses to get wrong.
-    carries_partition_by = "partition by" in construct.template.lower()
+    carries_partition_by = bool(re.search(r"partition\s+by", construct.template, re.IGNORECASE))
     if carries_partition_by and partition_column is None:
         raise ValueError(
             f"{construct.spec_name}: template carries PARTITION BY but no "
