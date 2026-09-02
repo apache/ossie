@@ -17,7 +17,7 @@
 
 import pytest
 from ossie_thoughtspot.formula import (
-    find_column_refs, find_parameter_refs, is_bare_column_ref,
+    _scan, find_column_refs, find_parameter_refs, is_bare_column_ref,
     rewrite_column_refs, split_call,
 )
 
@@ -249,3 +249,32 @@ class TestQuoteInsideBracketBody:
             ("A", 'Say "Hi"'),
             ("B", "y"),
         ]
+
+
+class TestScanBracketStackTypeAwarePop:
+    """`_scan`'s bracket-type stack must pop only when a closer matches the type of its top
+    entry, never unconditionally — an unconditional pop lets a mismatched or stray closer
+    desynchronise the stack, which can then incorrectly toggle quote suppression for
+    whatever follows. `_scan` is a shallow tokenizer over malformed input here, not a
+    validator, so these pin the actual observed output (checked by running the scanner
+    before writing the assertion, not the output one might expect) rather than any claim
+    that the malformed input is handled "correctly" in some absolute sense.
+    """
+
+    def test_a_mismatched_closer_does_not_pop_the_bracket_stack(self):
+        # `}` does not match the `[` on top of the stack, so the stack keeps
+        # treating everything after it as still inside the never-closed `[`
+        # body — quote-toggling for the trailing `'z'` literal stays
+        # suppressed rather than (incorrectly) starting a real quote.
+        by_index = {i: in_quote for i, _ch, _d, in_quote in _scan("[A::x} 'z'")}
+        assert by_index[7] is False  # opening quote of 'z'
+        assert by_index[9] is False  # closing quote of 'z'
+
+    def test_a_stray_closer_with_nothing_open_does_not_crash_or_suppress_quoting(self):
+        # After the properly closed `[A::x]`, an extra `)` has an empty
+        # stack to pop from — no matching opener anywhere. It must not
+        # raise, and with nothing open afterwards the trailing 'z' literal
+        # is read as a real quoted string, not suppressed.
+        by_index = {i: in_quote for i, _ch, _d, in_quote in _scan("[A::x] ) 'z'")}
+        assert by_index[9] is True  # opening quote of 'z'
+        assert by_index[11] is True  # closing quote of 'z'

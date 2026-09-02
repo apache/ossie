@@ -45,7 +45,7 @@ import re
 import unicodedata
 
 _NON_ALNUM = re.compile(r"[^0-9a-z]+")
-_COLUMN_REF = re.compile(r"^\[(?P<table>[^\]:]+)::(?P<column>[^\]]+)\]$")
+_COLUMN_REF = re.compile(r"^\[(?P<table>[^\]]+?)::(?P<column>[^\]]+)\]$")
 
 
 def normalise(display_name: str) -> str:
@@ -108,6 +108,12 @@ def split_column_ref(ref: str) -> tuple[str, str]:
     Whether the right fix is an escaping scheme or a different delimiter is a
     real design question against live ThoughtSpot display names, left to a
     later change; loud failure is the correct interim behaviour.
+
+    A table or column name containing a single `:` round-trips correctly —
+    `split_column_ref(format_column_ref("A:B", "x")) == ("A:B", "x")`. The
+    table group matches lazily up to the *first* `::`, not a character class
+    that excludes colons outright; only a `::` occurring inside either part
+    is the genuinely ambiguous case the checks above catch.
     """
     stripped = ref.strip()
     match = _COLUMN_REF.match(stripped)
