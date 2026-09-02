@@ -491,6 +491,199 @@ CATALOG.update(
     }
 )
 
+# --------------------------------------------------------------------------
+# String functions (Task 5) — 21 rows: 10 direct / 11 passthrough / 0 unmappable.
+# Source: docs/ossie/ts-ossie-function-mapping.md, "String functions" section
+# (thoughtspot-agent-skills repo — not vendored here; prose above/below the table
+# read in full, per rule E1-E4).
+#
+# This family is over half passthrough, and the reasons run against intuition
+# rather than with it: LOWER/UPPER/TRIM/LTRIM/RTRIM/REPLACE are passthrough not
+# because they behave differently in ThoughtSpot but because ThoughtSpot has no
+# native equivalent at all (live-verified 2026-07-29 on se-thoughtspot, BL-170 —
+# TRIM and REPLACE were rejected with "Search did not find ...", moving them
+# from an earlier direct/conservative-passthrough reading to confirmed
+# passthrough). STARTSWITH/ENDSWITH run the other way: also no native function,
+# but their compositions use only native functions (strpos/substr/strlen), so
+# rule E2 keeps them direct. There is no regular-expression support of any kind,
+# so every REGEXP_* row is passthrough with no native fallback.
+# --------------------------------------------------------------------------
+CATALOG.update(
+    {
+        "CONCAT(str1, str2, ...)": Construct(
+            "CONCAT(str1, str2, ...)", Classification.DIRECT,
+            template="concat ( {0} , {1} , ... )",
+            note=(
+                "N-ary on both sides. + does not concatenate in ThoughtSpot — "
+                "it is numeric-only and the parser rejects string operands, so "
+                "both || and CONCAT land here."
+            ),
+        ),
+        "LENGTH(str)": Construct(
+            "LENGTH(str)", Classification.DIRECT, template="strlen ( {0} )",
+            note="Characters, not bytes, on both sides.",
+        ),
+        "LOWER(str)": Construct(
+            "LOWER(str)", Classification.PASSTHROUGH,
+            template="LOWER({0})", variant=Variant.STRING,
+            note="There is no native lower in ThoughtSpot.",
+        ),
+        "UPPER(str)": Construct(
+            "UPPER(str)", Classification.PASSTHROUGH,
+            template="UPPER({0})", variant=Variant.STRING,
+            note=(
+                "There is no native upper in ThoughtSpot. LOWER/UPPER are the "
+                "most-used functions in the whole passthrough set, and their "
+                "absence is also what forces ILIKE and case-insensitive "
+                "comparison into pass-throughs."
+            ),
+        ),
+        "TRIM(str)": Construct(
+            "TRIM(str)", Classification.PASSTHROUGH,
+            template="TRIM({0})", variant=Variant.STRING,
+            note=(
+                "There is no native trim in ThoughtSpot — live-verified "
+                "2026-07-29 on se-thoughtspot (BL-170), rejected with "
+                "'Search did not find \"trim (\"'. The whole trim family is a "
+                "pass-through, not just the one-sided forms."
+            ),
+        ),
+        "LTRIM(str)": Construct(
+            "LTRIM(str)", Classification.PASSTHROUGH,
+            template="LTRIM({0})", variant=Variant.STRING,
+            note=(
+                "No native ltrim — live-verified 2026-07-29, se-thoughtspot "
+                "(BL-170). This row was already passthrough on the "
+                "conservative reading that trim was two-sided-only; the "
+                "verification confirms the classification and strengthens the "
+                "reason — there is no trim to substitute at all."
+            ),
+        ),
+        "RTRIM(str)": Construct(
+            "RTRIM(str)", Classification.PASSTHROUGH,
+            template="RTRIM({0})", variant=Variant.STRING,
+            note="As LTRIM.",
+        ),
+        "LEFT(str, n)": Construct(
+            "LEFT(str, n)", Classification.DIRECT, template="left ( {0} , {1} )",
+        ),
+        "RIGHT(str, n)": Construct(
+            "RIGHT(str, n)", Classification.DIRECT, template="right ( {0} , {1} )",
+        ),
+        "SUBSTRING(str, start, length)": Construct(
+            "SUBSTRING(str, start, length)", Classification.DIRECT,
+            template="substr ( {0} , {1} - 1 , {2} )",
+            note=(
+                "Index base differs. ANSI SUBSTRING is 1-based; ThoughtSpot's "
+                "substr is 0-based. The -1 is mandatory and is the single most "
+                "likely off-by-one in the whole mapping. When start is an "
+                "expression rather than a literal, the arithmetic is emitted "
+                "rather than folded."
+            ),
+        ),
+        "REPLACE(str, from, to)": Construct(
+            "REPLACE(str, from, to)", Classification.PASSTHROUGH,
+            template="REPLACE({0}, {1}, {2})",
+            variant=Variant.STRING,
+            note=(
+                "There is no native replace in ThoughtSpot — live-verified "
+                "2026-07-29 on se-thoughtspot (BL-170), rejected with "
+                "'Search did not find \"replace (\"'. This row was direct on "
+                "documentation; the live pass moved it to the documented "
+                "fallback."
+            ),
+        ),
+        "SPLIT_PART(str, delimiter, part)": Construct(
+            "SPLIT_PART(str, delimiter, part)", Classification.PASSTHROUGH,
+            template="SPLIT_PART({0}, {1}, {2})",
+            variant=Variant.STRING,
+            note=(
+                "ThoughtSpot has no tokenising function at all — not split, "
+                "split_part or an nth-occurrence search — so there is no "
+                "composition to fall back on."
+            ),
+        ),
+        "POSITION(substr IN str)": Construct(
+            "POSITION(substr IN str)", Classification.DIRECT,
+            template="strpos ( {1} , {0} )",
+            note=(
+                "Operand order is reversed (haystack first in ThoughtSpot) and "
+                "the specification's infix IN form becomes a comma. 1-based, "
+                "returning 0 when absent, on both sides."
+            ),
+        ),
+        "CHARINDEX(substr, str)": Construct(
+            "CHARINDEX(substr, str)", Classification.DIRECT,
+            template="strpos ( {1} , {0} )",
+            note=(
+                "Specification alias for POSITION (:419) with the operands "
+                "already in prefix order; the reversal is the same."
+            ),
+        ),
+        "CONTAINS(str, substr)": Construct(
+            "CONTAINS(str, substr)", Classification.DIRECT,
+            template="contains ( {0} , {1} )",
+            note="Returns boolean on both sides.",
+        ),
+        "STARTSWITH(str, prefix)": Construct(
+            "STARTSWITH(str, prefix)", Classification.DIRECT,
+            template="strpos ( {0} , {1} ) = 1",
+            note=(
+                "There is no native starts_with — live-verified 2026-07-29, "
+                "se-thoughtspot (BL-170). Still direct because the composition "
+                "is exact and uses only native functions (per the "
+                "classification definition): strpos is 1-based, so a true "
+                "prefix sits at position 1. The composition itself was "
+                "verified to import."
+            ),
+        ),
+        "ENDSWITH(str, suffix)": Construct(
+            "ENDSWITH(str, suffix)", Classification.DIRECT,
+            template="substr ( {0} , strlen ( {0} ) - strlen ( {1} ) , strlen ( {1} ) ) = {1}",
+            note=(
+                "There is no native ends_with — live-verified 2026-07-29, "
+                "se-thoughtspot (BL-170). Direct by composition, as "
+                "STARTSWITH; verified to import."
+            ),
+        ),
+        "REGEXP_LIKE(str, pattern)": Construct(
+            "REGEXP_LIKE(str, pattern)", Classification.PASSTHROUGH,
+            template="REGEXP_LIKE({0}, {1})",
+            variant=Variant.BOOL,
+            note=(
+                "Boolean return, so not sql_string_op. ThoughtSpot has no "
+                "regular-expression support of any kind."
+            ),
+        ),
+        "REGEXP_EXTRACT(str, pattern)": Construct(
+            "REGEXP_EXTRACT(str, pattern)", Classification.PASSTHROUGH,
+            template="REGEXP_SUBSTR({0}, {1})",
+            variant=Variant.STRING,
+            note=(
+                "The function name inside the template is dialect-specific — "
+                "Snowflake spells it REGEXP_SUBSTR, others REGEXP_EXTRACT — so "
+                "the converter selects it from the connection's dialect and "
+                "raises an issue when the dialect is unknown."
+            ),
+        ),
+        "REGEXP_REPLACE(str, pattern, replacement)": Construct(
+            "REGEXP_REPLACE(str, pattern, replacement)", Classification.PASSTHROUGH,
+            template="REGEXP_REPLACE({0},{1},{2})",
+            variant=Variant.STRING,
+            note=(
+                "Name is portable; the pattern dialect (POSIX vs PCRE, "
+                "backreference syntax) is not."
+            ),
+        ),
+        "REGEXP_COUNT(str, pattern)": Construct(
+            "REGEXP_COUNT(str, pattern)", Classification.PASSTHROUGH,
+            template="REGEXP_COUNT({0}, {1})",
+            variant=Variant.INT,
+            note="Integer return.",
+        ),
+    }
+)
+
 #: Constructs the mapping document (docs/ossie/ts-ossie-function-mapping.md in the
 #: thoughtspot-agent-skills repo) counts separately under rule E1 ("one row per
 #: construct") that core-spec/expression_language.md does not give a discrete
