@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import pytest
 from inline_snapshot import snapshot
 
 import ossie_hex
@@ -26,4 +27,6 @@ def test_import() -> None:
 
 
 def test_cli_exits_zero() -> None:
-    assert main() == 0
+    with pytest.raises(SystemExit) as exc:
+        main(["--help"])
+    assert exc.value.code == 0
