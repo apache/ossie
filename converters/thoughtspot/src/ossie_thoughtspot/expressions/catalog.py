@@ -684,6 +684,232 @@ CATALOG.update(
     }
 )
 
+# --------------------------------------------------------------------------
+# Mathematical + Conditional functions (Task 6) — 34 rows: 32 direct /
+# 2 passthrough / 0 unmappable.
+# Source: docs/ossie/ts-ossie-function-mapping.md, "Mathematical functions" and
+# "Conditional functions" sections (thoughtspot-agent-skills repo — not
+# vendored here; prose above/below the tables read in full, per rule E1-E4).
+#
+# Nearly every row here is direct, several by composition (rule E2): SIGN has
+# no native function but composes exactly as a three-way `if` chain — the
+# trailing `else 0` is mandatory, ThoughtSpot rejects an `if` with no `else`.
+# RADIANS/DEGREES are bare dialect-free arithmetic, not passthroughs. PI is a
+# literal at the precision ThoughtSpot's own documented trig composites use.
+# ThoughtSpot's trigonometry is degrees-native while the specification is
+# radians-native, so SIN/COS/TAN convert degrees->radians on the way in
+# (`* 180 / pi`) and ASIN/ACOS/ATAN convert radians->degrees on the way out
+# (`* pi / 180`) — opposite directions, easy to transpose by mistake.
+# GREATEST/LEAST are deliberately NOT mapped to max/min: ThoughtSpot's max/min
+# are aggregate-only, so that mapping would both collapse the row-wise N-ary
+# result to one value and flip it from attribute to measure (E7).
+#
+# Only two rows are passthrough: TRUNC/TRUNCATE (no native truncation — floor
+# only agrees with it for x >= 0, d = 0, and round disagrees at every
+# half-value) and ATAN2 (quadrant-aware and defined where x = 0, so it is not
+# a two-argument ATAN composition, unlike every other inverse trig function
+# in this family).
+# --------------------------------------------------------------------------
+CATALOG.update(
+    {
+        "ABS(x)": Construct(
+            "ABS(x)", Classification.DIRECT, template="abs ( {0} )",
+        ),
+        "ROUND(x, d)": Construct(
+            "ROUND(x, d)", Classification.DIRECT, template="round ( {0} , {1} )",
+        ),
+        "FLOOR(x)": Construct(
+            "FLOOR(x)", Classification.DIRECT, template="floor ( {0} )",
+        ),
+        "CEIL(x)": Construct(
+            "CEIL(x)", Classification.DIRECT, template="ceil ( {0} )",
+            note="Specification alias pair CEIL(x) / CEILING(x); both spellings map to ceil.",
+        ),
+        "TRUNC(x, d)": Construct(
+            "TRUNC(x, d)", Classification.PASSTHROUGH,
+            template="TRUNC({0}, {1})", variant=Variant.DOUBLE,
+            note=(
+                "Specification alias pair TRUNC(x, d) / TRUNCATE(x, d). "
+                "ThoughtSpot has no truncation function. floor agrees with "
+                "TRUNC only for x >= 0 and d = 0, and round disagrees at every "
+                "half-value, so neither is a safe substitute."
+            ),
+        ),
+        "MOD(x, y)": Construct(
+            "MOD(x, y)", Classification.DIRECT, template="mod ( {0} , {1} )",
+            note="Sign-of-result for negative operands follows the warehouse on both sides.",
+        ),
+        "SIGN(x)": Construct(
+            "SIGN(x)", Classification.DIRECT,
+            template="if ( {0} > 0 ) then 1 else if ( {0} < 0 ) then -1 else 0",
+            note=(
+                "No native sign, but the three-way result is exactly "
+                "expressible as an if chain. The else 0 is required — "
+                "ThoughtSpot rejects an if chain with no else."
+            ),
+        ),
+        "POWER(x, y)": Construct(
+            "POWER(x, y)", Classification.DIRECT, template="pow ( {0} , {1} )",
+            note="The function is pow. power is rejected by the parser.",
+        ),
+        "SQRT(x)": Construct(
+            "SQRT(x)", Classification.DIRECT, template="sqrt ( {0} )",
+        ),
+        "EXP(x)": Construct(
+            "EXP(x)", Classification.DIRECT, template="exp ( {0} )",
+        ),
+        "LN(x)": Construct(
+            "LN(x)", Classification.DIRECT, template="ln ( {0} )",
+        ),
+        "LOG(base, x)": Construct(
+            "LOG(base, x)", Classification.DIRECT,
+            template="safe_divide ( ln ( {1} ) , ln ( {0} ) )",
+            note=(
+                "ThoughtSpot has fixed-base log2 and log10 only; base is a "
+                "runtime argument here, not a literal known at catalog time, "
+                "so the general change-of-base composition is the one "
+                "template that is exact for every base. safe_divide rather "
+                "than / guards base = 1."
+            ),
+        ),
+        "LOG10(x)": Construct(
+            "LOG10(x)", Classification.DIRECT, template="log10 ( {0} )",
+        ),
+        "SIN(x)": Construct(
+            "SIN(x)", Classification.DIRECT,
+            template="sin ( {0} * 180 / 3.14159265358979 )",
+            note=(
+                "ThoughtSpot trigonometry is in degrees; the specification is "
+                "in radians. The conversion is mandatory — a bare sin ( {0} ) "
+                "returns the sine of x degrees and is wrong for every "
+                "non-zero input."
+            ),
+        ),
+        "COS(x)": Construct(
+            "COS(x)", Classification.DIRECT,
+            template="cos ( {0} * 180 / 3.14159265358979 )",
+            note="Degrees, as SIN.",
+        ),
+        "TAN(x)": Construct(
+            "TAN(x)", Classification.DIRECT,
+            template="tan ( {0} * 180 / 3.14159265358979 )",
+            note="Degrees, as SIN.",
+        ),
+        "ASIN(x)": Construct(
+            "ASIN(x)", Classification.DIRECT,
+            template="( asin ( {0} ) * 3.14159265358979 / 180 )",
+            note=(
+                "Inverse functions convert the other way: ThoughtSpot returns "
+                "degrees, the specification expects radians."
+            ),
+        ),
+        "ACOS(x)": Construct(
+            "ACOS(x)", Classification.DIRECT,
+            template="( acos ( {0} ) * 3.14159265358979 / 180 )",
+            note="Degrees -> radians, as ASIN.",
+        ),
+        "ATAN(x)": Construct(
+            "ATAN(x)", Classification.DIRECT,
+            template="( atan ( {0} ) * 3.14159265358979 / 180 )",
+            note="Degrees -> radians, as ASIN.",
+        ),
+        "ATAN2(y, x)": Construct(
+            "ATAN2(y, x)", Classification.PASSTHROUGH,
+            template="ATAN2({0}, {1})", variant=Variant.DOUBLE,
+            note=(
+                "atan2 is not a two-argument atan — it is quadrant-aware and "
+                "defined where x = 0. Composing it from atan plus sign tests "
+                "is possible but the branch table is easy to get wrong at the "
+                "axes, so the pass-through is the honest mapping."
+            ),
+        ),
+        "RADIANS(degrees)": Construct(
+            "RADIANS(degrees)", Classification.DIRECT,
+            template="{0} * 3.14159265358979 / 180",
+            note="No native radians; the arithmetic is exact and dialect-free.",
+        ),
+        "DEGREES(radians)": Construct(
+            "DEGREES(radians)", Classification.DIRECT,
+            template="{0} * 180 / 3.14159265358979",
+            note="No native degrees; as RADIANS.",
+        ),
+        "PI()": Construct(
+            "PI()", Classification.DIRECT, template="3.14159265358979",
+            note=(
+                "No native pi. The literal is emitted at the precision "
+                "ThoughtSpot's own documented composites use; "
+                'sql_double_op ( "pi()" ) is available where full warehouse '
+                "precision matters."
+            ),
+        ),
+        "GREATEST(x, y, ...)": Construct(
+            "GREATEST(x, y, ...)", Classification.DIRECT,
+            template="greatest ( {0} , {1} , ... )",
+            note=(
+                "Not max. ThoughtSpot's max is an aggregate; greatest is the "
+                "row-wise N-ary function. Mapping GREATEST to max would "
+                "collapse the column to one value and also flip it from "
+                "attribute to measure."
+            ),
+        ),
+        "LEAST(x, y, ...)": Construct(
+            "LEAST(x, y, ...)", Classification.DIRECT,
+            template="least ( {0} , {1} , ... )",
+            note="Not min, for the same reason as GREATEST.",
+        ),
+        "IF(condition, true_result, false_result)": Construct(
+            "IF(condition, true_result, false_result)", Classification.DIRECT,
+            template="if ( {0} ) then {1} else {2}",
+            note=(
+                "The parentheses around the condition are mandatory for TML "
+                "import — without them the parser reports \"Expecting keyword "
+                "'('\". Applies to every condition shape, including a bare "
+                "BOOL column reference."
+            ),
+        ),
+        "IFF(condition, true_result, false_result)": Construct(
+            "IFF(condition, true_result, false_result)", Classification.DIRECT,
+            template="if ( {0} ) then {1} else {2}",
+            note="Specification alias for IF.",
+        ),
+        "NULLIF(expr1, expr2)": Construct(
+            "NULLIF(expr1, expr2)", Classification.DIRECT,
+            template="nullif ( {0} , {1} )",
+        ),
+        "COALESCE(expr1, expr2, ...)": Construct(
+            "COALESCE(expr1, expr2, ...)", Classification.DIRECT,
+            template="ifnull ( {0} , ifnull ( {1} , {2} ) )",
+            note=(
+                "ThoughtSpot's ifnull is strictly two-argument, so an N-ary "
+                "COALESCE becomes a right-nested chain. Two arguments is the "
+                "common case and needs no nesting."
+            ),
+        ),
+        "IFNULL(expr, default)": Construct(
+            "IFNULL(expr, default)", Classification.DIRECT,
+            template="ifnull ( {0} , {1} )",
+        ),
+        "NVL(expr, default)": Construct(
+            "NVL(expr, default)", Classification.DIRECT,
+            template="ifnull ( {0} , {1} )",
+            note="Specification alias for two-argument COALESCE.",
+        ),
+        "NVL2(expr, not_null_result, null_result)": Construct(
+            "NVL2(expr, not_null_result, null_result)", Classification.DIRECT,
+            template="if ( isnotnull ( {0} ) ) then {1} else {2}",
+            note="No native three-way null function; the composition is exact.",
+        ),
+        "ZEROIFNULL(expr)": Construct(
+            "ZEROIFNULL(expr)", Classification.DIRECT,
+            template="ifnull ( {0} , 0 )",
+        ),
+        "NULLIFZERO(expr)": Construct(
+            "NULLIFZERO(expr)", Classification.DIRECT,
+            template="nullif ( {0} , 0 )",
+        ),
+    }
+)
+
 #: Constructs the mapping document (docs/ossie/ts-ossie-function-mapping.md in the
 #: thoughtspot-agent-skills repo) counts separately under rule E1 ("one row per
 #: construct") that core-spec/expression_language.md does not give a discrete
