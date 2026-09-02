@@ -122,7 +122,7 @@ def emit_passthrough(
     even when the user's search omits it. This is enforced, not left to caller
     convention: a template that carries `PARTITION BY` (case-insensitive) but no
     `partition_column` raises, and a `partition_column` supplied for a template
-    with no `PARTITION BY` raises too — a mis-transcribed catalog row fails
+    with no `PARTITION BY` raises too — a miscopied catalog row fails
     loudly here instead of silently emitting an unwrapped, only-sometimes-
     correct pass-through.
 
