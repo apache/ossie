@@ -29,12 +29,9 @@ CONVENTION_DIVERGENCES (catalog.py) is the exact, reasoned list of the 9 where
 that difference shows up; test_the_two_counts_reconcile pins the arithmetic so
 the two counts cannot drift apart silently.
 """
-import pytest
-
 from ossie_thoughtspot.expressions import CATALOG, CONVENTION_DIVERGENCES, spec_construct_names
 
 
-@pytest.mark.xfail(reason="catalog is populated across Tasks 2-7", strict=True)
 def test_every_spec_construct_has_a_catalog_entry():
     missing = spec_construct_names() - set(CATALOG)
     assert missing == set(), f"constructs in the spec with no catalog entry: {sorted(missing)}"
@@ -59,7 +56,6 @@ def test_the_two_counts_reconcile():
     assert len(spec_construct_names()) + len(CONVENTION_DIVERGENCES) == 146
 
 
-@pytest.mark.xfail(reason="catalog is populated across Tasks 2-7", strict=True)
 def test_the_total_matches_the_mapping_document_census():
     # 146 is the figure the mapping document's coverage summary reports, arrived at
     # by rule E1 (one row per construct; argument vocabularies are not constructs).
