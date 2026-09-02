@@ -106,7 +106,7 @@ def test_split_column_ref_rejects_a_reference_formatted_from_a_delimiter_contain
 
 
 def test_split_column_ref_rejects_a_table_with_a_trailing_colon():
-    # M3: str.count("::") is non-overlapping, so a run of three consecutive
+    # str.count("::") is non-overlapping, so a run of three consecutive
     # colons ("ORDERS" + trailing ":" + the "::" delimiter) only counts as
     # one match and previously slipped through, silently mis-splitting to
     # ("ORDERS", ":Col") instead of raising.
@@ -117,7 +117,7 @@ def test_split_column_ref_rejects_a_table_with_a_trailing_colon():
 
 
 def test_split_column_ref_rejects_a_column_with_a_leading_colon():
-    # M3: the same three-colon-run string is equally producible from a column
+    # The same three-colon-run string is equally producible from a column
     # that itself starts with ':' — genuinely ambiguous either way.
     ref = identifiers.format_column_ref("ORDERS", ":Col")
     assert ref == "[ORDERS:::Col]"

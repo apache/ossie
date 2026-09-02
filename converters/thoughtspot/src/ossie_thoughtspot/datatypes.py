@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""The ThoughtSpot <-> Ossie datatype map, transcribed from the construct-mapping document.
+"""The ThoughtSpot <-> Ossie datatype map, covering every data type each side supports.
 
 Three properties of the map shape this module's surface. It is **not injective** — Decimal
 and Float both become DOUBLE, and Time, DateTimeTz and Opaque collapse into types that

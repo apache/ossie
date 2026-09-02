@@ -187,7 +187,7 @@ def test_both_case_forms_are_direct_with_a_mandatory_typed_else():
 
 
 def test_in_and_not_in_use_the_curly_brace_list_form():
-    # Live-verified 2026-07-29 on se-thoughtspot (BL-170): the round-paren
+    # Live-verified 2026-07-29 on se-thoughtspot: the round-paren
     # form is rejected. The curly-brace delimiter is the confirmed syntax.
     in_row = CATALOG["IN"]
     not_in_row = CATALOG["NOT IN"]

@@ -43,7 +43,7 @@ def test_every_source_file_carries_the_asf_header():
 
 
 def test_non_python_packaging_files_carry_the_asf_header():
-    # M4: the glob above only covers src/**/*.py and tests/**/*.py, so
+    # The glob above only covers src/**/*.py and tests/**/*.py, so
     # pyproject.toml, .gitignore, README.md, and the CI workflow were
     # ungated. Each uses a different comment syntax ('#', HTML comment,
     # YAML '#'), so this checks for the licence text itself, not an exact

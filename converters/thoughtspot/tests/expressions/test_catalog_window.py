@@ -231,7 +231,7 @@ def test_first_value_and_last_value_render_with_single_braces():
 
 
 # --------------------------------------------------------------------------
-# F5: the window-aggregation template previously carried a literal U+2026
+# The window-aggregation template previously carried a literal U+2026
 # ellipsis ("ROWS BETWEEN …") — the mapping document's own prose shorthand for
 # "a frame clause goes here", not renderable SQL. It passed __post_init__, the
 # E8 partition check and declared a satisfiable 3-argument arity, so

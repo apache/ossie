@@ -182,7 +182,7 @@ def test_emit_passthrough_requires_partition_column_when_template_carries_partit
 
 def test_emit_passthrough_refuses_a_partition_column_for_a_template_with_no_partition_by():
     # Symmetric check: STDDEV_POP's template has no PARTITION BY, so supplying
-    # partition_column anyway is equally a mistake (a mis-transcribed catalog row)
+    # partition_column anyway is equally a mistake (a miscopied catalog row)
     # and must also fail loudly.
     log = IssueLog()
     with pytest.raises(ValueError, match="PARTITION BY"):

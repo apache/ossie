@@ -109,14 +109,13 @@ normative source becomes ASF-hosted like every sibling converter's. That is a la
 needing its own review and is not done in this change; this section exists so the gap is
 acknowledged rather than silent.
 
-Two further citation forms appear in the source, from the same external repository:
-`BL-170` (a backlog item recording a specific live-instance finding — e.g. that ThoughtSpot's
-`IN`/`NOT IN` list delimiter is `{ }`, not `( )`) and `se-thoughtspot` (the name of the
+A further citation form appears in the source: `se-thoughtspot` (the name of the
 ThoughtSpot test instance the underlying live probes ran against, e.g. the 52-probe window-
-functions sweep on 2026-07-30). Both are kept rather than removed: unlike the rule
-identifiers above, they are not a normative source this converter depends on — they are
-evidence that a specific claim was verified against a running ThoughtSpot instance rather
-than assumed from documentation. They carry the same unresolvable-from-this-repository gap
+functions sweep on 2026-07-30). It is kept rather than removed: unlike the rule
+identifiers above, it is not a normative source this converter depends on — it is
+evidence that a specific claim (for example, that ThoughtSpot's `IN`/`NOT IN` list
+delimiter is `{ }`, not `( )`) was verified against a running ThoughtSpot instance rather
+than assumed from documentation. It carries the same unresolvable-from-this-repository gap
 as the rule identifiers, acknowledged here for the same reason.
 
 **Before declaring any expression untranslatable, consult the function mapping.** Many window

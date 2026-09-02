@@ -28,7 +28,8 @@ def test_readme_declares_both_directions():
 
 
 def test_readme_carries_a_coverage_matrix_with_rows():
-    # P21: a matrix, not a prose limitations list.
+    # The coverage information must appear as a matrix, not a prose
+    # limitations list.
     text = README.read_text(encoding="utf-8")
     assert "## Coverage matrix" in text
     body = text.split("## Coverage matrix", 1)[1]

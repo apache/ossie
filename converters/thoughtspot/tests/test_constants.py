@@ -19,7 +19,8 @@ from ossie_thoughtspot import constants
 
 
 def test_vendor_key_and_dialect_are_distinct_constants():
-    # P6: same value today, different upstream governance. Must not be one name.
+    # Same value today, different upstream governance — the two constants
+    # must not collapse into one name.
     assert constants.VENDOR_KEY == "THOUGHTSPOT"
     assert constants.DIALECT == "THOUGHTSPOT"
     # Both names must exist independently, so a later divergence touches one call site.
@@ -29,7 +30,7 @@ def test_vendor_key_and_dialect_are_distinct_constants():
 
 def test_dialect_is_registered_upstream():
     # apache/ossie#351 merged 2026-09-01: THOUGHTSPOT is a registered Dialect.
-    # ANSI_SQL is still emitted alongside it for portable expressions (P8).
+    # ANSI_SQL is still emitted alongside it for portable expressions.
     assert constants.DIALECT_IS_REGISTERED is True
     assert constants.PORTABLE_DIALECT == "ANSI_SQL"
 
