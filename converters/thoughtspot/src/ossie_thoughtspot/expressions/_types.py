@@ -82,3 +82,24 @@ class Construct:
             raise ValueError(
                 f"{self.spec_name}: a {self.classification.value} row must have a template"
             )
+        # A PASSTHROUGH template holds only the bare inner SQL body (e.g.
+        # "LOWER({0})") — emit_passthrough builds the `variant.value ( "..." , args )`
+        # wrapper itself. A template that already contains its own variant call
+        # (e.g. 'sql_string_op ( "LOWER({0})" , {0} )', copied verbatim from the
+        # mapping document's ThoughtSpot-column cell) double-wraps at emission time:
+        # `sql_string_op ( "sql_string_op ( ""LOWER({0})"" , {0} )" , {0} )`. That
+        # reads as fine in the catalog file and is wrong the moment it runs — Task
+        # 5 caught this in its own first draft (see task-5-report.md). Matching on
+        # "{variant} (" (the space and paren) rather than a bare substring guards
+        # against a coincidental token inside a legitimate body; a `sql_*_op` name
+        # is a ThoughtSpot-side synthetic formula-function name, so it cannot
+        # legitimately appear inside raw warehouse SQL either.
+        if self.classification is Classification.PASSTHROUGH:
+            marker = f"{self.variant.value} ("
+            if marker in self.template:
+                raise ValueError(
+                    f"{self.spec_name}: passthrough template already contains "
+                    f"'{marker}' — the template must hold only the bare inner SQL "
+                    "body; emit_passthrough builds the variant(...) wrapper itself, "
+                    "so this template would double-wrap at emission time"
+                )
