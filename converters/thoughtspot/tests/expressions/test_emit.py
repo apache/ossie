@@ -84,6 +84,9 @@ def test_emit_passthrough_refuses_a_runtime_parameter():
             STDDEV_POP, ["[Threshold Parameter]"], log,
             object_ref="metric:Revenue", has_parameter=True,
         )
+    # The raise must precede any log.add — a refused call must never also emit a
+    # misleading WARNING that tells the user to "review" a formula they never got.
+    assert log.as_dicts() == []
 
 
 def test_emit_passthrough_refuses_a_non_passthrough_construct():
@@ -135,3 +138,27 @@ def test_emit_passthrough_without_a_partition_column_is_unwrapped():
     log = IssueLog()
     out = emit_passthrough(STDDEV_POP, ["[x]"], log, object_ref="metric:Revenue")
     assert not out.startswith("group_aggregate")
+
+
+def test_emit_passthrough_requires_partition_column_when_template_carries_partition_by():
+    # E8, enforced rather than left to convention: ROW_NUMBER's template carries a
+    # literal PARTITION BY, so omitting partition_column must fail loudly rather
+    # than silently emit an unwrapped, only-sometimes-correct pass-through.
+    log = IssueLog()
+    with pytest.raises(ValueError, match="PARTITION BY"):
+        emit_passthrough(
+            ROW_NUMBER, ["[T::Region]", "[T::OrderDate]"], log,
+            object_ref="metric:RowNum",
+        )
+
+
+def test_emit_passthrough_refuses_a_partition_column_for_a_template_with_no_partition_by():
+    # Symmetric check: STDDEV_POP's template has no PARTITION BY, so supplying
+    # partition_column anyway is equally a mistake (a mis-transcribed catalog row)
+    # and must also fail loudly.
+    log = IssueLog()
+    with pytest.raises(ValueError, match="PARTITION BY"):
+        emit_passthrough(
+            STDDEV_POP, ["[x]"], log,
+            object_ref="metric:Revenue", partition_column="[T::Region]",
+        )
