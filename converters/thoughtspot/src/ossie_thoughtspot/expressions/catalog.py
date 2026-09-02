@@ -1420,7 +1420,12 @@ CATALOG.update(
                 "argument has no equivalent in the native idiom — ThoughtSpot "
                 "yields null outside the frame — a second reason the native "
                 "form is a downgrade (the pass-through carries default fine). "
-                "Subject to E5 and E6."
+                "Subject to E5 and E6. Variant recorded here is the documented "
+                "default (sql_number_aggregate_op); the typed sibling applies "
+                "for a non-numeric expr — LAG returns its argument's own type, "
+                "not an aggregate, so a string-typed expr (LAG(order_status, "
+                "1) OVER (...)) needs the typed sibling, not this default, or "
+                "it imports cleanly and aggregates wrongly."
             ),
         ),
         "LEAD(expr, offset, default) OVER (...)": Construct(
@@ -1433,7 +1438,10 @@ CATALOG.update(
                 "moving_sum ( [m] , -n , n , [ord] ) — ThoughtSpot's start/end "
                 "arguments use opposite sign conventions, so a forward offset "
                 "is a negative start (both live-confirmed 2026-07-30). Same "
-                "default limitation as LAG."
+                "default limitation as LAG. Variant recorded here is the "
+                "documented default (sql_number_aggregate_op); the typed "
+                "sibling applies for a non-numeric expr, same reason as LAG's "
+                "note — LEAD returns its argument's own type, not an aggregate."
             ),
         ),
         "FIRST_VALUE(expr) OVER (...)": Construct(
@@ -1487,7 +1495,11 @@ CATALOG.update(
                 "and last values of the axis — live-confirmed 2026-07-30, "
                 "nth_value ( ... ) rejected with 'Search did not find "
                 "\"nth_value ( sum (\"'. n is a literal, baked into the "
-                "template, as NTILE's."
+                "template, as NTILE's. Variant recorded here is the "
+                "documented default (sql_number_aggregate_op); the typed "
+                "sibling applies for a non-numeric expr, same reason as LAG's "
+                "note — NTH_VALUE returns its argument's own type, not an "
+                "aggregate."
             ),
         ),
         "OVER (PARTITION BY ... ORDER BY ...) clause": Construct(
@@ -1565,7 +1577,8 @@ CATALOG.update(
         ),
         "Window aggregation — AGG(expr) OVER (...)": Construct(
             "Window aggregation — AGG(expr) OVER (...)", Classification.PASSTHROUGH,
-            template="SUM({0}) OVER (PARTITION BY {1} ORDER BY {2} ROWS BETWEEN …)",
+            template="SUM({0}) OVER (PARTITION BY {1} ORDER BY {2} "
+                     "ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)",
             variant=Variant.NUMBER_AGGREGATE,
             note=(
                 "CONVENTION_DIVERGENCE: the Window Aggregations section is "
@@ -1583,7 +1596,19 @@ CATALOG.update(
                 "\"moving_count (\"' and siblings) — so a windowed COUNT, "
                 "MEDIAN, STDDEV or VARIANCE has a partitioned form via "
                 "group_count/group_stddev/group_variance and no ordered or "
-                "framed form of any kind. Variant recorded here is the "
+                "framed form of any kind. The frame is an exemplar, the same "
+                "convention as NTILE's literal 4 (see the Construct.template "
+                "docstring): ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW "
+                "is the cumulative-aggregate boundary the Frame clause row "
+                "above maps cumulative_* to, and is one concrete, valid frame "
+                "among the ones a real occurrence could carry — a caller "
+                "rebuilds the frame per occurrence, same as any other "
+                "exemplar row. The mapping document's own cell for this row "
+                "writes the frame as a literal ellipsis ('ROWS BETWEEN …'), "
+                "which is prose shorthand for 'a frame clause goes here', not "
+                "renderable SQL — transcribing it verbatim rendered warehouse "
+                "syntax errors at query time, so this template supplies a "
+                "concrete, valid frame instead. Variant recorded here is the "
                 "documented default (sql_number_aggregate_op); the typed "
                 "sibling applies for a non-numeric aggregate. Subject to E5."
             ),

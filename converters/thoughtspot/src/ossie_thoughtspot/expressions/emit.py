@@ -125,6 +125,20 @@ def emit_passthrough(
     with no `PARTITION BY` raises too — a mis-transcribed catalog row (Tasks 3-8)
     fails loudly here instead of silently emitting an unwrapped, only-sometimes-
     correct pass-through.
+
+    The exemplar convention: not every `construct.template` this function renders is a
+    complete, general-purpose body. Roughly a third of the catalog's PASSTHROUGH rows
+    (`PERCENTILE_CONT`/`DISC`'s `0.75`, `APPROX_PERCENTILE`'s `0.5`, `NTILE`'s `4`,
+    `NTH_VALUE`'s `2`, `LAG`/`LEAD`'s offset `1`, `TO_TIMESTAMP`/`TO_CHAR`'s fixed formats,
+    `DENSE_RANK`/`CUME_DIST`'s fixed `ORDER BY`, typed literals, and window aggregation's
+    `SUM`, among others) bake ONE caller-supplied value into the template as a literal
+    while still declaring a satisfiable arity, rather than exposing that value as its own
+    `{n}` placeholder. This function renders such a row exactly as written — it has no way
+    to tell an exemplar from a genuinely complete template, since both pass the arg-count
+    check the same way. The catalog holds an exemplar for documentation and testing; a
+    caller translating a real occurrence with a different value for that slot must rebuild
+    the template for that occurrence rather than reuse the catalog row's rendering
+    verbatim. Each exemplar row's `note` names the baked-in value.
     """
     if construct.classification is not Classification.PASSTHROUGH:
         raise ValueError(
@@ -135,6 +149,19 @@ def emit_passthrough(
         raise ValueError(
             f"{construct.spec_name}: a passthrough cannot carry a runtime parameter "
             "(E9) — it cannot resolve to static SQL"
+        )
+
+    # Mirrors emit_direct's own arg-count guard: a mismatch means either a caller
+    # passing the wrong number of resolved operands, or a template with a hardcoded
+    # literal (e.g. a fixed date) that declares zero placeholders — either way this
+    # would otherwise render as a call whose args outnumber (or fall short of) what
+    # the template's own {0}, {1}, ... placeholders consume, silently appending an
+    # unused argument or leaving a placeholder unfilled instead of failing loudly.
+    expected = _placeholder_count(construct.template)
+    if len(args) != expected:
+        plural = "argument" if expected == 1 else "arguments"
+        raise ValueError(
+            f"{construct.spec_name} expects {expected} {plural}, got {len(args)}"
         )
 
     # E8, enforced rather than left to caller convention: every passthrough row

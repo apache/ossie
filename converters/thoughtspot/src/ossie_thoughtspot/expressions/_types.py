@@ -61,6 +61,31 @@ class Construct:
     `spec_name`   the construct as the specification writes it, e.g. "SUM(expr)".
     `template`    for DIRECT, the ThoughtSpot formula with {0}, {1}... placeholders;
                   for PASSTHROUGH, the SQL body passed to the variant; None if UNMAPPABLE.
+
+                  Not every DIRECT/PASSTHROUGH template is a complete, positionally
+                  substitutable one — two shapes diverge from that default, and both fail
+                  loud (a raised ValueError, or rejection at TML import) rather than
+                  silently producing a wrong answer:
+
+                  - A "dispatch" template — literal text such as "per-type — see note" or
+                    "per-pattern-shape — see note" — for a row whose actual ThoughtSpot
+                    rendering depends on a runtime value not known at catalog-construction
+                    time (CAST's per-type table, the EXTRACT/DATE_PART/DATE_TRUNC/DATEADD
+                    family, TRUE/FALSE, both CASE forms, the column/metric reference, the
+                    unary +/- row, and several window rows). A caller building a uniform
+                    `.format()` dispatcher off this field alone will hit these ~20 rows and
+                    must special-case them; each row's `note` says so and describes the
+                    real dispatch.
+                  - An "exemplar" PASSTHROUGH template — a complete, renderable body that
+                    bakes ONE caller-supplied value in as a literal while still declaring a
+                    satisfiable arity (`PERCENTILE_CONT`/`DISC`'s `0.75`, `NTILE`'s `4`,
+                    `LAG`/`LEAD`'s offset `1`, and others — see `emit_passthrough`'s
+                    docstring for the full convention). This kind renders without error, so
+                    the arg-count guard alone does not distinguish it from a genuinely
+                    complete template: treating the baked-in literal as universal instead of
+                    rebuilding the template per real occurrence is silently wrong, not
+                    loud — `PERCENTILE_CONT(0.9)` would render as a P75 measure that imports
+                    and runs. Each such row's `note` names the baked-in value.
     `variant`     required for PASSTHROUGH (rule E4), forbidden otherwise.
     `note`        the row's caveat, verbatim enough to be traceable to the document.
     """
