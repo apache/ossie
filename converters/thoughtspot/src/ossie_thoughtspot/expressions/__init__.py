@@ -21,12 +21,15 @@ Public surface, grown across the expression-translation plan:
     - `Classification`, `Variant`, `Construct` — the shared vocabulary (Task 1).
     - `CATALOG` — the specification's construct inventory as data (Tasks 1, 3-7).
     - `spec_construct_names()` — the upstream-spec coverage oracle (Task 1).
+    - `CONVENTION_DIVERGENCES` — constructs the mapping document counts by rule
+      E1 that have no discrete row in the upstream spec (Task 1).
 """
-from .catalog import CATALOG, spec_construct_names
+from .catalog import CATALOG, CONVENTION_DIVERGENCES, spec_construct_names
 from ._types import Classification, Construct, Variant
 
 __all__ = [
     "CATALOG",
+    "CONVENTION_DIVERGENCES",
     "Classification",
     "Construct",
     "Variant",

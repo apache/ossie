@@ -49,6 +49,36 @@ heading text ("Not Supported in Expressions", "Common Dialect Variations",
 bullet list — rather than a hardcoded list of names to drop. A hardcoded list
 would go stale the moment upstream renamed or added a construct, which is
 exactly the failure mode this gate exists to catch.
+
+Spelling: `CATALOG` keys must match `spec_construct_names()` exactly (READ THIS
+BEFORE TASKS 3-8)
+------------------------------------------------------------------------------
+`spec_construct_names()` is the oracle, not the mapping document's prose. Several
+rows write their Ossie-side syntax differently than this parser extracts it, and
+a `CATALOG` entry keyed on the mapping document's own wording — not this
+function's output — will read as an "invented" construct even though it is a
+real, intended row:
+
+- Alias pairs the spec merges into ONE table row keep this parser's single
+  extracted spelling, not a "/"-joined pair: `CEIL(x)` (not `CEIL(x) /
+  CEILING(x)`), `TRUNC(x, d)` (not `.../ TRUNCATE(x, d)`), `TRY_CAST` and `CAST`
+  (bare — the heading token, not `CAST(expression AS target_type)`).
+- The top-level "Supported SQL Constructs" table contributes several operators
+  by their bare backtick token, not the mapping document's `a`/`b`-style
+  example: `BETWEEN`, `IN`, `NOT IN`, `IS NULL`, `IS NOT NULL`, `IS DISTINCT
+  FROM`, `IS NOT DISTINCT FROM`, `CASE WHEN`, and the raw symbols `+ - * / % = <>
+  != < > <= >=`.
+- Two-alternative-syntax rows keep the literal joining word from the spec's own
+  cell, "or" — not the mapping document's "/": `"CURRENT_DATE or
+  CURRENT_DATE()"`, `"CURRENT_TIMESTAMP or CURRENT_TIMESTAMP()"`,
+  `"CURRENT_TIME or CURRENT_TIME()"`.
+- The merged boolean-literal row is one entry, comma-joined: `"TRUE, FALSE"`.
+- `EXTRACT` and `DATE_PART` are bare tokens (no `(part FROM date_expr)` suffix).
+
+When adding a row, cross-check its key against `spec_construct_names()`'s output
+rather than transcribing the mapping document's column text verbatim. See
+`CONVENTION_DIVERGENCES` below for the (much shorter) list of constructs that
+have no entry in `spec_construct_names()` at all and are exempted instead.
 """
 import re
 from pathlib import Path
@@ -59,6 +89,68 @@ from ._types import Construct
 # CATALOG: empty until Tasks 3-7 populate it, one family per task.
 # --------------------------------------------------------------------------
 CATALOG: dict[str, Construct] = {}
+
+#: Constructs the mapping document (docs/ossie/ts-ossie-function-mapping.md in the
+#: thoughtspot-agent-skills repo) counts separately under rule E1 ("one row per
+#: construct") that core-spec/expression_language.md does not give a discrete
+#: table row of their own. Each entry records WHY it diverges. This is NOT an
+#: escape hatch for missing coverage: the 137 names in spec_construct_names() are
+#: still parsed from the live upstream file, so an upstream addition still fails
+#: the build. It exists because the mapping document's 146-row census counts by a
+#: different unit (one row per construct, including constructs the spec only
+#: describes in prose) than spec_construct_names() counts by (one entry per
+#: parseable table row / heading). Verified directly against the mapping
+#: document's actual row list — see catalog.py's docstring and task-1-report.md
+#: for the reconciliation (137 + 9 == 146).
+#:
+#: Two mechanisms an earlier pass mistakenly guessed would appear here do NOT:
+#: `CEIL(x)`/`CEILING(x)`, `TRUNC(x, d)`/`TRUNCATE(x, d)` and `TRUE`/`FALSE` are
+#: each ONE row in the mapping document too (not split), matching spec_name's
+#: single merged entry — a spelling-convention question for Tasks 3-8 (see the
+#: module docstring's "Spelling" note), not a divergence.
+CONVENTION_DIVERGENCES: dict[str, str] = {
+    "-x / +x (unary)": (
+        "unary +/- is named only in the 'Operator Precedence' list "
+        "(core-spec/expression_language.md:142), never a table row"
+    ),
+    "CASE expr WHEN v1 THEN r1 ... END (simple)": (
+        "simple CASE is described only in the CASE Expression code fence "
+        "(core-spec/expression_language.md:508-513) alongside searched CASE; "
+        "the top-level summary table's single bare 'CASE WHEN' token covers "
+        "the searched form and does not extend to this one"
+    ),
+    "Parentheses — expression grouping": (
+        "its Supported SQL Constructs row (core-spec/expression_language.md:120) "
+        "carries no backtick token in either cell, the only marker the "
+        "top-table extraction keys on"
+    ),
+    "DISTINCT aggregate modifier": (
+        "the DISTINCT modifier is described only in the Conditional "
+        "Aggregations prose/code block (core-spec/expression_language.md:219-230), "
+        "never a table row"
+    ),
+    "Column / metric reference — field, dataset.field": (
+        "its Supported SQL Constructs row (core-spec/expression_language.md:108) "
+        "carries no backtick token in either cell, same reason as Parentheses"
+    ),
+    "EXISTS_IN()": (
+        "named only in the Reason column of the excluded 'Not Supported in "
+        "Expressions' table (core-spec/expression_language.md:131), never in a "
+        "table of its own"
+    ),
+    "OVER (PARTITION BY ... ORDER BY ...) clause": (
+        "the generic OVER syntax template (core-spec/expression_language.md:548-560) "
+        "is a fenced code block, not a table"
+    ),
+    "Frame clause — ROWS BETWEEN ... / RANGE BETWEEN ...": (
+        "frame options are a bullet list under the OVER syntax section "
+        "(core-spec/expression_language.md:556-560), not a table"
+    ),
+    "Window aggregation — AGG(expr) OVER (...)": (
+        "the Window Aggregations section (core-spec/expression_language.md:583-599) "
+        "is prose and code examples, not a table"
+    ),
+}
 
 
 # --------------------------------------------------------------------------
