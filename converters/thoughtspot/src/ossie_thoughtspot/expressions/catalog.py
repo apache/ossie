@@ -977,17 +977,26 @@ CATALOG.update(
             note="ThoughtSpot has no % operator — the modulo is the function.",
         ),
         "-x / +x (unary)": Construct(
-            "-x / +x (unary)", Classification.DIRECT, template="-{0}",
+            "-x / +x (unary)", Classification.DIRECT,
+            template="per-spelling — see note",
             note=(
                 "CONVENTION_DIVERGENCE: unary +/- is named only in the "
-                "'Operator Precedence' list, never a table row. The document "
-                "gives one ThoughtSpot rendering, -[x], for both spellings — "
-                "unary +x is the identity (emit {0} unchanged, no "
-                "transformation needed) and is not itself a composition; "
-                "transcribed as the document gives it rather than inventing "
-                "a second template field. Unary minus is where the "
-                "bare-date-literal trap originates: '2024-05-01' unquoted is "
-                "parsed as 2024 - 5 - 1. Date literals are always wrapped in "
+                "'Operator Precedence' list, never a table row. This row "
+                "merges two Ossie spellings that need DIFFERENT output — "
+                "unary minus is -[x] (negation), unary plus is the identity "
+                "([x] unchanged) — so a single {0}-substitutable template "
+                "would be wrong for whichever spelling didn't produce it: "
+                "an earlier draft used template=\"-{0}\", which is correct "
+                "for -x but silently negates a parsed +x node (right arg "
+                "count, wrong semantics, no exception — the arg-count guard "
+                "cannot catch it). Forced external dispatch instead, the "
+                "same treatment as TRUE, FALSE below and CAST's per-type "
+                "table (Task 3): the caller must choose -{0} or {0} "
+                "unchanged based on which spelling it parsed, rather than "
+                "getting a plausible-looking wrong answer from this row. "
+                "Unary minus is where the bare-date-literal trap "
+                "originates: '2024-05-01' unquoted is parsed as "
+                "2024 - 5 - 1. Date literals are always wrapped in "
                 "to_date ( )."
             ),
         ),
@@ -1035,21 +1044,28 @@ CATALOG.update(
         ),
         "IN": Construct(
             "IN", Classification.DIRECT,
-            template="{0} in { {1} , {2} , ... }",
+            template="{0} in {{ {1} , {2} , ... }}",
             note=(
                 "Literal lists only on both sides — no subqueries. The "
                 "curly-brace delimiter is confirmed, live-verified "
                 "2026-07-29 on se-thoughtspot (BL-170): the round-parenthesis "
                 "form is rejected with 'Expecting one of the valid keywords, "
-                "such as, \"ts_var\", \"{\"'. It forces >- block-scalar YAML."
+                "such as, \"ts_var\", \"{\"'. It forces >- block-scalar YAML. "
+                "The braces are doubled ({{ }}) in the template because "
+                "emit_direct renders via str.format, which reads a single "
+                "literal brace as the start of a field name — the "
+                "corrected form was verified by actually calling "
+                "emit_direct and checking the rendered output has single "
+                "braces (see test_emit.py's catalog-wide sweep)."
             ),
         ),
         "NOT IN": Construct(
             "NOT IN", Classification.DIRECT,
-            template="not ( {0} in { {1} , {2} , ... } )",
+            template="not ( {0} in {{ {1} , {2} , ... }} )",
             note=(
                 "Emitted as a negated in rather than a not in keyword — the "
-                "bare keyword form is not reliably accepted."
+                "bare keyword form is not reliably accepted. Braces doubled "
+                "for str.format, as IN above."
             ),
         ),
         "str LIKE pattern": Construct(
