@@ -27,10 +27,11 @@ def test_vendor_key_and_dialect_are_distinct_constants():
     assert "DIALECT" in vars(constants)
 
 
-def test_dialect_is_not_yet_registered_upstream():
-    # apache/ossie#351 is open. Until it merges, emitting DIALECT fails schema validation.
-    assert constants.DIALECT_IS_REGISTERED is False
-    assert constants.FALLBACK_DIALECT == "ANSI_SQL"
+def test_dialect_is_registered_upstream():
+    # apache/ossie#351 merged 2026-09-01: THOUGHTSPOT is a registered Dialect.
+    # ANSI_SQL is still emitted alongside it for portable expressions (P8).
+    assert constants.DIALECT_IS_REGISTERED is True
+    assert constants.PORTABLE_DIALECT == "ANSI_SQL"
 
 
 def test_spec_series_is_major_minor_not_an_exact_version():
