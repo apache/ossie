@@ -910,6 +910,324 @@ CATALOG.update(
     }
 )
 
+# --------------------------------------------------------------------------
+# Operators and constructs (Task 7) — 33 rows: 30 direct / 2 passthrough /
+# 1 unmappable.
+# Source: docs/ossie/ts-ossie-function-mapping.md, "Operators and constructs"
+# section (thoughtspot-agent-skills repo — not vendored here; prose above/below
+# the table read in full, per rule E1-E4).
+#
+# The document's own section header states that CASE (both forms) and the
+# boolean literals/operators are rowed HERE, not under Conditional functions —
+# confirmed by the arithmetic: 25 Math + 9 Conditional (Task 6) + 33 here would
+# double-count CASE otherwise.
+#
+# spec_construct_names() extracts the BARE operator/keyword token for most of
+# this family, not the document's own "a + b"-style worked-example row header —
+# confirmed live before writing this block (see test_catalog_operators.py's
+# docstring for the full list). Six rows have no discrete spec table row at
+# all and are keyed via CONVENTION_DIVERGENCES instead: unary -x/+x, the
+# simple CASE form, Parentheses, the DISTINCT modifier, the column/metric
+# reference, and EXISTS_IN() itself.
+#
+# This family holds the single UNMAPPABLE row in the whole 146-row catalog:
+# EXISTS_IN() is named at :131 as the sanctioned way to filter on a subquery,
+# but the specification defines it nowhere — no signature, no argument order,
+# no semantics, absent from every function table. Construct.__post_init__
+# forbids a template or variant on an UNMAPPABLE row, so this is the one entry
+# in the whole file with neither.
+#
+# LIKE is direct despite ThoughtSpot having no native starts_with/ends_with:
+# the prefix/suffix/contains compositions it needs use only native functions
+# (rule E2), the same reasoning as Task 5's STARTSWITH/ENDSWITH rows. ILIKE is
+# passthrough for the opposite reason — case-insensitive matching has no
+# native form, and the usual lower()-fold workaround is itself a passthrough,
+# so there is nothing to compose from. The DISTINCT aggregate modifier is
+# passthrough for every aggregate except COUNT, which already has its own
+# native unique count row (COUNT(DISTINCT expr), Task 3).
+# --------------------------------------------------------------------------
+CATALOG.update(
+    {
+        "+": Construct(
+            "+", Classification.DIRECT, template="{0} + {1}",
+            note=(
+                "Numeric only. ThoughtSpot's + rejects string operands, so a + "
+                "that concatenates on the source side must become concat ( ). "
+                "The specification does not overload +, so this only bites "
+                "when translating a dialect expression."
+            ),
+        ),
+        "-": Construct(
+            "-", Classification.DIRECT, template="{0} - {1}",
+        ),
+        "*": Construct(
+            "*", Classification.DIRECT, template="{0} * {1}",
+        ),
+        "/": Construct(
+            "/", Classification.DIRECT, template="{0} / {1}",
+            note=(
+                "Both yield NULL (or a warehouse error) on divide-by-zero. "
+                "ThoughtSpot's safe_divide returns 0, not NULL, so it is not "
+                "a faithful substitute and is used only where the source "
+                "itself guards the denominator."
+            ),
+        ),
+        "%": Construct(
+            "%", Classification.DIRECT, template="mod ( {0} , {1} )",
+            note="ThoughtSpot has no % operator — the modulo is the function.",
+        ),
+        "-x / +x (unary)": Construct(
+            "-x / +x (unary)", Classification.DIRECT, template="-{0}",
+            note=(
+                "CONVENTION_DIVERGENCE: unary +/- is named only in the "
+                "'Operator Precedence' list, never a table row. The document "
+                "gives one ThoughtSpot rendering, -[x], for both spellings — "
+                "unary +x is the identity (emit {0} unchanged, no "
+                "transformation needed) and is not itself a composition; "
+                "transcribed as the document gives it rather than inventing "
+                "a second template field. Unary minus is where the "
+                "bare-date-literal trap originates: '2024-05-01' unquoted is "
+                "parsed as 2024 - 5 - 1. Date literals are always wrapped in "
+                "to_date ( )."
+            ),
+        ),
+        "=": Construct(
+            "=", Classification.DIRECT, template="{0} = {1}",
+        ),
+        "<>": Construct(
+            "<>", Classification.DIRECT, template="{0} <> {1}",
+        ),
+        "!=": Construct(
+            "!=", Classification.DIRECT, template="{0} != {1}",
+            note="ThoughtSpot accepts both inequality spellings, so the two rows are independent and both direct.",
+        ),
+        "<": Construct(
+            "<", Classification.DIRECT, template="{0} < {1}",
+        ),
+        ">": Construct(
+            ">", Classification.DIRECT, template="{0} > {1}",
+        ),
+        "<=": Construct(
+            "<=", Classification.DIRECT, template="{0} <= {1}",
+        ),
+        ">=": Construct(
+            ">=", Classification.DIRECT, template="{0} >= {1}",
+        ),
+        "expr1 AND expr2": Construct(
+            "expr1 AND expr2", Classification.DIRECT, template="{0} and {1}",
+            note="Lower-case, infix.",
+        ),
+        "expr1 OR expr2": Construct(
+            "expr1 OR expr2", Classification.DIRECT, template="{0} or {1}",
+            note="Lower-case, infix.",
+        ),
+        "NOT expr": Construct(
+            "NOT expr", Classification.DIRECT, template="not ( {0} )",
+            note=(
+                "Function form with parentheses, not a prefix operator — "
+                "not [x] does not parse."
+            ),
+        ),
+        "BETWEEN": Construct(
+            "BETWEEN", Classification.DIRECT,
+            template="{0} between {1} and {2}",
+            note="Inclusive on both sides.",
+        ),
+        "IN": Construct(
+            "IN", Classification.DIRECT,
+            template="{0} in { {1} , {2} , ... }",
+            note=(
+                "Literal lists only on both sides — no subqueries. The "
+                "curly-brace delimiter is confirmed, live-verified "
+                "2026-07-29 on se-thoughtspot (BL-170): the round-parenthesis "
+                "form is rejected with 'Expecting one of the valid keywords, "
+                "such as, \"ts_var\", \"{\"'. It forces >- block-scalar YAML."
+            ),
+        ),
+        "NOT IN": Construct(
+            "NOT IN", Classification.DIRECT,
+            template="not ( {0} in { {1} , {2} , ... } )",
+            note=(
+                "Emitted as a negated in rather than a not in keyword — the "
+                "bare keyword form is not reliably accepted."
+            ),
+        ),
+        "str LIKE pattern": Construct(
+            "str LIKE pattern", Classification.DIRECT,
+            template="per-pattern-shape — see note",
+            note=(
+                "Prefix ('foo%') -> strpos ( {0} , 'foo' ) = 1; suffix "
+                "('%foo') -> substr ( {0} , strlen ( {0} ) - strlen ( 'foo' "
+                ") , strlen ( 'foo' ) ) = 'foo'; contains ('%foo%') -> "
+                "contains ( {0} , 'foo' ). Only contains is a native "
+                "function — starts_with and ends_with do not exist "
+                "(live-verified 2026-07-29, se-thoughtspot — BL-170), so the "
+                "first two shapes are compositions of native functions "
+                "(rule E2), same as the STARTSWITH/ENDSWITH rows. These "
+                "three shapes are the overwhelming majority of LIKE use. "
+                "Interior wildcards and any _ single-character wildcard have "
+                "no native form and fall back to "
+                'sql_bool_op ( "{0} LIKE {1}" , [s] , [pattern] ) (E3). '
+                "The per-pattern-shape dispatch is out of this catalog's "
+                "scope, same treatment as CAST's per-type dispatch (Task 3) "
+                "— the actual pattern literal is a runtime value, not known "
+                "at catalog-construction time."
+            ),
+        ),
+        "str ILIKE pattern": Construct(
+            "str ILIKE pattern", Classification.PASSTHROUGH,
+            template="{0} ILIKE {1}", variant=Variant.BOOL,
+            note=(
+                "Case-insensitive matching has no native form, and the "
+                "usual workaround — fold both sides with lower — is itself "
+                "a pass-through, so there is nothing to compose from."
+            ),
+        ),
+        "IS NULL": Construct(
+            "IS NULL", Classification.DIRECT, template="isnull ( {0} )",
+        ),
+        "IS NOT NULL": Construct(
+            "IS NOT NULL", Classification.DIRECT, template="isnotnull ( {0} )",
+            note="Native, so not composed as not ( isnull ( ) ).",
+        ),
+        "IS DISTINCT FROM": Construct(
+            "IS DISTINCT FROM", Classification.DIRECT,
+            template=(
+                "if ( isnull ( {0} ) and isnull ( {1} ) ) then false else "
+                "if ( isnull ( {0} ) or isnull ( {1} ) ) then true else "
+                "{0} != {1}"
+            ),
+            note=(
+                "No native null-safe comparison, but the three-case truth "
+                "table is exactly expressible. The nesting order matters: "
+                "both-null must be tested before either-null."
+            ),
+        ),
+        "IS NOT DISTINCT FROM": Construct(
+            "IS NOT DISTINCT FROM", Classification.DIRECT,
+            template=(
+                "if ( isnull ( {0} ) and isnull ( {1} ) ) then true else "
+                "if ( isnull ( {0} ) or isnull ( {1} ) ) then false else "
+                "{0} = {1}"
+            ),
+            note=(
+                "The negation of the row above, written directly rather "
+                "than wrapped in not ( ) — one fewer nesting level for the "
+                "parser."
+            ),
+        ),
+        "CASE WHEN": Construct(
+            "CASE WHEN", Classification.DIRECT,
+            template="if ( c1 ) then r1 else if ( c2 ) then r2 else d",
+            note=(
+                "The searched CASE WHEN c1 THEN r1 ... ELSE d END form. No "
+                "native CASE; the chain is else if, two words. The final "
+                "else is mandatory and must be type-matched — else 0 for a "
+                "measure, else '' for an attribute. Omitting it raises "
+                "'Unknown data type', and a CASE with no ELSE (legal in the "
+                "specification, yielding NULL) therefore needs one "
+                "synthesised. The branch count is unbounded, so the "
+                "template is transcribed with the document's own symbolic "
+                "c1/r1/c2/r2/d names rather than forced into a fixed "
+                "{0}/{1} scheme — the same out-of-scope-dispatch treatment "
+                "as CAST's per-type table (Task 3)."
+            ),
+        ),
+        "CASE expr WHEN v1 THEN r1 ... END (simple)": Construct(
+            "CASE expr WHEN v1 THEN r1 ... END (simple)", Classification.DIRECT,
+            template="if ( [expr] = v1 ) then r1 else if ( [expr] = v2 ) then r2 else d",
+            note=(
+                "CONVENTION_DIVERGENCE: the simple CASE form is described "
+                "only in the CASE Expression code fence, never a table row. "
+                "Expanded to the searched form with an explicit equality "
+                "per branch. expr is repeated per branch, so a converter "
+                "should hoist an expensive expr into its own formula first. "
+                "Symbolic template, as CASE WHEN above, for the same "
+                "unbounded-branch-count reason."
+            ),
+        ),
+        "str1 || str2": Construct(
+            "str1 || str2", Classification.DIRECT, template="concat ( {0} , {1} )",
+            note=(
+                "ThoughtSpot has no concatenation operator at all — + is "
+                "numeric-only — so || and CONCAT share one target."
+            ),
+        ),
+        "Parentheses — expression grouping": Construct(
+            "Parentheses — expression grouping", Classification.DIRECT,
+            template="( {0} )",
+            note=(
+                "CONVENTION_DIVERGENCE: its Supported SQL Constructs row "
+                "carries no backtick token in either cell, the only marker "
+                "the top-table extraction keys on. Precedence is the "
+                "standard SQL ordering on the Ossie side. The converter "
+                "emits explicit parentheses around every rewritten "
+                "sub-expression rather than relying on the two languages "
+                "agreeing about precedence — cheap, and it removes a whole "
+                "class of silent arithmetic errors."
+            ),
+        ),
+        "TRUE, FALSE": Construct(
+            "TRUE, FALSE", Classification.DIRECT, template="true / false",
+            note=(
+                "The Boolean Functions table's Syntax cell merges TRUE and "
+                "FALSE into one comma-joined entry, matching what "
+                "spec_construct_names() extracts. Which of the two "
+                "lower-case literals is emitted depends on which the source "
+                "wrote — TRUE -> true, FALSE -> false — resolved "
+                "per-occurrence, out of this catalog's scope (same as "
+                "CAST's per-type dispatch). A bare BOOL column reference "
+                "used as a condition still needs its parentheses: "
+                "if ( [T::flag] ) then ... parses, if [T::flag] then ... "
+                "does not."
+            ),
+        ),
+        "DISTINCT aggregate modifier": Construct(
+            "DISTINCT aggregate modifier", Classification.PASSTHROUGH,
+            template="SUM(DISTINCT {0})", variant=Variant.NUMBER_AGGREGATE,
+            note=(
+                "CONVENTION_DIVERGENCE: described only in the Conditional "
+                "Aggregations prose/code block, never a table row. The "
+                "specification allows DISTINCT on SUM as well as COUNT. "
+                "ThoughtSpot has exactly one distinct-aware aggregate — "
+                "unique count — which is COUNT(DISTINCT) and already has "
+                "its own row. Every other DISTINCT aggregate is a "
+                "pass-through."
+            ),
+        ),
+        "Column / metric reference — field, dataset.field": Construct(
+            "Column / metric reference — field, dataset.field",
+            Classification.DIRECT,
+            template="[TABLE::Column], or [Formula Name] for a metric",
+            note=(
+                "CONVENTION_DIVERGENCE: its Supported SQL Constructs row "
+                "carries no backtick token in either cell, same reason as "
+                "Parentheses. Always rewritten from resolved metadata, "
+                "never passed through textually — the rewrite, the "
+                "case-sensitivity rules and the display-name-versus-"
+                "identifier problem are the construct-mapping document's "
+                "ID1-ID4, out of this catalog's scope."
+            ),
+        ),
+        "EXISTS_IN()": Construct(
+            "EXISTS_IN()", Classification.UNMAPPABLE,
+            note=(
+                "CONVENTION_DIVERGENCE: named only in the Reason column of "
+                "the excluded 'Not Supported in Expressions' table, never "
+                "in a table of its own. The single unmappable row in the "
+                "whole 146-row catalog: named at :131 as the sanctioned way "
+                "to filter on a subquery, but defined nowhere in the "
+                "specification — no signature, no argument order, no "
+                "semantics, absent from every function table. Even given a "
+                "signature, ThoughtSpot's nearest capability is a "
+                "sql_bool_op subquery template that requires a "
+                "fully-qualified warehouse table name, which is not "
+                "derivable from an Ossie expression. See ask A9."
+            ),
+        ),
+    }
+)
+
 #: Constructs the mapping document (docs/ossie/ts-ossie-function-mapping.md in the
 #: thoughtspot-agent-skills repo) counts separately under rule E1 ("one row per
 #: construct") that core-spec/expression_language.md does not give a discrete
