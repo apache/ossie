@@ -99,6 +99,10 @@ checking is an error (invariant I7).
 ## Development
 
 ```bash
-pip install -e ".[dev]"
-python -m pytest tests/ -v
+uv run --python 3.13 pytest tests/ -v
 ```
+
+`uv run` syncs the `dev` dependency group (declared via PEP 735
+`[dependency-groups]`, not an extra) and runs the tests in one step — see
+`.github/workflows/converter-thoughtspot-ci.yml` for the CI invocation this
+mirrors.
