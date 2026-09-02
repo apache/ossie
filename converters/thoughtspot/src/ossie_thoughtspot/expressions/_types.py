@@ -113,8 +113,8 @@ class Construct:
         # (e.g. 'sql_string_op ( "LOWER({0})" , {0} )', copied verbatim from the
         # mapping document's ThoughtSpot-column cell) double-wraps at emission time:
         # `sql_string_op ( "sql_string_op ( ""LOWER({0})"" , {0} )" , {0} )`. That
-        # reads as fine in the catalog file and is wrong the moment it runs — Task
-        # 5 caught this in its own first draft (see task-5-report.md). Matching on
+        # reads as fine in the catalog file and is wrong the moment it runs — a real
+        # transcription mistake this check exists to catch. Matching on
         # "{variant} (" (the space and paren) rather than a bare substring guards
         # against a coincidental token inside a legitimate body; a `sql_*_op` name
         # is a ThoughtSpot-side synthetic formula-function name, so it cannot

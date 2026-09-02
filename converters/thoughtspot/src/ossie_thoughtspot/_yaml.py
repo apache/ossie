@@ -19,9 +19,9 @@
 
 PyYAML implements YAML 1.1, in which `on`, `off`, `yes`, `no`, `y` and `n`
 resolve to booleans. TML uses such tokens as ordinary strings, so a bare
-`yaml.safe_load` corrupts them silently (learnings report P7, fidelity F8).
-Only the boolean resolver is narrowed here — no other YAML 1.1/1.2 divergence
-(e.g. octal/sexagesimal number parsing) is addressed.
+`yaml.safe_load` corrupts them silently. Only the boolean resolver is
+narrowed here — no other YAML 1.1/1.2 divergence (e.g. octal/sexagesimal
+number parsing) is addressed.
 
 Both directions matter. The loader stops 1.1 bool tokens becoming booleans; the
 dumper quotes them on the way out so the next reader — which may be a 1.1

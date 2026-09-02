@@ -17,17 +17,36 @@
 
 """Expression translation: the Ossie expression language <-> ThoughtSpot formulas.
 
-Public surface, grown across the expression-translation plan:
-    - `Classification`, `Variant`, `Construct` — the shared vocabulary (Task 1).
-    - `CATALOG` — the specification's construct inventory as data (Tasks 1, 3-7).
-    - `spec_construct_names()` — the upstream-spec coverage oracle (Task 1).
-    - `CONVENTION_DIVERGENCES` — constructs the mapping document counts by rule
-      E1 that have no discrete row in the upstream spec (Task 1).
+Public surface:
+    - `Classification`, `Variant`, `Construct` — the shared vocabulary the forward
+      catalog, the emitters and the reverse inventory all use.
+    - `CATALOG` — every specification construct mapped to a ThoughtSpot rendering.
+    - `spec_construct_names()` — the upstream-spec coverage oracle: reads
+      core-spec/expression_language.md directly so a construct added upstream fails
+      this package's build instead of silently going unsupported.
+    - `CONVENTION_DIVERGENCES` — constructs the mapping document counts by rule E1
+      that have no discrete row in the upstream spec.
     - `emit_direct`, `emit_passthrough`, `emit_unmappable` — render a `Construct`
-      into an actual ThoughtSpot formula, one function per `Classification` (Task 2).
+      into an actual ThoughtSpot formula, one function per `Classification`.
+    - `REVERSE`, `ReverseConstruct`, `ReverseDisposition`, `translate_thoughtspot`,
+      `stash_runtime_parameter` — the reverse-direction inventory (ThoughtSpot
+      functions with no counterpart in the Ossie specification) and its translator.
+    - `thoughtspot_dialect_entry`, `portable_dialect_entry`,
+      `custom_extensions_fragment` — the E11/X1 helpers a caller combines with
+      `translate_thoughtspot`'s result to satisfy roundtrip at the object level.
 """
 from .catalog import CATALOG, CONVENTION_DIVERGENCES, spec_construct_names
 from .emit import emit_direct, emit_passthrough, emit_unmappable
+from .reverse import (
+    REVERSE,
+    ReverseConstruct,
+    ReverseDisposition,
+    custom_extensions_fragment,
+    portable_dialect_entry,
+    stash_runtime_parameter,
+    thoughtspot_dialect_entry,
+    translate_thoughtspot,
+)
 from ._types import Classification, Construct, Variant
 
 __all__ = [
@@ -35,9 +54,17 @@ __all__ = [
     "CONVENTION_DIVERGENCES",
     "Classification",
     "Construct",
+    "REVERSE",
+    "ReverseConstruct",
+    "ReverseDisposition",
     "Variant",
+    "custom_extensions_fragment",
     "emit_direct",
     "emit_passthrough",
     "emit_unmappable",
+    "portable_dialect_entry",
     "spec_construct_names",
+    "stash_runtime_parameter",
+    "thoughtspot_dialect_entry",
+    "translate_thoughtspot",
 ]
