@@ -21,7 +21,7 @@ ThoughtSpot has one `name` per column, serving as display name, search token and
 cross-document key at once (gap G2). Ossie splits identifier from label, so the
 identifier has to be derived — and derivation collides.
 
-**Known limitation — non-Latin scripts, not diacritics (R14 revision).** An
+**Known limitation — non-Latin scripts, not diacritics.** An
 earlier revision of this module documented ASCII-only folding as a stated
 boundary rather than fixing it, on the grounds that a transliteration policy
 is a product decision. That reasoning holds for *transliteration* (e.g.
