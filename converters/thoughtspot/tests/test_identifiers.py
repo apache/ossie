@@ -96,7 +96,7 @@ def test_split_column_ref_rejects_an_ambiguous_reference():
 
 
 def test_split_column_ref_rejects_a_reference_formatted_from_a_delimiter_containing_name():
-    # Reproduces the finding: a table name that itself contains '::' formats
+    # A table name that itself contains '::' formats
     # into a reference that must fail loudly on split, not silently mis-split
     # the table/column boundary.
     ref = identifiers.format_column_ref("A::B", "C")
