@@ -18,7 +18,7 @@
 
 """Render a catalog `Construct` into an actual ThoughtSpot formula.
 
-Three emitters, one per `Classification` (Task 1's `_types.py`):
+Three emitters, one per `Classification` (see `_types.py`):
 
 - `emit_direct`      — substitutes `args` into the construct's native ThoughtSpot
                         template positionally. Rule E2: a `direct` row may itself be
@@ -122,8 +122,8 @@ def emit_passthrough(
     even when the user's search omits it. This is enforced, not left to caller
     convention: a template that carries `PARTITION BY` (case-insensitive) but no
     `partition_column` raises, and a `partition_column` supplied for a template
-    with no `PARTITION BY` raises too — a mis-transcribed catalog row (Tasks 3-8)
-    fails loudly here instead of silently emitting an unwrapped, only-sometimes-
+    with no `PARTITION BY` raises too — a mis-transcribed catalog row fails
+    loudly here instead of silently emitting an unwrapped, only-sometimes-
     correct pass-through.
 
     The exemplar convention: not every `construct.template` this function renders is a
@@ -168,8 +168,8 @@ def emit_passthrough(
     # that needs the group_aggregate wrap carries the literal string "PARTITION BY"
     # in its SQL template (ROW_NUMBER, LAG, LEAD, the OVER fallback, window
     # aggregation, and the RANK/PERCENT_RANK/CUME_DIST fallbacks all do). Checking
-    # the template against the kwarg in both directions turns "Tasks 3-8 must
-    # remember to pass this" into something this function refuses to get wrong.
+    # the template against the kwarg in both directions turns "the catalog author
+    # must remember to pass this" into something this function refuses to get wrong.
     carries_partition_by = bool(re.search(r"partition\s+by", construct.template, re.IGNORECASE))
     if carries_partition_by and partition_column is None:
         raise ValueError(

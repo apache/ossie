@@ -51,9 +51,10 @@ expression whatsoever.
               `moving_*`/`cumulative_*` family: the frame and order translate exactly, the
               partition does not, rule E13/ask A10). Always logs a WARNING and, per rule
               E11, the caller should pair the composed expression with a THOUGHTSPOT dialect
-              entry (`thoughtspot_dialect_entry`) carrying the verbatim original — and, per
-              learnings P8, an ANSI_SQL sibling (`portable_dialect_entry`) for the composed
-              expression itself, since it *is* portable, just incomplete.
+              entry (`thoughtspot_dialect_entry`) carrying the verbatim original — and an
+              ANSI_SQL sibling (`portable_dialect_entry`) for the composed expression itself,
+              since it *is* portable, just incomplete: a consumer that does not implement the
+              THOUGHTSPOT dialect still gets something it can execute.
     DIALECT   the construct's natural home is the Ossie `dialects[]` mechanism, not a
               portable expression — the ten `sql_*_op` / `sql_*_aggregate_op` names. No
               ANSI_SQL sibling is ever emitted for these (the document is explicit: raw
@@ -68,13 +69,12 @@ Argument abstraction level
 `translate_thoughtspot(name, args, log, *, object_ref, ...)` takes `args` as already-
 extracted operand strings, exactly the abstraction level `emit_direct`/`emit_passthrough`
 take in the forward direction (never raw ThoughtSpot formula text with nested calls or
-brace/quote syntax to parse) — this plan's own open items record that the expression parser
-does not exist yet, so there is nothing to parse from either direction yet. A caller with a
-real parsed formula tree supplies the resolved operand strings positionally.
+brace/quote syntax to parse) — no expression parser exists yet, so there is nothing to parse
+from either direction yet. A caller with a real parsed formula tree supplies the resolved
+operand strings positionally.
 
-Interface note against the brief: `IssueLog.add` requires `object_ref` as a mandatory
-keyword argument, so `translate_thoughtspot` carries `object_ref` as a required keyword-only
-parameter beyond the brief's literal `(name, args, log)` — the same shape
+`translate_thoughtspot` carries `object_ref` as a required keyword-only parameter beyond the
+plain `(name, args, log)` shape: `IssueLog.add` requires it, the same shape
 `emit_passthrough`/`emit_unmappable` already use for the identical reason. A second keyword-
 only parameter, `connection_dialect`, is added for the DIALECT family only (see
 `_dispatch_sql_op`) — the document itself says resolving these needs the connection's own
@@ -329,9 +329,8 @@ REVERSE["to_date"] = ReverseConstruct(
     issue_severity=Severity.INFO,
     issue_message=(
         "{name}'s format string is passed through verbatim, not mechanically translated "
-        "through the TO_DATE/TO_CHAR format-token table — the expression parser this would "
-        "need does not exist yet (see task-9-report.md). TO_DATE(s, format) is EXPERIMENTAL "
-        "on the Ossie side."
+        "through the TO_DATE/TO_CHAR format-token table — no expression parser exists yet "
+        "to do that translation. TO_DATE(s, format) is EXPERIMENTAL on the Ossie side."
     ),
     note="Judgment call: format-token reversal deferred to Plans C/D's parser.",
 )
@@ -557,7 +556,7 @@ for _name, _agg in _GROUP_SHORTHAND_AGGREGATES.items():
             f"Shorthand for group_aggregate({_agg.lower()}(m), ...) — same shape dispatch. "
             "Judgment call: the (m, grouping, filter) 3-argument shape is assumed by analogy "
             "with group_aggregate's live-confirmed form; the shorthand family's own arity "
-            "was not independently live-tested (see task-9-report.md)."
+            "was not independently live-tested."
         ),
     )
 
@@ -857,7 +856,7 @@ def translate_thoughtspot(
 
     See the module docstring for the two cross-cutting checks below (fiscal-calendar
     argument, concat hyperlink markup) and for why `object_ref` and `connection_dialect` are
-    keyword-only additions beyond the brief's literal three-argument signature.
+    keyword-only additions beyond the plain `(name, args, log)` signature.
     """
     if _is_fiscal_variant(args):
         _stash_fiscal_variant(name, log, object_ref=object_ref)
@@ -888,13 +887,13 @@ def translate_thoughtspot(
 
 
 # --------------------------------------------------------------------------
-# E11/P8 — dialect-entry and custom_extensions helpers.
+# E11 — dialect-entry and custom_extensions helpers.
 #
-# translate_thoughtspot's own return type is `str | None` (the brief's contract), so it
-# cannot itself hand back a dialects[] entry or a custom_extensions payload — those are
-# object-level document concerns, one level above a single expression. These three helpers
-# are what a caller (Plan C/D, which does operate at the object level) combines with
-# translate_thoughtspot's result to satisfy rule E11 and learnings P8 in full.
+# translate_thoughtspot's own return type is `str | None`, so it cannot itself hand back a
+# dialects[] entry or a custom_extensions payload — those are object-level document
+# concerns, one level above a single expression. These three helpers are what a caller
+# operating at the object level combines with translate_thoughtspot's result to satisfy
+# rule E11 in full.
 # --------------------------------------------------------------------------
 
 def thoughtspot_dialect_entry(name: str, args: list[str]) -> dict[str, str]:
@@ -908,12 +907,14 @@ def thoughtspot_dialect_entry(name: str, args: list[str]) -> dict[str, str]:
 
 
 def portable_dialect_entry(expression: str) -> dict[str, str]:
-    """Learnings P8 — pair the THOUGHTSPOT dialect entry with a PORTABLE_DIALECT (ANSI_SQL)
-    sibling wherever the expression alongside it is itself portable. Applies to PARTIAL rows
-    (the frame/order composition is genuine, portable ANSI SQL, just an incomplete window) —
-    never to a pure STASH (there is no portable expression to pair) and never to the
-    `sql_*_op` DIALECT family (the document is explicit: no ANSI_SQL sibling is emitted
-    there, because that template's portability is exactly what is unknown).
+    """Pair the THOUGHTSPOT dialect entry with a PORTABLE_DIALECT (ANSI_SQL) sibling
+    wherever the expression alongside it is itself portable, so a consumer that does not
+    implement the THOUGHTSPOT dialect still gets something it can execute. Applies to
+    PARTIAL rows (the frame/order composition is genuine, portable ANSI SQL, just an
+    incomplete window) — never to a pure STASH (there is no portable expression to pair)
+    and never to the `sql_*_op` DIALECT family (the document is explicit: no ANSI_SQL
+    sibling is emitted there, because that template's portability is exactly what is
+    unknown).
     """
     return {"dialect": PORTABLE_DIALECT, "expression": expression}
 

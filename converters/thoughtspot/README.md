@@ -35,15 +35,32 @@ File-to-file only. Nothing here calls a ThoughtSpot API.
 
 ## Status
 
-Foundations only. Neither conversion direction is implemented yet. The foundations built so
-far are: a YAML 1.2 codec (`_yaml.py`), structured issue reporting (`issues.py`), the
-`custom_extensions` stash for data a conversion cannot carry natively (`stash.py`),
+Foundations and the expression-translation layer are built; neither end-to-end conversion
+direction (Model TML <-> Ossie semantic model) is implemented yet.
+
+**Foundations:** a YAML 1.2 codec (`_yaml.py`), structured issue reporting (`issues.py`),
+the `custom_extensions` stash for data a conversion cannot carry natively (`stash.py`),
 identifier derivation (`identifiers.py`), and key derivation (`keys.py`).
 
+**Expression translation** (`expressions/`) — the majority of the code so far, and not yet
+wired into either conversion direction:
+- `CATALOG` (`catalog.py`) — all 146 constructs `core-spec/expression_language.md` defines,
+  each mapped to its ThoughtSpot rendering (`direct`, `passthrough`, or `unmappable`), plus
+  `spec_construct_names()`, an oracle that parses the upstream spec directly so a future
+  upstream addition fails this package's build instead of silently going unsupported.
+- `emit_direct`, `emit_passthrough`, `emit_unmappable` (`emit.py`) — render one `Construct`
+  into an actual ThoughtSpot formula string.
+- `REVERSE` (`reverse.py`) — a 79-row inventory of ThoughtSpot-only functions with no
+  counterpart in the Ossie specification, and `translate_thoughtspot()`, which composes an
+  Ossie expression where possible and otherwise preserves the original ThoughtSpot call for
+  roundtrip, via the `custom_extensions` stash or an Ossie `dialects[]` entry.
+
 **The `THOUGHTSPOT` dialect is registered upstream** — apache/ossie#351 merged 2026-09-01.
-Expressions are emitted under `THOUGHTSPOT`, with an `ANSI_SQL` entry alongside it where the
-expression is portable, so consumers that do not implement our dialect still get something
-they can execute.
+Once a conversion direction emits a full document, expressions will be emitted under
+`THOUGHTSPOT`, with an `ANSI_SQL` entry alongside it where the expression is portable, so a
+consumer that does not implement our dialect still gets something it can execute — today
+`thoughtspot_dialect_entry`/`portable_dialect_entry` (`reverse.py`) are the building blocks
+for that, not yet called from a document-level emitter.
 
 ## Coverage matrix
 
@@ -91,6 +108,16 @@ those mapping tables into this repository, under `docs/` or alongside this conve
 normative source becomes ASF-hosted like every sibling converter's. That is a larger change
 needing its own review and is not done in this change; this section exists so the gap is
 acknowledged rather than silent.
+
+Two further citation forms appear in the source, from the same external repository:
+`BL-170` (a backlog item recording a specific live-instance finding — e.g. that ThoughtSpot's
+`IN`/`NOT IN` list delimiter is `{ }`, not `( )`) and `se-thoughtspot` (the name of the
+ThoughtSpot test instance the underlying live probes ran against, e.g. the 52-probe window-
+functions sweep on 2026-07-30). Both are kept rather than removed: unlike the rule
+identifiers above, they are not a normative source this converter depends on — they are
+evidence that a specific claim was verified against a running ThoughtSpot instance rather
+than assumed from documentation. They carry the same unresolvable-from-this-repository gap
+as the rule identifiers, acknowledged here for the same reason.
 
 **Before declaring any expression untranslatable, consult the function mapping.** Many window
 and LOD constructs have exact native equivalents; declaring one untranslatable without
