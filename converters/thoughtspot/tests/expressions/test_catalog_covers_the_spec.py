@@ -21,10 +21,17 @@ This test reads the UPSTREAM core-spec/expression_language.md rather than any
 document of our own. Oracling against our own mapping notes would only prove we
 are self-consistent; reading the spec means a construct added upstream fails this
 build instead of silently going unsupported.
+
+spec_construct_names() and the mapping document's 146-row census count by
+different units — one parseable table row/heading vs. one construct under rule
+E1, which also counts a handful of constructs the spec only describes in prose.
+CONVENTION_DIVERGENCES (catalog.py) is the exact, reasoned list of the 9 where
+that difference shows up; test_the_two_counts_reconcile pins the arithmetic so
+the two counts cannot drift apart silently.
 """
 import pytest
 
-from ossie_thoughtspot.expressions import CATALOG, spec_construct_names
+from ossie_thoughtspot.expressions import CATALOG, CONVENTION_DIVERGENCES, spec_construct_names
 
 
 @pytest.mark.xfail(reason="catalog is populated across Tasks 2-7", strict=True)
@@ -34,8 +41,22 @@ def test_every_spec_construct_has_a_catalog_entry():
 
 
 def test_no_catalog_entry_invents_a_construct_the_spec_does_not_have():
-    invented = set(CATALOG) - spec_construct_names()
-    assert invented == set(), f"catalog entries not found in the spec: {sorted(invented)}"
+    # CONVENTION_DIVERGENCES is the one deliberate exception: constructs the
+    # mapping document counts as their own row that core-spec/expression_language.md
+    # never gives a discrete table row of their own (see catalog.py for why, per
+    # entry). Everything else in CATALOG must trace to a real spec row.
+    invented = set(CATALOG) - spec_construct_names() - set(CONVENTION_DIVERGENCES)
+    assert invented == set(), (
+        f"catalog entries not found in the spec or CONVENTION_DIVERGENCES: {sorted(invented)}"
+    )
+
+
+def test_the_two_counts_reconcile():
+    # The spec's parseable rows (137) plus the deliberate divergences (9) must
+    # equal the mapping document's rule-E1 census (146). If this drifts, either
+    # spec_construct_names() regressed or CONVENTION_DIVERGENCES needs an entry
+    # added or removed - it must not be "fixed" by changing the 146 constant.
+    assert len(spec_construct_names()) + len(CONVENTION_DIVERGENCES) == 146
 
 
 @pytest.mark.xfail(reason="catalog is populated across Tasks 2-7", strict=True)
