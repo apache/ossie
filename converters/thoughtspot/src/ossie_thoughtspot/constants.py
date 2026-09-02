@@ -18,10 +18,10 @@
 """Vocabulary constants.
 
 VENDOR_KEY and DIALECT hold the same string today and are deliberately separate
-names (learnings report P6). They are governed differently upstream: the vendor
-key needs no spec change because `Vendor` is an `examples` list that accepts any
-string, while the dialect is a closed enum — it was a pending apache/ossie#351
-change, now merged (see DIALECT_IS_REGISTERED).
+names. They are governed differently upstream: the vendor key needs no spec
+change because `Vendor` is an `examples` list that accepts any string, while
+the dialect is a closed enum — it was a pending apache/ossie#351 change, now
+merged (see DIALECT_IS_REGISTERED).
 """
 
 #: `custom_extensions[].vendor_name` value for ThoughtSpot-owned entries.
@@ -35,9 +35,8 @@ DIALECT = "THOUGHTSPOT"
 #: SKIP_SQL_VALIDATION set, so emitting DIALECT no longer fails schema validation.
 DIALECT_IS_REGISTERED = True
 
-#: Dialect emitted alongside DIALECT (not instead of it) for portable expressions,
-#: per learnings finding P8: consumers that do not implement our dialect still get
-#: something they can execute.
+#: Dialect emitted alongside DIALECT (not instead of it) for portable expressions, so a
+#: consumer that does not implement our dialect still gets something it can execute.
 PORTABLE_DIALECT = "ANSI_SQL"
 
 #: Ossie spec series this converter targets, matched on major.minor. Not an exact

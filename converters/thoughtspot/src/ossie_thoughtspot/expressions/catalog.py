@@ -17,13 +17,14 @@
 
 """The catalog: every specification construct mapped to a ThoughtSpot rendering.
 
-`CATALOG` is populated across Tasks 3-8 of the expression-translation plan, one
-family per task; Task 3 (Aggregate functions + Type conversion) is the first.
-Until Task 8 lands the rest, `spec_construct_names()` — an oracle read from the
-**upstream** `core-spec/expression_language.md`, not from any document of our
-own — still reports every construct `CATALOG` has not yet covered, so that a
-construct added upstream fails this package's build instead of silently going
-unsupported (see `test_catalog_covers_the_spec.py`).
+`CATALOG` is organised into families below — Aggregate functions, Type conversion,
+Date/time functions, String functions, Mathematical + Conditional functions, Operators
+and constructs, and Window functions — one block per family, together covering the full
+specification. `spec_construct_names()` — an oracle read from the **upstream**
+`core-spec/expression_language.md`, not from any document of our own — independently
+reports every construct the specification defines, so that a construct added upstream in
+the future fails this package's build instead of silently going unsupported (see
+`test_catalog_covers_the_spec.py`).
 
 Extraction approach
 --------------------
@@ -55,7 +56,7 @@ starting with "|", so a plain bullet list is simply invisible to it, argument
 vocabulary or not.
 
 Spelling: `CATALOG` keys must match `spec_construct_names()` exactly (READ THIS
-BEFORE TASKS 3-8, AND WHEN IN DOUBT DO NOT TRUST THIS LIST FROM MEMORY)
+BEFORE ADDING OR EDITING ANY ROW, AND WHEN IN DOUBT DO NOT TRUST THIS LIST FROM MEMORY)
 ------------------------------------------------------------------------------
 `spec_construct_names()` is the oracle, not the mapping document's prose, and not
 this list. Several rows write their Ossie-side syntax differently than this
@@ -111,12 +112,12 @@ from pathlib import Path
 from ._types import Classification, Construct, Variant
 
 # --------------------------------------------------------------------------
-# CATALOG: populated across Tasks 3-8, one family per task.
+# CATALOG: organised into families, one block per family below.
 # --------------------------------------------------------------------------
 CATALOG: dict[str, Construct] = {}
 
 # --------------------------------------------------------------------------
-# Aggregate functions (Task 3) — 18 rows: 12 direct / 6 passthrough / 0 unmappable.
+# Aggregate functions — 18 rows: 12 direct / 6 passthrough / 0 unmappable.
 # Source: docs/ossie/ts-ossie-function-mapping.md, "Aggregate functions" section
 # (thoughtspot-agent-skills repo — not vendored here; prose above/below the table
 # read in full, per rule E1-E4).
@@ -232,7 +233,7 @@ CATALOG.update(
 )
 
 # --------------------------------------------------------------------------
-# Type conversion (Task 3) — 2 rows: 2 direct / 0 passthrough / 0 unmappable.
+# Type conversion — 2 rows: 2 direct / 0 passthrough / 0 unmappable.
 # Source: docs/ossie/ts-ossie-function-mapping.md, "Type conversion" section.
 #
 # CAST/TRY_CAST are, per rule E3, direct rows whose target-type argument
@@ -271,7 +272,7 @@ CATALOG.update(
 )
 
 # --------------------------------------------------------------------------
-# Date/time functions (Task 4) — 24 rows: 17 direct / 7 passthrough / 0 unmappable.
+# Date/time functions — 24 rows: 17 direct / 7 passthrough / 0 unmappable.
 # Source: docs/ossie/ts-ossie-function-mapping.md, "Date/time functions" section
 # (thoughtspot-agent-skills repo — not vendored here; prose above/below the table
 # read in full, per rule E1-E4).
@@ -283,7 +284,7 @@ CATALOG.update(
 # DATEADD(part, amount, date_expr) and DATEDIFF(part, start_date, end_date) are
 # themselves still DIRECT rows in the 24 — the per-argument dispatch happens for
 # each, but the dispatch table itself is out of catalog scope (same pattern as
-# Task 3's CAST/TRY_CAST): `template` records the mapping document's own
+# CAST/TRY_CAST in Type conversion above): `template` records the mapping document's own
 # ThoughtSpot-column text for traceability, and the real per-argument content
 # (which native function each part/precision rewrites to, and the argument-order
 # caveats) is recorded in `note`.
@@ -492,7 +493,7 @@ CATALOG.update(
 )
 
 # --------------------------------------------------------------------------
-# String functions (Task 5) — 21 rows: 10 direct / 11 passthrough / 0 unmappable.
+# String functions — 21 rows: 10 direct / 11 passthrough / 0 unmappable.
 # Source: docs/ossie/ts-ossie-function-mapping.md, "String functions" section
 # (thoughtspot-agent-skills repo — not vendored here; prose above/below the table
 # read in full, per rule E1-E4).
@@ -685,7 +686,7 @@ CATALOG.update(
 )
 
 # --------------------------------------------------------------------------
-# Mathematical + Conditional functions (Task 6) — 34 rows: 32 direct /
+# Mathematical + Conditional functions — 34 rows: 32 direct /
 # 2 passthrough / 0 unmappable.
 # Source: docs/ossie/ts-ossie-function-mapping.md, "Mathematical functions" and
 # "Conditional functions" sections (thoughtspot-agent-skills repo — not
@@ -911,7 +912,7 @@ CATALOG.update(
 )
 
 # --------------------------------------------------------------------------
-# Operators and constructs (Task 7) — 33 rows: 30 direct / 2 passthrough /
+# Operators and constructs — 33 rows: 30 direct / 2 passthrough /
 # 1 unmappable.
 # Source: docs/ossie/ts-ossie-function-mapping.md, "Operators and constructs"
 # section (thoughtspot-agent-skills repo — not vendored here; prose above/below
@@ -919,8 +920,8 @@ CATALOG.update(
 #
 # The document's own section header states that CASE (both forms) and the
 # boolean literals/operators are rowed HERE, not under Conditional functions —
-# confirmed by the arithmetic: 25 Math + 9 Conditional (Task 6) + 33 here would
-# double-count CASE otherwise.
+# confirmed by the arithmetic: 25 Math + 9 Conditional (the Mathematical +
+# Conditional functions family above) + 33 here would double-count CASE otherwise.
 #
 # spec_construct_names() extracts the BARE operator/keyword token for most of
 # this family, not the document's own "a + b"-style worked-example row header —
@@ -939,12 +940,13 @@ CATALOG.update(
 #
 # LIKE is direct despite ThoughtSpot having no native starts_with/ends_with:
 # the prefix/suffix/contains compositions it needs use only native functions
-# (rule E2), the same reasoning as Task 5's STARTSWITH/ENDSWITH rows. ILIKE is
-# passthrough for the opposite reason — case-insensitive matching has no
-# native form, and the usual lower()-fold workaround is itself a passthrough,
-# so there is nothing to compose from. The DISTINCT aggregate modifier is
-# passthrough for every aggregate except COUNT, which already has its own
-# native unique count row (COUNT(DISTINCT expr), Task 3).
+# (rule E2), the same reasoning as the String functions family's STARTSWITH/
+# ENDSWITH rows above. ILIKE is passthrough for the opposite reason —
+# case-insensitive matching has no native form, and the usual lower()-fold
+# workaround is itself a passthrough, so there is nothing to compose from. The
+# DISTINCT aggregate modifier is passthrough for every aggregate except COUNT,
+# which already has its own native unique count row (COUNT(DISTINCT expr),
+# in Aggregate functions above).
 # --------------------------------------------------------------------------
 CATALOG.update(
     {
@@ -991,7 +993,7 @@ CATALOG.update(
                 "count, wrong semantics, no exception — the arg-count guard "
                 "cannot catch it). Forced external dispatch instead, the "
                 "same treatment as TRUE, FALSE below and CAST's per-type "
-                "table (Task 3): the caller must choose -{0} or {0} "
+                "table: the caller must choose -{0} or {0} "
                 "unchanged based on which spelling it parsed, rather than "
                 "getting a plausible-looking wrong answer from this row. "
                 "Unary minus is where the bare-date-literal trap "
@@ -1085,7 +1087,7 @@ CATALOG.update(
                 "no native form and fall back to "
                 'sql_bool_op ( "{0} LIKE {1}" , [s] , [pattern] ) (E3). '
                 "The per-pattern-shape dispatch is out of this catalog's "
-                "scope, same treatment as CAST's per-type dispatch (Task 3) "
+                "scope, same treatment as CAST's per-type dispatch "
                 "— the actual pattern literal is a runtime value, not known "
                 "at catalog-construction time."
             ),
@@ -1146,7 +1148,7 @@ CATALOG.update(
                 "template is transcribed with the document's own symbolic "
                 "c1/r1/c2/r2/d names rather than forced into a fixed "
                 "{0}/{1} scheme — the same out-of-scope-dispatch treatment "
-                "as CAST's per-type table (Task 3)."
+                "as CAST's per-type table."
             ),
         ),
         "CASE expr WHEN v1 THEN r1 ... END (simple)": Construct(
@@ -1245,7 +1247,7 @@ CATALOG.update(
 )
 
 # --------------------------------------------------------------------------
-# Window functions (Task 8) — 14 rows: 5 direct / 9 passthrough / 0 unmappable.
+# Window functions — 14 rows: 5 direct / 9 passthrough / 0 unmappable.
 # Source: docs/ossie/ts-ossie-function-mapping.md, "Window functions" section, plus
 # "Window rows live-confirmed — 2026-07-30" (thoughtspot-agent-skills repo — not
 # vendored here; prose above/below the table read in full, per rule E1-E4).
@@ -1292,9 +1294,9 @@ CATALOG.update(
 # table. FIRST_VALUE/LAST_VALUE's worked example carries ThoughtSpot's literal
 # `{ [T::date] }` list syntax for the axis argument; since these are DIRECT rows
 # rendered via emit_direct's str.format, the literal braces are doubled ({{ }})
-# per Task 7's IN/NOT IN fix — verified here by actually calling emit_direct and
-# checking the rendered output has single braces again (see
-# test_catalog_window.py).
+# the same fix the IN/NOT IN rows above need for the same reason — verified here by
+# actually calling emit_direct and checking the rendered output has single braces
+# again (see test_catalog_window.py).
 #
 # Three of the 14 rows have no discrete row of their own in the upstream spec —
 # the OVER clause, the frame clause and window aggregation are keyed via the
@@ -1356,9 +1358,8 @@ CATALOG.update(
                 "ThoughtSpot's rank skips ranks after a tie; dense ranking has "
                 "no native form — live-confirmed 2026-07-30, dense_rank ( ... ) "
                 "rejected with 'Search did not find \"dense_rank ( sum (\"'. "
-                "This settles the doubt raised by the internal Tableau mapping, "
-                "which uses a SQL pass-through for DENSE_RANK: the two "
-                "references agree, and for the right reason."
+                "Passthrough is correct: no native ThoughtSpot construct produces "
+                "dense-rank semantics."
             ),
         ),
         "NTILE(n) OVER (...)": Construct(
@@ -1462,8 +1463,9 @@ CATALOG.update(
                 "argument to be List', so the { } braces are mandatory (and "
                 "force >- block-scalar YAML on the document side; doubled here "
                 "as {{ }} because emit_direct renders via str.format, the same "
-                "fix as Task 7's IN/NOT IN — verified by calling emit_direct "
-                "and checking the rendered output has single braces again). "
+                "fix the IN/NOT IN rows above need for the same reason — "
+                "verified by calling emit_direct and checking the rendered "
+                "output has single braces again). "
                 "Two boundaries remain: ThoughtSpot's first_value is a "
                 "semi-additive function over a date axis rather than a general "
                 "window function, so an OVER shape with a row frame other than "
@@ -1626,14 +1628,14 @@ CATALOG.update(
 #: different unit (one row per construct, including constructs the spec only
 #: describes in prose) than spec_construct_names() counts by (one entry per
 #: parseable table row / heading). Verified directly against the mapping
-#: document's actual row list — see catalog.py's docstring and task-1-report.md
-#: for the reconciliation (137 + 9 == 146).
+#: document's actual row list — see catalog.py's docstring for the
+#: reconciliation (137 + 9 == 146).
 #:
 #: Two mechanisms an earlier pass mistakenly guessed would appear here do NOT:
 #: `CEIL(x)`/`CEILING(x)`, `TRUNC(x, d)`/`TRUNCATE(x, d)` and `TRUE`/`FALSE` are
 #: each ONE row in the mapping document too (not split), matching spec_name's
-#: single merged entry — a spelling-convention question for Tasks 3-8 (see the
-#: module docstring's "Spelling" note), not a divergence.
+#: single merged entry — a spelling-convention question addressed throughout
+#: this file (see the module docstring's "Spelling" note), not a divergence.
 CONVENTION_DIVERGENCES: dict[str, str] = {
     "-x / +x (unary)": (
         "unary +/- is named only in the 'Operator Precedence' list "
