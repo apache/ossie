@@ -686,6 +686,80 @@ class TestMetricConversion:
         profit_ossie = next(m for m in _ossie_metrics(result) if m.name == "profit")
         assert profit_ossie.expression.dialects[0].expression == "SUM(orders.amount) - SUM(orders.cost_amount)"
 
+    def test_derived_metric_does_not_re_expand_an_inlined_reference(self) -> None:
+        """A reference is substituted once, even when its name appears in already-inlined text.
+
+        `gross` inlines to `SUM(orders.net)`, which contains the name of the second
+        input metric. Substituting references one at a time would expand `net` inside
+        that text as well.
+        """
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            measures=[
+                _measure("gross", agg=AggregationType.SUM, expr="net"),
+                _measure("net", agg=AggregationType.SUM, expr="net_amount"),
+            ],
+        )
+        gross_m = _simple_metric("gross", "gross")
+        net_m = _simple_metric("net", "net")
+        margin = PydanticMetric(
+            name="margin",
+            description=None,
+            type=MetricType.DERIVED,
+            type_params=PydanticMetricTypeParams(
+                expr="gross - net",
+                metrics=[
+                    PydanticMetricInput(name="gross"),
+                    PydanticMetricInput(name="net"),
+                ],
+            ),
+            filter=None,
+            metadata=default_meta(),
+            config=None,
+        )
+        result = (
+            MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[gross_m, net_m, margin])).output
+        )
+
+        margin_ossie = next(m for m in _ossie_metrics(result) if m.name == "margin")
+        assert margin_ossie.expression.dialects[0].expression == "SUM(orders.net) - SUM(orders.net_amount)"
+
+    def test_derived_metric_preserves_backslashes_from_a_filter(self) -> None:
+        """Backslashes in an inlined expression survive substitution verbatim.
+
+        A resolved expression is inserted as a literal, not as a `re.sub` replacement
+        template, so an escape sequence such as `\\b` in a filter's SQL is not
+        reinterpreted (`\\b` would otherwise become a backspace character).
+        """
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            measures=[_measure("revenue", agg=AggregationType.SUM, expr="amount")],
+        )
+        revenue_m = _simple_metric("revenue", "revenue")
+        revenue_m.filter = _filter(r"{{ Dimension('order__path') }} LIKE 'a\b'")
+        scaled = PydanticMetric(
+            name="scaled",
+            description=None,
+            type=MetricType.DERIVED,
+            type_params=PydanticMetricTypeParams(
+                expr="revenue * 2",
+                metrics=[PydanticMetricInput(name="revenue")],
+            ),
+            filter=None,
+            metadata=default_meta(),
+            config=None,
+        )
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[revenue_m, scaled])).output
+
+        revenue_ossie = next(m for m in _ossie_metrics(result) if m.name == "revenue")
+        scaled_ossie = next(m for m in _ossie_metrics(result) if m.name == "scaled")
+        assert revenue_ossie.expression.dialects[0].expression == (
+            r"SUM(CASE WHEN order__path LIKE 'a\b' THEN orders.amount END)"
+        )
+        assert scaled_ossie.expression.dialects[0].expression == (
+            r"SUM(CASE WHEN order__path LIKE 'a\b' THEN orders.amount END) * 2"
+        )
+
     def test_derived_metric_nested(self, snapshot: SnapshotAssertion) -> None:
         sm = semantic_model_with_guaranteed_meta(
             name="orders",
