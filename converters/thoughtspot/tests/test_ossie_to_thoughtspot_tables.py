@@ -33,10 +33,12 @@ from ossie_thoughtspot.constants import (
     DATASET_STASH_SOURCE_PARTS_SCHEMA,
     DATASET_STASH_SQL_OUTPUT_COLUMNS,
     DATASET_STASH_TML_OBJECT,
+    DATASET_STASH_TML_OBJECT_WITNESS,
     DATASET_STASH_UNSURFACED_COLUMNS,
     FIELD_STASH_DATA_TYPE,
     FIELD_STASH_DATA_TYPE_WITNESS,
     FIELD_STASH_DB_COLUMN_NAME,
+    FIELD_STASH_DB_COLUMN_NAME_WITNESS,
 )
 from ossie_thoughtspot.issues import IssueLog
 from ossie_thoughtspot.ossie_to_thoughtspot import build_table
@@ -140,9 +142,14 @@ class TestDbColumnName:
         # The bracket names the table's display name ("Order Date"); the
         # field's own stash carries the true warehouse name separately when
         # the forward direction saw the two differ, and that value wins --
-        # no assumption, no issue.
+        # no assumption, no issue -- as long as its witness (the display
+        # name it was recorded for) still matches.
         field = _round_tripped_physical(
-            "order_date", "ORDERS", "Order Date", field_stash={FIELD_STASH_DB_COLUMN_NAME: "O_ORDERDATE"}
+            "order_date", "ORDERS", "Order Date",
+            field_stash={
+                FIELD_STASH_DB_COLUMN_NAME: "O_ORDERDATE",
+                FIELD_STASH_DB_COLUMN_NAME_WITNESS: "Order Date",
+            },
         )
         dataset = _dataset("ORDERS", "SALES.PUBLIC.ORDERS", fields=[field])
         log = IssueLog()
@@ -151,6 +158,27 @@ class TestDbColumnName:
         assert column["name"] == "Order Date"
         assert column["db_column_name"] == "O_ORDERDATE"
         assert not [i for i in log.as_dicts() if i["code"] == "TS-FIELD-DB-COLUMN-NAME-ASSUMED"]
+        assert not [i for i in log.as_dicts() if i["code"] == "TS-FIELD-DB-COLUMN-NAME-STALE"]
+
+    def test_a_stashed_db_column_name_whose_witness_no_longer_matches_is_dropped(self):
+        # The field was retargeted to a different physical column since the
+        # stash was written (Amount -> Total Amount, the exact scenario a
+        # retargeted reference produces) -- the stashed warehouse name
+        # describes the OLD column and must not be applied to the new one.
+        field = _round_tripped_physical(
+            "amount", "ORDERS", "Total Amount",
+            field_stash={
+                FIELD_STASH_DB_COLUMN_NAME: "O_AMOUNT",
+                FIELD_STASH_DB_COLUMN_NAME_WITNESS: "Amount",
+            },
+        )
+        dataset = _dataset("ORDERS", "SALES.PUBLIC.ORDERS", fields=[field])
+        log = IssueLog()
+        table = build_table(dataset, log)
+        column = table.body["columns"][0]
+        assert column["name"] == "Total Amount"
+        assert column["db_column_name"] == "Total Amount"
+        assert any(i["code"] == "TS-FIELD-DB-COLUMN-NAME-STALE" for i in log.as_dicts())
 
 
 class TestDataTypeCompulsory:
@@ -218,13 +246,54 @@ class TestSourceSplitting:
 
     def test_a_stashed_tml_object_overrides_a_looks_like_a_query_source(self):
         # A query that happens to be stored under a stashed sql_view kind
-        # must not be re-classified by the whitespace heuristic.
+        # must not be re-classified by the whitespace heuristic. The witness
+        # (the source it was stashed against) still matches, so the stash
+        # wins even though this particular source's derived kind agrees
+        # anyway -- see the next two tests for cases where it does not.
+        source = "SELECT * FROM orders"
         dataset = _dataset(
-            "recent_orders", "SELECT * FROM orders",
-            dataset_stash={DATASET_STASH_TML_OBJECT: "sql_view"},
+            "recent_orders", source,
+            dataset_stash={
+                DATASET_STASH_TML_OBJECT: "sql_view",
+                DATASET_STASH_TML_OBJECT_WITNESS: source,
+            },
         )
         table = build_table(dataset, IssueLog())
         assert table.kind == "sql_view"
+
+    def test_a_matching_witness_prefers_the_stash_over_a_disagreeing_derivation(self):
+        # The source LOOKS like a plain table reference (_derive_kind would
+        # call it "table"), but the stash says this dataset came from a
+        # sql_view -- and its witness still matches the live source, so the
+        # stash wins despite disagreeing with the heuristic.
+        source = "SALES.PUBLIC.ORDERS"
+        dataset = _dataset(
+            "orders", source,
+            dataset_stash={
+                DATASET_STASH_TML_OBJECT: "sql_view",
+                DATASET_STASH_TML_OBJECT_WITNESS: source,
+            },
+        )
+        log = IssueLog()
+        table = build_table(dataset, log)
+        assert table.kind == "sql_view"
+        assert not any(i["code"] == "TS-DATASET-TML-OBJECT-STALE" for i in log.as_dicts())
+
+    def test_a_stale_tml_object_witness_is_dropped_and_the_kind_re_derived(self):
+        # The dataset's source has moved on since the stash was written (a
+        # query rewritten into a table reference) -- reusing the stale kind
+        # would silently misread the new source under the old rules.
+        dataset = _dataset(
+            "orders", "SALES.PUBLIC.ORDERS",
+            dataset_stash={
+                DATASET_STASH_TML_OBJECT: "sql_view",
+                DATASET_STASH_TML_OBJECT_WITNESS: "SELECT * FROM orders",
+            },
+        )
+        log = IssueLog()
+        table = build_table(dataset, log)
+        assert table.kind == "table"
+        assert any(i["code"] == "TS-DATASET-TML-OBJECT-STALE" for i in log.as_dicts())
 
     def test_a_stashed_source_parts_entry_is_used_when_it_still_agrees(self):
         dataset = _dataset(
