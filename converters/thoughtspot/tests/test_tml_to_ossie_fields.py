@@ -222,7 +222,7 @@ class TestConvertField:
         field = convert_field(
             {"name": "Order Amount", "column_id": "ORDERS::AMOUNT",
              "properties": {"column_type": "ATTRIBUTE"}},
-            self._table, _resolve, log,
+            {}, self._table, _resolve, log,
         )
         assert field["name"] == "order_amount"      # the normalised identifier
         assert field["label"] == "Order Amount"      # the exact display name
@@ -233,7 +233,7 @@ class TestConvertField:
         field = convert_field(
             {"name": "Amount", "column_id": "ORDERS::AMOUNT", "description": "How much",
              "properties": {"column_type": "ATTRIBUTE"}},
-            self._table, _resolve, log,
+            {}, self._table, _resolve, log,
         )
         assert field["description"] == "How much"
 
@@ -242,7 +242,7 @@ class TestConvertField:
         field = convert_field(
             {"name": "Amount", "column_id": "ORDERS::AMOUNT",
              "properties": {"column_type": "ATTRIBUTE"}},
-            self._table, _resolve, log,
+            {}, self._table, _resolve, log,
         )
         assert "description" not in field
 
@@ -252,7 +252,7 @@ class TestConvertField:
             {"name": "Amount", "column_id": "ORDERS::AMOUNT",
              "properties": {"column_type": "ATTRIBUTE", "synonyms": ["total", "value"],
                             "synonym_type": "USER_DEFINED"}},
-            self._table, _resolve, log,
+            {}, self._table, _resolve, log,
         )
         assert field["ai_context"]["synonyms"] == ["total", "value"]
 
@@ -261,7 +261,7 @@ class TestConvertField:
         field = convert_field(
             {"name": "Amount", "column_id": "ORDERS::AMOUNT",
              "properties": {"column_type": "ATTRIBUTE", "synonyms": []}},
-            self._table, _resolve, log,
+            {}, self._table, _resolve, log,
         )
         assert "ai_context" not in field
 
@@ -271,7 +271,7 @@ class TestConvertField:
         assert convert_field(
             {"name": "Amount", "column_id": "ORDERS::AMOUNT",
              "properties": {"column_type": "MEASURE"}},
-            self._table, _resolve, log,
+            {}, self._table, _resolve, log,
         ) is None
 
     def test_is_time_is_omitted_when_the_type_already_implies_it(self):
@@ -285,7 +285,7 @@ class TestConvertField:
         field = convert_field(
             {"name": "Order Date", "column_id": "ORDERS::DT",
              "properties": {"column_type": "ATTRIBUTE"}},
-            table, _resolve, log,
+            {}, table, _resolve, log,
         )
         assert "dimension" not in field or "is_time" not in field.get("dimension", {})
 
@@ -294,7 +294,7 @@ class TestConvertField:
         field = convert_field(
             {"name": "Ghost", "column_id": "ORDERS::NOPE",
              "properties": {"column_type": "ATTRIBUTE"}},
-            self._table, _resolve, log,
+            {}, self._table, _resolve, log,
         )
         assert "datatype" not in field
         assert log.as_dicts()
@@ -306,7 +306,7 @@ class TestConvertField:
         field = convert_field(
             {"name": "Ghost", "column_id": "MISSING::Col",
              "properties": {"column_type": "ATTRIBUTE"}},
-            self._table, _resolve, log,
+            {}, self._table, _resolve, log,
         )
         assert field is not None
         assert "datatype" not in field
@@ -320,7 +320,7 @@ class TestConvertField:
         field = convert_field(
             {"name": "Gross Margin %!!", "column_id": "ORDERS::AMOUNT",
              "properties": {"column_type": "ATTRIBUTE"}},
-            self._table, _resolve, log,
+            {}, self._table, _resolve, log,
         )
         assert field["label"] == "Gross Margin %!!"
         assert field["name"] != field["label"]
@@ -332,15 +332,17 @@ class TestConvertField:
         def resolve(table, column):
             return f"other.{column.lower()}" if table == "OTHER" else f"orders.{column.lower()}"
 
+        formulas = {"formula_Combined": {"id": "formula_Combined",
+                                          "expr": "[ORDERS::Amount] + [OTHER::Fee]"}}
         field = convert_field(
-            {"name": "Combined", "expr": "[ORDERS::Amount] + [OTHER::Fee]",
+            {"name": "Combined", "formula_id": "formula_Combined",
              "properties": {"column_type": "ATTRIBUTE"}},
-            self._table, resolve, log,
+            formulas, self._table, resolve, log,
         )
         assert field is None
         assert log.as_dicts()
 
-    # -- Two tests of my own, beyond everything specified above. --
+    # -- Tests of my own, beyond everything specified above. --
     #
     # 1. convert_field's handling of a *computed* (formula-backed) ATTRIBUTE column —
     #    attribution plus field construction end to end — has no coverage at all in
@@ -349,10 +351,12 @@ class TestConvertField:
     #    that "reasoning about behaviour instead of running it" would get wrong.
     def test_a_computed_field_with_references_in_one_dataset_is_built(self):
         log = IssueLog()
+        formulas = {"formula_Net_Amount": {"id": "formula_Net_Amount",
+                                            "expr": "[ORDERS::Amount] - [ORDERS::Discount]"}}
         field = convert_field(
-            {"name": "Net Amount", "expr": "[ORDERS::Amount] - [ORDERS::Discount]",
+            {"name": "Net Amount", "formula_id": "formula_Net_Amount",
              "properties": {"column_type": "ATTRIBUTE"}},
-            self._table, _resolve, log,
+            formulas, self._table, _resolve, log,
         )
         assert field is not None
         assert field["name"] == "net_amount"
@@ -373,12 +377,68 @@ class TestConvertField:
     #    attribution succeeded).
     def test_a_computed_field_with_a_parameter_is_attributed_but_not_portable(self):
         log = IssueLog()
+        formulas = {"formula_Grown_Amount": {"id": "formula_Grown_Amount",
+                                              "expr": "[ORDERS::Amount] * [Growth Rate]"}}
         field = convert_field(
-            {"name": "Grown Amount", "expr": "[ORDERS::Amount] * [Growth Rate]",
+            {"name": "Grown Amount", "formula_id": "formula_Grown_Amount",
              "properties": {"column_type": "ATTRIBUTE"}},
-            self._table, _resolve, log,
+            formulas, self._table, _resolve, log,
         )
         assert field is not None  # attribution succeeded from the one column reference
         dialects = [e["dialect"] for e in field["expression"]["dialects"]]
         assert dialects == ["THOUGHTSPOT"]  # but it is not portable
         assert any("parameter" in i["message"].lower() for i in log.as_dicts())
+
+    # 3. The `formulas` map lookup itself, per the task's three required cases.
+    #
+    # 3a. formula_id present in the map: the expr must survive verbatim, byte for
+    #     byte, into the THOUGHTSPOT dialect entry — re-run through the new
+    #     lookup-based path rather than assumed to still hold from the expr-stash
+    #     tests above.
+    def test_a_formula_id_present_in_the_map_converts_with_the_verbatim_expr(self):
+        log = IssueLog()
+        weird_expr = "concat(  [ORDERS::Amount] , 'it''s a test'\t)\n"
+        formulas = {"formula_Weird": {"id": "formula_Weird", "expr": weird_expr}}
+        field = convert_field(
+            {"name": "Weird", "formula_id": "formula_Weird",
+             "properties": {"column_type": "ATTRIBUTE"}},
+            formulas, self._table, _resolve, log,
+        )
+        assert field is not None
+        thoughtspot_entries = [
+            e for e in field["expression"]["dialects"] if e["dialect"] == "THOUGHTSPOT"
+        ]
+        assert thoughtspot_entries == [{"dialect": "THOUGHTSPOT", "expression": weird_expr}]
+
+    # 3b. formula_id with no matching entry in the map: must not raise (no
+    #     KeyError), must log an issue naming the column and the missing id, and
+    #     must return None rather than a field silently missing its expression.
+    def test_a_formula_id_missing_from_the_map_logs_and_returns_none(self):
+        log = IssueLog()
+        field = convert_field(
+            {"name": "Orphan", "formula_id": "formula_Nonexistent",
+             "properties": {"column_type": "ATTRIBUTE"}},
+            {}, self._table, _resolve, log,
+        )
+        assert field is None
+        issues = log.as_dicts()
+        assert len(issues) == 1
+        assert "Orphan" in issues[0]["message"]
+        assert "formula_Nonexistent" in issues[0]["message"]
+
+    # 3c. Neither column_id nor formula_id: decided to treat this the same as the
+    #     pre-existing "no source" contract (a column with neither key was already
+    #     handled before formula_id existed) — log an issue and return None, rather
+    #     than inventing a new, silent no-op path for what is really the same
+    #     "nothing to build this field from" situation.
+    def test_neither_column_id_nor_formula_id_logs_and_returns_none(self):
+        log = IssueLog()
+        field = convert_field(
+            {"name": "Nothing", "properties": {"column_type": "ATTRIBUTE"}},
+            {}, self._table, _resolve, log,
+        )
+        assert field is None
+        issues = log.as_dicts()
+        assert len(issues) == 1
+        assert "column_id" in issues[0]["message"]
+        assert "formula_id" in issues[0]["message"]
