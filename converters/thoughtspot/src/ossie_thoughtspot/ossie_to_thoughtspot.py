@@ -710,6 +710,87 @@ def _maybe_block_scalar(expr: str) -> str:
     return expr
 
 
+def _normalise_or_self(text: str) -> str:
+    """`identifiers.normalise(text)`, or `text` itself when it has no ASCII
+    alphanumerics for `normalise` to fold onto -- the same fallback
+    `_DisplayNameAllocator.allocate` and `_formula_id_from` already use, so
+    all three agree on what "the fold key" is for a piece of text with no
+    normal form."""
+    try:
+        return identifiers.normalise(text)
+    except ValueError:
+        return text
+
+
+#: The literal prefix every formula cross-reference starts with (R3's id
+#: form, `[formula_Name]`) -- distinct from a bare runtime-parameter
+#: reference (`[Discount Threshold]`), which never starts with this prefix.
+_FORMULA_REFERENCE_PREFIX = "formula_"
+
+
+def _rewrite_formula_references(
+    expr: str,
+    formula_id_by_normalised_name: dict[str, str],
+    log: IssueLog,
+    *,
+    object_ref: str,
+) -> str:
+    """Rewrite every bare `[formula_X]` cross-reference in `expr` to the id
+    this build actually assigned the referenced formula.
+
+    `_formula_id_from` regenerates every formula's id from the *normalised*
+    form of its own display name -- real ThoughtSpot ids are slug-shaped,
+    display names are not. A cross-reference embedded in a verbatim
+    THOUGHTSPOT-dialect expression was written against the *source*
+    document's own id text, which need not match the id this build just
+    minted for the same formula (the source id could use different casing,
+    punctuation, or spacing than this converter's own convention) -- and
+    ThoughtSpot does not fail an unresolvable bracket reference at parse
+    time, it parses it as search tokens instead, so a stale reference is a
+    guaranteed import failure discovered only later, not a warning.
+
+    `formula_id_by_normalised_name` must be keyed by `_normalise_or_self`
+    applied to each formula's own final display name -- the exact same fold
+    `_formula_id_from` uses to mint the id in the first place, passed in by
+    the caller rather than recomputed here, so the two can never
+    independently drift the way two separately-typed normalisation steps
+    could (this package just finished centralising stash-key spellings for
+    the identical reason).
+
+    A reference matching nothing being built in this model is left in the
+    text untouched -- there is nothing safe to substitute -- and logged as
+    an ERROR: the emitted document will fail to import on this reference
+    until it is fixed, and that has to be visible, not silently shipped.
+    """
+    out: list[str] = []
+    cursor = 0
+    for start, end, body in formula._bracketed_spans(expr):
+        if "::" in body or not body.startswith(_FORMULA_REFERENCE_PREFIX):
+            continue
+        referenced_name = body[len(_FORMULA_REFERENCE_PREFIX):]
+        target_id = formula_id_by_normalised_name.get(_normalise_or_self(referenced_name))
+        out.append(expr[cursor:start])
+        if target_id is None:
+            log.add(
+                code="TS-MODEL-FORMULA-REFERENCE-UNRESOLVED",
+                severity=Severity.ERROR,
+                message=(
+                    f"expression references {body!r}, which does not match any "
+                    f"formula this model emits; the reference is left as written "
+                    f"and the resulting document will fail to import (ThoughtSpot "
+                    f"parses an unresolvable bracket reference as search tokens, "
+                    f"not a parse error) until it is fixed"
+                ),
+                object_ref=object_ref,
+            )
+            out.append(expr[start:end])
+        else:
+            out.append(f"[{target_id}]")
+        cursor = end
+    out.append(expr[cursor:])
+    return "".join(out)
+
+
 #: A bare `dataset.field` reference, per the specification's own dot-notation
 #: convention (`core-spec/expression_language.md:98`) -- the shape a
 #: hand-authored ANSI_SQL expression uses to name another Ossie field, e.g.
@@ -1018,7 +1099,12 @@ def _build_field(
             )
             return None
         formula_id = _formula_id_from(name)
-        formulas_entry = {"id": formula_id, "name": name, "expr": _maybe_block_scalar(expr)}
+        # `expr` is stored raw here -- not yet rewritten for cross-references
+        # to other formulas, and not yet block-scalar-wrapped. Both happen
+        # once, uniformly, in build_model's own final pass over the fully
+        # assembled formulas[] list, which is the earliest point every
+        # formula's final id is known (see _rewrite_formula_references).
+        formulas_entry = {"id": formula_id, "name": name, "expr": expr}
         columns_entry = {"name": name, "formula_id": formula_id, "properties": properties}
         if field.get("datatype") is not None:
             log.add(
@@ -1113,6 +1199,33 @@ def _build_metric(
         conventional = _outer_aggregation_of(ts_expr)
         if conventional is not None:
             properties["aggregation"] = conventional
+            # Ossie's own Metric object has nowhere to record whether the
+            # *source* TML's surfacing column carried this property or
+            # omitted it -- both collapse identically on the way in, so this
+            # converter cannot tell them apart and always re-derives it. The
+            # value is a documented no-op here (the expr already aggregates,
+            # per the worked shape example and the domain-review note this
+            # module's docstrings already cite), so it changes no number --
+            # but it is still a difference a byte-for-byte reader would see,
+            # and a round trip whose whole point is fidelity should not make
+            # that judgment silently on the reader's behalf. INFO, not
+            # WARNING: nothing is wrong, this is FYI only, matching the
+            # severity expression_entries already uses for an equally benign
+            # structural note (TS-EXPR-THOUGHTSPOT-ONLY).
+            log.add(
+                code="TS-MODEL-METRIC-AGGREGATION-CONVENTION",
+                severity=Severity.INFO,
+                message=(
+                    f"metric {display_name!r}'s formula already aggregates "
+                    f"({conventional}); the surfacing column's aggregation is set "
+                    f"to match, as the convention real ThoughtSpot-authored "
+                    f"documents carry -- this is a no-op over an already-aggregate "
+                    f"expression, not a change to the result, and Ossie has no way "
+                    f"to record whether the source document set this property or "
+                    f"omitted it"
+                ),
+                object_ref=object_ref,
+            )
 
     if metric.get("datatype") is not None:
         log.add(
@@ -1130,7 +1243,10 @@ def _build_metric(
     properties.update(extra_properties)
     _restore_ai_context(properties, metric.get("ai_context"), log, object_ref=object_ref)
 
-    formulas_entry = {"id": formula_id, "name": name, "expr": _maybe_block_scalar(formula_expr)}
+    # Raw, unwrapped `formula_expr` here -- see the matching comment in
+    # _build_field; both the cross-reference rewrite and the R9 block-scalar
+    # wrap happen once, uniformly, in build_model's final pass.
+    formulas_entry = {"id": formula_id, "name": name, "expr": formula_expr}
     columns_entry = {"name": name, "formula_id": formula_id, "properties": properties}
     description = metric.get("description")
     if description:
@@ -1319,10 +1435,8 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
         raw_name = entry.get("name") or "<unnamed>"
         allocated_name = allocator.allocate(raw_name)
         expr = entry.get("expr", "")
-        formulas.append({
-            "id": _formula_id_from(allocated_name), "name": allocated_name,
-            "expr": _maybe_block_scalar(expr),
-        })
+        # Raw, unwrapped `expr` -- see the matching comment in _build_field.
+        formulas.append({"id": _formula_id_from(allocated_name), "name": allocated_name, "expr": expr})
         if entry.get(FIELD_STASH_COLUMN_PROPERTIES):
             log.add(
                 code="TS-MODEL-UNATTRIBUTED-FORMULA-PROPERTIES-LOST",
@@ -1335,6 +1449,24 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
                 ),
                 object_ref=f"formula:{raw_name}",
             )
+
+    # Every formula's final id is only fully known once every field, metric
+    # and unattributed formula above has been assigned one -- a formula
+    # earlier in this list can be cross-referenced by one built later (or
+    # vice versa; declaration order inside model.formulas[] carries no
+    # ordering guarantee for this converter's own consumers). So the
+    # cross-reference rewrite (R3's id form) and the R9 block-scalar wrap
+    # both happen here, once, over the now-complete list, rather than
+    # per-formula while it was being built above.
+    formula_id_by_normalised_name = {
+        _normalise_or_self(entry["name"]): entry["id"] for entry in formulas
+    }
+    for entry in formulas:
+        rewritten = _rewrite_formula_references(
+            entry["expr"], formula_id_by_normalised_name, log,
+            object_ref=f"formula:{entry['name']}",
+        )
+        entry["expr"] = _maybe_block_scalar(rewritten)
 
     covered_columns_by_dataset: dict[str, list[set]] = {}
 
