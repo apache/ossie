@@ -123,6 +123,22 @@ class TestDbColumnName:
         # wrong (the display name and the true db_column_name differed).
         assert any(i["code"] == "TS-FIELD-DB-COLUMN-NAME-ASSUMED" for i in log.as_dicts())
 
+    def test_a_stashed_db_column_name_is_preferred_over_the_bracket_display_name(self):
+        # The bracket names the table's display name ("Order Date"); the
+        # field's own stash carries the true warehouse name separately when
+        # the forward direction saw the two differ, and that value wins --
+        # no assumption, no issue.
+        field = _round_tripped_physical(
+            "order_date", "ORDERS", "Order Date", field_stash={"db_column_name": "O_ORDERDATE"}
+        )
+        dataset = _dataset("ORDERS", "SALES.PUBLIC.ORDERS", fields=[field])
+        log = IssueLog()
+        table = build_table(dataset, log)
+        column = table.body["columns"][0]
+        assert column["name"] == "Order Date"
+        assert column["db_column_name"] == "O_ORDERDATE"
+        assert not [i for i in log.as_dicts() if i["code"] == "TS-FIELD-DB-COLUMN-NAME-ASSUMED"]
+
 
 class TestDataTypeCompulsory:
     def test_a_datatype_less_field_still_gets_a_data_type(self):
@@ -218,6 +234,35 @@ class TestSourceSplitting:
         table = build_table(dataset, log)
         assert table.body["db_table"] == "RENAMED_ORDERS"
         assert any(i["code"] == "TS-DATASET-SOURCE-PARTS-STALE" for i in log.as_dicts())
+
+
+class TestQuotedIdentifierIsNotMisreadAsAQuery:
+    """A quoted identifier segment may legitimately contain whitespace
+    (`"ORDER TABLE"`) -- classifying a source by "contains whitespace"
+    alone would misread it as a query and emit an unimportable sql_view
+    document with the whole dotted string as its query, with no issue to
+    say so."""
+
+    def test_a_quoted_identifier_with_a_space_is_still_a_table(self):
+        dataset = _dataset("orders", 'SALES.PUBLIC."ORDER TABLE"')
+        log = IssueLog()
+        table = build_table(dataset, log)
+        assert table.kind == "table"
+        assert (table.body["db"], table.body["schema"], table.body["db_table"]) == (
+            "SALES", "PUBLIC", "ORDER TABLE",
+        )
+        assert not [i for i in log.as_dicts() if "SOURCE" in i["code"]]
+
+    def test_an_ordinary_three_part_name_is_unaffected(self):
+        dataset = _dataset("orders", "SALES.PUBLIC.ORDERS")
+        table = build_table(dataset, IssueLog())
+        assert table.kind == "table"
+        assert table.body["db_table"] == "ORDERS"
+
+    def test_a_genuine_query_is_still_a_sql_view(self):
+        dataset = _dataset("recent_orders", "SELECT * FROM orders WHERE recent = true")
+        table = build_table(dataset, IssueLog())
+        assert table.kind == "sql_view"
 
 
 class TestConnectionDependentSpelling:
@@ -387,6 +432,32 @@ class TestUnsurfacedColumns:
         assert names == ["amount", "internal_flag"]
 
 
+class TestDatasetAiContextHasNoHomeInTml:
+    """Table TML (both kinds) has no synonym or instruction field at all --
+    this loss is unconditional, so it must always be reported, not only when
+    some other recovery path happens to fail."""
+
+    def test_a_string_ai_context_raises_an_issue(self):
+        dataset = _dataset("orders", "SALES.PUBLIC.ORDERS", fields=[_physical("amount")])
+        dataset["ai_context"] = "Use this table for revenue questions."
+        log = IssueLog()
+        build_table(dataset, log)
+        assert any(i["code"] == "TS-DATASET-AI-CONTEXT-UNSUPPORTED" for i in log.as_dicts())
+
+    def test_an_object_ai_context_also_raises_an_issue(self):
+        dataset = _dataset("orders", "SALES.PUBLIC.ORDERS", fields=[_physical("amount")])
+        dataset["ai_context"] = {"synonyms": ["sales"]}
+        log = IssueLog()
+        build_table(dataset, log)
+        assert any(i["code"] == "TS-DATASET-AI-CONTEXT-UNSUPPORTED" for i in log.as_dicts())
+
+    def test_no_ai_context_raises_nothing(self):
+        dataset = _dataset("orders", "SALES.PUBLIC.ORDERS", fields=[_physical("amount")])
+        log = IssueLog()
+        build_table(dataset, log)
+        assert not [i for i in log.as_dicts() if i["code"] == "TS-DATASET-AI-CONTEXT-UNSUPPORTED"]
+
+
 class TestRoundTripAgainstTheForwardDirection:
     """Feed a real TML Table document through the forward direction and back
     through `build_table`, and compare against the original -- the strongest
@@ -406,6 +477,8 @@ class TestRoundTripAgainstTheForwardDirection:
                      "db_column_properties": {"data_type": "DATE"}},
                     {"name": "Amount", "db_column_name": "O_AMOUNT",
                      "db_column_properties": {"data_type": "DOUBLE"}},
+                    {"name": "Is Priority", "db_column_name": "O_IS_PRIORITY",
+                     "db_column_properties": {"data_type": "BOOL"}},
                     {"name": "Internal Note", "db_column_name": "O_NOTE",
                      "db_column_properties": {"data_type": "VARCHAR"}},
                 ],
@@ -421,6 +494,8 @@ class TestRoundTripAgainstTheForwardDirection:
                     {"name": "Order Date", "column_id": "ORDERS::Order Date",
                      "properties": {"column_type": "ATTRIBUTE"}},
                     {"name": "Amount", "column_id": "ORDERS::Amount",
+                     "properties": {"column_type": "ATTRIBUTE"}},
+                    {"name": "Is Priority", "column_id": "ORDERS::Is Priority",
                      "properties": {"column_type": "ATTRIBUTE"}},
                     # "Internal Note" is deliberately not surfaced -- it must
                     # come back as an unsurfaced column, not a field.
@@ -457,17 +532,14 @@ class TestRoundTripAgainstTheForwardDirection:
         # verbatim through unsurfaced_columns, db_column_name included.
         assert by_name["Internal Note"]["db_column_name"] == "O_NOTE"
 
-        # "Order Date" and "Amount" WERE surfaced. Their real db_column_name
-        # ("O_ORDERDATE", "O_AMOUNT") is genuinely not recoverable: the
-        # forward direction matches a physical column by display name only,
-        # so nothing about the original db_column_name reaches the Ossie
-        # document at all when it differs from the display name. A
-        # hand-written fixture can accidentally set bracket-name equal to
-        # db_column_name and never expose this; only a real forward-then-
-        # reverse round trip does. The documented default (db_column_name ==
-        # display name) is what comes back, and it is reported rather than
-        # silent for exactly this reason.
-        assert by_name["Order Date"]["db_column_name"] == "Order Date"
-        assert by_name["Amount"]["db_column_name"] == "Amount"
-        assumed = [i for i in log.as_dicts() if i["code"] == "TS-FIELD-DB-COLUMN-NAME-ASSUMED"]
-        assert len(assumed) == 2
+        # "Order Date", "Amount" and "Is Priority" WERE surfaced, and each
+        # has a display name that differs from its true db_column_name. The
+        # forward direction stashes that true name separately for exactly
+        # this case, and it round-trips exactly rather than falling back to
+        # the display-name assumption. A hand-written fixture that happens
+        # to set bracket-name equal to db_column_name would never expose a
+        # regression here; only a real forward-then-reverse round trip does.
+        assert by_name["Order Date"]["db_column_name"] == "O_ORDERDATE"
+        assert by_name["Amount"]["db_column_name"] == "O_AMOUNT"
+        assert by_name["Is Priority"]["db_column_name"] == "O_IS_PRIORITY"
+        assert not [i for i in log.as_dicts() if i["code"] == "TS-FIELD-DB-COLUMN-NAME-ASSUMED"]

@@ -56,3 +56,13 @@ DOCUMENT_VERSION = "0.2.0.dev0"
 #: Shape version of the custom_extensions payload (rule X3). Bump when the
 #: payload's shape changes, never for a value change.
 STASH_VERSION = 1
+
+#: Field/metric-level custom_extensions[THOUGHTSPOT] key holding the
+#: warehouse column's own name, stashed by the TML -> Ossie direction only
+#: when it differs from the column's display name (Table-backed columns
+#: only -- a SQL View's own sql_output_columns dataset-level key already
+#: covers the same fact). Not yet in the pinned payload schema. Shared here,
+#: rather than written as a literal in each direction separately, because
+#: tml_to_ossie.py (the writer) and ossie_to_thoughtspot.py (the reader)
+#: must agree on the exact spelling and nothing else enforces that.
+FIELD_STASH_DB_COLUMN_NAME = "db_column_name"
