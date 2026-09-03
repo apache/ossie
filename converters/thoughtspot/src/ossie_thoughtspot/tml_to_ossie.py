@@ -91,6 +91,7 @@ from .constants import (
     DATASET_STASH_SQL_QUERY,
     DATASET_STASH_TABLE_NAME,
     DATASET_STASH_TML_OBJECT,
+    DATASET_STASH_TML_OBJECT_WITNESS,
     DATASET_STASH_UNSURFACED_COLUMNS,
     DIALECT,
     DOCUMENT_VERSION,
@@ -98,6 +99,7 @@ from .constants import (
     FIELD_STASH_DATA_TYPE,
     FIELD_STASH_DATA_TYPE_WITNESS,
     FIELD_STASH_DB_COLUMN_NAME,
+    FIELD_STASH_DB_COLUMN_NAME_WITNESS,
     METRIC_SHAPE_COLUMN_AGGREGATION,
     METRIC_SHAPE_FORMULA,
     METRIC_SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION,
@@ -163,8 +165,13 @@ def expression_entries(
     """
     entries: list[dict[str, str]] = [{"dialect": DIALECT, "expression": expr}]
 
-    formula_refs = formula.find_formula_refs(expr)
-    parameters = formula.find_parameter_refs(expr)
+    # `dict.fromkeys` dedupes while preserving first-seen order -- a
+    # parameter or cross-reference used twice in one expression (a
+    # discount applied on both sides of a ratio, say) is one fact worth
+    # reporting once, not a message that reads as two distinct unresolved
+    # names when only one name repeats.
+    formula_refs = list(dict.fromkeys(formula.find_formula_refs(expr)))
+    parameters = list(dict.fromkeys(formula.find_parameter_refs(expr)))
     if formula_refs or parameters:
         if formula_refs:
             log.add(
@@ -1042,6 +1049,12 @@ def _physical_column_stash(
     db_column_name = physical.get("db_column_name")
     if is_table and db_column_name is not None and db_column_name != physical_name:
         payload[FIELD_STASH_DB_COLUMN_NAME] = db_column_name
+        # X5's witness: the column's own display name (the bracket's column
+        # part) this warehouse name was recorded against, so the reverse
+        # direction can tell whether the field still names the same
+        # physical column before trusting a warehouse name that may
+        # describe a different one now.
+        payload[FIELD_STASH_DB_COLUMN_NAME_WITNESS] = physical_name
 
     raw_data_type = (physical.get("db_column_properties") or {}).get("data_type")
     canonical = _CANONICAL_TML_SPELLING.get(ossie_datatype) if ossie_datatype else None
@@ -1259,6 +1272,13 @@ def _build_dataset(prefix: str, entry: dict, table_doc, log: IssueLog) -> tuple[
                 DATASET_STASH_SOURCE_PARTS_DB_TABLE: db_table,
             }
         source = ".".join((db, schema, db_table))
+
+    # X5's witness for DATASET_STASH_TML_OBJECT: the same `source` about to
+    # be written onto the dataset itself. Ossie -> TML compares its own
+    # current `source` against this snapshot before trusting the stashed
+    # kind -- a `source` rewritten from a query to a table reference (or
+    # back) since this was written makes the stashed kind stale.
+    ds_stash[DATASET_STASH_TML_OBJECT_WITNESS] = source
 
     dataset: dict = {"name": prefix, "source": source}
     description = body.get("description")

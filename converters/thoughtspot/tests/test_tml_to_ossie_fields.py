@@ -92,6 +92,25 @@ class TestExpressionEntries:
         assert "Growth Rate" in param_issue["message"]
         assert "formula_Margin" not in param_issue["message"]
 
+    def test_a_parameter_used_twice_is_named_once_not_twice(self):
+        # `[Growth Rate]` on both sides of the ratio is one fact worth
+        # reporting once -- listing it twice reads as two distinct
+        # unresolved parameters, not a single repeated reference.
+        log = IssueLog()
+        expression_entries(
+            "[Growth Rate] / [Growth Rate]", _resolve, log, object_ref="f"
+        )
+        [issue] = [i for i in log.as_dicts() if i["code"] == "TS-EXPR-PARAM"]
+        assert issue["message"].count("Growth Rate") == 1
+
+    def test_a_repeated_cross_reference_is_also_named_once(self):
+        log = IssueLog()
+        expression_entries(
+            "[formula_Margin] + [formula_Margin]", _resolve, log, object_ref="f"
+        )
+        [issue] = [i for i in log.as_dicts() if i["code"] == "TS-EXPR-FORMULA-REFERENCE"]
+        assert issue["message"].count("formula_Margin") == 1
+
     def test_an_unresolvable_reference_blocks_the_portable_sibling(self):
         log = IssueLog()
         out = expression_entries("[MISSING::Col]", _resolve, log, object_ref="f")
