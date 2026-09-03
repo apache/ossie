@@ -20,7 +20,17 @@ import json
 import pytest
 
 from ossie_thoughtspot import stash
-from ossie_thoughtspot.constants import STASH_VERSION, VENDOR_KEY
+from ossie_thoughtspot.constants import (
+    MODEL_STASH_ACTION_OBJECT_ASSOCIATIONS,
+    MODEL_STASH_COLUMN_GROUPS,
+    MODEL_STASH_CONSTRAINTS,
+    MODEL_STASH_FILTERS,
+    MODEL_STASH_LESSON_PLANS,
+    MODEL_STASH_MODEL_JOINS_WITH,
+    MODEL_STASH_PARAMETERS,
+    STASH_VERSION,
+    VENDOR_KEY,
+)
 from ossie_thoughtspot.errors import ConversionError
 
 
@@ -122,13 +132,13 @@ class TestFindForbiddenKeyIsTheSingleChokePoint:
     enumeration of known field names."""
 
     SHAPES = {
-        "parameters": [{"name": "P", "default_value": {"obj_id": "p-1"}}],
-        "filters": [{"column": "Region", "values": ["US", {"nested": {"fqn": "f-1"}}]}],
-        "column_groups": [{"name": "Sales", "meta": {"guid": "g-1"}}],
-        "lesson_plans": [{"lesson_id": 0, "extra": {"obj_id": "l-1"}}],
-        "action_object_associations": [{"action_name": "A", "context": {"fqn": "a-1"}}],
-        "constraints": {"rolling": {"window": {"guid": "c-1"}}},
-        "model_joins_with": [{"name": "j", "destination": {"fqn": "j-1"}}],
+        MODEL_STASH_PARAMETERS: [{"name": "P", "default_value": {"obj_id": "p-1"}}],
+        MODEL_STASH_FILTERS: [{"column": "Region", "values": ["US", {"nested": {"fqn": "f-1"}}]}],
+        MODEL_STASH_COLUMN_GROUPS: [{"name": "Sales", "meta": {"guid": "g-1"}}],
+        MODEL_STASH_LESSON_PLANS: [{"lesson_id": 0, "extra": {"obj_id": "l-1"}}],
+        MODEL_STASH_ACTION_OBJECT_ASSOCIATIONS: [{"action_name": "A", "context": {"fqn": "a-1"}}],
+        MODEL_STASH_CONSTRAINTS: {"rolling": {"window": {"guid": "c-1"}}},
+        MODEL_STASH_MODEL_JOINS_WITH: [{"name": "j", "destination": {"fqn": "j-1"}}],
         # A field name this module has never heard of -- the fail-closed
         # property itself: the guard must not depend on a list of known
         # model-scope keys to check.

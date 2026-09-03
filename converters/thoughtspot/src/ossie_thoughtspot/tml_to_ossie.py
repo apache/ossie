@@ -80,7 +80,43 @@ from dataclasses import dataclass
 from typing import Callable
 
 from . import datatypes, formula, identifiers, keys, stash
-from .constants import DIALECT, DOCUMENT_VERSION, FIELD_STASH_DB_COLUMN_NAME, PORTABLE_DIALECT
+from .constants import (
+    DATASET_STASH_ALIAS,
+    DATASET_STASH_CONNECTION_NAME,
+    DATASET_STASH_SOURCE_PARTS,
+    DATASET_STASH_SOURCE_PARTS_DB,
+    DATASET_STASH_SOURCE_PARTS_DB_TABLE,
+    DATASET_STASH_SOURCE_PARTS_SCHEMA,
+    DATASET_STASH_SQL_OUTPUT_COLUMNS,
+    DATASET_STASH_SQL_QUERY,
+    DATASET_STASH_TABLE_NAME,
+    DATASET_STASH_TML_OBJECT,
+    DATASET_STASH_UNSURFACED_COLUMNS,
+    DIALECT,
+    DOCUMENT_VERSION,
+    FIELD_STASH_COLUMN_PROPERTIES,
+    FIELD_STASH_DATA_TYPE,
+    FIELD_STASH_DB_COLUMN_NAME,
+    METRIC_STASH_SHAPE,
+    MODEL_STASH_ACTION_OBJECT_ASSOCIATIONS,
+    MODEL_STASH_COLUMN_GROUPS,
+    MODEL_STASH_CONSTRAINTS,
+    MODEL_STASH_FILTERS,
+    MODEL_STASH_LESSON_PLANS,
+    MODEL_STASH_MODEL_JOINS_WITH,
+    MODEL_STASH_MODEL_PROPERTIES,
+    MODEL_STASH_PARAMETERS,
+    MODEL_STASH_UNATTRIBUTED_FORMULAS,
+    MODEL_STASH_UNREPRESENTABLE_JOINS,
+    PORTABLE_DIALECT,
+    RELATIONSHIP_STASH_CARDINALITY,
+    RELATIONSHIP_STASH_JOIN_SHAPE,
+    RELATIONSHIP_STASH_ON_EXPRESSION,
+    RELATIONSHIP_STASH_REFERENCING_JOIN,
+    RELATIONSHIP_STASH_RESIDUAL_PREDICATES,
+    RELATIONSHIP_STASH_TYPE,
+    STASH_TML_NAME,
+)
 from .errors import ConversionError
 from .expressions import CATALOG, Variant, emit_direct
 from .issues import IssueLog, Severity
@@ -792,9 +828,9 @@ def convert_metric(
 
     stash_payload: dict = {}
     if normalised_name != display_name:
-        stash_payload["tml_name"] = display_name
+        stash_payload[STASH_TML_NAME] = display_name
     if metric_shape != _SHAPE_FORMULA:
-        stash_payload["shape"] = metric_shape
+        stash_payload[METRIC_STASH_SHAPE] = metric_shape
     metric = _write_stash_safely(metric, stash_payload, log, object_ref)
 
     description = column.get("description")
@@ -1001,7 +1037,7 @@ def _physical_column_stash(
         return {}
 
     payload: dict = {}
-    is_table = dataset_stashes.get(table_name, {}).get("tml_object") != "sql_view"
+    is_table = dataset_stashes.get(table_name, {}).get(DATASET_STASH_TML_OBJECT) != "sql_view"
     db_column_name = physical.get("db_column_name")
     if is_table and db_column_name is not None and db_column_name != physical_name:
         payload[FIELD_STASH_DB_COLUMN_NAME] = db_column_name
@@ -1009,7 +1045,7 @@ def _physical_column_stash(
     raw_data_type = (physical.get("db_column_properties") or {}).get("data_type")
     canonical = _CANONICAL_TML_SPELLING.get(ossie_datatype) if ossie_datatype else None
     if raw_data_type is not None and canonical is not None and raw_data_type != canonical:
-        payload["data_type"] = raw_data_type
+        payload[FIELD_STASH_DATA_TYPE] = raw_data_type
 
     return payload
 
@@ -1192,25 +1228,29 @@ def _build_dataset(prefix: str, entry: dict, table_doc, log: IssueLog) -> tuple[
     alias = entry.get("alias")
     kind = table_doc.kind
 
-    ds_stash: dict = {"tml_object": kind}
+    ds_stash: dict = {DATASET_STASH_TML_OBJECT: kind}
     if alias:
-        ds_stash["alias"] = alias
-        ds_stash["table_name"] = table_ref
+        ds_stash[DATASET_STASH_ALIAS] = alias
+        ds_stash[DATASET_STASH_TABLE_NAME] = table_ref
 
     connection_name = (body.get("connection") or {}).get("name")
     if connection_name:
-        ds_stash["connection_name"] = connection_name
+        ds_stash[DATASET_STASH_CONNECTION_NAME] = connection_name
 
     if kind == "sql_view":
         source = body.get("sql_query") or ""
-        ds_stash["sql_query"] = source
+        ds_stash[DATASET_STASH_SQL_QUERY] = source
     else:
         db = body.get("db") or ""
         schema = body.get("schema") or ""
         db_table = body.get("db_table") or table_ref or ""
         if any("." in part for part in (db, schema, db_table)):
             # A dotted source string would be ambiguous -- keep the parts too.
-            ds_stash["source_parts"] = {"db": db, "schema": schema, "db_table": db_table}
+            ds_stash[DATASET_STASH_SOURCE_PARTS] = {
+                DATASET_STASH_SOURCE_PARTS_DB: db,
+                DATASET_STASH_SOURCE_PARTS_SCHEMA: schema,
+                DATASET_STASH_SOURCE_PARTS_DB_TABLE: db_table,
+            }
         source = ".".join((db, schema, db_table))
 
     dataset: dict = {"name": prefix, "source": source}
@@ -1328,15 +1368,15 @@ def _unrepresentable_entry(
     entry: dict = {
         "from": from_prefix,
         "to": to_prefix,
-        "on_expression": on_expression,
-        "join_shape": join_shape,
+        RELATIONSHIP_STASH_ON_EXPRESSION: on_expression,
+        RELATIONSHIP_STASH_JOIN_SHAPE: join_shape,
     }
     if join_type:
-        entry["type"] = join_type
+        entry[RELATIONSHIP_STASH_TYPE] = join_type
     if cardinality:
-        entry["cardinality"] = cardinality
+        entry[RELATIONSHIP_STASH_CARDINALITY] = cardinality
     if referencing_join:
-        entry["referencing_join"] = referencing_join
+        entry[RELATIONSHIP_STASH_REFERENCING_JOIN] = referencing_join
     return entry
 
 
@@ -1421,17 +1461,17 @@ def _relationship_from_join(
         "from_columns": [pair[0] for pair in equality_pairs],
         "to_columns": [pair[1] for pair in equality_pairs],
     }
-    rel_stash: dict = {"join_shape": join_shape}
+    rel_stash: dict = {RELATIONSHIP_STASH_JOIN_SHAPE: join_shape}
     if join_type:
-        rel_stash["type"] = join_type
+        rel_stash[RELATIONSHIP_STASH_TYPE] = join_type
     if cardinality:
-        rel_stash["cardinality"] = cardinality
+        rel_stash[RELATIONSHIP_STASH_CARDINALITY] = cardinality
     if referencing_join:
-        rel_stash["referencing_join"] = referencing_join
+        rel_stash[RELATIONSHIP_STASH_REFERENCING_JOIN] = referencing_join
     has_residuals = bool(residuals)
     if has_residuals:
-        rel_stash["on_expression"] = on_expression
-        rel_stash["residual_predicates"] = residuals
+        rel_stash[RELATIONSHIP_STASH_ON_EXPRESSION] = on_expression
+        rel_stash[RELATIONSHIP_STASH_RESIDUAL_PREDICATES] = residuals
         log.add(
             code="TS-JOIN-RESIDUAL-PREDICATES",
             severity=Severity.WARNING,
@@ -1617,7 +1657,7 @@ def convert(document_set: DocumentSet) -> OssieConversion:
     semantic_model: dict = {"name": semantic_model_name, "datasets": []}
     model_stash: dict = {}
     if semantic_model_name != model_display_name:
-        model_stash["tml_name"] = model_display_name
+        model_stash[STASH_TML_NAME] = model_display_name
 
     description = model_body.get("description")
     if description:
@@ -1747,7 +1787,7 @@ def convert(document_set: DocumentSet) -> OssieConversion:
             )
             field_stash_payload: dict = {}
             if extra_properties:
-                field_stash_payload["column_properties"] = extra_properties
+                field_stash_payload[FIELD_STASH_COLUMN_PROPERTIES] = extra_properties
             if "column_id" in column:
                 field_stash_payload.update(_physical_column_stash(
                     column["column_id"], field.get("datatype"),
@@ -1776,7 +1816,7 @@ def convert(document_set: DocumentSet) -> OssieConversion:
             )
             metric_stash_payload: dict = {}
             if extra_properties:
-                metric_stash_payload["column_properties"] = extra_properties
+                metric_stash_payload[FIELD_STASH_COLUMN_PROPERTIES] = extra_properties
             if "column_id" in column:
                 metric_stash_payload.update(_physical_column_stash(
                     column["column_id"], metric.get("datatype"),
@@ -1816,8 +1856,8 @@ def convert(document_set: DocumentSet) -> OssieConversion:
                     "expr": formula_entry["expr"],
                 }
                 if properties:
-                    unattributed["column_properties"] = properties
-                model_stash.setdefault("unattributed_formulas", []).append(unattributed)
+                    unattributed[FIELD_STASH_COLUMN_PROPERTIES] = properties
+                model_stash.setdefault(MODEL_STASH_UNATTRIBUTED_FORMULAS, []).append(unattributed)
 
     # -- Phase 3.5: unsurfaced physical columns, and SQL View output aliases --
     # A Table/SQL-View column no Model columns[] entry surfaces -- by
@@ -1832,14 +1872,14 @@ def convert(document_set: DocumentSet) -> OssieConversion:
     # `db_column_name` this converter invented for lookup purposes.
     referenced_columns = _referenced_physical_columns(model_columns)
     for prefix in dataset_order:
-        kind = "sql_view" if dataset_stashes[prefix].get("tml_object") == "sql_view" else "table"
+        kind = "sql_view" if dataset_stashes[prefix].get(DATASET_STASH_TML_OBJECT) == "sql_view" else "table"
         raw_columns = _raw_physical_columns(table_docs.get(prefix) or {}, kind)
         unsurfaced = [
             column for column in raw_columns
             if (prefix, column.get("name")) not in referenced_columns
         ]
         if unsurfaced:
-            dataset_stashes[prefix]["unsurfaced_columns"] = unsurfaced
+            dataset_stashes[prefix][DATASET_STASH_UNSURFACED_COLUMNS] = unsurfaced
 
         if kind == "sql_view":
             # Every SURFACED field on a SQL View needs its own
@@ -1856,7 +1896,7 @@ def convert(document_set: DocumentSet) -> OssieConversion:
                 if field_name is not None and column.get("sql_output_column") is not None:
                     output_aliases[field_name] = column["sql_output_column"]
             if output_aliases:
-                dataset_stashes[prefix]["sql_output_columns"] = output_aliases
+                dataset_stashes[prefix][DATASET_STASH_SQL_OUTPUT_COLUMNS] = output_aliases
 
     # -- Phase 4: relationships ------------------------------------------------
     relationships: list[dict] = []
@@ -1875,7 +1915,7 @@ def convert(document_set: DocumentSet) -> OssieConversion:
             if relationship is not None:
                 relationships.append(relationship)
             if unrepresentable is not None:
-                model_stash.setdefault("unrepresentable_joins", []).append(unrepresentable)
+                model_stash.setdefault(MODEL_STASH_UNREPRESENTABLE_JOINS, []).append(unrepresentable)
             if candidate is not None:
                 key_candidates.append(candidate)
 
@@ -1914,21 +1954,21 @@ def convert(document_set: DocumentSet) -> OssieConversion:
             "is_spotter_enabled": spotter["is_spotter_enabled"]
         }
     if model_properties:
-        model_stash["model_properties"] = model_properties
+        model_stash[MODEL_STASH_MODEL_PROPERTIES] = model_properties
 
     for key_name in (
-        "parameters", "filters", "column_groups", "lesson_plans",
-        "action_object_associations",
+        MODEL_STASH_PARAMETERS, MODEL_STASH_FILTERS, MODEL_STASH_COLUMN_GROUPS,
+        MODEL_STASH_LESSON_PLANS, MODEL_STASH_ACTION_OBJECT_ASSOCIATIONS,
     ):
         value = model_body.get(key_name)
         if value:
             model_stash[key_name] = value
-    constraints = model_body.get("constraints")
+    constraints = model_body.get(MODEL_STASH_CONSTRAINTS)
     if constraints:
-        model_stash["constraints"] = constraints
+        model_stash[MODEL_STASH_CONSTRAINTS] = constraints
     model_joins_with = model_body.get("joins_with")
     if model_joins_with:
-        model_stash["model_joins_with"] = model_joins_with
+        model_stash[MODEL_STASH_MODEL_JOINS_WITH] = model_joins_with
 
     if model_body.get("aggregated_models"):
         # Aggregate-model routing associations are GUIDs of other Model

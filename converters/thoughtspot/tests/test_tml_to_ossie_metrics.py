@@ -17,6 +17,7 @@
 
 import pytest
 from ossie_thoughtspot import stash
+from ossie_thoughtspot.constants import METRIC_STASH_SHAPE, STASH_TML_NAME
 from ossie_thoughtspot.issues import IssueLog
 from ossie_thoughtspot.tml_to_ossie import _contains_aggregate_call, convert_field, convert_metric
 
@@ -179,7 +180,7 @@ class TestConvertMetric:
         )
         assert metric["name"] == "gross_margin"
         assert "label" not in metric  # metrics have no label field
-        assert stash.read_stash(metric)["tml_name"] == "Gross Margin %!!"
+        assert stash.read_stash(metric)[STASH_TML_NAME] == "Gross Margin %!!"
 
     def test_a_metric_that_needs_neither_tml_name_nor_shape_stashes_nothing(self):
         # X6: a converted document stays clean where ThoughtSpot added nothing.
@@ -209,8 +210,8 @@ class TestConvertMetric:
         )
         assert metric["name"] == "amount"
         payload = stash.read_stash(metric)
-        assert payload["shape"] == "column_aggregation"
-        assert "tml_name" not in payload
+        assert payload[METRIC_STASH_SHAPE] == "column_aggregation"
+        assert STASH_TML_NAME not in payload
 
     def test_each_shape_is_stashed_with_its_own_enum_value(self):
         # Pins all three enum spellings the stash schema defines, and confirms
@@ -236,12 +237,12 @@ class TestConvertMetric:
             formulas, self._table, _resolve, log,
         )
 
-        assert stash.read_stash(column_aggregation_metric)["shape"] == "column_aggregation"
+        assert stash.read_stash(column_aggregation_metric)[METRIC_STASH_SHAPE] == "column_aggregation"
         assert (
-            stash.read_stash(scalar_plus_aggregation_metric)["shape"]
+            stash.read_stash(scalar_plus_aggregation_metric)[METRIC_STASH_SHAPE]
             == "scalar_formula_plus_aggregation"
         )
-        assert "shape" not in stash.read_stash(formula_metric)
+        assert METRIC_STASH_SHAPE not in stash.read_stash(formula_metric)
 
     def test_datatype_is_emitted_only_for_a_bare_aggregate_over_a_typed_column(self):
         log = IssueLog()

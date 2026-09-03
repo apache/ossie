@@ -25,6 +25,18 @@ import json
 
 import pytest
 
+from ossie_thoughtspot.constants import (
+    DATASET_STASH_CONNECTION_NAME,
+    DATASET_STASH_SOURCE_PARTS,
+    DATASET_STASH_SOURCE_PARTS_DB,
+    DATASET_STASH_SOURCE_PARTS_DB_TABLE,
+    DATASET_STASH_SOURCE_PARTS_SCHEMA,
+    DATASET_STASH_SQL_OUTPUT_COLUMNS,
+    DATASET_STASH_TML_OBJECT,
+    DATASET_STASH_UNSURFACED_COLUMNS,
+    FIELD_STASH_DATA_TYPE,
+    FIELD_STASH_DB_COLUMN_NAME,
+)
 from ossie_thoughtspot.issues import IssueLog
 from ossie_thoughtspot.ossie_to_thoughtspot import build_table
 from ossie_thoughtspot.tml import DocumentSet, TmlDocument, dump_document, load_document
@@ -85,7 +97,7 @@ class TestDbColumnName:
         dataset = _dataset(
             "orders", "SALES.PUBLIC.ORDERS",
             fields=[_physical("order_date"), _physical("amount", "o_amount")],
-            dataset_stash={"connection_name": "My Snowflake"},
+            dataset_stash={DATASET_STASH_CONNECTION_NAME: "My Snowflake"},
         )
         table = build_table(dataset, IssueLog())
         assert table.kind == "table"
@@ -129,7 +141,7 @@ class TestDbColumnName:
         # the forward direction saw the two differ, and that value wins --
         # no assumption, no issue.
         field = _round_tripped_physical(
-            "order_date", "ORDERS", "Order Date", field_stash={"db_column_name": "O_ORDERDATE"}
+            "order_date", "ORDERS", "Order Date", field_stash={FIELD_STASH_DB_COLUMN_NAME: "O_ORDERDATE"}
         )
         dataset = _dataset("ORDERS", "SALES.PUBLIC.ORDERS", fields=[field])
         log = IssueLog()
@@ -208,7 +220,7 @@ class TestSourceSplitting:
         # must not be re-classified by the whitespace heuristic.
         dataset = _dataset(
             "recent_orders", "SELECT * FROM orders",
-            dataset_stash={"tml_object": "sql_view"},
+            dataset_stash={DATASET_STASH_TML_OBJECT: "sql_view"},
         )
         table = build_table(dataset, IssueLog())
         assert table.kind == "sql_view"
@@ -216,7 +228,13 @@ class TestSourceSplitting:
     def test_a_stashed_source_parts_entry_is_used_when_it_still_agrees(self):
         dataset = _dataset(
             "orders", "SALES.PUBLIC.ORDERS",
-            dataset_stash={"source_parts": {"db": "SALES", "schema": "PUBLIC", "db_table": "ORDERS"}},
+            dataset_stash={
+                DATASET_STASH_SOURCE_PARTS: {
+                    DATASET_STASH_SOURCE_PARTS_DB: "SALES",
+                    DATASET_STASH_SOURCE_PARTS_SCHEMA: "PUBLIC",
+                    DATASET_STASH_SOURCE_PARTS_DB_TABLE: "ORDERS",
+                }
+            },
         )
         table = build_table(dataset, IssueLog())
         assert (table.body["db"], table.body["schema"], table.body["db_table"]) == (
@@ -228,7 +246,13 @@ class TestSourceSplitting:
         # reusing the stale parts would silently discard the edit.
         dataset = _dataset(
             "orders", "SALES.PUBLIC.RENAMED_ORDERS",
-            dataset_stash={"source_parts": {"db": "SALES", "schema": "PUBLIC", "db_table": "ORDERS"}},
+            dataset_stash={
+                DATASET_STASH_SOURCE_PARTS: {
+                    DATASET_STASH_SOURCE_PARTS_DB: "SALES",
+                    DATASET_STASH_SOURCE_PARTS_SCHEMA: "PUBLIC",
+                    DATASET_STASH_SOURCE_PARTS_DB_TABLE: "ORDERS",
+                }
+            },
         )
         log = IssueLog()
         table = build_table(dataset, log)
@@ -267,7 +291,7 @@ class TestQuotedIdentifierIsNotMisreadAsAQuery:
 
 class TestConnectionDependentSpelling:
     def test_boolean_spelling_is_taken_from_the_stash_when_present(self):
-        field = _physical("is_active", datatype="Boolean", field_stash={"data_type": "BOOL"})
+        field = _physical("is_active", datatype="Boolean", field_stash={FIELD_STASH_DATA_TYPE: "BOOL"})
         dataset = _dataset("orders", "SALES.PUBLIC.ORDERS", fields=[field])
         table = build_table(dataset, IssueLog())
         assert table.body["columns"][0]["db_column_properties"]["data_type"] == "BOOL"
@@ -279,7 +303,7 @@ class TestConnectionDependentSpelling:
         assert table.body["columns"][0]["db_column_properties"]["data_type"] == "BOOLEAN"
 
     def test_float_spelling_is_taken_from_the_stash_when_present(self):
-        field = _physical("weight", datatype="Float", field_stash={"data_type": "FLOAT"})
+        field = _physical("weight", datatype="Float", field_stash={FIELD_STASH_DATA_TYPE: "FLOAT"})
         dataset = _dataset("orders", "SALES.PUBLIC.ORDERS", fields=[field])
         log = IssueLog()
         table = build_table(dataset, log)
@@ -300,7 +324,7 @@ class TestReload:
         dataset = _dataset(
             "orders", "SALES.PUBLIC.ORDERS",
             fields=[_physical("order_date"), _physical("amount")],
-            dataset_stash={"connection_name": "My Snowflake"},
+            dataset_stash={DATASET_STASH_CONNECTION_NAME: "My Snowflake"},
         )
         table = build_table(dataset, IssueLog())
         reloaded = load_document(_dump(table))
@@ -311,7 +335,7 @@ class TestReload:
         dataset = _dataset(
             "recent_orders", "SELECT * FROM orders",
             fields=[_physical("order_id")],
-            dataset_stash={"connection_name": "My Snowflake"},
+            dataset_stash={DATASET_STASH_CONNECTION_NAME: "My Snowflake"},
         )
         table = build_table(dataset, IssueLog())
         reloaded = load_document(_dump(table))
@@ -327,7 +351,7 @@ class TestConnectionFallback:
 
     def test_a_stashed_connection_name_wins_over_the_argument(self):
         dataset = _dataset(
-            "orders", "SALES.PUBLIC.ORDERS", dataset_stash={"connection_name": "Stashed Connection"}
+            "orders", "SALES.PUBLIC.ORDERS", dataset_stash={DATASET_STASH_CONNECTION_NAME: "Stashed Connection"}
         )
         table = build_table(dataset, IssueLog(), connection_name="Fallback Connection")
         assert table.body["connection"] == {"name": "Stashed Connection"}
@@ -391,7 +415,10 @@ class TestSqlViewColumnsUseOutputAliasNotDbColumnName:
         dataset = _dataset(
             "recent_orders", "SELECT cust_id_out AS customer_id FROM orders",
             fields=[field],
-            dataset_stash={"tml_object": "sql_view", "sql_output_columns": {"customer_id": "cust_id_out"}},
+            dataset_stash={
+                DATASET_STASH_TML_OBJECT: "sql_view",
+                DATASET_STASH_SQL_OUTPUT_COLUMNS: {"customer_id": "cust_id_out"},
+            },
         )
         table = build_table(dataset, IssueLog())
         column = table.body["sql_view_columns"][0]
@@ -401,8 +428,8 @@ class TestSqlViewColumnsUseOutputAliasNotDbColumnName:
         dataset = _dataset(
             "recent_orders", "SELECT a, b FROM orders",
             dataset_stash={
-                "tml_object": "sql_view",
-                "unsurfaced_columns": [
+                DATASET_STASH_TML_OBJECT: "sql_view",
+                DATASET_STASH_UNSURFACED_COLUMNS: [
                     {"name": "b", "sql_output_column": "b",
                      "db_column_properties": {"data_type": "VARCHAR"}}
                 ],
@@ -421,7 +448,7 @@ class TestUnsurfacedColumns:
             "orders", "SALES.PUBLIC.ORDERS",
             fields=[_physical("amount")],
             dataset_stash={
-                "unsurfaced_columns": [
+                DATASET_STASH_UNSURFACED_COLUMNS: [
                     {"name": "internal_flag", "db_column_name": "INTERNAL_FLAG",
                      "db_column_properties": {"data_type": "BOOLEAN"}}
                 ]
