@@ -26,6 +26,7 @@ can be unknowingly wrong about what the forward direction actually produces.
 """
 import json
 
+from ossie_thoughtspot import formula as formula_module
 from ossie_thoughtspot.constants import (
     FIELD_STASH_COLUMN_PROPERTIES,
     METRIC_STASH_SHAPE,
@@ -126,6 +127,27 @@ def _all_columns_and_formulas(body):
     return body.get("columns") or [], body.get("formulas") or []
 
 
+def _dangling_formula_references(formulas):
+    """Every `[formula_X]` reference, across every emitted formula's `expr`,
+    that does not match any emitted `formulas[]` id -- empty when every
+    cross-reference resolves. Deliberately checks the *property* (does every
+    reference land somewhere real) rather than any specific id spelling, so
+    it survives a change of normalisation scheme. Reuses the package's own
+    bracket scanner (`formula._bracketed_spans`) rather than a parallel
+    regex, so this check cannot itself disagree with what the production
+    code considers a bracket reference.
+    """
+    ids = {entry["id"] for entry in formulas}
+    dangling = []
+    for entry in formulas:
+        for _start, _end, body in formula_module._bracketed_spans(entry["expr"]):
+            if "::" in body or not body.startswith("formula_"):
+                continue
+            if body not in ids:
+                dangling.append((entry["name"], body))
+    return dangling
+
+
 # ---------------------------------------------------------------------------
 # R3 -- every formula is one formulas[] entry plus one columns[] entry.
 # ---------------------------------------------------------------------------
@@ -214,6 +236,132 @@ class TestFormulaCrossReferenceUsesIdForm:
         assert f"[{net_amount_id}]" in margin_expr
         assert "[formula_net_amount]" == f"[{net_amount_id}]"
         assert by_name  # sanity
+
+
+class TestFormulaReferenceRewriting:
+    """A formula id is regenerated from the *normalised* form of its own
+    display name (_formula_id_from), which can differ from whatever id text
+    the source document's own cross-references were written against. Every
+    embedded reference has to be rewritten to match, or it dangles --
+    ThoughtSpot parses an unresolvable bracket reference as search tokens
+    rather than failing at parse time, so a stale reference is a guaranteed
+    import failure. Assert the property directly (every reference resolves
+    to an emitted id) rather than pinning specific id spellings, so these
+    survive a change of normalisation scheme.
+    """
+
+    def test_a_reference_whose_target_normalises_differently_is_rewritten(self):
+        orders = _table_doc("orders", [_column("Amount", "AMOUNT", "DOUBLE"),
+                                        _column("Cost", "COST", "DOUBLE")])
+        dataset = _dataset("orders", "SALES.PUBLIC.ORDERS", fields=[
+            _field(
+                "net_amount", _dialects(("THOUGHTSPOT", "[orders::Amount] - [orders::Cost]")),
+                label="Net-Amount",  # normalises to "net_amount"
+            ),
+            _field(
+                "margin_pct",
+                # Written against the SOURCE's own id text ("Net-Amount",
+                # verbatim) -- not the normalised form this build mints.
+                _dialects(("THOUGHTSPOT", "[formula_Net-Amount] / [orders::Amount]")),
+                label="Margin Pct",
+            ),
+        ])
+        model = _semantic_model(datasets=[dataset])
+        log = IssueLog()
+
+        doc = build_model(model, [orders], log)
+        _columns, formulas = _all_columns_and_formulas(doc.body)
+
+        assert not _dangling_formula_references(formulas)
+        assert not [i for i in log.as_dicts() if i["code"] == "TS-MODEL-FORMULA-REFERENCE-UNRESOLVED"]
+        net_amount_id = next(f["id"] for f in formulas if f["name"] == "Net-Amount")
+        margin_expr = next(f["expr"] for f in formulas if f["name"] == "Margin Pct")
+        assert f"[{net_amount_id}]" in margin_expr
+        assert "[formula_Net-Amount]" not in margin_expr  # the stale reference is gone
+
+    def test_a_chain_of_three_resolves_regardless_of_declaration_order(self):
+        orders = _table_doc("orders", [_column("Amount", "AMOUNT", "DOUBLE")])
+        dataset = _dataset("orders", "SALES.PUBLIC.ORDERS", fields=[
+            # Declared in an order where the referenced formula comes AFTER
+            # its referencer, twice over -- proves the rewrite does not
+            # depend on build order.
+            _field(
+                "top", _dialects(("THOUGHTSPOT", "[formula_Middle] * 2")), label="Top",
+            ),
+            _field(
+                "middle", _dialects(("THOUGHTSPOT", "[formula_Bottom] + 1")), label="Middle",
+            ),
+            _field(
+                # A bare bracket reference would classify as a PHYSICAL
+                # field (no formula_id of its own) -- this must genuinely be
+                # computed so it gets an id the chain can resolve against.
+                "bottom", _dialects(("THOUGHTSPOT", "[orders::Amount] * 1")), label="Bottom",
+            ),
+        ])
+        model = _semantic_model(datasets=[dataset])
+        log = IssueLog()
+
+        doc = build_model(model, [orders], log)
+        _columns, formulas = _all_columns_and_formulas(doc.body)
+
+        assert not _dangling_formula_references(formulas)
+        assert not [i for i in log.as_dicts() if i["code"] == "TS-MODEL-FORMULA-REFERENCE-UNRESOLVED"]
+        by_name = {f["name"]: f for f in formulas}
+        bottom_id = by_name["Bottom"]["id"]
+        middle_id = by_name["Middle"]["id"]
+        assert f"[{middle_id}]" in by_name["Top"]["expr"]
+        assert f"[{bottom_id}]" in by_name["Middle"]["expr"]
+
+    def test_a_reference_to_a_formula_that_does_not_exist_is_logged_not_silently_dangling(self):
+        orders = _table_doc("orders", [_column("Amount", "AMOUNT", "DOUBLE")])
+        dataset = _dataset("orders", "SALES.PUBLIC.ORDERS", fields=[
+            _field(
+                "adjusted", _dialects(("THOUGHTSPOT", "[formula_Ghost] + [orders::Amount]")),
+                label="Adjusted",
+            ),
+        ])
+        model = _semantic_model(datasets=[dataset])
+        log = IssueLog()
+
+        doc = build_model(model, [orders], log)
+        _columns, formulas = _all_columns_and_formulas(doc.body)
+
+        issues = [i for i in log.as_dicts() if i["code"] == "TS-MODEL-FORMULA-REFERENCE-UNRESOLVED"]
+        assert len(issues) == 1
+        assert issues[0]["severity"] == "ERROR"
+        assert "formula_Ghost" in issues[0]["message"]
+        # Nothing safe to substitute -- the unresolved reference is left
+        # exactly as written, not silently dropped or invented.
+        adjusted_expr = next(f["expr"] for f in formulas if f["name"] == "Adjusted")
+        assert "[formula_Ghost]" in adjusted_expr
+
+    def test_a_reference_needing_no_normalisation_is_left_untouched(self):
+        # The common case: the source already used the slug-shaped
+        # convention this converter itself mints, so the rewrite is a no-op
+        # -- confirms the fix does not disturb the case that already worked.
+        orders = _table_doc("orders", [_column("Amount", "AMOUNT", "DOUBLE"),
+                                        _column("Cost", "COST", "DOUBLE")])
+        dataset = _dataset("orders", "SALES.PUBLIC.ORDERS", fields=[
+            _field(
+                "net_amount", _dialects(("THOUGHTSPOT", "[orders::Amount] - [orders::Cost]")),
+                label="net_amount",
+            ),
+            _field(
+                "margin_pct",
+                _dialects(("THOUGHTSPOT", "[formula_net_amount] / [orders::Amount]")),
+                label="margin_pct",
+            ),
+        ])
+        model = _semantic_model(datasets=[dataset])
+        log = IssueLog()
+
+        doc = build_model(model, [orders], log)
+        _columns, formulas = _all_columns_and_formulas(doc.body)
+
+        assert not _dangling_formula_references(formulas)
+        margin_expr = next(f["expr"] for f in formulas if f["name"] == "margin_pct")
+        assert margin_expr == "[formula_net_amount] / [orders::Amount]"
+        assert not [i for i in log.as_dicts() if i["code"] == "TS-MODEL-FORMULA-REFERENCE-UNRESOLVED"]
 
 
 # ---------------------------------------------------------------------------
