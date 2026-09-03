@@ -1032,6 +1032,65 @@ def _restore_ai_context(properties: dict, ai_context: object, log: IssueLog, *, 
         )
 
 
+#: R8 -- properties this converter must never write as `true` into a
+#: generated model, even when the stash carries the value verbatim. The
+#: stash is the Ossie document's own record of what the source TML held and
+#: is untouched by this filter (a forward conversion must still be able to
+#: recover the flag); only the *emitted* TML side ever drops it. A message
+#: per key, not one generic message, because R8's own reasoning differs for
+#: each: a hidden column cannot be surfaced again without a manual edit on
+#: the target instance, and re-asserting was_auto_generated on a column this
+#: build did not itself generate would misrepresent its provenance.
+_NEVER_EMIT_TRUE_PROPERTY_MESSAGES = {
+    "is_hidden": (
+        "the source column had is_hidden=true, but a generated model must never "
+        "set it -- a hidden column cannot be surfaced again without a manual edit "
+        "on the target instance, so silently regenerating one would lock it there "
+        "again; it is dropped from the emitted column rather than written"
+    ),
+    "was_auto_generated": (
+        "the source column had was_auto_generated=true, but this build did not "
+        "auto-generate the regenerated column -- re-asserting the flag would "
+        "misrepresent its provenance; it is dropped from the emitted column "
+        "rather than written"
+    ),
+}
+
+
+def _drop_never_emit_true_properties(
+    extra_properties: dict, log: IssueLog, *, object_ref: str
+) -> dict:
+    """R8 -- `extra_properties` (a restored `column_properties` stash) with
+    `is_hidden`/`was_auto_generated` removed before it is merged into the
+    emitted `properties` dict.
+
+    Only a `true` value is dropped-and-logged: it is the one value R8
+    forbids the *generated* TML from carrying, and a generated model
+    silently losing a column's visibility (or misreporting its provenance)
+    is a real, actionable difference the model owner needs to see, not a
+    stylistic omission -- hence WARNING, matching this module's other
+    declared-loss codes (TS-MODEL-FIELD-DATATYPE-UNWRITABLE,
+    TS-MODEL-DATASET-KEY-UNUSED), rather than the INFO severity reserved for
+    a benign structural note. A stashed `false` is simply omitted, logging
+    nothing: `false` (or absent) is ThoughtSpot's own default for both
+    properties, so leaving the key out of the emitted document loses no
+    information at all.
+    """
+    filtered = dict(extra_properties)
+    for key, message in _NEVER_EMIT_TRUE_PROPERTY_MESSAGES.items():
+        if key not in filtered:
+            continue
+        value = filtered.pop(key)
+        if value is True:
+            log.add(
+                code="TS-MODEL-PROPERTY-NEVER-EMITTED",
+                severity=Severity.WARNING,
+                message=message,
+                object_ref=object_ref,
+            )
+    return filtered
+
+
 def _build_field(
     field: dict,
     dataset_prefix: str,
@@ -1118,7 +1177,7 @@ def _build_field(
             )
 
     extra_properties = payload.get(FIELD_STASH_COLUMN_PROPERTIES) or {}
-    properties.update(extra_properties)
+    properties.update(_drop_never_emit_true_properties(extra_properties, log, object_ref=object_ref))
     _restore_ai_context(properties, field.get("ai_context"), log, object_ref=object_ref)
 
     description = field.get("description")
@@ -1259,7 +1318,7 @@ def _build_metric(
         )
 
     extra_properties = payload.get(FIELD_STASH_COLUMN_PROPERTIES) or {}
-    properties.update(extra_properties)
+    properties.update(_drop_never_emit_true_properties(extra_properties, log, object_ref=object_ref))
     _restore_ai_context(properties, metric.get("ai_context"), log, object_ref=object_ref)
 
     # Raw, unwrapped `formula_expr` here -- see the matching comment in
