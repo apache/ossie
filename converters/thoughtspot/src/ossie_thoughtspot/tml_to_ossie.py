@@ -951,6 +951,69 @@ def _normalized_physical_columns(body: dict, kind: str) -> list[dict]:
     return [_normalize_physical_column(entry, kind) for entry in _raw_physical_columns(body, kind)]
 
 
+#: The TML `db_column_properties.data_type` spelling `datatypes.to_tml` would
+#: emit by default for each Ossie datatype whose TML source has more than one
+#: valid spelling (the datatype map's Boolean and Float rows). Stashing the
+#: canonical spelling itself would be noise -- the reverse direction's own
+#: default already produces it; only the non-canonical spelling (`BOOL`,
+#: `FLOAT`) is worth recording.
+_CANONICAL_TML_SPELLING = {"Boolean": "BOOLEAN", "Float": "DOUBLE"}
+
+
+def _physical_column_stash(
+    column_id: str,
+    ossie_datatype: str | None,
+    physical_columns_by_prefix: dict[str, list[dict]],
+    dataset_stashes: dict[str, dict],
+) -> dict:
+    """Field/metric-level stash additions a physical column needs that
+    nothing else in this module records:
+
+    * `data_type` -- the exact warehouse spelling, only when it is not the
+      canonical one `datatypes.to_tml` would emit by default for
+      `ossie_datatype` (see `_CANONICAL_TML_SPELLING`). Documented in the
+      datatype map's Boolean row: "the connection's spelling is recorded in
+      the field stash's data_type key so the return trip re-emits the same
+      one" -- the same reasoning applies to Float's DOUBLE/FLOAT pair.
+
+    * `db_column_name` -- the exact warehouse column name, only when it
+      differs from the column's own display name. The forward direction
+      matches a physical column by display name only, so a round-tripped
+      bracket reference (`[TABLE::Column]`) carries the display name, never
+      the warehouse name, and the reverse direction has no other way to
+      recover it -- today it defaults to assuming the two are equal and
+      logs that assumption. This key is not in the pinned payload schema;
+      it closes a gap the schema itself does not yet cover. Only ever
+      stashed for a Table-backed column: a SQL View's own physical binding
+      (`sql_output_column`) already has its own dataset-level stash key
+      (`sql_output_columns`), so recording the same fact again here under a
+      different name would be redundant.
+    """
+    try:
+        table_name, physical_name = identifiers.split_column_ref(f"[{column_id}]")
+    except ValueError:
+        return {}
+    physical = next(
+        (p for p in physical_columns_by_prefix.get(table_name, []) if p.get("name") == physical_name),
+        None,
+    )
+    if physical is None:
+        return {}
+
+    payload: dict = {}
+    is_table = dataset_stashes.get(table_name, {}).get("tml_object") != "sql_view"
+    db_column_name = physical.get("db_column_name")
+    if is_table and db_column_name is not None and db_column_name != physical_name:
+        payload["db_column_name"] = db_column_name
+
+    raw_data_type = (physical.get("db_column_properties") or {}).get("data_type")
+    canonical = _CANONICAL_TML_SPELLING.get(ossie_datatype) if ossie_datatype else None
+    if raw_data_type is not None and canonical is not None and raw_data_type != canonical:
+        payload["data_type"] = raw_data_type
+
+    return payload
+
+
 #: Every `properties` key `convert_field` reads on the ATTRIBUTE path.
 #: Anything else in a column's `properties` dict is unconsumed and, per the
 #: fail-closed rule `_unconsumed_properties` implements, is stashed rather
@@ -1629,12 +1692,31 @@ def convert(document_set: DocumentSet) -> OssieConversion:
     attribute_index = _index_attribute_columns(model_columns, log)
 
     def resolve(table: str, column: str) -> str | None:
+        # The mapping document is explicit for a bare-identifier field: "the
+        # identifier is the *physical* column; the display name comes from
+        # label/name." So the ANSI_SQL sibling this feeds -- built to be
+        # directly executable against the warehouse -- has to carry the
+        # actual warehouse column reference (db_column_name, or a SQL
+        # View's sql_output_column), never the Ossie field's own
+        # display-derived identifier, which is not a column that exists on
+        # the underlying table at all. `attribute_index` still gates
+        # whether this reference is one the model actually surfaces as a
+        # field -- that scope is unchanged -- only the value returned once
+        # it passes that gate changes.
         if table not in dataset_bodies:
             return None
-        field_name = attribute_index.get((table, column))
-        if field_name is None:
+        if (table, column) not in attribute_index:
             return None
-        return f"{table}.{field_name}"
+        physical = next(
+            (p for p in physical_columns_by_prefix.get(table, []) if p.get("name") == column),
+            None,
+        )
+        if physical is None:
+            return None
+        warehouse_reference = physical.get("db_column_name")
+        if warehouse_reference is None:
+            return None
+        return f"{table}.{warehouse_reference}"
 
     # -- Phase 3: fields and metrics ------------------------------------------
     formulas: dict[str, dict] = {
@@ -1663,10 +1745,16 @@ def convert(document_set: DocumentSet) -> OssieConversion:
             extra_properties = _unconsumed_properties(
                 properties, _FIELD_CONSUMED_PROPERTIES, log, f"field:{display_name}"
             )
+            field_stash_payload: dict = {}
             if extra_properties:
-                field = _write_stash_safely(
-                    field, {"column_properties": extra_properties}, log, f"field:{display_name}"
-                )
+                field_stash_payload["column_properties"] = extra_properties
+            if "column_id" in column:
+                field_stash_payload.update(_physical_column_stash(
+                    column["column_id"], field.get("datatype"),
+                    physical_columns_by_prefix, dataset_stashes,
+                ))
+            if field_stash_payload:
+                field = _write_stash_safely(field, field_stash_payload, log, f"field:{display_name}")
             owner = _field_owner_dataset(column, formulas, resolve)
             if owner is not None and owner in fields_by_dataset:
                 fields_by_dataset[owner].append(field)
@@ -1686,10 +1774,16 @@ def convert(document_set: DocumentSet) -> OssieConversion:
             extra_properties = _unconsumed_properties(
                 properties, _METRIC_CONSUMED_PROPERTIES, log, f"metric:{display_name}"
             )
+            metric_stash_payload: dict = {}
             if extra_properties:
-                metric = _write_stash_safely(
-                    metric, {"column_properties": extra_properties}, log, f"metric:{display_name}"
-                )
+                metric_stash_payload["column_properties"] = extra_properties
+            if "column_id" in column:
+                metric_stash_payload.update(_physical_column_stash(
+                    column["column_id"], metric.get("datatype"),
+                    physical_columns_by_prefix, dataset_stashes,
+                ))
+            if metric_stash_payload:
+                metric = _write_stash_safely(metric, metric_stash_payload, log, f"metric:{display_name}")
             metrics.append(metric)
             continue
 
