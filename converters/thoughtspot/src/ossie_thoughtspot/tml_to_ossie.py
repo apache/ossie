@@ -795,7 +795,7 @@ def convert_metric(
         stash_payload["tml_name"] = display_name
     if metric_shape != _SHAPE_FORMULA:
         stash_payload["shape"] = metric_shape
-    metric = stash.write_stash(metric, stash_payload)
+    metric = _write_stash_safely(metric, stash_payload, log, object_ref)
 
     description = column.get("description")
     if description:
@@ -905,6 +905,52 @@ def _referenced_physical_columns(model_columns: list[dict]) -> set[tuple[str, st
     return referenced
 
 
+def _raw_physical_columns(body: dict, kind: str) -> list[dict]:
+    """The verbatim physical-column list for a Table or SQL View document --
+    `columns[]` for a `table:`, `sql_view_columns[]` for a `sql_view:`.
+
+    Per the mapping document's SQL View row, a SQL View's columns live under
+    a different key entirely, not merely a differently-shaped entry under
+    the same one -- reading `.get("columns")` unconditionally finds nothing
+    on a SQL View document and every one of its columns silently vanishes
+    (no datatype, no unsurfaced_columns entry, nothing). This is the single
+    place that knows which key each kind uses; every reader of "this
+    dataset's physical columns" goes through here or through
+    `_normalized_physical_columns` below, never `body.get("columns")` directly.
+    """
+    key = "sql_view_columns" if kind == "sql_view" else "columns"
+    return body.get(key) or []
+
+
+def _normalize_physical_column(entry: dict, kind: str) -> dict:
+    """One physical column entry, reshaped so datatype lookup
+    (`_physical_datatype` in the field/metric converters) can read `name` /
+    `db_column_name` / `db_column_properties` the same way regardless of
+    which document kind it came from.
+
+    A Table column already has exactly this shape. A SQL View column binds
+    its physical reference via `sql_output_column` instead of
+    `db_column_name` -- "each bound to a query output alias via
+    sql_output_column", per the mapping document -- but is otherwise
+    documented as playing the same role, so `name` and
+    `db_column_properties` carry over unchanged.
+    """
+    if kind != "sql_view":
+        return entry
+    return {
+        "name": entry.get("name"),
+        "db_column_name": entry.get("sql_output_column"),
+        "db_column_properties": entry.get("db_column_properties"),
+    }
+
+
+def _normalized_physical_columns(body: dict, kind: str) -> list[dict]:
+    """`_raw_physical_columns`, each entry passed through
+    `_normalize_physical_column` -- the shape `table_lookup` hands to
+    `_physical_datatype`."""
+    return [_normalize_physical_column(entry, kind) for entry in _raw_physical_columns(body, kind)]
+
+
 #: Every `properties` key `convert_field` reads on the ATTRIBUTE path.
 #: Anything else in a column's `properties` dict is unconsumed and, per the
 #: fail-closed rule `_unconsumed_properties` implements, is stashed rather
@@ -1003,6 +1049,15 @@ def _write_stash_safely(obj: dict, payload: dict, log: IssueLog, object_ref: str
     stash entry on `obj`, surfaced via its internal `read_stash` call, is
     the one other case it can raise for) there is no payload key to blame,
     and the exception is left to propagate rather than being swallowed.
+
+    Every call to `stash.write_stash` in this module goes through this
+    function -- including `convert_metric`'s own `tml_name`/`shape` payload,
+    which is hardcoded scalars today and so never actually exercises the
+    catch, but a future change that puts TML-derived content into it would
+    otherwise silently reinstate the abort-the-whole-conversion behaviour
+    this function exists to remove. A new call to `stash.write_stash`
+    added anywhere in this module should be a call to this function instead,
+    not a second bespoke exception.
     """
     cleaned = dict(payload)
     while True:
@@ -1510,6 +1565,7 @@ def convert(document_set: DocumentSet) -> OssieConversion:
     dataset_bodies: dict[str, dict] = {}
     dataset_stashes: dict[str, dict] = {}
     table_docs: dict[str, dict] = {}
+    physical_columns_by_prefix: dict[str, list[dict]] = {}
     fields_by_dataset: dict[str, list] = {}
     seen_prefixes: set[str] = set()
 
@@ -1557,10 +1613,16 @@ def convert(document_set: DocumentSet) -> OssieConversion:
         dataset_bodies[prefix] = dataset_dict
         dataset_stashes[prefix] = ds_stash
         table_docs[prefix] = table_doc.body
+        physical_columns_by_prefix[prefix] = _normalized_physical_columns(
+            table_doc.body, table_doc.kind
+        )
         fields_by_dataset[prefix] = []
 
     def table_lookup(name: str) -> dict | None:
-        return table_docs.get(name)
+        columns = physical_columns_by_prefix.get(name)
+        if columns is None:
+            return None
+        return {"columns": columns}
 
     # -- Phase 2: the cross-model resolver -----------------------------------
     model_columns = model_body.get("columns") or []
@@ -1663,20 +1725,44 @@ def convert(document_set: DocumentSet) -> OssieConversion:
                     unattributed["column_properties"] = properties
                 model_stash.setdefault("unattributed_formulas", []).append(unattributed)
 
-    # -- Phase 3.5: unsurfaced physical columns ------------------------------
-    # A Table column no Model columns[] entry surfaces -- by column_id, field
-    # or metric alike -- is not part of the semantic model, but has to be
-    # preserved verbatim (Dataset-level mapping, "fields" row) so the Table
-    # document can be regenerated exactly on the way back.
+    # -- Phase 3.5: unsurfaced physical columns, and SQL View output aliases --
+    # A Table/SQL-View column no Model columns[] entry surfaces -- by
+    # column_id, field or metric alike -- is not part of the semantic
+    # model, but has to be preserved verbatim (Dataset-level mapping,
+    # "fields" row) so the source document can be regenerated exactly on
+    # the way back. `_raw_physical_columns` reads whichever key this
+    # dataset's document kind actually uses (`columns[]` or
+    # `sql_view_columns[]`) -- the RAW entries, not the datatype-lookup
+    # shape `_normalized_physical_column` builds, since regenerating a SQL
+    # View column needs its own `sql_output_column` key back, not a
+    # `db_column_name` this converter invented for lookup purposes.
     referenced_columns = _referenced_physical_columns(model_columns)
     for prefix in dataset_order:
-        physical_columns = (table_docs.get(prefix) or {}).get("columns") or []
+        kind = "sql_view" if dataset_stashes[prefix].get("tml_object") == "sql_view" else "table"
+        raw_columns = _raw_physical_columns(table_docs.get(prefix) or {}, kind)
         unsurfaced = [
-            column for column in physical_columns
+            column for column in raw_columns
             if (prefix, column.get("name")) not in referenced_columns
         ]
         if unsurfaced:
             dataset_stashes[prefix]["unsurfaced_columns"] = unsurfaced
+
+        if kind == "sql_view":
+            # Every SURFACED field on a SQL View needs its own
+            # sql_output_column recorded (DatasetLevel schema's
+            # sql_output_columns key: "field name -> sql_output_column
+            # alias") -- there is no safe way to re-derive a query output
+            # alias from an Ossie field's own identifier the way a Table's
+            # db_column_name might be guessed at, so this is always
+            # necessary, not just when the alias happens to differ from the
+            # field's name.
+            output_aliases = {}
+            for column in raw_columns:
+                field_name = attribute_index.get((prefix, column.get("name")))
+                if field_name is not None and column.get("sql_output_column") is not None:
+                    output_aliases[field_name] = column["sql_output_column"]
+            if output_aliases:
+                dataset_stashes[prefix]["sql_output_columns"] = output_aliases
 
     # -- Phase 4: relationships ------------------------------------------------
     relationships: list[dict] = []
