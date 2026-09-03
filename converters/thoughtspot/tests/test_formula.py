@@ -17,7 +17,7 @@
 
 import pytest
 from ossie_thoughtspot.formula import (
-    _scan, find_column_refs, find_parameter_refs, is_bare_column_ref,
+    _scan, find_call_names, find_column_refs, find_parameter_refs, is_bare_column_ref,
     rewrite_column_refs, split_call,
 )
 
@@ -89,6 +89,49 @@ class TestSplitCall:
             "unique count",
             ["[B::y]"],
         )
+
+
+class TestFindCallNames:
+    def test_a_single_call_reports_its_own_name(self):
+        assert find_call_names("sum ( [A::x] )") == ["sum"]
+
+    def test_a_call_nested_inside_another_reports_both_at_every_depth(self):
+        # split_call only ever answers about the single outer call; this is the
+        # function that has to see through a scalar wrapper to what is inside it.
+        assert find_call_names("round ( sum ( [A::x] ) , 2 )") == ["round", "sum"]
+
+    def test_several_sibling_arguments_each_report_their_own_call(self):
+        assert find_call_names(
+            "group_aggregate ( sum ( [T::x] ) , query_groups ( ) , query_filters ( ) )"
+        ) == ["group_aggregate", "sum", "query_groups", "query_filters"]
+
+    def test_a_call_name_inside_a_quoted_string_literal_is_not_reported(self):
+        # The literal text "STDDEV_POP(" here is the quoted SQL body of a
+        # sql_number_aggregate_op pass-through, not a real ThoughtSpot call.
+        assert find_call_names(
+            "sql_number_aggregate_op ( 'STDDEV_POP({0})' , [T::x] )"
+        ) == ["sql_number_aggregate_op"]
+
+    def test_a_compound_expression_with_no_call_at_all_reports_nothing(self):
+        assert find_call_names("[A::x] - [A::y]") == []
+
+    def test_a_multi_word_call_name_is_reported_as_one_unit(self):
+        assert find_call_names("unique count ( [A::x] )") == ["unique count"]
+
+    def test_a_leading_keyword_is_stripped_but_the_real_call_after_it_is_still_found(self):
+        # `true and count ( ... )` is an operator expression ending in
+        # something that looks like a call head starting with "true and" —
+        # split_call correctly refuses to call the whole thing "true and
+        # count", but the nested `count(...)` call is still real and must
+        # still be found here, unlike in split_call's single-outer-call
+        # question where the whole expression is rejected instead.
+        assert find_call_names("true and count ( [A::x] )") == ["count"]
+
+    def test_a_keyword_immediately_before_a_paren_reports_no_call_there(self):
+        # `not ( ... )` is grouping/negation, not a call named "not" -- and,
+        # unlike the "true and count" case above, there is no non-keyword
+        # suffix left once "not" is stripped, so nothing is reported for it.
+        assert find_call_names("not ( [A::x] )") == []
 
 
 class TestFindColumnRefs:

@@ -46,6 +46,14 @@ from typing import Callable
 from . import identifiers
 
 _CALL_HEAD = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*(?:\s+[A-Za-z_][A-Za-z0-9_]*)*)\s*\(")
+#: Same call-head shape as `_CALL_HEAD`, but unanchored (no `^`) so it matches a call
+#: starting anywhere in the text, and guarded on the left by a negative lookbehind so
+#: a match can never start mid-identifier (e.g. inside "ground" when scanning for a
+#: call literally named "round"). Used by `find_call_names` to find every call in an
+#: expression, not just the single outer one `split_call` answers about.
+_CALL_HEAD_ANYWHERE = re.compile(
+    r"(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:\s+[A-Za-z_][A-Za-z0-9_]*)*)\s*\("
+)
 _BRACKETED = re.compile(r"\[([^\]]*)\]")
 _CLOSERS = {"(": ")", "[": "]", "{": "}"}
 _QUOTES = ("'", '"')
@@ -149,6 +157,46 @@ def split_call(expression: str) -> tuple[str, list[str]] | None:
     if not inner:
         return head.group(1), []
     return head.group(1), _split_top_level_commas(inner)
+
+
+def find_call_names(expression: str) -> list[str]:
+    """Every function-call name in `expression`, at any nesting depth, duplicates kept.
+
+    `split_call` deliberately answers only about the single *outer* call — exactly
+    what building a rendering around a whole expression needs. This answers a
+    different question a safety check needs instead: whether a call with a
+    particular name appears *anywhere* inside the expression, however deeply
+    nested — `round ( sum ( [T::x] ) , 2 )` has `round` as its outer call but
+    `sum` buried one level inside it, and a caller checking only the outer call
+    would miss that the expression already aggregates.
+
+    A name is only reported at a genuine call site: immediately followed by `(`,
+    not inside a quoted string literal, and not inside the opaque body of a
+    `[...]` reference — so a display name or string literal that happens to
+    contain text like `sum (` is never mistaken for a real call.
+
+    The same keyword handling `split_call` applies also applies here, adapted for
+    scanning mid-expression rather than judging one candidate outer call: a
+    leading keyword word (`true and count ( ... )`) means that word is part of an
+    operator expression, not the call's own name, so it is stripped one word at a
+    time from the front of the matched run until either a non-keyword word starts
+    the remainder (the real call name — `count`, not `true and count`) or nothing
+    is left (the whole run was keywords, so it names no call at all).
+    """
+    opaque = {i for i, _ch, _d, in_quote in _scan(expression) if in_quote}
+    for start, end, _body in _bracketed_spans(expression):
+        opaque.update(range(start, end))
+
+    names: list[str] = []
+    for match in _CALL_HEAD_ANYWHERE.finditer(expression):
+        if match.start() in opaque:
+            continue
+        words = match.group(1).split()
+        while words and words[0].lower() in _KEYWORDS:
+            words = words[1:]
+        if words:
+            names.append(" ".join(words))
+    return names
 
 
 def _bracketed_spans(expression: str) -> list[tuple[int, int, str]]:

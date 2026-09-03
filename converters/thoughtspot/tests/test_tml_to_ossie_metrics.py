@@ -18,7 +18,7 @@
 import pytest
 from ossie_thoughtspot import stash
 from ossie_thoughtspot.issues import IssueLog
-from ossie_thoughtspot.tml_to_ossie import convert_metric
+from ossie_thoughtspot.tml_to_ossie import _contains_aggregate_call, convert_field, convert_metric
 
 
 def _resolve(table, column):
@@ -333,3 +333,140 @@ class TestConvertMetric:
         assert len(issues) == 1
         assert "column_id" in issues[0]["message"]
         assert "formula_id" in issues[0]["message"]
+
+    # -- A guard against silent double aggregation. --
+    #
+    # The outer-call check alone missed genuinely-aggregate constructs that are
+    # common, not exotic: group_aggregate (the *performant* ThoughtSpot pattern)
+    # and the sql_*_aggregate_op pass-through family. Composing another
+    # aggregation around either produced a wrong number with no warning. These
+    # tests pin the fix end to end: no double aggregation, and a warning that
+    # says why the column-level aggregation was ignored.
+    def test_a_group_aggregate_formula_does_not_get_double_aggregated(self):
+        log = IssueLog()
+        formulas = {"formula_GA": {"id": "formula_GA", "expr": (
+            "group_aggregate ( sum ( [T::x] ) , query_groups ( ) , query_filters ( ) )"
+        )}}
+        metric = convert_metric(
+            {"name": "GA Metric", "formula_id": "formula_GA",
+             "properties": {"column_type": "MEASURE", "aggregation": "SUM"}},
+            formulas, self._table, _resolve, log,
+        )
+        thoughtspot_entries = [
+            d for d in metric["expression"]["dialects"] if d["dialect"] == "THOUGHTSPOT"
+        ]
+        assert thoughtspot_entries == [
+            {"dialect": "THOUGHTSPOT", "expression": formulas["formula_GA"]["expr"]}
+        ]
+        assert not any(
+            d["expression"].startswith("sum ( group_aggregate")
+            for d in metric["expression"]["dialects"]
+        )
+        warnings = [i for i in log.as_dicts() if i["severity"] == "WARNING"]
+        assert len(warnings) == 1
+        assert warnings[0]["code"] == "TS-METRIC-AGGREGATION-ALREADY-AGGREGATED"
+
+    def test_an_aggregate_nested_inside_a_scalar_wrapper_does_not_get_double_aggregated(self):
+        # The case an outer-call-only check cannot catch: round's own outer call
+        # is scalar, but sum is buried one level inside it.
+        log = IssueLog()
+        formulas = {"formula_R": {"id": "formula_R", "expr": "round ( sum ( [T::x] ) , 2 )"}}
+        metric = convert_metric(
+            {"name": "Rounded", "formula_id": "formula_R",
+             "properties": {"column_type": "MEASURE", "aggregation": "AVERAGE"}},
+            formulas, self._table, _resolve, log,
+        )
+        thoughtspot_entries = [
+            d for d in metric["expression"]["dialects"] if d["dialect"] == "THOUGHTSPOT"
+        ]
+        assert thoughtspot_entries == [
+            {"dialect": "THOUGHTSPOT", "expression": "round ( sum ( [T::x] ) , 2 )"}
+        ]
+        warnings = [i for i in log.as_dicts() if i["severity"] == "WARNING"]
+        assert len(warnings) == 1
+        assert warnings[0]["code"] == "TS-METRIC-AGGREGATION-ALREADY-AGGREGATED"
+
+    def test_a_genuinely_scalar_formula_still_composes_despite_the_new_guard(self):
+        # The guard must not break the case this whole feature exists for.
+        log = IssueLog()
+        formulas = {"formula_Net": {"id": "formula_Net", "expr": "[A::x] - [A::y]"}}
+        metric = convert_metric(
+            {"name": "Average Net", "formula_id": "formula_Net",
+             "properties": {"column_type": "MEASURE", "aggregation": "AVERAGE"}},
+            formulas, self._table, _resolve, log,
+        )
+        thoughtspot_entries = [
+            d for d in metric["expression"]["dialects"] if d["dialect"] == "THOUGHTSPOT"
+        ]
+        assert thoughtspot_entries == [
+            {"dialect": "THOUGHTSPOT", "expression": "average ( [A::x] - [A::y] )"}
+        ]
+        assert not any(
+            i["code"] == "TS-METRIC-AGGREGATION-ALREADY-AGGREGATED" for i in log.as_dicts()
+        )
+
+    # -- Field/metric wording and codes must match the object being converted. --
+    def test_a_missing_physical_column_on_a_metric_says_metric_not_field(self):
+        log = IssueLog()
+        metric = convert_metric(
+            {"name": "Ghost Metric", "column_id": "ORDERS::NOPE",
+             "properties": {"column_type": "MEASURE", "aggregation": "SUM"}},
+            {}, self._table, _resolve, log,
+        )
+        assert metric is not None
+        issues = log.as_dicts()
+        assert any(i["code"] == "TS-METRIC-PHYSICAL-COLUMN-MISSING" for i in issues)
+        assert all("field" not in i["message"] for i in issues)
+        assert all("TS-FIELD-" not in i["code"] for i in issues)
+
+    def test_a_non_portable_metric_expression_says_metric_not_field(self):
+        log = IssueLog()
+        formulas = {"formula_Net": {"id": "formula_Net", "expr": "[A::x] - [A::y]"}}
+        metric = convert_metric(
+            {"name": "Net", "formula_id": "formula_Net",
+             "properties": {"column_type": "MEASURE", "aggregation": "NONE"}},
+            formulas, self._table, _resolve, log,
+        )
+        assert metric is not None
+        issues = log.as_dicts()
+        thoughtspot_only = [i for i in issues if i["code"] == "TS-EXPR-THOUGHTSPOT-ONLY"]
+        assert len(thoughtspot_only) == 1
+        assert "metric" in thoughtspot_only[0]["message"]
+        assert "field" not in thoughtspot_only[0]["message"]
+
+    def test_field_side_wording_and_codes_are_unchanged(self):
+        # The fix must not touch convert_field's own behaviour at all.
+        log = IssueLog()
+        field = convert_field(
+            {"name": "Ghost", "column_id": "ORDERS::NOPE",
+             "properties": {"column_type": "ATTRIBUTE"}},
+            {}, self._table, _resolve, log,
+        )
+        assert field is not None
+        issues = log.as_dicts()
+        assert len(issues) == 1
+        assert issues[0]["code"] == "TS-FIELD-PHYSICAL-COLUMN-MISSING"
+        assert "field" in issues[0]["message"]
+
+
+class TestContainsAggregateCall:
+    """Layer (a) + (b) at the unit level: the broadened set, checked at any depth."""
+
+    @pytest.mark.parametrize("expr", [
+        "group_aggregate ( sum ( [T::x] ) , query_groups ( ) , query_filters ( ) )",
+        "sql_number_aggregate_op ( 'STDDEV_POP({0})' , [T::x] )",
+        "sql_int_aggregate_op ( 'COUNT({0})' , [T::x] )",
+        "round ( sum ( [A::x] ) , 2 )",
+        "sum ( [A::x] )",
+        "unique count ( [A::x] )",
+    ])
+    def test_detected(self, expr):
+        assert _contains_aggregate_call(expr) is True
+
+    @pytest.mark.parametrize("expr", [
+        "[A::x] - [A::y]",
+        "least ( [A::x] , [A::y] )",
+        "[ORDERS::AMOUNT]",
+    ])
+    def test_not_detected(self, expr):
+        assert _contains_aggregate_call(expr) is False
