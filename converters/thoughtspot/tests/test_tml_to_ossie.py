@@ -810,6 +810,47 @@ class TestModelScopeIdentityIsCaughtNotFatal:
         assert stashed[MODEL_STASH_FILTERS] == [{"column": "Region", "values": ["US"]}]
 
 
+class TestUnnormalisableNamesAreCaughtNotFatal:
+    """`identifiers.normalise` raises when a display name has no ASCII
+    alphanumerics for it to fold onto (a CJK-only name, a punctuation-only
+    one). Two call sites reach it before `convert()`'s own per-column
+    `TS-COLUMN-REF-MALFORMED` guard (Phase 3) ever gets a chance to catch
+    it: the model's own top-level name, and `_index_attribute_columns`
+    (Phase 2, which runs over every ATTRIBUTE column before Phase 3 starts).
+    Both must degrade -- report and continue -- rather than take the whole
+    conversion down over one unfoldable name.
+    """
+
+    def test_a_model_name_with_no_ascii_alphanumerics_falls_back_and_is_reported(self):
+        orders = _table("ORDERS", columns=[_column("Amount", "AMOUNT", "DOUBLE")])
+        model = _model(
+            name="北京市",  # CJK-only; NFKD folds none of it to ASCII
+            model_tables=[{"name": "ORDERS"}],
+            columns=[_attribute("Amount", "ORDERS::Amount")],
+        )
+        result = convert(_document_set(model, orders))
+        semantic_model = result.model["semantic_model"][0]
+        assert semantic_model["name"] == "model"
+        assert any(i["code"] == "TS-MODEL-NAME-UNNORMALISABLE" for i in result.issues.as_dicts())
+        # The rest of the model still converts -- one unfoldable name does
+        # not take the whole document down.
+        assert semantic_model["datasets"][0]["fields"][0]["name"] == "amount"
+
+    def test_an_attribute_columns_unnormalisable_name_is_dropped_not_fatal(self):
+        # Reaches `_index_attribute_columns` (Phase 2) before Phase 3's own
+        # per-column guard would ever get a turn -- if that earlier call
+        # site were unguarded, `convert()` would raise before this field's
+        # own TS-COLUMN-REF-MALFORMED issue could even be logged.
+        orders = _table("ORDERS", columns=[_column("Amount", "AMOUNT", "DOUBLE")])
+        model = _model(
+            model_tables=[{"name": "ORDERS"}],
+            columns=[_attribute("!!!", "ORDERS::Amount")],
+        )
+        result = convert(_document_set(model, orders))
+        assert result.model["semantic_model"][0]["datasets"][0].get("fields", []) == []
+        assert any(i["code"] == "TS-COLUMN-REF-MALFORMED" for i in result.issues.as_dicts())
+
+
 class TestKeyDerivationEdgeCasesCommitted:
     """Edge cases attacked and confirmed by hand during development, now
     committed so the check runs on every future change instead of living
