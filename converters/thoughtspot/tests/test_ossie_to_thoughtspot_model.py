@@ -383,6 +383,38 @@ class TestFormulaReferenceRewriting:
 
 
 # ---------------------------------------------------------------------------
+# ID3 -- an ambiguous bracket reference must be reported, never crash the build.
+# ---------------------------------------------------------------------------
+
+class TestAmbiguousColumnReferenceInModel:
+    """A field's own THOUGHTSPOT bracket carries "::" inside its table or
+    column part, so `identifiers.split_column_ref` refuses to guess which
+    "::" is the real delimiter. `build_table` (see
+    test_ossie_to_thoughtspot_tables.py's own TestAmbiguousColumnReference)
+    reports this once and omits the physical column; `build_model` reaches
+    the same ambiguous reference through a second, unlogging call
+    (`_field_physical_display_name`, to avoid a duplicate report under a
+    second object_ref) and must not raise either -- the field is emitted as
+    a formula carrying the ambiguous text verbatim, which will fail to
+    import until the ambiguity is fixed, exactly as any other unresolvable
+    THOUGHTSPOT-only construct already is.
+    """
+
+    def test_an_ambiguous_bracket_becomes_a_formula_rather_than_raising(self):
+        orders = _table_doc("A::B", [_column("y", "y", "INT64")])
+        dataset = _dataset("A::B", "SALES.PUBLIC.WIDGETS", fields=[
+            _field("x", _dialects(("THOUGHTSPOT", "[A::B::y]")), label="x"),
+        ])
+        model = _semantic_model(name="probe", datasets=[dataset])
+        doc = build_model(model, [orders], IssueLog())
+        columns, formulas = _all_columns_and_formulas(doc.body)
+        assert columns == [
+            {"name": "x", "formula_id": "formula_x", "properties": {"column_type": "ATTRIBUTE"}}
+        ]
+        assert formulas == [{"id": "formula_x", "name": "x", "expr": "[A::B::y]"}]
+
+
+# ---------------------------------------------------------------------------
 # R6 / ID4 -- unique display names across columns[] and formulas[].
 # ---------------------------------------------------------------------------
 

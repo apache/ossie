@@ -181,6 +181,42 @@ class TestDbColumnName:
         assert any(i["code"] == "TS-FIELD-DB-COLUMN-NAME-STALE" for i in log.as_dicts())
 
 
+class TestAmbiguousColumnReference:
+    """A THOUGHTSPOT-dialect bracket whose table or column part itself
+    contains "::" is genuinely ambiguous -- `split_column_ref` correctly
+    refuses to guess which "::" is the real delimiter rather than silently
+    mis-splitting one. That refusal must surface as a reported issue, not
+    an uncaught exception out of `build_table`."""
+
+    def test_an_ambiguous_bracket_is_reported_and_the_column_is_omitted(self):
+        # format_column_ref("A::B", "y") produces "[A::B::y]" -- two
+        # non-overlapping "::" delimiters, so identifiers.split_column_ref
+        # raises rather than picking one.
+        field = _round_tripped_physical("x", "A::B", "y")
+        dataset = _dataset("A::B", "SALES.PUBLIC.WIDGETS", fields=[field])
+        log = IssueLog()
+        table = build_table(dataset, log)
+        assert table.body["columns"] == []
+        issues = [i for i in log.as_dicts() if i["code"] == "TS-FIELD-COLUMN-REF-MALFORMED"]
+        assert len(issues) == 1
+        assert "[A::B::y]" in issues[0]["message"]
+
+    def test_an_empty_table_part_is_reported_the_same_way(self):
+        # format_column_ref("", "y") produces "[::y]" -- the bracket body
+        # never matches the [TABLE::Column] shape at all (no non-empty table
+        # part before a "::"), a different `split_column_ref` failure from
+        # the genuinely ambiguous case above, caught and reported the same
+        # way.
+        field = _round_tripped_physical("x", "", "y")
+        dataset = _dataset("", "SALES.PUBLIC.WIDGETS", fields=[field])
+        log = IssueLog()
+        table = build_table(dataset, log)
+        assert table.body["columns"] == []
+        issues = [i for i in log.as_dicts() if i["code"] == "TS-FIELD-COLUMN-REF-MALFORMED"]
+        assert len(issues) == 1
+        assert "[::y]" in issues[0]["message"]
+
+
 class TestDataTypeCompulsory:
     def test_a_datatype_less_field_still_gets_a_data_type(self):
         dataset = _dataset("orders", "SALES.PUBLIC.ORDERS", fields=[_physical("note")])
