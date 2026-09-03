@@ -548,6 +548,32 @@ def _shared_body(dataset: dict, payload: dict, connection: str | None) -> dict:
     return body
 
 
+def _unsurfaced_columns_still_unsurfaced(
+    unsurfaced: list[dict] | None, live_column_names: set[str]
+) -> list[dict]:
+    """`unsurfaced` (the verbatim DATASET_STASH_UNSURFACED_COLUMNS entries),
+    with any entry now covered by a live field dropped.
+
+    DATASET_STASH_UNSURFACED_COLUMNS is INFORMATION_ONLY in its per-entry
+    *content* -- a physical column's own db_column_name/data_type has no
+    Ossie counterpart to check it against -- but its *membership* is a
+    different question with a different answer: whether a given entry is
+    still unsurfaced is exactly the complement of what the live document's
+    fields now cover, and that complement can change. A field added (or
+    retargeted onto) a column that was unsurfaced when the stash was
+    written makes that column surfaced now; blindly re-appending it here
+    would emit it a second time under the field-derived entry's own name --
+    a duplicate Table/SQL-View column name, which does not import. Filtering
+    here is silent by design: nothing was lost (the column is still present,
+    once, under the live field's own build), so there is nothing to name in
+    an issue -- see STASH_KEYS_WITH_DERIVABLE_MEMBERSHIP for why this is a
+    distinct question from the value-classification table above it.
+    """
+    if not unsurfaced:
+        return []
+    return [c for c in unsurfaced if c.get("name") not in live_column_names]
+
+
 def _build_table_body(
     dataset: dict, payload: dict, connection: str | None, log: IssueLog, *, object_ref: str
 ) -> dict:
@@ -561,8 +587,9 @@ def _build_table_body(
         if column is not None:
             columns.append(column)
     unsurfaced = payload.get(DATASET_STASH_UNSURFACED_COLUMNS)
-    if unsurfaced:
-        columns.extend(unsurfaced)
+    columns.extend(
+        _unsurfaced_columns_still_unsurfaced(unsurfaced, {c["name"] for c in columns})
+    )
     body["columns"] = columns
     return body
 
@@ -580,8 +607,9 @@ def _build_sql_view_body(
         if column is not None:
             columns.append(column)
     unsurfaced = payload.get(DATASET_STASH_UNSURFACED_COLUMNS)
-    if unsurfaced:
-        columns.extend(unsurfaced)
+    columns.extend(
+        _unsurfaced_columns_still_unsurfaced(unsurfaced, {c["name"] for c in columns})
+    )
     body["sql_view_columns"] = columns
     return body
 

@@ -404,8 +404,8 @@ STASH_KEY_CLASSIFICATION: dict[str, "StashKeyClass"] = {
     DATASET_STASH_TABLE_NAME: StashKeyClass.INFORMATION_ONLY,
     DATASET_STASH_ALIAS: StashKeyClass.INFORMATION_ONLY,
     DATASET_STASH_TABLE_PROPERTIES: StashKeyClass.INFORMATION_ONLY,
-    DATASET_STASH_UNSURFACED_COLUMNS: StashKeyClass.INFORMATION_ONLY,
-    DATASET_STASH_SQL_OUTPUT_COLUMNS: StashKeyClass.INFORMATION_ONLY,
+    DATASET_STASH_UNSURFACED_COLUMNS: StashKeyClass.INFORMATION_ONLY,  # value only -- see STASH_KEYS_WITH_DERIVABLE_MEMBERSHIP below for its membership axis
+    DATASET_STASH_SQL_OUTPUT_COLUMNS: StashKeyClass.INFORMATION_ONLY,  # per-field dict lookup, never appended -- checked, does not share unsurfaced_columns' hybrid
 
     # -- Relationship scope --
     RELATIONSHIP_STASH_ON_EXPRESSION: StashKeyClass.SHADOWS_DERIVABLE,
@@ -438,3 +438,51 @@ STASH_ONLY_CARRIER_KEY_CLASSIFICATION: dict[str, "StashKeyClass"] = {
     RELATIONSHIP_STASH_CARDINALITY: StashKeyClass.INFORMATION_ONLY,
     FIELD_STASH_COLUMN_PROPERTIES: StashKeyClass.INFORMATION_ONLY,
 }
+
+# ---------------------------------------------------------------------------
+# A second, orthogonal axis StashKeyClass alone cannot express.
+#
+# StashKeyClass answers one question: can this key's stashed VALUE disagree
+# with something the live Ossie document says? DATASET_STASH_UNSURFACED_
+# COLUMNS answers that "no" correctly -- a physical column's own
+# db_column_name/data_type has no Ossie-side counterpart to check it
+# against, so INFORMATION_ONLY is the right answer for its *content*. But a
+# key that holds a LIST of entries has a second question INFORMATION_ONLY
+# does not cover at all: does each entry still BELONG in the list? For
+# unsurfaced_columns specifically, an entry belongs only while no live field
+# now covers the same physical column -- and that membership fact changes
+# the moment a field is added, or retargeted, onto a column that used to be
+# unsurfaced. Restoring a membership-stale entry verbatim (the value itself
+# is still perfectly accurate) alongside the live field's own build of the
+# same column duplicates it -- a duplicate Table/SQL-View column name, which
+# does not import. This was found live: a field retargeted onto a
+# previously-unsurfaced column produced exactly that duplicate, undetected
+# by the value-only classification above because the value itself was never
+# wrong.
+#
+# So "information-only in value" and "derivable in membership" are
+# independent facts about one key, and a single INFORMATION_ONLY /
+# SHADOWS_DERIVABLE answer cannot record both. STASH_KEYS_WITH_DERIVABLE_
+# MEMBERSHIP is the second axis: a key here is a *list*-shaped stash whose
+# entries can be superseded by something the live document now covers, and
+# whose read site MUST filter entries against that live coverage before
+# appending them -- silently, same as an ordinary derive-instead-of-stash
+# fallback, because a filtered-out entry was not lost, just no longer
+# needed. Every other list-shaped INFORMATION_ONLY key was checked against
+# this question directly, not assumed innocent: DATASET_STASH_SQL_OUTPUT_
+# COLUMNS is consulted only as a per-field dict lookup keyed by the live
+# field's own name (never appended as a block), so a field no longer
+# present just means the lookup is never made -- no duplication is
+# possible, and it does not belong here. MODEL_STASH_UNATTRIBUTED_FORMULAS
+# and MODEL_STASH_UNREPRESENTABLE_JOINS are appended into collections
+# (formulas[]/columns[], and a table's inline joins[]) that already run
+# every entry through the shared display-name allocator or accept multiple
+# joins between the same pair without an import-breaking collision, so a
+# name clash there is caught (and now logged -- see
+# TS-MODEL-DISPLAY-NAME-COLLISION) rather than silently duplicated. Every
+# scalar-valued INFORMATION_ONLY key (a single string, dict, or bool
+# assigned once, never merged with anything else the live document also
+# populates) has no membership question to ask at all.
+STASH_KEYS_WITH_DERIVABLE_MEMBERSHIP: frozenset[str] = frozenset({
+    DATASET_STASH_UNSURFACED_COLUMNS,
+})
