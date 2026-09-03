@@ -233,6 +233,20 @@ RELATIONSHIP_STASH_ON_EXPRESSION = "on_expression"
 #: and so never carry this key.
 RELATIONSHIP_STASH_RESIDUAL_PREDICATES = "residual_predicates"
 
+#: X5's witness copy for `RELATIONSHIP_STASH_ON_EXPRESSION`: `[from_columns,
+#: to_columns]` exactly as they stood the moment `on_expression` was
+#: stashed (only ever written alongside it, i.e. only when residual
+#: predicates exist). `Ossie -> TML` compares this against the relationship's
+#: CURRENT `from_columns`/`to_columns` -- agreement means nobody retargeted
+#: the relationship since the stash was written, so the verbatim
+#: `on_expression` (and the residual narrowing it carries) is still current
+#: and is restored; disagreement means the stash is stale, so both are
+#: dropped and the plain equality condition is re-derived from the live
+#: from_columns/to_columns instead, with an issue recording it. This is one
+#: of the two places (the other is FIELD_STASH_DATA_TYPE_WITNESS below) X5
+#: names by example: "a relationship's verbatim on_expression".
+RELATIONSHIP_STASH_ON_EXPRESSION_WITNESS = "on_expression_equality_witness"
+
 # --- Field/metric scope (attached to a `fields[]` or `metrics[]` entry) -----
 #
 # FIELD_STASH_DB_COLUMN_NAME above is the original of this group; the rest
@@ -246,6 +260,18 @@ RELATIONSHIP_STASH_RESIDUAL_PREDICATES = "residual_predicates"
 #: by default for the Ossie datatype (`BOOLEAN` vs `BOOL`, `FLOAT` vs
 #: `DOUBLE`), so the return trip re-emits the same one.
 FIELD_STASH_DATA_TYPE = "data_type"
+
+#: X5's witness copy for FIELD_STASH_DATA_TYPE: the Ossie `datatype` value
+#: (`"Boolean"` or `"Float"` -- the only two `_CANONICAL_TML_SPELLING` ever
+#: stashes a non-canonical spelling for) as it stood the moment the spelling
+#: was recorded. `Ossie -> TML` compares this against the field's CURRENT
+#: `datatype`: agreement means nobody edited the field's declared type since,
+#: so the exact warehouse spelling is still trustworthy and is restored;
+#: disagreement -- the field now declares a different datatype -- means the
+#: spelling is stale (it names a warehouse type for the *old* datatype, not
+#: this one) and is dropped, falling back to the canonical spelling
+#: `datatypes.to_tml` derives for the current value instead.
+FIELD_STASH_DATA_TYPE_WITNESS = "data_type_ossie_datatype_witness"
 
 #: ThoughtSpot column properties this converter did not read and consume
 #: elsewhere -- the fail-closed complement `_unconsumed_properties` builds,

@@ -664,10 +664,20 @@ class TestUnsurfacedColumns:
         assert unsurfaced[0]["name"] == "Internal Flag"
         assert unsurfaced[0]["db_column_name"] == "INTERNAL_FLAG"
 
-    def test_a_column_surfaced_only_as_a_measure_is_not_unsurfaced(self):
+    def test_a_column_surfaced_only_as_a_measure_is_stashed_too(self):
         # column_aggregation-shape metrics surface their physical column via
-        # column_id too -- only ATTRIBUTE fields were checked before this
-        # fix, which would have wrongly called this column unsurfaced.
+        # column_id, but a Metric has no column_id field on the Ossie side
+        # at all (R4) -- it carries only the composed THOUGHTSPOT-dialect
+        # expression, bracket reference and all. An earlier revision treated
+        # this column as "surfaced enough" to skip unsurfaced_columns, on
+        # the reasoning that it is still part of the semantic model. True,
+        # but nothing else preserves its definition, so the reverse
+        # direction regenerated a Table missing it while the metric's own
+        # formula still referenced it -- a dangling column reference,
+        # caught only by round-tripping a real document through both public
+        # entry points. This column is now stashed exactly like one
+        # referenced by nothing at all, redundant with the metric's own
+        # expression but making the Table document regenerable on its own.
         orders = _table("ORDERS", columns=[_column("Amount", "AMOUNT", "DOUBLE")])
         model = _model(
             model_tables=[{"name": "ORDERS"}],
@@ -678,7 +688,8 @@ class TestUnsurfacedColumns:
         result = convert(_document_set(model, orders))
         dataset = result.model["semantic_model"][0]["datasets"][0]
         stashed = _own_stash(dataset) or {}
-        assert DATASET_STASH_UNSURFACED_COLUMNS not in stashed
+        unsurfaced = stashed.get(DATASET_STASH_UNSURFACED_COLUMNS) or []
+        assert [c["name"] for c in unsurfaced] == ["Amount"]
 
     def test_a_dataset_with_no_unsurfaced_columns_gets_no_such_key(self):
         orders = _table("ORDERS", columns=[_column("Amount", "AMOUNT", "DOUBLE")])

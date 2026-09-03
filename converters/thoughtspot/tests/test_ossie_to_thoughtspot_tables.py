@@ -35,6 +35,7 @@ from ossie_thoughtspot.constants import (
     DATASET_STASH_TML_OBJECT,
     DATASET_STASH_UNSURFACED_COLUMNS,
     FIELD_STASH_DATA_TYPE,
+    FIELD_STASH_DATA_TYPE_WITNESS,
     FIELD_STASH_DB_COLUMN_NAME,
 )
 from ossie_thoughtspot.issues import IssueLog
@@ -291,7 +292,10 @@ class TestQuotedIdentifierIsNotMisreadAsAQuery:
 
 class TestConnectionDependentSpelling:
     def test_boolean_spelling_is_taken_from_the_stash_when_present(self):
-        field = _physical("is_active", datatype="Boolean", field_stash={FIELD_STASH_DATA_TYPE: "BOOL"})
+        field = _physical(
+            "is_active", datatype="Boolean",
+            field_stash={FIELD_STASH_DATA_TYPE: "BOOL", FIELD_STASH_DATA_TYPE_WITNESS: "Boolean"},
+        )
         dataset = _dataset("orders", "SALES.PUBLIC.ORDERS", fields=[field])
         table = build_table(dataset, IssueLog())
         assert table.body["columns"][0]["db_column_properties"]["data_type"] == "BOOL"
@@ -303,7 +307,10 @@ class TestConnectionDependentSpelling:
         assert table.body["columns"][0]["db_column_properties"]["data_type"] == "BOOLEAN"
 
     def test_float_spelling_is_taken_from_the_stash_when_present(self):
-        field = _physical("weight", datatype="Float", field_stash={FIELD_STASH_DATA_TYPE: "FLOAT"})
+        field = _physical(
+            "weight", datatype="Float",
+            field_stash={FIELD_STASH_DATA_TYPE: "FLOAT", FIELD_STASH_DATA_TYPE_WITNESS: "Float"},
+        )
         dataset = _dataset("orders", "SALES.PUBLIC.ORDERS", fields=[field])
         log = IssueLog()
         table = build_table(dataset, log)

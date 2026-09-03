@@ -66,6 +66,7 @@ guessing, with the fallback always reported:
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Callable, Sequence
 
 from . import datatypes, formula, identifiers, stash
@@ -84,6 +85,7 @@ from .constants import (
     DIALECT,
     FIELD_STASH_COLUMN_PROPERTIES,
     FIELD_STASH_DATA_TYPE,
+    FIELD_STASH_DATA_TYPE_WITNESS,
     FIELD_STASH_DB_COLUMN_NAME,
     METRIC_SHAPE_COLUMN_AGGREGATION,
     METRIC_SHAPE_FORMULA,
@@ -102,12 +104,14 @@ from .constants import (
     PORTABLE_DIALECT,
     RELATIONSHIP_STASH_CARDINALITY,
     RELATIONSHIP_STASH_ON_EXPRESSION,
+    RELATIONSHIP_STASH_ON_EXPRESSION_WITNESS,
     RELATIONSHIP_STASH_TYPE,
     STASH_TML_NAME,
 )
+from .errors import ConversionError
 from .expressions import CATALOG, Classification, emit_direct, emit_passthrough, emit_unmappable
 from .issues import IssueLog, Severity
-from .tml import TmlDocument, block_scalar
+from .tml import DocumentSet, TmlDocument, block_scalar
 
 #: A plain ANSI SQL regular identifier (unquoted) or a double-quoted one, per
 #: the specification's own identifier grammar — up to 128 characters, and a
@@ -279,13 +283,32 @@ def _field_datatype(field: dict, log: IssueLog, *, object_ref: str) -> str:
             )
 
     field_stash = stash.read_stash(field)
-    stashed_spelling = field_stash.get(FIELD_STASH_DATA_TYPE)
+    was_stashed = FIELD_STASH_DATA_TYPE in field_stash
+    # X5: the exact ThoughtSpot spelling a prior TML -> Ossie trip recorded
+    # (BOOL vs BOOLEAN, FLOAT vs DOUBLE) wins over a freshly derived one only
+    # when the witness -- the Ossie datatype it was recorded against --
+    # still matches this field's current `datatype`. A field whose declared
+    # type was edited since (Boolean -> String, say) makes the stashed
+    # spelling stale: "BOOL" names a warehouse type for the datatype that
+    # *was* there, not the one that is there now.
+    stashed_spelling = stash.restore(
+        field_stash, FIELD_STASH_DATA_TYPE, None,
+        witness=datatype, witness_key=FIELD_STASH_DATA_TYPE_WITNESS,
+    )
     if isinstance(stashed_spelling, str) and stashed_spelling:
-        # The exact ThoughtSpot spelling a prior TML -> Ossie trip recorded
-        # (BOOL vs BOOLEAN, FLOAT vs DOUBLE) always wins over a freshly
-        # derived one -- it is strictly more specific than any default this
-        # module could pick on its own.
         return stashed_spelling
+    if was_stashed:
+        log.add(
+            code="TS-FIELD-DATA-TYPE-STASH-STALE",
+            severity=Severity.WARNING,
+            message=(
+                f"a warehouse spelling was stashed for a different datatype "
+                f"than this field's current {datatype!r}; the field was "
+                f"edited since the stash was written, so the stash is "
+                f"dropped and the canonical spelling is derived instead"
+            ),
+            object_ref=object_ref,
+        )
 
     try:
         return datatypes.to_tml(datatype)
@@ -1399,7 +1422,7 @@ def _restore_relationship_condition(
     )
 
 
-def _join_entry_for_relationship(rel: dict) -> tuple[str, dict]:
+def _join_entry_for_relationship(rel: dict, log: IssueLog) -> tuple[str, dict]:
     """One Ossie relationship (or `unrepresentable_joins[]` entry) ->
     `(from_prefix, inline join entry)`.
 
@@ -1411,15 +1434,46 @@ def _join_entry_for_relationship(rel: dict) -> tuple[str, dict]:
     itself -- condition, type, cardinality -- is fully restored either way;
     only the structural choice of inline-vs-Table-referencing is collapsed,
     which does not change import behaviour.
+
+    X5 governs `on_expression`: it is the "verbatim on_expression" case the
+    rule names by example. A plain stash-if-present read would silently keep
+    serving the *old* condition (residual predicates included) after a user
+    retargets the relationship's `from_columns`/`to_columns` -- so the stash
+    is only trusted when the witness (a snapshot of those two arrays, taken
+    the moment the stash was written) still matches the live ones. A mismatch
+    means the relationship was edited since; the stash -- on_expression and
+    whatever residual narrowing it carried -- is dropped, an issue records
+    it, and the condition is re-derived from the current from_columns/
+    to_columns alone, exactly as a hand-authored relationship with no stash
+    at all would be.
     """
     payload = stash.read_stash(rel)
     from_prefix = rel.get("from") or ""
     to_prefix = rel.get("to") or ""
-    on_expression = payload.get(RELATIONSHIP_STASH_ON_EXPRESSION)
+    from_columns = rel.get("from_columns") or []
+    to_columns = rel.get("to_columns") or []
+    had_stashed_on_expression = RELATIONSHIP_STASH_ON_EXPRESSION in payload
+    on_expression = stash.restore(
+        payload, RELATIONSHIP_STASH_ON_EXPRESSION, None,
+        witness=[from_columns, to_columns], witness_key=RELATIONSHIP_STASH_ON_EXPRESSION_WITNESS,
+    )
     if not on_expression:
-        on_expression = _restore_relationship_condition(
-            from_prefix, to_prefix, rel.get("from_columns") or [], rel.get("to_columns") or []
-        )
+        if had_stashed_on_expression:
+            log.add(
+                code="TS-JOIN-ON-EXPRESSION-STALE",
+                severity=Severity.WARNING,
+                message=(
+                    f"relationship {rel.get('name')!r} has a stashed on_expression, "
+                    f"but its from_columns/to_columns no longer match what that "
+                    f"condition was derived from -- the relationship was retargeted "
+                    f"since the stash was written, so the stashed condition (and any "
+                    f"residual predicates it narrowed) is dropped; the plain equality "
+                    f"condition is re-derived from the current from_columns/to_columns "
+                    f"instead"
+                ),
+                object_ref=f"relationship:{rel.get('name')}",
+            )
+        on_expression = _restore_relationship_condition(from_prefix, to_prefix, from_columns, to_columns)
     join_type = _normalise_join_type(payload.get(RELATIONSHIP_STASH_TYPE) or "INNER")
     cardinality = payload.get(RELATIONSHIP_STASH_CARDINALITY) or "MANY_TO_ONE"
     return from_prefix, {
@@ -1572,7 +1626,7 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
     covered_columns_by_dataset: dict[str, list[set]] = {}
 
     for rel in semantic_model.get("relationships") or []:
-        from_prefix, join_entry = _join_entry_for_relationship(rel)
+        from_prefix, join_entry = _join_entry_for_relationship(rel, log)
         target = model_tables_by_prefix.get(from_prefix)
         if target is None:
             log.add(
@@ -1667,3 +1721,63 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
         body["joins_with"] = model_joins_with
 
     return TmlDocument(kind="model", body=body, guid=None)
+
+
+# ---------------------------------------------------------------------------
+# convert: the public Ossie -> TML entry point.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TmlConversion:
+    """The result of one Ossie -> TML conversion.
+
+    `documents` is the full TML document set -- one Model document plus one
+    Table/SQL-View document per dataset, ready to serialise via
+    `tml.dump_document_set`. `issues` is every declared loss and degradation
+    raised while building it, mirroring `tml_to_ossie.OssieConversion`'s own
+    shape in reverse.
+    """
+
+    documents: DocumentSet
+    issues: IssueLog
+
+
+def convert(ossie_document: dict) -> TmlConversion:
+    """Convert one Ossie document into one ThoughtSpot TML document set.
+
+    Ossie's `semantic_model` is a list (`core-spec/spec.md:88-96`), but --
+    mirroring `tml_to_ossie.convert`, which only ever *produces* a
+    single-entry list -- this converter only ever *consumes* one: "One Ossie
+    semantic model corresponds to 1 + N TML documents" is this document's own
+    opening rule, and there is no defined mapping for more than one model
+    sharing a single TML document set. Zero or more than one entry is a hard
+    failure naming what was found, not a best-effort pick of the first.
+
+    Tables are built before the model (`build_table`, one per dataset) so
+    `build_model` can validate every physical field's `column_id` against a
+    Table document that genuinely exists -- the same R10 ordering the model
+    document itself enforces on its output (tables emitted, and known,
+    before the model that references them).
+
+    There is no separate `connection_name` parameter, unlike `build_table`
+    directly: a dataset with no stashed connection name and no way to supply
+    one here gets the same `TS-DATASET-CONNECTION-MISSING` issue `build_table`
+    already raises for that case, naming the gap rather than inventing a
+    connection.
+    """
+    models = ossie_document.get("semantic_model")
+    if not isinstance(models, list) or not models:
+        raise ConversionError("the Ossie document has no semantic_model entry to convert")
+    if len(models) > 1:
+        names = ", ".join(str(m.get("name")) for m in models if isinstance(m, dict))
+        raise ConversionError(
+            f"the Ossie document declares more than one semantic_model entry "
+            f"({names}); this converter handles exactly one model per document"
+        )
+    semantic_model = models[0]
+
+    log = IssueLog()
+    tables = [build_table(dataset, log) for dataset in semantic_model.get("datasets") or []]
+    model = build_model(semantic_model, tables, log)
+    return TmlConversion(documents=DocumentSet(model=model, tables=tuple(tables)), issues=log)
