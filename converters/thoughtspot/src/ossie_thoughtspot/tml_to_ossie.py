@@ -55,17 +55,21 @@ A `MEASURE` column becomes a metric instead of a field, built by `convert_metric
 Its one genuinely tricky rule is easy to get backwards in a way that still imports cleanly
 and produces wrong numbers: the surfacing column's `aggregation` is load-bearing on a
 `column_id` metric and on a *scalar*-formula metric (the two compose — `AGG(<scalar
-expr>)`, never the bare scalar) but a no-op on a formula whose expression already
-aggregates, which already carries its own rollup. Composing when the rule says no-op, or
-leaving bare when the rule says compose, silently changes the grain the metric evaluates
-at while the model still imports — and "already aggregates" means at *any* depth, not
-only as the expression's own outer call: `group_aggregate ( sum ( ... ) , ... )` and
-`round ( sum ( ... ) , 2 )` both already aggregate even though their own outer call
-(`group_aggregate`, `round`) is not itself what does it. Whether an expression already
-aggregates anywhere in it is decided by `_contains_aggregate_call`, which reads
-ThoughtSpot's aggregate call names off the same expression catalog
-`_compose_aggregate_entries` uses to build the composed rendering — one source for both
-jobs, so they cannot silently drift apart the way two independently hand-typed lists
+expr>)`, never the bare scalar) but a no-op on a formula whose own outer call already
+aggregates (`sum ( ... )`, `group_aggregate ( ... )`, ...) — a common, correct shape
+ThoughtSpot's UI produces routinely, so discarding a redundant column aggregation there
+is silent by design. Composing when the rule says no-op, or leaving bare when the rule
+says compose, silently changes the grain the metric evaluates at while the model still
+imports. There is a third, rarer case an outer-call check alone cannot see: an aggregate
+*nested inside* a still-scalar outer call, as in `round ( sum ( ... ) , 2 )` — `round` is
+not itself an aggregate, but the expression as a whole already is one. That case is the
+one worth a warning, because it is the one shape where a reader might reasonably expect
+composition and not get it. `_outer_call_is_aggregate` decides the first two cases;
+`_contains_aggregate_call` — checked only once the outer call is not itself an aggregate —
+decides the third. Both read ThoughtSpot's aggregate call names off the same expression
+catalog `_compose_aggregate_entries` uses to build the composed rendering — one source for
+every one of these jobs, so they cannot silently drift apart the way independently
+hand-typed lists
 could. And unlike a field, a metric has no `label`: when ID1 normalisation changes the
 identifier, the exact display name has nowhere to go but the `custom_extensions` stash.
 """
@@ -477,18 +481,48 @@ _AGGREGATE_CALL_NAMES = (
 )
 
 
+def _outer_call_is_aggregate(expr: str) -> bool:
+    """Whether `expr`'s own outer call (not something nested inside it) is a
+    native ThoughtSpot aggregate.
+
+    `formula.split_call` returning `None` — not a single outer call, as in
+    `[A::x] - [B::y]` — means there is no outer call for it to be one. Matching
+    is case-insensitive (ThoughtSpot's formula functions are not case-sensitive)
+    and compares the whole call name as one unit, so a two-word name like
+    `unique count` is matched by both words together, never by either alone.
+
+    This is the *documented no-op* case: `sum ( [T::x] )` with a column
+    aggregation of `SUM`, `AVERAGE`, or anything else is a real, common shape —
+    ThoughtSpot's UI sets an aggregation on a formula column routinely, whether
+    or not the formula's own expression already aggregates — and discarding a
+    redundant one here is expected behaviour, not a loss. See `convert_metric`
+    for why this case stays silent while `_contains_aggregate_call` below (an
+    aggregate *nested inside*, not as the outer call) is reported.
+    """
+    call = formula.split_call(expr)
+    if call is None:
+        return False
+    name, _args = call
+    return name.lower() in _AGGREGATE_CALL_NAMES
+
+
 def _contains_aggregate_call(expr: str) -> bool:
     """Whether an aggregate call appears anywhere in `expr`, at any nesting depth.
 
-    Checking only `expr`'s own outer call (via `formula.split_call`) is not
+    Checking only `expr`'s own outer call (`_outer_call_is_aggregate`) is not
     enough: an aggregate can be buried inside a scalar wrapper the outer call
     does not name at all — `round ( sum ( [T::x] ) , 2 )` has `round` as its
-    outer call, not `sum`, but the expression as a whole is still fully
-    aggregated. `formula.find_call_names` finds every call at every depth, so
-    this checks the whole expression rather than the single outer position.
-    Matching is case-insensitive (ThoughtSpot's formula functions are not
-    case-sensitive) and compares each call's whole name, so a two-word name
-    like `unique count` is matched as one unit, never by either word alone.
+    outer call, not `sum`, but the expression as a whole still aggregates.
+    `formula.find_call_names` finds every call at every depth, so this checks
+    the whole expression rather than the single outer position. Matching is
+    case-insensitive and compares each call's whole name, exactly as
+    `_outer_call_is_aggregate` does.
+
+    Used only for the case `_outer_call_is_aggregate` already says `False` for:
+    see `convert_metric`, where an aggregate nested here (but not as the outer
+    call) is the one shape worth a warning — the outer-call case is silent by
+    design, and warning there too would fire on the common, correct case and
+    train readers to ignore the issue log.
     """
     return any(name.lower() in _AGGREGATE_CALL_NAMES for name in formula.find_call_names(expr))
 
@@ -585,15 +619,25 @@ def convert_metric(
     (keyed by each entry's `id`) exactly the same way. Either shape composes with
     `properties.aggregation` per the Metric-level `aggregation` row: load-bearing on
     a `column_id` metric and on a *scalar* formula (the two compose into
-    `AGG(<scalar expr>)`), a no-op on a formula whose expression already aggregates
-    somewhere in it — not only as its own outer call (`sum ( ... )`), but at any
-    depth (`round ( sum ( ... ) , 2 )`, or a native construct like
-    `group_aggregate ( sum ( ... ) , ... )`). Composing another aggregation on top
-    of either would silently double-aggregate a value that is already fully
-    reduced, so the column-level aggregation is discarded and — because it was a
-    real, present value that could not be carried across — reported. See
-    `_contains_aggregate_call` for how "already aggregates" is decided, and the
-    module docstring for why detection and composition share one source.
+    `AGG(<scalar expr>)`). Two different shapes are a no-op instead, and only one
+    of them is reported:
+
+    - The formula's own outer call already aggregates (`sum ( ... )`,
+      `group_aggregate ( ... )`, ...). This is the documented, common case —
+      ThoughtSpot's UI sets a column aggregation on a formula column routinely,
+      redundant or not — so the column-level value is discarded silently, without
+      logging anything. A warning here would fire on a large fraction of ordinary,
+      correct metrics and teach readers to stop reading the issue log.
+    - An aggregate is *nested* inside a still-scalar outer call
+      (`round ( sum ( ... ) , 2 )` — `round` is scalar, `sum` is buried one level
+      in). Composing here would silently double-aggregate an already-reduced
+      value, exactly as the first case would, but this is the one shape where a
+      reader might reasonably expect composition and not get it — so it is
+      reported.
+
+    See `_outer_call_is_aggregate` and `_contains_aggregate_call` for how the two
+    are told apart, and the module docstring for why detection and composition
+    share one source.
 
     An unrecognised `aggregation` value (not one of TML's documented enum members)
     is treated as `NONE` and logged — the value was present and could not be
@@ -686,15 +730,25 @@ def convert_metric(
             dialects = expression_entries(
                 expr, resolve, log, object_ref=object_ref, kind="metric"
             )
+        elif _outer_call_is_aggregate(expr):
+            # The documented no-op: the expression's own call already
+            # aggregates (sum ( ... ), group_aggregate ( ... ), ...), and
+            # ThoughtSpot's UI sets a column aggregation on a formula column
+            # like this routinely, whether or not it is redundant. Discarding
+            # it here is expected, not a loss, so nothing is logged --
+            # warning on this common, correct shape would train readers to
+            # ignore the issue log entirely.
+            metric_shape = _SHAPE_FORMULA
+            dialects = expression_entries(
+                expr, resolve, log, object_ref=object_ref, kind="metric"
+            )
         elif _contains_aggregate_call(expr):
-            # The expression already aggregates somewhere in it -- whether as its
-            # own outer call (sum ( ... )) or nested inside a scalar wrapper
-            # (round ( sum ( ... ) , 2 )) or a native construct that aggregates
-            # internally (group_aggregate ( ... ), a sql_*_aggregate_op
-            # pass-through). Composing the column-level aggregation on top would
-            # silently double-aggregate an already-reduced value, so it is
-            # discarded here instead -- and reported, because a real, present
-            # value could not be carried across.
+            # Not the outer call, but an aggregate is nested somewhere inside
+            # (round ( sum ( ... ) , 2 ), or a sql_*_aggregate_op pass-through
+            # buried in a larger expression). This is the one shape where a
+            # reader might reasonably expect composition and not get it, so
+            # it is the one shape worth telling them about: composing here
+            # would silently double-aggregate an already-reduced value.
             log.add(
                 code="TS-METRIC-AGGREGATION-ALREADY-AGGREGATED",
                 severity=Severity.WARNING,

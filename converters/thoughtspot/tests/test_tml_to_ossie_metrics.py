@@ -85,6 +85,11 @@ class TestConvertMetric:
 
     # -- Row 3: formula_id -> an *aggregate* expr. The column aggregation is a no-op. --
     def test_aggregate_formula_ignores_the_column_aggregation(self):
+        # The documented no-op: the formula's own outer call already aggregates,
+        # and ThoughtSpot's UI sets a column aggregation on a formula column like
+        # this routinely, redundant or not -- so this must be silent, not just
+        # correct. A warning here would fire on a large fraction of ordinary,
+        # correct metrics.
         log = IssueLog()
         formulas = {"formula_Sum": {"id": "formula_Sum", "expr": "sum ( [A::x] )"}}
         metric = convert_metric(
@@ -95,6 +100,7 @@ class TestConvertMetric:
         dialects = metric["expression"]["dialects"]
         assert {"dialect": "THOUGHTSPOT", "expression": "sum ( [A::x] )"} in dialects
         assert not any("MAX" in d["expression"] for d in dialects)
+        assert not any(i["severity"] == "WARNING" for i in log.as_dicts())
 
     def test_count_distinct_maps_to_count_distinct(self):
         log = IssueLog()
@@ -334,41 +340,37 @@ class TestConvertMetric:
         assert "column_id" in issues[0]["message"]
         assert "formula_id" in issues[0]["message"]
 
-    # -- A guard against silent double aggregation. --
-    #
-    # The outer-call check alone missed genuinely-aggregate constructs that are
-    # common, not exotic: group_aggregate (the *performant* ThoughtSpot pattern)
-    # and the sql_*_aggregate_op pass-through family. Composing another
-    # aggregation around either produced a wrong number with no warning. These
-    # tests pin the fix end to end: no double aggregation, and a warning that
-    # says why the column-level aggregation was ignored.
-    def test_a_group_aggregate_formula_does_not_get_double_aggregated(self):
+    # -- A guard against silent double aggregation, narrowed to the one shape
+    # -- worth a warning: an aggregate nested inside a still-scalar outer call.
+    # -- An aggregate *as the outer call* (sum(...), group_aggregate(...), ...)
+    # -- is the documented, common no-op ThoughtSpot's UI produces routinely,
+    # -- and must stay silent -- warning there would fire on a large fraction
+    # -- of ordinary, correct metrics.
+    @pytest.mark.parametrize("expr", [
+        "sum ( [T::x] )",
+        "average ( [T::x] )",
+        "unique count ( [T::x] )",
+        "group_aggregate ( sum ( [T::x] ) , query_groups ( ) , query_filters ( ) )",
+    ])
+    def test_an_aggregate_outer_call_is_silent_even_with_a_redundant_aggregation(self, expr):
         log = IssueLog()
-        formulas = {"formula_GA": {"id": "formula_GA", "expr": (
-            "group_aggregate ( sum ( [T::x] ) , query_groups ( ) , query_filters ( ) )"
-        )}}
+        formulas = {"formula_X": {"id": "formula_X", "expr": expr}}
         metric = convert_metric(
-            {"name": "GA Metric", "formula_id": "formula_GA",
+            {"name": "X", "formula_id": "formula_X",
              "properties": {"column_type": "MEASURE", "aggregation": "SUM"}},
             formulas, self._table, _resolve, log,
         )
         thoughtspot_entries = [
             d for d in metric["expression"]["dialects"] if d["dialect"] == "THOUGHTSPOT"
         ]
-        assert thoughtspot_entries == [
-            {"dialect": "THOUGHTSPOT", "expression": formulas["formula_GA"]["expr"]}
-        ]
-        assert not any(
-            d["expression"].startswith("sum ( group_aggregate")
-            for d in metric["expression"]["dialects"]
-        )
-        warnings = [i for i in log.as_dicts() if i["severity"] == "WARNING"]
-        assert len(warnings) == 1
-        assert warnings[0]["code"] == "TS-METRIC-AGGREGATION-ALREADY-AGGREGATED"
+        assert thoughtspot_entries == [{"dialect": "THOUGHTSPOT", "expression": expr}]
+        assert not any(i["severity"] == "WARNING" for i in log.as_dicts())
 
     def test_an_aggregate_nested_inside_a_scalar_wrapper_does_not_get_double_aggregated(self):
         # The case an outer-call-only check cannot catch: round's own outer call
-        # is scalar, but sum is buried one level inside it.
+        # is scalar, but sum is buried one level inside it -- the one shape
+        # where a reader might expect composition and not get it, so it is the
+        # one shape worth a warning.
         log = IssueLog()
         formulas = {"formula_R": {"id": "formula_R", "expr": "round ( sum ( [T::x] ) , 2 )"}}
         metric = convert_metric(
@@ -382,6 +384,34 @@ class TestConvertMetric:
         assert thoughtspot_entries == [
             {"dialect": "THOUGHTSPOT", "expression": "round ( sum ( [T::x] ) , 2 )"}
         ]
+        warnings = [i for i in log.as_dicts() if i["severity"] == "WARNING"]
+        assert len(warnings) == 1
+        assert warnings[0]["code"] == "TS-METRIC-AGGREGATION-ALREADY-AGGREGATED"
+
+    def test_group_aggregate_nested_inside_a_scalar_wrapper_also_warns_once(self):
+        # Same shape as the round(sum(x), 2) case above, but with
+        # group_aggregate as the buried aggregate rather than a bare sum --
+        # confirming the nested-detection path recognises the broadened set,
+        # not only the original eight TML-aggregation-mapped names.
+        log = IssueLog()
+        formulas = {"formula_GA": {"id": "formula_GA", "expr": (
+            "round ( group_aggregate ( sum ( [T::x] ) , query_groups ( ) , "
+            "query_filters ( ) ) , 2 )"
+        )}}
+        metric = convert_metric(
+            {"name": "Rounded GA", "formula_id": "formula_GA",
+             "properties": {"column_type": "MEASURE", "aggregation": "AVERAGE"}},
+            formulas, self._table, _resolve, log,
+        )
+        thoughtspot_entries = [
+            d for d in metric["expression"]["dialects"] if d["dialect"] == "THOUGHTSPOT"
+        ]
+        assert thoughtspot_entries == [
+            {"dialect": "THOUGHTSPOT", "expression": formulas["formula_GA"]["expr"]}
+        ]
+        assert not any(
+            d["expression"].startswith("average (") for d in metric["expression"]["dialects"]
+        )
         warnings = [i for i in log.as_dicts() if i["severity"] == "WARNING"]
         assert len(warnings) == 1
         assert warnings[0]["code"] == "TS-METRIC-AGGREGATION-ALREADY-AGGREGATED"

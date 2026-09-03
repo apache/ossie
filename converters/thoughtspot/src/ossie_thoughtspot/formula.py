@@ -160,7 +160,8 @@ def split_call(expression: str) -> tuple[str, list[str]] | None:
 
 
 def find_call_names(expression: str) -> list[str]:
-    """Every function-call name in `expression`, at any nesting depth, duplicates kept.
+    """Every function-call name in `expression`, at any nesting depth, that is
+    not also an operator/control-flow keyword — duplicates kept.
 
     `split_call` deliberately answers only about the single *outer* call — exactly
     what building a rendering around a whole expression needs. This answers a
@@ -175,13 +176,32 @@ def find_call_names(expression: str) -> list[str]:
     `[...]` reference — so a display name or string literal that happens to
     contain text like `sum (` is never mistaken for a real call.
 
-    The same keyword handling `split_call` applies also applies here, adapted for
-    scanning mid-expression rather than judging one candidate outer call: a
-    leading keyword word (`true and count ( ... )`) means that word is part of an
-    operator expression, not the call's own name, so it is stripped one word at a
-    time from the front of the matched run until either a non-keyword word starts
-    the remainder (the real call name — `count`, not `true and count`) or nothing
-    is left (the whole run was keywords, so it names no call at all).
+    **What the keyword exclusion actually costs.** A leading run of
+    operator/control-flow keyword words (`and`, `or`, `not`, `if`, ...) is
+    stripped from a matched run before it is reported: `true and count ( ... )`
+    reports `count`, not the bogus "true and count". But `not` and `if` are
+    *also* genuine ThoughtSpot catalog function names — the catalog holds
+    `not ( expr )` and `if ( ... ) then ...` — and the keyword blocklist cannot
+    tell a real call from an operator use of the same word. So a bare
+    `not ( [A::x] )` or `if ( ... )` reports **nothing** here, even though it is
+    a real call. This is deliberate and unfixed: this function's one caller
+    (`_contains_aggregate_call`) only cares about aggregate names, and neither
+    `not` nor `if` is one, so the loss costs that caller nothing. A caller with
+    a different need could not rely on this function to find every real call.
+
+    **Weaker than `split_call`'s own keyword handling.** `split_call` rejects
+    its *whole* candidate the moment *any* word in it is a keyword, wherever
+    that word sits, because there its only job is to say whether the entire
+    expression is one call — being wrong in either direction there is a
+    correctness bug. This function only strips a *leading* run: a keyword
+    appearing after a genuine word is not stripped, and the whole multi-word
+    run — keyword included — is reported as one (bogus) name instead. For
+    example `flag and sum ( x )` reports the single name `"flag and sum"`, not
+    `sum` — silently missing the real call. This shape does not arise from
+    valid ThoughtSpot formula grammar (a bare word cannot precede `and` like
+    that), which is why it is left as is rather than fixed, but it is not the
+    guarantee `split_call` makes, and this docstring says so rather than
+    implying otherwise.
     """
     opaque = {i for i, _ch, _d, in_quote in _scan(expression) if in_quote}
     for start, end, _body in _bracketed_spans(expression):
