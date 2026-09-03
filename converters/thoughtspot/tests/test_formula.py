@@ -17,8 +17,8 @@
 
 import pytest
 from ossie_thoughtspot.formula import (
-    _scan, find_call_names, find_column_refs, find_parameter_refs, is_bare_column_ref,
-    rewrite_column_refs, split_call,
+    _scan, find_call_names, find_column_refs, find_formula_refs, find_parameter_refs,
+    is_bare_column_ref, is_formula_reference, rewrite_column_refs, split_call,
 )
 
 
@@ -171,6 +171,45 @@ class TestFindParameterRefs:
 
     def test_returns_empty_when_every_reference_is_qualified(self):
         assert find_parameter_refs("[A::x] + [B::y]") == []
+
+    def test_a_formula_cross_reference_is_not_reported_as_a_parameter(self):
+        # A formula cross-reference is a bracketed name with no `::`, the
+        # same shape a runtime parameter has -- the only thing telling them
+        # apart is the formula_ prefix (FORMULA_REFERENCE_PREFIX), and this
+        # is the one place a `::`-less bracket must NOT be reported.
+        assert find_parameter_refs("sum ( [formula_Margin] )") == []
+
+    def test_a_genuine_parameter_is_still_reported_alongside_a_cross_reference(self):
+        assert find_parameter_refs(
+            "[formula_Margin] * [Growth Rate]"
+        ) == ["Growth Rate"]
+
+
+class TestFindFormulaRefs:
+    def test_finds_a_formula_cross_reference(self):
+        assert find_formula_refs("sum ( [formula_Margin] )") == ["formula_Margin"]
+
+    def test_does_not_find_a_genuine_parameter(self):
+        assert find_formula_refs("[A::x] * [Growth Rate]") == []
+
+    def test_does_not_find_a_qualified_column_reference(self):
+        assert find_formula_refs("[A::x] + [formula_Y]") == ["formula_Y"]
+
+    def test_an_expression_with_both_reports_only_the_cross_reference(self):
+        assert find_formula_refs("[formula_Margin] * [Growth Rate]") == ["formula_Margin"]
+
+
+class TestIsFormulaReference:
+    def test_a_formula_id_shaped_name_is_a_formula_reference(self):
+        assert is_formula_reference("formula_Margin") is True
+
+    def test_an_ordinary_parameter_name_is_not(self):
+        assert is_formula_reference("Growth Rate") is False
+
+    def test_a_name_that_merely_contains_the_word_formula_is_not(self):
+        # Only a leading formula_ prefix counts -- a coincidental substring
+        # elsewhere in the name must not trip this.
+        assert is_formula_reference("My Formula Budget") is False
 
 
 class TestIsBareColumnRef:
