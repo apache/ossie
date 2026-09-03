@@ -88,7 +88,6 @@ from .constants import (
     DATASET_STASH_SOURCE_PARTS_DB_TABLE,
     DATASET_STASH_SOURCE_PARTS_SCHEMA,
     DATASET_STASH_SQL_OUTPUT_COLUMNS,
-    DATASET_STASH_SQL_QUERY,
     DATASET_STASH_TABLE_NAME,
     DATASET_STASH_TML_OBJECT,
     DATASET_STASH_TML_OBJECT_WITNESS,
@@ -120,7 +119,6 @@ from .constants import (
     RELATIONSHIP_STASH_ON_EXPRESSION,
     RELATIONSHIP_STASH_ON_EXPRESSION_WITNESS,
     RELATIONSHIP_STASH_REFERENCING_JOIN,
-    RELATIONSHIP_STASH_RESIDUAL_PREDICATES,
     RELATIONSHIP_STASH_TYPE,
     STASH_TML_NAME,
 )
@@ -1268,8 +1266,10 @@ def _build_dataset(prefix: str, entry: dict, table_doc, log: IssueLog) -> tuple[
         ds_stash[DATASET_STASH_CONNECTION_NAME] = connection_name
 
     if kind == "sql_view":
+        # Not separately stashed: `source` (below, the dataset's own live
+        # field) already carries this same query text, so a stash entry
+        # here would be a pure duplicate nothing ever reads back.
         source = body.get("sql_query") or ""
-        ds_stash[DATASET_STASH_SQL_QUERY] = source
     else:
         db = body.get("db") or ""
         schema = body.get("schema") or ""
@@ -1507,8 +1507,10 @@ def _relationship_from_join(
         rel_stash[RELATIONSHIP_STASH_REFERENCING_JOIN] = referencing_join
     has_residuals = bool(residuals)
     if has_residuals:
+        # The residual predicates themselves are not stashed separately: they
+        # are already fully contained in the verbatim on_expression stashed
+        # below, and nothing reads them back on the way to TML.
         rel_stash[RELATIONSHIP_STASH_ON_EXPRESSION] = on_expression
-        rel_stash[RELATIONSHIP_STASH_RESIDUAL_PREDICATES] = residuals
         # X5's witness: from_columns/to_columns exactly as emitted above, so
         # the reverse direction can tell whether the relationship has been
         # retargeted since this stash was written before trusting the

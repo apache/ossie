@@ -111,7 +111,7 @@ def test_no_unmappable_rows_in_this_family():
 # --------------------------------------------------------------------------
 
 def test_the_whole_trim_family_is_passthrough_not_just_two_sided_trim():
-    # Live-verified 2026-07-29 on se-thoughtspot: ThoughtSpot has no
+    # Live-verified 2026-07-29: ThoughtSpot has no
     # native trim at all, rejected with `Search did not find "trim ("`. TRIM,
     # LTRIM and RTRIM are all passthrough for the same reason, not because a
     # two-sided trim exists and the one-sided forms don't compose from it.
@@ -129,7 +129,7 @@ def test_lower_and_upper_have_no_native_equivalent():
 
 
 def test_replace_was_direct_on_documentation_but_moved_on_live_verification():
-    # Live-verified 2026-07-29 on se-thoughtspot: rejected with
+    # Live-verified 2026-07-29: rejected with
     # `Search did not find "replace ("`. The row was direct on documentation
     # alone; the live pass moved it to the documented pass-through fallback.
     row = CATALOG["REPLACE(str, from, to)"]
@@ -138,8 +138,8 @@ def test_replace_was_direct_on_documentation_but_moved_on_live_verification():
 
 
 def test_startswith_and_endswith_are_direct_despite_no_native_function():
-    # No native starts_with/ends_with (live-verified 2026-07-29 on
-    # se-thoughtspot), but both compositions use only native functions
+    # No native starts_with/ends_with (live-verified 2026-07-29),
+    # but both compositions use only native functions
     # (strpos/substr/strlen), so rule E2 keeps them direct rather than
     # passthrough.
     for name in ("STARTSWITH(str, prefix)", "ENDSWITH(str, suffix)"):

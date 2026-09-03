@@ -20,11 +20,10 @@
 `CATALOG` is organised into families below — Aggregate functions, Type conversion,
 Date/time functions, String functions, Mathematical + Conditional functions, Operators
 and constructs, and Window functions — one block per family, together covering the full
-specification. `spec_construct_names()` — an oracle read from the **upstream**
-`core-spec/expression_language.md`, not from any document of our own — independently
-reports every construct the specification defines, so that a construct added upstream in
-the future fails this package's build instead of silently going unsupported (see
-`test_catalog_covers_the_spec.py`).
+specification. `spec_construct_names()` is an oracle read from the **upstream**
+`core-spec/expression_language.md`: it independently reports every construct the
+specification defines, so a construct added upstream in the future fails this package's
+build instead of silently going unsupported (see `test_catalog_covers_the_spec.py`).
 
 Extraction approach
 --------------------
@@ -35,76 +34,54 @@ The spec document mixes three kinds of content that must be told apart:
    row carries a `Syntax` column (e.g. `SUM(expr)`), or, for a handful of
    operators/keywords with no table of their own, a row of the top-level
    "Supported SQL Constructs" table.
-2. Argument vocabularies (rule E1) — the `EXTRACT`/`DATE_PART` parts, the
-   `DATE_TRUNC` precisions, the `TO_DATE`/`TO_CHAR` format tokens and the
-   `CAST` target types. These describe values an argument may take, not
-   constructs in their own right, and must be excluded.
+2. Argument vocabularies — the `EXTRACT`/`DATE_PART` parts, the `DATE_TRUNC`
+   precisions, the `TO_DATE`/`TO_CHAR` format tokens and the `CAST` target
+   types. These describe values an argument may take, not constructs in
+   their own right, and must be excluded.
 3. Informative tables — the per-engine "Common Dialect Variations" table and
    the "Cross-Reference: Tool Mappings" section describe *other products'*
    spellings (Tableau, Looker Studio, DAX, and per-engine SQL). Names that
    appear only there are not Ossie constructs.
 
-The exclusions are keyed off the document's own structure — a table's own
-header naming ("Token" columns, a "Form" cell reading "Cast") and the section
-heading text ("Not Supported in Expressions", "Common Dialect Variations",
-"Cross-Reference") — rather than a hardcoded list of names to drop. A hardcoded
-list would go stale the moment upstream renamed or added a construct, which is
-exactly the failure mode this gate exists to catch. The `EXTRACT`/`DATE_PART`
-date-part list, the `DATE_TRUNC` precision list and the `CAST` target-type list
-need no such marker at all: `_extract_tables()` only ever looks at lines
-starting with "|", so a plain bullet list is simply invisible to it, argument
-vocabulary or not.
+The exclusions are keyed off the document's own structure — a table's own header naming
+and section heading text ("Not Supported in Expressions", "Common Dialect Variations",
+"Cross-Reference") — rather than a hardcoded list of names to drop, so a renamed or added
+upstream construct cannot go silently unnoticed. `_extract_tables()` only looks at lines
+starting with "|", so the argument-vocabulary bullet lists are simply invisible to it.
 
-Spelling: `CATALOG` keys must match `spec_construct_names()` exactly (READ THIS
-BEFORE ADDING OR EDITING ANY ROW, AND WHEN IN DOUBT DO NOT TRUST THIS LIST FROM MEMORY)
+Spelling: `CATALOG` keys must match `spec_construct_names()` exactly
 ------------------------------------------------------------------------------
-`spec_construct_names()` is the oracle, not the mapping document's prose, and not
-this list. Several rows write their Ossie-side syntax differently than this
-parser extracts it, and a `CATALOG` entry keyed on the mapping document's own
-wording — not this function's output — will read as an "invented" construct
-even though it is a real, intended row. **The authoritative check is always:
-run `spec_construct_names()`, print it, and match a member of it exactly** —
-this list is a convenience audited against that output, not a substitute for
-it, and a previous version of this list both omitted a case and misattributed
-another's source (both listed below, corrected). If this list and a live run
-of `spec_construct_names()` ever disagree, the live run wins.
+`spec_construct_names()` is the oracle for a `CATALOG` key's exact spelling, not any
+mapping document's prose. Several rows write their Ossie-side syntax differently than
+this parser extracts it; a `CATALOG` entry keyed on a mapping document's own wording
+instead of this function's output will read as an "invented" construct even though it is
+a real, intended row. When adding or editing a row, run `spec_construct_names()` and
+match a member of it exactly, rather than transcribing another document's column text.
+Grouped by which extractor produces the divergent spelling:
 
-Grouped by which extractor produces the divergent spelling, so the source is
-never ambiguous:
-
-- **`_extract_tables()`** (an ordinary table with a `Syntax` column — the key is
-  that column's value, not the mapping document's `Ossie`-column header):
+- **`_extract_tables()`** (an ordinary table with a `Syntax` column):
     - Alias pairs the spec merges into ONE table row keep this parser's single
       extracted spelling: `CEIL(x)` (not `CEIL(x) / CEILING(x)`), `TRUNC(x, d)`
       (not `.../ TRUNCATE(x, d)`).
-    - Two-alternative-syntax rows keep the spec's own joining word, "or" — not
-      the mapping document's "/": `"CURRENT_DATE or CURRENT_DATE()"`,
-      `"CURRENT_TIMESTAMP or CURRENT_TIMESTAMP()"`, `"CURRENT_TIME or
-      CURRENT_TIME()"`.
+    - Two-alternative-syntax rows keep the spec's own joining word, "or":
+      `"CURRENT_DATE or CURRENT_DATE()"`, `"CURRENT_TIMESTAMP or
+      CURRENT_TIMESTAMP()"`, `"CURRENT_TIME or CURRENT_TIME()"`.
     - The merged boolean-literal row (`BOOLEAN`'s `Syntax` cell) is one entry,
-      comma-joined: `"TRUE, FALSE"` (mapping document header: `` `TRUE` /
-      `FALSE` (boolean literals) ``).
+      comma-joined: `"TRUE, FALSE"`.
     - The Boolean Functions table's `AND`/`OR` rows keep the spec's own
-      `expr1`/`expr2` placeholder names, not the mapping document's `a`/`b`:
-      `"expr1 AND expr2"` (mapping document header: `` `a AND b` ``),
-      `"expr1 OR expr2"` (mapping document header: `` `a OR b` ``).
+      `expr1`/`expr2` placeholder names: `"expr1 AND expr2"`, `"expr1 OR expr2"`.
 - **`_extract_summary_rows()`** (the top-level "Supported SQL Constructs"
-  table, bare backtick token — not the mapping document's `a`/`b`/`x`-style
-  worked example): `BETWEEN`, `IN`, `NOT IN`, `IS NULL`, `IS NOT NULL`, `CASE
-  WHEN`, and the raw symbols `+ - * / % = <> != < > <= >=`.
+  table, bare backtick token): `BETWEEN`, `IN`, `NOT IN`, `IS NULL`, `IS NOT NULL`,
+  `CASE WHEN`, and the raw symbols `+ - * / % = <> != < > <= >=`.
 - **`_extract_null_safe_comparison_operators()`** (the "Null-Safe Comparison"
-  code fence — NOT the summary table, despite reading like one more row of it):
-  `IS DISTINCT FROM`, `IS NOT DISTINCT FROM`.
+  code fence, not the summary table): `IS DISTINCT FROM`, `IS NOT DISTINCT FROM`.
 - **`_extract_extraction_syntax_functions()`** (the "Alternative Extraction
   Syntax" code fence, bare token, no argument list): `EXTRACT`, `DATE_PART`.
 - **`_extract_single_construct_headings()`** (a standalone heading with no
-  table, bare token): `CAST`, `TRY_CAST` (not `CAST(expression AS
-  target_type)`).
+  table, bare token): `CAST`, `TRY_CAST` (not `CAST(expression AS target_type)`).
 
-When adding a row, cross-check its key against `spec_construct_names()`'s output
-rather than transcribing the mapping document's column text verbatim. See
-`CONVENTION_DIVERGENCES` below for the (much shorter) list of constructs that
-have no entry in `spec_construct_names()` at all and are exempted instead.
+See `CONVENTION_DIVERGENCES` below for the (much shorter) list of constructs that have
+no entry in `spec_construct_names()` at all and are exempted instead.
 """
 import re
 from pathlib import Path
@@ -502,13 +479,12 @@ CATALOG.update(
 # This family is over half passthrough, and the reasons run against intuition
 # rather than with it: LOWER/UPPER/TRIM/LTRIM/RTRIM/REPLACE are passthrough not
 # because they behave differently in ThoughtSpot but because ThoughtSpot has no
-# native equivalent at all (live-verified 2026-07-29 on se-thoughtspot —
-# TRIM and REPLACE were rejected with "Search did not find ...", moving them
-# from an earlier direct/conservative-passthrough reading to confirmed
-# passthrough). STARTSWITH/ENDSWITH run the other way: also no native function,
-# but their compositions use only native functions (strpos/substr/strlen), so
-# rule E2 keeps them direct. There is no regular-expression support of any kind,
-# so every REGEXP_* row is passthrough with no native fallback.
+# native equivalent at all (live-verified 2026-07-29: TRIM and REPLACE were
+# rejected with "Search did not find ..."). STARTSWITH/ENDSWITH run the other
+# way: also no native function, but their compositions use only native
+# functions (strpos/substr/strlen), so rule E2 keeps them direct. There is no
+# regular-expression support of any kind, so every REGEXP_* row is passthrough
+# with no native fallback.
 # --------------------------------------------------------------------------
 CATALOG.update(
     {
@@ -545,21 +521,15 @@ CATALOG.update(
             template="TRIM({0})", variant=Variant.STRING,
             note=(
                 "There is no native trim in ThoughtSpot — live-verified "
-                "2026-07-29 on se-thoughtspot, rejected with "
-                "'Search did not find \"trim (\"'. The whole trim family is a "
-                "pass-through, not just the one-sided forms."
+                "2026-07-29, rejected with 'Search did not find \"trim (\"'. "
+                "The whole trim family is a pass-through, not just the "
+                "one-sided forms."
             ),
         ),
         "LTRIM(str)": Construct(
             "LTRIM(str)", Classification.PASSTHROUGH,
             template="LTRIM({0})", variant=Variant.STRING,
-            note=(
-                "No native ltrim — live-verified 2026-07-29, se-thoughtspot. "
-                "This row was already passthrough on the "
-                "conservative reading that trim was two-sided-only; the "
-                "verification confirms the classification and strengthens the "
-                "reason — there is no trim to substitute at all."
-            ),
+            note="No native ltrim — live-verified 2026-07-29.",
         ),
         "RTRIM(str)": Construct(
             "RTRIM(str)", Classification.PASSTHROUGH,
@@ -589,10 +559,7 @@ CATALOG.update(
             variant=Variant.STRING,
             note=(
                 "There is no native replace in ThoughtSpot — live-verified "
-                "2026-07-29 on se-thoughtspot, rejected with "
-                "'Search did not find \"replace (\"'. This row was direct on "
-                "documentation; the live pass moved it to the documented "
-                "fallback."
+                "2026-07-29, rejected with 'Search did not find \"replace (\"'."
             ),
         ),
         "SPLIT_PART(str, delimiter, part)": Construct(
@@ -631,21 +598,18 @@ CATALOG.update(
             "STARTSWITH(str, prefix)", Classification.DIRECT,
             template="strpos ( {0} , {1} ) = 1",
             note=(
-                "There is no native starts_with — live-verified 2026-07-29, "
-                "se-thoughtspot. Still direct because the composition "
-                "is exact and uses only native functions (per the "
-                "classification definition): strpos is 1-based, so a true "
-                "prefix sits at position 1. The composition itself was "
-                "verified to import."
+                "There is no native starts_with — live-verified 2026-07-29. "
+                "Still direct because the composition is exact and uses only "
+                "native functions: strpos is 1-based, so a true prefix sits "
+                "at position 1."
             ),
         ),
         "ENDSWITH(str, suffix)": Construct(
             "ENDSWITH(str, suffix)", Classification.DIRECT,
             template="substr ( {0} , strlen ( {0} ) - strlen ( {1} ) , strlen ( {1} ) ) = {1}",
             note=(
-                "There is no native ends_with — live-verified 2026-07-29, "
-                "se-thoughtspot. Direct by composition, as "
-                "STARTSWITH; verified to import."
+                "There is no native ends_with — live-verified 2026-07-29. "
+                "Direct by composition, as STARTSWITH."
             ),
         ),
         "REGEXP_LIKE(str, pattern)": Construct(
@@ -1051,15 +1015,13 @@ CATALOG.update(
             note=(
                 "Literal lists only on both sides — no subqueries. The "
                 "curly-brace delimiter is confirmed, live-verified "
-                "2026-07-29 on se-thoughtspot: the round-parenthesis "
-                "form is rejected with 'Expecting one of the valid keywords, "
-                "such as, \"ts_var\", \"{\"'. It forces >- block-scalar YAML. "
-                "The braces are doubled ({{ }}) in the template because "
-                "emit_direct renders via str.format, which reads a single "
-                "literal brace as the start of a field name — the "
-                "corrected form was verified by actually calling "
-                "emit_direct and checking the rendered output has single "
-                "braces (see test_emit.py's catalog-wide sweep)."
+                "2026-07-29: the round-parenthesis form is rejected with "
+                "'Expecting one of the valid keywords, such as, \"ts_var\", "
+                "\"{\"'. It forces >- block-scalar YAML. The braces are "
+                "doubled ({{ }}) in the template because emit_direct renders "
+                "via str.format, which reads a single literal brace as the "
+                "start of a field name (see test_emit.py's catalog-wide "
+                "sweep)."
             ),
         ),
         "NOT IN": Construct(
@@ -1080,7 +1042,7 @@ CATALOG.update(
                 ") , strlen ( 'foo' ) ) = 'foo'; contains ('%foo%') -> "
                 "contains ( {0} , 'foo' ). Only contains is a native "
                 "function — starts_with and ends_with do not exist "
-                "(live-verified 2026-07-29, se-thoughtspot), so the "
+                "(live-verified 2026-07-29), so the "
                 "first two shapes are compositions of native functions "
                 "(rule E2), same as the STARTSWITH/ENDSWITH rows. These "
                 "three shapes are the overwhelming majority of LIKE use. "
@@ -1264,16 +1226,16 @@ CATALOG.update(
 #   formula. A formula column in the sort position fails to resolve.
 # - E13 — a ThoughtSpot window formula cannot declare its own PARTITION BY; the
 #   window shape is completed from the search context. There is no argument slot
-#   for a partition and none can be added — live-confirmed by rejection on
-#   se-thoughtspot, 2026-07-30 (a fifth { [attr] } or query_groups ( ) argument to
-#   moving_sum, and a third to cumulative_sum, are both rejected at the parser).
-#   rank / rank_percentile are the stricter case: arity fixed at exactly two,
-#   enforced ("Function rank expects only 2 arguments"), so they are always global.
-#   This is why LAG, LEAD, the OVER clause and window aggregation moved
+#   for a partition and none can be added — live-confirmed by rejection,
+#   2026-07-30 (a fifth { [attr] } or query_groups ( ) argument to moving_sum,
+#   and a third to cumulative_sum, are both rejected at the parser). rank /
+#   rank_percentile are the stricter case: arity fixed at exactly two, enforced
+#   ("Function rank expects only 2 arguments"), so they are always global. This
+#   is why LAG, LEAD, the OVER clause and window aggregation moved
 #   direct -> passthrough in the 2026-07-30 rework (52 live probes, 31 accepted /
-#   21 rejected on se-thoughtspot) — a native idiom (moving_sum as the LAG/LEAD
-#   idiom) exists but is NOT equivalent to any OVER shape, because it has no
-#   partition slot and ThoughtSpot's partition is never empty.
+#   21 rejected) — a native idiom (moving_sum as the LAG/LEAD idiom) exists but
+#   is NOT equivalent to any OVER shape, because it has no partition slot and
+#   ThoughtSpot's partition is never empty.
 #
 # FIRST_VALUE/LAST_VALUE are the section's one exception: they take a genuine,
 # explicit partition argument and a genuine, explicit order axis — both
@@ -1381,7 +1343,7 @@ CATALOG.update(
                 "column that is wrong everywhere. Same shape restriction as "
                 "RANK, and the same live-proven boundary — rank_percentile is "
                 "also fixed at exactly two arguments ('Function rank_percentile "
-                "expects only 2 arguments', se-thoughtspot 2026-07-30), so it "
+                "expects only 2 arguments', live-verified 2026-07-30), so it "
                 "too is global-only and an explicit PARTITION BY falls back to "
                 "sql_number_aggregate_op ( \"PERCENT_RANK() OVER (PARTITION BY "
                 "{0} ORDER BY SUM({1}))\" , ... ) (E3, E13). Same evidence-class "
@@ -1454,7 +1416,7 @@ CATALOG.update(
                 "verdict survived the 2026-07-30 rework — first_value takes a "
                 "genuine explicit partition argument and a genuine explicit "
                 "order axis, so the formula does define its own window (E13). "
-                "Live-confirmed on se-thoughtspot, 2026-07-30: query_groups ( ), "
+                "Live-confirmed 2026-07-30: query_groups ( ), "
                 "a fixed single-column { [attr] }, a multi-column "
                 "{ [a] , [b] }, the grand-total { } and the dynamic "
                 "query_groups ( ) - { [attr] } all validate in the partition "
@@ -1558,8 +1520,8 @@ CATALOG.update(
                 "ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW -> "
                 "cumulative_*. Bounded ROWS frames -> moving_* with "
                 "n PRECEDING -> positive n, CURRENT ROW -> 0, n FOLLOWING -> "
-                "negative -n. All four boundary shapes were live-confirmed on "
-                "se-thoughtspot, 2026-07-30 (moving_sum ( [m] , 2 , 0 , [ord] "
+                "negative -n. All four boundary shapes were live-confirmed, "
+                "2026-07-30 (moving_sum ( [m] , 2 , 0 , [ord] "
                 "), ( ... , 1 , -1 , ... ), ( ... , -1 , 1 , ... ), "
                 "cumulative_sum ( [m] , [ord] )), and the positional signature "
                 "is enforced — moving_sum ( [m] , [ord] ) is rejected with "

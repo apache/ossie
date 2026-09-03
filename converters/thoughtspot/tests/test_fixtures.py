@@ -55,7 +55,7 @@ from ossie_thoughtspot.constants import (
     METRIC_SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION,
     METRIC_STASH_SHAPE,
     PORTABLE_DIALECT,
-    RELATIONSHIP_STASH_RESIDUAL_PREDICATES,
+    RELATIONSHIP_STASH_ON_EXPRESSION,
     VENDOR_KEY,
 )
 
@@ -239,9 +239,10 @@ class TestTpcdsFixtureCoversItsRequiredConstructs:
         extensions = {
             e["vendor_name"]: json.loads(e["data"]) for e in relationship["custom_extensions"]
         }
-        assert extensions[VENDOR_KEY][RELATIONSHIP_STASH_RESIDUAL_PREDICATES] == [
+        assert extensions[VENDOR_KEY][RELATIONSHIP_STASH_ON_EXPRESSION] == (
+            "[store_returns_sv::sr_item_sk] = [item::i_item_sk] and "
             "[store_returns_sv::sr_return_amt] <= [item::i_current_price]"
-        ]
+        )
 
     def test_the_three_metric_shapes_are_all_present(self, dataset):
         metrics_by_name = {m["name"]: m for m in dataset["metrics"]}
