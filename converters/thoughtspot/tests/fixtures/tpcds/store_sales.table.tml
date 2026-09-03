@@ -1,0 +1,90 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# TPC-DS fact table. `ss_ticket_number` is part of this table's natural
+# composite key (together with `ss_item_sk`) but is deliberately not
+# surfaced by the Model below, so it exercises a physical column the
+# semantic model does not expose as a field.
+table:
+  name: store_sales
+  db: TPCDS
+  schema: PUBLIC
+  db_table: STORE_SALES
+  connection:
+    name: TPC-DS Snowflake
+  columns:
+    - name: ss_sold_date_sk
+      db_column_name: ss_sold_date_sk
+      db_column_properties:
+        data_type: INT64
+    - name: ss_item_sk
+      db_column_name: ss_item_sk
+      db_column_properties:
+        data_type: INT64
+    - name: ss_customer_sk
+      db_column_name: ss_customer_sk
+      db_column_properties:
+        data_type: INT64
+    - name: ss_store_sk
+      db_column_name: ss_store_sk
+      db_column_properties:
+        data_type: INT64
+    - name: ss_quantity
+      db_column_name: ss_quantity
+      db_column_properties:
+        data_type: INT64
+    - name: ss_sales_price
+      db_column_name: ss_sales_price
+      db_column_properties:
+        data_type: DOUBLE
+    - name: ss_ext_sales_price
+      db_column_name: ss_ext_sales_price
+      db_column_properties:
+        data_type: DOUBLE
+    - name: ss_net_profit
+      db_column_name: ss_net_profit
+      db_column_properties:
+        data_type: DOUBLE
+    - name: ss_ticket_number
+      db_column_name: ss_ticket_number
+      db_column_properties:
+        data_type: INT64
+  joins_with:
+    - name: store_sales_to_date
+      destination:
+        name: date_dim
+      'on': "[store_sales::ss_sold_date_sk] = [date_dim::d_date_sk]"
+      type: INNER
+      cardinality: MANY_TO_ONE
+    - name: store_sales_to_customer
+      destination:
+        name: customer
+      'on': "[store_sales::ss_customer_sk] = [customer::c_customer_sk]"
+      type: INNER
+      cardinality: MANY_TO_ONE
+    - name: store_sales_to_item
+      destination:
+        name: item
+      'on': "[store_sales::ss_item_sk] = [item::i_item_sk]"
+      type: INNER
+      cardinality: MANY_TO_ONE
+    - name: store_sales_to_store
+      destination:
+        name: store
+      'on': "[store_sales::ss_store_sk] = [store::s_store_sk]"
+      type: INNER
+      cardinality: MANY_TO_ONE
