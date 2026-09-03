@@ -19,54 +19,203 @@
 
 # Apache Ossie ThoughtSpot Converter
 
-Will convert between **ThoughtSpot TML** and the Apache Ossie semantic model, in both
-directions — neither direction is implemented yet; see Status below:
+Bidirectional, offline conversion between an [Apache Ossie](https://github.com/apache/ossie)
+semantic model and ThoughtSpot TML. No ThoughtSpot connection required.
 
-- **ThoughtSpot TML → Ossie** — will read a Model TML document plus the Table and SQL
-  View documents it references, and emit one Ossie semantic model.
-- **Ossie → ThoughtSpot TML** — will read one Ossie semantic model and emit the
+- **ThoughtSpot TML → Ossie** (`to-ossie`): reads a Model TML document plus the Table and
+  SQL View documents it references, and emits one Ossie semantic model.
+- **Ossie → ThoughtSpot TML** (`to-tml`): reads one Ossie semantic model and emits the
   corresponding set of TML documents.
 
 A single Ossie semantic model corresponds to **1 + N TML documents**, not one file: one
-`model:` document plus one `table:` or `sql_view:` document per dataset. The converter reads
-and writes the set.
+`model:` document plus one `table:` or `sql_view:` document per dataset. The converter
+reads and writes the set. File-to-file only — nothing here calls a ThoughtSpot API.
 
-File-to-file only. Nothing here calls a ThoughtSpot API.
+The `THOUGHTSPOT` dialect is registered upstream — apache/ossie#351 merged 2026-09-01.
+Both conversion directions are implemented and tested: example-based unit tests, an
+exact-document comparison against a shared TPC-DS fixture set (the same retail schema
+every sibling converter round-trips), a round-trip suite asserting preservation and
+translation separately, and a Hypothesis property-based suite over adversarial
+identifiers.
 
-## Status
+## Installation
 
-Foundations and the expression-translation layer are built; neither end-to-end conversion
-direction (Model TML <-> Ossie semantic model) is implemented yet.
+```bash
+pip install apache-ossie-thoughtspot        # once published to PyPI
+# or, from a checkout of this directory:
+pip install -e .
+```
 
-**Foundations:** a YAML 1.2 codec (`_yaml.py`), structured issue reporting (`issues.py`),
-the `custom_extensions` stash for data a conversion cannot carry natively (`stash.py`),
-identifier derivation (`identifiers.py`), and key derivation (`keys.py`).
+The only runtime dependency is `PyYAML`. Python 3.10+.
 
-**Expression translation** (`expressions/`) — the majority of the code so far, and not yet
-wired into either conversion direction:
-- `CATALOG` (`catalog.py`) — all 146 constructs `core-spec/expression_language.md` defines,
-  each mapped to its ThoughtSpot rendering (`direct`, `passthrough`, or `unmappable`), plus
-  `spec_construct_names()`, an oracle that parses the upstream spec directly so a future
-  upstream addition fails this package's build instead of silently going unsupported.
-- `emit_direct`, `emit_passthrough`, `emit_unmappable` (`emit.py`) — render one `Construct`
-  into an actual ThoughtSpot formula string.
-- `REVERSE` (`reverse.py`) — a 79-row inventory of ThoughtSpot-only functions with no
-  counterpart in the Ossie specification, and `translate_thoughtspot()`, which composes an
-  Ossie expression where possible and otherwise preserves the original ThoughtSpot call for
-  roundtrip, via the `custom_extensions` stash or an Ossie `dialects[]` entry.
+## Usage
 
-**The `THOUGHTSPOT` dialect is registered upstream** — apache/ossie#351 merged 2026-09-01.
-Once a conversion direction emits a full document, expressions will be emitted under
-`THOUGHTSPOT`, with an `ANSI_SQL` entry alongside it where the expression is portable, so a
-consumer that does not implement our dialect still gets something it can execute — today
-`thoughtspot_dialect_entry`/`portable_dialect_entry` (`reverse.py`) are the building blocks
-for that, not yet called from a document-level emitter.
+### Command line
+
+```bash
+ossie-thoughtspot to-ossie <tml-file>... -o <out.yaml>  [--issues <issues.json>] [--force]
+ossie-thoughtspot to-tml   <ossie.yaml>  -o <out-dir>    [--issues <issues.json>] [--force]
+```
+
+`to-ossie` takes the Model TML document plus every Table/SQL View document it references
+and writes one Ossie YAML file. `to-tml` takes one Ossie YAML document and writes the
+corresponding TML document set — one file per document, tables before the model — into
+an output directory it creates if needed.
+
+`-o`/`--output` is required in both directions: `to-tml` writes a set of files that has
+no single-file stdout representation, so unlike some sibling converters there is no
+"default: stdout" fallback. Neither subcommand overwrites an existing output file unless
+`--force` is given.
+
+Every declared loss or degradation the conversion records is written as a JSON array of
+issues — to `--issues` when given, to stderr otherwise — never mixed into the document
+output. The process exits `1` when that issue log contains an ERROR-severity issue, `0`
+otherwise: a conversion that only warned or informed about a declared loss is still a
+successful conversion.
+
+### Python API
+
+```python
+from ossie_thoughtspot import tml, tml_to_ossie, ossie_to_thoughtspot, _yaml
+
+# ThoughtSpot TML -> Ossie
+texts = [(path, open(path).read()) for path in ("model.model.tml", "orders.table.tml")]
+result = tml_to_ossie.convert(tml.load_document_set(texts))
+ossie_yaml = _yaml.dump(result.model)          # result.issues: IssueLog
+
+# Ossie -> ThoughtSpot TML
+ossie_document = _yaml.load(open("model.yaml").read())
+result = ossie_to_thoughtspot.convert(ossie_document)
+for filename, text in tml.dump_document_set(result.documents):
+    ...                                          # result.issues: IssueLog
+```
+
+`result.issues` is an `IssueLog`: `has_errors()`, `count_by_severity()`, `as_dicts()`.
+Every declared loss raises an issue here — see [Coverage matrix](#coverage-matrix) and
+[Expression translation](#expression-translation-what-is-not-translated-and-why) below
+for what gets declared and why.
+
+## Mapping
+
+| Ossie | ThoughtSpot TML | Notes |
+|---|---|---|
+| `semantic_model` (one entry) | one Model document + the Table/SQL View documents it references | Exactly one `semantic_model` entry per document; more than one is a hard failure |
+| `dataset` | `table:`/`sql_view:` document, surfaced via the Model's `model_tables[]` entry | One dataset per participating `model_tables[]` entry, not per physical table — a self-join or a table used twice gets two datasets sharing one `source` |
+| `dataset.source` | `db`.`schema`.`db_table`, or `sql_query` for a SQL View | A dotted part is stashed individually (`source_parts`) when the joined form would be ambiguous |
+| `dataset.fields` | Table `columns[]` (physical) or Model `formulas[]` + surfacing `columns[]` entry (computed) | A computed field is attributed to the one dataset every column reference in its expression resolves to; ambiguous or cross-dataset references raise an issue instead of guessing |
+| `relationship` | `model_tables[].joins[]` (inline) or Table `joins_with[]` (referencing) | `from_columns`/`to_columns` are the join's equality pairs; a join with a non-equality residual (range/ASOF) narrows the same pairs, with the verbatim condition stashed — see [the payload section](#the-custom_extensionsthoughtspot-payload) below |
+| `dataset.primary_key` / `unique_keys` | *(not native to TML)* | TML declares no keys; Ossie's are derived from to-one relationships targeting the dataset |
+| `metric` | Model `formulas[]` + surfacing `columns[]` entry with `column_type: MEASURE` | Three TML shapes compose into one metric: a bare aggregate formula, a scalar formula plus the surfacing column's `aggregation`, or a physical column plus `aggregation` |
+| `field`/`metric` `expression.dialects` | `formulas[].expr` or a physical `db_column_name` | See [Expression translation](#expression-translation-what-is-not-translated-and-why) |
+| `custom_extensions[THOUGHTSPOT]` | TML fields with no Ossie equivalent | See [The `custom_extensions[THOUGHTSPOT]` payload](#the-custom_extensionsthoughtspot-payload) below |
+
+## The `custom_extensions[THOUGHTSPOT]` payload
+
+TML carries properties Ossie's core specification has no field for — a Connection name,
+search-indexing settings, a display column's warehouse name when it differs from its
+label, a join's exact type, and more. `TML → Ossie` stashes each one under a single
+`custom_extensions` entry (`vendor_name: THOUGHTSPOT`) attached to the Ossie object it
+came from; `Ossie → TML` reads the same entry back to reconstruct the original TML
+property, so `TML → Ossie → TML` is lossless for everything TML itself can express.
+
+```yaml
+custom_extensions:
+- vendor_name: THOUGHTSPOT
+  data: '{"_v": 1, "connection_name": "My Snowflake", "tml_object": "table"}'
+```
+
+`data` is always a single JSON-encoded string (never a nested object — the core
+specification requires this), carrying:
+
+- `_v`, a shape version bumped only when the payload's *shape* changes, never for a
+  value change — an unrecognised version is a hard failure rather than a silent
+  misread of a shape this converter has never seen.
+- Never a `guid`, `obj_id`, or `fqn` at any depth — object identity is instance-local
+  and is refused outright rather than carried, at write time.
+- Foreign-vendor `custom_extensions` entries on the same object pass through untouched
+  in both directions.
+- An object with nothing to stash gets no `custom_extensions[THOUGHTSPOT]` entry at
+  all, so a converted document stays as small as its content requires.
+
+`Ossie → TML` restores a stashed value only when it is still current: several keys
+(a physical column's warehouse name, a relationship's verbatim join condition, a
+dataset's TML object kind) are recorded alongside a witness copy of the live value they
+were stashed next to, and the stash is used only when that witness still matches the
+document's current value — an edit to the Ossie document since the stash was written
+(retargeting a relationship, renaming a field) makes the stash stale for that key, and
+the value is re-derived instead of silently reapplied to the wrong thing.
+
+The full key vocabulary is documented in `src/ossie_thoughtspot/constants.py`, grouped
+by which Ossie object each key's entry attaches to (model, dataset, relationship,
+field/metric).
+
+## Expression translation: what is not translated, and why
+
+**A ThoughtSpot formula is captured verbatim under a `THOUGHTSPOT` dialect entry. A
+portable `ANSI_SQL` sibling is added only when the whole expression is a single bare
+column reference — the one shape where portability is certain. Every other shape — a
+function call, an operator expression, a runtime parameter, a formula cross-reference —
+is recorded THOUGHTSPOT-only, with an issue explaining why no portable sibling was
+produced.** No SQL dialect is ever re-rendered into another dialect in this converter,
+in either direction.
+
+This is a deliberate design position, not an oversight, and it is worth stating plainly
+rather than leaving it to be inferred from reading `tml_to_ossie.py`:
+
+1. **The specification's own default is pass-through.** `core-spec/spec.md` defines
+   `dialects[]` as a list of `{dialect, expression}` pairs precisely so a value a
+   converter cannot translate can still travel, tagged with the dialect it is valid in.
+   Emitting an untranslated ThoughtSpot expression under `THOUGHTSPOT` and stopping
+   there is using the mechanism the specification provides for exactly this case, not
+   working around a gap in it.
+2. **No converter in this repository re-renders an expression from one SQL dialect into
+   another.** Every sibling converter that meets a dialect it does not natively speak
+   either passes the expression through under its own vendor dialect or falls back to
+   `ANSI_SQL` when the source already provides one — none parses a foreign dialect's
+   grammar and re-emits it in a different one. A hand-rolled reimplementation of that
+   translation, done once per converter, is exactly the kind of duplicated, easy-to-get-
+   subtly-wrong logic a shared SQL parser would exist to prevent — and no such shared
+   parser exists in this project today. Building one is out of scope for a single
+   converter to take on unilaterally.
+3. **The reference converter (`converters/databricks`) tags its own vendor dialect and
+   reads that first**, falling back to `ANSI_SQL` only when the source document already
+   provides it — it does not translate a foreign dialect into its own either. This
+   converter follows the same shape: prefer `THOUGHTSPOT`, add `ANSI_SQL` only when it
+   can be produced with certainty, never invent a translation.
+
+**What "certain" means in practice.** A bare column reference (`[TABLE::Column]`) is the
+one shape this converter resolves without ambiguity: the reference names a physical or
+computed field this document already knows how to place, so the `ANSI_SQL` sibling is
+just that field's own dataset-qualified name — no expression semantics are being
+translated at all, only a reference being resolved. Everything past that — even a
+composition ThoughtSpot's own documentation says is exactly equivalent to a portable
+form — is left THOUGHTSPOT-only. `src/ossie_thoughtspot/expressions/reverse.py` records,
+for testing and future use, which of ThoughtSpot's native functions compose into a
+portable Ossie expression and which do not (`ReverseDisposition`: compose fully,
+compose partially, resolve only to a dialect entry, or have no Ossie form at all) — but
+this inventory is not yet called from the shipped `TML → Ossie` conversion path itself.
+The current release is more conservative than what that inventory shows is possible: it
+never guesses, so it never translates something it has not resolved to a certainty.
+
+**The complementary direction.** `Ossie → TML` faces the reverse problem: rendering an
+Ossie specification construct as a ThoughtSpot formula. There, `expressions/catalog.py`
+maps all 146 constructs the Ossie expression language defines to a ThoughtSpot rendering
+— 108 with a native equivalent, 37 as a `sql_*_op` pass-through (opaque,
+warehouse-dialect-specific SQL ThoughtSpot cannot introspect, logged at WARNING every
+time), and 1 (`EXISTS_IN()`) with no representation ThoughtSpot has a slot for at all
+(logged at ERROR, never silently dropped). This direction *can* translate constructs to
+their ThoughtSpot equivalents because the Ossie expression language — unlike an
+arbitrary ThoughtSpot formula — is the one grammar this converter fully parses; nothing
+here reads or re-renders raw ThoughtSpot formula syntax, or any other vendor's SQL.
+
+Read together with the [coverage matrix](#coverage-matrix) below, this is the
+converter's whole answer to "what does not survive a round trip and why": expressions
+pass through by declared design; every other construct's loss is declared per row.
 
 ## Coverage matrix
 
-Every construct this converter does not carry, with its consequence. Each row is
-required to raise a structured `ConverterIssue` at conversion time once the conversion
-directions land — nothing may be dropped silently.
+Every construct this converter does not carry, with its consequence. Each row raises a
+structured `ConverterIssue` at conversion time — nothing is dropped silently.
 
 | # | Construct | Limitation | Consequence |
 |---|---|---|---|
@@ -79,48 +228,35 @@ directions land — nothing may be dropped silently.
 
 ## Known limitations
 
-Separate from the coverage matrix above — that covers TML constructs not carried
-(NM1-NM6); this covers identifier derivation correctness.
+Separate from the coverage matrix above — this covers identifier derivation
+correctness, not TML constructs.
 
 `identifiers.py`'s `normalise()` folds diacritics via Unicode NFKD decomposition before
-lowercasing and substituting — a stdlib operation, not a policy choice — so accented
-Latin now normalises correctly: `"Café"` -> `"cafe"`, `"Ürün"` -> `"urun"`, `"Zürich"` ->
-`"zurich"`. The residual limitation is narrower: a character with **no ASCII
+lowercasing and substituting, so accented Latin normalises correctly: `"Café"` ->
+`"cafe"`, `"Ürün"` -> `"urun"`, `"Zürich"` -> `"zurich"`. A character with **no ASCII
 decomposition** (Cyrillic, CJK, and similarly non-Latin scripts) is still dropped, not
 transliterated, and a name with no ASCII alphanumerics surviving still raises
-`ValueError` (a CJK-only name, for example). There is also an open question NFKD does
-not settle: some accented Latin folds to a *conventional* ASCII expansion rather than
-the bare decomposed letter — German `"Müller"` decomposes to `"Muller"` here, not the
-conventional `"Mueller"` — and choosing between them is a product decision left to a
-later change.
+`ValueError`. There is also an open question NFKD does not settle: some accented Latin
+folds to a *conventional* ASCII expansion rather than the bare decomposed letter —
+German `"Müller"` decomposes to `"Muller"` here, not the conventional `"Mueller"` — and
+choosing between them is a product decision left to a later change.
 
 ## Rules
 
-Rule identifiers referenced in the source (`ID1`-`ID4`, `X1`-`X9`, `KD1`-`KD3`, `R1`-`R11`,
-`E1`-`E13`, `NM1`-`NM6`, and others) refer to an external specification: the construct and
-expression mapping tables maintained in ThoughtSpot's own internal `thoughtspot-agent-skills`
-repository, which today is the normative source for this converter's behaviour. That
-repository is not ASF-hosted and is not publicly readable, so a rule identifier in this
-source tree is currently **unresolvable from inside this repository** — a real gap against
-the project's vendor-neutrality goal, and no other converter in this monorepo defers its
-normative behaviour to an external, vendor-controlled document. The intent is to contribute
-those mapping tables into this repository, under `docs/` or alongside this converter, so the
-normative source becomes ASF-hosted like every sibling converter's. That is a larger change
-needing its own review and is not done in this change; this section exists so the gap is
-acknowledged rather than silent.
+Rule identifiers referenced in the source (`ID1`-`ID4`, `X1`-`X9`, `KD1`-`KD3`,
+`R1`-`R11`, `E1`-`E13`, `NM1`-`NM6`, and others) refer to an external specification: the
+construct and expression mapping tables that were the working reference for this
+converter's behaviour. That reference is not part of this repository and is not
+publicly readable, so a rule identifier in this source tree is currently
+**unresolvable from inside this repository alone** — no other converter in this
+monorepo defers its normative behaviour to an external, vendor-controlled document.
+Whether that source material is ever contributed into this repository is a decision for
+the project, not for this converter; until then, each citation stays as a marker of
+which rule a piece of code implements, resolvable once that decision is made.
 
-A further citation form appears in the source: `se-thoughtspot` (the name of the
-ThoughtSpot test instance the underlying live probes ran against, e.g. the 52-probe window-
-functions sweep on 2026-07-30). It is kept rather than removed: unlike the rule
-identifiers above, it is not a normative source this converter depends on — it is
-evidence that a specific claim (for example, that ThoughtSpot's `IN`/`NOT IN` list
-delimiter is `{ }`, not `( )`) was verified against a running ThoughtSpot instance rather
-than assumed from documentation. It carries the same unresolvable-from-this-repository gap
-as the rule identifiers, acknowledged here for the same reason.
-
-**Before declaring any expression untranslatable, consult the function mapping.** Many window
-and LOD constructs have exact native equivalents; declaring one untranslatable without
-checking is an error (invariant I7).
+**Before declaring any expression untranslatable, consult the function mapping.** Many
+window and LOD constructs have exact native equivalents; declaring one untranslatable
+without checking is an error (invariant I7).
 
 ## Development
 
@@ -128,7 +264,18 @@ checking is an error (invariant I7).
 uv run --python 3.13 pytest tests/ -v
 ```
 
-`uv run` syncs the `dev` dependency group (declared via PEP 735
-`[dependency-groups]`, not an extra) and runs the tests in one step — see
-`.github/workflows/converter-thoughtspot-ci.yml` for the CI invocation this
-mirrors.
+`uv run` syncs the `dev` dependency group (declared via PEP 735 `[dependency-groups]`,
+not an extra — `pytest`, plus `jsonschema` and `hypothesis` for the schema-validation and
+property-based suites) and runs the tests in one step — see
+`.github/workflows/converter-thoughtspot-ci.yml` for the CI invocation this mirrors,
+run across every Python version this package declares support for.
+
+## Future effort
+
+The Apache Ossie specification is still evolving. As it adds or changes fields, this
+converter will be updated to track them — extending the mapping and coverage in both
+directions to keep the conversion current and to support as much as the format allows
+over time. `expressions/reverse.py`'s classified inventory of ThoughtSpot-only functions
+is a candidate foundation for a future, more ambitious `TML → Ossie` composition
+strategy, once that expansion is deliberately taken on rather than folded into this
+release.

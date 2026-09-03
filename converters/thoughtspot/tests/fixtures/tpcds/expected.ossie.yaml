@@ -417,12 +417,11 @@ semantic_model:
     - vendor_name: THOUGHTSPOT
       data: '{"_v": 1, "connection_name": "TPC-DS Snowflake", "sql_output_columns":
         {"sr_item_sk": "sr_item_sk", "sr_return_amt": "RETURN_AMT", "sr_ticket_number":
-        "sr_ticket_number"}, "sql_query": "SELECT sr_item_sk, sr_ticket_number, sr_return_amt
-        AS RETURN_AMT, sr_return_quantity FROM tpcds.public.store_returns", "tml_object":
-        "sql_view", "tml_object_source_witness": "SELECT sr_item_sk, sr_ticket_number,
-        sr_return_amt AS RETURN_AMT, sr_return_quantity FROM tpcds.public.store_returns",
-        "unsurfaced_columns": [{"db_column_properties": {"data_type": "INT64"}, "name":
-        "sr_return_quantity", "sql_output_column": "sr_return_quantity"}]}'
+        "sr_ticket_number"}, "tml_object": "sql_view", "tml_object_source_witness":
+        "SELECT sr_item_sk, sr_ticket_number, sr_return_amt AS RETURN_AMT, sr_return_quantity
+        FROM tpcds.public.store_returns", "unsurfaced_columns": [{"db_column_properties":
+        {"data_type": "INT64"}, "name": "sr_return_quantity", "sql_output_column":
+        "sr_return_quantity"}]}'
   description: TPC-DS retail semantic model used as a shared test fixture.
   relationships:
   - name: store_sales_to_date
@@ -494,8 +493,7 @@ semantic_model:
       data: '{"_v": 1, "cardinality": "MANY_TO_ONE", "join_shape": "inline", "on_expression":
         "[store_returns_sv::sr_item_sk] = [item::i_item_sk] and [store_returns_sv::sr_return_amt]
         <= [item::i_current_price]", "on_expression_equality_witness": [["sr_item_sk"],
-        ["i_item_sk"]], "residual_predicates": ["[store_returns_sv::sr_return_amt]
-        <= [item::i_current_price]"], "type": "INNER"}'
+        ["i_item_sk"]], "type": "INNER"}'
   metrics:
   - name: total_sales
     expression:
