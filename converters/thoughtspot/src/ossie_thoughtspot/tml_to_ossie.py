@@ -81,6 +81,7 @@ from typing import Callable
 
 from . import datatypes, formula, identifiers, keys, stash
 from .constants import DIALECT, DOCUMENT_VERSION, PORTABLE_DIALECT
+from .errors import ConversionError
 from .expressions import CATALOG, Variant, emit_direct
 from .issues import IssueLog, Severity
 from .tml import DocumentSet
@@ -877,6 +878,33 @@ def _index_attribute_columns(
     return index
 
 
+def _referenced_physical_columns(model_columns: list[dict]) -> set[tuple[str, str]]:
+    """Every `(TABLE, physical column display name)` pair some Model
+    `columns[]` entry's `column_id` names -- ATTRIBUTE and MEASURE alike.
+
+    This is broader than `_index_attribute_columns` on purpose: a
+    `column_aggregation`-shape metric surfaces its physical column just as
+    much as an ATTRIBUTE field does, so both count as "surfaced" for the
+    Dataset-level `unsurfaced_columns` question this feeds -- a physical
+    column referenced only by a metric is still part of the semantic model,
+    just not as a field. A malformed `column_id` is skipped silently here
+    rather than logged again: the field/metric conversion loop already logs
+    it once, from the same source data, and a second identical issue would
+    only be noise.
+    """
+    referenced: set[tuple[str, str]] = set()
+    for column in model_columns:
+        column_id = column.get("column_id")
+        if not column_id:
+            continue
+        try:
+            table_name, physical_name = identifiers.split_column_ref(f"[{column_id}]")
+        except ValueError:
+            continue
+        referenced.add((table_name, physical_name))
+    return referenced
+
+
 #: Every `properties` key `convert_field` reads on the ATTRIBUTE path.
 #: Anything else in a column's `properties` dict is unconsumed and, per the
 #: fail-closed rule `_unconsumed_properties` implements, is stashed rather
@@ -889,28 +917,17 @@ _METRIC_CONSUMED_PROPERTIES = _FIELD_CONSUMED_PROPERTIES | {"aggregation"}
 
 
 #: Identity-shaped keys that must never reach the portable document at any
-#: depth -- broader than `stash._FORBIDDEN_KEYS` (X8's guard on `guid`/
-#: `obj_id`/`fqn` alone, enforced only at a payload's top level).
-#: `_unconsumed_properties` is the one place in this module that copies a
-#: property's *value* wholesale rather than rebuilding it field by field, so
-#: it is also the one place the two further identity keys the mapping
-#: document's NM1 names -- `dataset_id`, and `geo_config.custom_file_guid`
-#: naming a custom map -- can arrive buried inside an otherwise-unconsumed
-#: value. Both are exactly the shape `stash`'s own top-level-only guard
-#: cannot see.
+#: depth -- broader than `stash._FORBIDDEN_KEYS` (X8's own `guid`/`obj_id`/
+#: `fqn`, which `stash.write_stash` scans every payload for regardless of
+#: caller). `_unconsumed_properties` is the one place in this module that
+#: copies a property's *value* wholesale rather than rebuilding it field by
+#: field, so it is also the one place the two further identity keys the
+#: mapping document's NM1 names -- `dataset_id`, and `geo_config.
+#: custom_file_guid` naming a custom map -- are worth checking for
+#: specifically, ahead of `write_stash`'s own narrower check: the scan is
+#: `stash.find_forbidden_key`'s, shared rather than reimplemented here, only
+#: the wider vocabulary to check it against is local to this one call site.
 _DEEP_IDENTITY_KEYS = stash._FORBIDDEN_KEYS | {"dataset_id", "custom_file_guid"}
-
-
-def _contains_forbidden_key(value: object) -> bool:
-    """Whether `value` carries one of `_DEEP_IDENTITY_KEYS` at *any* depth."""
-    if isinstance(value, dict):
-        return any(
-            key in _DEEP_IDENTITY_KEYS or _contains_forbidden_key(v)
-            for key, v in value.items()
-        )
-    if isinstance(value, list):
-        return any(_contains_forbidden_key(item) for item in value)
-    return False
 
 
 def _unconsumed_properties(
@@ -929,18 +946,25 @@ def _unconsumed_properties(
     the two lists cannot drift apart the way two independently maintained
     ones could.
 
-    A property whose value contains a forbidden key anywhere inside it
-    (`_contains_forbidden_key`) is dropped rather than stashed, and that drop
-    is logged -- the same treatment the mapping document gives
-    `geo_config.custom_file_guid` naming a custom map: the loss is real and
-    reported, not silent, even though the identity portion of it must never
-    travel.
+    A property whose value contains a forbidden key anywhere inside it is
+    dropped here -- with a WARNING logged naming it, so a per-column loss
+    stays a survivable one rather than the hard `ConversionError`
+    `stash.write_stash` would otherwise raise for it -- rather than
+    aborting the whole column's conversion over one contaminated property.
+    `write_stash` still re-checks (against its own narrower vocabulary)
+    whatever reaches it, so this is a caller earning its place with a softer
+    landing for a known case, not the only thing standing between identity
+    content and the output.
     """
     remainder: dict = {}
     for key, value in properties.items():
         if key in consumed:
             continue
-        if key in _DEEP_IDENTITY_KEYS or _contains_forbidden_key(value):
+        # Wrapping `{key: value}` rather than scanning `value` alone catches
+        # both shapes in one call: the property's own name being forbidden
+        # (a scalar `properties: {"guid": "..."}`, unlikely but not ruled
+        # out) and a forbidden key nested inside its value.
+        if stash.find_forbidden_key({key: value}, _DEEP_IDENTITY_KEYS) is not None:
             log.add(
                 code="TS-PROPERTY-IDENTITY-DROPPED",
                 severity=Severity.WARNING,
@@ -954,6 +978,57 @@ def _unconsumed_properties(
             continue
         remainder[key] = value
     return remainder
+
+
+def _write_stash_safely(obj: dict, payload: dict, log: IssueLog, object_ref: str) -> dict:
+    """`stash.write_stash(obj, payload)`, catching its X8 guard and turning a
+    would-be hard failure into a survivable, logged drop.
+
+    The payload content this module stashes is TML data read out of a
+    source file, not something the converter itself constructed -- an
+    identity key surfacing somewhere inside it is expected input, not a
+    programming error, and expected input must not abort the whole
+    conversion the way every other loss in this module does not. The guard
+    itself still lives at `stash.write_stash`, and still raises: that is
+    what makes it impossible to bypass, present caller or future one. This
+    is the one place that catches the raise and keeps going, generalising
+    the same choice `_unconsumed_properties` already makes for column
+    properties to every other stash site, rather than repeating a bespoke
+    pre-filter at each one.
+
+    A payload can have more than one contaminated top-level key, so this
+    retries after removing one at a time rather than assuming a single
+    pass suffices. If `stash.write_stash` ever raises for a reason other
+    than a forbidden key found in `payload` itself (a malformed *existing*
+    stash entry on `obj`, surfaced via its internal `read_stash` call, is
+    the one other case it can raise for) there is no payload key to blame,
+    and the exception is left to propagate rather than being swallowed.
+    """
+    cleaned = dict(payload)
+    while True:
+        try:
+            return stash.write_stash(obj, cleaned)
+        except ConversionError:
+            offender = next(
+                (
+                    key for key, value in cleaned.items()
+                    if stash.find_forbidden_key({key: value}) is not None
+                ),
+                None,
+            )
+            if offender is None:
+                raise
+            log.add(
+                code="TS-STASH-IDENTITY-DROPPED",
+                severity=Severity.WARNING,
+                message=(
+                    f"stash field {offender!r} contains instance-local identity "
+                    f"content; it is dropped rather than carried into the "
+                    f"portable document"
+                ),
+                object_ref=object_ref,
+            )
+            del cleaned[offender]
 
 
 def _field_owner_dataset(
@@ -1249,12 +1324,13 @@ def _relationship_from_join(
             ),
             object_ref=object_ref,
         )
-    relationship = stash.write_stash(relationship, rel_stash)
+    relationship = _write_stash_safely(relationship, rel_stash, log, object_ref)
     return relationship, None, has_residuals
 
 
 def _convert_join(
-    from_prefix: str, join: dict, from_table_body: dict, log: IssueLog
+    from_prefix: str, join: dict, from_table_body: dict, known_datasets: frozenset[str],
+    log: IssueLog,
 ) -> tuple[dict | None, dict | None, keys.Relationship | None]:
     """One `model_tables[].joins[]` entry -> `(relationship,
     unrepresentable_entry, key_candidate)`.
@@ -1266,6 +1342,17 @@ def _convert_join(
     entry overrides the Table's and marks the shape
     `referencing_with_inline_attrs`, the real hybrid the 2026-07-30 census
     found on 12 of 493 joins).
+
+    `known_datasets` is checked against the resolved target the same way the
+    caller already checks the source before calling this at all: a target
+    naming a dataset this model never built -- a table document missing, a
+    duplicate alias, or simply a typo -- is dropped with a WARNING rather
+    than emitted. Upstream's own validator hard-fails a document with a
+    relationship pointing at an unknown dataset (`exit 1`, not a warning),
+    so emitting one anyway would make the *whole* document unusable by any
+    downstream tool that runs it; dropping the one broken relationship keeps
+    everything else in the model valid and usable, which is the more useful
+    failure of the two.
 
     KD1's cardinality-orientation rule is applied here, not in
     `_relationship_from_join`: the *emitted* relationship's `from`/`to` always
@@ -1317,6 +1404,20 @@ def _convert_join(
             code="TS-JOIN-NO-TARGET",
             severity=Severity.WARNING,
             message=f"join {name!r} from {from_prefix!r} names no target dataset; it is skipped",
+            object_ref=f"relationship:{name}",
+        )
+        return None, None, None
+
+    if to_prefix not in known_datasets:
+        log.add(
+            code="TS-JOIN-UNKNOWN-TARGET",
+            severity=Severity.WARNING,
+            message=(
+                f"join {name!r} from {from_prefix!r} targets {to_prefix!r}, which "
+                f"is not one of this model's datasets; the relationship is "
+                f"dropped rather than emitted pointing at a dataset that does not "
+                f"exist"
+            ),
             object_ref=f"relationship:{name}",
         )
         return None, None, None
@@ -1501,7 +1602,9 @@ def convert(document_set: DocumentSet) -> OssieConversion:
                 properties, _FIELD_CONSUMED_PROPERTIES, log, f"field:{display_name}"
             )
             if extra_properties:
-                field = stash.write_stash(field, {"column_properties": extra_properties})
+                field = _write_stash_safely(
+                    field, {"column_properties": extra_properties}, log, f"field:{display_name}"
+                )
             owner = _field_owner_dataset(column, formulas, resolve)
             if owner is not None and owner in fields_by_dataset:
                 fields_by_dataset[owner].append(field)
@@ -1522,7 +1625,9 @@ def convert(document_set: DocumentSet) -> OssieConversion:
                 properties, _METRIC_CONSUMED_PROPERTIES, log, f"metric:{display_name}"
             )
             if extra_properties:
-                metric = stash.write_stash(metric, {"column_properties": extra_properties})
+                metric = _write_stash_safely(
+                    metric, {"column_properties": extra_properties}, log, f"metric:{display_name}"
+                )
             metrics.append(metric)
             continue
 
@@ -1558,9 +1663,25 @@ def convert(document_set: DocumentSet) -> OssieConversion:
                     unattributed["column_properties"] = properties
                 model_stash.setdefault("unattributed_formulas", []).append(unattributed)
 
+    # -- Phase 3.5: unsurfaced physical columns ------------------------------
+    # A Table column no Model columns[] entry surfaces -- by column_id, field
+    # or metric alike -- is not part of the semantic model, but has to be
+    # preserved verbatim (Dataset-level mapping, "fields" row) so the Table
+    # document can be regenerated exactly on the way back.
+    referenced_columns = _referenced_physical_columns(model_columns)
+    for prefix in dataset_order:
+        physical_columns = (table_docs.get(prefix) or {}).get("columns") or []
+        unsurfaced = [
+            column for column in physical_columns
+            if (prefix, column.get("name")) not in referenced_columns
+        ]
+        if unsurfaced:
+            dataset_stashes[prefix]["unsurfaced_columns"] = unsurfaced
+
     # -- Phase 4: relationships ------------------------------------------------
     relationships: list[dict] = []
     key_candidates: list[keys.Relationship] = []
+    known_datasets = frozenset(dataset_bodies)
 
     for entry in model_tables:
         table_ref = entry.get("name")
@@ -1569,7 +1690,7 @@ def convert(document_set: DocumentSet) -> OssieConversion:
             continue  # the dataset itself failed to build; already logged
         for join in entry.get("joins") or []:
             relationship, unrepresentable, candidate = _convert_join(
-                from_prefix, join, table_docs.get(from_prefix) or {}, log
+                from_prefix, join, table_docs.get(from_prefix) or {}, known_datasets, log
             )
             if relationship is not None:
                 relationships.append(relationship)
@@ -1592,7 +1713,7 @@ def convert(document_set: DocumentSet) -> OssieConversion:
         dataset_dict = dataset_bodies[prefix]
         if fields_by_dataset[prefix]:
             dataset_dict["fields"] = fields_by_dataset[prefix]
-        dataset_dict = stash.write_stash(dataset_dict, dataset_stashes[prefix])
+        dataset_dict = _write_stash_safely(dataset_dict, dataset_stashes[prefix], log, f"dataset:{prefix}")
         datasets_out.append(dataset_dict)
     semantic_model["datasets"] = datasets_out
 
@@ -1647,7 +1768,7 @@ def convert(document_set: DocumentSet) -> OssieConversion:
             remedy="Reconfigure aggregate-model routing manually on the target instance after import.",
         )
 
-    semantic_model = stash.write_stash(semantic_model, model_stash)
+    semantic_model = _write_stash_safely(semantic_model, model_stash, log, f"model:{semantic_model_name}")
 
     document = {"version": DOCUMENT_VERSION, "semantic_model": [semantic_model]}
     return OssieConversion(model=document, issues=log)
