@@ -75,12 +75,15 @@ identifier, the exact display name has nowhere to go but the `custom_extensions`
 """
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
 from typing import Callable
 
-from . import datatypes, formula, identifiers, stash
-from .constants import DIALECT, PORTABLE_DIALECT
+from . import datatypes, formula, identifiers, keys, stash
+from .constants import DIALECT, DOCUMENT_VERSION, PORTABLE_DIALECT
 from .expressions import CATALOG, Variant, emit_direct
 from .issues import IssueLog, Severity
+from .tml import DocumentSet
 
 
 def expression_entries(
@@ -802,3 +805,760 @@ def convert_metric(
         metric["ai_context"] = ai_context
 
     return metric
+
+
+# ---------------------------------------------------------------------------
+# Assembly: datasets, the cross-model resolver, relationships, and convert()
+# ---------------------------------------------------------------------------
+#
+# Everything above converts one column at a time and takes `resolve` as a
+# given. Nothing above can build `resolve` itself -- it maps a raw TML
+# reference to "dataset.field", and that mapping cannot exist until every
+# dataset in the model is known. That is the one job only this section can
+# do, and everything else here exists to support it: datasets have to be
+# built first (so their names -- the model_tables[] alias-or-name, never
+# normalised -- are known), then `resolve` is a closure over that, then
+# fields and metrics are converted through it, then joins become
+# relationships, then keys are derived from the relationships that qualify.
+#
+# A malformed reference anywhere in a TML document (an ambiguous `column_id`
+# or join condition -- `identifiers.split_column_ref` raising on purpose
+# rather than mis-splitting) is caught per object: the object is skipped, an
+# issue names it, and the rest of the model still converts. Nothing here lets
+# one bad reference abort the whole conversion.
+
+
+def _index_attribute_columns(
+    columns: list[dict], log: IssueLog
+) -> dict[tuple[str, str], str]:
+    """`(TABLE, physical column display name) -> Ossie field identifier`, for
+    every ATTRIBUTE `columns[]` entry bound to a physical `column_id`.
+
+    This is the data `resolve()` is built from: a bare `[TABLE::Column]`
+    reference is portable only when it names a column the model actually
+    surfaces as a field, and the identifier it resolves to has to be the
+    exact one `convert_field` independently computes for that same column --
+    plain `identifiers.normalise`, not run through an `identifiers.Allocator`.
+    Neither `convert_field` nor `convert_metric` resolve ID2 collisions
+    (display-name folds that only clash after normalisation) themselves; this
+    index deliberately matches that rather than silently picking a different,
+    collision-safe name `resolve()` would return but the built field would
+    not actually have. See the module docstring's identifier note in the
+    task report for why closing that gap here is out of scope.
+
+    A malformed `column_id` is caught here, per column, rather than aborting
+    the whole model: the column is left out of the index -- any expression
+    that references it resolves to nothing, which every caller already
+    treats as an ordinary unresolved reference -- and an issue names it.
+    """
+    index: dict[tuple[str, str], str] = {}
+    for column in columns:
+        properties = column.get("properties") or {}
+        if properties.get("column_type") != "ATTRIBUTE":
+            continue
+        column_id = column.get("column_id")
+        if not column_id:
+            continue
+        try:
+            table_name, physical_name = identifiers.split_column_ref(f"[{column_id}]")
+        except ValueError as exc:
+            log.add(
+                code="TS-COLUMN-ID-MALFORMED",
+                severity=Severity.WARNING,
+                message=(
+                    f"column {column.get('name', '<unnamed>')!r} has a malformed "
+                    f"column_id {column_id!r} ({exc}); it cannot be resolved by any "
+                    f"expression that references it"
+                ),
+                object_ref=f"field:{column.get('name', '<unnamed>')}",
+            )
+            continue
+        index[(table_name, physical_name)] = identifiers.normalise(column["name"])
+    return index
+
+
+def _field_owner_dataset(
+    column: dict, formulas: dict[str, dict], resolve: Callable[[str, str], str | None]
+) -> str | None:
+    """Which dataset a *successfully built* field belongs in.
+
+    Only ever called after `convert_field` has already returned a non-`None`
+    field for this exact column, which makes every path here provably safe:
+    the physical branch re-parses the same `column_id` `convert_field` just
+    parsed without raising, and the formula branch re-runs `attribute_dataset`
+    on the same expression `convert_field` just attributed successfully --
+    and `attribute_dataset`'s success path never logs (only its failure paths
+    do), so repeating it here adds nothing to the issue log.
+    """
+    if "column_id" in column:
+        table_name, _column_name = identifiers.split_column_ref(f"[{column['column_id']}]")
+        return table_name
+    formula_entry = formulas.get(column.get("formula_id"))
+    if formula_entry is None or "expr" not in formula_entry:
+        return None
+    return attribute_dataset(formula_entry["expr"], resolve, IssueLog(), object_ref="")
+
+
+def _build_dataset(prefix: str, entry: dict, table_doc, log: IssueLog) -> tuple[dict, dict]:
+    """One `model_tables[]` entry, paired with its Table/SQL-View document,
+    into `(base Ossie dataset dict, its custom_extensions[THOUGHTSPOT] payload)`.
+
+    The base dict carries `name`/`source`/`description` only -- no `fields`
+    key yet. The caller fills that in once every dataset (and therefore the
+    resolver) exists, and calls `stash.write_stash` with the returned payload
+    once fields are attached, so key order in the final dict reads naturally
+    even though this function runs long before fields are known.
+
+    `prefix` becomes the dataset's Ossie `name` verbatim: `entry["alias"]`
+    when present, else `entry["name"]`, never run through
+    `identifiers.normalise` -- the Dataset-level mapping requires it to match
+    the model_tables[] reference name exactly, case-sensitive, since that is
+    also the prefix every `column_id`/join reference in this dataset uses.
+    """
+    body = table_doc.body
+    table_ref = entry.get("name")
+    alias = entry.get("alias")
+    kind = table_doc.kind
+
+    ds_stash: dict = {"tml_object": kind}
+    if alias:
+        ds_stash["alias"] = alias
+        ds_stash["table_name"] = table_ref
+
+    connection_name = (body.get("connection") or {}).get("name")
+    if connection_name:
+        ds_stash["connection_name"] = connection_name
+
+    if kind == "sql_view":
+        source = body.get("sql_query") or ""
+        ds_stash["sql_query"] = source
+    else:
+        db = body.get("db") or ""
+        schema = body.get("schema") or ""
+        db_table = body.get("db_table") or table_ref or ""
+        if any("." in part for part in (db, schema, db_table)):
+            # A dotted source string would be ambiguous -- keep the parts too.
+            ds_stash["source_parts"] = {"db": db, "schema": schema, "db_table": db_table}
+        source = ".".join((db, schema, db_table))
+
+    dataset: dict = {"name": prefix, "source": source}
+    description = body.get("description")
+    if description:
+        dataset["description"] = description
+
+    if body.get("rls_rules"):
+        # NM2: row-level security policy is instance-local (it names groups
+        # that only exist on the source instance) and is never carried into
+        # the portable document. Per ThoughtSpot domain review this is now
+        # the primary RLS mechanism customers are migrating onto, so this is
+        # an ERROR-severity issue naming the table, not a quiet declared loss.
+        log.add(
+            code="TS-DATASET-RLS-RULES",
+            severity=Severity.ERROR,
+            message=(
+                f"table {table_ref!r} has row-level security rules (rls_rules); "
+                f"these reference instance-local groups and are not carried into "
+                f"the portable document -- data that was previously restricted is "
+                f"unrestricted until row-level security is reapplied on the "
+                f"target instance"
+            ),
+            object_ref=f"dataset:{prefix}",
+            remedy=(
+                "Reapply the table's row-level security rules manually on the "
+                "target instance after import."
+            ),
+        )
+
+    return dataset, ds_stash
+
+
+#: One equality pair, and nothing but: two bracketed references either side of
+#: a bare `=`. Anything else -- `>=`/`>`/`<`/`<=`, a literal on either side, or
+#: a genuine `=` between something that isn't two whole `[TABLE::Column]`
+#: references -- does not match, and is therefore a residual predicate.
+_EQUALITY_PAIR_RE = re.compile(r"^\s*(\[[^\]]+\])\s*=\s*(\[[^\]]+\])\s*$")
+_AND_RE = re.compile(r"\band\b", re.IGNORECASE)
+
+
+def _split_top_level_and(text: str) -> list[str]:
+    """Split a join condition on its top-level ` and ` operators.
+
+    Reuses `formula._scan` -- the same quote/bracket-depth tracker every
+    other reference-aware split in this package is built on -- so a literal
+    "and" inside a quoted literal, or inside a `[TABLE::Column]` body (a
+    table or column display name can genuinely contain the word, e.g.
+    `[Research and Development::Col]`), is never mistaken for the boolean
+    operator. An empty or whitespace-only `text` yields no parts.
+    """
+    if not text or not text.strip():
+        return []
+    context = {i: (depth, in_quote) for i, _ch, depth, in_quote in formula._scan(text)}
+    parts: list[str] = []
+    start = 0
+    for match in _AND_RE.finditer(text):
+        depth, in_quote = context.get(match.start(), (0, False))
+        if depth == 0 and not in_quote:
+            parts.append(text[start : match.start()].strip())
+            start = match.end()
+    parts.append(text[start:].strip())
+    return [p for p in parts if p]
+
+
+def _parse_join_condition(
+    on_expression: str, from_prefix: str, to_prefix: str
+) -> tuple[list[tuple[str, str]], list[str]]:
+    """Split a join condition into equality pairs and residual predicates.
+
+    Per the mapping document's *Non-equality joins* section: the condition is
+    split on its top-level `and`s; a part that is exactly `[FROM::a] = [TO::x]`
+    (in either orientation -- the equality is symmetric in TML, so the pair is
+    reoriented to `(from_col, to_col)` regardless of which side of `=` each
+    reference was written on) becomes one pair. Everything else -- `>=`, `>`,
+    `<`, `<=`, a comparison against a literal, or an equality naming some
+    table other than `from_prefix`/`to_prefix` -- is a residual predicate,
+    kept verbatim.
+
+    Raises `ValueError` (via `identifiers.split_column_ref`) on an ambiguous
+    column reference. The caller (`_relationship_from_join`) catches this per
+    relationship rather than letting it abort the whole conversion.
+    """
+    equality_pairs: list[tuple[str, str]] = []
+    residuals: list[str] = []
+    for part in _split_top_level_and(on_expression):
+        match = _EQUALITY_PAIR_RE.match(part)
+        if match is None:
+            residuals.append(part)
+            continue
+        left_table, left_column = identifiers.split_column_ref(match.group(1))
+        right_table, right_column = identifiers.split_column_ref(match.group(2))
+        if left_table == from_prefix and right_table == to_prefix:
+            equality_pairs.append((left_column, right_column))
+        elif left_table == to_prefix and right_table == from_prefix:
+            equality_pairs.append((right_column, left_column))
+        else:
+            # An equality pair, but not one naming both sides of *this* join --
+            # cannot be expressed as one of its from_columns/to_columns.
+            residuals.append(part)
+    return equality_pairs, residuals
+
+
+def _unrepresentable_entry(
+    from_prefix: str,
+    to_prefix: str,
+    on_expression: str,
+    join_type: str | None,
+    cardinality: str | None,
+    join_shape: str,
+    referencing_join: str | None,
+) -> dict:
+    """One `unrepresentable_joins[]` entry -- everything schema-required, plus
+    whatever else about the join is known, verbatim."""
+    entry: dict = {
+        "from": from_prefix,
+        "to": to_prefix,
+        "on_expression": on_expression,
+        "join_shape": join_shape,
+    }
+    if join_type:
+        entry["type"] = join_type
+    if cardinality:
+        entry["cardinality"] = cardinality
+    if referencing_join:
+        entry["referencing_join"] = referencing_join
+    return entry
+
+
+def _relationship_from_join(
+    *,
+    name: str,
+    from_prefix: str,
+    to_prefix: str,
+    on_expression: str | None,
+    join_type: str | None,
+    cardinality: str | None,
+    join_shape: str,
+    referencing_join: str | None,
+    log: IssueLog,
+) -> tuple[dict | None, dict | None, bool]:
+    """One join -> `(relationship, unrepresentable_entry, has_residual_predicates)`.
+
+    Exactly one of `relationship`/`unrepresentable_entry` is non-`None` (or
+    both `None` when there is no condition at all to report). Implements the
+    *Non-equality joins* table: at least one equality pair emits a
+    `Relationship`, with any residual predicates riding along in its own
+    `custom_extensions` rather than withholding the relationship; zero
+    equality pairs -- including when the condition could not be parsed at all
+    -- emits nothing, because Ossie's schema requires `from_columns`/
+    `to_columns` non-empty, and the condition goes to the model-scope
+    `unrepresentable_joins` stash instead.
+    """
+    object_ref = f"relationship:{name}"
+    if not on_expression or not on_expression.strip():
+        log.add(
+            code="TS-JOIN-NO-CONDITION",
+            severity=Severity.WARNING,
+            message=(
+                f"join {name!r} from {from_prefix!r} to {to_prefix!r} has no "
+                f"condition; it cannot be represented as a relationship"
+            ),
+            object_ref=object_ref,
+        )
+        return None, None, False
+
+    try:
+        equality_pairs, residuals = _parse_join_condition(on_expression, from_prefix, to_prefix)
+    except ValueError as exc:
+        log.add(
+            code="TS-JOIN-MALFORMED",
+            severity=Severity.WARNING,
+            message=(
+                f"join {name!r} condition {on_expression!r} could not be parsed "
+                f"({exc}); it is preserved verbatim as an unrepresentable join "
+                f"rather than as a relationship"
+            ),
+            object_ref=object_ref,
+        )
+        entry = _unrepresentable_entry(
+            from_prefix, to_prefix, on_expression, join_type, cardinality,
+            join_shape, referencing_join,
+        )
+        return None, entry, False
+
+    if not equality_pairs:
+        log.add(
+            code="TS-JOIN-UNREPRESENTABLE",
+            severity=Severity.WARNING,
+            message=(
+                f"join {name!r} from {from_prefix!r} to {to_prefix!r} has no "
+                f"equality pair in its condition ({on_expression!r}); Ossie requires "
+                f"from_columns/to_columns to be non-empty, so no relationship is "
+                f"emitted for it"
+            ),
+            object_ref=object_ref,
+        )
+        entry = _unrepresentable_entry(
+            from_prefix, to_prefix, on_expression, join_type, cardinality,
+            join_shape, referencing_join,
+        )
+        return None, entry, False
+
+    relationship: dict = {
+        "name": name,
+        "from": from_prefix,
+        "to": to_prefix,
+        "from_columns": [pair[0] for pair in equality_pairs],
+        "to_columns": [pair[1] for pair in equality_pairs],
+    }
+    rel_stash: dict = {"join_shape": join_shape}
+    if join_type:
+        rel_stash["type"] = join_type
+    if cardinality:
+        rel_stash["cardinality"] = cardinality
+    if referencing_join:
+        rel_stash["referencing_join"] = referencing_join
+    has_residuals = bool(residuals)
+    if has_residuals:
+        rel_stash["on_expression"] = on_expression
+        rel_stash["residual_predicates"] = residuals
+        log.add(
+            code="TS-JOIN-RESIDUAL-PREDICATES",
+            severity=Severity.WARNING,
+            message=(
+                f"relationship {name!r} carries residual predicate(s) beyond its "
+                f"equality pairs; a consumer that reads only from_columns/"
+                f"to_columns will join more rows than ThoughtSpot does"
+            ),
+            object_ref=object_ref,
+        )
+    relationship = stash.write_stash(relationship, rel_stash)
+    return relationship, None, has_residuals
+
+
+def _convert_join(
+    from_prefix: str, join: dict, from_table_body: dict, log: IssueLog
+) -> tuple[dict | None, dict | None, keys.Relationship | None]:
+    """One `model_tables[].joins[]` entry -> `(relationship,
+    unrepresentable_entry, key_candidate)`.
+
+    Handles both TML join shapes: `inline` (fully defined here -- `with`/
+    `on`/`type`/`cardinality`) and `referencing` (`referencing_join` names an
+    entry in the *Table*'s own `joins_with[]`, which supplies `destination`/
+    `on`/`type`/`cardinality`; a `type`/`cardinality` also present on this
+    entry overrides the Table's and marks the shape
+    `referencing_with_inline_attrs`, the real hybrid the 2026-07-30 census
+    found on 12 of 493 joins).
+
+    KD1's cardinality-orientation rule is applied here, not in
+    `_relationship_from_join`: the *emitted* relationship's `from`/`to` always
+    mirrors TML's FK-structural fact unconditionally (the Relationship-level
+    mapping's `from` row), but a `ONE_TO_MANY` join is evidence that the FROM
+    side -- not the TO side -- is the one covered by a key, so the key
+    candidate handed to `keys.derive_keys` targets `from_prefix` with the
+    relationship's own `from_columns`, relabelled `MANY_TO_ONE` from that
+    flipped perspective (`keys._qualifies` only recognises that spelling).
+    `MANY_TO_MANY` needs no such handling -- it is excluded by
+    `keys._qualifies` on either side, which is already correct.
+    """
+    referencing_join = join.get("referencing_join")
+    if referencing_join:
+        candidates = from_table_body.get("joins_with") or []
+        matched = next((jw for jw in candidates if jw.get("name") == referencing_join), None)
+        if matched is None:
+            log.add(
+                code="TS-JOIN-REFERENCING-MISSING",
+                severity=Severity.WARNING,
+                message=(
+                    f"model_tables[] entry {from_prefix!r} references joins_with "
+                    f"{referencing_join!r}, which is not defined on its table; the "
+                    f"join is skipped"
+                ),
+                object_ref=f"relationship:{referencing_join}",
+            )
+            return None, None, None
+        to_prefix = (matched.get("destination") or {}).get("name")
+        on_expression = matched.get("on")
+        join_type = join.get("type", matched.get("type"))
+        cardinality = join.get("cardinality", matched.get("cardinality"))
+        join_shape = (
+            "referencing_with_inline_attrs"
+            if ("type" in join or "cardinality" in join)
+            else "referencing"
+        )
+        name = referencing_join
+    else:
+        to_prefix = join.get("with")
+        on_expression = join.get("on")
+        join_type = join.get("type")
+        cardinality = join.get("cardinality")
+        join_shape = "inline"
+        name = f"{from_prefix}_to_{to_prefix}" if to_prefix else f"{from_prefix}_to_<unknown>"
+
+    if not to_prefix:
+        log.add(
+            code="TS-JOIN-NO-TARGET",
+            severity=Severity.WARNING,
+            message=f"join {name!r} from {from_prefix!r} names no target dataset; it is skipped",
+            object_ref=f"relationship:{name}",
+        )
+        return None, None, None
+
+    relationship, unrepresentable, has_residuals = _relationship_from_join(
+        name=name,
+        from_prefix=from_prefix,
+        to_prefix=to_prefix,
+        on_expression=on_expression,
+        join_type=join_type,
+        cardinality=cardinality,
+        join_shape=join_shape,
+        referencing_join=referencing_join,
+        log=log,
+    )
+
+    candidate = None
+    if relationship is not None:
+        if cardinality == "ONE_TO_MANY":
+            candidate = keys.Relationship(
+                name=name,
+                to_dataset=from_prefix,
+                to_columns=relationship["from_columns"],
+                cardinality="MANY_TO_ONE",
+                has_residual_predicates=has_residuals,
+            )
+        else:
+            candidate = keys.Relationship(
+                name=name,
+                to_dataset=to_prefix,
+                to_columns=relationship["to_columns"],
+                cardinality=cardinality or "",
+                has_residual_predicates=has_residuals,
+            )
+    return relationship, unrepresentable, candidate
+
+
+@dataclass(frozen=True)
+class OssieConversion:
+    """The result of one TML -> Ossie conversion.
+
+    `model` is the full Ossie document -- `{"version": ..., "semantic_model":
+    [...]}` -- ready to dump as YAML. `issues` is every declared loss and
+    degradation raised while building it: nothing in `model` is missing
+    something TML held without a matching entry here.
+    """
+
+    model: dict
+    issues: IssueLog
+
+
+def convert(document_set: DocumentSet) -> OssieConversion:
+    """Convert one ThoughtSpot TML document set into one Ossie semantic model.
+
+    Order matters and mirrors the module docstring above: datasets first (so
+    their names -- the model_tables[] alias-or-name, verbatim -- exist),
+    then the cross-model resolver (needs every dataset's name and every
+    ATTRIBUTE column's identifier), then fields and metrics (need `resolve`),
+    then relationships (need nothing new, but key derivation needs every
+    relationship gathered first), then keys.
+
+    A malformed reference anywhere -- an ambiguous `column_id`, an ambiguous
+    reference inside a join condition -- is caught per object: that object is
+    skipped, an issue names it and why, and every other object still
+    converts. A field that could not be attributed to a dataset is either
+    entirely omitted (a physical column, or a formula-produced field with no
+    attribution -- there is nothing else to build) or, when it is a
+    formula-backed ATTRIBUTE column whose formula genuinely exists, preserved
+    verbatim in the model-scope `unattributed_formulas` stash rather than
+    dropped outright.
+    """
+    log = IssueLog()
+    model_body = document_set.model.body
+
+    model_display_name = model_body.get("name") or ""
+    semantic_model_name = (
+        identifiers.normalise(model_display_name) if model_display_name else "model"
+    )
+    semantic_model: dict = {"name": semantic_model_name, "datasets": []}
+    model_stash: dict = {}
+    if semantic_model_name != model_display_name:
+        model_stash["tml_name"] = model_display_name
+
+    description = model_body.get("description")
+    if description:
+        semantic_model["description"] = description
+
+    # -- Phase 1: datasets --------------------------------------------------
+    dataset_order: list[str] = []
+    dataset_bodies: dict[str, dict] = {}
+    dataset_stashes: dict[str, dict] = {}
+    table_docs: dict[str, dict] = {}
+    fields_by_dataset: dict[str, list] = {}
+    seen_prefixes: set[str] = set()
+
+    model_tables = model_body.get("model_tables") or []
+    for entry in model_tables:
+        table_ref = entry.get("name")
+        prefix = entry.get("alias") or table_ref
+        if not prefix:
+            log.add(
+                code="TS-DATASET-NO-NAME",
+                severity=Severity.WARNING,
+                message="a model_tables[] entry has no name and no alias; it cannot become a dataset",
+                object_ref="dataset:<unnamed>",
+            )
+            continue
+        object_ref = f"dataset:{prefix}"
+        if prefix in seen_prefixes:
+            log.add(
+                code="TS-DATASET-DUPLICATE-PREFIX",
+                severity=Severity.WARNING,
+                message=(
+                    f"more than one model_tables[] entry resolves to the reference "
+                    f"name {prefix!r}; only the first is converted"
+                ),
+                object_ref=object_ref,
+            )
+            continue
+        table_doc = document_set.table_by_name(table_ref) if table_ref else None
+        if table_doc is None:
+            log.add(
+                code="TS-DATASET-TABLE-MISSING",
+                severity=Severity.WARNING,
+                message=(
+                    f"model_tables[] entry {prefix!r} references table {table_ref!r}, "
+                    f"which has no matching table/sql_view document; the dataset is "
+                    f"skipped"
+                ),
+                object_ref=object_ref,
+            )
+            continue
+
+        dataset_dict, ds_stash = _build_dataset(prefix, entry, table_doc, log)
+        seen_prefixes.add(prefix)
+        dataset_order.append(prefix)
+        dataset_bodies[prefix] = dataset_dict
+        dataset_stashes[prefix] = ds_stash
+        table_docs[prefix] = table_doc.body
+        fields_by_dataset[prefix] = []
+
+    def table_lookup(name: str) -> dict | None:
+        return table_docs.get(name)
+
+    # -- Phase 2: the cross-model resolver -----------------------------------
+    model_columns = model_body.get("columns") or []
+    attribute_index = _index_attribute_columns(model_columns, log)
+
+    def resolve(table: str, column: str) -> str | None:
+        if table not in dataset_bodies:
+            return None
+        field_name = attribute_index.get((table, column))
+        if field_name is None:
+            return None
+        return f"{table}.{field_name}"
+
+    # -- Phase 3: fields and metrics ------------------------------------------
+    formulas: dict[str, dict] = {
+        f["id"]: f for f in (model_body.get("formulas") or []) if f.get("id")
+    }
+    metrics: list[dict] = []
+
+    for column in model_columns:
+        display_name = column.get("name", "<unnamed>")
+        try:
+            field = convert_field(column, formulas, table_lookup, resolve, log)
+            metric = None if field is not None else convert_metric(
+                column, formulas, table_lookup, resolve, log
+            )
+        except ValueError as exc:
+            log.add(
+                code="TS-COLUMN-REF-MALFORMED",
+                severity=Severity.WARNING,
+                message=f"column {display_name!r} could not be converted: {exc}",
+                object_ref=f"field:{display_name}",
+            )
+            continue
+
+        if field is not None:
+            owner = _field_owner_dataset(column, formulas, resolve)
+            if owner is not None and owner in fields_by_dataset:
+                fields_by_dataset[owner].append(field)
+            else:
+                log.add(
+                    code="TS-FIELD-DATASET-MISSING",
+                    severity=Severity.WARNING,
+                    message=(
+                        f"field {display_name!r} resolves to dataset {owner!r}, "
+                        f"which was not built; the field is dropped"
+                    ),
+                    object_ref=f"field:{display_name}",
+                )
+            continue
+
+        if metric is not None:
+            metrics.append(metric)
+            continue
+
+        # Neither a field nor a metric was built.
+        properties = column.get("properties") or {}
+        column_type = properties.get("column_type")
+        if column_type not in ("ATTRIBUTE", "MEASURE"):
+            # A column_type this converter does not recognise at all (TML
+            # requires one of the two) is a malformed column, not a case
+            # convert_field/convert_metric already explained -- name it
+            # rather than silently skipping it.
+            log.add(
+                code="TS-COLUMN-TYPE-UNKNOWN",
+                severity=Severity.WARNING,
+                message=(
+                    f"column {display_name!r} has column_type {column_type!r}, "
+                    f"which is neither ATTRIBUTE nor MEASURE; it is not converted"
+                ),
+                object_ref=f"field:{display_name}",
+            )
+            continue
+
+        # The one case worth preserving: an ATTRIBUTE formula that genuinely
+        # exists (has an expr) but could not be attributed to a single
+        # dataset -- convert_field already logged why via attribute_dataset.
+        if column_type == "ATTRIBUTE" and "formula_id" in column:
+            formula_entry = formulas.get(column["formula_id"])
+            if formula_entry is not None and "expr" in formula_entry:
+                unattributed: dict = {
+                    "name": formula_entry.get("name") or display_name,
+                    "expr": formula_entry["expr"],
+                }
+                if properties:
+                    unattributed["column_properties"] = properties
+                model_stash.setdefault("unattributed_formulas", []).append(unattributed)
+
+    # -- Phase 4: relationships ------------------------------------------------
+    relationships: list[dict] = []
+    key_candidates: list[keys.Relationship] = []
+
+    for entry in model_tables:
+        table_ref = entry.get("name")
+        from_prefix = entry.get("alias") or table_ref
+        if from_prefix not in dataset_bodies:
+            continue  # the dataset itself failed to build; already logged
+        for join in entry.get("joins") or []:
+            relationship, unrepresentable, candidate = _convert_join(
+                from_prefix, join, table_docs.get(from_prefix) or {}, log
+            )
+            if relationship is not None:
+                relationships.append(relationship)
+            if unrepresentable is not None:
+                model_stash.setdefault("unrepresentable_joins", []).append(unrepresentable)
+            if candidate is not None:
+                key_candidates.append(candidate)
+
+    # -- Phase 5: keys -----------------------------------------------------
+    for prefix in dataset_order:
+        primary_key, unique_keys = keys.derive_keys(prefix, key_candidates, log)
+        if primary_key:
+            dataset_bodies[prefix]["primary_key"] = primary_key
+        if unique_keys:
+            dataset_bodies[prefix]["unique_keys"] = unique_keys
+
+    # -- Phase 6: assemble datasets ------------------------------------------
+    datasets_out: list[dict] = []
+    for prefix in dataset_order:
+        dataset_dict = dataset_bodies[prefix]
+        if fields_by_dataset[prefix]:
+            dataset_dict["fields"] = fields_by_dataset[prefix]
+        dataset_dict = stash.write_stash(dataset_dict, dataset_stashes[prefix])
+        datasets_out.append(dataset_dict)
+    semantic_model["datasets"] = datasets_out
+
+    if relationships:
+        semantic_model["relationships"] = relationships
+    if metrics:
+        semantic_model["metrics"] = metrics
+
+    # -- Phase 7: model-scope stash -------------------------------------------
+    raw_properties = model_body.get("properties") or {}
+    model_properties: dict = {}
+    for key_name in ("is_bypass_rls", "join_progressive"):
+        if key_name in raw_properties:
+            model_properties[key_name] = raw_properties[key_name]
+    spotter = raw_properties.get("spotter_config")
+    if isinstance(spotter, dict) and "is_spotter_enabled" in spotter:
+        model_properties["spotter_config"] = {
+            "is_spotter_enabled": spotter["is_spotter_enabled"]
+        }
+    if model_properties:
+        model_stash["model_properties"] = model_properties
+
+    for key_name in (
+        "parameters", "filters", "column_groups", "lesson_plans",
+        "action_object_associations",
+    ):
+        value = model_body.get(key_name)
+        if value:
+            model_stash[key_name] = value
+    constraints = model_body.get("constraints")
+    if constraints:
+        model_stash["constraints"] = constraints
+    model_joins_with = model_body.get("joins_with")
+    if model_joins_with:
+        model_stash["model_joins_with"] = model_joins_with
+
+    if model_body.get("aggregated_models"):
+        # Aggregate-model routing associations are GUIDs of other Model
+        # objects -- instance-local, so they are never stashed. Stripping
+        # them silently disables the routing with no error, so the issue is
+        # the only signal a reader gets.
+        log.add(
+            code="TS-MODEL-AGGREGATED-MODELS",
+            severity=Severity.WARNING,
+            message=(
+                "model has aggregated_models query-routing associations, which "
+                "reference instance-local Model GUIDs; they are not carried into "
+                "the portable document, so aggregate-aware routing will not be "
+                "active after import"
+            ),
+            object_ref=f"model:{semantic_model_name}",
+            remedy="Reconfigure aggregate-model routing manually on the target instance after import.",
+        )
+
+    semantic_model = stash.write_stash(semantic_model, model_stash)
+
+    document = {"version": DOCUMENT_VERSION, "semantic_model": [semantic_model]}
+    return OssieConversion(model=document, issues=log)
