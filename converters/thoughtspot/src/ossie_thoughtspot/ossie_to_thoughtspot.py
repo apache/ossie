@@ -105,8 +105,10 @@ from .constants import (
     MODEL_STASH_UNREPRESENTABLE_JOINS,
     PORTABLE_DIALECT,
     RELATIONSHIP_STASH_CARDINALITY,
+    RELATIONSHIP_STASH_JOIN_SHAPE,
     RELATIONSHIP_STASH_ON_EXPRESSION,
     RELATIONSHIP_STASH_ON_EXPRESSION_WITNESS,
+    RELATIONSHIP_STASH_REFERENCING_JOIN,
     RELATIONSHIP_STASH_TYPE,
     STASH_TML_NAME,
 )
@@ -356,23 +358,30 @@ def _field_object_ref(field: dict) -> str:
 
 
 def _physical_table_column(field: dict, log: IssueLog) -> dict | None:
-    """One Table `columns[]` entry for `field`, or `None` when it is computed."""
+    """One Table `columns[]` entry for `field`, or `None` when it is computed.
+
+    `description` is deliberately never copied here. Every field that
+    reaches this function is, by construction, also surfaced as a Model
+    `columns[]` ATTRIBUTE entry (`_build_field`, which writes the same
+    description there) -- a Table-only physical column never becomes a
+    `field` at all; it survives verbatim through
+    `DATASET_STASH_UNSURFACED_COLUMNS` instead. So the Model entry is the
+    only correct home for a Model-surfaced field's description; writing it
+    here too would assert something on the Table document its own source
+    never carried.
+    """
     object_ref = _field_object_ref(field)
     identity = _physical_identity(field, log, object_ref=object_ref)
     if identity is None:
         return None
     name, db_column_name = identity
-    column: dict = {
+    return {
         "name": name,
         # Always present, even equal to `name` -- some ThoughtSpot instances
         # reject an import that omits it.
         "db_column_name": db_column_name,
         "db_column_properties": {"data_type": _field_datatype(field, log, object_ref=object_ref)},
     }
-    description = field.get("description")
-    if description:
-        column["description"] = description
-    return column
 
 
 def _physical_sql_view_column(field: dict, output_aliases: dict, log: IssueLog) -> dict | None:
@@ -391,15 +400,14 @@ def _physical_sql_view_column(field: dict, output_aliases: dict, log: IssueLog) 
         return None
     name, fallback_identifier = identity
     sql_output_column = output_aliases.get(field.get("name")) or fallback_identifier
-    column: dict = {
+    # `description` is never copied here -- see the matching note on
+    # _physical_table_column just above; the same reasoning applies
+    # unchanged to a SQL View's own physical column.
+    return {
         "name": name,
         "sql_output_column": sql_output_column,
         "db_column_properties": {"data_type": _field_datatype(field, log, object_ref=object_ref)},
     }
-    description = field.get("description")
-    if description:
-        column["description"] = description
-    return column
 
 
 def _derive_kind(source: str) -> tuple[str, bool]:
@@ -1544,18 +1552,24 @@ def _restore_relationship_condition(
     )
 
 
-def _join_entry_for_relationship(rel: dict, log: IssueLog) -> tuple[str, dict]:
-    """One Ossie relationship (or `unrepresentable_joins[]` entry) ->
-    `(from_prefix, inline join entry)`.
+def _join_entry_for_relationship(rel: dict, log: IssueLog) -> tuple[str, dict, dict | None]:
+    """One Ossie relationship -> `(from_prefix, model join entry,
+    Table joins_with[] entry or None)`.
 
-    Always emitted as an *inline* `model_tables[].joins[]` entry (R5),
-    regardless of the stashed `join_shape` -- a `"referencing"`-shaped join
-    would need a `joins_with[]` entry on the *Table* document, which this
-    function has no way to add: the Table documents are already-built,
-    immutable `TmlDocument`s by the time `build_model` sees them. The join
-    itself -- condition, type, cardinality -- is fully restored either way;
-    only the structural choice of inline-vs-Table-referencing is collapsed,
-    which does not change import behaviour.
+    A `"referencing"`- or `"referencing_with_inline_attrs"`-shaped join is
+    restored as such -- a `referencing_join` pointer on the Model entry plus
+    a matching `joins_with[]` entry for the caller to attach to the *Table*
+    document -- whenever the stashed `referencing_join` name still matches
+    this relationship's own current `name`. TML's inline join syntax has no
+    name field at all, so a relationship that instead falls through to the
+    inline branch below gets a fresh one synthesized from its own from/to
+    dataset names on the next TML -> Ossie pass; restoring the referencing
+    shape here is what avoids that rename. When the two names disagree --
+    the relationship was renamed since the stash was written -- the stash
+    is stale: it is dropped, an issue records it, and the join is emitted
+    inline instead, exactly as a hand-authored relationship with no stash
+    at all would be. The same is true when there is no stashed
+    `referencing_join` to begin with.
 
     X5 governs `on_expression`: it is the "verbatim on_expression" case the
     rule names by example. A plain stash-if-present read would silently keep
@@ -1598,9 +1612,43 @@ def _join_entry_for_relationship(rel: dict, log: IssueLog) -> tuple[str, dict]:
         on_expression = _restore_relationship_condition(from_prefix, to_prefix, from_columns, to_columns)
     join_type = _normalise_join_type(payload.get(RELATIONSHIP_STASH_TYPE) or "INNER")
     cardinality = payload.get(RELATIONSHIP_STASH_CARDINALITY) or "MANY_TO_ONE"
+
+    live_name = rel.get("name")
+    stashed_referencing_join = payload.get(RELATIONSHIP_STASH_REFERENCING_JOIN)
+    if stashed_referencing_join and stashed_referencing_join != live_name:
+        log.add(
+            code="TS-JOIN-REFERENCING-JOIN-STALE",
+            severity=Severity.WARNING,
+            message=(
+                f"relationship {live_name!r} has a stashed referencing_join "
+                f"{stashed_referencing_join!r}, but that no longer matches the "
+                f"relationship's own current name -- it was renamed since the "
+                f"stash was written, so the stashed Table joins_with[] reference "
+                f"is dropped; an inline join is emitted instead, named on the "
+                f"next TML -> Ossie pass from its from/to datasets like a "
+                f"hand-authored relationship would be"
+            ),
+            object_ref=f"relationship:{live_name}",
+        )
+        stashed_referencing_join = None
+
+    if stashed_referencing_join:
+        model_join_entry: dict = {"referencing_join": stashed_referencing_join}
+        if payload.get(RELATIONSHIP_STASH_JOIN_SHAPE) == "referencing_with_inline_attrs":
+            model_join_entry["type"] = join_type
+            model_join_entry["cardinality"] = cardinality
+        joins_with_entry = {
+            "name": stashed_referencing_join,
+            "destination": {"name": to_prefix},
+            "on": on_expression,
+            "type": join_type,
+            "cardinality": cardinality,
+        }
+        return from_prefix, model_join_entry, joins_with_entry
+
     return from_prefix, {
         "with": to_prefix, "on": on_expression, "type": join_type, "cardinality": cardinality,
-    }
+    }, None
 
 
 def _join_entry_for_unrepresentable(entry: dict) -> tuple[str, dict]:
@@ -1765,7 +1813,7 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
     covered_columns_by_dataset: dict[str, list[set]] = {}
 
     for rel in semantic_model.get("relationships") or []:
-        from_prefix, join_entry = _join_entry_for_relationship(rel, log)
+        from_prefix, join_entry, joins_with_entry = _join_entry_for_relationship(rel, log)
         target = model_tables_by_prefix.get(from_prefix)
         if target is None:
             log.add(
@@ -1780,6 +1828,15 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
             )
             continue
         target.setdefault("joins", []).append(join_entry)
+        if joins_with_entry is not None:
+            # `table_doc_by_prefix` holds the same TmlDocument objects the
+            # caller's own `tables` sequence does -- `TmlDocument` is frozen,
+            # but its `body` dict is not, so appending here is visible in
+            # the final DocumentSet without build_model needing to return
+            # anything beyond the Model document it already does.
+            from_table_doc = table_doc_by_prefix.get(from_prefix)
+            if from_table_doc is not None:
+                from_table_doc.body.setdefault("joins_with", []).append(joins_with_entry)
         to_prefix = rel.get("to")
         to_columns = rel.get("to_columns")
         if to_prefix and to_columns:
