@@ -142,9 +142,18 @@ def expression_entries(
     whatever else this function decides, that entry is what makes the expression
     recoverable later, character for character. A second, ANSI_SQL entry is appended
     only when the whole expression is a bare column reference the resolver can place in
-    a dataset. Every other shape — a runtime parameter, an unresolvable reference, a
-    function call, a compound expression — gets an issue instead of a guessed
-    translation, and only the verbatim entry is returned.
+    a dataset. Every other shape — a runtime parameter, a formula cross-reference, an
+    unresolvable reference, a function call, a compound expression — gets an issue
+    instead of a guessed translation, and only the verbatim entry is returned.
+
+    A runtime parameter and a formula cross-reference are the same textual shape (a
+    bracketed name with no `::` qualifier) but different constructs, and are reported
+    under different codes for it: `formula.find_formula_refs`/`find_parameter_refs`
+    share one definition of which is which (`formula.FORMULA_REFERENCE_PREFIX`) so this
+    function and the Ossie -> TML model builder — which mints exactly this prefix and
+    rewrites references that carry it — cannot silently disagree about the convention.
+    Both are logged when both are present in the same expression, each under its own
+    code, rather than one masking the other.
 
     `kind` names the Ossie object this expression belongs to ("field" or "metric") —
     used only in issue text, so a metric's non-portability issue reads "...evaluate
@@ -154,18 +163,33 @@ def expression_entries(
     """
     entries: list[dict[str, str]] = [{"dialect": DIALECT, "expression": expr}]
 
+    formula_refs = formula.find_formula_refs(expr)
     parameters = formula.find_parameter_refs(expr)
-    if parameters:
-        log.add(
-            code="TS-EXPR-PARAM",
-            severity=Severity.WARNING,
-            message=(
-                f"expression references the ThoughtSpot runtime parameter(s) "
-                f"{', '.join(parameters)}, which have no Ossie equivalent; no "
-                f"portable expression is emitted"
-            ),
-            object_ref=object_ref,
-        )
+    if formula_refs or parameters:
+        if formula_refs:
+            log.add(
+                code="TS-EXPR-FORMULA-REFERENCE",
+                severity=Severity.INFO,
+                message=(
+                    f"expression references the formula(s) {', '.join(formula_refs)} "
+                    f"by cross-reference; a portable sibling would require inlining "
+                    f"the referenced formula's own expression, which this converter "
+                    f"does not attempt, so only the THOUGHTSPOT dialect entry is "
+                    f"emitted"
+                ),
+                object_ref=object_ref,
+            )
+        if parameters:
+            log.add(
+                code="TS-EXPR-PARAM",
+                severity=Severity.WARNING,
+                message=(
+                    f"expression references the ThoughtSpot runtime parameter(s) "
+                    f"{', '.join(parameters)}, which have no Ossie equivalent; no "
+                    f"portable expression is emitted"
+                ),
+                object_ref=object_ref,
+            )
         return entries
 
     bare = formula.is_bare_column_ref(expr)

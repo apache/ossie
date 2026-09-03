@@ -246,13 +246,57 @@ def find_column_refs(expression: str) -> list[tuple[str, str]]:
     ]
 
 
+#: The prefix a bracketed name with no `::` carries when it is a formula
+#: cross-reference (`[formula_Name]`, R3's id form) rather than a genuine
+#: runtime parameter (`[Discount Threshold]`) — the two are the same
+#: textual shape (a bracketed name, no table qualifier) and are told apart
+#: only by this prefix. Shared here because both conversion directions have
+#: to agree on the convention: the Ossie -> TML model builder mints every
+#: formula's id with this prefix and rewrites cross-references that carry
+#: it, and TML -> Ossie's own parameter finder has to recognise the same
+#: prefix or it misclassifies a formula composing another formula as an
+#: expression referencing a nonexistent runtime parameter.
+FORMULA_REFERENCE_PREFIX = "formula_"
+
+
+def is_formula_reference(body: str) -> bool:
+    """Whether a bracketed name with no `::` (see `find_parameter_refs` and
+    `find_formula_refs`) is a formula cross-reference rather than a genuine
+    runtime parameter."""
+    return body.startswith(FORMULA_REFERENCE_PREFIX)
+
+
 def find_parameter_refs(expression: str) -> list[str]:
-    """Every bracketed name with no table qualifier — a ThoughtSpot runtime parameter.
+    """Every bracketed name with no table qualifier that is **not** a formula
+    cross-reference — a genuine ThoughtSpot runtime parameter.
 
     Ossie has no equivalent, so an expression carrying one is not portable and the caller
-    raises an issue rather than emitting a portable sibling.
+    raises an issue rather than emitting a portable sibling. A formula cross-reference
+    (`[formula_Name]`) has the same bracketed, unqualified shape but is a different
+    construct entirely — see `find_formula_refs` and `is_formula_reference` — and must
+    not be reported here as a parameter that does not exist.
     """
-    return [body for _s, _e, body in _bracketed_spans(expression) if "::" not in body]
+    return [
+        body for _s, _e, body in _bracketed_spans(expression)
+        if "::" not in body and not is_formula_reference(body)
+    ]
+
+
+def find_formula_refs(expression: str) -> list[str]:
+    """Every bracketed name with no table qualifier that **is** a formula
+    cross-reference — the complement of `find_parameter_refs` within the
+    "no `::`" bracket set.
+
+    A formula composing another formula (`sum ( [formula_Margin] )`) is a
+    first-class ThoughtSpot construct, not a runtime parameter — see
+    `FORMULA_REFERENCE_PREFIX`. It is still not portable: a faithful ANSI_SQL
+    sibling would require inlining the referenced formula's own expression,
+    which this converter does not attempt.
+    """
+    return [
+        body for _s, _e, body in _bracketed_spans(expression)
+        if "::" not in body and is_formula_reference(body)
+    ]
 
 
 def is_bare_column_ref(expression: str) -> tuple[str, str] | None:

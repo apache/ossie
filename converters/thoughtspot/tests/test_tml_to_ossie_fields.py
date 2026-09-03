@@ -59,6 +59,38 @@ class TestExpressionEntries:
         out = expression_entries("[ORDERS::Amount] * [Growth Rate]", _resolve, log, object_ref="f")
         assert [e["dialect"] for e in out] == ["THOUGHTSPOT"]
         assert any("parameter" in i["message"].lower() for i in log.as_dicts())
+        assert not any(i["code"] == "TS-EXPR-FORMULA-REFERENCE" for i in log.as_dicts())
+
+    def test_a_formula_cross_reference_is_not_reported_as_a_parameter(self):
+        # `[formula_Margin]` has no `::`, the same bracketed shape a runtime
+        # parameter has -- but it is a formula composing another formula, a
+        # first-class ThoughtSpot construct, not something with no Ossie
+        # equivalent. The old bug: this fired TS-EXPR-PARAM and told a reader
+        # to go hunting for a parameter that does not exist.
+        log = IssueLog()
+        out = expression_entries("sum ( [formula_Margin] )", _resolve, log, object_ref="f")
+        assert [e["dialect"] for e in out] == ["THOUGHTSPOT"]
+        assert not any(i["code"] == "TS-EXPR-PARAM" for i in log.as_dicts())
+        assert not any("parameter" in i["message"].lower() for i in log.as_dicts())
+
+    def test_the_cross_reference_issue_names_the_right_cause(self):
+        log = IssueLog()
+        expression_entries("sum ( [formula_Margin] )", _resolve, log, object_ref="f")
+        [issue] = [i for i in log.as_dicts() if i["code"] == "TS-EXPR-FORMULA-REFERENCE"]
+        assert "formula_Margin" in issue["message"]
+        assert "inlin" in issue["message"].lower()
+
+    def test_an_expression_with_both_a_cross_reference_and_a_parameter_reports_both(self):
+        log = IssueLog()
+        out = expression_entries(
+            "[formula_Margin] * [Growth Rate]", _resolve, log, object_ref="f"
+        )
+        assert [e["dialect"] for e in out] == ["THOUGHTSPOT"]
+        codes = {i["code"] for i in log.as_dicts()}
+        assert codes == {"TS-EXPR-FORMULA-REFERENCE", "TS-EXPR-PARAM"}
+        [param_issue] = [i for i in log.as_dicts() if i["code"] == "TS-EXPR-PARAM"]
+        assert "Growth Rate" in param_issue["message"]
+        assert "formula_Margin" not in param_issue["message"]
 
     def test_an_unresolvable_reference_blocks_the_portable_sibling(self):
         log = IssueLog()
@@ -114,6 +146,7 @@ class TestPortableSiblingTruthTable:
         "bare reference with surrounding whitespace": ("  [ORDERS::Amount]  ", True),
         "reference the resolver cannot resolve": ("[MISSING::Col]", False),
         "expression with a runtime parameter": ("[ORDERS::Amount] * [Growth Rate]", False),
+        "expression with a formula cross-reference": ("sum ( [formula_Margin] )", False),
         "single function call": ("sum([ORDERS::Amount])", False),
         "compound expression": ("[ORDERS::Amount] + [ORDERS::Tax]", False),
     }
