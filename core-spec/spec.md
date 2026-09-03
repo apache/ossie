@@ -489,6 +489,7 @@ The following are well-known examples:
 | `WISDOM` | WisdomAI-specific attributes |
 | `POWER_BI` | Microsoft Power BI-specific attributes |
 | `SIGMA` | Sigma Computing-specific attributes |
+| `THOUGHTSPOT` | ThoughtSpot-specific attributes |
 
 ### Examples
 

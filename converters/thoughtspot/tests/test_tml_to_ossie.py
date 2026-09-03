@@ -52,7 +52,6 @@ from ossie_thoughtspot.constants import (
     RELATIONSHIP_STASH_JOIN_SHAPE,
     RELATIONSHIP_STASH_ON_EXPRESSION,
     RELATIONSHIP_STASH_REFERENCING_JOIN,
-    RELATIONSHIP_STASH_RESIDUAL_PREDICATES,
     RELATIONSHIP_STASH_TYPE,
 )
 from ossie_thoughtspot.errors import ConversionError
@@ -270,7 +269,7 @@ class TestKeyDerivation:
         assert rel_stash[RELATIONSHIP_STASH_TYPE] == "INNER"
         assert rel_stash[RELATIONSHIP_STASH_CARDINALITY] == "MANY_TO_ONE"
         assert rel_stash[RELATIONSHIP_STASH_JOIN_SHAPE] == "inline"
-        assert RELATIONSHIP_STASH_RESIDUAL_PREDICATES not in rel_stash
+        assert RELATIONSHIP_STASH_ON_EXPRESSION not in rel_stash
 
     def test_a_non_equality_join_derives_no_key_and_stashes_the_condition(self):
         # KD1 negative: a residual-predicate (as-of) join is to-one only
@@ -881,9 +880,6 @@ class TestKeyDerivationEdgeCasesCommitted:
         assert rel["from_columns"] == ["Customer Id"]
         assert rel["to_columns"] == ["Id"]
         rel_stash = _own_stash(rel)
-        assert rel_stash[RELATIONSHIP_STASH_RESIDUAL_PREDICATES] == [
-            "[ORDERS::Order Date] >= [CUSTOMERS::Effective Date]"
-        ]
         assert rel_stash[RELATIONSHIP_STASH_ON_EXPRESSION] == on_expr
         assert any(i["code"] == "TS-JOIN-RESIDUAL-PREDICATES" for i in result.issues.as_dicts())
         assert any(i["code"] == "TS_KEY_COVERAGE" for i in result.issues.as_dicts())

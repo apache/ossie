@@ -185,10 +185,6 @@ DATASET_STASH_TABLE_NAME = "table_name"
 #: caller as `build_table`'s own `connection_name` argument.
 DATASET_STASH_CONNECTION_NAME = "connection_name"
 
-#: `sql_view.sql_query`, stashed alongside the dataset's own `source` (which
-#: already carries the same query text) when the dataset came from a SQL View.
-DATASET_STASH_SQL_QUERY = "sql_query"
-
 #: `db`/`schema`/`db_table` recorded individually when the dotted `source`
 #: form would be ambiguous. A nested object; see the three keys below for its
 #: own contents.
@@ -247,13 +243,6 @@ RELATIONSHIP_STASH_REFERENCING_JOIN = "referencing_join"
 #: pure equality (range / ASOF / constant joins), because `from_columns`/
 #: `to_columns` then carry only part of it.
 RELATIONSHIP_STASH_ON_EXPRESSION = "on_expression"
-
-#: The non-equality predicates of the join condition -- the top-level `and`
-#: terms that are not a plain `[FROM::col] = [TO::col]` pair. Present only on
-#: a Relationship that WAS emitted (at least one equality pair existed);
-#: `MODEL_STASH_UNREPRESENTABLE_JOINS` entries have no equality pairs at all
-#: and so never carry this key.
-RELATIONSHIP_STASH_RESIDUAL_PREDICATES = "residual_predicates"
 
 #: X5's witness copy for `RELATIONSHIP_STASH_ON_EXPRESSION`: `[from_columns,
 #: to_columns]` exactly as they stood the moment `on_expression` was
