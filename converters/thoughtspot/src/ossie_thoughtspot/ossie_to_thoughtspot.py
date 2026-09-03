@@ -68,7 +68,22 @@ from __future__ import annotations
 import re
 
 from . import datatypes, formula, stash
-from .constants import DIALECT, FIELD_STASH_DB_COLUMN_NAME
+from .constants import (
+    DATASET_STASH_CONNECTION_NAME,
+    DATASET_STASH_SOURCE_PARTS,
+    DATASET_STASH_SOURCE_PARTS_DB,
+    DATASET_STASH_SOURCE_PARTS_DB_TABLE,
+    DATASET_STASH_SOURCE_PARTS_SCHEMA,
+    DATASET_STASH_SQL_OUTPUT_COLUMNS,
+    DATASET_STASH_TABLE_NAME,
+    DATASET_STASH_TABLE_PROPERTIES,
+    DATASET_STASH_TML_OBJECT,
+    DATASET_STASH_UNSURFACED_COLUMNS,
+    DIALECT,
+    FIELD_STASH_DATA_TYPE,
+    FIELD_STASH_DB_COLUMN_NAME,
+    STASH_TML_NAME,
+)
 from .issues import IssueLog, Severity
 from .tml import TmlDocument
 
@@ -242,7 +257,7 @@ def _field_datatype(field: dict, log: IssueLog, *, object_ref: str) -> str:
             )
 
     field_stash = stash.read_stash(field)
-    stashed_spelling = field_stash.get("data_type")
+    stashed_spelling = field_stash.get(FIELD_STASH_DATA_TYPE)
     if isinstance(stashed_spelling, str) and stashed_spelling:
         # The exact ThoughtSpot spelling a prior TML -> Ossie trip recorded
         # (BOOL vs BOOLEAN, FLOAT vs DOUBLE) always wins over a freshly
@@ -346,7 +361,7 @@ def _decide_kind(dataset: dict, payload: dict) -> str:
     trusting it keeps that list valid. A hand-authored dataset has no stash
     at all, and falls through to `_derive_kind`.
     """
-    stashed_kind = payload.get("tml_object")
+    stashed_kind = payload.get(DATASET_STASH_TML_OBJECT)
     if stashed_kind in ("table", "sql_view"):
         return stashed_kind
     kind, _malformed = _derive_kind(dataset.get("source") or "")
@@ -363,9 +378,13 @@ def _source_parts(dataset: dict, payload: dict, log: IssueLog, *, object_ref: st
     three-way split nobody asked for any more.
     """
     source = dataset.get("source") or ""
-    stashed = payload.get("source_parts")
+    stashed = payload.get(DATASET_STASH_SOURCE_PARTS)
     if isinstance(stashed, dict):
-        db, schema, db_table = stashed.get("db", ""), stashed.get("schema", ""), stashed.get("db_table", "")
+        db, schema, db_table = (
+            stashed.get(DATASET_STASH_SOURCE_PARTS_DB, ""),
+            stashed.get(DATASET_STASH_SOURCE_PARTS_SCHEMA, ""),
+            stashed.get(DATASET_STASH_SOURCE_PARTS_DB_TABLE, ""),
+        )
         if ".".join((db, schema, db_table)) == source:
             return db, schema, db_table
         log.add(
@@ -397,7 +416,7 @@ def _source_parts(dataset: dict, payload: dict, log: IssueLog, *, object_ref: st
 def _connection_name(
     payload: dict, connection_name: str | None, log: IssueLog, *, object_ref: str
 ) -> str | None:
-    name = payload.get("connection_name") or connection_name
+    name = payload.get(DATASET_STASH_CONNECTION_NAME) or connection_name
     if name:
         return name
     log.add(
@@ -416,8 +435,8 @@ def _connection_name(
 
 def _table_name(dataset: dict, payload: dict) -> str:
     return (
-        payload.get("tml_name")
-        or payload.get("table_name")
+        payload.get(STASH_TML_NAME)
+        or payload.get(DATASET_STASH_TABLE_NAME)
         or dataset.get("name")
         or "<unnamed>"
     )
@@ -430,7 +449,7 @@ def _shared_body(dataset: dict, payload: dict, connection: str | None) -> dict:
     description = dataset.get("description")
     if description:
         body["description"] = description
-    table_properties = payload.get("table_properties")
+    table_properties = payload.get(DATASET_STASH_TABLE_PROPERTIES)
     if table_properties:
         body["properties"] = table_properties
     return body
@@ -448,7 +467,7 @@ def _build_table_body(
         column = _physical_table_column(field, log)
         if column is not None:
             columns.append(column)
-    unsurfaced = payload.get("unsurfaced_columns")
+    unsurfaced = payload.get(DATASET_STASH_UNSURFACED_COLUMNS)
     if unsurfaced:
         columns.extend(unsurfaced)
     body["columns"] = columns
@@ -461,13 +480,13 @@ def _build_sql_view_body(
     body: dict = {"name": _table_name(dataset, payload), "sql_query": dataset.get("source") or ""}
     body.update(_shared_body(dataset, payload, connection))
 
-    output_aliases = payload.get("sql_output_columns") or {}
+    output_aliases = payload.get(DATASET_STASH_SQL_OUTPUT_COLUMNS) or {}
     columns: list[dict] = []
     for field in dataset.get("fields") or []:
         column = _physical_sql_view_column(field, output_aliases, log)
         if column is not None:
             columns.append(column)
-    unsurfaced = payload.get("unsurfaced_columns")
+    unsurfaced = payload.get(DATASET_STASH_UNSURFACED_COLUMNS)
     if unsurfaced:
         columns.extend(unsurfaced)
     body["sql_view_columns"] = columns
