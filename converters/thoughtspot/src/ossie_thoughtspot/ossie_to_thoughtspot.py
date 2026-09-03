@@ -215,7 +215,32 @@ def _physical_identity(field: dict, log: IssueLog, *, object_ref: str) -> tuple[
 
     ts_entry = next((d for d in dialects if d.get("dialect") == DIALECT), None)
     if ts_entry is not None:
-        bare = formula.is_bare_column_ref(ts_entry.get("expression", ""))
+        ts_expr = ts_entry.get("expression", "")
+        try:
+            bare = formula.is_bare_column_ref(ts_expr)
+        except ValueError as exc:
+            # split_column_ref raises for two distinct reasons -- the
+            # bracket's table or column part itself contains "::", making the
+            # delimiter genuinely ambiguous, or the text inside the brackets
+            # never matched the [TABLE::Column] shape at all (e.g. an empty
+            # table part) -- and correctly refuses to guess in either case
+            # rather than silently mis-splitting. That refusal must not
+            # propagate as an uncaught exception out of a document
+            # conversion: it is reported and the field is treated the same
+            # as any other THOUGHTSPOT expression that is not a single
+            # column reference (see the `bare is None` case just below).
+            log.add(
+                code="TS-FIELD-COLUMN-REF-MALFORMED",
+                severity=Severity.ERROR,
+                message=(
+                    f"expression {ts_expr!r} is not a usable ThoughtSpot column "
+                    f"reference ({exc}); it cannot become a table column and is "
+                    f"instead carried into the model as a formula, verbatim, "
+                    f"which will fail to import until it is fixed"
+                ),
+                object_ref=object_ref,
+            )
+            return None
         if bare is None:
             # A THOUGHTSPOT expression that is not a single column reference
             # is a formula -- computed fields are the Model document's
@@ -1127,11 +1152,21 @@ def _field_physical_display_name(field: dict) -> str | None:
     (called separately, on the same field, from the same log) already reports
     any db_column_name assumption -- calling `_physical_identity` again here
     would double-report the same finding under a second `object_ref`.
+
+    An ambiguous bracket (the table or column part itself contains "::") is
+    treated the same as "not a bare column reference" rather than left to
+    raise: `_physical_identity`, called on this same field from `build_table`
+    before this function ever runs, already reports the ambiguity once --
+    reporting it again here would be the same double report this function's
+    own docstring already rules out for db_column_name.
     """
     dialects = ((field.get("expression") or {}).get("dialects")) or []
     ts_entry = next((d for d in dialects if d.get("dialect") == DIALECT), None)
     if ts_entry is not None:
-        bare = formula.is_bare_column_ref(ts_entry.get("expression", ""))
+        try:
+            bare = formula.is_bare_column_ref(ts_entry.get("expression", ""))
+        except ValueError:
+            return None
         return bare[1] if bare is not None else None
 
     display_name = field.get("label") or field.get("name")

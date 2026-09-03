@@ -945,7 +945,17 @@ def _index_attribute_columns(
                 object_ref=f"field:{column.get('name', '<unnamed>')}",
             )
             continue
-        index[(table_name, physical_name)] = identifiers.normalise(column["name"])
+        try:
+            index[(table_name, physical_name)] = identifiers.normalise(column["name"])
+        except ValueError:
+            # column["name"] has no ASCII alphanumerics for normalise() to
+            # fold onto (a CJK-only or punctuation-only display name). This
+            # column is left out of the index exactly as a malformed
+            # column_id is just above -- convert_field/convert_metric hit
+            # the same normalise() call independently and report the
+            # column-level TS-COLUMN-REF-MALFORMED issue that actually drops
+            # it, so nothing here needs its own issue.
+            continue
     return index
 
 
@@ -1685,9 +1695,30 @@ def convert(document_set: DocumentSet) -> OssieConversion:
     model_body = document_set.model.body
 
     model_display_name = model_body.get("name") or ""
-    semantic_model_name = (
-        identifiers.normalise(model_display_name) if model_display_name else "model"
-    )
+    if not model_display_name:
+        semantic_model_name = "model"
+    else:
+        try:
+            semantic_model_name = identifiers.normalise(model_display_name)
+        except ValueError:
+            # A model name with no ASCII alphanumerics at all (a CJK-only
+            # name, one that is punctuation-only) has nothing for `normalise`
+            # to fold onto. Falling back to a fixed placeholder identifier,
+            # reported, keeps the document convertible instead of aborting
+            # the whole model over one unfoldable name -- the exact text is
+            # still recovered via the STASH_TML_NAME stash just below, since
+            # the placeholder never equals the original display name.
+            semantic_model_name = "model"
+            log.add(
+                code="TS-MODEL-NAME-UNNORMALISABLE",
+                severity=Severity.WARNING,
+                message=(
+                    f"model name {model_display_name!r} has no ASCII "
+                    f"alphanumerics for normalise() to fold onto; the "
+                    f"semantic model is named 'model' instead"
+                ),
+                object_ref=f"model:{model_display_name}",
+            )
     semantic_model: dict = {"name": semantic_model_name, "datasets": []}
     model_stash: dict = {}
     if semantic_model_name != model_display_name:

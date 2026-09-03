@@ -27,6 +27,11 @@ dev = [
     # so its absence never fails the suite -- the package's only *runtime* dependency
     # stays PyYAML. Same dev-group placement as converters/nvidia's pyproject.toml.
     "jsonschema>=4.26.0",
+    # Dev/test-only: drives tests/test_roundtrip_properties.py. Guarded there by
+    # pytest.importorskip("hypothesis"), same discipline as jsonschema above --
+    # the package's only runtime dependency stays PyYAML. Same dev-group
+    # placement as converters/databricks' own pyproject.toml.
+    "hypothesis>=6.0",
 ]
 
 [project]
