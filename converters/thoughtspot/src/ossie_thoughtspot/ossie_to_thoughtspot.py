@@ -85,6 +85,7 @@ from .constants import (
     FIELD_STASH_COLUMN_PROPERTIES,
     FIELD_STASH_DATA_TYPE,
     FIELD_STASH_DB_COLUMN_NAME,
+    METRIC_SHAPE_COLUMN_AGGREGATION,
     METRIC_SHAPE_FORMULA,
     METRIC_SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION,
     METRIC_STASH_SHAPE,
@@ -612,6 +613,18 @@ class _DisplayNameAllocator:
         return candidate
 
 
+def _normalise_or_self(text: str) -> str:
+    """`identifiers.normalise(text)`, or `text` itself when it has no ASCII
+    alphanumerics for `normalise` to fold onto -- the same fallback
+    `_DisplayNameAllocator.allocate` and `_formula_id_from` already use, so
+    all three agree on what "the fold key" is for a piece of text with no
+    normal form."""
+    try:
+        return identifiers.normalise(text)
+    except ValueError:
+        return text
+
+
 def _formula_id_from(display_name: str) -> str:
     """`formulas[].id` for a formula surfaced under `display_name`.
 
@@ -625,14 +638,11 @@ def _formula_id_from(display_name: str) -> str:
     written against ThoughtSpot's own slug-shaped id convention, and a
     verbatim, unnormalised id (``formula_Net Amount``) would silently break
     it while still importing (a stray space in an id is otherwise legal).
-    Falls back to the display name itself only when it has no ASCII
-    alphanumerics for `identifiers.normalise` to fold onto (the same case
-    `_DisplayNameAllocator.allocate` guards).
+    Calls `_normalise_or_self` rather than repeating its try/except, so the
+    id-minting side and `_rewrite_formula_references`'s reference-matching
+    side cannot independently drift onto two different fold rules.
     """
-    try:
-        return f"formula_{identifiers.normalise(display_name)}"
-    except ValueError:
-        return f"formula_{display_name}"
+    return f"formula_{_normalise_or_self(display_name)}"
 
 
 #: TML aggregation enum value -> the catalog `spec_name` whose DIRECT template
@@ -708,18 +718,6 @@ def _maybe_block_scalar(expr: str) -> str:
     if "{" in expr or "}" in expr:
         return block_scalar(expr)
     return expr
-
-
-def _normalise_or_self(text: str) -> str:
-    """`identifiers.normalise(text)`, or `text` itself when it has no ASCII
-    alphanumerics for `normalise` to fold onto -- the same fallback
-    `_DisplayNameAllocator.allocate` and `_formula_id_from` already use, so
-    all three agree on what "the fold key" is for a piece of text with no
-    normal form."""
-    try:
-        return identifiers.normalise(text)
-    except ValueError:
-        return text
 
 
 #: The literal prefix every formula cross-reference starts with (R3's id
@@ -1130,6 +1128,14 @@ def _build_field(
     return columns_entry, formulas_entry
 
 
+#: Every `shape` value METRIC_STASH_SHAPE's own vocabulary defines (see
+#: constants.py) -- checked against, not enumerated a second time, so a
+#: future fourth shape only needs adding there for this set to pick it up.
+_KNOWN_METRIC_SHAPES = frozenset(
+    {METRIC_SHAPE_COLUMN_AGGREGATION, METRIC_SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION, METRIC_SHAPE_FORMULA}
+)
+
+
 def _build_metric(
     metric: dict,
     allocator: _DisplayNameAllocator,
@@ -1175,6 +1181,19 @@ def _build_metric(
         return None
 
     shape = payload.get(METRIC_STASH_SHAPE, METRIC_SHAPE_FORMULA)
+    if shape not in _KNOWN_METRIC_SHAPES:
+        log.add(
+            code="TS-MODEL-METRIC-SHAPE-UNKNOWN",
+            severity=Severity.WARNING,
+            message=(
+                f"metric {display_name!r} is stashed with shape {shape!r}, which is "
+                f"not one of the shapes this converter recognises "
+                f"({sorted(_KNOWN_METRIC_SHAPES)!r}); treated as the default "
+                f"({METRIC_SHAPE_FORMULA!r}) rather than silently misapplied"
+            ),
+            object_ref=object_ref,
+        )
+        shape = METRIC_SHAPE_FORMULA
     properties: dict = {"column_type": "MEASURE"}
     formula_expr = ts_expr
 
@@ -1284,6 +1303,29 @@ def _build_field_index(
     return index
 
 
+#: R5 -- the two spellings a source join `type` can arrive as for what
+#: ThoughtSpot calls `OUTER` (its own full outer join). Matched
+#: case/whitespace-insensitively: the stash carries whatever spelling the
+#: source TML happened to use, and neither variant -- nor any casing of
+#: either -- is privileged.
+_FULL_OUTER_SPELLING = "FULL_OUTER"
+
+
+def _normalise_join_type(value: str) -> str:
+    """R5 -- a source `FULL OUTER` / `FULL_OUTER` becomes `OUTER`, in every
+    context TML accepts a join `type` at all. ThoughtSpot accepts only
+    `INNER`, `LEFT_OUTER`, `RIGHT_OUTER`, `OUTER` and rejects both `FULL_OUTER`
+    spellings identically; `OUTER` *is* ThoughtSpot's own full outer join, so
+    this is a semantics-preserving rename, never a loss -- nothing is logged
+    for it, unlike every other rewrite in this module. Every other value
+    (already one of the four TML accepts, since it came from a real TML
+    export) passes through unchanged.
+    """
+    if value.strip().upper().replace(" ", "_") == _FULL_OUTER_SPELLING:
+        return "OUTER"
+    return value
+
+
 def _restore_relationship_condition(
     from_prefix: str, to_prefix: str, from_columns: list[str], to_columns: list[str]
 ) -> str:
@@ -1319,7 +1361,7 @@ def _join_entry_for_relationship(rel: dict) -> tuple[str, dict]:
         on_expression = _restore_relationship_condition(
             from_prefix, to_prefix, rel.get("from_columns") or [], rel.get("to_columns") or []
         )
-    join_type = payload.get(RELATIONSHIP_STASH_TYPE) or "INNER"
+    join_type = _normalise_join_type(payload.get(RELATIONSHIP_STASH_TYPE) or "INNER")
     cardinality = payload.get(RELATIONSHIP_STASH_CARDINALITY) or "MANY_TO_ONE"
     return from_prefix, {
         "with": to_prefix, "on": on_expression, "type": join_type, "cardinality": cardinality,
@@ -1334,7 +1376,7 @@ def _join_entry_for_unrepresentable(entry: dict) -> tuple[str, dict]:
     from_prefix = entry.get("from") or ""
     to_prefix = entry.get("to") or ""
     on_expression = entry.get(RELATIONSHIP_STASH_ON_EXPRESSION) or ""
-    join_type = entry.get(RELATIONSHIP_STASH_TYPE) or "INNER"
+    join_type = _normalise_join_type(entry.get(RELATIONSHIP_STASH_TYPE) or "INNER")
     cardinality = entry.get(RELATIONSHIP_STASH_CARDINALITY) or "MANY_TO_ONE"
     return from_prefix, {
         "with": to_prefix, "on": on_expression, "type": join_type, "cardinality": cardinality,
