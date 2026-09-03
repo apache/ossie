@@ -175,8 +175,26 @@ class TestConvertMetric:
         assert "label" not in metric  # metrics have no label field
         assert stash.read_stash(metric)["tml_name"] == "Gross Margin %!!"
 
-    def test_a_metric_name_that_normalises_the_same_stashes_nothing(self):
+    def test_a_metric_that_needs_neither_tml_name_nor_shape_stashes_nothing(self):
         # X6: a converted document stays clean where ThoughtSpot added nothing.
+        # Both conditions have to hold at once here: the name must normalise to
+        # itself, AND the shape must be the "formula" default — the one shape
+        # that needs no stash entry, because it is also what a document with no
+        # stash defaults to on the way back.
+        log = IssueLog()
+        formulas = {"formula_Revenue": {"id": "formula_Revenue", "expr": "sum ( [A::x] )"}}
+        metric = convert_metric(
+            {"name": "revenue", "formula_id": "formula_Revenue",
+             "properties": {"column_type": "MEASURE", "aggregation": "NONE"}},
+            formulas, self._table, _resolve, log,
+        )
+        assert metric["name"] == "revenue"
+        assert "custom_extensions" not in metric
+
+    def test_shape_is_stashed_even_when_the_name_is_unchanged(self):
+        # A column_id metric is shape `column_aggregation`, not the default
+        # `formula` — it needs the stash entry regardless of whether the name
+        # also needed one, so an unchanged name must not suppress it.
         log = IssueLog()
         metric = convert_metric(
             {"name": "amount", "column_id": "ORDERS::AMOUNT",
@@ -184,7 +202,40 @@ class TestConvertMetric:
             {}, self._table, _resolve, log,
         )
         assert metric["name"] == "amount"
-        assert "custom_extensions" not in metric
+        payload = stash.read_stash(metric)
+        assert payload["shape"] == "column_aggregation"
+        assert "tml_name" not in payload
+
+    def test_each_shape_is_stashed_with_its_own_enum_value(self):
+        # Pins all three enum spellings the stash schema defines, and confirms
+        # each survives a read_stash round trip. The "formula" shape is the one
+        # value that is never written (see the empty-payload test above), so its
+        # absence here is itself the assertion for that row.
+        log = IssueLog()
+        column_aggregation_metric = convert_metric(
+            {"name": "Total Amount", "column_id": "ORDERS::AMOUNT",
+             "properties": {"column_type": "MEASURE", "aggregation": "SUM"}},
+            {}, self._table, _resolve, log,
+        )
+        formulas = {"formula_Net": {"id": "formula_Net", "expr": "[A::x] - [A::y]"}}
+        scalar_plus_aggregation_metric = convert_metric(
+            {"name": "Average Net", "formula_id": "formula_Net",
+             "properties": {"column_type": "MEASURE", "aggregation": "AVERAGE"}},
+            formulas, self._table, _resolve, log,
+        )
+        formulas = {"formula_Sum": {"id": "formula_Sum", "expr": "sum ( [A::x] )"}}
+        formula_metric = convert_metric(
+            {"name": "Odd Max Of Sum", "formula_id": "formula_Sum",
+             "properties": {"column_type": "MEASURE", "aggregation": "MAX"}},
+            formulas, self._table, _resolve, log,
+        )
+
+        assert stash.read_stash(column_aggregation_metric)["shape"] == "column_aggregation"
+        assert (
+            stash.read_stash(scalar_plus_aggregation_metric)["shape"]
+            == "scalar_formula_plus_aggregation"
+        )
+        assert "shape" not in stash.read_stash(formula_metric)
 
     def test_datatype_is_emitted_only_for_a_bare_aggregate_over_a_typed_column(self):
         log = IssueLog()
