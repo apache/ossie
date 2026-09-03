@@ -28,23 +28,24 @@ physical; anything else — a function call, an operator, several references —
 is computed and has no physical column to hold it. Only the first kind is
 handled here.
 
-Two things are unrecoverable when a physical field was never round-tripped
-through the forward direction, and both are handled by falling back to a
-documented default rather than guessing:
+Two things are unrecoverable *from the field's own expression alone*, and
+both are handled by falling back to a documented default rather than
+guessing, with the fallback always reported:
 
 * **The warehouse column's own physical name, for a field that came from a
-  real ThoughtSpot table.** Ossie has no field distinct from a Field's own
-  expression to hold it, and the forward direction matches a physical column
-  by its *display* name, never its warehouse name — so a round-tripped
-  field's bracketed reference (e.g. ``[ORDERS::Order Date]``) carries the
-  table column's display name only, not its own `db_column_name`, which may
-  have genuinely differed and has no way to travel through the trip at all.
-  The bracket's own name is reused for both the column's display name and
-  its `db_column_name`, which is correct whenever the two originally agreed
-  (the common case) and is otherwise the best available default rather than
-  an invented one — and the assumption is reported, not made silently, for
-  exactly the cases it might be wrong. A hand-authored field instead carries
-  a bare, unqualified SQL identifier for its own physical column (e.g.
+  real ThoughtSpot table.** A round-tripped field's bracketed reference
+  (e.g. ``[ORDERS::Order Date]``) carries the table column's *display* name
+  only, not its own `db_column_name` — a Model's `column_id` is matched by
+  display name, never by warehouse name. When the two genuinely differed,
+  the forward direction now stashes the true warehouse name separately
+  (`FIELD_STASH_DB_COLUMN_NAME`, Table-backed columns only), and that value
+  is used whenever present. Only when it is genuinely absent — a
+  hand-authored bracket, or a document produced before this key existed —
+  does this fall back to assuming the display name and the warehouse name
+  agree, which is correct in the common case and is reported as an
+  assumption otherwise, because a wrong guess here names a column the
+  warehouse may not have. A hand-authored field instead carries a bare,
+  unqualified SQL identifier for its own physical column (e.g.
   ``order_date``), which genuinely *is* its warehouse name, not a stand-in
   for one, so no assumption or issue is needed there. Either way,
   ``db_column_name`` is written — always, even when it is identical to the
@@ -67,7 +68,7 @@ from __future__ import annotations
 import re
 
 from . import datatypes, formula, stash
-from .constants import DIALECT
+from .constants import DIALECT, FIELD_STASH_DB_COLUMN_NAME
 from .issues import IssueLog, Severity
 from .tml import TmlDocument
 
@@ -79,10 +80,58 @@ from .tml import TmlDocument
 #: against its own dataset's source), no operators, no function calls.
 _BARE_IDENTIFIER_RE = re.compile(r'^(?:[A-Za-z_][A-Za-z0-9_]{0,127}|"[^"]{1,128}")$')
 
-#: Any source string containing whitespace reads as a query rather than a
-#: `db.schema.table` reference — a real three-part identifier never contains
-#: one, and any genuine SQL query does (at minimum a `SELECT` and a target).
+#: Any source string containing whitespace outside of a quoted identifier
+#: reads as a query rather than a `db.schema.table` reference — a real
+#: three-part identifier never contains one there, and any genuine SQL query
+#: does (at minimum a `SELECT` and a target). Whitespace *inside* a quoted
+#: identifier (`SALES.PUBLIC."ORDER TABLE"`) is a legitimate table name and
+#: must not trip this — see `_split_three_part_identifier`, which is always
+#: tried first for exactly that reason.
 _WHITESPACE_RE = re.compile(r"\s")
+
+#: A plain, unquoted ANSI SQL identifier segment.
+_PLAIN_IDENTIFIER_SEGMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _split_three_part_identifier(source: str) -> list[str] | None:
+    """`source` split on top-level `.` into its parts, or `None` when it does
+    not parse as a dotted identifier sequence at all.
+
+    Each part is either a plain unquoted identifier or a double-quoted one —
+    which may itself contain a `.`, whitespace, or any other character
+    except a literal quote, e.g. `"ORDER TABLE"`. Detecting the three-part
+    shape this way, before ever asking whether `source` merely *contains*
+    whitespace, is what keeps a quoted identifier with a space in it
+    (`SALES.PUBLIC."ORDER TABLE"`) from being misread as a query: the
+    quoted part's own whitespace is never inspected outside the quotes that
+    scope it. A genuine query fails this parse almost immediately -- its
+    first keyword is followed by a space, not a `.` or the end of the
+    string -- and falls through to the whitespace check instead.
+    """
+    parts: list[str] = []
+    i, n = 0, len(source)
+    if n == 0:
+        return None
+    while True:
+        if i >= n:
+            return None  # a trailing '.' with nothing after it
+        if source[i] == '"':
+            end = source.find('"', i + 1)
+            if end == -1 or end == i + 1:
+                return None  # unterminated or empty quoted identifier
+            parts.append(source[i + 1:end])
+            i = end + 1
+        else:
+            match = _PLAIN_IDENTIFIER_SEGMENT_RE.match(source, i)
+            if match is None:
+                return None
+            parts.append(match.group(0))
+            i = match.end()
+        if i == n:
+            return parts
+        if source[i] != ".":
+            return None
+        i += 1
 
 
 def _bare_sql_identifier(expression: str) -> str | None:
@@ -129,23 +178,29 @@ def _physical_identity(field: dict, log: IssueLog, *, object_ref: str) -> tuple[
             return None
         _table, column = bare
         # The bracket's own column part is the table's *display* name (what
-        # a Model column_id must match) -- not necessarily its warehouse
-        # db_column_name, which the forward direction never reads or stashes
-        # at all, because a physical column is matched by display name only.
-        # Whenever the two genuinely differed, that difference has no way to
-        # travel through this trip, so it is reported rather than silently
-        # assumed away: the common case (they agree) will make this fire
-        # often and harmlessly, but the alternative -- staying quiet exactly
-        # when the assumption is wrong -- is the one this package refuses to
-        # do.
+        # a Model column_id must match), not necessarily its warehouse
+        # db_column_name -- a physical column is matched by display name
+        # only. When the forward direction saw the two differ, it stashes
+        # the true warehouse name on the field, and that value is
+        # authoritative whenever present.
+        field_stash = stash.read_stash(field)
+        stashed_db_column_name = field_stash.get(FIELD_STASH_DB_COLUMN_NAME)
+        if isinstance(stashed_db_column_name, str) and stashed_db_column_name:
+            return column, stashed_db_column_name
+        # No stash to consult -- a hand-authored bracket, or a document
+        # produced before this key existed. Falling back to the display
+        # name is correct whenever the two originally agreed (the common
+        # case), but it is a genuine assumption, not a fact: a wrong guess
+        # here emits a Table column bound to a warehouse name that may not
+        # exist, so it is reported rather than made silently.
         log.add(
             code="TS-FIELD-DB-COLUMN-NAME-ASSUMED",
-            severity=Severity.INFO,
+            severity=Severity.WARNING,
             message=(
-                f"the table's original warehouse column name for {column!r} was "
-                f"not preserved by the prior TML -> Ossie trip (only its display "
-                f"name was); db_column_name is set equal to the display name, "
-                f"which is correct unless the two originally differed"
+                f"no stashed warehouse column name was found for {column!r}; "
+                f"db_column_name is set equal to the display name, which will "
+                f"name a column the warehouse does not have if the two "
+                f"originally differed"
             ),
             object_ref=object_ref,
         )
@@ -264,19 +319,21 @@ def _physical_sql_view_column(field: dict, output_aliases: dict, log: IssueLog) 
 def _derive_kind(source: str) -> tuple[str, bool]:
     """`(kind, malformed)` guessed from `source` alone.
 
-    Whitespace anywhere in `source` reads as a query: a genuine
-    `db.schema.table` reference never contains any, and a real SQL query
-    always does. Otherwise, exactly three non-empty dot-separated parts reads
-    as a table reference. Anything else is neither shape clearly enough to
-    guess, so it is reported malformed and a table is still produced --
-    `_source_parts` is what actually raises the issue for it, so the same
-    root cause is never reported twice.
+    A genuine three-part dotted identifier — quoted parts included, so a
+    quoted identifier's own internal whitespace is never mistaken for a
+    query — reads as a table reference. Failing that, whitespace anywhere
+    else in `source` reads as a query: a real `db.schema.table` reference
+    never contains any outside a quoted part, and a real SQL query always
+    does. Anything else is neither shape clearly enough to guess, so it is
+    reported malformed and a table is still produced -- `_source_parts` is
+    what actually raises the issue for it, so the same root cause is never
+    reported twice.
     """
+    parts = _split_three_part_identifier(source)
+    if parts is not None and len(parts) == 3 and all(parts):
+        return "table", False
     if _WHITESPACE_RE.search(source):
         return "sql_view", False
-    parts = source.split(".")
-    if len(parts) == 3 and all(parts):
-        return "table", False
     return "table", True
 
 
@@ -321,8 +378,8 @@ def _source_parts(dataset: dict, payload: dict, log: IssueLog, *, object_ref: st
             object_ref=object_ref,
         )
 
-    parts = source.split(".")
-    if len(parts) == 3 and all(parts):
+    parts = _split_three_part_identifier(source)
+    if parts is not None and len(parts) == 3 and all(parts):
         return parts[0], parts[1], parts[2]
 
     log.add(
@@ -438,6 +495,21 @@ def build_table(dataset: dict, log: IssueLog, *, connection_name: str | None = N
     object_ref = f"dataset:{name}"
     payload = stash.read_stash(dataset)
     connection = _connection_name(payload, connection_name, log, object_ref=object_ref)
+
+    if dataset.get("ai_context"):
+        # Neither a Table nor a SQL View document has any synonym or
+        # instruction field at all -- there is nowhere in TML for this to
+        # go, in either direction, so the loss is unconditional rather than
+        # a fallback that might be avoided with more information.
+        log.add(
+            code="TS-DATASET-AI-CONTEXT-UNSUPPORTED",
+            severity=Severity.WARNING,
+            message=(
+                "dataset ai_context has no home in a Table or SQL View "
+                "document; it is not carried into the table"
+            ),
+            object_ref=object_ref,
+        )
 
     if _decide_kind(dataset, payload) == "sql_view":
         body = _build_sql_view_body(dataset, payload, connection, log, object_ref=object_ref)
