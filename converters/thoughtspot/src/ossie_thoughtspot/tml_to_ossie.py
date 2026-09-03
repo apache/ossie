@@ -96,6 +96,7 @@ from .constants import (
     DOCUMENT_VERSION,
     FIELD_STASH_COLUMN_PROPERTIES,
     FIELD_STASH_DATA_TYPE,
+    FIELD_STASH_DATA_TYPE_WITNESS,
     FIELD_STASH_DB_COLUMN_NAME,
     METRIC_SHAPE_COLUMN_AGGREGATION,
     METRIC_SHAPE_FORMULA,
@@ -115,6 +116,7 @@ from .constants import (
     RELATIONSHIP_STASH_CARDINALITY,
     RELATIONSHIP_STASH_JOIN_SHAPE,
     RELATIONSHIP_STASH_ON_EXPRESSION,
+    RELATIONSHIP_STASH_ON_EXPRESSION_WITNESS,
     RELATIONSHIP_STASH_REFERENCING_JOIN,
     RELATIONSHIP_STASH_RESIDUAL_PREDICATES,
     RELATIONSHIP_STASH_TYPE,
@@ -916,33 +918,6 @@ def _index_attribute_columns(
     return index
 
 
-def _referenced_physical_columns(model_columns: list[dict]) -> set[tuple[str, str]]:
-    """Every `(TABLE, physical column display name)` pair some Model
-    `columns[]` entry's `column_id` names -- ATTRIBUTE and MEASURE alike.
-
-    This is broader than `_index_attribute_columns` on purpose: a
-    `column_aggregation`-shape metric surfaces its physical column just as
-    much as an ATTRIBUTE field does, so both count as "surfaced" for the
-    Dataset-level `unsurfaced_columns` question this feeds -- a physical
-    column referenced only by a metric is still part of the semantic model,
-    just not as a field. A malformed `column_id` is skipped silently here
-    rather than logged again: the field/metric conversion loop already logs
-    it once, from the same source data, and a second identical issue would
-    only be noise.
-    """
-    referenced: set[tuple[str, str]] = set()
-    for column in model_columns:
-        column_id = column.get("column_id")
-        if not column_id:
-            continue
-        try:
-            table_name, physical_name = identifiers.split_column_ref(f"[{column_id}]")
-        except ValueError:
-            continue
-        referenced.add((table_name, physical_name))
-    return referenced
-
-
 def _raw_physical_columns(body: dict, kind: str) -> list[dict]:
     """The verbatim physical-column list for a Table or SQL View document --
     `columns[]` for a `table:`, `sql_view_columns[]` for a `sql_view:`.
@@ -1048,6 +1023,12 @@ def _physical_column_stash(
     canonical = _CANONICAL_TML_SPELLING.get(ossie_datatype) if ossie_datatype else None
     if raw_data_type is not None and canonical is not None and raw_data_type != canonical:
         payload[FIELD_STASH_DATA_TYPE] = raw_data_type
+        # X5's witness: the Ossie datatype this spelling was derived from, so
+        # the reverse direction can tell a genuine edit (the field now
+        # declares a different datatype) from an unedited round trip before
+        # trusting a warehouse-specific spelling for a type it may no longer
+        # describe.
+        payload[FIELD_STASH_DATA_TYPE_WITNESS] = ossie_datatype
 
     return payload
 
@@ -1474,6 +1455,13 @@ def _relationship_from_join(
     if has_residuals:
         rel_stash[RELATIONSHIP_STASH_ON_EXPRESSION] = on_expression
         rel_stash[RELATIONSHIP_STASH_RESIDUAL_PREDICATES] = residuals
+        # X5's witness: from_columns/to_columns exactly as emitted above, so
+        # the reverse direction can tell whether the relationship has been
+        # retargeted since this stash was written before trusting the
+        # verbatim on_expression (and the residual narrowing riding with it).
+        rel_stash[RELATIONSHIP_STASH_ON_EXPRESSION_WITNESS] = [
+            relationship["from_columns"], relationship["to_columns"],
+        ]
         log.add(
             code="TS-JOIN-RESIDUAL-PREDICATES",
             severity=Severity.WARNING,
@@ -1862,17 +1850,37 @@ def convert(document_set: DocumentSet) -> OssieConversion:
                 model_stash.setdefault(MODEL_STASH_UNATTRIBUTED_FORMULAS, []).append(unattributed)
 
     # -- Phase 3.5: unsurfaced physical columns, and SQL View output aliases --
-    # A Table/SQL-View column no Model columns[] entry surfaces -- by
-    # column_id, field or metric alike -- is not part of the semantic
-    # model, but has to be preserved verbatim (Dataset-level mapping,
-    # "fields" row) so the source document can be regenerated exactly on
-    # the way back. `_raw_physical_columns` reads whichever key this
-    # dataset's document kind actually uses (`columns[]` or
-    # `sql_view_columns[]`) -- the RAW entries, not the datatype-lookup
+    # A Table/SQL-View column with no Ossie FIELD of its own is not part of
+    # the semantic model *as a field*, but has to be preserved verbatim
+    # (Dataset-level mapping, "fields" row) so the source document can be
+    # regenerated exactly on the way back. `_raw_physical_columns` reads
+    # whichever key this dataset's document kind actually uses (`columns[]`
+    # or `sql_view_columns[]`) -- the RAW entries, not the datatype-lookup
     # shape `_normalized_physical_column` builds, since regenerating a SQL
     # View column needs its own `sql_output_column` key back, not a
     # `db_column_name` this converter invented for lookup purposes.
-    referenced_columns = _referenced_physical_columns(model_columns)
+    #
+    # This is deliberately keyed on `attribute_index` -- which physical
+    # columns became an ATTRIBUTE *field* -- and not on every column_id any
+    # Model `columns[]` entry names (ATTRIBUTE and MEASURE alike). An
+    # earlier revision used the broader set, reasoning that a
+    # `column_aggregation`-shape metric surfaces its physical column just as
+    # much as an ATTRIBUTE field does. That is true as far as it goes, but
+    # nothing else preserves that column's definition: a metric has no
+    # `column_id` field in Ossie at all (R4) -- it carries only the composed
+    # THOUGHTSPOT-dialect expression, verbatim, with the bracket reference
+    # inside it -- so the physical column it names was silently dropped from
+    # both `fields` and `unsurfaced_columns`. `build_table` on the way back
+    # then regenerated a Table with no such column, while `build_model`
+    # still emitted a metric formula referencing it: a dangling
+    # `[TABLE::Column]` reference in an otherwise-valid document, the same
+    # "portable expression naming a column that does not exist" failure
+    # mode a plain round trip is the only way to catch. A physical column
+    # referenced only by a metric is therefore captured here exactly like
+    # one referenced by nothing at all -- redundant with the metric's own
+    # verbatim expression, but redundancy is what makes the Table document
+    # regenerable independently of which metrics happen to reference it.
+    referenced_columns = set(attribute_index)
     for prefix in dataset_order:
         kind = "sql_view" if dataset_stashes[prefix].get(DATASET_STASH_TML_OBJECT) == "sql_view" else "table"
         raw_columns = _raw_physical_columns(table_docs.get(prefix) or {}, kind)
