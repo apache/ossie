@@ -665,7 +665,7 @@ def _formula_id_from(display_name: str) -> str:
     id-minting side and `_rewrite_formula_references`'s reference-matching
     side cannot independently drift onto two different fold rules.
     """
-    return f"formula_{_normalise_or_self(display_name)}"
+    return f"{formula.FORMULA_REFERENCE_PREFIX}{_normalise_or_self(display_name)}"
 
 
 #: TML aggregation enum value -> the catalog `spec_name` whose DIRECT template
@@ -743,12 +743,6 @@ def _maybe_block_scalar(expr: str) -> str:
     return expr
 
 
-#: The literal prefix every formula cross-reference starts with (R3's id
-#: form, `[formula_Name]`) -- distinct from a bare runtime-parameter
-#: reference (`[Discount Threshold]`), which never starts with this prefix.
-_FORMULA_REFERENCE_PREFIX = "formula_"
-
-
 def _rewrite_formula_references(
     expr: str,
     formula_id_by_normalised_name: dict[str, str],
@@ -786,9 +780,9 @@ def _rewrite_formula_references(
     out: list[str] = []
     cursor = 0
     for start, end, body in formula._bracketed_spans(expr):
-        if "::" in body or not body.startswith(_FORMULA_REFERENCE_PREFIX):
+        if "::" in body or not formula.is_formula_reference(body):
             continue
-        referenced_name = body[len(_FORMULA_REFERENCE_PREFIX):]
+        referenced_name = body[len(formula.FORMULA_REFERENCE_PREFIX):]
         target_id = formula_id_by_normalised_name.get(_normalise_or_self(referenced_name))
         out.append(expr[cursor:start])
         if target_id is None:
