@@ -396,6 +396,16 @@ _AGGREGATION = {
 #: of rows.
 _COUNT_AGGREGATIONS = frozenset({"COUNT", "COUNT_DISTINCT"})
 
+#: The three TML shapes a metric can arrive as (the stash's `shape` key), so a
+#: return trip can reproduce the source shape instead of collapsing every metric
+#: into the same one. `_SHAPE_FORMULA` is also what a document with no stash at
+#: all defaults to on the way back — a plain formulas[] entry, aggregate already
+#: baked into its expr — so it is the one value never worth writing to the stash:
+#: writing it or omitting it produces the same reconstruction either way.
+_SHAPE_COLUMN_AGGREGATION = "column_aggregation"
+_SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION = "scalar_formula_plus_aggregation"
+_SHAPE_FORMULA = "formula"
+
 #: TML column aggregation -> the catalog `spec_name` whose DIRECT template is
 #: ThoughtSpot's own native rendering of that aggregate (`"sum ( {0} )"`,
 #: `"unique count ( {0} )"`, ...). Reused for two different jobs: composing the
@@ -552,6 +562,13 @@ def convert_metric(
     Metrics have no `label` field (unlike fields): when ID1 normalisation changes
     the identifier, the exact ThoughtSpot display name is stashed as `tml_name`
     rather than carried in a dedicated field.
+
+    Which of the three TML shapes produced this metric — `column_aggregation`,
+    `scalar_formula_plus_aggregation`, or `formula` — is stashed as `shape`, so a
+    return trip can reproduce the source shape instead of collapsing all three
+    into one. `formula` is omitted rather than written: it is also what a
+    document with no stash defaults to on the way back, so writing it would
+    change nothing about the reconstruction while making the payload heavier.
     """
     properties = column.get("properties") or {}
     if properties.get("column_type") != "MEASURE":
@@ -579,6 +596,7 @@ def convert_metric(
     metric: dict = {"name": normalised_name}
 
     if "column_id" in column:
+        metric_shape = _SHAPE_COLUMN_AGGREGATION
         table_name, column_name = identifiers.split_column_ref(f"[{column['column_id']}]")
         field_ref = identifiers.format_column_ref(table_name, column_name)
         if aggregation is None:
@@ -621,6 +639,7 @@ def convert_metric(
         expr = formula_entry["expr"]
         if aggregation is not None and not _is_aggregate_expression(expr):
             # A scalar expr: the column aggregation is load-bearing, so compose it.
+            metric_shape = _SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION
             dialects = _compose_aggregate_entries(
                 expr, aggregation_raw, resolve, log, object_ref=object_ref
             )
@@ -628,6 +647,7 @@ def convert_metric(
             # Either NONE (nothing to compose) or an expr that is already an
             # aggregate (the column aggregation is a documented no-op) — either way
             # the verbatim expr, untouched, is the whole metric.
+            metric_shape = _SHAPE_FORMULA
             dialects = expression_entries(expr, resolve, log, object_ref=object_ref)
         metric["expression"] = {"dialects": dialects}
         # A formula carries no declared type anywhere in TML — neither columns[] nor
@@ -645,8 +665,12 @@ def convert_metric(
         )
         return None
 
+    stash_payload: dict = {}
     if normalised_name != display_name:
-        metric = stash.write_stash(metric, {"tml_name": display_name})
+        stash_payload["tml_name"] = display_name
+    if metric_shape != _SHAPE_FORMULA:
+        stash_payload["shape"] = metric_shape
+    metric = stash.write_stash(metric, stash_payload)
 
     description = column.get("description")
     if description:
