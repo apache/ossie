@@ -198,12 +198,16 @@ class TestAliasPrefix:
 
         # The metric's expression resolves through the ALIAS, not "ADDRESSES" --
         # proof `resolve()` keys off the alias end to end, not just the
-        # column_id -> field mapping. The dataset-qualified name preserves the
-        # alias's exact case, per the Dataset-level mapping's "name...exactly,
-        # case-sensitive" rule.
+        # column_id -> field mapping. The dataset qualifier preserves the
+        # alias's exact case (Dataset-level mapping's "name...exactly,
+        # case-sensitive" rule); the column itself is the WAREHOUSE name
+        # ("CITY", from _column("City", "CITY", ...)), not the Ossie
+        # field's own display-derived identifier ("ship_city") -- a bare
+        # reference's portable sibling names the physical column, per the
+        # mapping document.
         metric = semantic_model["metrics"][0]
         dialects = {d["dialect"]: d["expression"] for d in metric["expression"]["dialects"]}
-        assert dialects["ANSI_SQL"] == "COUNT(DISTINCT ShippingAddress.ship_city)"
+        assert dialects["ANSI_SQL"] == "COUNT(DISTINCT ShippingAddress.CITY)"
 
         # No unresolved-reference issue should have fired for the aliased column.
         assert not any(i["code"] == "TS-EXPR-UNRESOLVED" for i in result.issues.as_dicts())
@@ -514,7 +518,11 @@ class TestUnconsumedColumnProperties:
     assembler now stashes the complement of what the converter actually
     reads, rather than an enumeration of known ThoughtSpot-only names."""
 
-    ORDERS = _table("ORDERS", columns=[_column("Amount", "AMOUNT", "DOUBLE")])
+    # db_column_name matches the display name exactly, so these tests'
+    # "no extra properties" premises are not disturbed by the separate
+    # db_column_name-preservation stash (TestPhysicalColumnStash covers
+    # that dimension on its own fixtures).
+    ORDERS = _table("ORDERS", columns=[_column("Amount", "Amount", "DOUBLE")])
 
     def _convert_one(self, properties):
         model = _model(
@@ -950,3 +958,126 @@ class TestSqlViewColumns:
         assert datasets["VW"]["fields"][0]["datatype"] == "Integer"
         assert _own_stash(datasets["VW"])["tml_object"] == "sql_view"
         assert result.issues.as_dicts() == []
+
+
+class TestPhysicalColumnReferences:
+    """The mapping document is explicit for a bare-identifier field: "the
+    identifier is the *physical* column; the display name comes from
+    label/name." resolve() used to build the ANSI_SQL sibling from the
+    Ossie field's own display-derived identifier instead -- confident,
+    well-formed SQL that names a column the warehouse does not have,
+    wrong in every model where a display name differs from its physical
+    column, which is the normal case in any curated model."""
+
+    def test_a_differing_db_column_name_is_used_in_the_portable_expression(self):
+        orders = _table("ORDERS", columns=[_column("Amount", "AMT_RAW", "DOUBLE")])
+        model = _model(model_tables=[{"name": "ORDERS"}], columns=[_attribute("Amount", "ORDERS::Amount")])
+        result = convert(_document_set(model, orders))
+        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        dialects = {d["dialect"]: d["expression"] for d in field["expression"]["dialects"]}
+        assert dialects["ANSI_SQL"] == "ORDERS.AMT_RAW"
+
+    def test_an_equal_db_column_name_still_resolves(self):
+        orders = _table("ORDERS", columns=[_column("Amount", "Amount", "DOUBLE")])
+        model = _model(model_tables=[{"name": "ORDERS"}], columns=[_attribute("Amount", "ORDERS::Amount")])
+        result = convert(_document_set(model, orders))
+        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        dialects = {d["dialect"]: d["expression"] for d in field["expression"]["dialects"]}
+        assert dialects["ANSI_SQL"] == "ORDERS.Amount"
+
+    def test_a_sql_view_reference_uses_sql_output_column_not_db_column_name(self):
+        vw = _sql_view("VW", columns=[_sql_view_column("CID", "c_id", "INT64")])
+        model = _model(model_tables=[{"name": "VW"}], columns=[_attribute("Cid", "VW::CID")])
+        result = convert(_document_set(model, vw))
+        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        dialects = {d["dialect"]: d["expression"] for d in field["expression"]["dialects"]}
+        assert dialects["ANSI_SQL"] == "VW.c_id"
+
+    def test_a_computed_field_referencing_a_renamed_column_still_resolves(self):
+        orders = _table("ORDERS", columns=[_column("Amount", "AMT_RAW", "DOUBLE")])
+        model = _model(
+            model_tables=[{"name": "ORDERS"}],
+            columns=[
+                _attribute("Amount", "ORDERS::Amount"),
+                {"name": "Doubled", "formula_id": "formula_doubled",
+                 "properties": {"column_type": "ATTRIBUTE"}},
+            ],
+            formulas=[{"id": "formula_doubled", "name": "Doubled", "expr": "[ORDERS::Amount]"}],
+        )
+        result = convert(_document_set(model, orders))
+        fields = {f["name"]: f for f in result.model["semantic_model"][0]["datasets"][0]["fields"]}
+        doubled_dialects = {d["dialect"]: d["expression"] for d in fields["doubled"]["expression"]["dialects"]}
+        assert doubled_dialects["ANSI_SQL"] == "ORDERS.AMT_RAW"
+        assert result.issues.as_dicts() == []
+
+
+class TestPhysicalColumnStash:
+    """`data_type`'s connection-dependent spelling (BOOL/BOOLEAN,
+    DOUBLE/FLOAT) and a Table column's `db_column_name` are both
+    unrecoverable by the reverse direction unless the forward direction
+    records them -- the datatype map says so explicitly for the former; the
+    latter has no documented stash slot at all yet but is just as lost
+    without one, since the display name is all a round-tripped bracket
+    reference carries."""
+
+    def test_a_non_canonical_boolean_spelling_is_stashed(self):
+        orders = _table("ORDERS", columns=[_column("Is Active", "Is Active", "BOOL")])
+        model = _model(model_tables=[{"name": "ORDERS"}], columns=[_attribute("Is Active", "ORDERS::Is Active")])
+        result = convert(_document_set(model, orders))
+        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        assert field["datatype"] == "Boolean"
+        assert _own_stash(field)["data_type"] == "BOOL"
+
+    def test_the_canonical_boolean_spelling_is_not_stashed(self):
+        orders = _table("ORDERS", columns=[_column("Is Active", "Is Active", "BOOLEAN")])
+        model = _model(model_tables=[{"name": "ORDERS"}], columns=[_attribute("Is Active", "ORDERS::Is Active")])
+        result = convert(_document_set(model, orders))
+        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        assert field["datatype"] == "Boolean"
+        assert "custom_extensions" not in field
+
+    def test_a_float_column_stashes_its_float_spelling(self):
+        orders = _table("ORDERS", columns=[_column("Rate", "Rate", "FLOAT")])
+        model = _model(model_tables=[{"name": "ORDERS"}], columns=[_attribute("Rate", "ORDERS::Rate")])
+        result = convert(_document_set(model, orders))
+        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        assert field["datatype"] == "Float"
+        assert _own_stash(field)["data_type"] == "FLOAT"
+
+    def test_a_differing_db_column_name_is_stashed_on_a_table_column(self):
+        orders = _table("ORDERS", columns=[_column("Amount", "AMT_RAW", "DOUBLE")])
+        model = _model(model_tables=[{"name": "ORDERS"}], columns=[_attribute("Amount", "ORDERS::Amount")])
+        result = convert(_document_set(model, orders))
+        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        assert _own_stash(field)["db_column_name"] == "AMT_RAW"
+
+    def test_an_equal_db_column_name_is_not_stashed(self):
+        orders = _table("ORDERS", columns=[_column("Amount", "Amount", "DOUBLE")])
+        model = _model(model_tables=[{"name": "ORDERS"}], columns=[_attribute("Amount", "ORDERS::Amount")])
+        result = convert(_document_set(model, orders))
+        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        assert "custom_extensions" not in field
+
+    def test_a_sql_view_column_never_gets_a_db_column_name_stash(self):
+        # sql_output_columns (dataset-level) already carries this fact for
+        # a SQL View -- a field-level db_column_name would be a redundant
+        # second copy of the same information under a different name.
+        vw = _sql_view("VW", columns=[_sql_view_column("CID", "c_id", "INT64")])
+        model = _model(model_tables=[{"name": "VW"}], columns=[_attribute("Cid", "VW::CID")])
+        result = convert(_document_set(model, vw))
+        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        assert "custom_extensions" not in field
+        dataset_stash = _own_stash(result.model["semantic_model"][0]["datasets"][0])
+        assert dataset_stash["sql_output_columns"] == {"cid": "c_id"}
+
+    def test_a_metric_bound_to_a_physical_column_gets_the_same_stash(self):
+        orders = _table("ORDERS", columns=[_column("Amount", "AMT_RAW", "BOOL")])
+        model = _model(
+            model_tables=[{"name": "ORDERS"}],
+            columns=[{"name": "Amount", "column_id": "ORDERS::Amount",
+                      "properties": {"column_type": "MEASURE", "aggregation": "COUNT"}}],
+        )
+        result = convert(_document_set(model, orders))
+        metric = result.model["semantic_model"][0]["metrics"][0]
+        stashed = _own_stash(metric)
+        assert stashed["db_column_name"] == "AMT_RAW"
