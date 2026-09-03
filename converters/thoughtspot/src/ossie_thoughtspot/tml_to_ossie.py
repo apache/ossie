@@ -80,7 +80,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from . import datatypes, formula, identifiers, keys, stash
-from .constants import DIALECT, DOCUMENT_VERSION, PORTABLE_DIALECT
+from .constants import DIALECT, DOCUMENT_VERSION, FIELD_STASH_DB_COLUMN_NAME, PORTABLE_DIALECT
 from .errors import ConversionError
 from .expressions import CATALOG, Variant, emit_direct
 from .issues import IssueLog, Severity
@@ -1004,7 +1004,7 @@ def _physical_column_stash(
     is_table = dataset_stashes.get(table_name, {}).get("tml_object") != "sql_view"
     db_column_name = physical.get("db_column_name")
     if is_table and db_column_name is not None and db_column_name != physical_name:
-        payload["db_column_name"] = db_column_name
+        payload[FIELD_STASH_DB_COLUMN_NAME] = db_column_name
 
     raw_data_type = (physical.get("db_column_properties") or {}).get("data_type")
     canonical = _CANONICAL_TML_SPELLING.get(ossie_datatype) if ossie_datatype else None
