@@ -485,3 +485,78 @@ class TestOwnChoice:
         unrep = model_stash["unrepresentable_joins"][0]
         assert unrep["on_expression"] == bad_condition
         assert any(i["code"] == "TS-JOIN-MALFORMED" for i in result.issues.as_dicts())
+
+
+class TestUnconsumedColumnProperties:
+    """Neither convert_field nor convert_metric preserves a ThoughtSpot-only
+    column property (`index_type`, `value_casing`, ...): they never returned
+    a fragment for the assembler to merge, so it vanished with no issue. The
+    assembler now stashes the complement of what the converter actually
+    reads, rather than an enumeration of known ThoughtSpot-only names."""
+
+    ORDERS = _table("ORDERS", columns=[_column("Amount", "AMOUNT", "DOUBLE")])
+
+    def _convert_one(self, properties):
+        model = _model(
+            model_tables=[{"name": "ORDERS"}],
+            columns=[{"name": "Amount", "column_id": "ORDERS::Amount", "properties": properties}],
+        )
+        return convert(_document_set(model, self.ORDERS))
+
+    def test_thoughtspot_only_properties_round_trip_into_column_properties(self):
+        result = self._convert_one(
+            {"column_type": "ATTRIBUTE", "index_type": "DONT_INDEX", "value_casing": "UPPER"}
+        )
+        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        assert _own_stash(field)["column_properties"] == {
+            "index_type": "DONT_INDEX", "value_casing": "UPPER",
+        }
+
+    def test_a_metric_with_only_consumed_properties_gets_no_column_properties_key(self):
+        result = self._convert_one({"column_type": "MEASURE", "aggregation": "SUM"})
+        metric = result.model["semantic_model"][0]["metrics"][0]
+        stashed = _own_stash(metric) or {}
+        assert "column_properties" not in stashed
+
+    def test_a_column_with_no_extra_properties_gets_no_extension_entry(self):
+        result = self._convert_one({"column_type": "ATTRIBUTE"})
+        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        assert "custom_extensions" not in field
+
+    def test_an_unknown_invented_property_name_is_preserved(self):
+        # The fail-closed property itself: a name this converter has never
+        # heard of must still survive, because the rule is "everything not
+        # consumed", not "everything on a known list".
+        result = self._convert_one(
+            {"column_type": "ATTRIBUTE", "a_property_ossie_thoughtspot_has_never_seen": 42}
+        )
+        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        assert _own_stash(field)["column_properties"] == {
+            "a_property_ossie_thoughtspot_has_never_seen": 42
+        }
+
+    def test_the_metric_side_behaves_the_same_as_the_field_side(self):
+        result = self._convert_one(
+            {"column_type": "MEASURE", "aggregation": "SUM", "index_type": "DONT_INDEX"}
+        )
+        metric = result.model["semantic_model"][0]["metrics"][0]
+        assert _own_stash(metric)["column_properties"] == {"index_type": "DONT_INDEX"}
+
+    def test_identity_shaped_content_nested_in_a_property_value_is_dropped_not_stashed(self):
+        # Found while re-verifying X8 for this fix: the complement copies an
+        # unconsumed property's *value* wholesale, and a real, documented
+        # ThoughtSpot shape (geo_config naming a custom map) carries a GUID
+        # nested inside that value -- not as a top-level payload key, which
+        # is all stash.write_stash's own guard checks. Dropped, not stashed,
+        # with an issue -- silently widening what "column_properties" leaks
+        # would be worse than the original gap.
+        result = self._convert_one({
+            "column_type": "ATTRIBUTE",
+            "index_type": "DONT_INDEX",
+            "geo_config": {"custom_file_guid": "map-guid-123", "geometryType": "polygon"},
+        })
+        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        assert _own_stash(field)["column_properties"] == {"index_type": "DONT_INDEX"}
+        serialised = json.dumps(result.model)
+        assert "guid" not in serialised
+        assert any(i["code"] == "TS-PROPERTY-IDENTITY-DROPPED" for i in result.issues.as_dicts())
