@@ -57,6 +57,25 @@ def _column(name, db_column_name=None, data_type="VARCHAR"):
     }
 
 
+def _sql_view(name, sql_query="SELECT 1", columns=None, connection="My Snowflake", **extra):
+    body = {
+        "name": name,
+        "sql_query": sql_query,
+        "connection": {"name": connection},
+        "sql_view_columns": columns or [],
+    }
+    body.update(extra)
+    return TmlDocument(kind="sql_view", body=body, guid=None)
+
+
+def _sql_view_column(name, sql_output_column=None, data_type="VARCHAR"):
+    return {
+        "name": name,
+        "sql_output_column": sql_output_column or name,
+        "db_column_properties": {"data_type": data_type},
+    }
+
+
 def _attribute(name, column_id):
     return {"name": name, "column_id": column_id, "properties": {"column_type": "ATTRIBUTE"}}
 
@@ -854,3 +873,80 @@ class TestKeyDerivationEdgeCasesCommitted:
         assert "unique_keys" not in customers_ds
         rel = semantic_model["relationships"][0]
         assert _own_stash(rel)["cardinality"] == "MANY_TO_MANY"
+
+
+class TestSqlViewColumns:
+    """A SQL View document's columns live under sql_view_columns[], not
+    columns[] -- a different key entirely, not a differently-shaped entry
+    under the same one. Reading the wrong key silently finds nothing for
+    every column of every SQL View: no datatype resolves, and every column
+    reads as unsurfaced regardless of whether the Model actually surfaces
+    it."""
+
+    def test_a_surfaced_sql_view_column_resolves_its_datatype(self):
+        vw = _sql_view("VW", columns=[
+            _sql_view_column("CID", "c_id", "INT64"),
+        ])
+        model = _model(
+            model_tables=[{"name": "VW"}],
+            columns=[_attribute("Cid", "VW::CID")],
+        )
+        result = convert(_document_set(model, vw))
+        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        assert field["datatype"] == "Integer"
+        assert result.issues.as_dicts() == []
+
+    def test_an_unsurfaced_sql_view_column_is_stashed_verbatim(self):
+        vw = _sql_view("VW", columns=[
+            _sql_view_column("CID", "c_id", "INT64"),
+            _sql_view_column("Never Surfaced", "x", "VARCHAR"),
+        ])
+        model = _model(
+            model_tables=[{"name": "VW"}],
+            columns=[_attribute("Cid", "VW::CID")],
+        )
+        result = convert(_document_set(model, vw))
+        dataset = result.model["semantic_model"][0]["datasets"][0]
+        unsurfaced = _own_stash(dataset)["unsurfaced_columns"]
+        assert len(unsurfaced) == 1
+        assert unsurfaced[0]["name"] == "Never Surfaced"
+        # Verbatim -- the SQL View's own key name, not the datatype-lookup
+        # translation this converter builds internally for its own use.
+        assert unsurfaced[0]["sql_output_column"] == "x"
+        assert "db_column_name" not in unsurfaced[0]
+
+    def test_sql_output_column_differing_from_name_is_stashed(self):
+        vw = _sql_view("VW", columns=[
+            _sql_view_column("Customer Id", sql_output_column="cust_id_out", data_type="INT64"),
+        ])
+        model = _model(
+            model_tables=[{"name": "VW"}],
+            columns=[_attribute("Customer Id", "VW::Customer Id")],
+        )
+        result = convert(_document_set(model, vw))
+        dataset = result.model["semantic_model"][0]["datasets"][0]
+        field_name = dataset["fields"][0]["name"]
+        assert field_name == "customer_id"
+        stashed = _own_stash(dataset)
+        assert stashed["sql_output_columns"] == {"customer_id": "cust_id_out"}
+
+    def test_a_mixed_document_set_with_a_table_and_a_sql_view_both_convert(self):
+        orders = _table("ORDERS", columns=[_column("Amount", "AMOUNT", "DOUBLE")])
+        vw = _sql_view("VW", columns=[_sql_view_column("CID", "c_id", "INT64")])
+        model = _model(
+            model_tables=[{"name": "ORDERS"}, {"name": "VW"}],
+            columns=[
+                _attribute("Amount", "ORDERS::Amount"),
+                _attribute("Cid", "VW::CID"),
+            ],
+        )
+        result = convert(_document_set(model, orders, vw))
+        datasets = {d["name"]: d for d in result.model["semantic_model"][0]["datasets"]}
+
+        assert datasets["ORDERS"]["source"] == "SALES.PUBLIC.ORDERS"
+        assert datasets["ORDERS"]["fields"][0]["datatype"] == "Decimal"
+
+        assert datasets["VW"]["source"] == "SELECT 1"
+        assert datasets["VW"]["fields"][0]["datatype"] == "Integer"
+        assert _own_stash(datasets["VW"])["tml_object"] == "sql_view"
+        assert result.issues.as_dicts() == []
