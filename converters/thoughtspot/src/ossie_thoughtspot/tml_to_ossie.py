@@ -55,16 +55,19 @@ A `MEASURE` column becomes a metric instead of a field, built by `convert_metric
 Its one genuinely tricky rule is easy to get backwards in a way that still imports cleanly
 and produces wrong numbers: the surfacing column's `aggregation` is load-bearing on a
 `column_id` metric and on a *scalar*-formula metric (the two compose — `AGG(<scalar
-expr>)`, never the bare scalar) but a no-op on an *aggregate*-formula metric, which already
-carries its own rollup. Composing when the rule says no-op, or leaving bare when the rule
-says compose, silently changes the grain the metric evaluates at while the model still
-imports. Whether a formula's own outer call is already a native ThoughtSpot aggregate is
-decided by `_is_aggregate_expression`, which reads ThoughtSpot's aggregate call names off
-the same expression catalog `_compose_aggregate_entries` uses to build the composed
-rendering — one source for both jobs, so they cannot silently drift apart the way two
-independently hand-typed lists could. And unlike a field, a metric has no `label`: when
-ID1 normalisation changes the identifier, the exact display name has nowhere to go but the
-`custom_extensions` stash.
+expr>)`, never the bare scalar) but a no-op on a formula whose expression already
+aggregates, which already carries its own rollup. Composing when the rule says no-op, or
+leaving bare when the rule says compose, silently changes the grain the metric evaluates
+at while the model still imports — and "already aggregates" means at *any* depth, not
+only as the expression's own outer call: `group_aggregate ( sum ( ... ) , ... )` and
+`round ( sum ( ... ) , 2 )` both already aggregate even though their own outer call
+(`group_aggregate`, `round`) is not itself what does it. Whether an expression already
+aggregates anywhere in it is decided by `_contains_aggregate_call`, which reads
+ThoughtSpot's aggregate call names off the same expression catalog
+`_compose_aggregate_entries` uses to build the composed rendering — one source for both
+jobs, so they cannot silently drift apart the way two independently hand-typed lists
+could. And unlike a field, a metric has no `label`: when ID1 normalisation changes the
+identifier, the exact display name has nowhere to go but the `custom_extensions` stash.
 """
 from __future__ import annotations
 
@@ -72,7 +75,7 @@ from typing import Callable
 
 from . import datatypes, formula, identifiers, stash
 from .constants import DIALECT, PORTABLE_DIALECT
-from .expressions import CATALOG, emit_direct
+from .expressions import CATALOG, Variant, emit_direct
 from .issues import IssueLog, Severity
 
 
@@ -82,6 +85,7 @@ def expression_entries(
     log: IssueLog,
     *,
     object_ref: str,
+    kind: str = "field",
 ) -> list[dict[str, str]]:
     """The dialect entries for one ThoughtSpot expression.
 
@@ -92,6 +96,12 @@ def expression_entries(
     a dataset. Every other shape — a runtime parameter, an unresolvable reference, a
     function call, a compound expression — gets an issue instead of a guessed
     translation, and only the verbatim entry is returned.
+
+    `kind` names the Ossie object this expression belongs to ("field" or "metric") —
+    used only in issue text, so a metric's non-portability issue reads "...evaluate
+    this metric" rather than the field-shaped default. `object_ref` already carries
+    this distinction (`field:...` vs `metric:...`); `kind` exists so the message
+    itself agrees with it instead of contradicting it.
     """
     entries: list[dict[str, str]] = [{"dialect": DIALECT, "expression": expr}]
 
@@ -135,7 +145,7 @@ def expression_entries(
         severity=Severity.INFO,
         message=(
             "expression is emitted in the THOUGHTSPOT dialect only; a consumer that "
-            "does not implement it will not be able to evaluate this field"
+            f"does not implement it will not be able to evaluate this {kind}"
         ),
         object_ref=object_ref,
     )
@@ -224,6 +234,7 @@ def _physical_datatype(
     log: IssueLog,
     *,
     object_ref: str,
+    kind: str = "field",
 ) -> str | None:
     """The Ossie datatype for a physical column, or `None` when it cannot be found.
 
@@ -237,7 +248,14 @@ def _physical_datatype(
     present but unrecognised by `datatypes.to_ossie` is different: the warehouse
     told us the type and it is about to be dropped on the floor, so that case
     logs an issue naming the type before returning `None`.
+
+    `kind` ("field" or "metric") names the Ossie object being built, both in the
+    issue code (`TS-FIELD-...` vs `TS-METRIC-...`) and in the message text, so a
+    metric calling this does not raise a `TS-FIELD-*` code or say "field" about
+    itself — `object_ref` already says `metric:...`, and the code and message
+    need to agree with it.
     """
+    code_prefix = f"TS-{kind.upper()}"
     table = table_lookup(table_name)
     physical = None
     if table is not None:
@@ -247,11 +265,11 @@ def _physical_datatype(
                 break
     if physical is None:
         log.add(
-            code="TS-FIELD-PHYSICAL-COLUMN-MISSING",
+            code=f"{code_prefix}-PHYSICAL-COLUMN-MISSING",
             severity=Severity.WARNING,
             message=(
                 f"physical column {column_name!r} was not found on table "
-                f"{table_name!r}; no datatype is emitted for this field"
+                f"{table_name!r}; no datatype is emitted for this {kind}"
             ),
             object_ref=object_ref,
         )
@@ -262,12 +280,12 @@ def _physical_datatype(
     ossie_type = datatypes.to_ossie(data_type)
     if ossie_type is None:
         log.add(
-            code="TS-FIELD-DATATYPE-UNMAPPED",
+            code=f"{code_prefix}-DATATYPE-UNMAPPED",
             severity=Severity.WARNING,
             message=(
                 f"physical column {column_name!r} on table {table_name!r} has "
                 f"warehouse data_type {data_type!r}, which has no Ossie "
-                f"equivalent; no datatype is emitted for this field"
+                f"equivalent; no datatype is emitted for this {kind}"
             ),
             object_ref=object_ref,
         )
@@ -422,44 +440,57 @@ _AGGREGATION_CATALOG_SPEC = {
 
 #: MEDIAN(expr) has no TML `aggregation` enum counterpart at all, but `median ( ... )`
 #: is a genuine native ThoughtSpot aggregate and must still be recognised as one when
-#: it is a formula's own outer call — see `_is_aggregate_expression`.
+#: it appears in an expression — see `_contains_aggregate_call`.
 _NATIVE_AGGREGATE_SPECS = (*_AGGREGATION_CATALOG_SPEC.values(), "MEDIAN(expr)")
 
-#: Every ThoughtSpot native aggregate call name, lower-cased, derived from the
-#: catalog's own DIRECT templates via the same `emit_direct` the rest of this package
-#: uses to render them — never retyped by hand. See the task report for why this,
-#: and not a short hand-written list, was chosen: a hand-written list can silently
-#: drift from the catalog (the mapping document's own aggregation row was corrected
-#: once already for a related reason), while this recomputes from the templates
-#: every time they change.
-_AGGREGATE_CALL_NAMES = frozenset(
-    formula.split_call(emit_direct(CATALOG[spec], ["x"]))[0].lower()
-    for spec in _NATIVE_AGGREGATE_SPECS
+#: `group_aggregate` is ThoughtSpot's own construct for a grouped/windowed
+#: aggregation — the *performant* pattern the catalog's window-function rows
+#: prefer over a raw `sql_*_aggregate_op` pass-through — and it is not a target of
+#: any TML `aggregation` enum value, so it cannot come from `_AGGREGATION_CATALOG_SPEC`.
+#: There is exactly one such construct, so it is named directly rather than derived.
+_GROUP_AGGREGATE_CALL = "group_aggregate"
+
+#: Every `Variant` that denotes an *aggregate* `sql_*_op` pass-through wrapper,
+#: derived by filtering the enum on its own `_aggregate_op` naming convention
+#: rather than listing `sql_int_aggregate_op` / `sql_number_aggregate_op` by hand,
+#: so a future aggregate variant is covered the moment it is added to `_types.py`
+#: without a second edit here.
+_SQL_AGGREGATE_OP_CALLS = frozenset(
+    variant.value for variant in Variant if variant.value.endswith("_aggregate_op")
+)
+
+#: Every ThoughtSpot call name that already aggregates: the native DIRECT catalog
+#: templates (derived from the catalog itself, never retyped by hand, via the same
+#: `emit_direct` the rest of this package uses to render them — see the task report
+#: for why), plus `group_aggregate` and the `sql_*_aggregate_op` pass-through family.
+#: This set alone is not the whole safety story — see `_contains_aggregate_call`,
+#: which also scans for these names at *any* nesting depth, not only as an
+#: expression's own outer call, because the catalog will always hold aggregate
+#: constructs beyond whatever a fixed enumeration lists.
+_AGGREGATE_CALL_NAMES = (
+    frozenset(
+        formula.split_call(emit_direct(CATALOG[spec], ["x"]))[0].lower()
+        for spec in _NATIVE_AGGREGATE_SPECS
+    )
+    | {_GROUP_AGGREGATE_CALL}
+    | _SQL_AGGREGATE_OP_CALLS
 )
 
 
-def _is_aggregate_expression(expr: str) -> bool:
-    """Whether `expr`'s own outer call is already a native ThoughtSpot aggregate.
+def _contains_aggregate_call(expr: str) -> bool:
+    """Whether an aggregate call appears anywhere in `expr`, at any nesting depth.
 
-    `formula.split_call` returning `None` — not a single outer call, as in
-    `[A::x] - [B::y]` — means `expr` is scalar by definition: there is no outer call
-    for it to be an aggregate of. Matching is case-insensitive (ThoughtSpot's formula
-    functions are not case-sensitive) and compares the whole call name as one unit, so
-    a two-word name like `unique count` is matched by both words together rather than
-    by either word alone.
-
-    This is a shallow, single-level check, matching the rest of this package's
-    "tokenizer, not a parser" stance (see `formula.py`'s module docstring): an
-    aggregate nested inside a scalar wrapper, such as `round ( sum ( x ) , 2 )`, has
-    the scalar `round` as its own outer call and is therefore *not* detected as an
-    aggregate expression here. See the task report for why that boundary was left
-    where it is rather than extended into a real expression-tree walk.
+    Checking only `expr`'s own outer call (via `formula.split_call`) is not
+    enough: an aggregate can be buried inside a scalar wrapper the outer call
+    does not name at all — `round ( sum ( [T::x] ) , 2 )` has `round` as its
+    outer call, not `sum`, but the expression as a whole is still fully
+    aggregated. `formula.find_call_names` finds every call at every depth, so
+    this checks the whole expression rather than the single outer position.
+    Matching is case-insensitive (ThoughtSpot's formula functions are not
+    case-sensitive) and compares each call's whole name, so a two-word name
+    like `unique count` is matched as one unit, never by either word alone.
     """
-    call = formula.split_call(expr)
-    if call is None:
-        return False
-    name, _args = call
-    return name.lower() in _AGGREGATE_CALL_NAMES
+    return any(name.lower() in _AGGREGATE_CALL_NAMES for name in formula.find_call_names(expr))
 
 
 def _compose_aggregate_entries(
@@ -492,7 +523,11 @@ def _compose_aggregate_entries(
     ts_expr = emit_direct(construct, [inner_expr])
     entries: list[dict[str, str]] = [{"dialect": DIALECT, "expression": ts_expr}]
 
-    inner_entries = expression_entries(inner_expr, resolve, log, object_ref=object_ref)
+    # This helper only ever composes a metric's aggregation (never a field's), so
+    # "metric" is hardcoded here rather than threaded through as a parameter.
+    inner_entries = expression_entries(
+        inner_expr, resolve, log, object_ref=object_ref, kind="metric"
+    )
     inner_ansi = next(
         (e["expression"] for e in inner_entries if e["dialect"] == PORTABLE_DIALECT), None
     )
@@ -526,7 +561,9 @@ def _metric_datatype(
     """
     if aggregation_raw in _COUNT_AGGREGATIONS:
         return "Integer"
-    return _physical_datatype(table_name, column_name, table_lookup, log, object_ref=object_ref)
+    return _physical_datatype(
+        table_name, column_name, table_lookup, log, object_ref=object_ref, kind="metric"
+    )
 
 
 def convert_metric(
@@ -548,10 +585,14 @@ def convert_metric(
     (keyed by each entry's `id`) exactly the same way. Either shape composes with
     `properties.aggregation` per the Metric-level `aggregation` row: load-bearing on
     a `column_id` metric and on a *scalar* formula (the two compose into
-    `AGG(<scalar expr>)`), a no-op on an *aggregate* formula (`sum ( ... )`, which
-    already carries its own rollup) — the column-level value is discarded there on
-    purpose, without logging anything, because discarding a documented no-op is not
-    a loss. See `_is_aggregate_expression` for how the two are told apart, and the
+    `AGG(<scalar expr>)`), a no-op on a formula whose expression already aggregates
+    somewhere in it — not only as its own outer call (`sum ( ... )`), but at any
+    depth (`round ( sum ( ... ) , 2 )`, or a native construct like
+    `group_aggregate ( sum ( ... ) , ... )`). Composing another aggregation on top
+    of either would silently double-aggregate a value that is already fully
+    reduced, so the column-level aggregation is discarded and — because it was a
+    real, present value that could not be carried across — reported. See
+    `_contains_aggregate_call` for how "already aggregates" is decided, and the
     module docstring for why detection and composition share one source.
 
     An unrecognised `aggregation` value (not one of TML's documented enum members)
@@ -600,7 +641,9 @@ def convert_metric(
         table_name, column_name = identifiers.split_column_ref(f"[{column['column_id']}]")
         field_ref = identifiers.format_column_ref(table_name, column_name)
         if aggregation is None:
-            dialects = expression_entries(field_ref, resolve, log, object_ref=object_ref)
+            dialects = expression_entries(
+                field_ref, resolve, log, object_ref=object_ref, kind="metric"
+            )
         else:
             dialects = _compose_aggregate_entries(
                 field_ref, aggregation_raw, resolve, log, object_ref=object_ref
@@ -637,18 +680,42 @@ def convert_metric(
             )
             return None
         expr = formula_entry["expr"]
-        if aggregation is not None and not _is_aggregate_expression(expr):
-            # A scalar expr: the column aggregation is load-bearing, so compose it.
+        if aggregation is None:
+            # Nothing to compose: the verbatim expr, untouched, is the whole metric.
+            metric_shape = _SHAPE_FORMULA
+            dialects = expression_entries(
+                expr, resolve, log, object_ref=object_ref, kind="metric"
+            )
+        elif _contains_aggregate_call(expr):
+            # The expression already aggregates somewhere in it -- whether as its
+            # own outer call (sum ( ... )) or nested inside a scalar wrapper
+            # (round ( sum ( ... ) , 2 )) or a native construct that aggregates
+            # internally (group_aggregate ( ... ), a sql_*_aggregate_op
+            # pass-through). Composing the column-level aggregation on top would
+            # silently double-aggregate an already-reduced value, so it is
+            # discarded here instead -- and reported, because a real, present
+            # value could not be carried across.
+            log.add(
+                code="TS-METRIC-AGGREGATION-ALREADY-AGGREGATED",
+                severity=Severity.WARNING,
+                message=(
+                    f"column {display_name!r}'s expression already contains an "
+                    f"aggregate; the column-level aggregation {aggregation_raw!r} "
+                    f"was ignored to avoid double-aggregating"
+                ),
+                object_ref=object_ref,
+            )
+            metric_shape = _SHAPE_FORMULA
+            dialects = expression_entries(
+                expr, resolve, log, object_ref=object_ref, kind="metric"
+            )
+        else:
+            # A genuinely scalar expr: the column aggregation is load-bearing, so
+            # compose it.
             metric_shape = _SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION
             dialects = _compose_aggregate_entries(
                 expr, aggregation_raw, resolve, log, object_ref=object_ref
             )
-        else:
-            # Either NONE (nothing to compose) or an expr that is already an
-            # aggregate (the column aggregation is a documented no-op) — either way
-            # the verbatim expr, untouched, is the whole metric.
-            metric_shape = _SHAPE_FORMULA
-            dialects = expression_entries(expr, resolve, log, object_ref=object_ref)
         metric["expression"] = {"dialects": dialects}
         # A formula carries no declared type anywhere in TML — neither columns[] nor
         # formulas[] has a data_type key (rule X9) — so datatype is always omitted
