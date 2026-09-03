@@ -66,17 +66,17 @@ def convert_ossie_field(
                     if ossie_field.dimension.is_time and not is_temporal_hex_datatype(
                         hex_datatype
                     ):
-                        ctx.warn("Not supported")
+                        ctx.warn("Not supported", code="is-time")
             # in the case that it's _not_ a time dimension, the datatype should fully
             # describe it, so no action is needed
 
         with ctx.problem_scope("ai_context"):
             if ossie_field.ai_context is not None:
-                ctx.warn("Not supported")
+                ctx.warn("Not supported", code="ai-context")
 
         with ctx.problem_scope("custom_extensions"):
             if ossie_field.custom_extensions is not None:
-                ctx.warn("Not supported")
+                ctx.warn("Not supported", code="custom-extensions")
 
         spec["unique"] = ctx.is_unique_field(ossie_field.name)
 

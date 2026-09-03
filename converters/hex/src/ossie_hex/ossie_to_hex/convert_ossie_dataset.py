@@ -60,6 +60,7 @@ def convert_ossie_dataset(
                 if len(ossie_dataset.primary_key) > 1:
                     ctx.warn(
                         f"Composite primary key is not supported: {ossie_dataset.primary_key}",
+                        code="composite-primary-key",
                     )
                 else:
                     unique_field_names.add(ossie_dataset.primary_key[0])
@@ -91,11 +92,11 @@ def convert_ossie_dataset(
 
         with ctx.problem_scope("ai_context"):
             if ossie_dataset.ai_context is not None:
-                ctx.warn("Not supported")
+                ctx.warn("Not supported", code="ai-context")
 
         with ctx.problem_scope("custom_extensions"):
             if ossie_dataset.custom_extensions is not None:
-                ctx.warn("Not supported")
+                ctx.warn("Not supported", code="custom-extensions")
 
         # Attributes not set:
         # - name: Ossie does not encode a display name

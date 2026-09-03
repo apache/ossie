@@ -17,7 +17,7 @@
 
 """Command-line interface for the Apache Ossie <-> Hex converter.
 
-    ossie-hex export -i model.yaml [-o hex_project/] [--dialect DIALECT]
+    ossie-hex export -i model.yaml [-o hex_project/] [--dialect DIALECT] [-v]
 
 ``export`` converts Apache Ossie semantic model(s) to a Hex project directory(s).
 If ``-o`` is omitted, files are written to the current working directory.
@@ -32,6 +32,7 @@ from typing import Any, NoReturn
 from ossie import OssieDialect
 
 from ..ossie_to_hex import convert_ossie_to_hex
+from .report import format_export_report
 
 # Ossie spells its dialects in upper case, but it's a bit nicer to show/take them
 # in lowercase. Parsing will transform them back.
@@ -75,6 +76,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help=f"Ossie expression dialect, one of: {_OSSIE_DIALECT_LIST}",
         default=OssieDialect.ANSI_SQL.value.lower(),
     )
+    export.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="show grouped problems; repeat (-vv) for phase and cause details",
+    )
 
     return parser
 
@@ -105,27 +113,22 @@ class _CustomArgumentParser(argparse.ArgumentParser):
 
 def main(argv: list[str] | None = None) -> int:
     try:
-        args = _build_parser().parse_args(argv)
+        parser = _build_parser()
+        args = parser.parse_args(argv)
         if args.command == "export":
             hex_projects, problems = convert_ossie_to_hex(
                 input=args.input,
                 output=args.output,
                 dialect=args.dialect,
             )
-            print(
-                f"Wrote {len(hex_projects)} hex semantic project(s) to {args.output}",
-                file=sys.stderr,
+            report = format_export_report(
+                input=args.input,
+                output=args.output,
+                projects=hex_projects,
+                problems=problems,
+                verbosity=args.verbose,
             )
-            if problems:
-                print(
-                    f"Encountered {len(problems)} problem(s):",
-                    file=sys.stderr,
-                )
-                problems_msg = "\n\n".join(
-                    problem.to_str(include_cause=bool(problem.cause_path))
-                    for problem in problems
-                )
-                print(problems_msg, file=sys.stderr)
+            print(report, file=sys.stderr)
             if any(problem.severity == "fatal" for problem in problems):
                 return 1
             return 0
