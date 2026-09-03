@@ -26,6 +26,7 @@ from ossie import OssieDialect
 from ...hex import HexDialect, HexDialectName, HexEntityId, HexModel
 from ...ossie import OssieDialectName
 from ...util.context import Context
+from ..problem_code import ExportProblemCode
 from .analysis import ExportAnalysis
 from .assignment import ExportAssignment
 from .hex_ids import ExportHexIds
@@ -33,7 +34,7 @@ from .hex_ids import ExportHexIds
 logger = logging.getLogger(__name__)
 
 
-class ExportContext(Context):
+class ExportContext(Context[ExportProblemCode]):
     """Context for exporting from Ossie specification to Hex specification."""
 
     # global scope

@@ -53,7 +53,7 @@ Convert an Ossie semantic model(s) into a Hex semantic project(s).
 
 ```bash
 ossie-hex export -i <file> -o <directory> \
-  [--dialect <dialect>]
+  [--dialect <dialect>] [-v]
 ```
 
 Options:
@@ -62,8 +62,9 @@ Options:
 - `-o, --output <directory>` — Optional. Directory where Hex YAML files are
   written. If omitted, the current working directory is used.
 - `-d, --dialect <dialect>` — Optional. Ossie dialect to pick from Ossie
-  expressions. If omitted, the first dialect an expression declares is used,
-  falling back to `ANSI_SQL`.
+  expressions. If omitted, `ANSI_SQL` is used.
+- `-v, --verbose` — Optional. Show a grouped problem summary. Repeat the flag
+  (`-vv`) to show every occurrence with its conversion phase and cause path.
 
 Example:
 

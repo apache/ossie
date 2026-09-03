@@ -32,7 +32,9 @@ def load_ossie_field(
             expression = load_ossie_field_expression(field.expression, ctx=ctx)
         with ctx.problem_scope("datatype"):
             datatype = load_ossie_datatype(
-                field.datatype, default=OssieDataType.STRING, ctx=ctx
+                field.datatype,
+                default=OssieDataType.STRING,
+                ctx=ctx,
             )
 
     if expression is None:

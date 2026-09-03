@@ -44,7 +44,17 @@ TODO(development): {workflow-description}
 
 ### Python
 
-TODO(development): {python-description}
+Conventions to follow when writing Python code:
+
+- Define public symbols at the top of a file, and private symbols below them,
+  prefixed with an underscore. If a function is not used outside of the file,
+  and is not intended to be public, it should be private.
+- Public functions should have descriptions that explain their purpose. Within
+  reason, try to avoid restating the words in the function name.
+- Do not nest functions calls. Assign the inner result to a named local
+  variable first.
+- Arguments for package-public functions should be in the widest reasonable
+  form (i.e. `str | Path` rather than `Path`).
 
 ### CLI
 

@@ -35,7 +35,9 @@ def load_ossie_metric(
             )
         with ctx.problem_scope("datatype"):
             datatype = load_ossie_datatype(
-                metric.datatype, default=OssieDataType.DECIMAL, ctx=ctx
+                metric.datatype,
+                default=OssieDataType.DECIMAL,
+                ctx=ctx,
             )
 
     if not expression:
