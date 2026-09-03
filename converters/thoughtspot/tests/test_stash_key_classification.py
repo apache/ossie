@@ -115,3 +115,31 @@ def test_every_shadows_derivable_key_has_a_witness_constant_or_documented_self_c
             f"{name} is classified SHADOWS_DERIVABLE but has no "
             f"{witness_name} constant and is not listed as self-verifying"
         )
+
+
+def test_derivable_membership_keys_are_information_only_in_value():
+    """STASH_KEYS_WITH_DERIVABLE_MEMBERSHIP is a second, orthogonal axis on
+    top of StashKeyClass, not a replacement for it -- a key there still
+    needs a primary classification, and it can only sensibly be
+    INFORMATION_ONLY: a SHADOWS_DERIVABLE key's *value* is already checked
+    against a witness on every read, which would have caught a membership
+    problem too (the witness mismatch IS the "this entry no longer
+    applies" signal). A key found here classified SHADOWS_DERIVABLE would
+    mean the two axes were mixed up.
+    """
+    for key in constants.STASH_KEYS_WITH_DERIVABLE_MEMBERSHIP:
+        assert key in constants.STASH_KEY_CLASSIFICATION, key
+        assert constants.STASH_KEY_CLASSIFICATION[key] is constants.StashKeyClass.INFORMATION_ONLY, key
+
+
+def test_unsurfaced_columns_is_the_known_derivable_membership_case():
+    # Regression pin -- the instance that motivated the second axis.
+    assert constants.DATASET_STASH_UNSURFACED_COLUMNS in constants.STASH_KEYS_WITH_DERIVABLE_MEMBERSHIP
+
+
+def test_sql_output_columns_does_not_share_the_hybrid():
+    # Checked directly, not assumed innocent: DATASET_STASH_SQL_OUTPUT_COLUMNS
+    # is consulted as a per-field dict lookup keyed by the live field's own
+    # name, never appended as a block the way unsurfaced_columns is, so a
+    # stale entry is simply never looked up rather than duplicated.
+    assert constants.DATASET_STASH_SQL_OUTPUT_COLUMNS not in constants.STASH_KEYS_WITH_DERIVABLE_MEMBERSHIP

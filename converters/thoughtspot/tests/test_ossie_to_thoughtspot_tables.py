@@ -534,6 +534,68 @@ class TestUnsurfacedColumns:
         names = [c["name"] for c in table.body["columns"]]
         assert names == ["amount", "internal_flag"]
 
+    def test_a_field_retargeted_onto_a_previously_unsurfaced_column_is_not_duplicated(self):
+        # "Total Amount" was unsurfaced when the stash was written. The
+        # field was then retargeted onto it ([ORDERS::Amount] ->
+        # [ORDERS::Total Amount]) -- it is surfaced now, so blindly
+        # restoring the stale unsurfaced_columns entry would emit it twice
+        # under the same display name, which does not import.
+        field = _round_tripped_physical(
+            "amount", "ORDERS", "Total Amount",
+            field_stash={
+                FIELD_STASH_DB_COLUMN_NAME: "O_AMOUNT",
+                FIELD_STASH_DB_COLUMN_NAME_WITNESS: "Amount",
+            },
+        )
+        dataset = _dataset(
+            "ORDERS", "SALES.PUBLIC.ORDERS",
+            fields=[field],
+            dataset_stash={
+                DATASET_STASH_UNSURFACED_COLUMNS: [
+                    {"name": "Total Amount", "db_column_name": "O_TOTAL_AMOUNT",
+                     "db_column_properties": {"data_type": "DOUBLE"}},
+                ],
+            },
+        )
+        log = IssueLog()
+        table = build_table(dataset, log)
+        names = [c["name"] for c in table.body["columns"]]
+        assert names == ["Total Amount"]
+        assert len(names) == len(set(names))
+        # The field itself was still retargeted (a real edit, correctly
+        # reported) -- only the now-redundant unsurfaced duplicate is
+        # dropped, and that drop is silent: nothing was lost, so there is
+        # nothing to name in a SECOND issue about it.
+        codes = [i["code"] for i in log.as_dicts()]
+        assert codes.count("TS-FIELD-DB-COLUMN-NAME-STALE") == 1
+        assert not any("unsurfaced" in i["message"].lower() for i in log.as_dicts())
+
+    def test_an_unrelated_unsurfaced_column_is_unaffected_by_a_retarget_elsewhere(self):
+        # A collision on ONE column must not suppress an unrelated
+        # unsurfaced column that genuinely still has no live field.
+        field = _round_tripped_physical(
+            "amount", "ORDERS", "Total Amount",
+            field_stash={
+                FIELD_STASH_DB_COLUMN_NAME: "O_AMOUNT",
+                FIELD_STASH_DB_COLUMN_NAME_WITNESS: "Amount",
+            },
+        )
+        dataset = _dataset(
+            "ORDERS", "SALES.PUBLIC.ORDERS",
+            fields=[field],
+            dataset_stash={
+                DATASET_STASH_UNSURFACED_COLUMNS: [
+                    {"name": "Total Amount", "db_column_name": "O_TOTAL_AMOUNT",
+                     "db_column_properties": {"data_type": "DOUBLE"}},
+                    {"name": "Internal Flag", "db_column_name": "INTERNAL_FLAG",
+                     "db_column_properties": {"data_type": "BOOLEAN"}},
+                ],
+            },
+        )
+        table = build_table(dataset, IssueLog())
+        names = [c["name"] for c in table.body["columns"]]
+        assert names == ["Total Amount", "Internal Flag"]
+
 
 class TestDatasetAiContextHasNoHomeInTml:
     """Table TML (both kinds) has no synonym or instruction field at all --
