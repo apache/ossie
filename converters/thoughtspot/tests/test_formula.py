@@ -127,10 +127,16 @@ class TestFindCallNames:
         # question where the whole expression is rejected instead.
         assert find_call_names("true and count ( [A::x] )") == ["count"]
 
-    def test_a_keyword_immediately_before_a_paren_reports_no_call_there(self):
-        # `not ( ... )` is grouping/negation, not a call named "not" -- and,
-        # unlike the "true and count" case above, there is no non-keyword
-        # suffix left once "not" is stripped, so nothing is reported for it.
+    def test_a_keyword_that_is_also_a_real_catalog_function_name_is_still_excluded(self):
+        # `not` is a genuine ThoughtSpot catalog function ("not ( expr )"), not
+        # merely an operator token -- but it is also in the keyword blocklist,
+        # needed so an expression like "true and count ( ... )" is not misread
+        # as one call named "true and count". The blocklist has no way to tell
+        # the two uses of "not" apart, so a real `not ( ... )` call reports
+        # nothing here. This is a deliberate, accepted cost: this function's
+        # one caller only looks for aggregate names, and neither `not` nor
+        # `if` (the other such collision) is one, so losing them here costs
+        # that caller nothing.
         assert find_call_names("not ( [A::x] )") == []
 
 
