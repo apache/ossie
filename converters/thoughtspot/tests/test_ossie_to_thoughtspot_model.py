@@ -29,8 +29,15 @@ import json
 from ossie_thoughtspot import formula as formula_module
 from ossie_thoughtspot.constants import (
     FIELD_STASH_COLUMN_PROPERTIES,
+    METRIC_SHAPE_COLUMN_AGGREGATION,
+    METRIC_SHAPE_FORMULA,
+    METRIC_SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION,
     METRIC_STASH_SHAPE,
     MODEL_STASH_UNATTRIBUTED_FORMULAS,
+    MODEL_STASH_UNREPRESENTABLE_JOINS,
+    RELATIONSHIP_STASH_CARDINALITY,
+    RELATIONSHIP_STASH_ON_EXPRESSION,
+    RELATIONSHIP_STASH_TYPE,
 )
 from ossie_thoughtspot.issues import IssueLog
 from ossie_thoughtspot.ossie_to_thoughtspot import build_model, build_table, to_thoughtspot_expression
@@ -100,6 +107,16 @@ def _semantic_model(name="test_model", datasets=None, metrics=None, relationship
         model["custom_extensions"] = _stash_ext(**model_stash)
     model.update(kwargs)
     return model
+
+
+def _relationship(name, from_, to, from_columns, to_columns, *, rel_stash=None):
+    relationship: dict = {
+        "name": name, "from": from_, "to": to,
+        "from_columns": from_columns, "to_columns": to_columns,
+    }
+    if rel_stash is not None:
+        relationship["custom_extensions"] = _stash_ext(**rel_stash)
+    return relationship
 
 
 def _table_doc(name, columns, connection="My Snowflake"):
@@ -197,7 +214,7 @@ class TestFormulasNeverCarryAggregation:
         metric_a = _metric("total", _dialects(("THOUGHTSPOT", "sum ( [orders::Amount] )")))
         metric_b = _metric(
             "avg_net", _dialects(("THOUGHTSPOT", "average ( [orders::Amount] - [orders::Cost] )")),
-            metric_stash={METRIC_STASH_SHAPE: "scalar_formula_plus_aggregation"},
+            metric_stash={METRIC_STASH_SHAPE: METRIC_SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION},
         )
         model = _semantic_model(datasets=[dataset], metrics=[metric_a, metric_b])
 
@@ -629,7 +646,7 @@ class TestMetricNeverEmitsColumnIdPlusAggregation:
         # would collide with a field sharing the same column_id).
         metric = _metric(
             "total", _dialects(("THOUGHTSPOT", "sum ( [orders::Amount] )")),
-            metric_stash={METRIC_STASH_SHAPE: "column_aggregation"},
+            metric_stash={METRIC_STASH_SHAPE: METRIC_SHAPE_COLUMN_AGGREGATION},
         )
         model = _semantic_model(datasets=[dataset], metrics=[metric])
 
@@ -670,7 +687,7 @@ class TestMetricShapeDefault:
         implicit = _metric("total", _dialects(("THOUGHTSPOT", "sum ( [orders::Amount] )")))
         explicit = _metric(
             "total", _dialects(("THOUGHTSPOT", "sum ( [orders::Amount] )")),
-            metric_stash={METRIC_STASH_SHAPE: "formula"},
+            metric_stash={METRIC_STASH_SHAPE: METRIC_SHAPE_FORMULA},
         )
 
         implicit_doc = build_model(
@@ -693,7 +710,7 @@ class TestMetricShapeDefault:
         dataset = _dataset("orders", "SALES.PUBLIC.ORDERS")
         metric = _metric(
             "avg_net", _dialects(("THOUGHTSPOT", "average ( [orders::Amount] - [orders::Cost] )")),
-            metric_stash={METRIC_STASH_SHAPE: "scalar_formula_plus_aggregation"},
+            metric_stash={METRIC_STASH_SHAPE: METRIC_SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION},
         )
         model = _semantic_model(datasets=[dataset], metrics=[metric])
 
@@ -1060,6 +1077,105 @@ class TestUnattributedFormulas:
             i["code"] == "TS-MODEL-UNATTRIBUTED-FORMULA-PROPERTIES-LOST"
             for i in log.as_dicts()
         )
+
+
+# ---------------------------------------------------------------------------
+# R5 -- inline joins: type/cardinality required, FULL_OUTER/FULL OUTER
+# renamed to OUTER (semantics-preserving, never a loss).
+# ---------------------------------------------------------------------------
+
+class TestJoinTypeRename:
+    """ThoughtSpot accepts only INNER, LEFT_OUTER, RIGHT_OUTER, OUTER for a
+    join `type` -- a stashed FULL_OUTER/"FULL OUTER" has to become OUTER
+    (OUTER *is* ThoughtSpot's own full outer join) or the generated document
+    is rejected on import. This is a rename, not a loss: no issue should be
+    raised for it, unlike every other rewrite this module performs.
+    """
+
+    def _built_join(self, join_type, log=None):
+        orders = _table_doc("orders", [_column("Customer Id", "CUSTOMER_ID", "INT64")])
+        customers = _table_doc("customers", [_column("Id", "ID", "INT64")])
+        orders_ds = _dataset("orders", "SALES.PUBLIC.ORDERS")
+        customers_ds = _dataset("customers", "SALES.PUBLIC.CUSTOMERS")
+        relationship = _relationship(
+            "orders_to_customers", "orders", "customers", ["Customer Id"], ["Id"],
+            rel_stash={RELATIONSHIP_STASH_TYPE: join_type, RELATIONSHIP_STASH_CARDINALITY: "MANY_TO_ONE"},
+        )
+        model = _semantic_model(datasets=[orders_ds, customers_ds], relationships=[relationship])
+        doc = build_model(model, [orders, customers], log if log is not None else IssueLog())
+        [orders_entry] = [t for t in doc.body["model_tables"] if t["name"] == "orders"]
+        [join] = orders_entry["joins"]
+        return join
+
+    def test_full_outer_with_an_underscore_becomes_outer(self):
+        assert self._built_join("FULL_OUTER")["type"] == "OUTER"
+
+    def test_full_outer_with_a_space_becomes_outer(self):
+        assert self._built_join("FULL OUTER")["type"] == "OUTER"
+
+    def test_a_lowercase_full_outer_variant_also_becomes_outer(self):
+        assert self._built_join("full_outer")["type"] == "OUTER"
+        assert self._built_join("full outer")["type"] == "OUTER"
+
+    def test_left_outer_passes_through_unchanged(self):
+        assert self._built_join("LEFT_OUTER")["type"] == "LEFT_OUTER"
+
+    def test_the_rename_raises_no_issue_its_a_rename_not_a_loss(self):
+        log = IssueLog()
+        self._built_join("FULL_OUTER", log)
+        assert not log.as_dicts()
+
+    def test_the_rename_also_applies_to_an_unrepresentable_joins_entry(self):
+        # The same R5 rule governs every context this module emits a join
+        # `type` into -- unrepresentable_joins[] (a non-equality condition
+        # with no equality pair at all) is the other one.
+        orders = _table_doc("orders", [_column("Order Date", "ORDER_DATE", "DATE")])
+        rates = _table_doc("fx_rates", [_column("Effective Date", "EFFECTIVE_DATE", "DATE")])
+        orders_ds = _dataset("orders", "SALES.PUBLIC.ORDERS")
+        rates_ds = _dataset("fx_rates", "SALES.PUBLIC.FX_RATES")
+        model = _semantic_model(
+            datasets=[orders_ds, rates_ds],
+            model_stash={
+                MODEL_STASH_UNREPRESENTABLE_JOINS: [{
+                    "from": "orders", "to": "fx_rates",
+                    RELATIONSHIP_STASH_ON_EXPRESSION: "[orders::Order Date] >= [fx_rates::Effective Date]",
+                    RELATIONSHIP_STASH_TYPE: "FULL_OUTER",
+                    RELATIONSHIP_STASH_CARDINALITY: "MANY_TO_ONE",
+                }],
+            },
+        )
+        log = IssueLog()
+
+        doc = build_model(model, [orders, rates], log)
+
+        [orders_entry] = [t for t in doc.body["model_tables"] if t["name"] == "orders"]
+        [join] = orders_entry["joins"]
+        assert join["type"] == "OUTER"
+        assert not [i for i in log.as_dicts() if "FULL" in i["message"].upper()]
+
+    def test_the_on_condition_key_is_quoted_and_survives_dump_and_reload(self):
+        # R5: 'on' is a YAML 1.1 reserved word -- the generic YAML 1.2 codec
+        # (_yaml.py) is what actually has to quote it, since nothing in this
+        # module writes YAML text directly. Proven at the dump/reload
+        # boundary rather than trusted, because that is the only place this
+        # requirement can actually fail.
+        orders = _table_doc("orders", [_column("Customer Id", "CUSTOMER_ID", "INT64")])
+        customers = _table_doc("customers", [_column("Id", "ID", "INT64")])
+        orders_ds = _dataset("orders", "SALES.PUBLIC.ORDERS")
+        customers_ds = _dataset("customers", "SALES.PUBLIC.CUSTOMERS")
+        relationship = _relationship(
+            "orders_to_customers", "orders", "customers", ["Customer Id"], ["Id"],
+        )
+        model = _semantic_model(datasets=[orders_ds, customers_ds], relationships=[relationship])
+
+        doc = build_model(model, [orders, customers], IssueLog())
+        text = dump_document(doc)
+
+        assert "'on':" in text
+        reloaded = load_document(text)
+        [orders_entry] = [t for t in reloaded.body["model_tables"] if t["name"] == "orders"]
+        [join] = orders_entry["joins"]
+        assert join["on"] == "[orders::Customer Id] = [customers::Id]"
 
 
 class TestOwnTests:
