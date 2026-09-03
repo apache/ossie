@@ -411,6 +411,16 @@ STASH_KEY_CLASSIFICATION: dict[str, "StashKeyClass"] = {
     RELATIONSHIP_STASH_ON_EXPRESSION: StashKeyClass.SHADOWS_DERIVABLE,
     RELATIONSHIP_STASH_TYPE: StashKeyClass.INFORMATION_ONLY,
     RELATIONSHIP_STASH_CARDINALITY: StashKeyClass.INFORMATION_ONLY,
+    # Self-verifying (STASH_TML_NAME's own pattern, nothing extra stored):
+    # written equal to the relationship's own `name` at stash time, so
+    # agreement on read means nobody renamed the relationship since and the
+    # stash is still trustworthy; a mismatch means it was renamed, so the
+    # stashed Table joins_with[] reference is dropped rather than restored
+    # under the wrong, stale name.
+    RELATIONSHIP_STASH_REFERENCING_JOIN: StashKeyClass.SHADOWS_DERIVABLE,
+    # Which TML shape produced this relationship -- purely descriptive, no
+    # live Ossie counterpart to disagree with (mirrors METRIC_STASH_SHAPE).
+    RELATIONSHIP_STASH_JOIN_SHAPE: StashKeyClass.INFORMATION_ONLY,
 
     # -- Model scope --
     MODEL_STASH_UNATTRIBUTED_FORMULAS: StashKeyClass.INFORMATION_ONLY,

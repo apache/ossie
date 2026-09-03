@@ -101,7 +101,9 @@ def test_every_shadows_derivable_key_has_a_witness_constant_or_documented_self_c
     value is reconstructed and compared against the live document directly,
     the same shape DATASET_STASH_SOURCE_PARTS and STASH_TML_NAME use).
     """
-    self_verifying = {"DATASET_STASH_SOURCE_PARTS", "STASH_TML_NAME"}
+    self_verifying = {
+        "DATASET_STASH_SOURCE_PARTS", "STASH_TML_NAME", "RELATIONSHIP_STASH_REFERENCING_JOIN",
+    }
     all_names = _all_stash_key_constants()
     name_by_value = {getattr(constants, n): n for n in all_names}
     for key, classification in constants.STASH_KEY_CLASSIFICATION.items():
