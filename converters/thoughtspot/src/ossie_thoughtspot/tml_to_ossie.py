@@ -97,6 +97,9 @@ from .constants import (
     FIELD_STASH_COLUMN_PROPERTIES,
     FIELD_STASH_DATA_TYPE,
     FIELD_STASH_DB_COLUMN_NAME,
+    METRIC_SHAPE_COLUMN_AGGREGATION,
+    METRIC_SHAPE_FORMULA,
+    METRIC_SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION,
     METRIC_STASH_SHAPE,
     MODEL_STASH_ACTION_OBJECT_ASSOCIATIONS,
     MODEL_STASH_COLUMN_GROUPS,
@@ -460,13 +463,12 @@ _COUNT_AGGREGATIONS = frozenset({"COUNT", "COUNT_DISTINCT"})
 
 #: The three TML shapes a metric can arrive as (the stash's `shape` key), so a
 #: return trip can reproduce the source shape instead of collapsing every metric
-#: into the same one. `_SHAPE_FORMULA` is also what a document with no stash at
-#: all defaults to on the way back — a plain formulas[] entry, aggregate already
-#: baked into its expr — so it is the one value never worth writing to the stash:
-#: writing it or omitting it produces the same reconstruction either way.
-_SHAPE_COLUMN_AGGREGATION = "column_aggregation"
-_SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION = "scalar_formula_plus_aggregation"
-_SHAPE_FORMULA = "formula"
+#: into the same one. The values themselves live in constants.py
+#: (METRIC_SHAPE_*) — shared with ossie_to_thoughtspot.py, the reader.
+#: `METRIC_SHAPE_FORMULA` is also what a document with no stash at all defaults
+#: to on the way back — a plain formulas[] entry, aggregate already baked into
+#: its expr — so it is the one value never worth writing to the stash: writing
+#: it or omitting it produces the same reconstruction either way.
 
 #: TML column aggregation -> the catalog `spec_name` whose DIRECT template is
 #: ThoughtSpot's own native rendering of that aggregate (`"sum ( {0} )"`,
@@ -721,7 +723,7 @@ def convert_metric(
     metric: dict = {"name": normalised_name}
 
     if "column_id" in column:
-        metric_shape = _SHAPE_COLUMN_AGGREGATION
+        metric_shape = METRIC_SHAPE_COLUMN_AGGREGATION
         table_name, column_name = identifiers.split_column_ref(f"[{column['column_id']}]")
         field_ref = identifiers.format_column_ref(table_name, column_name)
         if aggregation is None:
@@ -766,7 +768,7 @@ def convert_metric(
         expr = formula_entry["expr"]
         if aggregation is None:
             # Nothing to compose: the verbatim expr, untouched, is the whole metric.
-            metric_shape = _SHAPE_FORMULA
+            metric_shape = METRIC_SHAPE_FORMULA
             dialects = expression_entries(
                 expr, resolve, log, object_ref=object_ref, kind="metric"
             )
@@ -778,7 +780,7 @@ def convert_metric(
             # it here is expected, not a loss, so nothing is logged --
             # warning on this common, correct shape would train readers to
             # ignore the issue log entirely.
-            metric_shape = _SHAPE_FORMULA
+            metric_shape = METRIC_SHAPE_FORMULA
             dialects = expression_entries(
                 expr, resolve, log, object_ref=object_ref, kind="metric"
             )
@@ -799,14 +801,14 @@ def convert_metric(
                 ),
                 object_ref=object_ref,
             )
-            metric_shape = _SHAPE_FORMULA
+            metric_shape = METRIC_SHAPE_FORMULA
             dialects = expression_entries(
                 expr, resolve, log, object_ref=object_ref, kind="metric"
             )
         else:
             # A genuinely scalar expr: the column aggregation is load-bearing, so
             # compose it.
-            metric_shape = _SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION
+            metric_shape = METRIC_SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION
             dialects = _compose_aggregate_entries(
                 expr, aggregation_raw, resolve, log, object_ref=object_ref
             )
@@ -829,7 +831,7 @@ def convert_metric(
     stash_payload: dict = {}
     if normalised_name != display_name:
         stash_payload[STASH_TML_NAME] = display_name
-    if metric_shape != _SHAPE_FORMULA:
+    if metric_shape != METRIC_SHAPE_FORMULA:
         stash_payload[METRIC_STASH_SHAPE] = metric_shape
     metric = _write_stash_safely(metric, stash_payload, log, object_ref)
 

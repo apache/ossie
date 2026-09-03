@@ -66,9 +66,11 @@ guessing, with the fallback always reported:
 from __future__ import annotations
 
 import re
+from typing import Callable, Sequence
 
-from . import datatypes, formula, stash
+from . import datatypes, formula, identifiers, stash
 from .constants import (
+    DATASET_STASH_ALIAS,
     DATASET_STASH_CONNECTION_NAME,
     DATASET_STASH_SOURCE_PARTS,
     DATASET_STASH_SOURCE_PARTS_DB,
@@ -80,12 +82,31 @@ from .constants import (
     DATASET_STASH_TML_OBJECT,
     DATASET_STASH_UNSURFACED_COLUMNS,
     DIALECT,
+    FIELD_STASH_COLUMN_PROPERTIES,
     FIELD_STASH_DATA_TYPE,
     FIELD_STASH_DB_COLUMN_NAME,
+    METRIC_SHAPE_FORMULA,
+    METRIC_SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION,
+    METRIC_STASH_SHAPE,
+    MODEL_STASH_ACTION_OBJECT_ASSOCIATIONS,
+    MODEL_STASH_COLUMN_GROUPS,
+    MODEL_STASH_CONSTRAINTS,
+    MODEL_STASH_FILTERS,
+    MODEL_STASH_LESSON_PLANS,
+    MODEL_STASH_MODEL_JOINS_WITH,
+    MODEL_STASH_MODEL_PROPERTIES,
+    MODEL_STASH_PARAMETERS,
+    MODEL_STASH_UNATTRIBUTED_FORMULAS,
+    MODEL_STASH_UNREPRESENTABLE_JOINS,
+    PORTABLE_DIALECT,
+    RELATIONSHIP_STASH_CARDINALITY,
+    RELATIONSHIP_STASH_ON_EXPRESSION,
+    RELATIONSHIP_STASH_TYPE,
     STASH_TML_NAME,
 )
+from .expressions import CATALOG, Classification, emit_direct, emit_passthrough, emit_unmappable
 from .issues import IssueLog, Severity
-from .tml import TmlDocument
+from .tml import TmlDocument, block_scalar
 
 #: A plain ANSI SQL regular identifier (unquoted) or a double-quoted one, per
 #: the specification's own identifier grammar — up to 128 characters, and a
@@ -536,3 +557,880 @@ def build_table(dataset: dict, log: IssueLog, *, connection_name: str | None = N
 
     body = _build_table_body(dataset, payload, connection, log, object_ref=object_ref)
     return TmlDocument(kind="table", body=body, guid=None)
+
+
+# ---------------------------------------------------------------------------
+# build_model: the Model TML document.
+#
+# Everything below builds `model:` from one Ossie `semantic_model` entry plus
+# the Table/SQL-View documents `build_table` already produced for its
+# datasets. Order of business: name/description/ai_context, then a resolver
+# any computed field or metric's portable (ANSI_SQL) expression needs
+# (`resolve_field`, built once from every dataset's physical fields), then
+# fields and metrics (which allocate the model-wide unique display names R6
+# requires), then unattributed formulas, then relationships/unrepresentable
+# joins folded into each dataset's inline `joins[]`, then model-scope stash.
+# ---------------------------------------------------------------------------
+
+
+class _DisplayNameAllocator:
+    """Assigns unique TML display names across `columns[]` and `formulas[]`
+    combined (R6, ID4), preserving each candidate's own text exactly whenever
+    it is not colliding with one already assigned.
+
+    `identifiers.Allocator` is not reused directly here: it folds every
+    candidate to a normalised (lowercase, underscore-joined) identifier even
+    on its very first use, which is correct for an *Ossie* identifier
+    (TML -> Ossie's own `field.name`) but wrong for a TML display name --
+    ID1 requires `Ossie -> TML` to use a field's `label` (or a metric's own
+    `name`, when there is no `label`) verbatim in the ordinary, non-colliding
+    case. This class reuses `identifiers.normalise` as the fold key -- the
+    exact case/punctuation-insensitive comparison ID2 specifies, and the same
+    one `identifiers.Allocator` computes internally -- and appends a numeric
+    suffix to the *original* text, never the folded one, only once a
+    collision is actually found.
+    """
+
+    def __init__(self) -> None:
+        self._taken: set[str] = set()
+
+    def allocate(self, display_name: str) -> str:
+        try:
+            fold_base = identifiers.normalise(display_name)
+        except ValueError:
+            # A name with no ASCII alphanumerics at all -- normalise() raises
+            # rather than returning one. Falls back to a plain casefold so
+            # this allocator still has *some* fold key to dedupe against,
+            # rather than propagating the exception into a model build.
+            fold_base = display_name.strip().casefold() or "field"
+        fold, candidate, suffix = fold_base, display_name, 1
+        while fold in self._taken:
+            suffix += 1
+            candidate = f"{display_name}_{suffix}"
+            fold = f"{fold_base}_{suffix}"
+        self._taken.add(fold)
+        return candidate
+
+
+def _formula_id_from(display_name: str) -> str:
+    """`formulas[].id` for a formula surfaced under `display_name`.
+
+    Real ThoughtSpot display names carry spaces and mixed case
+    (``"Net Amount"``); ids do not (``formula_net_amount``). Deriving the id
+    from the *normalised* form of the display name -- the same fold
+    `_DisplayNameAllocator` already dedupes on -- rather than embedding the
+    display name verbatim is what lets a THOUGHTSPOT-verbatim cross-reference
+    elsewhere in the model (`[formula_net_amount]`, R3's id form) resolve
+    against a formula this converter itself is generating: the reference was
+    written against ThoughtSpot's own slug-shaped id convention, and a
+    verbatim, unnormalised id (``formula_Net Amount``) would silently break
+    it while still importing (a stray space in an id is otherwise legal).
+    Falls back to the display name itself only when it has no ASCII
+    alphanumerics for `identifiers.normalise` to fold onto (the same case
+    `_DisplayNameAllocator.allocate` guards).
+    """
+    try:
+        return f"formula_{identifiers.normalise(display_name)}"
+    except ValueError:
+        return f"formula_{display_name}"
+
+
+#: TML aggregation enum value -> the catalog `spec_name` whose DIRECT template
+#: is ThoughtSpot's own native rendering of it. Mirrors tml_to_ossie.py's own
+#: `_AGGREGATION_CATALOG_SPEC` (kept local rather than imported across modules
+#: for a private name) -- both derive `_CALL_NAME_TO_AGGREGATION` below from
+#: the same catalog rows, so "what native call names an aggregate" cannot
+#: silently drift between the read and write directions.
+_METRIC_AGGREGATION_CATALOG_SPEC = {
+    "SUM": "SUM(expr)", "COUNT": "COUNT(expr)", "AVERAGE": "AVG(expr)",
+    "MIN": "MIN(expr)", "MAX": "MAX(expr)", "COUNT_DISTINCT": "COUNT(DISTINCT expr)",
+    "STD_DEVIATION": "STDDEV(expr)", "VARIANCE": "VARIANCE(expr)",
+}
+
+#: The inverse: ThoughtSpot's own native aggregate call name (as rendered by
+#: `emit_direct`) -> the TML `aggregation` enum value it corresponds to.
+#: Derived, not hand-typed, for the same reason tml_to_ossie.py derives
+#: `_AGGREGATE_CALL_NAMES` from the catalog rather than listing native names
+#: by hand.
+_CALL_NAME_TO_AGGREGATION: dict[str, str] = {
+    formula.split_call(emit_direct(CATALOG[_spec], ["x"]))[0].lower(): _agg
+    for _agg, _spec in _METRIC_AGGREGATION_CATALOG_SPEC.items()
+}
+
+
+def _outer_aggregation_of(ts_expr: str) -> str | None:
+    """The TML `aggregation` enum value matching `ts_expr`'s own outer call,
+    or `None` when there is no outer call or it is not a recognised native
+    aggregate.
+
+    Used two ways: to decompose a `scalar_formula_plus_aggregation`-shaped
+    metric's composed expression back into its scalar inner expression plus
+    the aggregation that wraps it, and — for every other shape — to set the
+    surfacing column's `aggregation` as the documented convention the worked
+    shape shows (inert at query time when the formula's own expr already
+    aggregates, per R4, but present on real ThoughtSpot-authored documents).
+    """
+    call = formula.split_call(ts_expr)
+    if call is None:
+        return None
+    name, args = call
+    if len(args) != 1:
+        return None
+    return _CALL_NAME_TO_AGGREGATION.get(name.lower())
+
+
+def _decompose_scalar_aggregate(ts_expr: str) -> tuple[str, str] | None:
+    """`(aggregation, inner scalar expr)` for a composed aggregate call, or
+    `None` when `ts_expr`'s outer call is not a recognised native aggregate
+    over a single argument.
+
+    R4's scalar-formula-plus-aggregation pattern (`scalar_formula_plus_aggregation`): the Ossie metric's
+    THOUGHTSPOT-dialect entry already holds the *composed* text (e.g.
+    ``average ( [A::x] - [A::y] )``, built by tml_to_ossie's own
+    `_compose_aggregate_entries`) — this is the inverse, recovering the bare
+    scalar `[A::x] - [A::y]` and the `AVERAGE` that wraps it.
+    """
+    call = formula.split_call(ts_expr)
+    if call is None:
+        return None
+    name, args = call
+    if len(args) != 1:
+        return None
+    aggregation = _CALL_NAME_TO_AGGREGATION.get(name.lower())
+    if aggregation is None:
+        return None
+    return aggregation, args[0]
+
+
+def _maybe_block_scalar(expr: str) -> str:
+    """R9 — wrap `expr` for `>-` emission whenever it contains a brace,
+    otherwise return it untouched."""
+    if "{" in expr or "}" in expr:
+        return block_scalar(expr)
+    return expr
+
+
+#: A bare `dataset.field` reference, per the specification's own dot-notation
+#: convention (`core-spec/expression_language.md:98`) -- the shape a
+#: hand-authored ANSI_SQL expression uses to name another Ossie field, e.g.
+#: `orders.amount`. Distinct from the warehouse-qualified dot form
+#: tml_to_ossie.py's own `resolve()` closure builds for a *round-tripped*
+#: document's portable sibling (`TABLE.db_column_name`) -- that form is never
+#: read back here: a round-tripped Ossie document always carries a THOUGHTSPOT
+#: entry too, which `to_thoughtspot_expression` prefers unconditionally, so
+#: this pattern is only ever exercised for a document with no such entry.
+_ANSI_DATASET_FIELD_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s*$")
+
+
+def _match_ansi_call(name: str, args: list[str]) -> tuple[str, list[str]] | None:
+    """The CATALOG key and (possibly rewritten) argument list matching a
+    single ANSI_SQL call `name(args)`, or `None` when nothing in the catalog
+    matches this call structurally.
+
+    Deliberately narrow: only the single-argument aggregate family
+    (`SUM(expr)`, `COUNT(expr)`, ..., and the `COUNT(DISTINCT expr)` special
+    case) is matched. This is the shape a metric's portable expression
+    realistically takes (R4's scalar-formula-plus-aggregation pattern's own
+    composed shape), and the catalog's other
+    families spell their placeholder differently per row (`ABS(x)`,
+    `LOWER(str)`, ...) — matching those too would need a full per-row arity
+    index this module does not build, so anything else falls through to "no
+    catalog construct matches structurally" rather than a guess.
+    """
+    upper = name.upper()
+    if upper == "COUNT" and len(args) == 1 and args[0].strip().upper().startswith("DISTINCT "):
+        inner = args[0].strip()[len("DISTINCT "):].strip()
+        if "COUNT(DISTINCT expr)" in CATALOG:
+            return "COUNT(DISTINCT expr)", [inner]
+        return None
+    if len(args) == 1:
+        key = f"{upper}(expr)"
+        if key in CATALOG:
+            return key, args
+    return None
+
+
+def _translate_ansi_sql(
+    expr: str,
+    resolve_field: Callable[[str], tuple[str, str] | None],
+    log: IssueLog,
+    *,
+    object_ref: str,
+) -> str | None:
+    """One ANSI_SQL expression -> a ThoughtSpot formula string, or `None`.
+
+    Handles exactly two structural shapes, recursively: a bare
+    `dataset.field` reference (rewritten via `resolve_field`), and a single
+    catalog-matched function call wrapping arguments of either shape. Anything
+    else raises an issue and returns `None` — the caller stashes rather than
+    this function guessing a rendering. Never re-renders one SQL dialect into
+    another: a construct the catalog does not structurally match is left
+    alone, not approximated.
+    """
+    match = _ANSI_DATASET_FIELD_RE.match(expr)
+    if match is not None:
+        key = f"{match.group(1)}.{match.group(2)}"
+        resolved = resolve_field(key)
+        if resolved is None:
+            log.add(
+                code="TS-EXPR-ANSI-UNRESOLVED",
+                severity=Severity.WARNING,
+                message=(
+                    f"reference {key!r} does not resolve to a known field in this "
+                    f"model; no ThoughtSpot expression is produced for it"
+                ),
+                object_ref=object_ref,
+            )
+            return None
+        table, column = resolved
+        return identifiers.format_column_ref(table, column)
+
+    call = formula.split_call(expr)
+    if call is None:
+        log.add(
+            code="TS-EXPR-ANSI-UNSTRUCTURED",
+            severity=Severity.WARNING,
+            message=(
+                f"ANSI_SQL expression {expr!r} is neither a bare dataset.field "
+                f"reference nor a single function call this converter's catalog "
+                f"matches structurally; it is not re-rendered rather than guessed"
+            ),
+            object_ref=object_ref,
+        )
+        return None
+
+    name, args = call
+    matched = _match_ansi_call(name, args)
+    if matched is None:
+        log.add(
+            code="TS-EXPR-ANSI-UNMATCHED",
+            severity=Severity.WARNING,
+            message=(
+                f"{name}(...) in {expr!r} has no catalog construct this converter "
+                f"matches structurally; it is not re-rendered rather than guessed"
+            ),
+            object_ref=object_ref,
+        )
+        return None
+
+    spec_key, inner_args = matched
+    construct = CATALOG[spec_key]
+    translated: list[str] = []
+    for arg in inner_args:
+        piece = _translate_ansi_sql(arg, resolve_field, log, object_ref=object_ref)
+        if piece is None:
+            return None
+        translated.append(piece)
+
+    if construct.classification is Classification.DIRECT:
+        return emit_direct(construct, translated)
+    if construct.classification is Classification.PASSTHROUGH:
+        return emit_passthrough(construct, translated, log, object_ref=object_ref)
+    emit_unmappable(construct, log, object_ref=object_ref)
+    return None
+
+
+def to_thoughtspot_expression(
+    entries: Sequence[dict],
+    resolve_field: Callable[[str], tuple[str, str] | None],
+    log: IssueLog,
+    *,
+    object_ref: str,
+) -> str | None:
+    """One Ossie `expression.dialects[]` list -> a ThoughtSpot formula string,
+    or `None`.
+
+    Mirrors the reference converters' own `pick_expression`, and the same
+    dialect-selection order `tml_to_ossie.py`'s own `expression_entries` uses
+    in reverse: the THOUGHTSPOT entry, when present, is
+    authoritative and is returned **verbatim** — it is the exact `expr` text a
+    prior `TML -> Ossie` trip preserved untouched (tml_to_ossie.py's own
+    `expression_entries`), and every reference inside it already names this
+    document's own table/alias (a dataset's Ossie `name` is the
+    `model_tables[]` name-or-alias verbatim, so it round-trips unchanged) and
+    this document's own physical column display names (a Table document's
+    column `name` is copied from that same bracket text by `build_table`).
+    So nothing inside it needs rewriting for a document this converter
+    produced to return exactly, and none is attempted — `resolve_field` is
+    simply unused on this path.
+
+    Only when there is no THOUGHTSPOT entry at all — a hand-authored document,
+    or the worked-shape example in the construct-mapping document, both of
+    which carry only an ANSI_SQL sibling — does this fall through to
+    `_translate_ansi_sql`, which structurally matches a bare `dataset.field`
+    reference or a single catalog-recognised function call and rewrites via
+    `resolve_field`. Anything else raises an issue and returns `None` (the
+    caller stashes rather than guessing); one dialect is never re-rendered
+    into another.
+    """
+    by_dialect = {e.get("dialect"): e.get("expression") for e in entries if isinstance(e, dict)}
+
+    ts_expr = by_dialect.get(DIALECT)
+    if isinstance(ts_expr, str) and ts_expr:
+        return ts_expr
+
+    ansi_expr = by_dialect.get(PORTABLE_DIALECT)
+    if not isinstance(ansi_expr, str) or not ansi_expr:
+        log.add(
+            code="TS-EXPR-NO-USABLE-DIALECT",
+            severity=Severity.ERROR,
+            message=(
+                "expression carries no THOUGHTSPOT entry and no ANSI_SQL entry this "
+                "converter can translate; no ThoughtSpot expression can be produced for it"
+            ),
+            object_ref=object_ref,
+        )
+        return None
+
+    return _translate_ansi_sql(ansi_expr, resolve_field, log, object_ref=object_ref)
+
+
+def _field_physical_display_name(field: dict) -> str | None:
+    """The physical Table column's own display name `field` maps to, or
+    `None` when `field` is computed.
+
+    Mirrors `_physical_identity`'s own classification (THOUGHTSPOT-entry
+    priority, else any dialect's bare SQL identifier) without its logging or
+    its `db_column_name` lookup: this module's job here is only to classify
+    physical-vs-computed and to name the display column, and `build_table`
+    (called separately, on the same field, from the same log) already reports
+    any db_column_name assumption -- calling `_physical_identity` again here
+    would double-report the same finding under a second `object_ref`.
+    """
+    dialects = ((field.get("expression") or {}).get("dialects")) or []
+    ts_entry = next((d for d in dialects if d.get("dialect") == DIALECT), None)
+    if ts_entry is not None:
+        bare = formula.is_bare_column_ref(ts_entry.get("expression", ""))
+        return bare[1] if bare is not None else None
+
+    display_name = field.get("label") or field.get("name")
+    for entry in dialects:
+        if _bare_sql_identifier(entry.get("expression", "")) is not None:
+            return display_name
+    return None
+
+
+def _physical_columns_of(table_doc: TmlDocument | None) -> list[dict]:
+    if table_doc is None:
+        return []
+    key = "sql_view_columns" if table_doc.kind == "sql_view" else "columns"
+    return table_doc.body.get(key) or []
+
+
+def _restore_ai_context(properties: dict, ai_context: object, log: IssueLog, *, object_ref: str) -> None:
+    """Fold an Ossie `ai_context` value (string or `{synonyms, instructions,
+    examples}`) into `properties`, mutating it in place (R7: `synonyms` and
+    `synonym_type` live under `properties`, never at the column root).
+
+    `examples` has no TML equivalent (NM4) and raises an issue rather than
+    being dropped silently.
+    """
+    if ai_context is None:
+        return
+    if isinstance(ai_context, str):
+        if ai_context:
+            properties["ai_context"] = ai_context
+        return
+    if not isinstance(ai_context, dict):
+        return
+
+    synonyms = ai_context.get("synonyms")
+    if synonyms:
+        properties["synonyms"] = list(synonyms)
+        properties["synonym_type"] = "USER_DEFINED"
+    instructions = ai_context.get("instructions")
+    if instructions:
+        properties["ai_context"] = instructions
+    if ai_context.get("examples"):
+        log.add(
+            code="TS-AI-CONTEXT-EXAMPLES-UNSUPPORTED",
+            severity=Severity.WARNING,
+            message=(
+                "ai_context.examples has no ThoughtSpot TML equivalent (NM4); it is "
+                "not carried into the model"
+            ),
+            object_ref=object_ref,
+        )
+
+
+def _build_field(
+    field: dict,
+    dataset_prefix: str,
+    table_doc: TmlDocument | None,
+    allocator: _DisplayNameAllocator,
+    resolve_field: Callable[[str], tuple[str, str] | None],
+    log: IssueLog,
+) -> tuple[dict, dict | None] | None:
+    """One Ossie field -> `(columns[] entry, formulas[] entry or None)`, or
+    `None` when the field cannot be surfaced at all.
+
+    A physical field becomes a `column_id` entry, validated against the
+    dataset's own already-built Table document so a broken reference is
+    caught here rather than shipped as an import-time 404. A computed field
+    becomes a `formulas[]` + `formula_id` pair (R3), never a bare `column_id`.
+    """
+    payload = stash.read_stash(field)
+    display_name = field.get("label") or field.get("name") or "<unnamed>"
+    object_ref = f"field:{display_name}"
+    name = allocator.allocate(display_name)
+    properties: dict = {"column_type": "ATTRIBUTE"}
+    formulas_entry: dict | None = None
+
+    physical_column_name = _field_physical_display_name(field)
+    if physical_column_name is not None:
+        exists = any(
+            c.get("name") == physical_column_name for c in _physical_columns_of(table_doc)
+        )
+        if not exists:
+            log.add(
+                code="TS-MODEL-COLUMN-ID-MISSING",
+                severity=Severity.ERROR,
+                message=(
+                    f"field {display_name!r} maps to physical column "
+                    f"{physical_column_name!r} on dataset {dataset_prefix!r}, but no "
+                    f"such column exists on its Table document; the field is not "
+                    f"surfaced in the model rather than referencing a column that "
+                    f"does not exist"
+                ),
+                object_ref=object_ref,
+            )
+            return None
+        columns_entry = {
+            "name": name,
+            "column_id": f"{dataset_prefix}::{physical_column_name}",
+            "properties": properties,
+        }
+    else:
+        expr = to_thoughtspot_expression(
+            (field.get("expression") or {}).get("dialects") or [],
+            resolve_field, log, object_ref=object_ref,
+        )
+        if expr is None:
+            log.add(
+                code="TS-MODEL-FIELD-UNTRANSLATABLE",
+                severity=Severity.ERROR,
+                message=(
+                    f"field {display_name!r}'s expression could not be translated "
+                    f"into any ThoughtSpot-importable form; it is not included in "
+                    f"the model"
+                ),
+                object_ref=object_ref,
+            )
+            return None
+        formula_id = _formula_id_from(name)
+        formulas_entry = {"id": formula_id, "name": name, "expr": _maybe_block_scalar(expr)}
+        columns_entry = {"name": name, "formula_id": formula_id, "properties": properties}
+        if field.get("datatype") is not None:
+            log.add(
+                code="TS-MODEL-FIELD-DATATYPE-UNWRITABLE",
+                severity=Severity.WARNING,
+                message=(
+                    f"field {display_name!r} is formula-backed and declares a "
+                    f"datatype, but Model TML has no data_type key on a "
+                    f"formula-backed columns[] entry; it is not carried into the "
+                    f"model"
+                ),
+                object_ref=object_ref,
+            )
+
+    extra_properties = payload.get(FIELD_STASH_COLUMN_PROPERTIES) or {}
+    properties.update(extra_properties)
+    _restore_ai_context(properties, field.get("ai_context"), log, object_ref=object_ref)
+
+    description = field.get("description")
+    if description:
+        columns_entry["description"] = description
+
+    return columns_entry, formulas_entry
+
+
+def _build_metric(
+    metric: dict,
+    allocator: _DisplayNameAllocator,
+    resolve_field: Callable[[str], tuple[str, str] | None],
+    log: IssueLog,
+) -> tuple[dict, dict] | None:
+    """One Ossie metric -> `(formulas[] entry, columns[] entry)`, or `None`
+    when it cannot be translated at all.
+
+    R4: always a formula, never `column_id` + `aggregation` -- Ossie's own
+    Metric schema has no `column_id` field regardless, so this is the only
+    shape available. The stash's `shape` (default METRIC_SHAPE_FORMULA, the
+    documented contract for an absent key) selects only between the two
+    formula-based emissions: `scalar_formula_plus_aggregation`
+    decomposes the composed expression back into a scalar `expr` plus a
+    load-bearing `properties.aggregation`; every other shape — the default,
+    and `column_aggregation`, whose Ossie-side THOUGHTSPOT text is *already*
+    the same aggregate-in-expr shape the default is — is emitted as-is, with
+    `properties.aggregation` set only as the inert convention real
+    ThoughtSpot-authored documents carry (see the worked shape example).
+    """
+    payload = stash.read_stash(metric)
+    display_name = payload.get(STASH_TML_NAME) or metric.get("name") or "<unnamed>"
+    object_ref = f"metric:{display_name}"
+    name = allocator.allocate(display_name)
+    formula_id = _formula_id_from(name)
+
+    ts_expr = to_thoughtspot_expression(
+        (metric.get("expression") or {}).get("dialects") or [],
+        resolve_field, log, object_ref=object_ref,
+    )
+    if ts_expr is None:
+        log.add(
+            code="TS-MODEL-METRIC-UNTRANSLATABLE",
+            severity=Severity.ERROR,
+            message=(
+                f"metric {display_name!r}'s expression could not be translated "
+                f"into any ThoughtSpot-importable form; it is not included in the "
+                f"model"
+            ),
+            object_ref=object_ref,
+        )
+        return None
+
+    shape = payload.get(METRIC_STASH_SHAPE, METRIC_SHAPE_FORMULA)
+    properties: dict = {"column_type": "MEASURE"}
+    formula_expr = ts_expr
+
+    if shape == METRIC_SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION:
+        decomposed = _decompose_scalar_aggregate(ts_expr)
+        if decomposed is None:
+            log.add(
+                code="TS-MODEL-METRIC-SHAPE-MISMATCH",
+                severity=Severity.WARNING,
+                message=(
+                    f"metric {display_name!r} is stashed as "
+                    f"scalar_formula_plus_aggregation but its composed expression "
+                    f"{ts_expr!r} has no recognised single-argument outer aggregate "
+                    f"call; it is emitted as a plain formula instead"
+                ),
+                object_ref=object_ref,
+            )
+        else:
+            properties["aggregation"], formula_expr = decomposed
+
+    if "aggregation" not in properties:
+        conventional = _outer_aggregation_of(ts_expr)
+        if conventional is not None:
+            properties["aggregation"] = conventional
+
+    if metric.get("datatype") is not None:
+        log.add(
+            code="TS-MODEL-METRIC-DATATYPE-UNWRITABLE",
+            severity=Severity.WARNING,
+            message=(
+                f"metric {display_name!r} declares a datatype, but Model TML has "
+                f"no data_type key anywhere for a formula-backed metric; it is not "
+                f"carried into the model"
+            ),
+            object_ref=object_ref,
+        )
+
+    extra_properties = payload.get(FIELD_STASH_COLUMN_PROPERTIES) or {}
+    properties.update(extra_properties)
+    _restore_ai_context(properties, metric.get("ai_context"), log, object_ref=object_ref)
+
+    formulas_entry = {"id": formula_id, "name": name, "expr": _maybe_block_scalar(formula_expr)}
+    columns_entry = {"name": name, "formula_id": formula_id, "properties": properties}
+    description = metric.get("description")
+    if description:
+        columns_entry["description"] = description
+
+    return formulas_entry, columns_entry
+
+
+def _build_field_index(
+    datasets: list[dict],
+) -> dict[str, tuple[str, str]]:
+    """`"dataset.field" -> (TABLE, physical column display name)`, for every
+    physical field in every dataset -- the data `resolve_field` (the
+    `to_thoughtspot_expression` parameter) is built from.
+
+    Deliberately not named `resolve` (see the module's Model-building
+    section and the task interfaces): `resolve` (tml_to_ossie.py) maps
+    `(TABLE, Column) -> "dataset.field"`; this is its inverse, same arity,
+    keyed the other way around, so a mixed-up argument would type-check and
+    produce silently wrong references.
+    """
+    index: dict[str, tuple[str, str]] = {}
+    for dataset in datasets:
+        dataset_prefix = dataset.get("name")
+        if not dataset_prefix:
+            continue
+        for field in dataset.get("fields") or []:
+            field_name = field.get("name")
+            if not field_name:
+                continue
+            physical_column_name = _field_physical_display_name(field)
+            if physical_column_name is None:
+                continue
+            index[f"{dataset_prefix}.{field_name}"] = (dataset_prefix, physical_column_name)
+    return index
+
+
+def _restore_relationship_condition(
+    from_prefix: str, to_prefix: str, from_columns: list[str], to_columns: list[str]
+) -> str:
+    """The equality-only `on:` condition for a relationship with no stashed
+    `on_expression` -- reconstructed from `from_columns`/`to_columns` alone,
+    which is all a hand-authored relationship (no stash) has to go on."""
+    pairs = zip(from_columns or [], to_columns or [])
+    return " and ".join(
+        f"{identifiers.format_column_ref(from_prefix, fc)} = "
+        f"{identifiers.format_column_ref(to_prefix, tc)}"
+        for fc, tc in pairs
+    )
+
+
+def _join_entry_for_relationship(rel: dict) -> tuple[str, dict]:
+    """One Ossie relationship (or `unrepresentable_joins[]` entry) ->
+    `(from_prefix, inline join entry)`.
+
+    Always emitted as an *inline* `model_tables[].joins[]` entry (R5),
+    regardless of the stashed `join_shape` -- a `"referencing"`-shaped join
+    would need a `joins_with[]` entry on the *Table* document, which this
+    function has no way to add: the Table documents are already-built,
+    immutable `TmlDocument`s by the time `build_model` sees them. The join
+    itself -- condition, type, cardinality -- is fully restored either way;
+    only the structural choice of inline-vs-Table-referencing is collapsed,
+    which does not change import behaviour.
+    """
+    payload = stash.read_stash(rel)
+    from_prefix = rel.get("from") or ""
+    to_prefix = rel.get("to") or ""
+    on_expression = payload.get(RELATIONSHIP_STASH_ON_EXPRESSION)
+    if not on_expression:
+        on_expression = _restore_relationship_condition(
+            from_prefix, to_prefix, rel.get("from_columns") or [], rel.get("to_columns") or []
+        )
+    join_type = payload.get(RELATIONSHIP_STASH_TYPE) or "INNER"
+    cardinality = payload.get(RELATIONSHIP_STASH_CARDINALITY) or "MANY_TO_ONE"
+    return from_prefix, {
+        "with": to_prefix, "on": on_expression, "type": join_type, "cardinality": cardinality,
+    }
+
+
+def _join_entry_for_unrepresentable(entry: dict) -> tuple[str, dict]:
+    """One `unrepresentable_joins[]` stash entry -> `(from_prefix, inline join
+    entry)` -- these carry the verbatim `on_expression` unconditionally (they
+    exist only because their condition has no equality pair at all), so the
+    join is restored exactly rather than approximated."""
+    from_prefix = entry.get("from") or ""
+    to_prefix = entry.get("to") or ""
+    on_expression = entry.get(RELATIONSHIP_STASH_ON_EXPRESSION) or ""
+    join_type = entry.get(RELATIONSHIP_STASH_TYPE) or "INNER"
+    cardinality = entry.get(RELATIONSHIP_STASH_CARDINALITY) or "MANY_TO_ONE"
+    return from_prefix, {
+        "with": to_prefix, "on": on_expression, "type": join_type, "cardinality": cardinality,
+    }
+
+
+def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueLog) -> TmlDocument:
+    """One Ossie `semantic_model` entry -> one ThoughtSpot `model:` TML document.
+
+    `tables` are the already-built Table/SQL-View documents for this model's
+    datasets (`build_table`, called once per dataset) -- consulted here, by
+    name, rather than re-derived, so a physical field's `column_id` always
+    references a column that genuinely exists on the document a Model import
+    would actually load (R10: tables are emitted, and known, before the
+    model that references them).
+    """
+    model_payload = stash.read_stash(semantic_model)
+    model_name = model_payload.get(STASH_TML_NAME) or semantic_model.get("name") or "<unnamed>"
+    object_ref = f"model:{model_name}"
+    body: dict = {"name": model_name}
+
+    description = semantic_model.get("description")
+    if description:
+        body["description"] = description
+
+    if semantic_model.get("ai_context") is not None:
+        log.add(
+            code="TS-MODEL-AI-CONTEXT-UNSUPPORTED",
+            severity=Severity.WARNING,
+            message=(
+                "model-scope ai_context has no home in Model TML -- ThoughtSpot's "
+                "model-scope Spotter instructions are configured outside the TML "
+                "document; it is not carried into the model"
+            ),
+            object_ref=object_ref,
+        )
+
+    datasets = semantic_model.get("datasets") or []
+    tables_by_name = {t.body.get("name"): t for t in tables}
+
+    model_tables: list[dict] = []
+    model_tables_by_prefix: dict[str, dict] = {}
+    table_doc_by_prefix: dict[str, TmlDocument | None] = {}
+
+    for dataset in datasets:
+        dataset_prefix = dataset.get("name") or "<unnamed>"
+        ds_payload = stash.read_stash(dataset)
+        table_ref = _table_name(dataset, ds_payload)
+        alias = ds_payload.get(DATASET_STASH_ALIAS)
+        table_doc = tables_by_name.get(table_ref)
+        table_doc_by_prefix[dataset_prefix] = table_doc
+        if table_doc is None:
+            log.add(
+                code="TS-MODEL-TABLE-MISSING",
+                severity=Severity.ERROR,
+                message=(
+                    f"dataset {dataset_prefix!r} references table {table_ref!r}, "
+                    f"but no matching document was supplied in `tables`; the "
+                    f"model_tables[] entry is still emitted by name, but none of "
+                    f"this dataset's fields can be validated or surfaced"
+                ),
+                object_ref=f"dataset:{dataset_prefix}",
+            )
+
+        table_entry: dict = {"name": table_ref}
+        if alias:
+            table_entry["alias"] = alias
+        model_tables.append(table_entry)
+        model_tables_by_prefix[dataset_prefix] = table_entry
+
+    resolve_field = _build_field_index(datasets).get
+
+    allocator = _DisplayNameAllocator()
+    columns: list[dict] = []
+    formulas: list[dict] = []
+
+    for dataset in datasets:
+        dataset_prefix = dataset.get("name") or "<unnamed>"
+        table_doc = table_doc_by_prefix.get(dataset_prefix)
+        for field in dataset.get("fields") or []:
+            built = _build_field(field, dataset_prefix, table_doc, allocator, resolve_field, log)
+            if built is None:
+                continue
+            columns_entry, formulas_entry = built
+            columns.append(columns_entry)
+            if formulas_entry is not None:
+                formulas.append(formulas_entry)
+
+    for metric in semantic_model.get("metrics") or []:
+        built = _build_metric(metric, allocator, resolve_field, log)
+        if built is None:
+            continue
+        formulas_entry, columns_entry = built
+        formulas.append(formulas_entry)
+        columns.append(columns_entry)
+
+    for entry in model_payload.get(MODEL_STASH_UNATTRIBUTED_FORMULAS) or []:
+        raw_name = entry.get("name") or "<unnamed>"
+        allocated_name = allocator.allocate(raw_name)
+        expr = entry.get("expr", "")
+        formulas.append({
+            "id": _formula_id_from(allocated_name), "name": allocated_name,
+            "expr": _maybe_block_scalar(expr),
+        })
+        if entry.get(FIELD_STASH_COLUMN_PROPERTIES):
+            log.add(
+                code="TS-MODEL-UNATTRIBUTED-FORMULA-PROPERTIES-LOST",
+                severity=Severity.WARNING,
+                message=(
+                    f"unattributed formula {raw_name!r} carried column properties "
+                    f"from its original surfacing column, but the rebuilt formula "
+                    f"has no surfacing columns[] entry (it remains unattributable) "
+                    f"to attach them to; they are not restored"
+                ),
+                object_ref=f"formula:{raw_name}",
+            )
+
+    covered_columns_by_dataset: dict[str, list[set]] = {}
+
+    for rel in semantic_model.get("relationships") or []:
+        from_prefix, join_entry = _join_entry_for_relationship(rel)
+        target = model_tables_by_prefix.get(from_prefix)
+        if target is None:
+            log.add(
+                code="TS-MODEL-RELATIONSHIP-UNKNOWN-FROM",
+                severity=Severity.ERROR,
+                message=(
+                    f"relationship {rel.get('name')!r} names `from` dataset "
+                    f"{from_prefix!r}, which is not one of this model's datasets; "
+                    f"the join is dropped"
+                ),
+                object_ref=f"relationship:{rel.get('name')}",
+            )
+            continue
+        target.setdefault("joins", []).append(join_entry)
+        to_prefix = rel.get("to")
+        to_columns = rel.get("to_columns")
+        if to_prefix and to_columns:
+            covered_columns_by_dataset.setdefault(to_prefix, []).append(set(to_columns))
+
+    for entry in model_payload.get(MODEL_STASH_UNREPRESENTABLE_JOINS) or []:
+        from_prefix, join_entry = _join_entry_for_unrepresentable(entry)
+        target = model_tables_by_prefix.get(from_prefix)
+        if target is None:
+            log.add(
+                code="TS-MODEL-RELATIONSHIP-UNKNOWN-FROM",
+                severity=Severity.ERROR,
+                message=(
+                    f"an unrepresentable join names `from` dataset {from_prefix!r}, "
+                    f"which is not one of this model's datasets; the join is dropped"
+                ),
+                object_ref=f"dataset:{from_prefix}",
+            )
+            continue
+        target.setdefault("joins", []).append(join_entry)
+
+    # Dataset-level mapping's `primary_key`/`unique_keys` rows: TML has no key
+    # declaration anywhere (neither Table nor Model), so a declared key's only
+    # possible home on the way back is a relationship whose `to_columns`
+    # cover it -- see the construct-mapping document's own worked example,
+    # where a single-dataset model's unused `primary_key` is exactly this
+    # loss. A key a relationship *does* cover needs no issue: the
+    # relationship (already restored above) carries the same fact.
+    for dataset in datasets:
+        dataset_prefix = dataset.get("name") or "<unnamed>"
+        covered = covered_columns_by_dataset.get(dataset_prefix, [])
+        declared_keys: list[tuple[str, list[str]]] = []
+        primary_key = dataset.get("primary_key")
+        if primary_key:
+            declared_keys.append(("primary_key", list(primary_key)))
+        for index, unique_key in enumerate(dataset.get("unique_keys") or []):
+            if unique_key:
+                declared_keys.append((f"unique_keys[{index}]", list(unique_key)))
+        for key_label, key_columns in declared_keys:
+            key_set = set(key_columns)
+            if any(key_set <= c for c in covered):
+                continue
+            log.add(
+                code="TS-MODEL-DATASET-KEY-UNUSED",
+                severity=Severity.WARNING,
+                message=(
+                    f"dataset {dataset_prefix!r} declares {key_label} "
+                    f"{key_columns!r}, but no relationship's to_columns cover it; "
+                    f"TML has no key declaration anywhere, so this key has nowhere "
+                    f"to go and is dropped"
+                ),
+                object_ref=f"dataset:{dataset_prefix}",
+            )
+
+    body["model_tables"] = model_tables
+    if columns:
+        body["columns"] = columns
+    if formulas:
+        body["formulas"] = formulas
+
+    model_properties = model_payload.get(MODEL_STASH_MODEL_PROPERTIES)
+    if model_properties:
+        body["properties"] = dict(model_properties)
+
+    for stash_key in (
+        MODEL_STASH_PARAMETERS, MODEL_STASH_FILTERS, MODEL_STASH_COLUMN_GROUPS,
+        MODEL_STASH_LESSON_PLANS, MODEL_STASH_ACTION_OBJECT_ASSOCIATIONS, MODEL_STASH_CONSTRAINTS,
+    ):
+        value = model_payload.get(stash_key)
+        if value:
+            body[stash_key] = value
+
+    model_joins_with = model_payload.get(MODEL_STASH_MODEL_JOINS_WITH)
+    if model_joins_with:
+        # Restored under the bare TML key `joins_with` -- `model_` in the
+        # stash key only disambiguates it from a *Table* document's own,
+        # differently-scoped `joins_with[]` inside the same payload namespace.
+        body["joins_with"] = model_joins_with
+
+    return TmlDocument(kind="model", body=body, guid=None)

@@ -150,8 +150,8 @@ _MAPPING_DOC_RULE_ID_FAMILIES: dict[str, tuple[int, ...]] = {
     "I": (1, 4, 5, 7),
     "ID": (1, 2, 3, 4),
     "KD": (1, 2, 3),
-    "NM": (1, 2, 6),
-    "R": (1, 11),
+    "NM": (1, 2, 4, 6),
+    "R": (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11),
     "X": tuple(range(1, 10)),
 }
 MAPPING_DOC_RULE_IDS: frozenset[str] = frozenset(
