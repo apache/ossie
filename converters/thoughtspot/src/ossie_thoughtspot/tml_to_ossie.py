@@ -213,6 +213,14 @@ def _physical_datatype(
 
     Matched by the physical column's own display name — what a Model `column_id`
     suffix names — not by its warehouse column name.
+
+    `None` covers two different situations, and only one of them is a loss worth
+    logging. A column with no `data_type` at all has nothing to drop — `datatype`
+    is optional in Ossie, and `datatypes.to_ossie` documents omission as a
+    legitimate answer, so this stays silent. A column whose `data_type` *is*
+    present but unrecognised by `datatypes.to_ossie` is different: the warehouse
+    told us the type and it is about to be dropped on the floor, so that case
+    logs an issue naming the type before returning `None`.
     """
     table = table_lookup(table_name)
     physical = None
@@ -235,7 +243,19 @@ def _physical_datatype(
     data_type = (physical.get("db_column_properties") or {}).get("data_type")
     if data_type is None:
         return None
-    return datatypes.to_ossie(data_type)
+    ossie_type = datatypes.to_ossie(data_type)
+    if ossie_type is None:
+        log.add(
+            code="TS-FIELD-DATATYPE-UNMAPPED",
+            severity=Severity.WARNING,
+            message=(
+                f"physical column {column_name!r} on table {table_name!r} has "
+                f"warehouse data_type {data_type!r}, which has no Ossie "
+                f"equivalent; no datatype is emitted for this field"
+            ),
+            object_ref=object_ref,
+        )
+    return ossie_type
 
 
 def _ai_context(properties: dict) -> dict | str | None:
@@ -302,6 +322,17 @@ def convert_field(
                 message=(
                     f"column {display_name!r} has formula_id {formula_id!r}, which "
                     f"matches no formulas[] entry; no field can be built"
+                ),
+                object_ref=object_ref,
+            )
+            return None
+        if "expr" not in formula_entry:
+            log.add(
+                code="TS-FIELD-FORMULA-MISSING",
+                severity=Severity.WARNING,
+                message=(
+                    f"column {display_name!r} has formula_id {formula_id!r}, whose "
+                    f"formulas[] entry has no expr; no field can be built"
                 ),
                 object_ref=object_ref,
             )
