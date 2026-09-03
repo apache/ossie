@@ -265,3 +265,14 @@ FIELD_STASH_COLUMN_PROPERTIES = "column_properties"
 #: into one. `formula` is the default a document with no stash at all
 #: reconstructs as, so it is the one value never written.
 METRIC_STASH_SHAPE = "shape"
+
+#: METRIC_STASH_SHAPE's own value vocabulary -- shared here, not written as a
+#: literal by tml_to_ossie.py (the writer) and re-typed as a literal by
+#: ossie_to_thoughtspot.py (the reader), for the same reason every other name
+#: in this file is centralised: the two must agree on the exact spelling and
+#: nothing else enforces that. `METRIC_SHAPE_FORMULA` is also what a document
+#: with no `shape` stash at all defaults to on the way back -- see
+#: METRIC_STASH_SHAPE above, and R4 for which shape is emitted by default.
+METRIC_SHAPE_COLUMN_AGGREGATION = "column_aggregation"
+METRIC_SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION = "scalar_formula_plus_aggregation"
+METRIC_SHAPE_FORMULA = "formula"
