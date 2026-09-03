@@ -81,12 +81,14 @@ from .constants import (
     DATASET_STASH_TABLE_NAME,
     DATASET_STASH_TABLE_PROPERTIES,
     DATASET_STASH_TML_OBJECT,
+    DATASET_STASH_TML_OBJECT_WITNESS,
     DATASET_STASH_UNSURFACED_COLUMNS,
     DIALECT,
     FIELD_STASH_COLUMN_PROPERTIES,
     FIELD_STASH_DATA_TYPE,
     FIELD_STASH_DATA_TYPE_WITNESS,
     FIELD_STASH_DB_COLUMN_NAME,
+    FIELD_STASH_DB_COLUMN_NAME_WITNESS,
     METRIC_SHAPE_COLUMN_AGGREGATION,
     METRIC_SHAPE_FORMULA,
     METRIC_SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION,
@@ -222,12 +224,36 @@ def _physical_identity(field: dict, log: IssueLog, *, object_ref: str) -> tuple[
         # a Model column_id must match), not necessarily its warehouse
         # db_column_name -- a physical column is matched by display name
         # only. When the forward direction saw the two differ, it stashes
-        # the true warehouse name on the field, and that value is
-        # authoritative whenever present.
+        # the true warehouse name on the field, witnessed against the
+        # display name it was recorded for (X5): trustworthy only when the
+        # field still names the same physical column, since a user
+        # retargeting the bracket reference to a different column leaves a
+        # stash that now names the WRONG column's warehouse name -- one
+        # that would otherwise be silently applied to this one.
         field_stash = stash.read_stash(field)
-        stashed_db_column_name = field_stash.get(FIELD_STASH_DB_COLUMN_NAME)
+        was_stashed = FIELD_STASH_DB_COLUMN_NAME in field_stash
+        stashed_db_column_name = stash.restore(
+            field_stash, FIELD_STASH_DB_COLUMN_NAME, None,
+            witness=column, witness_key=FIELD_STASH_DB_COLUMN_NAME_WITNESS,
+        )
         if isinstance(stashed_db_column_name, str) and stashed_db_column_name:
             return column, stashed_db_column_name
+        if was_stashed:
+            log.add(
+                code="TS-FIELD-DB-COLUMN-NAME-STALE",
+                severity=Severity.WARNING,
+                message=(
+                    f"a stashed warehouse column name was recorded for a "
+                    f"different physical column than this field's current "
+                    f"{column!r}; the field was retargeted since the stash "
+                    f"was written, so the stash is dropped and "
+                    f"db_column_name is set equal to the display name "
+                    f"instead, which will name a column the warehouse does "
+                    f"not have if the two differ"
+                ),
+                object_ref=object_ref,
+            )
+            return column, column
         # No stash to consult -- a hand-authored bracket, or a document
         # produced before this key existed. Falling back to the display
         # name is correct whenever the two originally agreed (the common
@@ -397,19 +423,41 @@ def _derive_kind(source: str) -> tuple[str, bool]:
     return "table", True
 
 
-def _decide_kind(dataset: dict, payload: dict) -> str:
+def _decide_kind(dataset: dict, payload: dict, log: IssueLog, *, object_ref: str) -> str:
     """Whether `dataset` becomes a `table:` or `sql_view:` document.
 
     A stashed `tml_object` (written whenever this dataset came from a prior
-    TML -> Ossie trip) is authoritative and is used whenever present --
-    it also determines which shape `unsurfaced_columns` was captured in, so
-    trusting it keeps that list valid. A hand-authored dataset has no stash
-    at all, and falls through to `_derive_kind`.
+    TML -> Ossie trip) is authoritative -- it also determines which shape
+    `unsurfaced_columns` was captured in, so trusting it keeps that list
+    valid -- but only when its witness (the `source` it was stashed
+    alongside, X5) still matches this dataset's CURRENT `source`. A user who
+    rewrites `source` from a table reference to a query (or back) since the
+    stash was written leaves a `tml_object` that now describes the wrong
+    shape; using it anyway would misread `source` under the old rules (a
+    query parsed as db/schema/table, or vice versa). A hand-authored dataset
+    has no stash at all, and falls through to `_derive_kind` either way.
     """
-    stashed_kind = payload.get(DATASET_STASH_TML_OBJECT)
+    source = dataset.get("source") or ""
+    was_stashed = DATASET_STASH_TML_OBJECT in payload
+    stashed_kind = stash.restore(
+        payload, DATASET_STASH_TML_OBJECT, None,
+        witness=source, witness_key=DATASET_STASH_TML_OBJECT_WITNESS,
+    )
     if stashed_kind in ("table", "sql_view"):
         return stashed_kind
-    kind, _malformed = _derive_kind(dataset.get("source") or "")
+    if was_stashed:
+        log.add(
+            code="TS-DATASET-TML-OBJECT-STALE",
+            severity=Severity.WARNING,
+            message=(
+                "a stashed document kind (table/sql_view) no longer matches "
+                "this dataset's current source; the source was rewritten "
+                "since the stash was written, so the stash is dropped and "
+                "the kind is re-derived from the current source instead"
+            ),
+            object_ref=object_ref,
+        )
+    kind, _malformed = _derive_kind(source)
     return kind
 
 
@@ -575,7 +623,7 @@ def build_table(dataset: dict, log: IssueLog, *, connection_name: str | None = N
             object_ref=object_ref,
         )
 
-    if _decide_kind(dataset, payload) == "sql_view":
+    if _decide_kind(dataset, payload, log, object_ref=object_ref) == "sql_view":
         body = _build_sql_view_body(dataset, payload, connection, log, object_ref=object_ref)
         return TmlDocument(kind="sql_view", body=body, guid=None)
 
@@ -618,7 +666,7 @@ class _DisplayNameAllocator:
     def __init__(self) -> None:
         self._taken: set[str] = set()
 
-    def allocate(self, display_name: str) -> str:
+    def allocate(self, display_name: str, log: IssueLog, *, object_ref: str) -> str:
         try:
             fold_base = identifiers.normalise(display_name)
         except ValueError:
@@ -633,6 +681,21 @@ class _DisplayNameAllocator:
             candidate = f"{display_name}_{suffix}"
             fold = f"{fold_base}_{suffix}"
         self._taken.add(fold)
+        if candidate != display_name:
+            # The rename is correct -- uniqueness is required (R6/ID4) -- but
+            # it changes text the user chose and will see in the product, and
+            # silence here is exactly the kind of quiet difference this
+            # package otherwise always reports.
+            log.add(
+                code="TS-MODEL-DISPLAY-NAME-COLLISION",
+                severity=Severity.WARNING,
+                message=(
+                    f"display name {display_name!r} collides with one already "
+                    f"assigned in this model; it is emitted as {candidate!r} "
+                    f"instead to satisfy ThoughtSpot's uniqueness requirement"
+                ),
+                object_ref=object_ref,
+            )
         return candidate
 
 
@@ -646,6 +709,42 @@ def _normalise_or_self(text: str) -> str:
         return identifiers.normalise(text)
     except ValueError:
         return text
+
+
+def _restore_tml_name(
+    payload: dict, live_identifier: str, log: IssueLog, *, object_ref: str
+) -> str:
+    """X5 for STASH_TML_NAME (metric and model scope): the exact ThoughtSpot
+    display name a prior TML -> Ossie trip stashed when ID1 normalisation
+    changed it, restored only when it is still current.
+
+    Self-verifying rather than a separately stored witness (the same shape
+    `_source_parts` already uses for DATASET_STASH_SOURCE_PARTS): the
+    stashed name's own normalised form IS the check, since that is exactly
+    the fold the forward direction applied to produce `live_identifier` in
+    the first place. If they still agree, nobody has renamed the Ossie
+    identifier since the stash was written, and the exact display name is
+    restored; if they disagree, the identifier was renamed and the stash
+    describes a name that no longer belongs to this object, so it is
+    dropped and the live identifier is used instead.
+    """
+    stashed = payload.get(STASH_TML_NAME)
+    if not isinstance(stashed, str) or not stashed:
+        return live_identifier
+    if _normalise_or_self(stashed) == live_identifier:
+        return stashed
+    log.add(
+        code="TS-STASH-TML-NAME-STALE",
+        severity=Severity.WARNING,
+        message=(
+            f"a stashed display name {stashed!r} no longer matches this "
+            f"object's current identifier {live_identifier!r}; it was "
+            f"renamed since the stash was written, so the stashed name is "
+            f"dropped and the current identifier is used instead"
+        ),
+        object_ref=object_ref,
+    )
+    return live_identifier
 
 
 def _formula_id_from(display_name: str) -> str:
@@ -1127,7 +1226,7 @@ def _build_field(
     payload = stash.read_stash(field)
     display_name = field.get("label") or field.get("name") or "<unnamed>"
     object_ref = f"field:{display_name}"
-    name = allocator.allocate(display_name)
+    name = allocator.allocate(display_name, log, object_ref=object_ref)
     properties: dict = {"column_type": "ATTRIBUTE"}
     formulas_entry: dict | None = None
 
@@ -1234,9 +1333,10 @@ def _build_metric(
     ThoughtSpot-authored documents carry (see the worked shape example).
     """
     payload = stash.read_stash(metric)
-    display_name = payload.get(STASH_TML_NAME) or metric.get("name") or "<unnamed>"
+    live_name = metric.get("name") or "<unnamed>"
+    display_name = _restore_tml_name(payload, live_name, log, object_ref=f"metric:{live_name}")
     object_ref = f"metric:{display_name}"
-    name = allocator.allocate(display_name)
+    name = allocator.allocate(display_name, log, object_ref=object_ref)
     formula_id = _formula_id_from(name)
 
     ts_expr = to_thoughtspot_expression(
@@ -1501,7 +1601,10 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
     model that references them).
     """
     model_payload = stash.read_stash(semantic_model)
-    model_name = model_payload.get(STASH_TML_NAME) or semantic_model.get("name") or "<unnamed>"
+    live_model_name = semantic_model.get("name") or "<unnamed>"
+    model_name = _restore_tml_name(
+        model_payload, live_model_name, log, object_ref=f"model:{live_model_name}"
+    )
     object_ref = f"model:{model_name}"
     body: dict = {"name": model_name}
 
@@ -1581,23 +1684,37 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
         columns.append(columns_entry)
 
     for entry in model_payload.get(MODEL_STASH_UNATTRIBUTED_FORMULAS) or []:
+        # A formula spanning two or more Ossie datasets has no single
+        # dataset to belong to, which is exactly why the forward direction
+        # could not turn it into an ordinary Ossie field -- but a TML
+        # formula's surfacing columns[] entry was never tied to a dataset
+        # in the first place (R3: `formula_id` + `properties`, no
+        # `column_id`), so nothing here actually stops the formula from
+        # being surfaced normally. An earlier revision re-emitted only the
+        # bare formulas[] entry with no surfacing columns[] entry at all --
+        # which, by ThoughtSpot's own visibility rule (a formulas[] entry
+        # with no columns[] entry referencing it is not surfaced), silently
+        # made a formula that WAS visible in the source unreachable in the
+        # rebuilt model, while the issue it raised said only that column
+        # properties were lost -- a materially smaller claim than what
+        # actually happened. Restoring the surfacing entry (using the
+        # stashed properties verbatim, R8-filtered the same way every other
+        # surfaced field's properties are) fixes the cause rather than
+        # rewording the symptom, and needs no issue at all: nothing is lost
+        # once the formula is surfaced.
         raw_name = entry.get("name") or "<unnamed>"
-        allocated_name = allocator.allocate(raw_name)
+        object_ref = f"formula:{raw_name}"
+        allocated_name = allocator.allocate(raw_name, log, object_ref=object_ref)
         expr = entry.get("expr", "")
+        formula_id = _formula_id_from(allocated_name)
         # Raw, unwrapped `expr` -- see the matching comment in _build_field.
-        formulas.append({"id": _formula_id_from(allocated_name), "name": allocated_name, "expr": expr})
-        if entry.get(FIELD_STASH_COLUMN_PROPERTIES):
-            log.add(
-                code="TS-MODEL-UNATTRIBUTED-FORMULA-PROPERTIES-LOST",
-                severity=Severity.WARNING,
-                message=(
-                    f"unattributed formula {raw_name!r} carried column properties "
-                    f"from its original surfacing column, but the rebuilt formula "
-                    f"has no surfacing columns[] entry (it remains unattributable) "
-                    f"to attach them to; they are not restored"
-                ),
-                object_ref=f"formula:{raw_name}",
-            )
+        formulas.append({"id": formula_id, "name": allocated_name, "expr": expr})
+        stashed_properties = entry.get(FIELD_STASH_COLUMN_PROPERTIES) or {}
+        properties = _drop_never_emit_true_properties(
+            dict(stashed_properties), log, object_ref=object_ref
+        )
+        properties.setdefault("column_type", "ATTRIBUTE")
+        columns.append({"name": allocated_name, "formula_id": formula_id, "properties": properties})
 
     # Every formula's final id is only fully known once every field, metric
     # and unattributed formula above has been assigned one -- a formula

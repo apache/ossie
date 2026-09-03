@@ -407,6 +407,40 @@ class TestDisplayNameCollisions:
         column_ids = {c["column_id"] for c in columns}
         assert column_ids == {"orders::Status", "customers::Status"}
 
+    def test_the_rename_is_logged_not_silent(self):
+        # The rename itself is correct -- uniqueness is required -- but it
+        # changes a name the user chose, and that used to go unreported.
+        orders = _table_doc("orders", [_column("Status", "STATUS", "VARCHAR")])
+        customers = _table_doc("customers", [_column("Status", "C_STATUS", "VARCHAR")])
+        orders_ds = _dataset("orders", "SALES.PUBLIC.ORDERS", fields=[
+            _field("status", _dialects(("THOUGHTSPOT", "[orders::Status]")), label="Status"),
+        ])
+        customers_ds = _dataset("customers", "SALES.PUBLIC.CUSTOMERS", fields=[
+            _field("status", _dialects(("THOUGHTSPOT", "[customers::Status]")), label="Status"),
+        ])
+        model = _semantic_model(datasets=[orders_ds, customers_ds])
+        log = IssueLog()
+
+        doc = build_model(model, [orders, customers], log)
+        columns, _formulas = _all_columns_and_formulas(doc.body)
+        renamed = next(c["name"] for c in columns if c["name"] != "Status")
+
+        [issue] = [i for i in log.as_dicts() if i["code"] == "TS-MODEL-DISPLAY-NAME-COLLISION"]
+        assert "Status" in issue["message"]
+        assert renamed in issue["message"]
+
+    def test_the_first_field_to_take_a_name_is_not_reported_as_a_collision(self):
+        orders = _table_doc("orders", [_column("Status", "STATUS", "VARCHAR")])
+        dataset = _dataset("orders", "SALES.PUBLIC.ORDERS", fields=[
+            _field("status", _dialects(("THOUGHTSPOT", "[orders::Status]")), label="Status"),
+        ])
+        model = _semantic_model(datasets=[dataset])
+        log = IssueLog()
+
+        build_model(model, [orders], log)
+
+        assert not any(i["code"] == "TS-MODEL-DISPLAY-NAME-COLLISION" for i in log.as_dicts())
+
     def test_a_field_and_a_metric_with_the_same_display_name_also_get_distinct_names(self):
         # ID4 spans columns[] AND formulas[] together, not just columns[]
         # against columns[].
@@ -1067,6 +1101,17 @@ class TestRoundTripAgainstTheForwardDirection:
         assert len({c["name"] for c in status_columns}) == 2  # renamed, not dropped
         assert {c["column_id"] for c in status_columns} == {"ORDERS::Status", "CUSTOMERS::Status"}
 
+    def test_the_collision_rename_is_logged_naming_both_names(self):
+        # The rename is correct (uniqueness is required), but it changes
+        # text the user chose -- silently, before this fix. The issue must
+        # name both the original, colliding name and what it was renamed to.
+        _original, _rebuilt, log = self._build()
+        collision_issues = [i for i in log.as_dicts() if i["code"] == "TS-MODEL-DISPLAY-NAME-COLLISION"]
+        assert len(collision_issues) == 1
+        message = collision_issues[0]["message"]
+        assert "Status" in message
+        assert "Status_2" in message
+
     def test_a_yaml_1_1_boolean_token_column_name_survives_dump_and_reload(self):
         _original, rebuilt, _log = self._build()
         text = dump_document(rebuilt)
@@ -1175,8 +1220,90 @@ class TestModelScopeStashRestoration:
         assert "model_properties" not in doc.body
 
 
+class TestTmlNameWitness:
+    """X5 for STASH_TML_NAME at metric and model scope: the exact
+    ThoughtSpot display name a prior TML -> Ossie trip stashed (when ID1
+    normalisation changed the identifier) is trustworthy only while nobody
+    has renamed the live Ossie identifier since. Self-verifying: the
+    stashed name's own normalised form is compared against the live
+    identifier directly, with no separate stored witness needed."""
+
+    def test_a_metric_whose_identifier_still_matches_the_stash_uses_the_stashed_name(self):
+        orders = _table_doc("orders", [_column("Amount", "AMOUNT", "DOUBLE")])
+        metric = _metric(
+            "total_revenue", _dialects(("THOUGHTSPOT", "sum ( [orders::Amount] )")),
+            metric_stash={"tml_name": "Total Revenue"},
+        )
+        model = _semantic_model(datasets=[_dataset("orders", "SALES.PUBLIC.ORDERS")], metrics=[metric])
+        log = IssueLog()
+
+        doc = build_model(model, [orders], log)
+        columns, _formulas = _all_columns_and_formulas(doc.body)
+
+        assert columns[0]["name"] == "Total Revenue"
+        assert not any(i["code"] == "TS-STASH-TML-NAME-STALE" for i in log.as_dicts())
+
+    def test_a_renamed_metric_drops_the_stale_stashed_name(self):
+        # The metric's own `name` was changed (total_revenue -> gross_revenue)
+        # since the stash was written -- the stashed "Total Revenue" now
+        # names a metric that no longer exists under that identifier.
+        orders = _table_doc("orders", [_column("Amount", "AMOUNT", "DOUBLE")])
+        metric = _metric(
+            "gross_revenue", _dialects(("THOUGHTSPOT", "sum ( [orders::Amount] )")),
+            metric_stash={"tml_name": "Total Revenue"},
+        )
+        model = _semantic_model(datasets=[_dataset("orders", "SALES.PUBLIC.ORDERS")], metrics=[metric])
+        log = IssueLog()
+
+        doc = build_model(model, [orders], log)
+        columns, _formulas = _all_columns_and_formulas(doc.body)
+
+        assert columns[0]["name"] == "gross_revenue"
+        assert any(i["code"] == "TS-STASH-TML-NAME-STALE" for i in log.as_dicts())
+
+    def test_a_model_whose_identifier_still_matches_the_stash_uses_the_stashed_name(self):
+        orders = _table_doc("orders", [_column("Amount", "AMOUNT", "DOUBLE")])
+        dataset = _dataset("orders", "SALES.PUBLIC.ORDERS")
+        model = _semantic_model(
+            name="sales_analytics", datasets=[dataset], model_stash={"tml_name": "Sales Analytics"},
+        )
+        log = IssueLog()
+
+        doc = build_model(model, [orders], log)
+
+        assert doc.body["name"] == "Sales Analytics"
+        assert not any(i["code"] == "TS-STASH-TML-NAME-STALE" for i in log.as_dicts())
+
+    def test_a_renamed_model_drops_the_stale_stashed_name(self):
+        orders = _table_doc("orders", [_column("Amount", "AMOUNT", "DOUBLE")])
+        dataset = _dataset("orders", "SALES.PUBLIC.ORDERS")
+        model = _semantic_model(
+            name="marketing_analytics", datasets=[dataset], model_stash={"tml_name": "Sales Analytics"},
+        )
+        log = IssueLog()
+
+        doc = build_model(model, [orders], log)
+
+        assert doc.body["name"] == "marketing_analytics"
+        assert any(i["code"] == "TS-STASH-TML-NAME-STALE" for i in log.as_dicts())
+
+
 class TestUnattributedFormulas:
-    def test_an_unattributed_formula_is_emitted_bare_with_no_surfacing_column(self):
+    """A formula whose references span two or more Ossie datasets could not
+    become an ordinary Ossie field on the way out (no single dataset owns
+    it), but nothing about a TML formula's own surfacing columns[] entry
+    ties it to a dataset in the first place (R3: formula_id + properties,
+    no column_id) -- so it is restored fully surfaced, exactly like any
+    other formula, rather than re-emitted as an orphan formulas[] entry
+    with no columns[] entry pointing at it. An earlier revision did the
+    latter, which made the formula unreachable in the rebuilt model by
+    ThoughtSpot's own visibility rule (a formulas[] entry with no
+    referencing columns[] entry is not surfaced) while raising an issue
+    that claimed only its properties were lost -- describing a smaller
+    loss than the one that actually happened.
+    """
+
+    def test_an_unattributed_formula_is_restored_fully_surfaced(self):
         orders = _table_doc("orders", [_column("Amount", "AMOUNT", "DOUBLE")])
         dataset = _dataset("orders", "SALES.PUBLIC.ORDERS")
         model = _semantic_model(
@@ -1192,16 +1319,17 @@ class TestUnattributedFormulas:
         doc = build_model(model, [orders], log)
         columns, formulas = _all_columns_and_formulas(doc.body)
 
-        assert columns == []
         assert len(formulas) == 1
         assert formulas[0]["name"] == "Cross Dataset Thing"
         assert formulas[0]["expr"] == "[ORDERS::Amount] + [CUSTOMERS::Fee]"
         assert formulas[0]["id"] == "formula_cross_dataset_thing"
-        # No columns[] entry references it -- per the Metric-level mapping,
-        # a formula with no referencing column is simply not surfaced.
-        assert not any(f.get("formula_id") == formulas[0]["id"] for f in columns)
+        # A columns[] entry references it -- surfaced, not orphaned, so
+        # ThoughtSpot's own visibility rule does not hide it.
+        [surfacing] = [c for c in columns if c.get("formula_id") == formulas[0]["id"]]
+        assert surfacing["name"] == "Cross Dataset Thing"
+        assert surfacing["properties"]["column_type"] == "ATTRIBUTE"
 
-    def test_lost_column_properties_on_an_unattributed_formula_raise_an_issue(self):
+    def test_stashed_column_properties_on_an_unattributed_formula_are_restored(self):
         orders = _table_doc("orders", [_column("Amount", "AMOUNT", "DOUBLE")])
         dataset = _dataset("orders", "SALES.PUBLIC.ORDERS")
         model = _semantic_model(
@@ -1215,9 +1343,14 @@ class TestUnattributedFormulas:
         )
         log = IssueLog()
 
-        build_model(model, [orders], log)
+        doc = build_model(model, [orders], log)
+        columns, _formulas = _all_columns_and_formulas(doc.body)
 
-        assert any(
+        [surfacing] = [c for c in columns if c["name"] == "Cross Dataset Thing"]
+        assert surfacing["properties"]["index_type"] == "DONT_INDEX"
+        # Nothing was lost -- the old "properties lost" issue no longer
+        # applies, because the properties are restored, not dropped.
+        assert not any(
             i["code"] == "TS-MODEL-UNATTRIBUTED-FORMULA-PROPERTIES-LOST"
             for i in log.as_dicts()
         )

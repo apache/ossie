@@ -24,6 +24,8 @@ the dialect is a closed enum — it was a pending apache/ossie#351 change, now
 merged (see DIALECT_IS_REGISTERED).
 """
 
+from enum import Enum
+
 #: `custom_extensions[].vendor_name` value for ThoughtSpot-owned entries.
 VENDOR_KEY = "THOUGHTSPOT"
 
@@ -66,6 +68,17 @@ STASH_VERSION = 1
 #: tml_to_ossie.py (the writer) and ossie_to_thoughtspot.py (the reader)
 #: must agree on the exact spelling and nothing else enforces that.
 FIELD_STASH_DB_COLUMN_NAME = "db_column_name"
+
+#: X5's witness copy for FIELD_STASH_DB_COLUMN_NAME: the physical column's
+#: own display name (the bracket's column part, e.g. "Amount") as it stood
+#: the moment db_column_name was stashed. Ossie -> TML compares this against
+#: the CURRENT bracket reference's column part: agreement means nobody
+#: retargeted the field to a different physical column since, so the
+#: stashed warehouse name is still trustworthy; disagreement means the
+#: field now names a different column and the stashed warehouse name
+#: describes the wrong one -- it is dropped rather than misapplied to the
+#: new column.
+FIELD_STASH_DB_COLUMN_NAME_WITNESS = "db_column_name_display_name_witness"
 
 # ---------------------------------------------------------------------------
 # The rest of the custom_extensions[THOUGHTSPOT] payload vocabulary.
@@ -151,6 +164,15 @@ MODEL_STASH_MODEL_JOINS_WITH = "model_joins_with"
 #: heuristic whenever present, since it also determines which shape
 #: `unsurfaced_columns` was captured in.
 DATASET_STASH_TML_OBJECT = "tml_object"
+
+#: X5's witness copy for DATASET_STASH_TML_OBJECT: the dataset's own
+#: `source` string as it stood the moment `tml_object` was stashed.
+#: Ossie -> TML compares this against the CURRENT `source`: agreement means
+#: nobody edited it since (a query rewritten as a table reference, or vice
+#: versa), so the stashed kind is still trustworthy; disagreement means the
+#: stash is stale and `_derive_kind` re-guesses from the current `source`
+#: instead of trusting a kind that used to describe a different value.
+DATASET_STASH_TML_OBJECT_WITNESS = "tml_object_source_witness"
 
 #: `model_tables[].alias`, when one physical table participates more than once.
 DATASET_STASH_ALIAS = "alias"
@@ -302,3 +324,117 @@ METRIC_STASH_SHAPE = "shape"
 METRIC_SHAPE_COLUMN_AGGREGATION = "column_aggregation"
 METRIC_SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION = "scalar_formula_plus_aggregation"
 METRIC_SHAPE_FORMULA = "formula"
+
+
+# ---------------------------------------------------------------------------
+# X5 classification.
+#
+# Every custom_extensions[THOUGHTSPOT] key above answers one question before
+# ossie_to_thoughtspot.py is allowed to read it: does the stashed value
+# shadow something this converter could otherwise derive from the live Ossie
+# document -- a field's own bracket reference, a metric's own name, a
+# dataset's own source -- or is it information that exists nowhere else in
+# the Ossie document at all?
+#
+# The first kind can go stale: a user edits the Ossie document (retargets a
+# field, renames a metric, rewrites a relationship, rewrites a dataset's
+# source) and the stash still describes the document as it was. Rule X5 says
+# a key in that category needs a witness and a currency check -- reused only
+# when the two still agree, dropped and re-derived otherwise -- never plain
+# stash-if-present. The second kind cannot go stale, because there is
+# nothing on the Ossie side for it to disagree with; plain stash-if-present
+# is correct there and a witness would have nothing to compare against.
+#
+# STASH_KEY_CLASSIFICATION is the enforcement point. Three different stash
+# keys were found, independently, reading the unsafe way before this table
+# existed (FIELD_STASH_DB_COLUMN_NAME, FIELD_STASH_DATA_TYPE, and a
+# relationship's on_expression) — each found by generalising from the
+# instance before it, not by a rule anyone consulted. This table is that
+# rule, made structural: a key read anywhere in ossie_to_thoughtspot.py that
+# is missing here fails test_stash_key_classification.py, so the next key
+# has to declare an answer rather than default to the unsafe one. It does
+# not, by itself, prove the *code* honours a SHADOWS_DERIVABLE
+# classification with an actual witness -- that is still a review
+# discipline -- but it makes "someone forgot" a build failure instead of a
+# silent gap for a key already known to need one.
+# ---------------------------------------------------------------------------
+
+
+class StashKeyClass(Enum):
+    #: The stashed value could disagree with something the live Ossie
+    #: document itself says. Reading it MUST check currency: via
+    #: `stash.restore`'s witness/witness_key (FIELD_STASH_DB_COLUMN_NAME,
+    #: FIELD_STASH_DATA_TYPE, RELATIONSHIP_STASH_ON_EXPRESSION on a real
+    #: Relationship, DATASET_STASH_TML_OBJECT), or a self-verifying
+    #: reconstruction when the stashed value's own shape lets it check
+    #: itself against the live document with nothing extra stored
+    #: (DATASET_STASH_SOURCE_PARTS re-joins to compare against `source`;
+    #: STASH_TML_NAME re-normalises to compare against the live
+    #: identifier). Either way, a mismatch drops the stash, re-derives, and
+    #: logs why -- never keeps the stale value.
+    SHADOWS_DERIVABLE = "shadows_derivable"
+    #: The stashed value has no Ossie-native counterpart at all -- nothing
+    #: on the Ossie side represents it independently, so nothing there
+    #: could have diverged from it. Plain stash-if-present is correct.
+    INFORMATION_ONLY = "information_only"
+
+
+#: One entry per stash key read anywhere in ossie_to_thoughtspot.py.
+#: RELATIONSHIP_STASH_ON_EXPRESSION appears once, classified for its
+#: primary carrier (a real Relationship, where it shadows
+#: from_columns/to_columns) -- the same key read off a
+#: MODEL_STASH_UNREPRESENTABLE_JOINS entry has no independent Relationship
+#: object to diverge from and would be INFORMATION_ONLY in that context;
+#: see the read site's own docstring, not a second table entry, since the
+#: dict is keyed by string and cannot hold two classifications for one key.
+STASH_KEY_CLASSIFICATION: dict[str, "StashKeyClass"] = {
+    # -- Shared --
+    STASH_TML_NAME: StashKeyClass.SHADOWS_DERIVABLE,
+
+    # -- Field/metric scope --
+    FIELD_STASH_DB_COLUMN_NAME: StashKeyClass.SHADOWS_DERIVABLE,
+    FIELD_STASH_DATA_TYPE: StashKeyClass.SHADOWS_DERIVABLE,
+    FIELD_STASH_COLUMN_PROPERTIES: StashKeyClass.INFORMATION_ONLY,
+    METRIC_STASH_SHAPE: StashKeyClass.INFORMATION_ONLY,
+
+    # -- Dataset scope --
+    DATASET_STASH_TML_OBJECT: StashKeyClass.SHADOWS_DERIVABLE,
+    DATASET_STASH_SOURCE_PARTS: StashKeyClass.SHADOWS_DERIVABLE,
+    DATASET_STASH_CONNECTION_NAME: StashKeyClass.INFORMATION_ONLY,
+    DATASET_STASH_TABLE_NAME: StashKeyClass.INFORMATION_ONLY,
+    DATASET_STASH_ALIAS: StashKeyClass.INFORMATION_ONLY,
+    DATASET_STASH_TABLE_PROPERTIES: StashKeyClass.INFORMATION_ONLY,
+    DATASET_STASH_UNSURFACED_COLUMNS: StashKeyClass.INFORMATION_ONLY,
+    DATASET_STASH_SQL_OUTPUT_COLUMNS: StashKeyClass.INFORMATION_ONLY,
+
+    # -- Relationship scope --
+    RELATIONSHIP_STASH_ON_EXPRESSION: StashKeyClass.SHADOWS_DERIVABLE,
+    RELATIONSHIP_STASH_TYPE: StashKeyClass.INFORMATION_ONLY,
+    RELATIONSHIP_STASH_CARDINALITY: StashKeyClass.INFORMATION_ONLY,
+
+    # -- Model scope --
+    MODEL_STASH_UNATTRIBUTED_FORMULAS: StashKeyClass.INFORMATION_ONLY,
+    MODEL_STASH_UNREPRESENTABLE_JOINS: StashKeyClass.INFORMATION_ONLY,
+    MODEL_STASH_MODEL_PROPERTIES: StashKeyClass.INFORMATION_ONLY,
+    MODEL_STASH_PARAMETERS: StashKeyClass.INFORMATION_ONLY,
+    MODEL_STASH_FILTERS: StashKeyClass.INFORMATION_ONLY,
+    MODEL_STASH_COLUMN_GROUPS: StashKeyClass.INFORMATION_ONLY,
+    MODEL_STASH_LESSON_PLANS: StashKeyClass.INFORMATION_ONLY,
+    MODEL_STASH_ACTION_OBJECT_ASSOCIATIONS: StashKeyClass.INFORMATION_ONLY,
+    MODEL_STASH_CONSTRAINTS: StashKeyClass.INFORMATION_ONLY,
+    MODEL_STASH_MODEL_JOINS_WITH: StashKeyClass.INFORMATION_ONLY,
+}
+
+#: Keys read only when attached to a stash-only carrier that has no
+#: independent Ossie object of its own (an unrepresentable_joins[] entry,
+#: an unattributed_formulas[] entry) -- the same key name as a
+#: SHADOWS_DERIVABLE entry above, but INFORMATION_ONLY in this context,
+#: because there is no live Relationship/Metric/Field for it to diverge
+#: from. Recorded separately rather than overwriting the primary
+#: classification above, so both contexts stay documented.
+STASH_ONLY_CARRIER_KEY_CLASSIFICATION: dict[str, "StashKeyClass"] = {
+    RELATIONSHIP_STASH_ON_EXPRESSION: StashKeyClass.INFORMATION_ONLY,
+    RELATIONSHIP_STASH_TYPE: StashKeyClass.INFORMATION_ONLY,
+    RELATIONSHIP_STASH_CARDINALITY: StashKeyClass.INFORMATION_ONLY,
+    FIELD_STASH_COLUMN_PROPERTIES: StashKeyClass.INFORMATION_ONLY,
+}
