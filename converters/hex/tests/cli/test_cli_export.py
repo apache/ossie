@@ -21,8 +21,28 @@ import pytest
 from inline_snapshot import snapshot
 
 from ossie_hex.cli import main
+from ossie_hex.cli.report import format_export_report
+from ossie_hex.util.problem import Problem
 
 TPCDS = Path(__file__).resolve().parents[4] / "examples" / "tpcds_semantic_model.yaml"
+
+
+def test_error_report_is_failed() -> None:
+    problem = Problem(severity="error", message="A definition was omitted.")
+
+    report = format_export_report(
+        input="INPUT",
+        output="OUTPUT",
+        projects=[],
+        problems=[problem],
+        verbosity=0,
+    )
+
+    assert report == snapshot("""\
+Failed.
+Could not convert INPUT.
+Encountered 1 problem: 1 error.
+  (Run with -v to see a grouped summary.)""")
 
 
 def test_tpcds(tmp_path: Path) -> None:
@@ -68,8 +88,8 @@ def test_missing_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     )
 
 
-def test_missing_dialect(tmp_path: Path) -> None:
-    """Should not error"""
+def test_default_dialect(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    """Should use ANSI SQL without reporting a fallback."""
     input_file = TPCDS
     i = str(input_file)
     output_dir = tmp_path / "hex_out"
@@ -78,6 +98,63 @@ def test_missing_dialect(tmp_path: Path) -> None:
     code = main(["export", "-i", i, "-o", o])
 
     assert code == 0
+    message = (
+        capsys.readouterr()
+        .err.replace(str(output_dir), "OUTPUT")
+        .replace(str(input_file), "INPUT")
+    )
+    assert message == snapshot("""\
+Success!
+Converted INPUT -> OUTPUT/tpcds_retail_model/ (1 project, 5 files).
+Encountered 49 problems: 49 warnings.
+  (Run with -v to see a grouped summary.)
+""")
+
+
+def test_verbose_problem_summary(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    output_dir = tmp_path / "hex_out"
+
+    code = main(["export", "-v", "-i", str(TPCDS), "-o", str(output_dir)])
+
+    assert code == 0
+    message = (
+        capsys.readouterr()
+        .err.replace(str(output_dir), "OUTPUT")
+        .replace(str(TPCDS), "INPUT")
+    )
+    assert message == snapshot("""\
+Success!
+Converted INPUT -> OUTPUT/tpcds_retail_model/ (1 project, 5 files).
+Encountered 49 problems: 49 warnings.
+
+Warnings (49)
+  40× `ai_context` — AI context is not preserved in Hex and was dropped.
+   3× `Field.is_time` — Temporal role markers are not supported in Hex and were dropped.
+   2× `Field.datatype` — A datatype is required in Hex; a default was used.
+   1× `Dataset.primary_key` — Composite primary keys are not supported in Hex and were dropped.
+   1× `Dataset.unique_keys` — Composite unique keys are not supported in Hex and were dropped.
+   1× `SemanticModel.description` — Project descriptions are not supported in Hex and were dropped.
+   1× `SemanticModel.custom_extensions` — Custom extensions are not preserved in Hex and were dropped.
+""")
+
+
+def test_double_verbose_includes_phase_and_cause(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    output_dir = tmp_path / "hex_out"
+
+    code = main(["export", "-vv", "-i", str(TPCDS), "-o", str(output_dir)])
+
+    assert code == 0
+    message = capsys.readouterr().err
+    assert "[load] `Field.datatype`" in message
+    assert (
+        "Cause: semantic_model > tpcds_retail_model > datasets > date_dim > "
+        "fields > d_quarter_name > datatype"
+    ) in message
+    assert "[convert] `ai_context`" in message
 
 
 def test_missing_input_file(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
@@ -93,9 +170,12 @@ def test_missing_input_file(capsys: pytest.CaptureFixture[str], tmp_path: Path) 
         .replace(str(missing.resolve()), "INPUT")
     )
     assert message == snapshot("""\
-Wrote 0 hex semantic project(s) to OUTPUT
-Encountered 1 problem(s):
-[FATAL] File does not exist: `INPUT`
+Failure!
+Could not convert INPUT.
+Encountered 1 problem: 1 fatal.
+
+Fatal errors (1)
+  [load] File does not exist: `INPUT`
 """)
 
 
@@ -113,6 +193,6 @@ def test_invalid_dialect(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> 
     assert exc.value.code == 2
     message = capsys.readouterr().err
     assert message == snapshot("""\
-usage: ossie-hex export [-h] -i INPUT [-o OUTPUT] [-d DIALECT]
+usage: ossie-hex export [-h] -i INPUT [-o OUTPUT] [-d DIALECT] [-v]
 ossie-hex export: error: argument -d/--dialect: invalid choice: 'invalid' (choose from 'ansi_sql', 'snowflake', 'mdx', 'maql', 'tableau', 'databricks', 'bigquery', 'thoughtspot')
 """)

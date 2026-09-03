@@ -41,5 +41,8 @@ def load_ossie_dialect(
             )
             return OssieDialect.ANSI_SQL
     else:
-        ctx.info("No Ossie dialect specified; using ANSI_SQL")
+        ctx.info(
+            "No Ossie dialect specified; using ANSI_SQL",
+            code="missing-dialect",
+        )
         return OssieDialect.ANSI_SQL

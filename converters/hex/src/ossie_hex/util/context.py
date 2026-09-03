@@ -60,6 +60,7 @@ class Context(Generic[ProblemCodeT]):
         *,
         path: KeyPath,
         internal_message: str = "",
+        code: ProblemCodeT | None = None,
     ) -> None:
         phase = self.current_phase_name
         cause_path: KeyPath = [*self.current_problem_path, *path]
@@ -68,6 +69,7 @@ class Context(Generic[ProblemCodeT]):
             message=message,
             cause_path=cause_path,
             phase=phase,
+            code=code,
         )
         if severity == "fatal" or internal_message:
             self._logger.error(
@@ -83,6 +85,7 @@ class Context(Generic[ProblemCodeT]):
         *,
         path: KeyPath | None = None,
         internal_message: str = "",
+        code: ProblemCodeT | None = None,
     ) -> None:
         """Report a critical error that cannot be recovered from,
         or an unexpected internal error.
@@ -92,6 +95,7 @@ class Context(Generic[ProblemCodeT]):
             message=message,
             path=path or [],
             internal_message=internal_message,
+            code=code,
         )
 
     def error(
@@ -100,6 +104,7 @@ class Context(Generic[ProblemCodeT]):
         *,
         path: KeyPath | None = None,
         internal_message: str = "",
+        code: ProblemCodeT | None = None,
     ) -> None:
         """Report an issue that invalidates a definition."""
         self.report_problem(
@@ -107,6 +112,7 @@ class Context(Generic[ProblemCodeT]):
             message=message,
             path=path or [],
             internal_message=internal_message,
+            code=code,
         )
 
     def warn(
@@ -115,6 +121,7 @@ class Context(Generic[ProblemCodeT]):
         *,
         path: KeyPath | None = None,
         internal_message: str = "",
+        code: ProblemCodeT | None = None,
     ) -> None:
         """Report a potential issue that may cause unexpected behavior,
         but does not invalidate a definition.
@@ -124,6 +131,7 @@ class Context(Generic[ProblemCodeT]):
             message=message,
             path=path or [],
             internal_message=internal_message,
+            code=code,
         )
 
     def info(
@@ -132,6 +140,7 @@ class Context(Generic[ProblemCodeT]):
         *,
         path: KeyPath | None = None,
         internal_message: str = "",
+        code: ProblemCodeT | None = None,
     ) -> None:
         """Report an informational message that is not an issue."""
         self.report_problem(
@@ -139,4 +148,5 @@ class Context(Generic[ProblemCodeT]):
             message=message,
             path=path or [],
             internal_message=internal_message,
+            code=code,
         )

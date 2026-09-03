@@ -116,11 +116,11 @@ def convert_ossie_metric(
 
         with ctx.problem_scope("ai_context"):
             if ossie_metric.ai_context is not None:
-                ctx.warn("Not supported")
+                ctx.warn("Not supported", code="ai-context")
 
         with ctx.problem_scope("custom_extensions"):
             if ossie_metric.custom_extensions is not None:
-                ctx.warn("Not supported")
+                ctx.warn("Not supported", code="custom-extensions")
 
         if spec["id"] is None or spec["func_sql"] is None or source_model_id is None:
             return None

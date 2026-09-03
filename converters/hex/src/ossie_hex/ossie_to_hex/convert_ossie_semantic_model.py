@@ -77,15 +77,15 @@ def convert_ossie_semantic_model(
 
         with ctx.problem_scope("description"):
             if ossie_semantic_model.description is not None:
-                ctx.warn("Not supported")
+                ctx.warn("Not supported", code="project-description")
 
         with ctx.problem_scope("ai_context"):
             if ossie_semantic_model.ai_context is not None:
-                ctx.warn("Not supported")
+                ctx.warn("Not supported", code="ai-context")
 
         with ctx.problem_scope("custom_extensions"):
             if ossie_semantic_model.custom_extensions is not None:
-                ctx.warn("Not supported")
+                ctx.warn("Not supported", code="custom-extensions")
 
         hex_models = ctx.hex_models()
         hex_resources: list[HexResource] = []

@@ -51,6 +51,9 @@ class Problem(BaseModel):
     )
     """The phase of the conversion process in which the problem occurred."""
 
+    code: str | None = None
+    """A stable identifier used to group equivalent problems."""
+
     def to_str(self, *, include_cause: bool = True, include_phase: bool = False) -> str:
         sev = self.severity.upper()
         cause = str(self.cause_path)
@@ -85,6 +88,13 @@ The severity of a problem.
 
 - `info`: The problem is a general informational message that is not an issue.
 """
+
+PROBLEM_SEVERITIES: tuple[ProblemSeverity, ...] = (
+    "fatal",
+    "error",
+    "warning",
+    "info",
+)
 
 
 KeyPath = Annotated[

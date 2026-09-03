@@ -86,11 +86,11 @@ def convert_ossie_relationship(
 
         with ctx.problem_scope("ai_context"):
             if ossie_relationship.ai_context is not None:
-                ctx.warn("Not supported")
+                ctx.warn("Not supported", code="ai-context")
 
         with ctx.problem_scope("custom_extensions"):
             if ossie_relationship.custom_extensions is not None:
-                ctx.warn("Not supported")
+                ctx.warn("Not supported", code="custom-extensions")
 
         if not hex_relation_id:
             return None
