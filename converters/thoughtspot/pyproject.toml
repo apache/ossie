@@ -46,6 +46,9 @@ dependencies = [
     "PyYAML>=6.0",
 ]
 
+[project.scripts]
+ossie-thoughtspot = "ossie_thoughtspot.cli:main"
+
 [project.urls]
 homepage = "https://ossie.apache.org/"
 repository = "https://github.com/apache/ossie/"
