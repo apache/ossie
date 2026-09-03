@@ -247,6 +247,9 @@ class TestConvertField:
         assert "description" not in field
 
     def test_synonyms_become_ai_context(self):
+        # The full shape, not just presence: a synonyms-only ai_context must be the
+        # bare {"synonyms": [...]} object, with no "instructions" key sitting empty
+        # beside it.
         log = IssueLog()
         field = convert_field(
             {"name": "Amount", "column_id": "ORDERS::AMOUNT",
@@ -254,13 +257,50 @@ class TestConvertField:
                             "synonym_type": "USER_DEFINED"}},
             {}, self._table, _resolve, log,
         )
-        assert field["ai_context"]["synonyms"] == ["total", "value"]
+        assert field["ai_context"] == {"synonyms": ["total", "value"]}
 
     def test_an_empty_synonyms_list_produces_no_ai_context(self):
         log = IssueLog()
         field = convert_field(
             {"name": "Amount", "column_id": "ORDERS::AMOUNT",
              "properties": {"column_type": "ATTRIBUTE", "synonyms": []}},
+            {}, self._table, _resolve, log,
+        )
+        assert "ai_context" not in field
+
+    def test_free_text_ai_context_alone_stays_a_bare_string(self):
+        # The other shape Ossie's ai_context oneOf accepts: free-text instructions
+        # with no synonyms must come through as the plain string itself, not
+        # wrapped in an object — a regression that wrapped it would still pass a
+        # presence-only check.
+        log = IssueLog()
+        field = convert_field(
+            {"name": "Amount", "column_id": "ORDERS::AMOUNT",
+             "properties": {"column_type": "ATTRIBUTE",
+                            "ai_context": "Prefer this over the raw column."}},
+            {}, self._table, _resolve, log,
+        )
+        assert field["ai_context"] == "Prefer this over the raw column."
+        assert isinstance(field["ai_context"], str)
+
+    def test_synonyms_and_free_text_together_combine_into_one_object(self):
+        log = IssueLog()
+        field = convert_field(
+            {"name": "Amount", "column_id": "ORDERS::AMOUNT",
+             "properties": {"column_type": "ATTRIBUTE", "synonyms": ["total"],
+                            "ai_context": "Prefer this over the raw column."}},
+            {}, self._table, _resolve, log,
+        )
+        assert field["ai_context"] == {
+            "synonyms": ["total"],
+            "instructions": "Prefer this over the raw column.",
+        }
+
+    def test_neither_synonyms_nor_free_text_omits_ai_context_entirely(self):
+        log = IssueLog()
+        field = convert_field(
+            {"name": "Amount", "column_id": "ORDERS::AMOUNT",
+             "properties": {"column_type": "ATTRIBUTE"}},
             {}, self._table, _resolve, log,
         )
         assert "ai_context" not in field
@@ -442,3 +482,61 @@ class TestConvertField:
         assert len(issues) == 1
         assert "column_id" in issues[0]["message"]
         assert "formula_id" in issues[0]["message"]
+
+    # 4. A formulas[] entry can be present under the id but still be malformed —
+    #    missing its own `expr` key. Same class of problem as an absent id (there
+    #    is still no expression text to read), so it gets the same treatment: an
+    #    issue naming the column and the formula id, and None — not a KeyError.
+    def test_a_formula_entry_present_but_missing_expr_logs_and_returns_none(self):
+        log = IssueLog()
+        formulas = {"formula_Bad": {"id": "formula_Bad"}}  # no "expr" key
+        field = convert_field(
+            {"name": "Malformed", "formula_id": "formula_Bad",
+             "properties": {"column_type": "ATTRIBUTE"}},
+            formulas, self._table, _resolve, log,
+        )
+        assert field is None
+        issues = log.as_dicts()
+        assert len(issues) == 1
+        assert "Malformed" in issues[0]["message"]
+        assert "formula_Bad" in issues[0]["message"]
+
+
+class TestPhysicalDatatypeLoss:
+    """`_physical_datatype`'s two `None` outcomes are not the same kind of
+    outcome, and only one of them is a loss worth logging — exercised through
+    `convert_field`'s column_id path, the only way this private helper runs."""
+
+    def test_an_absent_data_type_produces_no_issue(self):
+        # Nothing was ever declared, so there is nothing being dropped. datatype
+        # is optional in Ossie; silence here is the correct, unremarkable answer.
+        log = IssueLog()
+        table = lambda n: {"name": "ORDERS", "columns": [
+            {"name": "NOTE", "db_column_name": "NOTE"}]}  # no db_column_properties
+        field = convert_field(
+            {"name": "Note", "column_id": "ORDERS::NOTE",
+             "properties": {"column_type": "ATTRIBUTE"}},
+            {}, table, _resolve, log,
+        )
+        assert field is not None
+        assert "datatype" not in field
+        assert log.as_dicts() == []
+
+    def test_a_present_but_unmapped_data_type_logs_exactly_one_issue_naming_it(self):
+        # The warehouse told us the type (GEOGRAPHY, outside the Ossie enum) and
+        # to_ossie has no mapping for it — that is a genuine silent loss unless
+        # this logs it.
+        log = IssueLog()
+        table = lambda n: {"name": "ORDERS", "columns": [
+            {"name": "LOC", "db_column_name": "LOC",
+             "db_column_properties": {"data_type": "GEOGRAPHY"}}]}
+        field = convert_field(
+            {"name": "Location", "column_id": "ORDERS::LOC",
+             "properties": {"column_type": "ATTRIBUTE"}},
+            {}, table, _resolve, log,
+        )
+        assert field is not None
+        assert "datatype" not in field
+        issues = log.as_dicts()
+        assert len(issues) == 1
+        assert "GEOGRAPHY" in issues[0]["message"]
