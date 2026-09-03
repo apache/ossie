@@ -257,6 +257,7 @@ def _ai_context(properties: dict) -> dict | str | None:
 
 def convert_field(
     column: dict,
+    formulas: dict[str, dict],
     table_lookup: Callable[[str], dict | None],
     resolve: Callable[[str, str], str | None],
     log: IssueLog,
@@ -264,12 +265,13 @@ def convert_field(
     """Convert one Model `columns[]` entry into an Ossie field, or `None`.
 
     `column` is a ThoughtSpot Model `columns[]` entry. A physical column carries
-    `column_id` (`TABLE::Column Name`); a computed column carries no `column_id`, and
-    by convention the caller inlines the corresponding formula's `expr` text onto this
-    entry under the key `"expr"` before calling this function — the formula itself
-    lives in the model's `formulas[]` list, one level above a single column, which
-    this function never sees. A column with neither key, or whose `column_type` is not
-    `ATTRIBUTE`, produces no field.
+    `column_id` (`TABLE::Column Name`); a computed column carries `formula_id`
+    instead, naming an entry in the model's `formulas[]` list. `formulas` is that
+    list reshaped into a lookup keyed by each entry's `id`, value the whole entry,
+    so `formulas[column["formula_id"]]["expr"]` is the expression text — this
+    function reads the expression from there, never from the column itself. A
+    `formula_id` absent from `formulas`, a column with neither key, or a
+    `column_type` that is not `ATTRIBUTE`, produces no field.
     """
     properties = column.get("properties") or {}
     if properties.get("column_type") != "ATTRIBUTE":
@@ -290,8 +292,21 @@ def convert_field(
         )
         if datatype is not None:
             field["datatype"] = datatype
-    elif "expr" in column:
-        expr = column["expr"]
+    elif "formula_id" in column:
+        formula_id = column["formula_id"]
+        formula_entry = formulas.get(formula_id)
+        if formula_entry is None:
+            log.add(
+                code="TS-FIELD-FORMULA-MISSING",
+                severity=Severity.WARNING,
+                message=(
+                    f"column {display_name!r} has formula_id {formula_id!r}, which "
+                    f"matches no formulas[] entry; no field can be built"
+                ),
+                object_ref=object_ref,
+            )
+            return None
+        expr = formula_entry["expr"]
         dataset = attribute_dataset(expr, resolve, log, object_ref=object_ref)
         if dataset is None:
             return None
@@ -303,7 +318,7 @@ def convert_field(
             code="TS-FIELD-NO-SOURCE",
             severity=Severity.WARNING,
             message=(
-                "column has neither a physical column_id nor a formula expression; "
+                "column has neither a physical column_id nor a formula_id; "
                 "no field can be built"
             ),
             object_ref=object_ref,
