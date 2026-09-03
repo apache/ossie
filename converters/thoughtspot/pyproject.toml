@@ -22,6 +22,11 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    # Dev/test-only: validates convert()'s output against core-spec/ossie-schema.json
+    # in tests/test_tml_to_ossie.py. Guarded there by pytest.importorskip("jsonschema")
+    # so its absence never fails the suite -- the package's only *runtime* dependency
+    # stays PyYAML. Same dev-group placement as converters/nvidia's pyproject.toml.
+    "jsonschema>=4.26.0",
 ]
 
 [project]

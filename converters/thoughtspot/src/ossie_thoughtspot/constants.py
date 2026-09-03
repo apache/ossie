@@ -43,6 +43,16 @@ PORTABLE_DIALECT = "ANSI_SQL"
 #: version: upstream's first release is proposed as 0.3.0, not 0.2.0.
 SPEC_SERIES = "0.2"
 
+#: The exact `version` this converter writes at the root of every document it
+#: emits (`{"version": DOCUMENT_VERSION, "semantic_model": [...]}`). Unlike
+#: SPEC_SERIES (major.minor, used to check an *incoming* document's rough
+#: compatibility), ossie-schema.json pins `version` to this exact string as a
+#: `const` (`ossie-schema.json:9-13`), so a document that emits anything else
+#: fails schema validation outright. Bump in lockstep with core-spec/'s own
+#: `version` if it ever moves -- the same discipline converters/databricks'
+#: `OSSIE_VERSION` constant documents.
+DOCUMENT_VERSION = "0.2.0.dev0"
+
 #: Shape version of the custom_extensions payload (rule X3). Bump when the
 #: payload's shape changes, never for a value change.
 STASH_VERSION = 1
