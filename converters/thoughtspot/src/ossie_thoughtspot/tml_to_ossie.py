@@ -877,6 +877,85 @@ def _index_attribute_columns(
     return index
 
 
+#: Every `properties` key `convert_field` reads on the ATTRIBUTE path.
+#: Anything else in a column's `properties` dict is unconsumed and, per the
+#: fail-closed rule `_unconsumed_properties` implements, is stashed rather
+#: than silently dropped.
+_FIELD_CONSUMED_PROPERTIES = frozenset({"column_type", "synonyms", "ai_context"})
+
+#: Same, for `convert_metric`'s MEASURE path -- one key more than the field
+#: set: `aggregation` is load-bearing only for a metric.
+_METRIC_CONSUMED_PROPERTIES = _FIELD_CONSUMED_PROPERTIES | {"aggregation"}
+
+
+#: Identity-shaped keys that must never reach the portable document at any
+#: depth -- broader than `stash._FORBIDDEN_KEYS` (X8's guard on `guid`/
+#: `obj_id`/`fqn` alone, enforced only at a payload's top level).
+#: `_unconsumed_properties` is the one place in this module that copies a
+#: property's *value* wholesale rather than rebuilding it field by field, so
+#: it is also the one place the two further identity keys the mapping
+#: document's NM1 names -- `dataset_id`, and `geo_config.custom_file_guid`
+#: naming a custom map -- can arrive buried inside an otherwise-unconsumed
+#: value. Both are exactly the shape `stash`'s own top-level-only guard
+#: cannot see.
+_DEEP_IDENTITY_KEYS = stash._FORBIDDEN_KEYS | {"dataset_id", "custom_file_guid"}
+
+
+def _contains_forbidden_key(value: object) -> bool:
+    """Whether `value` carries one of `_DEEP_IDENTITY_KEYS` at *any* depth."""
+    if isinstance(value, dict):
+        return any(
+            key in _DEEP_IDENTITY_KEYS or _contains_forbidden_key(v)
+            for key, v in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_forbidden_key(item) for item in value)
+    return False
+
+
+def _unconsumed_properties(
+    properties: dict, consumed: frozenset[str], log: IssueLog, object_ref: str
+) -> dict:
+    """Every key in a column's `properties` dict that the converter did not
+    read, minus anything carrying instance-local identity (rule X8) at any
+    depth.
+
+    Deliberately the complement of `consumed`, not an enumeration of the
+    ThoughtSpot-only property names this module happens to know about today
+    (`index_type`, `value_casing`, ...): an enumeration silently drops the
+    next property ThoughtSpot adds, where the complement preserves it and is
+    correct by construction. `consumed` is what `convert_field`/
+    `convert_metric` actually read, reused here rather than duplicated, so
+    the two lists cannot drift apart the way two independently maintained
+    ones could.
+
+    A property whose value contains a forbidden key anywhere inside it
+    (`_contains_forbidden_key`) is dropped rather than stashed, and that drop
+    is logged -- the same treatment the mapping document gives
+    `geo_config.custom_file_guid` naming a custom map: the loss is real and
+    reported, not silent, even though the identity portion of it must never
+    travel.
+    """
+    remainder: dict = {}
+    for key, value in properties.items():
+        if key in consumed:
+            continue
+        if key in _DEEP_IDENTITY_KEYS or _contains_forbidden_key(value):
+            log.add(
+                code="TS-PROPERTY-IDENTITY-DROPPED",
+                severity=Severity.WARNING,
+                message=(
+                    f"property {key!r} contains instance-local identity "
+                    f"content; it is dropped rather than carried into the "
+                    f"portable document"
+                ),
+                object_ref=object_ref,
+            )
+            continue
+        remainder[key] = value
+    return remainder
+
+
 def _field_owner_dataset(
     column: dict, formulas: dict[str, dict], resolve: Callable[[str, str], str | None]
 ) -> str | None:
@@ -1402,6 +1481,7 @@ def convert(document_set: DocumentSet) -> OssieConversion:
 
     for column in model_columns:
         display_name = column.get("name", "<unnamed>")
+        properties = column.get("properties") or {}
         try:
             field = convert_field(column, formulas, table_lookup, resolve, log)
             metric = None if field is not None else convert_metric(
@@ -1417,6 +1497,11 @@ def convert(document_set: DocumentSet) -> OssieConversion:
             continue
 
         if field is not None:
+            extra_properties = _unconsumed_properties(
+                properties, _FIELD_CONSUMED_PROPERTIES, log, f"field:{display_name}"
+            )
+            if extra_properties:
+                field = stash.write_stash(field, {"column_properties": extra_properties})
             owner = _field_owner_dataset(column, formulas, resolve)
             if owner is not None and owner in fields_by_dataset:
                 fields_by_dataset[owner].append(field)
@@ -1433,11 +1518,15 @@ def convert(document_set: DocumentSet) -> OssieConversion:
             continue
 
         if metric is not None:
+            extra_properties = _unconsumed_properties(
+                properties, _METRIC_CONSUMED_PROPERTIES, log, f"metric:{display_name}"
+            )
+            if extra_properties:
+                metric = stash.write_stash(metric, {"column_properties": extra_properties})
             metrics.append(metric)
             continue
 
         # Neither a field nor a metric was built.
-        properties = column.get("properties") or {}
         column_type = properties.get("column_type")
         if column_type not in ("ATTRIBUTE", "MEASURE"):
             # A column_type this converter does not recognise at all (TML
