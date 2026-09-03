@@ -38,19 +38,27 @@ drop correctly produce identical documents. Every assertion below that
 checks a real difference also checks that the issue log named it -- object
 and all -- rather than trusting a bare count.
 
-Not every difference this module finds is a defect. `_columns_by_name`
-below and the two `TestKnownRoundTripSimplifications` tests document
-differences the converter's own code already explains and justifies (R4,
-R5) -- collapsing three ThoughtSpot Model TML metric shapes into one on the
-way out, and a Table `joins_with[]` reference into an inline Model join.
-Those are asserted as the current, intentional behaviour. Two further
-differences this module found while it was written have no such
-justification anywhere in the source -- a physical Table column gaining a
-`description` its own document never had, and a relationship's `name`
-being resynthesized rather than recovered once its join collapses to
-inline -- and are deliberately NOT asserted as correct here; baking in a
-value nobody has justified is exactly how a real regression gets
-permanently disguised as a passing test.
+Not every difference this module finds is a defect. `test_minimal_model_
+reproduces_every_column_and_formula_except_the_aggregation_convention` and
+its tpcds counterpart document a difference the converter's own code
+already explains and justifies (R4) -- collapsing three ThoughtSpot Model
+TML metric shapes into one on the way out. That is asserted as the
+current, intentional behaviour.
+
+Two further differences this module found while it was first written had
+no such justification anywhere in the source, and were deliberately NOT
+asserted as correct -- baking in a value nobody has justified is exactly
+how a real regression gets permanently disguised as a passing test. Both
+have since been fixed in `ossie_to_thoughtspot.py`, and this module now
+asserts the fix directly instead of excluding the field it touches: a
+physical Table column no longer gains a `description` its own document
+never had (see `_columns_by_name` and the dedicated description test), and
+a relationship whose join was Table-referenced keeps its own `name` and
+its Table `joins_with[]` entry across the round trip, restored from the
+stash rather than resynthesized -- with a currency check, so a relationship
+renamed after the stash was written falls back to the old, safe behaviour
+instead of restoring a stale reference under the wrong name (see
+`TestReferencingJoinRestoration`).
 """
 from __future__ import annotations
 
@@ -144,7 +152,11 @@ def _issue_refs(issues, code: str) -> set[str]:
 
 def _columns_by_name(body: dict) -> dict[str, dict]:
     """A Table/SQL-View document's physical columns, keyed by `name` --
-    order-insensitive, content-exact.
+    order-insensitive, content-exact (`description` included: a physical
+    column reaching `_physical_table_column`/`_physical_sql_view_column` is
+    always Model-surfaced, so it never carries one -- see
+    `test_a_model_surfaced_fields_description_is_never_duplicated_onto_its_
+    physical_column` below).
 
     `_build_table_body`/`_build_sql_view_body` in ossie_to_thoughtspot.py
     unconditionally emit a dataset's surfaced fields first and its still-
@@ -155,18 +167,10 @@ def _columns_by_name(body: dict) -> dict[str, dict]:
     surfaced `customer_name` field; `orders` lists its surfaced column
     first -- both legitimate authoring choices TML places no meaning on, so
     comparing column list *order* would fail on a difference the converter
-    never claims to preserve. `description` is dropped from the comparison
-    for a different reason, and NOT one this converter's own comments
-    justify: `_physical_table_column`/`_physical_sql_view_column` copy a
-    field's own `description` onto its physical column unconditionally, so
-    the `store` fixture's `on` column (whose `description` lives only on
-    the Model's own field entry, never on the Table's physical column)
-    gains a `description` its own source document never had. Every other
-    key -- `name`, `db_column_name`/`sql_output_column`,
-    `db_column_properties` -- is still held to exact equality.
+    never claims to preserve.
     """
     key = "sql_view_columns" if "sql_view_columns" in body else "columns"
-    return {c["name"]: {k: v for k, v in c.items() if k != "description"} for c in body.get(key, [])}
+    return {c["name"]: c for c in body.get(key, [])}
 
 
 def _model_columns_by_name(body: dict) -> dict[str, dict]:
@@ -204,7 +208,11 @@ class TestTmlRoundTripReproducesTableDocuments:
         document_set, _, tml_result = _tml_roundtrip(fixture_name)
         for original in document_set.tables:
             new = _table_by_name(tml_result.documents, original.body["name"])
-            for key in ("name", "db", "schema", "db_table", "sql_query", "connection"):
+            # "joins_with" included: a Table-referenced join's own
+            # joins_with[] entry -- name, destination, condition, type,
+            # cardinality -- is restored from the relationship's stash
+            # rather than dropped (see TestReferencingJoinRestoration).
+            for key in ("name", "db", "schema", "db_table", "sql_query", "connection", "joins_with"):
                 if key in original.body or key in new.body:
                     assert new.body.get(key) == original.body.get(key), (original.body["name"], key)
 
@@ -215,6 +223,10 @@ def test_minimal_model_reproduces_every_column_and_formula_except_the_aggregatio
     new = tml_result.documents.model.body
     assert new["name"] == original["name"]
     assert new.get("description") == original.get("description")
+    # The relationship's own referencing_join name survives too, so
+    # `model_tables[].joins[]` -- {"referencing_join": "orders_to_customers"}
+    # -- comes back exactly, not resynthesized as an inline join.
+    assert new["model_tables"] == original["model_tables"]
 
     orig_columns = _model_columns_by_name(original)
     new_columns = _model_columns_by_name(new)
@@ -242,6 +254,11 @@ def test_tpcds_model_reproduces_every_column_and_formula_except_the_metric_shape
     document_set, _, tml_result = _tml_roundtrip("tpcds")
     original = document_set.model.body
     new = tml_result.documents.model.body
+    # All four of store_sales's referencing joins (including the one whose
+    # target dataset name, "date_dim", differs from its own name,
+    # "store_sales_to_date" -- the exact case that used to be resynthesized
+    # as "store_sales_to_date_dim") come back exactly.
+    assert new["model_tables"] == original["model_tables"]
 
     orig_columns = _model_columns_by_name(original)
     new_columns = _model_columns_by_name(new)
@@ -284,66 +301,50 @@ def test_tpcds_model_reproduces_every_column_and_formula_except_the_metric_shape
     }
 
 
-class TestKnownRoundTripSimplifications:
-    """R5 (`_join_entry_for_relationship`, ossie_to_thoughtspot.py): a
-    relationship is always emitted as an inline `model_tables[].joins[]`
-    entry, regardless of whether its ThoughtSpot source used a Table
-    `joins_with[]` reference. The join's own condition, type and
-    cardinality are fully restored either way -- only the structural
-    choice between the two TML shapes is collapsed, and TML's own `Table`
-    document has no equivalent way to write that structural choice back in
-    the reverse direction, so the original `joins_with[]` array does not
-    come back at all. Nothing in the issue log names this: the join is not
-    lost, but the Table document's own `joins_with[]` genuinely is, and
-    that is worth recording here even though the source code's own
-    reasoning -- restoring the join itself in full -- is sound.
+class TestReferencingJoinRestoration:
+    """`_join_entry_for_relationship` (ossie_to_thoughtspot.py) restores a
+    Table-referenced join's own shape -- a `referencing_join` pointer on the
+    Model entry plus a matching `joins_with[]` entry on the Table document
+    -- from the relationship's `RELATIONSHIP_STASH_REFERENCING_JOIN` stash,
+    rather than always collapsing it to an inline join. TML's inline join
+    syntax has no name field at all, so without this a relationship whose
+    join round-trips through TML gets a fresh name synthesized from its own
+    from/to dataset names on the next pass -- unstable exactly when the
+    relationship's own name does not already match that pattern (a target
+    dataset named `date_dim` but a relationship named `..._to_date`, tpcds's
+    own `store_sales_to_date`).
     """
 
-    def test_minimal_referencing_join_becomes_an_inline_join(self):
+    def test_minimal_referencing_join_is_restored_with_its_own_name(self):
         document_set, _, tml_result = _tml_roundtrip("minimal")
         original_orders = _table_by_name(document_set, "orders")
         new_orders = _table_by_name(tml_result.documents, "orders")
-        assert original_orders.body["joins_with"] == [
-            {
-                "name": "orders_to_customers",
-                "destination": {"name": "customers"},
-                "on": "[orders::customer_id] = [customers::customer_id]",
-                "type": "INNER",
-                "cardinality": "MANY_TO_ONE",
-            }
-        ]
-        assert "joins_with" not in new_orders.body
+        assert new_orders.body["joins_with"] == original_orders.body["joins_with"]
 
         new_join = tml_result.documents.model.body["model_tables"][0]["joins"][0]
-        assert new_join == {
-            "with": "customers",
-            "on": "[orders::customer_id] = [customers::customer_id]",
-            "type": "INNER",
-            "cardinality": "MANY_TO_ONE",
-        }
+        assert new_join == {"referencing_join": "orders_to_customers"}
 
-    def test_tpcds_four_referencing_joins_become_inline_joins(self):
+    def test_tpcds_four_referencing_joins_are_restored_with_their_own_names(self):
         document_set, _, tml_result = _tml_roundtrip("tpcds")
         original_store_sales = _table_by_name(document_set, "store_sales")
         new_store_sales = _table_by_name(tml_result.documents, "store_sales")
-        assert len(original_store_sales.body["joins_with"]) == 4
-        assert "joins_with" not in new_store_sales.body
+        assert new_store_sales.body["joins_with"] == original_store_sales.body["joins_with"]
 
         store_sales_entry = next(
             t for t in tml_result.documents.model.body["model_tables"] if t["name"] == "store_sales"
         )
-        assert {j["with"] for j in store_sales_entry["joins"]} == {
-            "date_dim", "customer", "item", "store"
+        # The exact case a name synthesized from from/to dataset names gets
+        # wrong: the target dataset is "date_dim", not "date", so a
+        # resynthesized name would read "store_sales_to_date_dim".
+        assert {"referencing_join": "store_sales_to_date"} in store_sales_entry["joins"]
+        assert {j["referencing_join"] for j in store_sales_entry["joins"]} == {
+            "store_sales_to_date", "store_sales_to_customer", "store_sales_to_item", "store_sales_to_store",
         }
-        for join in store_sales_entry["joins"]:
-            assert join["type"] == "INNER"
-            assert join["cardinality"] == "MANY_TO_ONE"
-            assert "referencing_join" not in join
 
-        # The two relationships that were ALREADY inline in the source
-        # document (store_returns_sv's own joins, one of them carrying a
-        # residual predicate) are unaffected by R5 -- there was no
-        # `joins_with[]` shape to collapse -- and survive verbatim.
+        # The relationships already inline in the source document
+        # (store_returns_sv's own joins, one of them carrying a residual
+        # predicate) have no referencing_join to restore and are
+        # unaffected -- still emitted inline, verbatim.
         store_returns_sv_entry = next(
             t for t in tml_result.documents.model.body["model_tables"]
             if t["name"] == "store_returns_sv"
@@ -352,6 +353,62 @@ class TestKnownRoundTripSimplifications:
             t for t in document_set.model.body["model_tables"] if t["name"] == "store_returns_sv"
         )
         assert store_returns_sv_entry["joins"] == original_store_returns_sv_entry["joins"]
+
+    def test_a_relationship_renamed_since_the_stash_was_written_falls_back_and_logs(self):
+        """A relationship's `name` can be edited directly in the Ossie
+        document (there is nothing to keep it in sync with the stash it was
+        written alongside). Restoring the stashed `referencing_join` under
+        that stale name would point the Table's `joins_with[]` reference at
+        a name the live relationship no longer answers to -- so the
+        currency check (RELATIONSHIP_STASH_REFERENCING_JOIN compared
+        directly against the relationship's own live `name`) drops it
+        instead, exactly as if no stash were present at all, and reports
+        why. The other three relationships from the same dataset, whose
+        stash is still current, are unaffected.
+        """
+        expected = _load_expected(FIXTURES_ROOT / "tpcds")
+        model = expected["semantic_model"][0]
+        relationship = next(r for r in model["relationships"] if r["name"] == "store_sales_to_date")
+        relationship["name"] = "renamed_relationship"
+
+        tml_result = ossie_to_thoughtspot.convert(expected)
+        store_sales = _table_by_name(tml_result.documents, "store_sales")
+        joins_with_names = {j["name"] for j in store_sales.body.get("joins_with") or []}
+        assert joins_with_names == {"store_sales_to_customer", "store_sales_to_item", "store_sales_to_store"}
+
+        store_sales_entry = next(
+            t for t in tml_result.documents.model.body["model_tables"] if t["name"] == "store_sales"
+        )
+        renamed_join = next(j for j in store_sales_entry["joins"] if j.get("with") == "date_dim")
+        assert renamed_join == {
+            "with": "date_dim",
+            "on": "[store_sales::ss_sold_date_sk] = [date_dim::d_date_sk]",
+            "type": "INNER",
+            "cardinality": "MANY_TO_ONE",
+        }
+        assert _issue_refs(tml_result.issues, "TS-JOIN-REFERENCING-JOIN-STALE") == {
+            "relationship:renamed_relationship"
+        }
+
+
+def test_a_model_surfaced_fields_description_is_never_duplicated_onto_its_physical_column():
+    """tpcds's `store.on` field carries a `description` on the Model's own
+    `columns[]` entry; the Table's own `on` column never has one. That
+    description must survive on the Model side and must NOT be invented on
+    the Table side -- `_physical_table_column`/`_physical_sql_view_column`
+    never read a field's `description` at all, so the only place a
+    Model-surfaced field's description can end up is the one place the
+    mapping rule puts it.
+    """
+    document_set, _, tml_result = _tml_roundtrip("tpcds")
+    original_store = _table_by_name(document_set, "store")
+    assert "description" not in _columns_by_name(original_store.body)["on"]
+
+    new_store = _table_by_name(tml_result.documents, "store")
+    assert "description" not in _columns_by_name(new_store.body)["on"]
+
+    new_model_columns = _model_columns_by_name(tml_result.documents.model.body)
+    assert new_model_columns["on"]["description"] == "Whether the store is currently active and open for business."
 
 
 # ---------------------------------------------------------------------------
@@ -601,21 +658,13 @@ def test_tpcds_metric_datatype_is_dropped_with_an_issue_naming_it():
 
 
 @pytest.mark.parametrize("fixture_name", FIXTURE_SETS)
-def test_every_relationship_survives_by_from_to_columns_type_and_cardinality(fixture_name):
-    """`name` is deliberately excluded from this comparison -- see
-    TestKnownRoundTripSimplifications above for why a relationship's
-    join_shape collapses to inline on the way to TML, and the note below
-    for what that costs a relationship's own name on this leg specifically.
-
-    tpcds's own `store_sales_to_date` relationship is the concrete case:
-    its target dataset is named `date_dim`, not `date`, so once its join
-    becomes inline (TML's inline join syntax has no name field at all),
-    `tml_to_ossie.py`'s `_convert_join` synthesizes a fresh name from the
-    join's own from/to table names (`f"{from}_to_{to}"`) rather than
-    recovering the original -- the relationship comes back named
-    `store_sales_to_date_dim`. That is a real content change to the Ossie
-    document with no issue reporting it, worth recording on its own terms;
-    this test does not assert it as the expected value.
+def test_every_relationship_survives_by_from_to_columns_type_cardinality_and_name(fixture_name):
+    """`name` is included in this comparison -- see
+    TestReferencingJoinRestoration for why a relationship whose join was
+    Table-referenced now keeps its own name across the TML leg instead of
+    getting a fresh one synthesized from its from/to dataset names.
+    tpcds's own `store_sales_to_date` (target dataset `date_dim`, not
+    `date`) is the concrete case that used to come back renamed.
     """
     expected, _, ossie_result = _ossie_roundtrip(fixture_name)
     original_model = expected["semantic_model"][0]
@@ -629,6 +678,7 @@ def test_every_relationship_survives_by_from_to_columns_type_and_cardinality(fix
 
     for identity, original_rel in original_by_identity.items():
         new_rel = new_by_identity[identity]
+        assert new_rel["name"] == original_rel["name"], identity
         original_payload = stash.read_stash(original_rel)
         new_payload = stash.read_stash(new_rel)
         assert new_payload.get(RELATIONSHIP_STASH_TYPE) == original_payload.get(RELATIONSHIP_STASH_TYPE)
