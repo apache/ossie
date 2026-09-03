@@ -30,6 +30,7 @@ from pathlib import Path
 import pytest
 
 from ossie_thoughtspot import stash
+from ossie_thoughtspot.errors import ConversionError
 from ossie_thoughtspot.tml import DocumentSet, TmlDocument
 from ossie_thoughtspot.tml_to_ossie import OssieConversion, convert
 
@@ -560,3 +561,296 @@ class TestUnconsumedColumnProperties:
         serialised = json.dumps(result.model)
         assert "guid" not in serialised
         assert any(i["code"] == "TS-PROPERTY-IDENTITY-DROPPED" for i in result.issues.as_dicts())
+
+
+class TestUnknownRelationshipTarget:
+    def test_a_relationship_targeting_an_unknown_dataset_is_dropped_and_logged(self):
+        # Critical: only the FROM side of a join used to be checked against
+        # the datasets this model actually built. CUSTOMERS is referenced by
+        # the join but has no Table document, so its dataset never builds --
+        # emitting a relationship pointing at it would produce a document
+        # upstream's own validator rejects outright.
+        orders = _table("ORDERS", columns=[_column("Customer Id", "CUSTOMER_ID", "INT64")])
+        model = _model(
+            model_tables=[{"name": "ORDERS", "joins": [{
+                "with": "CUSTOMERS",
+                "on": "[ORDERS::Customer Id] = [CUSTOMERS::Id]",
+                "cardinality": "MANY_TO_ONE",
+            }]}],
+            columns=[_attribute("Customer Id", "ORDERS::Customer Id")],
+        )
+
+        result = convert(_document_set(model, orders))
+        semantic_model = result.model["semantic_model"][0]
+
+        assert "relationships" not in semantic_model
+        # The rest of the model -- the one dataset that DID build -- is
+        # still useful rather than being discarded along with the bad join.
+        assert semantic_model["datasets"][0]["fields"][0]["name"] == "customer_id"
+        assert any(
+            i["code"] == "TS-JOIN-UNKNOWN-TARGET" and "CUSTOMERS" in i["message"]
+            for i in result.issues.as_dicts()
+        )
+
+
+class TestUnsurfacedColumns:
+    def test_a_physical_column_the_model_does_not_surface_is_stashed_verbatim(self):
+        orders = _table("ORDERS", columns=[
+            _column("Amount", "AMOUNT", "DOUBLE"),
+            _column("Internal Flag", "INTERNAL_FLAG", "BOOLEAN"),
+        ])
+        model = _model(
+            model_tables=[{"name": "ORDERS"}],
+            columns=[_attribute("Amount", "ORDERS::Amount")],
+        )
+
+        result = convert(_document_set(model, orders))
+        dataset = result.model["semantic_model"][0]["datasets"][0]
+
+        unsurfaced = _own_stash(dataset)["unsurfaced_columns"]
+        assert len(unsurfaced) == 1
+        assert unsurfaced[0]["name"] == "Internal Flag"
+        assert unsurfaced[0]["db_column_name"] == "INTERNAL_FLAG"
+
+    def test_a_column_surfaced_only_as_a_measure_is_not_unsurfaced(self):
+        # column_aggregation-shape metrics surface their physical column via
+        # column_id too -- only ATTRIBUTE fields were checked before this
+        # fix, which would have wrongly called this column unsurfaced.
+        orders = _table("ORDERS", columns=[_column("Amount", "AMOUNT", "DOUBLE")])
+        model = _model(
+            model_tables=[{"name": "ORDERS"}],
+            columns=[{"name": "Total", "column_id": "ORDERS::Amount",
+                      "properties": {"column_type": "MEASURE", "aggregation": "SUM"}}],
+        )
+
+        result = convert(_document_set(model, orders))
+        dataset = result.model["semantic_model"][0]["datasets"][0]
+        stashed = _own_stash(dataset) or {}
+        assert "unsurfaced_columns" not in stashed
+
+    def test_a_dataset_with_no_unsurfaced_columns_gets_no_such_key(self):
+        orders = _table("ORDERS", columns=[_column("Amount", "AMOUNT", "DOUBLE")])
+        model = _model(
+            model_tables=[{"name": "ORDERS"}],
+            columns=[_attribute("Amount", "ORDERS::Amount")],
+        )
+        result = convert(_document_set(model, orders))
+        dataset = result.model["semantic_model"][0]["datasets"][0]
+        stashed = _own_stash(dataset) or {}
+        assert "unsurfaced_columns" not in stashed
+
+    def test_unsurfaced_columns_populates_the_dataset_stash_on_its_own(self):
+        # A dataset's stash always carries at least tml_object, so X6's
+        # empty-payload guarantee is exercised at the model scope
+        # (test_an_empty_payload_writes_no_stash_entry), not here -- this
+        # confirms unsurfaced_columns itself lands correctly when nothing
+        # else about the column is surfaced at all.
+        orders = _table("ORDERS", columns=[_column("Amount", "AMOUNT", "DOUBLE")])
+        model = _model(model_tables=[{"name": "ORDERS"}], columns=[])
+        result = convert(_document_set(model, orders))
+        dataset = result.model["semantic_model"][0]["datasets"][0]
+        stashed = _own_stash(dataset)
+        assert stashed is not None
+        assert stashed["unsurfaced_columns"][0]["name"] == "Amount"
+
+
+class TestModelScopeIdentityIsCaughtNotFatal:
+    """The boundary guard (stash.write_stash) still raises -- that is what
+    makes it impossible to bypass -- but the assembly catches it, drops the
+    one contaminated stash field, logs why, and keeps converting everything
+    else. A single stray identity value in an otherwise-fine model must not
+    turn the whole conversion into a traceback."""
+
+    def _model_with(self, **model_scope_fields):
+        orders = _table("ORDERS", columns=[_column("Amount", "AMOUNT", "DOUBLE")])
+        model = _model(
+            model_tables=[{"name": "ORDERS"}],
+            columns=[_attribute("Amount", "ORDERS::Amount")],
+            **model_scope_fields,
+        )
+        return orders, model
+
+    def test_a_guid_nested_in_parameters_is_dropped_not_fatal(self):
+        orders, model = self._model_with(
+            parameters=[{"name": "P", "default_value": {"obj_id": "p-1"}}]
+        )
+        result = convert(_document_set(model, orders))
+        semantic_model = result.model["semantic_model"][0]
+        assert semantic_model["datasets"][0]["fields"][0]["name"] == "amount"
+        stashed = _own_stash(semantic_model) or {}
+        assert "parameters" not in stashed
+        assert "obj_id" not in json.dumps(result.model)
+        assert any(i["code"] == "TS-STASH-IDENTITY-DROPPED" for i in result.issues.as_dicts())
+
+    def test_a_guid_nested_in_filters_is_dropped_not_fatal(self):
+        orders, model = self._model_with(
+            filters=[{"column": "Region", "values": [{"nested": {"fqn": "f-1"}}]}]
+        )
+        result = convert(_document_set(model, orders))
+        stashed = _own_stash(result.model["semantic_model"][0]) or {}
+        assert "filters" not in stashed
+        assert "fqn" not in json.dumps(result.model)
+
+    def test_a_guid_nested_in_column_groups_is_dropped_not_fatal(self):
+        orders, model = self._model_with(
+            column_groups=[{"name": "Sales", "meta": {"guid": "g-1"}}]
+        )
+        result = convert(_document_set(model, orders))
+        stashed = _own_stash(result.model["semantic_model"][0]) or {}
+        assert "column_groups" not in stashed
+        assert "guid" not in json.dumps(result.model)
+
+    def test_a_guid_nested_in_lesson_plans_is_dropped_not_fatal(self):
+        orders, model = self._model_with(
+            lesson_plans=[{"lesson_id": 0, "extra": {"obj_id": "l-1"}}]
+        )
+        result = convert(_document_set(model, orders))
+        stashed = _own_stash(result.model["semantic_model"][0]) or {}
+        assert "lesson_plans" not in stashed
+        assert "obj_id" not in json.dumps(result.model)
+
+    def test_a_guid_nested_in_action_object_associations_is_dropped_not_fatal(self):
+        orders, model = self._model_with(
+            action_object_associations=[{"action_name": "A", "context": {"fqn": "a-1"}}]
+        )
+        result = convert(_document_set(model, orders))
+        stashed = _own_stash(result.model["semantic_model"][0]) or {}
+        assert "action_object_associations" not in stashed
+        assert "fqn" not in json.dumps(result.model)
+
+    def test_a_guid_nested_in_constraints_is_dropped_not_fatal(self):
+        orders, model = self._model_with(constraints={"rolling": {"window": {"guid": "c-1"}}})
+        result = convert(_document_set(model, orders))
+        stashed = _own_stash(result.model["semantic_model"][0]) or {}
+        assert "constraints" not in stashed
+        assert "guid" not in json.dumps(result.model)
+
+    def test_a_guid_nested_in_model_joins_with_is_dropped_not_fatal(self):
+        orders, model = self._model_with(
+            joins_with=[{"name": "j", "destination": {"fqn": "j-1"}}]
+        )
+        result = convert(_document_set(model, orders))
+        stashed = _own_stash(result.model["semantic_model"][0]) or {}
+        assert "model_joins_with" not in stashed
+        assert "fqn" not in json.dumps(result.model)
+
+    def test_other_model_scope_fields_survive_when_only_one_is_contaminated(self):
+        # Dropping the one bad key must not take the rest of the model
+        # stash down with it.
+        orders, model = self._model_with(
+            parameters=[{"name": "P", "default_value": {"obj_id": "p-1"}}],
+            filters=[{"column": "Region", "values": ["US"]}],
+        )
+        result = convert(_document_set(model, orders))
+        stashed = _own_stash(result.model["semantic_model"][0]) or {}
+        assert "parameters" not in stashed
+        assert stashed["filters"] == [{"column": "Region", "values": ["US"]}]
+
+
+class TestKeyDerivationEdgeCasesCommitted:
+    """Edge cases attacked and confirmed by hand during development, now
+    committed so the check runs on every future change instead of living
+    only in a one-off transcript."""
+
+    def test_a_mixed_equality_and_residual_join_emits_a_weaker_relationship_and_no_key(self):
+        customers = _table("CUSTOMERS", columns=[_column("Id", "ID", "INT64"), _column("Effective Date", "EFFECTIVE_DATE", "DATE")])
+        orders = _table("ORDERS", columns=[_column("Customer Id", "CUSTOMER_ID", "INT64"), _column("Order Date", "ORDER_DATE", "DATE")])
+        on_expr = (
+            "[ORDERS::Customer Id] = [CUSTOMERS::Id] and "
+            "[ORDERS::Order Date] >= [CUSTOMERS::Effective Date]"
+        )
+        model = _model(
+            model_tables=[
+                {"name": "ORDERS", "joins": [{"with": "CUSTOMERS", "on": on_expr,
+                                               "type": "INNER", "cardinality": "MANY_TO_ONE"}]},
+                {"name": "CUSTOMERS"},
+            ],
+        )
+        result = convert(_document_set(model, orders, customers))
+        semantic_model = result.model["semantic_model"][0]
+        customers_ds = next(d for d in semantic_model["datasets"] if d["name"] == "CUSTOMERS")
+
+        assert "primary_key" not in customers_ds
+        assert "unique_keys" not in customers_ds
+
+        rel = semantic_model["relationships"][0]
+        assert rel["from_columns"] == ["Customer Id"]
+        assert rel["to_columns"] == ["Id"]
+        rel_stash = _own_stash(rel)
+        assert rel_stash["residual_predicates"] == [
+            "[ORDERS::Order Date] >= [CUSTOMERS::Effective Date]"
+        ]
+        assert rel_stash["on_expression"] == on_expr
+        assert any(i["code"] == "TS-JOIN-RESIDUAL-PREDICATES" for i in result.issues.as_dicts())
+        assert any(i["code"] == "TS_KEY_COVERAGE" for i in result.issues.as_dicts())
+
+    def test_a_self_join_gives_each_alias_its_own_dataset_and_key(self):
+        employees = _table("EMPLOYEES", columns=[
+            _column("Id", "ID", "INT64"), _column("Manager Id", "MANAGER_ID", "INT64"),
+            _column("Name", "NAME", "VARCHAR"),
+        ])
+        model = _model(
+            name="OrgChart",
+            model_tables=[
+                {"name": "EMPLOYEES", "alias": "Emp", "joins": [{
+                    "with": "Mgr", "on": "[Emp::Manager Id] = [Mgr::Id]",
+                    "type": "INNER", "cardinality": "MANY_TO_ONE",
+                }]},
+                {"name": "EMPLOYEES", "alias": "Mgr"},
+            ],
+            columns=[
+                _attribute("Emp Name", "Emp::Name"),
+                _attribute("Mgr Name", "Mgr::Name"),
+            ],
+        )
+        result = convert(_document_set(model, employees))
+        semantic_model = result.model["semantic_model"][0]
+        datasets = {d["name"]: d for d in semantic_model["datasets"]}
+
+        assert set(datasets) == {"Emp", "Mgr"}
+        assert datasets["Emp"]["source"] == datasets["Mgr"]["source"] == "SALES.PUBLIC.EMPLOYEES"
+        assert datasets["Mgr"]["primary_key"] == ["Id"]
+        rel = semantic_model["relationships"][0]
+        assert rel["from"] == "Emp"
+        assert rel["to"] == "Mgr"
+        assert result.issues.as_dicts() == []
+
+    def test_a_top_level_or_in_a_join_condition_is_not_fabricated_into_an_equality_pair(self):
+        customers = _table("CUSTOMERS", columns=[_column("Id", "ID", "INT64"), _column("Legacy Id", "LEGACY_ID", "INT64")])
+        orders = _table("ORDERS", columns=[_column("Customer Id", "CUSTOMER_ID", "INT64")])
+        on_expr = "[ORDERS::Customer Id] = [CUSTOMERS::Id] or [ORDERS::Customer Id] = [CUSTOMERS::Legacy Id]"
+        model = _model(
+            model_tables=[
+                {"name": "ORDERS", "joins": [{"with": "CUSTOMERS", "on": on_expr, "cardinality": "MANY_TO_ONE"}]},
+                {"name": "CUSTOMERS"},
+            ],
+        )
+        result = convert(_document_set(model, orders, customers))
+        semantic_model = result.model["semantic_model"][0]
+
+        # No equality pair could be safely attributed -- the whole "or"
+        # expression is one residual, never split into a fabricated pair.
+        assert "relationships" not in semantic_model
+        model_stash = _own_stash(semantic_model)
+        assert model_stash["unrepresentable_joins"][0]["on_expression"] == on_expr
+
+    def test_many_to_many_is_not_key_evidence_through_the_full_pipeline(self):
+        customers = _table("CUSTOMERS", columns=[_column("Id", "ID", "INT64")])
+        products = _table("PRODUCTS", columns=[_column("Customer Id", "CUSTOMER_ID", "INT64")])
+        model = _model(
+            model_tables=[
+                {"name": "PRODUCTS", "joins": [{
+                    "with": "CUSTOMERS", "on": "[PRODUCTS::Customer Id] = [CUSTOMERS::Id]",
+                    "type": "INNER", "cardinality": "MANY_TO_MANY",
+                }]},
+                {"name": "CUSTOMERS"},
+            ],
+        )
+        result = convert(_document_set(model, products, customers))
+        semantic_model = result.model["semantic_model"][0]
+        customers_ds = next(d for d in semantic_model["datasets"] if d["name"] == "CUSTOMERS")
+
+        assert "primary_key" not in customers_ds
+        assert "unique_keys" not in customers_ds
+        rel = semantic_model["relationships"][0]
+        assert _own_stash(rel)["cardinality"] == "MANY_TO_MANY"

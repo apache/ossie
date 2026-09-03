@@ -26,14 +26,51 @@ from typing import Any
 from .constants import STASH_VERSION, VENDOR_KEY
 from .errors import ConversionError
 
-#: X8 — instance-local identity never travels in a portable document. This
-#: check is top-level only: a forbidden key nested inside a value (e.g.
-#: `{"detail": {"guid": ...}}`) is not scanned and passes through unchecked.
+#: X8 — instance-local identity never travels in a portable document.
 _FORBIDDEN_KEYS = frozenset({"guid", "obj_id", "fqn"})
 
 
 def _object_label(obj: dict) -> str:
     return str(obj.get("name", "<unnamed>"))
+
+
+def find_forbidden_key(value: Any, forbidden: frozenset[str] | None = None) -> str | None:
+    """The first key from `forbidden` found anywhere inside `value`, at any
+    depth, or `None`.
+
+    `forbidden` defaults to `_FORBIDDEN_KEYS` (rule X8's own `guid`/`obj_id`/
+    `fqn`). A caller with a wider identity vocabulary to check for — this
+    package's own `dataset_id`/`custom_file_guid` additions, documented
+    identity-shaped keys X8 itself does not name — passes its own set rather
+    than this module maintaining a second, wider copy of its own; the scan
+    itself is shared either way, so the two vocabularies cannot drift apart
+    the way two independently maintained scans could.
+
+    `write_stash` is the single point every stashed payload passes through,
+    so this is the one place the check needs to live for no caller — present
+    or future — to bypass it by nesting identity content one level below a
+    payload's own top-level keys instead of putting it there directly. A
+    value copied wholesale from source data, rather than rebuilt field by
+    field, is exactly how that happens in practice — the documented
+    ThoughtSpot shape `geo_config.custom_file_guid` naming a custom map is
+    one real example.
+    """
+    names = forbidden if forbidden is not None else _FORBIDDEN_KEYS
+    if isinstance(value, dict):
+        for key, v in value.items():
+            if key in names:
+                return key
+            found = find_forbidden_key(v, names)
+            if found is not None:
+                return found
+        return None
+    if isinstance(value, list):
+        for item in value:
+            found = find_forbidden_key(item, names)
+            if found is not None:
+                return found
+        return None
+    return None
 
 
 def read_stash(obj: dict) -> dict[str, Any]:
@@ -51,13 +88,25 @@ def read_stash(obj: dict) -> dict[str, Any]:
                 f"{type(raw).__name__}, expected a JSON string"
             )
         try:
-            return json.loads(raw)
+            parsed = json.loads(raw)
         except json.JSONDecodeError as exc:
             # X4: name the object; never surface a bare json traceback.
             raise ConversionError(
                 f"malformed THOUGHTSPOT custom_extensions payload on "
                 f"{_object_label(obj)!r}: {exc}"
             ) from exc
+        version = parsed.get("_v") if isinstance(parsed, dict) else None
+        if version != STASH_VERSION:
+            # X3: an unrecognised shape version is a hard failure, not a
+            # partial read — a future payload shape this converter has never
+            # seen would otherwise be silently misread as the current one.
+            raise ConversionError(
+                f"THOUGHTSPOT custom_extensions payload on "
+                f"{_object_label(obj)!r} has shape version {version!r}, "
+                f"which this converter does not recognise (expected "
+                f"{STASH_VERSION!r})"
+            )
+        return parsed
     return {}
 
 
@@ -67,12 +116,12 @@ def write_stash(obj: dict, payload: dict[str, Any]) -> dict:
     Foreign-vendor entries are preserved untouched (X7). An empty resulting
     payload writes nothing at all (X6).
     """
-    forbidden = _FORBIDDEN_KEYS & set(payload)
-    if forbidden:
-        # X8.
+    forbidden_key = find_forbidden_key(payload)
+    if forbidden_key is not None:
+        # X8, checked at any depth — see find_forbidden_key.
         raise ConversionError(
-            f"refusing to stash instance-local identity key(s) "
-            f"{sorted(forbidden)} on {_object_label(obj)!r}"
+            f"refusing to stash instance-local identity key {forbidden_key!r} "
+            f"on {_object_label(obj)!r}"
         )
 
     merged = {**read_stash(obj), **payload}
