@@ -26,6 +26,7 @@ on:
       - "validation/**"
       - "core-spec/**"
       - "examples/tpcds_semantic_model.yaml"
+      - "examples/multi_model_ai_context.yaml"
       - ".github/workflows/validation-ci.yml"
   pull_request:
     branches: ["main"]
@@ -33,6 +34,7 @@ on:
       - "validation/**"
       - "core-spec/**"
       - "examples/tpcds_semantic_model.yaml"
+      - "examples/multi_model_ai_context.yaml"
       - ".github/workflows/validation-ci.yml"
 
 jobs:
@@ -64,3 +66,6 @@ jobs:
 
       - name: Validate canonical example
         run: uv run validation/validate.py examples/tpcds_semantic_model.yaml
+
+      - name: Validate document-wide ai_context example
+        run: uv run validation/validate.py examples/multi_model_ai_context.yaml

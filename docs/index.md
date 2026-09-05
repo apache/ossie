@@ -57,7 +57,7 @@ The Ossie core specification (current version: **0.2.0.dev0**, latest released: 
 | **Relationships** | Foreign key connections between datasets, supporting both simple and composite keys. |
 | **Metrics** | Quantitative measures (sums, averages, ratios, etc.) defined at the model level, capable of spanning multiple datasets. |
 | **Custom Extensions** | Vendor-specific metadata stored as JSON, allowing platforms to carry additional information without breaking core compatibility. |
-| **AI Context** | Optional annotations at every level (model, dataset, field, relationship, metric) to help AI tools understand business meaning — including instructions, synonyms, and example queries. |
+| **AI Context** | Optional annotations at every level (document, model, dataset, field, relationship, metric) to help AI tools understand business meaning — including instructions, synonyms, and example queries. |
 
 The specification supports multiple SQL dialects (`ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`, `MDX`, `TABLEAU`) so that expressions can be tailored to each platform while maintaining a common model structure.
 
@@ -322,7 +322,7 @@ A practical guide for organizations looking to adopt Ossie.
 | **Relationship** | A foreign key connection between two datasets, defining how they can be joined. Relationships are always many-to-one (from the referencing dataset to the referenced dataset). |
 | **Dialect** | A specific SQL or expression language variant (e.g., `ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`). Ossie supports multiple dialects so expressions can be tailored to each platform. |
 | **Custom Extension** | Vendor-specific metadata attached to any Ossie construct as a JSON string. Extensions allow platforms to carry additional information without modifying the core specification. |
-| **AI Context** | Optional annotations on any Ossie construct (model, dataset, field, relationship, metric) that provide additional context for AI tools — including natural language instructions, synonyms, and example queries. |
+| **AI Context** | Optional annotations on any Ossie construct (document, model, dataset, field, relationship, metric) that provide additional context for AI tools — including natural language instructions, synonyms, and example queries. |
 | **Converter** | A tool that translates between the Ossie format and a specific vendor's semantic model format. Converters come in pairs: import (vendor → Ossie) and export (Ossie → vendor). |
 | **Hub-and-Spoke** | The architectural pattern used by Ossie, where the specification acts as the central format (hub) and vendor converters act as spokes, avoiding the need for point-to-point integrations. |
 | **Round-Trip Fidelity** | The ability to convert a model from one format to Ossie and back without losing information. Achieved by preserving vendor-specific metadata in `custom_extensions`. |

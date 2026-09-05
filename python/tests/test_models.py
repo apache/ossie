@@ -111,6 +111,64 @@ def test_invalid_datatype_is_rejected() -> None:
         OssieDocument.model_validate(document)
 
 
+def test_document_ai_context_matches_core_schema() -> None:
+    schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    schema = json.loads(schema_path.read_text())
+
+    assert schema["properties"]["ai_context"]["$ref"] == "#/$defs/AIContext"
+
+    # Document-wide context is optional, so existing documents keep validating
+    # unchanged, and the root stays closed to anything else.
+    assert "ai_context" not in schema["required"]
+    assert schema["additionalProperties"] is False
+
+
+def test_document_ai_context_agrees_with_the_ontology_root() -> None:
+    """Both document roots resolve ai_context against the same definition.
+
+    The ontology specification already puts ai_context on its root and $refs this
+    specification's AIContext. If that reference is ever repointed at a different
+    definition, the two document types would silently disagree about what
+    document-wide context means.
+    """
+    core = json.loads(
+        (Path(__file__).parents[2] / "core-spec" / "ossie-schema.json").read_text()
+    )
+    ontology = json.loads(
+        (Path(__file__).parents[2] / "ontology" / "ontology.json").read_text()
+    )
+
+    assert ontology["properties"]["ai_context"]["$ref"].endswith(
+        "ossie-schema.json#/$defs/AIContext"
+    )
+    assert core["properties"]["ai_context"]["$ref"] == "#/$defs/AIContext"
+
+
+def test_document_ai_context_survives_serialization() -> None:
+    """Both forms of AIContext round-trip, and an absent one does not serialize."""
+    document = _document()
+    document["ai_context"] = {
+        "instructions": "Fiscal year starts in July.",
+        "synonyms": ["revenue = net_sales"],
+    }
+
+    parsed = OssieDocument.model_validate(document)
+    assert parsed.ai_context.instructions == "Fiscal year starts in July."
+    for serialized in (
+        json.loads(parsed.to_ossie_json()),
+        yaml.safe_load(parsed.to_ossie_yaml()),
+    ):
+        assert serialized["ai_context"]["instructions"] == "Fiscal year starts in July."
+
+    document["ai_context"] = "Fiscal year starts in July."
+    assert OssieDocument.model_validate(document).ai_context == "Fiscal year starts in July."
+
+    absent = OssieDocument.model_validate(_document())
+    assert absent.ai_context is None
+    assert "ai_context" not in yaml.safe_load(absent.to_ossie_yaml())
+    assert "ai_context" not in json.loads(absent.to_ossie_json())
+
+
 @pytest.mark.parametrize(
     ("dimension", "datatype", "expected"),
     [

@@ -10,6 +10,10 @@
       "const": "0.2.0.dev0",
       "description": "Apache Ossie specification version"
     },
+    "ai_context": {
+      "$ref": "#/$defs/AIContext",
+      "description": "Document-wide context for AI tools. Applies to every semantic model in this document."
+    },
     "semantic_model": {
       "type": "array",
       "description": "Collection of semantic model definitions",
