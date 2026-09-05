@@ -59,6 +59,11 @@ datatypes:
 vendor_name: string
 
 
+---
+# Document root
+# Keys allowed on the root object of an Ossie document, alongside the `version`
+# declared at the top of this file.
+
 # Top-level semantic model definition
 semantic_model:
   # Required: Unique identifier for the semantic model
