@@ -21,8 +21,8 @@ package org.apache.ossie.converter.polaris;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.apache.ossie.converter.polaris.model.OsiModel;
-import org.apache.ossie.converter.polaris.model.OsiModel.*;
+import org.apache.ossie.converter.polaris.model.OssieModel;
+import org.apache.ossie.converter.polaris.model.OssieModel.*;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -34,7 +34,7 @@ import java.util.List;
  * <p>
  * Reads namespaces and tables from a Polaris catalog via the Iceberg REST API,
  * maps Iceberg table schemas to Ossie datasets and fields, and produces a complete
- * {@link OsiModel}.
+ * {@link OssieModel}.
  */
 public class PolarisImporter {
 
@@ -48,8 +48,8 @@ public class PolarisImporter {
      * Import all tables from all namespaces in the catalog into an Ossie model.
      * Each namespace becomes a separate semantic model.
      */
-    public OsiModel importCatalog() throws IOException, InterruptedException {
-        OsiModel model = new OsiModel();
+    public OssieModel importCatalog() throws IOException, InterruptedException {
+        OssieModel model = new OssieModel();
         model.setVersion("0.2.0.dev0");
 
         List<List<String>> namespaces = client.listNamespaces();

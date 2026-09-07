@@ -18,16 +18,16 @@
 """Shared test helpers for Ossie converter tests."""
 
 from ossie import (
-    OSIDataset,
-    OSIDialect,
-    OSIDialectExpression,
-    OSIDimension,
-    OSIDocument,
-    OSIExpression,
-    OSIField,
-    OSIMetric,
-    OSIRelationship,
-    OSISemanticModel,
+    OssieDataset,
+    OssieDialect,
+    OssieDialectExpression,
+    OssieDimension,
+    OssieDocument,
+    OssieExpression,
+    OssieField,
+    OssieMetric,
+    OssieRelationship,
+    OssieSemanticModel,
 )
 from metricflow_semantic_interfaces.implementations.elements.dimension import (
     PydanticDimension,
@@ -157,35 +157,35 @@ def _filter(sql: str) -> PydanticWhereFilterIntersection:
 # ---------------------------------------------------------------------------
 
 
-def _osi_expr(expression: str, dialect: OSIDialect = OSIDialect.ANSI_SQL) -> OSIExpression:
-    return OSIExpression(dialects=[OSIDialectExpression(dialect=dialect, expression=expression)])
+def _ossie_expr(expression: str, dialect: OssieDialect = OssieDialect.ANSI_SQL) -> OssieExpression:
+    return OssieExpression(dialects=[OssieDialectExpression(dialect=dialect, expression=expression)])
 
 
-def _osi_field(
+def _ossie_field(
     name: str,
     expression: str | None = None,
     is_time: bool | None = None,
     description: str | None = None,
     label: str | None = None,
-) -> OSIField:
-    return OSIField(
+) -> OssieField:
+    return OssieField(
         name=name,
-        expression=_osi_expr(expression if expression is not None else name),
-        dimension=OSIDimension(is_time=is_time) if is_time is not None else None,
+        expression=_ossie_expr(expression if expression is not None else name),
+        dimension=OssieDimension(is_time=is_time) if is_time is not None else None,
         description=description,
         label=label,
     )
 
 
-def _osi_dataset(
+def _ossie_dataset(
     name: str,
     source: str = "schema.table",
-    fields: list[OSIField] | None = None,
+    fields: list[OssieField] | None = None,
     primary_key: list[str] | None = None,
     unique_keys: list[list[str]] | None = None,
     description: str | None = None,
-) -> OSIDataset:
-    return OSIDataset(
+) -> OssieDataset:
+    return OssieDataset(
         name=name,
         source=source,
         fields=fields,
@@ -195,14 +195,14 @@ def _osi_dataset(
     )
 
 
-def _osi_metric(name: str, expression: str, description: str | None = None) -> OSIMetric:
-    return OSIMetric(name=name, expression=_osi_expr(expression), description=description)
+def _ossie_metric(name: str, expression: str, description: str | None = None) -> OssieMetric:
+    return OssieMetric(name=name, expression=_ossie_expr(expression), description=description)
 
 
-def _osi_relationship(
+def _ossie_relationship(
     name: str, from_dataset: str, to_dataset: str, from_columns: list[str], to_columns: list[str]
-) -> OSIRelationship:
-    return OSIRelationship(
+) -> OssieRelationship:
+    return OssieRelationship(
         name=name,
         from_dataset=from_dataset,
         to=to_dataset,
@@ -211,15 +211,15 @@ def _osi_relationship(
     )
 
 
-def _osi_doc(
-    datasets: list[OSIDataset] | None = None,
-    metrics: list[OSIMetric] | None = None,
-    relationships: list[OSIRelationship] | None = None,
+def _ossie_doc(
+    datasets: list[OssieDataset] | None = None,
+    metrics: list[OssieMetric] | None = None,
+    relationships: list[OssieRelationship] | None = None,
     model_name: str = "test",
-) -> OSIDocument:
-    return OSIDocument(
+) -> OssieDocument:
+    return OssieDocument(
         semantic_model=[
-            OSISemanticModel(
+            OssieSemanticModel(
                 name=model_name,
                 datasets=datasets or [],
                 metrics=metrics if metrics else None,

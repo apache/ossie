@@ -15,8 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Fixture B -- stash round-trip (Omni -> OSI -> Omni, lossless).
-# The model file has no OSI home and round-trips via the model-level stash.
+# Fixture B -- stash round-trip (Omni -> Ossie -> Omni, lossless).
+# The model file has no Ossie home and round-trips via the model-level stash.
 included_schemas:
 - ecomm
 week_start_day: Sunday

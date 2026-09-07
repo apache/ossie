@@ -327,13 +327,13 @@ def test_inactive_many_to_many_and_dangling_relationships_are_dropped(model):
 def test_output_validates_against_core_spec_schema(osi):
     jsonschema = pytest.importorskip("jsonschema")
 
-    with open(REPO_ROOT / "core-spec" / "osi-schema.json", encoding="utf-8") as fh:
+    with open(REPO_ROOT / "core-spec" / "ossie-schema.json", encoding="utf-8") as fh:
         schema = json.load(fh)
     jsonschema.validate(osi, schema)
 
 
 def test_dax_is_a_spec_dialect():
-    with open(REPO_ROOT / "core-spec" / "osi-schema.json", encoding="utf-8") as fh:
+    with open(REPO_ROOT / "core-spec" / "ossie-schema.json", encoding="utf-8") as fh:
         schema = json.load(fh)
     assert "DAX" in schema["$defs"]["Dialect"]["enum"]
 

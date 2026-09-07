@@ -15,10 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# yaml-language-server: $schema=../core-spec/osi-schema.json
+# yaml-language-server: $schema=../core-spec/ossie-schema.json
 
 # TPC-DS Semantic Model Example
-# This example demonstrates the OSI Core Metadata Spec using the TPC-DS benchmark schema
+# This example demonstrates the Ossie Core Metadata Spec using the TPC-DS benchmark schema
 # TPC-DS is a decision support benchmark with a realistic retail business model
 
 version: "0.2.0.dev0"

@@ -571,6 +571,8 @@ def _convert_metric(metric, fact, seen_names):
         measure["format"] = stash["format"]
     if "window" in stash:
         measure["window"] = stash["window"]
+    if "display_name" in stash:
+        measure["display_name"] = stash["display_name"]
     return measure
 
 

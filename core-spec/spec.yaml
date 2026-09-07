@@ -37,11 +37,12 @@ dialects:
   - "DATABRICKS"            # Databricks SQL
   - "MAQL"                  # GoodData MAQL (Multi-Dimensional Analytical Query Language)
   - "BIGQUERY"              # Google BigQuery GoogleSQL
+  - "THOUGHTSPOT"           # ThoughtSpot formula language (not SQL)
   - "DAX"                   # Data Analysis Expressions (Power BI / Analysis Services)
 
 # Supported logical data types for fields and metrics
 # TODO: Generate this list from the authoritative DataType enum in
-# osi-schema.json ($defs.DataType.enum); until then, keep them in sync.
+# ossie-schema.json ($defs.DataType.enum); until then, keep them in sync.
 datatypes:
   - "String"                # Variable-length Unicode character data
   - "Integer"               # Exact integral number

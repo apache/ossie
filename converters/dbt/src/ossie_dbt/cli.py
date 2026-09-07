@@ -18,8 +18,8 @@
 """CLI entry point for the ossie-dbt converter.
 
 Usage:
-    ossie-dbt msi-to-osi -i semantic_manifest.json -o output.yaml
-    ossie-dbt osi-to-msi -i input.yaml -o semantic_manifest.json
+    ossie-dbt msi-to-ossie -i semantic_manifest.json -o output.yaml
+    ossie-dbt ossie-to-msi -i input.yaml -o semantic_manifest.json
 """
 
 import argparse
@@ -29,10 +29,10 @@ from pathlib import Path
 
 import yaml
 
-from ossie import OSIDocument
+from ossie import OssieDocument
 from ossie_dbt.converter_issues import ConverterIssueType
-from ossie_dbt.msi_to_osi import MSIToOSIConverter
-from ossie_dbt.osi_to_msi import OSIToMSIConverter
+from ossie_dbt.msi_to_ossie import MSIToOssieConverter
+from ossie_dbt.ossie_to_msi import OssieToMSIConverter
 
 from metricflow_semantics.model.dbt_manifest_parser import parse_manifest_from_dbt_generated_manifest
 
@@ -50,12 +50,12 @@ _DROPPED_ISSUE_TYPES = {
 }
 
 
-def _cmd_msi_to_osi(args: argparse.Namespace) -> None:
+def _cmd_msi_to_ossie(args: argparse.Namespace) -> None:
     input_path = Path(args.input)
     output_path = Path(args.output)
 
     manifest = parse_manifest_from_dbt_generated_manifest(input_path.read_text())
-    result = MSIToOSIConverter().convert(manifest, osi_model_name=args.model_name)
+    result = MSIToOssieConverter().convert(manifest, ossie_model_name=args.model_name)
 
     if result.issues:
         for issue in result.issues:
@@ -63,17 +63,17 @@ def _cmd_msi_to_osi(args: argparse.Namespace) -> None:
             reason = _ISSUE_REASON[issue.issue_type]
             print(f"[WARNING] {issue.issue_type.value}: {issue.element_name} {verb} during conversion because {reason}", file=sys.stderr)
 
-    output_path.write_text(result.output.to_osi_yaml())
+    output_path.write_text(result.output.to_ossie_yaml())
     print(f"Written to {output_path}", file=sys.stderr)
 
 
-def _cmd_osi_to_msi(args: argparse.Namespace) -> None:
+def _cmd_ossie_to_msi(args: argparse.Namespace) -> None:
     input_path = Path(args.input)
     output_path = Path(args.output)
 
     raw = yaml.safe_load(input_path.read_text())
-    document = OSIDocument.model_validate(raw)
-    result = OSIToMSIConverter().convert(document)
+    document = OssieDocument.model_validate(raw)
+    result = OssieToMSIConverter().convert(document)
 
     output_path.write_text(result.output.model_dump_json(by_alias=True, exclude_none=True, indent=2))
     print(f"Written to {output_path}", file=sys.stderr)
@@ -86,22 +86,22 @@ def main() -> None:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    msi_to_osi = subparsers.add_parser("msi-to-osi", help="Convert semantic_manifest.json → Ossie YAML")
-    msi_to_osi.add_argument("-i", "--input", required=True, metavar="FILE", help="Path to semantic_manifest.json")
-    msi_to_osi.add_argument("-o", "--output", required=True, metavar="FILE", help="Path for output Ossie YAML")
-    msi_to_osi.add_argument(
+    msi_to_ossie = subparsers.add_parser("msi-to-ossie", help="Convert semantic_manifest.json → Ossie YAML")
+    msi_to_ossie.add_argument("-i", "--input", required=True, metavar="FILE", help="Path to semantic_manifest.json")
+    msi_to_ossie.add_argument("-o", "--output", required=True, metavar="FILE", help="Path for output Ossie YAML")
+    msi_to_ossie.add_argument(
         "--model-name", default="semantic_model", metavar="NAME", help="Ossie semantic model name (default: semantic_model)"
     )
 
-    osi_to_msi = subparsers.add_parser("osi-to-msi", help="Convert Ossie YAML → semantic_manifest.json")
-    osi_to_msi.add_argument("-i", "--input", required=True, metavar="FILE", help="Path to Ossie YAML")
-    osi_to_msi.add_argument("-o", "--output", required=True, metavar="FILE", help="Path for output semantic_manifest.json")
+    ossie_to_msi = subparsers.add_parser("ossie-to-msi", help="Convert Ossie YAML → semantic_manifest.json")
+    ossie_to_msi.add_argument("-i", "--input", required=True, metavar="FILE", help="Path to Ossie YAML")
+    ossie_to_msi.add_argument("-o", "--output", required=True, metavar="FILE", help="Path for output semantic_manifest.json")
 
     args = parser.parse_args()
-    if args.command == "msi-to-osi":
-        _cmd_msi_to_osi(args)
-    elif args.command == "osi-to-msi":
-        _cmd_osi_to_msi(args)
+    if args.command == "msi-to-ossie":
+        _cmd_msi_to_ossie(args)
+    elif args.command == "ossie-to-msi":
+        _cmd_ossie_to_msi(args)
 
 
 if __name__ == "__main__":

@@ -27,23 +27,23 @@ public enum ConversionDirection {
     /**
      * Converting from Ossie YAML format to Salesforce JSON format.
      */
-    OSI_TO_SALESFORCE,
+    OSSIE_TO_SALESFORCE,
 
     /**
      * Converting from Salesforce JSON format to Ossie YAML format.
      */
-    SALESFORCE_TO_OSI;
+    SALESFORCE_TO_OSSIE;
 
     /**
      * Converts enum name to pipeline configuration key.
-     * Maps OSI_TO_SALESFORCE -> "osiToSalesforce" and SALESFORCE_TO_OSI -> "salesforceToOsi"
+     * Maps OSSIE_TO_SALESFORCE -> "ossieToSalesforce" and SALESFORCE_TO_OSSIE -> "salesforceToOssie"
      *
      * @return The pipeline key used in YAML configuration
      */
     public String toPipelineKey() {
         return switch (this) {
-            case OSI_TO_SALESFORCE -> "osiToSalesforce";
-            case SALESFORCE_TO_OSI -> "salesforceToOsi";
+            case OSSIE_TO_SALESFORCE -> "ossieToSalesforce";
+            case SALESFORCE_TO_OSSIE -> "salesforceToOssie";
         };
     }
 }

@@ -24,8 +24,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
-import org.apache.ossie.converter.polaris.model.OsiModel.CustomExtension;
-import org.apache.ossie.converter.polaris.model.OsiModel.Field;
+import org.apache.ossie.converter.polaris.model.OssieModel.CustomExtension;
+import org.apache.ossie.converter.polaris.model.OssieModel.Field;
 
 import java.io.IOException;
 import java.util.Locale;

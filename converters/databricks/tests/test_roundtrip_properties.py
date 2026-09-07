@@ -100,7 +100,7 @@ class TestMetricViewRoundTrip:
         assert_mv_roundtrip(mv)
 
 
-class TestOSIRoundTrip:
+class TestOssieRoundTrip:
     @given(ossie=ossie_models())
     @_SETTINGS
     def test_ossie_to_mv_to_ossie(self, ossie):

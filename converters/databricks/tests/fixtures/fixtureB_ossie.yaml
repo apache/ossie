@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# yaml-language-server: $schema=../../../../core-spec/osi-schema.json
+# yaml-language-server: $schema=../../../../core-spec/ossie-schema.json
 #
 # Fixture B -- expected Apache Ossie produced from fixtureB_metric_view.yaml. MV-only
 # features are stashed in custom_extensions[DATABRICKS], keyed by their exact v1.1

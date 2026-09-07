@@ -55,26 +55,26 @@ public class RelationshipMappingHandler implements PipelineStep {
     @Override
     public void execute(Map<String, Object> sourceData, Map<String, Object> outputData, Map<String, String> mappings) {
         logger.debug("Mapping relationships in {} direction", direction);
-        if (direction == ConversionDirection.OSI_TO_SALESFORCE) {
-            mapOsiToSalesforce(sourceData, outputData, mappings);
+        if (direction == ConversionDirection.OSSIE_TO_SALESFORCE) {
+            mapOssieToSalesforce(sourceData, outputData, mappings);
         } else {
-            mapSalesforceToOsi(sourceData, outputData, mappings);
+            mapSalesforceToOssie(sourceData, outputData, mappings);
         }
     }
 
     /**
      * Maps Ossie relationships to Salesforce semanticRelationships.
      */
-    private void mapOsiToSalesforce(
+    private void mapOssieToSalesforce(
             Map<String, Object> sourceData, Map<String, Object> outputData, Map<String, String> mappings) {
 
-        List<Object> osiRelationships = getList(sourceData, RELATIONSHIPS);
-        if (osiRelationships == null) {
+        List<Object> ossieRelationships = getList(sourceData, RELATIONSHIPS);
+        if (ossieRelationships == null) {
             return;
         }
 
         // Validate and filter relationships - remove those with non-existent fields
-        List<Object> validRelationships = validateAndFilterRelationships(osiRelationships, outputData);
+        List<Object> validRelationships = validateAndFilterRelationships(ossieRelationships, outputData);
         if (validRelationships.isEmpty()) {
             return;
         }
@@ -92,7 +92,7 @@ public class RelationshipMappingHandler implements PipelineStep {
         // Apply manual mappings (criteria)
         List<Object> sfRelationships = getList(outputData, SEMANTIC_RELATIONSHIPS);
         if (sfRelationships != null) {
-            reconstructCriteria(osiRelationships, sfRelationships);
+            reconstructCriteria(ossieRelationships, sfRelationships);
         }
 
         customExtensionHandler.restoreCustomExtensionsAtLevel(outputData, sourceData, Level.RELATIONSHIPS);
@@ -105,7 +105,7 @@ public class RelationshipMappingHandler implements PipelineStep {
     /**
      * Maps Salesforce semanticRelationships to Ossie relationships.
      */
-    private void mapSalesforceToOsi(
+    private void mapSalesforceToOssie(
             Map<String, Object> sourceData, Map<String, Object> outputData, Map<String, String> mappings) {
 
         List<Object> sfRelationships = getList(sourceData, SEMANTIC_RELATIONSHIPS);
@@ -153,9 +153,9 @@ public class RelationshipMappingHandler implements PipelineStep {
 
         outputData.putAll(mappedData);
 
-        List<Object> osiRelationships = getList(outputData, RELATIONSHIPS);
-        if (osiRelationships != null) {
-            deconstructCriteria(supportedRelationships, osiRelationships);
+        List<Object> ossieRelationships = getList(outputData, RELATIONSHIPS);
+        if (ossieRelationships != null) {
+            deconstructCriteria(supportedRelationships, ossieRelationships);
         }
 
         // Store unmapped SF properties in custom_extensions
@@ -168,13 +168,13 @@ public class RelationshipMappingHandler implements PipelineStep {
     /**
      * Reconstructs criteria for Ossie→SF conversion.
      */
-    private void reconstructCriteria(List<Object> osiRelationships, List<Object> sfRelationships) {
-        for (int i = 0; i < osiRelationships.size() && i < sfRelationships.size(); i++) {
-            Map<String, Object> osiRel = asMap(osiRelationships.get(i));
+    private void reconstructCriteria(List<Object> ossieRelationships, List<Object> sfRelationships) {
+        for (int i = 0; i < ossieRelationships.size() && i < sfRelationships.size(); i++) {
+            Map<String, Object> ossieRel = asMap(ossieRelationships.get(i));
             Map<String, Object> sfRel = asMap(sfRelationships.get(i));
 
-            String fromEntity = getString(osiRel, FROM);
-            String toEntity = getString(osiRel, TO);
+            String fromEntity = getString(ossieRel, FROM);
+            String toEntity = getString(ossieRel, TO);
 
             if (fromEntity != null) {
                 sfRel.put(LEFT_SEMANTIC_DEFINITION_API_NAME, fromEntity);
@@ -183,8 +183,8 @@ public class RelationshipMappingHandler implements PipelineStep {
                 sfRel.put(RIGHT_SEMANTIC_DEFINITION_API_NAME, toEntity);
             }
 
-            Object fromColumnsObj = osiRel.get(FROM_COLUMNS);
-            Object toColumnsObj = osiRel.get(TO_COLUMNS);
+            Object fromColumnsObj = ossieRel.get(FROM_COLUMNS);
+            Object toColumnsObj = ossieRel.get(TO_COLUMNS);
 
             if (fromColumnsObj == null || toColumnsObj == null) {
                 return;
@@ -223,21 +223,21 @@ public class RelationshipMappingHandler implements PipelineStep {
      * Note: This method only processes supported relationships (TableField types).
      * Unsupported relationships are filtered out earlier and stored in custom_extensions.
      */
-    private void deconstructCriteria(List<Object> sfRelationships, List<Object> osiRelationships) {
-        for (int i = 0; i < sfRelationships.size() && i < osiRelationships.size(); i++) {
+    private void deconstructCriteria(List<Object> sfRelationships, List<Object> ossieRelationships) {
+        for (int i = 0; i < sfRelationships.size() && i < ossieRelationships.size(); i++) {
             Map<String, Object> sfRel = asMap(sfRelationships.get(i));
-            Map<String, Object> osiRel = asMap(osiRelationships.get(i));
+            Map<String, Object> ossieRel = asMap(ossieRelationships.get(i));
 
             // Extract leftSemanticDefinitionApiName → from
             String leftDef = getString(sfRel, LEFT_SEMANTIC_DEFINITION_API_NAME);
             if (leftDef != null) {
-                osiRel.put(FROM, leftDef);
+                ossieRel.put(FROM, leftDef);
             }
 
             // Extract rightSemanticDefinitionApiName → to
             String rightDef = getString(sfRel, RIGHT_SEMANTIC_DEFINITION_API_NAME);
             if (rightDef != null) {
-                osiRel.put(TO, rightDef);
+                ossieRel.put(TO, rightDef);
             }
 
             Object criteriaObj = sfRel.get(CRITERIA);
@@ -260,10 +260,10 @@ public class RelationshipMappingHandler implements PipelineStep {
                 }
 
                 if (!fromColumns.isEmpty()) {
-                    osiRel.put(FROM_COLUMNS, fromColumns);
+                    ossieRel.put(FROM_COLUMNS, fromColumns);
                 }
                 if (!toColumns.isEmpty()) {
-                    osiRel.put(TO_COLUMNS, toColumns);
+                    ossieRel.put(TO_COLUMNS, toColumns);
                 }
             }
         }
@@ -286,19 +286,19 @@ public class RelationshipMappingHandler implements PipelineStep {
     /**
      * Validates and filters relationships, removing those that reference non-existent fields. (Calculated fields that are not supported)
      *
-     * @param osiRelationships List of Ossie relationships to validate
+     * @param ossieRelationships List of Ossie relationships to validate
      * @param outputData The output data containing semanticDataObjects with their fields
      * @return Filtered list of valid relationships
      */
-    private List<Object> validateAndFilterRelationships(List<Object> osiRelationships, Map<String, Object> outputData) {
+    private List<Object> validateAndFilterRelationships(List<Object> ossieRelationships, Map<String, Object> outputData) {
         List<Object> validRelationships = new ArrayList<>();
         List<Object> sfDataObjects = getList(outputData, SEMANTIC_DATA_OBJECTS);
 
-        for (Object relObj : osiRelationships) {
-            Map<String, Object> osiRel = asMap(relObj);
-            String relName = getString(osiRel, NAME);
-            String fromEntity = getString(osiRel, FROM);
-            String toEntity = getString(osiRel, TO);
+        for (Object relObj : ossieRelationships) {
+            Map<String, Object> ossieRel = asMap(relObj);
+            String relName = getString(ossieRel, NAME);
+            String fromEntity = getString(ossieRel, FROM);
+            String toEntity = getString(ossieRel, TO);
 
             Map<String, Object> fromDataObject = findDataObjectByName(sfDataObjects, fromEntity);
             Map<String, Object> toDataObject = findDataObjectByName(sfDataObjects, toEntity);
@@ -308,14 +308,14 @@ public class RelationshipMappingHandler implements PipelineStep {
                 continue;
             }
 
-            List<Object> fromColumns = getList(osiRel, FROM_COLUMNS);
-            List<Object> toColumns = getList(osiRel, TO_COLUMNS);
+            List<Object> fromColumns = getList(ossieRel, FROM_COLUMNS);
+            List<Object> toColumns = getList(ossieRel, TO_COLUMNS);
 
             if (!validateColumns(fromColumns, fromDataObject, fromEntity, relName) ||
                 !validateColumns(toColumns, toDataObject, toEntity, relName)) {
                 continue;
             }
-            validRelationships.add(osiRel);
+            validRelationships.add(ossieRel);
         }
         return validRelationships;
     }
