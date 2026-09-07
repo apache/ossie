@@ -34,6 +34,9 @@ from ossie_thoughtspot.constants import (
     FIELD_STASH_DATA_TYPE,
     FIELD_STASH_DATA_TYPE_WITNESS,
     RELATIONSHIP_STASH_CARDINALITY,
+    RELATIONSHIP_STASH_ENDPOINTS_SWAPPED,
+    RELATIONSHIP_STASH_ENDPOINTS_SWAPPED_WITNESS,
+    RELATIONSHIP_STASH_JOIN_SHAPE,
     RELATIONSHIP_STASH_ON_EXPRESSION,
     RELATIONSHIP_STASH_ON_EXPRESSION_WITNESS,
     RELATIONSHIP_STASH_TYPE,
@@ -437,6 +440,112 @@ class TestOnExpressionWitness:
         [orders_entry] = [t for t in doc.body["model_tables"] if t["name"] == "orders"]
         assert orders_entry["joins"][0]["on"] == "[orders::Currency] = [fx_rates::Currency]"
         assert not [i for i in log.as_dicts() if i["code"] == "TS-JOIN-ON-EXPRESSION-STALE"]
+
+
+# ---------------------------------------------------------------------------
+# A third witnessed construct: RELATIONSHIP_STASH_ENDPOINTS_SWAPPED. TML ->
+# Ossie swaps a ONE_TO_MANY join's from/to/from_columns/to_columns so the
+# emitted relationship satisfies core-spec/spec.yaml's many-side/one-side
+# convention. Undoing that swap on the way back is itself governed by the
+# same stash-if-present-and-still-current-else-derive rule: only while
+# nothing has retargeted the relationship since the swap was stashed.
+# ---------------------------------------------------------------------------
+
+
+class TestEndpointsSwapWitness:
+    def _tables(self):
+        cust = _table_doc("CUST", [_column("ID", "ID", "INT64")])
+        orders = _table_doc("ORDERS", [_column("CID", "CID", "INT64")])
+        return cust, orders
+
+    def _model(self, relationship):
+        return _semantic_model(
+            datasets=[
+                _dataset("CUST", "SALES.PUBLIC.CUST"),
+                _dataset("ORDERS", "SALES.PUBLIC.ORDERS"),
+            ],
+            relationships=[relationship],
+        )
+
+    def test_a_witness_that_still_matches_undoes_the_swap(self):
+        # The live (already-swapped) relationship: from=ORDERS (many side),
+        # to=CUST (one side). Undoing the swap recovers TML's own
+        # declaration -- the join nested under CUST, targeting ORDERS.
+        relationship = _relationship(
+            "ORDERS_to_CUST", "ORDERS", "CUST", ["CID"], ["ID"],
+            rel_stash={
+                RELATIONSHIP_STASH_CARDINALITY: "ONE_TO_MANY",
+                RELATIONSHIP_STASH_ENDPOINTS_SWAPPED: True,
+                RELATIONSHIP_STASH_ENDPOINTS_SWAPPED_WITNESS: ["ORDERS", "CUST", ["CID"], ["ID"]],
+                RELATIONSHIP_STASH_TYPE: "INNER",
+                RELATIONSHIP_STASH_JOIN_SHAPE: "inline",
+            },
+        )
+        cust, orders = self._tables()
+        log = IssueLog()
+        doc = build_model(self._model(relationship), [cust, orders], log)
+
+        [cust_entry] = [t for t in doc.body["model_tables"] if t["name"] == "CUST"]
+        [orders_entry] = [t for t in doc.body["model_tables"] if t["name"] == "ORDERS"]
+        assert "joins" not in orders_entry
+        assert cust_entry["joins"] == [{
+            "with": "ORDERS",
+            "on": "[CUST::ID] = [ORDERS::CID]",
+            "type": "INNER",
+            "cardinality": "ONE_TO_MANY",
+        }]
+        assert not [i for i in log.as_dicts() if i["code"] == "TS-JOIN-ENDPOINTS-SWAP-STALE"]
+
+    def test_a_witness_that_no_longer_matches_leaves_the_swap_undone_and_logs(self):
+        # to_columns was retargeted after the stash was written -- the
+        # witness still names the OLD pairing (["ID"]). The swap is left
+        # alone: the join is emitted straight from the live (still-swapped)
+        # shape, exactly as a hand-authored relationship with no stash at
+        # all would be.
+        relationship = _relationship(
+            "ORDERS_to_CUST", "ORDERS", "CUST", ["CID"], ["OTHER_ID"],
+            rel_stash={
+                RELATIONSHIP_STASH_CARDINALITY: "ONE_TO_MANY",
+                RELATIONSHIP_STASH_ENDPOINTS_SWAPPED: True,
+                RELATIONSHIP_STASH_ENDPOINTS_SWAPPED_WITNESS: ["ORDERS", "CUST", ["CID"], ["ID"]],
+                RELATIONSHIP_STASH_TYPE: "INNER",
+                RELATIONSHIP_STASH_JOIN_SHAPE: "inline",
+            },
+        )
+        cust, orders = self._tables()
+        log = IssueLog()
+        doc = build_model(self._model(relationship), [cust, orders], log)
+
+        [orders_entry] = [t for t in doc.body["model_tables"] if t["name"] == "ORDERS"]
+        assert orders_entry["joins"] == [{
+            "with": "CUST",
+            "on": "[ORDERS::CID] = [CUST::OTHER_ID]",
+            "type": "INNER",
+            "cardinality": "ONE_TO_MANY",
+        }]
+        assert any(i["code"] == "TS-JOIN-ENDPOINTS-SWAP-STALE" for i in log.as_dicts())
+
+    def test_no_endpoints_swapped_stash_uses_the_live_shape_directly(self):
+        # A relationship whose cardinality is ONE_TO_MANY but carries no
+        # endpoints_swapped stash at all (hand-authored, never round-tripped
+        # through TML -> Ossie) is emitted straight from its live from/to --
+        # there is nothing to undo, and nothing stale to report either.
+        relationship = _relationship(
+            "CUST_to_ORDERS", "CUST", "ORDERS", ["ID"], ["CID"],
+            rel_stash={RELATIONSHIP_STASH_CARDINALITY: "ONE_TO_MANY", RELATIONSHIP_STASH_TYPE: "INNER"},
+        )
+        cust, orders = self._tables()
+        log = IssueLog()
+        doc = build_model(self._model(relationship), [cust, orders], log)
+
+        [cust_entry] = [t for t in doc.body["model_tables"] if t["name"] == "CUST"]
+        assert cust_entry["joins"] == [{
+            "with": "ORDERS",
+            "on": "[CUST::ID] = [ORDERS::CID]",
+            "type": "INNER",
+            "cardinality": "ONE_TO_MANY",
+        }]
+        assert not [i for i in log.as_dicts() if i["code"] == "TS-JOIN-ENDPOINTS-SWAP-STALE"]
 
 
 # ---------------------------------------------------------------------------

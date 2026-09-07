@@ -53,6 +53,7 @@ Every `custom_extensions` entry this converter writes uses `vendor_name` `THOUGH
 | `on_expression` | Relationship | shadows_derivable | Restored only if its witness companion key still matches the live document's current value; a mismatch means the document changed since the stash was written, so the value is re-derived instead. |
 | `type` | Relationship | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
 | `cardinality` | Relationship | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
+| `endpoints_swapped` | Relationship | shadows_derivable | Restored only if its witness companion key still matches the live document's current value; a mismatch means the document changed since the stash was written, so the value is re-derived instead. |
 | `referencing_join` | Relationship | shadows_derivable | Restored only if reconstructing it from the live document still agrees with the stashed value (self-verifying — no separate witness key); disagreement re-derives instead. |
 | `join_shape` | Relationship | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
 | `unattributed_formulas` | Model | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
@@ -75,6 +76,7 @@ A `SHADOWS_DERIVABLE` key's stashed value is checked for currency before being r
 | `tml_object_source_witness` | `tml_object` |
 | `data_type_ossie_datatype_witness` | `data_type` |
 | `db_column_name_display_name_witness` | `db_column_name` |
+| `endpoints_swapped_witness` | `endpoints_swapped` |
 | `on_expression_equality_witness` | `on_expression` |
 
 ## Nested keys under `source_parts`

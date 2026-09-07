@@ -17,13 +17,17 @@
 
 # A SQL View alongside the Tables above. `sr_return_amt`'s query output
 # alias (`RETURN_AMT`) deliberately differs from its display name, and
-# `sr_return_quantity` is deliberately left unsurfaced by the Model so it
-# is only ever referenced through a metric's own formula.
+# `sr_return_quantity` and `sr_store_sk` are deliberately left unsurfaced by
+# the Model -- `sr_return_quantity` is only ever referenced through a
+# metric's own formula, and `sr_store_sk` only through the `store`
+# model_tables entry's ONE_TO_MANY join condition below (mirroring
+# store_sales's own `ss_ticket_number`, referenced only from a join
+# condition and never surfaced as a field).
 sql_view:
   name: store_returns_sv
   sql_query: >-
     SELECT sr_item_sk, sr_ticket_number, sr_return_amt AS RETURN_AMT,
-    sr_return_quantity FROM tpcds.public.store_returns
+    sr_return_quantity, sr_store_sk FROM tpcds.public.store_returns
   connection:
     name: TPC-DS Snowflake
   sql_view_columns:
@@ -41,5 +45,9 @@ sql_view:
         data_type: DOUBLE
     - name: sr_return_quantity
       sql_output_column: sr_return_quantity
+      db_column_properties:
+        data_type: INT64
+    - name: sr_store_sk
+      sql_output_column: sr_store_sk
       db_column_properties:
         data_type: INT64

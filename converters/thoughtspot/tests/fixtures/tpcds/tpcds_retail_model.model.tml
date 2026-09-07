@@ -18,10 +18,16 @@
 # The TPC-DS retail model shared across this converter's sibling test
 # fixtures: 5 core datasets (store_sales, date_dim, customer, item, store),
 # their 4 core relationships and 5 core metrics, plus one additional SQL
-# View dataset (store_returns_sv) and two additional relationships added
-# deliberately to exercise a composite-key join and a non-equality join
-# condition, and four additional metrics covering the remaining metric
-# shapes and formula constructs this converter has to handle.
+# View dataset (store_returns_sv) and three additional relationships added
+# deliberately to exercise a composite-key join, a non-equality join
+# condition, and a ONE_TO_MANY join declared from its "one" side (store has
+# many store_returns) -- TML's own from/to naming does not encode which side
+# of a join is which, cardinality does, and ONE_TO_MANY is the one value
+# where Ossie's spec (core-spec/spec.yaml: `from` is the many side, `to` is
+# the one side) requires the emitted relationship's endpoints to be the
+# reverse of how this join is declared here -- plus four additional metrics
+# covering the remaining metric shapes and formula constructs this converter
+# has to handle.
 model:
   name: tpcds_retail_model
   description: "TPC-DS retail semantic model used as a shared test fixture."
@@ -36,6 +42,16 @@ model:
     - name: customer
     - name: item
     - name: store
+      joins:
+        # A ONE_TO_MANY join declared from the "one" side: a store has many
+        # store_returns. Exercises the endpoint swap this converter applies
+        # to a ONE_TO_MANY join -- the emitted Ossie relationship's `from`
+        # is store_returns_sv (the many side) and `to` is store (the one
+        # side), the reverse of this join's own declared from/to.
+        - with: store_returns_sv
+          'on': "[store::s_store_sk] = [store_returns_sv::sr_store_sk]"
+          type: INNER
+          cardinality: ONE_TO_MANY
     - name: store_returns_sv
       joins:
         # A composite-key equality join: store_sales's own natural key is

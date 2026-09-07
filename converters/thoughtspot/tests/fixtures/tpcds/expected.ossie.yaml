@@ -21,10 +21,12 @@
 #
 # store's unique_keys derives to [s_store_sk], not [s_store_id]: TML has no
 # native key-declaration syntax, so every key here comes from the join
-# graph, and the only relationship that targets store joins on s_store_sk.
-# That is a correct, expected divergence from a source format (such as one
-# with its own native key declarations) that could declare s_store_id as a
-# key independently of any join.
+# graph, and every relationship that targets store (store_sales_to_store,
+# and store_returns_sv_to_store -- a ONE_TO_MANY join declared from store's
+# own side, whose emitted endpoints are swapped so store lands on `to`)
+# joins on s_store_sk. That is a correct, expected divergence from a source
+# format (such as one with its own native key declarations) that could
+# declare s_store_id as a key independently of any join.
 version: 0.2.0.dev0
 semantic_model:
 - name: tpcds_retail_model
@@ -383,8 +385,8 @@ semantic_model:
       data: '{"_v": 1, "connection_name": "TPC-DS Snowflake", "tml_object": "table",
         "tml_object_source_witness": "TPCDS.PUBLIC.STORE"}'
   - name: store_returns_sv
-    source: SELECT sr_item_sk, sr_ticket_number, sr_return_amt AS RETURN_AMT, sr_return_quantity
-      FROM tpcds.public.store_returns
+    source: SELECT sr_item_sk, sr_ticket_number, sr_return_amt AS RETURN_AMT, sr_return_quantity,
+      sr_store_sk FROM tpcds.public.store_returns
     fields:
     - name: sr_item_sk
       label: sr_item_sk
@@ -418,10 +420,11 @@ semantic_model:
       data: '{"_v": 1, "connection_name": "TPC-DS Snowflake", "sql_output_columns":
         {"sr_item_sk": "sr_item_sk", "sr_return_amt": "RETURN_AMT", "sr_ticket_number":
         "sr_ticket_number"}, "tml_object": "sql_view", "tml_object_source_witness":
-        "SELECT sr_item_sk, sr_ticket_number, sr_return_amt AS RETURN_AMT, sr_return_quantity
-        FROM tpcds.public.store_returns", "unsurfaced_columns": [{"db_column_properties":
+        "SELECT sr_item_sk, sr_ticket_number, sr_return_amt AS RETURN_AMT, sr_return_quantity,
+        sr_store_sk FROM tpcds.public.store_returns", "unsurfaced_columns": [{"db_column_properties":
         {"data_type": "INT64"}, "name": "sr_return_quantity", "sql_output_column":
-        "sr_return_quantity"}]}'
+        "sr_return_quantity"}, {"db_column_properties": {"data_type": "INT64"}, "name":
+        "sr_store_sk", "sql_output_column": "sr_store_sk"}]}'
   description: TPC-DS retail semantic model used as a shared test fixture.
   relationships:
   - name: store_sales_to_date
@@ -468,6 +471,18 @@ semantic_model:
     - vendor_name: THOUGHTSPOT
       data: '{"_v": 1, "cardinality": "MANY_TO_ONE", "join_shape": "referencing",
         "referencing_join": "store_sales_to_store", "type": "INNER"}'
+  - name: store_returns_sv_to_store
+    from: store_returns_sv
+    to: store
+    from_columns:
+    - sr_store_sk
+    to_columns:
+    - s_store_sk
+    custom_extensions:
+    - vendor_name: THOUGHTSPOT
+      data: '{"_v": 1, "cardinality": "ONE_TO_MANY", "endpoints_swapped": true, "endpoints_swapped_witness":
+        ["store_returns_sv", "store", ["sr_store_sk"], ["s_store_sk"]], "join_shape":
+        "inline", "type": "INNER"}'
   - name: store_returns_sv_to_store_sales
     from: store_returns_sv
     to: store_sales
