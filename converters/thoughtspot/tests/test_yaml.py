@@ -75,7 +75,7 @@ def test_dumper_quotes_what_plain_pyyaml_leaves_bare(token):
 
 
 def test_load_wraps_a_parser_error_in_conversion_error():
-    # I4: never let a bare yaml.YAMLError escape — same never-a-bare-traceback
+    # Never let a bare yaml.YAMLError escape — same never-a-bare-traceback
     # contract stash.py holds for malformed custom_extensions JSON.
     with pytest.raises(ConversionError, match="malformed YAML"):
         _yaml.load("a: [1, 2\nb: 3")
@@ -86,7 +86,7 @@ def test_load_does_not_wrap_a_clean_document():
 
 
 def test_dump_allow_unicode_round_trips_and_does_not_escape():
-    # I5: without allow_unicode=True, PyYAML escapes non-ASCII as \xE9 etc.
+    # Without allow_unicode=True, PyYAML escapes non-ASCII as \xE9 etc.
     text = _yaml.dump({"label": "Café"})
     assert "Café" in text
     assert "\\x" not in text and "\\u" not in text
