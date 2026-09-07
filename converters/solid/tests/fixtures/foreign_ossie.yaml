@@ -1,0 +1,149 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# A stand-in for an Apache Ossie model produced by SOME OTHER vendor's converter.
+#
+# Every construct here was observed in the Ossie fixtures the other converters in this
+# repository ship (dbt, Databricks, GoodData, Omni, NVIDIA GSF, Orion Belt). This file
+# reproduces them under `converters/solid/` so the interop gaps can be pinned exactly
+# without this converter's CI depending on another converter's fixtures -- the
+# workflows are path-filtered per converter, so a pin against a foreign fixture would
+# break on a main-branch push from a PR that never ran this suite.
+#
+# What makes it "foreign", and what each construct exercises:
+#
+#   - no `custom_extensions[SOLID]` stash anywhere, so every fallback path is used
+#   - no `dimension` block anywhere, so the fact/dimension split falls back to
+#     Solid's own data-type rule
+#   - `datatype` omitted on most fields (it is optional in the spec, and the other
+#     converters largely do omit it) -> an empty Solid `type`
+#   - `store_sales.ticket_number`: a field RENAMED relative to its column
+#   - `date_dim.d_year`: a `label`, which Solid has no slot for
+#   - `store_sales`: `unique_keys`, which Solid has no slot for
+#   - `revenue`: a metric written against BARE column names, as a vendor that keeps
+#     the owning table elsewhere would write it
+#   - `order_count`: `COUNT(*)`, which references no column at all
+#   - `revenue`: a metric `datatype`
+#   - `store_sales_to_date`: a relationship annotation
+#   - foreign `custom_extensions` at the model, dataset, field and metric levels
+version: "0.2.0.dev0"
+semantic_model:
+  - name: foreign_retail_model
+    description: Retail sales, as another vendor's converter would emit it.
+    ai_context:
+      instructions: Prefer net sales over gross for revenue questions.
+      examples:
+        - What were total sales last quarter?
+    custom_extensions:
+      - vendor_name: DBT
+        data: '{"package": "jaffle_shop"}'
+    datasets:
+      - name: store_sales
+        source: tpcds.public.store_sales
+        description: One row per line item on a sales ticket.
+        primary_key:
+          - ss_item_sk
+          - ss_ticket_number
+        unique_keys:
+          - - ss_ticket_number
+        custom_extensions:
+          - vendor_name: DATABRICKS
+            data: '{"table_type": "MANAGED"}'
+        fields:
+          - name: ss_item_sk
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: ss_item_sk
+          - name: ss_ticket_number
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: ss_ticket_number
+          - name: ss_sold_date_sk
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: ss_sold_date_sk
+          # Renamed: the Solid column that comes out of this is named for the alias,
+          # not for the column that actually exists in the warehouse.
+          - name: ticket_number
+            description: Ticket number, exposed under a friendlier name.
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: ss_ticket_number
+            custom_extensions:
+              - vendor_name: DATABRICKS
+                data: '{"comment": "renamed for readability"}'
+          - name: ss_net_paid
+            datatype: Decimal
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: ss_net_paid
+      - name: date_dim
+        source: tpcds.public.date_dim
+        primary_key:
+          - d_date_sk
+        fields:
+          - name: d_date_sk
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: d_date_sk
+          - name: d_year
+            label: Year
+            datatype: Integer
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: d_year
+            ai_context:
+              synonyms:
+                - year
+    relationships:
+      - name: store_sales_to_date
+        from: store_sales
+        to: date_dim
+        from_columns:
+          - ss_sold_date_sk
+        to_columns:
+          - d_date_sk
+        ai_context:
+          instructions: Sales are dated by the sold date, not the ship date.
+          synonyms:
+            - sold on
+    metrics:
+      # Bare column names: the owning table is not recoverable from a qualifier.
+      - name: revenue
+        description: Net sales revenue.
+        datatype: Decimal
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(ss_net_paid)
+        custom_extensions:
+          - vendor_name: DBT
+            data: '{"agg": "sum"}'
+      # References no column at all.
+      - name: order_count
+        description: Number of tickets.
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(*)
