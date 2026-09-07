@@ -243,20 +243,19 @@ choosing between them is a product decision left to a later change.
 
 ## Rules
 
-Rule identifiers referenced in the source (`ID1`-`ID4`, `X1`-`X9`, `KD1`-`KD3`,
-`R1`-`R11`, `E1`-`E13`, `NM1`-`NM6`, and others) refer to an external specification: the
-construct and expression mapping tables that were the working reference for this
-converter's behaviour. That reference is not part of this repository and is not
-publicly readable, so a rule identifier in this source tree is currently
-**unresolvable from inside this repository alone** — no other converter in this
-monorepo defers its normative behaviour to an external, vendor-controlled document.
-Whether that source material is ever contributed into this repository is a decision for
-the project, not for this converter; until then, each citation stays as a marker of
-which rule a piece of code implements, resolvable once that decision is made.
+Earlier revisions of this converter's comments and docstrings cited short, letter-plus-
+number rule identifiers drawn from an internal construct/expression mapping reference
+that is not part of this repository and is not publicly readable — a citation of that
+shape in the shipped source was therefore unresolvable from inside this repository
+alone. That has been resolved: every such citation has been rewritten to state the
+substance it stood for directly, in place, so nothing shipped here depends on material
+outside this repository. `tests/test_shipped_references.py` enforces this going
+forward — it fails the suite if a citation of that shape reappears in any shipped
+file.
 
 **Before declaring any expression untranslatable, consult the function mapping.** Many
 window and LOD constructs have exact native equivalents; declaring one untranslatable
-without checking is an error (invariant I7).
+without checking is an error.
 
 ## Generated reference documentation
 

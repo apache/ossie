@@ -15,10 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""custom_extensions[THOUGHTSPOT] payload handling — rules X1-X9.
+"""custom_extensions[THOUGHTSPOT] payload handling.
 
 The stash lives in the *Ossie* document, so it is written on the way in and read
-on the way out. Rule X9 follows from that: it can only carry what TML contains.
+on the way out. It follows that the stash can only carry what TML contains.
 """
 import json
 from typing import Any
@@ -26,7 +26,7 @@ from typing import Any
 from .constants import STASH_VERSION, VENDOR_KEY
 from .errors import ConversionError
 
-#: X8 — instance-local identity never travels in a portable document.
+#: Instance-local identity never travels in a portable document.
 _FORBIDDEN_KEYS = frozenset({"guid", "obj_id", "fqn"})
 
 
@@ -38,10 +38,10 @@ def find_forbidden_key(value: Any, forbidden: frozenset[str] | None = None) -> s
     """The first key from `forbidden` found anywhere inside `value`, at any
     depth, or `None`.
 
-    `forbidden` defaults to `_FORBIDDEN_KEYS` (rule X8's own `guid`/`obj_id`/
-    `fqn`). A caller with a wider identity vocabulary to check for — this
+    `forbidden` defaults to `_FORBIDDEN_KEYS` (`guid`/`obj_id`/`fqn`). A caller
+    with a wider identity vocabulary to check for — this
     package's own `dataset_id`/`custom_file_guid` additions, documented
-    identity-shaped keys X8 itself does not name — passes its own set rather
+    identity-shaped keys the default set does not name — passes its own set rather
     than this module maintaining a second, wider copy of its own; the scan
     itself is shared either way, so the two vocabularies cannot drift apart
     the way two independently maintained scans could.
@@ -82,7 +82,7 @@ def read_stash(obj: dict) -> dict[str, Any]:
         if raw is None:
             return {}
         if not isinstance(raw, str):
-            # X2: `data` is typed as a string; a nested object is a spec violation.
+            # `data` is typed as a string; a nested object is a spec violation.
             raise ConversionError(
                 f"custom_extensions data for {_object_label(obj)!r} is "
                 f"{type(raw).__name__}, expected a JSON string"
@@ -90,14 +90,14 @@ def read_stash(obj: dict) -> dict[str, Any]:
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError as exc:
-            # X4: name the object; never surface a bare json traceback.
+            # Name the object; never surface a bare json traceback.
             raise ConversionError(
                 f"malformed THOUGHTSPOT custom_extensions payload on "
                 f"{_object_label(obj)!r}: {exc}"
             ) from exc
         version = parsed.get("_v") if isinstance(parsed, dict) else None
         if version != STASH_VERSION:
-            # X3: an unrecognised shape version is a hard failure, not a
+            # An unrecognised shape version is a hard failure, not a
             # partial read — a future payload shape this converter has never
             # seen would otherwise be silently misread as the current one.
             raise ConversionError(
@@ -113,12 +113,12 @@ def read_stash(obj: dict) -> dict[str, Any]:
 def write_stash(obj: dict, payload: dict[str, Any]) -> dict:
     """Merge `payload` into this object's THOUGHTSPOT entry, returning a new dict.
 
-    Foreign-vendor entries are preserved untouched (X7). An empty resulting
-    payload writes nothing at all (X6).
+    Foreign-vendor entries are preserved untouched. An empty resulting
+    payload writes nothing at all.
     """
     forbidden_key = find_forbidden_key(payload)
     if forbidden_key is not None:
-        # X8, checked at any depth — see find_forbidden_key.
+        # Checked at any depth — see find_forbidden_key.
         raise ConversionError(
             f"refusing to stash instance-local identity key {forbidden_key!r} "
             f"on {_object_label(obj)!r}"
@@ -128,10 +128,10 @@ def write_stash(obj: dict, payload: dict[str, Any]) -> dict:
     if not merged:
         return dict(obj)
 
-    merged["_v"] = STASH_VERSION  # X3
+    merged["_v"] = STASH_VERSION  # stamp the shape version so a future reader can recognise it
     others = [e for e in obj.get("custom_extensions") or [] if e.get("vendor_name") != VENDOR_KEY]
     out = dict(obj)
-    # X1: exactly one own entry, merged rather than appended.
+    # Exactly one own entry, merged rather than appended.
     out["custom_extensions"] = [
         *others,
         {"vendor_name": VENDOR_KEY, "data": json.dumps(merged, sort_keys=True)},
@@ -147,7 +147,7 @@ def restore(
     witness: Any = None,
     witness_key: str | None = None,
 ) -> Any:
-    """Rule X5 — stash-if-present-and-still-current-else-derive.
+    """Stash-if-present-and-still-current-else-derive.
 
     `witness` is the live Ossie value and `witness_key` names the copy recorded
     alongside the stashed value. When they disagree the Ossie document has been

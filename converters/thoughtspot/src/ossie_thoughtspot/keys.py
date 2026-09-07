@@ -15,15 +15,15 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""primary_key / unique_keys derivation — rules KD1-KD3.
+"""primary_key / unique_keys derivation.
 
-TML declares no keys (gap G3), so every key we emit is manufactured from the
+TML declares no keys, so every key we emit is manufactured from the
 join graph. Upstream PR #330 checks that a relationship's to_columns covers a
 declared key, and converters/databricks turns a declared key into a
 `rely.at_most_one_match` join hint — so a fabricated key becomes another
 vendor's wrong numbers, not just a cosmetic error in ours.
 
-KD3 — orientation is re-checked downstream, so do not rely on ours surviving.
+Orientation is re-checked downstream, so do not rely on ours surviving.
 `converters/databricks` (`ossie_to_metric_view.py:446-478`) swaps `from`/`to`
 and their column arrays — via `_warn()` (`ossie_to_metric_view.py:53`), not
 silently — when the *from* side covers a key and the *to* side does not,
@@ -54,7 +54,7 @@ class Relationship:
 
 
 def _qualifies(rel: Relationship) -> bool:
-    """KD1 — key evidence requires a to-one join whose condition is wholly
+    """Key evidence requires a to-one join whose condition is wholly
     equality, and columns actually present to name as the key."""
     return (
         rel.cardinality in _TO_ONE
@@ -81,7 +81,7 @@ def derive_keys(
         if cols not in seen:
             seen.append(cols)
 
-    # KD2 — explain every disqualified relationship's non-key status.
+    # Explain every disqualified relationship's non-key status.
     #
     # An empty to_columns is a hard schema failure, not a coverage warning:
     # upstream's schema requires to_columns to be a non-empty list

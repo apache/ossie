@@ -97,7 +97,7 @@ CATALOG: dict[str, Construct] = {}
 # Aggregate functions — 18 rows: 12 direct / 6 passthrough / 0 unmappable.
 # Source: docs/ossie/ts-ossie-function-mapping.md, "Aggregate functions" section
 # (thoughtspot-agent-skills repo — not vendored here; prose above/below the table
-# read in full, per rule E1-E4).
+# read in full).
 # --------------------------------------------------------------------------
 CATALOG.update(
     {
@@ -121,7 +121,7 @@ CATALOG.update(
             "COUNT(DISTINCT expr)", Classification.DIRECT, template="unique count ( {0} )",
             note=(
                 "A space, not an underscore. count_distinct(...) is rejected by the "
-                "formula parser. See ask A9 on DISTINCT as a general modifier."
+                "formula parser."
             ),
         ),
         "AVG(expr)": Construct(
@@ -213,11 +213,11 @@ CATALOG.update(
 # Type conversion — 2 rows: 2 direct / 0 passthrough / 0 unmappable.
 # Source: docs/ossie/ts-ossie-function-mapping.md, "Type conversion" section.
 #
-# CAST/TRY_CAST are, per rule E3, direct rows whose target-type argument
-# vocabulary is only partly covered (5 of 8 types direct, 3 fall back to a
-# pass-through) — the per-type dispatch is not counted as its own construct
-# (rule E1: the target-type table is an argument vocabulary, marked "not
-# counted" in the mapping document) and is not resolved here. Resolving a
+# CAST/TRY_CAST are direct rows whose target-type argument vocabulary is only
+# partly covered (5 of 8 types direct, 3 fall back to a pass-through) — the
+# per-type dispatch is not counted as its own construct (the target-type
+# table is an argument vocabulary, marked "not counted" in the mapping
+# document) and is not resolved here. Resolving a
 # `CAST` occurrence to an actual formula from its target type would need an
 # expression parser, which is out of scope, and whether to take on a sqlglot
 # dependency for that is still unresolved; `template` records the document's
@@ -231,7 +231,7 @@ CATALOG.update(
             template="per-type — see the target-type table below",
             note=(
                 "5 of the 8 specified target types are direct; the other three — "
-                "BOOLEAN, TIMESTAMP and TIME — fall back to a pass-through (E3)."
+                "BOOLEAN, TIMESTAMP and TIME — fall back to a pass-through."
             ),
         ),
         "TRY_CAST": Construct(
@@ -253,10 +253,10 @@ CATALOG.update(
 # Date/time functions — 24 rows: 17 direct / 7 passthrough / 0 unmappable.
 # Source: docs/ossie/ts-ossie-function-mapping.md, "Date/time functions" section
 # (thoughtspot-agent-skills repo — not vendored here; prose above/below the table
-# read in full, per rule E1-E4).
+# read in full).
 #
 # EXTRACT/DATE_PART date-parts, DATE_TRUNC precisions, DATEADD/DATEDIFF parts and
-# TO_DATE/TO_CHAR format tokens are argument vocabularies under rule E1 and get no
+# TO_DATE/TO_CHAR format tokens are argument vocabularies and get no
 # entry of their own (see the mapping document's "(not counted — arguments)"
 # sub-tables). EXTRACT, DATE_PART, DATE_TRUNC(part, date_expr),
 # DATEADD(part, amount, date_expr) and DATEDIFF(part, start_date, end_date) are
@@ -281,7 +281,7 @@ CATALOG.update(
             template="time ( now ( ) )",
             note=(
                 "ThoughtSpot has no current-time function, but time ( ) extracts "
-                "the time part of a datetime, so the composition is exact (E2)."
+                "the time part of a datetime, so the composition is exact."
             ),
         ),
         "YEAR(date_expr)": Construct(
@@ -336,7 +336,7 @@ CATALOG.update(
                 "WEEK->week_number_of_year, DAY->day, "
                 "DAYOFWEEK->day_number_of_week, DAYOFYEAR->day_number_of_year, "
                 "HOUR->hour_of_day); MINUTE, SECOND and MILLISECOND fall back "
-                "to sql_int_op (E3)."
+                "to sql_int_op."
             ),
         ),
         "DATE_PART": Construct(
@@ -353,8 +353,8 @@ CATALOG.update(
                 "'quarter'->start_of_quarter, 'month'->start_of_month, "
                 "'week'->start_of_week, 'day'->date ( ), 'hour'->start_of_hour, "
                 "'minute'->start_of_min — the function is start_of_min, not "
-                "start_of_minute); 'second' falls back to sql_date_time_op "
-                "(E3). The specification says week truncation is Monday-start; "
+                "start_of_minute); 'second' falls back to sql_date_time_op. "
+                "The specification says week truncation is Monday-start; "
                 "ThoughtSpot's week start is an instance setting, so the "
                 "converter verifies alignment and raises an issue when it cannot."
             ),
@@ -474,7 +474,7 @@ CATALOG.update(
 # String functions — 21 rows: 10 direct / 11 passthrough / 0 unmappable.
 # Source: docs/ossie/ts-ossie-function-mapping.md, "String functions" section
 # (thoughtspot-agent-skills repo — not vendored here; prose above/below the table
-# read in full, per rule E1-E4).
+# read in full).
 #
 # This family is over half passthrough, and the reasons run against intuition
 # rather than with it: LOWER/UPPER/TRIM/LTRIM/RTRIM/REPLACE are passthrough not
@@ -482,7 +482,7 @@ CATALOG.update(
 # native equivalent at all (live-verified 2026-07-29: TRIM and REPLACE were
 # rejected with "Search did not find ..."). STARTSWITH/ENDSWITH run the other
 # way: also no native function, but their compositions use only native
-# functions (strpos/substr/strlen), so rule E2 keeps them direct. There is no
+# functions (strpos/substr/strlen), so they stay direct. There is no
 # regular-expression support of any kind, so every REGEXP_* row is passthrough
 # with no native fallback.
 # --------------------------------------------------------------------------
@@ -655,9 +655,9 @@ CATALOG.update(
 # 2 passthrough / 0 unmappable.
 # Source: docs/ossie/ts-ossie-function-mapping.md, "Mathematical functions" and
 # "Conditional functions" sections (thoughtspot-agent-skills repo — not
-# vendored here; prose above/below the tables read in full, per rule E1-E4).
+# vendored here; prose above/below the tables read in full).
 #
-# Nearly every row here is direct, several by composition (rule E2): SIGN has
+# Nearly every row here is direct, several by composition: SIGN has
 # no native function but composes exactly as a three-way `if` chain — the
 # trailing `else 0` is mandatory, ThoughtSpot rejects an `if` with no `else`.
 # RADIANS/DEGREES are bare dialect-free arithmetic, not passthroughs. PI is a
@@ -668,7 +668,7 @@ CATALOG.update(
 # (`* pi / 180`) — opposite directions, easy to transpose by mistake.
 # GREATEST/LEAST are deliberately NOT mapped to max/min: ThoughtSpot's max/min
 # are aggregate-only, so that mapping would both collapse the row-wise N-ary
-# result to one value and flip it from attribute to measure (E7).
+# result to one value and flip it from attribute to measure.
 #
 # Only two rows are passthrough: TRUNC/TRUNCATE (no native truncation — floor
 # only agrees with it for x >= 0, d = 0, and round disagrees at every
@@ -881,7 +881,7 @@ CATALOG.update(
 # 1 unmappable.
 # Source: docs/ossie/ts-ossie-function-mapping.md, "Operators and constructs"
 # section (thoughtspot-agent-skills repo — not vendored here; prose above/below
-# the table read in full, per rule E1-E4).
+# the table read in full).
 #
 # The document's own section header states that CASE (both forms) and the
 # boolean literals/operators are rowed HERE, not under Conditional functions —
@@ -904,8 +904,8 @@ CATALOG.update(
 # in the whole file with neither.
 #
 # LIKE is direct despite ThoughtSpot having no native starts_with/ends_with:
-# the prefix/suffix/contains compositions it needs use only native functions
-# (rule E2), the same reasoning as the String functions family's STARTSWITH/
+# the prefix/suffix/contains compositions it needs use only native functions,
+# the same reasoning as the String functions family's STARTSWITH/
 # ENDSWITH rows above. ILIKE is passthrough for the opposite reason —
 # case-insensitive matching has no native form, and the usual lower()-fold
 # workaround is itself a passthrough, so there is nothing to compose from. The
@@ -1043,12 +1043,12 @@ CATALOG.update(
                 "contains ( {0} , 'foo' ). Only contains is a native "
                 "function — starts_with and ends_with do not exist "
                 "(live-verified 2026-07-29), so the "
-                "first two shapes are compositions of native functions "
-                "(rule E2), same as the STARTSWITH/ENDSWITH rows. These "
+                "first two shapes are compositions of native functions, "
+                "same as the STARTSWITH/ENDSWITH rows. These "
                 "three shapes are the overwhelming majority of LIKE use. "
                 "Interior wildcards and any _ single-character wildcard have "
                 "no native form and fall back to "
-                'sql_bool_op ( "{0} LIKE {1}" , [s] , [pattern] ) (E3). '
+                'sql_bool_op ( "{0} LIKE {1}" , [s] , [pattern] ). '
                 "The per-pattern-shape dispatch is out of this catalog's "
                 "scope, same treatment as CAST's per-type dispatch "
                 "— the actual pattern literal is a runtime value, not known "
@@ -1186,8 +1186,7 @@ CATALOG.update(
                 "Parentheses. Always rewritten from resolved metadata, "
                 "never passed through textually — the rewrite, the "
                 "case-sensitivity rules and the display-name-versus-"
-                "identifier problem are the construct-mapping document's "
-                "ID1-ID4, out of this catalog's scope."
+                "identifier problem are out of this catalog's scope."
             ),
         ),
         "EXISTS_IN()": Construct(
@@ -1203,7 +1202,7 @@ CATALOG.update(
                 "signature, ThoughtSpot's nearest capability is a "
                 "sql_bool_op subquery template that requires a "
                 "fully-qualified warehouse table name, which is not "
-                "derivable from an Ossie expression. See ask A9."
+                "derivable from an Ossie expression."
             ),
         ),
     }
@@ -1213,18 +1212,18 @@ CATALOG.update(
 # Window functions — 14 rows: 5 direct / 9 passthrough / 0 unmappable.
 # Source: docs/ossie/ts-ossie-function-mapping.md, "Window functions" section, plus
 # "Window rows live-confirmed — 2026-07-30" (thoughtspot-agent-skills repo — not
-# vendored here; prose above/below the table read in full, per rule E1-E4).
+# vendored here; prose above/below the table read in full).
 #
 # This is the hardest family, and the last one — it completes the 146-row catalog.
-# Three rules govern it:
+# Three constraints govern it:
 #
-# - E5 — a raw aggregate cannot be nested inside a ThoughtSpot window function. The
+# - A raw aggregate cannot be nested inside a ThoughtSpot window function. The
 #   argument must be a column reference or a group_aggregate ( ... ). Live-confirmed
 #   both directions: the raw-aggregate form is rejected, the group_aggregate form
 #   validates, for moving_* and cumulative_* alike.
-# - E6 — ThoughtSpot's ORDER BY column must be a physical column reference, not a
+# - ThoughtSpot's ORDER BY column must be a physical column reference, not a
 #   formula. A formula column in the sort position fails to resolve.
-# - E13 — a ThoughtSpot window formula cannot declare its own PARTITION BY; the
+# - A ThoughtSpot window formula cannot declare its own PARTITION BY; the
 #   window shape is completed from the search context. There is no argument slot
 #   for a partition and none can be added — live-confirmed by rejection,
 #   2026-07-30 (a fifth { [attr] } or query_groups ( ) argument to moving_sum,
@@ -1277,7 +1276,7 @@ CATALOG.update(
             variant=Variant.INT_AGGREGATE,
             note=(
                 "ThoughtSpot's rank is competition rank, not a row number, so it "
-                "is not a substitute. Wrap in group_aggregate per E8 so the "
+                "is not a substitute. Wrap in group_aggregate so the "
                 "partition column reaches the GROUP BY even when the user's "
                 "search omits it."
             ),
@@ -1293,7 +1292,7 @@ CATALOG.update(
                 "exactly two — a third argument in any shape (bare attribute, "
                 "{ [attr] }, or query_groups ( )) is rejected with 'Function "
                 "rank expects only 2 arguments', so an explicit PARTITION BY is "
-                "provably not expressible (E13). Two further live-proven "
+                "provably not expressible. Two further live-proven "
                 "restrictions: the first argument must be aggregated (rank "
                 "( [m] , 'desc' ) -> 'Function rank expects 1st argument to be "
                 "aggregated'), so an Ossie ORDER BY <non-aggregated column> has "
@@ -1301,8 +1300,8 @@ CATALOG.update(
                 "group_aggregate ( ... ), so the partition cannot be smuggled "
                 "in through the measure. Every non-covered shape falls back to "
                 "sql_int_aggregate_op ( \"RANK() OVER (PARTITION BY {0} ORDER "
-                "BY SUM({1}) DESC)\" , ... ) (E3), wrapped per E8. Query-context "
-                "caveat: rank carries no dynamic partition (E13) but it is "
+                "BY SUM({1}) DESC)\" , ... ), wrapped in group_aggregate. Query-context "
+                "caveat: rank carries no dynamic partition but it is "
                 "evaluated over the query's result rows, so the covered shape "
                 "is faithful to RANK() OVER (ORDER BY ...) only when the search "
                 "returns the grain the expression assumed — a query-time "
@@ -1346,7 +1345,7 @@ CATALOG.update(
                 "expects only 2 arguments', live-verified 2026-07-30), so it "
                 "too is global-only and an explicit PARTITION BY falls back to "
                 "sql_number_aggregate_op ( \"PERCENT_RANK() OVER (PARTITION BY "
-                "{0} ORDER BY SUM({1}))\" , ... ) (E3, E13). Same evidence-class "
+                "{0} ORDER BY SUM({1}))\" , ... ). Same evidence-class "
                 "caveat as RANK: the arity is probe-proven, the global-window "
                 "semantic is documentation-derived. CUME_DIST is deliberately "
                 "NOT given this same composition — see that row."
@@ -1369,7 +1368,7 @@ CATALOG.update(
             template="LAG({0}, 1) OVER (PARTITION BY {1} ORDER BY {2})",
             variant=Variant.NUMBER_AGGREGATE,
             note=(
-                "Reclassified direct -> passthrough 2026-07-30 (E13). The "
+                "Reclassified direct -> passthrough 2026-07-30. The "
                 "native idiom moving_sum ( [m] , n , -n , [ord] ) is real and "
                 "validates (a frame of n PRECEDING to n PRECEDING) but is not "
                 "equivalent to any OVER shape: moving_sum has no partition "
@@ -1384,7 +1383,8 @@ CATALOG.update(
                 "argument has no equivalent in the native idiom — ThoughtSpot "
                 "yields null outside the frame — a second reason the native "
                 "form is a downgrade (the pass-through carries default fine). "
-                "Subject to E5 and E6. Variant recorded here is the documented "
+                "Subject to the same aggregation and physical-ORDER-BY-column "
+                "constraints as the rest of this family. Variant recorded here is the documented "
                 "default (sql_number_aggregate_op); the typed sibling applies "
                 "for a non-numeric expr — LAG returns its argument's own type, "
                 "not an aggregate, so a string-typed expr (LAG(order_status, "
@@ -1415,7 +1415,7 @@ CATALOG.update(
                 "The section's exception, and the only window row whose direct "
                 "verdict survived the 2026-07-30 rework — first_value takes a "
                 "genuine explicit partition argument and a genuine explicit "
-                "order axis, so the formula does define its own window (E13). "
+                "order axis, so the formula does define its own window. "
                 "Live-confirmed 2026-07-30: query_groups ( ), "
                 "a fixed single-column { [attr] }, a multi-column "
                 "{ [a] , [b] }, the grand-total { } and the dynamic "
@@ -1434,7 +1434,7 @@ CATALOG.update(
                 "window function, so an OVER shape with a row frame other than "
                 "the whole partition falls back to "
                 "sql_number_aggregate_op ( \"FIRST_VALUE({0}) OVER (...)\" , "
-                "... ) (E3); and the axis column's type is not validated at "
+                "... ); and the axis column's type is not validated at "
                 "import (a VARCHAR axis was accepted), so acceptance proves "
                 "the call shape, not that the axis is temporal."
             ),
@@ -1485,7 +1485,7 @@ CATALOG.update(
                 "group_aggregate ( agg ( [m] ) , { [T::a] , [T::b] } , "
                 "query_filters ( ) ) and is lossless; an OVER clause with an "
                 "ORDER BY must target moving_*/cumulative_*, which have no "
-                "partition slot at all (E13). Live-confirmed accepted: a "
+                "partition slot at all. Live-confirmed accepted: a "
                 "fixed single-column grouping { [T::pk] } inside "
                 "group_aggregate (as a moving_* and a cumulative_* argument), "
                 "and query_groups ( ) - { [attr] } / "
@@ -1506,7 +1506,7 @@ CATALOG.update(
                 "non-numeric aggregate. The reverse direction is lossy for the "
                 "mirror-image reason — ThoughtSpot's ordered window functions "
                 "add the query's own dimensions to the partition dynamically, "
-                "which the specification cannot express (ask A10)."
+                "which the specification cannot express."
             ),
         ),
         "Frame clause — ROWS BETWEEN ... / RANGE BETWEEN ...": Construct(
@@ -1532,7 +1532,7 @@ CATALOG.update(
                 "live-verified on gapped dates, moving_* counts surviving rows "
                 "regardless of the calendar distance between them — so a "
                 "RANGE frame over a gapped sort column would silently return "
-                "different numbers (E3). A frame reaches ThoughtSpot natively "
+                "different numbers. A frame reaches ThoughtSpot natively "
                 "only when the accompanying OVER clause declares no "
                 "PARTITION BY; otherwise it is emitted verbatim inside the "
                 "pass-through template the OVER row selects. Per-shape "
@@ -1552,7 +1552,7 @@ CATALOG.update(
                 "the specification allows every aggregate as a window "
                 "function, but every ordered ThoughtSpot target "
                 "(cumulative_*, moving_*) completes its partition from the "
-                "query (E13). The unordered case remains lossless and is the "
+                "query. The unordered case remains lossless and is the "
                 "group_aggregate path on the OVER row. The native family is "
                 "also narrower than the specification's: cumulative_*/"
                 "moving_* cover SUM, AVG, MIN and MAX only — live-confirmed "
@@ -1575,14 +1575,16 @@ CATALOG.update(
                 "syntax errors at query time, so this template supplies a "
                 "concrete, valid frame instead. Variant recorded here is the "
                 "documented default (sql_number_aggregate_op); the typed "
-                "sibling applies for a non-numeric aggregate. Subject to E5."
+                "sibling applies for a non-numeric aggregate. The argument must still be "
+                "an aggregate — a raw column reference cannot be nested inside window "
+                "aggregation."
             ),
         ),
     }
 )
 
 #: Constructs the mapping document (docs/ossie/ts-ossie-function-mapping.md in the
-#: thoughtspot-agent-skills repo) counts separately under rule E1 ("one row per
+#: thoughtspot-agent-skills repo) counts separately ("one row per
 #: construct") that core-spec/expression_language.md does not give a discrete
 #: table row of their own. Each entry records WHY it diverges. This is NOT an
 #: escape hatch for missing coverage: the 137 names in spec_construct_names() are
@@ -1798,7 +1800,7 @@ def _extract_tables(text: str) -> tuple[set[str], set[str], list[tuple[str, str]
         header_lower = [c.lower() for c in header[0]]
         data_rows = [_split_table_row(r) for r in table_lines[2:]]
 
-        # Rule E1: a table whose identifying column is literally "Token" is a
+        # A table whose identifying column is literally "Token" is a
         # format-token argument vocabulary (TO_CHAR/TO_DATE's `format` argument).
         if header_lower and header_lower[0] == "token":
             continue
@@ -1874,7 +1876,7 @@ def _extract_extraction_syntax_functions(text: str) -> set[str]:
 
     The "Alternative Extraction Syntax" section is the only place either
     function is named; the bullet list immediately below it enumerates the
-    date parts they accept (rule E1: an argument vocabulary, not a construct).
+    date parts they accept (an argument vocabulary, not a construct).
     That list needs no special exclusion - it is a bullet list, not a table,
     so `_extract_tables()` never looks at it in the first place.
     """

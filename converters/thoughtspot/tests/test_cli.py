@@ -58,7 +58,7 @@ def _write_ossie_yaml_from_fixture(fixture_name: str, target: Path) -> None:
 def _inject_rls_rules(src_dir: Path, dst_dir: Path, *, table_filename: str) -> None:
     """Copy a fixture directory, adding `rls_rules` to one table document.
 
-    R2 (`test_fixtures.py`) forbids `rls_rules` in the committed fixtures
+    `test_fixtures.py`'s own check forbids `rls_rules` in the committed fixtures
     themselves -- an ERROR-severity issue (`TS-DATASET-RLS-RULES`) needs its own,
     disposable copy rather than mutating a shared fixture.
     """

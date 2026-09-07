@@ -55,7 +55,7 @@ SPEC_SERIES = "0.2"
 #: `OSSIE_VERSION` constant documents.
 DOCUMENT_VERSION = "0.2.0.dev0"
 
-#: Shape version of the custom_extensions payload (rule X3). Bump when the
+#: Shape version of the custom_extensions payload. Bump when the
 #: payload's shape changes, never for a value change.
 STASH_VERSION = 1
 
@@ -69,7 +69,7 @@ STASH_VERSION = 1
 #: must agree on the exact spelling and nothing else enforces that.
 FIELD_STASH_DB_COLUMN_NAME = "db_column_name"
 
-#: X5's witness copy for FIELD_STASH_DB_COLUMN_NAME: the physical column's
+#: The witness copy for FIELD_STASH_DB_COLUMN_NAME: the physical column's
 #: own display name (the bracket's column part, e.g. "Amount") as it stood
 #: the moment db_column_name was stashed. Ossie -> TML compares this against
 #: the CURRENT bracket reference's column part: agreement means nobody
@@ -98,7 +98,7 @@ FIELD_STASH_DB_COLUMN_NAME_WITNESS = "db_column_name_display_name_witness"
 # DatasetLevel / RelationshipLevel / FieldLevel / MetricLevel $defs).
 # ---------------------------------------------------------------------------
 
-#: Exact ThoughtSpot display name, stashed whenever ID1 normalisation produced
+#: Exact ThoughtSpot display name, stashed whenever identifier normalisation produced
 #: a different Ossie identifier. Shared across every scope that can suffer
 #: this divergence: Model (`semantic_model.name`) and Metric (a Metric has no
 #: `label` field to carry the display name the way a Field does). Also
@@ -165,7 +165,7 @@ MODEL_STASH_MODEL_JOINS_WITH = "model_joins_with"
 #: `unsurfaced_columns` was captured in.
 DATASET_STASH_TML_OBJECT = "tml_object"
 
-#: X5's witness copy for DATASET_STASH_TML_OBJECT: the dataset's own
+#: The witness copy for DATASET_STASH_TML_OBJECT: the dataset's own
 #: `source` string as it stood the moment `tml_object` was stashed.
 #: Ossie -> TML compares this against the CURRENT `source`: agreement means
 #: nobody edited it since (a query rewritten as a table reference, or vice
@@ -244,7 +244,7 @@ RELATIONSHIP_STASH_REFERENCING_JOIN = "referencing_join"
 #: `to_columns` then carry only part of it.
 RELATIONSHIP_STASH_ON_EXPRESSION = "on_expression"
 
-#: X5's witness copy for `RELATIONSHIP_STASH_ON_EXPRESSION`: `[from_columns,
+#: The witness copy for `RELATIONSHIP_STASH_ON_EXPRESSION`: `[from_columns,
 #: to_columns]` exactly as they stood the moment `on_expression` was
 #: stashed (only ever written alongside it, i.e. only when residual
 #: predicates exist). `Ossie -> TML` compares this against the relationship's
@@ -254,8 +254,8 @@ RELATIONSHIP_STASH_ON_EXPRESSION = "on_expression"
 #: and is restored; disagreement means the stash is stale, so both are
 #: dropped and the plain equality condition is re-derived from the live
 #: from_columns/to_columns instead, with an issue recording it. This is one
-#: of the two places (the other is FIELD_STASH_DATA_TYPE_WITNESS below) X5
-#: names by example: "a relationship's verbatim on_expression".
+#: of the two places (the other is FIELD_STASH_DATA_TYPE_WITNESS below) this
+#: converter uses a witness copy: "a relationship's verbatim on_expression".
 RELATIONSHIP_STASH_ON_EXPRESSION_WITNESS = "on_expression_equality_witness"
 
 # --- Field/metric scope (attached to a `fields[]` or `metrics[]` entry) -----
@@ -272,7 +272,7 @@ RELATIONSHIP_STASH_ON_EXPRESSION_WITNESS = "on_expression_equality_witness"
 #: `DOUBLE`), so the return trip re-emits the same one.
 FIELD_STASH_DATA_TYPE = "data_type"
 
-#: X5's witness copy for FIELD_STASH_DATA_TYPE: the Ossie `datatype` value
+#: The witness copy for FIELD_STASH_DATA_TYPE: the Ossie `datatype` value
 #: (`"Boolean"` or `"Float"` -- the only two `_CANONICAL_TML_SPELLING` ever
 #: stashes a non-canonical spelling for) as it stood the moment the spelling
 #: was recorded. `Ossie -> TML` compares this against the field's CURRENT
@@ -309,14 +309,14 @@ METRIC_STASH_SHAPE = "shape"
 #: in this file is centralised: the two must agree on the exact spelling and
 #: nothing else enforces that. `METRIC_SHAPE_FORMULA` is also what a document
 #: with no `shape` stash at all defaults to on the way back -- see
-#: METRIC_STASH_SHAPE above, and R4 for which shape is emitted by default.
+#: METRIC_STASH_SHAPE above for which shape is emitted by default.
 METRIC_SHAPE_COLUMN_AGGREGATION = "column_aggregation"
 METRIC_SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION = "scalar_formula_plus_aggregation"
 METRIC_SHAPE_FORMULA = "formula"
 
 
 # ---------------------------------------------------------------------------
-# X5 classification.
+# Stash-freshness classification.
 #
 # Every custom_extensions[THOUGHTSPOT] key above answers one question before
 # ossie_to_thoughtspot.py is allowed to read it: does the stashed value
@@ -327,8 +327,8 @@ METRIC_SHAPE_FORMULA = "formula"
 #
 # The first kind can go stale: a user edits the Ossie document (retargets a
 # field, renames a metric, rewrites a relationship, rewrites a dataset's
-# source) and the stash still describes the document as it was. Rule X5 says
-# a key in that category needs a witness and a currency check -- reused only
+# source) and the stash still describes the document as it was. A key in
+# that category needs a witness and a currency check -- reused only
 # when the two still agree, dropped and re-derived otherwise -- never plain
 # stash-if-present. The second kind cannot go stale, because there is
 # nothing on the Ossie side for it to disagree with; plain stash-if-present

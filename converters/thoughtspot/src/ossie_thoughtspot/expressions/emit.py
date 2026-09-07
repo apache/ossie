@@ -21,21 +21,21 @@
 Three emitters, one per `Classification` (see `_types.py`):
 
 - `emit_direct`      — substitutes `args` into the construct's native ThoughtSpot
-                        template positionally. Rule E2: a `direct` row may itself be
+                        template positionally. A `direct` row may itself be
                         a composition of native functions, not only a rename — that
                         composition is baked into `construct.template` by the
                         catalog, not by this function.
-- `emit_passthrough` — renders a `sql_*_op` call. Rule E4/E7: the row's `variant`
+- `emit_passthrough` — renders a `sql_*_op` call. The row's `variant`
                         fixes both the emitted function name and, through it, the
                         emitted column's type and measure/attribute role. Every call
-                        raises a WARNING issue (E12: names the function and the
-                        object) because the body is raw, dialect-specific warehouse
-                        SQL, opaque to ThoughtSpot's query planner. Rule E9: a call
+                        raises a WARNING issue naming the function and the
+                        object, because the body is raw, dialect-specific warehouse
+                        SQL, opaque to ThoughtSpot's query planner. A call
                         that would carry a runtime ThoughtSpot parameter is refused
                         outright — it cannot resolve to static SQL, so it is not
                         portable in either direction, and the caller must route it
                         elsewhere (a THOUGHTSPOT-only dialect entry) instead of
-                        obtaining a formula string from this function. Rule E8: pass
+                        obtaining a formula string from this function. Pass
                         `partition_column` when the passthrough carries a
                         `PARTITION BY` and the wrapped result guarantees that column
                         reaches ThoughtSpot's GROUP BY regardless of what the user's
@@ -107,15 +107,15 @@ def emit_passthrough(
     has_parameter: bool = False,
     partition_column: str | None = None,
 ) -> str:
-    """Render a PASSTHROUGH construct as a `sql_*_op` call and log a warning (E4/E7/E12).
+    """Render a PASSTHROUGH construct as a `sql_*_op` call and log a warning.
 
-    `has_parameter=True` (E9) refuses the call outright: a `sql_*_op` whose
+    `has_parameter=True` refuses the call outright: a `sql_*_op` whose
     arguments include a ThoughtSpot parameter cannot resolve to static SQL, so it
     is not portable in either direction. The caller must not obtain a formula
     string from this function in that case — it routes the construct to a
     THOUGHTSPOT-only dialect entry instead.
 
-    `partition_column` (E8): when the pass-through's SQL carries a `PARTITION BY`,
+    `partition_column`: when the pass-through's SQL carries a `PARTITION BY`,
     pass the column it partitions on and the result comes back wrapped in
     `group_aggregate ( <passthrough> , query_groups ( ) + { <partition_column> } ,
     query_filters ( ) )`, so the partition column reaches ThoughtSpot's GROUP BY
@@ -148,7 +148,7 @@ def emit_passthrough(
     if has_parameter:
         raise ValueError(
             f"{construct.spec_name}: a passthrough cannot carry a runtime parameter "
-            "(E9) — it cannot resolve to static SQL"
+            "— it cannot resolve to static SQL"
         )
 
     # Mirrors emit_direct's own arg-count guard: a mismatch means either a caller
@@ -164,7 +164,7 @@ def emit_passthrough(
             f"{construct.spec_name} expects {expected} {plural}, got {len(args)}"
         )
 
-    # E8, enforced rather than left to caller convention: every passthrough row
+    # Enforced rather than left to caller convention: every passthrough row
     # that needs the group_aggregate wrap carries the literal string "PARTITION BY"
     # in its SQL template (ROW_NUMBER, LAG, LEAD, the OVER fallback, window
     # aggregation, and the RANK/PERCENT_RANK/CUME_DIST fallbacks all do). Checking
@@ -174,7 +174,7 @@ def emit_passthrough(
     if carries_partition_by and partition_column is None:
         raise ValueError(
             f"{construct.spec_name}: template carries PARTITION BY but no "
-            "partition_column was supplied — the E8 group_aggregate wrapper is required"
+            "partition_column was supplied — the group_aggregate wrapper is required"
         )
     if partition_column is not None and not carries_partition_by:
         raise ValueError(
@@ -182,14 +182,14 @@ def emit_passthrough(
             "carries no PARTITION BY — there is nothing to wrap"
         )
 
-    # E4: variant is guaranteed non-None for a PASSTHROUGH row by Construct.__post_init__.
+    # variant is guaranteed non-None for a PASSTHROUGH row by Construct.__post_init__.
     variant = construct.variant
     quoted_template = json.dumps(construct.template)
     body = " , ".join([quoted_template, *args])
     call = f"{variant.value} ( {body} )"
 
     log.add(
-        code="E7-PASSTHROUGH",
+        code="TS-EXPR-PASSTHROUGH",
         severity=Severity.WARNING,
         message=(
             f"{construct.spec_name} is emitted as a {variant.value} pass-through: "
@@ -207,7 +207,7 @@ def emit_passthrough(
 
 
 def emit_unmappable(construct: Construct, log: IssueLog, *, object_ref: str) -> None:
-    """Raise an ERROR issue for an UNMAPPABLE construct. Never a silent drop (E12).
+    """Raise an ERROR issue for an UNMAPPABLE construct. Never a silent drop.
 
     Returns nothing — the caller is responsible for preserving the construct in
     `custom_extensions` for roundtrip; that stash is out of this function's scope.
@@ -218,7 +218,7 @@ def emit_unmappable(construct: Construct, log: IssueLog, *, object_ref: str) -> 
             f"{construct.classification.value} construct, not unmappable"
         )
     log.add(
-        code="E12-UNMAPPABLE",
+        code="TS-EXPR-UNMAPPABLE",
         severity=Severity.ERROR,
         message=(
             f"{construct.spec_name} has no ThoughtSpot representation; "

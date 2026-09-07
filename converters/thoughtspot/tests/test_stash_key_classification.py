@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""X5's enforcement point: every custom_extensions[THOUGHTSPOT] stash key
+"""The witness rule's enforcement point: every custom_extensions[THOUGHTSPOT] stash key
 this converter reads on its Ossie -> TML direction has to declare, in
 `constants.STASH_KEY_CLASSIFICATION`, whether it shadows a value this
 converter could otherwise derive from the live Ossie document (and so needs

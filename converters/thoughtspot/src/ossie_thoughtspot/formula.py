@@ -247,7 +247,7 @@ def find_column_refs(expression: str) -> list[tuple[str, str]]:
 
 
 #: The prefix a bracketed name with no `::` carries when it is a formula
-#: cross-reference (`[formula_Name]`, R3's id form) rather than a genuine
+#: cross-reference (`[formula_Name]`) rather than a genuine
 #: runtime parameter (`[Discount Threshold]`) — the two are the same
 #: textual shape (a bracketed name, no table qualifier) and are told apart
 #: only by this prefix. Shared here because both conversion directions have

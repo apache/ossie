@@ -24,7 +24,7 @@ class Classification(str, Enum):
     """How a specification construct reaches ThoughtSpot.
 
     DIRECT      a native ThoughtSpot equivalent exists, possibly as a documented
-                composition of native functions (rule E2).
+                composition of native functions.
     PASSTHROUGH requires a sql_*_op pass-through: warehouse-dialect-specific, and
                 opaque to ThoughtSpot's query planner.
     UNMAPPABLE  no representation; the converter raises an issue and preserves the
@@ -37,7 +37,7 @@ class Classification(str, Enum):
 
 
 class Variant(str, Enum):
-    """The sql_*_op family. Rule E7: the variant fixes the emitted column's type AND
+    """The sql_*_op family. The variant fixes the emitted column's type AND
     its measure/attribute role. The scalar variants produce attributes; the
     *_aggregate_op variants produce measures. Emitting sql_int_op where
     sql_int_aggregate_op was needed yields a column that imports cleanly and then
@@ -86,7 +86,7 @@ class Construct:
                     rebuilding the template per real occurrence is silently wrong, not
                     loud — `PERCENTILE_CONT(0.9)` would render as a P75 measure that imports
                     and runs. Each such row's `note` names the baked-in value.
-    `variant`     required for PASSTHROUGH (rule E4), forbidden otherwise.
+    `variant`     required for PASSTHROUGH, forbidden otherwise.
     `note`        the row's caveat, verbatim enough to be traceable to the document.
     """
 
@@ -98,7 +98,7 @@ class Construct:
 
     def __post_init__(self) -> None:
         if self.classification is Classification.PASSTHROUGH and self.variant is None:
-            raise ValueError(f"{self.spec_name}: a passthrough row must name its variant (E4)")
+            raise ValueError(f"{self.spec_name}: a passthrough row must name its variant")
         if self.classification is not Classification.PASSTHROUGH and self.variant is not None:
             raise ValueError(f"{self.spec_name}: only a passthrough row may name a variant")
         if self.classification is Classification.UNMAPPABLE and self.template is not None:

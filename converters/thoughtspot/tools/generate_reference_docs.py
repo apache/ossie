@@ -420,12 +420,12 @@ def _treatment_text(key: str, cls: "constants.StashKeyClass", has_witness: bool)
         return (
             "Restored only if its witness companion key still matches the live "
             "document's current value; a mismatch means the document changed since the "
-            "stash was written, so the value is re-derived instead (rule X5)."
+            "stash was written, so the value is re-derived instead."
         )
     return (
         "Restored only if reconstructing it from the live document still agrees with "
         "the stashed value (self-verifying — no separate witness key); "
-        "disagreement re-derives instead (rule X5)."
+        "disagreement re-derives instead."
     )
 
 

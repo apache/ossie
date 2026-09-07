@@ -23,8 +23,8 @@ are self-consistent; reading the spec means a construct added upstream fails thi
 build instead of silently going unsupported.
 
 spec_construct_names() and the mapping document's 146-row census count by
-different units — one parseable table row/heading vs. one construct under rule
-E1, which also counts a handful of constructs the spec only describes in prose.
+different units — one parseable table row/heading vs. one construct, which
+also counts a handful of constructs the spec only describes in prose.
 CONVENTION_DIVERGENCES (catalog.py) is the exact, reasoned list of the 9 where
 that difference shows up; test_the_two_counts_reconcile pins the arithmetic so
 the two counts cannot drift apart silently.
@@ -50,7 +50,7 @@ def test_no_catalog_entry_invents_a_construct_the_spec_does_not_have():
 
 def test_the_two_counts_reconcile():
     # The spec's parseable rows (137) plus the deliberate divergences (9) must
-    # equal the mapping document's rule-E1 census (146). If this drifts, either
+    # equal the mapping document's own census (146). If this drifts, either
     # spec_construct_names() regressed or CONVENTION_DIVERGENCES needs an entry
     # added or removed - it must not be "fixed" by changing the 146 constant.
     assert len(spec_construct_names()) + len(CONVENTION_DIVERGENCES) == 146
@@ -58,5 +58,5 @@ def test_the_two_counts_reconcile():
 
 def test_the_total_matches_the_mapping_document_census():
     # 146 is the figure the mapping document's coverage summary reports, arrived at
-    # by rule E1 (one row per construct; argument vocabularies are not constructs).
+    # one row per construct (argument vocabularies are not constructs).
     assert len(CATALOG) == 146

@@ -24,15 +24,15 @@ Public surface:
     - `spec_construct_names()` — the upstream-spec coverage oracle: reads
       core-spec/expression_language.md directly so a construct added upstream fails
       this package's build instead of silently going unsupported.
-    - `CONVENTION_DIVERGENCES` — constructs the mapping document counts by rule E1
-      that have no discrete row in the upstream spec.
+    - `CONVENTION_DIVERGENCES` — constructs the mapping document counts one row per
+      construct that have no discrete row in the upstream spec.
     - `emit_direct`, `emit_passthrough`, `emit_unmappable` — render a `Construct`
       into an actual ThoughtSpot formula, one function per `Classification`.
     - `REVERSE`, `ReverseConstruct`, `ReverseDisposition`, `translate_thoughtspot`,
       `stash_runtime_parameter` — the reverse-direction inventory (ThoughtSpot
       functions with no counterpart in the Ossie specification) and its translator.
     - `thoughtspot_dialect_entry`, `portable_dialect_entry`,
-      `custom_extensions_fragment` — the E11/X1 helpers a caller combines with
+      `custom_extensions_fragment` — helpers a caller combines with
       `translate_thoughtspot`'s result to satisfy roundtrip at the object level.
 """
 from .catalog import CATALOG, CONVENTION_DIVERGENCES, spec_construct_names

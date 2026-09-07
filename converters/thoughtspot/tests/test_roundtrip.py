@@ -41,7 +41,7 @@ and all -- rather than trusting a bare count.
 Not every difference this module finds is a defect. `test_minimal_model_
 reproduces_every_column_and_formula_except_the_aggregation_convention` and
 its tpcds counterpart document a difference the converter's own code
-already explains and justifies (R4) -- collapsing three ThoughtSpot Model
+already explains and justifies -- collapsing three ThoughtSpot Model
 TML metric shapes into one on the way out. That is asserted as the
 current, intentional behaviour.
 
@@ -268,7 +268,7 @@ def test_tpcds_model_reproduces_every_column_and_formula_except_the_metric_shape
     # aggregation-convention property as minimal's "total_order_amount"
     # above. "total_return_quantity" is different: it arrives as
     # `column_id` + a load-bearing `aggregation` (never a `formula` in the
-    # source document at all) -- R4: Ossie's own Metric schema has no
+    # source document at all) -- Ossie's own Metric schema has no
     # `column_id` field, so the only shape available on the way back is a
     # formula, and the aggregate is composed into a brand new formulas[]
     # entry rather than surviving as a column-level property.
@@ -524,7 +524,7 @@ def test_a_metrics_portable_expression_carries_its_column_level_aggregation():
     assert dialects[PORTABLE_DIALECT] == "SUM(widgets.amount)"
 
     # The composed aggregate survives being written back out as a formula
-    # too (R4 -- a metric is always a formula on the way back).
+    # too -- a metric is always a formula on the way back.
     tml_result = ossie_to_thoughtspot.convert(ossie_result.model)
     new_columns = _model_columns_by_name(tml_result.documents.model.body)
     formulas = _model_formulas_by_id(tml_result.documents.model.body)

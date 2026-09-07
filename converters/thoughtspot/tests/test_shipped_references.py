@@ -132,29 +132,24 @@ ALLOWED_TOKENS: frozenset[str] = frozenset(
 # ---------------------------------------------------------------------------
 # PROVISIONAL — pending a decision that is not this test's to make.
 #
-# These are rule identifiers from ThoughtSpot's construct/expression mapping
-# tables and conversion-invariant catalogue, maintained in an internal
-# repository that is not part of this project and is not currently public (see
-# README.md's "Rules" section for the full account). Whether that source
-# material is ever contributed into this repository — which would make each of
-# these resolvable — is a larger decision above this test's authority, and is
-# not made here.
+# The decision on the A/E/G/ID/KD/NM/R/X families has been made: the internal
+# mapping/invariant reference they cited is not shipping, so every citation to
+# one of those families has been rewritten in place to state its substance
+# directly (see README.md's "Rules" section for the full account), and those
+# seven families have been removed from this block — a citation to any of them
+# now fails the suite like any other unresolvable reference.
 #
-# Until that decision lands, citing them is allowed. This block is the single
-# place to edit when it does: delete the whole block once the source material
-# ships alongside this converter, or move individual entries up into
-# ALLOWED_TOKENS with their own justification if only some turn out to stay.
+# The "I" family remains provisional: these are rule identifiers from
+# ThoughtSpot's conversion-invariant catalogue, maintained in the same internal
+# repository, and resolving them is outside the scope of the change that
+# closed the other seven. Until that decision lands, citing them is allowed.
+# This block is the single place to edit when it does: delete the whole block
+# once the source material ships alongside this converter, or move individual
+# entries up into ALLOWED_TOKENS with their own justification if only some
+# turn out to stay.
 # ---------------------------------------------------------------------------
 _MAPPING_DOC_RULE_ID_FAMILIES: dict[str, tuple[int, ...]] = {
-    "A": (3, 9, 10, 11, 12),
-    "E": tuple(range(1, 14)),
-    "G": (2, 3),
     "I": (1, 4, 5, 7),
-    "ID": (1, 2, 3, 4),
-    "KD": (1, 2, 3),
-    "NM": (1, 2, 4, 6),
-    "R": (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11),
-    "X": tuple(range(1, 10)),
 }
 MAPPING_DOC_RULE_IDS: frozenset[str] = frozenset(
     f"{prefix}{number}"

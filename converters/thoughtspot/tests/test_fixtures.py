@@ -101,7 +101,7 @@ class TestFixtureSetsLoad:
         for path in _tml_paths(fixture_dir):
             document = tml.load_document(path.read_text(encoding="utf-8"), source=str(path))
             assert document.kind in _TML_KINDS
-            # R2: a fixture must never carry a root-level guid -- these are
+            # A fixture must never carry a root-level guid -- these are
             # hand-authored, portable documents, not exports from a live
             # instance.
             assert document.guid is None

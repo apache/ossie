@@ -31,7 +31,7 @@ passthrough because ThoughtSpot has exactly one distinct-aware aggregate
 (`unique count`, i.e. `COUNT(DISTINCT)`, already its own row) and nothing
 else. `str LIKE pattern` stays direct despite ThoughtSpot having no native
 `starts_with`/`ends_with`: the prefix/suffix/contains compositions use only
-native functions (rule E2).
+native functions.
 
 Six of the family's 33 rows have no discrete row of their own in the upstream
 core-spec/expression_language.md - they are named only in prose, a bullet
@@ -98,7 +98,7 @@ EXPECTED: dict[str, Classification] = {
     "EXISTS_IN()": Classification.UNMAPPABLE,  # CONVENTION_DIVERGENCES
 }
 
-#: Expected `Variant` for every passthrough row in this family (E4/E7).
+#: Expected `Variant` for every passthrough row in this family.
 EXPECTED_VARIANTS: dict[str, Variant] = {
     "str ILIKE pattern": Variant.BOOL,
     "DISTINCT aggregate modifier": Variant.NUMBER_AGGREGATE,
@@ -159,7 +159,7 @@ def test_ilike_is_passthrough_because_case_fold_has_no_native_form():
 
 def test_like_stays_direct_despite_no_native_starts_with_ends_with():
     # Unlike ILIKE, LIKE's prefix/suffix/contains compositions use only
-    # native functions (strpos/substr/contains), so rule E2 keeps it direct.
+    # native functions (strpos/substr/contains), so it stays direct.
     row = CATALOG["str LIKE pattern"]
     assert row.classification is Classification.DIRECT
 

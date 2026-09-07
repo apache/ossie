@@ -48,7 +48,7 @@ def test_disagreeing_qualifying_relationships_yield_unique_keys_and_no_primary_k
 
 
 def test_residual_predicate_relationship_is_not_key_evidence():
-    # KD1: the equality columns alone are not unique — the narrowing makes it to-one.
+    # The equality columns alone are not unique — the narrowing makes it to-one.
     log = IssueLog()
     pk, uniques = derive_keys("customers", [rel("asof", ["ccy"], residual=True)], log)
     assert pk is None
@@ -63,7 +63,7 @@ def test_many_to_many_is_not_key_evidence():
 
 
 def test_a_disqualified_sibling_raises_an_issue_naming_it():
-    # KD2/I1: "ccy" does not cover the derived key ("customer_id"), so
+    # I1: "ccy" does not cover the derived key ("customer_id"), so
     # upstream's to_columns coverage check (validate.py:159-165) genuinely
     # will warn here — the claim is correct and must be present.
     log = IssueLog()

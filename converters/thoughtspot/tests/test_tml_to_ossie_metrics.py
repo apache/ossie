@@ -183,7 +183,7 @@ class TestConvertMetric:
         assert stash.read_stash(metric)[STASH_TML_NAME] == "Gross Margin %!!"
 
     def test_a_metric_that_needs_neither_tml_name_nor_shape_stashes_nothing(self):
-        # X6: a converted document stays clean where ThoughtSpot added nothing.
+        # A converted document stays clean where ThoughtSpot added nothing.
         # Both conditions have to hold at once here: the name must normalise to
         # itself, AND the shape must be the "formula" default — the one shape
         # that needs no stash entry, because it is also what a document with no

@@ -252,7 +252,7 @@ def _physical_identity(field: dict, log: IssueLog, *, object_ref: str) -> tuple[
         # db_column_name -- a physical column is matched by display name
         # only. When the forward direction saw the two differ, it stashes
         # the true warehouse name on the field, witnessed against the
-        # display name it was recorded for (X5): trustworthy only when the
+        # display name it was recorded for: trustworthy only when the
         # field still names the same physical column, since a user
         # retargeting the bracket reference to a different column leaves a
         # stash that now names the WRONG column's warehouse name -- one
@@ -337,7 +337,7 @@ def _field_datatype(field: dict, log: IssueLog, *, object_ref: str) -> str:
 
     field_stash = stash.read_stash(field)
     was_stashed = FIELD_STASH_DATA_TYPE in field_stash
-    # X5: the exact ThoughtSpot spelling a prior TML -> Ossie trip recorded
+    # The exact ThoughtSpot spelling a prior TML -> Ossie trip recorded
     # (BOOL vs BOOLEAN, FLOAT vs DOUBLE) wins over a freshly derived one only
     # when the witness -- the Ossie datatype it was recorded against --
     # still matches this field's current `datatype`. A field whose declared
@@ -463,7 +463,7 @@ def _decide_kind(dataset: dict, payload: dict, log: IssueLog, *, object_ref: str
     TML -> Ossie trip) is authoritative -- it also determines which shape
     `unsurfaced_columns` was captured in, so trusting it keeps that list
     valid -- but only when its witness (the `source` it was stashed
-    alongside, X5) still matches this dataset's CURRENT `source`. A user who
+    alongside) still matches this dataset's CURRENT `source`. A user who
     rewrites `source` from a table reference to a query (or back) since the
     stash was written leaves a `tml_object` that now describes the wrong
     shape; using it anyway would misread `source` under the old rules (a
@@ -700,25 +700,26 @@ def build_table(dataset: dict, log: IssueLog, *, connection_name: str | None = N
 # datasets. Order of business: name/description/ai_context, then a resolver
 # any computed field or metric's portable (ANSI_SQL) expression needs
 # (`resolve_field`, built once from every dataset's physical fields), then
-# fields and metrics (which allocate the model-wide unique display names R6
-# requires), then unattributed formulas, then relationships/unrepresentable
+# fields and metrics (which allocate model-wide unique display names),
+# then unattributed formulas, then relationships/unrepresentable
 # joins folded into each dataset's inline `joins[]`, then model-scope stash.
 # ---------------------------------------------------------------------------
 
 
 class _DisplayNameAllocator:
     """Assigns unique TML display names across `columns[]` and `formulas[]`
-    combined (R6, ID4), preserving each candidate's own text exactly whenever
+    combined, preserving each candidate's own text exactly whenever
     it is not colliding with one already assigned.
 
     `identifiers.Allocator` is not reused directly here: it folds every
     candidate to a normalised (lowercase, underscore-joined) identifier even
     on its very first use, which is correct for an *Ossie* identifier
     (TML -> Ossie's own `field.name`) but wrong for a TML display name --
-    ID1 requires `Ossie -> TML` to use a field's `label` (or a metric's own
+    `Ossie -> TML` must use a field's `label` (or a metric's own
     `name`, when there is no `label`) verbatim in the ordinary, non-colliding
     case. This class reuses `identifiers.normalise` as the fold key -- the
-    exact case/punctuation-insensitive comparison ID2 specifies, and the same
+    exact case/punctuation-insensitive comparison Ossie identifier resolution
+    requires, and the same
     one `identifiers.Allocator` computes internally -- and appends a numeric
     suffix to the *original* text, never the folded one, only once a
     collision is actually found.
@@ -743,7 +744,7 @@ class _DisplayNameAllocator:
             fold = f"{fold_base}_{suffix}"
         self._taken.add(fold)
         if candidate != display_name:
-            # The rename is correct -- uniqueness is required (R6/ID4) -- but
+            # The rename is correct -- uniqueness is required -- but
             # it changes text the user chose and will see in the product, and
             # silence here is exactly the kind of quiet difference this
             # package otherwise always reports.
@@ -775,8 +776,8 @@ def _normalise_or_self(text: str) -> str:
 def _restore_tml_name(
     payload: dict, live_identifier: str, log: IssueLog, *, object_ref: str
 ) -> str:
-    """X5 for STASH_TML_NAME (metric and model scope): the exact ThoughtSpot
-    display name a prior TML -> Ossie trip stashed when ID1 normalisation
+    """The witness check for STASH_TML_NAME (metric and model scope): the exact ThoughtSpot
+    display name a prior TML -> Ossie trip stashed when identifier normalisation
     changed it, restored only when it is still current.
 
     Self-verifying rather than a separately stored witness (the same shape
@@ -816,7 +817,7 @@ def _formula_id_from(display_name: str) -> str:
     from the *normalised* form of the display name -- the same fold
     `_DisplayNameAllocator` already dedupes on -- rather than embedding the
     display name verbatim is what lets a THOUGHTSPOT-verbatim cross-reference
-    elsewhere in the model (`[formula_net_amount]`, R3's id form) resolve
+    elsewhere in the model (`[formula_net_amount]`) resolve
     against a formula this converter itself is generating: the reference was
     written against ThoughtSpot's own slug-shaped id convention, and a
     verbatim, unnormalised id (``formula_Net Amount``) would silently break
@@ -861,7 +862,7 @@ def _outer_aggregation_of(ts_expr: str) -> str | None:
     the aggregation that wraps it, and — for every other shape — to set the
     surfacing column's `aggregation` as the documented convention the worked
     shape shows (inert at query time when the formula's own expr already
-    aggregates, per R4, but present on real ThoughtSpot-authored documents).
+    aggregates, but present on real ThoughtSpot-authored documents).
     """
     call = formula.split_call(ts_expr)
     if call is None:
@@ -877,7 +878,7 @@ def _decompose_scalar_aggregate(ts_expr: str) -> tuple[str, str] | None:
     `None` when `ts_expr`'s outer call is not a recognised native aggregate
     over a single argument.
 
-    R4's scalar-formula-plus-aggregation pattern (`scalar_formula_plus_aggregation`): the Ossie metric's
+    The scalar-formula-plus-aggregation pattern (`scalar_formula_plus_aggregation`): the Ossie metric's
     THOUGHTSPOT-dialect entry already holds the *composed* text (e.g.
     ``average ( [A::x] - [A::y] )``, built by tml_to_ossie's own
     `_compose_aggregate_entries`) — this is the inverse, recovering the bare
@@ -896,7 +897,7 @@ def _decompose_scalar_aggregate(ts_expr: str) -> tuple[str, str] | None:
 
 
 def _maybe_block_scalar(expr: str) -> str:
-    """R9 — wrap `expr` for `>-` emission whenever it contains a brace,
+    """Wrap `expr` for `>-` emission whenever it contains a brace,
     otherwise return it untouched."""
     if "{" in expr or "}" in expr:
         return block_scalar(expr)
@@ -986,7 +987,7 @@ def _match_ansi_call(name: str, args: list[str]) -> tuple[str, list[str]] | None
     Deliberately narrow: only the single-argument aggregate family
     (`SUM(expr)`, `COUNT(expr)`, ..., and the `COUNT(DISTINCT expr)` special
     case) is matched. This is the shape a metric's portable expression
-    realistically takes (R4's scalar-formula-plus-aggregation pattern's own
+    realistically takes (the scalar-formula-plus-aggregation pattern's own
     composed shape), and the catalog's other
     families spell their placeholder differently per row (`ABS(x)`,
     `LOWER(str)`, ...) — matching those too would need a full per-row arity
@@ -1185,10 +1186,10 @@ def _physical_columns_of(table_doc: TmlDocument | None) -> list[dict]:
 
 def _restore_ai_context(properties: dict, ai_context: object, log: IssueLog, *, object_ref: str) -> None:
     """Fold an Ossie `ai_context` value (string or `{synonyms, instructions,
-    examples}`) into `properties`, mutating it in place (R7: `synonyms` and
+    examples}`) into `properties`, mutating it in place (`synonyms` and
     `synonym_type` live under `properties`, never at the column root).
 
-    `examples` has no TML equivalent (NM4) and raises an issue rather than
+    `examples` has no TML equivalent and raises an issue rather than
     being dropped silently.
     """
     if ai_context is None:
@@ -1212,19 +1213,19 @@ def _restore_ai_context(properties: dict, ai_context: object, log: IssueLog, *, 
             code="TS-AI-CONTEXT-EXAMPLES-UNSUPPORTED",
             severity=Severity.WARNING,
             message=(
-                "ai_context.examples has no ThoughtSpot TML equivalent (NM4); it is "
+                "ai_context.examples has no ThoughtSpot TML equivalent; it is "
                 "not carried into the model"
             ),
             object_ref=object_ref,
         )
 
 
-#: R8 -- properties this converter must never write as `true` into a
+#: Properties this converter must never write as `true` into a
 #: generated model, even when the stash carries the value verbatim. The
 #: stash is the Ossie document's own record of what the source TML held and
 #: is untouched by this filter (a forward conversion must still be able to
 #: recover the flag); only the *emitted* TML side ever drops it. A message
-#: per key, not one generic message, because R8's own reasoning differs for
+#: per key, not one generic message, because the reasoning differs for
 #: each: a hidden column cannot be surfaced again without a manual edit on
 #: the target instance, and re-asserting was_auto_generated on a column this
 #: build did not itself generate would misrepresent its provenance.
@@ -1247,12 +1248,12 @@ _NEVER_EMIT_TRUE_PROPERTY_MESSAGES = {
 def _drop_never_emit_true_properties(
     extra_properties: dict, log: IssueLog, *, object_ref: str
 ) -> dict:
-    """R8 -- `extra_properties` (a restored `column_properties` stash) with
+    """`extra_properties` (a restored `column_properties` stash) with
     `is_hidden`/`was_auto_generated` removed before it is merged into the
     emitted `properties` dict.
 
-    Only a `true` value is dropped-and-logged: it is the one value R8
-    forbids the *generated* TML from carrying, and a generated model
+    Only a `true` value is dropped-and-logged: it is the one value this
+    converter forbids the *generated* TML from carrying, and a generated model
     silently losing a column's visibility (or misreporting its provenance)
     is a real, actionable difference the model owner needs to see, not a
     stylistic omission -- hence WARNING, matching this module's other
@@ -1292,7 +1293,7 @@ def _build_field(
     A physical field becomes a `column_id` entry, validated against the
     dataset's own already-built Table document so a broken reference is
     caught here rather than shipped as an import-time 404. A computed field
-    becomes a `formulas[]` + `formula_id` pair (R3), never a bare `column_id`.
+    becomes a `formulas[]` + `formula_id` pair, never a bare `column_id`.
     """
     payload = stash.read_stash(field)
     display_name = field.get("label") or field.get("name") or "<unnamed>"
@@ -1391,7 +1392,7 @@ def _build_metric(
     """One Ossie metric -> `(formulas[] entry, columns[] entry)`, or `None`
     when it cannot be translated at all.
 
-    R4: always a formula, never `column_id` + `aggregation` -- Ossie's own
+    Always a formula, never `column_id` + `aggregation` -- Ossie's own
     Metric schema has no `column_id` field regardless, so this is the only
     shape available. The stash's `shape` (default METRIC_SHAPE_FORMULA, the
     documented contract for an absent key) selects only between the two
@@ -1510,7 +1511,7 @@ def _build_metric(
     _restore_ai_context(properties, metric.get("ai_context"), log, object_ref=object_ref)
 
     # Raw, unwrapped `formula_expr` here -- see the matching comment in
-    # _build_field; both the cross-reference rewrite and the R9 block-scalar
+    # _build_field; both the cross-reference rewrite and the block-scalar
     # wrap happen once, uniformly, in build_model's final pass.
     formulas_entry = {"id": formula_id, "name": name, "expr": formula_expr}
     columns_entry = {"name": name, "formula_id": formula_id, "properties": properties}
@@ -1550,7 +1551,7 @@ def _build_field_index(
     return index
 
 
-#: R5 -- the two spellings a source join `type` can arrive as for what
+#: The two spellings a source join `type` can arrive as for what
 #: ThoughtSpot calls `OUTER` (its own full outer join). Matched
 #: case/whitespace-insensitively: the stash carries whatever spelling the
 #: source TML happened to use, and neither variant -- nor any casing of
@@ -1559,7 +1560,7 @@ _FULL_OUTER_SPELLING = "FULL_OUTER"
 
 
 def _normalise_join_type(value: str) -> str:
-    """R5 -- a source `FULL OUTER` / `FULL_OUTER` becomes `OUTER`, in every
+    """A source `FULL OUTER` / `FULL_OUTER` becomes `OUTER`, in every
     context TML accepts a join `type` at all. ThoughtSpot accepts only
     `INNER`, `LEFT_OUTER`, `RIGHT_OUTER`, `OUTER` and rejects both `FULL_OUTER`
     spellings identically; `OUTER` *is* ThoughtSpot's own full outer join, so
@@ -1606,8 +1607,9 @@ def _join_entry_for_relationship(rel: dict, log: IssueLog) -> tuple[str, dict, d
     at all would be. The same is true when there is no stashed
     `referencing_join` to begin with.
 
-    X5 governs `on_expression`: it is the "verbatim on_expression" case the
-    rule names by example. A plain stash-if-present read would silently keep
+    The witness-copy pattern governs `on_expression` here, named by example
+    elsewhere in this converter as the "verbatim on_expression" case. A plain
+    stash-if-present read would silently keep
     serving the *old* condition (residual predicates included) after a user
     retargets the relationship's `from_columns`/`to_columns` -- so the stash
     is only trusted when the witness (a snapshot of those two arrays, taken
@@ -1708,7 +1710,7 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
     datasets (`build_table`, called once per dataset) -- consulted here, by
     name, rather than re-derived, so a physical field's `column_id` always
     references a column that genuinely exists on the document a Model import
-    would actually load (R10: tables are emitted, and known, before the
+    would actually load (tables are emitted, and known, before the
     model that references them).
     """
     model_payload = stash.read_stash(semantic_model)
@@ -1799,7 +1801,7 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
         # dataset to belong to, which is exactly why the forward direction
         # could not turn it into an ordinary Ossie field -- but a TML
         # formula's surfacing columns[] entry was never tied to a dataset
-        # in the first place (R3: `formula_id` + `properties`, no
+        # in the first place (`formula_id` + `properties`, no
         # `column_id`), so nothing here actually stops the formula from
         # being surfaced normally. An earlier revision re-emitted only the
         # bare formulas[] entry with no surfacing columns[] entry at all --
@@ -1809,7 +1811,7 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
         # rebuilt model, while the issue it raised said only that column
         # properties were lost -- a materially smaller claim than what
         # actually happened. Restoring the surfacing entry (using the
-        # stashed properties verbatim, R8-filtered the same way every other
+        # stashed properties verbatim, filtered the same way every other
         # surfaced field's properties are) fixes the cause rather than
         # rewording the symptom, and needs no issue at all: nothing is lost
         # once the formula is surfaced.
@@ -1832,7 +1834,7 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
     # earlier in this list can be cross-referenced by one built later (or
     # vice versa; declaration order inside model.formulas[] carries no
     # ordering guarantee for this converter's own consumers). So the
-    # cross-reference rewrite (R3's id form) and the R9 block-scalar wrap
+    # cross-reference rewrite and the block-scalar wrap
     # both happen here, once, over the now-complete list, rather than
     # per-formula while it was being built above.
     formula_id_by_normalised_name = {
@@ -1987,7 +1989,7 @@ def convert(ossie_document: dict) -> TmlConversion:
 
     Tables are built before the model (`build_table`, one per dataset) so
     `build_model` can validate every physical field's `column_id` against a
-    Table document that genuinely exists -- the same R10 ordering the model
+    Table document that genuinely exists -- the same ordering the model
     document itself enforces on its output (tables emitted, and known,
     before the model that references them).
 

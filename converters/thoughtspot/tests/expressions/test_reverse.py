@@ -23,11 +23,11 @@ vendored here), all three sub-sections: conditional aggregates and arithmetic
 helpers; window, LOD and semi-additive functions; runtime, display and
 calendar concepts.
 
-One assertion group per ThoughtSpot function: does it compose (rule E10), or
-does it stash (custom_extensions + issue, rule E12)? Composers assert the
+One assertion group per ThoughtSpot function: does it compose, or
+does it stash (custom_extensions + issue)? Composers assert the
 exact emitted Ossie expression. Stash/partial entries assert the issue's
-code, severity and object_ref, per E12 ("names the function, the object and
-the reason").
+code, severity and object_ref, since every stash issue names the function,
+the object and the reason.
 """
 from ossie_thoughtspot.expressions.reverse import (
     REVERSE,
@@ -536,7 +536,7 @@ def test_unrecognised_name_returns_none_with_no_issue():
 
 
 # ---------------------------------------------------------------------------
-# E11 — dialect-entry and stash-payload helpers.
+# Dialect-entry and stash-payload helpers.
 # ---------------------------------------------------------------------------
 
 def test_thoughtspot_dialect_entry_reconstructs_the_verbatim_call():

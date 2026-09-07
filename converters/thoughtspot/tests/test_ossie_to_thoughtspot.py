@@ -16,12 +16,12 @@
 # under the License.
 
 """Tests for the public `convert` entry point (Ossie -> TML), inline-join
-placement, and X5's stash-restoration witness.
+placement, and the stash-restoration witness.
 
 Three things are new here relative to the other `ossie_to_thoughtspot`
 test modules: `convert()` itself (build_table/build_model already have
-their own dedicated files), the two places this converter now applies
-X5's stash-if-present-**and-still-current**-else-derive rule rather than
+their own dedicated files), the two places this converter now applies its
+stash-if-present-**and-still-current**-else-derive rule rather than
 plain stash-if-present, and a round trip that drives the two public entry
 points back to back (`tml_to_ossie.convert` then `ossie_to_thoughtspot.
 convert`) rather than a hand-built Ossie fixture.
@@ -177,8 +177,8 @@ def _model_tml(name, model_tables, columns, formulas=None):
 
 
 def _find_key(value, key):
-    """Whether `key` appears anywhere in `value`, at any depth -- R2's "no
-    guid anywhere" needs to look past the document root, since a nested
+    """Whether `key` appears anywhere in `value`, at any depth -- the "no
+    guid anywhere" rule needs to look past the document root, since a nested
     guid is exactly as import-breaking as a root one (tml.py strips guids
     unconditionally at dump time, but build_model/build_table must also
     never *emit* one in the first place)."""
@@ -223,7 +223,7 @@ class TestConvertEntryPoint:
             convert(_ossie_document(first, second))
 
     def test_no_guid_appears_anywhere_in_the_emitted_document_set(self):
-        # R2 -- proven at the deepest fixture this file builds: a join, a
+        # The no-guid-anywhere rule, proven at the deepest fixture this file builds: a join, a
         # formula cross-reference, a metric and a stashed foreign extension
         # all present at once.
         orders_ds = _dataset("orders", "SALES.PUBLIC.ORDERS", fields=[
@@ -248,7 +248,7 @@ class TestConvertEntryPoint:
         # A genuinely hand-authored Ossie file: no custom_extensions
         # anywhere, physical fields as bare identifiers, no THOUGHTSPOT
         # dialect entries. This must still produce an importable document
-        # set -- X5's "else-derive" half: every stashed key needs a
+        # set -- the "else-derive" half of the witness rule: every stashed key needs a
         # derivation or a documented default, since a hand-authored
         # document has no stash to fall back on at all.
         orders = _dataset("orders", "SALES.PUBLIC.ORDERS", fields=[
@@ -275,7 +275,7 @@ class TestConvertEntryPoint:
 
 
 # ---------------------------------------------------------------------------
-# Inline join placement and type normalisation (R5), through convert()'s own
+# Inline join placement and type normalisation, through convert()'s own
 # document -- build_model's join mechanics have their own dedicated tests in
 # test_ossie_to_thoughtspot_model.py; these confirm the same invariants hold
 # end to end through the public entry point.
@@ -321,7 +321,7 @@ class TestJoinPlacementThroughConvert:
         assert orders_entry["joins"][0]["type"] == "OUTER"
 
     def test_full_outer_becomes_outer_on_an_unrepresentable_join_too(self):
-        # R5's rename applies "in every context TML accepts a join type at
+        # The rename applies "in every context TML accepts a join type at
         # all" -- unrepresentable_joins[] is the other one this module emits.
         orders = _dataset("orders", "SALES.PUBLIC.ORDERS")
         fx_rates = _dataset("fx_rates", "SALES.PUBLIC.FX_RATES")
@@ -341,7 +341,7 @@ class TestJoinPlacementThroughConvert:
         assert orders_entry["joins"][0]["type"] == "OUTER"
 
     def test_missing_type_and_cardinality_default_rather_than_being_omitted(self):
-        # TML requires both keys on every join (R5) -- a document with
+        # TML requires both keys on every join -- a document with
         # neither stashed must still emit both, never leave one out.
         result = convert(_ossie_document(self._model_with_join()))
         [orders_entry] = [t for t in result.documents.model.body["model_tables"] if t["name"] == "orders"]
@@ -352,7 +352,7 @@ class TestJoinPlacementThroughConvert:
 
 
 # ---------------------------------------------------------------------------
-# X5 -- stash-if-present-and-still-current-else-derive, for a relationship's
+# Stash-if-present-and-still-current-else-derive, for a relationship's
 # on_expression. The obvious reading ("use the stash if it is there") is
 # wrong: it silently discards a retargeted relationship's edit.
 # ---------------------------------------------------------------------------
@@ -440,9 +440,9 @@ class TestOnExpressionWitness:
 
 
 # ---------------------------------------------------------------------------
-# X5 again, on a second construct: FIELD_STASH_DATA_TYPE. Reading
-# _field_datatype revealed the exact same stash-if-present pattern X5
-# warns against for on_expression, just on a different key: a field whose
+# The same witness rule again, on a second construct: FIELD_STASH_DATA_TYPE. Reading
+# _field_datatype revealed the exact same stash-if-present pattern to
+# warn against for on_expression, just on a different key: a field whose
 # `datatype` is edited after the stash was written (Boolean -> String,
 # say) would silently keep emitting the OLD warehouse spelling (BOOL) for
 # a column that is no longer Boolean at all. Worth its own test because it
@@ -576,7 +576,8 @@ class TestFullRoundTripBothEntryPoints:
             d for d in ossie_document["semantic_model"][0]["datasets"] if d["name"] == "ORDERS"
         )
         # Simulate another tool having already touched the intermediate
-        # Ossie document -- X7's own scenario, and the only place a
+        # Ossie document -- the scenario write_stash's foreign-vendor
+        # preservation guards against, and the only place a
         # "foreign vendor extension" can meaningfully appear in a
         # TML -> Ossie -> TML round trip, since TML itself has no
         # extension mechanism at all for one to originate from.
@@ -633,7 +634,7 @@ class TestFullRoundTripBothEntryPoints:
         assert rebuilt_formulas["formula_total_revenue"] == original_formulas["formula_total_revenue"]
 
     def test_the_column_aggregation_metric_becomes_a_formula_a_declared_non_lossy_difference(self):
-        # R4: a metric is always emitted as a formula, never column_id +
+        # A metric is always emitted as a formula, never column_id +
         # aggregation, on the way back -- Ossie's Metric schema has no
         # column_id field at all. This is the one deliberate structural
         # difference the round trip produces; asserted explicitly here so
