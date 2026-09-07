@@ -28,11 +28,12 @@ followed by digits, with an optional hyphen between the two, the shape a rule id
 or a backlog-style item number is written in — are handled fail-closed: every
 token of that shape actually present in a shipped file is collected, a curated
 ALLOWED_TOKENS set of genuinely unrelated technical tokens (data types, encodings,
-lint codes, ...) is subtracted, and a second, explicitly provisional set of known
-mapping-document rule identifiers is subtracted, and *anything left over fails
-the suite*. A blocklist can only catch an id someone already thought to list;
-this can't be evaded that way, because the burden is on a new token to justify
-itself, not on this file to have predicted it.
+lint codes, ...) is subtracted, and a second set — MAPPING_DOC_RULE_IDS, held
+permanently empty now that every mapping-document rule-id family it once
+allowed has had its citation rewritten in place — is subtracted too, and
+*anything left over fails the suite*. A blocklist can only catch an id someone
+already thought to list; this can't be evaded that way, because the burden is
+on a new token to justify itself, not on this file to have predicted it.
 
 **Ordinary-English process language** — internal task-tracking, multi-option
 planning, and change-review vocabulary that reads as a normal sentence and so
@@ -86,7 +87,8 @@ def _shipped_files() -> list[Path]:
 # Half 1 — identifier-shaped tokens. Fail-closed: ALLOWED_TOKENS below is the
 # complete list of tokens of this shape that are *not* a citation to unshipped
 # material. Anything of this shape found in a shipped file and not in one of
-# the two sets below (this one, or the provisional one further down) fails.
+# the two sets below (this one, or MAPPING_DOC_RULE_IDS further down, held
+# empty) fails.
 # ---------------------------------------------------------------------------
 
 #: An uppercase letter run (1-6 chars) followed by 1-4 digits, with an optional
@@ -99,8 +101,8 @@ TOKEN_SHAPE_RE = re.compile(r"\b[A-Z]{1,6}-?[0-9]{1,4}\b")
 
 #: Tokens of the id shape above that are genuinely unrelated technical terms —
 #: not a citation to anything, mapping-document or otherwise. Each entry is
-#: justified individually; an entry that is actually a rule id belongs in the
-#: provisional set below instead, not here.
+#: justified individually; an entry that is actually a citation to unshipped
+#: material does not belong here at all — see MAPPING_DOC_RULE_IDS below.
 ALLOWED_TOKENS: frozenset[str] = frozenset(
     {
         # ANSI/SQL function and format names emitted into translated expressions —
@@ -119,7 +121,7 @@ ALLOWED_TOKENS: frozenset[str] = frozenset(
         "TS001",  # an arbitrary example issue code used as test fixture data
         # Loss-category codes this repository defines and explains itself, in
         # README's own coverage matrix — resolvable from inside this repository
-        # alone, unlike every entry in the provisional set below.
+        # alone, unlike a citation to unshipped mapping-document material.
         "L1",
         "L2",
         "L3",
@@ -130,38 +132,33 @@ ALLOWED_TOKENS: frozenset[str] = frozenset(
 )
 
 # ---------------------------------------------------------------------------
-# PROVISIONAL — pending a decision that is not this test's to make.
+# RESOLVED — kept empty, not deleted.
 #
-# The decision on the A/E/G/ID/KD/NM/R/X families has been made: the internal
-# mapping/invariant reference they cited is not shipping, so every citation to
-# one of those families has been rewritten in place to state its substance
-# directly (see README.md's "Rules" section for the full account), and those
-# seven families have been removed from this block — a citation to any of them
-# now fails the suite like any other unresolvable reference.
+# The decision on every mapping-document rule-id family cited from this
+# package (A/E/G/ID/KD/NM/R/X, and finally I) has now been made the same way:
+# the internal mapping/invariant reference each one cited is not shipping, so
+# every citation has been rewritten in place to state its substance directly
+# (see README.md's "Rules" section for the full account). None remain
+# allowed, so this set is empty — a citation of this shape now fails the
+# suite like any other unresolvable reference.
 #
-# The "I" family remains provisional: these are rule identifiers from
-# ThoughtSpot's conversion-invariant catalogue, maintained in the same internal
-# repository, and resolving them is outside the scope of the change that
-# closed the other seven. Until that decision lands, citing them is allowed.
-# This block is the single place to edit when it does: delete the whole block
-# once the source material ships alongside this converter, or move individual
-# entries up into ALLOWED_TOKENS with their own justification if only some
-# turn out to stay.
+# This name stays defined, rather than being deleted along with the families
+# it used to hold, only because test_allowed_token_sets_do_not_overlap and
+# the union in test_no_unresolvable_identifier_shaped_tokens still refer to
+# it by name; removing it would mean rewriting those tests' structure, not
+# just their comments. It is not a container to drop a new id into: a future
+# citation of this shape gets the same treatment every prior one did (state
+# the substance in place), and only a fresh, reasoned decision — recorded
+# here the way this comment records the last one — may repopulate it.
 # ---------------------------------------------------------------------------
-_MAPPING_DOC_RULE_ID_FAMILIES: dict[str, tuple[int, ...]] = {
-    "I": (1, 4, 5, 7),
-}
-MAPPING_DOC_RULE_IDS: frozenset[str] = frozenset(
-    f"{prefix}{number}"
-    for prefix, numbers in _MAPPING_DOC_RULE_ID_FAMILIES.items()
-    for number in numbers
-)
+MAPPING_DOC_RULE_IDS: frozenset[str] = frozenset()
 
 
 def test_allowed_token_sets_do_not_overlap() -> None:
-    # A token provisionally-allowed as an external rule id must not also be
-    # claimed as an unrelated legitimate token — that would hide which bucket
-    # it is really in, and defeat the point of separating the two.
+    # MAPPING_DOC_RULE_IDS is empty today (see its comment above), but a
+    # token claimed there in the future must not also be claimed as an
+    # unrelated legitimate token in ALLOWED_TOKENS — that would hide which
+    # bucket it is really in, and defeat the point of separating the two.
     overlap = ALLOWED_TOKENS & MAPPING_DOC_RULE_IDS
     assert overlap == set(), f"tokens claimed in both allowlists: {sorted(overlap)}"
 
@@ -187,8 +184,8 @@ def test_no_unresolvable_identifier_shaped_tokens() -> None:
         "what they name. Either it is a genuinely unrelated technical token — add "
         "it to ALLOWED_TOKENS with a one-line justification — or it is a new "
         "citation to unshipped material, which needs a human decision (reword to "
-        "state the substance, or add to the provisional mapping-doc set with "
-        "reason):\n" + "\n".join(offenders)
+        "state the substance, or add to MAPPING_DOC_RULE_IDS with reason):\n"
+        + "\n".join(offenders)
     )
 
 
