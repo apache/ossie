@@ -258,6 +258,37 @@ which rule a piece of code implements, resolvable once that decision is made.
 window and LOD constructs have exact native equivalents; declaring one untranslatable
 without checking is an error (invariant I7).
 
+## Generated reference documentation
+
+`docs/` holds four Markdown reference documents, generated from this converter's own
+code rather than hand-authored — the code is the single source of truth for the
+mapping each one describes, so a document maintained separately would only be able to
+drift from it:
+
+- [`docs/expression-mapping.md`](docs/expression-mapping.md) — every Ossie
+  specification construct, its classification and its ThoughtSpot rendering, generated
+  from `expressions/catalog.py`'s `CATALOG`.
+- [`docs/reverse-inventory.md`](docs/reverse-inventory.md) — every ThoughtSpot-only
+  function with no specification counterpart, and how it composes (or does not) back
+  into a portable Ossie expression, generated from `expressions/reverse.py`'s `REVERSE`.
+- [`docs/datatype-map.md`](docs/datatype-map.md) — the bidirectional datatype map and
+  which types are declared lossy, generated from `datatypes.py`.
+- [`docs/vendor-payload.md`](docs/vendor-payload.md) — every
+  `custom_extensions[THOUGHTSPOT]` key, its scope and how it is treated on the return
+  trip, generated from `constants.py`'s `STASH_KEY_CLASSIFICATION`.
+
+`tools/generate_reference_docs.py` produces all four; it is dev/tooling only — not a
+runtime dependency, not part of the wheel, not a `[project.scripts]` entry point.
+Regenerate with:
+
+```bash
+uv run --python 3.13 python tools/generate_reference_docs.py
+```
+
+`tests/test_reference_docs_current.py` regenerates on every test run and compares the
+result against the committed files byte-for-byte, so a `docs/*.md` file that has
+drifted from the code it describes fails the suite rather than going unnoticed.
+
 ## Development
 
 ```bash

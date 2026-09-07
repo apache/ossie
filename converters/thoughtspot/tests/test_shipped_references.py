@@ -62,6 +62,8 @@ def _shipped_files() -> list[Path]:
     patterns = (
         "src/**/*.py",
         "tests/**/*.py",
+        "tools/**/*.py",
+        "docs/**/*.md",
         "README.md",
         "pyproject.toml",
         # Only matches if this package ever grows its own workflow file directly
