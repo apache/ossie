@@ -49,6 +49,8 @@ from ossie_thoughtspot.constants import (
     MODEL_STASH_UNATTRIBUTED_FORMULAS,
     MODEL_STASH_UNREPRESENTABLE_JOINS,
     RELATIONSHIP_STASH_CARDINALITY,
+    RELATIONSHIP_STASH_ENDPOINTS_SWAPPED,
+    RELATIONSHIP_STASH_ENDPOINTS_SWAPPED_WITNESS,
     RELATIONSHIP_STASH_JOIN_SHAPE,
     RELATIONSHIP_STASH_ON_EXPRESSION,
     RELATIONSHIP_STASH_REFERENCING_JOIN,
@@ -329,6 +331,162 @@ class TestKeyDerivation:
         rel = semantic_model["relationships"][0]
         assert rel["from_columns"] == ["Region", "Customer Id"]
         assert rel["to_columns"] == ["Region", "Id"]
+
+
+class TestOneToManyEndpointSwap:
+    """core-spec/spec.yaml requires a Relationship's `from` to name the many
+    side and `to` the one side, but TML's own `from`/`to` -- the
+    model_tables[] entry a join is declared under, and its `with` target --
+    do not encode which side is which; `cardinality` does. A `ONE_TO_MANY`
+    join is the one case where TML's `from` names the one side and `to`
+    names the many side: the wrong way around for Ossie's spec, so its
+    emitted endpoints are swapped to compensate. `MANY_TO_ONE`/`ONE_TO_ONE`
+    are already oriented correctly and must be left alone.
+    """
+
+    def test_one_to_many_swaps_the_relationships_endpoints(self):
+        # A customer has many orders: TML declares this from the "one" side
+        # (CUSTOMERS), naming ORDERS as `with` and ONE_TO_MANY as the
+        # cardinality -- so from=CUSTOMERS is the one side and to=ORDERS is
+        # the many side, backwards for Ossie's spec.
+        customers = _table("CUSTOMERS", columns=[_column("Id", "ID", "INT64")])
+        orders = _table("ORDERS", columns=[_column("Customer Id", "CUSTOMER_ID", "INT64")])
+        model = _model(
+            model_tables=[
+                {"name": "CUSTOMERS", "joins": [{
+                    "with": "ORDERS",
+                    "on": "[CUSTOMERS::Id] = [ORDERS::Customer Id]",
+                    "type": "INNER",
+                    "cardinality": "ONE_TO_MANY",
+                }]},
+                {"name": "ORDERS"},
+            ],
+        )
+
+        result = convert(_document_set(model, customers, orders))
+        semantic_model = result.model["semantic_model"][0]
+
+        rel = semantic_model["relationships"][0]
+        # Swapped: the many side (ORDERS) is `from`, the one side
+        # (CUSTOMERS) is `to` -- the reverse of how the join is declared.
+        assert rel["from"] == "ORDERS"
+        assert rel["to"] == "CUSTOMERS"
+        assert rel["from_columns"] == ["Customer Id"]
+        assert rel["to_columns"] == ["Id"]
+        # The inline join's synthesized name reflects the emitted (swapped)
+        # from/to, not the TML declaration order.
+        assert rel["name"] == "ORDERS_to_CUSTOMERS"
+
+        rel_stash = _own_stash(rel)
+        assert rel_stash[RELATIONSHIP_STASH_CARDINALITY] == "ONE_TO_MANY"
+        assert rel_stash[RELATIONSHIP_STASH_ENDPOINTS_SWAPPED] is True
+        assert rel_stash[RELATIONSHIP_STASH_ENDPOINTS_SWAPPED_WITNESS] == [
+            "ORDERS", "CUSTOMERS", ["Customer Id"], ["Id"],
+        ]
+
+        # Key derivation follows the swap: the key belongs to the one side
+        # (CUSTOMERS), which is now `to`.
+        customers_ds = next(d for d in semantic_model["datasets"] if d["name"] == "CUSTOMERS")
+        assert customers_ds["primary_key"] == ["Id"]
+        assert customers_ds["unique_keys"] == [["Id"]]
+        orders_ds = next(d for d in semantic_model["datasets"] if d["name"] == "ORDERS")
+        assert "primary_key" not in orders_ds
+
+    def test_many_to_one_is_not_swapped(self):
+        customers = _table("CUSTOMERS", columns=[_column("Id", "ID", "INT64")])
+        orders = _table("ORDERS", columns=[_column("Customer Id", "CUSTOMER_ID", "INT64")])
+        model = _model(
+            model_tables=[
+                {"name": "ORDERS", "joins": [{
+                    "with": "CUSTOMERS",
+                    "on": "[ORDERS::Customer Id] = [CUSTOMERS::Id]",
+                    "type": "INNER",
+                    "cardinality": "MANY_TO_ONE",
+                }]},
+                {"name": "CUSTOMERS"},
+            ],
+        )
+
+        result = convert(_document_set(model, orders, customers))
+        rel = result.model["semantic_model"][0]["relationships"][0]
+
+        assert rel["from"] == "ORDERS"
+        assert rel["to"] == "CUSTOMERS"
+        assert rel["from_columns"] == ["Customer Id"]
+        assert rel["to_columns"] == ["Id"]
+        assert rel["name"] == "ORDERS_to_CUSTOMERS"
+
+        rel_stash = _own_stash(rel)
+        assert rel_stash[RELATIONSHIP_STASH_CARDINALITY] == "MANY_TO_ONE"
+        assert RELATIONSHIP_STASH_ENDPOINTS_SWAPPED not in rel_stash
+        assert RELATIONSHIP_STASH_ENDPOINTS_SWAPPED_WITNESS not in rel_stash
+
+    def test_one_to_one_is_not_swapped(self):
+        people = _table("PEOPLE", columns=[_column("Id", "ID", "INT64")])
+        profiles = _table("PROFILES", columns=[_column("Person Id", "PERSON_ID", "INT64")])
+        model = _model(
+            model_tables=[
+                {"name": "PROFILES", "joins": [{
+                    "with": "PEOPLE",
+                    "on": "[PROFILES::Person Id] = [PEOPLE::Id]",
+                    "type": "INNER",
+                    "cardinality": "ONE_TO_ONE",
+                }]},
+                {"name": "PEOPLE"},
+            ],
+        )
+
+        result = convert(_document_set(model, profiles, people))
+        rel = result.model["semantic_model"][0]["relationships"][0]
+
+        assert rel["from"] == "PROFILES"
+        assert rel["to"] == "PEOPLE"
+        assert rel["from_columns"] == ["Person Id"]
+        assert rel["to_columns"] == ["Id"]
+
+        rel_stash = _own_stash(rel)
+        assert rel_stash[RELATIONSHIP_STASH_CARDINALITY] == "ONE_TO_ONE"
+        assert RELATIONSHIP_STASH_ENDPOINTS_SWAPPED not in rel_stash
+
+    def test_a_referencing_shaped_one_to_many_join_keeps_its_own_name(self):
+        # The hybrid shape (referencing_join plus an inline cardinality
+        # override): the name comes from the Table's own joins_with[] entry,
+        # not from/to dataset names, and is untouched by the endpoint swap.
+        customers = _table(
+            "CUSTOMERS",
+            columns=[_column("Id", "ID", "INT64")],
+            joins_with=[{
+                "name": "customers_to_orders",
+                "destination": {"name": "ORDERS"},
+                "on": "[CUSTOMERS::Id] = [ORDERS::Customer Id]",
+                "type": "INNER",
+                "cardinality": "MANY_TO_ONE",
+            }],
+        )
+        orders = _table("ORDERS", columns=[_column("Customer Id", "CUSTOMER_ID", "INT64")])
+        model = _model(
+            model_tables=[
+                {"name": "CUSTOMERS", "joins": [{
+                    "referencing_join": "customers_to_orders", "cardinality": "ONE_TO_MANY",
+                }]},
+                {"name": "ORDERS"},
+            ],
+        )
+
+        result = convert(_document_set(model, customers, orders))
+        rel = result.model["semantic_model"][0]["relationships"][0]
+
+        assert rel["name"] == "customers_to_orders"
+        assert rel["from"] == "ORDERS"
+        assert rel["to"] == "CUSTOMERS"
+        assert rel["from_columns"] == ["Customer Id"]
+        assert rel["to_columns"] == ["Id"]
+
+        rel_stash = _own_stash(rel)
+        assert rel_stash[RELATIONSHIP_STASH_CARDINALITY] == "ONE_TO_MANY"
+        assert rel_stash[RELATIONSHIP_STASH_ENDPOINTS_SWAPPED] is True
+        assert rel_stash[RELATIONSHIP_STASH_JOIN_SHAPE] == "referencing_with_inline_attrs"
+        assert rel_stash[RELATIONSHIP_STASH_REFERENCING_JOIN] == "customers_to_orders"
 
 
 class TestUnattributedFormulas:

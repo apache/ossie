@@ -115,6 +115,8 @@ from .constants import (
     MODEL_STASH_UNREPRESENTABLE_JOINS,
     PORTABLE_DIALECT,
     RELATIONSHIP_STASH_CARDINALITY,
+    RELATIONSHIP_STASH_ENDPOINTS_SWAPPED,
+    RELATIONSHIP_STASH_ENDPOINTS_SWAPPED_WITNESS,
     RELATIONSHIP_STASH_JOIN_SHAPE,
     RELATIONSHIP_STASH_ON_EXPRESSION,
     RELATIONSHIP_STASH_ON_EXPRESSION_WITNESS,
@@ -1440,6 +1442,12 @@ def _relationship_from_join(
     -- emits nothing, because Ossie's schema requires `from_columns`/
     `to_columns` non-empty, and the condition goes to the model-scope
     `unrepresentable_joins` stash instead.
+
+    A `ONE_TO_MANY` join additionally has its endpoints swapped once a
+    `Relationship` is built -- see the comment at the swap site for why. An
+    `unrepresentable_entry` is never swapped: it carries no live Ossie
+    Relationship object of its own for the spec's from/to convention to
+    apply to, so `from`/`to` there stay exactly TML's own, unswapped.
     """
     object_ref = f"relationship:{name}"
     if not on_expression or not on_expression.strip():
@@ -1498,6 +1506,32 @@ def _relationship_from_join(
         "from_columns": [pair[0] for pair in equality_pairs],
         "to_columns": [pair[1] for pair in equality_pairs],
     }
+
+    # core-spec/spec.yaml requires a Relationship's `from` to name the many
+    # side and `to` the one side. TML's own `from`/`to` -- the model_tables[]
+    # entry a join is declared under, and its `with`/`destination` target --
+    # do not themselves encode which side is which; `cardinality` does, and
+    # ONE_TO_MANY is the one value where TML's `from` names the one side and
+    # `to` names the many side: the wrong way around for Ossie's spec. So a
+    # ONE_TO_MANY join's endpoints are swapped here to compensate; MANY_TO_ONE
+    # and ONE_TO_ONE are already oriented correctly and are left alone.
+    endpoints_swapped = cardinality == "ONE_TO_MANY"
+    if endpoints_swapped:
+        relationship["from"], relationship["to"] = relationship["to"], relationship["from"]
+        relationship["from_columns"], relationship["to_columns"] = (
+            relationship["to_columns"], relationship["from_columns"]
+        )
+        if join_shape == "inline":
+            # An inline join's name is synthesized (TML's inline syntax has
+            # no name field), so it is re-derived from the swapped from/to --
+            # reading the same self-describing "{many}_to_{one}" way every
+            # other relationship's derived name already does. A `referencing`
+            # (or hybrid) shape's name is the Table joins_with[] entry's own
+            # identifier, unrelated to from/to naming, and is left as-is.
+            relationship["name"] = f"{relationship['from']}_to_{relationship['to']}"
+        name = relationship["name"]
+        object_ref = f"relationship:{name}"
+
     rel_stash: dict = {RELATIONSHIP_STASH_JOIN_SHAPE: join_shape}
     if join_type:
         rel_stash[RELATIONSHIP_STASH_TYPE] = join_type
@@ -1505,6 +1539,16 @@ def _relationship_from_join(
         rel_stash[RELATIONSHIP_STASH_CARDINALITY] = cardinality
     if referencing_join:
         rel_stash[RELATIONSHIP_STASH_REFERENCING_JOIN] = referencing_join
+    if endpoints_swapped:
+        rel_stash[RELATIONSHIP_STASH_ENDPOINTS_SWAPPED] = True
+        # The witness: from/to/from_columns/to_columns exactly as emitted
+        # above (i.e. already swapped), so the reverse direction can tell
+        # whether the relationship has been retargeted since this stash was
+        # written before undoing the swap to recover TML's original from/to.
+        rel_stash[RELATIONSHIP_STASH_ENDPOINTS_SWAPPED_WITNESS] = [
+            relationship["from"], relationship["to"],
+            relationship["from_columns"], relationship["to_columns"],
+        ]
     has_residuals = bool(residuals)
     if has_residuals:
         # The residual predicates themselves are not stashed separately: they
@@ -1558,16 +1602,23 @@ def _convert_join(
     everything else in the model valid and usable, which is the more useful
     failure of the two.
 
-    The cardinality-orientation rule is applied here, not in
-    `_relationship_from_join`: the *emitted* relationship's `from`/`to` always
-    mirrors TML's FK-structural fact unconditionally (the Relationship-level
-    mapping's `from` row), but a `ONE_TO_MANY` join is evidence that the FROM
-    side -- not the TO side -- is the one covered by a key, so the key
-    candidate handed to `keys.derive_keys` targets `from_prefix` with the
-    relationship's own `from_columns`, relabelled `MANY_TO_ONE` from that
-    flipped perspective (`keys._qualifies` only recognises that spelling).
-    `MANY_TO_MANY` needs no such handling -- it is excluded by
-    `keys._qualifies` on either side, which is already correct.
+    The cardinality-orientation rule itself is applied inside
+    `_relationship_from_join`, not here: a `ONE_TO_MANY` join's endpoints are
+    swapped there so the *emitted* relationship's `from`/`to` always lands on
+    the many-side/one-side arrangement core-spec/spec.yaml requires,
+    regardless of which side TML happened to declare the join from. Because
+    that swap already happened by the time `relationship` comes back here,
+    the key candidate handed to `keys.derive_keys` is read directly off the
+    (possibly-swapped) `relationship["to"]`/`relationship["to_columns"]` --
+    for a swapped `ONE_TO_MANY` join this is TML's original FROM side (now
+    the relationship's `to`), which is exactly the side a key belongs to;
+    for every other cardinality it is unchanged from before, since nothing
+    swapped. Only the cardinality label itself still needs translating:
+    `keys._qualifies` recognises `MANY_TO_ONE`/`ONE_TO_ONE`, never the TML
+    spelling `ONE_TO_MANY` a swapped relationship is still stashed under, so
+    `ONE_TO_MANY` is relabelled `MANY_TO_ONE` for the candidate. `MANY_TO_MANY`
+    needs no such handling -- it is excluded by `keys._qualifies` on either
+    side, which is already correct.
     """
     referencing_join = join.get("referencing_join")
     if referencing_join:
@@ -1640,22 +1691,14 @@ def _convert_join(
 
     candidate = None
     if relationship is not None:
-        if cardinality == "ONE_TO_MANY":
-            candidate = keys.Relationship(
-                name=name,
-                to_dataset=from_prefix,
-                to_columns=relationship["from_columns"],
-                cardinality="MANY_TO_ONE",
-                has_residual_predicates=has_residuals,
-            )
-        else:
-            candidate = keys.Relationship(
-                name=name,
-                to_dataset=to_prefix,
-                to_columns=relationship["to_columns"],
-                cardinality=cardinality or "",
-                has_residual_predicates=has_residuals,
-            )
+        candidate_cardinality = "MANY_TO_ONE" if cardinality == "ONE_TO_MANY" else (cardinality or "")
+        candidate = keys.Relationship(
+            name=relationship["name"],
+            to_dataset=relationship["to"],
+            to_columns=relationship["to_columns"],
+            cardinality=candidate_cardinality,
+            has_residual_predicates=has_residuals,
+        )
     return relationship, unrepresentable, candidate
 
 

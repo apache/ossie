@@ -226,8 +226,38 @@ DATASET_STASH_TABLE_PROPERTIES = "table_properties"
 RELATIONSHIP_STASH_TYPE = "type"
 
 #: ThoughtSpot's join cardinality (`MANY_TO_ONE`, `ONE_TO_ONE`, `ONE_TO_MANY`,
-#: `MANY_TO_MANY`).
+#: `MANY_TO_MANY`). Always the exact TML value, verbatim, regardless of
+#: whether `RELATIONSHIP_STASH_ENDPOINTS_SWAPPED` (below) also fired for this
+#: relationship -- the two facts are independent: this one is never stale
+#: (TML's cardinality has no Ossie-side counterpart to disagree with), while
+#: whether the endpoint swap it triggered is still trustworthy is a separate,
+#: witnessed question.
 RELATIONSHIP_STASH_CARDINALITY = "cardinality"
+
+#: Whether this relationship's `from`/`to`/`from_columns`/`to_columns` were
+#: swapped relative to TML's own declared join direction. core-spec/spec.yaml
+#: requires a Relationship's `from` to name the many side and `to` the one
+#: side, but TML's `from`/`to` (the model_tables[] entry a join is declared
+#: under, and its `with`/`destination` target) do not themselves encode which
+#: side is which -- `cardinality` does. Only a `ONE_TO_MANY` join has TML's
+#: `from` naming the one side and `to` naming the many side -- the wrong way
+#: around for Ossie's spec -- so only that cardinality ever sets this `True`
+#: and swaps the emitted relationship's endpoints to compensate. `MANY_TO_ONE`
+#: and `ONE_TO_ONE` are already oriented correctly and never set it.
+RELATIONSHIP_STASH_ENDPOINTS_SWAPPED = "endpoints_swapped"
+
+#: The witness copy for RELATIONSHIP_STASH_ENDPOINTS_SWAPPED: `[from, to,
+#: from_columns, to_columns]` exactly as emitted -- i.e. already swapped --
+#: at the moment the marker was stashed. `Ossie -> TML` compares this against
+#: the relationship's CURRENT `from`/`to`/`from_columns`/`to_columns`:
+#: agreement means nobody retargeted the relationship since, so it is safe to
+#: undo the swap and recover the TML join's original `from`/`to`/columns
+#: (and, with them, which dataset's `model_tables[]` entry the join is
+#: nested under); disagreement means the relationship was edited since the
+#: stash was written, so the swap is not undone -- the live shape is trusted
+#: instead, exactly as a hand-authored relationship with no stash at all
+#: would be -- and an issue records it.
+RELATIONSHIP_STASH_ENDPOINTS_SWAPPED_WITNESS = "endpoints_swapped_witness"
 
 #: Which TML join shape produced this relationship -- `"referencing"` (a
 #: named Table `joins_with[]` entry the Model points at), `"inline"` (defined
@@ -400,6 +430,10 @@ STASH_KEY_CLASSIFICATION: dict[str, "StashKeyClass"] = {
     RELATIONSHIP_STASH_ON_EXPRESSION: StashKeyClass.SHADOWS_DERIVABLE,
     RELATIONSHIP_STASH_TYPE: StashKeyClass.INFORMATION_ONLY,
     RELATIONSHIP_STASH_CARDINALITY: StashKeyClass.INFORMATION_ONLY,
+    # Witnessed against [from, to, from_columns, to_columns]: a ONE_TO_MANY
+    # join's endpoint swap is only undone while nothing has retargeted the
+    # relationship since it was stashed.
+    RELATIONSHIP_STASH_ENDPOINTS_SWAPPED: StashKeyClass.SHADOWS_DERIVABLE,
     # Self-verifying (STASH_TML_NAME's own pattern, nothing extra stored):
     # written equal to the relationship's own `name` at stash time, so
     # agreement on read means nobody renamed the relationship since and the

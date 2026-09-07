@@ -411,6 +411,50 @@ def test_a_model_surfaced_fields_description_is_never_duplicated_onto_its_physic
     assert new_model_columns["on"]["description"] == "Whether the store is currently active and open for business."
 
 
+def test_tpcds_one_to_many_join_round_trips_with_swapped_endpoints():
+    """`store`'s join to `store_returns_sv` (tests/fixtures/tpcds/
+    tpcds_retail_model.model.tml) is the fixture's only ONE_TO_MANY join --
+    the one case where TML's own declared from/to is backwards relative to
+    core-spec/spec.yaml's many-side/one-side convention, so `TML -> Ossie`
+    swaps the emitted relationship's endpoints. Undoing that swap on the
+    `Ossie -> TML` leg must reproduce the original join exactly: nested
+    under the same dataset (`store`, the "one" side, not `store_returns_sv`,
+    the "many" side the swap moves the relationship's own `from` to),
+    same `with` target, same condition, same cardinality -- with no
+    endpoint-swap staleness issue logged.
+    """
+    document_set, ossie_result, tml_result = _tml_roundtrip("tpcds")
+
+    # The intermediate Ossie relationship: endpoints swapped relative to
+    # TML's declaration (`from` is the many side, `to` is the one side).
+    semantic_model = ossie_result.model["semantic_model"][0]
+    relationship = next(
+        r for r in semantic_model["relationships"] if r["name"] == "store_returns_sv_to_store"
+    )
+    assert relationship["from"] == "store_returns_sv"
+    assert relationship["to"] == "store"
+    assert relationship["from_columns"] == ["sr_store_sk"]
+    assert relationship["to_columns"] == ["s_store_sk"]
+
+    # The round-tripped TML: the join is nested back under `store`'s own
+    # model_tables entry, targeting `store_returns_sv`, exactly as declared.
+    original_store_entry = next(
+        t for t in document_set.model.body["model_tables"] if t["name"] == "store"
+    )
+    new_store_entry = next(
+        t for t in tml_result.documents.model.body["model_tables"] if t["name"] == "store"
+    )
+    assert new_store_entry["joins"] == original_store_entry["joins"]
+    assert new_store_entry["joins"] == [{
+        "with": "store_returns_sv",
+        "on": "[store::s_store_sk] = [store_returns_sv::sr_store_sk]",
+        "type": "INNER",
+        "cardinality": "ONE_TO_MANY",
+    }]
+
+    assert not _issue_refs(tml_result.issues, "TS-JOIN-ENDPOINTS-SWAP-STALE")
+
+
 # ---------------------------------------------------------------------------
 # TML -> Ossie -> TML: translation. Asserted directly on the intermediate
 # Ossie document's ANSI_SQL siblings -- the half a preservation test, by

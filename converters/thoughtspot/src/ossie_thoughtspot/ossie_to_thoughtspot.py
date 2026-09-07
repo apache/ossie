@@ -105,6 +105,8 @@ from .constants import (
     MODEL_STASH_UNREPRESENTABLE_JOINS,
     PORTABLE_DIALECT,
     RELATIONSHIP_STASH_CARDINALITY,
+    RELATIONSHIP_STASH_ENDPOINTS_SWAPPED,
+    RELATIONSHIP_STASH_ENDPOINTS_SWAPPED_WITNESS,
     RELATIONSHIP_STASH_JOIN_SHAPE,
     RELATIONSHIP_STASH_ON_EXPRESSION,
     RELATIONSHIP_STASH_ON_EXPRESSION_WITNESS,
@@ -1619,16 +1621,68 @@ def _join_entry_for_relationship(rel: dict, log: IssueLog) -> tuple[str, dict, d
     it, and the condition is re-derived from the current from_columns/
     to_columns alone, exactly as a hand-authored relationship with no stash
     at all would be.
+
+    The same witness pattern governs whether this relationship's endpoints
+    get un-swapped before any of the above runs. `TML -> Ossie` swaps a
+    `ONE_TO_MANY` join's `from`/`to`/`from_columns`/`to_columns` so the
+    emitted relationship satisfies core-spec/spec.yaml's many-side/one-side
+    convention (see `tml_to_ossie._relationship_from_join`) -- which means
+    recovering TML's own declared join direction here means undoing that
+    swap first, before `from_prefix`/`to_prefix`/`from_columns`/`to_columns`
+    are used for anything else in this function (the condition fallback, the
+    `with`/`destination` target, and the `from_prefix` the caller nests the
+    join under). The swap is undone only while
+    `RELATIONSHIP_STASH_ENDPOINTS_SWAPPED_WITNESS` still matches the
+    relationship's live from/to/from_columns/to_columns -- agreement means
+    nobody retargeted the relationship since the stash was written;
+    disagreement means it was, so the swap is left alone (the live shape is
+    trusted as-is, exactly as a hand-authored relationship with no stash at
+    all would be) and an issue records it.
     """
     payload = stash.read_stash(rel)
-    from_prefix = rel.get("from") or ""
-    to_prefix = rel.get("to") or ""
-    from_columns = rel.get("from_columns") or []
-    to_columns = rel.get("to_columns") or []
+    live_from = rel.get("from") or ""
+    live_to = rel.get("to") or ""
+    live_from_columns = rel.get("from_columns") or []
+    live_to_columns = rel.get("to_columns") or []
+
+    had_stashed_swap = RELATIONSHIP_STASH_ENDPOINTS_SWAPPED in payload
+    endpoints_swapped = stash.restore(
+        payload, RELATIONSHIP_STASH_ENDPOINTS_SWAPPED, False,
+        witness=[live_from, live_to, live_from_columns, live_to_columns],
+        witness_key=RELATIONSHIP_STASH_ENDPOINTS_SWAPPED_WITNESS,
+    )
+    if had_stashed_swap and not endpoints_swapped:
+        log.add(
+            code="TS-JOIN-ENDPOINTS-SWAP-STALE",
+            severity=Severity.WARNING,
+            message=(
+                f"relationship {rel.get('name')!r} has a stashed endpoint swap, "
+                f"but its from/to/from_columns/to_columns no longer match what "
+                f"that swap was recorded against -- the relationship was "
+                f"retargeted since the stash was written, so the swap is not "
+                f"undone; the join is emitted from this relationship's current "
+                f"from/to exactly as a hand-authored relationship with no stash "
+                f"at all would be"
+            ),
+            object_ref=f"relationship:{rel.get('name')}",
+        )
+
+    if endpoints_swapped:
+        from_prefix, to_prefix = live_to, live_from
+        from_columns, to_columns = live_to_columns, live_from_columns
+    else:
+        from_prefix, to_prefix = live_from, live_to
+        from_columns, to_columns = live_from_columns, live_to_columns
+
     had_stashed_on_expression = RELATIONSHIP_STASH_ON_EXPRESSION in payload
     on_expression = stash.restore(
         payload, RELATIONSHIP_STASH_ON_EXPRESSION, None,
-        witness=[from_columns, to_columns], witness_key=RELATIONSHIP_STASH_ON_EXPRESSION_WITNESS,
+        # Compared against the relationship's live from_columns/to_columns,
+        # never the un-swapped ones above: the stashed witness was written
+        # (tml_to_ossie.py) from the emitted -- i.e. already-swapped --
+        # from_columns/to_columns, which is exactly what "live" means here.
+        witness=[live_from_columns, live_to_columns],
+        witness_key=RELATIONSHIP_STASH_ON_EXPRESSION_WITNESS,
     )
     if not on_expression:
         if had_stashed_on_expression:
