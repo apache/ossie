@@ -345,6 +345,14 @@ class MSIToOssieConverter:
         twice. The replacement is a callback rather than a string so that backslashes
         in the resolved SQL (e.g. from a `LIKE 'a\\b'` filter) are inserted verbatim
         instead of being interpreted as `re.sub` template escapes.
+
+        Listing the same input metric twice under one reference is rejected when the
+        two occurrences resolve differently (e.g. distinct per-input filters and no
+        aliases): the expression has a single token for them, so either resolution
+        would be an arbitrary choice. MetricFlow does not reject this shape upstream —
+        `DerivedMetricRule._validate_alias_collision` only compares entries that set an
+        alias. Occurrences that resolve identically are redundant rather than ambiguous
+        and are accepted.
         """
         expr = metric.type_params.expr or ""
         replacements: Dict[str, str] = {}
@@ -355,6 +363,13 @@ class MSIToOssieConverter:
             resolved = self._resolve_metric_expression(dep_metric, metric_index, cache, input_filter)
             if dep_metric.type in (MetricType.DERIVED, MetricType.RATIO):
                 resolved = f"({resolved})"
+            previous = replacements.get(ref)
+            if previous is not None and previous != resolved:
+                raise ValueError(
+                    "DERIVED metric references an input metric that is listed more than once with "
+                    "differing resolutions, making the reference ambiguous; give each occurrence a "
+                    f"distinct alias: metric_name={metric.name!r}, reference={ref!r}"
+                )
             replacements[ref] = resolved
 
         if not replacements:

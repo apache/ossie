@@ -718,6 +718,65 @@ class TestMetricConversion:
             r"SUM(CASE WHEN order__path LIKE 'a\b' THEN orders.amount END) * 2"
         )
 
+    def test_derived_metric_rejects_a_reference_listed_twice_with_differing_filters(self) -> None:
+        """An input metric listed twice under one reference, resolving differently, is ambiguous.
+
+        MetricFlow accepts this shape — `DerivedMetricRule._validate_alias_collision`
+        only compares entries that set an alias — so the converter has to reject it
+        rather than silently pick one of the two filters.
+        """
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            measures=[_measure("revenue", agg=AggregationType.SUM, expr="amount")],
+        )
+        revenue_m = _simple_metric("revenue", "revenue")
+        both = PydanticMetric(
+            name="both",
+            description=None,
+            type=MetricType.DERIVED,
+            type_params=PydanticMetricTypeParams(
+                expr="revenue",
+                metrics=[
+                    PydanticMetricInput(name="revenue", filter=_filter("{{ Dimension('order__region') }} = 'EU'")),
+                    PydanticMetricInput(name="revenue", filter=_filter("{{ Dimension('order__region') }} = 'US'")),
+                ],
+            ),
+            filter=None,
+            metadata=default_meta(),
+            config=None,
+        )
+        with pytest.raises(ValueError, match="listed more than once"):
+            MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[revenue_m, both]))
+
+    def test_derived_metric_accepts_a_reference_listed_twice_resolving_identically(self) -> None:
+        """A redundant duplicate is not ambiguous: both occurrences resolve to the same SQL."""
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            measures=[_measure("revenue", agg=AggregationType.SUM, expr="amount")],
+        )
+        revenue_m = _simple_metric("revenue", "revenue")
+        doubled = PydanticMetric(
+            name="doubled",
+            description=None,
+            type=MetricType.DERIVED,
+            type_params=PydanticMetricTypeParams(
+                expr="revenue + revenue",
+                metrics=[
+                    PydanticMetricInput(name="revenue"),
+                    PydanticMetricInput(name="revenue"),
+                ],
+            ),
+            filter=None,
+            metadata=default_meta(),
+            config=None,
+        )
+        result = (
+            MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[revenue_m, doubled])).output
+        )
+
+        doubled_ossie = next(m for m in _ossie_metrics(result) if m.name == "doubled")
+        assert doubled_ossie.expression.dialects[0].expression == "SUM(orders.amount) + SUM(orders.amount)"
+
     def test_derived_metric_nested(self, snapshot: SnapshotAssertion) -> None:
         sm = semantic_model_with_guaranteed_meta(
             name="orders",
