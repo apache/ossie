@@ -19,4 +19,4 @@
 
 
 class ConversionError(Exception):
-    """Raised when the converter cannot proceed — e.g. a malformed stash (rule X4)."""
+    """Raised when the converter cannot proceed — e.g. a malformed stash."""

@@ -22,11 +22,11 @@ Source: the `Window functions` section of docs/ossie/ts-ossie-function-mapping.m
 live-confirmed - 2026-07-30" section that records the 52-probe evidence behind the
 classifications. 14 rows total - 5 direct / 9 passthrough / 0 unmappable.
 
-This is the hardest family. Three rules govern it:
+This is the hardest family. Three constraints govern it:
 
-- E5 - a raw aggregate cannot be nested inside a ThoughtSpot window function.
-- E6 - the ORDER BY column must be a physical column reference, not a formula.
-- E13 - a ThoughtSpot window formula cannot declare its own PARTITION BY; the
+- A raw aggregate cannot be nested inside a ThoughtSpot window function.
+- The ORDER BY column must be a physical column reference, not a formula.
+- A ThoughtSpot window formula cannot declare its own PARTITION BY; the
   partition is always completed from the query's own dimensions. This is why nine
   of fourteen rows are passthrough, and why LAG, LEAD, the OVER clause and window
   aggregation moved direct -> passthrough after 52 live probes on 2026-07-30.
@@ -79,7 +79,7 @@ EXPECTED: dict[str, Classification] = {
     "Window aggregation — AGG(expr) OVER (...)": Classification.PASSTHROUGH,
 }
 
-#: Expected `Variant` for every passthrough row in this family (E4/E7).
+#: Expected `Variant` for every passthrough row in this family.
 EXPECTED_VARIANTS: dict[str, Variant] = {
     "ROW_NUMBER() OVER (...)": Variant.INT_AGGREGATE,
     "DENSE_RANK() OVER (...)": Variant.INT_AGGREGATE,
@@ -122,7 +122,7 @@ def test_no_unmappable_rows_in_this_family():
 
 
 # --------------------------------------------------------------------------
-# E13: the rule this family turns on. Locking in the four rows the July rework
+# The window-formula PARTITION BY constraint this family turns on. Locking in the four rows the July rework
 # moved off `direct`, and the two structural rows (partition/frame) that are
 # NOT swept up by the same reclassification.
 # --------------------------------------------------------------------------
@@ -196,11 +196,11 @@ def test_cume_dist_is_not_substituted_by_rank_percentile():
 
 
 # --------------------------------------------------------------------------
-# E8: which templates carry PARTITION BY and therefore require partition_column
+# Which templates carry PARTITION BY and therefore require partition_column
 # at emission time. Exactly the rows the document gives a PARTITION BY clause to.
 # --------------------------------------------------------------------------
 
-def test_only_the_documented_rows_carry_partition_by_for_e8():
+def test_only_the_documented_rows_carry_partition_by():
     partitioned = {
         "ROW_NUMBER() OVER (...)",
         "LAG(expr, offset, default) OVER (...)",
@@ -234,7 +234,7 @@ def test_first_value_and_last_value_render_with_single_braces():
 # The window-aggregation template previously carried a literal U+2026
 # ellipsis ("ROWS BETWEEN …") — the mapping document's own prose shorthand for
 # "a frame clause goes here", not renderable SQL. It passed __post_init__, the
-# E8 partition check and declared a satisfiable 3-argument arity, so
+# partition check and declared a satisfiable 3-argument arity, so
 # emit_passthrough rendered it as-is: a warehouse SQL syntax error far from the
 # converter. The fix supplies a concrete, valid exemplar frame instead (the
 # same convention as NTILE's literal 4).

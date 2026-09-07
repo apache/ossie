@@ -76,7 +76,7 @@ EXPECTED: dict[str, Classification] = {
     "TO_CHAR(date_expr, format)": Classification.PASSTHROUGH,
 }
 
-#: Expected `Variant` for every passthrough row in this family (E4/E7). Getting
+#: Expected `Variant` for every passthrough row in this family. Getting
 #: this wrong is the failure mode with no safety net: the wrong variant emits a
 #: column that imports cleanly and aggregates wrongly, and nothing downstream
 #: catches it. Taken individually from the document, not inferred.
@@ -146,7 +146,7 @@ def test_dayofyear_uses_day_number_of_year_not_day_of_year():
 
 
 def test_current_time_is_a_composition_of_time_and_now():
-    # ThoughtSpot has no current-time function; time ( now ( ) ) is exact (E2).
+    # ThoughtSpot has no current-time function; time ( now ( ) ) is exact.
     row = CATALOG["CURRENT_TIME or CURRENT_TIME()"]
     assert row.template == "time ( now ( ) )"
 

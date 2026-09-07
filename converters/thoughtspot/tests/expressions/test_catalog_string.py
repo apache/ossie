@@ -26,7 +26,7 @@ TRIM/LTRIM/RTRIM/REPLACE/LOWER/UPPER are passthrough because ThoughtSpot has no
 native trim/replace/lower/upper function at all — not because they behave
 differently. STARTSWITH/ENDSWITH are the opposite surprise: direct despite
 having no native function, because the composition out of strpos/substr/strlen
-is exact and uses only native functions (rule E2).
+is exact and uses only native functions.
 
 Construct names in this family are spelled identically to the mapping
 document's own row headers — none of this family's keys diverge the way CAST/
@@ -60,7 +60,7 @@ EXPECTED: dict[str, Classification] = {
     "REGEXP_COUNT(str, pattern)": Classification.PASSTHROUGH,
 }
 
-#: Expected `Variant` for every passthrough row in this family (E4/E7). Getting
+#: Expected `Variant` for every passthrough row in this family. Getting
 #: this wrong is the failure mode with no safety net: the wrong variant emits a
 #: column that imports cleanly and then aggregates or types wrongly, and
 #: nothing downstream catches it.
@@ -140,7 +140,7 @@ def test_replace_was_direct_on_documentation_but_moved_on_live_verification():
 def test_startswith_and_endswith_are_direct_despite_no_native_function():
     # No native starts_with/ends_with (live-verified 2026-07-29),
     # but both compositions use only native functions
-    # (strpos/substr/strlen), so rule E2 keeps them direct rather than
+    # (strpos/substr/strlen), so they stay direct rather than
     # passthrough.
     for name in ("STARTSWITH(str, prefix)", "ENDSWITH(str, suffix)"):
         row = CATALOG[name]

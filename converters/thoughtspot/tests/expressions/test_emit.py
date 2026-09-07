@@ -24,9 +24,9 @@ Three emitter signatures, one per `Classification`:
     emit_passthrough(construct, args, log, *, object_ref, has_parameter=False) -> str
     emit_unmappable(construct, log, *, object_ref) -> None
 
-`object_ref` is required on both issue-raising emitters (rule E12: an issue names
+`object_ref` is required on both issue-raising emitters: an issue names
 the function, the object and the reason — an emitter that cannot name the object
-structurally cannot satisfy it).
+structurally cannot satisfy it.
 """
 import re
 
@@ -73,12 +73,12 @@ def test_emit_passthrough_always_raises_a_warning_issue():
     emit_passthrough(STDDEV_POP, ["[ORDERS::Amount]"], log, object_ref="metric:Revenue")
     assert log.count_by_severity() == {"WARNING": 1}
     issue = log.as_dicts()[0]
-    assert "STDDEV_POP" in issue["message"]          # E12: names the function
-    assert issue["object_ref"]                        # E12: names the object
+    assert "STDDEV_POP" in issue["message"]          # names the function
+    assert issue["object_ref"]                        # names the object
 
 
 def test_emit_passthrough_refuses_a_runtime_parameter():
-    # E9. A sql_*_op whose arguments include a ThoughtSpot parameter cannot resolve to
+    # A sql_*_op whose arguments include a ThoughtSpot parameter cannot resolve to
     # static SQL, so it is not portable in either direction.
     log = IssueLog()
     with pytest.raises(ValueError, match="runtime parameter"):
@@ -110,7 +110,7 @@ def test_emit_passthrough_rejects_an_argument_count_mismatch():
         emit_passthrough(
             literal_timestamp, ["'2026-03-04 09:00:00'"], log, object_ref="metric:X",
         )
-    # Same discipline as the E9 refusal above: no misleading WARNING for a call that
+    # Same discipline as the runtime-parameter refusal above: no misleading WARNING for a call that
     # was refused.
     assert log.as_dicts() == []
 
@@ -137,7 +137,7 @@ def test_emit_unmappable_refuses_a_mappable_construct():
 
 
 # --------------------------------------------------------------------------
-# E8: a pass-through carrying PARTITION BY is wrapped in group_aggregate so the
+# A pass-through carrying PARTITION BY is wrapped in group_aggregate so the
 # partition column reaches GROUP BY even when the user's search omits it.
 # --------------------------------------------------------------------------
 
@@ -169,7 +169,7 @@ def test_emit_passthrough_without_a_partition_column_is_unwrapped():
 
 
 def test_emit_passthrough_requires_partition_column_when_template_carries_partition_by():
-    # E8, enforced rather than left to convention: ROW_NUMBER's template carries a
+    # Enforced rather than left to convention: ROW_NUMBER's template carries a
     # literal PARTITION BY, so omitting partition_column must fail loudly rather
     # than silently emit an unwrapped, only-sometimes-correct pass-through.
     log = IssueLog()
@@ -195,7 +195,7 @@ def test_emit_passthrough_refuses_a_partition_column_for_a_template_with_no_part
 def test_emit_passthrough_detects_partition_by_with_irregular_whitespace():
     # A plain substring match on "partition by" misses "PARTITION  BY" (two
     # spaces) or a newline between the words, which would silently leave the
-    # E8 guard defeated in both directions. Regex with \s+ must still catch it.
+    # guard defeated in both directions. Regex with \s+ must still catch it.
     irregular = Construct(
         "IRREGULAR_WHITESPACE(expr)", Classification.PASSTHROUGH,
         template="SOME_FUNC({0}) OVER (PARTITION  BY {0} ORDER BY {1})",
@@ -246,7 +246,7 @@ def test_every_direct_catalog_row_renders_with_its_own_natural_arity():
 # above — would otherwise go uncaught until something later tried to emit
 # that specific row. Whether a row needs `partition_column` is derived from
 # its own template (the same `PARTITION BY` check emit_passthrough itself
-# makes, E8), not hardcoded, so a row that gains or loses a PARTITION BY
+# makes), not hardcoded, so a row that gains or loses a PARTITION BY
 # stays in sync with this sweep automatically.
 # --------------------------------------------------------------------------
 

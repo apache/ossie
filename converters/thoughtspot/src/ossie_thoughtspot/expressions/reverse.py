@@ -26,11 +26,11 @@ docs/ossie/ts-ossie-function-mapping.md (thoughtspot-agent-skills repo, not vend
 its three sub-sections (conditional aggregates and arithmetic helpers; window, LOD and
 semi-additive functions; runtime, display and calendar concepts).
 
-Rule E10 governs the whole module: prefer composition over the stash. Most of ThoughtSpot's
+One governing idea shapes the whole module: prefer composition over the stash. Most of ThoughtSpot's
 apparently-proprietary functions are sugar over constructs the specification already has
 (`sum_if` -> `SUM(CASE WHEN ...)`, `safe_divide` -> `COALESCE(a / NULLIF(b, 0), 0)`,
 `group_sum` over a fixed grain -> `SUM(x) OVER (PARTITION BY attr)`). The stash
-(`custom_extensions` + issue, rule E12) is for what genuinely has no expression — a short
+(`custom_extensions` + issue) is for what genuinely has no expression — a short
 list dominated by *runtime* concepts (parameters, signed-in-user identity, display markup,
 fiscal calendars), not by missing mathematics.
 
@@ -39,7 +39,7 @@ Four dispositions, not the forward module's three
 `Classification` (catalog.py's DIRECT/PASSTHROUGH/UNMAPPABLE) does not fit this direction
 cleanly, so this module defines its own `ReverseDisposition` rather than bending it (as
 instructed): a reverse row can compose fully, compose *partially* (with a real fidelity
-loss that still deserves an issue and, per E11, a preserved verbatim rendering), resolve to
+loss that still deserves an issue and a preserved verbatim rendering), resolve to
 the Ossie `dialects[]` mechanism instead of a portable expression at all, or have no
 expression whatsoever.
 
@@ -49,8 +49,9 @@ expression whatsoever.
               *specification's* own portability, not about this construct's translation.
     PARTIAL   a real Ossie expression is produced, but it is provably incomplete (the
               `moving_*`/`cumulative_*` family: the frame and order translate exactly, the
-              partition does not, rule E13/ask A10). Always logs a WARNING and, per rule
-              E11, the caller should pair the composed expression with a THOUGHTSPOT dialect
+              partition does not — a ThoughtSpot window formula cannot declare its own
+              PARTITION BY, and the specification has no way to express that limitation).
+              Always logs a WARNING and the caller should pair the composed expression with a THOUGHTSPOT dialect
               entry (`thoughtspot_dialect_entry`) carrying the verbatim original — and an
               ANSI_SQL sibling (`portable_dialect_entry`) for the composed expression itself,
               since it *is* portable, just incomplete: a consumer that does not implement the
@@ -61,7 +62,7 @@ expression whatsoever.
               warehouse SQL's portability is exactly what is unknown).
     STASH     no Ossie expression exists at all. Always logs an ERROR (mirroring
               `emit_unmappable`'s severity choice for the same "no representation, preserved
-              only for roundtrip" shape) and, per E11, the caller should attach a THOUGHTSPOT
+              only for roundtrip" shape) and the caller should attach a THOUGHTSPOT
               dialect entry with the verbatim call.
 
 Argument abstraction level
@@ -150,8 +151,8 @@ class ReverseConstruct:
     `dispatch_fn`       full override: decides composing vs. stashing itself from argument
                          shape, and does its own issue logging. When set, `disposition`
                          above is documentation only and no other field is validated.
-    `issue_code`        `IssueLog.add(code=...)` for this row's issue (rule E12: never a
-                         bare "untranslatable" message).
+    `issue_code`        `IssueLog.add(code=...)` for this row's issue — never a
+                         bare "untranslatable" message.
     `issue_severity`    WARNING for a COMPOSE-with-caveat or PARTIAL row (something usable
                          is still produced); ERROR for STASH (nothing is — mirrors
                          `emit_unmappable`'s choice for the same "no representation" shape).
@@ -192,7 +193,7 @@ class ReverseConstruct:
         if self.disposition in (ReverseDisposition.PARTIAL, ReverseDisposition.STASH) and not self.issue_message:
             raise ValueError(
                 f"{self.thoughtspot_name}: a {self.disposition.value} row must carry an "
-                "issue message (E12) — never a bare 'untranslatable'"
+                "issue message — never a bare 'untranslatable'"
             )
 
 
@@ -245,7 +246,7 @@ for _name, _agg in (
         thoughtspot_name=_name,
         disposition=ReverseDisposition.COMPOSE,
         template=f"{_agg}(CASE WHEN {{0}} THEN {{1}} END)",
-        note=f"{_name} ( cond , x ) -> {_agg}(CASE WHEN cond THEN x END), rule E10.",
+        note=f"{_name} ( cond , x ) -> {_agg}(CASE WHEN cond THEN x END).",
     )
 
 REVERSE["unique_count_if"] = ReverseConstruct(
@@ -325,7 +326,7 @@ REVERSE["to_date"] = ReverseConstruct(
     thoughtspot_name="to_date",
     disposition=ReverseDisposition.COMPOSE,
     template="TO_DATE({0}, {1})",
-    issue_code="E10-FORMAT-TOKENS-PASSTHROUGH",
+    issue_code="TS-EXPR-FORMAT-TOKENS-PASSTHROUGH",
     issue_severity=Severity.INFO,
     issue_message=(
         "{name}'s format string is passed through verbatim, not mechanically translated "
@@ -392,10 +393,11 @@ def _frame_bound(offset: str) -> str:
 
 _PARTITION_LOST_ISSUE = (
     "{name}'s emitted OVER clause has no PARTITION BY: ThoughtSpot completes the partition "
-    "dynamically from the query's own dimensions minus the order columns, which a static "
-    "Ossie window cannot express (rule E13, ask A10). The composed expression is correct "
-    "only when the search returns exactly the grain this formula assumed. Per rule E11, "
-    "pair this with a THOUGHTSPOT dialect entry carrying the verbatim original."
+    "dynamically from the query's own dimensions minus the order columns — a ThoughtSpot "
+    "window formula cannot declare its own PARTITION BY, and a static Ossie window has no "
+    "way to express that limitation. The composed expression is correct "
+    "only when the search returns exactly the grain this formula assumed. "
+    "Pair this with a THOUGHTSPOT dialect entry carrying the verbatim original."
 )
 
 
@@ -436,19 +438,19 @@ for _agg in ("SUM", "AVERAGE", "MAX", "MIN"):
         thoughtspot_name=f"moving_{_agg.lower()}",
         disposition=ReverseDisposition.PARTIAL,
         compose_fn=_compose_moving(_ansi_agg),
-        issue_code="E13-PARTIAL-PARTITION",
+        issue_code="TS-EXPR-PARTIAL-PARTITION",
         issue_severity=Severity.WARNING,
         issue_message=_PARTITION_LOST_ISSUE,
-        note="Frame and order translate exactly; the partition does not (E13/A10).",
+        note="Frame and order translate exactly; the partition does not — a ThoughtSpot window formula cannot declare its own PARTITION BY, and the specification has no way to express that limitation.",
     )
     REVERSE[f"cumulative_{_agg.lower()}"] = ReverseConstruct(
         thoughtspot_name=f"cumulative_{_agg.lower()}",
         disposition=ReverseDisposition.PARTIAL,
         compose_fn=_compose_cumulative(_ansi_agg),
-        issue_code="E13-PARTIAL-PARTITION",
+        issue_code="TS-EXPR-PARTIAL-PARTITION",
         issue_severity=Severity.WARNING,
         issue_message=_PARTITION_LOST_ISSUE,
-        note="Frame and order translate exactly; the partition does not (E13/A10).",
+        note="Frame and order translate exactly; the partition does not — a ThoughtSpot window formula cannot declare its own PARTITION BY, and the specification has no way to express that limitation.",
     )
 
 
@@ -472,33 +474,33 @@ def _compose_grouped(
       this direction, because its partition is declared in the formula rather than completed
       from the query;
     - a `query_groups ( ) ± { attr }` dynamic grouping has no expression (the largest
-      reverse-direction fidelity gap, ask A10);
+      reverse-direction fidelity gap);
     - any filter argument other than `query_filters ( )` has no expression either (filter
-      scoping is excluded from Ossie expressions, ask A3).
+      scoping is excluded from Ossie expressions).
     """
     grouping = grouping_arg.strip()
     filt = filter_arg.strip()
     if filt != "query_filters ( )":
         log.add(
-            code="E10-GROUP-FILTER-SCOPE",
+            code="TS-EXPR-GROUP-FILTER-SCOPE",
             severity=Severity.ERROR,
             message=(
                 f"{source_name}'s filter argument ({filter_arg!r}) scopes the aggregate to "
                 "a filtered subset of the query; the specification excludes filter scoping "
-                "from expressions (ask A3). Preserved verbatim for roundtrip (rule E11)."
+                "from expressions. Preserved verbatim for roundtrip."
             ),
             object_ref=object_ref,
         )
         return None
     if "query_groups ( )" in grouping and ("-" in grouping or "+" in grouping):
         log.add(
-            code="E10-GROUP-DYNAMIC-PARTITION",
+            code="TS-EXPR-GROUP-DYNAMIC-PARTITION",
             severity=Severity.ERROR,
             message=(
                 f"{source_name}'s grouping argument ({grouping_arg!r}) completes the "
                 "partition dynamically from the query's own dimensions, which the "
-                "specification cannot express (ask A10) — the largest reverse-direction "
-                "fidelity gap. Preserved verbatim for roundtrip (rule E11)."
+                "specification cannot express — the largest reverse-direction "
+                "fidelity gap. Preserved verbatim for roundtrip."
             ),
             object_ref=object_ref,
         )
@@ -528,7 +530,7 @@ REVERSE["group_aggregate"] = ReverseConstruct(
 )
 
 _GROUP_SHORTHAND_AGGREGATES = {
-    # Only the shorthands the document names explicitly (E10's own example, "group_sum",
+    # Only the shorthands the document names explicitly (its own worked example, "group_sum",
     # and line ~420's "group_count / group_stddev / group_variance") — no group_average,
     # group_max or group_min is invented, since the document never names them.
     "group_sum": "SUM",
@@ -563,14 +565,14 @@ for _name, _agg in _GROUP_SHORTHAND_AGGREGATES.items():
 _SEMI_ADDITIVE_ISSUE = (
     "{name} declares a genuine partition and order axis, and that window clause round-trips "
     "faithfully — but semi-additivity is a roll-up declaration (do not re-sum this measure "
-    "across the axis), not an expression, and the specification has no such declaration "
-    "(ask A12). Preserved verbatim for roundtrip (rule E11)."
+    "across the axis), not an expression, and the specification has no such declaration. "
+    "Preserved verbatim for roundtrip."
 )
 for _name in ("last_value", "first_value", "last_value_in_period", "first_value_in_period"):
     REVERSE[_name] = ReverseConstruct(
         thoughtspot_name=_name,
         disposition=ReverseDisposition.STASH,
-        issue_code="E12-SEMI-ADDITIVE",
+        issue_code="TS-EXPR-SEMI-ADDITIVE",
         issue_severity=Severity.ERROR,
         issue_message=_SEMI_ADDITIVE_ISSUE,
         note="The window clause itself round-trips; only the roll-up declaration is lost.",
@@ -596,12 +598,12 @@ def _dispatch_sql_op(
     body_template, *cols = args
     if connection_dialect is None:
         log.add(
-            code="E10-DIALECT-UNKNOWN",
+            code="TS-EXPR-DIALECT-UNKNOWN",
             severity=Severity.ERROR,
             message=(
                 "sql_*_op resolves to a dialects[] entry for the connection's own dialect, "
                 "which could not be derived from TML here; the converter must not guess a "
-                "dialect label. Preserved verbatim for roundtrip (rule E11)."
+                "dialect label. Preserved verbatim for roundtrip."
             ),
             object_ref=object_ref,
         )
@@ -613,7 +615,7 @@ def _dispatch_sql_op(
             f"sql_*_op template {body_template!r} does not match {len(cols)} argument(s)"
         ) from exc
     log.add(
-        code="E10-DIALECT-PASSTHROUGH",
+        code="TS-EXPR-DIALECT-PASSTHROUGH",
         severity=Severity.WARNING,
         message=(
             f"Raw {connection_dialect} SQL, emitted as a dialects[] entry for that dialect; "
@@ -648,13 +650,13 @@ for _name in (
 REVERSE["<runtime parameter reference>"] = ReverseConstruct(
     thoughtspot_name="<runtime parameter reference>",
     disposition=ReverseDisposition.STASH,
-    issue_code="E12-RUNTIME-PARAMETER",
+    issue_code="TS-EXPR-RUNTIME-PARAMETER",
     issue_severity=Severity.ERROR,
     issue_message=(
         "Runtime parameter reference {name} is resolved per-query from user input; the "
         "definitions are stashed at model level (owned by the construct-mapping document). "
         "The expression itself stops being portable once it references a parameter. "
-        "Preserved verbatim for roundtrip (rule E11)."
+        "Preserved verbatim for roundtrip."
     ),
     note="Synthetic key — not a callable name. See stash_runtime_parameter().",
 )
@@ -674,14 +676,14 @@ def stash_runtime_parameter(parameter_name: str, log: IssueLog, *, object_ref: s
 
 _RUNTIME_IDENTITY_ISSUE = (
     "{name} resolves signed-in-user identity at query time; an interchange document that "
-    "carried it would describe an access-control decision, not semantics (construct-mapping "
-    "document's NM2). Preserved verbatim for roundtrip (rule E11)."
+    "carried it would describe an access-control decision, not semantics. "
+    "Preserved verbatim for roundtrip."
 )
 for _name in ("ts_username", "ts_groups", "ts_groups_int", "ts_org", "ts_email_domain", "ts_var"):
     REVERSE[_name] = ReverseConstruct(
         thoughtspot_name=_name,
         disposition=ReverseDisposition.STASH,
-        issue_code="E12-RUNTIME-IDENTITY",
+        issue_code="TS-EXPR-RUNTIME-IDENTITY",
         issue_severity=Severity.ERROR,
         issue_message=_RUNTIME_IDENTITY_ISSUE,
     )
@@ -696,13 +698,13 @@ def _has_hyperlink_markup(args: list[str]) -> bool:
 REVERSE["concat (hyperlink markup)"] = ReverseConstruct(
     thoughtspot_name="concat (hyperlink markup)",
     disposition=ReverseDisposition.STASH,
-    issue_code="E12-HYPERLINK-MARKUP",
+    issue_code="TS-EXPR-HYPERLINK-MARKUP",
     issue_severity=Severity.ERROR,
     issue_message=(
         "{name}'s string arguments carry ThoughtSpot's {{caption}}/{{/caption}} hyperlink "
         "display markup; concat itself maps (it has a spec counterpart, CONCAT), but a "
         "consumer that rendered the tags literally would show them to users. Preserved "
-        "verbatim for roundtrip (rule E11)."
+        "verbatim for roundtrip."
     ),
     note="Synthetic key, reached only via the content-pattern check in translate_thoughtspot "
          "-- plain concat (no markup) is out of this module's scope entirely.",
@@ -718,15 +720,15 @@ def _is_fiscal_variant(args: list[str]) -> bool:
 _FISCAL_ISSUE_MESSAGE = (
     "{name}'s trailing 'fiscal' argument has no expression: the specification has no "
     "fiscal-calendar concept, and the fiscal year's start month is model-level metadata no "
-    "per-expression rewrite can recover (ask A11). Emitting the calendar-year composition "
+    "per-expression rewrite can recover. Emitting the calendar-year composition "
     "instead would be silently wrong for any organisation whose year does not start in "
-    "January. Preserved verbatim for roundtrip (rule E11)."
+    "January. Preserved verbatim for roundtrip."
 )
 
 
 def _stash_fiscal_variant(name: str, log: IssueLog, *, object_ref: str) -> None:
     log.add(
-        code="E11-FISCAL-CALENDAR",
+        code="TS-EXPR-FISCAL-CALENDAR",
         severity=Severity.ERROR,
         message=_FISCAL_ISSUE_MESSAGE.format(name=name),
         object_ref=object_ref,
@@ -744,7 +746,7 @@ for _name, _fmt in (("month", "MONTH"), ("year_name", "YYYY"), ("day_of_week", "
         thoughtspot_name=_name,
         disposition=ReverseDisposition.COMPOSE,
         template=f"TO_CHAR({{0}}, '{_fmt}')",
-        issue_code="E10-LOCALE-DEPENDENT",
+        issue_code="TS-EXPR-LOCALE-DEPENDENT",
         issue_severity=Severity.WARNING,
         issue_message=_LOCALE_ISSUE_MESSAGE,
         note="Name-returning form, distinct from month_number/year/day_number_of_week.",
@@ -770,7 +772,7 @@ REVERSE["week_number_of_month"] = ReverseConstruct(
     thoughtspot_name="week_number_of_month",
     disposition=ReverseDisposition.COMPOSE,
     template="DATEDIFF(week, DATE_TRUNC('month', {0}), {0}) + 1",
-    issue_code="E10-WEEK-START-ASSUMED",
+    issue_code="TS-EXPR-WEEK-START-ASSUMED",
     issue_severity=Severity.WARNING,
     issue_message=_WEEK_START_ISSUE,
 )
@@ -778,7 +780,7 @@ REVERSE["week_number_of_quarter"] = ReverseConstruct(
     thoughtspot_name="week_number_of_quarter",
     disposition=ReverseDisposition.COMPOSE,
     template="DATEDIFF(week, DATE_TRUNC('quarter', {0}), {0}) + 1",
-    issue_code="E10-WEEK-START-ASSUMED",
+    issue_code="TS-EXPR-WEEK-START-ASSUMED",
     issue_severity=Severity.WARNING,
     issue_message=_WEEK_START_ISSUE,
 )
@@ -786,11 +788,11 @@ REVERSE["is_weekend"] = ReverseConstruct(
     thoughtspot_name="is_weekend",
     disposition=ReverseDisposition.COMPOSE,
     template="DATE_PART('dayofweek', {0}) IN (6, 7)",
-    issue_code="E10-DAYOFWEEK-BASE",
+    issue_code="TS-EXPR-DAYOFWEEK-BASE",
     issue_severity=Severity.WARNING,
     issue_message=(
         "{name}'s member list (6, 7) uses ThoughtSpot's own DAYOFWEEK base (1 = Monday); "
-        "the specification does not fix a base and engines disagree (ask A11) — confirm "
+        "the specification does not fix a base and engines disagree — confirm "
         "the target engine's base agrees before relying on this column."
     ),
 )
@@ -849,7 +851,7 @@ def translate_thoughtspot(
     """Translate one ThoughtSpot-only construct call into an Ossie expression, or stash it.
 
     Returns the composed Ossie expression string, or `None` when the construct stashes (an
-    issue is always logged in that case, rule E12) or when `name` has no entry in this
+    issue is always logged in that case) or when `name` has no entry in this
     module's reverse inventory at all (nothing is logged — that name is either a plain
     column/measure reference or a construct with a spec counterpart already covered by the
     forward `CATALOG`, neither of which is this module's concern).
@@ -887,17 +889,17 @@ def translate_thoughtspot(
 
 
 # --------------------------------------------------------------------------
-# E11 — dialect-entry and custom_extensions helpers.
+# Dialect-entry and custom_extensions helpers.
 #
 # translate_thoughtspot's own return type is `str | None`, so it cannot itself hand back a
 # dialects[] entry or a custom_extensions payload — those are object-level document
 # concerns, one level above a single expression. These three helpers are what a caller
-# operating at the object level combines with translate_thoughtspot's result to satisfy
-# rule E11 in full.
+# operating at the object level combines with translate_thoughtspot's result to guarantee
+# a lossless roundtrip.
 # --------------------------------------------------------------------------
 
 def thoughtspot_dialect_entry(name: str, args: list[str]) -> dict[str, str]:
-    """Rule E11 — the verbatim ThoughtSpot call, reconstructed textually (this module never
+    """The verbatim ThoughtSpot call, reconstructed textually (this module never
     has the original formula's exact whitespace, only the parsed name/args) so a PARTIAL or
     STASH construct still round-trips losslessly through a THOUGHTSPOT dialect entry even
     where no full — or no — portable Ossie expression exists.
@@ -921,12 +923,12 @@ def portable_dialect_entry(expression: str) -> dict[str, str]:
 
 def custom_extensions_fragment(column: str, name: str, args: list[str]) -> dict[str, dict[str, str]]:
     """The payload fragment this module contributes toward an object's
-    `custom_extensions[VENDOR_KEY]` entry (`stash.write_stash`, rule X1) for one construct
+    `custom_extensions[VENDOR_KEY]` entry (`stash.write_stash`) for one construct
     this module could not fully compose.
 
     `write_stash(obj, payload)` treats `payload` as the *contents* of the object's
     THOUGHTSPOT entry, not as `{VENDOR_KEY: contents}` — `write_stash` already owns the
-    vendor-key wrapping (rule X1). So this fragment must be keyed by `column`, the caller's
+    vendor-key wrapping. So this fragment must be keyed by `column`, the caller's
     Ossie metric/column name, not by `VENDOR_KEY`: this module operates at the
     single-expression level and has no access to the enclosing object, so the caller merges
     fragments across an object's columns — `{**fragment_for_col_a, **fragment_for_col_b}` —
