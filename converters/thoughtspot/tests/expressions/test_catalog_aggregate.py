@@ -54,7 +54,7 @@ EXPECTED: dict[str, Classification] = {
     "TRY_CAST": Classification.DIRECT,
 }
 
-#: Expected `Variant` for every passthrough row in this family (E4/E7). Getting
+#: Expected `Variant` for every passthrough row in this family. Getting
 #: this wrong is the failure mode with no safety net: the wrong variant emits a
 #: column that imports cleanly and aggregates wrongly, and nothing downstream
 #: catches it.

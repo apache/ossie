@@ -15,10 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Identifier derivation and column-reference rewriting — rules ID1-ID4.
+"""Identifier derivation and column-reference rewriting.
 
 ThoughtSpot has one `name` per column, serving as display name, search token and
-cross-document key at once (gap G2). Ossie splits identifier from label, so the
+cross-document key at once. Ossie splits identifier from label, so the
 identifier has to be derived — and derivation collides.
 
 **Known limitation — non-Latin scripts, not diacritics.** An
@@ -49,7 +49,7 @@ _COLUMN_REF = re.compile(r"^\[(?P<table>[^\]]+?)::(?P<column>[^\]]+)\]$")
 
 
 def normalise(display_name: str) -> str:
-    """Fold a ThoughtSpot display name to an Ossie identifier (rule ID1).
+    """Fold a ThoughtSpot display name to an Ossie identifier.
 
     Diacritics are folded via NFKD decomposition before the ASCII
     lowercase-and-substitute step — see the module docstring's "Known
@@ -90,7 +90,7 @@ class Allocator:
 
 
 def split_column_ref(ref: str) -> tuple[str, str]:
-    """`[TABLE::Column]` -> `("TABLE", "Column")` (rule ID3).
+    """`[TABLE::Column]` -> `("TABLE", "Column")`.
 
     Raises if `ref` doesn't match the `[TABLE::Column]` shape at all, and also
     if it is *ambiguous* — rather than silently taking the first delimiter and
@@ -129,5 +129,5 @@ def split_column_ref(ref: str) -> tuple[str, str]:
 
 
 def format_column_ref(table: str, column: str) -> str:
-    """`("TABLE", "Column")` -> `[TABLE::Column]` (rule ID3)."""
+    """`("TABLE", "Column")` -> `[TABLE::Column]`."""
     return f"[{table}::{column}]"

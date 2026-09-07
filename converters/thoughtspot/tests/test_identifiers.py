@@ -62,7 +62,7 @@ def test_normalise_on_a_cjk_only_name_is_non_latin_script_known_limitation():
 
 
 def test_allocator_resolves_a_collision_with_a_numeric_suffix():
-    # ID2: two distinct display names folding onto one identifier.
+    # Two distinct display names folding onto one identifier.
     alloc = identifiers.Allocator()
     assert alloc.allocate("Order Date") == "order_date"
     assert alloc.allocate("Order-Date") == "order_date_2"
@@ -70,7 +70,7 @@ def test_allocator_resolves_a_collision_with_a_numeric_suffix():
 
 
 def test_allocator_folds_case_when_detecting_collisions():
-    # ID2: Ossie resolves regular identifiers case-insensitively, so a case-only
+    # Ossie resolves regular identifiers case-insensitively, so a case-only
     # difference is ambiguous even though validate.py would accept it.
     alloc = identifiers.Allocator()
     assert alloc.allocate("Region") == "region"
@@ -78,7 +78,6 @@ def test_allocator_folds_case_when_detecting_collisions():
 
 
 def test_split_and_format_column_refs_round_trip():
-    # ID3.
     assert identifiers.split_column_ref("[ORDERS::Order Date]") == ("ORDERS", "Order Date")
     assert identifiers.format_column_ref("ORDERS", "Order Date") == "[ORDERS::Order Date]"
 
@@ -89,7 +88,7 @@ def test_split_column_ref_rejects_a_malformed_reference():
 
 
 def test_split_column_ref_rejects_an_ambiguous_reference():
-    # ID3: more than one '::' must raise rather than silently taking the
+    # More than one '::' must raise rather than silently taking the
     # first delimiter and mis-splitting table/column.
     with pytest.raises(ValueError, match="ambiguous"):
         identifiers.split_column_ref("[A::B::C]")

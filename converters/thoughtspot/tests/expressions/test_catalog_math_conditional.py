@@ -21,7 +21,7 @@ Source: the `Mathematical functions` and `Conditional functions` sections of
 docs/ossie/ts-ossie-function-mapping.md (thoughtspot-agent-skills repo, not
 vendored here). 34 rows total — 32 direct / 2 passthrough / 0 unmappable.
 
-Nearly everything here is direct, several by composition (rule E2): SIGN is an
+Nearly everything here is direct, several by composition: SIGN is an
 `if` chain with a mandatory `else 0` (ThoughtSpot rejects an `if` with no
 `else`); RADIANS/DEGREES are bare arithmetic (no native function); PI is a
 literal at the precision ThoughtSpot's own documented composites use.
@@ -30,7 +30,7 @@ so every forward trig function multiplies by 180/pi and every inverse trig
 function divides by it — the opposite conversion, easy to get backwards.
 GREATEST/LEAST are deliberately not MAX/MIN: ThoughtSpot's max/min are
 aggregate-only, so mapping the row-wise N-ary forms onto them would both
-collapse the column to one value and flip it from attribute to measure (E7).
+collapse the column to one value and flip it from attribute to measure.
 
 Only two rows are passthrough: TRUNC/TRUNCATE (no native truncation, and
 neither floor nor round is a safe substitute) and ATAN2 (quadrant-aware and
@@ -85,7 +85,7 @@ EXPECTED: dict[str, Classification] = {
     "NULLIFZERO(expr)": Classification.DIRECT,
 }
 
-#: Expected `Variant` for every passthrough row in this family (E4/E7). Getting
+#: Expected `Variant` for every passthrough row in this family. Getting
 #: this wrong is the failure mode with no safety net: the wrong variant emits a
 #: column that imports cleanly and then aggregates or types wrongly, and
 #: nothing downstream catches it.
@@ -192,7 +192,7 @@ def test_pi_is_a_literal_at_the_documented_composite_precision():
 def test_greatest_and_least_are_not_max_and_min():
     # ThoughtSpot's max/min are aggregate-only; greatest/least are the
     # row-wise N-ary functions. Mapping GREATEST to max would both collapse
-    # the column to one value and flip it from attribute to measure (E7).
+    # the column to one value and flip it from attribute to measure.
     greatest = CATALOG["GREATEST(x, y, ...)"]
     least = CATALOG["LEAST(x, y, ...)"]
     assert greatest.classification is Classification.DIRECT

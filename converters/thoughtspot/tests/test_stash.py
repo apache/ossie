@@ -35,7 +35,7 @@ from ossie_thoughtspot.errors import ConversionError
 
 
 def test_write_stash_serialises_data_as_a_json_string_not_an_object():
-    # X2: ossie-schema.json types `data` as "string".
+    # ossie-schema.json types `data` as "string".
     obj = stash.write_stash({}, {"join_type": "LEFT_OUTER"})
     entry = obj["custom_extensions"][0]
     assert entry["vendor_name"] == VENDOR_KEY
@@ -49,12 +49,12 @@ def test_write_stash_stamps_the_shape_version():
 
 
 def test_write_stash_writes_nothing_for_an_empty_payload():
-    # X6: a converted document stays clean where ThoughtSpot added nothing.
+    # A converted document stays clean where ThoughtSpot added nothing.
     assert stash.write_stash({}, {}) == {}
 
 
 def test_write_stash_merges_into_the_existing_own_entry():
-    # X1: one entry per object, merged — never a second THOUGHTSPOT entry.
+    # One entry per object, merged — never a second THOUGHTSPOT entry.
     obj = stash.write_stash({}, {"a": 1})
     obj = stash.write_stash(obj, {"b": 2})
     own = [e for e in obj["custom_extensions"] if e["vendor_name"] == VENDOR_KEY]
@@ -64,7 +64,6 @@ def test_write_stash_merges_into_the_existing_own_entry():
 
 
 def test_foreign_vendor_entries_pass_through_untouched():
-    # X7.
     obj = {"custom_extensions": [{"vendor_name": "DATABRICKS", "data": '{"x": 1}'}]}
     out = stash.write_stash(obj, {"a": 1})
     foreign = [e for e in out["custom_extensions"] if e["vendor_name"] == "DATABRICKS"]
@@ -72,14 +71,14 @@ def test_foreign_vendor_entries_pass_through_untouched():
 
 
 def test_write_stash_refuses_identity_keys():
-    # X8: a portable document must not carry instance-local identity.
+    # A portable document must not carry instance-local identity.
     for key in ("guid", "obj_id", "fqn"):
         with pytest.raises(ConversionError, match=key):
             stash.write_stash({}, {key: "abc-123"})
 
 
 def test_read_stash_raises_a_named_error_on_malformed_json():
-    # X4: never a bare json traceback.
+    # Never a bare json traceback.
     obj = {"name": "orders", "custom_extensions": [{"vendor_name": VENDOR_KEY, "data": "{not json"}]}
     with pytest.raises(ConversionError, match="orders"):
         stash.read_stash(obj)
@@ -90,7 +89,7 @@ def test_read_stash_returns_empty_when_there_is_no_own_entry():
 
 
 def test_restore_returns_the_stashed_value_with_no_witness_key():
-    # X5, degraded (stash-if-present) shape — the most common form in
+    # The degraded (stash-if-present) shape — the most common form in
     # practice: no witness_key, so a present key always wins regardless of
     # `witness`. Correct only for values nothing downstream can edit.
     payload = {"some_key": "stashed_value"}
@@ -98,14 +97,14 @@ def test_restore_returns_the_stashed_value_with_no_witness_key():
 
 
 def test_restore_prefers_the_stash_when_the_witness_still_agrees():
-    # X5, positive case.
+    # The witness-agrees case.
     payload = {"on_expression": "a = b", "ossie_expression": "a = b"}
     assert stash.restore(payload, "on_expression", "DERIVED",
                          witness="a = b", witness_key="ossie_expression") == "a = b"
 
 
 def test_restore_rederives_when_the_witness_has_changed():
-    # X5, the case a plain stash-if-present rule gets wrong: the user edited the
+    # The case a plain stash-if-present rule gets wrong: the user edited the
     # Ossie document, so the stashed copy is stale and must not win.
     payload = {"on_expression": "a = b", "ossie_expression": "a = b"}
     assert stash.restore(payload, "on_expression", "DERIVED",
@@ -158,7 +157,7 @@ class TestFindForbiddenKeyIsTheSingleChokePoint:
 
     def test_find_forbidden_key_accepts_a_wider_vocabulary_than_the_default(self):
         # tml_to_ossie.py's column-properties path checks a wider identity
-        # vocabulary than X8's own three names (this package's own
+        # vocabulary than the default three names (this package's own
         # dataset_id/custom_file_guid additions) -- find_forbidden_key has to
         # support that without stash.py hard-coding a second, wider set.
         wider = frozenset({"custom_file_guid"})
@@ -168,7 +167,7 @@ class TestFindForbiddenKeyIsTheSingleChokePoint:
 
 class TestReadStashShapeVersion:
     def test_an_unrecognised_shape_version_raises_naming_the_object_and_version(self):
-        # X3: a future payload shape must never be partially read as today's.
+        # A future payload shape must never be partially read as today's.
         obj = {"name": "orders", "custom_extensions": [
             {"vendor_name": VENDOR_KEY, "data": json.dumps({"_v": 999, "alias": "X"})}
         ]}

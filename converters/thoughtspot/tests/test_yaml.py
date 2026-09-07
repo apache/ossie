@@ -76,7 +76,7 @@ def test_dumper_quotes_what_plain_pyyaml_leaves_bare(token):
 
 def test_load_wraps_a_parser_error_in_conversion_error():
     # I4: never let a bare yaml.YAMLError escape — same never-a-bare-traceback
-    # contract stash.py (X4) holds for malformed custom_extensions JSON.
+    # contract stash.py holds for malformed custom_extensions JSON.
     with pytest.raises(ConversionError, match="malformed YAML"):
         _yaml.load("a: [1, 2\nb: 3")
 

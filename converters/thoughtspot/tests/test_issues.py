@@ -68,5 +68,5 @@ def test_count_by_severity_supports_summarising_instead_of_printing():
 
 
 def test_conversion_error_is_distinct_from_an_issue():
-    # A malformed stash is a hard error (X4), not a loggable issue.
+    # A malformed stash is a hard error, not a loggable issue.
     assert issubclass(ConversionError, Exception)

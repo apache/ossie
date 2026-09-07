@@ -383,7 +383,7 @@ class TestOssieRoundTripAdversarialNames:
 
 
 # ---------------------------------------------------------------------------
-# ID4 -- names that collide only after normalisation.
+# Names that collide only after normalisation.
 # ---------------------------------------------------------------------------
 
 #: Base words chosen so every spelling variant below folds to the same

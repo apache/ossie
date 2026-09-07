@@ -70,7 +70,7 @@ decides the third. Both read ThoughtSpot's aggregate call names off the same exp
 catalog `_compose_aggregate_entries` uses to build the composed rendering — one source for
 every one of these jobs, so they cannot silently drift apart the way independently
 hand-typed lists
-could. And unlike a field, a metric has no `label`: when ID1 normalisation changes the
+could. And unlike a field, a metric has no `label`: when identifier normalisation changes the
 identifier, the exact display name has nowhere to go but the `custom_extensions` stash.
 """
 from __future__ import annotations
@@ -717,7 +717,7 @@ def convert_metric(
     understood, which is a loss worth reporting, unlike an absent `aggregation` key,
     which defaults to `NONE` silently.
 
-    Metrics have no `label` field (unlike fields): when ID1 normalisation changes
+    Metrics have no `label` field (unlike fields): when identifier normalisation changes
     the identifier, the exact ThoughtSpot display name is stashed as `tml_name`
     rather than carried in a dedicated field.
 
@@ -845,7 +845,7 @@ def convert_metric(
             )
         metric["expression"] = {"dialects": dialects}
         # A formula carries no declared type anywhere in TML — neither columns[] nor
-        # formulas[] has a data_type key (rule X9) — so datatype is always omitted
+        # formulas[] has a data_type key — so datatype is always omitted
         # here, and never logged: there was never a value here to lose.
     else:
         log.add(
@@ -909,8 +909,8 @@ def _index_attribute_columns(
     surfaces as a field, and the identifier it resolves to has to be the
     exact one `convert_field` independently computes for that same column --
     plain `identifiers.normalise`, not run through an `identifiers.Allocator`.
-    Neither `convert_field` nor `convert_metric` resolve ID2 collisions
-    (display-name folds that only clash after normalisation) themselves; this
+    Neither `convert_field` nor `convert_metric` resolve display-name-fold
+    collisions (names that only clash after normalisation) themselves; this
     index deliberately matches that rather than silently picking a different,
     collision-safe name `resolve()` would return but the built field would
     not actually have. See the module docstring's identifier note in the
@@ -1057,7 +1057,7 @@ def _physical_column_stash(
     db_column_name = physical.get("db_column_name")
     if is_table and db_column_name is not None and db_column_name != physical_name:
         payload[FIELD_STASH_DB_COLUMN_NAME] = db_column_name
-        # X5's witness: the column's own display name (the bracket's column
+        # The witness: the column's own display name (the bracket's column
         # part) this warehouse name was recorded against, so the reverse
         # direction can tell whether the field still names the same
         # physical column before trusting a warehouse name that may
@@ -1068,7 +1068,7 @@ def _physical_column_stash(
     canonical = _CANONICAL_TML_SPELLING.get(ossie_datatype) if ossie_datatype else None
     if raw_data_type is not None and canonical is not None and raw_data_type != canonical:
         payload[FIELD_STASH_DATA_TYPE] = raw_data_type
-        # X5's witness: the Ossie datatype this spelling was derived from, so
+        # The witness: the Ossie datatype this spelling was derived from, so
         # the reverse direction can tell a genuine edit (the field now
         # declares a different datatype) from an unedited round trip before
         # trusting a warehouse-specific spelling for a type it may no longer
@@ -1090,12 +1090,12 @@ _METRIC_CONSUMED_PROPERTIES = _FIELD_CONSUMED_PROPERTIES | {"aggregation"}
 
 
 #: Identity-shaped keys that must never reach the portable document at any
-#: depth -- broader than `stash._FORBIDDEN_KEYS` (X8's own `guid`/`obj_id`/
+#: depth -- broader than `stash._FORBIDDEN_KEYS` (`guid`/`obj_id`/
 #: `fqn`, which `stash.write_stash` scans every payload for regardless of
 #: caller). `_unconsumed_properties` is the one place in this module that
 #: copies a property's *value* wholesale rather than rebuilding it field by
-#: field, so it is also the one place the two further identity keys the
-#: mapping document's NM1 names -- `dataset_id`, and `geo_config.
+#: field, so it is also the one place the two further identity keys this
+#: converter also tracks -- `dataset_id`, and `geo_config.
 #: custom_file_guid` naming a custom map -- are worth checking for
 #: specifically, ahead of `write_stash`'s own narrower check: the scan is
 #: `stash.find_forbidden_key`'s, shared rather than reimplemented here, only
@@ -1107,7 +1107,7 @@ def _unconsumed_properties(
     properties: dict, consumed: frozenset[str], log: IssueLog, object_ref: str
 ) -> dict:
     """Every key in a column's `properties` dict that the converter did not
-    read, minus anything carrying instance-local identity (rule X8) at any
+    read, minus anything carrying instance-local identity at any
     depth.
 
     Deliberately the complement of `consumed`, not an enumeration of the
@@ -1154,7 +1154,7 @@ def _unconsumed_properties(
 
 
 def _write_stash_safely(obj: dict, payload: dict, log: IssueLog, object_ref: str) -> dict:
-    """`stash.write_stash(obj, payload)`, catching its X8 guard and turning a
+    """`stash.write_stash(obj, payload)`, catching its identity guard and turning a
     would-be hard failure into a survivable, logged drop.
 
     The payload content this module stashes is TML data read out of a
@@ -1283,7 +1283,7 @@ def _build_dataset(prefix: str, entry: dict, table_doc, log: IssueLog) -> tuple[
             }
         source = ".".join((db, schema, db_table))
 
-    # X5's witness for DATASET_STASH_TML_OBJECT: the same `source` about to
+    # The witness for DATASET_STASH_TML_OBJECT: the same `source` about to
     # be written onto the dataset itself. Ossie -> TML compares its own
     # current `source` against this snapshot before trusting the stashed
     # kind -- a `source` rewritten from a query to a table reference (or
@@ -1296,7 +1296,7 @@ def _build_dataset(prefix: str, entry: dict, table_doc, log: IssueLog) -> tuple[
         dataset["description"] = description
 
     if body.get("rls_rules"):
-        # NM2: row-level security policy is instance-local (it names groups
+        # Row-level security policy is instance-local (it names groups
         # that only exist on the source instance) and is never carried into
         # the portable document. Per ThoughtSpot domain review this is now
         # the primary RLS mechanism customers are migrating onto, so this is
@@ -1511,7 +1511,7 @@ def _relationship_from_join(
         # are already fully contained in the verbatim on_expression stashed
         # below, and nothing reads them back on the way to TML.
         rel_stash[RELATIONSHIP_STASH_ON_EXPRESSION] = on_expression
-        # X5's witness: from_columns/to_columns exactly as emitted above, so
+        # The witness: from_columns/to_columns exactly as emitted above, so
         # the reverse direction can tell whether the relationship has been
         # retargeted since this stash was written before trusting the
         # verbatim on_expression (and the residual narrowing riding with it).
@@ -1558,7 +1558,7 @@ def _convert_join(
     everything else in the model valid and usable, which is the more useful
     failure of the two.
 
-    KD1's cardinality-orientation rule is applied here, not in
+    The cardinality-orientation rule is applied here, not in
     `_relationship_from_join`: the *emitted* relationship's `from`/`to` always
     mirrors TML's FK-structural fact unconditionally (the Relationship-level
     mapping's `from` row), but a `ONE_TO_MANY` join is evidence that the FROM
@@ -1944,7 +1944,7 @@ def convert(document_set: DocumentSet) -> OssieConversion:
     # `column_aggregation`-shape metric surfaces its physical column just as
     # much as an ATTRIBUTE field does. That is true as far as it goes, but
     # nothing else preserves that column's definition: a metric has no
-    # `column_id` field in Ossie at all (R4) -- it carries only the composed
+    # `column_id` field in Ossie at all -- it carries only the composed
     # THOUGHTSPOT-dialect expression, verbatim, with the bracket reference
     # inside it -- so the physical column it names was silently dropped from
     # both `fields` and `unsurfaced_columns`. `build_table` on the way back

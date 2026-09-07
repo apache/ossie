@@ -272,7 +272,7 @@ class TestKeyDerivation:
         assert RELATIONSHIP_STASH_ON_EXPRESSION not in rel_stash
 
     def test_a_non_equality_join_derives_no_key_and_stashes_the_condition(self):
-        # KD1 negative: a residual-predicate (as-of) join is to-one only
+        # A residual-predicate (as-of) join is to-one only
         # because of the narrowing -- its equality columns alone are not
         # unique, so no key is derived and no relationship is emitted at all
         # (the condition has zero equality pairs).
@@ -364,7 +364,7 @@ class TestUnattributedFormulas:
 
 class TestStashProtocol:
     def test_other_vendors_custom_extensions_pass_through_untouched(self):
-        # X7. `convert()`'s own objects must stay compatible with a further
+        # `convert()`'s own objects must stay compatible with a further
         # write_stash call from another vendor's tooling -- exercised on a
         # dataset dict `convert()` actually produced.
         orders = _table("ORDERS")
@@ -382,7 +382,7 @@ class TestStashProtocol:
         assert foreign == {"vendor_name": "SNOWFLAKE", "data": '{"x": 1}'}
 
     def test_no_guid_obj_id_or_fqn_appears_anywhere_in_the_output(self):
-        # X8. Nested guids on the model_tables[] entry (fqn) and the model
+        # Nested guids on the model_tables[] entry (fqn) and the model
         # document root (guid) are present in the source and must never leak
         # into the output -- not only into the stash, but anywhere at all.
         orders = _table("ORDERS", columns=[_column("Amount", "AMOUNT", "DOUBLE")])
@@ -406,7 +406,7 @@ class TestStashProtocol:
             assert forbidden not in serialised, forbidden
 
     def test_an_empty_payload_writes_no_stash_entry(self):
-        # X6: a model with an already-normalised name and no ThoughtSpot-only
+        # A model with an already-normalised name and no ThoughtSpot-only
         # model-scope properties stays clean at model scope.
         orders = _table("ORDERS", columns=[_column("Amount", "AMOUNT", "DOUBLE")], connection="Snowflake")
         model = _model(
@@ -595,7 +595,7 @@ class TestUnconsumedColumnProperties:
         assert _own_stash(metric)[FIELD_STASH_COLUMN_PROPERTIES] == {"index_type": "DONT_INDEX"}
 
     def test_identity_shaped_content_nested_in_a_property_value_is_dropped_not_stashed(self):
-        # Found while re-verifying X8 for this fix: the complement copies an
+        # Found while re-verifying the identity guard for this fix: the complement copies an
         # unconsumed property's *value* wholesale, and a real, documented
         # ThoughtSpot shape (geo_config naming a custom map) carries a GUID
         # nested inside that value -- not as a top-level payload key, which
@@ -666,7 +666,7 @@ class TestUnsurfacedColumns:
     def test_a_column_surfaced_only_as_a_measure_is_stashed_too(self):
         # column_aggregation-shape metrics surface their physical column via
         # column_id, but a Metric has no column_id field on the Ossie side
-        # at all (R4) -- it carries only the composed THOUGHTSPOT-dialect
+        # at all -- it carries only the composed THOUGHTSPOT-dialect
         # expression, bracket reference and all. An earlier revision treated
         # this column as "surfaced enough" to skip unsurfaced_columns, on
         # the reasoning that it is still part of the semantic model. True,
@@ -702,7 +702,7 @@ class TestUnsurfacedColumns:
         assert DATASET_STASH_UNSURFACED_COLUMNS not in stashed
 
     def test_unsurfaced_columns_populates_the_dataset_stash_on_its_own(self):
-        # A dataset's stash always carries at least tml_object, so X6's
+        # A dataset's stash always carries at least tml_object, so the
         # empty-payload guarantee is exercised at the model scope
         # (test_an_empty_payload_writes_no_stash_entry), not here -- this
         # confirms unsurfaced_columns itself lands correctly when nothing
