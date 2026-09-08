@@ -43,3 +43,10 @@ table:
       db_column_name: c_email_address
       db_column_properties:
         data_type: VARCHAR
+    # A non-Latin display name (Japanese kana-spelled name) over an ASCII
+    # warehouse column name -- exercises the fallback identifier
+    # `identifiers.normalise` cannot derive one from the display name alone.
+    - name: カナ名
+      db_column_name: c_kana_name
+      db_column_properties:
+        data_type: VARCHAR

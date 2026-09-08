@@ -970,12 +970,14 @@ class TestModelScopeIdentityIsCaughtNotFatal:
 class TestUnnormalisableNamesAreCaughtNotFatal:
     """`identifiers.normalise` raises when a display name has no ASCII
     alphanumerics for it to fold onto (a CJK-only name, a punctuation-only
-    one). Two call sites reach it before `convert()`'s own per-column
-    `TS-COLUMN-REF-MALFORMED` guard (Phase 3) ever gets a chance to catch
-    it: the model's own top-level name, and `_index_attribute_columns`
-    (Phase 2, which runs over every ATTRIBUTE column before Phase 3 starts).
-    Both must degrade -- report and continue -- rather than take the whole
-    conversion down over one unfoldable name.
+    one). Three scopes can hit it: the model's own top-level name, a field,
+    and a metric. All three must degrade -- fall back to a usable
+    identifier, report it, and continue -- rather than take the whole
+    conversion down, or the column, over one unfoldable name. (Before
+    `_field_or_metric_identifier` existed, a field or metric hitting this
+    was dropped entirely and misreported as a malformed column *reference*
+    -- see `test_a_column_ref_and_an_unnormalisable_name_report_different_codes`
+    for the two now being told apart.)
     """
 
     def test_a_model_name_with_no_ascii_alphanumerics_falls_back_and_is_reported(self):
@@ -993,19 +995,82 @@ class TestUnnormalisableNamesAreCaughtNotFatal:
         # not take the whole document down.
         assert semantic_model["datasets"][0]["fields"][0]["name"] == "amount"
 
-    def test_an_attribute_columns_unnormalisable_name_is_dropped_not_fatal(self):
-        # Reaches `_index_attribute_columns` (Phase 2) before Phase 3's own
-        # per-column guard would ever get a turn -- if that earlier call
-        # site were unguarded, `convert()` would raise before this field's
-        # own TS-COLUMN-REF-MALFORMED issue could even be logged.
+    def test_an_attribute_columns_unnormalisable_name_falls_back_to_the_warehouse_column_name(self):
+        # Also exercises `_index_attribute_columns` (Phase 2, which runs
+        # over every ATTRIBUTE column before Phase 3 starts): before this
+        # fix, Phase 2 silently excluded a column like this one from the
+        # cross-reference gate on the theory that convert_field would drop
+        # the field too -- true then, a correctness bug once convert_field
+        # grew this fallback. There is no cross-reference in this fixture,
+        # but the field surviving Phase 3 at all already proves Phase 2 did
+        # not exclude it.
         orders = _table("ORDERS", columns=[_column("Amount", "AMOUNT", "DOUBLE")])
         model = _model(
             model_tables=[{"name": "ORDERS"}],
             columns=[_attribute("!!!", "ORDERS::Amount")],
         )
         result = convert(_document_set(model, orders))
-        assert result.model["semantic_model"][0]["datasets"][0].get("fields", []) == []
-        assert any(i["code"] == "TS-COLUMN-REF-MALFORMED" for i in result.issues.as_dicts())
+        fields = result.model["semantic_model"][0]["datasets"][0]["fields"]
+        assert len(fields) == 1
+        field = fields[0]
+        # The physical column's own warehouse name is the fallback basis --
+        # not a bare placeholder -- see _field_or_metric_identifier.
+        assert field["name"] == "amount"
+        assert field["label"] == "!!!"  # the exact display name, recoverable via `label` alone
+        assert any(i["code"] == "TS-FIELD-NAME-UNNORMALISABLE" for i in result.issues.as_dicts())
+        assert not any(i["code"] == "TS-COLUMN-REF-MALFORMED" for i in result.issues.as_dicts())
+
+    def test_two_unnormalisable_fields_with_no_physical_hint_get_distinct_fallback_names(self):
+        # Neither formula-backed field has a column_id, so neither has a
+        # warehouse column name to fall back on -- both reach the
+        # allocator-suffixed placeholder, and must not collide into the same
+        # "field" identifier. The physical "Amount" field is only here so
+        # `resolve()` has something to attribute the two formulas' shared
+        # `[ORDERS::Amount]` reference to.
+        orders = _table("ORDERS", columns=[_column("Amount", "AMOUNT", "DOUBLE")])
+        model = _model(
+            model_tables=[{"name": "ORDERS"}],
+            columns=[
+                _attribute("Amount", "ORDERS::Amount"),
+                {"name": "顧客", "formula_id": "f1", "properties": {"column_type": "ATTRIBUTE"}},
+                {"name": "名前", "formula_id": "f2", "properties": {"column_type": "ATTRIBUTE"}},
+            ],
+            formulas=[
+                {"id": "f1", "name": "顧客", "expr": "[ORDERS::Amount]"},
+                {"id": "f2", "name": "名前", "expr": "[ORDERS::Amount]"},
+            ],
+        )
+        result = convert(_document_set(model, orders))
+        fields = result.model["semantic_model"][0]["datasets"][0]["fields"]
+        assert len(fields) == 3  # "amount" plus the two non-Latin formula fields
+        fallback_names = {f["name"] for f in fields if f["label"] in ("顧客", "名前")}
+        assert len(fallback_names) == 2  # distinct, not collapsed into one "field"
+        assert fallback_names == {"field", "field_2"}
+
+    def test_a_column_ref_and_an_unnormalisable_name_report_different_codes(self):
+        # Fix 2: split_column_ref('[顧客::名前]') parses fine -- the reference
+        # itself is not malformed -- so a field with a genuinely ambiguous
+        # column_id must still report TS-COLUMN-REF-MALFORMED, distinct from
+        # TS-FIELD-NAME-UNNORMALISABLE (a valid reference, unfoldable name).
+        # Before this fix both funnelled through one shared except-ValueError
+        # handler in convert() and were indistinguishable.
+        orders = _table("ORDERS", columns=[_column("Amount", "AMOUNT", "DOUBLE")])
+        model = _model(
+            model_tables=[{"name": "ORDERS"}],
+            columns=[
+                _attribute("名前", "ORDERS::Amount"),  # unfoldable name, valid reference
+                # A column_id containing a run of "::" is ambiguous --
+                # identifiers.split_column_ref refuses to guess.
+                _attribute("Ambiguous", "ORDERS:::Nested"),
+            ],
+        )
+        result = convert(_document_set(model, orders))
+        codes = {i["code"] for i in result.issues.as_dicts()}
+        assert "TS-FIELD-NAME-UNNORMALISABLE" in codes
+        assert "TS-COLUMN-REF-MALFORMED" in codes
+        fields = result.model["semantic_model"][0]["datasets"][0]["fields"]
+        assert len(fields) == 1  # the unfoldable-but-valid field survives
+        assert fields[0]["label"] == "名前"
 
 
 class TestKeyDerivationEdgeCasesCommitted:

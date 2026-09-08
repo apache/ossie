@@ -178,22 +178,28 @@ def _effective_label(label: str, name: str) -> str:
 
 def _field_survives(dataset_name: str, label: str, name: str) -> bool:
     """Whether this field is expected to still be present after the round
-    trip, per the two real gates found while writing this suite:
+    trip.
 
-    - the bracket `[dataset_name::effective_label]` must be a reference
-      `split_column_ref` can parse (an ambiguous one is caught, reported,
-      and the field is carried into the model as an unreadable formula that
-      `tml_to_ossie.convert`'s own Phase 3 then also fails to convert, via
-      whichever of `identifiers.normalise`/`find_column_refs` hits the
-      ambiguity first -- always the same observable outcome, so this
-      property does not need to distinguish which);
-    - the effective display name must itself fold to something
-      (`identifiers.normalise`), since `convert_field`/`convert_metric`
-      call it unconditionally and `tml_to_ossie.convert`'s Phase 3 drops
-      any column whose conversion raises.
+    Only one real gate remains: the bracket `[dataset_name::effective_label]`
+    must be a reference `split_column_ref` can parse. An ambiguous one is
+    caught, reported, and the field is carried into the model as an
+    unreadable formula that `tml_to_ossie.convert`'s own Phase 3 then also
+    fails to convert, via whichever of `identifiers.normalise`/
+    `find_column_refs` hits the ambiguity first -- always the same
+    observable outcome, so this property does not need to distinguish which.
+
+    A second gate used to exist here: the effective display name had to
+    itself fold (`identifiers.normalise`), because `convert_field`/
+    `convert_metric` called it unconditionally and a raise there dropped the
+    column entirely. `_field_or_metric_identifier` closed that gap with a
+    fallback identifier (physical-hint-based, or an allocator-suffixed
+    placeholder) -- a field with an unfoldable name now always survives,
+    just under a different identifier than `identifiers.normalise` would
+    have produced. See the test body for what is, and isn't, pinned about
+    that fallback identifier's exact value.
     """
     effective = _effective_label(label, name)
-    return _bracket_is_usable(dataset_name, effective) and _folds(effective)
+    return _bracket_is_usable(dataset_name, effective)
 
 
 def _expected_datatype(original: str | None) -> str:
@@ -365,16 +371,34 @@ class TestOssieRoundTripAdversarialNames:
                         f"{[i.code for i in ossie_result.issues.issues]}"
                     )
                     new_field = new_fields_by_label[effective]
-                    assert new_field["name"] == identifiers.normalise(effective)
+                    if _folds(effective):
+                        assert new_field["name"] == identifiers.normalise(effective)
+                    else:
+                        # The exact fallback identifier depends on the
+                        # regenerated table's own db_column_name (itself
+                        # just `effective` verbatim here -- no
+                        # FIELD_STASH_DB_COLUMN_NAME is written by this
+                        # generator, so ossie_to_thoughtspot.py's
+                        # TS-FIELD-DB-COLUMN-NAME-ASSUMED path applies) and,
+                        # once that also fails to fold, on allocator
+                        # ordering across every unfoldable field in the
+                        # model -- see _field_or_metric_identifier. This
+                        # property only pins that SOME usable identifier
+                        # was assigned and reported, not which one;
+                        # TestUnnormalisableNamesAreCaughtNotFatal in
+                        # test_tml_to_ossie.py pins the exact fallback for
+                        # one concrete case.
+                        assert new_field["name"]
+                        assert _has_issue(ossie_result.issues, "TS-FIELD-NAME-UNNORMALISABLE")
                     assert new_field.get("datatype") == _expected_datatype(original_datatype)
                     if original_datatype is not None and datatypes.declared_loss(original_datatype):
                         assert _has_issue(tml_result.issues, "TS-FIELD-DATATYPE-DECLARED-LOSS")
                 else:
-                    # Never silently vanished -- either the bracket was
-                    # unusable (reported on the Ossie -> TML leg) or the
-                    # display name would not fold (reported on the
-                    # TML -> Ossie leg); either way `effective` is absent
-                    # and an issue explains why.
+                    # Never silently vanished -- the bracket was unusable
+                    # (reported on the Ossie -> TML leg, and again on the
+                    # TML -> Ossie leg once the unreadable formula is
+                    # reprocessed) -- `effective` is absent and an issue
+                    # explains why.
                     assert effective not in new_fields_by_label
                     assert (
                         _has_issue(tml_result.issues, "TS-FIELD-COLUMN-REF-MALFORMED")

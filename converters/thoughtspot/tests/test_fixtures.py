@@ -28,10 +28,13 @@ YAML 1.1 boolean token, a brace-carrying window formula, a formula
 cross-reference, a connection-specific BOOL column, a SQL View with an
 output alias differing from its column name, a physical column the Model
 does not surface, a non-equality join condition, a composite-key
-relationship, and one metric of each of the three TML shapes this
-converter has to compose. `minimal/` is the smallest possible pair -- one
-model, two tables, one relationship -- for debugging a failure without the
-larger fixture's noise.
+relationship, one metric of each of the three TML shapes this converter has
+to compose, and a non-Latin (CJK) display name with no ASCII form for
+`identifiers.normalise` to fold onto -- which reached a public PR before any
+fixture had one, dropping every field and metric of a non-Latin-named model
+outright (see `_field_or_metric_identifier` in tml_to_ossie.py). `minimal/`
+is the smallest possible pair -- one model, two tables, one relationship --
+for debugging a failure without the larger fixture's noise.
 
 Each fixture directory holds the TML documents (`*.table.tml`,
 `*.sql_view.tml`, `*.model.tml`) plus one `expected.ossie.yaml`: the Ossie
@@ -175,6 +178,26 @@ class TestTpcdsFixtureCoversItsRequiredConstructs:
         customer = next(d for d in dataset["datasets"] if d["name"] == "customer")
         field = next(f for f in customer["fields"] if f["name"] == "customer_full_name")
         assert "datatype" not in field  # a formula-backed field declares no type
+
+    def test_a_non_latin_display_name_falls_back_to_its_warehouse_column_name(self, dataset):
+        # The regression this fixture exists to catch: a CJK-only display
+        # name (カナ名, "kana name") has no ASCII form for
+        # identifiers.normalise to fold onto. Before _field_or_metric_identifier
+        # existed, this field -- and every other field/metric in a
+        # non-Latin-named model -- was silently dropped rather than falling
+        # back to a usable identifier.
+        customer = next(d for d in dataset["datasets"] if d["name"] == "customer")
+        field = next(f for f in customer["fields"] if f["label"] == "カナ名")
+        assert field["name"] == "c_kana_name"  # its own warehouse column name, not a placeholder
+
+    def test_the_non_latin_display_name_issue_names_the_right_cause(self):
+        # This must never be misreported as a malformed column *reference*
+        # -- the [customer::カナ名] bracket itself parses fine; it is the
+        # display name that has no ASCII form.
+        document_set = _load_document_set(FIXTURES_ROOT / "tpcds")
+        result = tml_to_ossie.convert(document_set)
+        codes = {i["code"] for i in result.issues.as_dicts()}
+        assert "TS-FIELD-NAME-UNNORMALISABLE" in codes
 
     def test_store_has_a_display_name_differing_from_its_db_column_name(self, dataset):
         store = next(d for d in dataset["datasets"] if d["name"] == "store")
