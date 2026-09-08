@@ -27,7 +27,9 @@
 # the one side) requires the emitted relationship's endpoints to be the
 # reverse of how this join is declared here -- plus four additional metrics
 # covering the remaining metric shapes and formula constructs this converter
-# has to handle.
+# has to handle, and one non-Latin (CJK) display name on `customer` with no
+# ASCII form to fold onto (see tml_to_ossie.py's
+# `_field_or_metric_identifier`).
 model:
   name: tpcds_retail_model
   description: "TPC-DS retail semantic model used as a shared test fixture."
@@ -151,6 +153,15 @@ model:
         column_type: ATTRIBUTE
     - name: c_email_address
       column_id: customer::c_email_address
+      properties:
+        column_type: ATTRIBUTE
+    # A non-Latin (CJK) display name: identifiers.normalise has no ASCII
+    # form to fold it onto, so this field falls back to its physical
+    # column's own warehouse name (c_kana_name -> "c_kana_name") instead of
+    # being dropped -- see identifiers.py / tml_to_ossie.py's
+    # _field_or_metric_identifier.
+    - name: カナ名
+      column_id: customer::カナ名
       properties:
         column_type: ATTRIBUTE
     # -- item

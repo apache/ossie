@@ -40,6 +40,16 @@ settle: some accented Latin folds to a *conventional* ASCII expansion rather
 than the bare decomposed letter — German `"Müller"` decomposes to `"Muller"`
 here, not the conventional `"Mueller"` — and choosing between them is still a
 product decision left to a later change.
+
+`normalise` itself still raises on a name with no surviving ASCII alphanumerics --
+that has not changed. What changed is who is still allowed to let it propagate.
+`tml_to_ossie.py`'s model/field/metric name conversions each catch it and fall
+back to a different, still-usable identifier instead (see that module's
+`_field_or_metric_identifier` and its model-scope counterpart in `convert`) --
+a display name with no ASCII form is common enough for a non-Latin-script
+customer that treating it as fatal dropped their entire model's worth of
+fields and metrics, not just one name. A caller with no such fallback of its
+own is still expected to let the exception propagate.
 """
 import re
 import unicodedata
