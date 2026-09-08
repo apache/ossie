@@ -39,7 +39,7 @@ table:
       db_column_name: d_quarter_name
       db_column_properties:
         data_type: VARCHAR
-    - name: d_month_name
-      db_column_name: d_month_name
+    - name: d_moy
+      db_column_name: d_moy
       db_column_properties:
-        data_type: VARCHAR
+        data_type: INT64

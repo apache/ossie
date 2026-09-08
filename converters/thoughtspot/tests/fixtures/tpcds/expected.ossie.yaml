@@ -160,15 +160,15 @@ semantic_model:
         - dialect: ANSI_SQL
           expression: date_dim.d_quarter_name
       datatype: String
-    - name: d_month_name
-      label: d_month_name
+    - name: d_moy
+      label: d_moy
       expression:
         dialects:
         - dialect: THOUGHTSPOT
-          expression: '[date_dim::d_month_name]'
+          expression: '[date_dim::d_moy]'
         - dialect: ANSI_SQL
-          expression: date_dim.d_month_name
-      datatype: String
+          expression: date_dim.d_moy
+      datatype: Integer
     custom_extensions:
     - vendor_name: THOUGHTSPOT
       data: '{"_v": 1, "connection_name": "TPC-DS Snowflake", "tml_object": "table",
