@@ -229,7 +229,7 @@ A converter should map `ai_context` when the target vendor supports equivalent c
 
 ### Step-by-Step Guide
 
-1. **Validate input**: Use the [Ossie JSON Schema](../core-spec/osi-schema.json) and the [validation script](../validation/validate.py) to ensure the source Ossie model is valid before conversion.
+1. **Validate input**: Use the [Ossie JSON Schema](../core-spec/ossie-schema.json) and the [validation script](../validation/validate.py) to ensure the source Ossie model is valid before conversion.
 
 2. **Parse the Ossie model**: Load the YAML file and iterate over the top-level `semantic_model` entries.
 

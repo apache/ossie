@@ -62,11 +62,11 @@ final class SalesforceDataTypeMapper {
     }
 
     /** Maps an Ossie logical type to Salesforce, or returns null when no safe mapping exists. */
-    static String toSalesforce(String osiDatatype) {
-        if (osiDatatype == null || osiDatatype.isBlank()) {
+    static String toSalesforce(String ossieDatatype) {
+        if (ossieDatatype == null || ossieDatatype.isBlank()) {
             return null;
         }
-        return OSSIE_TO_SALESFORCE.get(osiDatatype);
+        return OSSIE_TO_SALESFORCE.get(ossieDatatype);
     }
 
     static boolean isTemporalSalesforceType(String salesforceDataType) {
@@ -74,8 +74,8 @@ final class SalesforceDataTypeMapper {
     }
 
     /** Returns whether this mapping loses Ossie's timezone-free DateTime distinction. */
-    static boolean isTimezoneLossyMapping(String osiDatatype, String salesforceDataType) {
-        return "DateTime".equals(osiDatatype) && "DateTime".equals(salesforceDataType);
+    static boolean isTimezoneLossyMapping(String ossieDatatype, String salesforceDataType) {
+        return "DateTime".equals(ossieDatatype) && "DateTime".equals(salesforceDataType);
     }
 
     /**
@@ -83,11 +83,11 @@ final class SalesforceDataTypeMapper {
      * describe compatible values. This treats lossy portable collapses such as
      * Email/String and Currency/Decimal as compatible.
      */
-    static boolean areCompatible(String osiDatatype, String salesforceDataType) {
-        if (osiDatatype == null || salesforceDataType == null) {
+    static boolean areCompatible(String ossieDatatype, String salesforceDataType) {
+        if (ossieDatatype == null || salesforceDataType == null) {
             return true;
         }
-        return Objects.equals(toSalesforce(osiDatatype), salesforceDataType)
-                || Objects.equals(toOssie(salesforceDataType), osiDatatype);
+        return Objects.equals(toSalesforce(ossieDatatype), salesforceDataType)
+                || Objects.equals(toOssie(salesforceDataType), ossieDatatype);
     }
 }

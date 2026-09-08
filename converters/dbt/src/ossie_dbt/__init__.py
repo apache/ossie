@@ -16,13 +16,13 @@
 # under the License.
 
 from ossie_dbt.converter_issues import ConverterIssue, ConverterIssueType, ConverterResult
-from ossie_dbt.msi_to_osi import MSIToOSIConverter
-from ossie_dbt.osi_to_msi import OSIToMSIConverter
+from ossie_dbt.msi_to_ossie import MSIToOssieConverter
+from ossie_dbt.ossie_to_msi import OssieToMSIConverter
 
 __all__ = [
     "ConverterIssue",
     "ConverterIssueType",
     "ConverterResult",
-    "MSIToOSIConverter",
-    "OSIToMSIConverter",
+    "MSIToOssieConverter",
+    "OssieToMSIConverter",
 ]

@@ -44,7 +44,7 @@ def gooddata_tpcds_model(gooddata_tpcds_dict: dict) -> GdDeclarativeModel:
 
 
 @pytest.fixture()
-def osi_tpcds_dict() -> dict:
+def ossie_tpcds_dict() -> dict:
     """Load the Ossie TPC-DS YAML fixture."""
-    with open(FIXTURES_DIR / "osi_tpcds.yaml") as f:
+    with open(FIXTURES_DIR / "ossie_tpcds.yaml") as f:
         return yaml.safe_load(f)

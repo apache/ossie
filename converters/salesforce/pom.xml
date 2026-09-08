@@ -98,9 +98,9 @@
         <plugins>
             <!--
               Copy the canonical Ossie core-spec JSON schema into this module's
-              classpath under /schemas/osi-schema.json so SchemaValidator can
+              classpath under /schemas/ossie-schema.json so SchemaValidator can
               load it at runtime. Single source of truth lives in
-              ../../core-spec/osi-schema.json; do not maintain a duplicate
+              ../../core-spec/ossie-schema.json; do not maintain a duplicate
               copy in this module's src/main/resources.
             -->
             <plugin>
@@ -109,7 +109,7 @@
                 <version>${maven-resources-plugin.version}</version>
                 <executions>
                     <execution>
-                        <id>copy-osi-core-spec-schema</id>
+                        <id>copy-ossie-core-spec-schema</id>
                         <phase>process-resources</phase>
                         <goals>
                             <goal>copy-resources</goal>
@@ -120,7 +120,7 @@
                                 <resource>
                                     <directory>${project.basedir}/../../core-spec</directory>
                                     <includes>
-                                        <include>osi-schema.json</include>
+                                        <include>ossie-schema.json</include>
                                     </includes>
                                 </resource>
                             </resources>
@@ -143,7 +143,7 @@
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>org.apache.ossie.app.OsiSalesforceConverter</mainClass>
+                                    <mainClass>org.apache.ossie.app.OssieSalesforceConverter</mainClass>
                                 </transformer>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>

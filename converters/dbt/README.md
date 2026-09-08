@@ -23,8 +23,8 @@ Converts between dbt's [MetricFlow Semantic Interface](https://docs.getdbt.com/d
 
 Both conversion directions are supported:
 
-- `msi-to-osi` — `semantic_manifest.json` (dbt output) → Ossie YAML
-- `osi-to-msi` — Ossie YAML → `semantic_manifest.json`
+- `msi-to-ossie` — `semantic_manifest.json` (dbt output) → Ossie YAML
+- `ossie-to-msi` — Ossie YAML → `semantic_manifest.json`
 
 ## Requirements
 
@@ -57,13 +57,13 @@ dbt parse
 Then convert to Ossie YAML:
 
 ```bash
-ossie-dbt msi-to-osi -i target/semantic_manifest.json -o semantic_model.yaml
+ossie-dbt msi-to-ossie -i target/semantic_manifest.json -o semantic_model.yaml
 ```
 
 By default the Ossie semantic model is named `semantic_model`. Override it with `--model-name`:
 
 ```bash
-ossie-dbt msi-to-osi -i target/semantic_manifest.json -o semantic_model.yaml --model-name my_project
+ossie-dbt msi-to-ossie -i target/semantic_manifest.json -o semantic_model.yaml --model-name my_project
 ```
 
 Conversion issues (e.g. dropped CONVERSION or PRIVATE metrics) are printed as warnings to stderr. The output file is still written.
@@ -71,7 +71,7 @@ Conversion issues (e.g. dropped CONVERSION or PRIVATE metrics) are printed as wa
 ### Apache Ossie → dbt
 
 ```bash
-ossie-dbt osi-to-msi -i semantic_model.yaml -o semantic_manifest.json
+ossie-dbt ossie-to-msi -i semantic_model.yaml -o semantic_manifest.json
 ```
 
 Produces a `semantic_manifest.json` that metricflow can load.
@@ -80,31 +80,31 @@ Produces a `semantic_manifest.json` that metricflow can load.
 
 ```bash
 ossie-dbt --help
-ossie-dbt msi-to-osi --help
-ossie-dbt osi-to-msi --help
+ossie-dbt msi-to-ossie --help
+ossie-dbt ossie-to-msi --help
 ```
 
 ## Python API
 
 ```python
-from ossie_dbt import MSIToOSIConverter, OSIToMSIConverter
+from ossie_dbt import MSIToOssieConverter, OssieToMSIConverter
 from metricflow_semantics.model.dbt_manifest_parser import parse_manifest_from_dbt_generated_manifest
 
 # dbt → Apache Ossie
 manifest = parse_manifest_from_dbt_generated_manifest(Path("target/semantic_manifest.json").read_text())
-result = MSIToOSIConverter().convert(manifest, osi_model_name="my_project")
+result = MSIToOssieConverter().convert(manifest, ossie_model_name="my_project")
 
 for issue in result.issues:
     print(f"[warning] {issue.issue_type.value}: {issue.element_name}")
 
-osi_yaml = result.output.to_osi_yaml()
+ossie_yaml = result.output.to_ossie_yaml()
 
 # Apache Ossie → dbt
 import yaml
-from ossie import OSIDocument
+from ossie import OssieDocument
 
-document = OSIDocument.model_validate(yaml.safe_load(Path("semantic_model.yaml").read_text()))
-result = OSIToMSIConverter().convert(document)
+document = OssieDocument.model_validate(yaml.safe_load(Path("semantic_model.yaml").read_text()))
+result = OssieToMSIConverter().convert(document)
 manifest_json = result.output.model_dump_json(by_alias=True, exclude_none=True, indent=2)
 ```
 

@@ -30,6 +30,7 @@ import (
 var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List installed plugins",
+	Args:  cobra.NoArgs,
 	// TODO(P1): cross-reference against the embedded plugin registry to show
 	// latest available versions and update indicators once registry embedding
 	// (F4) is implemented.

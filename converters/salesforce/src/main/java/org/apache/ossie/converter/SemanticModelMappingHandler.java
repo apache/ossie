@@ -60,10 +60,10 @@ public class SemanticModelMappingHandler implements PipelineStep {
 
     @Override
     public void execute(Map<String, Object> sourceData, Map<String, Object> outputData, Map<String, String> mappings) {
-        if (direction == ConversionDirection.OSI_TO_SALESFORCE) {
-            mapOsiToSalesforce(sourceData, outputData, mappings);
+        if (direction == ConversionDirection.OSSIE_TO_SALESFORCE) {
+            mapOssieToSalesforce(sourceData, outputData, mappings);
         } else {
-            mapSalesforceToOsi(sourceData, outputData, mappings);
+            mapSalesforceToOssie(sourceData, outputData, mappings);
         }
     }
 
@@ -71,7 +71,7 @@ public class SemanticModelMappingHandler implements PipelineStep {
      * Maps Ossie top-level properties to Salesforce format.
      * Steps: generic mappings → manual conversions → restore custom extensions
      */
-    private void mapOsiToSalesforce(
+    private void mapOssieToSalesforce(
             Map<String, Object> sourceData, Map<String, Object> outputData, Map<String, String> mappings) {
 
         var mappedData = GenericMappingEngine.applyMappings(sourceData, mappings);
@@ -88,7 +88,7 @@ public class SemanticModelMappingHandler implements PipelineStep {
      * Maps Salesforce top-level properties to Ossie format.
      * Steps: generic mappings → manual conversions → store custom extensions
      */
-    private void mapSalesforceToOsi(
+    private void mapSalesforceToOssie(
             Map<String, Object> sourceData, Map<String, Object> outputData, Map<String, String> mappings) {
 
         var mappedData = GenericMappingEngine.applyMappings(sourceData, mappings);
