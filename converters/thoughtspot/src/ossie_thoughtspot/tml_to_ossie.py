@@ -41,7 +41,11 @@ checked.
 A field's identifier and its display label are two different values. `name` is a
 normalised, portable identifier derived from the ThoughtSpot column's display name;
 `label` carries that display name exactly as written. Writing the display name into
-`name`, or the normalised form into `label`, silently breaks both.
+`name`, or the normalised form into `label`, silently breaks both. When the display
+name has no ASCII form at all for `identifiers.normalise` to fold onto (a CJK-only,
+Cyrillic-only, or Greek-only name), `name` falls back to a different, still-usable
+identifier instead of raising — see `_field_or_metric_identifier` — while `label`
+still carries the exact original, unaffected either way.
 
 Finally, a computed column is model-scoped in ThoughtSpot but has to live inside exactly
 one dataset in Ossie. It is attributed to the dataset every one of its column references
@@ -389,12 +393,118 @@ def _ai_context(properties: dict) -> dict | str | None:
     return None
 
 
+def _physical_db_column_name(
+    table_name: str, column_name: str, table_lookup: Callable[[str], dict | None]
+) -> str | None:
+    """The warehouse `db_column_name` of the physical column matching
+    `column_name` (its own display name — what a Model `column_id` suffix
+    names) on `table_name`, or `None` when the table, the column, or a
+    `db_column_name` on it can't be found.
+
+    Used only as a fallback identifier basis — see
+    `_field_or_metric_identifier` — for a column whose *display* name has no
+    ASCII form: the underlying warehouse column name is almost always ASCII
+    even then, and unique within its table by construction, so it survives
+    where the display name doesn't.
+    """
+    table = table_lookup(table_name)
+    if table is None:
+        return None
+    physical = next(
+        (p for p in table.get("columns", []) if p.get("name") == column_name), None
+    )
+    if physical is None:
+        return None
+    return physical.get("db_column_name")
+
+
+def _field_or_metric_identifier(
+    display_name: str,
+    physical_hint: str | None,
+    allocator: identifiers.Allocator,
+    log: IssueLog,
+    *,
+    kind: str,
+    object_ref: str,
+) -> str:
+    """The Ossie identifier for a field or metric's ThoughtSpot display name.
+
+    The common case is `identifiers.normalise(display_name)`, unchanged. The
+    exceptional case — `display_name` has no ASCII alphanumerics for
+    `normalise` to fold onto (a CJK-only, Cyrillic-only, Greek-only, or
+    punctuation-only name) — used to propagate as `ValueError` out of
+    `convert_field`/`convert_metric` entirely, caught by `convert()`'s own
+    try/except and misreported as a malformed *column reference* (the
+    exception is the same type `identifiers.split_column_ref` raises for a
+    genuinely ambiguous reference, and `convert()` could not tell the two
+    apart from outside). That also meant the column was dropped rather than
+    converted — the same graceful-degradation gap `TS-MODEL-NAME-UNNORMALISABLE`
+    already closed at Model scope, here extended to Field/Metric scope, and
+    reported under its own code so the two failures are never conflated again.
+
+    The fallback identifier, in preference order:
+
+    1. `physical_hint` — normally the underlying warehouse column's own
+       `db_column_name` (see `_physical_db_column_name`), for a
+       column_id-backed column. A warehouse identifier is almost always
+       ASCII even when the display name labelling it is not, and it is
+       unique within its own table by construction (two columns cannot
+       share one warehouse name) — so no collision-avoidance is needed for
+       this branch; it is naturally distinct the same way an ordinary,
+       successfully-normalised identifier is (this converter does not
+       collision-check those either, a pre-existing and separate gap — see
+       `_index_attribute_columns`).
+    2. A fixed placeholder — `kind` itself, i.e. `"field"` or `"metric"` —
+       allocated through `allocator`. Reached only when there is no
+       `physical_hint` at all (a formula-backed column with no physical
+       grounding) or the hint itself also has no ASCII form. `allocator` is
+       shared by the caller across every column that can reach this branch,
+       so two columns that would otherwise both become `"field"` instead
+       become `"field"` and `"field_2"` — distinct, per the `Allocator`
+       collision-suffix contract in `identifiers.py`.
+
+    Either fallback always differs from `display_name`, so a caller that
+    already stashes the original display name whenever the identifier
+    differs from it (metrics do; fields carry it in `label` instead, which
+    is populated independently of this call and needs no stash) picks this
+    case up for free — nothing here writes a stash entry itself, only logs
+    the WARNING naming what happened.
+    """
+    try:
+        return identifiers.normalise(display_name)
+    except ValueError:
+        pass
+
+    fallback: str | None = None
+    if physical_hint:
+        try:
+            fallback = identifiers.normalise(physical_hint)
+        except ValueError:
+            fallback = None
+    source = "the underlying warehouse column name" if fallback is not None else "a placeholder"
+    if fallback is None:
+        fallback = allocator.allocate(kind)
+
+    log.add(
+        code=f"TS-{kind.upper()}-NAME-UNNORMALISABLE",
+        severity=Severity.WARNING,
+        message=(
+            f"{kind} name {display_name!r} has no ASCII alphanumerics for "
+            f"normalise() to fold onto; {source} is used as its identifier "
+            f"instead: {fallback!r}"
+        ),
+        object_ref=object_ref,
+    )
+    return fallback
+
+
 def convert_field(
     column: dict,
     formulas: dict[str, dict],
     table_lookup: Callable[[str], dict | None],
     resolve: Callable[[str, str], str | None],
     log: IssueLog,
+    allocator: identifiers.Allocator | None = None,
 ) -> dict | None:
     """Convert one Model `columns[]` entry into an Ossie field, or `None`.
 
@@ -406,17 +516,33 @@ def convert_field(
     function reads the expression from there, never from the column itself. A
     `formula_id` absent from `formulas`, a column with neither key, or a
     `column_type` that is not `ATTRIBUTE`, produces no field.
+
+    `allocator` scopes fallback-identifier collision avoidance when this
+    column's display name has no ASCII form — see
+    `_field_or_metric_identifier`. The caller (`convert()`) shares one
+    `Allocator` across every field in the model so two colliding fallbacks
+    never collide with each other; a caller that omits it (every existing
+    single-column test in this suite) gets a fresh, private one, which is
+    exactly as correct for a call that only ever converts one column at a
+    time.
     """
     properties = column.get("properties") or {}
     if properties.get("column_type") != "ATTRIBUTE":
         return None
+    if allocator is None:
+        allocator = identifiers.Allocator()
 
     display_name = column["name"]
     object_ref = f"field:{display_name}"
-    field: dict = {"name": identifiers.normalise(display_name), "label": display_name}
 
     if "column_id" in column:
         table_name, column_name = identifiers.split_column_ref(f"[{column['column_id']}]")
+        field_name = _field_or_metric_identifier(
+            display_name,
+            _physical_db_column_name(table_name, column_name, table_lookup),
+            allocator, log, kind="field", object_ref=object_ref,
+        )
+        field: dict = {"name": field_name, "label": display_name}
         expr = identifiers.format_column_ref(table_name, column_name)
         field["expression"] = {
             "dialects": expression_entries(expr, resolve, log, object_ref=object_ref)
@@ -455,6 +581,10 @@ def convert_field(
         dataset = attribute_dataset(expr, resolve, log, object_ref=object_ref)
         if dataset is None:
             return None
+        field_name = _field_or_metric_identifier(
+            display_name, None, allocator, log, kind="field", object_ref=object_ref,
+        )
+        field: dict = {"name": field_name, "label": display_name}
         field["expression"] = {
             "dialects": expression_entries(expr, resolve, log, object_ref=object_ref)
         }
@@ -681,6 +811,7 @@ def convert_metric(
     table_lookup: Callable[[str], dict | None],
     resolve: Callable[[str, str], str | None],
     log: IssueLog,
+    allocator: identifiers.Allocator | None = None,
 ) -> dict | None:
     """Convert one Model `columns[]` entry into an Ossie metric, or `None`.
 
@@ -729,10 +860,18 @@ def convert_metric(
     into one. `formula` is omitted rather than written: it is also what a
     document with no stash defaults to on the way back, so writing it would
     change nothing about the reconstruction while making the payload heavier.
+
+    `allocator` is `convert_field`'s own parameter, mirrored here — see its
+    docstring. Metrics are model-scoped in Ossie (unlike fields, scoped per
+    dataset), so `convert()` shares a *different* `Allocator` across metrics
+    than it does across fields; a caller that omits it gets a fresh, private
+    one, correct for a call that only ever converts one column.
     """
     properties = column.get("properties") or {}
     if properties.get("column_type") != "MEASURE":
         return None
+    if allocator is None:
+        allocator = identifiers.Allocator()
 
     display_name = column["name"]
     object_ref = f"metric:{display_name}"
@@ -752,12 +891,15 @@ def convert_metric(
         aggregation_raw = "NONE"
     aggregation = _AGGREGATION[aggregation_raw]
 
-    normalised_name = identifiers.normalise(display_name)
-    metric: dict = {"name": normalised_name}
-
     if "column_id" in column:
         metric_shape = METRIC_SHAPE_COLUMN_AGGREGATION
         table_name, column_name = identifiers.split_column_ref(f"[{column['column_id']}]")
+        metric_name = _field_or_metric_identifier(
+            display_name,
+            _physical_db_column_name(table_name, column_name, table_lookup),
+            allocator, log, kind="metric", object_ref=object_ref,
+        )
+        metric: dict = {"name": metric_name}
         field_ref = identifiers.format_column_ref(table_name, column_name)
         if aggregation is None:
             dialects = expression_entries(
@@ -799,6 +941,10 @@ def convert_metric(
             )
             return None
         expr = formula_entry["expr"]
+        metric_name = _field_or_metric_identifier(
+            display_name, None, allocator, log, kind="metric", object_ref=object_ref,
+        )
+        metric: dict = {"name": metric_name}
         if aggregation is None:
             # Nothing to compose: the verbatim expr, untouched, is the whole metric.
             metric_shape = METRIC_SHAPE_FORMULA
@@ -862,7 +1008,7 @@ def convert_metric(
         return None
 
     stash_payload: dict = {}
-    if normalised_name != display_name:
+    if metric_name != display_name:
         stash_payload[STASH_TML_NAME] = display_name
     if metric_shape != METRIC_SHAPE_FORMULA:
         stash_payload[METRIC_STASH_SHAPE] = metric_shape
@@ -902,28 +1048,45 @@ def convert_metric(
 
 def _index_attribute_columns(
     columns: list[dict], log: IssueLog
-) -> dict[tuple[str, str], str]:
-    """`(TABLE, physical column display name) -> Ossie field identifier`, for
-    every ATTRIBUTE `columns[]` entry bound to a physical `column_id`.
+) -> set[tuple[str, str]]:
+    """`{(TABLE, physical column display name)}`, for every ATTRIBUTE
+    `columns[]` entry bound to a valid physical `column_id`.
 
-    This is the data `resolve()` is built from: a bare `[TABLE::Column]`
-    reference is portable only when it names a column the model actually
-    surfaces as a field, and the identifier it resolves to has to be the
-    exact one `convert_field` independently computes for that same column --
-    plain `identifiers.normalise`, not run through an `identifiers.Allocator`.
-    Neither `convert_field` nor `convert_metric` resolve display-name-fold
-    collisions (names that only clash after normalisation) themselves; this
-    index deliberately matches that rather than silently picking a different,
-    collision-safe name `resolve()` would return but the built field would
-    not actually have. See the module docstring's identifier note in the
-    task report for why closing that gap here is out of scope.
+    This is the set `resolve()` gates cross-references against: a bare
+    `[TABLE::Column]` reference is portable only when it names a column the
+    model actually surfaces as a field. It has to be built ahead of Phase 3
+    (fields and metrics) because a formula processed early in that phase can
+    reference a column defined later in the same `columns[]` list -- the gate
+    needs to already know about every ATTRIBUTE column, not just the ones
+    converted so far.
+
+    Membership only -- no identifier value. An earlier revision stored
+    `identifiers.normalise(column["name"])` as the value here, on the theory
+    that `resolve()`'s caller needed to know the field's actual identifier
+    up front. It didn't: every real consumer of the value only ever tested
+    membership (see `resolve()` in `convert()`), and the one place that did
+    read the *value* (Phase 3.5's `sql_output_columns` stash) now reads
+    `built_field_names`, populated from the field `convert_field` actually
+    built, in `convert()`'s Phase 3 -- the one place that identifier is
+    truly known, rather than a second, independent recomputation of it here
+    that had to somehow stay in exact sync. That sync was already fragile
+    (see the note on `convert_field`'s own `allocator` parameter) and it
+    silently broke the moment a column's display name failed to normalise:
+    this index used to drop such a column from the gate entirely, on the
+    theory that `convert_field` would drop the field too -- true before
+    `convert_field` grew a fallback identifier, and a real correctness bug
+    once it did, because a cross-reference to that column then resolved to
+    nothing even though the field genuinely exists, and the column's own
+    physical entry was reported as unsurfaced despite having a real field.
+    Tracking membership only, independent of how the identifier is derived,
+    closes both without needing the two call sites to agree on anything.
 
     A malformed `column_id` is caught here, per column, rather than aborting
     the whole model: the column is left out of the index -- any expression
     that references it resolves to nothing, which every caller already
     treats as an ordinary unresolved reference -- and an issue names it.
     """
-    index: dict[tuple[str, str], str] = {}
+    index: set[tuple[str, str]] = set()
     for column in columns:
         properties = column.get("properties") or {}
         if properties.get("column_type") != "ATTRIBUTE":
@@ -945,17 +1108,7 @@ def _index_attribute_columns(
                 object_ref=f"field:{column.get('name', '<unnamed>')}",
             )
             continue
-        try:
-            index[(table_name, physical_name)] = identifiers.normalise(column["name"])
-        except ValueError:
-            # column["name"] has no ASCII alphanumerics for normalise() to
-            # fold onto (a CJK-only or punctuation-only display name). This
-            # column is left out of the index exactly as a malformed
-            # column_id is just above -- convert_field/convert_metric hit
-            # the same normalise() call independently and report the
-            # column-level TS-COLUMN-REF-MALFORMED issue that actually drops
-            # it, so nothing here needs its own issue.
-            continue
+        index.add((table_name, physical_name))
     return index
 
 
@@ -1873,14 +2026,38 @@ def convert(document_set: DocumentSet) -> OssieConversion:
         f["id"]: f for f in (model_body.get("formulas") or []) if f.get("id")
     }
     metrics: list[dict] = []
+    # Field identifiers are scoped per dataset in Ossie (Field.name is unique
+    # "within the dataset"); metrics are scoped to the whole model (Metric.name
+    # is unique across `metrics[]`, which is a single flat list here, not one
+    # per dataset). One allocator per scope, shared by every fallback
+    # identifier `convert_field`/`convert_metric` allocate in this model, so
+    # two columns that would otherwise both fall back to the same placeholder
+    # (e.g. two formula-backed, non-Latin-named fields with no physical
+    # grounding to fall back on) get distinct identifiers instead of
+    # colliding. Sharing one field allocator across every dataset rather than
+    # one per dataset is a stricter guarantee than the schema requires, not a
+    # looser one -- a model-wide-unique fallback name is trivially also
+    # dataset-unique -- and it avoids threading a per-dataset registry through
+    # a call site that does not otherwise need to know which dataset it is in
+    # until after the identifier is already computed.
+    field_name_allocator = identifiers.Allocator()
+    metric_name_allocator = identifiers.Allocator()
+    # `(TABLE, physical column display name) -> the Ossie field identifier
+    # convert_field actually assigned it`, populated below as fields are
+    # built. Phase 3.5 needs this for the SQL View `sql_output_columns` stash
+    # -- see `_index_attribute_columns` for why it is no longer read from
+    # `attribute_index` itself.
+    built_field_names: dict[tuple[str, str], str] = {}
 
     for column in model_columns:
         display_name = column.get("name", "<unnamed>")
         properties = column.get("properties") or {}
         try:
-            field = convert_field(column, formulas, table_lookup, resolve, log)
+            field = convert_field(
+                column, formulas, table_lookup, resolve, log, field_name_allocator
+            )
             metric = None if field is not None else convert_metric(
-                column, formulas, table_lookup, resolve, log
+                column, formulas, table_lookup, resolve, log, metric_name_allocator
             )
         except ValueError as exc:
             log.add(
@@ -1892,6 +2069,14 @@ def convert(document_set: DocumentSet) -> OssieConversion:
             continue
 
         if field is not None:
+            if "column_id" in column:
+                # Safe to re-parse without a try/except: convert_field just
+                # parsed this same column_id successfully (that's how `field`
+                # came to exist at all), so it cannot raise here.
+                field_table, field_column = identifiers.split_column_ref(
+                    f"[{column['column_id']}]"
+                )
+                built_field_names[(field_table, field_column)] = field["name"]
             extra_properties = _unconsumed_properties(
                 properties, _FIELD_CONSUMED_PROPERTIES, log, f"field:{display_name}"
             )
@@ -2000,6 +2185,12 @@ def convert(document_set: DocumentSet) -> OssieConversion:
     # one referenced by nothing at all -- redundant with the metric's own
     # verbatim expression, but redundancy is what makes the Table document
     # regenerable independently of which metrics happen to reference it.
+    #
+    # The SQL View alias lookup just below reads `built_field_names`, not
+    # `attribute_index`, for the *value* half of the same fact (which Ossie
+    # field identifier a physical column became) -- see
+    # `_index_attribute_columns` for why the two are no longer the same
+    # object.
     referenced_columns = set(attribute_index)
     for prefix in dataset_order:
         kind = "sql_view" if dataset_stashes[prefix].get(DATASET_STASH_TML_OBJECT) == "sql_view" else "table"
@@ -2022,7 +2213,7 @@ def convert(document_set: DocumentSet) -> OssieConversion:
             # field's name.
             output_aliases = {}
             for column in raw_columns:
-                field_name = attribute_index.get((prefix, column.get("name")))
+                field_name = built_field_names.get((prefix, column.get("name")))
                 if field_name is not None and column.get("sql_output_column") is not None:
                     output_aliases[field_name] = column["sql_output_column"]
             if output_aliases:

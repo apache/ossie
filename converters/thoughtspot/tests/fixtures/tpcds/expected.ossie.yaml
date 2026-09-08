@@ -232,6 +232,19 @@ semantic_model:
         - dialect: ANSI_SQL
           expression: customer.c_email_address
       datatype: String
+    - name: c_kana_name
+      label: カナ名
+      expression:
+        dialects:
+        - dialect: THOUGHTSPOT
+          expression: '[customer::カナ名]'
+        - dialect: ANSI_SQL
+          expression: customer.c_kana_name
+      datatype: String
+      custom_extensions:
+      - vendor_name: THOUGHTSPOT
+        data: '{"_v": 1, "db_column_name": "c_kana_name", "db_column_name_display_name_witness":
+          "\u30ab\u30ca\u540d"}'
     custom_extensions:
     - vendor_name: THOUGHTSPOT
       data: '{"_v": 1, "connection_name": "TPC-DS Snowflake", "tml_object": "table",
