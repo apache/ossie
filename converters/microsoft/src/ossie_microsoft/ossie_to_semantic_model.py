@@ -39,6 +39,7 @@ are represented in the TMSL model.
 import json
 import re
 from typing import Literal
+
 import yaml
 
 from . import _sql_to_dax as sql_to_dax
