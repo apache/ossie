@@ -233,7 +233,6 @@ def test_measures_become_dax_metrics(model):
     total = _metric(model, "Total Sales")
     assert _expression(total, "DAX") == "SUM ( Sales[Amount] )"
     assert total["description"] == "Sum of sales amount"
-    assert total["description"] == "Sum of sales amount"
 
 
 def test_multi_line_measure_expression_is_joined(model):

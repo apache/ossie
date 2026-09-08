@@ -366,10 +366,10 @@ arithmetic between aggregates (`SUM(a) / COUNT(*)`), aggregates over expressions
 and percentiles (whose DAX spelling depends on the interpolation the SQL does not
 state).
 
-A calculated *field* whose expression is not already DAX is likewise skipped, even when
-the same expression would translate as a metric: a calculated column evaluates in row
-context, where `SUM('T'[X])` returns the whole-column total on every row instead of the
-row's own value.
+ A calculated *field* whose expression is not already DAX is not generally translated. The
+ export will only attempt a narrow, unambiguous translation for string concatenations;
+ otherwise it emits the column as `BLANK()` and preserves the original dialect/expression
+ as annotations so the column remains present but does not silently compute a wrong value.
 
 The reason is that the alternative is worse. A stand-in expression such as `BLANK()`,
 or a plausible-looking but wrong translation, produces a model that deploys and
