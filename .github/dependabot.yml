@@ -67,3 +67,7 @@ updates:
       maven-dependencies:
         patterns:
           - "*"
+    ignore:
+      # 2.x/3.x introduced breaking package/API changes; only allow minor/patch updates
+      - dependency-name: "com.networknt:json-schema-validator"
+        update-types: ["version-update:semver-major"]
