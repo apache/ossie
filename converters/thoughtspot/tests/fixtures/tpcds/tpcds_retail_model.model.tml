@@ -124,8 +124,8 @@ model:
       column_id: date_dim::d_quarter_name
       properties:
         column_type: ATTRIBUTE
-    - name: d_month_name
-      column_id: date_dim::d_month_name
+    - name: d_moy
+      column_id: date_dim::d_moy
       properties:
         column_type: ATTRIBUTE
     # -- customer. customer_full_name is a computed attribute (a formula,
