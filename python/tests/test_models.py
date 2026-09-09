@@ -111,6 +111,14 @@ def test_invalid_datatype_is_rejected() -> None:
         OssieDocument.model_validate(document)
 
 
+def test_root_dialects_field_is_rejected() -> None:
+    document = _document()
+    document["dialects"] = ["ANSI_SQL"]
+
+    with pytest.raises(ValidationError):
+        OssieDocument.model_validate(document)
+
+
 @pytest.mark.parametrize(
     ("dimension", "datatype", "expected"),
     [

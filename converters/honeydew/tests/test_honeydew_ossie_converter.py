@@ -608,11 +608,27 @@ def test_ossie_to_honeydew_multiple_models_warns():
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _hd_root(sm):
-    return {"version": OSSIE_VERSION, "vendors": ["HONEYDEW"], "semantic_model": [sm]}
+    return {"version": OSSIE_VERSION, "semantic_model": [sm]}
 
 
 def _ansi(expr):
     return {"dialects": [{"dialect": "ANSI_SQL", "expression": expr}]}
+
+
+def test_honeydew_to_ossie_omits_schema_invalid_root_advertisement_fields(tmp_path):
+    _write_workspace(str(tmp_path), "ws", [{
+        "name": "orders",
+        "keys": ["id"],
+        "key_dataset": "orders",
+        "sql": "db.s.orders",
+        "dataset_attrs": [],
+    }])
+
+    result = yaml.safe_load(convert_honeydew_to_ossie(str(tmp_path)))
+
+    assert "vendors" not in result
+    assert "dialects" not in result
+    assert result["semantic_model"][0]["datasets"][0]["name"] == "orders"
 
 
 @pytest.mark.parametrize("ws_name,entities,expected_root", [
@@ -800,8 +816,7 @@ def test_honeydew_to_ossie_missing_workspace_raises(tmp_path):
 def test_honeydew_to_ossie_missing_schema_dir_empty_model(tmp_path):
     (tmp_path / "workspace.yml").write_text(yaml.dump({"type": "workspace", "name": "ws"}))
     result = yaml.safe_load(convert_honeydew_to_ossie(str(tmp_path)))
-    assert result == {"version": OSSIE_VERSION, "vendors": ["HONEYDEW"],
-                      "semantic_model": [{"name": "ws", "datasets": []}]}
+    assert result == {"version": OSSIE_VERSION, "semantic_model": [{"name": "ws", "datasets": []}]}
 
 
 def test_honeydew_to_ossie_empty_metric_sql_skipped(tmp_path):
@@ -1405,28 +1420,22 @@ def test_connectionless_relation_warns():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Vendors round-trip
+# Root advertisement fields are schema-invalid
 # ─────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("input_vendors,expected_vendors", [
-    (["SNOWFLAKE", "HONEYDEW"], ["HONEYDEW", "SNOWFLAKE"]),
-    (["SNOWFLAKE"], ["HONEYDEW", "SNOWFLAKE"]),
-    (["HONEYDEW"], ["HONEYDEW"]),
+@pytest.mark.parametrize("field,value", [
+    ("vendors", ["SNOWFLAKE", "HONEYDEW"]),
+    ("dialects", ["ANSI_SQL"]),
 ])
-def test_vendors_roundtrip(tmp_path, input_vendors, expected_vendors):
+def test_ossie_to_honeydew_rejects_root_advertisement_fields(field, value):
     doc = yaml.dump({
         "version": OSSIE_VERSION,
-        "vendors": input_vendors,
+        field: value,
         "semantic_model": [{"name": "m", "datasets": []}],
     })
-    files = convert_ossie_to_honeydew(doc)
-    for rel_path, content in files.items():
-        p = tmp_path / rel_path
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content)
-    result = yaml.safe_load(convert_honeydew_to_ossie(str(tmp_path)))
-    assert result == {"version": OSSIE_VERSION, "vendors": expected_vendors,
-                      "semantic_model": [{"name": "m", "datasets": []}]}
+
+    with pytest.raises(HoneydewConversionError, match=field):
+        convert_ossie_to_honeydew(doc)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1469,7 +1478,6 @@ def test_main_honeydew_to_ossie(tmp_path):
     assert result.returncode == 0
     assert yaml.safe_load(output_file.read_text()) == {
         "version": OSSIE_VERSION,
-        "vendors": ["HONEYDEW"],
         "semantic_model": [{"name": "ws", "datasets": [
             {"name": "orders", "source": "DB.S.ORDERS", "primary_key": ["id"],
              "unique_keys": [["id"]]},

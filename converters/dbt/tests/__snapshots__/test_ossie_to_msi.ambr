@@ -18,8 +18,6 @@
 # name: TestOssieToMSIRoundTrip.test_ossie_to_msi_to_ossie_preserves_structure
   '''
   version: 0.2.0.dev0
-  dialects:
-  - ANSI_SQL
   semantic_model:
   - name: semantic_model
     datasets:

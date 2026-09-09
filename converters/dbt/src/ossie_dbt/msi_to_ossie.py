@@ -122,7 +122,6 @@ class MSIToOssieConverter:
         return ConverterResult(
             output=OssieDocument(
                 version="0.2.0.dev0",
-                dialects=[self._dialect],
                 semantic_model=[
                     OssieSemanticModel(
                         name=ossie_model_name,

@@ -88,6 +88,13 @@ def convert_ossie_to_honeydew(ossie_yaml_str: str) -> dict[str, str]:
     if not isinstance(root, dict):
         raise HoneydewConversionError("Invalid Ossie YAML: expected a mapping at the root")
 
+    extra_root_fields = sorted(set(root) - {"version", "semantic_model"})
+    if extra_root_fields:
+        raise HoneydewConversionError(
+            "Invalid Ossie YAML: unsupported root field(s): "
+            + ", ".join(extra_root_fields)
+        )
+
     version_str = str(root.get("version", ""))
     if version_str != SUPPORTED_OSSIE_VERSION:
         raise HoneydewConversionError(
@@ -104,11 +111,10 @@ def convert_ossie_to_honeydew(ossie_yaml_str: str) -> dict[str, str]:
             "only the first will be converted"
         )
 
-    vendors = [v for v in (root.get("vendors") or []) if v != HONEYDEW_VENDOR]
-    return _model_to_files(semantic_models[0], extra_vendors=vendors)
+    return _model_to_files(semantic_models[0])
 
 
-def _model_to_files(sm: dict[str, Any], *, extra_vendors: list[str] | None = None) -> dict[str, str]:
+def _model_to_files(sm: dict[str, Any]) -> dict[str, str]:
     name = sm.get("name")
     if not name:
         raise HoneydewConversionError("Missing 'name' in semantic model")
@@ -119,13 +125,12 @@ def _model_to_files(sm: dict[str, Any], *, extra_vendors: list[str] | None = Non
     if sm.get("description"):
         workspace["description"] = sm["description"]
 
-    # Preserve model-level ai_context, non-HONEYDEW custom_extensions, and extra vendors
+    # Preserve model-level ai_context and non-HONEYDEW custom_extensions.
     model_ai_ctx = sm.get("ai_context")
     model_ext = [e for e in (sm.get("custom_extensions") or []) if e.get("vendor_name") != HONEYDEW_VENDOR]
     ws_meta = _build_ossie_metadata(
         ai_context=model_ai_ctx,
         custom_extensions=model_ext or None,
-        extra_vendors=extra_vendors or None,
     )
     if ws_meta:
         workspace["metadata"] = [ws_meta]
@@ -602,11 +607,8 @@ def convert_honeydew_to_ossie(workspace_dir: str) -> str:
     if ossie_metrics:
         sm["metrics"] = ossie_metrics
 
-    extra_vendors = ws_ossie_meta.get("vendors") or []
-    vendors = [HONEYDEW_VENDOR] + [v for v in extra_vendors if v != HONEYDEW_VENDOR]
     root: dict[str, Any] = {
         "version": SUPPORTED_OSSIE_VERSION,
-        "vendors": vendors,
         "semantic_model": [sm],
     }
     return _dump(root)
@@ -930,7 +932,6 @@ def _build_ossie_metadata(
     label: str | None = None,
     unique_keys: Any = None,
     custom_extensions: list | None = None,
-    extra_vendors: list[str] | None = None,
 ) -> dict[str, Any] | None:
     """Build a Honeydew metadata entry that stores Ossie-only fields for round-tripping."""
     items: list[dict[str, Any]] = []
@@ -944,8 +945,6 @@ def _build_ossie_metadata(
         items.append({"name": "unique_keys", "value": json.dumps(unique_keys)})
     if custom_extensions:
         items.append({"name": "custom_extensions", "value": json.dumps(custom_extensions)})
-    if extra_vendors:
-        items.append({"name": "vendors", "value": json.dumps(extra_vendors)})
 
     if not items:
         return None
@@ -968,7 +967,7 @@ def _read_ossie_metadata(obj: dict[str, Any]) -> dict[str, Any]:
                     result[key] = raw
             elif key == "label":
                 result[key] = raw
-            elif key in ("unique_keys", "custom_extensions", "vendors"):
+            elif key in ("unique_keys", "custom_extensions"):
                 try:
                     result[key] = json.loads(raw)
                 except (json.JSONDecodeError, TypeError):
