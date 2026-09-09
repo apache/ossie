@@ -1,0 +1,169 @@
+{
+  "kind": "data-model",
+  "name": "Events",
+  "dataModelId": "33333333-3333-3333-3333-333333333333",
+  "schemaVersion": 1,
+  "pages": [
+    {
+      "id": "pageB",
+      "name": "Model",
+      "elements": [
+        {
+          "id": "elemEvents",
+          "kind": "table",
+          "name": "Events",
+          "source": {
+            "connectionId": "conn-2",
+            "kind": "warehouse-table",
+            "path": ["ANALYTICS", "PUBLIC", "EVENTS"]
+          },
+          "columns": [
+            {"id": "colEventId", "formula": "[EVENTS/EVENT_ID]", "name": "Event ID"},
+            {"id": "colOrgId", "formula": "[EVENTS/ORG_ID]", "name": "Org ID"},
+            {"id": "colUserId", "formula": "[EVENTS/USER_ID]", "name": "User ID"},
+            {"id": "colAmount", "formula": "[EVENTS/AMOUNT]", "name": "Amount"},
+            {"id": "colOccurredAt", "formula": "[EVENTS/OCCURRED_AT]", "name": "Occurred At"},
+            {"id": "colEventName", "formula": "[EVENTS/EVENT_NAME]", "name": "Event Name"},
+            {"id": "colCategory", "formula": "[EVENTS/CATEGORY]", "name": "Category"},
+            {"id": "colRegion", "formula": "[EVENTS/REGION]", "name": "Region"},
+            {
+              "id": "colPayload",
+              "formula": "[EVENTS/PAYLOAD]",
+              "name": "Payload",
+              "format": {"kind": "variant"}
+            },
+            {
+              "id": "colRunningTotal",
+              "formula": "RunningSum([EVENTS/AMOUNT])",
+              "name": "Running Total"
+            }
+          ],
+          "groupings": [
+            {"id": "groupByOrg", "groupBy": ["colOrgId"], "calculations": ["colRunningTotal"]}
+          ],
+          "filters": [
+            {"kind": "number-range", "id": "filtAmount", "columnId": "colAmount", "state": "enabled", "includeNulls": "never", "min": 0, "max": 1000},
+            {"kind": "date-range", "id": "filtOccurred", "columnId": "colOccurredAt", "state": "enabled", "includeNulls": "always"},
+            {"kind": "top-n", "id": "filtTopOrgs", "columnId": "colOrgId", "state": "enabled"},
+            {"kind": "list", "id": "filtCategory", "columnId": "colCategory", "state": "enabled", "mode": "include", "values": ["signup", "purchase"]},
+            {"kind": "text-match", "id": "filtName", "columnId": "colEventName", "mode": "contains", "value": "checkout", "case": "insensitive", "includeNulls": "never", "state": "enabled"},
+            {"kind": "hierarchy", "id": "filtRegion", "columnId": "colRegion", "state": "disabled", "mode": "include", "values": [["NA", "US"], ["NA", "CA"]]}
+          ],
+          "relationships": [
+            {
+              "id": "relEventsToOrgUser",
+              "targetElementId": "elemOrgUsers",
+              "relationshipType": "N:1",
+              "keys": [
+                {
+                  "sourceColumnId": "inode-abc123/ORG_ID",
+                  "targetColumnId": "inode-def456/ORGANIZATION_UUID"
+                },
+                {
+                  "sourceColumnId": "colUserId",
+                  "targetColumnId": "inode-def456/USER_UUID"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "elemOrgUsers",
+          "kind": "table",
+          "name": "Org Users",
+          "source": {
+            "connectionId": "conn-2",
+            "kind": "warehouse-table",
+            "path": ["ANALYTICS", "PUBLIC", "ORG_USERS"]
+          },
+          "columns": [
+            {"id": "colOrgUuid", "formula": "[ORG_USERS/ORGANIZATION_UUID]"},
+            {"id": "colUserUuid", "formula": "[ORG_USERS/USER_UUID]"},
+            {"id": "colPlanTier", "formula": "[ORG_USERS/PLAN_TIER]", "name": "Plan Tier"}
+          ],
+          "uniqueKeys": ["colOrgUuid", "colUserUuid"]
+        },
+        {
+          "id": "elemActiveEvents",
+          "kind": "table",
+          "name": "Active Events",
+          "description": "Derived view layered on Events, not a direct warehouse table",
+          "source": {
+            "kind": "table",
+            "elementId": "elemEvents",
+            "groupingId": "groupByOrg"
+          },
+          "columns": [
+            {"id": "colActiveEventId", "formula": "[Event ID]", "name": "Event ID"}
+          ]
+        },
+        {
+          "id": "elemCustomSql",
+          "kind": "table",
+          "name": "Daily Revenue",
+          "source": {
+            "kind": "sql",
+            "connectionId": "conn-2",
+            "statement": "SELECT DATE_TRUNC('day', occurred_at) AS DAY, SUM(amount) AS REVENUE FROM analytics.public.events GROUP BY 1"
+          },
+          "columns": [
+            {"id": "colDay", "formula": "[DAY]", "name": "Day"},
+            {"id": "colRevenue", "formula": "[REVENUE]", "name": "Revenue"}
+          ]
+        },
+        {
+          "id": "elemFromOtherModel",
+          "kind": "table",
+          "name": "Shared Dimension",
+          "source": {
+            "kind": "data-model",
+            "dataModelId": "11111111-1111-1111-1111-111111111111",
+            "elementId": "elemCustomers"
+          },
+          "columns": [
+            {"id": "colSharedCustomerId", "formula": "[Customer ID]", "name": "Customer ID"}
+          ]
+        },
+        {
+          "id": "elemJoined",
+          "kind": "table",
+          "name": "Events With Orgs",
+          "source": {
+            "kind": "join",
+            "name": "events_orgs",
+            "primarySource": {"kind": "table", "elementId": "elemEvents"},
+            "joins": [
+              {
+                "source": {"kind": "table", "elementId": "elemOrgUsers"},
+                "joinType": "left-outer",
+                "keys": [{"sourceColumnId": "colOrgId", "targetColumnId": "colOrgUuid"}]
+              }
+            ]
+          },
+          "columns": [
+            {"id": "colJoinedEventId", "formula": "[Event ID]", "name": "Event ID"},
+            {"id": "colJoinedPlanTier", "formula": "[Plan Tier]", "name": "Plan Tier"}
+          ]
+        },
+        {
+          "id": "elemUnioned",
+          "kind": "table",
+          "name": "All Events",
+          "source": {
+            "kind": "union",
+            "sources": [
+              {"kind": "table", "elementId": "elemEvents"},
+              {"kind": "table", "elementId": "elemActiveEvents"}
+            ],
+            "matches": [
+              {"columnIds": ["colEventId", "colActiveEventId"]}
+            ]
+          },
+          "columns": [
+            {"id": "colUnionEventId", "formula": "[Event ID]", "name": "Event ID"}
+          ]
+        }
+      ]
+    }
+  ]
+}

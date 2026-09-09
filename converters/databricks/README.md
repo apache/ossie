@@ -86,10 +86,10 @@ Each row maps in both directions; the **Notes** flag where a behavior is specifi
 | `dataset.fields[]` | `dimensions[]` | Export: fields flatten into one list and a joined column is qualified by its full join path (`customer.c_name`; `customer.region.r_name` when nested). |
 | `field.expression.dialects[]` | `expr` | Export: prefer the `DATABRICKS` dialect, else `ANSI_SQL`. |
 | `metrics[]` | `measures[]` | Export: fact columns are referenced bare (`SUM(amount)`). |
-| `field.label` | `display_name` | |
+| `field.label` | dimension `display_name` | A measure's `display_name` has no `label` on the Apache Ossie metric shape, so it rides in the stash instead (see the `custom_extensions` row). |
 | `field` / `metric` `description` | `comment` | |
 | `ai_context.synonyms` | `synonyms` | |
-| `custom_extensions[DATABRICKS]` | `filter`, `window`, `format`, `rely`, `materialization` | Import stashes Metric View only features here; export restores them -- keeping `MV -> Apache Ossie -> MV` lossless. |
+| `custom_extensions[DATABRICKS]` | `filter`, `window`, `format`, `rely`, `materialization`, measure `display_name` | Import stashes Metric View only features here; export restores them -- keeping `MV -> Apache Ossie -> MV` lossless. |
 
 ## Requirements
 

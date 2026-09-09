@@ -58,6 +58,7 @@ Supported SQL and expression language dialects for metrics and field definitions
 | `DATABRICKS` | Databricks SQL |
 | `MAQL` | GoodData MAQL (Metric Analysis and Query Language) |
 | `BIGQUERY` | Google BigQuery (GoogleSQL) |
+| `SIGMA` | Sigma Computing's spreadsheet-style formula language |
 | `THOUGHTSPOT` | ThoughtSpot formula language |
 
 ### Data types
@@ -448,6 +449,7 @@ The following are well-known examples:
 | `HONEYDEW` | Honeydew-specific attributes |
 | `WISDOM` | WisdomAI-specific attributes |
 | `LIGHTDASH` | Lightdash-specific attributes |
+| `SIGMA` | Sigma Computing-specific attributes |
 
 ### Examples
 

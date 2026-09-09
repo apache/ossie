@@ -32,6 +32,7 @@ class OssieDialect(str, Enum):
     TABLEAU = "TABLEAU"
     DATABRICKS = "DATABRICKS"
     BIGQUERY = "BIGQUERY"
+    SIGMA = "SIGMA"
     THOUGHTSPOT = "THOUGHTSPOT"
 
 
@@ -72,6 +73,7 @@ class OssieVendor(str, Enum):
     SEMANTIDO = "SEMANTIDO"
     WISDOM = "WISDOM"
     LIGHTDASH = "LIGHTDASH"
+    SIGMA = "SIGMA"
 
 
 class OssieAIContextObject(BaseModel):

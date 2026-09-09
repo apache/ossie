@@ -1,0 +1,58 @@
+{
+  "kind": "data-model",
+  "name": "Forward Compatibility",
+  "schemaVersion": 1,
+  "pages": [
+    {
+      "id": "pageC",
+      "name": "Model",
+      "elements": [
+        {
+          "id": "elemBasic",
+          "kind": "table",
+          "name": "Basic",
+          "source": {
+            "connectionId": "conn-3",
+            "kind": "warehouse-table",
+            "path": [
+              "ANALYTICS",
+              "PUBLIC",
+              "BASIC"
+            ]
+          },
+          "columns": [
+            {
+              "id": "colId",
+              "formula": "[BASIC/ID]",
+              "name": "Id",
+              "someFutureColumnKey": {
+                "a": 1
+              }
+            }
+          ],
+          "someFutureElementKey": [
+            "not",
+            "yet",
+            "modeled"
+          ]
+        },
+        {
+          "id": "elemFutureKind",
+          "kind": "some-future-element-kind",
+          "name": "Not A Table",
+          "arbitrary": {
+            "nested": [
+              "payload",
+              1,
+              true,
+              null
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "someFutureTopLevelKey": {
+    "round": "trips"
+  }
+}

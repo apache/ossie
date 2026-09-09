@@ -16,6 +16,20 @@
       "items": {
         "$ref": "#/$defs/SemanticModel"
       }
+    },
+    "dialects": {
+      "type": "array",
+      "description": "Dialects used anywhere in this document",
+      "items": {
+        "$ref": "#/$defs/Dialect"
+      }
+    },
+    "vendors": {
+      "type": "array",
+      "description": "Vendors with custom_extensions present anywhere in this document",
+      "items": {
+        "$ref": "#/$defs/Vendor"
+      }
     }
   },
   "required": ["version", "semantic_model"],
@@ -23,7 +37,7 @@
   "$defs": {
     "Dialect": {
       "type": "string",
-      "enum": ["ANSI_SQL", "SNOWFLAKE", "MDX", "TABLEAU", "DATABRICKS", "MAQL", "BIGQUERY", "THOUGHTSPOT"],
+      "enum": ["ANSI_SQL", "SNOWFLAKE", "MDX", "TABLEAU", "DATABRICKS", "MAQL", "BIGQUERY", "SIGMA", "THOUGHTSPOT"],
       "description": "Supported SQL and expression language dialects"
     },
     "Vendor": {

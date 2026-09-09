@@ -53,6 +53,9 @@ from ._common import (
 _MODEL_STASH_KEYS = ("filter", "parameters", "materialization")
 _JOIN_STASH_KEYS = ("rely", "cardinality")
 _COLUMN_STASH_KEYS = ("format", "window")
+# A dimension's display_name maps to the field `label`, but a metric has no `label`, so a
+# measure's display_name is stashed instead.
+_MEASURE_STASH_KEYS = ("display_name",)
 
 
 def _warn(scope, msg):
@@ -362,5 +365,6 @@ def _convert_measure(measure, fact_name):
         metric["description"] = measure["comment"]
     if measure.get("synonyms"):
         metric["ai_context"] = {"synonyms": list(measure["synonyms"])}
-    write_stash(metric, {k: measure[k] for k in _COLUMN_STASH_KEYS if k in measure})
+    stash_keys = _COLUMN_STASH_KEYS + _MEASURE_STASH_KEYS
+    write_stash(metric, {k: measure[k] for k in stash_keys if k in measure})
     return metric

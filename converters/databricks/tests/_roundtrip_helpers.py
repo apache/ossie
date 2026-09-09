@@ -180,6 +180,8 @@ def build_metric_view(rnd):
         if rnd.chance(0.4):
             m["comment"] = rnd.text()
         if rnd.chance(0.3):
+            m["display_name"] = rnd.text()
+        if rnd.chance(0.3):
             m["synonyms"] = [rnd.text() for _ in range(rnd.count(1, 3))]
         if rnd.chance(0.3):
             m["window"] = [{"order": rnd.colname(), "range": "trailing 7 day"}]
