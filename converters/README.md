@@ -76,7 +76,7 @@ The Ossie specification currently defines extensions for the following vendors:
 | `OMNI` | Omni semantic model |
 | `WISDOM` | WisdomAI domain |
 | `NVIDIA_GSF` | NVIDIA Generative Semantic Fabric standalone YAML |
-| `POWER_BI` | Microsoft Power BI / Fabric semantic model (TMSL) |
+| `SIGMA` | Sigma Computing data model |
 
 Each vendor may define custom extensions (via the `custom_extensions` field in the Ossie spec) to carry vendor-specific metadata that does not have an equivalent in the core specification.
 

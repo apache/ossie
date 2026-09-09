@@ -137,10 +137,10 @@ dataObjects:
         customExtensions:
         - vendor: Ossie
           data: '{"synonyms": ["quarter", "fiscal quarter"]}'
-      d_month_name:
-        code: d_month_name
+      d_moy:
+        code: d_moy
         abstractType: date
-        comment: Month name
+        comment: Month of year (1-12)
         customExtensions:
         - vendor: Ossie
           data: '{"synonyms": ["month"]}'
@@ -299,9 +299,9 @@ dimensions:
     dataObject: date_dim
     column: d_quarter_name
     resultType: date
-  d_month_name:
+  d_moy:
     dataObject: date_dim
-    column: d_month_name
+    column: d_moy
     resultType: date
   c_customer_id:
     dataObject: customer

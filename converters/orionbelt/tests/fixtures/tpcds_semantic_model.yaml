@@ -202,12 +202,12 @@ semantic_model:
                 - "quarter"
                 - "fiscal quarter"
 
-          - name: d_month_name
+          - name: d_moy
             expression:
               dialects:
                 - dialect: ANSI_SQL
-                  expression: d_month_name
-            description: Month name
+                  expression: d_moy
+            description: Month of year (1-12)
             dimension:
               is_time: true
             ai_context:

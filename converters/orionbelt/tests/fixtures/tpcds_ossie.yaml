@@ -21,7 +21,7 @@
 # This example demonstrates the Ossie Core Metadata Spec using the TPC-DS benchmark schema
 # TPC-DS is a decision support benchmark with a realistic retail business model
 
-version: "0.1.1"
+version: "0.2.0.dev0"
 
 semantic_model:
   - name: tpcds_retail_model
@@ -202,12 +202,12 @@ semantic_model:
                 - "quarter"
                 - "fiscal quarter"
 
-          - name: d_month_name
+          - name: d_moy
             expression:
               dialects:
                 - dialect: ANSI_SQL
-                  expression: d_month_name
-            description: Month name
+                  expression: d_moy
+            description: Month of year (1-12)
             dimension:
               is_time: true
             ai_context:
