@@ -41,6 +41,10 @@ import yaml
 SUPPORTED_OSSIE_VERSION = "0.2.0.dev0"
 HONEYDEW_VENDOR = "HONEYDEW"
 _OSSIE_METADATA_SECTION = "ossie"
+# Workspaces written before the Ossie rebrand named the section "osi". Still
+# read it, so exporting such a workspace does not silently drop the fields it
+# preserves (ai_context, label, unique_keys, custom_extensions, vendors).
+_LEGACY_OSSIE_METADATA_SECTION = "osi"
 _HD_ATTR_KEYS = ("display_name", "hidden", "folder", "format_string", "timegrain")
 
 
@@ -955,7 +959,10 @@ def _build_ossie_metadata(
 def _read_ossie_metadata(obj: dict[str, Any]) -> dict[str, Any]:
     """Read Ossie-preserved fields from a Honeydew object's 'ossie' metadata section."""
     for section in (obj.get("metadata") or []):
-        if (section.get("name") or "") != _OSSIE_METADATA_SECTION:
+        if (section.get("name") or "") not in (
+            _OSSIE_METADATA_SECTION,
+            _LEGACY_OSSIE_METADATA_SECTION,
+        ):
             continue
         result: dict[str, Any] = {}
         for item in (section.get("metadata") or []):

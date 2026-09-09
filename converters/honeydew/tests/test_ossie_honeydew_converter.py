@@ -278,6 +278,19 @@ def test_read_ossie_metadata_no_ossie_section():
     assert _read_ossie_metadata({"metadata": [{"name": "other", "metadata": []}]}) == {}
 
 
+def test_read_legacy_osi_metadata_section():
+    """Workspaces written before the rebrand named the section 'osi'; still read it."""
+    section = _build_ossie_metadata(
+        ai_context={"synonyms": ["orders"]},
+        unique_keys=[["col1"]],
+        custom_extensions=[{"vendor_name": "SNOWFLAKE", "data": "{}"}],
+    )
+    legacy = {**section, "name": "osi"}
+    assert _read_ossie_metadata({"metadata": [legacy]}) == _read_ossie_metadata(
+        {"metadata": [section]}
+    )
+
+
 def test_read_ossie_metadata_no_metadata():
     assert _read_ossie_metadata({}) == {}
 
