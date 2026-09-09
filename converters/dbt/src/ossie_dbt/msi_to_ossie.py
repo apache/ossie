@@ -110,6 +110,13 @@ class MSIToOssieConverter:
                 issues.append(
                     ConverterIssue(issue_type=ConverterIssueType.CUMULATIVE_SEMANTICS_LOSS, element_name=metric.name)
                 )
+            if metric.type is MetricType.DERIVED and any(
+                input_metric.offset_window or input_metric.offset_to_grain
+                for input_metric in metric.type_params.metrics or []
+            ):
+                issues.append(
+                    ConverterIssue(issue_type=ConverterIssueType.OFFSET_SEMANTICS_LOSS, element_name=metric.name)
+                )
             expr = self._resolve_metric_expression(metric, metric_index, expression_cache)
             ossie_metrics.append(
                 OssieMetric(

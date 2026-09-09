@@ -951,6 +951,96 @@ class TestConverterIssues:
         assert len(cumulative_issues) == 1
         assert cumulative_issues[0].element_name == "cumulative_revenue"
 
+    def test_derived_metric_with_offset_window_emits_issue(self) -> None:
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            measures=[_measure("revenue", agg=AggregationType.SUM, expr="amount")],
+        )
+        revenue_m = _simple_metric("revenue", "revenue")
+        revenue_yoy = PydanticMetric(
+            name="revenue_yoy",
+            description=None,
+            type=MetricType.DERIVED,
+            type_params=PydanticMetricTypeParams(
+                expr="current - prior",
+                metrics=[
+                    PydanticMetricInput(name="revenue", alias="current"),
+                    PydanticMetricInput(
+                        name="revenue",
+                        alias="prior",
+                        offset_window=PydanticMetricTimeWindow(count=1, granularity="year"),
+                    ),
+                ],
+            ),
+            filter=None,
+            metadata=default_meta(),
+            config=None,
+        )
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[revenue_m, revenue_yoy]))
+
+        offset_issues = [i for i in result.issues if i.issue_type == ConverterIssueType.OFFSET_SEMANTICS_LOSS]
+        assert len(offset_issues) == 1
+        assert offset_issues[0].element_name == "revenue_yoy"
+
+    def test_derived_metric_with_offset_to_grain_emits_issue(self) -> None:
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            measures=[_measure("revenue", agg=AggregationType.SUM, expr="amount")],
+        )
+        revenue_m = _simple_metric("revenue", "revenue")
+        revenue_mtd_ago = PydanticMetric(
+            name="revenue_vs_month_start",
+            description=None,
+            type=MetricType.DERIVED,
+            type_params=PydanticMetricTypeParams(
+                expr="current - start",
+                metrics=[
+                    PydanticMetricInput(name="revenue", alias="current"),
+                    PydanticMetricInput(name="revenue", alias="start", offset_to_grain="month"),
+                ],
+            ),
+            filter=None,
+            metadata=default_meta(),
+            config=None,
+        )
+        result = MSIToOssieConverter().convert(
+            _manifest(semantic_models=[sm], metrics=[revenue_m, revenue_mtd_ago])
+        )
+
+        offset_issues = [i for i in result.issues if i.issue_type == ConverterIssueType.OFFSET_SEMANTICS_LOSS]
+        assert len(offset_issues) == 1
+        assert offset_issues[0].element_name == "revenue_vs_month_start"
+
+    def test_derived_metric_without_offset_does_not_emit_issue(self) -> None:
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            measures=[
+                _measure("revenue", agg=AggregationType.SUM, expr="amount"),
+                _measure("cost", agg=AggregationType.SUM, expr="cost_amount"),
+            ],
+        )
+        revenue_m = _simple_metric("revenue", "revenue")
+        cost_m = _simple_metric("cost", "cost")
+        profit = PydanticMetric(
+            name="profit",
+            description=None,
+            type=MetricType.DERIVED,
+            type_params=PydanticMetricTypeParams(
+                expr="revenue - cost",
+                metrics=[
+                    PydanticMetricInput(name="revenue"),
+                    PydanticMetricInput(name="cost"),
+                ],
+            ),
+            filter=None,
+            metadata=default_meta(),
+            config=None,
+        )
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[revenue_m, cost_m, profit]))
+
+        offset_issues = [i for i in result.issues if i.issue_type == ConverterIssueType.OFFSET_SEMANTICS_LOSS]
+        assert len(offset_issues) == 0
+
 
 class TestFilterRendering:
     """Unit tests for the Jinja → SQL rendering of where-filter templates."""
