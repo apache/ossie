@@ -17,9 +17,9 @@
   under the License.
 -->
 
-# Ossie ↔ Honeydew Converter
+# Apache Ossie ↔ Honeydew Converter
 
-Bidirectional converter between [Ossie](../../core-spec/spec.md) semantic models and [Honeydew](https://honeydew.ai/docs) workspace YAML.
+Bidirectional converter between [Apache Ossie](../../core-spec/spec.md) semantic models and [Honeydew](https://honeydew.ai/docs) workspace YAML.
 
 ## Overview
 
@@ -70,10 +70,10 @@ uv sync
 
 ```bash
 # Ossie YAML → Honeydew workspace directory
-uv run honeydew-ossie ossie-to-honeydew -i input.yaml -o output_dir/
+uv run ossie-honeydew ossie-to-honeydew -i input.yaml -o output_dir/
 
 # Honeydew workspace directory → Ossie YAML
-uv run honeydew-ossie honeydew-to-ossie -i workspace_dir/ -o output.yaml
+uv run ossie-honeydew honeydew-to-ossie -i workspace_dir/ -o output.yaml
 ```
 
 ## Tests

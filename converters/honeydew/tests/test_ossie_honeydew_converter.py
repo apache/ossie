@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from honeydew_ossie.converter import (
+from ossie_honeydew.converter import (
     HoneydewConversionError,
     _assign_metrics_to_entities,
     _build_ossie_metadata,
@@ -1444,7 +1444,7 @@ def test_main_ossie_to_honeydew(tmp_path):
     }))
     output_dir = tmp_path / "out"
     result = subprocess.run(
-        [sys.executable, "-m", "honeydew_ossie.converter",
+        [sys.executable, "-m", "ossie_honeydew.converter",
          "ossie-to-honeydew", "-i", str(input_file), "-o", str(output_dir)],
         capture_output=True, text=True,
     )
@@ -1462,7 +1462,7 @@ def test_main_honeydew_to_ossie(tmp_path):
     }])
     output_file = tmp_path / "output.yaml"
     result = subprocess.run(
-        [sys.executable, "-m", "honeydew_ossie.converter",
+        [sys.executable, "-m", "ossie_honeydew.converter",
          "honeydew-to-ossie", "-i", str(tmp_path), "-o", str(output_file)],
         capture_output=True, text=True,
     )
@@ -1487,7 +1487,7 @@ def test_main_path_traversal_rejected(tmp_path):
     )
     output_dir = tmp_path / "out"
     result = subprocess.run(
-        [sys.executable, "-m", "honeydew_ossie.converter",
+        [sys.executable, "-m", "ossie_honeydew.converter",
          "ossie-to-honeydew", "-i", str(input_file), "-o", str(output_dir)],
         capture_output=True, text=True,
     )

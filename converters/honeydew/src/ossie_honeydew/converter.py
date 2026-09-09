@@ -24,8 +24,8 @@ Ossie → Honeydew: Converts a single Ossie YAML file into a Honeydew workspace
 Honeydew → Ossie: Reads a Honeydew workspace directory and produces an Ossie YAML.
 
 Usage:
-    python converter.py ossie-to-honeydew -i input.yaml -o output_dir/
-    python converter.py honeydew-to-ossie -i workspace_dir/ -o output.yaml
+    ossie-honeydew ossie-to-honeydew -i input.yaml -o output_dir/
+    ossie-honeydew honeydew-to-ossie -i workspace_dir/ -o output.yaml
 """
 
 import argparse
