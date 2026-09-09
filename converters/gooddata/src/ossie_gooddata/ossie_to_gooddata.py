@@ -357,8 +357,13 @@ def _is_multivalue(rel: dict[str, Any]) -> bool:
     return bool(gd_ext and gd_ext.get("multivalue"))
 
 
-def _parse_source_to_table_id(source: str, data_source_id: str) -> GdDataSourceTableId:
-    """Parse an Ossie source string into a GoodData DataSourceTableId."""
+def _parse_source_to_table_id(source: object, data_source_id: str) -> GdDataSourceTableId:
+    """Parse a legacy Ossie string source into a GoodData DataSourceTableId."""
+    if not isinstance(source, str):
+        kind = source.get("kind") if isinstance(source, dict) else type(source).__name__
+        raise TypeError(
+            f"Structured dataset source kind {kind!r} is not supported by the GoodData converter"
+        )
     parts = source.split(".")
     if len(parts) >= 3:
         # source_id.schema.table or more

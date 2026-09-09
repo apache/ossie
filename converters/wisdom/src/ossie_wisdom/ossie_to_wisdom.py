@@ -40,6 +40,7 @@ from ossie import (
     OssieDocument,
     OssieExpression,
     OssieSemanticModel,
+    OssieSource,
 )
 from ossie_wisdom.converter_issues import ConverterIssue, ConverterIssueType, ConverterResult
 
@@ -270,7 +271,12 @@ class OssieToWisdomConverter:
             return ai_context.instructions or ""
         return ai_context
 
-    def _split_source(self, source: str) -> Tuple[str, str, str]:
+    def _split_source(self, source: OssieSource) -> Tuple[str, str, str]:
+        if not isinstance(source, str):
+            kind = getattr(source, "kind", type(source).__name__)
+            raise TypeError(
+                f"Structured dataset source kind {kind!r} is not supported by the Wisdom converter"
+            )
         parts = source.split(".")
         if len(parts) >= 3:
             return parts[0], parts[1], ".".join(parts[2:])

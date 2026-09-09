@@ -328,9 +328,16 @@ def parse_source(source, dataset_name):
     (parts may be double-quoted: `"Omni Views".channel_info`).
     Omni views require a `schema`, so a bare 1-part table name is rejected.
     """
-    if not source or not str(source).strip():
+    if not source:
         raise ConversionError(f"Dataset '{dataset_name}': missing/empty 'source'")
-    s = str(source).strip()
+    if not isinstance(source, str):
+        kind = source.get("kind") if isinstance(source, dict) else type(source).__name__
+        raise ConversionError(
+            f"Dataset '{dataset_name}': structured source kind {kind!r} is not supported by the Omni converter"
+        )
+    if not source.strip():
+        raise ConversionError(f"Dataset '{dataset_name}': missing/empty 'source'")
+    s = source.strip()
     if re.match(r"(?i)(select|with)\b", s):
         return ("sql", s)
     if not _SOURCE_PARTS_RE.match(s):

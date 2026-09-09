@@ -43,6 +43,14 @@ import ossie_orionbelt.converter as conv
 # ---------------------------------------------------------------------------
 
 
+def test_structured_dataset_source_is_rejected() -> None:
+    converter = conv.OssietoOBML({"version": "0.2.0.dev0", "semantic_model": []})
+    source = {"kind": "file", "format": "parquet", "locations": ["s3://bucket/orders.parquet"]}
+
+    with pytest.raises(TypeError, match="Structured dataset source kind.*file.*not supported"):
+        converter._parse_source(source)
+
+
 @pytest.fixture(scope="module")
 def schema_validator() -> Any:
     """Draft 2020-12 validator pinned to the resolved Ossie v0.2 core schema

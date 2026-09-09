@@ -50,6 +50,13 @@ VALIDATOR = Path(__file__).resolve().parents[3] / "validation" / "validate.py"
 SCHEMA = Path(__file__).resolve().parents[3] / "core-spec" / "ossie-schema.json"
 
 
+def test_structured_dataset_source_is_rejected() -> None:
+    source = {"kind": "file", "format": "parquet", "locations": ["s3://bucket/orders.parquet"]}
+
+    with pytest.raises(GSFConversionError, match="Structured dataset source kind.*file.*not supported"):
+        _parse_source(source, "analytics")
+
+
 def _ossie_yaml() -> str:
     return (FIXTURES / "sales.ossie.yaml").read_text(encoding="utf-8")
 

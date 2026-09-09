@@ -25,6 +25,7 @@ import org.apache.ossie.converter.Converter;
 import org.apache.ossie.converter.ConverterFactory;
 import org.apache.ossie.converter.ConversionDirection;
 import org.apache.ossie.converter.CustomExtensionHandler;
+import org.apache.ossie.exception.ConversionException;
 import org.apache.ossie.validator.SchemaValidator;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -92,6 +93,23 @@ class OssieToSalesforceConverterTest {
         jsonMapper = new ObjectMapper();
         ossieYamlAnsiSql = Files.readString(Paths.get("src/test/resources/examples/ossieToSalesforce.yaml"));
         ossieYaml = ossieYamlAnsiSql;
+    }
+
+    @Test
+    void testStructuredDatasetSourceIsRejected() {
+        String structuredSourceModel =
+                "version: \"0.2.0.dev0\"\n"
+                + "semantic_model:\n"
+                + "  - name: test_model\n"
+                + "    datasets:\n"
+                + "      - name: orders\n"
+                + "        source:\n"
+                + "          kind: file\n"
+                + "          format: parquet\n"
+                + "          locations: [s3://bucket/orders.parquet]\n";
+
+        ConversionException error = assertThrows(ConversionException.class, () -> converter.convert(structuredSourceModel));
+        assertTrue(error.getMessage().contains("Structured dataset source kind 'file' is not supported"));
     }
 
     @Test

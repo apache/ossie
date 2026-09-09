@@ -16,7 +16,7 @@
 # under the License.
 
 from enum import Enum
-from typing import Any, Optional, Union
+from typing import Annotated, Any, Literal, Optional, Union
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -150,13 +150,46 @@ class OssieField(BaseModel):
         return self.datatype in _TEMPORAL_DATA_TYPES
 
 
+class OssieFileSource(BaseModel):
+    """Structured descriptor for a file-backed dataset source."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["file"]
+    format: str = Field(min_length=1)
+    locations: list[Annotated[str, Field(min_length=1)]] = Field(min_length=1)
+
+
+class OssieTableSource(BaseModel):
+    """Structured descriptor for a catalog-backed table source."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Annotated[str, Field(min_length=1)]
+    format: Literal["table"]
+    identifier: Annotated[str, Field(min_length=1)]
+
+
+class OssieSQLQuerySource(BaseModel):
+    """Structured descriptor for a catalog-backed SQL query source."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Annotated[str, Field(min_length=1)]
+    format: Literal["SQL_QUERY"]
+    query: Annotated[str, Field(min_length=1)]
+
+
+OssieSource = Union[str, OssieFileSource, OssieTableSource, OssieSQLQuerySource]
+
+
 class OssieDataset(BaseModel):
     """Logical dataset representing a business entity (fact or dimension table)."""
 
     model_config = ConfigDict(frozen=True)
 
     name: str
-    source: str
+    source: OssieSource
     primary_key: Optional[list[str]] = None
     unique_keys: Optional[list[list[str]]] = None
     description: Optional[str] = None

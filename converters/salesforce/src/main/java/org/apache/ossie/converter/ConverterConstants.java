@@ -64,6 +64,7 @@ public final class ConverterConstants {
     public static final String API_NAME = "apiName";
     public static final String LABEL = "label";
     public static final String DESCRIPTION = "description";
+    public static final String SOURCE = "source";
     public static final String DATA_TYPE = "dataType";
     public static final String OSSIE_DATATYPE = "datatype";
     public static final String AI_CONTEXT = "ai_context";

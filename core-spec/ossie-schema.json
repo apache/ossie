@@ -187,6 +187,88 @@
       "required": ["name", "expression"],
       "additionalProperties": false
     },
+    "FileSource": {
+      "type": "object",
+      "description": "Structured descriptor for a file-backed dataset source.",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "file",
+          "description": "Discriminator identifying a file-backed source."
+        },
+        "format": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Physical file format, for example parquet."
+        },
+        "locations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "description": "One or more file, object-store, or HTTPS locations."
+        }
+      },
+      "required": ["kind", "format", "locations"],
+      "additionalProperties": false
+    },
+    "TableSource": {
+      "type": "object",
+      "description": "Structured descriptor for a table addressed through a catalog or data platform.",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Catalog or platform type, for example HIVE_CATALOG or POLARIS_CATALOG."
+        },
+        "format": {
+          "type": "string",
+          "const": "table",
+          "description": "Discriminator identifying a catalog table source."
+        },
+        "identifier": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Catalog-specific table identifier, for example db.schema.table."
+        }
+      },
+      "required": ["kind", "format", "identifier"],
+      "additionalProperties": false
+    },
+    "SQLQuerySource": {
+      "type": "object",
+      "description": "Structured descriptor for a SQL query executed through a catalog or data platform.",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Catalog or platform type, for example SNOWFLAKE_CATALOG."
+        },
+        "format": {
+          "type": "string",
+          "const": "SQL_QUERY",
+          "description": "Discriminator identifying a SQL query source."
+        },
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "description": "SQL query text evaluated by the named catalog or platform."
+        }
+      },
+      "required": ["kind", "format", "query"],
+      "additionalProperties": false
+    },
+    "Source": {
+      "description": "Dataset source. Legacy string sources remain supported for backward compatibility.",
+      "oneOf": [
+        {"type": "string"},
+        {"$ref": "#/$defs/FileSource"},
+        {"$ref": "#/$defs/TableSource"},
+        {"$ref": "#/$defs/SQLQuerySource"}
+      ]
+    },
     "Dataset": {
       "type": "object",
       "description": "Logical dataset representing a business entity (fact or dimension table)",
@@ -196,8 +278,7 @@
           "description": "Unique identifier for the dataset"
         },
         "source": {
-          "type": "string",
-          "description": "Reference to underlying physical table/view (database.schema.table) or query"
+          "$ref": "#/$defs/Source"
         },
         "primary_key": {
           "type": "array",

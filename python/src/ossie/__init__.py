@@ -27,9 +27,13 @@ from ossie.models import (
     OssieDocument,
     OssieExpression,
     OssieField,
+    OssieFileSource,
     OssieMetric,
     OssieRelationship,
+    OssieSQLQuerySource,
     OssieSemanticModel,
+    OssieSource,
+    OssieTableSource,
     OssieVendor,
 )
 
@@ -45,8 +49,12 @@ __all__ = [
     "OssieDocument",
     "OssieExpression",
     "OssieField",
+    "OssieFileSource",
     "OssieMetric",
     "OssieRelationship",
+    "OssieSQLQuerySource",
     "OssieSemanticModel",
+    "OssieSource",
+    "OssieTableSource",
     "OssieVendor",
 ]

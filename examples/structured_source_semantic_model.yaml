@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=../core-spec/ossie-schema.json
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Structured Dataset Source Examples
+
+version: 0.2.0.dev0
+semantic_model:
+  - name: structured_source_example
+    datasets:
+      - name: file_events
+        source:
+          kind: file
+          format: parquet
+          locations:
+            - s3://analytics-data/events/*.parquet
+        fields:
+          - name: event_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: event_id
+
+      - name: catalog_orders
+        source:
+          kind: HIVE_CATALOG
+          format: table
+          identifier: analytics.sales.orders
+        fields:
+          - name: order_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: order_id
+
+      - name: recent_orders
+        source:
+          kind: SNOWFLAKE_CATALOG
+          format: SQL_QUERY
+          query: SELECT * FROM analytics.sales.orders WHERE order_total > 10
+        fields:
+          - name: order_total
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: order_total

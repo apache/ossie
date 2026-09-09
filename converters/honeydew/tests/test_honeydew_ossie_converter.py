@@ -50,6 +50,13 @@ from honeydew_ossie.converter import (
 OSSIE_VERSION = "0.2.0.dev0"
 
 
+def test_structured_dataset_source_is_rejected() -> None:
+    source = {"kind": "file", "format": "parquet", "locations": ["s3://bucket/orders.parquet"]}
+
+    with pytest.raises(HoneydewConversionError, match="Structured dataset source kind.*file.*not supported"):
+        _parse_ossie_source(source)
+
+
 def _ossie(model_dict):
     return yaml.dump(
         {"version": OSSIE_VERSION, "semantic_model": [model_dict]},

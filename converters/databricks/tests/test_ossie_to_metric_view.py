@@ -26,6 +26,13 @@ from ossie_databricks import ossie_to_metric_view as exporter
 from _util import canon, load_fixture, parse
 
 
+def test_structured_dataset_source_is_rejected():
+    source = {"kind": "file", "format": "parquet", "locations": ["s3://bucket/orders.parquet"]}
+
+    with pytest.raises(ConversionError, match="structured source kind.*file.*not supported"):
+        exporter.validate_source(source, "orders")
+
+
 def test_fixtureA_export_matches_expected():
     out = exporter.convert_ossie_to_metric_view(load_fixture("fixtureA_ossie.yaml"))
     assert parse(out) == parse(load_fixture("fixtureA_metric_view.yaml"))

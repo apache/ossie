@@ -446,8 +446,13 @@ def _parse_source(source):
     """
     if not source:
         return None
+    if not isinstance(source, str):
+        kind = source.get("kind") if isinstance(source, dict) else type(source).__name__
+        raise OssieConversionError(
+            f"Structured dataset source kind {kind!r} is not supported by the Snowflake converter"
+        )
 
-    source_stripped = str(source).strip()
+    source_stripped = source.strip()
     if not source_stripped:
         return None
 

@@ -25,6 +25,7 @@ from ossie import (
     OssieExpression,
     OssieField,
     OssieSemanticModel,
+    OssieSource,
 )
 from ossie_dbt.converter_issues import ConverterResult
 from ossie_dbt.expression_utils import (
@@ -395,8 +396,13 @@ class OssieToMSIConverter:
         return ossie_expr.dialects[0].expression if ossie_expr.dialects else ""
 
     @staticmethod
-    def _parse_source(source: str) -> PydanticNodeRelation:
-        """Parse `schema.table` or `db.schema.table` into a PydanticNodeRelation."""
+    def _parse_source(source: OssieSource) -> PydanticNodeRelation:
+        """Parse a legacy string source into a PydanticNodeRelation."""
+        if not isinstance(source, str):
+            kind = getattr(source, "kind", type(source).__name__)
+            raise TypeError(
+                f"Structured dataset source kind {kind!r} is not supported by the dbt converter"
+            )
         parts = source.split(".")
         if len(parts) >= 3:
             database, schema, alias = parts[0], parts[1], ".".join(parts[2:])

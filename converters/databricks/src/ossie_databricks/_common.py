@@ -261,9 +261,16 @@ def validate_source(source, dataset_name):
     Accepts a 3-part `catalog.schema.table` identifier or a `SELECT`/`WITH`
     subquery. Raises ConversionError otherwise.
     """
-    if not source or not str(source).strip():
+    if not source:
         raise ConversionError(f"Dataset '{dataset_name}': missing/empty 'source'")
-    s = str(source).strip()
+    if not isinstance(source, str):
+        kind = source.get("kind") if isinstance(source, dict) else type(source).__name__
+        raise ConversionError(
+            f"Dataset '{dataset_name}': structured source kind {kind!r} is not supported by the Databricks converter"
+        )
+    if not source.strip():
+        raise ConversionError(f"Dataset '{dataset_name}': missing/empty 'source'")
+    s = source.strip()
     # A SELECT/WITH subquery source. `\b` after the keyword matches `WITH(...)` (no
     # space) too, but not an identifier like `WITHHELD`.
     if re.match(r"(?i)(select|with)\b", s):

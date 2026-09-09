@@ -121,6 +121,27 @@ class OssiePolarisConverterTest {
     }
 
     @Test
+    void testStructuredDatasetSourceIsRejected() {
+        String structuredSourceModel =
+                "version: \"0.2.0.dev0\"\n"
+                + "semantic_model:\n"
+                + "  - name: test_model\n"
+                + "    datasets:\n"
+                + "      - name: orders\n"
+                + "        source:\n"
+                + "          kind: file\n"
+                + "          format: parquet\n"
+                + "          locations: [s3://bucket/orders.parquet]\n";
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> new OssieModelParser().parse(
+                        new ByteArrayInputStream(structuredSourceModel.getBytes(StandardCharsets.UTF_8))));
+
+        assertTrue(error.getMessage().contains("Structured dataset source kind 'file' is not supported"));
+    }
+
+    @Test
     void testParseDatasetFields() {
         OssieModelParser parser = new OssieModelParser();
         OssieModel model = parser.parse(

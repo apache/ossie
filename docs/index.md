@@ -52,7 +52,7 @@ The Ossie core specification (current version: **0.2.0.dev0**, latest released: 
 | Construct | Description |
 |-----------|-------------|
 | **Semantic Model** | The top-level container representing a complete semantic model, including datasets, relationships, and metrics. |
-| **Datasets** | Logical datasets representing business entities (fact and dimension tables), with fields, primary keys, and unique keys. |
+| **Datasets** | Logical datasets representing business entities, with fields, keys, and a `source` that can be a legacy string or a structured file, catalog table, or SQL query descriptor. |
 | **Fields** | Row-level attributes for grouping, filtering, and metric expressions. Fields support multiple SQL dialects for cross-platform compatibility. |
 | **Relationships** | Foreign key connections between datasets, supporting both simple and composite keys. |
 | **Metrics** | Quantitative measures (sums, averages, ratios, etc.) defined at the model level, capable of spanning multiple datasets. |
@@ -61,7 +61,7 @@ The Ossie core specification (current version: **0.2.0.dev0**, latest released: 
 
 The specification supports multiple SQL dialects (`ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`, `MDX`, `TABLEAU`) so that expressions can be tailored to each platform while maintaining a common model structure.
 
-For the full specification, see [core-spec/spec.md](../core-spec/spec.md). For validation tooling, see [validation/validate.py](../validation/validate.py). For a complete example, see the [TPC-DS semantic model](../examples/tpcds_semantic_model.yaml).
+For the full specification, see [core-spec/spec.md](../core-spec/spec.md). For validation tooling, see [validation/validate.py](../validation/validate.py). For examples, see the [TPC-DS semantic model](../examples/tpcds_semantic_model.yaml) and the [structured-source semantic model](../examples/structured_source_semantic_model.yaml).
 
 ### Participating Organizations
 

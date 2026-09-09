@@ -226,8 +226,14 @@ class OssietoOBML:
                     {"vendor": vendor, "data": ext.get("data", "")}
                 )
 
-    def _parse_source(self, source: str) -> tuple[str, str, str]:
-        """Parse 'database.schema.table' into parts."""
+    def _parse_source(self, source: object) -> tuple[str, str, str]:
+        """Parse a legacy string source into database/schema/table parts."""
+        if not isinstance(source, str):
+            kind = source.get("kind") if isinstance(source, dict) else type(source).__name__
+            raise TypeError(
+                f"Structured dataset source kind {kind!r} is not supported "
+                "by the OrionBelt converter"
+            )
         parts = source.split(".")
         if len(parts) == 3:
             return parts[0], parts[1], parts[2]

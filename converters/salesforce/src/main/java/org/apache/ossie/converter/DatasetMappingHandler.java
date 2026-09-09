@@ -69,6 +69,21 @@ public class DatasetMappingHandler implements PipelineStep {
     private void mapOssieToSalesforce(
             Map<String, Object> sourceData, Map<String, Object> outputData, Map<String, String> mappings) {
 
+        List<Object> osiDatasets = getList(sourceData, DATASETS);
+        if (osiDatasets != null) {
+            streamMaps(osiDatasets).forEach(dataset -> {
+                Object source = dataset.get(SOURCE);
+                if (source != null && !(source instanceof String)) {
+                    Object kind = source instanceof Map<?, ?> sourceMap
+                            ? sourceMap.get("kind")
+                            : source.getClass().getSimpleName();
+                    throw new org.apache.ossie.exception.ConversionException(
+                            "Structured dataset source kind '" + kind
+                                    + "' is not supported by the Salesforce converter");
+                }
+            });
+        }
+
         Map<String, String> datasetMappings = MappingUtils.filterMappingsByPrefix(mappings, DATASETS);
 
         var mappedData = GenericMappingEngine.applyMappings(sourceData, datasetMappings);

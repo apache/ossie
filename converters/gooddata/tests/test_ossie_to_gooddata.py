@@ -26,6 +26,7 @@ import pytest
 from ossie_gooddata.ossie_to_gooddata import (
     _convert_to_attribute,
     _convert_to_fact,
+    _parse_source_to_table_id,
     ossie_to_gooddata,
 )
 

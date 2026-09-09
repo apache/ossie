@@ -22,8 +22,15 @@ import warnings
 import pytest
 
 from ossie_omni import ConversionError, convert_ossie_to_omni
-from ossie_omni._common import dump_yaml
+from ossie_omni._common import dump_yaml, parse_source
 from _util import REPO_ROOT, load_fixture, load_fixture_dir, parse, parse_files
+
+
+def test_structured_dataset_source_is_rejected():
+    source = {"kind": "file", "format": "parquet", "locations": ["s3://bucket/orders.parquet"]}
+
+    with pytest.raises(ConversionError, match="structured source kind.*file.*not supported"):
+        parse_source(source, "orders")
 
 
 def export(ossie_yaml, **kwargs):

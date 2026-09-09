@@ -112,7 +112,13 @@ public class OssieModelParser {
     private Dataset parseDataset(Map<String, Object> map) {
         Dataset ds = new Dataset();
         ds.setName((String) map.get("name"));
-        ds.setSource((String) map.get("source"));
+        Object source = map.get("source");
+        if (source != null && !(source instanceof String)) {
+            Object kind = source instanceof Map<?, ?> sourceMap ? sourceMap.get("kind") : source.getClass().getSimpleName();
+            throw new IllegalArgumentException(
+                    "Structured dataset source kind '" + kind + "' is not supported by the Polaris converter");
+        }
+        ds.setSource((String) source);
         ds.setDescription((String) map.get("description"));
 
         List<String> pk = (List<String>) map.get("primary_key");

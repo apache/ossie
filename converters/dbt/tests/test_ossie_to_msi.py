@@ -20,7 +20,7 @@
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
-from ossie import OssieDataType, OssieDimension
+from ossie import OssieDataType, OssieDimension, OssieFileSource
 from ossie_dbt.msi_to_ossie import MSIToOssieConverter
 from ossie_dbt.ossie_to_msi import OssieToMSIConverter
 from metricflow_semantic_interfaces.type_enums import (
@@ -35,6 +35,13 @@ from tests.helpers import (
     _ossie_metric,
     _ossie_relationship,
 )
+
+
+def test_structured_dataset_source_is_rejected() -> None:
+    source = OssieFileSource(kind="file", format="parquet", locations=["s3://bucket/orders.parquet"])
+
+    with pytest.raises(TypeError, match="Structured dataset source kind.*file.*not supported"):
+        OssieToMSIConverter._parse_source(source)
 
 
 class TestOssieToMSIBasicConversion:

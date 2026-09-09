@@ -1923,6 +1923,10 @@ def _parse_source(
     default_database: str | None,
 ) -> dict[str, str | None]:
     if isinstance(source, dict):
+        if "kind" in source:
+            raise GSFConversionError(
+                f"Structured dataset source kind {source.get('kind')!r} is not supported by the NVIDIA GSF converter"
+            )
         database = source.get("database") or default_database
         schema = source.get("schema")
         table = source.get("table")

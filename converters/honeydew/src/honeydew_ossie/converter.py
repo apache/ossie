@@ -453,7 +453,12 @@ def _is_simple_identifier(expr: str) -> bool:
     return bool(re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", expr.strip()))
 
 
-def _parse_ossie_source(source: str) -> tuple[str, str]:
+def _parse_ossie_source(source: object) -> tuple[str, str]:
+    if not isinstance(source, str):
+        kind = source.get("kind") if isinstance(source, dict) else type(source).__name__
+        raise HoneydewConversionError(
+            f"Structured dataset source kind {kind!r} is not supported by the Honeydew converter"
+        )
     source = (source or "").strip()
     if not source:
         return ("", "table")

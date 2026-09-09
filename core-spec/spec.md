@@ -126,13 +126,53 @@ Logical datasets represent business entities or concepts (fact and dimension tab
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | Yes | Unique identifier for the dataset |
-| `source` | string | Yes | Reference to underlying physical table/view (e.g., `database.schema.table`) or query |
+| `source` | string/object | Yes | Legacy table/view/query string, or a structured file, catalog table, or SQL query source descriptor |
 | `primary_key` | array | No | Primary key columns that uniquely identify rows (single or composite) |
 | `unique_keys` | array of arrays | No | Array of unique key definitions (each can be single or composite) |
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms, common terms) |
 | `fields` | array | No | Row-level attributes for grouping, filtering, and metric expressions |
 | `custom_extensions` | array | No | Vendor-specific attributes |
+
+### Source Forms
+
+Existing string sources remain valid and preserve current behavior:
+
+```yaml
+source: sales.public.orders
+```
+
+Structured sources separate the source system (`kind`) from the addressing contract (`format`). Catalog kinds are intentionally open-ended so new systems do not require a core-spec enum change.
+
+**Files** use `kind: file`, a physical file format, and one or more locations:
+
+```yaml
+source:
+  kind: file
+  format: parquet
+  locations:
+    - s3://analytics-data/orders/*.parquet
+```
+
+**Catalog tables** use any non-empty catalog or platform kind, `format: table`, and an identifier:
+
+```yaml
+source:
+  kind: HIVE_CATALOG
+  format: table
+  identifier: analytics.sales.orders
+```
+
+**SQL queries** use any non-empty catalog or platform kind, `format: SQL_QUERY`, and query text:
+
+```yaml
+source:
+  kind: SNOWFLAKE_CATALOG
+  format: SQL_QUERY
+  query: SELECT * FROM analytics.sales.orders WHERE order_total > 10
+```
+
+`locations`, `identifier`, and `query` are metadata references only. Ossie does not imply that every converter or consumer can access the referenced storage system or catalog. A converter that does not support a structured source must reject it explicitly rather than silently reinterpret or discard it.
 
 ### Primary Key Examples
 

@@ -38,6 +38,13 @@ from ossie_snowflake.converter import (
 )
 
 
+def test_structured_dataset_source_is_rejected():
+    source = {"kind": "file", "format": "parquet", "locations": ["s3://bucket/orders.parquet"]}
+
+    with pytest.raises(OssieConversionError, match="Structured dataset source kind.*file.*not supported"):
+        _parse_source(source)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
