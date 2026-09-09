@@ -171,14 +171,16 @@ relationships:
     #   - [order_id, line_number]    # Composite key
     to_columns: []  # Array of column names
 
-    # Optional: Additional context for AI tools (e.g., synonyms, business context)
+    # Optional: Additional context for AI tools
     # Helps LLMs understand when and why the datasets should be joined
-    # Either a free-form string, or a structured object:
-    # ai_context:
-    #   instructions: string  # Instructions for AI on how to use this entity
-    #   synonyms: []          # Alternative names and terms
-    #   examples: []          # Sample questions or use cases
-    ai_context: string
+    # Can be either:
+    #   - A free-form string, or
+    #   - A structured object with optional keys:
+    #       instructions: string  # how AI should use this relationship
+    #       synonyms:     []      # alternative names / terms
+    #       examples:     []      # sample questions or use cases
+    #     (additionalProperties: true, so vendors may add more keys)
+    ai_context: {}  # see AIContext in ossie-schema.json
 
     # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
