@@ -111,7 +111,7 @@ class OssieExpression(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    dialects: list[OssieDialectExpression]
+    dialects: list[OssieDialectExpression] = Field(..., min_length=1)
 
 
 class OssieDimension(BaseModel):
@@ -173,8 +173,8 @@ class OssieRelationship(BaseModel):
     name: str
     from_dataset: str = Field(..., alias="from")
     to: str
-    from_columns: list[str]
-    to_columns: list[str]
+    from_columns: list[str] = Field(..., min_length=1)
+    to_columns: list[str] = Field(..., min_length=1)
     ai_context: Optional[OssieAIContext] = None
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
@@ -200,10 +200,11 @@ class OssieSemanticModel(BaseModel):
     name: str
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
-    datasets: list[OssieDataset]
+    datasets: list[OssieDataset] = Field(..., min_length=1)
     relationships: Optional[list[OssieRelationship]] = None
     metrics: Optional[list[OssieMetric]] = None
     custom_extensions: Optional[list[OssieCustomExtension]] = None
+
 
 
 class OssieDocument(BaseModel):
