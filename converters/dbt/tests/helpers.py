@@ -28,6 +28,9 @@ from ossie import (
     OssieMetric,
     OssieRelationship,
 )
+from metricflow_semantic_interfaces.implementations.element_config import (
+    PydanticSemanticLayerElementConfig,
+)
 from metricflow_semantic_interfaces.implementations.elements.dimension import (
     PydanticDimension,
     PydanticDimensionTypeParams,
@@ -78,6 +81,7 @@ def _simple_metric(
     name: str,
     measure_name: str,
     description: str | None = None,
+    config: PydanticSemanticLayerElementConfig | None = None,
 ) -> PydanticMetric:
     return PydanticMetric(
         name=name,
@@ -88,7 +92,7 @@ def _simple_metric(
         ),
         filter=None,
         metadata=default_meta(),
-        config=None,
+        config=config,
     )
 
 
@@ -99,6 +103,7 @@ def _dimension(
     description: str | None = None,
     label: str | None = None,
     granularity: TimeGranularity | None = None,
+    config: PydanticSemanticLayerElementConfig | None = None,
 ) -> PydanticDimension:
     type_params = PydanticDimensionTypeParams(time_granularity=granularity) if granularity else None
     return PydanticDimension(
@@ -109,7 +114,7 @@ def _dimension(
         label=label,
         type_params=type_params,
         metadata=default_meta(),
-        config=None,
+        config=config,
     )
 
 
@@ -119,6 +124,7 @@ def _measure(
     expr: str | None = None,
     description: str | None = None,
     label: str | None = None,
+    config: PydanticSemanticLayerElementConfig | None = None,
 ) -> PydanticMeasure:
     return PydanticMeasure(
         name=name,
@@ -129,6 +135,7 @@ def _measure(
         create_metric=None,
         agg_params=None,
         metadata=default_meta(),
+        config=config,
     )
 
 
@@ -136,6 +143,7 @@ def _entity(
     name: str,
     entity_type: EntityType = EntityType.PRIMARY,
     expr: str | None = None,
+    config: PydanticSemanticLayerElementConfig | None = None,
 ) -> PydanticEntity:
     return PydanticEntity(
         name=name,
@@ -143,7 +151,7 @@ def _entity(
         expr=expr,
         description=None,
         role=None,
-        config=None,
+        config=config,
     )
 
 
