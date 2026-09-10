@@ -35,6 +35,22 @@ from .convert_ossie_relationship import (
     convert_ossie_relationship,
 )
 
+# NOTE: Ossie metrics lack "aggregate locality" information, i.e. where an
+# aggregate calculation should be anchored. Ossie metrics are expressed
+# at a "global" scope, at least as a peer to datasets, rather than inside
+# of dataset, which are anchored to a physical source.
+#
+# On the other hand, Hex expresses aggregations as measures attached to a
+# model (equivalent to a dataset). Converting an Ossie metric to a Hex
+# measure requires a best-effort guess at the right model to attach the
+# measure to (locality), and the relation (Hex relation / Ossie relationship)
+# to attach in the case that the metric/measure expression references
+# fields/dimensions across multiple datasets/models.
+#
+# To solve this, we perform "analyze" and "assign" steps for metrics
+# and relationships in addition to a single straightforward "convert" step
+# that other concepts (datasets, fields) require.
+
 
 def convert_ossie_semantic_model(
     ossie_semantic_model: OssieSemanticModel,
