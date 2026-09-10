@@ -491,6 +491,48 @@ class TestRelationshipConversion:
         assert rels[0].from_dataset == "alpha"
         assert rels[0].to == "beta"
 
+    def test_foreign_foreign_pair_produces_no_relationship(self) -> None:
+        """Neither side of a FOREIGN<->FOREIGN pair is a key of the other; to_columns would be invalid (ossie#301)."""
+        customers = semantic_model_with_guaranteed_meta(
+            name="customers",
+            entities=[_entity("customer", entity_type=EntityType.PRIMARY, expr="customer_id")],
+        )
+        orders = semantic_model_with_guaranteed_meta(
+            name="orders",
+            entities=[
+                _entity("order", entity_type=EntityType.PRIMARY, expr="order_id"),
+                _entity("customer", entity_type=EntityType.FOREIGN, expr="customer_id"),
+            ],
+        )
+        reviews = semantic_model_with_guaranteed_meta(
+            name="reviews",
+            entities=[
+                _entity("review", entity_type=EntityType.PRIMARY, expr="review_id"),
+                _entity("customer", entity_type=EntityType.FOREIGN, expr="customer_id"),
+            ],
+        )
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[customers, orders, reviews])).output
+
+        rels = result.semantic_model[0].relationships
+        assert rels is not None
+        pairs = {(r.from_dataset, r.to) for r in rels}
+        # orders and reviews each join to customers; orders-reviews (both FOREIGN on `customer`) is excluded.
+        assert pairs == {("orders", "customers"), ("reviews", "customers")}
+        assert len(rels) == 2
+
+    def test_foreign_foreign_pair_excluded_even_when_only_pair(self) -> None:
+        orders = semantic_model_with_guaranteed_meta(
+            name="orders",
+            entities=[_entity("customer", entity_type=EntityType.FOREIGN, expr="customer_id")],
+        )
+        reviews = semantic_model_with_guaranteed_meta(
+            name="reviews",
+            entities=[_entity("customer", entity_type=EntityType.FOREIGN, expr="customer_id")],
+        )
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[orders, reviews])).output
+
+        assert result.semantic_model[0].relationships is None
+
 
 class TestMetricConversion:
     # --- SIMPLE ---
