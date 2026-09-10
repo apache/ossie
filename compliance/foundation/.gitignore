@@ -1,0 +1,9 @@
+# Everything in results/ is per-run runner output, written by
+# `python -m harness.runner` into a subdirectory of results/ (the
+# default is `results/latest/`; the Makefile under
+# impl/python/ uses `results/osi_python/` and `results/osi_python_all/`).
+#
+# Only the curated baseline at results/REPORT.md is tracked. Repo-wide
+# Python / cache / venv rules live in the root .gitignore.
+results/*
+!results/REPORT.md

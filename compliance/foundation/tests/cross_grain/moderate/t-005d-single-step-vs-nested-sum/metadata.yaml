@@ -1,0 +1,13 @@
+name: t-005d-single-step-vs-nested-sum
+description: "Single-step SUM and nested SUM(SUM(...)) over 1:N produce identical row sets (distributive)"
+area: cross_grain
+difficulty: moderate
+dataset: f_prelude
+spec_refs:
+  - "core-spec/foundational_semantics.md#D-020"
+tags: [cross-grain, 1:N, distributive, equivalence]
+conformance_level: foundation_v0_1
+decision: D-020
+test_id: T-005d
+status: planned
+xfail_reason: "Sprint S-5 — single-step ≡ nested SUM equivalence (D-020)"
