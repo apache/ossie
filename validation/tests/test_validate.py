@@ -32,6 +32,7 @@ _VALIDATE = module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_VALIDATE)
 
 validate_references = _VALIDATE.validate_references
+validate_relationship_column_arity = _VALIDATE.validate_relationship_column_arity
 
 
 def _document(datasets: list[dict], relationships: list[dict]) -> dict:
@@ -161,3 +162,57 @@ def test_skips_malformed_flat_unique_keys() -> None:
     )
 
     assert errors == []
+
+
+def _arity_relationship(from_columns: list[str], to_columns: list[str]) -> dict:
+    return {
+        "name": "orders_to_customers",
+        "from": "orders",
+        "to": "customers",
+        "from_columns": from_columns,
+        "to_columns": to_columns,
+    }
+
+
+@pytest.mark.parametrize(
+    ("from_columns", "to_columns"),
+    [
+        (["customer_id"], ["id"]),
+        (["product_id", "variant_id"], ["id", "variant_id"]),
+    ],
+)
+def test_arity_accepts_equal_length_columns(
+    from_columns: list[str], to_columns: list[str]
+) -> None:
+    rel = _arity_relationship(from_columns, to_columns)
+
+    assert validate_relationship_column_arity(_document([_ORDERS, _CUSTOMERS], [rel])) == []
+
+
+@pytest.mark.parametrize(
+    ("from_columns", "to_columns"),
+    [
+        (["product_id", "variant_id"], ["id"]),
+        (["customer_id"], ["id", "variant_id"]),
+    ],
+)
+def test_arity_rejects_mismatched_length_columns(
+    from_columns: list[str], to_columns: list[str]
+) -> None:
+    rel = _arity_relationship(from_columns, to_columns)
+
+    errors = validate_relationship_column_arity(_document([_ORDERS, _CUSTOMERS], [rel]))
+
+    assert errors == [
+        f"[Arity] Relationship 'orders_to_customers' in model 'm': "
+        f"from_columns ({len(from_columns)}) and to_columns ({len(to_columns)}) "
+        f"must have the same number of columns"
+    ]
+
+
+def test_arity_skips_non_list_columns() -> None:
+    # Schema validation reports the shape error; the arity check must not crash.
+    rel = _arity_relationship(["customer_id"], ["id"])
+    rel["to_columns"] = "id"
+
+    assert validate_relationship_column_arity(_document([_ORDERS, _CUSTOMERS], [rel])) == []

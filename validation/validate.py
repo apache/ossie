@@ -33,7 +33,8 @@ Validates Ossie YAML files against:
 1. JSON Schema (structure, types, enums)
 2. Unique names (datasets, fields, metrics, relationships)
 3. Valid relationship references
-4. SQL syntax (using sqlglot)
+4. Relationship column arity (from_columns and to_columns lengths match)
+5. SQL syntax (using sqlglot)
 
 Usage:
     python validation/validate.py <yaml_file>
@@ -231,6 +232,36 @@ def validate_references(data: dict) -> list[str]:
     return errors
 
 
+def validate_relationship_column_arity(data: dict) -> list[str]:
+    """Validate that from_columns and to_columns have the same length.
+
+    The spec requires the two arrays to correspond positionally, so their
+    lengths must match. JSON Schema cannot express this, so it is checked here.
+    """
+    errors = []
+
+    for model in data.get("semantic_model", []):
+        model_name = model.get("name", "<unnamed>")
+
+        for rel in model.get("relationships", []):
+            rel_name = rel.get("name", "<unnamed>")
+            from_columns = rel.get("from_columns")
+            to_columns = rel.get("to_columns")
+
+            # Skip anything that already failed schema validation.
+            if not isinstance(from_columns, list) or not isinstance(to_columns, list):
+                continue
+
+            if len(from_columns) != len(to_columns):
+                errors.append(
+                    f"[Arity] Relationship '{rel_name}' in model '{model_name}': "
+                    f"from_columns ({len(from_columns)}) and "
+                    f"to_columns ({len(to_columns)}) must have the same number of columns"
+                )
+
+    return errors
+
+
 def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None:
     """Validate a single SQL expression. Returns error message or None if valid."""
     if not SQLGLOT_AVAILABLE:
@@ -344,6 +375,7 @@ def main():
     if data.get("semantic_model"):
         errors.extend(validate_unique_names(data))
         errors.extend(validate_references(data))
+        errors.extend(validate_relationship_column_arity(data))
         errors.extend(validate_sql(data))
 
     # Report results
