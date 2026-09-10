@@ -16,13 +16,25 @@
 
 package plugin
 
-import "github.com/spf13/cobra"
+import (
+	"errors"
+
+	"github.com/spf13/cobra"
+)
 
 // Cmd is the parent "ossie plugin" command. It is exported so cmd/root.go can
-// register it. Invoking it bare prints help.
+// register it.
+//
+// The RunE matters: cobra never reaches ValidateArgs on a non-runnable
+// command, so without it a bare "ossie plugin" or an unknown subcommand
+// prints help and exits 0 (#345).
 var Cmd = &cobra.Command{
 	Use:   "plugin",
 	Short: "Manage Ossie plugins",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return errors.New("a subcommand is required")
+	},
 }
 
 func init() {
