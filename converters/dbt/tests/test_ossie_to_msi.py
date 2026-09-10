@@ -23,12 +23,16 @@ from syrupy.assertion import SnapshotAssertion
 from ossie import OssieDataType, OssieDimension
 from ossie_dbt.msi_to_ossie import MSIToOssieConverter
 from ossie_dbt.ossie_to_msi import OssieToMSIConverter
+from metricflow_semantic_interfaces.test_utils import semantic_model_with_guaranteed_meta
 from metricflow_semantic_interfaces.type_enums import (
     AggregationType,
     DimensionType,
+    EntityType,
     MetricType,
 )
 from tests.helpers import (
+    _entity,
+    _manifest,
     _ossie_dataset,
     _ossie_doc,
     _ossie_field,
@@ -445,3 +449,22 @@ class TestOssieToMSIRoundTrip:
         assert metrics[0].name == "revenue"
         assert metrics[0].expression.dialects[0].expression == "SUM(orders.amount)"
         assert ossie_doc.to_ossie_yaml() == snapshot
+
+    def test_entity_with_expr_different_from_name_survives_round_trip(self) -> None:
+        """A PRIMARY entity whose expr differs from its name is not lost on MSI -> OSI -> MSI."""
+        orders = semantic_model_with_guaranteed_meta(
+            name="orders",
+            entities=[_entity("customer_id", entity_type=EntityType.PRIMARY, expr="id")],
+        )
+
+        ossie_doc = MSIToOssieConverter().convert(_manifest(semantic_models=[orders])).output
+
+        assert ossie_doc.semantic_model[0].datasets[0].primary_key == ["id"]
+
+        back = OssieToMSIConverter().convert(ossie_doc).output
+        sm = back.semantic_models[0]
+
+        assert len(sm.entities) == 1
+        assert sm.entities[0].name == "customer_id"
+        assert sm.entities[0].expr == "id"
+        assert sm.entities[0].type is EntityType.PRIMARY

@@ -188,7 +188,7 @@ class OssieToMSIConverter:
         Aggregation info lives on metrics (`metric_aggregation_params`), not on
         semantic model measures, so there is no measure classification step.
         """
-        if field.name in primary_key_cols:
+        if field.name in primary_key_cols or expr in primary_key_cols:
             entities.append(
                 PydanticEntity(
                     name=field.name,
@@ -201,7 +201,7 @@ class OssieToMSIConverter:
                 )
             )
             return
-        if field.name in unique_key_cols:
+        if field.name in unique_key_cols or expr in unique_key_cols:
             entities.append(
                 PydanticEntity(
                     name=field.name,
@@ -214,7 +214,7 @@ class OssieToMSIConverter:
                 )
             )
             return
-        if field.name in foreign_key_cols:
+        if field.name in foreign_key_cols or expr in foreign_key_cols:
             entities.append(
                 PydanticEntity(
                     name=field.name,
