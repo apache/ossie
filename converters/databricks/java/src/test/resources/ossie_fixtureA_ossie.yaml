@@ -1,0 +1,79 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# yaml-language-server: $schema=../../../../core-spec/osi-schema.json
+#
+# Fixture A -- all-native round-trip (Apache Ossie -> MV -> Apache Ossie).
+# Star schema; every field maps to a native MV field. Documented losses on the
+# Apache Ossie -> MV -> Apache Ossie trip: the model name (MV carries none) and primary_key.
+
+version: "0.2.0.dev0"
+
+semantic_model:
+  - name: sales
+    description: Sales orders with customer attributes
+    datasets:
+      - name: orders            # fact: no incoming relationship -> becomes `source`
+        source: samples.tpch.orders
+        primary_key: [o_orderkey]   # dropped on export (Apache Ossie-only)
+        description: One row per order
+        fields:
+          - name: o_orderkey
+            expression:
+              dialects:
+                - dialect: DATABRICKS
+                  expression: o_orderkey
+            description: Order identifier
+          - name: o_orderdate
+            expression:
+              dialects:
+                - dialect: DATABRICKS
+                  expression: o_orderdate
+            label: Order Date
+            ai_context:
+              synonyms: [order date, date]
+      - name: customer
+        source: samples.tpch.customer
+        primary_key: [c_custkey]
+        fields:
+          - name: c_name
+            expression:
+              dialects:
+                - dialect: DATABRICKS
+                  expression: c_name
+            description: Customer name
+    relationships:
+      - name: orders_to_customer
+        from: orders
+        to: customer
+        from_columns: [o_custkey]
+        to_columns: [c_custkey]
+    metrics:
+      - name: total_revenue
+        expression:
+          dialects:
+            - dialect: DATABRICKS
+              expression: SUM(o_totalprice)   # fact columns are bare in measures
+        description: Total order revenue
+        ai_context:
+          synonyms: [revenue, total revenue, sales]
+      - name: order_count
+        expression:
+          dialects:
+            - dialect: DATABRICKS
+              expression: COUNT(*)
+        description: Number of orders
