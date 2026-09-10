@@ -40,7 +40,63 @@ uv sync
 
 ## Development
 
-TODO(development): {workflow-description}
+This converter is written with two main goals:
+
+**Maximal output.** Return both the converted artifact and every issue
+encountered. Continue processing whenever possible rather than stopping
+early.
+
+**Maintainability.** Module boundaries are clear and limited. Public
+functions should be short and readable. Complexity is delegated to private
+helpers.
+
+### Architecture
+
+Conversion follows three phases, always in order:
+
+1. **load** — read, parse, and validate source documents into in-memory models
+2. **convert** — transform source representations into target models
+3. **dump** — serialize and write target files (when an output path is given)
+
+Each direction (export, import) lives in its own module directory. Within a
+direction, organize by phase and format: `load_<source>_*`,
+`convert_<source>_*`, `dump_<target>_*`
+
+### Problems
+
+During conversion, issues are modeled as structured `Problem` values collected
+on the conversion context while control flow continues. Each problem indicates
+its phase, severity, message (public and internal), stable code, and cause.
+
+The severities are:
+
+- **`fatal`** — unrecoverable or unexpected; cannot complete
+- **`error`** — invalidates a definition; can continue
+- **`warning`** — definition is included but may behave unexpectedly
+- **`info`** — informational only
+
+The cause of a problem should be a logical path into the source document,
+sufficient to identify the definition or property the issue belongs to. Nested
+`problem_scope` calls on the conversion context build this path automatically.
+
+Assign a stable problem code when a class of issue should be grouped in
+user-facing reports.
+
+### Modules
+
+The layout of the package should establish clear module boundaries:
+
+- **`ossie/`** — Ossie domain type and utilities (additional to `apache-ossie`)
+- **`hex/`** — Hex domain types and utilities (additional to `hex-sl-utils`)
+- **`ossie_to_hex/`** — export conversion pipeline
+- **`hex_to_ossie/`** — import conversion pipeline
+- **`util/`** — shared infrastructure (problems, context, YAML)
+- **`cli/`** — command-line entry points
+
+Use official libraries rather than redefining a spec:
+
+- `apache-ossie` - Ossie
+- `hex-sl-utils` - Hex
 
 ### Python
 
@@ -58,7 +114,14 @@ Conventions to follow when writing Python code:
 
 ### CLI
 
-TODO(development): {cli-description}
+The CLI is a thin wrapper around the library API. Keep argument parsing and
+human-readable reporting output in `src/ossie_hex/cli/`. Conversion logic 
+belongs in `ossie_to_hex/` and should be available identically to users
+across the CLI and Python library API
+
+### Tests
+
+Mirror the source layout of modules, e.g. `tests/ossie_to_hex/`, `tests/cli/`.
 
 ## Verification
 
