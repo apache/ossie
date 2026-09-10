@@ -205,11 +205,22 @@ def validate_references(data: dict) -> list[str]:
             rel_name = rel.get("name", "<unnamed>")
             from_ds = rel.get("from")
             to_ds = rel.get("to")
+            from_columns = rel.get("from_columns")
+            to_columns = rel.get("to_columns")
 
             if from_ds and from_ds not in datasets:
                 errors.append(f"[Reference] Relationship '{rel_name}' in model '{model_name}' references unknown dataset '{from_ds}'")
             if to_ds and to_ds not in datasets:
                 errors.append(f"[Reference] Relationship '{rel_name}' in model '{model_name}' references unknown dataset '{to_ds}'")
+            if (
+                isinstance(from_columns, list)
+                and isinstance(to_columns, list)
+                and len(from_columns) != len(to_columns)
+            ):
+                errors.append(
+                    f"[Relationship] Relationship '{rel_name}' in model '{model_name}' has "
+                    f"{len(from_columns)} from_columns but {len(to_columns)} to_columns"
+                )
 
             # The spec defines to_columns as "Primary/unique key columns in the
             # 'to' dataset". Coverage (superset of a key) still guarantees the

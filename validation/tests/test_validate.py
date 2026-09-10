@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 # validate.py exits at import time when its dependencies are missing, which
-# would abort the whole pytest session during collection — skip instead.
+# would abort the whole pytest session during collection -- skip instead.
 pytest.importorskip("yaml")
 pytest.importorskip("jsonschema")
 
@@ -57,14 +57,25 @@ _CUSTOMERS = {
 _ORDERS = {"name": "orders", "source": "db.s.orders"}
 
 
-def _relationship(to_columns: list[str], to: str = "customers") -> dict:
+def _relationship(
+    to_columns: list[str],
+    to: str = "customers",
+    from_columns: list[str] | None = None,
+) -> dict:
     return {
         "name": "orders_to_customers",
         "from": "orders",
         "to": to,
-        "from_columns": ["customer_id"],
+        "from_columns": from_columns or ["customer_id"],
         "to_columns": to_columns,
     }
+
+
+def _document_with_relationship(from_columns: list[str], to_columns: list[str]) -> dict:
+    rel = _relationship(to_columns=to_columns)
+    rel["from_columns"] = from_columns
+    customers = {"name": "customers", "source": "db.s.customers"}
+    return _document([_ORDERS, customers], [rel])
 
 
 def test_warns_when_to_columns_does_not_cover_a_declared_key() -> None:
@@ -98,7 +109,15 @@ def test_accepts_to_columns_that_is_a_superset_of_a_key() -> None:
     # e.g. tenant-sharded joins carry extra columns on top of the key;
     # coverage still guarantees the many-to-one semantics.
     errors = validate_references(
-        _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["tenant_id", "id"])])
+        _document(
+            [_ORDERS, _CUSTOMERS],
+            [
+                _relationship(
+                    from_columns=["tenant_id", "customer_id"],
+                    to_columns=["tenant_id", "id"],
+                )
+            ],
+        )
     )
 
     assert errors == []
@@ -110,7 +129,11 @@ def test_accepts_composite_key_regardless_of_column_order() -> None:
         "source": "db.s.order_lines",
         "primary_key": ["order_id", "line_number"],
     }
-    rel = _relationship(to_columns=["line_number", "order_id"], to="order_lines")
+    rel = _relationship(
+        from_columns=["line_number", "order_id"],
+        to_columns=["line_number", "order_id"],
+        to="order_lines",
+    )
 
     assert validate_references(_document([_ORDERS, composite], [rel])) == []
 
@@ -134,8 +157,12 @@ def test_still_reports_unknown_datasets() -> None:
 
 def test_tolerates_null_unique_keys() -> None:
     # `unique_keys:` present but empty parses to None; the check must not crash.
-    dataset = {"name": "customers", "source": "db.s.customers",
-               "primary_key": ["id"], "unique_keys": None}
+    dataset = {
+        "name": "customers",
+        "source": "db.s.customers",
+        "primary_key": ["id"],
+        "unique_keys": None,
+    }
     errors = validate_references(
         _document([_ORDERS, dataset], [_relationship(to_columns=["id"])])
     )
@@ -152,12 +179,44 @@ def test_skips_non_list_to_columns() -> None:
     assert validate_references(_document([_ORDERS, _CUSTOMERS], [rel])) == []
 
 
+def test_skips_non_list_from_columns() -> None:
+    rel = _relationship(to_columns=["id"])
+    rel["from_columns"] = "customer_id"
+
+    assert validate_references(_document([_ORDERS, _CUSTOMERS], [rel])) == []
+
+
 def test_skips_malformed_flat_unique_keys() -> None:
     # unique_keys mistakenly written flat like primary_key: strings are not
     # keys, so with no well-formed key declared the check does not fire.
     dataset = {"name": "customers", "source": "db.s.customers", "unique_keys": ["email"]}
     errors = validate_references(
         _document([_ORDERS, dataset], [_relationship(to_columns=["email"])])
+    )
+
+    assert errors == []
+
+
+def test_validate_references_rejects_mismatched_relationship_column_counts() -> None:
+    errors = validate_references(
+        _document_with_relationship(
+            from_columns=["customer_id", "region_id"],
+            to_columns=["id"],
+        )
+    )
+
+    assert errors == [
+        "[Relationship] Relationship 'orders_to_customers' in model 'm' has "
+        "2 from_columns but 1 to_columns"
+    ]
+
+
+def test_validate_references_accepts_matching_relationship_column_counts() -> None:
+    errors = validate_references(
+        _document_with_relationship(
+            from_columns=["customer_id", "region_id"],
+            to_columns=["id", "region_id"],
+        )
     )
 
     assert errors == []
