@@ -119,8 +119,9 @@ manifest_json = result.output.model_dump_json(by_alias=True, exclude_none=True, 
 | `NATURAL_ENTITY_DROPPED` | Ossie has no natural-key entity type |
 | `CUMULATIVE_SEMANTICS_LOSS` | Window/grain semantics cannot be expressed in an Ossie expression string; the base aggregation is preserved |
 
-**Ossie → MSI** reconstructs a best-effort MSI manifest from Ossie's simpler schema. Nothing is dropped, but Ossie carries less structural information than MSI, so the converter makes the following choices:
+**Ossie → MSI** reconstructs a best-effort MSI manifest from Ossie's simpler schema. Nothing is dropped for supported inputs, but Ossie carries less structural information than MSI, so the converter makes the following choices:
 
+- Composite primary and unique keys are rejected because MSI entities cannot preserve grouped key semantics
 - Single aggregations (`SUM(col)`, `COUNT(DISTINCT col)`, etc.) → SIMPLE metric with `metric_aggregation_params`
 - `(expr_a) / (expr_b)` → RATIO metric with auto-generated sub-metrics
 - Anything else → SIMPLE metric with the raw expression stored verbatim
