@@ -352,6 +352,44 @@ def test_relationships_become_references(ossie_tpcds_dict: dict):
     assert "store" in ref_targets
 
 
+def test_relationship_column_count_mismatch_raises():
+    """Verify incomplete Ossie relationship pairs do not get silently truncated."""
+    model = {
+        "semantic_model": [
+            {
+                "name": "orders",
+                "datasets": [
+                    {
+                        "name": "orders",
+                        "source": "analytics.orders",
+                        "fields": [
+                            _direct_field("customer_id", dimension={}),
+                            _direct_field("region_id", dimension={}),
+                        ],
+                    },
+                    {
+                        "name": "customers",
+                        "source": "analytics.customers",
+                        "fields": [_direct_field("id", dimension={})],
+                    },
+                ],
+                "relationships": [
+                    {
+                        "name": "orders_to_customers",
+                        "from": "orders",
+                        "to": "customers",
+                        "from_columns": ["customer_id", "region_id"],
+                        "to_columns": ["id"],
+                    }
+                ],
+            }
+        ]
+    }
+
+    with pytest.raises(ValueError, match="from_columns.*to_columns.*same length"):
+        ossie_to_gooddata(model)
+
+
 def test_source_column_from_ansi_sql(ossie_tpcds_dict: dict):
     """Verify source columns are extracted from ANSI_SQL expressions."""
     result = ossie_to_gooddata(ossie_tpcds_dict)

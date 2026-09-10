@@ -366,6 +366,13 @@ class OssieToWisdomConverter:
                     ConverterIssue(issue_type=ConverterIssueType.AI_CONTEXT_DROPPED, element_name=relationship.name)
                 )
 
+            if len(relationship.from_columns) != len(relationship.to_columns):
+                raise ValueError(
+                    f"Relationship '{relationship.name}': from_columns and to_columns "
+                    f"must have the same length (got {len(relationship.from_columns)} "
+                    f"and {len(relationship.to_columns)})"
+                )
+
             left_ref = {"uuid": zsheet_refs[left]["uuid"], "name": left}
             right_ref = {"uuid": zsheet_refs[right]["uuid"], "name": right}
             conditions = [

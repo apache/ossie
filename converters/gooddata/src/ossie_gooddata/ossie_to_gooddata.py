@@ -329,6 +329,12 @@ def _convert_relationship(
     to_ds = rel["to"]
     from_columns: list[str] = rel.get("from_columns", [])
     to_columns: list[str] = rel.get("to_columns", from_columns)
+    if len(from_columns) != len(to_columns):
+        raise ValueError(
+            f"Relationship '{rel.get('name', '<unnamed>')}': from_columns and "
+            f"to_columns must have the same length (got {len(from_columns)} and "
+            f"{len(to_columns)})"
+        )
 
     target_meta = target_info.get(to_ds, {"is_date": False, "col_to_attr": {}})
     sources: list[GdReferenceSource] = []
