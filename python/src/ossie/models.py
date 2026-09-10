@@ -72,6 +72,7 @@ class OssieVendor(str, Enum):
     GOODDATA = "GOODDATA"
     SEMANTIDO = "SEMANTIDO"
     WISDOM = "WISDOM"
+    LIGHTDASH = "LIGHTDASH"
     SIGMA = "SIGMA"
 
 
