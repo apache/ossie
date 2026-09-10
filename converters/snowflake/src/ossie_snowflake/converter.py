@@ -422,13 +422,17 @@ def _normalize_identifier(identifier):
         return stripped
     return stripped.upper()
 
-# A dataset source is a SQL query when, after leading whitespace and SQL
-# comments (`-- ...` and `/* ... */`) and any opening parentheses, it starts
-# with SELECT or WITH as a whole word. The word boundary keeps table names such
-# as SELECT_RESULTS on the relation path, while `SELECT*FROM`, `SELECT/*c*/`,
-# and CRLF line endings after the keyword are still recognised as queries.
-_LEADING_SQL_TRIVIA = re.compile(r"^(?:\s+|--[^\n]*(?:\n|$)|/\*.*?\*/)+", re.DOTALL)
-_QUERY_KEYWORD = re.compile(r"(?:SELECT|WITH)\b", re.IGNORECASE)
+# A dataset source is a SQL query when, after leading whitespace, SQL comments
+# (`-- ...`, `// ...` and `/* ... */`) and any opening parentheses, it starts
+# with SELECT or WITH followed by something that cannot continue an unquoted
+# identifier. That keeps names such as SELECT_RESULTS or SELECT$ARCHIVE on the
+# relation path (Snowflake allows `$` in unquoted identifiers, so `\b` would be
+# wrong), while `SELECT*FROM`, `SELECT/*c*/` and CRLF after the keyword are
+# still recognised as queries.
+_LEADING_SQL_TRIVIA = re.compile(
+    r"^(?:\s+|--[^\n]*(?:\n|$)|//[^\n]*(?:\n|$)|/\*.*?\*/)+", re.DOTALL
+)
+_QUERY_KEYWORD = re.compile(r"^(?:SELECT|WITH)(?![A-Za-z0-9_$])", re.IGNORECASE)
 _UNQUOTED_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
 _QUOTED_IDENTIFIER = re.compile(r'^"(?:[^"]|"")+"$')
 

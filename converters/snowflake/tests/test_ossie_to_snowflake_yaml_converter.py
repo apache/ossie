@@ -164,13 +164,22 @@ class TestParseSource:
         with pytest.raises(OssieConversionError, match="fully qualified"):
             _parse_source("SELECT_RESULTS")
 
-    def test_table_named_like_keyword_prefix_is_a_relation(self):
-        result = _parse_source("select_results.public.t")
-        assert result == {"database": "SELECT_RESULTS", "schema": "PUBLIC", "table": "T"}
+    @pytest.mark.parametrize("source, database", [
+        ("select_results.public.t", "SELECT_RESULTS"),
+        ("select$archive.public.t", "SELECT$ARCHIVE"),
+        ("with$archive.public.t", "WITH$ARCHIVE"),
+        ("select1.public.t", "SELECT1"),
+        ("SELECT$.public.t", "SELECT$"),
+    ])
+    def test_table_named_like_keyword_prefix_is_a_relation(self, source, database):
+        # Snowflake allows `_`, digits and `$` after the first character of an
+        # unquoted identifier, so these are tables, not queries.
+        assert _parse_source(source) == {"database": database, "schema": "PUBLIC", "table": "T"}
 
     @pytest.mark.parametrize("source", [
         "-- revenue source\nSELECT amount FROM db.schema.orders",
         "/* revenue source */ SELECT amount FROM db.schema.orders",
+        "// revenue source\nSELECT amount FROM db.schema.orders",
         "-- first\n  -- second\n/* third */\nWITH c AS (SELECT 1) SELECT * FROM c",
         "SELECT\r\namount FROM db.schema.orders",
         "WITH\r\nc AS (SELECT 1 AS amount) SELECT amount FROM c",
