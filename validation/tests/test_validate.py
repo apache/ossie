@@ -167,7 +167,7 @@ def test_skips_malformed_flat_unique_keys() -> None:
 @pytest.fixture
 def run_validator(tmp_path, monkeypatch, capsys):
     def run(document):
-        model_path = tmp_path / "model.yaml"
+        model_path = tmp_path / "model.json"
         model_path.write_text(json.dumps(document))
         monkeypatch.setattr(_VALIDATE.sys, "argv", [str(_VALIDATE_PATH), str(model_path)])
         with pytest.raises(SystemExit) as caught:
