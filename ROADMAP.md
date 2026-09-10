@@ -351,7 +351,7 @@ Ossie standardizes structural and logical semantics well, but there is limited s
 
 **Roadmap Deliverables:**
 
-- [Extended Metadata Proposal for Ossie](https://github.com/apache/ossie/issues/100) — optional, backward-compatible metadata fields (e.g., `measurement`, `display_format`, `semantic_type`, `default_aggregation`, `desired_direction`, `default_sort`, `semantic_mappings`)
+- [Extended Metadata Proposal for Ossie](https://github.com/apache/ossie/issues/100) — optional, backward-compatible metadata fields (e.g., `measurement`, `display_format`, `semantic_type`, `default_aggregation`, `desired_direction`, `default_sort`, `glossary_references`)
 - Richer application-specific extension points beyond `custom_extensions`
 - Sample value annotations for documentation and AI grounding
 
