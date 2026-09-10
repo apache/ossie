@@ -164,6 +164,44 @@ class TestParseSource:
         with pytest.raises(OssieConversionError, match="fully qualified"):
             _parse_source("SELECT_RESULTS")
 
+    def test_table_named_like_keyword_prefix_is_a_relation(self):
+        result = _parse_source("select_results.public.t")
+        assert result == {"database": "SELECT_RESULTS", "schema": "PUBLIC", "table": "T"}
+
+    @pytest.mark.parametrize("source", [
+        "-- revenue source\nSELECT amount FROM db.schema.orders",
+        "/* revenue source */ SELECT amount FROM db.schema.orders",
+        "-- first\n  -- second\n/* third */\nWITH c AS (SELECT 1) SELECT * FROM c",
+        "SELECT\r\namount FROM db.schema.orders",
+        "WITH\r\nc AS (SELECT 1 AS amount) SELECT amount FROM c",
+        "SELECT*FROM db.schema.orders",
+        "SELECT/*c*/ amount FROM db.schema.orders",
+        "(SELECT amount FROM db.schema.orders)",
+        "( -- inner\n  select amount from db.schema.orders )",
+        "select amount from db.schema.orders",
+    ])
+    def test_query_text_is_preserved_verbatim_as_definition(self, source):
+        # Leading comments, CRLF, missing whitespace after the keyword, and
+        # parentheses must not turn a query into a physical table reference.
+        assert _parse_source(source) == {"definition": source}
+
+    def test_query_with_leading_comment_and_fewer_dots_is_still_a_query(self):
+        source = "-- revenue\nSELECT 1 AS amount"
+        assert _parse_source(source) == {"definition": source}
+
+    @pytest.mark.parametrize("source", [
+        "-- c\nSELEC amount FROM db.schema.orders",   # typo: neither query nor relation
+        "foo bar.schema.table",                        # whitespace inside an unquoted part
+        "db.schema.table;",                            # trailing statement terminator
+        "1db.schema.table",                            # unquoted identifier cannot start with a digit
+    ])
+    def test_relation_shaped_garbage_is_rejected_not_uppercased(self, source):
+        with pytest.raises(OssieConversionError, match="fully qualified"):
+            _parse_source(source)
+
+    def test_dollar_sign_allowed_in_unquoted_identifier(self):
+        assert _parse_source("db$1.sch_2.t$") == {"database": "DB$1", "schema": "SCH_2", "table": "T$"}
+
 
 # ---------------------------------------------------------------------------
 # _extract_synonyms
@@ -731,6 +769,34 @@ class TestConvertOssieToSnowflake:
         }
         result = yaml.safe_load(convert_ossie_to_snowflake(_wrap_ossie(model)))
         assert "definition" in result["tables"][0]["base_table"]
+
+    def test_subquery_source_with_leading_comment_keeps_definition(self):
+        source = "-- revenue source\nSELECT * FROM db.s.t WHERE active = 1"
+        model = {
+            "name": "m",
+            "datasets": [
+                {
+                    "name": "t",
+                    "source": source,
+                    "fields": [
+                        {
+                            "name": "c",
+                            "expression": {
+                                "dialects": [
+                                    {"dialect": "ANSI_SQL", "expression": "c"}
+                                ]
+                            },
+                            "dimension": {"is_time": False},
+                        }
+                    ],
+                }
+            ],
+        }
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = yaml.safe_load(convert_ossie_to_snowflake(_wrap_ossie(model)))
+        assert result["tables"][0]["base_table"] == {"definition": source}
+        assert not [w for w in caught if "source" in str(w.message).lower()]
 
 
 # ---------------------------------------------------------------------------
