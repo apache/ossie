@@ -1,0 +1,49 @@
+# serializer version: 1
+# name: TestOSIToMSIRoundTrip.test_osi_to_msi_to_osi_preserves_structure
+  '''
+  version: 0.2.0.dev0
+  dialects:
+  - ANSI_SQL
+  semantic_model:
+  - name: semantic_model
+    datasets:
+    - name: orders
+      source: analytics.orders
+      primary_key:
+      - order_id
+      fields:
+      - name: order_id
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: order_id
+      - name: status
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: status
+        dimension:
+          is_time: false
+      - name: created_at
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: created_at
+        dimension:
+          is_time: true
+      - name: amount
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: amount
+        dimension:
+          is_time: false
+    metrics:
+    - name: revenue
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(orders.amount)
+  
+  '''
+# ---
