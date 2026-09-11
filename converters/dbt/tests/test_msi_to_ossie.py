@@ -358,7 +358,7 @@ class TestConfigMetaCustomExtensions:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
 
-        extensions = result.semantic_model[0].datasets[0].custom_extensions
+        extensions = result.datasets[0].custom_extensions
         assert extensions is not None
         assert json.loads(extensions[0].data) == {"view_label": "Orders"}
 
