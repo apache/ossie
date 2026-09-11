@@ -305,15 +305,47 @@ class ValidatorIntegrationTest(unittest.TestCase):
                 text=True,
             )
 
+    def test_invalid_document_roots_report_schema_errors(self):
+        for content in ("", "null\n", "[]\n", "42\n"):
+            with self.subTest(content=content):
+                result = self.run_validator(content)
+
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("Validation FAILED", result.stdout)
+                self.assertIn("[Schema]", result.stdout)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_wrapped_models_report_schema_errors(self):
+        model = {"name": "sales", "datasets": [{"name": "orders", "source": "orders"}]}
+        for wrapped in (model, [], [model], [model, model], None):
+            with self.subTest(semantic_model=wrapped):
+                content = yaml.safe_dump({"version": "0.2.0.dev0", "semantic_model": wrapped})
+                result = self.run_validator(content)
+
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("Validation FAILED", result.stdout)
+                self.assertIn("[Schema]", result.stdout)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_malformed_datasets_report_schema_errors(self):
+        for datasets in (None, {}, "orders", [None]):
+            with self.subTest(datasets=datasets):
+                content = yaml.safe_dump({"version": "0.2.0.dev0", "name": "sales", "datasets": datasets})
+                result = self.run_validator(content)
+
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("Validation FAILED", result.stdout)
+                self.assertIn("[Schema]", result.stdout)
+                self.assertNotIn("Traceback", result.stderr)
+
     def test_duplicate_key_exits_nonzero(self):
         result = self.run_validator(
             "version: 0.2.0.dev0\n"
-            "semantic_model:\n"
-            "  - name: sales\n"
-            "    name: finance\n"
-            "    datasets:\n"
-            "      - name: orders\n"
-            "        source: analytics.orders\n"
+            "name: sales\n"
+            "name: finance\n"
+            "datasets:\n"
+            "  - name: orders\n"
+            "    source: analytics.orders\n"
         )
 
         self.assertEqual(result.returncode, 1)
@@ -323,11 +355,10 @@ class ValidatorIntegrationTest(unittest.TestCase):
     def test_valid_model_still_passes(self):
         result = self.run_validator(
             "version: 0.2.0.dev0\n"
-            "semantic_model:\n"
-            "  - name: sales\n"
-            "    datasets:\n"
-            "      - name: orders\n"
-            "        source: analytics.orders\n"
+            "name: sales\n"
+            "datasets:\n"
+            "  - name: orders\n"
+            "    source: analytics.orders\n"
         )
 
         self.assertEqual(result.returncode, 0)
