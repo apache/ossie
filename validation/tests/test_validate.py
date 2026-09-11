@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import json
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
@@ -34,16 +35,18 @@ _SPEC.loader.exec_module(_VALIDATE)
 validate_references = _VALIDATE.validate_references
 
 
+@pytest.fixture
+def core_schema() -> dict:
+    schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    return json.loads(schema_path.read_text())
+
+
 def _document(datasets: list[dict], relationships: list[dict]) -> dict:
     return {
         "version": "0.2.0.dev0",
-        "semantic_model": [
-            {
-                "name": "m",
-                "datasets": datasets,
-                "relationships": relationships,
-            }
-        ],
+        "name": "m",
+        "datasets": datasets,
+        "relationships": relationships,
     }
 
 
@@ -55,6 +58,99 @@ _CUSTOMERS = {
 }
 
 _ORDERS = {"name": "orders", "source": "db.s.orders"}
+
+
+def test_accepts_a_single_root_model(core_schema: dict) -> None:
+    document = _document([_ORDERS, _CUSTOMERS], [])
+
+    assert _VALIDATE.validate_schema(document, core_schema) == []
+
+
+@pytest.mark.parametrize("required_property", ["version", "name", "datasets"])
+def test_requires_model_and_document_properties(core_schema: dict, required_property: str) -> None:
+    document = _document([_ORDERS], [])
+    del document[required_property]
+
+    errors = _VALIDATE.validate_schema(document, core_schema)
+
+    assert any(f"'{required_property}' is a required property" in error for error in errors)
+
+
+@pytest.mark.parametrize("property_name", ["name", "datasets"])
+def test_rejects_null_model_properties(core_schema: dict, property_name: str) -> None:
+    document = _document([_ORDERS], [])
+    document[property_name] = None
+
+    errors = _VALIDATE.validate_schema(document, core_schema)
+
+    assert any(f"[Schema] {property_name}:" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "wrapped",
+    [
+        None,
+        [],
+        {"name": "one", "datasets": []},
+        [{"name": "one", "datasets": []}],
+        [{"name": "one", "datasets": []}, {"name": "two", "datasets": []}],
+    ],
+)
+def test_rejects_legacy_or_object_wrappers(core_schema: dict, wrapped: object) -> None:
+    document = {"version": "0.2.0.dev0", "semantic_model": wrapped}
+
+    assert _VALIDATE.validate_schema(document, core_schema)
+
+    # A wrapper must also be rejected when a valid root model is present.
+    document.update(_document([_ORDERS], []))
+    errors = _VALIDATE.validate_schema(document, core_schema)
+
+    assert any(
+        "Additional properties are not allowed" in error and "semantic_model" in error
+        for error in errors
+    )
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        None,
+        [],
+        42,
+        {"version": "0.2.0.dev0"},
+        {"version": "0.2.0.dev0", "semantic_model": [{"name": "old", "datasets": []}]},
+    ],
+)
+def test_semantic_checks_skip_non_model_payloads(data: object) -> None:
+    assert _VALIDATE.validate_unique_names(data) == []
+    assert validate_references(data) == []
+    assert _VALIDATE.validate_sql(data) == []
+
+
+def test_unique_names_are_checked_in_the_root_model() -> None:
+    errors = _VALIDATE.validate_unique_names(_document([_ORDERS, _ORDERS], []))
+
+    assert errors == ["[Unique] Duplicate dataset name 'orders' in model 'm'"]
+
+
+def test_sql_checks_traverse_root_fields_and_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = []
+
+    def record_expression(expression: str, dialect: str, context: str) -> None:
+        seen.append((expression, dialect, context))
+
+    monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", True)
+    monkeypatch.setattr(_VALIDATE, "validate_sql_expression", record_expression)
+    expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": "value"}]}
+    dataset = {**_ORDERS, "fields": [{"name": "value", "expression": expression}]}
+    document = _document([dataset], [])
+    document["metrics"] = [{"name": "total", "expression": expression}]
+
+    assert _VALIDATE.validate_sql(document) == []
+    assert seen == [
+        ("value", "ANSI_SQL", "Field 'orders.value' in model 'm' (ANSI_SQL)"),
+        ("value", "ANSI_SQL", "Metric 'total' in model 'm' (ANSI_SQL)"),
+    ]
 
 
 def _relationship(to_columns: list[str], to: str = "customers") -> dict:
