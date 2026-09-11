@@ -25,9 +25,6 @@ Bidirectional, offline conversion between
 [Apache Ossie][apache-ossie] and [Hex][hex-semantic-spec].
 
 - **Export** (`ossie-hex export`): Ossie → Hex
-- **Import** (`ossie-hex import`): Hex → Ossie
-
-TODO(main): {description}
 
 ## Installation
 
@@ -71,16 +68,6 @@ Example:
 ```bash
 ossie-hex export -i ossie.yaml -o hex/ --dialect snowflake
 ```
-
-#### `import`
-
-TODO(import): {description}
-
-TODO(import): {code-signature}
-
-TODO(import): {options}
-
-TODO(import): {code-example}
 
 ### Python API
 
@@ -204,12 +191,6 @@ conversion is not one-to-one.
 | `Opaque`         | `other`           |                                                      |
 | `Time`           | `other`           | No Hex equivalent.                                   |
 | _omitted_        | `string`/`number` | Warning. String for dimensions, number for measures. |
-
-### Custom extension
-
-TODO(custom-extension): {description}
-
-TODO(custom-extension): {table}
 
 [apache-ossie]: https://ossie.apache.org/
 [hex-semantic-spec]: https://learn.hex.tech/docs/connect-to-data/semantic-models/semantic-authoring/modeling-specification
