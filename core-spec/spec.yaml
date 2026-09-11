@@ -59,42 +59,44 @@ datatypes:
 vendor_name: string
 
 
+# Standalone documents contain exactly one model directly at the root.
+# No semantic_model wrapper; include version and optional dialects/vendors.
+# The sections in this reference file describe separate schema components.
 # Top-level semantic model definition
-semantic_model:
-  # Required: Unique identifier for the semantic model
-  - name: string
+# Required: Unique identifier for the semantic model
+name: string
 
-    # Optional: Human-readable description of the semantic model
-    description: string
+# Optional: Human-readable description of the semantic model
+description: string
 
-    # Optional: Additional context for AI tools (e.g., custom prompts, instructions)
-    # Can be either:
-    #   - A free-form string, or
-    #   - A structured object with optional keys:
-    #       instructions: string  # how AI should use this entity
-    #       synonyms:     []      # alternative names / terms
-    #       examples:     []      # sample questions or use cases
-    #     (additionalProperties: true, so vendors may add more keys)
-    ai_context: {}  # see AIContext in ossie-schema.json
+# Optional: Additional context for AI tools (e.g., custom prompts, instructions)
+# Can be either:
+#   - A free-form string, or
+#   - A structured object with optional keys:
+#       instructions: string  # how AI should use this entity
+#       synonyms:     []      # alternative names / terms
+#       examples:     []      # sample questions or use cases
+#     (additionalProperties: true, so vendors may add more keys)
+ai_context: {}  # see AIContext in ossie-schema.json
 
-    # Required: Collection of logical datasets (fact and dimension tables)
-    # See Logical Dataset section below for detailed structure
-    datasets: []
+# Required: Collection of logical datasets (fact and dimension tables)
+# See Logical Dataset section below for detailed structure
+datasets: []
 
-    # Optional: Defines how logical datasets are connected
-    # See Relationships section below for detailed structure
-    relationships: []
+# Optional: Defines how logical datasets are connected
+# See Relationships section below for detailed structure
+relationships: []
 
-    # Optional:
-    # These metrics can span one or more logical datasets and use relationships
-    # See Metrics section below for detailed structure
-    metrics: []
+# Optional:
+# These metrics can span one or more logical datasets and use relationships
+# See Metrics section below for detailed structure
+metrics: []
 
-    # Optional: Vendor-specific attributes for extensibility
-    # Allows vendors to add custom metadata without breaking core compatibility
-    custom_extensions:
-      - vendor_name: string  # Free-form string identifying the vendor
-        data: string
+# Optional: Vendor-specific attributes for extensibility
+# Allows vendors to add custom metadata without breaking core compatibility
+custom_extensions:
+  - vendor_name: string  # Free-form string identifying the vendor
+    data: string
 
 ---
 # Logical Dataset Schema
@@ -149,7 +151,7 @@ datasets:
 
 ---
 # Relationship Schema
-# Defines how logical datasets or semantic models are connected
+# Defines how logical datasets within this model are connected
 # Represents foreign key relationships (many-to-one or one-to-one)
 relationships:
   # Required: Unique identifier for the relationship

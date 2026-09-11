@@ -2,20 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/apache/ossie/core-spec/ossie-schema.json",
   "title": "Apache Ossie Core Metadata Specification",
-  "description": "JSON Schema for validating Apache Ossie semantic model definitions",
+  "description": "JSON Schema for validating a single Apache Ossie semantic model document",
   "type": "object",
   "properties": {
     "version": {
       "type": "string",
       "const": "0.2.0.dev0",
       "description": "Apache Ossie specification version"
-    },
-    "semantic_model": {
-      "type": "array",
-      "description": "Collection of semantic model definitions",
-      "items": {
-        "$ref": "#/$defs/SemanticModel"
-      }
     },
     "dialects": {
       "type": "array",
@@ -30,9 +23,30 @@
       "items": {
         "$ref": "#/$defs/Vendor"
       }
+    },
+    "name": {
+      "$ref": "#/$defs/SemanticModel/properties/name"
+    },
+    "description": {
+      "$ref": "#/$defs/SemanticModel/properties/description"
+    },
+    "ai_context": {
+      "$ref": "#/$defs/SemanticModel/properties/ai_context"
+    },
+    "datasets": {
+      "$ref": "#/$defs/SemanticModel/properties/datasets"
+    },
+    "relationships": {
+      "$ref": "#/$defs/SemanticModel/properties/relationships"
+    },
+    "metrics": {
+      "$ref": "#/$defs/SemanticModel/properties/metrics"
+    },
+    "custom_extensions": {
+      "$ref": "#/$defs/SemanticModel/properties/custom_extensions"
     }
   },
-  "required": ["version", "semantic_model"],
+  "required": ["version", "name", "datasets"],
   "additionalProperties": false,
   "$defs": {
     "Dialect": {
