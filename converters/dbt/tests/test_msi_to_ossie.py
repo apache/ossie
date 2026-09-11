@@ -25,6 +25,9 @@ from ossie_dbt.converter_issues import ConverterIssueType
 from ossie_dbt.filter_utils import _render_filter_template
 from ossie import OssieDialect, OssieDocument
 from ossie_dbt.msi_to_ossie import MSIToOssieConverter
+from metricflow_semantic_interfaces.implementations.element_config import (
+    PydanticSemanticLayerElementConfig,
+)
 from metricflow_semantic_interfaces.implementations.metric import (
     PydanticConversionTypeParams,
     PydanticCumulativeTypeParams,
@@ -247,6 +250,111 @@ class TestEntityConversion:
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
 
         assert _fields(result)[0].name == "user_id"
+
+
+class TestConfigMetaCustomExtensions:
+    """config.meta is otherwise silently dropped at the MSI -> Ossie boundary (ossie#303)."""
+
+    def test_dimension_config_meta_becomes_custom_extension(self) -> None:
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            dimensions=[
+                _dimension(
+                    "status",
+                    config=PydanticSemanticLayerElementConfig(meta={"looker_group_label": "Order Info"}),
+                )
+            ],
+        )
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
+
+        extensions = _fields(result)[0].custom_extensions
+        assert extensions is not None
+        assert len(extensions) == 1
+        assert extensions[0].vendor_name == "DBT"
+        assert json.loads(extensions[0].data) == {"looker_group_label": "Order Info"}
+
+    def test_entity_config_meta_becomes_custom_extension(self) -> None:
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            entities=[
+                _entity(
+                    "order_id",
+                    entity_type=EntityType.PRIMARY,
+                    config=PydanticSemanticLayerElementConfig(meta={"hidden": True}),
+                )
+            ],
+        )
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
+
+        extensions = _fields(result)[0].custom_extensions
+        assert extensions is not None
+        assert json.loads(extensions[0].data) == {"hidden": True}
+
+    def test_measure_config_meta_becomes_custom_extension(self) -> None:
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            measures=[
+                _measure(
+                    "revenue",
+                    config=PydanticSemanticLayerElementConfig(meta={"value_format": "$#,##0.00"}),
+                )
+            ],
+        )
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
+
+        extensions = _fields(result)[0].custom_extensions
+        assert extensions is not None
+        assert json.loads(extensions[0].data) == {"value_format": "$#,##0.00"}
+
+    def test_metric_config_meta_becomes_custom_extension(self) -> None:
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            measures=[_measure("revenue", agg=AggregationType.SUM, expr="amount")],
+        )
+        revenue = _simple_metric(
+            "revenue",
+            "revenue",
+            config=PydanticSemanticLayerElementConfig(meta={"group_label": "Revenue"}),
+        )
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[revenue])).output
+
+        extensions = _ossie_metrics(result)[0].custom_extensions
+        assert extensions is not None
+        assert json.loads(extensions[0].data) == {"group_label": "Revenue"}
+
+    def test_semantic_model_config_meta_becomes_dataset_custom_extension(self) -> None:
+        sm = PydanticSemanticModel(
+            name="orders",
+            defaults=None,
+            description=None,
+            node_relation=PydanticNodeRelation(schema_name="analytics", alias="orders_table"),
+            primary_entity=None,
+            metadata=default_meta(),
+            config=PydanticSemanticLayerElementConfig(meta={"view_label": "Orders"}),
+        )
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
+
+        extensions = result.semantic_model[0].datasets[0].custom_extensions
+        assert extensions is not None
+        assert json.loads(extensions[0].data) == {"view_label": "Orders"}
+
+    def test_no_config_meta_omits_custom_extensions(self) -> None:
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            dimensions=[_dimension("status")],
+        )
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
+
+        assert _fields(result)[0].custom_extensions is None
+
+    def test_empty_config_meta_omits_custom_extensions(self) -> None:
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            dimensions=[_dimension("status", config=PydanticSemanticLayerElementConfig(meta={}))],
+        )
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
+
+        assert _fields(result)[0].custom_extensions is None
 
 
 class TestEntityKeyExtraction:

@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import json
 import re
 from collections import defaultdict
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ from itertools import combinations
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from ossie import (
+    OssieCustomExtension,
     OssieDataset,
     OssieDialect,
     OssieDialectExpression,
@@ -32,6 +34,7 @@ from ossie import (
     OssieMetric,
     OssieRelationship,
     OssieSemanticModel,
+    OssieVendor,
 )
 from ossie_dbt.converter_issues import ConverterIssue, ConverterIssueType, ConverterResult
 from ossie_dbt.filter_utils import _collect_filter_sql, _merge_filter_sqls
@@ -44,6 +47,7 @@ from metricflow_semantic_interfaces.protocols.measure import (
     Measure,
     MeasureAggregationParameters,
 )
+from metricflow_semantic_interfaces.protocols.meta import SemanticLayerElementConfig
 from metricflow_semantic_interfaces.protocols.metric import Metric
 from metricflow_semantic_interfaces.protocols.semantic_model import SemanticModel
 from metricflow_semantic_interfaces.transformations.convert_count import ConvertCountMetricToSumRule
@@ -116,6 +120,7 @@ class MSIToOssieConverter:
                     name=metric.name,
                     expression=self._make_expression(expr),
                     description=metric.description,
+                    custom_extensions=self._custom_extensions_from_meta(metric.config),
                 )
             )
 
@@ -153,6 +158,7 @@ class MSIToOssieConverter:
             unique_keys=unique_keys if unique_keys else None,
             description=sm.description,
             fields=fields if fields else None,
+            custom_extensions=self._custom_extensions_from_meta(sm.config),
         )
 
     def _convert_dimension(self, dim: Dimension) -> OssieField:
@@ -165,6 +171,7 @@ class MSIToOssieConverter:
             dimension=OssieDimension(is_time=is_time),
             label=dim.label,
             description=dim.description,
+            custom_extensions=self._custom_extensions_from_meta(dim.config),
         )
 
     def _convert_entity(self, entity: Entity) -> OssieField:
@@ -175,6 +182,7 @@ class MSIToOssieConverter:
             expression=self._make_expression(expr),
             label=entity.label,
             description=entity.description,
+            custom_extensions=self._custom_extensions_from_meta(entity.config),
         )
 
     def _convert_measure(self, measure: Measure) -> OssieField:
@@ -185,7 +193,20 @@ class MSIToOssieConverter:
             expression=self._make_expression(expr),
             label=measure.label,
             description=measure.description,
+            custom_extensions=self._custom_extensions_from_meta(measure.config),
         )
+
+    @staticmethod
+    def _custom_extensions_from_meta(
+        config: Optional[SemanticLayerElementConfig],
+    ) -> Optional[List[OssieCustomExtension]]:
+        """Carry a non-empty MSI `config.meta` dict across as one Ossie `custom_extensions` entry.
+
+        `config.meta` is otherwise silently dropped at this boundary (ossie#303).
+        """
+        if config is None or not config.meta:
+            return None
+        return [OssieCustomExtension(vendor_name=OssieVendor.DBT.value, data=json.dumps(config.meta))]
 
     @staticmethod
     def _extract_keys(entities: Sequence[Entity]) -> Tuple[Optional[List[str]], List[List[str]]]:
