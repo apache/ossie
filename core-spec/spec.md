@@ -83,12 +83,24 @@ ontology specification's built-in value types; `Time`, `DateTimeTz`, and
 
 ## Semantic Model
 
-The top-level container that represents a complete semantic model, including datasets, relationships, and  metrics.
+Each JSON or YAML document represents exactly one semantic model. Model properties
+are defined directly at the document root alongside `version`, `dialects`, and
+`vendors`; there is no `semantic_model` wrapper. A model can contain multiple
+datasets, relationships, and metrics.
+
+A standalone document must contain `version`, `name`, and a non-empty `datasets`
+array. Arrays of models, wrapped models, and unknown root properties are invalid.
+For bulk exchange, use separate model documents, optionally grouped in a directory
+or archive. This specification does not define a bundle format or cross-model
+references.
 
 ### Schema
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `version` | string | Yes | Apache Ossie specification version (`0.2.0.dev0`) |
+| `dialects` | array | No | Expression dialects used in the document |
+| `vendors` | array | No | Vendors with custom extensions in the document |
 | `name` | string | Yes | Unique identifier for the semantic model |
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., custom instructions) |
@@ -100,20 +112,55 @@ The top-level container that represents a complete semantic model, including dat
 ### Example
 
 ```yaml
-semantic_model:
-  - name: sales_analytics
-    description: Sales and customer analytics model
-    ai_context:
-      instructions: "Use this model for sales analysis and customer insights"
-    datasets:
-      - name: orders
-        source: sales.public.orders
-    relationships: []
-    metrics: []
-    custom_extensions:
-      - vendor_name: DBT
-        data: '{"project_name": "tpcds_analytics", "models_path": "models/semantic"}'
+version: 0.2.0.dev0
+name: sales_analytics
+description: Sales and customer analytics model
+ai_context:
+  instructions: "Use this model for sales analysis and customer insights"
+datasets:
+  - name: orders
+    source: sales.public.orders
+relationships: []
+metrics: []
+custom_extensions:
+  - vendor_name: DBT
+    data: '{"project_name": "tpcds_analytics", "models_path": "models/semantic"}'
 ```
+
+The same document structure in JSON:
+
+```json
+{
+  "version": "0.2.0.dev0",
+  "name": "sales_analytics",
+  "datasets": [
+    {"name": "orders", "source": "sales.public.orders"}
+  ]
+}
+```
+
+### Migrating earlier document shapes
+
+This is a breaking change in the unreleased `0.2.0.dev0` specification. Earlier
+releases and earlier development snapshots use a `semantic_model` array. The
+current schema accepts only the flat document shape; it does not accept the array
+or an object-valued wrapper.
+
+To migrate a document containing one model, move that model's properties to the
+root, remove `semantic_model`, and retain the document's dialect and vendor
+declarations. Use `version: 0.2.0.dev0` for the migrated document. For multiple
+models, create one document per model, carrying over the applicable declarations
+and validating each result. An empty model array cannot produce a valid model
+document. Preserve model contents and custom extensions; never silently select
+only the first model or overwrite a file when splitting a document.
+
+The reusable `$defs/SemanticModel` schema still describes model contents without
+standalone document metadata. In particular, an ontology map continues to embed
+those contents under its `semantic_model` property. This standalone document
+change does not rename or flatten that ontology property.
+
+Converter and Python SDK adoption is tracked as follow-up work; existing
+implementations may still require the earlier wrapped-array shape.
 
 ---
 
@@ -506,101 +553,100 @@ Here's a complete semantic model example showing all components working together
 
 ```yaml
 version: 0.2.0.dev0
-semantic_model:
-  - name: ecommerce_analytics
-    description: E-commerce sales and customer analytics
+name: ecommerce_analytics
+description: E-commerce sales and customer analytics
+ai_context:
+  instructions: "Use this model for analyzing sales trends, customer behavior, and product performance"
+
+datasets:
+  - name: orders
+    source: sales.public.orders
+    primary_key: [order_id]
+    description: Customer orders
+    fields:
+      - name: order_id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: order_id
+        description: Order identifier
+
+      - name: customer_id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: customer_id
+        description: Customer identifier
+
+      - name: order_date
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: order_date
+        datatype: Date
+        dimension:
+          is_time: true
+        description: Order date
+
+      - name: amount
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: amount
+        description: Order amount
+
+  - name: customers
+    source: sales.public.customers
+    primary_key: [id]
+    description: Customer information
+    fields:
+      - name: id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: id
+        description: Customer identifier
+
+      - name: email
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: email
+        description: Customer email
+
+relationships:
+  - name: orders_to_customers
+    from: orders
+    to: customers
+    from_columns: [customer_id]
+    to_columns: [id]
+
+metrics:
+  - name: total_revenue
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(orders.amount)
+    description: Total revenue from all orders
     ai_context:
-      instructions: "Use this model for analyzing sales trends, customer behavior, and product performance"
+      synonyms:
+        - "total sales"
+        - "revenue"
 
-    datasets:
-      - name: orders
-        source: sales.public.orders
-        primary_key: [order_id]
-        description: Customer orders
-        fields:
-          - name: order_id
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: order_id
-            description: Order identifier
+  - name: customer_count
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: COUNT(DISTINCT customers.id)
+    description: Total number of customers
+    ai_context:
+      synonyms:
+        - "total customers"
+        - "customer base"
 
-          - name: customer_id
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: customer_id
-            description: Customer identifier
-
-          - name: order_date
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: order_date
-            datatype: Date
-            dimension:
-              is_time: true
-            description: Order date
-
-          - name: amount
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: amount
-            description: Order amount
-
-      - name: customers
-        source: sales.public.customers
-        primary_key: [id]
-        description: Customer information
-        fields:
-          - name: id
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: id
-            description: Customer identifier
-
-          - name: email
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: email
-            description: Customer email
-
-    relationships:
-      - name: orders_to_customers
-        from: orders
-        to: customers
-        from_columns: [customer_id]
-        to_columns: [id]
-
-    metrics:
-      - name: total_revenue
-        expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: SUM(orders.amount)
-        description: Total revenue from all orders
-        ai_context:
-          synonyms:
-            - "total sales"
-            - "revenue"
-
-      - name: customer_count
-        expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: COUNT(DISTINCT customers.id)
-        description: Total number of customers
-        ai_context:
-          synonyms:
-            - "total customers"
-            - "customer base"
-
-    custom_extensions:
-      - vendor_name: SNOWFLAKE
-        data: '{"warehouse": "ANALYTICS_WH"}'
+custom_extensions:
+  - vendor_name: SNOWFLAKE
+    data: '{"warehouse": "ANALYTICS_WH"}'
 ```
 
 ---
@@ -642,6 +688,7 @@ ai_context:
 ## Version History
 
 - **0.2.0.dev0** (Unreleased): In-development next minor release. Schema is mutable; do not depend on this version in production.
+  - Breaking: each standalone document contains one model directly at the root; the `semantic_model` array is removed.
 - **0.1.1** (2025-12-11): Initial release
   - Core semantic model structure
   - Support for datasets, relationships, fields, and metrics
