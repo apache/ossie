@@ -16,11 +16,7 @@
 # under the License.
 
 from .ossie_dialect_name import OssieDialectName
-from .ossie_field_expr import (
-    OSSIE_QUALIFIED_FIELD_EXPR_SCAN_RE,
-)
 
 __all__ = [
-    "OSSIE_QUALIFIED_FIELD_EXPR_SCAN_RE",
     "OssieDialectName",
 ]
