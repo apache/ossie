@@ -66,6 +66,37 @@ def test_accepts_a_single_root_model(core_schema: dict) -> None:
     assert _VALIDATE.validate_schema(document, core_schema) == []
 
 
+def test_rejects_empty_root_datasets(core_schema: dict) -> None:
+    errors = _VALIDATE.validate_schema(_document([], []), core_schema)
+
+    assert errors == ["[Schema] datasets: [] should be non-empty"]
+
+
+def test_embedded_semantic_model_does_not_require_document_version(core_schema: dict) -> None:
+    # Ontology components reference this definition without a document envelope.
+    embedded_schema = {
+        "$ref": "#/$defs/SemanticModel",
+        "$defs": core_schema["$defs"],
+    }
+    model = _document([_ORDERS, _CUSTOMERS], [])
+    del model["version"]
+
+    assert _VALIDATE.validate_schema(model, embedded_schema) == []
+
+
+@pytest.mark.parametrize("unknown_property", ["dataset", "owner"])
+def test_rejects_unknown_root_properties(core_schema: dict, unknown_property: str) -> None:
+    document = _document([_ORDERS], [])
+    document[unknown_property] = "unexpected"
+
+    errors = _VALIDATE.validate_schema(document, core_schema)
+
+    assert any(
+        "Additional properties are not allowed" in error and unknown_property in error
+        for error in errors
+    )
+
+
 @pytest.mark.parametrize("required_property", ["version", "name", "datasets"])
 def test_requires_model_and_document_properties(core_schema: dict, required_property: str) -> None:
     document = _document([_ORDERS], [])
