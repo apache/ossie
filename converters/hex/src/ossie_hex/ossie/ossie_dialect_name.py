@@ -25,4 +25,6 @@ OssieDialectName = Literal[
     "TABLEAU",
     "DATABRICKS",
     "BIGQUERY",
+    "THOUGHTSPOT",
+    "SIGMA",
 ]

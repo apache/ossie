@@ -105,6 +105,7 @@ def _to_sqlglot_dialect(ossie_dialect: OssieDialect) -> SQLGlotDialect | None:
         OssieDialect.MDX,
         OssieDialect.MAQL,
         OssieDialect.THOUGHTSPOT,
+        OssieDialect.SIGMA,
     ):
         # There's no parallel for these
         read = None
