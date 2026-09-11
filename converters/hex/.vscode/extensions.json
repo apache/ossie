@@ -1,0 +1,11 @@
+{
+  "recommendations": [
+    "astral-sh.ty",
+    "charliermarsh.ruff",
+    "rvben.rumdl",
+    "nefrob.vscode-just-syntax",
+    "redhat.vscode-yaml",
+    "ms-python.vscode-python-envs",
+    "ms-python.python"
+  ]
+}
