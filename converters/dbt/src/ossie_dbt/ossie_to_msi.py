@@ -15,16 +15,19 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import json
 from dataclasses import dataclass
 from typing import List, Optional, Set
 
 from ossie import (
+    OssieCustomExtension,
     OssieDataset,
     OssieDialect,
     OssieDocument,
     OssieExpression,
     OssieField,
     OssieSemanticModel,
+    OssieVendor,
 )
 from ossie_dbt.converter_issues import ConverterResult
 from ossie_dbt.expression_utils import (
@@ -34,6 +37,9 @@ from ossie_dbt.expression_utils import (
     _try_parse_ratio,
 )
 
+from metricflow_semantic_interfaces.implementations.element_config import (
+    PydanticSemanticLayerElementConfig,
+)
 from metricflow_semantic_interfaces.implementations.elements.dimension import (
     PydanticDimension,
     PydanticDimensionTypeParams,
@@ -149,7 +155,22 @@ class OssieToMSIConverter:
             entities=entities,
             dimensions=dimensions,
             measures=[],
+            config=self._config_from_custom_extensions(dataset.custom_extensions),
         )
+
+    @staticmethod
+    def _config_from_custom_extensions(
+        custom_extensions: Optional[List[OssieCustomExtension]],
+    ) -> Optional[PydanticSemanticLayerElementConfig]:
+        """Reconstruct MSI `config.meta` from the `custom_extensions` entry this converter wrote (ossie#303).
+
+        Only the DBT-vendor entry round-trips; extensions written by another vendor did not
+        originate from config.meta and have no meaning as one.
+        """
+        for ext in custom_extensions or []:
+            if ext.vendor_name == OssieVendor.DBT.value:
+                return PydanticSemanticLayerElementConfig(meta=json.loads(ext.data))
+        return None
 
     @staticmethod
     def _build_key_sets(dataset: OssieDataset, ossie_sm: OssieSemanticModel) -> _KeySets:
@@ -197,7 +218,7 @@ class OssieToMSIConverter:
                     description=field.description,
                     label=field.label,
                     role=None,
-                    config=None,
+                    config=self._config_from_custom_extensions(field.custom_extensions),
                 )
             )
             return
@@ -210,7 +231,7 @@ class OssieToMSIConverter:
                     description=field.description,
                     label=field.label,
                     role=None,
-                    config=None,
+                    config=self._config_from_custom_extensions(field.custom_extensions),
                 )
             )
             return
@@ -223,7 +244,7 @@ class OssieToMSIConverter:
                     description=field.description,
                     label=field.label,
                     role=None,
-                    config=None,
+                    config=self._config_from_custom_extensions(field.custom_extensions),
                 )
             )
             return
@@ -237,7 +258,7 @@ class OssieToMSIConverter:
                     expr=expr_or_none,
                     description=field.description,
                     label=field.label,
-                    config=None,
+                    config=self._config_from_custom_extensions(field.custom_extensions),
                 )
             )
             return
@@ -249,7 +270,7 @@ class OssieToMSIConverter:
                 expr=expr_or_none,
                 description=field.description,
                 label=field.label,
-                config=None,
+                config=self._config_from_custom_extensions(field.custom_extensions),
             )
         )
 
@@ -261,7 +282,15 @@ class OssieToMSIConverter:
         metrics: List[PydanticMetric] = []
         for metric in ossie_sm.metrics or []:
             expr_str = self._get_expression(metric.expression)
-            metrics.extend(self._convert_metric(metric.name, expr_str, metric.description, ossie_sm.datasets))
+            metrics.extend(
+                self._convert_metric(
+                    metric.name,
+                    expr_str,
+                    metric.description,
+                    ossie_sm.datasets,
+                    config=self._config_from_custom_extensions(metric.custom_extensions),
+                )
+            )
         return metrics
 
     def _convert_metric(
@@ -270,6 +299,7 @@ class OssieToMSIConverter:
         expr_str: str,
         description: Optional[str],
         datasets: List[OssieDataset],
+        config: Optional[PydanticSemanticLayerElementConfig] = None,
     ) -> List[PydanticMetric]:
         """Return one or more PydanticMetric objects for the given Ossie expression.
 
@@ -302,7 +332,7 @@ class OssieToMSIConverter:
                     ),
                     filter=None,
                     metadata=None,
-                    config=None,
+                    config=config,
                 )
             ]
 
@@ -324,7 +354,7 @@ class OssieToMSIConverter:
                 ),
                 filter=None,
                 metadata=None,
-                config=None,
+                config=config,
             )
             return [*num_metrics, *den_metrics, ratio_metric]
 
@@ -349,7 +379,7 @@ class OssieToMSIConverter:
                 ),
                 filter=None,
                 metadata=None,
-                config=None,
+                config=config,
             )
         ]
 

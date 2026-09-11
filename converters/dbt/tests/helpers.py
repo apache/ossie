@@ -18,6 +18,7 @@
 """Shared test helpers for Ossie converter tests."""
 
 from ossie import (
+    OssieCustomExtension,
     OssieDataset,
     OssieDialect,
     OssieDialectExpression,
@@ -175,6 +176,7 @@ def _ossie_field(
     is_time: bool | None = None,
     description: str | None = None,
     label: str | None = None,
+    custom_extensions: list[OssieCustomExtension] | None = None,
 ) -> OssieField:
     return OssieField(
         name=name,
@@ -182,6 +184,7 @@ def _ossie_field(
         dimension=OssieDimension(is_time=is_time) if is_time is not None else None,
         description=description,
         label=label,
+        custom_extensions=custom_extensions,
     )
 
 
@@ -192,6 +195,7 @@ def _ossie_dataset(
     primary_key: list[str] | None = None,
     unique_keys: list[list[str]] | None = None,
     description: str | None = None,
+    custom_extensions: list[OssieCustomExtension] | None = None,
 ) -> OssieDataset:
     return OssieDataset(
         name=name,
@@ -200,11 +204,19 @@ def _ossie_dataset(
         primary_key=primary_key,
         unique_keys=unique_keys,
         description=description,
+        custom_extensions=custom_extensions,
     )
 
 
-def _ossie_metric(name: str, expression: str, description: str | None = None) -> OssieMetric:
-    return OssieMetric(name=name, expression=_ossie_expr(expression), description=description)
+def _ossie_metric(
+    name: str,
+    expression: str,
+    description: str | None = None,
+    custom_extensions: list[OssieCustomExtension] | None = None,
+) -> OssieMetric:
+    return OssieMetric(
+        name=name, expression=_ossie_expr(expression), description=description, custom_extensions=custom_extensions
+    )
 
 
 def _ossie_relationship(

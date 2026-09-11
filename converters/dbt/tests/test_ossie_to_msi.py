@@ -17,10 +17,12 @@
 
 """Tests for OssieToMSIConverter."""
 
+import json
+
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
-from ossie import OssieDataType, OssieDimension
+from ossie import OssieCustomExtension, OssieDataType, OssieDimension, OssieVendor
 from ossie_dbt.msi_to_ossie import MSIToOssieConverter
 from ossie_dbt.ossie_to_msi import OssieToMSIConverter
 from metricflow_semantic_interfaces.type_enums import (
@@ -404,6 +406,84 @@ class TestOssieToMSIMetricConversion:
         assert m.type_params.metric_aggregation_params.agg_params is not None
         assert m.type_params.metric_aggregation_params.agg_params.percentile == 0.95
         assert m.type_params.expr == "amount"
+
+
+class TestOssieToMSIConfigMetaRoundTrip:
+    """The DBT custom_extensions entry this converter's forward direction writes (ossie#303)
+    round-trips back to config.meta; extensions from another vendor do not."""
+
+    def test_field_custom_extension_becomes_entity_config_meta(self) -> None:
+        ext = [OssieCustomExtension(vendor_name=OssieVendor.DBT.value, data=json.dumps({"group_label": "IDs"}))]
+        doc = _ossie_doc(
+            datasets=[
+                _ossie_dataset(
+                    "orders",
+                    fields=[_ossie_field("order_id", custom_extensions=ext)],
+                    primary_key=["order_id"],
+                )
+            ]
+        )
+        sm = OssieToMSIConverter().convert(doc).output.semantic_models[0]
+
+        assert sm.entities[0].config is not None
+        assert sm.entities[0].config.meta == {"group_label": "IDs"}
+
+    def test_field_custom_extension_becomes_dimension_config_meta(self) -> None:
+        ext = [OssieCustomExtension(vendor_name=OssieVendor.DBT.value, data=json.dumps({"value_format": "$#,##0"}))]
+        doc = _ossie_doc(
+            datasets=[_ossie_dataset("orders", fields=[_ossie_field("amount", custom_extensions=ext)])]
+        )
+        sm = OssieToMSIConverter().convert(doc).output.semantic_models[0]
+
+        assert sm.dimensions[0].config is not None
+        assert sm.dimensions[0].config.meta == {"value_format": "$#,##0"}
+
+    def test_dataset_custom_extension_becomes_semantic_model_config_meta(self) -> None:
+        ext = [OssieCustomExtension(vendor_name=OssieVendor.DBT.value, data=json.dumps({"view_label": "Orders"}))]
+        doc = _ossie_doc(datasets=[_ossie_dataset("orders", custom_extensions=ext)])
+        sm = OssieToMSIConverter().convert(doc).output.semantic_models[0]
+
+        assert sm.config is not None
+        assert sm.config.meta == {"view_label": "Orders"}
+
+    def test_metric_custom_extension_becomes_metric_config_meta(self) -> None:
+        ext = [OssieCustomExtension(vendor_name=OssieVendor.DBT.value, data=json.dumps({"group_label": "Revenue"}))]
+        doc = _ossie_doc(
+            datasets=[_ossie_dataset("orders", fields=[_ossie_field("amount")])],
+            metrics=[_ossie_metric("revenue", "SUM(amount)", custom_extensions=ext)],
+        )
+        result = OssieToMSIConverter().convert(doc).output
+
+        assert result.metrics[0].config is not None
+        assert result.metrics[0].config.meta == {"group_label": "Revenue"}
+
+    def test_ratio_sub_metrics_do_not_inherit_parent_config_meta(self) -> None:
+        """Numerator/denominator are synthetic metrics with no origin of their own."""
+        ext = [OssieCustomExtension(vendor_name=OssieVendor.DBT.value, data=json.dumps({"group_label": "ARPU"}))]
+        doc = _ossie_doc(
+            datasets=[_ossie_dataset("orders", fields=[_ossie_field("amount"), _ossie_field("order_id")])],
+            metrics=[_ossie_metric("arpu", "(SUM(amount)) / (COUNT(order_id))", custom_extensions=ext)],
+        )
+        result = OssieToMSIConverter().convert(doc).output
+
+        ratio = next(m for m in result.metrics if m.type == MetricType.RATIO)
+        assert ratio.config is not None
+        assert ratio.config.meta == {"group_label": "ARPU"}
+        sub_metrics = [m for m in result.metrics if m.type == MetricType.SIMPLE]
+        assert all(m.config is None for m in sub_metrics)
+
+    def test_non_dbt_vendor_extension_does_not_become_config_meta(self) -> None:
+        ext = [OssieCustomExtension(vendor_name=OssieVendor.SIGMA.value, data=json.dumps({"foo": "bar"}))]
+        doc = _ossie_doc(datasets=[_ossie_dataset("orders", fields=[_ossie_field("status", custom_extensions=ext)])])
+        sm = OssieToMSIConverter().convert(doc).output.semantic_models[0]
+
+        assert sm.dimensions[0].config is None
+
+    def test_no_custom_extensions_produces_no_config(self) -> None:
+        doc = _ossie_doc(datasets=[_ossie_dataset("orders", fields=[_ossie_field("status")])])
+        sm = OssieToMSIConverter().convert(doc).output.semantic_models[0]
+
+        assert sm.dimensions[0].config is None
 
 
 class TestOssieToMSIRoundTrip:
