@@ -115,7 +115,7 @@ Conventions to follow when writing Python code:
 ### CLI
 
 The CLI is a thin wrapper around the library API. Keep argument parsing and
-human-readable reporting output in `src/ossie_hex/cli/`. Conversion logic 
+human-readable reporting output in `src/ossie_hex/cli/`. Conversion logic
 belongs in `ossie_to_hex/` and should be available identically to users
 across the CLI and Python library API
 
