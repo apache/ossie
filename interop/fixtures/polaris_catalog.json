@@ -1,0 +1,31 @@
+{
+  "catalog": "interop",
+  "namespaces": [
+    {
+      "namespace": ["sales"],
+      "properties": {
+        "description": "Interop fixture",
+        "ossie.source": "true"
+      },
+      "tables": [
+        {
+          "name": "orders",
+          "schema": {
+            "type": "struct",
+            "schema-id": 0,
+            "fields": [
+              {"id": 1, "name": "order_id", "type": "long", "required": true},
+              {"id": 2, "name": "order_amount", "type": "decimal(18,2)", "required": false},
+              {"id": 3, "name": "order_ts", "type": "timestamptz", "required": false}
+            ],
+            "identifier-field-ids": [1]
+          },
+          "properties": {
+            "comment": "Orders",
+            "ossie.source": "interop.sales.orders"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,171 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements. See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership. The ASF licenses this file to you under the
+# Apache License, Version 2.0 (the "License"); you may not use this file except
+# in compliance with the License. You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+version: 1
+canonical_model: examples/tpcds_semantic_model.yaml
+validation:
+  command: [uv, run, --script, "{repo}/validation/validate.py", "{input}"]
+warning_pattern: '(?i)\bwarning\b'
+foreign_extension_pattern: '(?i)(foreign.*custom_extensions|custom_extensions.*foreign)'
+
+converters:
+  databricks:
+    root: converters/databricks
+    prepare: [uv, sync, --frozen]
+    fixture: converters/databricks/tests/fixtures/fixtureA_metric_view.yaml
+    export:
+      command: [uv, run, ossie-databricks, export, -i, "{input}", -o, "{output}"]
+      output: file
+      nonempty: {type: structured_any, paths: [dimensions, measures, joins]}
+    import:
+      command: [uv, run, ossie-databricks, import, -i, "{input}", -o, "{output}"]
+      output: file
+      nonempty: {type: structured_any, paths: [semantic_model]}
+
+  dbt:
+    root: converters/dbt
+    prepare: [uv, sync, --frozen]
+    export:
+      command: [uv, run, ossie-dbt, ossie-to-msi, -i, "{input}", -o, "{output}"]
+      output: file
+      nonempty: {type: structured_any, paths: [semantic_models, metrics]}
+    import:
+      command: [uv, run, ossie-dbt, msi-to-ossie, -i, "{input}", -o, "{output}"]
+      output: file
+      nonempty: {type: structured_any, paths: [semantic_model]}
+
+  gooddata:
+    root: converters/gooddata
+    prepare: [uv, sync, --frozen]
+    fixture: converters/gooddata/tests/fixtures/gooddata_tpcds.json
+    export:
+      command: [uv, run, python, "{repo}/interop/adapters/gooddata.py", export, --input, "{input}", --output, "{output}"]
+      output: file
+      nonempty: {type: structured_any, paths: [ldm.datasets, ldm.dateInstances]}
+    import:
+      command: [uv, run, python, "{repo}/interop/adapters/gooddata.py", import, --input, "{input}", --output, "{output}"]
+      output: file
+      nonempty: {type: structured_any, paths: [semantic_model]}
+
+  gsf:
+    root: converters/gsf
+    skip_reason: legacy compatibility directory; NVIDIA GSF is the executable converter
+
+  honeydew:
+    root: converters/honeydew
+    prepare: [uv, sync, --frozen]
+    export:
+      command: [uv, run, honeydew-ossie, ossie-to-honeydew, -i, "{input}", -o, "{output}"]
+      output: directory
+      nonempty: {type: directory_any, patterns: ['**/*.yaml', '**/*.yml']}
+    import:
+      command: [uv, run, honeydew-ossie, honeydew-to-ossie, -i, "{input}", -o, "{output}"]
+      output: file
+      nonempty: {type: structured_any, paths: [semantic_model]}
+
+  nvidia:
+    root: converters/nvidia
+    prepare: [uv, sync, --frozen]
+    fixture: converters/nvidia/tests/fixtures/sales.gsf.yaml
+    export:
+      command: [uv, run, ossie-nvidia-gsf, export, -i, "{input}", -o, "{output}"]
+      output: file
+      nonempty: {type: structured_any, paths: [data_layer.databases, semantic_layer.terms]}
+    import:
+      command: [uv, run, ossie-nvidia-gsf, import, -i, "{input}", -o, "{output}"]
+      output: file
+      nonempty: {type: structured_any, paths: [semantic_model]}
+
+  ontology:
+    root: converters/ontology
+    fixture: interop/fixtures/ontology_palantir
+    import:
+      command: [uv, run, --project, "{repo}/interop", --with-requirements, "{repo}/converters/ontology/requirements.lock", python, "{repo}/interop/adapters/ontology.py", import, --input, "{input}", --output, "{output}"]
+      output: file
+      nonempty: {type: structured_any, paths: [ontology, semantic_model, ontology_mappings]}
+
+  omni:
+    root: converters/omni
+    prepare: [uv, sync, --frozen]
+    fixture: converters/omni/tests/fixtures/fixtureB_omni
+    export:
+      command: [uv, run, ossie-omni, export, -i, "{input}", -o, "{output}"]
+      output: directory
+      nonempty: {type: directory_any, patterns: ['**/*.yaml', '**/*.yml']}
+    import:
+      command: [uv, run, ossie-omni, import, -i, "{input}", -o, "{output}"]
+      output: file
+      nonempty: {type: structured_any, paths: [semantic_model]}
+
+  orionbelt:
+    root: converters/orionbelt
+    prepare: [uv, sync, --frozen]
+    fixture: converters/orionbelt/tests/fixtures/tpcds_as_obml.yaml
+    export:
+      command: [uv, run, ossie-orionbelt, ossie-to-obml, -i, "{input}", -o, "{output}"]
+      output: file
+      nonempty: {type: structured_any, paths: [dataObjects, dimensions, measures, metrics]}
+    import:
+      command: [uv, run, ossie-orionbelt, obml-to-ossie, -i, "{input}", -o, "{output}"]
+      output: file
+      nonempty: {type: structured_any, paths: [semantic_model]}
+
+  polaris:
+    root: converters/polaris
+    prepare: [uv, run, --project, "{repo}/interop", python, "{repo}/interop/adapters/java_build.py", --module, polaris, --output, "{workspace}/java/polaris"]
+    fixture: interop/fixtures/polaris_catalog.json
+    export:
+      command: [uv, run, --project, "{repo}/interop", python, "{repo}/interop/adapters/polaris.py", export, --input, "{input}", --output, "{output}", --build-root, "{workspace}/java/polaris/repo/converters/polaris"]
+      output: file
+      nonempty: {type: structured_any, paths: [namespaces]}
+    import:
+      command: [uv, run, --project, "{repo}/interop", python, "{repo}/interop/adapters/polaris.py", import, --input, "{input}", --output, "{output}", --build-root, "{workspace}/java/polaris/repo/converters/polaris"]
+      output: file
+      nonempty: {type: structured_any, paths: [semantic_model]}
+
+  salesforce:
+    root: converters/salesforce
+    prepare: [uv, run, --project, "{repo}/interop", python, "{repo}/interop/adapters/java_build.py", --module, salesforce, --output, "{workspace}/java/salesforce"]
+    fixture: converters/salesforce/src/test/resources/examples/salesforceToOssie.json
+    export:
+      command: [uv, run, --project, "{repo}/interop", python, "{repo}/interop/adapters/salesforce.py", export, --input, "{input}", --output, "{output}", --build-root, "{workspace}/java/salesforce/repo/converters/salesforce"]
+      output: directory
+      nonempty: {type: directory_any, patterns: ['**/*.json']}
+    import:
+      requires_file: "{repo}/converters/salesforce/src/main/resources/schemas/salesforce-semantic-model-schema.json"
+      skip_reason: Salesforce import requires the externally supplied semantic-model schema documented in converters/salesforce/README.md
+      command: [uv, run, --project, "{repo}/interop", python, "{repo}/interop/adapters/salesforce.py", import, --input, "{input}", --output, "{output}", --build-root, "{workspace}/java/salesforce/repo/converters/salesforce"]
+      output: file
+      nonempty: {type: structured_any, paths: [semantic_model]}
+
+  snowflake:
+    root: converters/snowflake
+    prepare: [uv, sync, --frozen]
+    export:
+      command: [uv, run, ossie-snowflake, -i, "{input}", -o, "{output}"]
+      output: file
+      nonempty: {type: structured_any, paths: [tables, relationships, metrics]}
+
+  wisdom:
+    root: converters/wisdom
+    fixture: converters/wisdom/tests/fixtures/sample_export.json
+    export:
+      command: [uv, run, --project, "{repo}/interop", --with, "{repo}/python", --with, "{repo}/converters/wisdom", ossie-wisdom, ossie-to-wisdom, -i, "{input}", -o, "{output}"]
+      output: file
+      nonempty: {type: structured_any, paths: [tables, table_metadata]}
+    import:
+      command: [uv, run, --project, "{repo}/interop", --with, "{repo}/python", --with, "{repo}/converters/wisdom", ossie-wisdom, wisdom-to-ossie, -i, "{input}", -o, "{output}"]
+      output: file
+      nonempty: {type: structured_any, paths: [semantic_model]}

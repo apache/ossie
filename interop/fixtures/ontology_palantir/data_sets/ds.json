@@ -1,0 +1,9 @@
+[
+  {
+    "mainDatasetId": "ri.ot.1",
+    "datasetName": "widget",
+    "datasetSchema": [
+      {"name": "widget_id", "type": "STRING"}
+    ]
+  }
+]
