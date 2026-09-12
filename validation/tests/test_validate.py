@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import json
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
@@ -161,3 +162,104 @@ def test_skips_malformed_flat_unique_keys() -> None:
     )
 
     assert errors == []
+
+
+@pytest.fixture
+def run_validator(tmp_path, monkeypatch, capsys):
+    def run(document):
+        model_path = tmp_path / "model.json"
+        model_path.write_text(json.dumps(document))
+        monkeypatch.setattr(_VALIDATE.sys, "argv", [str(_VALIDATE_PATH), str(model_path)])
+        with pytest.raises(SystemExit) as caught:
+            _VALIDATE.main()
+        return caught.value.code, capsys.readouterr().out
+
+    return run
+
+
+@pytest.mark.parametrize("target", [
+    "missing_customers",
+    "Warning: missing_customers",
+    "[SQL] Warning: missing_customers",
+    "[Reference] Warning: missing_customers",
+])
+def test_unknown_dataset_is_an_error_regardless_of_its_name(run_validator, target):
+    document = _document([_ORDERS], [_relationship(to_columns=["id"], to=target)])
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "Validation FAILED with 1 error(s)" in output
+    assert f"references unknown dataset '{target}'" in output
+    assert "Validation PASSED" not in output
+
+
+def test_duplicate_dataset_with_warning_in_name_is_an_error(run_validator):
+    dataset = {"name": "Warning: orders", "source": "db.s.orders"}
+
+    exit_code, output = run_validator(_document([dataset, dataset], []))
+
+    assert exit_code == 1
+    assert "Validation FAILED with 1 error(s)" in output
+    assert "Duplicate dataset name 'Warning: orders'" in output
+
+
+def test_schema_error_containing_warning_text_is_an_error(run_validator):
+    document = _document([_ORDERS], [])
+    document["Warning: unexpected"] = True
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "Validation FAILED with 1 error(s)" in output
+    assert "[Schema]" in output
+    assert "Warning: unexpected" in output
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_sql_error_in_metric_with_warning_in_name_is_an_error(run_validator):
+    document = _document([_ORDERS], [])
+    document["semantic_model"][0]["metrics"] = [{
+        "name": "Warning: broken_metric",
+        "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "SUM("}]},
+    }]
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "Validation FAILED with 1 error(s)" in output
+    assert "[SQL] Metric 'Warning: broken_metric'" in output
+
+
+def test_key_coverage_warning_remains_nonfatal(run_validator):
+    document = _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["region"])])
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 0
+    assert "[Reference] Warning:" in output
+    assert "Validation PASSED" in output
+
+
+def test_missing_sqlglot_warning_remains_nonfatal(run_validator, monkeypatch):
+    monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", False)
+
+    exit_code, output = run_validator(_document([_ORDERS], []))
+
+    assert exit_code == 0
+    assert "[SQL] Warning: sqlglot not installed" in output
+    assert "Validation PASSED" in output
+
+
+def test_genuine_warning_does_not_hide_reference_error(run_validator):
+    document = _document([_ORDERS, _CUSTOMERS], [
+        _relationship(to_columns=["region"]),
+        {**_relationship(to_columns=["id"], to="Warning: missing"), "name": "broken"},
+    ])
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "[Reference] Warning:" in output
+    assert "references unknown dataset 'Warning: missing'" in output
+    assert "Validation FAILED with 1 error(s)" in output

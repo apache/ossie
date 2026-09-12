@@ -79,6 +79,10 @@ DIALECT_MAP = {
 SKIP_SQL_VALIDATION = {"MDX", "TABLEAU", "MAQL", "SIGMA", "THOUGHTSPOT"}
 
 
+class ValidationWarning(str):
+    """An explicitly nonfatal diagnostic, compatible with existing string callers."""
+
+
 class UniqueKeyLoader(yaml.SafeLoader):
     """Safe YAML loader that rejects duplicate explicit mapping keys."""
 
@@ -226,7 +230,9 @@ def validate_references(data: dict) -> list[str]:
                 declared_keys = [k for k in candidate_keys if isinstance(k, list) and k]
                 to_column_set = set(to_columns)
                 if declared_keys and not any(set(key) <= to_column_set for key in declared_keys):
-                    errors.append(f"[Reference] Warning: Relationship '{rel_name}' in model '{model_name}': to_columns {to_columns} does not cover the primary key or a unique key of dataset '{to_ds}'")
+                    errors.append(ValidationWarning(
+                        f"[Reference] Warning: Relationship '{rel_name}' in model '{model_name}': to_columns {to_columns} does not cover the primary key or a unique key of dataset '{to_ds}'"
+                    ))
 
     return errors
 
@@ -263,7 +269,9 @@ def validate_sql(data: dict) -> list[str]:
         return []
 
     if not SQLGLOT_AVAILABLE:
-        return ["[SQL] Warning: sqlglot not installed, skipping SQL validation. Install with: pip install sqlglot"]
+        return [ValidationWarning(
+            "[SQL] Warning: sqlglot not installed, skipping SQL validation. Install with: pip install sqlglot"
+        )]
 
     errors = []
 
@@ -348,9 +356,9 @@ def main():
 
     # Report results
     if errors:
-        # Separate warnings from errors
-        warnings = [e for e in errors if "Warning:" in e]
-        actual_errors = [e for e in errors if "Warning:" not in e]
+        # Severity must not depend on user-controlled text in a diagnostic.
+        warnings = [e for e in errors if isinstance(e, ValidationWarning)]
+        actual_errors = [e for e in errors if not isinstance(e, ValidationWarning)]
 
         for warning in warnings:
             print(f"  {warning}")
