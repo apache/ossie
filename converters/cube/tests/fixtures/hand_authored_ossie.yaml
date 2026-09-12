@@ -1,0 +1,95 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# An Ossie model authored by hand rather than imported from Cube: no
+# custom_extensions[CUBE] stash anywhere. Export therefore has to derive
+# everything -- the cube layout, the join orientation, and a generated view --
+# instead of restoring it. Also carries the constructs Cube has no field for
+# (unique_keys, a foreign vendor's extensions, structured ai_context), which
+# export parks under meta.ossie.
+
+version: 0.2.0.dev0
+semantic_model:
+- name: ecommerce
+  description: Orders and customers
+  ai_context:
+    instructions: Use for sales analysis.
+    synonyms:
+    - sales
+    - purchases
+  datasets:
+  - name: orders
+    source: sales.public.orders
+    primary_key:
+    - id
+    unique_keys:
+    - - order_number
+    fields:
+    - name: id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: id
+      datatype: Integer
+    - name: customer_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: customer_id
+      datatype: Integer
+    - name: ordered_at
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: ordered_at
+      datatype: Date
+    custom_extensions:
+    - vendor_name: SNOWFLAKE
+      data: '{"warehouse": "ANALYTICS_WH"}'
+  - name: customers
+    source: sales.public.customers
+    primary_key:
+    - id
+    fields:
+    - name: id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: id
+      datatype: Integer
+    - name: email
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: LOWER(email)
+      datatype: String
+  relationships:
+  - name: orders_to_customers
+    from: orders
+    to: customers
+    from_columns:
+    - customer_id
+    to_columns:
+    - id
+  metrics:
+  - name: total_revenue
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(orders.amount)
+    description: Total revenue
+    datatype: Decimal

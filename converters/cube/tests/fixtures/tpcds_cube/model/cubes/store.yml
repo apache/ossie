@@ -1,0 +1,100 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+cubes:
+- name: store
+  sql_table: tpcds.public.store
+  description: Store dimension with location and store attributes
+  meta:
+    ai_context: 'Also known as: stores, retail locations, branches.'
+    ossie:
+      unique_keys:
+      - - s_store_id
+      ai_context:
+        synonyms:
+        - stores
+        - retail locations
+        - branches
+  dimensions:
+  - name: s_store_sk
+    sql: s_store_sk
+    type: number
+    primary_key: true
+    description: Surrogate key for store
+  - name: s_store_id
+    sql: s_store_id
+    type: string
+    description: Business key for store
+    meta:
+      ai_context: 'Also known as: store ID, store number.'
+      ossie:
+        ai_context:
+          synonyms:
+          - store ID
+          - store number
+  - name: s_store_name
+    sql: s_store_name
+    type: string
+    description: Store name
+    meta:
+      ai_context: 'Also known as: store name, location name.'
+      ossie:
+        ai_context:
+          synonyms:
+          - store name
+          - location name
+  - name: s_city
+    sql: s_city
+    type: string
+    description: City where store is located
+    meta:
+      ai_context: 'Also known as: city, location.'
+      ossie:
+        ai_context:
+          synonyms:
+          - city
+          - location
+  - name: s_state
+    sql: s_state
+    type: string
+    description: State where store is located
+    meta:
+      ai_context: 'Also known as: state, region.'
+      ossie:
+        ai_context:
+          synonyms:
+          - state
+          - region
+  - name: s_number_employees
+    sql: s_number_employees
+    type: number
+    description: Number of employees at the store
+    meta:
+      ai_context: 'Also known as: employee count, staff size.'
+      ossie:
+        ai_context:
+          synonyms:
+          - employee count
+          - staff size
+  measures:
+  - name: store_productivity_part_2
+    sql: '{CUBE}.s_number_employees'
+    type: sum
+    meta:
+      ossie:
+        part_of: store_productivity
+    public: false
