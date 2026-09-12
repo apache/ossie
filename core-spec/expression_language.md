@@ -241,11 +241,19 @@ Every aggregate function must support a postfix `FILTER (WHERE <predicate>)` mod
 <aggregate_function>(<args>) FILTER (WHERE <predicate>)
 ```
 
-The clause has the semantics of the SQL:2003 `<filter clause>` (optional feature T612): the aggregate considers only the rows for which `<predicate>` is `TRUE`.
+The clause has the semantics of the SQL:2003 `<filter clause>` (optional feature T612): the aggregate considers only the rows for which `<predicate>` succeeds. `FILTER` is applied to the aggregate's input, not as a query `WHERE`, so it never removes output groups.
 
 `FILTER (WHERE ...)` is a modifier on an aggregate expression. It is not the standalone `WHERE` clause listed under [Not Supported in Expressions](#not-supported-in-expressions). The `<predicate>` must reference only fields of the same dataset as the aggregate's arguments.
 
-Engines without native `FILTER (WHERE ...)` support MAY lower it to the equivalent `CASE` form.
+Engines without native `FILTER (WHERE ...)` support MAY lower it to the equivalent `CASE` form:
+
+```sql
+-- value aggregate: filter the argument
+SUM(amount) FILTER (WHERE status = 'completed')  --> SUM(CASE WHEN status = 'completed' THEN amount END)
+
+-- COUNT(*): filter a constant
+COUNT(*) FILTER (WHERE status = 'completed')      --> COUNT(CASE WHEN status = 'completed' THEN 1 END)
+```
 
 ### Decomposability Reference
 
