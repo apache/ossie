@@ -77,6 +77,7 @@ The Ossie specification currently defines extensions for the following vendors:
 | `WISDOM` | WisdomAI domain |
 | `NVIDIA_GSF` | NVIDIA Generative Semantic Fabric standalone YAML |
 | `SIGMA` | Sigma Computing data model |
+| `HEX` | Hex semantic project |
 
 Each vendor may define custom extensions (via the `custom_extensions` field in the Ossie spec) to carry vendor-specific metadata that does not have an equivalent in the core specification.
 
