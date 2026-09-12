@@ -382,6 +382,54 @@ def test_grain_uses_source_column_for_aliased_attribute(field: dict):
     assert [grain.id for grain in customer.grain] == ["attr.customers.customer_key"]
 
 
+def test_duplicate_source_columns_are_rejected():
+    """Verify ambiguous grain and relationship targets fail instead of being misassigned."""
+    model = {
+        "semantic_model": [
+            {
+                "name": "m",
+                "datasets": [
+                    {
+                        "name": "customers",
+                        "primary_key": ["customer_id"],
+                        "fields": [
+                            _direct_field("customer_id", dimension={}),
+                            {
+                                "name": "customer_key",
+                                "expression": {
+                                    "dialects": [
+                                        {"dialect": "ANSI_SQL", "expression": "customer_id"}
+                                    ]
+                                },
+                                "dimension": {},
+                            },
+                        ],
+                    },
+                    {
+                        "name": "orders",
+                        "fields": [_direct_field("customer_id", dimension={})],
+                    },
+                ],
+                "relationships": [
+                    {
+                        "name": "orders_customer",
+                        "from": "orders",
+                        "to": "customers",
+                        "from_columns": ["customer_id"],
+                        "to_columns": ["customer_id"],
+                    }
+                ],
+            }
+        ]
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="Dataset 'customers': source column 'customer_id' maps to multiple fields",
+    ):
+        ossie_to_gooddata(model)
+
+
 def test_relationships_become_references(ossie_tpcds_dict: dict):
     """Verify Ossie relationships become GoodData references."""
     result = ossie_to_gooddata(ossie_tpcds_dict)
