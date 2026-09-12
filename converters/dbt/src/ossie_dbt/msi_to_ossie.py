@@ -338,8 +338,24 @@ class MSIToOssieConverter:
         """Resolve a DERIVED metric by substituting each input metric's expression into the expr string.
 
         Compound sub-expressions (DERIVED/RATIO) are wrapped in parentheses to preserve operator precedence.
+
+        All references are substituted in a single pass. Substituting them one at a
+        time would re-scan text inserted by an earlier reference, so a metric named
+        after a column appearing in an already-inlined expression would be expanded
+        twice. The replacement is a callback rather than a string so that backslashes
+        in the resolved SQL (e.g. from a `LIKE 'a\\b'` filter) are inserted verbatim
+        instead of being interpreted as `re.sub` template escapes.
+
+        Listing the same input metric twice under one reference is rejected when the
+        two occurrences resolve differently (e.g. distinct per-input filters and no
+        aliases): the expression has a single token for them, so either resolution
+        would be an arbitrary choice. MetricFlow does not reject this shape upstream —
+        `DerivedMetricRule._validate_alias_collision` only compares entries that set an
+        alias. Occurrences that resolve identically are redundant rather than ambiguous
+        and are accepted.
         """
         expr = metric.type_params.expr or ""
+        replacements: Dict[str, str] = {}
         for input_metric in metric.type_params.metrics or []:
             ref = input_metric.alias if input_metric.alias else input_metric.name
             dep_metric = self._lookup_metric(metric_index, input_metric.name, f"DERIVED metric '{metric.name}'")
@@ -347,8 +363,25 @@ class MSIToOssieConverter:
             resolved = self._resolve_metric_expression(dep_metric, metric_index, cache, input_filter)
             if dep_metric.type in (MetricType.DERIVED, MetricType.RATIO):
                 resolved = f"({resolved})"
-            expr = re.sub(rf"\b{re.escape(ref)}\b", resolved, expr)
-        return expr
+            previous = replacements.get(ref)
+            if previous is not None and previous != resolved:
+                raise ValueError(
+                    "DERIVED metric references an input metric that is listed more than once with "
+                    "differing resolutions, making the reference ambiguous; give each occurrence a "
+                    f"distinct alias: metric_name={metric.name!r}, reference={ref!r}"
+                )
+            replacements[ref] = resolved
+
+        if not replacements:
+            return expr
+
+        # The `\b` anchors already stop a short reference from matching inside a
+        # longer identifier; sorting by length (then name) keeps the alternation order stable
+        # and independent of the order metrics happen to be declared in.
+        pattern = re.compile(
+            r"\b(" + "|".join(re.escape(ref) for ref in sorted(replacements, key=lambda ref: (-len(ref), ref))) + r")\b"
+        )
+        return pattern.sub(lambda match: replacements[match.group(0)], expr)
 
     @staticmethod
     def _build_entity_index(
