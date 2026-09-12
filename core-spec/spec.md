@@ -60,6 +60,7 @@ Supported SQL and expression language dialects for metrics and field definitions
 | `BIGQUERY` | Google BigQuery (GoogleSQL) |
 | `SIGMA` | Sigma Computing's spreadsheet-style formula language |
 | `THOUGHTSPOT` | ThoughtSpot formula language |
+| `DAX` | Data Analysis Expressions (Power BI / Analysis Services) |
 
 ### Data types
 

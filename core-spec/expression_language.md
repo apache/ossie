@@ -696,6 +696,24 @@ This section maps Ossie standard functions to their equivalents in popular BI to
 | `MEDIAN(x)` | `MEDIAN(x)` | `MEDIAN(X)` | `MEDIAN(x)` | `Median(x)` |
 | `PERCENTILE_CONT(x, 0.75)` | `PERCENTILE(x, 0.75)` | `PERCENTILE(X, 75)` | `PERCENTILE.INC(x, 0.75)` | `Percentile(x, 0.75)` |
 
+Two of the DAX mappings are not the same-named function, because DAX treats BLANK
+differently from SQL's NULL:
+
+- `COUNT(x)` maps to `COUNTA`, not `COUNT`. Both count non-blank values, but DAX
+  `COUNT` documents `TRUE`/`FALSE` columns as unsupported, whereas SQL `COUNT(x)`
+  counts non-NULL values of any type. `COUNTA` counts non-blank values of any type.
+- `COUNT(DISTINCT x)` maps to `DISTINCTCOUNTNOBLANK`, not `DISTINCTCOUNT`. SQL
+  excludes NULL from the distinct set, but DAX `DISTINCTCOUNT` counts BLANK as a
+  distinct value, so it is off by one on any nullable column.
+
+Two further differences have no faithful DAX equivalent and should be expected rather
+than worked around:
+
+- Over an empty set the SQL count functions return `0`, while the DAX ones return
+  BLANK. This is intentional in DAX, since it lets a visual hide the empty row.
+- `STDEV.S`, `STDEV.P`, `VAR.S` and `VAR.P` raise an error when fewer than two
+  non-blank rows remain, where SQL yields NULL (sample) or `0` (population).
+
 ### Date Function Mapping
 
 | Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
@@ -707,6 +725,12 @@ This section maps Ossie standard functions to their equivalents in popular BI to
 | `DATEADD(day, n, d)` | `DATEADD('day', n, d)` | `DATE_ADD(d, n)` (days only) | `DATE(d) + n` or `DATEADD(d, n, DAY)` | `DateAdd(d, n, "day")` |
 | `DATEDIFF(day, d1, d2)` | `DATEDIFF('day', d1, d2)` | `DATE_DIFF(d1, d2)` | `DATEDIFF(d1, d2, DAY)` | `DateDiff(d1, d2, "day")` |
 | `CURRENT_DATE` | `TODAY()` | `TODAY()` | `TODAY()` | `Today()` |
+
+DAX also has a `DATEADD` function, but it is not the equivalent of the scalar SQL
+`DATEADD`: it is a time-intelligence function that returns a *table* of shifted dates
+for the current filter context, and it requires a marked date table with a contiguous
+date range. For a row-level shift, add a number of days to the date directly, or use
+`EDATE` to shift by whole months.
 
 ### String Function Mapping
 

@@ -37,12 +37,12 @@
   "$defs": {
     "Dialect": {
       "type": "string",
-      "enum": ["ANSI_SQL", "SNOWFLAKE", "MDX", "TABLEAU", "DATABRICKS", "MAQL", "BIGQUERY", "SIGMA", "THOUGHTSPOT"],
+      "enum": ["ANSI_SQL", "SNOWFLAKE", "MDX", "TABLEAU", "DATABRICKS", "MAQL", "BIGQUERY", "SIGMA", "THOUGHTSPOT", "DAX"],
       "description": "Supported SQL and expression language dialects"
     },
     "Vendor": {
       "type": "string",
-      "examples": ["COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA", "WISDOM"],
+      "examples": ["COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA", "WISDOM", "POWER_BI"],
       "description": "Vendor name for custom extensions. Any string value is accepted."
     },
     "AIContext": {

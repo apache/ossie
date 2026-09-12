@@ -21,9 +21,11 @@
 **/.pytest_cache/
 **/.ruff_cache/
 **/.coverage
+**/coverage.xml
 **/htmlcov/
 **/dist/
 **/target/
+**/.tom/
 *.py[cod]
 
 # Go CLI
