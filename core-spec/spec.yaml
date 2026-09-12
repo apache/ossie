@@ -60,6 +60,24 @@ datatypes:
 vendor_name: string
 
 
+---
+# Document root
+# Keys allowed on the root object of an Ossie document, alongside the `version`
+# declared at the top of this file.
+
+# Optional: Document-wide context for AI tools.
+# Applies to every semantic model in this document. Use this for guidance that
+# governs the document as a whole, rather than repeating it in every model.
+# Can be a simple string or a structured object; see the authoritative AIContext
+# definition in ossie-schema.json, which accepts both forms wherever ai_context
+# appears.
+ai_context:
+  instructions: string
+  synonyms:
+    - string
+  examples:
+    - string
+
 # Top-level semantic model definition
 semantic_model:
   # Required: Unique identifier for the semantic model

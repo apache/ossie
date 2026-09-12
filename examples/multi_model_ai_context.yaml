@@ -1,0 +1,99 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Document-wide ai_context
+#
+# This document holds two semantic models, one per data source, each queried in
+# its own dialect. The guidance at the root governs both of them: it states the
+# publisher's conventions once, instead of being copied into every model where
+# the copies drift and a consumer cannot tell them apart from instruction that
+# is genuinely specific to one model.
+#
+# Model-level ai_context remains the place for anything true of only that model
+# ("amounts are in USD" below).
+
+version: "0.2.0.dev0"
+
+ai_context:
+  instructions: "The fiscal year starts in July: a date in July 2024 belongs to FY2025. These two models come from separate systems and share no keys, so never join across them; answer questions that span both by querying each and reporting the results side by side."
+  synonyms:
+    - "revenue = net_sales"
+
+semantic_model:
+  - name: finance
+    description: General ledger, sourced from the accounting warehouse.
+    ai_context:
+      instructions: "Amounts are in USD. Rows with a null posted_at are drafts and must be excluded."
+
+    datasets:
+      - name: gl_entries
+        source: finance.public.gl_entries
+        primary_key: [entry_id]
+        description: One row per posted general ledger entry.
+        fields:
+          - name: entry_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: entry_id
+            datatype: Integer
+            description: Surrogate key of the ledger entry.
+
+          - name: net_sales
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: net_sales
+            datatype: Decimal
+            description: Net sales amount for the entry.
+
+          - name: posted_at
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: posted_at
+            datatype: DateTime
+            description: When the entry was posted; null for drafts.
+            dimension:
+              is_time: true
+
+  - name: telemetry
+    description: Product usage events, sourced from the telemetry lakehouse.
+
+    datasets:
+      - name: events
+        source: telemetry.public.events
+        primary_key: [event_id]
+        description: One row per emitted product usage event.
+        fields:
+          - name: event_id
+            expression:
+              dialects:
+                - dialect: DATABRICKS
+                  expression: event_id
+            datatype: String
+            description: Unique identifier of the event.
+
+          - name: occurred_at
+            expression:
+              dialects:
+                - dialect: DATABRICKS
+                  expression: occurred_at
+            datatype: DateTimeTz
+            description: When the event was emitted.
+            dimension:
+              is_time: true

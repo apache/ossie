@@ -214,6 +214,7 @@ class OssieDocument(BaseModel):
     version: str = "0.2.0.dev0"
     dialects: Optional[list[OssieDialect]] = None
     vendors: Optional[list[OssieVendor]] = None
+    ai_context: Optional[OssieAIContext] = None
     semantic_model: list[OssieSemanticModel]
 
     def to_ossie_yaml(self, **kwargs: Any) -> str:

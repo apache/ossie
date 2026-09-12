@@ -32,12 +32,13 @@
 ## Table of Contents
 
 1. [Enumerations](#enumerations)
-2. [Semantic Model](#semantic-model)
-3. [Datasets](#datasets)
-4. [Relationships](#relationships)
-5. [Fields](#fields)
-6. [Metrics](#metrics)
-7. [Examples](#examples)
+2. [Document](#document)
+3. [Semantic Model](#semantic-model)
+4. [Datasets](#datasets)
+5. [Relationships](#relationships)
+6. [Fields](#fields)
+7. [Metrics](#metrics)
+8. [Examples](#examples)
 
 ---
 
@@ -80,6 +81,44 @@ ontology specification's built-in value types; `Time`, `DateTimeTz`, and
 | `DateTime` | Local/civil date and time with no timezone or offset. |
 | `DateTimeTz` | Date and time with sufficient offset or timezone context to identify an instant. Preservation of a named timezone identifier is not guaranteed. |
 | `Opaque` | Known type outside the portable vocabulary; use `custom_extensions` for vendor-specific refinement. Omit `datatype` when the type is unknown or unspecified. |
+
+## Document
+
+The root object of an Ossie file. A document carries a specification `version` and one or
+more semantic models.
+
+### Schema
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `version` | string | Yes | Apache Ossie specification version |
+| `ai_context` | string/object | No | Document-wide context for AI tools |
+| `semantic_model` | array | Yes | Collection of semantic model definitions |
+
+### Document-wide `ai_context`
+
+A document may hold several semantic models — for example one per data source. Guidance that
+governs all of them belongs to the document rather than to any one model, and stating it at
+the root avoids copying it into every model, where the copies drift and a consumer cannot
+tell them apart from genuinely model-specific instruction.
+
+```yaml
+version: 0.2.0.dev0
+ai_context:
+  instructions: "Fiscal year starts in July. Never join across the finance and telemetry models."
+semantic_model:
+  - name: finance
+    ai_context:
+      instructions: "Amounts are in USD."
+    datasets: [...]
+  - name: telemetry
+    datasets: [...]
+```
+
+Document-level `ai_context` applies to every semantic model in the document. How it composes
+with model-level `ai_context` is not defined by this version of the specification.
+
+---
 
 ## Semantic Model
 
