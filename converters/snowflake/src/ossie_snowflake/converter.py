@@ -25,6 +25,7 @@ Usage:
 """
 
 import argparse
+import re
 import sys
 import warnings
 
@@ -421,6 +422,34 @@ def _normalize_identifier(identifier):
         return stripped
     return stripped.upper()
 
+# A dataset source is a SQL query when, after leading whitespace, SQL comments
+# (`-- ...`, `// ...` and `/* ... */`) and any opening parentheses, it starts
+# with SELECT or WITH followed by something that cannot continue an unquoted
+# identifier. That keeps names such as SELECT_RESULTS or SELECT$ARCHIVE on the
+# relation path (Snowflake allows `$` in unquoted identifiers, so `\b` would be
+# wrong), while `SELECT*FROM`, `SELECT/*c*/` and CRLF after the keyword are
+# still recognised as queries.
+_LEADING_SQL_TRIVIA = re.compile(
+    r"^(?:\s+|--[^\n]*(?:\n|$)|//[^\n]*(?:\n|$)|/\*.*?\*/)+", re.DOTALL
+)
+_QUERY_KEYWORD = re.compile(r"^(?:SELECT|WITH)(?![A-Za-z0-9_$])", re.IGNORECASE)
+_UNQUOTED_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
+_QUOTED_IDENTIFIER = re.compile(r'^"(?:[^"]|"")+"$')
+
+
+def _is_query_source(source_stripped):
+    """True if the source text is a SQL query rather than a relation name."""
+    body = _LEADING_SQL_TRIVIA.sub("", source_stripped, count=1)
+    while body.startswith("("):
+        body = _LEADING_SQL_TRIVIA.sub("", body[1:], count=1)
+    return _QUERY_KEYWORD.match(body) is not None
+
+
+def _is_identifier(part):
+    """True if `part` is a valid quoted or unquoted Snowflake identifier."""
+    return bool(_UNQUOTED_IDENTIFIER.match(part) or _QUOTED_IDENTIFIER.match(part))
+
+
 def _split_identifiers(source_str):
     """Split a dot-separated identifier string while respecting double quotes."""
     parts = []
@@ -451,15 +480,16 @@ def _parse_source(source):
     if not source_stripped:
         return None
 
-    # Detect subqueries — require whitespace after the keyword to avoid false
-    # positives on table names like WITH_TABLE or SELECT_RESULTS.
-    upper = source_stripped.upper()
-    if upper.startswith(("SELECT ", "SELECT\n", "SELECT\t",
-                          "WITH ", "WITH\n", "WITH\t")):
+    # Queries keep their exact text (including leading comments) so the
+    # emitted definition is what the author wrote.
+    if _is_query_source(source_stripped):
         return {"definition": source_stripped}
 
+    # Anything else must be a relation name whose three parts are real
+    # identifiers; otherwise SQL text that was not recognised as a query would
+    # silently become a bogus database/schema/table.
     parts = _split_identifiers(source_stripped)
-    if len(parts) == 3:
+    if len(parts) == 3 and all(_is_identifier(part) for part in parts):
         # Only uppercase unquoted identifiers; preserve quoted ones as-is.
         return {
             "database": _normalize_identifier(parts[0]),
@@ -468,7 +498,8 @@ def _parse_source(source):
         }
 
     raise OssieConversionError(
-        f"Source '{source}' must be a fully qualified db.schema.table or a subquery"
+        f"Source '{source}' must be a fully qualified db.schema.table "
+        "(quoted or unquoted identifiers) or a SELECT/WITH query"
     )
 
 
