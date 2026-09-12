@@ -389,6 +389,54 @@ class TestOssieToMSIMetricConversion:
         assert metric.type_params.metric_aggregation_params is not None
         assert metric.type_params.metric_aggregation_params.semantic_model == "analytics.orders"
 
+    @pytest.mark.parametrize(
+        ("expression", "expected_agg", "expected_expr"),
+        [
+            ("SUM(orders.gross - orders.tax)", AggregationType.SUM, "gross - tax"),
+            ("SUM(COALESCE(orders.tax, 0))", AggregationType.SUM, "COALESCE(tax, 0)"),
+            ("MAX(orders.gross - orders.tax)", AggregationType.MAX, "gross - tax"),
+            ("SUM(amount * 0.5)", AggregationType.SUM, "amount * 0.5"),
+            ("AVG(CAST(orders.tax AS DOUBLE))", AggregationType.AVERAGE, "CAST(tax AS DOUBLE)"),
+            (
+                "COUNT(DISTINCT orders.status || orders.region)",
+                AggregationType.COUNT_DISTINCT,
+                "status || region",
+            ),
+            (
+                "PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY orders.gross - orders.tax)",
+                AggregationType.PERCENTILE,
+                "gross - tax",
+            ),
+        ],
+    )
+    def test_compound_aggregate_argument_is_unqualified_as_a_whole(
+        self, expression: str, expected_agg: AggregationType, expected_expr: str
+    ) -> None:
+        """Every column reference inside the aggregate argument loses its dataset qualifier;
+        the surrounding expression is kept intact rather than sliced at the last dot."""
+        doc = _ossie_doc(
+            datasets=[
+                _ossie_dataset(
+                    "orders",
+                    fields=[
+                        _ossie_field("amount"),
+                        _ossie_field("gross"),
+                        _ossie_field("tax"),
+                        _ossie_field("status"),
+                        _ossie_field("region"),
+                    ],
+                )
+            ],
+            metrics=[_ossie_metric("m", expression)],
+        )
+        result = OssieToMSIConverter().convert(doc).output
+
+        m = result.metrics[0]
+        assert m.type_params.metric_aggregation_params is not None
+        assert m.type_params.metric_aggregation_params.agg == expected_agg
+        assert m.type_params.metric_aggregation_params.semantic_model == "orders"
+        assert m.type_params.expr == expected_expr
+
     def test_percentile_cont_0_5_produces_median(self) -> None:
         doc = _ossie_doc(
             datasets=[_ossie_dataset("orders", fields=[_ossie_field("amount")])],
@@ -499,3 +547,25 @@ class TestOssieToMSIRoundTrip:
         assert m.type_params.metric_aggregation_params.agg == AggregationType.PERCENTILE
         assert m.type_params.metric_aggregation_params.agg_params is not None
         assert m.type_params.metric_aggregation_params.agg_params.use_discrete_percentile is True
+
+    def test_compound_aggregate_argument_survives_round_trip(self) -> None:
+        """Ossie → MSI → Ossie keeps a compound aggregate argument intact."""
+        original = _ossie_doc(
+            datasets=[_ossie_dataset("orders", fields=[_ossie_field("gross"), _ossie_field("tax")])],
+            metrics=[
+                _ossie_metric("net_sales", "SUM(orders.gross - orders.tax)"),
+                _ossie_metric("tax_or_zero", "SUM(COALESCE(orders.tax, 0))"),
+            ],
+        )
+
+        msi = OssieToMSIConverter().convert(original).output
+        ossie_doc = MSIToOssieConverter().convert(msi).output
+
+        metrics = ossie_doc.semantic_model[0].metrics or []
+        expressions = {m.name: m.expression.dialects[0].expression for m in metrics}
+        # msi_to_ossie._qualify_col re-qualifies only bare identifiers,
+        # so the exported argument comes back unqualified.
+        assert expressions == {
+            "net_sales": "SUM(gross - tax)",
+            "tax_or_zero": "SUM(COALESCE(tax, 0))",
+        }
