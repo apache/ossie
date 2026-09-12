@@ -1,0 +1,20 @@
+# Shared ruff (lint + format) rules for this repo's Python packages.
+#
+# Individual packages opt in with:
+#
+#     [tool.ruff]
+#     extend = "../../ruff.toml"   # (relative path to this file)
+#
+# `extend` is ruff's native config-inheritance mechanism: the package's own
+# `[tool.ruff]` settings are merged on top of this base (and can override
+# it), rather than the usual "closest config wins outright" behavior.
+line-length = 100
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "I", "N", "UP", "B", "A", "SIM"]
+
+[format]
+# Explicit (not just relying on defaults): this is the formatting
+# enforcement mechanism shared by every package that extends this file.
+quote-style = "double"

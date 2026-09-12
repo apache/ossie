@@ -139,12 +139,13 @@ Ossie expressions support the following SQL constructs within any expression:
 Standard SQL operator precedence applies (highest to lowest):
 
 1. Parentheses `()`  
-2. Unary operators: `+`, `-`, `NOT`  
+2. Unary operators: `+`, `-`  
 3. Multiplication/Division: `*`, `/`, `%`  
-4. Addition/Subtraction: `+`, `-`  
+4. Addition/Subtraction/Concatenation: `+`, `-`, `||`  
 5. Comparison: `=`, `<>`, `<`, `>`, `<=`, `>=`, `LIKE`, `IN`, `BETWEEN`, `IS NULL`   
-6`AND`  
-7`OR`
+6. `NOT`  
+7. `AND`  
+8. `OR`
 
 ---
 
