@@ -29,7 +29,7 @@ Apache Ossie provides a single JSON- and YAML-based specification that any tool 
 
 - [`core-spec/`](core-spec/) — The Ossie core specification (`spec.md`), the machine-readable schema (`spec.yaml`, `ossie-schema.json`), and accompanying documentation.
 - [`converters/`](converters/) — Reference converters that translate between Ossie and other semantic formats (e.g., dbt, GoodData, Polaris, Salesforce).
-- [`examples/`](examples/) — Example semantic models, including a complete TPC-DS model.
+- [`examples/`](examples/) — Example semantic models, including a complete TPC-DS model and ontology-layer models of flights and SAP Business Partner.
 - [`validation/`](validation/) — Tooling for validating semantic models against the Ossie schema.
 - [`docs/`](docs/) — Project documentation and overview.
 
