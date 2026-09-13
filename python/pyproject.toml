@@ -19,6 +19,11 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
 [project]
 name = "apache-ossie"
 version = "0.2.0.dev0"
@@ -45,3 +50,6 @@ packages = ["src/ossie"]
 
 [tool.uv]
 required-version = ">=0.9.0"
+default-groups = [
+    "dev"
+]
