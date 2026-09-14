@@ -401,6 +401,130 @@ def test_stash_data_is_versioned_json(model):
     assert json.loads(ext["data"])["_v"] == 1
 
 
+def test_ai_context_annotations_round_trip_at_every_supported_level():
+    def annotations(target):
+        return {annotation["name"]: annotation["value"] for annotation in target["annotations"]}
+
+    def annotated(name, value):
+        return [
+            {"name": "OssieAIContext", "value": value},
+            {"name": f"Other{name}", "value": "preserve me"},
+        ]
+
+    bim = {
+        "name": "contexts",
+        "model": {
+            "annotations": annotated("Model", "true"),
+            "tables": [
+                {
+                    "name": "Orders",
+                    "annotations": annotated(
+                        "Table",
+                        json.dumps(
+                            {
+                                "instructions": "Use completed orders",
+                                "synonyms": ["purchases"],
+                            }
+                        ),
+                    ),
+                    "columns": [
+                        {
+                            "name": "CustomerId",
+                            "dataType": "int64",
+                            "sourceColumn": "CustomerId",
+                            "annotations": annotated("Column", "customer identifier"),
+                        }
+                    ],
+                    "measures": [
+                        {
+                            "name": "Order Count",
+                            "expression": "COUNTROWS(Orders)",
+                            "annotations": annotated(
+                                "Measure",
+                                json.dumps({"examples": ["How many orders?"]}),
+                            ),
+                        }
+                    ],
+                },
+                {
+                    "name": "Customers",
+                    "columns": [
+                        {
+                            "name": "CustomerId",
+                            "dataType": "int64",
+                            "sourceColumn": "CustomerId",
+                        }
+                    ],
+                },
+            ],
+            "relationships": [
+                {
+                    "name": "Orders_Customers",
+                    "fromTable": "Orders",
+                    "fromColumn": "CustomerId",
+                    "toTable": "Customers",
+                    "toColumn": "CustomerId",
+                    "annotations": annotated(
+                        "Relationship",
+                        json.dumps({"instructions": "Join customers to their orders"}),
+                    ),
+                }
+            ],
+        },
+    }
+
+    document = build_ossie_document(bim)
+    model = document["semantic_model"][0]
+    dataset = _dataset(model, "Orders")
+    field = _field(dataset, "CustomerId")
+    metric = _metric(model, "Order Count")
+    relationship = model["relationships"][0]
+
+    assert model["ai_context"] == "true"
+    assert dataset["ai_context"] == {
+        "instructions": "Use completed orders",
+        "synonyms": ["purchases"],
+    }
+    assert field["ai_context"] == "customer identifier"
+    assert metric["ai_context"] == {"examples": ["How many orders?"]}
+    assert relationship["ai_context"] == {
+        "instructions": "Join customers to their orders"
+    }
+
+    for obj, other_name in (
+        (model, "OtherModel"),
+        (dataset, "OtherTable"),
+        (field, "OtherColumn"),
+        (metric, "OtherMeasure"),
+        (relationship, "OtherRelationship"),
+    ):
+        stashed_annotations = read_stash(obj)["annotations"]
+        assert stashed_annotations == [{"name": other_name, "value": "preserve me"}]
+
+    round_tripped = convert_ossie_to_semantic_model(document)
+    round_trip_model = round_tripped["model"]
+    round_trip_table = next(t for t in round_trip_model["tables"] if t["name"] == "Orders")
+    round_trip_column = round_trip_table["columns"][0]
+    round_trip_measure = round_trip_table["measures"][0]
+    round_trip_relationship = round_trip_model["relationships"][0]
+
+    assert annotations(round_trip_model)["OssieAIContext"] == "true"
+    assert json.loads(annotations(round_trip_table)["OssieAIContext"]) == dataset["ai_context"]
+    assert annotations(round_trip_column)["OssieAIContext"] == "customer identifier"
+    assert json.loads(annotations(round_trip_measure)["OssieAIContext"]) == metric["ai_context"]
+    assert json.loads(annotations(round_trip_relationship)["OssieAIContext"]) == relationship[
+        "ai_context"
+    ]
+    for target, other_name in (
+        (round_trip_model, "OtherModel"),
+        (round_trip_table, "OtherTable"),
+        (round_trip_column, "OtherColumn"),
+        (round_trip_measure, "OtherMeasure"),
+        (round_trip_relationship, "OtherRelationship"),
+    ):
+        assert annotations(target)[other_name] == "preserve me"
+
+
 # --- data types ------------------------------------------------------------
 
 

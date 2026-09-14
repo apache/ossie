@@ -19,7 +19,7 @@
 
 Concepts that exist in both formats are mapped to the Apache Ossie core: model name and
 description, tables -> datasets, columns -> fields, measures -> metrics, relationships ->
-relationships.
+relationships, and ``OssieAIContext`` annotations -> AI context.
 
 Power BI constructs with no Apache Ossie counterpart -- format strings, display folders,
 perspectives, row-level security, KPIs, hierarchies, partitions, calculation groups,
@@ -63,6 +63,8 @@ _PRESERVED = (
     "preserved in the Power BI stash for round trip, but not represented in the "
     "Apache Ossie document"
 )
+
+_AI_CONTEXT_ANNOTATION = "OssieAIContext"
 
 # `Schema="dbo", Item="Sales"` navigation in a Power Query (M) partition.
 _M_ITEM_RE = re.compile(r'Item\s*=\s*"([^"]+)"')
@@ -152,6 +154,9 @@ def build_ossie_document(bim_file):
     description = model.get("description") or bim_file.get("description")
     if description:
         semantic_model["description"] = text(description)
+    model_ai_context, model_stash = _split_ai_context(model, _MODEL_CONSUMED)
+    if model_ai_context is not None:
+        semantic_model["ai_context"] = model_ai_context
     semantic_model["datasets"] = [_convert_table(t) for t in tables]
 
     relationships, excluded_relationships = _convert_relationships(
@@ -164,7 +169,14 @@ def build_ossie_document(bim_file):
     if metrics:
         semantic_model["metrics"] = metrics
 
-    _stash_model(semantic_model, bim_file, model, excluded_tables, excluded_relationships)
+    _stash_model(
+        semantic_model,
+        bim_file,
+        model,
+        model_stash,
+        excluded_tables,
+        excluded_relationships,
+    )
 
     return {"version": OSSIE_VERSION, "semantic_model": [semantic_model]}
 
@@ -245,6 +257,9 @@ def _convert_table(table):
         dataset["unique_keys"] = unique_keys
     if table.get("description"):
         dataset["description"] = text(table["description"])
+    ai_context, table_stash = _split_ai_context(table, _TABLE_CONSUMED)
+    if ai_context is not None:
+        dataset["ai_context"] = ai_context
     if fields:
         dataset["fields"] = fields
 
@@ -252,7 +267,6 @@ def _convert_table(table):
     for field, column_stash in field_stashes:
         write_stash(field, column_stash)
 
-    table_stash = _passthrough(table, _TABLE_CONSUMED)
     if excluded_columns:
         table_stash["excludedColumns"] = excluded_columns
     write_stash(dataset, table_stash)
@@ -324,10 +338,12 @@ def _convert_column(column, table_scope):
         field["datatype"] = datatype
     if column.get("description"):
         field["description"] = text(column["description"])
+    ai_context, stash = _split_ai_context(column, _COLUMN_CONSUMED)
+    if ai_context is not None:
+        field["ai_context"] = ai_context
     if datatype in TEMPORAL_DATATYPES or column.get("dataCategory") == "Time":
         field["dimension"] = {"is_time": True}
 
-    stash = _passthrough(column, _COLUMN_CONSUMED)
     if column.get("type") == "calculated":
         # `type` is implied by the DAX expression on the way back out.
         stash.pop("type", None)
@@ -421,7 +437,9 @@ def _convert_metrics(tables):
             if datatype:
                 metric["datatype"] = datatype
 
-            stash = _passthrough(measure, _MEASURE_CONSUMED)
+            ai_context, stash = _split_ai_context(measure, _MEASURE_CONSUMED)
+            if ai_context is not None:
+                metric["ai_context"] = ai_context
             # Apache Ossie metrics are model-level; Power BI measures belong to a table.
             # The home table is recorded so an export can put the measure back.
             stash["table"] = table["name"]
@@ -497,7 +515,9 @@ def _convert_relationships(relationships, exported_names):
             "to_columns": [to_column],
         }
 
-        stash = _passthrough(relationship, _RELATIONSHIP_CONSUMED)
+        ai_context, stash = _split_ai_context(relationship, _RELATIONSHIP_CONSUMED)
+        if ai_context is not None:
+            converted_relationship["ai_context"] = ai_context
         if relationship.get("name"):
             stash["name"] = relationship["name"]
         # Cardinalities are recorded whenever the source stated them, so the export
@@ -529,8 +549,48 @@ def _passthrough(obj, consumed):
     }
 
 
-def _stash_model(semantic_model, bim_file, model, excluded_tables, excluded_relationships):
-    stash = _passthrough(model, _MODEL_CONSUMED)
+def _split_ai_context(obj, consumed):
+    """Return the mapped AI context and a stash containing all other properties."""
+    stash = _passthrough(obj, consumed)
+    annotations = stash.get("annotations")
+    if not isinstance(annotations, list):
+        return None, stash
+
+    ai_context = None
+    remaining = []
+    for annotation in annotations:
+        if isinstance(annotation, dict) and annotation.get("name") == _AI_CONTEXT_ANNOTATION:
+            if ai_context is None and "value" in annotation:
+                ai_context = _decode_ai_context(annotation["value"])
+        else:
+            remaining.append(annotation)
+
+    if remaining:
+        stash["annotations"] = remaining
+    else:
+        stash.pop("annotations", None)
+    return ai_context, stash
+
+
+def _decode_ai_context(value):
+    """Decode JSON objects and arrays while leaving scalar annotation text unchanged."""
+    if not isinstance(value, str):
+        return value
+    try:
+        decoded = json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return value
+    return decoded if isinstance(decoded, (dict, list)) else value
+
+
+def _stash_model(
+    semantic_model,
+    bim_file,
+    model,
+    stash,
+    excluded_tables,
+    excluded_relationships,
+):
     # Properties that sit outside the `model` object (compatibilityLevel and friends) are
     # nested so they cannot collide with a model property of the same name.
     document = _passthrough(bim_file, _DOCUMENT_CONSUMED)
