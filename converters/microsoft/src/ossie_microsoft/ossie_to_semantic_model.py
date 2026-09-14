@@ -27,7 +27,8 @@ Power BI evaluates DAX. An expression that cannot be translated is emitted as
 ``BLANK()`` so its calculated column or measure remains in the model, while its original
 dialect and expression are stored as annotations on that object.
 
-The semantic model is created in Direct Lake mode and the ``source`` argument is used to generate the shared M expression for all Direct Lake partitions. 
+The semantic model is created in Direct Lake mode. The ``source`` argument generates the
+shared M expression for all Direct Lake partitions.
 
 The ``ai_context`` values are saved as annotations on the semantic model object. Relationships which
 depend on multiple columns are not supported in Power BI and are skipped. The ``primary_key`` and
@@ -70,7 +71,8 @@ _STASH_CONTROL_KEYS = frozenset(
     {"excludedTables", "excludedRelationships", "document", "descriptionSource"}
 )
 _TABLE_CONTROL_KEYS = frozenset({"excludedColumns"})
-_RELATIONSHIP_CONTROL_KEYS = frozenset({"flipped", "name"})
+_RELATIONSHIP_CONTROL_KEYS = frozenset({"flipped", "name", "normalizedEndpoints"})
+_RELATIONSHIP_CARDINALITY_KEYS = frozenset({"fromCardinality", "toCardinality"})
 _MEASURE_CONTROL_KEYS = frozenset({"table", "name"})
 _COLUMN_CONTROL_KEYS = frozenset({"dataType", "sourceColumn"})
 
@@ -112,7 +114,11 @@ _DELIMITED_RE = re.compile(r'^\[([^\]]+)\]$|^"([^"]+)"$|^`([^`]+)`$')
 _QUERY_START_RE = re.compile(r"^\s*(select|with)\b", re.IGNORECASE)
 
 
-def convert_ossie_to_semantic_model(ossie_yaml_str, source: dict=None, output_format: Literal["TMSL", "TMDL"]="TMSL") -> dict | str:
+def convert_ossie_to_semantic_model(
+    ossie_yaml_str,
+    source: dict = None,
+    output_format: Literal["TMSL", "TMDL"] = "TMSL",
+) -> dict | str:
     """Convert an Apache Ossie document into a Power BI semantic model.
 
     Args:
@@ -720,7 +726,11 @@ def _convert_relationships(relationships, table_columns):
                                 to_table, to_column):
             continue
 
-        if stash.get("flipped"):
+        endpoints = [from_table, from_column, to_table, to_column]
+        metadata_is_current = _relationship_metadata_is_current(
+            relationship, stash, endpoints
+        )
+        if metadata_is_current and stash.get("flipped"):
             # Restore the original orientation the import normalized away.
             from_table, to_table = to_table, from_table
             from_column, to_column = to_column, from_column
@@ -733,11 +743,26 @@ def _convert_relationships(relationships, table_columns):
             "toColumn": to_column,
         }
         for key, value in stash.items():
-            if key not in _RELATIONSHIP_CONTROL_KEYS:
+            if key not in _RELATIONSHIP_CONTROL_KEYS and (
+                metadata_is_current or key not in _RELATIONSHIP_CARDINALITY_KEYS
+            ):
                 tmsl.setdefault(key, value)
         _apply_ai_context(tmsl, relationship.get("ai_context"))
         converted.append(prune(tmsl))
     return converted
+
+
+def _relationship_metadata_is_current(relationship, stash, endpoints):
+    if "normalizedEndpoints" in stash:
+        return stash["normalizedEndpoints"] == endpoints
+
+    # Stashes written before normalizedEndpoints was introduced can still be checked
+    # against the generated Ossie relationship name. This preserves their unchanged
+    # round trip while avoiding stale metadata after the common endpoint-only edit.
+    generated_name = (
+        f"{endpoints[0]}_{endpoints[1]}_to_{endpoints[2]}_{endpoints[3]}"
+    )
+    return relationship.get("name") == generated_name
 
 
 def _endpoints_exist(scope, table_columns, from_table, from_column, to_table, to_column):

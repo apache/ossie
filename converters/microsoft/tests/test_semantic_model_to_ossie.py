@@ -26,7 +26,7 @@ import pytest
 import yaml
 
 from ossie_microsoft import convert_ossie_to_semantic_model, convert_semantic_model_to_ossie
-from ossie_microsoft._common import VENDOR, read_stash
+from ossie_microsoft._common import VENDOR, read_stash, write_stash
 from ossie_microsoft.semantic_model_to_ossie import build_ossie_document
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -267,8 +267,20 @@ def _one_to_many_bim():
         "name": "flip",
         "model": {
             "tables": [
-                {"name": "Calendar", "columns": [{"name": "Date", "dataType": "dateTime"}]},
-                {"name": "Sales", "columns": [{"name": "OrderDate", "dataType": "dateTime"}]},
+                {
+                    "name": "Calendar",
+                    "columns": [
+                        {"name": "Date", "dataType": "dateTime"},
+                        {"name": "AlternateDate", "dataType": "dateTime"},
+                    ],
+                },
+                {
+                    "name": "Sales",
+                    "columns": [
+                        {"name": "OrderDate", "dataType": "dateTime"},
+                        {"name": "AlternateOrderDate", "dataType": "dateTime"},
+                    ],
+                },
             ],
             "relationships": [
                 {
@@ -305,6 +317,12 @@ def test_a_flipped_relationship_records_its_original_orientation():
     stash = read_stash(model["relationships"][0])
     assert stash["flipped"] is True
     assert stash["fromCardinality"] == "one"
+    assert stash["normalizedEndpoints"] == [
+        "Sales",
+        "OrderDate",
+        "Calendar",
+        "Date",
+    ]
 
 
 def test_a_flipped_relationship_is_exported_the_way_power_bi_wrote_it():
@@ -313,6 +331,59 @@ def test_a_flipped_relationship_is_exported_the_way_power_bi_wrote_it():
         warnings.simplefilter("ignore")
         round_tripped = convert_ossie_to_semantic_model(_flip_osi())
     assert round_tripped["model"]["relationships"][0] == bim["model"]["relationships"][0]
+
+
+def test_an_unchanged_pre_snapshot_stash_still_restores_the_original_orientation():
+    osi = _flip_osi()
+    relationship = osi["semantic_model"][0]["relationships"][0]
+    stash = read_stash(relationship)
+    stash.pop("normalizedEndpoints")
+    write_stash(relationship, stash)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        exported = convert_ossie_to_semantic_model(osi)
+
+    expected = _one_to_many_bim()["model"]["relationships"][0]
+    assert exported["model"]["relationships"][0] == expected
+
+
+def test_reversed_ossie_endpoints_are_not_reversed_again_by_a_stale_flip_marker():
+    osi = _flip_osi()
+    relationship = osi["semantic_model"][0]["relationships"][0]
+    relationship["from"], relationship["to"] = relationship["to"], relationship["from"]
+    relationship["from_columns"], relationship["to_columns"] = (
+        relationship["to_columns"],
+        relationship["from_columns"],
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        exported = convert_ossie_to_semantic_model(osi)
+
+    result = exported["model"]["relationships"][0]
+    assert (result["fromTable"], result["fromColumn"]) == ("Calendar", "Date")
+    assert (result["toTable"], result["toColumn"]) == ("Sales", "OrderDate")
+
+
+def test_edited_ossie_endpoints_do_not_replay_stale_cardinalities():
+    osi = _flip_osi()
+    relationship = osi["semantic_model"][0]["relationships"][0]
+    relationship["from_columns"] = ["AlternateOrderDate"]
+    relationship["to_columns"] = ["AlternateDate"]
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        exported = convert_ossie_to_semantic_model(osi)
+
+    result = exported["model"]["relationships"][0]
+    assert (result["fromTable"], result["fromColumn"]) == (
+        "Sales",
+        "AlternateOrderDate",
+    )
+    assert (result["toTable"], result["toColumn"]) == ("Calendar", "AlternateDate")
+    assert "fromCardinality" not in result
+    assert "toCardinality" not in result
 
 
 def test_inactive_many_to_many_and_dangling_relationships_are_dropped(model):

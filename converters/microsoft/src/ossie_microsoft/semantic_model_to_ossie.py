@@ -530,6 +530,15 @@ def _convert_relationships(relationships, exported_names):
             # Recorded so an export restores the original one-to-many orientation
             # instead of silently rewriting the model shape.
             stash["flipped"] = True
+        if flipped or any(key in relationship for key in ("fromCardinality", "toCardinality")):
+            # Cardinality and orientation only describe these normalized endpoints.
+            # Remember them so later Ossie edits cannot make that metadata stale.
+            stash["normalizedEndpoints"] = [
+                from_table,
+                from_column,
+                to_table,
+                to_column,
+            ]
         write_stash(converted_relationship, stash)
         converted.append(converted_relationship)
     return converted, excluded
