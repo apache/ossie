@@ -51,21 +51,24 @@ public class OssieModelParser {
     @SuppressWarnings("unchecked")
     public OssieModel parse(InputStream is) {
         Yaml yaml = new Yaml();
-        Map<String, Object> root = yaml.load(is);
+        Object document = yaml.load(is);
+        if (!(document instanceof Map)) {
+            throw new IllegalArgumentException("An Ossie document must be an object");
+        }
+        Map<String, Object> root = (Map<String, Object>) document;
+        if (root.containsKey("semantic_model")) {
+            throw new IllegalArgumentException(
+                    "Legacy semantic_model wrappers are not supported; use version, name, and datasets at the root");
+        }
+        if (!(root.get("version") instanceof String)
+                || !(root.get("name") instanceof String)
+                || !(root.get("datasets") instanceof List)) {
+            throw new IllegalArgumentException("An Ossie document requires version, name, and datasets at the root");
+        }
 
         OssieModel model = new OssieModel();
         model.setVersion((String) root.get("version"));
-
-        List<Map<String, Object>> smList = (List<Map<String, Object>>) root.get("semantic_model");
-        if (smList == null) {
-            return model;
-        }
-
-        List<SemanticModel> semanticModels = new ArrayList<>();
-        for (Map<String, Object> smMap : smList) {
-            semanticModels.add(parseSemanticModel(smMap));
-        }
-        model.setSemanticModels(semanticModels);
+        model.setSemanticModel(parseSemanticModel(root));
         return model;
     }
 

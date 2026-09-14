@@ -24,20 +24,26 @@ import org.apache.ossie.converter.polaris.model.OssieModel;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 
 /**
  * CLI entry point for the Ossie Polaris converter.
  * <p>
  * Supports two modes:
  * <ul>
- *   <li><b>import</b>: Reads from a Polaris catalog and generates an Ossie YAML file</li>
+ *   <li><b>import</b>: Reads from a Polaris catalog and generates one Ossie YAML file per nonempty namespace</li>
  *   <li><b>export</b>: Reads an Ossie YAML file and creates tables in a Polaris catalog</li>
  * </ul>
  *
  * <pre>
  * Usage:
- *   ossie-polaris-converter import --url URL --catalog CATALOG [--client-id ID --client-secret SECRET] [-o output.yaml]
+ *   ossie-polaris-converter import --url URL --catalog CATALOG [options] [-o output.yaml | --output-dir DIR]
  *   ossie-polaris-converter export --url URL --catalog CATALOG [--client-id ID --client-secret SECRET] &lt;ossie_model.yaml&gt;
  * </pre>
  */
@@ -56,6 +62,7 @@ public class OssiePolarisConverter {
         String clientSecret = null;
         String token = null;
         String outputFile = null;
+        String outputDirectory = null;
         String inputFile = null;
 
         for (int i = 1; i < args.length; i++) {
@@ -78,6 +85,12 @@ public class OssiePolarisConverter {
                 case "-o":
                     if (i + 1 < args.length) outputFile = args[++i];
                     break;
+                case "--output-dir":
+                    if (i + 1 >= args.length || args[i + 1].startsWith("-")) {
+                        throw new IllegalArgumentException("--output-dir requires a directory");
+                    }
+                    outputDirectory = args[++i];
+                    break;
                 default:
                     if (!args[i].startsWith("-")) {
                         inputFile = args[i];
@@ -92,6 +105,10 @@ public class OssiePolarisConverter {
             System.exit(1);
         }
 
+        if (outputDirectory != null && (!"import".equals(mode) || outputFile != null)) {
+            throw new IllegalArgumentException("--output-dir is only for import and cannot be combined with -o");
+        }
+
         PolarisClient client = new PolarisClient(url, catalog);
 
         // Authenticate
@@ -103,7 +120,7 @@ public class OssiePolarisConverter {
 
         switch (mode) {
             case "import":
-                doImport(client, outputFile);
+                doImport(client, outputFile, outputDirectory);
                 break;
             case "export":
                 doExport(client, inputFile);
@@ -115,19 +132,47 @@ public class OssiePolarisConverter {
         }
     }
 
-    private static void doImport(PolarisClient client, String outputFile) throws Exception {
+    static void doImport(PolarisClient client, String outputFile, String outputDirectory) throws Exception {
+        if (outputFile != null && outputDirectory != null) {
+            throw new IllegalArgumentException("Use either -o or --output-dir");
+        }
         PolarisImporter importer = new PolarisImporter(client);
-        OssieModel model = importer.importCatalog();
+        List<OssieModel> models = importer.importCatalog();
 
-        if (model.getSemanticModels().isEmpty()) {
+        if (models.isEmpty()) {
             System.err.println("Warning: no tables found in catalog.");
+            return;
         }
 
         OssieYamlGenerator generator = new OssieYamlGenerator();
-        String yaml = generator.generate(model);
+        if (outputDirectory != null) {
+            Path directory = Paths.get(outputDirectory);
+            Files.createDirectories(directory);
+            List<Path> outputs = new ArrayList<>();
+            for (int i = 0; i < models.size(); i++) {
+                // The ordinal avoids collisions between sanitized or flattened namespace names.
+                String name = models.get(i).getSemanticModel().getName().replaceAll("[^A-Za-z0-9_-]", "_");
+                name = name.substring(0, Math.min(name.length(), 80));
+                Path output = directory.resolve(String.format(Locale.ROOT, "%04d-%s.yaml", i + 1, name));
+                if (Files.exists(output, LinkOption.NOFOLLOW_LINKS)) {
+                    throw new IOException("Refusing to overwrite existing file: " + output);
+                }
+                outputs.add(output);
+            }
+            for (int i = 0; i < models.size(); i++) {
+                Files.writeString(outputs.get(i), generator.generate(models.get(i)),
+                        StandardCharsets.UTF_8, StandardOpenOption.CREATE_NEW);
+                System.out.println("Ossie model written to " + outputs.get(i));
+            }
+            return;
+        }
+        if (models.size() != 1) {
+            throw new IllegalArgumentException("Catalog contains multiple nonempty namespaces; use --output-dir");
+        }
+        String yaml = generator.generate(models.get(0));
 
         if (outputFile != null) {
-            Files.write(Paths.get(outputFile), yaml.getBytes(StandardCharsets.UTF_8));
+            Files.writeString(Paths.get(outputFile), yaml, StandardCharsets.UTF_8);
             System.out.println("Ossie model written to " + outputFile);
         } else {
             System.out.println(yaml);
@@ -143,21 +188,15 @@ public class OssiePolarisConverter {
         OssieModelParser parser = new OssieModelParser();
         OssieModel model = parser.parse(Paths.get(inputFile));
 
-        if (model.getSemanticModels().isEmpty()) {
-            System.err.println("Error: no semantic_model found in " + inputFile);
-            System.exit(1);
-        }
-
         PolarisExporter exporter = new PolarisExporter(client);
         exporter.exportModel(model);
 
-        System.out.println("Exported " + model.getSemanticModels().size()
-                + " semantic model(s) to Polaris catalog.");
+        System.out.println("Exported one semantic model to Polaris catalog.");
     }
 
     private static void printUsage() {
         System.err.println("Usage:");
-        System.err.println("  ossie-polaris-converter import --url URL --catalog CATALOG [options] [-o output.yaml]");
+        System.err.println("  ossie-polaris-converter import --url URL --catalog CATALOG [options] [-o output.yaml | --output-dir DIR]");
         System.err.println("  ossie-polaris-converter export --url URL --catalog CATALOG [options] <ossie_model.yaml>");
         System.err.println();
         System.err.println("Options:");
@@ -166,6 +205,7 @@ public class OssiePolarisConverter {
         System.err.println("  --client-id ID         OAuth2 client ID for authentication");
         System.err.println("  --client-secret SECRET OAuth2 client secret for authentication");
         System.err.println("  --token TOKEN          Pre-existing bearer token");
-        System.err.println("  -o FILE                Output file (import mode, default: stdout)");
+        System.err.println("  -o FILE                Output file for a single nonempty namespace (default: stdout)");
+        System.err.println("  --output-dir DIR       One YAML file per nonempty namespace (import mode)");
     }
 }
