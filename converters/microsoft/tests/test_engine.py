@@ -370,6 +370,22 @@ def test_deploy_returns_the_item_id(monkeypatch):
     assert engine.deploy({"model": {}}, "w", "n", "t") == ("ds", None)
 
 
+def test_deploy_reports_a_success_response_without_an_item_id(monkeypatch):
+    _stub_request(monkeypatch, lambda *a, **k: (201, {}, {}))
+    assert engine.deploy({"model": {}}, "w", "n", "t") == (
+        None,
+        "deployment succeeded but returned no dataset id",
+    )
+
+
+def test_deploy_reports_an_accepted_response_without_an_operation(monkeypatch):
+    _stub_request(monkeypatch, lambda *a, **k: (202, None, {}))
+    assert engine.deploy({"model": {}}, "w", "n", "t") == (
+        None,
+        "deployment was accepted but returned no operation location",
+    )
+
+
 def test_deploy_sends_the_document_as_base64_tmsl(monkeypatch):
     seen = {}
 
@@ -472,6 +488,26 @@ def test_deploy_retries_transient_operation_result_failure(monkeypatch):
     assert engine.deploy({"model": {}}, "w", "n", "t") == ("ds", None)
 
 
+def test_deploy_retries_a_transport_failure_from_operation_result(monkeypatch):
+    monkeypatch.setattr(engine.time, "sleep", lambda _s: None)
+    responses = iter(
+        [
+            (None, "transport error (URLError): reset", {}),
+            (200, {"id": "ds"}, {}),
+        ]
+    )
+
+    def handler(method, url, token, payload=None):
+        if method == "POST":
+            return 202, None, {"Location": "https://e/op"}
+        if url.endswith("/result"):
+            return next(responses)
+        return 200, {"status": "Succeeded"}, {}
+
+    _stub_request(monkeypatch, handler)
+    assert engine.deploy({"model": {}}, "w", "n", "t") == ("ds", None)
+
+
 def test_deploy_reports_a_failed_operation(monkeypatch):
     monkeypatch.setattr(engine.time, "sleep", lambda _s: None)
 
@@ -540,6 +576,56 @@ def test_refresh_times_out(monkeypatch):
 
     _stub_request(monkeypatch, handler)
     assert engine.refresh("w", "d", "t", tries=2, delay=0) == "refresh timed out"
+
+
+def test_refresh_reports_persistent_transport_failure(monkeypatch):
+    monkeypatch.setattr(engine.time, "sleep", lambda _s: None)
+
+    def handler(method, url, token, payload=None):
+        if method == "POST":
+            return 202, None, {}
+        return None, "transport error (URLError): DNS unavailable", {}
+
+    _stub_request(monkeypatch, handler)
+    error = engine.refresh("w", "d", "t", tries=2, delay=0)
+    assert error == (
+        "refresh polling failed after 2 attempts: "
+        "transport error (URLError): DNS unavailable"
+    )
+
+
+def test_refresh_reports_a_transport_failure_after_a_valid_poll(monkeypatch):
+    monkeypatch.setattr(engine.time, "sleep", lambda _s: None)
+    responses = iter(
+        [
+            (200, {"value": [{"status": "InProgress"}]}, {}),
+            (None, "transport error (TimeoutError): timed out", {}),
+        ]
+    )
+
+    def handler(method, url, token, payload=None):
+        if method == "POST":
+            return 202, None, {}
+        return next(responses)
+
+    _stub_request(monkeypatch, handler)
+    error = engine.refresh("w", "d", "t", tries=2, delay=0)
+    assert error == (
+        "refresh timed out; last transport error: "
+        "transport error (TimeoutError): timed out"
+    )
+
+
+def test_refresh_reports_a_polling_http_failure(monkeypatch):
+    def handler(method, url, token, payload=None):
+        if method == "POST":
+            return 202, None, {}
+        return 503, "service unavailable", {}
+
+    _stub_request(monkeypatch, handler)
+    assert engine.refresh("w", "d", "t", tries=1, delay=0) == (
+        "HTTP 503: service unavailable"
+    )
 
 
 def test_evaluate_returns_rows(monkeypatch):
@@ -641,6 +727,36 @@ def test_a_refresh_failure_is_reported_with_its_stage(monkeypatch):
     _stub_request(monkeypatch, lambda *a, **k: (200, None, {}))
     result = engine.validate_with_engine({}, workspace="w", fabric_token="a", powerbi_token="b")
     assert (result.stage, result.error) == ("refresh", "broke")
+
+
+def test_a_cleanup_failure_is_reported_with_its_own_stage(monkeypatch):
+    monkeypatch.setattr(engine, "deploy", lambda *a, **k: ("ds", None))
+    monkeypatch.setattr(engine, "refresh", lambda *a, **k: None)
+    monkeypatch.setattr(engine, "check_model", lambda *a, **k: ())
+    _stub_request(monkeypatch, lambda *a, **k: (503, "delete unavailable", {}))
+
+    result = engine.validate_with_engine(
+        {}, workspace="w", fabric_token="a", powerbi_token="b"
+    )
+    assert result.stage == "cleanup"
+    assert result.error == (
+        "cleanup failed for dataset ds: HTTP 503: delete unavailable"
+    )
+
+
+def test_a_cleanup_failure_is_appended_to_the_validation_error(monkeypatch):
+    monkeypatch.setattr(engine, "deploy", lambda *a, **k: ("ds", None))
+    monkeypatch.setattr(engine, "refresh", lambda *a, **k: "refresh failed")
+    _stub_request(monkeypatch, lambda *a, **k: (503, "delete unavailable", {}))
+
+    result = engine.validate_with_engine(
+        {}, workspace="w", fabric_token="a", powerbi_token="b"
+    )
+    assert result.stage == "refresh"
+    assert result.error == (
+        "refresh failed; cleanup failed for dataset ds: "
+        "HTTP 503: delete unavailable"
+    )
 
 
 def test_keep_preserves_a_known_dataset_after_transport_failure(monkeypatch):
