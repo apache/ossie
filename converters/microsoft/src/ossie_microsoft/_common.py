@@ -59,7 +59,7 @@ DIALECT_DAX = "DAX"
 DIALECT_ANSI = "ANSI_SQL"
 
 # Bump when the shape of a stashed `data` blob changes.
-STASH_VERSION = 1
+STASH_VERSION = 2
 
 # Default TMSL compatibility level. 1550 is the baseline that supports calculation
 # groups and the modern partition surface.

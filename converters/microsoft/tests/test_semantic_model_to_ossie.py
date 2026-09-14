@@ -26,7 +26,7 @@ import pytest
 import yaml
 
 from ossie_microsoft import convert_ossie_to_semantic_model, convert_semantic_model_to_ossie
-from ossie_microsoft._common import VENDOR, read_stash, write_stash
+from ossie_microsoft._common import VENDOR, make_expression, read_stash, write_stash
 from ossie_microsoft.semantic_model_to_ossie import build_ossie_document
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -469,7 +469,7 @@ def test_a_model_without_power_bi_specifics_has_no_stash():
 
 def test_stash_data_is_versioned_json(model):
     ext = next(e for e in model["custom_extensions"] if e["vendor_name"] == VENDOR)
-    assert json.loads(ext["data"])["_v"] == 1
+    assert json.loads(ext["data"])["_v"] == 2
 
 
 def test_ai_context_annotations_round_trip_at_every_supported_level():
@@ -669,18 +669,98 @@ def test_every_lossy_step_warns(bim):
     assert any("Time Intelligence" in m for m in messages)
 
 
-def test_a_measure_without_an_expression_is_skipped():
+def test_a_measure_without_an_expression_is_preserved_exactly():
+    measure = {
+        "name": "Empty",
+        "expression": [" ", ""],
+        "formatString": "#,0.00",
+        "futureProperty": {"value": 42},
+    }
     bim = {
         "name": "m",
         "model": {
             "tables": [
-                {"name": "T", "columns": [], "measures": [{"name": "Empty"}]}
+                {
+                    "name": "T",
+                    "columns": [],
+                    "measures": [
+                        {"name": "Before", "expression": "1"},
+                        measure,
+                        {"name": "After", "expression": "2"},
+                    ],
+                }
             ]
         },
     }
     with pytest.warns(UserWarning, match="no expression"):
-        osi = yaml.safe_load(convert_semantic_model_to_ossie(bim))
-    assert "metrics" not in osi["semantic_model"][0]
+        osi = build_ossie_document(bim)
+    model = osi["semantic_model"][0]
+    assert read_stash(model)["excludedMeasures"] == [
+        {"table": "T", "measure": measure, "index": 1}
+    ]
+
+    out = convert_ossie_to_semantic_model(osi)
+    assert out["model"]["tables"][0]["measures"] == bim["model"]["tables"][0]["measures"]
+
+
+def test_expressionless_measures_return_to_their_own_tables():
+    bim = {
+        "name": "m",
+        "model": {
+            "tables": [
+                {"name": "A", "measures": [{"name": "Empty A"}]},
+                {"name": "B", "measures": [{"name": "Empty B", "expression": ""}]},
+            ]
+        },
+    }
+    with pytest.warns(UserWarning, match="no expression"):
+        osi = build_ossie_document(bim)
+
+    out = convert_ossie_to_semantic_model(osi)
+    assert {
+        table["name"]: table["measures"] for table in out["model"]["tables"]
+    } == {
+        "A": [{"name": "Empty A"}],
+        "B": [{"name": "Empty B", "expression": ""}],
+    }
+
+
+def test_an_excluded_measure_with_a_missing_home_table_warns():
+    bim = {
+        "name": "m",
+        "model": {"tables": [{"name": "Gone", "measures": [{"name": "Empty"}]}]},
+    }
+    with pytest.warns(UserWarning, match="no expression"):
+        osi = build_ossie_document(bim)
+    osi["semantic_model"][0]["datasets"] = []
+
+    with pytest.warns(UserWarning, match="home table 'Gone' is missing"):
+        out = convert_ossie_to_semantic_model(osi)
+    assert out["model"]["tables"] == []
+
+
+def test_an_authored_metric_wins_over_an_excluded_measure_collision():
+    bim = {
+        "name": "m",
+        "model": {
+            "tables": [
+                {
+                    "name": "T",
+                    "measures": [
+                        {"name": "M", "formatString": "stale", "futureProperty": True}
+                    ],
+                }
+            ]
+        },
+    }
+    with pytest.warns(UserWarning, match="no expression"):
+        osi = build_ossie_document(bim)
+    metric = {"name": "M", "expression": make_expression("1", "DAX")}
+    write_stash(metric, {"table": "T"})
+    osi["semantic_model"][0]["metrics"] = [metric]
+
+    out = convert_ossie_to_semantic_model(osi)
+    assert out["model"]["tables"][0]["measures"] == [{"name": "M", "expression": "1"}]
 
 
 def test_a_conversion_can_be_asserted_lossless_by_escalating_warnings():

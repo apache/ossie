@@ -165,7 +165,7 @@ def build_ossie_document(bim_file):
     if relationships:
         semantic_model["relationships"] = relationships
 
-    metrics = _convert_metrics(tables)
+    metrics, excluded_measures = _convert_metrics(tables)
     if metrics:
         semantic_model["metrics"] = metrics
 
@@ -176,6 +176,7 @@ def build_ossie_document(bim_file):
         model_stash,
         excluded_tables,
         excluded_relationships,
+        excluded_measures,
     )
 
     return {"version": OSSIE_VERSION, "semantic_model": [semantic_model]}
@@ -405,16 +406,29 @@ def _map_datatype(tmsl_type, format_string, scope):
 
 def _convert_metrics(tables):
     metrics = []
+    excluded = []
     seen = set()
     for table in tables:
-        for measure in table.get("measures") or []:
+        for index, measure in enumerate(table.get("measures") or []):
             if not isinstance(measure, dict) or not measure.get("name"):
                 continue
             scope = f"table '{table['name']}' measure '{measure.get('name')}'"
             warn_unsupported(scope, measure, TMSL_UNSUPPORTED_MEASURE, "Apache Ossie", _PRESERVED)
-            expression = text(measure.get("expression", "")).strip()
+            original_expression = measure.get("expression")
+            expression = (
+                text(original_expression).strip()
+                if original_expression is not None
+                else ""
+            )
             if not expression:
-                warn(scope, "measure has no expression; skipped")
+                warn(
+                    scope,
+                    "measure has no expression; excluded from the Apache Ossie model "
+                    "and preserved in custom_extensions",
+                )
+                excluded.append(
+                    {"table": table["name"], "measure": measure, "index": index}
+                )
                 continue
 
             # Measure names are unique per model in Power BI, but a qualified name may
@@ -447,7 +461,7 @@ def _convert_metrics(tables):
                 stash["name"] = measure["name"]
             write_stash(metric, stash)
             metrics.append(metric)
-    return metrics
+    return metrics, excluded
 
 
 # ---------------------------------------------------------------------------
@@ -599,6 +613,7 @@ def _stash_model(
     stash,
     excluded_tables,
     excluded_relationships,
+    excluded_measures,
 ):
     # Properties that sit outside the `model` object (compatibilityLevel and friends) are
     # nested so they cannot collide with a model property of the same name.
@@ -621,6 +636,8 @@ def _stash_model(
             )
     if excluded_relationships:
         stash["excludedRelationships"] = excluded_relationships
+    if excluded_measures:
+        stash["excludedMeasures"] = excluded_measures
     write_stash(semantic_model, stash)
 
 

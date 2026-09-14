@@ -68,7 +68,13 @@ _DROPPED = "dropped, because a Power BI semantic model has nowhere to record it"
 
 # Stash keys the export interprets rather than replays as TMSL properties.
 _STASH_CONTROL_KEYS = frozenset(
-    {"excludedTables", "excludedRelationships", "document", "descriptionSource"}
+    {
+        "excludedMeasures",
+        "excludedRelationships",
+        "excludedTables",
+        "document",
+        "descriptionSource",
+    }
 )
 _TABLE_CONTROL_KEYS = frozenset({"excludedColumns"})
 _RELATIONSHIP_CONTROL_KEYS = frozenset({"flipped", "name", "normalizedEndpoints"})
@@ -176,6 +182,7 @@ def convert_ossie_to_semantic_model(
         semantic_model.get("datasets") or []
     )
     _apply_measures(tables, semantic_model.get("metrics") or [])
+    _restore_excluded_measures(tables, stash.get("excludedMeasures") or [])
 
     relationships = _convert_relationships(
         semantic_model.get("relationships") or [], table_columns
@@ -691,6 +698,51 @@ def _apply_measures(tables, metrics):
             _apply_expression_annotations(measure, dialect, expression)
         _apply_ai_context(measure, metric.get("ai_context"))
         table.setdefault("measures", []).append(measure)
+
+
+def _restore_excluded_measures(tables, excluded_measures):
+    """Restore measures that could not become Apache Ossie metrics."""
+    by_name = {table["name"]: table for table in tables}
+    current = {
+        (table["name"].casefold(), measure["name"].casefold())
+        for table in tables
+        for measure in table.get("measures") or []
+        if isinstance(measure, dict) and measure.get("name")
+    }
+    restorations = []
+    for excluded in excluded_measures:
+        if not isinstance(excluded, dict):
+            continue
+        home_table = excluded.get("table")
+        measure = excluded.get("measure")
+        measure_name = measure.get("name") if isinstance(measure, dict) else None
+        scope = f"excluded measure '{measure_name or '<unnamed>'}'"
+        table = by_name.get(home_table)
+        if table is None:
+            warn(
+                scope,
+                f"home table '{home_table or '<unknown>'}' is missing; "
+                "the measure was not restored",
+            )
+            continue
+        if not measure_name:
+            warn(scope, "the preserved measure has no name; it was not restored")
+            continue
+        key = (table["name"].casefold(), measure_name.casefold())
+        if key in current:
+            continue
+        current.add(key)
+        index = excluded.get("index")
+        if not isinstance(index, int) or isinstance(index, bool) or index < 0:
+            index = None
+        restorations.append((table, index, measure))
+
+    for table, index, measure in restorations:
+        measures = table.setdefault("measures", [])
+        if index is None:
+            measures.append(measure)
+        else:
+            measures.insert(index, measure)
 
 
 # ---------------------------------------------------------------------------
