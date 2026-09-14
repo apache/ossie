@@ -39,6 +39,7 @@ capacity. Nothing here runs unless a caller supplies a workspace id.
 
 import base64
 import json
+import socket
 import time
 import typing
 import urllib.error
@@ -140,6 +141,9 @@ def _request(method, url, token, payload=None):
             return response.status, (json.loads(body) if body else None), dict(response.headers)
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read().decode("utf-8")[:2000], dict(exc.headers)
+    except (urllib.error.URLError, ConnectionError, TimeoutError, socket.gaierror) as exc:
+        reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+        return None, f"transport error ({type(exc).__name__}): {reason}", {}
 
 
 def _engine_message(body):
@@ -155,6 +159,11 @@ def _engine_message(body):
         return error.get("message") or str(payload)[:400]
     except (ValueError, AttributeError):
         return str(body)[:400]
+
+
+def _request_failure(status, body):
+    message = _engine_message(body)
+    return message if status is None else f"HTTP {status}: {message}"
 
 
 def _m_literal(value):
@@ -285,12 +294,28 @@ def build_deployable(bim, name):
 
 
 def _wait_for_operation(url, token, tries=40, delay=3):
+    last_transport_error = None
+    received_response = False
     for _ in range(tries):
         time.sleep(delay)
-        _status, body, _headers = _request("GET", url, token)
+        status, body, _headers = _request("GET", url, token)
+        if status is None:
+            last_transport_error = _engine_message(body)
+            continue
+        received_response = True
+        if status != 200:
+            return {"status": "Failed", "error": _request_failure(status, body)}
         if isinstance(body, dict) and body.get("status") in ("Succeeded", "Failed"):
             return body
-    return {"status": "TimedOut"}
+    if last_transport_error and not received_response:
+        return {
+            "status": "TransportFailed",
+            "error": f"{last_transport_error} after {tries} polling attempts",
+        }
+    result = {"status": "TimedOut"}
+    if last_transport_error:
+        result["lastTransportError"] = last_transport_error
+    return result
 
 
 def deploy(document, workspace, name, token):
@@ -322,9 +347,14 @@ def deploy(document, workspace, name, token):
         "POST", f"{FABRIC_API}/workspaces/{workspace}/items", token, payload
     )
     if status in (200, 201):
-        return body["id"], None
+        dataset = body.get("id") if isinstance(body, dict) else None
+        if dataset:
+            return dataset, None
+        return None, "deployment succeeded but returned no dataset id"
     if status == 202:
         operation = headers.get("Location")
+        if not operation:
+            return None, "deployment was accepted but returned no operation location"
         result = _wait_for_operation(operation, token)
         if result.get("status") != "Succeeded":
             return None, json.dumps(result)[:4000]
@@ -332,29 +362,30 @@ def deploy(document, workspace, name, token):
             result_status, created, _headers = _request(
                 "GET", f"{operation}/result", token
             )
+            dataset = created.get("id") if isinstance(created, dict) else None
             if result_status == 200:
                 if (
-                    isinstance(created, dict)
-                    and isinstance(created.get("id"), str)
-                    and created["id"]
+                    isinstance(dataset, str)
+                    and dataset
                 ):
-                    return created["id"], None
+                    return dataset, None
                 return (
                     None,
                     "invalid operation result: expected an object with a non-empty id; "
                     f"received {_engine_message(created)}",
                 )
             error = (
-                f"HTTP {result_status} fetching operation result: "
-                f"{_engine_message(created)}"
+                "fetching operation result failed: "
+                f"{_request_failure(result_status, created)}"
             )
             if (
                 result_status is not None
                 and result_status not in _TRANSIENT_HTTP_STATUSES
             ) or attempt == 2:
-                return None, error
+                return dataset, error
             time.sleep(1)
-    return None, f"HTTP {status}: {_engine_message(body)}"
+    dataset = body.get("id") if isinstance(body, dict) else None
+    return dataset, _request_failure(status, body)
 
 
 def refresh(workspace, dataset, token, tries=60, delay=5):
@@ -367,7 +398,9 @@ def refresh(workspace, dataset, token, tries=60, delay=5):
         {"notifyOption": "NoNotification"},
     )
     if status not in (200, 202):
-        return f"HTTP {status}: {_engine_message(body)}"
+        return _request_failure(status, body)
+    last_transport_error = None
+    received_response = False
     for _ in range(tries):
         time.sleep(delay)
         status, body, _headers = _request(
@@ -375,12 +408,22 @@ def refresh(workspace, dataset, token, tries=60, delay=5):
             f"{POWERBI_API}/groups/{workspace}/datasets/{dataset}/refreshes?$top=1",
             token,
         )
+        if status is None:
+            last_transport_error = _engine_message(body)
+            continue
+        received_response = True
         if status == 200 and body.get("value"):
             state = body["value"][0]
             if state.get("status") == "Completed":
                 return None
             if state.get("status") in ("Failed", "Disabled"):
                 return json.dumps(state)[:600]
+        elif status != 200:
+            return _request_failure(status, body)
+    if last_transport_error and not received_response:
+        return f"refresh polling failed after {tries} attempts: {last_transport_error}"
+    if last_transport_error:
+        return f"refresh timed out; last transport error: {last_transport_error}"
     return "refresh timed out"
 
 
@@ -459,16 +502,40 @@ def validate_with_engine(bim, *, workspace, fabric_token, powerbi_token, name=No
     name = name or f"ossie-validation-{int(time.time())}"
     document = build_deployable(bim, name)
 
-    dataset, error = deploy(document, workspace, name, fabric_token)
-    if error:
-        return EngineValidationResult(stage="deploy", error=error)
-
+    dataset = None
+    result = None
+    cleanup_error = None
     try:
-        error = refresh(workspace, dataset, powerbi_token)
+        dataset, error = deploy(document, workspace, name, fabric_token)
         if error:
-            return EngineValidationResult(stage="refresh", error=error)
-        findings = check_model(document, workspace, dataset, powerbi_token)
-        return EngineValidationResult(findings=findings)
+            if dataset is None and not keep:
+                error += "; cleanup not attempted because deployment returned no dataset id"
+            result = EngineValidationResult(stage="deploy", error=error)
+        else:
+            error = refresh(workspace, dataset, powerbi_token)
+            if error:
+                result = EngineValidationResult(stage="refresh", error=error)
+            else:
+                result = EngineValidationResult(
+                    findings=check_model(document, workspace, dataset, powerbi_token)
+                )
     finally:
-        if not keep:
-            _request("DELETE", f"{FABRIC_API}/workspaces/{workspace}/items/{dataset}", fabric_token)
+        if dataset is not None and not keep:
+            status, body, _headers = _request(
+                "DELETE",
+                f"{FABRIC_API}/workspaces/{workspace}/items/{dataset}",
+                fabric_token,
+            )
+            if status not in (200, 202, 204):
+                cleanup_error = _request_failure(status, body)
+
+    if cleanup_error:
+        message = f"cleanup failed for dataset {dataset}: {cleanup_error}"
+        if result.error:
+            message = f"{result.error}; {message}"
+        return EngineValidationResult(
+            findings=result.findings,
+            stage=result.stage if result.error else "cleanup",
+            error=message,
+        )
+    return result

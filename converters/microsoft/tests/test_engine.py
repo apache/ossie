@@ -342,6 +342,25 @@ def test_an_http_error_is_returned_rather_than_raised(monkeypatch):
     assert engine._engine_message(body) == "no"
 
 
+def test_an_operation_retries_a_transient_url_error(monkeypatch):
+    responses = [
+        engine.urllib.error.URLError("temporary DNS failure"),
+        _FakeResponse(200, json.dumps({"status": "Succeeded"}), {}),
+    ]
+
+    def fake_urlopen(_request):
+        response = responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    monkeypatch.setattr(engine.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(engine.time, "sleep", lambda _s: None)
+    result = engine._wait_for_operation("https://e/op", "t", tries=2, delay=0)
+    assert result == {"status": "Succeeded"}
+    assert not responses
+
+
 def _stub_request(monkeypatch, handler):
     monkeypatch.setattr(engine, "_request", handler)
 
@@ -550,6 +569,7 @@ def test_validate_with_engine_deletes_the_model_it_created(monkeypatch):
     monkeypatch.setattr(engine, "deploy", lambda *a, **k: ("ds", None))
     monkeypatch.setattr(engine, "refresh", lambda *a, **k: None)
     monkeypatch.setattr(engine, "check_model", lambda *a, **k: ())
+
     def record(method, url, *a, **k):
         calls.append((method, url))
         return 200, None, {}
@@ -575,7 +595,44 @@ def test_validate_with_engine_can_keep_the_model(monkeypatch):
 def test_a_deploy_failure_stops_before_refreshing(monkeypatch):
     monkeypatch.setattr(engine, "deploy", lambda *a, **k: (None, "nope"))
     result = engine.validate_with_engine({}, workspace="w", fabric_token="a", powerbi_token="b")
-    assert (result.stage, result.error) == ("deploy", "nope")
+    assert result.stage == "deploy"
+    assert "nope" in result.error
+    assert "no dataset id" in result.error
+
+
+def test_persistent_polling_transport_failure_is_a_deploy_error(monkeypatch):
+    monkeypatch.setattr(engine.time, "sleep", lambda _s: None)
+
+    def handler(method, _url, _token, payload=None):
+        if method == "POST":
+            return 202, None, {"Location": "https://e/op"}
+        return None, "transport error (URLError): DNS unavailable", {}
+
+    _stub_request(monkeypatch, handler)
+    result = engine.validate_with_engine({}, workspace="w", fabric_token="a", powerbi_token="b")
+    assert result.stage == "deploy"
+    assert "TransportFailed" in result.error
+    assert "DNS unavailable" in result.error
+    assert "no dataset id" in result.error
+
+
+def test_known_id_deploy_failure_still_cleans_up(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        engine,
+        "deploy",
+        lambda *a, **k: ("ds", "transport error while reading operation result"),
+    )
+
+    def record(method, url, *a, **k):
+        calls.append((method, url))
+        return 204, None, {}
+
+    _stub_request(monkeypatch, record)
+    result = engine.validate_with_engine({}, workspace="w", fabric_token="a", powerbi_token="b")
+    assert result.stage == "deploy"
+    assert "transport error" in result.error
+    assert ("DELETE", f"{engine.FABRIC_API}/workspaces/w/items/ds") in calls
 
 
 def test_a_refresh_failure_is_reported_with_its_stage(monkeypatch):
@@ -584,6 +641,23 @@ def test_a_refresh_failure_is_reported_with_its_stage(monkeypatch):
     _stub_request(monkeypatch, lambda *a, **k: (200, None, {}))
     result = engine.validate_with_engine({}, workspace="w", fabric_token="a", powerbi_token="b")
     assert (result.stage, result.error) == ("refresh", "broke")
+
+
+def test_keep_preserves_a_known_dataset_after_transport_failure(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        engine,
+        "deploy",
+        lambda *a, **k: ("ds", "transport error while reading operation result"),
+    )
+    _stub_request(monkeypatch, lambda method, *a, **k: calls.append(method) or (204, None, {}))
+
+    result = engine.validate_with_engine(
+        {}, workspace="w", fabric_token="a", powerbi_token="b", keep=True
+    )
+    assert result.stage == "deploy"
+    assert "transport error" in result.error
+    assert "DELETE" not in calls
 
 
 # --- guards ----------------------------------------------------------------
