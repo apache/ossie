@@ -296,6 +296,91 @@ def test_a_sql_concatenation_becomes_a_table_qualified_calculated_column():
     )
 
 
+def _customer_name_model(expression):
+    semantic_model = _minimal()
+    semantic_model["datasets"][0].update(
+        {
+            "name": "Customer",
+            "fields": [
+                {
+                    "name": "FirstName",
+                    "datatype": "String",
+                    "expression": make_expression("first_name", "ANSI_SQL"),
+                },
+                {
+                    "name": "LastName",
+                    "datatype": "String",
+                    "expression": make_expression("last_name", "ANSI_SQL"),
+                },
+                {
+                    "name": "FullName",
+                    "datatype": "String",
+                    "expression": make_expression(expression, "ANSI_SQL"),
+                },
+            ],
+        }
+    )
+    return semantic_model
+
+
+def test_a_dataset_qualified_concatenation_resolves_model_field_names():
+    semantic_model = _customer_name_model(
+        "Customer.FirstName || ' ' || Customer.LastName"
+    )
+
+    column = _column(_table(_convert(semantic_model), "Customer"), "FullName")
+    assert column["expression"] == "'Customer'[FirstName] & \" \" & 'Customer'[LastName]"
+
+
+def test_a_dataset_qualified_concatenation_resolves_source_column_aliases():
+    semantic_model = _customer_name_model(
+        "Customer.first_name || ' ' || Customer.last_name"
+    )
+
+    column = _column(_table(_convert(semantic_model), "Customer"), "FullName")
+    assert column["expression"] == "'Customer'[FirstName] & \" \" & 'Customer'[LastName]"
+
+
+def test_dataset_qualified_column_resolution_is_case_insensitive():
+    semantic_model = _customer_name_model(
+        '"CUSTOMER"."FIRST_NAME" || \' \' || customer.LAST_NAME'
+    )
+
+    column = _column(_table(_convert(semantic_model), "Customer"), "FullName")
+    assert column["expression"] == "'Customer'[FirstName] & \" \" & 'Customer'[LastName]"
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "Other.first_name || ' ' || Other.last_name",
+        "catalog.Customer.first_name || ' ' || Customer.last_name",
+    ],
+)
+def test_an_invalid_dataset_qualified_column_falls_back_safely(expression):
+    semantic_model = _customer_name_model(expression)
+
+    with pytest.warns(UserWarning, match="does not resolve to exactly one dataset field"):
+        column = _column(_table(_convert(semantic_model), "Customer"), "FullName")
+    assert column["expression"] == "BLANK()"
+
+
+def test_an_ambiguous_dataset_qualified_column_falls_back_safely():
+    semantic_model = _customer_name_model("Customer.first_name || Customer.LastName")
+    semantic_model["datasets"][0]["fields"].insert(
+        1,
+        {
+            "name": "PreferredName",
+            "datatype": "String",
+            "expression": make_expression("first_name", "ANSI_SQL"),
+        },
+    )
+
+    with pytest.warns(UserWarning, match="does not resolve to exactly one dataset field"):
+        column = _column(_table(_convert(semantic_model), "Customer"), "FullName")
+    assert column["expression"] == "BLANK()"
+
+
 def test_a_date_field_carries_a_date_only_format_string():
     semantic_model = _minimal()
     semantic_model["datasets"][0]["fields"][0]["datatype"] = "Date"

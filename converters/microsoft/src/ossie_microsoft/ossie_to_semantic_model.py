@@ -512,12 +512,13 @@ def _convert_field(field, dataset_scope, resolve_column):
 
 
 def _dataset_column_index(dataset):
-    """Map each SQL-visible field name to its unique model column in this dataset."""
+    """Map unqualified and dataset-qualified SQL aliases to unique model columns."""
     seen = {}
     table = dataset["name"]
     for field in dataset.get("fields") or []:
         if not isinstance(field, dict) or not field.get("name"):
             continue
+        target = (table, field["name"])
         aliases = {field["name"]}
         expressions = dialect_expressions(field.get("expression"))
         if expressions:
@@ -526,7 +527,8 @@ def _dataset_column_index(dataset):
             if IDENTIFIER_RE.match(candidate):
                 aliases.add(candidate)
         for alias in aliases:
-            seen.setdefault(alias.casefold(), set()).add((table, field["name"]))
+            for key in (alias, f"{table}.{alias}"):
+                seen.setdefault(key.casefold(), set()).add(target)
     return {key: next(iter(matches)) for key, matches in seen.items() if len(matches) == 1}
 
 
