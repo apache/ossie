@@ -64,13 +64,13 @@ def strip_dropped(ossie):
     `rely.at_most_one_match` (MV) -> `unique_keys` + a relationship rely-stash. We drop
     both key forms and the relationship stash so the key info is compared as 'gone'."""
     ossie = copy.deepcopy(ossie)
-    for model in ossie.get("semantic_model", []):
-        model.pop("name", None)         # MV carries no model name
-        model.pop("description", None)  # model + fact descriptions merge into one comment
-        for ds in model.get("datasets", []):
-            ds.pop("primary_key", None)
-            ds.pop("unique_keys", None)
-            ds.pop("description", None)  # no per-source comment in single-source MV
-        for rel in model.get("relationships", []):
-            rel.pop("custom_extensions", None)  # derived rely-stash from a declared key
+    model = ossie
+    model.pop("name", None)         # MV carries no model name
+    model.pop("description", None)  # model + fact descriptions merge into one comment
+    for ds in model.get("datasets", []):
+        ds.pop("primary_key", None)
+        ds.pop("unique_keys", None)
+        ds.pop("description", None)  # no per-source comment in single-source MV
+    for rel in model.get("relationships", []):
+        rel.pop("custom_extensions", None)  # derived rely-stash from a declared key
     return ossie

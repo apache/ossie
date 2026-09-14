@@ -39,7 +39,7 @@ def minimal(**model_overrides):
                       "fields": [_field("amount")]}],
     }
     model.update(model_overrides)
-    return dump_yaml({"version": "0.2.0.dev0", "semantic_model": [model]})
+    return dump_yaml({"version": "0.2.0.dev0", **model})
 
 
 def _field(name, expr=None, dialect="ANSI_SQL", **extra):
@@ -251,10 +251,9 @@ def test_dialect_preference():
 
 
 def test_names_are_sanitized():
-    files = export(dump_yaml({"version": "0.2.0.dev0", "semantic_model": [{
-        "name": "My Model",
+    files = export(dump_yaml({"version": "0.2.0.dev0", "name": "My Model",
         "datasets": [{"name": "Order Items", "source": "db.sch.t",
-                      "fields": [_field("Total Price", "p")]}]}]}))
+                      "fields": [_field("Total Price", "p")]}]}))
     assert "views/order_items.view.yaml" in files
     assert "topics/my_model.topic.yaml" in files
     dims = parse(files["views/order_items.view.yaml"])["dimensions"]
@@ -293,7 +292,7 @@ def test_unknown_relationship_dataset_rejected():
 
 def test_unsupported_version_rejected():
     with pytest.raises(ConversionError, match="Unsupported Ossie version"):
-        export(dump_yaml({"version": "9.9.9", "semantic_model": [{"name": "m"}]}))
+        export(dump_yaml({"version": "9.9.9", "name": "m"}))
 
 
 # --- warnings ---------------------------------------------------------------
@@ -343,9 +342,11 @@ def test_foreign_vendor_extensions_warn():
     assert any("foreign-vendor" in m for m in msgs)
 
 
-def test_multiple_models_warn_and_first_converts():
-    ossie = parse(minimal())
-    ossie["semantic_model"].append({"name": "second", "datasets": [
-        {"name": "x", "source": "db.s.x"}]})
-    msgs = _warnings_of(dump_yaml(ossie))
-    assert any("multiple semantic models" in m for m in msgs)
+@pytest.mark.parametrize(
+    "wrapper",
+    [[], [{"name": "first"}], [{"name": "first"}, {"name": "second"}], {"name": "first"}, None],
+)
+def test_legacy_model_wrappers_are_rejected(wrapper):
+    document = {"version": "0.2.0.dev0", "semantic_model": wrapper}
+    with pytest.raises(ConversionError, match="Legacy 'semantic_model'"):
+        export(dump_yaml(document))

@@ -25,6 +25,10 @@ and [Honeydew](https://honeydew.ai/docs) [workspace YAML](https://honeydew.ai/do
 Honeydew documents this integration from its own side under
 [Apache Ossie (OSI)](https://honeydew.ai/docs/integration/apache-ossie-osi).
 
+Ossie documents contain one model directly at the root, with `version`, `name`,
+`datasets`, and optional model properties. Legacy `semantic_model` wrappers
+(arrays or objects) are rejected.
+
 ## Overview
 
 | Direction | Input | Output |
@@ -36,7 +40,7 @@ Honeydew documents this integration from its own side under
 
 | Ossie concept | Honeydew concept |
 |-------------|-----------------|
-| `semantic_model.name` | `workspace.yml name` |
+| `name` | `workspace.yml name` |
 | `dataset` | Entity + dataset files under `schema/<entity>/` |
 | `dataset.source` | `dataset.sql` |
 | `dataset.primary_key` | `entity.keys` |
@@ -50,7 +54,7 @@ Honeydew documents this integration from its own side under
 
 | Honeydew concept | Ossie concept |
 |-----------------|-------------|
-| `workspace.name` | `semantic_model.name` |
+| `workspace.name` | `name` |
 | Entity + primary dataset | `dataset` |
 | `entity.keys` | `dataset.primary_key` (and `dataset.unique_keys`) |
 | `dataset.attributes` (columns) | `fields` with `ANSI_SQL` expression = column name |

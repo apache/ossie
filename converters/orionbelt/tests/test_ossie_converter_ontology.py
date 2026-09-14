@@ -101,6 +101,7 @@ class TestOntologyStructure:
         omap = doc["ontology_mappings"][0]
         assert omap["name"] == "sales_map"
         assert "semantic_model" in omap
+        assert not {"version", "dialects", "vendors"} & set(omap["semantic_model"])
         assert omap["semantic_model"]["name"] == "sales"
         assert {d["name"] for d in omap["semantic_model"]["datasets"]} == {
             "Customers",

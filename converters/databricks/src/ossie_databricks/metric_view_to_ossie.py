@@ -91,7 +91,7 @@ def convert_metric_view_to_ossie(mv_yaml_str, model_name=None):
         )
 
     model = _convert_view(view, model_name)
-    return dump_yaml({"version": OSSIE_VERSION, "semantic_model": [model]})
+    return dump_yaml({"version": OSSIE_VERSION, **model})
 
 
 def _convert_view(view, model_name):

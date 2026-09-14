@@ -45,7 +45,7 @@ from ossie_snowflake.converter import (
 def _wrap_ossie(model_dict):
     """Wrap a model dict in the standard Ossie envelope."""
     return yaml.dump(
-        {"version": "0.2.0.dev0", "semantic_model": [model_dict]},
+        {"version": "0.2.0.dev0", **model_dict},
         default_flow_style=False,
     )
 
@@ -606,45 +606,23 @@ class TestConvertOssieToSnowflake:
             convert_ossie_to_snowflake("- a list")
 
     def test_wrong_version_raises(self):
-        bad = yaml.dump({"version": "9.9.9", "semantic_model": [{"name": "m"}]})
+        bad = yaml.dump({"version": "9.9.9", "name": "m"})
         with pytest.raises(OssieConversionError, match="Unsupported Ossie specification"):
             convert_ossie_to_snowflake(bad)
 
-    def test_missing_semantic_model_raises(self):
-        bad = yaml.dump({"version": "0.2.0.dev0"})
-        with pytest.raises(OssieConversionError, match="non-empty list"):
-            convert_ossie_to_snowflake(bad)
-
-    def test_empty_semantic_model_raises(self):
-        bad = yaml.dump({"version": "0.2.0.dev0", "semantic_model": []})
-        with pytest.raises(OssieConversionError, match="non-empty list"):
-            convert_ossie_to_snowflake(bad)
-
-    def test_non_dict_model_entry_raises(self):
-        bad = yaml.dump({"version": "0.2.0.dev0", "semantic_model": ["not a dict"]})
-        with pytest.raises(OssieConversionError, match="must be mappings"):
-            convert_ossie_to_snowflake(bad)
-
     def test_missing_model_name_raises(self):
-        bad = yaml.dump({"version": "0.2.0.dev0", "semantic_model": [{"description": "x"}]})
+        bad = yaml.dump({"version": "0.2.0.dev0", "description": "x"})
         with pytest.raises(OssieConversionError, match="Missing required 'name'"):
             convert_ossie_to_snowflake(bad)
 
-    def test_multiple_models_warns(self):
-        multi = yaml.dump(
-            {
-                "version": "0.2.0.dev0",
-                "semantic_model": [
-                    _minimal_model(name="first"),
-                    _minimal_model(name="second"),
-                ],
-            }
-        )
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            result = yaml.safe_load(convert_ossie_to_snowflake(multi))
-        assert result["name"] == "first"
-        assert any("only the first" in str(warning.message) for warning in w)
+    @pytest.mark.parametrize(
+        "wrapper",
+        [[], [{"name": "first"}], [{"name": "first"}, {"name": "second"}], {"name": "first"}, None],
+    )
+    def test_legacy_model_wrappers_are_rejected(self, wrapper):
+        bad = yaml.dump({"version": "0.2.0.dev0", "semantic_model": wrapper})
+        with pytest.raises(OssieConversionError, match="Legacy 'semantic_model'"):
+            convert_ossie_to_snowflake(bad)
 
     def test_snowflake_dialect_preferred(self):
         model = {

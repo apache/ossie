@@ -251,7 +251,7 @@ def build_ossie(rnd):
         model["relationships"] = relationships
     if metrics:
         model["metrics"] = metrics
-    return {"version": OSSIE_VERSION, "semantic_model": [model]}
+    return {"version": OSSIE_VERSION, **model}
 
 
 def _three_part(rnd):
@@ -348,7 +348,7 @@ def assert_ossie_roundtrip(ossie):
     mv_yaml = _convert(exporter.convert_ossie_to_metric_view, dump_yaml(ossie))
     ossie2 = load_yaml(_convert(importer.convert_metric_view_to_ossie, mv_yaml))
 
-    m1, m2 = ossie["semantic_model"][0], ossie2["semantic_model"][0]
+    m1, m2 = ossie, ossie2
     assert ({d["name"]: (d["source"], _fields_map(d)) for d in m1["datasets"]}
             == {d["name"]: (d["source"], _fields_map(d)) for d in m2["datasets"]}), "datasets"
     assert _rel_set(m1) == _rel_set(m2), "relationships"

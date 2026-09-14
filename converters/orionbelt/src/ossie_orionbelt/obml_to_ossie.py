@@ -140,15 +140,10 @@ class OBMLtoOssie:
             self.obml.get("customExtensions"), sem_model["custom_extensions"]
         )
 
-        ossie["semantic_model"] = [sem_model]
+        ossie.update(sem_model)
 
-        # The published Ossie core schema forbids root-level ``dialects`` /
-        # ``vendors`` (root is additionalProperties:false, only ``version`` +
-        # ``semantic_model``). Dialects live per-expression in
-        # ``expression.dialects[]`` and vendors per-entity in
-        # ``custom_extensions[].vendor_name`` — the schema-valid homes — so the
-        # document stays fully conformant without root advertisement arrays.
-        # See Ossie PR #148 (and the single-document-dialect direction in #52).
+        # Dialects and vendors are represented on the expressions and extensions
+        # that use them; root-level advertisement arrays remain optional.
         return ossie
 
     def _emit_foreign_extensions(self, obml_exts: list[dict] | None, ossie_exts: list[dict]) -> None:

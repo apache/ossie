@@ -98,18 +98,14 @@ def convert_ossie_to_honeydew(ossie_yaml_str: str) -> dict[str, str]:
             f"Unsupported Ossie version '{version_str}'. Supported: {SUPPORTED_OSSIE_VERSION}"
         )
 
-    semantic_models = root.get("semantic_model")
-    if not isinstance(semantic_models, list) or not semantic_models:
-        raise HoneydewConversionError("'semantic_model' must be a non-empty list")
-
-    if len(semantic_models) > 1:
-        warnings.warn(
-            f"Ossie YAML contains {len(semantic_models)} semantic models; "
-            "only the first will be converted"
+    if "semantic_model" in root:
+        raise HoneydewConversionError(
+            "Legacy 'semantic_model' wrappers are not supported; "
+            "place the model properties directly at the document root"
         )
 
     vendors = [v for v in (root.get("vendors") or []) if v != HONEYDEW_VENDOR]
-    return _model_to_files(semantic_models[0], extra_vendors=vendors)
+    return _model_to_files(root, extra_vendors=vendors)
 
 
 def _model_to_files(sm: dict[str, Any], *, extra_vendors: list[str] | None = None) -> dict[str, str]:
@@ -611,7 +607,7 @@ def convert_honeydew_to_ossie(workspace_dir: str) -> str:
     root: dict[str, Any] = {
         "version": SUPPORTED_OSSIE_VERSION,
         "vendors": vendors,
-        "semantic_model": [sm],
+        **sm,
     }
     return _dump(root)
 

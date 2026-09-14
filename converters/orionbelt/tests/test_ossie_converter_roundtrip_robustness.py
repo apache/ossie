@@ -63,7 +63,7 @@ class TestMetricRoundTripCodeVsName:
 
     def test_emitter_uses_physical_code(self) -> None:
         ossie = conv.OBMLtoOssie(self._OBML).convert()
-        sql = ossie["semantic_model"][0]["metrics"][0]["expression"]["dialects"][0]["expression"]
+        sql = ossie["metrics"][0]["expression"]["dialects"][0]["expression"]
         assert "fact_orders" in sql  # confirms the emit side uses the code
 
     def test_measure_survives_round_trip(self) -> None:
@@ -86,36 +86,32 @@ class TestMetricRoundTripCodeVsName:
         # the metric references the physical code. Must resolve, not drop.
         ossie = {
             "version": "0.2.0.dev0",
-            "semantic_model": [
+            "name": "sales",
+            "datasets": [
                 {
-                    "name": "sales",
-                    "datasets": [
+                    "name": "Orders",
+                    "source": "WH.PUBLIC.fact_orders",
+                    "fields": [
                         {
-                            "name": "Orders",
-                            "source": "WH.PUBLIC.fact_orders",
-                            "fields": [
-                                {
-                                    "name": "Amount",
-                                    "expression": {
-                                        "dialects": [
-                                            {"dialect": "ANSI_SQL", "expression": "amount"}
-                                        ]
-                                    },
-                                    "data_type": "number",
-                                }
-                            ],
-                        }
-                    ],
-                    "metrics": [
-                        {
-                            "name": "Revenue",
+                            "name": "Amount",
                             "expression": {
                                 "dialects": [
-                                    {"dialect": "ANSI_SQL", "expression": "SUM(fact_orders.amount)"}
+                                    {"dialect": "ANSI_SQL", "expression": "amount"}
                                 ]
                             },
+                            "data_type": "number",
                         }
                     ],
+                }
+            ],
+            "metrics": [
+                {
+                    "name": "Revenue",
+                    "expression": {
+                        "dialects": [
+                            {"dialect": "ANSI_SQL", "expression": "SUM(fact_orders.amount)"}
+                        ]
+                    },
                 }
             ],
         }
@@ -132,39 +128,35 @@ class TestMetricRoundTripCodeVsName:
         # fails query resolution.
         ossie = {
             "version": "0.2.0.dev0",
-            "semantic_model": [
+            "name": "sales",
+            "datasets": [
                 {
-                    "name": "sales",
-                    "datasets": [
+                    "name": "Orders",
+                    "source": "WH.PUBLIC.fact_orders",
+                    "fields": [
                         {
-                            "name": "Orders",
-                            "source": "WH.PUBLIC.fact_orders",
-                            "fields": [
-                                {
-                                    "name": "Net Amount",
-                                    "expression": {
-                                        "dialects": [
-                                            {"dialect": "ANSI_SQL", "expression": "net_amount"}
-                                        ]
-                                    },
-                                    "data_type": "number",
-                                }
-                            ],
-                        }
-                    ],
-                    "metrics": [
-                        {
-                            "name": "Net Revenue",
+                            "name": "Net Amount",
                             "expression": {
                                 "dialects": [
-                                    {
-                                        "dialect": "ANSI_SQL",
-                                        "expression": "SUM(fact_orders.net_amount)",
-                                    }
+                                    {"dialect": "ANSI_SQL", "expression": "net_amount"}
                                 ]
                             },
+                            "data_type": "number",
                         }
                     ],
+                }
+            ],
+            "metrics": [
+                {
+                    "name": "Net Revenue",
+                    "expression": {
+                        "dialects": [
+                            {
+                                "dialect": "ANSI_SQL",
+                                "expression": "SUM(fact_orders.net_amount)",
+                            }
+                        ]
+                    },
                 }
             ],
         }
@@ -182,39 +174,35 @@ class TestMetricRoundTripCodeVsName:
         # must still resolve to a queryable measure, not fall through to LOSSY.
         ossie = {
             "version": "0.2.0.dev0",
-            "semantic_model": [
+            "name": "sales",
+            "datasets": [
                 {
-                    "name": "sales",
-                    "datasets": [
+                    "name": "Orders",
+                    "source": 'WH.PUBLIC."fact_orders"',
+                    "fields": [
                         {
-                            "name": "Orders",
-                            "source": 'WH.PUBLIC."fact_orders"',
-                            "fields": [
-                                {
-                                    "name": "Amount",
-                                    "expression": {
-                                        "dialects": [
-                                            {"dialect": "ANSI_SQL", "expression": '"net_amount"'}
-                                        ]
-                                    },
-                                    "data_type": "number",
-                                }
-                            ],
-                        }
-                    ],
-                    "metrics": [
-                        {
-                            "name": "Revenue",
+                            "name": "Amount",
                             "expression": {
                                 "dialects": [
-                                    {
-                                        "dialect": "ANSI_SQL",
-                                        "expression": "SUM(fact_orders.net_amount)",
-                                    }
+                                    {"dialect": "ANSI_SQL", "expression": '"net_amount"'}
                                 ]
                             },
+                            "data_type": "number",
                         }
                     ],
+                }
+            ],
+            "metrics": [
+                {
+                    "name": "Revenue",
+                    "expression": {
+                        "dialects": [
+                            {
+                                "dialect": "ANSI_SQL",
+                                "expression": "SUM(fact_orders.net_amount)",
+                            }
+                        ]
+                    },
                 }
             ],
         }
@@ -249,14 +237,10 @@ class TestDimensionNameCollision:
     def test_both_dimensions_survive(self) -> None:
         ossie = {
             "version": "0.2.0.dev0",
-            "semantic_model": [
-                {
-                    "name": "sales",
-                    "datasets": [
-                        _dim_dataset("Orders", "WH.PUBLIC.orders"),
-                        _dim_dataset("Invoices", "WH.PUBLIC.invoices"),
-                    ],
-                }
+            "name": "sales",
+            "datasets": [
+                _dim_dataset("Orders", "WH.PUBLIC.orders"),
+                _dim_dataset("Invoices", "WH.PUBLIC.invoices"),
             ],
         }
         c = conv.OssietoOBML(ossie)
@@ -279,7 +263,7 @@ class TestValidateOssieRobustness:
     def test_malformed_datasets_does_not_raise(self) -> None:
         # datasets is a string, not a list — must return a result, not raise.
         r = conv.validate_ossie(
-            {"version": "0.1.1", "semantic_model": [{"name": "x", "datasets": "not-an-array"}]}
+            {"version": "0.1.1", "name": "x", "datasets": "not-an-array"}
         )
         assert r is not None
         # No garbage semantic errors from iterating a string char-by-char.
@@ -289,7 +273,7 @@ class TestValidateOssieRobustness:
         r = conv.validate_ossie(
             {
                 "version": "0.2.0.dev0",
-                "semantic_model": [{"name": "x", "datasets": [{"name": "D", "fields": "nope"}]}],
+                "name": "x", "datasets": [{"name": "D", "fields": "nope"}],
             }
         )
         assert r is not None
@@ -299,14 +283,10 @@ class TestValidateOssieRobustness:
         r = conv.validate_ossie(
             {
                 "version": "0.2.0.dev0",
-                "semantic_model": [
-                    {
-                        "name": "m",
-                        "datasets": [
-                            {"name": "D", "source": "a.b.d", "fields": []},
-                            {"name": "D", "source": "a.b.d2", "fields": []},
-                        ],
-                    }
+                "name": "m",
+                "datasets": [
+                    {"name": "D", "source": "a.b.d", "fields": []},
+                    {"name": "D", "source": "a.b.d2", "fields": []},
                 ],
             }
         )
