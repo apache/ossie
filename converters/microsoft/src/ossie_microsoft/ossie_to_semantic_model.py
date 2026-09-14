@@ -27,8 +27,8 @@ Power BI evaluates DAX. An expression that cannot be translated is emitted as
 ``BLANK()`` so its calculated column or measure remains in the model, while its original
 dialect and expression are stored as annotations on that object.
 
-The semantic model is created in Direct Lake mode. The ``source`` argument generates the
-shared M expression for all Direct Lake partitions.
+The semantic model is created in Direct Lake mode. The ``source`` argument generates
+the shared M expression for all Direct Lake partitions.
 
 The ``ai_context`` values are saved as annotations on the semantic model object. Relationships which
 depend on multiple columns are not supported in Power BI and are skipped. The ``primary_key`` and
@@ -195,7 +195,12 @@ def convert_ossie_to_semantic_model(
 
     model = {"tables": tables}
     if generated_partitions:
-        model["expressions"] = [_direct_lake_expression(source)]
+        expressions, expression_name = _merge_direct_lake_expressions(
+            stash.get("expressions"), source
+        )
+        model["expressions"] = expressions
+        for partition in generated_partitions:
+            partition["source"]["expressionSource"] = expression_name
     description = semantic_model.get("description")
     if description and stash.get("descriptionSource") != "document":
         model["description"] = description
@@ -243,14 +248,15 @@ def convert_ossie_to_semantic_model(
 
 def _convert_datasets(datasets):
     tables = []
-    generated_partitions = False
+    generated_partitions = []
     # Maps a table name to the set of its column names, used to validate relationships.
     table_columns = {}
     for dataset in datasets:
         if not isinstance(dataset, dict) or not dataset.get("name"):
             continue
         table, generated_partition = _convert_dataset(dataset)
-        generated_partitions = generated_partitions or generated_partition
+        if generated_partition is not None:
+            generated_partitions.append(generated_partition)
         tables.append(table)
         table_columns[table["name"]] = {c["name"] for c in table["columns"]}
     return tables, table_columns, generated_partitions
@@ -289,19 +295,19 @@ def _convert_dataset(dataset):
         columns.insert(0, column)
 
     partitions = stash.get("partitions")
-    generated_partition = not partitions
+    generated_partition = None
     if not partitions:
-        partitions = [_convert_partition(name, dataset.get("source") or name)]
+        generated_partition = _convert_partition(name, dataset.get("source") or name)
+        partitions = [generated_partition]
+        if generated_partition["mode"] != "directLake":
+            generated_partition = None
     table["partitions"] = partitions
 
     for key, value in stash.items():
         if key not in _TABLE_CONTROL_KEYS and key != "partitions":
             table.setdefault(key, value)
     _apply_ai_context(table, dataset.get("ai_context"))
-    generated_direct_lake_partition = generated_partition and any(
-        partition.get("mode") == "directLake" for partition in partitions
-    )
-    return table, generated_direct_lake_partition
+    return table, generated_partition
 
 
 def _convert_partition(table_name, source):
@@ -349,6 +355,62 @@ def _direct_lake_expression(source):
             "    Source",
         ],
     }
+
+
+def _merge_direct_lake_expressions(preserved, source):
+    """Add or reuse the source expression without changing preserved partitions."""
+    expressions = list(preserved) if isinstance(preserved, list) else []
+    named = [
+        expression
+        for expression in expressions
+        if isinstance(expression, dict) and isinstance(expression.get("name"), str)
+    ]
+    direct_lake = next(
+        (
+            expression
+            for expression in named
+            if expression["name"].casefold() == DIRECT_LAKE_EXPRESSION.casefold()
+        ),
+        None,
+    )
+
+    if source is not None and not isinstance(source, dict):
+        raise TypeError("source must be a mapping with workspaceId and itemId")
+    explicit_source = bool(
+        source and (source.get("workspaceId") or source.get("itemId"))
+    )
+    desired = _direct_lake_expression(source) if explicit_source else None
+    if direct_lake is not None and _compatible_direct_lake_expression(
+        direct_lake, desired
+    ):
+        return expressions, direct_lake["name"]
+
+    desired = desired or _direct_lake_expression(source)
+    used_names = {expression["name"].casefold() for expression in named}
+    name = DIRECT_LAKE_EXPRESSION
+    suffix = 1
+    while name.casefold() in used_names:
+        name = f"{DIRECT_LAKE_EXPRESSION}_{suffix}"
+        suffix += 1
+    desired["name"] = name
+    expressions.append(desired)
+    return expressions, name
+
+
+def _compatible_direct_lake_expression(expression, desired):
+    if expression.get("kind") != "m" or "expression" not in expression:
+        return False
+    if desired is None:
+        return True
+    return _tmsl_expression_text(expression["expression"]) == _tmsl_expression_text(
+        desired["expression"]
+    )
+
+
+def _tmsl_expression_text(expression):
+    if isinstance(expression, list):
+        return "\n".join(str(line) for line in expression)
+    return str(expression)
 
 
 def _m_expression(source):

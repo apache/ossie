@@ -85,6 +85,41 @@ def _minimal(**overrides):
     return semantic_model
 
 
+def _mixed_partition_model(expressions, existing_expression_source="DatabaseQuery"):
+    semantic_model = _minimal()
+    existing = semantic_model["datasets"][0]
+    existing["name"] = "Existing"
+    existing_partition = {
+        "name": "Existing",
+        "mode": "directLake",
+        "source": {
+            "type": "entity",
+            "entityName": "old_table",
+            "expressionSource": existing_expression_source,
+        },
+    }
+    write_stash(existing, {"partitions": [existing_partition]})
+    semantic_model["datasets"].append(
+        {"name": "New", "source": "curated.new_table", "fields": []}
+    )
+    write_stash(semantic_model, {"expressions": expressions})
+    return semantic_model, existing_partition
+
+
+def _database_query(workspace, item, name="DatabaseQuery"):
+    return {
+        "name": name,
+        "kind": "m",
+        "expression": [
+            "let",
+            "    Source = AzureStorage.DataLake("
+            f'"https://onelake.dfs.fabric.microsoft.com/{workspace}/{item}")',
+            "in",
+            "    Source",
+        ],
+    }
+
+
 # --- input handling --------------------------------------------------------
 
 
@@ -507,6 +542,72 @@ def test_a_non_mapping_onelake_location_is_rejected():
     document = {"version": OSSIE_VERSION, "semantic_model": [_minimal()]}
     with pytest.raises(TypeError, match="workspaceId and itemId"):
         convert_ossie_to_semantic_model(document, source="workspace/item")
+
+
+def test_a_stashed_database_query_is_reused_without_redirecting_old_partitions():
+    expressions = [
+        _database_query("old-workspace", "old-item"),
+        {"name": "UnrelatedParameter", "kind": "m", "expression": '"keep me"'},
+    ]
+    semantic_model, existing_partition = _mixed_partition_model(
+        expressions, existing_expression_source="UnrelatedParameter"
+    )
+
+    bim = _convert(semantic_model)
+
+    assert bim["model"]["expressions"] == expressions
+    assert _table(bim, "Existing")["partitions"] == [existing_partition]
+    new_partition = _table(bim, "New")["partitions"][0]
+    assert new_partition["source"]["expressionSource"] == "DatabaseQuery"
+    assert new_partition["source"]["schemaName"] == "curated"
+    assert new_partition["source"]["entityName"] == "new_table"
+
+
+def test_an_explicit_compatible_source_reuses_the_preserved_database_query():
+    source = {"workspaceId": "workspace", "itemId": "item"}
+    expressions = [
+        _database_query("workspace", "item"),
+        {"name": "Other", "kind": "m", "expression": "42"},
+    ]
+    semantic_model, existing_partition = _mixed_partition_model(expressions)
+    document = {"version": OSSIE_VERSION, "semantic_model": [semantic_model]}
+
+    bim = convert_ossie_to_semantic_model(document, source=source)
+
+    assert bim["model"]["expressions"] == expressions
+    assert _table(bim, "Existing")["partitions"] == [existing_partition]
+    assert (
+        _table(bim, "New")["partitions"][0]["source"]["expressionSource"]
+        == "DatabaseQuery"
+    )
+
+
+def test_a_conflicting_database_query_gets_a_collision_free_name():
+    expressions = [
+        _database_query("old-workspace", "old-item"),
+        _database_query("another-workspace", "another-item", "DatabaseQuery_1"),
+        {"name": "Unrelated", "kind": "m", "expression": "let X = 1 in X"},
+    ]
+    semantic_model, existing_partition = _mixed_partition_model(expressions)
+    document = {"version": OSSIE_VERSION, "semantic_model": [semantic_model]}
+
+    bim = convert_ossie_to_semantic_model(
+        document, source={"workspaceId": "current-workspace", "itemId": "current-item"}
+    )
+
+    merged = bim["model"]["expressions"]
+    assert merged[:3] == expressions
+    assert [expression["name"] for expression in merged] == [
+        "DatabaseQuery",
+        "DatabaseQuery_1",
+        "Unrelated",
+        "DatabaseQuery_2",
+    ]
+    assert "current-workspace/current-item" in "\n".join(merged[-1]["expression"])
+    assert _table(bim, "Existing")["partitions"] == [existing_partition]
+    new_partition = _table(bim, "New")["partitions"][0]
+    assert new_partition["source"]["expressionSource"] == "DatabaseQuery_2"
+    assert new_partition["source"]["entityName"] == "new_table"
 
 
 # --- measures --------------------------------------------------------------
