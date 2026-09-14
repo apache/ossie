@@ -375,8 +375,10 @@ def deploy(document, workspace, name, token):
                     f"received {_engine_message(created)}",
                 )
             error = (
-                "fetching operation result failed: "
-                f"{_request_failure(result_status, created)}"
+                f"HTTP {result_status} fetching operation result: "
+                f"{_engine_message(created)}"
+                if result_status is not None
+                else f"fetching operation result failed: {_engine_message(created)}"
             )
             if (
                 result_status is not None
