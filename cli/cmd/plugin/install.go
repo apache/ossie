@@ -46,6 +46,6 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 	if !all && !hasName {
 		return errors.New("requires a plugin name or --all")
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), "not yet implemented")
-	return nil
+	cmd.SilenceUsage = true
+	return fmt.Errorf("%s is not yet implemented", cmd.CommandPath())
 }
