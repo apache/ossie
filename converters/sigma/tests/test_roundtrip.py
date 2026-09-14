@@ -21,7 +21,12 @@ def test_sigma_osi_sigma_roundtrip_through_yaml_serialization(fixture_name):
     document = SigmaToOssieConverter().convert(spec).output
     yaml_text = document.to_ossie_yaml()
 
-    reparsed_document = OssieDocument.model_validate(yaml.safe_load(yaml_text))
+    serialized = yaml.safe_load(yaml_text)
+    assert serialized["name"] == spec["name"]
+    assert "semantic_model" not in serialized
+    assert serialized["dialects"] == ["ANSI_SQL", "SIGMA"]
+    assert serialized["vendors"] == ["SIGMA"]
+    reparsed_document = OssieDocument.model_validate(serialized)
     reconstructed_spec = OssieToSigmaConverter().convert(reparsed_document).output
 
     assert normalize(reconstructed_spec) == normalize(spec)
@@ -39,7 +44,7 @@ def test_osi_sigma_osi_roundtrip_preserves_portable_fields(fixture_name):
     document_2 = SigmaToOssieConverter().convert(spec_2).output
 
     def portable(document):
-        model = document.semantic_model[0]
+        model = document
         return {
             "datasets": [(d.name, d.source, [(f.name, f.datatype) for f in d.fields or []]) for d in model.datasets],
             "relationships": [(r.name, r.from_dataset, r.to, r.from_columns, r.to_columns) for r in model.relationships or []],

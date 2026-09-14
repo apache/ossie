@@ -41,7 +41,6 @@ _ISSUE_REASON: dict[ConverterIssueType, str] = {
     ConverterIssueType.METRIC_NAME_COLLISION: "another table defines a measure with the same name; this one was prefixed with its table name",
     ConverterIssueType.STALE_MEASURE: "wisdom marked this measure stale; it was converted anyway",
     ConverterIssueType.DUPLICATE_FIELD_DROPPED: "the dataset already has a field with this name",
-    ConverterIssueType.EXTRA_MODEL_DROPPED: "a wisdom domain export holds a single domain; only the first semantic model was converted",
     ConverterIssueType.AI_CONTEXT_DROPPED: "wisdom has no equivalent for ai_context at this level (or for synonyms/examples)",
     ConverterIssueType.METRIC_TABLE_UNRESOLVED: "the metric expression references no known dataset; it was attached to the first dataset",
     ConverterIssueType.MISSING_DIALECT_EXPRESSION: "no expression was available in the dataset's dialect or ANSI_SQL; the first available dialect was used",
@@ -52,7 +51,6 @@ _ISSUE_REASON: dict[ConverterIssueType, str] = {
 _DROPPED_ISSUE_TYPES = {
     ConverterIssueType.RELATIONSHIP_DROPPED,
     ConverterIssueType.DUPLICATE_FIELD_DROPPED,
-    ConverterIssueType.EXTRA_MODEL_DROPPED,
     ConverterIssueType.AI_CONTEXT_DROPPED,
     ConverterIssueType.UNIQUE_KEYS_DROPPED,
     ConverterIssueType.CUSTOM_EXTENSION_DROPPED,

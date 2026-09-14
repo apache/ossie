@@ -62,9 +62,7 @@ class OssieToWisdomConverter:
     def convert(self, document: OssieDocument, exported_at: Optional[str] = None) -> ConverterResult[dict]:
         issues: List[ConverterIssue] = []
 
-        model = document.semantic_model[0]
-        for extra in document.semantic_model[1:]:
-            issues.append(ConverterIssue(issue_type=ConverterIssueType.EXTRA_MODEL_DROPPED, element_name=extra.name))
+        model = document
         self._report_custom_extensions(model, issues)
 
         domain_uuid = _stable_id("ET_DOMAIN", model.name)

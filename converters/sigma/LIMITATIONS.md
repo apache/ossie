@@ -121,7 +121,5 @@ Sigma's backend.
 
 ## One semantic model per document
 
-Sigma data models are single models; `OssieDocument.semantic_model` is a list. Only
-`semantic_model[0]` is converted, with `EXTRA_MODEL_DROPPED` naming how many were
-dropped. An empty `semantic_model` list has no model to convert at all; rather than
-raising an opaque `IndexError`, `OssieToSigmaConverter` raises a `ConverterError`.
+Each Ossie document contains one model at the root, which maps to one Sigma data
+model. Legacy `semantic_model` wrappers are rejected when parsing an Ossie document.

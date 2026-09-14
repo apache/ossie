@@ -35,8 +35,7 @@ def result():
 
 @pytest.fixture(scope="module")
 def model(result):
-    assert len(result.output.semantic_model) == 1
-    return result.output.semantic_model[0]
+    return result.output
 
 
 def _issues_of(result, issue_type):
@@ -158,7 +157,10 @@ def test_stale_measure_is_kept_with_warning(result, model):
 
 
 def test_output_round_trips_through_ossie_yaml(result):
-    document = OssieDocument.model_validate(yaml.safe_load(result.output.to_ossie_yaml()))
+    serialized = yaml.safe_load(result.output.to_ossie_yaml())
+    assert serialized["name"] == "Sample Sales"
+    assert "semantic_model" not in serialized
+    document = OssieDocument.model_validate(serialized)
     assert document == result.output
 
 

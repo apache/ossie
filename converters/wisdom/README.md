@@ -42,9 +42,9 @@ python ../../validation/validate.py semantic_model.yaml --schema ../../core-spec
 
 | Ossie | Wisdom |
 |-------|--------|
-| `semantic_model[].name` | domain `ref.name` |
-| `semantic_model[].description` | domain `description` |
-| `semantic_model[].ai_context` | `domainSystemInstructions` + each domain `knowledge[].content` as a bulleted list |
+| `name` | domain `ref.name` |
+| `description` | domain `description` |
+| `ai_context` | `domainSystemInstructions` + each domain `knowledge[].content` as a bulleted list |
 | `datasets[].name` | table `ref.name` |
 | `datasets[].source` | table `location.database.schema.dbTable` |
 | `datasets[].description` | table `description` |

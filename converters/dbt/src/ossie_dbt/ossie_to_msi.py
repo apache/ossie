@@ -101,10 +101,9 @@ class OssieToMSIConverter:
         semantic_models: List[PydanticSemanticModel] = []
         metrics: List[PydanticMetric] = []
 
-        for ossie_sm in document.semantic_model:
-            for dataset in ossie_sm.datasets:
-                semantic_models.append(self._convert_dataset(dataset, ossie_sm))
-            metrics.extend(self._convert_metrics(ossie_sm))
+        for dataset in document.datasets:
+            semantic_models.append(self._convert_dataset(dataset, document))
+        metrics.extend(self._convert_metrics(document))
 
         return ConverterResult(
             output=PydanticSemanticManifest(

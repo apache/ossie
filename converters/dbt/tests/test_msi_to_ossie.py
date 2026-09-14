@@ -64,7 +64,7 @@ from tests.helpers import (
 
 def _fields(result: OssieDocument, dataset_idx: int = 0) -> list:
     """Return fields for a dataset, asserting they exist."""
-    fields = result.semantic_model[0].datasets[dataset_idx].fields
+    fields = result.datasets[dataset_idx].fields
     assert fields is not None
     return fields
 
@@ -76,7 +76,7 @@ def _field_expr(result: OssieDocument, field_idx: int = 0) -> str:
 
 def _ossie_metrics(result: OssieDocument) -> list:
     """Return Ossie metrics for the first semantic model, asserting they exist."""
-    metrics = result.semantic_model[0].metrics
+    metrics = result.metrics
     assert metrics is not None
     return metrics
 
@@ -91,11 +91,10 @@ class TestBasicConversion:
         result = MSIToOssieConverter().convert(_manifest(), ossie_model_name="test").output
 
         assert result.version == "0.2.0.dev0"
-        assert len(result.semantic_model) == 1
-        assert result.semantic_model[0].name == "test"
-        assert result.semantic_model[0].datasets == []
-        assert result.semantic_model[0].metrics is None
-        assert result.semantic_model[0].relationships is None
+        assert result.name == "test"
+        assert result.datasets == []
+        assert result.metrics is None
+        assert result.relationships is None
 
     def test_semantic_model_becomes_dataset(self) -> None:
         sm = semantic_model_with_guaranteed_meta(
@@ -105,7 +104,7 @@ class TestBasicConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
 
-        dataset = result.semantic_model[0].datasets[0]
+        dataset = result.datasets[0]
         assert dataset.name == "orders"
         assert dataset.source == "analytics.orders_table"
         assert dataset.description == "Order data"
@@ -117,14 +116,14 @@ class TestBasicConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
 
-        assert result.semantic_model[0].datasets[0].source == "prod.analytics.orders_table"
+        assert result.datasets[0].source == "prod.analytics.orders_table"
 
     def test_multiple_semantic_models_become_multiple_datasets(self) -> None:
         sm_a = semantic_model_with_guaranteed_meta(name="orders")
         sm_b = semantic_model_with_guaranteed_meta(name="users")
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm_a, sm_b])).output
 
-        names = [ds.name for ds in result.semantic_model[0].datasets]
+        names = [ds.name for ds in result.datasets]
         assert names == ["orders", "users"]
 
 
@@ -274,7 +273,7 @@ class TestEntityKeyExtraction:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
 
-        dataset = result.semantic_model[0].datasets[0]
+        dataset = result.datasets[0]
         assert dataset.primary_key == expected_pk
         assert dataset.unique_keys == expected_uk
 
@@ -329,7 +328,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[listings, bookings])).output
 
-        rels = result.semantic_model[0].relationships
+        rels = result.relationships
         assert rels is not None
         assert len(rels) == 1
         rel = rels[0]
@@ -349,7 +348,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[users_a, users_b])).output
 
-        rels = result.semantic_model[0].relationships
+        rels = result.relationships
         assert rels is not None
         assert len(rels) == 1
         assert rels[0].from_columns == ["user_id"]
@@ -362,7 +361,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[bookings])).output
 
-        assert result.semantic_model[0].relationships is None
+        assert result.relationships is None
 
     def test_same_dataset_entities_excluded(self) -> None:
         orders = semantic_model_with_guaranteed_meta(
@@ -374,7 +373,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[orders])).output
 
-        assert result.semantic_model[0].relationships is None
+        assert result.relationships is None
 
     def test_three_datasets_produce_all_pairs(self, snapshot: SnapshotAssertion) -> None:
         users_a = semantic_model_with_guaranteed_meta(
@@ -391,7 +390,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[users_a, users_b, orders])).output
 
-        rels = result.semantic_model[0].relationships
+        rels = result.relationships
         assert rels is not None
         assert len(rels) == 3
         pairs = {(r.from_dataset, r.to) for r in rels}
@@ -409,7 +408,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[listings, bookings])).output
 
-        rels = result.semantic_model[0].relationships
+        rels = result.relationships
         assert rels is not None
         rel = rels[0]
         assert rel.from_columns == ["fk_lid"]
@@ -426,7 +425,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[listings, bookings])).output
 
-        rels = result.semantic_model[0].relationships
+        rels = result.relationships
         assert rels is not None
         assert rels[0].from_columns == ["listing"]
         assert rels[0].to_columns == ["listing"]
@@ -446,7 +445,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[bookings, orders])).output
 
-        assert result.semantic_model[0].relationships is None
+        assert result.relationships is None
 
     def test_relationship_name_format(self) -> None:
         listings = semantic_model_with_guaranteed_meta(
@@ -459,7 +458,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[listings, bookings])).output
 
-        rels = result.semantic_model[0].relationships
+        rels = result.relationships
         assert rels is not None
         assert rels[0].name == "bookings__listings__listing"
 
@@ -474,7 +473,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[users, orders])).output
 
-        assert result.semantic_model[0].relationships is None
+        assert result.relationships is None
 
     def test_direction_based_on_entity_type_not_manifest_order(self) -> None:
         beta = semantic_model_with_guaranteed_meta(
@@ -487,7 +486,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[beta, alpha])).output
 
-        rels = result.semantic_model[0].relationships
+        rels = result.relationships
         assert rels is not None
         assert rels[0].from_dataset == "alpha"
         assert rels[0].to == "beta"
@@ -848,7 +847,7 @@ class TestMetricConversion:
         sm = semantic_model_with_guaranteed_meta(name="orders")
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
 
-        assert result.semantic_model[0].metrics is None
+        assert result.metrics is None
 
     def test_multiple_metrics_all_converted(self) -> None:
         sm = semantic_model_with_guaranteed_meta(
@@ -901,7 +900,7 @@ class TestMetricConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[conversion])).output
 
-        assert result.semantic_model[0].metrics is None
+        assert result.metrics is None
 
 
 class TestConverterIssues:
@@ -1210,15 +1209,15 @@ class TestOssieJsonSerialization:
         parsed = json.loads(result.to_ossie_json())
 
         assert parsed["version"] == "0.2.0.dev0"
-        assert len(parsed["semantic_model"]) == 1
-        assert parsed["semantic_model"][0]["name"] == "my_project"
+        assert "semantic_model" not in parsed
+        assert parsed["name"] == "my_project"
 
     def test_to_ossie_json_excludes_none_fields(self) -> None:
         sm = semantic_model_with_guaranteed_meta(name="orders")
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
         parsed = json.loads(result.to_ossie_json())
 
-        dataset = parsed["semantic_model"][0]["datasets"][0]
+        dataset = parsed["datasets"][0]
         assert "primary_key" not in dataset
         assert "unique_keys" not in dataset
         assert "fields" not in dataset
