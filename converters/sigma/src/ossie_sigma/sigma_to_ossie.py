@@ -458,9 +458,5 @@ class SigmaToOssieConverter:
             custom_extensions=[_vendor_ext(model_ext)] if model_ext else None,
         )
 
-        document = OssieDocument(
-            dialects=[OssieDialect.ANSI_SQL, OssieDialect.SIGMA],
-            vendors=[OssieVendor.SIGMA],
-            semantic_model=[semantic_model],
-        )
+        document = OssieDocument(semantic_model=[semantic_model])
         return ConverterResult(output=document, issues=issues)
