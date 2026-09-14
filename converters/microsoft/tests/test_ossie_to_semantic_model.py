@@ -25,7 +25,14 @@ import pytest
 import yaml
 
 from ossie_microsoft import convert_ossie_to_semantic_model, convert_semantic_model_to_ossie
-from ossie_microsoft._common import OSSIE_VERSION, make_expression, read_stash, write_stash
+from ossie_microsoft._common import (
+    DEFAULT_COMPATIBILITY_LEVEL,
+    OSSIE_VERSION,
+    ConversionError,
+    make_expression,
+    read_stash,
+    write_stash,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -147,6 +154,59 @@ def test_a_model_without_a_stash_gets_documented_defaults():
     bim = _convert(_minimal())
     assert bim["compatibilityLevel"] == 1702
     assert bim["model"]["culture"] == "en-US"
+
+
+@pytest.mark.parametrize(
+    ("stashed_level", "expected_level"),
+    [(1500, 1702), (1702, 1702), (1800, 1800)],
+)
+def test_generated_direct_lake_partitions_require_a_minimum_compatibility_level(
+    stashed_level, expected_level
+):
+    semantic_model = _minimal()
+    write_stash(
+        semantic_model, {"document": {"compatibilityLevel": stashed_level}}
+    )
+
+    assert _convert(semantic_model)["compatibilityLevel"] == expected_level
+
+
+@pytest.mark.parametrize("stashed_level", ["1702", 1702.0, True, None])
+def test_generated_direct_lake_partitions_reject_invalid_compatibility_levels(
+    stashed_level,
+):
+    semantic_model = _minimal()
+    write_stash(
+        semantic_model, {"document": {"compatibilityLevel": stashed_level}}
+    )
+
+    with pytest.raises(ConversionError, match="'compatibilityLevel' must be an integer"):
+        _convert(semantic_model)
+
+
+def test_without_generated_direct_lake_partitions_compatibility_behavior_is_preserved():
+    semantic_model = _minimal()
+    write_stash(
+        semantic_model["datasets"][0],
+        {
+            "partitions": [
+                {
+                    "name": "T",
+                    "mode": "import",
+                    "source": {"type": "m", "expression": "let Source = 1 in Source"},
+                }
+            ]
+        },
+    )
+    write_stash(semantic_model, {"document": {"compatibilityLevel": 1500}})
+
+    assert _convert(semantic_model)["compatibilityLevel"] == 1500
+
+    semantic_model["custom_extensions"] = []
+    assert (
+        _convert(semantic_model)["compatibilityLevel"]
+        == DEFAULT_COMPATIBILITY_LEVEL
+    )
 
 
 def test_datasets_become_tables(bim_out):

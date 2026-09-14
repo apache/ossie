@@ -202,10 +202,18 @@ def convert_ossie_to_semantic_model(ossie_yaml_str, source: dict=None, output_fo
     if description and stash.get("descriptionSource") == "document":
         bim["description"] = description
     bim.update(document_properties)
-    bim.setdefault(
-        "compatibilityLevel",
-        DIRECT_LAKE_COMPATIBILITY_LEVEL if generated_partitions else DEFAULT_COMPATIBILITY_LEVEL,
-    )
+    bim.setdefault("compatibilityLevel", DEFAULT_COMPATIBILITY_LEVEL)
+    if generated_partitions:
+        compatibility_level = bim["compatibilityLevel"]
+        if not isinstance(compatibility_level, int) or isinstance(compatibility_level, bool):
+            raise ConversionError(
+                "POWER_BI custom_extensions document 'compatibilityLevel' must be "
+                "an integer when generating Direct Lake partitions, got "
+                f"{compatibility_level!r}"
+            )
+        bim["compatibilityLevel"] = max(
+            compatibility_level, DIRECT_LAKE_COMPATIBILITY_LEVEL
+        )
     bim["model"] = model
     if normalized_format == "TMSL":
         return bim
@@ -277,7 +285,10 @@ def _convert_dataset(dataset):
         if key not in _TABLE_CONTROL_KEYS and key != "partitions":
             table.setdefault(key, value)
     _apply_ai_context(table, dataset.get("ai_context"))
-    return table, generated_partition
+    generated_direct_lake_partition = generated_partition and any(
+        partition.get("mode") == "directLake" for partition in partitions
+    )
+    return table, generated_direct_lake_partition
 
 
 def _convert_partition(table_name, source):
