@@ -1332,6 +1332,8 @@ def test_metric_string_ai_context_preserved_in_roundtrip(tmp_path):
                      "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(orders.total)"}]}}]}
     sm = _ossie_roundtrip(model, tmp_path)
     assert sm == {
+        "version": OSSIE_VERSION,
+        "vendors": ["HONEYDEW"],
         "name": "m",
         "datasets": [{"name": "orders", "source": "db.s.orders"}],
         "metrics": [{
