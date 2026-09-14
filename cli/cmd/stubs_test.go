@@ -20,6 +20,9 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 func TestUnimplementedCommandsFail(t *testing.T) {
@@ -34,6 +37,8 @@ func TestUnimplementedCommandsFail(t *testing.T) {
 
 	for _, args := range tests {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Cleanup(func() { clearFlags(rootCmd) })
+
 			out := new(bytes.Buffer)
 			rootCmd.SetOut(out)
 			rootCmd.SetErr(out)
@@ -50,5 +55,16 @@ func TestUnimplementedCommandsFail(t *testing.T) {
 				t.Errorf("Execute(%q) printed usage:\n%s", args, out.String())
 			}
 		})
+	}
+}
+
+// Flag values set by one Execute call stay on the shared rootCmd tree.
+func clearFlags(cmd *cobra.Command) {
+	cmd.Flags().Visit(func(f *pflag.Flag) {
+		_ = f.Value.Set(f.DefValue)
+		f.Changed = false
+	})
+	for _, sub := range cmd.Commands() {
+		clearFlags(sub)
 	}
 }
