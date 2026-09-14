@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
- #
- # /// script
- # requires-python = ">=3.11"
- # dependencies = [
- #     "pyyaml>=6.0.3",
- # ]
- # ///
+#
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "pyyaml>=6.0.3",
+# ]
+# ///
 
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
