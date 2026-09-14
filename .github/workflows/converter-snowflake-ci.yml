@@ -24,11 +24,15 @@ on:
     branches: [ "main" ]
     paths:
       - 'converters/snowflake/**'
+      - 'core-spec/**'
+      - 'examples/**'
       - '.github/workflows/converter-snowflake-ci.yml'    
   pull_request:
     branches: [ "main" ]
     paths:
       - 'converters/snowflake/**'
+      - 'core-spec/**'
+      - 'examples/**'
       - '.github/workflows/converter-snowflake-ci.yml'    
 
 jobs:

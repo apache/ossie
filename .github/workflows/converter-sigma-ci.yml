@@ -24,12 +24,16 @@ on:
     branches: [ "main" ]
     paths:
       - 'converters/sigma/**'
+      - 'core-spec/**'
+      - 'examples/**'
       - 'python/**'
       - '.github/workflows/converter-sigma-ci.yml'
   pull_request:
     branches: [ "main" ]
     paths:
       - 'converters/sigma/**'
+      - 'core-spec/**'
+      - 'examples/**'
       - 'python/**'
       - '.github/workflows/converter-sigma-ci.yml'
 

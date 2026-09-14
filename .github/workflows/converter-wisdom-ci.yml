@@ -24,11 +24,15 @@ on:
     branches: [ "main" ]
     paths:
       - 'converters/wisdom/**'
+      - 'core-spec/**'
+      - 'examples/**'
       - '.github/workflows/converter-wisdom-ci.yml'
   pull_request:
     branches: [ "main" ]
     paths:
       - 'converters/wisdom/**'
+      - 'core-spec/**'
+      - 'examples/**'
       - '.github/workflows/converter-wisdom-ci.yml'
 
 permissions:

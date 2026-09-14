@@ -119,16 +119,16 @@ def test_basic_conversion(gooddata_tpcds_model: GdDeclarativeModel):
     result = gooddata_to_ossie(gooddata_tpcds_model, model_name="tpcds_test")
 
     assert result["version"] == "0.2.0.dev0"
-    assert len(result["semantic_model"]) == 1
+    assert "semantic_model" not in result
 
-    sm = result["semantic_model"][0]
+    sm = result
     assert sm["name"] == "tpcds_test"
 
 
 def test_datasets_converted(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify all datasets (regular + date instances) are converted."""
     result = gooddata_to_ossie(gooddata_tpcds_model)
-    sm = result["semantic_model"][0]
+    sm = result
 
     # 4 regular datasets + 1 date instance = 5 datasets
     assert len(sm["datasets"]) == 5
@@ -144,7 +144,7 @@ def test_datasets_converted(gooddata_tpcds_model: GdDeclarativeModel):
 def test_dataset_source(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify source is built from dataSourceTableId."""
     result = gooddata_to_ossie(gooddata_tpcds_model)
-    sm = result["semantic_model"][0]
+    sm = result
 
     store_sales = next(ds for ds in sm["datasets"] if ds["name"] == "store_sales")
     assert store_sales["source"] == "tpcds.public.store_sales"
@@ -153,7 +153,7 @@ def test_dataset_source(gooddata_tpcds_model: GdDeclarativeModel):
 def test_primary_key_from_grain(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify primary_key is derived from grain attributes' source columns."""
     result = gooddata_to_ossie(gooddata_tpcds_model)
-    sm = result["semantic_model"][0]
+    sm = result
 
     store_sales = next(ds for ds in sm["datasets"] if ds["name"] == "store_sales")
     assert set(store_sales["primary_key"]) == {"ss_item_sk", "ss_ticket_number"}
@@ -162,7 +162,7 @@ def test_primary_key_from_grain(gooddata_tpcds_model: GdDeclarativeModel):
 def test_attributes_become_dimension_fields(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify GoodData attributes become Ossie fields with dimension metadata."""
     result = gooddata_to_ossie(gooddata_tpcds_model)
-    sm = result["semantic_model"][0]
+    sm = result
 
     customer = next(ds for ds in sm["datasets"] if ds["name"] == "customer")
     fields = customer["fields"]
@@ -179,7 +179,7 @@ def test_attributes_become_dimension_fields(gooddata_tpcds_model: GdDeclarativeM
 def test_facts_become_plain_fields(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify GoodData facts become Ossie fields without dimension metadata."""
     result = gooddata_to_ossie(gooddata_tpcds_model)
-    sm = result["semantic_model"][0]
+    sm = result
 
     store_sales = next(ds for ds in sm["datasets"] if ds["name"] == "store_sales")
     fields = store_sales["fields"]
@@ -195,7 +195,7 @@ def test_omitted_fixture_source_types_remain_unspecified(gooddata_tpcds_model: G
     """Verify absent GoodData source types are not promoted from field roles."""
     result = gooddata_to_ossie(gooddata_tpcds_model)
     store_sales = next(
-        ds for ds in result["semantic_model"][0]["datasets"] if ds["name"] == "store_sales"
+        ds for ds in result["datasets"] if ds["name"] == "store_sales"
     )
 
     item_key = next(field for field in store_sales["fields"] if field["name"] == "ss_item_sk")
@@ -207,7 +207,7 @@ def test_omitted_fixture_source_types_remain_unspecified(gooddata_tpcds_model: G
 def test_maql_expressions(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify MAQL dialect expressions are generated for fields."""
     result = gooddata_to_ossie(gooddata_tpcds_model)
-    sm = result["semantic_model"][0]
+    sm = result
 
     store_sales = next(ds for ds in sm["datasets"] if ds["name"] == "store_sales")
     quantity_field = next(f for f in store_sales["fields"] if f["name"] == "ss_quantity")
@@ -225,7 +225,7 @@ def test_maql_expressions(gooddata_tpcds_model: GdDeclarativeModel):
 def test_references_become_relationships(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify GoodData references become Ossie relationships."""
     result = gooddata_to_ossie(gooddata_tpcds_model)
-    sm = result["semantic_model"][0]
+    sm = result
 
     rels = sm["relationships"]
     assert len(rels) == 4
@@ -238,7 +238,7 @@ def test_references_become_relationships(gooddata_tpcds_model: GdDeclarativeMode
 def test_date_instance_converted(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify date instances become Ossie datasets with custom_extensions."""
     result = gooddata_to_ossie(gooddata_tpcds_model)
-    sm = result["semantic_model"][0]
+    sm = result
 
     date_ds = next(ds for ds in sm["datasets"] if ds["name"] == "date_dim")
     assert "custom_extensions" in date_ds
@@ -254,7 +254,7 @@ def test_date_instance_converted(gooddata_tpcds_model: GdDeclarativeModel):
 def test_labels_in_custom_extensions(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify attribute labels are preserved in custom_extensions."""
     result = gooddata_to_ossie(gooddata_tpcds_model)
-    sm = result["semantic_model"][0]
+    sm = result
 
     customer = next(ds for ds in sm["datasets"] if ds["name"] == "customer")
     # First attribute (c_customer_sk) has 2 labels
@@ -273,7 +273,7 @@ def test_labels_in_custom_extensions(gooddata_tpcds_model: GdDeclarativeModel):
 def test_data_source_id_extension(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify data_source_id is stored in model-level custom_extensions."""
     result = gooddata_to_ossie(gooddata_tpcds_model, data_source_id="my_pg")
-    sm = result["semantic_model"][0]
+    sm = result
 
     assert "custom_extensions" in sm
 

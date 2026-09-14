@@ -24,11 +24,15 @@ on:
     branches: [ "main" ]
     paths:
       - 'converters/omni/**'
+      - 'core-spec/**'
+      - 'examples/**'
       - '.github/workflows/converter-omni-ci.yml'    
   pull_request:
     branches: [ "main" ]
     paths:
       - 'converters/omni/**'
+      - 'core-spec/**'
+      - 'examples/**'
       - '.github/workflows/converter-omni-ci.yml'    
 
 jobs:

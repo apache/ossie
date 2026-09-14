@@ -24,11 +24,15 @@ on:
     branches: [ "main" ]
     paths:
       - 'converters/nvidia/**'
+      - 'core-spec/**'
+      - 'examples/**'
       - '.github/workflows/converter-nvidia-ci.yml'
   pull_request:
     branches: [ "main" ]
     paths:
       - 'converters/nvidia/**'
+      - 'core-spec/**'
+      - 'examples/**'
       - '.github/workflows/converter-nvidia-ci.yml'
 
 jobs:

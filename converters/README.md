@@ -19,6 +19,16 @@
 
 # Apache Ossie Converters
 
+## Document format
+
+Converters use the flat `0.2.0.dev0` core format: one model per JSON/YAML document,
+with `name`, `datasets`, `relationships`, and `metrics` at the root alongside
+`version`. Legacy `semantic_model` arrays or object wrappers must be migrated
+before conversion; see the [migration guidance](../core-spec/spec.md#migrating-earlier-document-shapes).
+For catalog exports, write separate documents rather than wrapping multiple
+models in one file. Ontology documents retain their embedded `semantic_model`
+property as defined by the ontology schema.
+
 ## Overview
 
 An Ossie Converter translates between the Ossie semantic model format and a specific vendor's semantic implementation. This enables teams to author a semantic model once in the Ossie standard and then generate the corresponding vendor-specific representation automatically.
