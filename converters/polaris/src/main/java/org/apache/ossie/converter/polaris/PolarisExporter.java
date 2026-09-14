@@ -24,8 +24,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
-import org.apache.ossie.converter.polaris.model.OsiModel;
-import org.apache.ossie.converter.polaris.model.OsiModel.*;
+import org.apache.ossie.converter.polaris.model.OssieModel;
+import org.apache.ossie.converter.polaris.model.OssieModel.*;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -56,7 +56,7 @@ public class PolarisExporter {
      * Export the Ossie model to the Polaris catalog.
      * Each semantic model becomes a namespace, and each dataset becomes a table.
      */
-    public void exportModel(OsiModel model) throws IOException, InterruptedException {
+    public void exportModel(OssieModel model) throws IOException, InterruptedException {
         for (SemanticModel sm : model.getSemanticModels()) {
             exportSemanticModel(sm);
         }
@@ -73,7 +73,7 @@ public class PolarisExporter {
         if (sm.getDescription() != null) {
             properties.put("description", sm.getDescription());
         }
-        properties.put("osi.source", "true");
+        properties.put("ossie.source", "true");
         client.createNamespace(namespace, properties);
 
         // Create tables for each dataset
@@ -100,7 +100,7 @@ public class PolarisExporter {
             properties.put("comment", dataset.getDescription());
         }
         if (dataset.getSource() != null) {
-            properties.put("osi.source", dataset.getSource());
+            properties.put("ossie.source", dataset.getSource());
         }
         request.set("properties", properties);
 
@@ -120,14 +120,14 @@ public class PolarisExporter {
         AtomicInteger nextNestedId = new AtomicInteger(dataset.getFields().size() + 1);
 
         int fieldId = 1;
-        for (Field osiField : dataset.getFields()) {
+        for (Field ossieField : dataset.getFields()) {
             ObjectNode field = objectMapper.createObjectNode();
             field.put("id", fieldId);
-            field.put("name", osiField.getName());
-            field.set("type", inferIcebergType(osiField, nextNestedId));
-            field.put("required", pk != null && pk.contains(osiField.getName()));
-            if (osiField.getDescription() != null) {
-                field.put("doc", osiField.getDescription());
+            field.put("name", ossieField.getName());
+            field.set("type", inferIcebergType(ossieField, nextNestedId));
+            field.put("required", pk != null && pk.contains(ossieField.getName()));
+            if (ossieField.getDescription() != null) {
+                field.put("doc", ossieField.getDescription());
             }
             fields.add(field);
             fieldId++;

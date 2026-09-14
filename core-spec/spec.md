@@ -58,6 +58,8 @@ Supported SQL and expression language dialects for metrics and field definitions
 | `DATABRICKS` | Databricks SQL |
 | `MAQL` | GoodData MAQL (Metric Analysis and Query Language) |
 | `BIGQUERY` | Google BigQuery (GoogleSQL) |
+| `SIGMA` | Sigma Computing's spreadsheet-style formula language |
+| `THOUGHTSPOT` | ThoughtSpot formula language |
 
 ### Data types
 
@@ -454,6 +456,7 @@ covers the Tabular model shared by Power BI, Fabric and Analysis Services).
 | `OMNI` | Omni-specific attributes |
 | `NVIDIA_GSF` | NVIDIA Generative Semantic Fabric-specific attributes |
 | `MICROSOFT` | Microsoft Tabular model attributes — Power BI, Fabric semantic models, Azure Analysis Services and SQL Server Analysis Services (TMSL / TMDL / TOM). See [Microsoft vendor extension](../docs/vendor_extensions/microsoft.md). |
+| `SIGMA` | Sigma Computing-specific attributes |
 
 ### Examples
 

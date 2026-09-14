@@ -36,7 +36,7 @@ There are two layers in Ossie that need an expression language:
 * **Ontology layer.**  This layer maps onto the ontology layer which sits above the logical layer.  It maps more closely to modelling languages like OWL, [(Py)Rel](https://docs.relational.ai) from RelationalAI, and [Legend](https://legend.finos.org) from Goldman Sachs  
 * **Logical layer.**  This layer maps directly to the databases and physical layer.  It maps closely to traditional BI semantic models.
 
-This proposal is only targeted at the Logical Layer.  It would be nice if the Ontological layer could re-use the same expression language, but that will be treated as a separate proposal.
+This proposal is only targeted at the Logical Layer.  It would be nice if the Ontological layer could reuse the same expression language, but that will be treated as a separate proposal.
 
 This document defines the SQL expression language subset that Ossie-compliant implementations MUST support. The goal is to provide a portable expression language that works across all Ossie implementations while allowing vendors to expose richer database-specific functionality through dialect extensions.  In particular, it is meant for expressions at the logical layer.  This means metrics, fields, filters, etc  In the future, expressions such as arbitrary join expressions should also use this expression language.
 
@@ -80,7 +80,7 @@ The quote character for the Ossie dialect will follow ANSI SQL and support the d
 
 #### Comparison Table
 
-| You type this in SQL | Equivalen to | Will it match a column created as id?             |
+| You type this in SQL | Equivalent to | Will it match a column created as id?             |
 | :---- |:-------------|:--------------------------------------------------|
 | id | ID           | **Yes** (Standard behavior)                       |
 | Id | ID           | **Yes** (Standard behavior)                       |
@@ -105,7 +105,7 @@ Ossie expressions support the following SQL constructs within any expression:
 
 | Construct | Notes                                                                                                                                                                                                                                                                                 |
 | :---- |:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Column and Metric references | Varies based on whether in Ontology or Semantic models. See namespaceing in [OSI Discussion Point: Core Analytic Abstractions](https://docs.google.com/document/d/1si8DqU4arG18ZgX4HnRG5D_zS2X7V1s-vgNY35rvxhM/edit?tab=t.0#heading=h.le505t8uoyfy) And future Ontology documentation |
+| Column and Metric references | Varies based on whether in Ontology or Semantic models. See namespaceing in [Ossie Discussion Point: Core Analytic Abstractions](https://docs.google.com/document/d/1si8DqU4arG18ZgX4HnRG5D_zS2X7V1s-vgNY35rvxhM/edit?tab=t.0#heading=h.le505t8uoyfy) And future Ontology documentation |
 | Arithmetic operators | `+`, `-`, `*`, `/`, `%` (modulo)                                                                                                                                                                                                                                                      |
 | Comparison operators | `=`, `<>`, `!=`, `<`, `>`, `<=`, `>=`                                                                                                                                                                                                                                                 |
 | Logical operators | `AND`, `OR`, `NOT`                                                                                                                                                                                                                                                                    |
@@ -682,65 +682,67 @@ This section maps Ossie standard functions to their equivalents in popular BI to
 
 ### Aggregation Function Mapping
 
-| Ossie Standard | Tableau | Looker Studio | DAX |
-| :---- | :---- | :---- | :---- |
-| `SUM(x)` | `SUM(x)` | `SUM(X)` | `SUM(x)` |
-| `COUNT(x)` | `COUNT(x)` | `COUNT(X)` | `COUNT(x)` |
-| `COUNT(DISTINCT x)` | `COUNTD(x)` | `COUNT_DISTINCT(X)` | `DISTINCTCOUNT(x)` |
-| `AVG(x)` | `AVG(x)` | `AVG(X)` | `AVERAGE(x)` |
-| `MIN(x)` | `MIN(x)` | `MIN(X)` | `MIN(x)` |
-| `MAX(x)` | `MAX(x)` | `MAX(X)` | `MAX(x)` |
-| `STDDEV(x)` | `STDEV(x)` | `STDDEV(X)` | `STDEV.S(x)` |
-| `STDDEV_POP(x)` | `STDEVP(x)` | `STDDEV(X)` | `STDEV.P(x)` |
-| `VARIANCE(x)` | `VAR(x)` | `VARIANCE(X)` | `VAR.S(x)` |
-| `MEDIAN(x)` | `MEDIAN(x)` | `MEDIAN(X)` | `MEDIAN(x)` |
-| `PERCENTILE_CONT(x, 0.75)` | `PERCENTILE(x, 0.75)` | `PERCENTILE(X, 75)` | `PERCENTILE.INC(x, 0.75)` |
+| Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
+| :---- | :---- | :---- | :---- | :---- |
+| `SUM(x)` | `SUM(x)` | `SUM(X)` | `SUM(x)` | `Sum(x)` |
+| `COUNT(x)` | `COUNT(x)` | `COUNT(X)` | `COUNT(x)` | `Count(x)` |
+| `COUNT(DISTINCT x)` | `COUNTD(x)` | `COUNT_DISTINCT(X)` | `DISTINCTCOUNT(x)` | `CountDistinct(x)` |
+| `AVG(x)` | `AVG(x)` | `AVG(X)` | `AVERAGE(x)` | `Avg(x)` |
+| `MIN(x)` | `MIN(x)` | `MIN(X)` | `MIN(x)` | `Min(x)` |
+| `MAX(x)` | `MAX(x)` | `MAX(X)` | `MAX(x)` | `Max(x)` |
+| `STDDEV(x)` | `STDEV(x)` | `STDDEV(X)` | `STDEV.S(x)` | `StdDev(x)` |
+| `STDDEV_POP(x)` | `STDEVP(x)` | `STDDEV(X)` | `STDEV.P(x)` | N/A |
+| `VARIANCE(x)` | `VAR(x)` | `VARIANCE(X)` | `VAR.S(x)` | `Variance(x)` |
+| `MEDIAN(x)` | `MEDIAN(x)` | `MEDIAN(X)` | `MEDIAN(x)` | `Median(x)` |
+| `PERCENTILE_CONT(x, 0.75)` | `PERCENTILE(x, 0.75)` | `PERCENTILE(X, 75)` | `PERCENTILE.INC(x, 0.75)` | `Percentile(x, 0.75)` |
 
 ### Date Function Mapping
 
-| Ossie Standard | Tableau | Looker Studio | DAX |
-| :---- | :---- | :---- | :---- |
-| `YEAR(d)` | `YEAR(d)` | `YEAR(Date)` | `YEAR(d)` |
-| `MONTH(d)` | `MONTH(d)` | `MONTH(Date)` | `MONTH(d)` |
-| `DAY(d)` | `DAY(d)` | `DAY(Date)` | `DAY(d)` |
-| `DATE_TRUNC('month', d)` | `DATETRUNC('month', d)` | `TODATE(d, "YYYYMM01", "YYYYMMDD")` | `DATE(YEAR(d), MONTH(d), 1)` |
-| `DATEADD(day, n, d)` | `DATEADD('day', n, d)` | `DATE_ADD(d, n)` (days only) | `DATE(d) + n` or `DATEADD(d, n, DAY)` |
-| `DATEDIFF(day, d1, d2)` | `DATEDIFF('day', d1, d2)` | `DATE_DIFF(d1, d2)` | `DATEDIFF(d1, d2, DAY)` |
-| `CURRENT_DATE` | `TODAY()` | `TODAY()` | `TODAY()` |
+| Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
+| :---- | :---- | :---- | :---- | :---- |
+| `YEAR(d)` | `YEAR(d)` | `YEAR(Date)` | `YEAR(d)` | `Year(d)` |
+| `MONTH(d)` | `MONTH(d)` | `MONTH(Date)` | `MONTH(d)` | `Month(d)` |
+| `DAY(d)` | `DAY(d)` | `DAY(Date)` | `DAY(d)` | `Day(d)` |
+| `DATE_TRUNC('month', d)` | `DATETRUNC('month', d)` | `TODATE(d, "YYYYMM01", "YYYYMMDD")` | `DATE(YEAR(d), MONTH(d), 1)` | N/A — no direct equivalent; Sigma's UI-driven date bucketing is not addressable as a formula argument |
+| `DATEADD(day, n, d)` | `DATEADD('day', n, d)` | `DATE_ADD(d, n)` (days only) | `DATE(d) + n` or `DATEADD(d, n, DAY)` | `DateAdd(d, n, "day")` |
+| `DATEDIFF(day, d1, d2)` | `DATEDIFF('day', d1, d2)` | `DATE_DIFF(d1, d2)` | `DATEDIFF(d1, d2, DAY)` | `DateDiff(d1, d2, "day")` |
+| `CURRENT_DATE` | `TODAY()` | `TODAY()` | `TODAY()` | `Today()` |
 
 ### String Function Mapping
 
-| Ossie Standard | Tableau | Looker Studio | DAX |
-| :---- | :---- | :---- | :---- |
-| `CONCAT(a, b)` | `a + b` | `CONCAT(X, Y)` | `CONCATENATE(a, b)` or `a & b` |
-| `LENGTH(s)` | `LEN(s)` | `LENGTH(X)` | `LEN(s)` |
-| `LOWER(s)` | `LOWER(s)` | `LOWER(X)` | `LOWER(s)` |
-| `UPPER(s)` | `UPPER(s)` | `UPPER(X)` | `UPPER(s)` |
-| `TRIM(s)` | `TRIM(s)` | `TRIM(X)` | `TRIM(s)` |
-| `LEFT(s, n)` | `LEFT(s, n)` | `LEFT_TEXT(X, n)` | `LEFT(s, n)` |
-| `RIGHT(s, n)` | `RIGHT(s, n)` | `RIGHT_TEXT(X, n)` | `RIGHT(s, n)` |
-| `SUBSTRING(s, start, len)` | `MID(s, start, len)` | `SUBSTR(X, start, len)` | `MID(s, start, len)` |
-| `REPLACE(s, from, to)` | `REPLACE(s, from, to)` | `REPLACE(X, Y, Z)` | `SUBSTITUTE(s, from, to)` |
-| `CONTAINS(s, sub)` | `CONTAINS(s, sub)` | `CONTAINS_TEXT(X, text)` | `CONTAINSSTRING(s, sub)` |
+| Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
+| :---- | :---- | :---- | :---- | :---- |
+| `CONCAT(a, b)` | `a + b` | `CONCAT(X, Y)` | `CONCATENATE(a, b)` or `a & b` | `Concat(a, b)` or `a & b` |
+| `LENGTH(s)` | `LEN(s)` | `LENGTH(X)` | `LEN(s)` | `Length(s)` |
+| `LOWER(s)` | `LOWER(s)` | `LOWER(X)` | `LOWER(s)` | `Lower(s)` |
+| `UPPER(s)` | `UPPER(s)` | `UPPER(X)` | `UPPER(s)` | `Upper(s)` |
+| `TRIM(s)` | `TRIM(s)` | `TRIM(X)` | `TRIM(s)` | `Trim(s)` |
+| `LEFT(s, n)` | `LEFT(s, n)` | `LEFT_TEXT(X, n)` | `LEFT(s, n)` | `Left(s, n)` |
+| `RIGHT(s, n)` | `RIGHT(s, n)` | `RIGHT_TEXT(X, n)` | `RIGHT(s, n)` | `Right(s, n)` |
+| `SUBSTRING(s, start, len)` | `MID(s, start, len)` | `SUBSTR(X, start, len)` | `MID(s, start, len)` | `Mid(s, start, len)` |
+| `REPLACE(s, from, to)` | `REPLACE(s, from, to)` | `REPLACE(X, Y, Z)` | `SUBSTITUTE(s, from, to)` | `Replace(s, from, to)` |
+| `CONTAINS(s, sub)` | `CONTAINS(s, sub)` | `CONTAINS_TEXT(X, text)` | `CONTAINSSTRING(s, sub)` | `Contains(s, sub)` |
 
 ### Conditional Function Mapping
 
-| Ossie Standard | Tableau | Looker Studio | DAX |
-| :---- | :---- | :---- | :---- |
-| `CASE WHEN...` | `CASE WHEN...` or `IF...` | `CASE WHEN...` | `SWITCH(TRUE(), ...)` |
-| `IF(cond, t, f)` | `IF cond THEN t ELSE f END` | N/A (use CASE) | `IF(cond, t, f)` |
-| `COALESCE(a, b)` | `IFNULL(a, b)` or `ZN(a)` | `COALESCE(...)` | `COALESCE(a, b)` |
-| `NULLIF(a, b)` | `IF a = b THEN NULL ELSE a END` | N/A | `IF(a = b, BLANK(), a)` |
+| Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
+| :---- | :---- | :---- | :---- | :---- |
+| `CASE WHEN...` | `CASE WHEN...` or `IF...` | `CASE WHEN...` | `SWITCH(TRUE(), ...)` | Only 3-argument `If(cond, t, f)`; no native multi-branch `CASE` |
+| `IF(cond, t, f)` | `IF cond THEN t ELSE f END` | N/A (use CASE) | `IF(cond, t, f)` | `If(cond, t, f)` |
+| `COALESCE(a, b)` | `IFNULL(a, b)` or `ZN(a)` | `COALESCE(...)` | `COALESCE(a, b)` | `IfNull(a, b)` (2-argument only) |
+| `NULLIF(a, b)` | `IF a = b THEN NULL ELSE a END` | N/A | `IF(a = b, BLANK(), a)` | `If(a = b, Null(), a)` |
 
 ### Window Function Mapping
 
-| Ossie Standard | Tableau | Looker Studio | DAX |
-| :---- | :---- | :---- | :---- |
-| `ROW_NUMBER() OVER(...)` | `INDEX()` | N/A | `RANKX(...)` with DENSE |
-| `RANK() OVER(...)` | `RANK(expr)` | N/A | `RANKX(...)` |
-| `SUM(...) OVER(PARTITION BY...)` | `{FIXED [...]: SUM(...)}` | N/A (blending only) | Context-dependent |
-| `LAG(x, 1) OVER(ORDER BY...)` | `LOOKUP(x, -1)` | N/A | `CALCULATE(x, PREVIOUSDAY(...))` |
-| `RUNNING_SUM(...)` | `RUNNING_SUM(SUM(...))` | N/A | `CALCULATE(SUM(...), FILTER(...))` |
+| Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
+| :---- | :---- | :---- | :---- | :---- |
+| `ROW_NUMBER() OVER(...)` | `INDEX()` | N/A | `RANKX(...)` with DENSE | `RowNumber()` — but partition/order come from UI table-calculation configuration, not formula arguments, so it has no portable expression form |
+| `RANK() OVER(...)` | `RANK(expr)` | N/A | `RANKX(...)` | `Rank()` — same UI-configuration caveat as `RowNumber()` |
+| `SUM(...) OVER(PARTITION BY...)` | `{FIXED [...]: SUM(...)}` | N/A (blending only) | Context-dependent | `RunningSum(...)`/`RunningAvg(...)` — same UI-configuration caveat |
+| `LAG(x, 1) OVER(ORDER BY...)` | `LOOKUP(x, -1)` | N/A | `CALCULATE(x, PREVIOUSDAY(...))` | `Lag(x, 1)` — same UI-configuration caveat |
+| `RUNNING_SUM(...)` | `RUNNING_SUM(SUM(...))` | N/A | `CALCULATE(SUM(...), FILTER(...))` | `RunningSum(...)` — same UI-configuration caveat |
+
+Sigma's table-calculation functions (`RowNumber`, `Rank`, `RunningSum`, `RunningAvg`, `Lag`, `Lead`, etc.) resolve their partition/order context from workbook UI configuration (which pivot/table the calculation is attached to) rather than from arguments passed in the formula text itself. Because that context isn't recoverable from the formula string alone, the Sigma converter (`converters/sigma/`) treats these as untranslatable to ANSI SQL and carries the original Sigma formula through in the `SIGMA` dialect only — see `converters/sigma/LIMITATIONS.md`.
 
 ---
 

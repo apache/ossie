@@ -18,8 +18,8 @@
 """CLI entry point for the ossie-wisdom converter.
 
 Usage:
-    ossie-wisdom wisdom-to-osi -i domain-export.json -o output.yaml
-    ossie-wisdom osi-to-wisdom -i input.yaml -o domain-export.json
+    ossie-wisdom wisdom-to-ossie -i domain-export.json -o output.yaml
+    ossie-wisdom ossie-to-wisdom -i input.yaml -o domain-export.json
 """
 
 import argparse
@@ -29,10 +29,10 @@ from pathlib import Path
 
 import yaml
 
-from ossie import OSIDocument
+from ossie import OssieDocument
 from ossie_wisdom.converter_issues import ConverterIssueType
-from ossie_wisdom.osi_to_wisdom import OSIToWisdomConverter
-from ossie_wisdom.wisdom_to_osi import WisdomToOSIConverter
+from ossie_wisdom.ossie_to_wisdom import OssieToWisdomConverter
+from ossie_wisdom.wisdom_to_ossie import WisdomToOssieConverter
 
 _ISSUE_REASON: dict[ConverterIssueType, str] = {
     ConverterIssueType.UNSUPPORTED_DIALECT: "the connection dialect has no Ossie equivalent; expressions were emitted verbatim as ANSI_SQL",
@@ -66,24 +66,24 @@ def _print_issues(result) -> None:
         print(f"[WARNING] {issue.issue_type.value}: {issue.element_name} {verb} during conversion because {reason}", file=sys.stderr)
 
 
-def _cmd_wisdom_to_osi(args: argparse.Namespace) -> None:
+def _cmd_wisdom_to_ossie(args: argparse.Namespace) -> None:
     input_path = Path(args.input)
     output_path = Path(args.output)
 
     export = json.loads(input_path.read_text())
-    result = WisdomToOSIConverter().convert(export)
+    result = WisdomToOssieConverter().convert(export)
 
     _print_issues(result)
-    output_path.write_text(result.output.to_osi_yaml())
+    output_path.write_text(result.output.to_ossie_yaml())
     print(f"Written to {output_path}", file=sys.stderr)
 
 
-def _cmd_osi_to_wisdom(args: argparse.Namespace) -> None:
+def _cmd_ossie_to_wisdom(args: argparse.Namespace) -> None:
     input_path = Path(args.input)
     output_path = Path(args.output)
 
-    document = OSIDocument.model_validate(yaml.safe_load(input_path.read_text()))
-    result = OSIToWisdomConverter().convert(document)
+    document = OssieDocument.model_validate(yaml.safe_load(input_path.read_text()))
+    result = OssieToWisdomConverter().convert(document)
 
     _print_issues(result)
     output_path.write_text(json.dumps(result.output, indent=2) + "\n")
@@ -97,19 +97,19 @@ def main() -> None:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    wisdom_to_osi = subparsers.add_parser("wisdom-to-osi", help="Convert domain-export.json → Ossie YAML")
-    wisdom_to_osi.add_argument("-i", "--input", required=True, metavar="FILE", help="Path to wisdom domain export JSON")
-    wisdom_to_osi.add_argument("-o", "--output", required=True, metavar="FILE", help="Path for output Ossie YAML")
+    wisdom_to_ossie = subparsers.add_parser("wisdom-to-ossie", help="Convert domain-export.json → Ossie YAML")
+    wisdom_to_ossie.add_argument("-i", "--input", required=True, metavar="FILE", help="Path to wisdom domain export JSON")
+    wisdom_to_ossie.add_argument("-o", "--output", required=True, metavar="FILE", help="Path for output Ossie YAML")
 
-    osi_to_wisdom = subparsers.add_parser("osi-to-wisdom", help="Convert Ossie YAML → domain-export.json")
-    osi_to_wisdom.add_argument("-i", "--input", required=True, metavar="FILE", help="Path to Ossie YAML")
-    osi_to_wisdom.add_argument("-o", "--output", required=True, metavar="FILE", help="Path for output wisdom domain export JSON")
+    ossie_to_wisdom = subparsers.add_parser("ossie-to-wisdom", help="Convert Ossie YAML → domain-export.json")
+    ossie_to_wisdom.add_argument("-i", "--input", required=True, metavar="FILE", help="Path to Ossie YAML")
+    ossie_to_wisdom.add_argument("-o", "--output", required=True, metavar="FILE", help="Path for output wisdom domain export JSON")
 
     args = parser.parse_args()
-    if args.command == "wisdom-to-osi":
-        _cmd_wisdom_to_osi(args)
-    elif args.command == "osi-to-wisdom":
-        _cmd_osi_to_wisdom(args)
+    if args.command == "wisdom-to-ossie":
+        _cmd_wisdom_to_ossie(args)
+    elif args.command == "ossie-to-wisdom":
+        _cmd_ossie_to_wisdom(args)
 
 
 if __name__ == "__main__":

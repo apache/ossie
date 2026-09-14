@@ -15,14 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Command-line entry point for the OBML <-> OSI converter.
+"""Command-line entry point for the OBML <-> Ossie converter.
 
 A single ``ossie-orionbelt`` command with two format-named subcommands, mirroring
-the OSI converter convention (e.g. ``osi-dbt msi-to-osi``):
+the Ossie converter convention (e.g. ``ossie-dbt msi-to-ossie``):
 
-    ossie-orionbelt obml-to-osi  -i model.obml.yaml -o model.osi.yaml
-    ossie-orionbelt obml-to-osi --ontology -i model.obml.yaml -o model.ontology.yaml
-    ossie-orionbelt osi-to-obml  -i model.osi.yaml  -o model.obml.yaml
+    ossie-orionbelt obml-to-ossie  -i model.obml.yaml -o model.ossie.yaml
+    ossie-orionbelt obml-to-ossie --ontology -i model.obml.yaml -o model.ontology.yaml
+    ossie-orionbelt ossie-to-obml  -i model.ossie.yaml  -o model.obml.yaml
 
 Both subcommands print conversion warnings and a validation summary to stderr,
 and exit non-zero when the produced document fails schema validation (unless
@@ -39,12 +39,12 @@ from typing import Any
 import yaml
 
 from ossie_orionbelt.converter import (
-    OBMLtoOSI,
-    OBMLtoOSIOntology,
-    OSItoOBML,
+    OBMLtoOssie,
+    OBMLtoOssieOntology,
+    OssietoOBML,
     validate_obml,
-    validate_osi,
-    validate_osi_ontology,
+    validate_ossie,
+    validate_ossie_ontology,
 )
 
 
@@ -84,21 +84,21 @@ def _report_validation(label: str, result: dict[str, Any], validate_fn: Any) -> 
     return True
 
 
-def _cmd_obml_to_osi(args: argparse.Namespace) -> int:
-    """OBML -> OSI core-spec (or, with --ontology, OSI ontology)."""
+def _cmd_obml_to_ossie(args: argparse.Namespace) -> int:
+    """OBML -> Ossie core-spec (or, with --ontology, Ossie ontology)."""
     data = _load(args.input)
 
     validate_fn: Any
     if args.ontology:
-        converter: Any = OBMLtoOSIOntology(
+        converter: Any = OBMLtoOssieOntology(
             data, args.model_name, args.description, args.ai_instructions
         )
         result = converter.convert()
-        validate_fn, label = validate_osi_ontology, "OSI ontology output"
+        validate_fn, label = validate_ossie_ontology, "Ossie ontology output"
     else:
-        converter = OBMLtoOSI(data, args.model_name, args.description, args.ai_instructions)
+        converter = OBMLtoOssie(data, args.model_name, args.description, args.ai_instructions)
         result = converter.convert()
-        validate_fn, label = validate_osi, "OSI output"
+        validate_fn, label = validate_ossie, "Ossie output"
 
     _emit(result, args.output)
     _print_warnings(converter.warnings)
@@ -108,11 +108,11 @@ def _cmd_obml_to_osi(args: argparse.Namespace) -> int:
     return 1 if _report_validation(label, result, validate_fn) else 0
 
 
-def _cmd_osi_to_obml(args: argparse.Namespace) -> int:
-    """OSI core-spec -> OBML."""
+def _cmd_ossie_to_obml(args: argparse.Namespace) -> int:
+    """Ossie core-spec -> OBML."""
     data = _load(args.input)
 
-    converter = OSItoOBML(data, args.database, args.schema)
+    converter = OssietoOBML(data, args.database, args.schema)
     result = converter.convert()
 
     _emit(result, args.output)
@@ -126,29 +126,29 @@ def _cmd_osi_to_obml(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="ossie-orionbelt",
-        description="Convert between OrionBelt OBML and OSI YAML.",
+        description="Convert between OrionBelt OBML and Ossie YAML.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    o2s = subparsers.add_parser("obml-to-osi", help="Convert OBML YAML → OSI YAML")
+    o2s = subparsers.add_parser("obml-to-ossie", help="Convert OBML YAML → Ossie YAML")
     o2s.add_argument("-i", "--input", required=True, metavar="FILE", help="Path to OBML YAML")
     o2s.add_argument(
-        "-o", "--output", required=True, metavar="FILE", help="Path for output OSI YAML"
+        "-o", "--output", required=True, metavar="FILE", help="Path for output Ossie YAML"
     )
     o2s.add_argument(
-        "--ontology", action="store_true", help="Emit an OSI ontology document instead of core-spec"
+        "--ontology", action="store_true", help="Emit an Ossie ontology document instead of core-spec"
     )
     o2s.add_argument(
-        "--model-name", default="semantic_model", metavar="NAME", help="OSI semantic model name"
+        "--model-name", default="semantic_model", metavar="NAME", help="Ossie semantic model name"
     )
-    o2s.add_argument("--description", default="", metavar="TEXT", help="OSI model description")
+    o2s.add_argument("--description", default="", metavar="TEXT", help="Ossie model description")
     o2s.add_argument(
-        "--ai-instructions", default="", metavar="TEXT", help="OSI ai_context instructions"
+        "--ai-instructions", default="", metavar="TEXT", help="Ossie ai_context instructions"
     )
     o2s.add_argument("--no-validate", action="store_true", help="Skip output validation")
 
-    s2o = subparsers.add_parser("osi-to-obml", help="Convert OSI YAML → OBML YAML")
-    s2o.add_argument("-i", "--input", required=True, metavar="FILE", help="Path to OSI YAML")
+    s2o = subparsers.add_parser("ossie-to-obml", help="Convert Ossie YAML → OBML YAML")
+    s2o.add_argument("-i", "--input", required=True, metavar="FILE", help="Path to Ossie YAML")
     s2o.add_argument(
         "-o", "--output", required=True, metavar="FILE", help="Path for output OBML YAML"
     )
@@ -161,10 +161,10 @@ def main(argv: list[str] | None = None) -> int:
     s2o.add_argument("--no-validate", action="store_true", help="Skip output validation")
 
     args = parser.parse_args(argv)
-    if args.command == "obml-to-osi":
-        return _cmd_obml_to_osi(args)
-    if args.command == "osi-to-obml":
-        return _cmd_osi_to_obml(args)
+    if args.command == "obml-to-ossie":
+        return _cmd_obml_to_ossie(args)
+    if args.command == "ossie-to-obml":
+        return _cmd_ossie_to_obml(args)
     return 1
 
 

@@ -37,13 +37,13 @@ public interface PropertyMapper {
      *
      * @return a map where keys are Ossie property paths and values are Salesforce property paths
      */
-    Map<String, String> getOsiToSalesforceMappings();
+    Map<String, String> getOssieToSalesforceMappings();
 
     /**
      * Returns the mapping from Salesforce property paths to Ossie property paths.
-     * <p>This is the reverse mapping of {@link #getOsiToSalesforceMappings()}.
+     * <p>This is the reverse mapping of {@link #getOssieToSalesforceMappings()}.
      *
      * @return a map where keys are Salesforce property paths and values are Ossie property paths
      */
-    Map<String, String> getSalesforceToOsiMappings();
+    Map<String, String> getSalesforceToOssieMappings();
 }

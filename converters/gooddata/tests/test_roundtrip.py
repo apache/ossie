@@ -23,7 +23,7 @@ import json
 
 import pytest
 
-from ossie_gooddata.gooddata_to_osi import gooddata_to_osi
+from ossie_gooddata.gooddata_to_ossie import gooddata_to_ossie
 from ossie_gooddata.models import (
     GdAttribute,
     GdDataset,
@@ -31,7 +31,7 @@ from ossie_gooddata.models import (
     GdLdm,
     gd_model_to_dict,
 )
-from ossie_gooddata.osi_to_gooddata import osi_to_gooddata
+from ossie_gooddata.ossie_to_gooddata import ossie_to_gooddata
 
 
 def _model_with_attribute(source_type: str | None) -> GdDeclarativeModel:
@@ -61,21 +61,21 @@ def _model_with_attribute(source_type: str | None) -> GdDeclarativeModel:
 )
 def test_roundtrip_preserves_native_source_types(source_type: str):
     """Verify every directly mapped GoodData source type round-trips."""
-    ossie = gooddata_to_osi(_model_with_attribute(source_type))
-    result = osi_to_gooddata(ossie)
+    ossie = gooddata_to_ossie(_model_with_attribute(source_type))
+    result = ossie_to_gooddata(ossie)
 
     assert result.ldm.datasets[0].attributes[0].source_column_data_type == source_type
 
 
 def test_roundtrip_preserves_unknown_source_type_through_opaque():
     """Verify an unknown GoodData type round-trips through Opaque extension data."""
-    ossie = gooddata_to_osi(_model_with_attribute("CUSTOM_TYPE"))
+    ossie = gooddata_to_ossie(_model_with_attribute("CUSTOM_TYPE"))
     field = ossie["semantic_model"][0]["datasets"][0]["fields"][0]
 
     assert field["datatype"] == "Opaque"
     assert json.loads(field["custom_extensions"][0]["data"])["source_column_data_type"] == "CUSTOM_TYPE"
 
-    result = osi_to_gooddata(ossie)
+    result = ossie_to_gooddata(ossie)
     assert result.ldm.datasets[0].attributes[0].source_column_data_type == "CUSTOM_TYPE"
 
 
@@ -83,9 +83,9 @@ def test_roundtrip_keeps_missing_source_type_unasserted():
     """Verify a missing input type stays absent in Ossie and serialized GoodData."""
     model = _model_with_attribute(None)
 
-    ossie = gooddata_to_osi(model)
+    ossie = gooddata_to_ossie(model)
     field = ossie["semantic_model"][0]["datasets"][0]["fields"][0]
-    result = gd_model_to_dict(osi_to_gooddata(ossie))
+    result = gd_model_to_dict(ossie_to_gooddata(ossie))
     attribute = result["ldm"]["datasets"][0]["attributes"][0]
 
     assert "datatype" not in field
@@ -95,10 +95,10 @@ def test_roundtrip_keeps_missing_source_type_unasserted():
 def test_roundtrip_preserves_datasets(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify GoodData → Ossie → GoodData preserves dataset count and IDs."""
     # GoodData -> Ossie
-    ossie = gooddata_to_osi(gooddata_tpcds_model, model_name="roundtrip_test")
+    ossie = gooddata_to_ossie(gooddata_tpcds_model, model_name="roundtrip_test")
 
     # Ossie -> GoodData
-    result = osi_to_gooddata(ossie)
+    result = ossie_to_gooddata(ossie)
 
     original_ds_ids = {ds.id for ds in gooddata_tpcds_model.ldm.datasets}
     result_ds_ids = {ds.id for ds in result.ldm.datasets}
@@ -110,8 +110,8 @@ def test_roundtrip_preserves_datasets(gooddata_tpcds_model: GdDeclarativeModel):
 
 def test_roundtrip_preserves_date_instances(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify date instances survive the round trip."""
-    ossie = gooddata_to_osi(gooddata_tpcds_model)
-    result = osi_to_gooddata(ossie)
+    ossie = gooddata_to_ossie(gooddata_tpcds_model)
+    result = ossie_to_gooddata(ossie)
 
     assert len(result.ldm.date_instances) == len(gooddata_tpcds_model.ldm.date_instances)
 
@@ -123,8 +123,8 @@ def test_roundtrip_preserves_date_instances(gooddata_tpcds_model: GdDeclarativeM
 
 def test_roundtrip_preserves_references(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify references/relationships survive the round trip."""
-    ossie = gooddata_to_osi(gooddata_tpcds_model)
-    result = osi_to_gooddata(ossie)
+    ossie = gooddata_to_ossie(gooddata_tpcds_model)
+    result = ossie_to_gooddata(ossie)
 
     original_ss = next(ds for ds in gooddata_tpcds_model.ldm.datasets if ds.id == "store_sales")
     result_ss = next(ds for ds in result.ldm.datasets if ds.id == "store_sales")
@@ -136,8 +136,8 @@ def test_roundtrip_preserves_references(gooddata_tpcds_model: GdDeclarativeModel
 
 def test_roundtrip_preserves_attribute_count(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify attribute counts survive the round trip."""
-    ossie = gooddata_to_osi(gooddata_tpcds_model)
-    result = osi_to_gooddata(ossie)
+    ossie = gooddata_to_ossie(gooddata_tpcds_model)
+    result = ossie_to_gooddata(ossie)
 
     for orig_ds in gooddata_tpcds_model.ldm.datasets:
         result_ds = next((ds for ds in result.ldm.datasets if ds.id == orig_ds.id), None)
@@ -149,8 +149,8 @@ def test_roundtrip_preserves_attribute_count(gooddata_tpcds_model: GdDeclarative
 
 def test_roundtrip_preserves_fact_count(gooddata_tpcds_model: GdDeclarativeModel):
     """Verify fact counts survive the round trip."""
-    ossie = gooddata_to_osi(gooddata_tpcds_model)
-    result = osi_to_gooddata(ossie)
+    ossie = gooddata_to_ossie(gooddata_tpcds_model)
+    result = ossie_to_gooddata(ossie)
 
     for orig_ds in gooddata_tpcds_model.ldm.datasets:
         result_ds = next((ds for ds in result.ldm.datasets if ds.id == orig_ds.id), None)

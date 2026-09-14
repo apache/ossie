@@ -48,7 +48,7 @@ _SNOWFLAKE_DATATYPES = {
 }
 
 
-class OsiConversionError(Exception):
+class OssieConversionError(Exception):
     """Raised when an Ossie YAML cannot be converted to Snowflake format."""
 
 
@@ -77,7 +77,7 @@ def _convert_datatype(datatype, field_name):
     return snowflake_datatype
 
 
-def convert_osi_to_snowflake(osi_yaml_str):
+def convert_ossie_to_snowflake(ossie_yaml_str):
     """Top-level entry point. Parses Ossie YAML, validates, converts, returns
     Snowflake YAML string.
 
@@ -88,28 +88,28 @@ def convert_osi_to_snowflake(osi_yaml_str):
           - name: ...
 
     Args:
-        osi_yaml_str: Ossie YAML as a string.
+        ossie_yaml_str: Ossie YAML as a string.
 
     Returns:
         Snowflake Cortex Analyst semantic model YAML string.
 
     Raises:
-        OsiConversionError: If the input cannot be converted.
+        OssieConversionError: If the input cannot be converted.
     """
-    root = yaml.safe_load(osi_yaml_str)
+    root = yaml.safe_load(ossie_yaml_str)
     if not isinstance(root, dict):
-        raise OsiConversionError("Invalid Ossie YAML: expected a mapping at the root")
+        raise OssieConversionError("Invalid Ossie YAML: expected a mapping at the root")
 
     version_str = str(root.get("version", ""))
     if version_str != SUPPORTED_VERSION:
-        raise OsiConversionError(
+        raise OssieConversionError(
             f"Unsupported Ossie specification version '{version_str}'. "
             f"Supported: {SUPPORTED_VERSION}"
         )
 
     semantic_model = root.get("semantic_model")
     if not isinstance(semantic_model, list) or len(semantic_model) == 0:
-        raise OsiConversionError(
+        raise OssieConversionError(
             "Invalid Ossie YAML: 'semantic_model' must be a non-empty list"
         )
 
@@ -121,7 +121,7 @@ def convert_osi_to_snowflake(osi_yaml_str):
 
     ossie = semantic_model[0]
     if not isinstance(ossie, dict):
-        raise OsiConversionError(
+        raise OssieConversionError(
             "Invalid Ossie YAML: 'semantic_model' entries must be mappings"
         )
 
@@ -139,7 +139,7 @@ def _convert_model(ossie):
     """Converts the root Ossie model dict to a Snowflake semantic model dict."""
     name = ossie.get("name")
     if not name:
-        raise OsiConversionError("Missing required 'name' field in semantic model")
+        raise OssieConversionError("Missing required 'name' field in semantic model")
 
     result = {}
     result["name"] = name
@@ -187,7 +187,7 @@ def _convert_dataset(dataset):
     result = {}
     name = dataset.get("name")
     if not name:
-        raise OsiConversionError("Missing required 'name' field in dataset")
+        raise OssieConversionError("Missing required 'name' field in dataset")
     result["name"] = name
 
     # source -> base_table
@@ -299,7 +299,7 @@ def _convert_named_expr(entry, kind):
     """
     name = entry.get("name")
     if not name:
-        raise OsiConversionError(f"Missing required 'name' in {kind}")
+        raise OssieConversionError(f"Missing required 'name' in {kind}")
 
     expr_str = _extract_expression(entry.get("expression"), name)
     if expr_str is None:
@@ -335,17 +335,17 @@ def _convert_relationship(rel):
     result = {}
     rel_name = rel.get("name")
     if not rel_name:
-        raise OsiConversionError("Missing required 'name' field in relationship")
+        raise OssieConversionError("Missing required 'name' field in relationship")
     result["name"] = rel_name
 
     left_table = rel.get("from")
     if not left_table:
-        raise OsiConversionError(
+        raise OssieConversionError(
             f"Relationship '{rel_name}': missing required 'from' field"
         )
     right_table = rel.get("to")
     if not right_table:
-        raise OsiConversionError(
+        raise OssieConversionError(
             f"Relationship '{rel_name}': missing required 'to' field"
         )
     result["left_table"] = left_table
@@ -355,7 +355,7 @@ def _convert_relationship(rel):
     to_cols = rel.get("to_columns", [])
 
     if len(from_cols) != len(to_cols):
-        raise OsiConversionError(
+        raise OssieConversionError(
             f"Relationship '{rel_name}': from_columns and to_columns must have the "
             f"same length (got {len(from_cols)} and {len(to_cols)})"
         )
@@ -377,17 +377,17 @@ def _extract_expression(expression, field_name):
     """Selects the best dialect expression for Snowflake.
 
     Returns the expression string, or None if only unsupported dialects are
-    present (the field should be skipped). Raises OsiConversionError if the
+    present (the field should be skipped). Raises OssieConversionError if the
     expression or dialects list is missing entirely.
     """
     if expression is None or not isinstance(expression, dict):
-        raise OsiConversionError(
+        raise OssieConversionError(
             f"Missing or malformed expression for field/metric '{field_name}'"
         )
 
     dialects = expression.get("dialects")
     if not dialects:
-        raise OsiConversionError(
+        raise OssieConversionError(
             f"Missing expression for field/metric '{field_name}'"
         )
 
@@ -467,7 +467,7 @@ def _parse_source(source):
             "table": _normalize_identifier(parts[2]),
         }
 
-    raise OsiConversionError(
+    raise OssieConversionError(
         f"Source '{source}' must be a fully qualified db.schema.table or a subquery"
     )
 
@@ -528,11 +528,11 @@ def main():
     args = parser.parse_args()
 
     with open(args.input, "r") as f:
-        osi_yaml_str = f.read()
+        ossie_yaml_str = f.read()
 
     try:
-        snowflake_yaml_str = convert_osi_to_snowflake(osi_yaml_str)
-    except OsiConversionError as e:
+        snowflake_yaml_str = convert_ossie_to_snowflake(ossie_yaml_str)
+    except OssieConversionError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 

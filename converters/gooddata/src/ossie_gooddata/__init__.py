@@ -17,7 +17,7 @@
 
 """Bidirectional converter between GoodData LDM and Ossie semantic model."""
 
-from ossie_gooddata.gooddata_to_osi import gooddata_to_osi
-from ossie_gooddata.osi_to_gooddata import osi_to_gooddata
+from ossie_gooddata.gooddata_to_ossie import gooddata_to_ossie
+from ossie_gooddata.ossie_to_gooddata import ossie_to_gooddata
 
-__all__ = ["gooddata_to_osi", "osi_to_gooddata"]
+__all__ = ["gooddata_to_ossie", "ossie_to_gooddata"]

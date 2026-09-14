@@ -16,7 +16,7 @@
 # under the License.
 
 # Exercises: non-default join_type, reversible, a composite-key one_to_many
-# join (flipped to OSI's many-side-first orientation and flipped back on export).
+# join (flipped to Ossie's many-side-first orientation and flipped back on export).
 - join_from_view: order_items
   join_to_view: users
   on_sql: ${order_items.user_id} = ${users.id}

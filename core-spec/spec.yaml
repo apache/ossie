@@ -37,10 +37,12 @@ dialects:
   - "DATABRICKS"            # Databricks SQL
   - "MAQL"                  # GoodData MAQL (Multi-Dimensional Analytical Query Language)
   - "BIGQUERY"              # Google BigQuery GoogleSQL
+  - "SIGMA"                 # Sigma Computing spreadsheet-style formula language
+  - "THOUGHTSPOT"           # ThoughtSpot formula language (not SQL)
 
 # Supported logical data types for fields and metrics
 # TODO: Generate this list from the authoritative DataType enum in
-# osi-schema.json ($defs.DataType.enum); until then, keep them in sync.
+# ossie-schema.json ($defs.DataType.enum); until then, keep them in sync.
 datatypes:
   - "String"                # Variable-length Unicode character data
   - "Integer"               # Exact integral number
@@ -56,7 +58,7 @@ datatypes:
 # Vendor name for custom extensions (free-form string)
 # Well-known examples (see "Vendor Names" in core-spec/spec.md for the canonical list):
 #   "COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA", "HONEYDEW",
-#   "WISDOM", "OMNI", "NVIDIA_GSF", "MICROSOFT"
+#   "WISDOM", "OMNI", "NVIDIA_GSF", "MICROSOFT", "SIGMA"
 vendor_name: string
 
 
@@ -69,7 +71,14 @@ semantic_model:
     description: string
 
     # Optional: Additional context for AI tools (e.g., custom prompts, instructions)
-    ai_context: string
+    # Can be either:
+    #   - A free-form string, or
+    #   - A structured object with optional keys:
+    #       instructions: string  # how AI should use this entity
+    #       synonyms:     []      # alternative names / terms
+    #       examples:     []      # sample questions or use cases
+    #     (additionalProperties: true, so vendors may add more keys)
+    ai_context: {}  # see AIContext in ossie-schema.json
 
     # Required: Collection of logical datasets (fact and dimension tables)
     # See Logical Dataset section below for detailed structure
@@ -130,7 +139,7 @@ datasets:
 
     # Optional: Additional context for AI tools (e.g., synonyms, common terms)
     # Helps LLMs understand the business meaning and generate better queries
-    ai_context: string
+    ai_context: {}  # see AIContext in ossie-schema.json
 
     # Optional: Row-level calculations for grouping, filtering, and in metric expressions
     # See Fields section below for detailed structure
@@ -172,6 +181,10 @@ relationships:
     #   - [id]                       # Simple key
     #   - [order_id, line_number]    # Composite key
     to_columns: []  # Array of column names
+
+    # Optional: Additional context for AI tools (e.g., synonyms, business context)
+    # Helps LLMs understand when and why the datasets should be joined
+    ai_context: {}  # see AIContext in ossie-schema.json
 
     # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
@@ -226,7 +239,7 @@ fields:
 
     # Optional: Additional context for AI tools (e.g., synonyms, business terms)
     # Helps LLMs understand the field meaning and generate better queries
-    ai_context: string
+    ai_context: {}  # see AIContext in ossie-schema.json
 
     # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
@@ -263,7 +276,7 @@ metrics:
 
     # Optional: Additional context for AI tools (e.g., synonyms, business context)
     # Helps LLMs understand the metric meaning and suggest it appropriately
-    ai_context: string
+    ai_context: {}  # see AIContext in ossie-schema.json
 
     # Optional: Vendor-specific attributes for extensibility
     custom_extensions:

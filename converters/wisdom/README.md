@@ -27,15 +27,15 @@ YAML document.
 
 ```bash
 pip install -e ../../python -e .
-ossie-wisdom wisdom-to-osi -i domain-export.json -o semantic_model.yaml
-ossie-wisdom osi-to-wisdom -i semantic_model.yaml -o domain-export.json
+ossie-wisdom wisdom-to-ossie -i domain-export.json -o semantic_model.yaml
+ossie-wisdom ossie-to-wisdom -i semantic_model.yaml -o domain-export.json
 ```
 
 Conversion warnings (information loss) are printed to stderr; the output YAML validates
-against the [Ossie JSON Schema](../../core-spec/osi-schema.json):
+against the [Ossie JSON Schema](../../core-spec/ossie-schema.json):
 
 ```bash
-python ../../validation/validate.py semantic_model.yaml --schema ../../core-spec/osi-schema.json
+python ../../validation/validate.py semantic_model.yaml --schema ../../core-spec/ossie-schema.json
 ```
 
 ## Field mapping
@@ -77,7 +77,7 @@ drops the relationship with a `RELATIONSHIP_DROPPED` warning.
 
 ## Ossie → wisdom (export direction)
 
-`osi-to-wisdom` emits a domain export mirroring wisdom's `exportDomain` JSON, inverting
+`ossie-to-wisdom` emits a domain export mirroring wisdom's `exportDomain` JSON, inverting
 the mapping above so that wisdom → Ossie → wisdom and Ossie → wisdom → Ossie round-trips
 are stable:
 
@@ -87,7 +87,7 @@ are stable:
   anything else becomes a formula. `dimension.is_time` becomes a `TIMESTAMP` data type
   (wisdom re-derives exact types from the warehouse).
 - Relationships become `MANY_TO_ONE` edges (Ossie's `from` is the many side); the
-  `ai_context` notes written by `wisdom-to-osi` restore `ONE_TO_ONE`/`MANY_TO_MANY`, and
+  `ai_context` notes written by `wisdom-to-ossie` restore `ONE_TO_ONE`/`MANY_TO_MANY`, and
   composite keys become compound `AND` join conditions.
 - Metrics attach to the first dataset their expression references (a
   `METRIC_TABLE_UNRESOLVED` warning falls back to the first dataset).
