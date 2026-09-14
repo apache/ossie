@@ -49,6 +49,7 @@ FABRIC_API = "https://api.fabric.microsoft.com/v1"
 FABRIC_SCOPE = "https://api.fabric.microsoft.com"
 POWERBI_API = "https://api.powerbi.com/v1.0/myorg"
 POWERBI_SCOPE = "https://analysis.windows.net/powerbi/api"
+_TRANSIENT_HTTP_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 # TMSL dataType -> (M ascribed type, sample values). The values are deliberately
 # boring: the point is to make the engine compile and run the DAX, not to model a
@@ -327,8 +328,32 @@ def deploy(document, workspace, name, token):
         result = _wait_for_operation(operation, token)
         if result.get("status") != "Succeeded":
             return None, json.dumps(result)[:4000]
-        _status, created, _headers = _request("GET", f"{operation}/result", token)
-        return created["id"], None
+        for attempt in range(3):
+            result_status, created, _headers = _request(
+                "GET", f"{operation}/result", token
+            )
+            if result_status == 200:
+                if (
+                    isinstance(created, dict)
+                    and isinstance(created.get("id"), str)
+                    and created["id"]
+                ):
+                    return created["id"], None
+                return (
+                    None,
+                    "invalid operation result: expected an object with a non-empty id; "
+                    f"received {_engine_message(created)}",
+                )
+            error = (
+                f"HTTP {result_status} fetching operation result: "
+                f"{_engine_message(created)}"
+            )
+            if (
+                result_status is not None
+                and result_status not in _TRANSIENT_HTTP_STATUSES
+            ) or attempt == 2:
+                return None, error
+            time.sleep(1)
     return None, f"HTTP {status}: {_engine_message(body)}"
 
 

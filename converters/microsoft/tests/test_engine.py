@@ -379,6 +379,80 @@ def test_deploy_polls_a_long_running_operation(monkeypatch):
     assert engine.deploy({"model": {}}, "w", "n", "t") == ("ds", None)
 
 
+def test_deploy_reports_string_error_from_operation_result(monkeypatch):
+    monkeypatch.setattr(engine.time, "sleep", lambda _s: None)
+    result_requests = 0
+
+    def handler(method, url, token, payload=None):
+        nonlocal result_requests
+        if method == "POST":
+            return 202, None, {"Location": "https://e/op"}
+        if url.endswith("/result"):
+            result_requests += 1
+            return 500, "temporary service failure", {}
+        return 200, {"status": "Succeeded"}, {}
+
+    _stub_request(monkeypatch, handler)
+    dataset, error = engine.deploy({"model": {}}, "w", "n", "t")
+    assert dataset is None
+    assert error == "HTTP 500 fetching operation result: temporary service failure"
+    assert result_requests == 3
+
+
+def test_deploy_does_not_retry_auth_failure_from_operation_result(monkeypatch):
+    result_requests = 0
+
+    def handler(method, url, token, payload=None):
+        nonlocal result_requests
+        if method == "POST":
+            return 202, None, {"Location": "https://e/op"}
+        if url.endswith("/result"):
+            result_requests += 1
+            return 401, json.dumps({"error": {"message": "token expired"}}), {}
+        return 200, {"status": "Succeeded"}, {}
+
+    _stub_request(monkeypatch, handler)
+    dataset, error = engine.deploy({"model": {}}, "w", "n", "t")
+    assert dataset is None
+    assert error == "HTTP 401 fetching operation result: token expired"
+    assert result_requests == 1
+
+
+@pytest.mark.parametrize("created", ["not an object", {}, {"name": "model"}, {"id": ""}])
+def test_deploy_reports_malformed_operation_result(monkeypatch, created):
+    def handler(method, url, token, payload=None):
+        if method == "POST":
+            return 202, None, {"Location": "https://e/op"}
+        if url.endswith("/result"):
+            return 200, created, {}
+        return 200, {"status": "Succeeded"}, {}
+
+    _stub_request(monkeypatch, handler)
+    dataset, error = engine.deploy({"model": {}}, "w", "n", "t")
+    assert dataset is None
+    assert "expected an object with a non-empty id" in error
+
+
+def test_deploy_retries_transient_operation_result_failure(monkeypatch):
+    monkeypatch.setattr(engine.time, "sleep", lambda _s: None)
+    responses = iter(
+        [
+            (503, "still publishing", {}),
+            (200, {"id": "ds"}, {}),
+        ]
+    )
+
+    def handler(method, url, token, payload=None):
+        if method == "POST":
+            return 202, None, {"Location": "https://e/op"}
+        if url.endswith("/result"):
+            return next(responses)
+        return 200, {"status": "Succeeded"}, {}
+
+    _stub_request(monkeypatch, handler)
+    assert engine.deploy({"model": {}}, "w", "n", "t") == ("ds", None)
+
+
 def test_deploy_reports_a_failed_operation(monkeypatch):
     monkeypatch.setattr(engine.time, "sleep", lambda _s: None)
 
