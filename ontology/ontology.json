@@ -42,6 +42,14 @@
       "items": {
         "$ref": "#/$defs/OntologyMap"
       }
+    },
+    "prefixes": {
+      "type": "object",
+      "description": "Maps namespace prefixes to the URIs they abbreviate, enabling QName expansion (e.g., 'foaf' -> 'http://xmlns.com/foaf/0.1/').",
+      "additionalProperties": {
+        "type": "string",
+        "format": "uri"
+      }
     }
   },
   "required": ["version", "name", "ontology"],
@@ -96,6 +104,10 @@
             "$ref": "#/$defs/Relationship"
           },
           "description": "Defines relationships that pertain primarily to the concept defined in this component"
+        },
+        "uri": {
+          "type": "string",
+          "description": "Optional global identifier for this concept, expressed as a full URI or as a QName (prefix:local) resolved against the ontology-level 'prefixes' map."
         }
       },
       "required": ["concept", "type"],
@@ -147,6 +159,10 @@
             "type": "string"
           },
           "description": "Natural language expressions that verbalize this relationship"
+        },
+        "uri": {
+          "type": "string",
+          "description": "Optional global identifier for this relationship, expressed as a full URI or as a QName (prefix:local) resolved against the ontology-level 'prefixes' map."
         }
       },
       "required": ["name", "verbalizes"],
