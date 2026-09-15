@@ -84,16 +84,11 @@ ontology specification's built-in value types; `Time`, `DateTimeTz`, and
 
 ## Semantic Model
 
-Each JSON or YAML document represents exactly one semantic model. Model properties
-are defined directly at the document root alongside `version`; there is no
-`semantic_model` wrapper. A model can contain multiple datasets, relationships,
-and metrics.
+Each JSON or YAML document represents exactly one semantic model.
 
 A standalone document must contain `version`, `name`, and a non-empty `datasets`
-array. Arrays of models, wrapped models, and unknown root properties are invalid.
-For bulk exchange, use separate model documents, optionally grouped in a directory
-or archive. This specification does not define a bundle format or cross-model
-references.
+array. For bulk exchange, use separate model documents. This specification does
+not define a bundle format or cross-model references.
 
 ### Schema
 
@@ -158,9 +153,6 @@ The reusable `$defs/SemanticModel` schema still describes model contents without
 standalone document metadata. In particular, an ontology map continues to embed
 those contents under its `semantic_model` property. This standalone document
 change does not rename or flatten that ontology property.
-
-Converter and Python SDK adoption is tracked as follow-up work; existing
-implementations may still require the earlier wrapped-array shape.
 
 ---
 
