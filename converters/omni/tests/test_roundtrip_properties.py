@@ -29,9 +29,9 @@ import pytest
 from _roundtrip_helpers import (
     RandomRnd,
     assert_omni_roundtrip,
-    assert_osi_roundtrip,
+    assert_ossie_roundtrip,
     build_omni,
-    build_osi,
+    build_ossie,
 )
 
 try:
@@ -86,8 +86,8 @@ if HAVE_HYPOTHESIS:
 
     @given(st.data())
     @settings(max_examples=50, deadline=None)
-    def test_osi_roundtrip_property(data):
-        assert_osi_roundtrip(build_osi(_HypRnd(data)))
+    def test_ossie_roundtrip_property(data):
+        assert_ossie_roundtrip(build_ossie(_HypRnd(data)))
 
 else:  # pragma: no cover - exercised only without hypothesis
 
@@ -96,5 +96,5 @@ else:  # pragma: no cover - exercised only without hypothesis
         assert_omni_roundtrip(build_omni(RandomRnd(seed)))
 
     @pytest.mark.parametrize("seed", range(50))
-    def test_osi_roundtrip_seeded(seed):
-        assert_osi_roundtrip(build_osi(RandomRnd(seed)))
+    def test_ossie_roundtrip_seeded(seed):
+        assert_ossie_roundtrip(build_ossie(RandomRnd(seed)))

@@ -16,13 +16,13 @@
 # under the License.
 
 from ossie_wisdom.converter_issues import ConverterIssue, ConverterIssueType, ConverterResult
-from ossie_wisdom.osi_to_wisdom import OSIToWisdomConverter
-from ossie_wisdom.wisdom_to_osi import WisdomToOSIConverter
+from ossie_wisdom.ossie_to_wisdom import OssieToWisdomConverter
+from ossie_wisdom.wisdom_to_ossie import WisdomToOssieConverter
 
 __all__ = [
     "ConverterIssue",
     "ConverterIssueType",
     "ConverterResult",
-    "OSIToWisdomConverter",
-    "WisdomToOSIConverter",
+    "OssieToWisdomConverter",
+    "WisdomToOssieConverter",
 ]

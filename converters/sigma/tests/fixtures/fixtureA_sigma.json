@@ -1,0 +1,152 @@
+{
+  "kind": "data-model",
+  "name": "Sales",
+  "description": "Orders and the customers who placed them",
+  "dataModelId": "11111111-1111-1111-1111-111111111111",
+  "folderId": "22222222-2222-2222-2222-222222222222",
+  "documentVersion": 4,
+  "latestDocumentVersion": 4,
+  "schemaVersion": 1,
+  "pages": [
+    {
+      "id": "pageA",
+      "name": "Model",
+      "elements": [
+        {
+          "id": "elemOrders",
+          "kind": "table",
+          "name": "Orders",
+          "description": "One row per placed order",
+          "source": {
+            "connectionId": "conn-1",
+            "kind": "warehouse-table",
+            "path": ["ANALYTICS", "PUBLIC", "ORDERS"]
+          },
+          "columns": [
+            {"id": "colOrderId", "formula": "[ORDERS/ORDER_ID]", "name": "Order ID"},
+            {"id": "colCustomerId", "formula": "[ORDERS/CUSTOMER_ID]", "name": "Customer ID", "hidden": true},
+            {"id": "colStatus", "formula": "[ORDERS/STATUS]", "name": "Status"},
+            {
+              "id": "colAmount",
+              "formula": "[ORDERS/AMOUNT]",
+              "name": "Amount",
+              "format": {
+                "kind": "number",
+                "formatString": "#,##0.00",
+                "currencySymbol": "$",
+                "decimalSymbol": ".",
+                "digitGroupingSymbol": ",",
+                "digitGroupingSize": [3],
+                "displayNullAs": "—",
+                "prefix": "$",
+                "suffix": " USD"
+              }
+            },
+            {
+              "id": "colCreatedAt",
+              "formula": "[ORDERS/CREATED_AT]",
+              "name": "Created At",
+              "format": {"kind": "date", "formatString": "%Y-%m-%d"}
+            },
+            {
+              "id": "colIsClosed",
+              "formula": "If([Status] = \"closed\", 1, 0)",
+              "name": "Is Closed",
+              "description": "1 when the order status is closed, else 0"
+            },
+            {
+              "id": "colOrderYear",
+              "formula": "Year([Created At])",
+              "name": "Order Year"
+            },
+            {
+              "id": "colNetAmount",
+              "formula": "IfNull([Amount], 0) - SumIf([Status] = \"refunded\", [Amount])",
+              "name": "Net Amount"
+            }
+          ],
+          "uniqueKeys": ["colOrderId"],
+          "visibleAsSource": true,
+          "folders": [
+            {"id": "folderIdentifiers", "name": "Identifiers", "items": ["colOrderId", "colCustomerId"]},
+            {"id": "folderAttributes", "name": "Attributes", "items": ["colStatus", "colAmount", "colCreatedAt", "colIsClosed", "colOrderYear", "colNetAmount"]}
+          ],
+          "order": ["folderIdentifiers", "folderAttributes"],
+          "summary": ["colAmount", "colNetAmount"],
+          "sort": [
+            {"columnId": "colCreatedAt", "direction": "descending", "nulls": "last"},
+            {"columnId": "colOrderId", "direction": "ascending"}
+          ],
+          "metrics": [
+            {
+              "id": "metricTotalAmount",
+              "formula": "Sum([Amount])",
+              "name": "Total Amount",
+              "description": "Gross amount across all orders",
+              "isHighlighted": true,
+              "format": {"kind": "number", "formatString": "#,##0", "currencySymbol": "$"},
+              "timeline": {
+                "dateColumnId": "colCreatedAt",
+                "truncation": "month",
+                "comparison": {"comparisonPeriod": "month", "direction": "higher-is-better"}
+              }
+            },
+            {"id": "metricOrderCount", "formula": "CountDistinct([Order ID])", "name": "Order Count"},
+            {"id": "metricUnnamed", "formula": "Avg([Net Amount])"}
+          ],
+          "relationships": [
+            {
+              "id": "relOrdersToCustomers",
+              "name": "Customers",
+              "description": "Each order belongs to one customer",
+              "targetElementId": "elemCustomers",
+              "relationshipType": "N:1",
+              "keys": [
+                {"sourceColumnId": "colCustomerId", "targetColumnId": "colCustId"}
+              ]
+            }
+          ]
+        },
+        {
+          "id": "elemCustomers",
+          "kind": "table",
+          "name": "Customers",
+          "source": {
+            "connectionId": "conn-1",
+            "kind": "warehouse-table",
+            "path": ["ANALYTICS", "PUBLIC", "CUSTOMERS"]
+          },
+          "columns": [
+            {"id": "colCustId", "formula": "[CUSTOMERS/CUSTOMER_ID]", "name": "Customer ID"},
+            {"id": "colCustName", "formula": "[CUSTOMERS/NAME]", "name": "Customer Name"},
+            {"id": "colCustEmail", "formula": "Lower(Trim([CUSTOMERS/EMAIL]))", "name": "Customer Email"},
+            {"id": "colCustTier", "formula": "[CUSTOMERS/PLAN_TIER]", "name": "Plan Tier"}
+          ],
+          "uniqueKeys": ["colCustId"],
+          "folders": [
+            {"id": "folderCustAttrs", "name": "Attributes", "items": ["colCustId", "colCustName", "colCustEmail", "colCustTier"]}
+          ],
+          "order": ["folderCustAttrs"],
+          "columnSecurities": [
+            {
+              "id": "secEmail",
+              "restrictedColumns": ["colCustEmail"],
+              "criteria": {
+                "kind": "specific-users-and-teams",
+                "assignments": [{"kind": "team", "teamId": "team-analytics"}]
+              }
+            },
+            {
+              "id": "secTier",
+              "restrictedColumns": ["colCustTier"],
+              "criteria": {
+                "kind": "user-attribute",
+                "assignments": [{"attributeId": "attr-region", "value": "NA"}]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

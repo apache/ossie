@@ -79,6 +79,24 @@ def test_one_to_many_round_trips_mv_ossie_mv():
     assert parse(mv_out) == parse(mv_in)
 
 
+def test_measure_display_name_survives_round_trip_via_stash():
+    """A measure's display_name survives MV -> Apache Ossie -> MV. A dimension's
+    display_name maps to the Apache Ossie field `label`, but the metric shape has no
+    `label`, so a measure's display_name rides in the DATABRICKS stash (like format/window)
+    and is restored on the way back (apache/ossie#326)."""
+    mv_in = (
+        "version: '1.1'\nsource: c.s.fact\n"
+        "dimensions:\n- {name: region, expr: region}\n"
+        "measures:\n- {name: total_revenue, expr: SUM(amount), display_name: Total Revenue}\n"
+    )
+    ossie = importer.convert_metric_view_to_ossie(mv_in)
+    # The only display_name in the input is on the measure; it must ride in the metric's
+    # stash, since there is no native Apache Ossie field for it.
+    assert "display_name" in ossie
+    mv_out = exporter.convert_ossie_to_metric_view(ossie)
+    assert parse(mv_out) == parse(mv_in)
+
+
 # Property-based round-trip coverage. The Hypothesis driver lives in
 # test_roundtrip_properties.py; these run the same generators/assertions under a plain
 # seeded RNG so the property coverage also holds where Hypothesis is not installed.

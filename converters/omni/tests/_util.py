@@ -21,7 +21,7 @@ import copy
 import json
 import pathlib
 
-from osi_omni._common import load_yaml  # src is on sys.path via conftest.py
+from ossie_omni._common import load_yaml  # src is on sys.path via conftest.py
 
 FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -71,8 +71,8 @@ def canon(obj):
     return obj
 
 
-def strip_normalized(osi):
-    """Normalize away what the OSI -> Omni -> OSI trip changes by design, so a
+def strip_normalized(ossie):
+    """Normalize away what the Ossie -> Omni -> Ossie trip changes by design, so a
     round-trip comparison reflects the documented behavior:
 
     - `custom_extensions` everywhere: the import adds OMNI stashes (topic set,
@@ -87,8 +87,8 @@ def strip_normalized(osi):
     - a primary-key column no field covers materializes as a hidden
       dimension on export, so it comes back as an extra (stash-only) field.
     """
-    osi = copy.deepcopy(osi)
-    for model in osi.get("semantic_model", []):
+    ossie = copy.deepcopy(ossie)
+    for model in ossie.get("semantic_model", []):
         model.pop("custom_extensions", None)
         ai = model.get("ai_context")
         if isinstance(ai, dict):
@@ -142,4 +142,4 @@ def strip_normalized(osi):
         # their measure lives on.
         if model.get("metrics"):
             model["metrics"].sort(key=lambda m: m["name"])
-    return osi
+    return ossie

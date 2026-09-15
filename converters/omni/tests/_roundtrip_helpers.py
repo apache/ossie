@@ -33,10 +33,10 @@ shapes the converter reproduces exactly. Known normalizations are avoided by
 construction (documented inline), e.g.:
   - Omni names are generated already valid (lowercase snake_case), so the
     sanitizer never renames anything;
-  - OSI metric expressions reference *field names* (`view.field`), which survive
+  - Ossie metric expressions reference *field names* (`view.field`), which survive
     the `${field}` modeled-reference trip; a raw column that differs from its
     field's name would come back as the field name;
-  - OSI relationship names use the canonical `<from>_to_<to>` form the importer
+  - Ossie relationship names use the canonical `<from>_to_<to>` form the importer
     regenerates.
 Name fuzzing (collisions, reserved words) is left to the targeted unit tests,
 which assert the converter *rejects* or *warns on* those inputs.
@@ -46,13 +46,13 @@ import random
 import string
 import warnings
 
-from osi_omni import convert_omni_to_osi, convert_osi_to_omni
-from osi_omni._common import OSI_VERSION, dump_yaml, load_yaml
+from ossie_omni import convert_omni_to_ossie, convert_ossie_to_omni
+from ossie_omni._common import OSSIE_VERSION, dump_yaml, load_yaml
 
 from _util import strip_normalized
 
 _AGGS = ["sum", "average", "min", "max", "median", "count_distinct"]
-_OSI_AGGS = ["SUM", "AVG", "MIN", "MAX", "MEDIAN"]
+_OSSIE_AGGS = ["SUM", "AVG", "MIN", "MAX", "MEDIAN"]
 
 
 # --- Rnd backend for offline (no hypothesis) runs --------------------------------
@@ -102,7 +102,7 @@ class _Names:
         return f"{prefix}{i}"
 
 
-# --- Omni model builder (for Omni -> OSI -> Omni) ---------------------------------
+# --- Omni model builder (for Omni -> Ossie -> Omni) ---------------------------------
 
 def _maybe_meta(rnd, target):
     if rnd.chance(0.4):
@@ -252,9 +252,9 @@ def build_omni(rnd):
     return files
 
 
-# --- OSI model builder (for OSI -> Omni -> OSI) -----------------------------------
+# --- Ossie model builder (for Ossie -> Omni -> Ossie) -----------------------------------
 
-def _osi_field(rnd, names):
+def _ossie_field(rnd, names):
     fname = names.next("f")
     flavor = rnd.count(0, 2)
     if flavor == 0:
@@ -282,8 +282,8 @@ def _osi_field(rnd, names):
     return field, expr
 
 
-def build_osi(rnd):
-    """Generate an OSI model dict in the round-trippable subset."""
+def build_ossie(rnd):
+    """Generate an Ossie model dict in the round-trippable subset."""
     names = _Names()
     fact = names.next("fact")
     dim_names = [names.next("dim") for _ in range(rnd.count(0, 3))]
@@ -295,7 +295,7 @@ def build_osi(rnd):
               "source": f"{rnd.colname()}.{rnd.colname()}.{rnd.colname()}"}
         fields, simple_fields = [], []
         for _ in range(rnd.count(1, 4)):
-            field, expr = _osi_field(rnd, names)
+            field, expr = _ossie_field(rnd, names)
             fields.append(field)
             if expr == field["name"]:
                 simple_fields.append(field["name"])
@@ -327,7 +327,7 @@ def build_osi(rnd):
         if flavor == 0:
             expr = "COUNT(*)"
         elif flavor == 1 and fields_of[target]:
-            expr = f"{rnd.pick(_OSI_AGGS)}({target}.{rnd.pick(fields_of[target])})"
+            expr = f"{rnd.pick(_OSSIE_AGGS)}({target}.{rnd.pick(fields_of[target])})"
         else:
             expr = f"SUM({fact}.{fields_of[fact][0]}) / COUNT(*)"
         metric = {"name": mname,
@@ -349,7 +349,7 @@ def build_osi(rnd):
         model["relationships"] = relationships
     if metrics:
         model["metrics"] = metrics
-    return {"version": OSI_VERSION, "semantic_model": [model]}
+    return {"version": OSSIE_VERSION, "semantic_model": [model]}
 
 
 # --- Round-trip assertions -------------------------------------------------------
@@ -361,18 +361,18 @@ def _quiet(fn, *args, **kwargs):
 
 
 def assert_omni_roundtrip(files):
-    """An Omni model survives Omni -> OSI -> Omni with every file identical
+    """An Omni model survives Omni -> Ossie -> Omni with every file identical
     (structurally -- YAML key order and formatting aside)."""
-    osi = _quiet(convert_omni_to_osi, files)
-    files2 = _quiet(convert_osi_to_omni, osi)
+    ossie = _quiet(convert_omni_to_ossie, files)
+    files2 = _quiet(convert_ossie_to_omni, ossie)
     parsed1 = {name: load_yaml(text, name) for name, text in files.items()}
     parsed2 = {name: load_yaml(text, name) for name, text in files2.items()}
     assert parsed2 == parsed1
 
 
-def assert_osi_roundtrip(osi):
-    """An OSI model dict survives OSI -> Omni -> OSI up to the documented
+def assert_ossie_roundtrip(ossie):
+    """An Ossie model dict survives Ossie -> Omni -> Ossie up to the documented
     normalizations (see _util.strip_normalized)."""
-    files = _quiet(convert_osi_to_omni, dump_yaml(osi))
-    osi2 = load_yaml(_quiet(convert_omni_to_osi, files))
-    assert strip_normalized(osi2) == strip_normalized(osi)
+    files = _quiet(convert_ossie_to_omni, dump_yaml(ossie))
+    ossie2 = load_yaml(_quiet(convert_omni_to_ossie, files))
+    assert strip_normalized(ossie2) == strip_normalized(ossie)

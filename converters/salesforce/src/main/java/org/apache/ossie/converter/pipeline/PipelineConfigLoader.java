@@ -32,11 +32,11 @@ import java.util.Map;
 
 /**
  * Loads pipeline configuration from YAML.
- * Uses Jackson to deserialize osi-salesforce-converter-config.yaml into PipelineConfig model.
+ * Uses Jackson to deserialize ossie-salesforce-converter-config.yaml into PipelineConfig model.
  *
  */
 public class PipelineConfigLoader {
-    private static final String CONFIG_RESOURCE = "/osi-salesforce-converter-config.yaml";
+    private static final String CONFIG_RESOURCE = "/ossie-salesforce-converter-config.yaml";
     private final ObjectMapper yamlMapper;
 
     public PipelineConfigLoader() {
@@ -58,7 +58,7 @@ public class PipelineConfigLoader {
             PipelineConfig config = new PipelineConfig();
             config.setPipelines((Map<String, List<String>>) rawConfig.get("pipelines"));
 
-            // Parse direction configs (osiToSalesforce, salesforceToOsi sections)
+            // Parse direction configs (ossieToSalesforce, salesforceToOssie sections)
             Map<String, DirectionConfig> directionConfigs = new HashMap<>();
             for (String direction : config.getPipelines().keySet()) {
                 if (rawConfig.containsKey(direction)) {
