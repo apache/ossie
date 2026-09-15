@@ -56,17 +56,17 @@ public class DatasetMappingHandler implements PipelineStep {
     @Override
     public void execute(Map<String, Object> sourceData, Map<String, Object> outputData, Map<String, String> mappings) {
         logger.debug("Mapping datasets in {} direction", direction);
-        if (direction == ConversionDirection.OSI_TO_SALESFORCE) {
-            mapOsiToSalesforce(sourceData, outputData, mappings);
+        if (direction == ConversionDirection.OSSIE_TO_SALESFORCE) {
+            mapOssieToSalesforce(sourceData, outputData, mappings);
         } else {
-            mapSalesforceToOsi(sourceData, outputData, mappings);
+            mapSalesforceToOssie(sourceData, outputData, mappings);
         }
     }
 
     /**
      * Maps Ossie datasets to Salesforce semanticDataObjects.
      */
-    private void mapOsiToSalesforce(
+    private void mapOssieToSalesforce(
             Map<String, Object> sourceData, Map<String, Object> outputData, Map<String, String> mappings) {
 
         Map<String, String> datasetMappings = MappingUtils.filterMappingsByPrefix(mappings, DATASETS);
@@ -85,7 +85,7 @@ public class DatasetMappingHandler implements PipelineStep {
     /**
      * Maps Salesforce semanticDataObjects to Ossie datasets.
      */
-    private void mapSalesforceToOsi(
+    private void mapSalesforceToOssie(
             Map<String, Object> sourceData, Map<String, Object> outputData, Map<String, String> mappings) {
 
         List<Object> sfDataObjects = getList(sourceData, SEMANTIC_DATA_OBJECTS);

@@ -57,8 +57,8 @@ dimensions:
     - month
     - quarter
     - year
-  d_month_name:
-    description: Month name
+  d_moy:
+    description: Month of year (1-12)
     synonyms:
     - month
     timeframes:

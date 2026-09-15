@@ -136,9 +136,9 @@ tables:
     synonyms:
     - quarter
     - fiscal quarter
-  - name: d_month_name
-    expr: d_month_name
-    description: Month name
+  - name: d_moy
+    expr: d_moy
+    description: Month of year (1-12)
     synonyms:
     - month
 - name: customer

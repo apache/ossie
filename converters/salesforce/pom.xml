@@ -45,13 +45,13 @@
         <java.version>21</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-        <jackson.version>2.18.9</jackson.version>
-        <junit.version>5.11.4</junit.version>
-        <slf4j.version>2.0.16</slf4j.version>
-        <logback.version>1.5.25</logback.version>
-        <json-schema-validator.version>1.5.5</json-schema-validator.version>
-        <maven-shade-plugin.version>3.6.0</maven-shade-plugin.version>
-        <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
+        <jackson.version>2.22.2</jackson.version>
+        <junit.version>6.1.3</junit.version>
+        <slf4j.version>2.0.19</slf4j.version>
+        <logback.version>1.6.3</logback.version>
+        <json-schema-validator.version>1.5.9</json-schema-validator.version>
+        <maven-shade-plugin.version>3.6.2</maven-shade-plugin.version>
+        <maven-resources-plugin.version>3.5.0</maven-resources-plugin.version>
     </properties>
 
     <dependencies>
@@ -98,9 +98,9 @@
         <plugins>
             <!--
               Copy the canonical Ossie core-spec JSON schema into this module's
-              classpath under /schemas/osi-schema.json so SchemaValidator can
+              classpath under /schemas/ossie-schema.json so SchemaValidator can
               load it at runtime. Single source of truth lives in
-              ../../core-spec/osi-schema.json; do not maintain a duplicate
+              ../../core-spec/ossie-schema.json; do not maintain a duplicate
               copy in this module's src/main/resources.
             -->
             <plugin>
@@ -109,7 +109,7 @@
                 <version>${maven-resources-plugin.version}</version>
                 <executions>
                     <execution>
-                        <id>copy-osi-core-spec-schema</id>
+                        <id>copy-ossie-core-spec-schema</id>
                         <phase>process-resources</phase>
                         <goals>
                             <goal>copy-resources</goal>
@@ -120,7 +120,7 @@
                                 <resource>
                                     <directory>${project.basedir}/../../core-spec</directory>
                                     <includes>
-                                        <include>osi-schema.json</include>
+                                        <include>ossie-schema.json</include>
                                     </includes>
                                 </resource>
                             </resources>
@@ -143,7 +143,7 @@
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>org.apache.ossie.app.OsiSalesforceConverter</mainClass>
+                                    <mainClass>org.apache.ossie.app.OssieSalesforceConverter</mainClass>
                                 </transformer>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>
