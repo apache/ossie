@@ -89,6 +89,7 @@ public final class ConverterConstants {
     public static final String DIALECTS = "dialects";
     public static final String DIALECT = "dialect";
     public static final String DIALECT_TABLEAU = "TABLEAU";
+    public static final String DIALECT_ANSI_SQL = "ANSI_SQL";
 
     // Relationship properties
     public static final String CRITERIA = "criteria";
