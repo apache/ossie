@@ -610,6 +610,44 @@ def test_a_conflicting_database_query_gets_a_collision_free_name():
     assert new_partition["source"]["entityName"] == "new_table"
 
 
+def test_a_non_m_database_query_is_not_reused_for_new_partitions():
+    expressions = [
+        {"name": "DatabaseQuery", "kind": "parameter", "expression": '"old"'}
+    ]
+    semantic_model, _ = _mixed_partition_model(expressions)
+    document = {"version": OSSIE_VERSION, "semantic_model": [semantic_model]}
+
+    bim = convert_ossie_to_semantic_model(
+        document, source={"workspaceId": "workspace", "itemId": "item"}
+    )
+
+    assert [expression["name"] for expression in bim["model"]["expressions"]] == [
+        "DatabaseQuery",
+        "DatabaseQuery_1",
+    ]
+    assert (
+        _table(bim, "New")["partitions"][0]["source"]["expressionSource"]
+        == "DatabaseQuery_1"
+    )
+
+
+def test_a_scalar_database_query_expression_can_be_reused():
+    generated = _database_query("workspace", "item")
+    generated["expression"] = "\n".join(generated["expression"])
+    semantic_model, _ = _mixed_partition_model([generated])
+    document = {"version": OSSIE_VERSION, "semantic_model": [semantic_model]}
+
+    bim = convert_ossie_to_semantic_model(
+        document, source={"workspaceId": "workspace", "itemId": "item"}
+    )
+
+    assert bim["model"]["expressions"] == [generated]
+    assert (
+        _table(bim, "New")["partitions"][0]["source"]["expressionSource"]
+        == "DatabaseQuery"
+    )
+
+
 # --- measures --------------------------------------------------------------
 
 
@@ -619,6 +657,31 @@ def test_a_metric_returns_to_its_home_table(bim_out):
     assert measures["Total Sales"]["formatString"] == "\\$#,0.00"
     # A DAX measure needs no annotation; see the calculated column test above.
     assert "annotations" not in measures["Total Sales"]
+
+
+def test_malformed_excluded_measures_are_skipped_or_restored_safely():
+    semantic_model = _minimal()
+    write_stash(
+        semantic_model,
+        {
+            "excludedMeasures": [
+                None,
+                {"table": "T", "measure": {}},
+                {
+                    "table": "T",
+                    "measure": {"name": "Recovered", "expression": ""},
+                    "index": False,
+                },
+            ]
+        },
+    )
+
+    with pytest.warns(UserWarning, match="preserved measure has no name"):
+        bim = _convert(semantic_model)
+
+    assert _table(bim, "T")["measures"] == [
+        {"name": "Recovered", "expression": ""}
+    ]
 
 
 def test_a_metric_with_an_untranslatable_expression_uses_blank_and_annotations():
@@ -1244,3 +1307,27 @@ def test_ai_context_is_saved_as_annotations_on_semantic_model_objects():
     assert _annotation(table, "OssieAIContext") == '{"instructions": "dataset level"}'
     assert _annotation(_column(table, "C"), "OssieAIContext") == "field level"
     assert _annotation(table["measures"][0], "OssieAIContext") == "metric level"
+
+
+def test_current_ai_context_replaces_a_stashed_annotation():
+    semantic_model = _minimal()
+    dataset = semantic_model["datasets"][0]
+    dataset["ai_context"] = "current context"
+    write_stash(
+        dataset,
+        {"annotations": [{"name": "OssieAIContext", "value": "stale context"}]},
+    )
+
+    table = _table(_convert(semantic_model), "T")
+
+    annotations = [
+        annotation
+        for annotation in table["annotations"]
+        if annotation["name"] == "OssieAIContext"
+    ]
+    assert annotations == [{"name": "OssieAIContext", "value": "current context"}]
+
+
+def test_non_mapping_relationship_entries_are_ignored():
+    semantic_model = _minimal(relationships=[None, "not a relationship"])
+    assert "relationships" not in _convert(semantic_model)["model"]
