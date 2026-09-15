@@ -85,7 +85,7 @@ def test_embedded_semantic_model_does_not_require_document_version(core_schema: 
     assert _VALIDATE.validate_schema(model, embedded_schema) == []
 
 
-@pytest.mark.parametrize("unknown_property", ["dataset", "owner"])
+@pytest.mark.parametrize("unknown_property", ["dataset", "owner", "dialects", "vendors"])
 def test_rejects_unknown_root_properties(core_schema: dict, unknown_property: str) -> None:
     document = _document([_ORDERS], [])
     document[unknown_property] = "unexpected"

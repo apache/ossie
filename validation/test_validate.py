@@ -365,17 +365,16 @@ class ValidatorIntegrationTest(unittest.TestCase):
         self.assertIn("Validation PASSED", result.stdout)
 
     def test_root_dialects_and_vendors_are_rejected(self):
-        # The document root is version and semantic_model only; the dialect and
-        # vendor enumerations belong under expression.dialects and custom_extensions.
+        # Dialects and vendors belong under expression.dialects and custom_extensions,
+        # not alongside the model properties at the document root.
         result = self.run_validator(
             "version: 0.2.0.dev0\n"
             "dialects: [ANSI_SQL]\n"
             "vendors: [DBT]\n"
-            "semantic_model:\n"
-            "  - name: sales\n"
-            "    datasets:\n"
-            "      - name: orders\n"
-            "        source: analytics.orders\n"
+            "name: sales\n"
+            "datasets:\n"
+            "  - name: orders\n"
+            "    source: analytics.orders\n"
         )
 
         self.assertEqual(result.returncode, 1)

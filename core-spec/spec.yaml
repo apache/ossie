@@ -62,7 +62,7 @@ vendor_name: string
 
 
 # Standalone documents contain exactly one model directly at the root.
-# No semantic_model wrapper; include version and optional dialects/vendors.
+# No semantic_model wrapper; include version alongside the model properties.
 # The sections in this reference file describe separate schema components.
 # Top-level semantic model definition
 # Required: Unique identifier for the semantic model

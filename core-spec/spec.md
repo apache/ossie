@@ -85,9 +85,9 @@ ontology specification's built-in value types; `Time`, `DateTimeTz`, and
 ## Semantic Model
 
 Each JSON or YAML document represents exactly one semantic model. Model properties
-are defined directly at the document root alongside `version`, `dialects`, and
-`vendors`; there is no `semantic_model` wrapper. A model can contain multiple
-datasets, relationships, and metrics.
+are defined directly at the document root alongside `version`; there is no
+`semantic_model` wrapper. A model can contain multiple datasets, relationships,
+and metrics.
 
 A standalone document must contain `version`, `name`, and a non-empty `datasets`
 array. Arrays of models, wrapped models, and unknown root properties are invalid.
@@ -100,8 +100,6 @@ references.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `version` | string | Yes | Apache Ossie specification version (`0.2.0.dev0`) |
-| `dialects` | array | No | Expression dialects used in the document |
-| `vendors` | array | No | Vendors with custom extensions in the document |
 | `name` | string | Yes | Unique identifier for the semantic model |
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., custom instructions) |
@@ -148,12 +146,13 @@ current schema accepts only the flat document shape; it does not accept the arra
 or an object-valued wrapper.
 
 To migrate a document containing one model, move that model's properties to the
-root, remove `semantic_model`, and retain the document's dialect and vendor
-declarations. Use `version: 0.2.0.dev0` for the migrated document. For multiple
-models, create one document per model, carrying over the applicable declarations
-and validating each result. An empty model array cannot produce a valid model
-document. Preserve model contents and custom extensions; never silently select
-only the first model or overwrite a file when splitting a document.
+root and remove `semantic_model`. Use `version: 0.2.0.dev0` for the migrated
+document. Remove any root-level `dialects` and `vendors` declarations; preserve
+per-expression dialects and vendor information in `custom_extensions`. For
+multiple models, create one document per model and validate each result. An empty
+model array cannot produce a valid model document. Preserve model contents and
+custom extensions; never silently select only the first model or overwrite a file
+when splitting a document.
 
 The reusable `$defs/SemanticModel` schema still describes model contents without
 standalone document metadata. In particular, an ontology map continues to embed
