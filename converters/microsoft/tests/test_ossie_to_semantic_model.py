@@ -773,8 +773,9 @@ def test_all_tpcds_example_metrics_translate_to_dax():
         "SUM('store'[s_number_employees]))"
     )
     print(f"DIAG measure names: {sorted(measures)!r}")
+    blanks = {n: m["expression"] for n, m in measures.items() if m["expression"] == "BLANK()"}
     assert all(measure["expression"] != "BLANK()" for measure in measures.values()), (
-        f"DIAG blanks: { {n: m['expression'] for n, m in measures.items() if m['expression'] == 'BLANK()'} !r}"
+        f"DIAG blanks: {blanks!r}"
     )
 
 
