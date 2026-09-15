@@ -77,6 +77,14 @@ public class MetricMappingHandler implements PipelineStep {
             return;
         }
 
+        Set<String> names = new HashSet<>();
+        for (Object metric : ossieMetrics) {
+            String name = getString(asMap(metric), NAME);
+            if (!names.add(name)) {
+                throw new ConversionException("Metric '" + name + "': duplicate metric name");
+            }
+        }
+
         // Filter mappings to get only metric-related entries
         Map<String, String> metricMappings = MappingUtils.filterMappingsByPrefix(mappings, METRICS);
 
@@ -87,7 +95,10 @@ public class MetricMappingHandler implements PipelineStep {
 
         List<Object> sfMetrics = getList(outputData, SEMANTIC_CALCULATED_MEASUREMENTS);
         if (sfMetrics != null) {
-            unwrapExpressions(ossieMetrics, sfMetrics);
+            unwrapExpressions(ossieMetrics, sfMetrics, sourceData, outputData);
+        } else if (!ossieMetrics.isEmpty()) {
+            throw new ConversionException("Metric '" + getString(asMap(ossieMetrics.get(0)), NAME)
+                    + "': metric mappings produced no calculated measurements");
         }
     }
 
@@ -127,64 +138,25 @@ public class MetricMappingHandler implements PipelineStep {
 
 
     /**
-     * Unwraps expressions for Ossie→SF conversion, mirroring {@link #wrapExpressions}.
-     *
-     * <p>Picks an expression out of each Ossie metric's {@code expression.dialects[]} and
-     * flattens it into the Salesforce metric's {@code expression} string. {@code TABLEAU} is
-     * preferred (it is what Salesforce/Tableau CRM itself speaks); a model authored without one
-     * falls back to {@code ANSI_SQL} best-effort, since resolving/rewriting an expression into
-     * TABLEAU syntax is the scope of #222's expression-language work, not this fix. A metric with
-     * neither dialect fails the conversion rather than being silently omitted (#399).
+     * Compiles each metric to Tua after fields have been mapped. Binding checks both
+     * the OSI declarations and the actual emitted fields, including their types.
      */
-    private void unwrapExpressions(List<Object> ossieMetrics, List<Object> sfMetrics) {
-        for (int i = 0; i < ossieMetrics.size() && i < sfMetrics.size(); i++) {
+    private void unwrapExpressions(List<Object> ossieMetrics, List<Object> sfMetrics,
+                                   Map<String, Object> sourceData, Map<String, Object> outputData) {
+        if (ossieMetrics.size() != sfMetrics.size()) {
+            throw new ConversionException("Metric export count differs from declared metrics: "
+                    + streamMaps(ossieMetrics).map(metric -> getString(metric, NAME)).toList());
+        }
+        for (int i = 0; i < ossieMetrics.size(); i++) {
             Map<String, Object> ossieMetric = asMap(ossieMetrics.get(i));
             Map<String, Object> sfMetric = asMap(sfMetrics.get(i));
-
-            String expressionValue = extractExpression(ossieMetric, DIALECT_TABLEAU);
-            if (expressionValue == null) {
-                expressionValue = extractExpression(ossieMetric, DIALECT_ANSI_SQL);
-                if (expressionValue != null) {
-                    logger.warn(
-                            "Metric '{}' has no TABLEAU-dialect expression; exporting its "
-                                    + "ANSI_SQL expression to Salesforce unresolved/untranslated",
-                            getString(ossieMetric, NAME));
-                }
-            }
-            if (expressionValue == null) {
-                throw new ConversionException(
-                        "Metric '" + getString(ossieMetric, NAME) + "' has neither a TABLEAU nor "
-                                + "an ANSI_SQL expression to export to Salesforce; add one to "
-                                + "expression.dialects[] or remove the metric.");
-            }
-            sfMetric.put(EXPRESSION, expressionValue);
-
-            String datatype = SalesforceDataTypeMapper.toSalesforce(getString(ossieMetric, OSSIE_DATATYPE));
-            if (datatype != null) {
-                sfMetric.put(DATA_TYPE, datatype);
-            }
+            MetricExpressionTranslator.Result translated =
+                    MetricExpressionTranslator.translate(ossieMetric, sourceData, outputData);
+            sfMetric.put(EXPRESSION, translated.expression());
+            sfMetric.put(DATA_TYPE, translated.dataType());
+            sfMetric.put("syntax", "Tua");
+            sfMetric.put("aggregationType", "UserAgg");
         }
-    }
-
-    /**
-     * Finds the given dialect's expression string in an Ossie metric's
-     * {@code expression.dialects[]}, or {@code null} when the metric has no expression or no
-     * entry for that dialect.
-     */
-    private String extractExpression(Map<String, Object> ossieMetric, String dialect) {
-        Map<String, Object> expression = getMap(ossieMetric, EXPRESSION);
-        if (expression == null) {
-            return null;
-        }
-        List<Object> dialects = getList(expression, DIALECTS);
-        if (dialects == null) {
-            return null;
-        }
-        return streamMaps(dialects)
-                .filter(d -> dialect.equals(getString(d, DIALECT)))
-                .map(d -> getString(d, EXPRESSION))
-                .findFirst()
-                .orElse(null);
     }
 
     /**
