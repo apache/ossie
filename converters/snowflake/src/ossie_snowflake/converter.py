@@ -30,6 +30,9 @@ import sys
 import warnings
 
 import yaml
+from sqlglot import tokenize
+from sqlglot.errors import TokenError
+from sqlglot.tokens import TokenType
 
 
 SUPPORTED_VERSION = "0.2.0.dev0"
@@ -422,27 +425,23 @@ def _normalize_identifier(identifier):
         return stripped
     return stripped.upper()
 
-# A dataset source is a SQL query when, after leading whitespace, SQL comments
-# (`-- ...`, `// ...` and `/* ... */`) and any opening parentheses, it starts
-# with SELECT or WITH followed by something that cannot continue an unquoted
-# identifier. That keeps names such as SELECT_RESULTS or SELECT$ARCHIVE on the
-# relation path (Snowflake allows `$` in unquoted identifiers, so `\b` would be
-# wrong), while `SELECT*FROM`, `SELECT/*c*/` and CRLF after the keyword are
-# still recognised as queries.
-_LEADING_SQL_TRIVIA = re.compile(
-    r"^(?:\s+|--[^\n]*(?:\n|$)|//[^\n]*(?:\n|$)|/\*.*?\*/)+", re.DOTALL
-)
-_QUERY_KEYWORD = re.compile(r"^(?:SELECT|WITH)(?![A-Za-z0-9_$])", re.IGNORECASE)
 _UNQUOTED_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
 _QUOTED_IDENTIFIER = re.compile(r'^"(?:[^"]|"")+"$')
 
 
 def _is_query_source(source_stripped):
-    """True if the source text is a SQL query rather than a relation name."""
-    body = _LEADING_SQL_TRIVIA.sub("", source_stripped, count=1)
-    while body.startswith("("):
-        body = _LEADING_SQL_TRIVIA.sub("", body[1:], count=1)
-    return _QUERY_KEYWORD.match(body) is not None
+    """Recognize SELECT/WITH sources without requiring a full SQL parse."""
+    # Use Snowflake's comment and identifier rules, including `$` in names.
+    # Full parsing could reject newer Snowflake syntax that should pass through.
+    try:
+        tokens = tokenize(source_stripped, read="snowflake")
+    except TokenError:
+        return False
+
+    for token in tokens:
+        if token.token_type != TokenType.L_PAREN:
+            return token.token_type in (TokenType.SELECT, TokenType.WITH)
+    return False
 
 
 def _is_identifier(part):
@@ -480,8 +479,7 @@ def _parse_source(source):
     if not source_stripped:
         return None
 
-    # Queries keep their exact text (including leading comments) so the
-    # emitted definition is what the author wrote.
+    # Preserve query text, including comments, after trimming outer whitespace.
     if _is_query_source(source_stripped):
         return {"definition": source_stripped}
 

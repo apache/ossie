@@ -198,6 +198,57 @@ class TestParseSource:
         source = "-- revenue\nSELECT 1 AS amount"
         assert _parse_source(source) == {"definition": source}
 
+    @pytest.mark.parametrize("comment", ["-- revenue", "// revenue"])
+    @pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"])
+    @pytest.mark.parametrize("query", [
+        "SELECT 1 AS amount",
+        "WITH c AS (SELECT 1 AS amount) SELECT amount FROM c",
+    ])
+    def test_line_comments_with_supported_line_endings(self, comment, newline, query):
+        source = comment + newline + query
+        assert _parse_source(source) == {"definition": source}
+
+    @pytest.mark.parametrize("source", [
+        "/* first */ ( // second\r\n ( -- third\n SELECT 1 ))",
+        "SELECT '-- not a comment' AS amount",
+        "SELECT $$// literal\n/* still literal */$$ AS amount",
+        "SELECT 1 AS amount; -- trailing comment",
+        "(SELECT 1 AS amount) UNION ALL (SELECT 2 AS amount)",
+        "SELECT * FROM weather RESAMPLE(USING observed_at INCREMENT BY INTERVAL '1 day')",
+    ])
+    def test_query_contents_do_not_require_parsing_or_rewriting(self, source):
+        assert _parse_source(source) == {"definition": source}
+
+    def test_query_trims_only_outer_whitespace(self):
+        source = "  \n// revenue\r\nSELECT  'Mixed Case' AS amount;\n\t"
+        assert _parse_source(source) == {
+            "definition": "// revenue\r\nSELECT  'Mixed Case' AS amount;"
+        }
+
+    @pytest.mark.parametrize("database", [
+        '"select"',
+        '"my"".db"',
+        '"/*db*/"',
+    ])
+    def test_quoted_database_stays_a_relation(self, database):
+        assert _parse_source(f"{database}.public.orders") == {
+            "database": database, "schema": "PUBLIC", "table": "ORDERS"
+        }
+
+    @pytest.mark.parametrize("source", [
+        "-- comment only",
+        "// comment only",
+        "/* comment only */",
+        "( /* comment only */ )",
+        "/* unclosed comment SELECT * FROM db.schema.orders",
+        "SELECT 'unterminated FROM db.schema.orders",
+        'SELECT "unterminated FROM db.schema.orders',
+        "SELECT $$unterminated FROM db.schema.orders",
+    ])
+    def test_unrecognizable_or_untokenizable_source_raises_conversion_error(self, source):
+        with pytest.raises(OssieConversionError, match="fully qualified"):
+            _parse_source(source)
+
     @pytest.mark.parametrize("source", [
         "-- c\nSELEC amount FROM db.schema.orders",   # typo: neither query nor relation
         "foo bar.schema.table",                        # whitespace inside an unquoted part
@@ -779,8 +830,12 @@ class TestConvertOssieToSnowflake:
         result = yaml.safe_load(convert_ossie_to_snowflake(_wrap_ossie(model)))
         assert "definition" in result["tables"][0]["base_table"]
 
-    def test_subquery_source_with_leading_comment_keeps_definition(self):
-        source = "-- revenue source\nSELECT * FROM db.s.t WHERE active = 1"
+    @pytest.mark.parametrize("source", [
+        "-- revenue source\nSELECT * FROM db.s.t WHERE active = 1",
+        "// revenue source\rSELECT * FROM db.s.t WHERE active = 1",
+        "/* weather */ SELECT * FROM db.s.t RESAMPLE(USING observed_at INCREMENT BY INTERVAL '1 day')",
+    ])
+    def test_subquery_source_with_leading_comment_keeps_definition(self, source):
         model = {
             "name": "m",
             "datasets": [
