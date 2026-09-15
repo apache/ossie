@@ -18,6 +18,7 @@
 from typing import List, Optional, Sequence
 
 import jinja2
+from jinja2.sandbox import SandboxedEnvironment
 
 from metricflow_semantic_interfaces.protocols.where_filter import WhereFilterIntersection
 
@@ -115,12 +116,18 @@ def _render_filter_template(template: str) -> str:
     and `{{ Metric('revenue') }}` are resolved to their column-name
     equivalents using lightweight stubs. The output is a best-effort SQL
     string suitable for embedding in an Ossie expression.
+    
+    Sandboxing is necessary to prevent SSTI-to-RCE style exploits
     """
-    return jinja2.Template(template, undefined=jinja2.StrictUndefined).render(
-        Dimension=_DimensionStub,
-        TimeDimension=_TimeDimensionStub,
-        Entity=_EntityStub,
-        Metric=_MetricStub,
+    return (
+        SandboxedEnvironment(undefined=jinja2.StrictUndefined)
+        .from_string(template)
+        .render(
+            Dimension=_DimensionStub,
+            TimeDimension=_TimeDimensionStub,
+            Entity=_EntityStub,
+            Metric=_MetricStub,
+        )
     )
 
 

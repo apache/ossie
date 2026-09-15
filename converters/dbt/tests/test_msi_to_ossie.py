@@ -18,6 +18,7 @@
 import json
 from typing import List, Optional
 
+import jinja2
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
@@ -977,6 +978,10 @@ class TestFilterRendering:
 
     def test_metric_reference(self) -> None:
         assert _render_filter_template("{{ Metric('revenue') }} > 0") == "revenue > 0"
+        
+    def test_ssti_gadget_payload_is_blocked(self) -> None:  # noqa: D102
+        with pytest.raises(jinja2.exceptions.SecurityError):
+            _render_filter_template("{{ cycler.__init__.__globals__.os.popen('id').read() }}")
 
 
 class TestMetricFilterFlattening:
