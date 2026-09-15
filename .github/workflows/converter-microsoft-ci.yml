@@ -57,7 +57,7 @@ jobs:
       - name: Sync dependencies
         working-directory: converters/microsoft
         run: |
-          uv sync
+          uv sync --locked
 
       - name: Lint
         working-directory: converters/microsoft
@@ -107,7 +107,7 @@ jobs:
       - name: Install optional TOM dependencies
         working-directory: converters/microsoft
         run: |
-          uv sync --extra tom
+          uv sync --locked --extra tom
           uv run python scripts/restore_tom.py
 
       - name: Run TOM structural validation tests
