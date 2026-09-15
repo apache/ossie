@@ -194,6 +194,15 @@ class MetricFieldResolverTest {
                 Map.of("semanticDataObjects", List.of(targetDataset(dataset, targetField(field, targetType)))));
     }
 
+    @Test
+    void disabledRelationshipsDoNotConnectDatasets() {
+        MetricFieldResolver resolver = graphResolver(List.of(Map.of(
+                "leftSemanticDefinitionApiName", "Orders",
+                "rightSemanticDefinitionApiName", "Returns", "isEnabled", false)), "Orders", "Returns");
+        assertThrows(IllegalArgumentException.class,
+                () -> resolver.validateDatasets(java.util.Set.of("Orders", "Returns")));
+    }
+
     private static MetricFieldResolver graphResolver(List<Map<String, Object>> relationships, String... datasets) {
         return new MetricFieldResolver(Map.of(), Map.of(
                 "semanticDataObjects", java.util.Arrays.stream(datasets).map(name -> targetDataset(name)).toList(),

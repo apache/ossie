@@ -65,6 +65,9 @@ final class MetricFieldResolver {
             }
         }
         for (Map<String, Object> relationship : relationships) {
+            if (Boolean.FALSE.equals(relationship.get("isEnabled"))) {
+                continue;
+            }
             String left = getString(relationship, "leftSemanticDefinitionApiName");
             String right = getString(relationship, "rightSemanticDefinitionApiName");
             if (graph.containsKey(left) && graph.containsKey(right)) {
