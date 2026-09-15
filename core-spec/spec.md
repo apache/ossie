@@ -448,6 +448,7 @@ The following are well-known examples:
 | `GOODDATA` | GoodData-specific attributes |
 | `HONEYDEW` | Honeydew-specific attributes |
 | `WISDOM` | WisdomAI-specific attributes |
+| `LIGHTDASH` | Lightdash-specific attributes |
 | `SIGMA` | Sigma Computing-specific attributes |
 
 ### Examples
