@@ -302,9 +302,10 @@ class OssieToSalesforceConverterTest {
         assertNotNull(totalRevenue);
         assertEquals("Sum of all order amounts", totalRevenue.get("description"));
         assertEquals("Number", totalRevenue.get("dataType"));
-        // The fixture's metrics only carry an ANSI_SQL dialect (no TABLEAU) -- falls back to
-        // exporting it unresolved/untranslated rather than failing the whole conversion.
+        // Legacy ANSI_SQL bracket references are validated and emitted as Tua.
         assertEquals("SUM([Orders].[amount])", totalRevenue.get("expression"));
+        assertEquals("Tua", totalRevenue.get("syntax"));
+        assertEquals("UserAgg", totalRevenue.get("aggregationType"));
 
         Map<String, Object> avgOrderValue = calcMeasurements.stream()
                 .filter(m -> "avg_order_value".equals(m.get("apiName")))
@@ -336,7 +337,7 @@ class OssieToSalesforceConverterTest {
                         + "        - dialect: ANSI_SQL\n"
                         + "          expression: SUM([Orders].[amount])\n"
                         + "        - dialect: TABLEAU\n"
-                        + "          expression: SUM(Orders.amount)\n");
+                        + "          expression: MAX([Orders].[amount])\n");
         assertTrue(yamlWithTableauMetric.contains("dialect: TABLEAU"), "fixture text substitution did not match");
 
         List<String> results = converter.convert(yamlWithTableauMetric);
@@ -348,7 +349,7 @@ class OssieToSalesforceConverterTest {
                 .findFirst()
                 .orElse(null);
         assertNotNull(totalRevenue);
-        assertEquals("SUM(Orders.amount)", totalRevenue.get("expression"),
+        assertEquals("MAX([Orders].[amount])", totalRevenue.get("expression"),
                 "TABLEAU dialect should be preferred over ANSI_SQL when both are present");
     }
 
