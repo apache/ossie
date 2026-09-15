@@ -305,7 +305,7 @@ fractional expression. Missing metric types are inferred. A formula must be
 aggregated or constant: mixed row/aggregate expressions, nested aggregates, and
 aggregates without a dataset field fail. A single aggregate cannot combine fields
 from multiple datasets. Separate aggregates can use datasets connected through
-exported relationships; connectivity alone does not prove join grain.
+enabled exported relationships; connectivity alone does not prove join grain.
 
 **Limits and compatibility.** `COUNT`/`COUNTD` take a field. `ROUND` supports one
 argument or a second integer-literal precision; rounding-mode overloads are not
