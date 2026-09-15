@@ -449,6 +449,7 @@ The following are well-known examples:
 | `HONEYDEW` | Honeydew-specific attributes |
 | `WISDOM` | WisdomAI-specific attributes |
 | `SIGMA` | Sigma Computing-specific attributes |
+| `HEX` | Hex-specific attributes |
 
 ### Examples
 
