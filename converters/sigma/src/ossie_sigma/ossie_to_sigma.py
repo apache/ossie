@@ -279,7 +279,7 @@ class OssieToSigmaConverter:
         relationships = relationships_by_element.get(element_id, [])
         if relationships:
             element["relationships"] = [
-                self._build_relationship(r, dataset.name, dataset_element_id, field_ids) for r in relationships
+                self._build_relationship(r, dataset.name, dataset_element_id, field_ids, issues) for r in relationships
             ]
 
         return element
@@ -346,6 +346,7 @@ class OssieToSigmaConverter:
         dataset_name: str,
         dataset_element_id: dict[str, str],
         field_ids: dict[str, str],
+        issues: list[ConverterIssue],
     ) -> dict[str, Any]:
         ext = _sigma_ext(rel) or {}
         target_element_id = dataset_element_id.get(rel.to, rel.to)
@@ -365,6 +366,18 @@ class OssieToSigmaConverter:
         if raw_keys is not None:
             result["keys"] = raw_keys
         else:
+            if len(rel.from_columns) != len(rel.to_columns):
+                # zip() below stops at the shorter array; record what it drops.
+                issues.append(
+                    ConverterIssue(
+                        ConverterIssueType.RELATIONSHIP_COLUMN_ARITY_MISMATCH,
+                        rel.name,
+                        f"from_columns ({len(rel.from_columns)}) and to_columns "
+                        f"({len(rel.to_columns)}) have different lengths; the "
+                        f"{abs(len(rel.from_columns) - len(rel.to_columns))} extra "
+                        "key column(s) were dropped from the Sigma relationship.",
+                    )
+                )
             result["keys"] = [
                 {
                     "sourceColumnId": field_ids.get(from_col, from_col),
