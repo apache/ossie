@@ -1,0 +1,12 @@
+{
+  "dataset": "customers",
+  "dimensions": [
+    "customers.region"
+  ],
+  "measures": [
+    {
+      "name": "distinct_order_statuses",
+      "metric": "distinct_order_statuses"
+    }
+  ]
+}
