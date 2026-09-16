@@ -27,7 +27,9 @@ connection.
 Each Ossie JSON/YAML document contains one model, with `name`, `datasets`,
 `relationships`, and `metrics` at the root alongside `version`. Legacy
 `semantic_model` wrappers must be unwrapped before conversion; split documents
-containing multiple models into separate files.
+containing multiple models into separate files. Because the Ossie schema requires at
+least one dataset, importing a Power BI model fails explicitly when every table is
+malformed or excluded from the vendor-neutral model.
 
 ## Installation
 

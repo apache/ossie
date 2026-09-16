@@ -178,6 +178,10 @@ def build_ossie_document(bim_file):
         excluded_relationships,
         excluded_measures,
     )
+    if not tables:
+        raise ValueError(
+            "model.bim has no tables that can be exported as Apache Ossie datasets"
+        )
 
     return {"version": OSSIE_VERSION, **semantic_model}
 

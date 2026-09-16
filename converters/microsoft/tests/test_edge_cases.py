@@ -122,7 +122,8 @@ def test_a_malformed_extension_entry_is_ignored():
 
 def test_a_non_dict_table_is_skipped():
     bim = {"name": "m", "model": {"tables": ["nonsense", {"name": None}]}}
-    assert build_ossie_document(bim).get("datasets") == []
+    with pytest.raises(ValueError, match="no tables that can be exported"):
+        build_ossie_document(bim)
 
 
 def test_a_non_dict_column_is_skipped():
@@ -144,7 +145,10 @@ def test_a_non_dict_measure_is_skipped():
 
 
 def test_a_non_dict_relationship_is_skipped():
-    bim = {"name": "m", "model": {"tables": [], "relationships": ["nonsense"]}}
+    bim = {
+        "name": "m",
+        "model": {"tables": [{"name": "T"}], "relationships": ["nonsense"]},
+    }
     assert build_ossie_document(bim).get("relationships") is None
 
 
@@ -302,9 +306,24 @@ def test_the_cli_writes_to_stdout_without_an_output_path(tmp_path, capsys):
     from ossie_microsoft.cli import main
 
     src = tmp_path / "m.bim"
-    src.write_text(json.dumps({"name": "m", "model": {"tables": []}}), encoding="utf-8")
+    src.write_text(
+        json.dumps({"name": "m", "model": {"tables": [{"name": "T"}]}}),
+        encoding="utf-8",
+    )
     assert main(["import", "-i", str(src)]) == 0
     assert yaml.safe_load(capsys.readouterr().out)["name"] == "m"
+
+
+def test_the_cli_rejects_a_model_without_an_exportable_dataset(tmp_path, capsys):
+    from ossie_microsoft.cli import main
+
+    src = tmp_path / "m.bim"
+    out = tmp_path / "m.yaml"
+    src.write_text(json.dumps({"name": "m", "model": {"tables": []}}), encoding="utf-8")
+
+    assert main(["import", "-i", str(src), "-o", str(out)]) == 1
+    assert "no tables that can be exported" in capsys.readouterr().err
+    assert not out.exists()
 
 
 def test_the_cli_reports_a_bad_file_without_a_traceback(tmp_path, capsys):

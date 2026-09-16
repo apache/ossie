@@ -109,7 +109,7 @@ def test_model_name_and_description(model):
 
 
 def test_accepts_model_bim_json_text():
-    document = {"name": "x", "model": {"tables": []}}
+    document = {"name": "x", "model": {"tables": [{"name": "T"}]}}
     assert convert_semantic_model_to_ossie(json.dumps(document)) == (
         convert_semantic_model_to_ossie(document)
     )
@@ -144,9 +144,11 @@ def test_calculation_group_is_skipped_with_a_warning():
             ]
         },
     }
-    with pytest.warns(UserWarning, match="calculation groups are not converted"):
-        document = build_ossie_document(bim)
-    assert document["datasets"] == []
+    with (
+        pytest.warns(UserWarning, match="calculation groups are not converted"),
+        pytest.raises(ValueError, match="no tables that can be exported"),
+    ):
+        build_ossie_document(bim)
 
 
 def test_calculated_table_is_skipped_with_a_warning():
@@ -169,9 +171,11 @@ def test_calculated_table_is_skipped_with_a_warning():
             ]
         },
     }
-    with pytest.warns(UserWarning, match="calculated tables are not converted"):
-        document = build_ossie_document(bim)
-    assert document["datasets"] == []
+    with (
+        pytest.warns(UserWarning, match="calculated tables are not converted"),
+        pytest.raises(ValueError, match="no tables that can be exported"),
+    ):
+        build_ossie_document(bim)
 
 
 def test_row_number_column_is_skipped(model):
