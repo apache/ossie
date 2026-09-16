@@ -283,7 +283,8 @@ def _ossie_documents(draw):
 
     return {
         "version": DOCUMENT_VERSION,
-        "semantic_model": [{"name": model_name, "datasets": datasets}],
+        "name": model_name,
+        "datasets": datasets,
     }
 
 
@@ -315,9 +316,9 @@ class TestOssieRoundTripAdversarialNames:
     @given(ossie_in=_ossie_documents())
     @_SETTINGS
     def test_lossless_content_survives_and_every_other_difference_is_reported(self, ossie_in):
-        original_model = ossie_in["semantic_model"][0]
+        original_model = ossie_in
         tml_result, ossie_result, ossie_reloaded = _run_roundtrip(ossie_in)
-        new_model = ossie_reloaded["semantic_model"][0]
+        new_model = ossie_reloaded
 
         # -- Model name -------------------------------------------------
         # An Ossie `name` is a normalised identifier; TML's own `model:
@@ -462,7 +463,8 @@ class TestDisplayNameCollisionAllocator:
         )
         ossie_in = {
             "version": DOCUMENT_VERSION,
-            "semantic_model": [{"name": "collision_model", "datasets": [dataset]}],
+            "name": "collision_model",
+            "datasets": [dataset],
         }
 
         tml_result = ossie_to_thoughtspot.convert(ossie_in)
@@ -473,7 +475,7 @@ class TestDisplayNameCollisionAllocator:
         assert _has_issue(tml_result.issues, "TS-MODEL-DISPLAY-NAME-COLLISION")
 
         ossie_result = tml_to_ossie.convert(tml_result.documents)
-        new_fields = ossie_result.model["semantic_model"][0]["datasets"][0].get("fields") or []
+        new_fields = ossie_result.model["datasets"][0].get("fields") or []
         assert len(new_fields) == 2
 
 
@@ -519,7 +521,8 @@ class TestWarehouseColumnNameDiffersFromDisplayName:
         )
         ossie_in = {
             "version": DOCUMENT_VERSION,
-            "semantic_model": [{"name": "warehouse_probe_model", "datasets": [dataset]}],
+            "name": "warehouse_probe_model",
+            "datasets": [dataset],
         }
 
         tml_result, ossie_result, ossie_reloaded = _run_roundtrip(ossie_in)
@@ -530,6 +533,6 @@ class TestWarehouseColumnNameDiffersFromDisplayName:
             assert table_column["db_column_name"] == warehouse_name
             assert not _has_issue(tml_result.issues, "TS-FIELD-DB-COLUMN-NAME-ASSUMED")
 
-        new_dataset = ossie_reloaded["semantic_model"][0]["datasets"][0]
+        new_dataset = ossie_reloaded["datasets"][0]
         new_field = next(f for f in new_dataset["fields"] if f["label"] == display_name)
         assert new_field["name"] == identifiers.normalise(display_name)

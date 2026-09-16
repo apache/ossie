@@ -367,7 +367,7 @@ class TestReferencingJoinRestoration:
         stash is still current, are unaffected.
         """
         expected = _load_expected(FIXTURES_ROOT / "tpcds")
-        model = expected["semantic_model"][0]
+        model = expected
         relationship = next(r for r in model["relationships"] if r["name"] == "store_sales_to_date")
         relationship["name"] = "renamed_relationship"
 
@@ -427,7 +427,7 @@ def test_tpcds_one_to_many_join_round_trips_with_swapped_endpoints():
 
     # The intermediate Ossie relationship: endpoints swapped relative to
     # TML's declaration (`from` is the many side, `to` is the one side).
-    semantic_model = ossie_result.model["semantic_model"][0]
+    semantic_model = ossie_result.model
     relationship = next(
         r for r in semantic_model["relationships"] if r["name"] == "store_returns_sv_to_store"
     )
@@ -463,7 +463,7 @@ def test_tpcds_one_to_many_join_round_trips_with_swapped_endpoints():
 
 def test_minimal_physical_field_translates_to_its_dataset_dot_column():
     _, ossie_result, _ = _tml_roundtrip("minimal")
-    model = ossie_result.model["semantic_model"][0]
+    model = ossie_result.model
     field = _field(_dataset(model, "orders"), "order_id")
     dialects = _dialects(field)
     assert dialects[DIALECT] == "[orders::order_id]"
@@ -472,7 +472,7 @@ def test_minimal_physical_field_translates_to_its_dataset_dot_column():
 
 def test_minimal_known_unportable_metric_has_no_portable_sibling_and_an_issue():
     _, ossie_result, _ = _tml_roundtrip("minimal")
-    model = ossie_result.model["semantic_model"][0]
+    model = ossie_result.model
     metric = _metric(model, "total_order_amount")
     assert PORTABLE_DIALECT not in _dialects(metric)
     assert "metric:total_order_amount" in _issue_refs(ossie_result.issues, "TS-EXPR-THOUGHTSPOT-ONLY")
@@ -480,7 +480,7 @@ def test_minimal_known_unportable_metric_has_no_portable_sibling_and_an_issue():
 
 def test_tpcds_physical_fields_translate_to_their_warehouse_column_even_when_the_display_name_differs():
     _, ossie_result, _ = _tml_roundtrip("tpcds")
-    model = ossie_result.model["semantic_model"][0]
+    model = ossie_result.model
     # s_store_name's display name differs from its warehouse column name
     # (STORE_NM); the portable expression has to carry the warehouse name,
     # not the display-derived Ossie identifier.
@@ -495,7 +495,7 @@ def test_tpcds_physical_fields_translate_to_their_warehouse_column_even_when_the
 
 def test_tpcds_known_unportable_metrics_have_no_portable_sibling_and_an_issue():
     _, ossie_result, _ = _tml_roundtrip("tpcds")
-    model = ossie_result.model["semantic_model"][0]
+    model = ossie_result.model
 
     # A formula cross-reference: inlining the referenced formulas is out of
     # scope, so only the THOUGHTSPOT dialect entry is emitted.
@@ -562,7 +562,7 @@ def test_a_metrics_portable_expression_carries_its_column_level_aggregation():
     document_set = tml.DocumentSet(model=model_doc, tables=(table,))
 
     ossie_result = tml_to_ossie.convert(document_set)
-    metric = _metric(ossie_result.model["semantic_model"][0], "total_amount")
+    metric = _metric(ossie_result.model, "total_amount")
     dialects = _dialects(metric)
     assert dialects[DIALECT] == "sum ( [widgets::amount] )"
     assert dialects[PORTABLE_DIALECT] == "SUM(widgets.amount)"
@@ -605,7 +605,8 @@ def _datatype_probe_document() -> dict:
     )
     return {
         "version": DOCUMENT_VERSION,
-        "semantic_model": [{"name": "datatype_probe_model", "datasets": [dataset]}],
+        "name": "datatype_probe_model",
+        "datasets": [dataset],
     }
 
 
@@ -624,7 +625,7 @@ def test_every_declared_loss_datatype_is_flagged_before_the_round_trip_changes_i
     assert flagged == {f"field:col_{dt.lower()}" for dt in _LOSSY_DATATYPES}
 
     ossie_result = tml_to_ossie.convert(tml_result.documents)
-    new_dataset = ossie_result.model["semantic_model"][0]["datasets"][0]
+    new_dataset = ossie_result.model["datasets"][0]
     new_by_name = {f["name"]: f.get("datatype") for f in new_dataset["fields"]}
     # Exactly what datatypes.py's own _TO_TML/_TO_OSSIE maps predict -- the
     # TML type each lossy datatype collapses into, mapped back.
@@ -644,7 +645,7 @@ def test_every_lossless_datatype_returns_exactly():
     }  # none of the lossless fields are flagged
 
     ossie_result = tml_to_ossie.convert(tml_result.documents)
-    new_dataset = ossie_result.model["semantic_model"][0]["datasets"][0]
+    new_dataset = ossie_result.model["datasets"][0]
     new_by_name = {f["name"]: f.get("datatype") for f in new_dataset["fields"]}
     for dt in _LOSSLESS_DATATYPES:
         assert new_by_name[f"col_{dt.lower()}"] == dt, dt
@@ -668,12 +669,12 @@ def test_every_declared_field_datatype_returns_exactly(fixture_name):
     declared_loss types covered by the synthetic probe above), so every
     field with a declared datatype must come back unchanged."""
     expected, _, ossie_result = _ossie_roundtrip(fixture_name)
-    original = list(_fields_with_datatype(expected["semantic_model"][0]))
+    original = list(_fields_with_datatype(expected))
     assert original, "expected at least one field with a declared datatype"
 
     new_by_key = {
         (d["name"], f["name"]): f.get("datatype")
-        for d in ossie_result.model["semantic_model"][0]["datasets"]
+        for d in ossie_result.model["datasets"]
         for f in d.get("fields", [])
     }
     for dataset_name, field_name, expected_datatype in original:
@@ -693,11 +694,11 @@ def test_tpcds_metric_datatype_is_dropped_with_an_issue_naming_it():
         "metric:total_return_quantity"
     }
 
-    original_metric = _metric(expected["semantic_model"][0], "total_return_quantity")
+    original_metric = _metric(expected, "total_return_quantity")
     assert original_metric["datatype"] == "Integer"
 
     ossie_result = tml_to_ossie.convert(tml_result.documents)
-    new_metric = _metric(ossie_result.model["semantic_model"][0], "total_return_quantity")
+    new_metric = _metric(ossie_result.model, "total_return_quantity")
     assert "datatype" not in new_metric
 
 
@@ -711,8 +712,8 @@ def test_every_relationship_survives_by_from_to_columns_type_cardinality_and_nam
     `date`) is the concrete case that used to come back renamed.
     """
     expected, _, ossie_result = _ossie_roundtrip(fixture_name)
-    original_model = expected["semantic_model"][0]
-    new_model = ossie_result.model["semantic_model"][0]
+    original_model = expected
+    new_model = ossie_result.model
 
     original_by_identity = {
         _relationship_identity(r): r for r in original_model.get("relationships", [])

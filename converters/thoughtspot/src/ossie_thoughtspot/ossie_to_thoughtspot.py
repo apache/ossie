@@ -697,8 +697,8 @@ def build_table(dataset: dict, log: IssueLog, *, connection_name: str | None = N
 # ---------------------------------------------------------------------------
 # build_model: the Model TML document.
 #
-# Everything below builds `model:` from one Ossie `semantic_model` entry plus
-# the Table/SQL-View documents `build_table` already produced for its
+# Everything below builds `model:` from one Ossie semantic model -- the
+# document root -- plus the Table/SQL-View documents `build_table` produced for its
 # datasets. Order of business: name/description/ai_context, then a resolver
 # any computed field or metric's portable (ANSI_SQL) expression needs
 # (`resolve_field`, built once from every dataset's physical fields), then
@@ -1758,7 +1758,10 @@ def _join_entry_for_unrepresentable(entry: dict) -> tuple[str, dict]:
 
 
 def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueLog) -> TmlDocument:
-    """One Ossie `semantic_model` entry -> one ThoughtSpot `model:` TML document.
+    """One Ossie semantic model -> one ThoughtSpot `model:` TML document.
+
+    `semantic_model` is the Ossie document root itself (apache/ossie#383): its
+    extra `version` key is simply never read here.
 
     `tables` are the already-built Table/SQL-View documents for this model's
     datasets (`build_table`, called once per dataset) -- consulted here, by
@@ -2033,13 +2036,16 @@ class TmlConversion:
 def convert(ossie_document: dict) -> TmlConversion:
     """Convert one Ossie document into one ThoughtSpot TML document set.
 
-    Ossie's `semantic_model` is a list (`core-spec/spec.md:88-96`), but --
-    mirroring `tml_to_ossie.convert`, which only ever *produces* a
-    single-entry list -- this converter only ever *consumes* one: "One Ossie
-    semantic model corresponds to 1 + N TML documents" is this document's own
-    opening rule, and there is no defined mapping for more than one model
-    sharing a single TML document set. Zero or more than one entry is a hard
-    failure naming what was found, not a best-effort pick of the first.
+    An Ossie document carries exactly one semantic model, its fields at the
+    document root (apache/ossie#383) -- which matches this converter's own
+    opening rule, "One Ossie semantic model corresponds to 1 + N TML
+    documents", with nothing left to choose between.
+
+    A document still carrying the pre-#383 `semantic_model` wrapper is
+    rejected by name rather than unwrapped. Reading its first entry would
+    convert silently and quietly discard any later one, and a document old
+    enough to have the wrapper is old enough that the rest of it may have
+    moved too; saying so is more useful than a best-effort guess.
 
     Tables are built before the model (`build_table`, one per dataset) so
     `build_model` can validate every physical field's `column_id` against a
@@ -2053,16 +2059,26 @@ def convert(ossie_document: dict) -> TmlConversion:
     already raises for that case, naming the gap rather than inventing a
     connection.
     """
-    models = ossie_document.get("semantic_model")
-    if not isinstance(models, list) or not models:
-        raise ConversionError("the Ossie document has no semantic_model entry to convert")
-    if len(models) > 1:
-        names = ", ".join(str(m.get("name")) for m in models if isinstance(m, dict))
+    # The mapping check comes first so `in` is a key test: on a str it would
+    # be a substring match, and "semantic_model: ..." read as raw text would
+    # raise the wrapper error instead of saying what is actually wrong. The
+    # CLI already rejects a non-mapping before calling this, so this guard is
+    # for library callers.
+    if not isinstance(ossie_document, dict):
         raise ConversionError(
-            f"the Ossie document declares more than one semantic_model entry "
-            f"({names}); this converter handles exactly one model per document"
+            f"the Ossie document must be a mapping, not "
+            f"{type(ossie_document).__name__}"
         )
-    semantic_model = models[0]
+    if "semantic_model" in ossie_document:
+        raise ConversionError(
+            "the Ossie document uses the removed `semantic_model` wrapper; "
+            "a document now carries one semantic model at its root "
+            "(`version`, `name`, `datasets`, ...). Re-export it, or lift the "
+            "single wrapper entry to the root, and convert again"
+        )
+    semantic_model = ossie_document
+    if not semantic_model.get("datasets"):
+        raise ConversionError("the Ossie document has no datasets to convert")
 
     log = IssueLog()
     tables = [build_table(dataset, log) for dataset in semantic_model.get("datasets") or []]

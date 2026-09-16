@@ -46,10 +46,10 @@ PORTABLE_DIALECT = "ANSI_SQL"
 SPEC_SERIES = "0.2"
 
 #: The exact `version` this converter writes at the root of every document it
-#: emits (`{"version": DOCUMENT_VERSION, "semantic_model": [...]}`). Unlike
+#: emits (`{"version": DOCUMENT_VERSION, "name": ..., "datasets": [...]}`). Unlike
 #: SPEC_SERIES (major.minor, used to check an *incoming* document's rough
 #: compatibility), ossie-schema.json pins `version` to this exact string as a
-#: `const` (`ossie-schema.json:9-13`), so a document that emits anything else
+#: `const` (`ossie-schema.json:8-12`), so a document that emits anything else
 #: fails schema validation outright. Bump in lockstep with core-spec/'s own
 #: `version` if it ever moves -- the same discipline converters/databricks'
 #: `OSSIE_VERSION` constant documents.
@@ -100,7 +100,7 @@ FIELD_STASH_DB_COLUMN_NAME_WITNESS = "db_column_name_display_name_witness"
 
 #: Exact ThoughtSpot display name, stashed whenever identifier normalisation produced
 #: a different Ossie identifier. Shared across every scope that can suffer
-#: this divergence: Model (`semantic_model.name`) and Metric (a Metric has no
+#: this divergence: Model (the document root's `name`) and Metric (a Metric has no
 #: `label` field to carry the display name the way a Field does). Also
 #: defensively checked at Dataset scope by `_table_name` in
 #: ossie_to_thoughtspot.py -- but a Dataset's own `name` is the verbatim
@@ -109,7 +109,7 @@ FIELD_STASH_DB_COLUMN_NAME_WITNESS = "db_column_name_display_name_witness"
 #: two scopes, not a reachable path.
 STASH_TML_NAME = "tml_name"
 
-# --- Model scope (attached to a `semantic_model` entry) --------------------
+# --- Model scope (attached to the document root) ---------------------------
 
 #: Formula-backed ATTRIBUTE columns whose references span two or more
 #: datasets, so no single Ossie dataset can own the field. Preserved verbatim

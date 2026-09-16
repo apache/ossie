@@ -140,7 +140,7 @@ class TestConversionMatchesExpected:
 @pytest.fixture(scope="module")
 def _tpcds_semantic_model() -> dict:
     document_set = _load_document_set(FIXTURES_ROOT / "tpcds")
-    return tml_to_ossie.convert(document_set).model["semantic_model"][0]
+    return tml_to_ossie.convert(document_set).model
 
 
 class TestTpcdsFixtureCoversItsRequiredConstructs:

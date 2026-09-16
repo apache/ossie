@@ -1859,10 +1859,11 @@ def _convert_join(
 class OssieConversion:
     """The result of one TML -> Ossie conversion.
 
-    `model` is the full Ossie document -- `{"version": ..., "semantic_model":
-    [...]}` -- ready to dump as YAML. `issues` is every declared loss and
-    degradation raised while building it: nothing in `model` is missing
-    something TML held without a matching entry here.
+    `model` is the full Ossie document -- `{"version": ..., "name": ...,
+    "datasets": [...], ...}`, one semantic model per document with no wrapper
+    -- ready to dump as YAML. `issues` is every declared loss and degradation
+    raised while building it: nothing in `model` is missing something TML held
+    without a matching entry here.
     """
 
     model: dict
@@ -2258,6 +2259,29 @@ def convert(document_set: DocumentSet) -> OssieConversion:
         datasets_out.append(dataset_dict)
     semantic_model["datasets"] = datasets_out
 
+    if not datasets_out:
+        # `datasets` is `minItems: 1` in ossie-schema.json, so a model whose
+        # every model_tables[] entry was unusable (or which declared none)
+        # produces a document that does not validate -- and that this
+        # converter's own to-tml leg then refuses. Reporting it at ERROR keeps
+        # the two legs agreeing about what a convertible document is and makes
+        # the CLI exit non-zero, rather than handing back an empty document
+        # that only fails later, somewhere else.
+        log.add(
+            code="TS-MODEL-NO-DATASETS",
+            severity=Severity.ERROR,
+            message=(
+                f"model {model_display_name!r} yielded no datasets; an Ossie "
+                f"document requires at least one, so the emitted document is "
+                f"not valid against the Ossie schema"
+            ),
+            object_ref=f"model:{semantic_model_name}",
+            remedy=(
+                "Check that the model's model_tables[] entries name Table or "
+                "SQL View documents that were supplied alongside it."
+            ),
+        )
+
     if relationships:
         semantic_model["relationships"] = relationships
     if metrics:
@@ -2311,5 +2335,13 @@ def convert(document_set: DocumentSet) -> OssieConversion:
 
     semantic_model = _write_stash_safely(semantic_model, model_stash, log, f"model:{semantic_model_name}")
 
-    document = {"version": DOCUMENT_VERSION, "semantic_model": [semantic_model]}
+    # One semantic model per document, its fields at the root beside `version`
+    # -- no wrapper (apache/ossie#383). The spread cannot clobber `version`:
+    # `semantic_model` only ever holds name/description/datasets/relationships/
+    # metrics plus the `custom_extensions` the stash writes, and nothing on
+    # that path emits a `version` key. Key order is the order those were
+    # assembled in, which is not the order the schema lists them in -- YAML
+    # mappings are unordered and the schema does not care, so this is a
+    # readability detail, not a correctness one.
+    document = {"version": DOCUMENT_VERSION, **semantic_model}
     return OssieConversion(model=document, issues=log)
