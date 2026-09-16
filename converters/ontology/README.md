@@ -31,7 +31,7 @@ Converters between Ossie, Palantir, LinkML, and Spec ontology formats.
 
 ### LinkML
 
-The LinkML converters use the natively-compiled [LinkML-Scala](https://github.com/NeverBlink-OSS/linkml-scala) library. This repository only provides wrappers – please file any issues [here](https://github.com/NeverBlink-OSS/linkml-scala/issues). 
+The LinkML converters use the natively-compiled [LinkML-Scala](https://github.com/NeverBlink-OSS/linkml-scala) library (see: [converter source code](https://github.com/NeverBlink-OSS/linkml-scala/tree/main/generator/src/eu/neverblink/linkml/generator/ossie)). This repository only provides wrappers – please file any issues [here](https://github.com/NeverBlink-OSS/linkml-scala/issues).
 
 The Ossie <-> LinkML mapping and its limitations are documented [here](https://github.com/NeverBlink-OSS/linkml-scala/blob/main/docs/ossie_mapping.md). In general, LinkML supports only a subset of restriction expressions in Ossie, `derived_by` is not yet supported, and `ontology_mappings` are not representable in LinkML. Conversely, Ossie does not support many of the features of LinkML, such as all possible inheritance patterns. We are working to iteratively improve the coverage of the mapping in both directions.
 

@@ -35,6 +35,7 @@ import yaml
 
 from ossie_ontology.converter.linkml_to_ossie.converter import LinkmlToOssieConverter
 from ossie_ontology.converter.ossie_to_linkml.converter import OssieToLinkmlConverter
+from ossie_ontology.converter.spec_to_ossie.converter import SpecToOssieConverter
 from ossie_ontology.model import OssieOntology
 from ossie_ontology.spec import OssieSpec
 
@@ -149,3 +150,143 @@ def test_roundtrip_drops_ontology_mappings(flights_model: OssieOntology, flights
     # is nowhere to put datasets, join paths or metrics.
     assert flights_model.ontology_mappings != []
     assert LinkmlToOssieConverter().convert_text(flights_linkml).ontology_mappings == []
+
+
+# ----- One full example, in both YAML formats ----------------------------
+
+# The two documents below describe the same little ontology: one in Ossie's
+# YAML, one in LinkML's. They convert into each other exactly:
+#
+#   Ossie                               LinkML
+#   ----------------------------------  ------------------------------------
+#   name, description                   name, description
+#   (nothing)                           id, prefixes, imports, default_range
+#   concept, type: ValueType            an entry under `types`
+#   extends: [ Integer ]                typeof: integer
+#   requires: [ NrPages >= 1 ]          minimum_value: 1
+#   concept, type: EntityType           an entry under `classes`
+#   relationships                       that class's `attributes`
+#   roles: [ { concept: Isbn } ]        range: Isbn
+#   verbalizes                          title (the phrase, placeholders cut)
+#   identify_by: [ isbn ]               identifier: true on that attribute
+#   requires: [ Book.isbn ]             required: true on that attribute
+#   multiplicity: OneToOne, ManyToOne   a single-valued attribute
+#   no multiplicity                     multivalued: true
+#   a camelCase relationship name       a snake_case slot, alias keeps the
+#                                       original spelling
+#   the order relationships are in      rank
+
+EXAMPLE_OSSIE = """\
+version: 0.2.0.dev0
+name: Books
+description: A tiny ontology of books and the people who wrote them.
+ontology:
+- concept: Author
+  type: EntityType
+  description: A person who wrote a book.
+  identify_by:
+  - name
+  requires:
+  - Author.name
+  relationships:
+  - name: name
+    roles:
+    - concept: String
+    verbalizes:
+    - '{Author} is identified by {String}'
+    multiplicity: OneToOne
+- concept: Book
+  type: EntityType
+  identify_by:
+  - isbn
+  requires:
+  - Book.isbn
+  relationships:
+  - name: isbn
+    roles:
+    - concept: Isbn
+    verbalizes:
+    - '{Book} is identified by {Isbn}'
+    multiplicity: OneToOne
+  - name: pages
+    roles:
+    - concept: NrPages
+    verbalizes:
+    - '{Book} has pages- {NrPages}'
+    multiplicity: ManyToOne
+  - name: writtenBy
+    roles:
+    - concept: Author
+    verbalizes:
+    - '{Book} is written by {Author}'
+- concept: Isbn
+  type: ValueType
+  description: The identifier of a book.
+  extends:
+  - String
+- concept: NrPages
+  type: ValueType
+  extends:
+  - Integer
+  requires:
+  - NrPages >= 1
+"""
+
+EXAMPLE_LINKML = """\
+id: https://example.org/books
+name: Books
+description: A tiny ontology of books and the people who wrote them.
+prefixes:
+  linkml: https://w3id.org/linkml/
+imports:
+- linkml:types
+default_range: string
+classes:
+  Book:
+    attributes:
+      isbn:
+        title: is identified by
+        identifier: true
+        required: true
+        rank: 1
+        range: Isbn
+      pages:
+        title: has pages-
+        rank: 2
+        range: NrPages
+      written_by:
+        title: is written by
+        alias: writtenBy
+        multivalued: true
+        rank: 3
+        range: Author
+  Author:
+    description: A person who wrote a book.
+    attributes:
+      name:
+        title: is identified by
+        identifier: true
+        required: true
+        rank: 1
+        range: string
+types:
+  NrPages:
+    typeof: integer
+    minimum_value: 1
+  Isbn:
+    description: The identifier of a book.
+    typeof: string
+"""
+
+
+def test_full_example_ossie_to_linkml():
+    """The Ossie document above converts to exactly the LinkML schema above."""
+    model = SpecToOssieConverter().convert(OssieSpec.load_yaml(EXAMPLE_OSSIE))
+    assert yaml.safe_load(OssieToLinkmlConverter.convert(model)) == yaml.safe_load(EXAMPLE_LINKML)
+
+
+def test_full_example_linkml_to_ossie():
+    """And back: the LinkML schema above converts to exactly the Ossie document."""
+    with linkml_scala.load_string(EXAMPLE_LINKML) as schema:
+        spec = LinkmlToOssieConverter().convert_to_spec(schema)
+    assert yaml.safe_load(spec.dump_yaml()) == yaml.safe_load(EXAMPLE_OSSIE)
