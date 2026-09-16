@@ -772,7 +772,19 @@ def test_all_tpcds_example_metrics_translate_to_dax():
         "DIVIDE(SUM('store_sales'[ss_ext_sales_price]), "
         "SUM('store'[s_number_employees]))"
     )
-    assert all(measure["expression"] != "BLANK()" for measure in measures.values())
+    # cumulative_sales, brand_rank_in_store, and monthly_sales_change each wrap an
+    # aggregate in a window (OVER/PARTITION BY/RANK/LAG), which this translator
+    # refuses rather than guesses at -- BLANK() is the correct, documented outcome.
+    window_function_metrics = {
+        "cumulative_sales",
+        "brand_rank_in_store",
+        "monthly_sales_change",
+    }
+    for name, measure in measures.items():
+        if name in window_function_metrics:
+            assert measure["expression"] == "BLANK()"
+        else:
+            assert measure["expression"] != "BLANK()"
 
 
 def test_a_translated_sql_measure_preserves_its_source_expression():
