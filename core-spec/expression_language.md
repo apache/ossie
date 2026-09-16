@@ -143,8 +143,8 @@ Standard SQL operator precedence applies (highest to lowest):
 3. Multiplication/Division: `*`, `/`, `%`  
 4. Addition/Subtraction: `+`, `-`  
 5. Comparison: `=`, `<>`, `<`, `>`, `<=`, `>=`, `LIKE`, `IN`, `BETWEEN`, `IS NULL`   
-6`AND`  
-7`OR`
+6. Logical AND: `AND`  
+7. Logical OR: `OR`
 
 ---
 

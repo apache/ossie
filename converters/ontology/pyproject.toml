@@ -15,33 +15,49 @@
 # specific language governing permissions and limitations
 # under the License.
 
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest==9.0.3",
+    "pytest-snapshot",
+]
+
 [project]
 name = "apache-ossie-ontology"
 version = "0.1.0"
 description = "Ossie ontology converters — Palantir → Ossie, Ossie → Spec, Spec → Ossie"
+authors = [{ name = "RelationalAI", email = "support@relational.ai" }]
+requires-python = ">=3.11"
 readme = "README.md"
-authors = [
-    { name = "RelationalAI", email = "support@relational.ai" },
+license = "Apache-2.0"
+keywords = [
+    "Apache Ossie",
+    "Ossie",
+    "Ontology"
 ]
-requires-python = ">= 3.11"
 dependencies = [
     "pydantic",
     "pyyaml",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest==9.0.3",
-    "pytest-snapshot",
-    "pip-tools",
-]
+[project.urls]
+homepage = "https://ossie.apache.org/"
+repository = "https://github.com/apache/ossie/"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/ossie_ontology"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
 
 [tool.pyright]
 pythonVersion = "3.11"
+
+[tool.uv]
+required-version = ">=0.9.0"
+default-groups = [
+    "dev"
+]

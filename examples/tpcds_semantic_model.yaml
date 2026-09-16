@@ -610,6 +610,47 @@ semantic_model:
             - "employee productivity"
             - "revenue per employee"
 
+      # Window-function metrics. Each one wraps an aggregate in a window, so the
+      # grain named in the description is the GROUP BY the query is expected to supply.
+      - name: cumulative_sales
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(SUM(store_sales.ss_ext_sales_price)) OVER (ORDER BY date_dim.d_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+        description: Running total of sales revenue by date (requires grouping by date_dim.d_date)
+        datatype: Decimal
+        ai_context:
+          synonyms:
+            - "running total sales"
+            - "cumulative revenue"
+            - "sales to date"
+
+      - name: brand_rank_in_store
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: RANK() OVER (PARTITION BY store.s_store_sk ORDER BY SUM(store_sales.ss_ext_sales_price) DESC)
+        description: Rank of each brand by sales within a store, 1 = highest (requires grouping by store.s_store_sk and item.i_brand)
+        datatype: Integer
+        ai_context:
+          synonyms:
+            - "brand ranking by store"
+            - "top brands per store"
+            - "store brand leaderboard"
+
+      - name: monthly_sales_change
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(store_sales.ss_ext_sales_price) - LAG(SUM(store_sales.ss_ext_sales_price), 1) OVER (ORDER BY date_dim.d_year, date_dim.d_moy)
+        description: Sales revenue change versus the previous month (requires grouping by date_dim.d_year and date_dim.d_moy)
+        datatype: Decimal
+        ai_context:
+          synonyms:
+            - "month over month sales change"
+            - "MoM sales"
+            - "sales delta"
+
     custom_extensions:
       - vendor_name: SALESFORCE
         data: |
