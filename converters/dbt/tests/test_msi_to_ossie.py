@@ -302,7 +302,7 @@ class TestDialectConfiguration:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
 
-        assert result.dialects == [OssieDialect.ANSI_SQL]
+        assert "dialects" not in json.loads(result.to_ossie_json())
         assert _fields(result)[0].expression.dialects[0].dialect == OssieDialect.ANSI_SQL
 
     def test_configurable_dialect(self) -> None:
@@ -312,7 +312,7 @@ class TestDialectConfiguration:
         )
         result = MSIToOssieConverter(dialect=OssieDialect.SNOWFLAKE).convert(_manifest(semantic_models=[sm])).output
 
-        assert result.dialects == [OssieDialect.SNOWFLAKE]
+        assert "dialects" not in json.loads(result.to_ossie_json())
         assert _fields(result)[0].expression.dialects[0].dialect == OssieDialect.SNOWFLAKE
 
 
