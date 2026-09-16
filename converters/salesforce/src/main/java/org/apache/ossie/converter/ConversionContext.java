@@ -19,24 +19,21 @@
 
 package org.apache.ossie.converter;
 
-/**
- * Factory for creating converters based on conversion direction.
- *
- */
-public class ConverterFactory {
+import java.util.Map;
 
-    /**
-     * Creates a converter for the specified direction.
-     *
-     * @param direction The conversion direction
-     * @return A Converter instance configured for the specified direction
-     */
-    public static Converter getConverter(ConversionDirection direction) {
-        return new ConverterImpl(direction);
+/** State owned by one model conversion; never shared across inputs or converter calls. */
+public final class ConversionContext {
+    private final Map<String, Object> sourceData;
+    private final Map<String, Object> outputData;
+    private FieldExpressionPlan fieldPlan;
+
+    public ConversionContext(Map<String, Object> sourceData, Map<String, Object> outputData) {
+        this.sourceData = sourceData;
+        this.outputData = outputData;
     }
 
-    /** Creates a converter with an external environment binding catalog. */
-    public static Converter getConverter(ConversionDirection direction, SalesforceBindings bindings) {
-        return new ConverterImpl(direction, bindings);
-    }
+    public Map<String, Object> sourceData() { return sourceData; }
+    public Map<String, Object> outputData() { return outputData; }
+    FieldExpressionPlan fieldPlan() { return fieldPlan; }
+    void fieldPlan(FieldExpressionPlan plan) { this.fieldPlan = plan; }
 }

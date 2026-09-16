@@ -58,20 +58,25 @@ public class MetricMappingHandler implements PipelineStep {
 
     @Override
     public void execute(Map<String, Object> sourceData, Map<String, Object> outputData, Map<String, String> mappings) {
+        execute(new ConversionContext(sourceData, outputData), mappings);
+    }
+
+    @Override
+    public void execute(ConversionContext context, Map<String, String> mappings) {
         logger.debug("Mapping metrics in {} direction", direction);
         if (direction == ConversionDirection.OSSIE_TO_SALESFORCE) {
-            mapOssieToSalesforce(sourceData, outputData, mappings);
+            mapOssieToSalesforce(context, mappings);
         } else {
-            mapSalesforceToOssie(sourceData, outputData, mappings);
+            mapSalesforceToOssie(context.sourceData(), context.outputData(), mappings);
         }
     }
 
     /**
      * Maps Ossie metrics to Salesforce semanticCalculatedMeasurements.
      */
-    private void mapOssieToSalesforce(
-            Map<String, Object> sourceData, Map<String, Object> outputData, Map<String, String> mappings) {
-
+    private void mapOssieToSalesforce(ConversionContext context, Map<String, String> mappings) {
+        Map<String, Object> sourceData = context.sourceData();
+        Map<String, Object> outputData = context.outputData();
         List<Object> ossieMetrics = getList(sourceData, METRICS);
         if (ossieMetrics == null) {
             return;
@@ -95,7 +100,7 @@ public class MetricMappingHandler implements PipelineStep {
 
         List<Object> sfMetrics = getList(outputData, SEMANTIC_CALCULATED_MEASUREMENTS);
         if (sfMetrics != null) {
-            unwrapExpressions(ossieMetrics, sfMetrics, sourceData, outputData);
+            unwrapExpressions(ossieMetrics, sfMetrics, context);
         } else if (!ossieMetrics.isEmpty()) {
             throw new ConversionException("Metric '" + getString(asMap(ossieMetrics.get(0)), NAME)
                     + "': metric mappings produced no calculated measurements");
@@ -142,20 +147,28 @@ public class MetricMappingHandler implements PipelineStep {
      * the OSI declarations and the actual emitted fields, including their types.
      */
     private void unwrapExpressions(List<Object> ossieMetrics, List<Object> sfMetrics,
-                                   Map<String, Object> sourceData, Map<String, Object> outputData) {
+                                   ConversionContext context) {
         if (ossieMetrics.size() != sfMetrics.size()) {
             throw new ConversionException("Metric export count differs from declared metrics: "
                     + streamMaps(ossieMetrics).map(metric -> getString(metric, NAME)).toList());
         }
+        MetricFieldResolver resolver = new MetricFieldResolver(context.sourceData(), context.outputData(), context.fieldPlan());
+        MetricCompilationPlan plan = new MetricCompilationPlan(context.sourceData(), resolver);
         for (int i = 0; i < ossieMetrics.size(); i++) {
             Map<String, Object> ossieMetric = asMap(ossieMetrics.get(i));
             Map<String, Object> sfMetric = asMap(sfMetrics.get(i));
-            MetricExpressionTranslator.Result translated =
-                    MetricExpressionTranslator.translate(ossieMetric, sourceData, outputData);
+            customExtensionHandler.restoreSalesforceCustomExtension(sfMetric, ossieMetric);
+            ExpressionCompiler.Compiled translated = plan.compile(getString(ossieMetric, NAME));
+            String nativeType = getString(sfMetric, DATA_TYPE);
+            if (nativeType != null && !Set.of("Number", "Currency", "Percentage").contains(nativeType)) {
+                throw new ConversionException("Metric '" + getString(ossieMetric, NAME)
+                        + "': incompatible Salesforce dataType " + nativeType);
+            }
             sfMetric.put(EXPRESSION, translated.expression());
-            sfMetric.put(DATA_TYPE, translated.dataType());
+            sfMetric.put(DATA_TYPE, nativeType == null ? "Number" : nativeType);
             sfMetric.put("syntax", "Tua");
             sfMetric.put("aggregationType", "UserAgg");
+            sfMetric.put("level", "AggregateFunction");
         }
     }
 

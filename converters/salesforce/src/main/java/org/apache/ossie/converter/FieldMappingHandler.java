@@ -24,7 +24,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
-import java.util.regex.Pattern;
 
 import static org.apache.ossie.converter.ConverterConstants.*;
 import static org.apache.ossie.util.DataStructureUtils.*;
@@ -44,26 +43,8 @@ public class FieldMappingHandler implements PipelineStep {
     private static final Set<String> SF_FIELD_HANDLED_PROPS =
         Set.of(API_NAME, LABEL, DESCRIPTION, DATA_OBJECT_FIELD_NAME);
 
-    // Compiled regex pattern for SQL keywords that indicate calculated expressions
-    private static final Pattern CALCULATED_KEYWORDS_PATTERN = Pattern.compile(
-        "\\b(CASE|WHEN|THEN|ELSE|END|CAST|CONVERT|EXTRACT|SUBSTRING|SUBSTR|" +
-        "COALESCE|NULLIF|IFNULL|CONCAT|UPPER|LOWER|TRIM|LENGTH|" +
-        "AND|OR|NOT|IN|BETWEEN|LIKE|IS\\s+NULL|IS\\s+NOT\\s+NULL|DISTINCT|" +
-        "COUNT|SUM|AVG|MIN|MAX|DATE|YEAR|MONTH|DAY)\\b"
-    );
-
     private final ConversionDirection direction;
     private final CustomExtensionHandler customExtensionHandler;
-
-    /**
-     * Enum representing the four possible field types in Salesforce Semantic Model.
-     */
-    private enum FieldType {
-        DIMENSION, // Direct dimension: !isCalculated + hasDimension
-        MEASUREMENT, // Direct measurement: !isCalculated + !hasDimension
-        CALCULATED_DIMENSION, // Calculated dimension: isCalculated + hasDimension
-        CALCULATED_MEASUREMENT // Calculated measurement: isCalculated + !hasDimension
-    }
 
     public FieldMappingHandler(ConversionDirection direction, CustomExtensionHandler customExtensionHandler) {
         this.direction = direction;
@@ -75,38 +56,72 @@ public class FieldMappingHandler implements PipelineStep {
      */
     @Override
     public void execute(Map<String, Object> sourceData, Map<String, Object> outputData, Map<String, String> mappings) {
+        execute(new ConversionContext(sourceData, outputData), mappings);
+    }
+
+    @Override
+    public void execute(ConversionContext context, Map<String, String> mappings) {
         logger.debug("Mapping fields in {} direction", direction);
         if (direction == ConversionDirection.OSSIE_TO_SALESFORCE) {
-            mapOssieToSalesforce(sourceData, outputData);
+            FieldExpressionPlan plan = new FieldExpressionPlan(context.sourceData(), context.outputData());
+            mapOssieToSalesforce(context.sourceData(), context.outputData(), plan);
+            context.fieldPlan(plan);
         } else {
-            mapSalesforceToOssie(sourceData, outputData);
+            mapSalesforceToOssie(context.sourceData(), context.outputData());
         }
     }
 
-    /**
-     * Maps Ossie dataset fields to Salesforce SemanticDimensions and SemanticMeasurements.
-     *
-     * @param outputData The output map containing semanticModel
-     * @param sourceData The source Ossie data
-     */
-    private void mapOssieToSalesforce(
-            Map<String, Object> sourceData, Map<String, Object> outputData) {
-
-        List<Object> ossieDatasets = getList(sourceData, DATASETS);
-
-        List<Object> sfDataObjects = getList(outputData, SEMANTIC_DATA_OBJECTS);
-
-        for (Object ossieDatasetObj : ossieDatasets) {
-            Map<String, Object> ossieDataset = asMap(ossieDatasetObj);
-
-            String datasetName = getString(ossieDataset, NAME);
-            if (datasetName == null) continue;
-
-            // Find matching SemanticDataObject
-            Map<String, Object> sfDataObject = findItemById(sfDataObjects, API_NAME, datasetName);
-            if (sfDataObject == null) continue;
-
-            processFieldsForDataset(ossieDataset, sfDataObject, outputData);
+    /** Emit physical bindings first, then compile every derived field against those bindings. */
+    private void mapOssieToSalesforce(Map<String, Object> sourceData,
+            Map<String, Object> outputData, FieldExpressionPlan plan) {
+        List<Object> targets = getList(outputData, SEMANTIC_DATA_OBJECTS);
+        Map<String, Map<String, Object>> targetsByName = new LinkedHashMap<>();
+        if (targets != null) {
+            for (Object item : targets) {
+                Map<String, Object> target = asMap(item);
+                String name = getString(target, API_NAME);
+                if (targetsByName.putIfAbsent(name, target) != null) {
+                    throw new IllegalArgumentException("Duplicate exported dataset '" + name + "'");
+                }
+            }
+        }
+        for (Object item : getList(sourceData, DATASETS)) {
+            Map<String, Object> dataset = asMap(item);
+            String datasetName = getString(dataset, NAME);
+            Map<String, Object> target = targetsByName.get(datasetName);
+            if (target == null) {
+                throw new IllegalArgumentException("Dataset '" + datasetName + "' was not exported before field mapping");
+            }
+            for (FieldExpressionPlan.PlannedField field : plan.fields(datasetName)) {
+                if (!field.direct()) continue;
+                Map<String, Object> sfField = mapFieldProperties(field.source(), field.physicalColumn());
+                customExtensionHandler.restoreSalesforceCustomExtension(sfField, field.source());
+                applyOssieDatatype(sfField, field.source());
+                applyFieldDefaults(sfField);
+                getOrCreateList(target, field.source().containsKey(DIMENSION)
+                        ? SEMANTIC_DIMENSIONS : SEMANTIC_MEASUREMENTS).add(sfField);
+            }
+        }
+        plan.compileAll();
+        for (Object item : getList(sourceData, DATASETS)) {
+            String datasetName = getString(asMap(item), NAME);
+            for (FieldExpressionPlan.PlannedField field : plan.fields(datasetName)) {
+                if (field.direct()) continue;
+                ExpressionCompiler.Binding binding = plan.resolve(datasetName, field.name());
+                Map<String, Object> calc = createSemanticCalculatedDimension(field.source(), binding.expression());
+                calc.put(API_NAME, field.calculatedApiName());
+                calc.put(DEPENDENCIES, plan.dependencies(datasetName, field.name()));
+                customExtensionHandler.restoreSalesforceCustomExtension(calc, field.source());
+                applyOssieDatatype(calc, field.source());
+                String exactType = getString(calc, DATA_TYPE);
+                if (exactType != null && !SalesforceDataTypeMapper.areCompatible(binding.datatype(), exactType)) {
+                    throw new IllegalArgumentException("Field '" + datasetName + "." + field.name()
+                            + "' calculated datatype conflicts with Salesforce extension dataType '" + exactType + "'");
+                }
+                calc.putIfAbsent(DATA_TYPE, SalesforceDataTypeMapper.toSalesforce(binding.datatype()));
+                applyFieldDefaults(calc);
+                getOrCreateList(outputData, SEMANTIC_CALCULATED_DIMENSIONS).add(calc);
+            }
         }
     }
 
@@ -193,7 +208,7 @@ public class FieldMappingHandler implements PipelineStep {
         // Wrap dataObjectFieldName in expression structure
         String dataObjectFieldName = getString(sfDimension, DATA_OBJECT_FIELD_NAME);
         if (dataObjectFieldName != null) {
-            ossieField.put(EXPRESSION, wrapExpression(dataObjectFieldName));
+            ossieField.put(EXPRESSION, wrapPhysicalExpression(dataObjectFieldName));
         }
 
         // Store unmapped properties in custom_extensions
@@ -212,7 +227,7 @@ public class FieldMappingHandler implements PipelineStep {
 
         String dataObjectFieldName = getString(sfMeasurement, DATA_OBJECT_FIELD_NAME);
         if (dataObjectFieldName != null) {
-            ossieField.put(EXPRESSION, wrapExpression(dataObjectFieldName));
+            ossieField.put(EXPRESSION, wrapPhysicalExpression(dataObjectFieldName));
         }
 
         // Store unmapped properties in custom_extensions
@@ -263,82 +278,11 @@ public class FieldMappingHandler implements PipelineStep {
         return expression;
     }
 
-    /**
-     * Processes all fields for a single dataset.
-     *
-     * <p><b>Routing Logic:</b>
-     * <table border="1">
-     *   <tr><th>Expression Type</th><th>Has dimension?</th><th>Routes To</th></tr>
-     *   <tr><td>Direct</td><td>Yes</td><td>dataObject.semanticDimensions</td></tr>
-     *   <tr><td>Direct</td><td>No</td><td>dataObject.semanticMeasurements</td></tr>
-     *   <tr><td>Calculated</td><td>N/A</td><td>MODEL.semanticCalculatedDimensions</td></tr>
-     * </table>
-     *
-     * @param ossieDataset The Ossie dataset
-     * @param sfDataObject The Salesforce data object to add direct fields to
-     * @param outputData The Salesforce model for adding calculated dimensions
-     */
-    private void processFieldsForDataset(
-            Map<String, Object> ossieDataset, Map<String, Object> sfDataObject, Map<String, Object> outputData) {
-        List<Object> ossieFields = getList(ossieDataset, FIELDS);
-        if (ossieFields == null) {
-            return;
-        }
-
-        List<Object> sfDimensions = getList(sfDataObject, SEMANTIC_DIMENSIONS);
-        List<Object> sfMeasurements = getList(sfDataObject, SEMANTIC_MEASUREMENTS);
-
-        for (Object ossieFieldObj : ossieFields) {
-            Map<String, Object> ossieField = asMap(ossieFieldObj);
-
-            // Determine field type based on Ossie structure
-            boolean hasDimension = ossieField.containsKey(DIMENSION);
-            ExpressionInfo expressionInfo = unwrapExpression(ossieField);
-
-            String expression = expressionInfo.expression();
-            String dialect = expressionInfo.dialect();
-
-            // Skip calculated fields for non-Tableau dialects till we agree on a common dialect.
-            if (!DIALECT_TABLEAU.equals(dialect) && isCalculatedExpression(expression)) {
-                continue;
-            }
-
-            // Check if this is a calculated field (Tableau dialect with calculated expression)
-            boolean isCalculated = DIALECT_TABLEAU.equals(dialect) && isCalculatedExpression(expression);
-
-            if (isCalculated) {
-                // Create a semantic calculated dimension
-                Map<String, Object> calcDim = createSemanticCalculatedDimension(ossieField, expression);
-
-                customExtensionHandler.restoreSalesforceCustomExtension(calcDim, ossieField);
-
-                applyOssieDatatype(calcDim, ossieField);
-
-                applyFieldDefaults(calcDim);
-
-                // Add to semantic calculated dimensions array
-                List<Object> calcDimensions = getOrCreateList(outputData, SEMANTIC_CALCULATED_DIMENSIONS);
-                calcDimensions.add(calcDim);
-            } else {
-                // Non calculated field - add to data object
-                FieldType fieldType = hasDimension? FieldType.DIMENSION : FieldType.MEASUREMENT;
-
-                Map<String, Object> sfField = mapFieldProperties(ossieField, expression);
-
-                customExtensionHandler.restoreSalesforceCustomExtension(sfField, ossieField);
-
-                applyOssieDatatype(sfField, ossieField);
-
-                applyFieldDefaults(sfField);
-
-                RoutingResult result =
-                        routeFieldToArray(sfField, fieldType, sfDataObject, sfDimensions, sfMeasurements);
-                sfDimensions = result.dataObjectDimensions();
-                sfMeasurements = result.dataObjectMeasurements();
-            }
-        }
+    /** Physical columns are SQL identifiers, even when they contain operators or spaces. */
+    private Map<String, Object> wrapPhysicalExpression(String column) {
+        return Map.of(DIALECTS, List.of(Map.of(DIALECT, "ANSI_SQL", EXPRESSION,
+                "\"" + column.replace("\"", "\"\"") + "\"")));
     }
-
 
     /**
      * Maps field properties based on whether the field is calculated.
@@ -400,141 +344,10 @@ public class FieldMappingHandler implements PipelineStep {
         }
 
         // Set syntax for Tableau expressions
-        calcDim.put("syntax", DIALECT_TABLEAU);
+        calcDim.put("syntax", "Tua");
+        calcDim.put("level", "Row");
 
         return calcDim;
-    }
-
-    /**
-     * Routes a field to the appropriate array based on its type.
-     * Initializes arrays lazily using computeIfAbsent.
-     *
-     * @param sfField The Salesforce field to route
-     * @param fieldType The field type
-     * @param sfDataObject The data object (for data object-level arrays)
-     * @return Updated arrays for all levels
-     */
-    private RoutingResult routeFieldToArray(
-            Map<String, Object> sfField,
-            FieldType fieldType,
-            Map<String, Object> sfDataObject,
-            List<Object> currentDataObjectDimensions,
-            List<Object> currentDataObjectMeasurements) {
-
-        List<Object> dataObjectDimensions = currentDataObjectDimensions;
-        List<Object> dataObjectMeasurements = currentDataObjectMeasurements;
-
-        switch (fieldType) {
-            case DIMENSION:
-                dataObjectDimensions = getOrCreateList(sfDataObject, SEMANTIC_DIMENSIONS);
-                dataObjectDimensions.add(sfField);
-                break;
-
-            case MEASUREMENT:
-                dataObjectMeasurements = getOrCreateList(sfDataObject, SEMANTIC_MEASUREMENTS);
-                dataObjectMeasurements.add(sfField);
-                break;
-        }
-
-        return new RoutingResult(dataObjectDimensions, dataObjectMeasurements);
-    }
-
-    /**
-     * Helper record to return updated data object arrays.
-     */
-    private record RoutingResult(List<Object> dataObjectDimensions, List<Object> dataObjectMeasurements) {}
-
-    /**
-     * Helper record to return expression value along with its dialect type.
-     */
-    private record ExpressionInfo(String expression, String dialect) {}
-
-    /**
-     * Extracts the expression value and dialect from Ossie field's expression.dialects[0].expression.
-     * This unwraps the nested structure to get the simple column reference and its dialect.
-     *
-     * @param ossieField The Ossie field containing expression structure
-     * @return ExpressionInfo containing the expression string and dialect type, or null if not found
-     */
-    private ExpressionInfo unwrapExpression(Map<String, Object> ossieField) {
-        Object expressionObj = ossieField.get(EXPRESSION);
-
-        Map<String, Object> expression = asMap(expressionObj);
-        Object dialectsObj = expression.get(DIALECTS);
-
-        List<Object> dialects = asList(dialectsObj);
-
-        Object selectedDialectObj = null;
-        for (Object dialectObj : dialects) {
-            Map<String, Object> dialect = asMap(dialectObj);
-            String dialectType = getString(dialect, DIALECT);
-            if (DIALECT_TABLEAU.equals(dialectType)) {
-                selectedDialectObj = dialectObj;
-                break;
-            }
-        }
-
-        if (selectedDialectObj == null) {
-            selectedDialectObj = dialects.get(0);
-        }
-
-        Map<String, Object> selectedDialect = asMap(selectedDialectObj);
-        Object expressionValue = selectedDialect.get(EXPRESSION);
-        String dialectType = getString(selectedDialect, DIALECT);
-
-        return new ExpressionInfo((String) expressionValue, dialectType);
-    }
-
-    /**
-     * Determines if an expression is calculated or a direct column reference.
-     *
-     * <p>A calculated expression contains:
-     * <ul>
-     *   <li>SQL functions: CONCAT(), SUM(), CAST(), etc.</li>
-     *   <li>Operators: +, -, *, /, %, ||</li>
-     *   <li>SQL keywords: CASE, WHEN, AND, OR, etc.</li>
-     *   <li>Comparisons: {@literal >, <, =, !=, <>}</li>
-     * </ul>
-     *
-     * <p>A direct reference is a simple column name (possibly table-qualified):
-     * <ul>
-     *   <li>customer_name</li>
-     *   <li>customers.customer_name</li>
-     *   <li>schema.table.column</li>
-     * </ul>
-     *
-     * @param expression The SQL expression to evaluate
-     * @return true if calculated, false if direct reference
-     */
-    private boolean isCalculatedExpression(String expression) {
-        if (expression == null || expression.isEmpty()) {
-            return false;
-        }
-
-        String normalized = expression.trim().toUpperCase();
-
-        // Check for function calls (presence of parentheses)
-        if (normalized.contains("(") || normalized.contains("[")) {
-            return true;
-        }
-
-        // Check for operators (arithmetic, comparison, string concatenation)
-        if (normalized.contains("*") || normalized.contains("/") || normalized.contains("%") ||
-            normalized.contains("||") || normalized.contains("::") ||
-            normalized.contains(">") || normalized.contains("<") ||
-            normalized.contains("!=") || normalized.contains("<>")) {
-            return true;
-        }
-
-        // Check for arithmetic/comparison operators with spaces (avoid false positives like "customer-id")
-        if (normalized.contains(" + ") || normalized.contains(" - ") ||
-            normalized.contains(" * ") || normalized.contains(" / ") ||
-            normalized.contains(" = ")) {
-            return true;
-        }
-
-        // Check for SQL keywords using compiled pattern
-        return CALCULATED_KEYWORDS_PATTERN.matcher(normalized).find();
     }
 
     /**
@@ -572,12 +385,9 @@ public class FieldMappingHandler implements PipelineStep {
         if (exactSalesforceDataType != null) {
             if (ossieDatatype != null
                     && !SalesforceDataTypeMapper.areCompatible(ossieDatatype, exactSalesforceDataType)) {
-                logger.warn(
-                        "Field '{}' has Ossie datatype '{}' that conflicts with exact Salesforce dataType '{}'; "
-                                + "preserving the Salesforce extension value",
-                        getString(ossieField, NAME),
-                        ossieDatatype,
-                        exactSalesforceDataType);
+                throw new IllegalArgumentException("Field '" + getString(ossieField, NAME)
+                        + "' has Ossie datatype '" + ossieDatatype
+                        + "' that conflicts with Salesforce extension dataType '" + exactSalesforceDataType + "'");
             }
             return;
         }
@@ -587,11 +397,9 @@ public class FieldMappingHandler implements PipelineStep {
         }
 
         if (mappedSalesforceDataType == null) {
-            logger.warn(
-                    "Field '{}' has Ossie datatype '{}' with no safe Salesforce mapping; omitting dataType",
-                    getString(ossieField, NAME),
-                    ossieDatatype);
-            return;
+            throw new IllegalArgumentException("Field '" + getString(ossieField, NAME)
+                    + "' has Ossie datatype '" + ossieDatatype
+                    + "' with no safe Salesforce mapping; provide a compatible native type");
         }
         sfField.put(DATA_TYPE, mappedSalesforceDataType);
     }
