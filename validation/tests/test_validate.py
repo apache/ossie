@@ -156,6 +156,7 @@ def test_rejects_legacy_or_object_wrappers(core_schema: dict, wrapped: object) -
 def test_semantic_checks_skip_non_model_payloads(data: object) -> None:
     assert _VALIDATE.validate_unique_names(data) == []
     assert validate_references(data) == []
+    assert validate_relationship_column_arity(data) == []
     assert _VALIDATE.validate_sql(data) == []
 
 

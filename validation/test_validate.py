@@ -364,6 +364,46 @@ class ValidatorIntegrationTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertIn("Validation PASSED", result.stdout)
 
+    def test_relationship_column_counts_are_checked_in_flat_documents(self):
+        cases = (
+            (["customer_id"], ["id"], 0),
+            (["customer_id", "region_id"], ["id"], 1),
+            (["customer_id"], ["id", "region_id"], 1),
+        )
+        for from_columns, to_columns, expected_code in cases:
+            with self.subTest(from_columns=from_columns, to_columns=to_columns):
+                document = {
+                    "version": "0.2.0.dev0",
+                    "name": "sales",
+                    "datasets": [
+                        {"name": "orders", "source": "analytics.orders"},
+                        {
+                            "name": "customers",
+                            "source": "analytics.customers",
+                            "primary_key": ["id"],
+                        },
+                    ],
+                    "relationships": [
+                        {
+                            "name": "orders_to_customers",
+                            "from": "orders",
+                            "to": "customers",
+                            "from_columns": from_columns,
+                            "to_columns": to_columns,
+                        }
+                    ],
+                }
+                result = self.run_validator(yaml.safe_dump(document))
+
+                self.assertEqual(result.returncode, expected_code)
+                self.assertNotIn("Traceback", result.stderr)
+                if expected_code:
+                    self.assertIn("Validation FAILED", result.stdout)
+                    self.assertIn("[Arity]", result.stdout)
+                    self.assertIn("must have the same number of columns", result.stdout)
+                else:
+                    self.assertIn("Validation PASSED", result.stdout)
+
     def test_root_dialects_and_vendors_are_rejected(self):
         # Dialects and vendors belong under expression.dialects and custom_extensions,
         # not alongside the model properties at the document root.

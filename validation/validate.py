@@ -245,26 +245,29 @@ def validate_relationship_column_arity(data: dict) -> list[str]:
     The spec requires the two arrays to correspond positionally, so their
     lengths must match. JSON Schema cannot express this, so it is checked here.
     """
+    if not isinstance(data, dict) or "datasets" not in data:
+        return []
+
+    model = data
     errors = []
 
-    for model in data.get("semantic_model", []):
-        model_name = model.get("name", "<unnamed>")
+    model_name = model.get("name", "<unnamed>")
 
-        for rel in model.get("relationships", []):
-            rel_name = rel.get("name", "<unnamed>")
-            from_columns = rel.get("from_columns")
-            to_columns = rel.get("to_columns")
+    for rel in model.get("relationships", []):
+        rel_name = rel.get("name", "<unnamed>")
+        from_columns = rel.get("from_columns")
+        to_columns = rel.get("to_columns")
 
-            # Skip anything that already failed schema validation.
-            if not isinstance(from_columns, list) or not isinstance(to_columns, list):
-                continue
+        # Skip anything that already failed schema validation.
+        if not isinstance(from_columns, list) or not isinstance(to_columns, list):
+            continue
 
-            if len(from_columns) != len(to_columns):
-                errors.append(
-                    f"[Arity] Relationship '{rel_name}' in model '{model_name}': "
-                    f"from_columns ({len(from_columns)}) and "
-                    f"to_columns ({len(to_columns)}) must have the same number of columns"
-                )
+        if len(from_columns) != len(to_columns):
+            errors.append(
+                f"[Arity] Relationship '{rel_name}' in model '{model_name}': "
+                f"from_columns ({len(from_columns)}) and "
+                f"to_columns ({len(to_columns)}) must have the same number of columns"
+            )
 
     return errors
 
