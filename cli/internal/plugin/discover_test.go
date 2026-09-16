@@ -296,3 +296,62 @@ func TestDiscover_setupFieldAbsent(t *testing.T) {
 		t.Errorf("Setup: got %q, want empty string", plugins[0].Setup)
 	}
 }
+
+func TestDiscover_symlinkedPluginDirectory(t *testing.T) {
+	// Create the real plugin directory outside pluginsDir
+	realRoot := t.TempDir()
+	pluginDir := writePlugin(t, realRoot, "dbt", validPluginYAML)
+
+	// Create pluginsDir with a symlink to the real plugin directory
+	pluginsDir := t.TempDir()
+	symlinkPath := filepath.Join(pluginsDir, "dbt-link")
+	if err := os.Symlink(pluginDir, symlinkPath); err != nil {
+		t.Skipf("symlinks not supported or not permitted on this platform: %v", err)
+	}
+
+	var stderr strings.Builder
+	plugins, err := plugin.Discover(pluginsDir, &stderr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(plugins) != 1 {
+		t.Fatalf("expected 1 plugin via symlink, got %d", len(plugins))
+	}
+	p := plugins[0]
+	if p.Path != symlinkPath {
+		t.Errorf("Path: got %q, want %q", p.Path, symlinkPath)
+	}
+	if p.Name != "dbt" {
+		t.Errorf("Name: got %q, want %q", p.Name, "dbt")
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("unexpected warning: %q", stderr.String())
+	}
+}
+
+func TestDiscover_brokenSymlink(t *testing.T) {
+	pluginsDir := t.TempDir()
+
+	// Create a symlink pointing to a non-existent target
+	brokenTarget := filepath.Join(pluginsDir, "nonexistent-dir")
+	symlinkPath := filepath.Join(pluginsDir, "broken-link")
+	if err := os.Symlink(brokenTarget, symlinkPath); err != nil {
+		t.Fatalf("could not create symlink: %v", err)
+	}
+
+	// Create a valid plugin to ensure Discover can still find non-symlink dirs
+	writePlugin(t, pluginsDir, "valid", validPluginYAML)
+
+	var stderr strings.Builder
+	plugins, err := plugin.Discover(pluginsDir, &stderr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(plugins) != 1 {
+		t.Errorf("expected 1 valid plugin, got %d", len(plugins))
+	}
+	warnings := stderr.String()
+	if !strings.Contains(warnings, symlinkPath) {
+		t.Errorf("warning should contain broken symlink path, got: %q", warnings)
+	}
+}
