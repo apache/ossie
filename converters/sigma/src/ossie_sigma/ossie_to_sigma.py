@@ -371,7 +371,7 @@ class OssieToSigmaConverter:
                 issues.append(
                     ConverterIssue(
                         ConverterIssueType.RELATIONSHIP_COLUMN_ARITY_MISMATCH,
-                        rel.name,
+                        f"{dataset_name}.{rel.name}",
                         f"from_columns ({len(rel.from_columns)}) and to_columns "
                         f"({len(rel.to_columns)}) have different lengths; the "
                         f"{abs(len(rel.from_columns) - len(rel.to_columns))} extra "

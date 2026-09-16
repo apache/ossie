@@ -167,6 +167,51 @@ def test_relationship_column_arity_mismatch_is_recorded_not_silently_truncated()
     assert len(rel["keys"]) == 1
 
 
+def test_relationship_arity_mismatch_element_names_are_scoped_by_owning_dataset():
+    """Relationship identity is already scoped by (dataset_name, rel.name) (see
+    test_relationship_ids_are_scoped_by_owning_dataset); an arity-mismatch issue's
+    element_name must be scoped the same way, or two unrelated relationships sharing a
+    name on different table pairs become indistinguishable in the issue list."""
+    document = OssieDocument(
+        semantic_model=[
+            OssieSemanticModel(
+                name="m",
+                datasets=[
+                    OssieDataset(name="orders", source="db.public.orders"),
+                    OssieDataset(name="customers", source="db.public.customers"),
+                    OssieDataset(name="shipments", source="db.public.shipments"),
+                    OssieDataset(name="carriers", source="db.public.carriers"),
+                ],
+                relationships=[
+                    OssieRelationship(
+                        name="Parent",
+                        **{"from": "orders"},
+                        to="customers",
+                        from_columns=["region_id", "sub_id"],
+                        to_columns=["region_id"],
+                    ),
+                    OssieRelationship(
+                        name="Parent",
+                        **{"from": "shipments"},
+                        to="carriers",
+                        from_columns=["region_id", "sub_id"],
+                        to_columns=["region_id"],
+                    ),
+                ],
+            )
+        ]
+    )
+
+    result = OssieToSigmaConverter().convert(document)
+
+    arity_issues = [
+        i for i in result.issues if i.issue_type == ConverterIssueType.RELATIONSHIP_COLUMN_ARITY_MISMATCH
+    ]
+    assert len(arity_issues) == 2
+    element_names = {i.element_name for i in arity_issues}
+    assert len(element_names) == 2, "arity-mismatch issues for same-named relationships must not collide"
+
+
 def test_model_level_metadata_round_trips_through_ossie_and_back():
     spec = load_fixture("fixtureA_sigma.json")
     spec.update(
