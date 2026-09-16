@@ -136,6 +136,45 @@ class TestOssieToMSIFieldClassification:
         assert sm.entities[0].name == "email"
         assert sm.entities[0].type.value == "unique"
 
+    @pytest.mark.parametrize(
+        ("primary_key", "unique_keys", "expected_error"),
+        [
+            (
+                ["tenant_id", "order_id"],
+                None,
+                "Dataset 'orders' has composite primary key ['tenant_id', 'order_id']; "
+                "MetricFlow entities cannot represent composite keys losslessly",
+            ),
+            (
+                None,
+                [["tenant_id", "external_id"]],
+                "Dataset 'orders' has composite unique key ['tenant_id', 'external_id']; "
+                "MetricFlow entities cannot represent composite keys losslessly",
+            ),
+        ],
+    )
+    def test_composite_key_is_rejected(
+        self,
+        primary_key: list[str] | None,
+        unique_keys: list[list[str]] | None,
+        expected_error: str,
+    ) -> None:
+        doc = _ossie_doc(
+            datasets=[
+                _ossie_dataset(
+                    "orders",
+                    fields=[_ossie_field("tenant_id"), _ossie_field("order_id")],
+                    primary_key=primary_key,
+                    unique_keys=unique_keys,
+                )
+            ]
+        )
+
+        with pytest.raises(ValueError) as exc_info:
+            OssieToMSIConverter().convert(doc)
+
+        assert str(exc_info.value) == expected_error
+
     def test_relationship_from_column_becomes_foreign_entity(self) -> None:
         doc = _ossie_doc(
             datasets=[

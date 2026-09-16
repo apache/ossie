@@ -82,12 +82,12 @@ neither — they have drifted apart before.
 | `WISDOM` | WisdomAI domain |
 | `NVIDIA_GSF` | NVIDIA Generative Semantic Fabric standalone YAML |
 | `MICROSOFT` | Microsoft Tabular model — Power BI, Fabric semantic models, Azure Analysis Services and SQL Server Analysis Services (TMSL `model.bim` / TMDL) |
+| `POWER_BI` | Power BI round-trip stash used by the Microsoft converter |
 | `SIGMA` | Sigma Computing data model |
 
 A token names the **organization**, not one of its products, so one token covers every
-product that shares the same underlying model. `SALESFORCE` already works this way for
-the Tableau semantic layer, and `MICROSOFT` works this way for the Tabular model that
-Power BI, Fabric, Azure Analysis Services and SQL Server Analysis Services all share.
+product that shares the same underlying model. `POWER_BI` is retained for compatibility
+with the existing Microsoft converter's product-specific round-trip stash.
 
 Each vendor may define custom extensions (via the `custom_extensions` field in the Ossie spec) to carry vendor-specific metadata that does not have an equivalent in the core specification. Vendors that need more than a table row document their payload under
 [`docs/vendor_extensions/`](../docs/vendor_extensions/).
@@ -244,7 +244,7 @@ A converter should map `ai_context` when the target vendor supports equivalent c
 
 1. **Validate input**: Use the [Ossie JSON Schema](../core-spec/ossie-schema.json) and the [validation script](../validation/validate.py) to ensure the source Ossie model is valid before conversion.
 
-2. **Parse the Ossie model**: Load the YAML file and iterate over the top-level `semantic_model` entries.
+2. **Parse the Ossie model**: Load the JSON or YAML document as one model.
 
 3. **Map datasets**: For each dataset, translate the `name`, `source`, `primary_key`, `unique_keys`, and `fields` to the vendor's format. Parse the `source` string (typically `database.schema.table`) into the vendor's catalog structure.
 

@@ -47,7 +47,7 @@ Ossie addresses semantic fragmentation by providing:
 
 ### Specification at a Glance
 
-The Ossie core specification (current version: **0.2.0.dev0**, latest released: **0.1.1**) defines a YAML-based format for describing semantic models. The key constructs are:
+The Ossie core specification (current version: **0.2.0.dev0**, latest released: **0.1.1**) defines a JSON/YAML format with one semantic model per document. Model properties such as `name` and `datasets` sit directly at the root alongside `version`, without a `semantic_model` wrapper. Converter and Python SDK support for this development format is follow-up work. See the [migration guidance](../core-spec/spec.md#migrating-earlier-document-shapes). The key constructs are:
 
 | Construct | Description |
 |-----------|-------------|

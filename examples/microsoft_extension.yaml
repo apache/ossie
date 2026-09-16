@@ -24,243 +24,240 @@
 #
 # See docs/vendor_extensions/microsoft.md for the full key catalogue.
 #
-# NOTE: metric expressions below use the ANSI_SQL dialect. A real Tabular measure is
-# DAX, and belongs in a `DAX` dialect entry — that enum member is added by
-# apache/ossie#250, so this example stays portable until #250 merges.
+# Metric expressions use DAX, while physical source-column references use ANSI SQL.
 
 version: 0.2.0.dev0
-semantic_model:
-  - name: sales_analytics
-    description: Sales analytics model imported from a Microsoft Tabular model
-    datasets:
-      - name: sales
-        source: Sales
-        description: Sales fact table
-        primary_key:
-          - sales_order_line_id
-        fields:
-          - name: sales_order_line_id
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: SalesOrderLineID
-            datatype: Integer
-            custom_extensions:
-              # A surrogate key: present and queryable, but curated out of the field
-              # list. Ossie has no visibility concept, so without this an AI consumer
-              # cannot tell it apart from a business column.
-              - vendor_name: MICROSOFT
-                data: '{
-                  "_v": 1,
-                  "format": "TMSL",
-                  "isHidden": true,
-                  "summarizeBy": "none",
-                  "lineageTag": "2f4a1c7e-8b3d-4e15-9a62-0d7c5b1e9f38"
-                }'
-          - name: extended_amount
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: ExtendedAmount
-            datatype: Decimal
-            description: Line item amount
-            custom_extensions:
-              - vendor_name: MICROSOFT
-                data: '{
-                  "_v": 1,
-                  "format": "TMSL",
-                  "formatString": "\\$#,0.00;(\\$#,0.00);\\$#,0.00",
-                  "displayFolder": "Amounts",
-                  "summarizeBy": "sum"
-                }'
-          - name: order_date
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: OrderDate
-            datatype: Date
-            dimension:
-              is_time: true
-        custom_extensions:
-          # A Direct Lake table. `dataset.source` is a single name, so the storage mode
-          # and the partition shape have nowhere else to live — and the mode decides
-          # whether the model holds data or delegates to OneLake at query time.
-          - vendor_name: MICROSOFT
-            data: '{
-              "_v": 1,
-              "format": "TMSL",
-              "partitions": [
-                {
-                  "name": "Sales",
-                  "mode": "directLake",
-                  "source": {"type": "entity", "entityName": "Sales", "schemaName": "dbo"}
-                }
-              ],
-              "lineageTag": "6c0b9d24-3f77-4a51-b8ee-2a9d4c6f1b03"
-            }'
-
-      - name: date
-        source: Date
-        description: Date dimension
-        primary_key:
-          - date_key
-        fields:
-          - name: date_key
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: DateKey
-            datatype: Integer
-          - name: month_name
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: MonthName
-            datatype: String
-            custom_extensions:
-              # Without sortByColumn, "April" sorts before "August" and every chart
-              # built on this column is silently in the wrong order. The value is the
-              # TMSL column name of month_number below, not its Ossie field name.
-              - vendor_name: MICROSOFT
-                data: '{
-                  "_v": 1,
-                  "format": "TMSL",
-                  "sortByColumn": "MonthNumber",
-                  "displayFolder": "Calendar"
-                }'
-          - name: month_number
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: MonthNumber
-            datatype: Integer
-            description: Sort order for month_name
-            custom_extensions:
-              # The target of the sortByColumn above. It has to exist as an ordinary
-              # field: a sort key that lives only inside a vendor payload has no Ossie
-              # representation, so the reference would dangle on the way back.
-              - vendor_name: MICROSOFT
-                data: '{
-                  "_v": 1,
-                  "format": "TMSL",
-                  "isHidden": true,
-                  "summarizeBy": "none",
-                  "displayFolder": "Calendar"
-                }'
-          - name: calendar_year
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: CalendarYear
-            datatype: Integer
-            dimension:
-              is_time: true
-            custom_extensions:
-              - vendor_name: MICROSOFT
-                data: '{
-                  "_v": 1,
-                  "format": "TMSL",
-                  "summarizeBy": "none",
-                  "displayFolder": "Calendar"
-                }'
-          - name: calendar_date
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: CalendarDate
-            datatype: Date
-            dimension:
-              is_time: true
-        custom_extensions:
-          # dataCategory: Time marks the date table; the hierarchy is an ordered drill
-          # path, and the ordering is the whole content of the construct. Every level
-          # names a TMSL column that is also an ordinary field above -- a level
-          # pointing at a column with no Ossie field would dangle.
-          - vendor_name: MICROSOFT
-            data: '{
-              "_v": 1,
-              "format": "TMSL",
-              "dataCategory": "Time",
-              "hierarchies": [
-                {
-                  "name": "Calendar",
-                  "levels": [
-                    {"name": "Year", "ordinal": 0, "column": "CalendarYear"},
-                    {"name": "Month", "ordinal": 1, "column": "MonthName"},
-                    {"name": "Date", "ordinal": 2, "column": "CalendarDate"}
-                  ]
-                }
-              ]
-            }'
-
-    relationships:
-      - name: sales_to_date
-        from: sales
-        to: date
-        from_columns:
-          - order_date
-        to_columns:
-          - calendar_date
-        custom_extensions:
-          # An ACTIVE relationship, whose flag is recorded anyway. Ossie has no
-          # inactive-join concept, so isActive is the only place the distinction can
-          # survive -- and a reader that finds no flag cannot tell "active" from
-          # "converted by a tool that dropped it".
-          #
-          # The inactive case deliberately does NOT appear here as an ordinary Ossie
-          # relationship: doing that would assert a join the engine does not apply by
-          # default. See docs/vendor_extensions/microsoft.md.
-          - vendor_name: MICROSOFT
-            data: '{
-              "_v": 1,
-              "format": "TMSL",
-              "isActive": true,
-              "crossFilteringBehavior": "oneDirection",
-              "fromCardinality": "many",
-              "toCardinality": "one"
-            }'
-
-    metrics:
-      - name: sales_amount
-        description: Total sales revenue
-        datatype: Decimal
+name: sales_analytics
+description: Sales analytics model imported from a Microsoft Tabular model
+datasets:
+  - name: sales
+    source: Sales
+    description: Sales fact table
+    primary_key:
+      - sales_order_line_id
+    fields:
+      - name: sales_order_line_id
         expression:
           dialects:
             - dialect: ANSI_SQL
-              expression: SUM(sales.extended_amount)
+              expression: SalesOrderLineID
+        datatype: Integer
+        custom_extensions:
+          # A surrogate key: present and queryable, but curated out of the field
+          # list. Ossie has no visibility concept, so without this an AI consumer
+          # cannot tell it apart from a business column.
+          - vendor_name: MICROSOFT
+            data: '{
+              "_v": 1,
+              "format": "TMSL",
+              "isHidden": true,
+              "summarizeBy": "none",
+              "lineageTag": "2f4a1c7e-8b3d-4e15-9a62-0d7c5b1e9f38"
+            }'
+      - name: extended_amount
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: ExtendedAmount
+        datatype: Decimal
+        description: Line item amount
         custom_extensions:
           - vendor_name: MICROSOFT
             data: '{
               "_v": 1,
               "format": "TMSL",
               "formatString": "\\$#,0.00;(\\$#,0.00);\\$#,0.00",
-              "displayFolder": "Sales\\KPIs",
-              "isHidden": false,
-              "lineageTag": "9b1f6f3a-4c2e-4d2a-9c5a-1f8b2d0e7a41"
+              "displayFolder": "Amounts",
+              "summarizeBy": "sum"
             }'
-
+      - name: order_date
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: OrderDate
+        datatype: Date
+        dimension:
+          is_time: true
     custom_extensions:
-      # Model-level leftovers, including the constructs that have no Ossie object at
-      # all. Roles are recorded so that a consumer knows the source model was secured —
-      # an Ossie document describes the UNSECURED shape and is not a security boundary.
+      # A Direct Lake table. `dataset.source` is a single name, so the storage mode
+      # and the partition shape have nowhere else to live — and the mode decides
+      # whether the model holds data or delegates to OneLake at query time.
       - vendor_name: MICROSOFT
         data: '{
           "_v": 1,
           "format": "TMSL",
-          "compatibilityLevel": 1604,
-          "culture": "en-US",
-          "discourageImplicitMeasures": true,
-          "directLakeBehavior": "automatic",
-          "roles": [
+          "partitions": [
             {
-              "name": "RegionalManager",
-              "modelPermission": "read",
-              "tablePermissions": [
-                {"name": "Sales", "filterExpression": "Sales[Region] = USERPRINCIPALNAME()"}
-              ]
+              "name": "Sales",
+              "mode": "directLake",
+              "source": {"type": "entity", "entityName": "Sales", "schemaName": "dbo"}
             }
           ],
-          "perspectives": [
-            {"name": "Executive", "tables": [{"name": "Sales"}, {"name": "Date"}]}
+          "lineageTag": "6c0b9d24-3f77-4a51-b8ee-2a9d4c6f1b03"
+        }'
+
+  - name: date
+    source: Date
+    description: Date dimension
+    primary_key:
+      - date_key
+    fields:
+      - name: date_key
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: DateKey
+        datatype: Integer
+      - name: month_name
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: MonthName
+        datatype: String
+        custom_extensions:
+          # Without sortByColumn, "April" sorts before "August" and every chart
+          # built on this column is silently in the wrong order. The value is the
+          # TMSL column name of month_number below, not its Ossie field name.
+          - vendor_name: MICROSOFT
+            data: '{
+              "_v": 1,
+              "format": "TMSL",
+              "sortByColumn": "MonthNumber",
+              "displayFolder": "Calendar"
+            }'
+      - name: month_number
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: MonthNumber
+        datatype: Integer
+        description: Sort order for month_name
+        custom_extensions:
+          # The target of the sortByColumn above. It has to exist as an ordinary
+          # field: a sort key that lives only inside a vendor payload has no Ossie
+          # representation, so the reference would dangle on the way back.
+          - vendor_name: MICROSOFT
+            data: '{
+              "_v": 1,
+              "format": "TMSL",
+              "isHidden": true,
+              "summarizeBy": "none",
+              "displayFolder": "Calendar"
+            }'
+      - name: calendar_year
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: CalendarYear
+        datatype: Integer
+        dimension:
+          is_time: true
+        custom_extensions:
+          - vendor_name: MICROSOFT
+            data: '{
+              "_v": 1,
+              "format": "TMSL",
+              "summarizeBy": "none",
+              "displayFolder": "Calendar"
+            }'
+      - name: calendar_date
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: CalendarDate
+        datatype: Date
+        dimension:
+          is_time: true
+    custom_extensions:
+      # dataCategory: Time marks the date table; the hierarchy is an ordered drill
+      # path, and the ordering is the whole content of the construct. Every level
+      # names a TMSL column that is also an ordinary field above -- a level
+      # pointing at a column with no Ossie field would dangle.
+      - vendor_name: MICROSOFT
+        data: '{
+          "_v": 1,
+          "format": "TMSL",
+          "dataCategory": "Time",
+          "hierarchies": [
+            {
+              "name": "Calendar",
+              "levels": [
+                {"name": "Year", "ordinal": 0, "column": "CalendarYear"},
+                {"name": "Month", "ordinal": 1, "column": "MonthName"},
+                {"name": "Date", "ordinal": 2, "column": "CalendarDate"}
+              ]
+            }
           ]
         }'
+
+relationships:
+  - name: sales_to_date
+    from: sales
+    to: date
+    from_columns:
+      - order_date
+    to_columns:
+      - calendar_date
+    custom_extensions:
+      # An ACTIVE relationship, whose flag is recorded anyway. Ossie has no
+      # inactive-join concept, so isActive is the only place the distinction can
+      # survive -- and a reader that finds no flag cannot tell "active" from
+      # "converted by a tool that dropped it".
+      #
+      # The inactive case deliberately does NOT appear here as an ordinary Ossie
+      # relationship: doing that would assert a join the engine does not apply by
+      # default. See docs/vendor_extensions/microsoft.md.
+      - vendor_name: MICROSOFT
+        data: '{
+          "_v": 1,
+          "format": "TMSL",
+          "isActive": true,
+          "crossFilteringBehavior": "oneDirection",
+          "fromCardinality": "many",
+          "toCardinality": "one"
+        }'
+
+metrics:
+  - name: sales_amount
+    description: Total sales revenue
+    datatype: Decimal
+    expression:
+      dialects:
+        - dialect: DAX
+          expression: SUM(Sales[ExtendedAmount])
+    custom_extensions:
+      - vendor_name: MICROSOFT
+        data: '{
+          "_v": 1,
+          "format": "TMSL",
+          "formatString": "\\$#,0.00;(\\$#,0.00);\\$#,0.00",
+          "displayFolder": "Sales\\KPIs",
+          "isHidden": false,
+          "lineageTag": "9b1f6f3a-4c2e-4d2a-9c5a-1f8b2d0e7a41"
+        }'
+
+custom_extensions:
+  # Model-level leftovers, including the constructs that have no Ossie object at
+  # all. Roles are recorded so that a consumer knows the source model was secured —
+  # an Ossie document describes the UNSECURED shape and is not a security boundary.
+  - vendor_name: MICROSOFT
+    data: '{
+      "_v": 1,
+      "format": "TMSL",
+      "compatibilityLevel": 1604,
+      "culture": "en-US",
+      "discourageImplicitMeasures": true,
+      "directLakeBehavior": "automatic",
+      "roles": [
+        {
+          "name": "RegionalManager",
+          "modelPermission": "read",
+          "tablePermissions": [
+            {"name": "Sales", "filterExpression": "Sales[Region] = USERPRINCIPALNAME()"}
+          ]
+        }
+      ],
+      "perspectives": [
+        {"name": "Executive", "tables": [{"name": "Sales"}, {"name": "Date"}]}
+      ]
+    }'

@@ -34,6 +34,7 @@ class OssieDialect(str, Enum):
     BIGQUERY = "BIGQUERY"
     SIGMA = "SIGMA"
     THOUGHTSPOT = "THOUGHTSPOT"
+    DAX = "DAX"
 
 
 class OssieDataType(str, Enum):
@@ -81,6 +82,7 @@ class OssieVendor(str, Enum):
     OMNI = "OMNI"
     NVIDIA_GSF = "NVIDIA_GSF"
     MICROSOFT = "MICROSOFT"
+    POWER_BI = "POWER_BI"
     SIGMA = "SIGMA"
 
 

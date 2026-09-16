@@ -74,7 +74,9 @@ def _cmd_ossie_to_msi(args: argparse.Namespace) -> None:
     document = OssieDocument.model_validate(raw)
     result = OssieToMSIConverter().convert(document)
 
-    output_path.write_text(result.output.model_dump_json(by_alias=True, exclude_none=True, indent=2))
+    # PydanticSemanticManifest subclasses pydantic.v1.BaseModel, whose JSON
+    # serializer is .json(), not the pydantic v2 .model_dump_json().
+    output_path.write_text(result.output.json(by_alias=True, exclude_none=True, indent=2))
     print(f"Written to {output_path}", file=sys.stderr)
 
 
