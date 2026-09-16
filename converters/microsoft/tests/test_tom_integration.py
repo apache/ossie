@@ -84,8 +84,8 @@ def test_a_tmdl_document_imports_back_to_an_equivalent_ossie_model(monkeypatch):
     )
     from_tmdl = yaml.safe_load(convert_semantic_model_to_ossie(tmdl))
 
-    expected = from_tmsl["semantic_model"][0]
-    received = from_tmdl["semantic_model"][0]
+    expected = from_tmsl
+    received = from_tmdl
     assert received["name"] == expected["name"]
     assert received["description"] == expected["description"]
     assert [d["name"] for d in received["datasets"]] == [

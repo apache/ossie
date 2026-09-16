@@ -24,6 +24,11 @@ semantic model. Power BI output is available as either a TMSL `model.bim` mappin
 TMDL document. The conversion is offline and requires no Power BI or Fabric
 connection.
 
+Each Ossie JSON/YAML document contains one model, with `name`, `datasets`,
+`relationships`, and `metrics` at the root alongside `version`. Legacy
+`semantic_model` wrappers must be unwrapped before conversion; split documents
+containing multiple models into separate files.
+
 ## Installation
 
 ```bash
@@ -171,7 +176,7 @@ logging.getLogger("ossie_microsoft").addHandler(logging.StreamHandler())
 
 | Power BI (TMSL) | Apache Ossie |
 |-----------------|--------------|
-| `name` / `model.description` | `semantic_model.name` / `.description` |
+| `name` / `model.description` | `name` / `description` |
 | `model.tables[]` | `datasets[]` |
 | table partition source (`entity`, `m`, `query`, `calculated`) | `dataset.source` |
 | `table.columns[]` | `dataset.fields[]` |

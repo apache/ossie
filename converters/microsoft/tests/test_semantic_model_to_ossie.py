@@ -82,7 +82,7 @@ def test_cli_writes_ossie_yaml(tmp_path):
     out = tmp_path / "model.yaml"
     assert main(["import", "-i", str(FIXTURES / "sales_model.bim"), "-o", str(out)]) == 0
     document = yaml.safe_load(out.read_text(encoding="utf-8"))
-    assert document["semantic_model"][0]["name"] == "sales_model"
+    assert document["name"] == "sales_model"
 
 
 def test_cli_reports_errors_without_traceback(tmp_path, capsys):
@@ -99,7 +99,8 @@ def test_cli_reports_errors_without_traceback(tmp_path, capsys):
 
 def test_document_header(osi):
     assert osi["version"] == "0.2.0.dev0"
-    assert len(osi["semantic_model"]) == 1
+    assert "semantic_model" not in osi
+    assert osi["name"] == "sales_model"
 
 
 def test_model_name_and_description(model):
@@ -145,7 +146,7 @@ def test_calculation_group_is_skipped_with_a_warning():
     }
     with pytest.warns(UserWarning, match="calculation groups are not converted"):
         document = build_ossie_document(bim)
-    assert document["semantic_model"][0]["datasets"] == []
+    assert document["datasets"] == []
 
 
 def test_calculated_table_is_skipped_with_a_warning():
@@ -170,7 +171,7 @@ def test_calculated_table_is_skipped_with_a_warning():
     }
     with pytest.warns(UserWarning, match="calculated tables are not converted"):
         document = build_ossie_document(bim)
-    assert document["semantic_model"][0]["datasets"] == []
+    assert document["datasets"] == []
 
 
 def test_row_number_column_is_skipped(model):
@@ -304,7 +305,7 @@ def _flip_osi():
 
 
 def test_a_one_to_many_relationship_is_flipped_to_many_to_one():
-    model = _flip_osi()["semantic_model"][0]
+    model = _flip_osi()
     rel = model["relationships"][0]
     assert rel["from"] == "Sales"
     assert rel["from_columns"] == ["OrderDate"]
@@ -313,7 +314,7 @@ def test_a_one_to_many_relationship_is_flipped_to_many_to_one():
 
 
 def test_a_flipped_relationship_records_its_original_orientation():
-    model = _flip_osi()["semantic_model"][0]
+    model = _flip_osi()
     stash = read_stash(model["relationships"][0])
     assert stash["flipped"] is True
     assert stash["fromCardinality"] == "one"
@@ -335,7 +336,7 @@ def test_a_flipped_relationship_is_exported_the_way_power_bi_wrote_it():
 
 def test_an_unchanged_pre_snapshot_stash_still_restores_the_original_orientation():
     osi = _flip_osi()
-    relationship = osi["semantic_model"][0]["relationships"][0]
+    relationship = osi["relationships"][0]
     stash = read_stash(relationship)
     stash.pop("normalizedEndpoints")
     write_stash(relationship, stash)
@@ -350,7 +351,7 @@ def test_an_unchanged_pre_snapshot_stash_still_restores_the_original_orientation
 
 def test_reversed_ossie_endpoints_are_not_reversed_again_by_a_stale_flip_marker():
     osi = _flip_osi()
-    relationship = osi["semantic_model"][0]["relationships"][0]
+    relationship = osi["relationships"][0]
     relationship["from"], relationship["to"] = relationship["to"], relationship["from"]
     relationship["from_columns"], relationship["to_columns"] = (
         relationship["to_columns"],
@@ -368,7 +369,7 @@ def test_reversed_ossie_endpoints_are_not_reversed_again_by_a_stale_flip_marker(
 
 def test_edited_ossie_endpoints_do_not_replay_stale_cardinalities():
     osi = _flip_osi()
-    relationship = osi["semantic_model"][0]["relationships"][0]
+    relationship = osi["relationships"][0]
     relationship["from_columns"] = ["AlternateOrderDate"]
     relationship["to_columns"] = ["AlternateDate"]
 
@@ -462,7 +463,7 @@ def test_a_model_without_power_bi_specifics_has_no_stash():
         },
     }
     osi = yaml.safe_load(convert_semantic_model_to_ossie(bim))
-    dataset = osi["semantic_model"][0]["datasets"][0]
+    dataset = osi["datasets"][0]
     assert "custom_extensions" not in dataset
     assert "custom_extensions" not in dataset["fields"][0]
 
@@ -545,7 +546,7 @@ def test_ai_context_annotations_round_trip_at_every_supported_level():
     }
 
     document = build_ossie_document(bim)
-    model = document["semantic_model"][0]
+    model = document
     dataset = _dataset(model, "Orders")
     field = _field(dataset, "CustomerId")
     metric = _metric(model, "Order Count")
@@ -652,7 +653,7 @@ def _single_field_datatype(tmsl_type, format_string=None):
         column["formatString"] = format_string
     bim = {"name": "m", "model": {"tables": [{"name": "T", "columns": [column]}]}}
     osi = yaml.safe_load(convert_semantic_model_to_ossie(bim))
-    return osi["semantic_model"][0]["datasets"][0]["fields"][0].get("datatype")
+    return osi["datasets"][0]["fields"][0].get("datatype")
 
 
 # --- lossy steps are reported ----------------------------------------------
@@ -694,7 +695,7 @@ def test_a_measure_without_an_expression_is_preserved_exactly():
     }
     with pytest.warns(UserWarning, match="no expression"):
         osi = build_ossie_document(bim)
-    model = osi["semantic_model"][0]
+    model = osi
     assert read_stash(model)["excludedMeasures"] == [
         {"table": "T", "measure": measure, "index": 1}
     ]
@@ -732,7 +733,7 @@ def test_an_excluded_measure_with_a_missing_home_table_warns():
     }
     with pytest.warns(UserWarning, match="no expression"):
         osi = build_ossie_document(bim)
-    osi["semantic_model"][0]["datasets"] = []
+    osi["datasets"] = []
 
     with pytest.warns(UserWarning, match="home table 'Gone' is missing"):
         out = convert_ossie_to_semantic_model(osi)
@@ -757,7 +758,7 @@ def test_an_authored_metric_wins_over_an_excluded_measure_collision():
         osi = build_ossie_document(bim)
     metric = {"name": "M", "expression": make_expression("1", "DAX")}
     write_stash(metric, {"table": "T"})
-    osi["semantic_model"][0]["metrics"] = [metric]
+    osi["metrics"] = [metric]
 
     out = convert_ossie_to_semantic_model(osi)
     assert out["model"]["tables"][0]["measures"] == [{"name": "M", "expression": "1"}]

@@ -163,16 +163,16 @@ def convert_ossie_to_semantic_model(
             f"{OSSIE_VERSION}; conversion may be incomplete",
         )
 
-    models = document.get("semantic_model")
-    if not isinstance(models, list) or not models or not isinstance(models[0], dict):
-        raise ValueError("document is missing a 'semantic_model' entry")
-    if len(models) > 1:
-        warn(
-            "document",
-            f"a model.bim holds a single model; converting the first of {len(models)} "
-            "and skipping the rest",
+    if "semantic_model" in document:
+        raise ValueError(
+            "Legacy 'semantic_model' wrappers are not supported; "
+            "place model properties at the document root"
         )
-    semantic_model = models[0]
+    if "dialects" in document or "vendors" in document:
+        raise ValueError("Root dialects and vendors are not supported by the Ossie spec")
+    if not document.get("name") or "datasets" not in document:
+        raise ValueError("document requires 'name' and 'datasets' at the root")
+    semantic_model = document
 
     stash = read_stash(semantic_model)
     _warn_foreign_extensions("model", semantic_model)

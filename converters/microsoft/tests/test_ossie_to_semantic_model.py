@@ -42,7 +42,7 @@ def bim_out(model):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         return convert_ossie_to_semantic_model(
-            {"version": OSSIE_VERSION, "semantic_model": [model]}
+            {"version": OSSIE_VERSION, **model}
         )
 
 
@@ -60,7 +60,7 @@ def _annotation(target, name):
 
 def _convert(semantic_model):
     return convert_ossie_to_semantic_model(
-        {"version": OSSIE_VERSION, "semantic_model": [semantic_model]}
+        {"version": OSSIE_VERSION, **semantic_model}
     )
 
 
@@ -136,19 +136,29 @@ def test_a_document_without_a_model_is_rejected():
 def test_a_foreign_spec_version_warns():
     with pytest.warns(UserWarning, match="targets Apache Ossie spec"):
         convert_ossie_to_semantic_model(
-            {"version": "9.9.9", "semantic_model": [_minimal()]}
+            {"version": "9.9.9", **_minimal()}
         )
 
 
-def test_only_the_first_model_is_converted():
-    document = {"version": OSSIE_VERSION, "semantic_model": [_minimal(), _minimal()]}
-    with pytest.warns(UserWarning, match="single model"):
-        bim = convert_ossie_to_semantic_model(document)
-    assert len(bim["model"]["tables"]) == 1
+@pytest.mark.parametrize("wrapper", [None, [], {}, [_minimal()], [_minimal(), _minimal()]])
+@pytest.mark.parametrize("include_root_model", [False, True])
+def test_legacy_wrappers_are_rejected(wrapper, include_root_model):
+    document = {"version": OSSIE_VERSION, "semantic_model": wrapper}
+    if include_root_model:
+        document.update(_minimal())
+    with pytest.raises(ValueError, match="Legacy 'semantic_model'"):
+        convert_ossie_to_semantic_model(document)
+
+
+@pytest.mark.parametrize("property_name", ["dialects", "vendors"])
+def test_removed_root_metadata_is_rejected(property_name):
+    document = {"version": OSSIE_VERSION, **_minimal(), property_name: []}
+    with pytest.raises(ValueError, match="Root dialects and vendors"):
+        convert_ossie_to_semantic_model(document)
 
 
 def test_tmsl_is_the_default_and_can_be_selected_explicitly():
-    document = {"version": OSSIE_VERSION, "semantic_model": [_minimal()]}
+    document = {"version": OSSIE_VERSION, **_minimal()}
 
     assert convert_ossie_to_semantic_model(document) == convert_ossie_to_semantic_model(
         document, output_format="tmsl"
@@ -156,7 +166,7 @@ def test_tmsl_is_the_default_and_can_be_selected_explicitly():
 
 
 def test_tmdl_serializes_the_completed_tmsl_model(monkeypatch):
-    document = {"version": OSSIE_VERSION, "semantic_model": [_minimal()]}
+    document = {"version": OSSIE_VERSION, **_minimal()}
     expected = "database Model\n\n\tmodel Model\n"
     received = []
 
@@ -454,7 +464,7 @@ def test_a_preserved_partition_is_replayed(bim_out):
 
 
 def test_yaml_text_and_source_parameters_generate_a_direct_lake_partition():
-    document = {"version": OSSIE_VERSION, "semantic_model": [_minimal()]}
+    document = {"version": OSSIE_VERSION, **_minimal()}
     bim = convert_ossie_to_semantic_model(
         yaml.safe_dump(document),
         source={"workspaceId": "workspace", "itemId": "item"},
@@ -531,7 +541,7 @@ def test_an_unqualified_source_names_the_entity_without_inventing_a_schema():
 
 
 def test_a_missing_onelake_location_is_reported_rather_than_assumed():
-    document = {"version": OSSIE_VERSION, "semantic_model": [_minimal()]}
+    document = {"version": OSSIE_VERSION, **_minimal()}
     with pytest.warns(UserWarning, match="placeholder ids"):
         bim = convert_ossie_to_semantic_model(document, source={"workspaceId": "w"})
 
@@ -539,7 +549,7 @@ def test_a_missing_onelake_location_is_reported_rather_than_assumed():
 
 
 def test_a_non_mapping_onelake_location_is_rejected():
-    document = {"version": OSSIE_VERSION, "semantic_model": [_minimal()]}
+    document = {"version": OSSIE_VERSION, **_minimal()}
     with pytest.raises(TypeError, match="workspaceId and itemId"):
         convert_ossie_to_semantic_model(document, source="workspace/item")
 
@@ -570,7 +580,7 @@ def test_an_explicit_compatible_source_reuses_the_preserved_database_query():
         {"name": "Other", "kind": "m", "expression": "42"},
     ]
     semantic_model, existing_partition = _mixed_partition_model(expressions)
-    document = {"version": OSSIE_VERSION, "semantic_model": [semantic_model]}
+    document = {"version": OSSIE_VERSION, **semantic_model}
 
     bim = convert_ossie_to_semantic_model(document, source=source)
 
@@ -589,7 +599,7 @@ def test_a_conflicting_database_query_gets_a_collision_free_name():
         {"name": "Unrelated", "kind": "m", "expression": "let X = 1 in X"},
     ]
     semantic_model, existing_partition = _mixed_partition_model(expressions)
-    document = {"version": OSSIE_VERSION, "semantic_model": [semantic_model]}
+    document = {"version": OSSIE_VERSION, **semantic_model}
 
     bim = convert_ossie_to_semantic_model(
         document, source={"workspaceId": "current-workspace", "itemId": "current-item"}
@@ -615,7 +625,7 @@ def test_a_non_m_database_query_is_not_reused_for_new_partitions():
         {"name": "DatabaseQuery", "kind": "parameter", "expression": '"old"'}
     ]
     semantic_model, _ = _mixed_partition_model(expressions)
-    document = {"version": OSSIE_VERSION, "semantic_model": [semantic_model]}
+    document = {"version": OSSIE_VERSION, **semantic_model}
 
     bim = convert_ossie_to_semantic_model(
         document, source={"workspaceId": "workspace", "itemId": "item"}
@@ -635,7 +645,7 @@ def test_a_scalar_database_query_expression_can_be_reused():
     generated = _database_query("workspace", "item")
     generated["expression"] = "\n".join(generated["expression"])
     semantic_model, _ = _mixed_partition_model([generated])
-    document = {"version": OSSIE_VERSION, "semantic_model": [semantic_model]}
+    document = {"version": OSSIE_VERSION, **semantic_model}
 
     bim = convert_ossie_to_semantic_model(
         document, source={"workspaceId": "workspace", "itemId": "item"}
@@ -1060,7 +1070,7 @@ def test_a_row_number_column_is_restored():
         warnings.simplefilter("ignore")
         osi = yaml.safe_load(convert_semantic_model_to_ossie(bim))
         result = convert_ossie_to_semantic_model(osi)
-    assert [f["name"] for f in osi["semantic_model"][0]["datasets"][0]["fields"]] == ["C"]
+    assert [f["name"] for f in osi["datasets"][0]["fields"]] == ["C"]
     assert [c["name"] for c in _table(result, "T")["columns"]] == ["RowNumber", "C"]
 
 

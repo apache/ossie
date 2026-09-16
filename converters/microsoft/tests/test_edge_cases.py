@@ -26,6 +26,7 @@ import json
 import warnings
 
 import pytest
+import yaml
 
 from ossie_microsoft import convert_ossie_to_semantic_model
 from ossie_microsoft._common import (
@@ -59,7 +60,7 @@ def _model(**overrides):
         ],
     }
     semantic_model.update(overrides)
-    return {"version": OSSIE_VERSION, "semantic_model": [semantic_model]}
+    return {"version": OSSIE_VERSION, **semantic_model}
 
 
 def _convert(document):
@@ -121,7 +122,7 @@ def test_a_malformed_extension_entry_is_ignored():
 
 def test_a_non_dict_table_is_skipped():
     bim = {"name": "m", "model": {"tables": ["nonsense", {"name": None}]}}
-    assert build_ossie_document(bim)["semantic_model"][0].get("datasets") == []
+    assert build_ossie_document(bim).get("datasets") == []
 
 
 def test_a_non_dict_column_is_skipped():
@@ -129,7 +130,7 @@ def test_a_non_dict_column_is_skipped():
         "name": "m",
         "model": {"tables": [{"name": "T", "columns": ["nonsense", {"noName": 1}]}]},
     }
-    model = build_ossie_document(bim)["semantic_model"][0]
+    model = build_ossie_document(bim)
     assert model["datasets"][0].get("fields") is None
 
 
@@ -138,13 +139,13 @@ def test_a_non_dict_measure_is_skipped():
         "name": "m",
         "model": {"tables": [{"name": "T", "measures": ["nonsense", {"noName": 1}]}]},
     }
-    model = build_ossie_document(bim)["semantic_model"][0]
+    model = build_ossie_document(bim)
     assert model.get("metrics") is None
 
 
 def test_a_non_dict_relationship_is_skipped():
     bim = {"name": "m", "model": {"tables": [], "relationships": ["nonsense"]}}
-    assert build_ossie_document(bim)["semantic_model"][0].get("relationships") is None
+    assert build_ossie_document(bim).get("relationships") is None
 
 
 def test_a_non_dict_dataset_is_skipped():
@@ -154,7 +155,7 @@ def test_a_non_dict_dataset_is_skipped():
 
 def test_a_non_dict_field_is_skipped():
     document = _model()
-    document["semantic_model"][0]["datasets"][0]["fields"] = ["nonsense", {"noName": 1}]
+    document["datasets"][0]["fields"] = ["nonsense", {"noName": 1}]
     bim = _convert(document)
     assert bim["model"]["tables"][0]["columns"] == []
 
@@ -172,7 +173,7 @@ def test_a_non_dict_metric_is_skipped():
 def test_a_composite_unique_key_is_reported():
     """TMSL marks uniqueness per column; a composite constraint has no equivalent."""
     document = _model()
-    document["semantic_model"][0]["datasets"][0]["unique_keys"] = [["C", "D"]]
+    document["datasets"][0]["unique_keys"] = [["C", "D"]]
     with pytest.warns(UserWarning, match="composite unique constraint"):
         bim = _convert(document)
     assert "isUnique" not in bim["model"]["tables"][0]["columns"][0]
@@ -180,13 +181,13 @@ def test_a_composite_unique_key_is_reported():
 
 def test_a_malformed_unique_key_is_ignored():
     document = _model()
-    document["semantic_model"][0]["datasets"][0]["unique_keys"] = ["not a list"]
+    document["datasets"][0]["unique_keys"] = ["not a list"]
     _convert(document)
 
 
 def test_an_unrecognized_datatype_is_reported_and_left_unspecified():
     document = _model()
-    document["semantic_model"][0]["datasets"][0]["fields"][0]["datatype"] = "Fictional"
+    document["datasets"][0]["fields"][0]["datatype"] = "Fictional"
     with pytest.warns(UserWarning, match="unrecognized Apache Ossie data type"):
         bim = _convert(document)
     assert "dataType" not in bim["model"]["tables"][0]["columns"][0]
@@ -229,7 +230,7 @@ def test_a_duplicate_measure_name_is_qualified_by_its_table():
         },
     }
     with pytest.warns(UserWarning, match="duplicate measure name"):
-        model = build_ossie_document(bim)["semantic_model"][0]
+        model = build_ossie_document(bim)
     assert [m["name"] for m in model["metrics"]] == ["Total", "B.Total"]
 
 
@@ -261,7 +262,7 @@ def test_a_relationship_missing_an_endpoint_is_reported_and_preserved():
         },
     }
     with pytest.warns(UserWarning, match="missing an endpoint"):
-        model = build_ossie_document(bim)["semantic_model"][0]
+        model = build_ossie_document(bim)
     # Preserved, so a round trip back to Power BI does not delete it.
     assert read_stash(model)["excludedRelationships"][0]["name"] == "broken"
 
@@ -287,7 +288,7 @@ def test_a_duplicate_relationship_name_is_reported_and_preserved():
         },
     }
     with pytest.warns(UserWarning, match="duplicate relationship"):
-        model = build_ossie_document(bim)["semantic_model"][0]
+        model = build_ossie_document(bim)
     assert len(model["relationships"]) == 1
     assert read_stash(model)["excludedRelationships"][0]["name"] == "dup"
 
@@ -303,7 +304,7 @@ def test_the_cli_writes_to_stdout_without_an_output_path(tmp_path, capsys):
     src = tmp_path / "m.bim"
     src.write_text(json.dumps({"name": "m", "model": {"tables": []}}), encoding="utf-8")
     assert main(["import", "-i", str(src)]) == 0
-    assert "semantic_model" in capsys.readouterr().out
+    assert yaml.safe_load(capsys.readouterr().out)["name"] == "m"
 
 
 def test_the_cli_reports_a_bad_file_without_a_traceback(tmp_path, capsys):

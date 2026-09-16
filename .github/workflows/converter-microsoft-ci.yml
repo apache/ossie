@@ -24,13 +24,15 @@ on:
     branches: [ "main" ]
     paths:
       - 'converters/microsoft/**'
-      - 'core-spec/ossie-schema.json'
+      - 'core-spec/**'
+      - 'examples/**'
       - '.github/workflows/converter-microsoft-ci.yml'
   pull_request:
     branches: [ "main" ]
     paths:
       - 'converters/microsoft/**'
-      - 'core-spec/ossie-schema.json'
+      - 'core-spec/**'
+      - 'examples/**'
       - '.github/workflows/converter-microsoft-ci.yml'
 
 jobs:

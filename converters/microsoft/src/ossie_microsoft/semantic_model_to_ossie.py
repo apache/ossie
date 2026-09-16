@@ -179,7 +179,7 @@ def build_ossie_document(bim_file):
         excluded_measures,
     )
 
-    return {"version": OSSIE_VERSION, "semantic_model": [semantic_model]}
+    return {"version": OSSIE_VERSION, **semantic_model}
 
 
 # ---------------------------------------------------------------------------
