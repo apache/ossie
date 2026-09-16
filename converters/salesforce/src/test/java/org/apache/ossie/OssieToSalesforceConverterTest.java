@@ -86,6 +86,7 @@ class OssieToSalesforceConverterTest {
 
     @BeforeEach
     void setUp() throws IOException {
+        assumeTrue(salesforceSchemaExists, "Salesforce schema is required; see README setup instructions.");
         assumeTrue(ossieSchemaExists, "Ossie schema file is required but not found. See README for setup instructions.");
 
         converter = ConverterFactory.getConverter(ConversionDirection.OSSIE_TO_SALESFORCE);
@@ -224,11 +225,15 @@ class OssieToSalesforceConverterTest {
         Map<String, Object> ansiModel = jsonMapper.readValue(ansiResults.get(0), new TypeReference<Map<String, Object>>() {});
 
         List<Map<String, Object>> ansiCalcDimensions = (List<Map<String, Object>>) ansiModel.get("semanticCalculatedDimensions");
-        assertNull(ansiCalcDimensions, "ANSI_SQL dialect: no semanticCalculatedDimensions");
+        assertNotNull(ansiCalcDimensions);
+        assertEquals(2, ansiCalcDimensions.size());
+        assertTrue(ansiCalcDimensions.stream().allMatch(field -> "Tua".equals(field.get("syntax"))));
+        assertTrue(ansiCalcDimensions.stream().anyMatch(field -> field.get("expression").toString().contains("MID(")));
+        assertTrue(ansiCalcDimensions.stream().anyMatch(field -> field.get("expression").toString().contains("YEAR(")));
     }
 
     @Test
-    void testInvalidRelationshipsFiltered() throws Exception {
+    void testAllDeclaredRelationshipsAreExported() throws Exception {
         List<String> results = converter.convert(ossieYaml);
         Map<String, Object> sfModel = jsonMapper.readValue(results.get(0), new TypeReference<Map<String, Object>>() {});
 
@@ -243,6 +248,21 @@ class OssieToSalesforceConverterTest {
         boolean hasValidOrdersProducts = relationships.stream()
                 .anyMatch(r -> "Orders_Products".equals(r.get("apiName")));
         assertTrue(hasValidOrdersProducts, "Orders_Products should be included");
+    }
+
+    @Test
+    void testCalculatedRelationshipKeyFailsInsteadOfDroppingTheRelationship() {
+        String invalid = ossieYaml.replace("    metrics:", """
+                - name: Orders_ByYear
+                  from: Orders
+                  to: Products
+                  from_columns: [order_year]
+                  to_columns: [product_id]
+                metrics:""".indent(4).stripTrailing());
+        Exception error = assertThrows(org.apache.ossie.exception.ConversionException.class,
+                () -> converter.convert(invalid));
+        assertTrue(error.getMessage().contains("Orders_ByYear"), error.getMessage());
+        assertTrue(error.getMessage().contains("order_year"), error.getMessage());
     }
 
     @Test
