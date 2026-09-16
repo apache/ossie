@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pytest
 
-from ossie_thoughtspot import stash
+from ossie_thoughtspot import ossie_to_thoughtspot, stash
 from ossie_thoughtspot.constants import (
     DATASET_STASH_ALIAS,
     DATASET_STASH_SQL_OUTPUT_COLUMNS,
@@ -155,7 +155,7 @@ class TestMinimalConversion:
         assert isinstance(result, OssieConversion)
         document = result.model
         assert document["version"] == "0.2.0.dev0"
-        semantic_model = document["semantic_model"][0]
+        semantic_model = document
         assert semantic_model["name"] == "sales_analytics"
 
         assert len(semantic_model["datasets"]) == 1
@@ -176,7 +176,7 @@ class TestMinimalConversion:
         orders = _table("ORDERS", db="SALES", schema="PUBLIC", db_table="ORDERS_FACT")
         model = _model(model_tables=[{"name": "ORDERS"}])
         result = convert(_document_set(model, orders))
-        dataset = result.model["semantic_model"][0]["datasets"][0]
+        dataset = result.model["datasets"][0]
         assert dataset["source"] == "SALES.PUBLIC.ORDERS_FACT"
 
 
@@ -203,7 +203,7 @@ class TestAliasPrefix:
         )
 
         result = convert(_document_set(model, ship_to, orders))
-        semantic_model = result.model["semantic_model"][0]
+        semantic_model = result.model
         datasets = {d["name"]: d for d in semantic_model["datasets"]}
 
         assert set(datasets) == {"ShippingAddress", "ORDERS"}
@@ -256,7 +256,7 @@ class TestKeyDerivation:
         )
 
         result = convert(_document_set(model, orders, customers))
-        semantic_model = result.model["semantic_model"][0]
+        semantic_model = result.model
         customers_ds = next(d for d in semantic_model["datasets"] if d["name"] == "CUSTOMERS")
 
         assert customers_ds["primary_key"] == ["Id"]
@@ -292,7 +292,7 @@ class TestKeyDerivation:
         )
 
         result = convert(_document_set(model, orders, rates))
-        semantic_model = result.model["semantic_model"][0]
+        semantic_model = result.model
         fx_ds = next(d for d in semantic_model["datasets"] if d["name"] == "FX_RATES")
 
         assert "primary_key" not in fx_ds
@@ -324,7 +324,7 @@ class TestKeyDerivation:
         )
 
         result = convert(_document_set(model, orders, customers))
-        semantic_model = result.model["semantic_model"][0]
+        semantic_model = result.model
         customers_ds = next(d for d in semantic_model["datasets"] if d["name"] == "CUSTOMERS")
 
         assert customers_ds["primary_key"] == ["Region", "Id"]
@@ -364,7 +364,7 @@ class TestOneToManyEndpointSwap:
         )
 
         result = convert(_document_set(model, customers, orders))
-        semantic_model = result.model["semantic_model"][0]
+        semantic_model = result.model
 
         rel = semantic_model["relationships"][0]
         # Swapped: the many side (ORDERS) is `from`, the one side
@@ -408,7 +408,7 @@ class TestOneToManyEndpointSwap:
         )
 
         result = convert(_document_set(model, orders, customers))
-        rel = result.model["semantic_model"][0]["relationships"][0]
+        rel = result.model["relationships"][0]
 
         assert rel["from"] == "ORDERS"
         assert rel["to"] == "CUSTOMERS"
@@ -437,7 +437,7 @@ class TestOneToManyEndpointSwap:
         )
 
         result = convert(_document_set(model, profiles, people))
-        rel = result.model["semantic_model"][0]["relationships"][0]
+        rel = result.model["relationships"][0]
 
         assert rel["from"] == "PROFILES"
         assert rel["to"] == "PEOPLE"
@@ -474,7 +474,7 @@ class TestOneToManyEndpointSwap:
         )
 
         result = convert(_document_set(model, customers, orders))
-        rel = result.model["semantic_model"][0]["relationships"][0]
+        rel = result.model["relationships"][0]
 
         assert rel["name"] == "customers_to_orders"
         assert rel["from"] == "ORDERS"
@@ -506,7 +506,7 @@ class TestUnattributedFormulas:
         )
 
         result = convert(_document_set(model, orders, customers))
-        semantic_model = result.model["semantic_model"][0]
+        semantic_model = result.model
 
         field_names = {f["name"] for d in semantic_model["datasets"] for f in d.get("fields", [])}
         assert "net_amount" not in field_names
@@ -529,7 +529,7 @@ class TestStashProtocol:
         model = _model(model_tables=[{"name": "ORDERS"}])
         result = convert(_document_set(model, orders))
 
-        dataset = result.model["semantic_model"][0]["datasets"][0]
+        dataset = result.model["datasets"][0]
         dataset.setdefault("custom_extensions", []).append(
             {"vendor_name": "SNOWFLAKE", "data": '{"x": 1}'}
         )
@@ -573,7 +573,7 @@ class TestStashProtocol:
             columns=[_attribute("Amount", "ORDERS::Amount")],
         )
         result = convert(_document_set(model, orders))
-        semantic_model = result.model["semantic_model"][0]
+        semantic_model = result.model
         assert "custom_extensions" not in semantic_model
 
 
@@ -642,7 +642,7 @@ class TestOwnChoice:
         )
 
         result = convert(_document_set(model, orders, customers))
-        semantic_model = result.model["semantic_model"][0]
+        semantic_model = result.model
 
         rel = semantic_model["relationships"][0]
         assert rel["name"] == "orders_to_customers"
@@ -679,7 +679,7 @@ class TestOwnChoice:
         )
 
         result = convert(_document_set(model, orders, customers))
-        semantic_model = result.model["semantic_model"][0]
+        semantic_model = result.model
 
         # The rest of the model still converts.
         assert len(semantic_model["datasets"]) == 2
@@ -717,20 +717,20 @@ class TestUnconsumedColumnProperties:
         result = self._convert_one(
             {"column_type": "ATTRIBUTE", "index_type": "DONT_INDEX", "value_casing": "UPPER"}
         )
-        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        field = result.model["datasets"][0]["fields"][0]
         assert _own_stash(field)[FIELD_STASH_COLUMN_PROPERTIES] == {
             "index_type": "DONT_INDEX", "value_casing": "UPPER",
         }
 
     def test_a_metric_with_only_consumed_properties_gets_no_column_properties_key(self):
         result = self._convert_one({"column_type": "MEASURE", "aggregation": "SUM"})
-        metric = result.model["semantic_model"][0]["metrics"][0]
+        metric = result.model["metrics"][0]
         stashed = _own_stash(metric) or {}
         assert FIELD_STASH_COLUMN_PROPERTIES not in stashed
 
     def test_a_column_with_no_extra_properties_gets_no_extension_entry(self):
         result = self._convert_one({"column_type": "ATTRIBUTE"})
-        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        field = result.model["datasets"][0]["fields"][0]
         assert "custom_extensions" not in field
 
     def test_an_unknown_invented_property_name_is_preserved(self):
@@ -740,7 +740,7 @@ class TestUnconsumedColumnProperties:
         result = self._convert_one(
             {"column_type": "ATTRIBUTE", "a_property_ossie_thoughtspot_has_never_seen": 42}
         )
-        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        field = result.model["datasets"][0]["fields"][0]
         assert _own_stash(field)[FIELD_STASH_COLUMN_PROPERTIES] == {
             "a_property_ossie_thoughtspot_has_never_seen": 42
         }
@@ -749,7 +749,7 @@ class TestUnconsumedColumnProperties:
         result = self._convert_one(
             {"column_type": "MEASURE", "aggregation": "SUM", "index_type": "DONT_INDEX"}
         )
-        metric = result.model["semantic_model"][0]["metrics"][0]
+        metric = result.model["metrics"][0]
         assert _own_stash(metric)[FIELD_STASH_COLUMN_PROPERTIES] == {"index_type": "DONT_INDEX"}
 
     def test_identity_shaped_content_nested_in_a_property_value_is_dropped_not_stashed(self):
@@ -765,7 +765,7 @@ class TestUnconsumedColumnProperties:
             "index_type": "DONT_INDEX",
             "geo_config": {"custom_file_guid": "map-guid-123", "geometryType": "polygon"},
         })
-        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        field = result.model["datasets"][0]["fields"][0]
         assert _own_stash(field)[FIELD_STASH_COLUMN_PROPERTIES] == {"index_type": "DONT_INDEX"}
         serialised = json.dumps(result.model)
         assert "guid" not in serialised
@@ -790,7 +790,7 @@ class TestUnknownRelationshipTarget:
         )
 
         result = convert(_document_set(model, orders))
-        semantic_model = result.model["semantic_model"][0]
+        semantic_model = result.model
 
         assert "relationships" not in semantic_model
         # The rest of the model -- the one dataset that DID build -- is
@@ -814,7 +814,7 @@ class TestUnsurfacedColumns:
         )
 
         result = convert(_document_set(model, orders))
-        dataset = result.model["semantic_model"][0]["datasets"][0]
+        dataset = result.model["datasets"][0]
 
         unsurfaced = _own_stash(dataset)[DATASET_STASH_UNSURFACED_COLUMNS]
         assert len(unsurfaced) == 1
@@ -843,7 +843,7 @@ class TestUnsurfacedColumns:
         )
 
         result = convert(_document_set(model, orders))
-        dataset = result.model["semantic_model"][0]["datasets"][0]
+        dataset = result.model["datasets"][0]
         stashed = _own_stash(dataset) or {}
         unsurfaced = stashed.get(DATASET_STASH_UNSURFACED_COLUMNS) or []
         assert [c["name"] for c in unsurfaced] == ["Amount"]
@@ -855,7 +855,7 @@ class TestUnsurfacedColumns:
             columns=[_attribute("Amount", "ORDERS::Amount")],
         )
         result = convert(_document_set(model, orders))
-        dataset = result.model["semantic_model"][0]["datasets"][0]
+        dataset = result.model["datasets"][0]
         stashed = _own_stash(dataset) or {}
         assert DATASET_STASH_UNSURFACED_COLUMNS not in stashed
 
@@ -868,7 +868,7 @@ class TestUnsurfacedColumns:
         orders = _table("ORDERS", columns=[_column("Amount", "AMOUNT", "DOUBLE")])
         model = _model(model_tables=[{"name": "ORDERS"}], columns=[])
         result = convert(_document_set(model, orders))
-        dataset = result.model["semantic_model"][0]["datasets"][0]
+        dataset = result.model["datasets"][0]
         stashed = _own_stash(dataset)
         assert stashed is not None
         assert stashed[DATASET_STASH_UNSURFACED_COLUMNS][0]["name"] == "Amount"
@@ -895,7 +895,7 @@ class TestModelScopeIdentityIsCaughtNotFatal:
             parameters=[{"name": "P", "default_value": {"obj_id": "p-1"}}]
         )
         result = convert(_document_set(model, orders))
-        semantic_model = result.model["semantic_model"][0]
+        semantic_model = result.model
         assert semantic_model["datasets"][0]["fields"][0]["name"] == "amount"
         stashed = _own_stash(semantic_model) or {}
         assert MODEL_STASH_PARAMETERS not in stashed
@@ -907,7 +907,7 @@ class TestModelScopeIdentityIsCaughtNotFatal:
             filters=[{"column": "Region", "values": [{"nested": {"fqn": "f-1"}}]}]
         )
         result = convert(_document_set(model, orders))
-        stashed = _own_stash(result.model["semantic_model"][0]) or {}
+        stashed = _own_stash(result.model) or {}
         assert MODEL_STASH_FILTERS not in stashed
         assert "fqn" not in json.dumps(result.model)
 
@@ -916,7 +916,7 @@ class TestModelScopeIdentityIsCaughtNotFatal:
             column_groups=[{"name": "Sales", "meta": {"guid": "g-1"}}]
         )
         result = convert(_document_set(model, orders))
-        stashed = _own_stash(result.model["semantic_model"][0]) or {}
+        stashed = _own_stash(result.model) or {}
         assert MODEL_STASH_COLUMN_GROUPS not in stashed
         assert "guid" not in json.dumps(result.model)
 
@@ -925,7 +925,7 @@ class TestModelScopeIdentityIsCaughtNotFatal:
             lesson_plans=[{"lesson_id": 0, "extra": {"obj_id": "l-1"}}]
         )
         result = convert(_document_set(model, orders))
-        stashed = _own_stash(result.model["semantic_model"][0]) or {}
+        stashed = _own_stash(result.model) or {}
         assert MODEL_STASH_LESSON_PLANS not in stashed
         assert "obj_id" not in json.dumps(result.model)
 
@@ -934,14 +934,14 @@ class TestModelScopeIdentityIsCaughtNotFatal:
             action_object_associations=[{"action_name": "A", "context": {"fqn": "a-1"}}]
         )
         result = convert(_document_set(model, orders))
-        stashed = _own_stash(result.model["semantic_model"][0]) or {}
+        stashed = _own_stash(result.model) or {}
         assert MODEL_STASH_ACTION_OBJECT_ASSOCIATIONS not in stashed
         assert "fqn" not in json.dumps(result.model)
 
     def test_a_guid_nested_in_constraints_is_dropped_not_fatal(self):
         orders, model = self._model_with(constraints={"rolling": {"window": {"guid": "c-1"}}})
         result = convert(_document_set(model, orders))
-        stashed = _own_stash(result.model["semantic_model"][0]) or {}
+        stashed = _own_stash(result.model) or {}
         assert MODEL_STASH_CONSTRAINTS not in stashed
         assert "guid" not in json.dumps(result.model)
 
@@ -950,7 +950,7 @@ class TestModelScopeIdentityIsCaughtNotFatal:
             joins_with=[{"name": "j", "destination": {"fqn": "j-1"}}]
         )
         result = convert(_document_set(model, orders))
-        stashed = _own_stash(result.model["semantic_model"][0]) or {}
+        stashed = _own_stash(result.model) or {}
         assert MODEL_STASH_MODEL_JOINS_WITH not in stashed
         assert "fqn" not in json.dumps(result.model)
 
@@ -962,7 +962,7 @@ class TestModelScopeIdentityIsCaughtNotFatal:
             filters=[{"column": "Region", "values": ["US"]}],
         )
         result = convert(_document_set(model, orders))
-        stashed = _own_stash(result.model["semantic_model"][0]) or {}
+        stashed = _own_stash(result.model) or {}
         assert MODEL_STASH_PARAMETERS not in stashed
         assert stashed[MODEL_STASH_FILTERS] == [{"column": "Region", "values": ["US"]}]
 
@@ -988,7 +988,7 @@ class TestUnnormalisableNamesAreCaughtNotFatal:
             columns=[_attribute("Amount", "ORDERS::Amount")],
         )
         result = convert(_document_set(model, orders))
-        semantic_model = result.model["semantic_model"][0]
+        semantic_model = result.model
         assert semantic_model["name"] == "model"
         assert any(i["code"] == "TS-MODEL-NAME-UNNORMALISABLE" for i in result.issues.as_dicts())
         # The rest of the model still converts -- one unfoldable name does
@@ -1010,7 +1010,7 @@ class TestUnnormalisableNamesAreCaughtNotFatal:
             columns=[_attribute("!!!", "ORDERS::Amount")],
         )
         result = convert(_document_set(model, orders))
-        fields = result.model["semantic_model"][0]["datasets"][0]["fields"]
+        fields = result.model["datasets"][0]["fields"]
         assert len(fields) == 1
         field = fields[0]
         # The physical column's own warehouse name is the fallback basis --
@@ -1041,7 +1041,7 @@ class TestUnnormalisableNamesAreCaughtNotFatal:
             ],
         )
         result = convert(_document_set(model, orders))
-        fields = result.model["semantic_model"][0]["datasets"][0]["fields"]
+        fields = result.model["datasets"][0]["fields"]
         assert len(fields) == 3  # "amount" plus the two non-Latin formula fields
         fallback_names = {f["name"] for f in fields if f["label"] in ("顧客", "名前")}
         assert len(fallback_names) == 2  # distinct, not collapsed into one "field"
@@ -1068,7 +1068,7 @@ class TestUnnormalisableNamesAreCaughtNotFatal:
         codes = {i["code"] for i in result.issues.as_dicts()}
         assert "TS-FIELD-NAME-UNNORMALISABLE" in codes
         assert "TS-COLUMN-REF-MALFORMED" in codes
-        fields = result.model["semantic_model"][0]["datasets"][0]["fields"]
+        fields = result.model["datasets"][0]["fields"]
         assert len(fields) == 1  # the unfoldable-but-valid field survives
         assert fields[0]["label"] == "名前"
 
@@ -1093,7 +1093,7 @@ class TestKeyDerivationEdgeCasesCommitted:
             ],
         )
         result = convert(_document_set(model, orders, customers))
-        semantic_model = result.model["semantic_model"][0]
+        semantic_model = result.model
         customers_ds = next(d for d in semantic_model["datasets"] if d["name"] == "CUSTOMERS")
 
         assert "primary_key" not in customers_ds
@@ -1127,7 +1127,7 @@ class TestKeyDerivationEdgeCasesCommitted:
             ],
         )
         result = convert(_document_set(model, employees))
-        semantic_model = result.model["semantic_model"][0]
+        semantic_model = result.model
         datasets = {d["name"]: d for d in semantic_model["datasets"]}
 
         assert set(datasets) == {"Emp", "Mgr"}
@@ -1149,7 +1149,7 @@ class TestKeyDerivationEdgeCasesCommitted:
             ],
         )
         result = convert(_document_set(model, orders, customers))
-        semantic_model = result.model["semantic_model"][0]
+        semantic_model = result.model
 
         # No equality pair could be safely attributed -- the whole "or"
         # expression is one residual, never split into a fabricated pair.
@@ -1170,7 +1170,7 @@ class TestKeyDerivationEdgeCasesCommitted:
             ],
         )
         result = convert(_document_set(model, products, customers))
-        semantic_model = result.model["semantic_model"][0]
+        semantic_model = result.model
         customers_ds = next(d for d in semantic_model["datasets"] if d["name"] == "CUSTOMERS")
 
         assert "primary_key" not in customers_ds
@@ -1196,7 +1196,7 @@ class TestSqlViewColumns:
             columns=[_attribute("Cid", "VW::CID")],
         )
         result = convert(_document_set(model, vw))
-        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        field = result.model["datasets"][0]["fields"][0]
         assert field["datatype"] == "Integer"
         assert result.issues.as_dicts() == []
 
@@ -1210,7 +1210,7 @@ class TestSqlViewColumns:
             columns=[_attribute("Cid", "VW::CID")],
         )
         result = convert(_document_set(model, vw))
-        dataset = result.model["semantic_model"][0]["datasets"][0]
+        dataset = result.model["datasets"][0]
         unsurfaced = _own_stash(dataset)[DATASET_STASH_UNSURFACED_COLUMNS]
         assert len(unsurfaced) == 1
         assert unsurfaced[0]["name"] == "Never Surfaced"
@@ -1228,7 +1228,7 @@ class TestSqlViewColumns:
             columns=[_attribute("Customer Id", "VW::Customer Id")],
         )
         result = convert(_document_set(model, vw))
-        dataset = result.model["semantic_model"][0]["datasets"][0]
+        dataset = result.model["datasets"][0]
         field_name = dataset["fields"][0]["name"]
         assert field_name == "customer_id"
         stashed = _own_stash(dataset)
@@ -1245,7 +1245,7 @@ class TestSqlViewColumns:
             ],
         )
         result = convert(_document_set(model, orders, vw))
-        datasets = {d["name"]: d for d in result.model["semantic_model"][0]["datasets"]}
+        datasets = {d["name"]: d for d in result.model["datasets"]}
 
         assert datasets["ORDERS"]["source"] == "SALES.PUBLIC.ORDERS"
         assert datasets["ORDERS"]["fields"][0]["datatype"] == "Decimal"
@@ -1269,7 +1269,7 @@ class TestPhysicalColumnReferences:
         orders = _table("ORDERS", columns=[_column("Amount", "AMT_RAW", "DOUBLE")])
         model = _model(model_tables=[{"name": "ORDERS"}], columns=[_attribute("Amount", "ORDERS::Amount")])
         result = convert(_document_set(model, orders))
-        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        field = result.model["datasets"][0]["fields"][0]
         dialects = {d["dialect"]: d["expression"] for d in field["expression"]["dialects"]}
         assert dialects["ANSI_SQL"] == "ORDERS.AMT_RAW"
 
@@ -1277,7 +1277,7 @@ class TestPhysicalColumnReferences:
         orders = _table("ORDERS", columns=[_column("Amount", "Amount", "DOUBLE")])
         model = _model(model_tables=[{"name": "ORDERS"}], columns=[_attribute("Amount", "ORDERS::Amount")])
         result = convert(_document_set(model, orders))
-        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        field = result.model["datasets"][0]["fields"][0]
         dialects = {d["dialect"]: d["expression"] for d in field["expression"]["dialects"]}
         assert dialects["ANSI_SQL"] == "ORDERS.Amount"
 
@@ -1285,7 +1285,7 @@ class TestPhysicalColumnReferences:
         vw = _sql_view("VW", columns=[_sql_view_column("CID", "c_id", "INT64")])
         model = _model(model_tables=[{"name": "VW"}], columns=[_attribute("Cid", "VW::CID")])
         result = convert(_document_set(model, vw))
-        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        field = result.model["datasets"][0]["fields"][0]
         dialects = {d["dialect"]: d["expression"] for d in field["expression"]["dialects"]}
         assert dialects["ANSI_SQL"] == "VW.c_id"
 
@@ -1301,7 +1301,7 @@ class TestPhysicalColumnReferences:
             formulas=[{"id": "formula_doubled", "name": "Doubled", "expr": "[ORDERS::Amount]"}],
         )
         result = convert(_document_set(model, orders))
-        fields = {f["name"]: f for f in result.model["semantic_model"][0]["datasets"][0]["fields"]}
+        fields = {f["name"]: f for f in result.model["datasets"][0]["fields"]}
         doubled_dialects = {d["dialect"]: d["expression"] for d in fields["doubled"]["expression"]["dialects"]}
         assert doubled_dialects["ANSI_SQL"] == "ORDERS.AMT_RAW"
         assert result.issues.as_dicts() == []
@@ -1320,7 +1320,7 @@ class TestPhysicalColumnStash:
         orders = _table("ORDERS", columns=[_column("Is Active", "Is Active", "BOOL")])
         model = _model(model_tables=[{"name": "ORDERS"}], columns=[_attribute("Is Active", "ORDERS::Is Active")])
         result = convert(_document_set(model, orders))
-        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        field = result.model["datasets"][0]["fields"][0]
         assert field["datatype"] == "Boolean"
         assert _own_stash(field)[FIELD_STASH_DATA_TYPE] == "BOOL"
 
@@ -1328,7 +1328,7 @@ class TestPhysicalColumnStash:
         orders = _table("ORDERS", columns=[_column("Is Active", "Is Active", "BOOLEAN")])
         model = _model(model_tables=[{"name": "ORDERS"}], columns=[_attribute("Is Active", "ORDERS::Is Active")])
         result = convert(_document_set(model, orders))
-        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        field = result.model["datasets"][0]["fields"][0]
         assert field["datatype"] == "Boolean"
         assert "custom_extensions" not in field
 
@@ -1336,7 +1336,7 @@ class TestPhysicalColumnStash:
         orders = _table("ORDERS", columns=[_column("Rate", "Rate", "FLOAT")])
         model = _model(model_tables=[{"name": "ORDERS"}], columns=[_attribute("Rate", "ORDERS::Rate")])
         result = convert(_document_set(model, orders))
-        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        field = result.model["datasets"][0]["fields"][0]
         assert field["datatype"] == "Float"
         assert _own_stash(field)[FIELD_STASH_DATA_TYPE] == "FLOAT"
 
@@ -1344,14 +1344,14 @@ class TestPhysicalColumnStash:
         orders = _table("ORDERS", columns=[_column("Amount", "AMT_RAW", "DOUBLE")])
         model = _model(model_tables=[{"name": "ORDERS"}], columns=[_attribute("Amount", "ORDERS::Amount")])
         result = convert(_document_set(model, orders))
-        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        field = result.model["datasets"][0]["fields"][0]
         assert _own_stash(field)[FIELD_STASH_DB_COLUMN_NAME] == "AMT_RAW"
 
     def test_an_equal_db_column_name_is_not_stashed(self):
         orders = _table("ORDERS", columns=[_column("Amount", "Amount", "DOUBLE")])
         model = _model(model_tables=[{"name": "ORDERS"}], columns=[_attribute("Amount", "ORDERS::Amount")])
         result = convert(_document_set(model, orders))
-        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        field = result.model["datasets"][0]["fields"][0]
         assert "custom_extensions" not in field
 
     def test_a_sql_view_column_never_gets_a_db_column_name_stash(self):
@@ -1361,9 +1361,9 @@ class TestPhysicalColumnStash:
         vw = _sql_view("VW", columns=[_sql_view_column("CID", "c_id", "INT64")])
         model = _model(model_tables=[{"name": "VW"}], columns=[_attribute("Cid", "VW::CID")])
         result = convert(_document_set(model, vw))
-        field = result.model["semantic_model"][0]["datasets"][0]["fields"][0]
+        field = result.model["datasets"][0]["fields"][0]
         assert "custom_extensions" not in field
-        dataset_stash = _own_stash(result.model["semantic_model"][0]["datasets"][0])
+        dataset_stash = _own_stash(result.model["datasets"][0])
         assert dataset_stash[DATASET_STASH_SQL_OUTPUT_COLUMNS] == {"cid": "c_id"}
 
     def test_a_metric_bound_to_a_physical_column_gets_the_same_stash(self):
@@ -1374,6 +1374,39 @@ class TestPhysicalColumnStash:
                       "properties": {"column_type": "MEASURE", "aggregation": "COUNT"}}],
         )
         result = convert(_document_set(model, orders))
-        metric = result.model["semantic_model"][0]["metrics"][0]
+        metric = result.model["metrics"][0]
         stashed = _own_stash(metric)
         assert stashed[FIELD_STASH_DB_COLUMN_NAME] == "AMT_RAW"
+
+
+class TestAModelThatYieldsNoDatasets:
+    """`datasets` is `minItems: 1` upstream, so an empty one is not a document.
+
+    Both legs have to agree about that. The Ossie -> TML leg refuses such a
+    document outright; if this leg emitted one quietly, `to-ossie` would report
+    success and hand back an artifact that fails the schema and that our own
+    `to-tml` then rejects.
+    """
+
+    def _convert_empty(self):
+        return convert(_document_set(_model(name="Empty Model", model_tables=[])))
+
+    def test_it_is_reported_at_error_severity(self):
+        result = self._convert_empty()
+        codes = [i["code"] for i in result.issues.as_dicts()]
+        assert "TS-MODEL-NO-DATASETS" in codes
+        assert result.issues.has_errors()
+
+    def test_the_issue_names_the_model(self):
+        issue = next(
+            i for i in self._convert_empty().issues.as_dicts()
+            if i["code"] == "TS-MODEL-NO-DATASETS"
+        )
+        assert "Empty Model" in issue["message"]
+
+    def test_the_other_leg_refuses_the_same_document(self):
+        # The agreement this issue exists to preserve, asserted rather than
+        # assumed: what this leg flags is exactly what the other leg rejects.
+        document = self._convert_empty().model
+        with pytest.raises(ConversionError):
+            ossie_to_thoughtspot.convert(document)

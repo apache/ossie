@@ -118,7 +118,7 @@ def test_to_ossie_writes_a_loadable_ossie_document(tmp_path):
     assert code == 0
     document = _yaml.load(out_path.read_text(encoding="utf-8"))
     assert isinstance(document, dict)
-    assert document["semantic_model"][0]["name"] == "tpcds_retail_model"
+    assert document["name"] == "tpcds_retail_model"
 
 
 def test_to_ossie_help_documents_the_overwrite_flag(capsys):
@@ -249,7 +249,7 @@ def test_exit_code_one_on_an_error_severity_issue_but_the_document_is_still_writ
     # that reported it -- the document is written regardless of exit code.
     assert out_path.exists()
     document = _yaml.load(out_path.read_text(encoding="utf-8"))
-    assert document["semantic_model"][0]["name"] == "minimal_orders_model"
+    assert document["name"] == "minimal_orders_model"
 
 
 # ---------------------------------------------------------------------------

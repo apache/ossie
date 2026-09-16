@@ -40,3 +40,19 @@ def test_readme_carries_a_coverage_matrix_with_rows():
 def test_readme_states_the_dialect_registration():
     # The THOUGHTSPOT dialect was registered by apache/ossie#351 (merged 2026-09-01).
     assert "351" in README.read_text(encoding="utf-8")
+
+
+def test_readme_describes_the_document_root_not_the_removed_wrapper():
+    # apache/ossie#383 moved the semantic model's fields to the document root.
+    # The mapping table is the README's statement of the input contract, so a
+    # stale row here tells a reader to build documents this converter now
+    # rejects. Pinned because nothing else reads that row: reverting it left
+    # the whole suite green.
+    text = README.read_text(encoding="utf-8")
+    mapping_rows = [ln for ln in text.splitlines() if ln.startswith("| ") and "document root" in ln]
+    assert mapping_rows, "README's mapping table no longer states the document-root contract"
+    for line in text.splitlines():
+        if "`semantic_model`" in line:
+            assert "removed" in line or "reject" in line, (
+                f"README still presents `semantic_model` as current: {line!r}"
+            )

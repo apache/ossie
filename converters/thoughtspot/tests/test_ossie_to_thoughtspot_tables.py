@@ -709,7 +709,7 @@ class TestRoundTripAgainstTheForwardDirection:
     def test_round_trip_reproduces_the_original_table_structurally(self):
         document_set, original = self._model_and_table()
         ossie = tml_to_ossie_convert(document_set)
-        [dataset] = ossie.model["semantic_model"][0]["datasets"]
+        [dataset] = ossie.model["datasets"]
 
         log = IssueLog()
         rebuilt = build_table(dataset, log)

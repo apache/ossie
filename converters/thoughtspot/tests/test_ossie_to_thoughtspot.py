@@ -136,8 +136,9 @@ def _relationship(name, from_, to, from_columns, to_columns, *, rel_stash=None):
     return relationship
 
 
-def _ossie_document(*semantic_models):
-    return {"version": "0.2.0.dev0", "semantic_model": list(semantic_models)}
+def _ossie_document(semantic_model):
+    # One model per document, at the root, no wrapper (apache/ossie#383).
+    return {"version": "0.2.0.dev0", **semantic_model}
 
 
 def _table_doc(name, columns, connection="My Snowflake"):
@@ -211,19 +212,34 @@ class TestConvertEntryPoint:
         assert [t.body["name"] for t in result.documents.tables] == ["orders"]
         assert isinstance(result.issues, IssueLog)
 
-    def test_no_semantic_model_at_all_is_a_hard_failure(self):
+    def test_no_datasets_at_all_is_a_hard_failure(self):
         with pytest.raises(ConversionError):
-            convert({"version": "0.2.0.dev0", "semantic_model": []})
+            convert({"version": "0.2.0.dev0", "name": "empty", "datasets": []})
 
-    def test_missing_semantic_model_key_is_a_hard_failure(self):
+    def test_a_document_with_nothing_but_a_version_is_a_hard_failure(self):
         with pytest.raises(ConversionError):
             convert({"version": "0.2.0.dev0"})
 
-    def test_more_than_one_semantic_model_is_a_hard_failure_naming_both(self):
-        first = _semantic_model(name="first")
-        second = _semantic_model(name="second")
-        with pytest.raises(ConversionError, match="first"):
-            convert(_ossie_document(first, second))
+    @pytest.mark.parametrize("wrapped", [
+        pytest.param([_semantic_model(name="only")], id="one-entry"),
+        pytest.param([_semantic_model(name="first"), _semantic_model(name="second")], id="two-entries"),
+        pytest.param([], id="empty"),
+    ])
+    def test_the_removed_semantic_model_wrapper_is_rejected_by_name(self, wrapped):
+        # A pre-#383 document is refused rather than unwrapped, whatever the
+        # wrapper holds -- including the one-entry case that would otherwise
+        # convert perfectly well. The message has to name the wrapper, since
+        # that is the one thing the reader has to change.
+        legacy = {"version": "0.2.0.dev0", "semantic_model": wrapped}
+        with pytest.raises(ConversionError, match="semantic_model"):
+            convert(legacy)
+
+    def test_a_non_mapping_is_rejected_as_a_non_mapping(self):
+        # Guards the `in` check below it: on a str, `"semantic_model" in doc`
+        # is a substring match, so raw document text would have been reported
+        # as a wrapper problem.
+        with pytest.raises(ConversionError, match="mapping"):
+            convert("semantic_model: hello")
 
     def test_no_guid_appears_anywhere_in_the_emitted_document_set(self):
         # The no-guid-anywhere rule, proven at the deepest fixture this file builds: a join, a
@@ -682,7 +698,7 @@ class TestFullRoundTripBothEntryPoints:
 
         ossie_document = forward.model
         orders_dataset = next(
-            d for d in ossie_document["semantic_model"][0]["datasets"] if d["name"] == "ORDERS"
+            d for d in ossie_document["datasets"] if d["name"] == "ORDERS"
         )
         # Simulate another tool having already touched the intermediate
         # Ossie document -- the scenario write_stash's foreign-vendor
@@ -700,7 +716,7 @@ class TestFullRoundTripBothEntryPoints:
     def test_the_foreign_vendor_entry_is_never_touched(self):
         _original, ossie_document, foreign_entry, _result = self._round_trip()
         orders_dataset = next(
-            d for d in ossie_document["semantic_model"][0]["datasets"] if d["name"] == "ORDERS"
+            d for d in ossie_document["datasets"] if d["name"] == "ORDERS"
         )
         assert foreign_entry in orders_dataset["custom_extensions"]
 

@@ -704,7 +704,7 @@ class TestHiddenFlagDroppedFromEmissionButKeptInTheStash:
         document_set = DocumentSet(model=model_doc, tables=(table_doc,))
 
         ossie = tml_to_ossie_convert(document_set)
-        [dataset] = ossie.model["semantic_model"][0]["datasets"]
+        [dataset] = ossie.model["datasets"]
         [field] = dataset["fields"]
 
         payload = stash_module.read_stash(field)
@@ -1096,7 +1096,7 @@ class TestRoundTripAgainstTheForwardDirection:
         )
         document_set = DocumentSet(model=model, tables=(orders, customers))
         ossie = tml_to_ossie_convert(document_set)
-        semantic_model = ossie.model["semantic_model"][0]
+        semantic_model = ossie.model
 
         log = IssueLog()
         rebuilt_tables = [build_table(ds, log) for ds in semantic_model["datasets"]]

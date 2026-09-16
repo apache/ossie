@@ -99,7 +99,7 @@ for what gets declared and why.
 
 | Ossie | ThoughtSpot TML | Notes |
 |---|---|---|
-| `semantic_model` (one entry) | one Model document + the Table/SQL View documents it references | Exactly one `semantic_model` entry per document; more than one is a hard failure |
+| the semantic model (the document root) | one Model document + the Table/SQL View documents it references | One semantic model per document, its fields at the root beside `version`; a document still carrying the removed `semantic_model` wrapper is a hard failure naming it |
 | `dataset` | `table:`/`sql_view:` document, surfaced via the Model's `model_tables[]` entry | One dataset per participating `model_tables[]` entry, not per physical table — a self-join or a table used twice gets two datasets sharing one `source` |
 | `dataset.source` | `db`.`schema`.`db_table`, or `sql_query` for a SQL View | A dotted part is stashed individually (`source_parts`) when the joined form would be ambiguous |
 | `dataset.fields` | Table `columns[]` (physical) or Model `formulas[]` + surfacing `columns[]` entry (computed) | A computed field is attributed to the one dataset every column reference in its expression resolves to; ambiguous or cross-dataset references raise an issue instead of guessing |
