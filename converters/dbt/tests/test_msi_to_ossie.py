@@ -513,7 +513,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[customers, orders, reviews])).output
 
-        rels = result.semantic_model[0].relationships
+        rels = result.relationships
         assert rels is not None
         pairs = {(r.from_dataset, r.to) for r in rels}
         # orders and reviews each join to customers; orders-reviews (both FOREIGN on `customer`) is excluded.
@@ -531,7 +531,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[orders, reviews])).output
 
-        assert result.semantic_model[0].relationships is None
+        assert result.relationships is None
 
 
 class TestMetricConversion:

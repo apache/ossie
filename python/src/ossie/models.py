@@ -213,8 +213,6 @@ class OssieDocument(OssieSemanticModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     version: str = "0.2.0.dev0"
-    dialects: Optional[list[OssieDialect]] = None
-    vendors: Optional[list[OssieVendor]] = None
 
     def to_ossie_yaml(self, **kwargs: Any) -> str:
         """Serialize to Ossie-compliant YAML (uses field aliases and excludes None values)."""

@@ -121,7 +121,6 @@ class MSIToOssieConverter:
         return ConverterResult(
             output=OssieDocument(
                 version="0.2.0.dev0",
-                dialects=[self._dialect],
                 name=ossie_model_name,
                 datasets=datasets,
                 relationships=relationships if relationships else None,

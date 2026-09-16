@@ -64,8 +64,6 @@
       - dialect: ANSI_SQL
         expression: (SUM(orders.amount) - SUM(orders.cost_amount)) - SUM(orders.expense_amount)
   version: 0.2.0.dev0
-  dialects:
-  - ANSI_SQL
   
   '''
 # ---
@@ -104,8 +102,6 @@
         expression: (SUM(orders.amount)) / (SUM(CASE WHEN orders.order_id IS NOT NULL
           THEN 1 ELSE 0 END))
   version: 0.2.0.dev0
-  dialects:
-  - ANSI_SQL
   
   '''
 # ---
@@ -129,8 +125,6 @@
         expression: SUM(CASE WHEN (status = 'paid') AND (region = 'intl') THEN orders.amount
           END)
   version: 0.2.0.dev0
-  dialects:
-  - ANSI_SQL
   
   '''
 # ---
@@ -189,8 +183,6 @@
     to_columns:
     - user_id
   version: 0.2.0.dev0
-  dialects:
-  - ANSI_SQL
   
   '''
 # ---

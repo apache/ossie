@@ -1373,7 +1373,7 @@ def _parse_ossie(value: str) -> dict[str, Any]:
             "Ossie model properties must be at the root; semantic_model wrappers are not supported"
         )
     unknown = sorted(set(root) - {
-        "version", "dialects", "vendors", "name", "description", "ai_context",
+        "version", "name", "description", "ai_context",
         "datasets", "relationships", "metrics", "custom_extensions",
     })
     if unknown:

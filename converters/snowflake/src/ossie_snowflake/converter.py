@@ -116,7 +116,7 @@ def convert_ossie_to_snowflake(ossie_yaml_str):
     # Document metadata is consumed here; it is not a dropped model property.
     model = {
         key: value for key, value in root.items()
-        if key not in {"version", "dialects", "vendors"}
+        if key != "version"
     }
     snowflake_model = _convert_model(model)
 

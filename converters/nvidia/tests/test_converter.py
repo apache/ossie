@@ -978,9 +978,10 @@ def test_rejects_legacy_wrapper_even_with_root_model(wrapper: Any) -> None:
         convert_ossie_to_gsf(yaml.safe_dump(document))
 
 
-def test_flat_document_metadata_does_not_change_native_conversion() -> None:
+@pytest.mark.parametrize("property_name", ["dialects", "vendors"])
+def test_rejects_removed_root_metadata(property_name: str) -> None:
     document = yaml.safe_load(_ossie_yaml())
-    document["dialects"] = ["ANSI_SQL"]
-    document["vendors"] = []
+    document[property_name] = []
 
-    assert yaml.safe_load(convert_ossie_to_gsf(yaml.safe_dump(document))) == yaml.safe_load(_gsf_yaml())
+    with pytest.raises(GSFConversionError, match="Unsupported Ossie root properties"):
+        convert_ossie_to_gsf(yaml.safe_dump(document))

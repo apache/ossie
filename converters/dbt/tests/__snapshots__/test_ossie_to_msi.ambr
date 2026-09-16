@@ -57,8 +57,6 @@
       - dialect: ANSI_SQL
         expression: SUM(orders.amount)
   version: 0.2.0.dev0
-  dialects:
-  - ANSI_SQL
   
   '''
 # ---

@@ -106,8 +106,7 @@ class OBMLtoOssieOntology:
             ai_instructions=self.ai_instructions,
         )
         sem_model = core_conv.convert()
-        for metadata_key in ("version", "dialects", "vendors"):
-            sem_model.pop(metadata_key, None)
+        sem_model.pop("version", None)
         self.warnings.extend(core_conv.warnings)
 
         data_objects = self.obml.get("dataObjects", {}) or {}

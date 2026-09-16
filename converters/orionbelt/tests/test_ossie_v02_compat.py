@@ -360,13 +360,13 @@ class TestSchemaValidation:
         errors = list(schema_validator.iter_errors(ossie))
         assert errors == [], [e.message for e in errors[:5]]
 
-    def test_schema_accepts_root_dialects_and_vendors(self, schema_validator: Any) -> None:
-        """The flat document permits optional dialect/vendor advertisements."""
+    def test_schema_rejects_root_dialects_and_vendors(self, schema_validator: Any) -> None:
+        """Dialect and vendor metadata belongs to expressions and extensions."""
         ossie = conv.OBMLtoOssie(_OBML_WITH_PK_AND_LABEL).convert()
         ossie["dialects"] = ["ANSI_SQL"]
         ossie["vendors"] = ["ORIONBELT"]
         messages = [e.message for e in schema_validator.iter_errors(ossie)]
-        assert messages == []
+        assert any("Additional properties" in message for message in messages)
 
 
 # ---------------------------------------------------------------------------

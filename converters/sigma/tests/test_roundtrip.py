@@ -24,8 +24,8 @@ def test_sigma_osi_sigma_roundtrip_through_yaml_serialization(fixture_name):
     serialized = yaml.safe_load(yaml_text)
     assert serialized["name"] == spec["name"]
     assert "semantic_model" not in serialized
-    assert serialized["dialects"] == ["ANSI_SQL", "SIGMA"]
-    assert serialized["vendors"] == ["SIGMA"]
+    assert "dialects" not in serialized
+    assert "vendors" not in serialized
     reparsed_document = OssieDocument.model_validate(serialized)
     reconstructed_spec = OssieToSigmaConverter().convert(reparsed_document).output
 

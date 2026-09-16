@@ -620,7 +620,7 @@ def test_ossie_to_honeydew_legacy_model_wrappers_are_rejected(wrapper):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _hd_root(sm):
-    return {"version": OSSIE_VERSION, "vendors": ["HONEYDEW"], **sm}
+    return {"version": OSSIE_VERSION, **sm}
 
 
 def _ansi(expr):
@@ -812,7 +812,7 @@ def test_honeydew_to_ossie_missing_workspace_raises(tmp_path):
 def test_honeydew_to_ossie_missing_schema_dir_empty_model(tmp_path):
     (tmp_path / "workspace.yml").write_text(yaml.dump({"type": "workspace", "name": "ws"}))
     result = yaml.safe_load(convert_honeydew_to_ossie(str(tmp_path)))
-    assert result == {"version": OSSIE_VERSION, "vendors": ["HONEYDEW"],
+    assert result == {"version": OSSIE_VERSION,
                       "name": "ws", "datasets": []}
 
 
@@ -986,7 +986,7 @@ def test_honeydew_to_ossie_relation_target_columns_are_unique_keys(tmp_path):
 ])
 def test_ossie_roundtrip_sm(tmp_path, model, expected_sm):
     assert _ossie_roundtrip(model, tmp_path) == {
-        "version": OSSIE_VERSION, "vendors": ["HONEYDEW"], **expected_sm
+        "version": OSSIE_VERSION, **expected_sm
     }
 
 
@@ -1333,7 +1333,6 @@ def test_metric_string_ai_context_preserved_in_roundtrip(tmp_path):
     sm = _ossie_roundtrip(model, tmp_path)
     assert sm == {
         "version": OSSIE_VERSION,
-        "vendors": ["HONEYDEW"],
         "name": "m",
         "datasets": [{"name": "orders", "source": "db.s.orders"}],
         "metrics": [{
@@ -1421,28 +1420,15 @@ def test_connectionless_relation_warns():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Vendors round-trip
+# Removed document metadata
 # ─────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("input_vendors,expected_vendors", [
-    (["SNOWFLAKE", "HONEYDEW"], ["HONEYDEW", "SNOWFLAKE"]),
-    (["SNOWFLAKE"], ["HONEYDEW", "SNOWFLAKE"]),
-    (["HONEYDEW"], ["HONEYDEW"]),
-])
-def test_vendors_roundtrip(tmp_path, input_vendors, expected_vendors):
-    doc = yaml.dump({
-        "version": OSSIE_VERSION,
-        "vendors": input_vendors,
-        "name": "m", "datasets": [],
-    })
-    files = convert_ossie_to_honeydew(doc)
-    for rel_path, content in files.items():
-        p = tmp_path / rel_path
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content)
-    result = yaml.safe_load(convert_honeydew_to_ossie(str(tmp_path)))
-    assert result == {"version": OSSIE_VERSION, "vendors": expected_vendors,
-                      "name": "m", "datasets": []}
+@pytest.mark.parametrize("property_name", ["dialects", "vendors"])
+def test_rejects_removed_root_metadata(property_name):
+    doc = {"version": OSSIE_VERSION, "name": "m", "datasets": []}
+    doc[property_name] = []
+    with pytest.raises(HoneydewConversionError, match="Root dialects and vendors"):
+        convert_ossie_to_honeydew(yaml.safe_dump(doc))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1485,7 +1471,6 @@ def test_main_honeydew_to_ossie(tmp_path):
     assert result.returncode == 0
     assert yaml.safe_load(output_file.read_text()) == {
         "version": OSSIE_VERSION,
-        "vendors": ["HONEYDEW"],
         "name": "ws", "datasets": [
             {"name": "orders", "source": "DB.S.ORDERS", "primary_key": ["id"],
              "unique_keys": [["id"]]},

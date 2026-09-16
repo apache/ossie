@@ -102,8 +102,6 @@ def test_field_and_metric_datatypes_survive_serialization() -> None:
 def test_document_serialization_preserves_flat_model_and_metadata() -> None:
     data = _document()
     data.update(
-        dialects=["ANSI_SQL"],
-        vendors=["SIGMA"],
         description="A portable model",
         ai_context="Use the event timestamp",
         custom_extensions=[{"vendor_name": "SIGMA", "data": '{"id":"model-1"}'}],
@@ -154,6 +152,14 @@ def test_document_requires_root_model_properties(property_name: str) -> None:
     data = _document()
     del data[property_name]
 
+    with pytest.raises(ValidationError):
+        OssieDocument.model_validate(data)
+
+
+@pytest.mark.parametrize("property_name", ["dialects", "vendors"])
+def test_document_rejects_removed_root_metadata(property_name: str) -> None:
+    data = _document()
+    data[property_name] = []
     with pytest.raises(ValidationError):
         OssieDocument.model_validate(data)
 
