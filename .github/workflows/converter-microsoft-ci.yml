@@ -67,7 +67,7 @@ jobs:
       - name: Unit Tests
         working-directory: converters/microsoft
         run: |
-          uv run pytest --cov --cov-report=term-missing --cov-report=xml -l
+          uv run pytest --cov --cov-report=term-missing --cov-report=xml
 
       - name: Round trip through the installed CLI
         working-directory: converters/microsoft

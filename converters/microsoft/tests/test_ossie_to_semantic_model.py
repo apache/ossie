@@ -772,11 +772,7 @@ def test_all_tpcds_example_metrics_translate_to_dax():
         "DIVIDE(SUM('store_sales'[ss_ext_sales_price]), "
         "SUM('store'[s_number_employees]))"
     )
-    print(f"DIAG measure names: {sorted(measures)!r}")
-    blanks = {n: m["expression"] for n, m in measures.items() if m["expression"] == "BLANK()"}
-    assert all(measure["expression"] != "BLANK()" for measure in measures.values()), (
-        f"DIAG blanks: {blanks!r}"
-    )
+    assert all(measure["expression"] != "BLANK()" for measure in measures.values())
 
 
 def test_a_translated_sql_measure_preserves_its_source_expression():
