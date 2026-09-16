@@ -115,6 +115,9 @@ class OssietoOBML:
                 "place the model properties directly at the document root"
             )
 
+        if "dialects" in self.ossie or "vendors" in self.ossie:
+            raise ValueError("Root dialects and vendors are not supported by the Ossie spec")
+
         # Retain legacy key metadata normalization for already flattened inputs.
         self._normalize_legacy_v01()
         model = self.ossie

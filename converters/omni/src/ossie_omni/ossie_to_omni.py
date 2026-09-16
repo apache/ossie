@@ -109,6 +109,11 @@ def convert_ossie_to_omni(ossie_yaml_str, base_view=None, dialect=None):
             "place the model properties directly at the document root"
         )
 
+    if "dialects" in root or "vendors" in root:
+        raise ConversionError("Root dialects and vendors are not supported by the Ossie spec")
+    if not isinstance(root.get("name"), str):
+        raise ConversionError("Ossie model requires a string 'name' at the document root")
+
     return _convert_model(root, base_view, dialect)
 
 

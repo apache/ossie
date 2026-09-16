@@ -350,3 +350,23 @@ def test_legacy_model_wrappers_are_rejected(wrapper):
     document = {"version": "0.2.0.dev0", "semantic_model": wrapper}
     with pytest.raises(ConversionError, match="Legacy 'semantic_model'"):
         export(dump_yaml(document))
+
+
+@pytest.mark.parametrize("property_name", ["dialects", "vendors"])
+@pytest.mark.parametrize("value", [None, [], ["legacy"]])
+def test_removed_root_metadata_is_rejected(property_name, value):
+    with pytest.raises(ConversionError, match="Root dialects and vendors"):
+        export(minimal(**{property_name: value}))
+
+
+@pytest.mark.parametrize(
+    "name_properties",
+    [{}, {"name": None}, {"name": 123}, {"name": True}, {"name": []}, {"name": {}}],
+    ids=["missing", "null", "number", "boolean", "list", "object"],
+)
+def test_root_name_must_be_a_string(name_properties):
+    document = parse(minimal())
+    del document["name"]
+    document.update(name_properties)
+    with pytest.raises(ConversionError, match="string 'name' at the document root"):
+        export(dump_yaml(document))

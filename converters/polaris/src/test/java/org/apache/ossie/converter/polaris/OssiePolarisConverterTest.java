@@ -480,6 +480,19 @@ class OssiePolarisConverterTest {
     }
 
     @Test
+    void testRejectsRemovedRootMetadata() {
+        for (String property : List.of("dialects", "vendors")) {
+            for (String value : List.of("null", "[]", "[legacy]")) {
+                String yaml = MINIMAL_MODEL + property + ": " + value + "\n";
+                IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                        () -> new OssieModelParser().parse(
+                                new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8))));
+                assertTrue(exception.getMessage().contains("Root dialects and vendors"));
+            }
+        }
+    }
+
+    @Test
     void testEmptyDatasetListRoundTrips() {
         String yaml = "version: 0.2.0.dev0\nname: empty\ndatasets: []\n";
         OssieModelParser parser = new OssieModelParser();

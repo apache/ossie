@@ -20,7 +20,7 @@
 Covers the v2.6 spec bump from Ossie v0.1.1 → v0.2.0.dev0:
 
 - Emitted ``version`` is the v0.2 constant
-- Top-level ``dialects`` / ``vendors`` informational arrays are present
+- Dialects and vendors are represented per expression and extension, not at the root
 - Dataset ``primary_key`` is promoted from per-column ``primaryKey: true``
 - Dataset ``unique_keys`` round-trips lossly via OBSL custom_extensions
 - Field ``label`` round-trips via OBSL custom_extensions
@@ -423,4 +423,13 @@ def test_legacy_model_wrappers_are_rejected(wrapper):
     document = {"version": "0.2.0.dev0", "semantic_model": wrapper}
     assert not conv.validate_ossie(document).valid
     with pytest.raises(ValueError, match="Legacy 'semantic_model'"):
+        conv.OssietoOBML(document).convert()
+
+
+@pytest.mark.parametrize("property_name", ["dialects", "vendors"])
+@pytest.mark.parametrize("value", [None, [], ["legacy"]])
+def test_removed_root_metadata_is_rejected(property_name, value):
+    document = conv.OBMLtoOssie(_OBML_WITH_PK_AND_LABEL).convert()
+    document[property_name] = value
+    with pytest.raises(ValueError, match="Root dialects and vendors"):
         conv.OssietoOBML(document).convert()

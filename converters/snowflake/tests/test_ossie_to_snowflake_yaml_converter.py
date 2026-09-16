@@ -624,6 +624,14 @@ class TestConvertOssieToSnowflake:
         with pytest.raises(OssieConversionError, match="Legacy 'semantic_model'"):
             convert_ossie_to_snowflake(bad)
 
+    @pytest.mark.parametrize("property_name", ["dialects", "vendors"])
+    @pytest.mark.parametrize("value", [None, [], ["legacy"]])
+    def test_removed_root_metadata_is_rejected(self, property_name, value):
+        document = yaml.safe_load(_wrap_ossie(_minimal_model()))
+        document[property_name] = value
+        with pytest.raises(OssieConversionError, match="Root dialects and vendors"):
+            convert_ossie_to_snowflake(yaml.safe_dump(document))
+
     def test_snowflake_dialect_preferred(self):
         model = {
             "name": "m",

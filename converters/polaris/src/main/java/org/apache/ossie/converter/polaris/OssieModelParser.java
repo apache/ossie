@@ -60,6 +60,9 @@ public class OssieModelParser {
             throw new IllegalArgumentException(
                     "Legacy semantic_model wrappers are not supported; use version, name, and datasets at the root");
         }
+        if (root.containsKey("dialects") || root.containsKey("vendors")) {
+            throw new IllegalArgumentException("Root dialects and vendors are not supported by the Ossie spec");
+        }
         if (!(root.get("version") instanceof String)
                 || !(root.get("name") instanceof String)
                 || !(root.get("datasets") instanceof List)) {

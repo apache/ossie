@@ -66,6 +66,8 @@ def ossie_to_gooddata(
         raise ValueError("Ossie input must be a mapping")
     if "semantic_model" in ossie_model:
         raise ValueError("Ossie model properties must be at the root; semantic_model wrappers are not supported")
+    if "dialects" in ossie_model or "vendors" in ossie_model:
+        raise ValueError("Root dialects and vendors are not supported by the Ossie spec")
     if not isinstance(ossie_model.get("name"), str) or not isinstance(ossie_model.get("datasets"), list):
         raise ValueError("Ossie input requires name and datasets at the root")
 

@@ -376,3 +376,11 @@ def test_rejects_legacy_wrapper_even_with_root_model(ossie_tpcds_dict: dict, wra
 def test_rejects_missing_root_model(document):
     with pytest.raises(ValueError, match="mapping|name and datasets"):
         ossie_to_gooddata(document)
+
+
+@pytest.mark.parametrize("property_name", ["dialects", "vendors"])
+@pytest.mark.parametrize("value", [None, [], ["legacy"]])
+def test_removed_root_metadata_is_rejected(ossie_tpcds_dict: dict, property_name, value):
+    document = {**ossie_tpcds_dict, property_name: value}
+    with pytest.raises(ValueError, match="Root dialects and vendors"):
+        ossie_to_gooddata(document)

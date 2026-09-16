@@ -113,6 +113,9 @@ def convert_ossie_to_snowflake(ossie_yaml_str):
             "place the model properties directly at the document root"
         )
 
+    if "dialects" in root or "vendors" in root:
+        raise OssieConversionError("Root dialects and vendors are not supported by the Ossie spec")
+
     # Document metadata is consumed here; it is not a dropped model property.
     model = {
         key: value for key, value in root.items()

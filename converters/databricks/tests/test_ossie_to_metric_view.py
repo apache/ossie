@@ -633,3 +633,29 @@ def test_legacy_model_wrappers_are_rejected(wrapper):
     document = {"version": exporter.OSSIE_VERSION, "semantic_model": wrapper}
     with pytest.raises(ConversionError, match="Legacy 'semantic_model'"):
         exporter.convert_ossie_to_metric_view(yaml.safe_dump(document))
+
+
+@pytest.mark.parametrize("property_name", ["dialects", "vendors"])
+@pytest.mark.parametrize("value", [None, [], ["legacy"]])
+def test_removed_root_metadata_is_rejected(property_name, value):
+    import yaml
+
+    document = parse(load_fixture("fixtureA_ossie.yaml"))
+    document[property_name] = value
+    with pytest.raises(ConversionError, match="Root dialects and vendors"):
+        exporter.convert_ossie_to_metric_view(yaml.safe_dump(document))
+
+
+@pytest.mark.parametrize(
+    "name_properties",
+    [{}, {"name": None}, {"name": 123}, {"name": True}, {"name": []}, {"name": {}}],
+    ids=["missing", "null", "number", "boolean", "list", "object"],
+)
+def test_root_name_must_be_a_string(name_properties):
+    import yaml
+
+    document = parse(load_fixture("fixtureA_ossie.yaml"))
+    del document["name"]
+    document.update(name_properties)
+    with pytest.raises(ConversionError, match="string 'name' at the document root"):
+        exporter.convert_ossie_to_metric_view(yaml.safe_dump(document))

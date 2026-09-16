@@ -143,7 +143,7 @@ class OBMLtoOssie:
         ossie.update(sem_model)
 
         # Dialects and vendors are represented on the expressions and extensions
-        # that use them; root-level advertisement arrays remain optional.
+        # that use them; root-level advertisement arrays are not supported.
         return ossie
 
     def _emit_foreign_extensions(self, obml_exts: list[dict] | None, ossie_exts: list[dict]) -> None:

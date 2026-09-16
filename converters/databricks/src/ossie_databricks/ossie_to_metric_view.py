@@ -83,6 +83,11 @@ def convert_ossie_to_metric_view(ossie_yaml_str, source=None):
             "place the model properties directly at the document root"
         )
 
+    if "dialects" in root or "vendors" in root:
+        raise ConversionError("Root dialects and vendors are not supported by the Ossie spec")
+    if not isinstance(root.get("name"), str):
+        raise ConversionError("Ossie model requires a string 'name' at the document root")
+
     view = _convert_model(root, explicit_source=source)
     return dump_yaml(view)
 
