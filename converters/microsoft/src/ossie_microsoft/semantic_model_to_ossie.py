@@ -146,6 +146,10 @@ def build_ossie_document(bim_file):
         t for t in model.get("tables") or [] if isinstance(t, dict) and t.get("name")
     ]
     tables = [t for t in all_tables if _is_exported_table(t)]
+    if not tables:
+        raise ValueError(
+            "model.bim has no tables that can be exported as Apache Ossie datasets"
+        )
     excluded_tables = [t for t in all_tables if not _is_exported_table(t)]
     exported_names = {t["name"] for t in tables}
 
@@ -178,10 +182,6 @@ def build_ossie_document(bim_file):
         excluded_relationships,
         excluded_measures,
     )
-    if not tables:
-        raise ValueError(
-            "model.bim has no tables that can be exported as Apache Ossie datasets"
-        )
 
     return {"version": OSSIE_VERSION, **semantic_model}
 

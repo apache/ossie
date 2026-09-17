@@ -155,14 +155,6 @@ def convert_ossie_to_semantic_model(
     if not isinstance(document, dict):
         raise TypeError("input must be Apache Ossie YAML text or a parsed document")
 
-    version = document.get("version")
-    if version and version != OSSIE_VERSION:
-        warn(
-            "document",
-            f"document targets Apache Ossie spec {version}, this converter targets "
-            f"{OSSIE_VERSION}; conversion may be incomplete",
-        )
-
     if "semantic_model" in document:
         raise ValueError(
             "Legacy 'semantic_model' wrappers are not supported; "
@@ -170,17 +162,30 @@ def convert_ossie_to_semantic_model(
         )
     if "dialects" in document or "vendors" in document:
         raise ValueError("Root dialects and vendors are not supported by the Ossie spec")
-    if not document.get("name") or "datasets" not in document:
+    if not document.get("name"):
         raise ValueError("document requires 'name' and 'datasets' at the root")
+    datasets = document.get("datasets")
+    if (
+        not isinstance(datasets, list)
+        or not datasets
+        or any(not isinstance(dataset, dict) or not dataset.get("name") for dataset in datasets)
+    ):
+        raise ValueError("document 'datasets' must be a non-empty list of named objects")
+
+    version = document.get("version")
+    if version and version != OSSIE_VERSION:
+        warn(
+            "document",
+            f"document targets Apache Ossie spec {version}, this converter targets "
+            f"{OSSIE_VERSION}; conversion may be incomplete",
+        )
     semantic_model = document
 
     stash = read_stash(semantic_model)
     _warn_foreign_extensions("model", semantic_model)
     warn_unsupported("model", semantic_model, OSSIE_UNSUPPORTED, "Power BI", _DROPPED)
 
-    tables, table_columns, generated_partitions = _convert_datasets(
-        semantic_model.get("datasets") or []
-    )
+    tables, table_columns, generated_partitions = _convert_datasets(datasets)
     _apply_measures(tables, semantic_model.get("metrics") or [])
     _restore_excluded_measures(tables, stash.get("excludedMeasures") or [])
 
@@ -730,9 +735,6 @@ def _apply_measures(tables, metrics):
 
         table = by_name.get(stash.get("table"))
         if table is None:
-            if not tables:
-                warn(scope, "the model has no table to hold the measure; skipped")
-                continue
             table = tables[0]
             warn(
                 scope,

@@ -132,7 +132,7 @@ def test_exports_only_user_facing_tables(model):
     assert [d["name"] for d in model["datasets"]] == ["Sales", "Customer", "Calendar"]
 
 
-def test_calculation_group_is_skipped_with_a_warning():
+def test_an_only_calculation_group_is_rejected_before_warning():
     bim = {
         "name": "m",
         "model": {
@@ -144,14 +144,13 @@ def test_calculation_group_is_skipped_with_a_warning():
             ]
         },
     }
-    with (
-        pytest.warns(UserWarning, match="calculation groups are not converted"),
-        pytest.raises(ValueError, match="no tables that can be exported"),
-    ):
-        build_ossie_document(bim)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with pytest.raises(ValueError, match="no tables that can be exported"):
+            build_ossie_document(bim)
 
 
-def test_calculated_table_is_skipped_with_a_warning():
+def test_an_only_calculated_table_is_rejected_before_warning():
     bim = {
         "name": "m",
         "model": {
@@ -171,11 +170,10 @@ def test_calculated_table_is_skipped_with_a_warning():
             ]
         },
     }
-    with (
-        pytest.warns(UserWarning, match="calculated tables are not converted"),
-        pytest.raises(ValueError, match="no tables that can be exported"),
-    ):
-        build_ossie_document(bim)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with pytest.raises(ValueError, match="no tables that can be exported"):
+            build_ossie_document(bim)
 
 
 def test_row_number_column_is_skipped(model):
@@ -737,11 +735,11 @@ def test_an_excluded_measure_with_a_missing_home_table_warns():
     }
     with pytest.warns(UserWarning, match="no expression"):
         osi = build_ossie_document(bim)
-    osi["datasets"] = []
+    osi["datasets"] = [{"name": "Present", "source": "present"}]
 
     with pytest.warns(UserWarning, match="home table 'Gone' is missing"):
         out = convert_ossie_to_semantic_model(osi)
-    assert out["model"]["tables"] == []
+    assert [table["name"] for table in out["model"]["tables"]] == ["Present"]
 
 
 def test_an_authored_metric_wins_over_an_excluded_measure_collision():

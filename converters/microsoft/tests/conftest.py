@@ -46,4 +46,4 @@ def osi(bim):
 
 @pytest.fixture(scope="module")
 def model(osi):
-    return osi
+    return {key: value for key, value in osi.items() if key != "version"}

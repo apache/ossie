@@ -152,9 +152,13 @@ def test_a_non_dict_relationship_is_skipped():
     assert build_ossie_document(bim).get("relationships") is None
 
 
-def test_a_non_dict_dataset_is_skipped():
-    bim = _convert(_model(datasets=["nonsense", {"noName": 1}]))
-    assert bim["model"]["tables"] == []
+@pytest.mark.parametrize(
+    "datasets",
+    [None, {}, [], "dataset", ["nonsense"], [{"name": "T"}, "nonsense"], [{}]],
+)
+def test_datasets_must_be_a_non_empty_list_of_named_objects(datasets):
+    with pytest.raises(ValueError, match="non-empty list of named objects"):
+        _convert(_model(datasets=datasets))
 
 
 def test_a_non_dict_field_is_skipped():
@@ -195,16 +199,6 @@ def test_an_unrecognized_datatype_is_reported_and_left_unspecified():
     with pytest.warns(UserWarning, match="unrecognized Apache Ossie data type"):
         bim = _convert(document)
     assert "dataType" not in bim["model"]["tables"][0]["columns"][0]
-
-
-def test_a_measure_with_no_table_to_live_on_is_reported():
-    """A Power BI measure must belong to a table; with no tables there is nowhere."""
-    document = _model(datasets=[], metrics=[
-        {"name": "M", "expression": make_expression("SUM(x)", "DAX")}
-    ])
-    with pytest.warns(UserWarning, match="no table to hold the measure"):
-        bim = _convert(document)
-    assert bim["model"]["tables"] == []
 
 
 def test_a_relationship_to_a_missing_table_is_reported():
