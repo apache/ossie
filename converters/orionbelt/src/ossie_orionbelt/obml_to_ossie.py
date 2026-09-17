@@ -31,7 +31,9 @@ from ossie_orionbelt._common import (
     _OSSIE_VENDOR_READ,
     _OSSIE_VERSION,
     _VENDOR_OBML,
+    OBML_ABSTRACT_TO_OSSIE_DATATYPE,
     OBML_TO_OSSIE_TYPE,
+    obml_datatype_to_ossie,
 )
 from ossie_orionbelt._portable import NotPortableError, PortableRenderer
 
@@ -386,8 +388,12 @@ class OBMLtoOssie:
         if ai_ctx:
             field["ai_context"] = ai_ctx
 
-        # Preserve OBML type info in custom_extensions for roundtrip fidelity
+        # Emit the spec `datatype` from the OBML abstractType so exported fields
+        # carry a portable logical type...
         abstract_type = col_obj.get("abstractType", "string")
+        field["datatype"] = OBML_ABSTRACT_TO_OSSIE_DATATYPE.get(abstract_type, "String")
+        # ...and stash the exact abstractType in custom_extensions so the return
+        # trip restores it verbatim, lossless through the narrowing map.
         ossie_type = OBML_TO_OSSIE_TYPE.get(abstract_type, "string")
         ext_data: dict[str, Any] = {
             "data_type": ossie_type,
@@ -596,6 +602,7 @@ class OBMLtoOssie:
         self._merge_obml_extension(ossie_metric, "obml_definition", definition)
         self._merge_obml_extension(ossie_metric, "obml_definition_kind", kind)
         self._carry_foreign_to_ossie_metric(obml_obj, ossie_metric)
+        self._emit_ossie_metric_datatype(obml_obj, ossie_metric)
 
     @staticmethod
     def _merge_obml_extension(ossie_metric: dict, key: str, value: Any) -> None:
@@ -621,6 +628,18 @@ class OBMLtoOssie:
         )
         if not ossie_metric["custom_extensions"]:
             del ossie_metric["custom_extensions"]
+
+    def _emit_ossie_metric_datatype(self, obml_obj: dict, ossie_metric: dict) -> None:
+        """Emit the spec `datatype` from an explicit OBML measure/metric `dataType`.
+
+        Only fires when the OBML object declares an exact `dataType`, so plain
+        measures (whose type is only the defaulted `resultType`) stay untouched
+        and round trips stay idempotent. The exact `dataType` also round-trips via
+        `obml_data_type` in `custom_extensions`; this adds the portable field.
+        """
+        ossie_dt = obml_datatype_to_ossie(obml_obj.get("dataType"))
+        if ossie_dt:
+            ossie_metric["datatype"] = ossie_dt
 
     @staticmethod
     def _ossie_metric(name: str, obml_obj: dict, sql: str, dialect: str = "ANSI_SQL") -> dict:
