@@ -67,7 +67,7 @@ spec = json.loads(Path("data_model.json").read_text())
 result = SigmaToOssieConverter().convert(spec)
 for issue in result.issues:
     print(f"[warning] {issue.issue_type.value}: {issue.element_name}")
-Path("semantic_model.yaml").write_text(result.output.to_osi_yaml())
+Path("semantic_model.yaml").write_text(result.output.to_ossie_yaml())
 
 # Ossie -> Sigma
 from ossie import OssieDocument
