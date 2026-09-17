@@ -34,9 +34,13 @@ from ossie_orionbelt._common import (
     _OSSIE_VERSION,
     _SQL_PARSEABLE_DIALECTS,
     _VENDOR_OSSIE,
+    OBML_ABSTRACT_TO_OSSIE_DATATYPE,
+    OBML_DECIMAL_DEFAULT,
     OSSIE_DATATYPE_TO_OBML_ABSTRACT,
-    OSSIE_DATATYPE_TO_OBML_PHYSICAL,
     OSSIE_TO_OBML_TYPE,
+    obml_datatype_to_ossie,
+    obml_decimal_default,
+    ossie_metric_datatype_to_obml,
 )
 
 # A dataset/column identifier in a resolved metric expression: either a bare SQL
@@ -63,6 +67,10 @@ class OssietoOBML:
         # Measures/metrics restored whole from an OBML definition stash; their
         # column references already use OBML column names.
         self._restored_names: set[str] = set()
+        # What an Ossie ``Decimal`` metric becomes: the model's own
+        # ``settings.defaultNumericDataType`` when it carries one, set per model
+        # in ``convert``.
+        self._decimal_default = OBML_DECIMAL_DEFAULT
 
     def _normalize_legacy_v01(self) -> None:
         """Promote Ossie v0.1.x payloads to the v0.2 shape, in place.
@@ -171,6 +179,7 @@ class OssietoOBML:
 
         # ── Measures & Metrics ──────────────────────────────────────
         ossie_metrics = model.get("metrics", [])
+        self._decimal_default = obml_decimal_default(self._stashed_obml_settings(model))
         measures, metrics = self._convert_metrics(ossie_metrics, ds_map)
         if measures:
             obml["measures"] = measures
@@ -272,6 +281,22 @@ class OssietoOBML:
                     lambda m: "{[" + m.group(1) + "].[" + rename(m.group(1), m.group(2)) + "]}",
                     measure["expression"],
                 )
+
+    @staticmethod
+    def _stashed_obml_settings(model: dict) -> object:
+        """The OBML ``settings`` an OBML-origin model stashed on export, if any.
+
+        Read ahead of the metrics, which need the numeric default; the model
+        properties themselves are restored after them, as before.
+        """
+        for ext in model.get("custom_extensions", []):
+            if ext.get("vendor_name") in _OBML_VENDOR_READ:
+                try:
+                    data = json.loads(ext.get("data", "{}"))
+                except (json.JSONDecodeError, TypeError):
+                    return None
+                return data.get("obml_settings") if isinstance(data, dict) else None
+        return None
 
     @staticmethod
     def _carry_foreign_extensions(ossie_exts: list[dict] | None, obml_target: dict[str, Any]) -> None:
@@ -439,10 +464,15 @@ class OssietoOBML:
         # Determine abstract type. Precedence: the spec `datatype` (capitalised
         # `DataType` enum) > legacy lowercase `data_type` > name heuristic. An
         # OBML-origin field additionally restores its exact `abstractType` from
-        # the stashed extension below (highest precedence), keeping
-        # OBML -> Ossie -> OBML lossless.
-        ossie_datatype = field.get("datatype", "")
-        legacy_type = field.get("data_type", "")
+        # the stashed extension below, keeping OBML -> Ossie -> OBML lossless,
+        # unless the `datatype` was edited since. A non-string value (a
+        # hand-authored document) counts as absent rather than crashing.
+        ossie_datatype = field.get("datatype")
+        if not isinstance(ossie_datatype, str):
+            ossie_datatype = ""
+        legacy_type = field.get("data_type")
+        if not isinstance(legacy_type, str):
+            legacy_type = ""
         if ossie_datatype in OSSIE_DATATYPE_TO_OBML_ABSTRACT:
             abstract_type = OSSIE_DATATYPE_TO_OBML_ABSTRACT[ossie_datatype]
         elif legacy_type and legacy_type in OSSIE_TO_OBML_TYPE:
@@ -481,10 +511,20 @@ class OssietoOBML:
                 try:
                     ext_data = json.loads(ext.get("data", "{}"))
                     # Restore the exact OBML abstractType stashed on export, so a
-                    # narrowing datatype map (e.g. Decimal -> float) never
-                    # degrades an OBML-origin round trip.
-                    if ext_data.get("obml_abstract_type"):
-                        col["abstractType"] = ext_data["obml_abstract_type"]
+                    # narrowing datatype map (e.g. time_tz -> Time) never
+                    # degrades an OBML-origin round trip. The stash yields to a
+                    # `datatype` that no longer agrees with it: that is an edit
+                    # made in Ossie after the export, and it is the newer fact.
+                    stashed = ext_data.get("obml_abstract_type")
+                    if isinstance(stashed, str) and stashed:
+                        stashed_ossie = OBML_ABSTRACT_TO_OSSIE_DATATYPE.get(stashed)
+                        edited = (
+                            ossie_datatype in OSSIE_DATATYPE_TO_OBML_ABSTRACT
+                            and stashed_ossie is not None
+                            and stashed_ossie != ossie_datatype
+                        )
+                        if not edited:
+                            col["abstractType"] = stashed
                     if ext_data.get("obml_sql_type"):
                         col["sqlType"] = ext_data["obml_sql_type"]
                     if ext_data.get("obml_sql_precision") is not None:
@@ -918,14 +958,20 @@ class OssietoOBML:
             if target is not None:
                 self._carry_foreign_extensions(m.get("custom_extensions"), target)
                 # Ossie metric `datatype` -> OBML exact `dataType` (its natural
-                # home; `Decimal` -> decimal(p, s)). Don't override a dataType
-                # already restored from an OBML-origin extension, and skip
-                # Opaque/unknown (absent from the map).
+                # home; `Decimal` -> the model's decimal(p, s)). Opaque, unknown
+                # and non-string values have no mapping and change nothing.
                 ossie_dt = m.get("datatype")
-                if ossie_dt and not target.get("dataType"):
-                    obml_dt = OSSIE_DATATYPE_TO_OBML_PHYSICAL.get(ossie_dt)
-                    if obml_dt:
-                        target["dataType"] = obml_dt
+                obml_dt = ossie_metric_datatype_to_obml(ossie_dt, self._decimal_default)
+                if obml_dt is None:
+                    continue
+                # A dataType restored from the OBML-origin stash is more exact
+                # than the map (`decimal(20, 6)`, `bigint`) and is kept while it
+                # still agrees with `datatype`. When it names a different type,
+                # `datatype` was edited in Ossie after the export, and the edit
+                # wins over the stale stash.
+                stashed_ossie = obml_datatype_to_ossie(target.get("dataType"))
+                if stashed_ossie is None or stashed_ossie != ossie_dt:
+                    target["dataType"] = obml_dt
 
         return measures, metrics
 

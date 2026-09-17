@@ -28,6 +28,7 @@ from __future__ import annotations
 from typing import Any
 
 import ossie_orionbelt.converter as conv
+from ossie_orionbelt._common import obml_datatype_to_ossie, obml_decimal_default
 
 
 def _ossie_field(name: str, **extra: Any) -> dict[str, Any]:
@@ -236,3 +237,99 @@ class TestMetricDatatype:
         ossie = conv.OBMLtoOssie(obml, model_name="s").convert()
         metric = ossie["semantic_model"][0]["metrics"][0]
         assert "datatype" not in metric
+
+
+def _obml_with_measure(**measure: Any) -> dict[str, Any]:
+    return {
+        "dataObjects": {
+            "Orders": {
+                "code": "orders",
+                "columns": {"Amount": {"code": "amount", "abstractType": "float"}},
+            }
+        },
+        "measures": {
+            "Total": {
+                "columns": [{"dataObject": "Orders", "column": "Amount"}],
+                "resultType": "float",
+                "aggregation": "sum",
+                **measure,
+            }
+        },
+    }
+
+
+def _only_metric(ossie: dict[str, Any]) -> dict[str, Any]:
+    (metric,) = ossie["semantic_model"][0]["metrics"]
+    return metric
+
+
+class TestMalformedDatatype:
+    """A hand-authored document with a non-string type must not abort conversion."""
+
+    def test_non_string_obml_data_type_emits_nothing(self) -> None:
+        assert obml_datatype_to_ossie(123) is None
+        assert obml_datatype_to_ossie("   ") is None
+        ossie = conv.OBMLtoOssie(_obml_with_measure(dataType=123), model_name="s").convert()
+        assert "datatype" not in _only_metric(ossie)
+
+    def test_non_string_ossie_datatype_is_ignored(self) -> None:
+        # `price` is a heuristic float keyword, so the field falls back to it.
+        ossie = _ossie_model_with_metric("Decimal")
+        model = ossie["semantic_model"][0]
+        model["datasets"][0]["fields"] = [_ossie_field("price", datatype=["Integer"])]
+        model["metrics"][0]["datatype"] = 7
+        model["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(Orders.price)"
+        obml = conv.OssietoOBML(ossie).convert()
+        assert _obml_columns(obml)["price"]["abstractType"] == "float"
+        assert "dataType" not in obml["measures"]["Total"]
+
+
+class TestDecimalDefaultFromSettings:
+    """``Decimal`` follows the model's ``settings.defaultNumericDataType``."""
+
+    def test_model_default_is_used(self) -> None:
+        obml = _obml_with_measure()
+        obml["settings"] = {"defaultNumericDataType": "decimal(20, 6)"}
+        ossie = conv.OBMLtoOssie(obml, model_name="s").convert()
+        _only_metric(ossie)["datatype"] = "Decimal"
+        back = conv.OssietoOBML(ossie).convert()
+        assert back["measures"]["Total"]["dataType"] == "decimal(20, 6)"
+        assert back["settings"] == {"defaultNumericDataType": "decimal(20, 6)"}
+
+    def test_builtin_default_without_or_with_an_invalid_setting(self) -> None:
+        assert obml_decimal_default(None) == "decimal(18, 2)"
+        assert obml_decimal_default({"defaultNumericDataType": "bigint"}) == "decimal(18, 2)"
+        assert obml_decimal_default({"defaultNumericDataType": 5}) == "decimal(18, 2)"
+        obml = conv.OssietoOBML(_ossie_model_with_metric("Decimal")).convert()
+        assert obml["measures"]["Total"]["dataType"] == "decimal(18, 2)"
+
+
+class TestEditedDatatypeBeatsStaleStash:
+    """An Ossie ``datatype`` edited after an OBML export wins over the stash."""
+
+    def test_metric_edit_wins(self) -> None:
+        ossie = conv.OBMLtoOssie(_obml_with_measure(dataType="integer"), model_name="s").convert()
+        assert _only_metric(ossie)["datatype"] == "Integer"
+        _only_metric(ossie)["datatype"] = "Float"
+        back = conv.OssietoOBML(ossie).convert()
+        assert back["measures"]["Total"]["dataType"] == "double"
+
+    def test_metric_stash_that_still_agrees_stays_exact(self) -> None:
+        for data_type in ["decimal(20, 6)", "bigint"]:
+            obml = _obml_with_measure(dataType=data_type)
+            back = conv.OssietoOBML(conv.OBMLtoOssie(obml, model_name="s").convert()).convert()
+            assert back["measures"]["Total"]["dataType"] == data_type
+
+    def test_field_edit_wins(self) -> None:
+        obml = {
+            "dataObjects": {
+                "Orders": {
+                    "code": "orders",
+                    "columns": {"Val": {"code": "val", "abstractType": "timestamp_tz"}},
+                }
+            }
+        }
+        ossie = conv.OBMLtoOssie(obml, model_name="s").convert()
+        _ossie_fields(ossie)["val"]["datatype"] = "DateTime"
+        (col,) = _obml_columns(conv.OssietoOBML(ossie).convert()).values()
+        assert col["abstractType"] == "timestamp"
