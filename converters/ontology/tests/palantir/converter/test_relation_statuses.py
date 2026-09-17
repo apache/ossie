@@ -39,7 +39,6 @@ from tests.palantir.converter.helpers import (
     _concept_names,
     _relationship_names,
     _mapped_relationship_names,
-    _linked_export,
 )
 
 

@@ -123,4 +123,4 @@ class FormulaLexer:
     # every string that doesn't match one of the previous tokens is considered an error
     def t_error(self, t):
         r'.'
-        return SyntaxError(f'Illegal character {t.value!r} at position {t.lexpos}')
+        raise SyntaxError(f"Illegal character {t.value!r} at position {t.lexpos}")

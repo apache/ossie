@@ -30,7 +30,7 @@ class BinOp(str, Node, Enum):
     LE = "<="
     GT = ">"
     GE = ">="
-    comparison_ops = {EQ, NE, LE, LE, GT, GE}
+    comparison_ops = {EQ, NE, LT, LE, GT, GE}
 
     # arithmetic operators
     PLUS = "+"

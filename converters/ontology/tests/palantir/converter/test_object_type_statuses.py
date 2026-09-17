@@ -31,7 +31,7 @@ from tests.palantir.converter.builders import dataset, object_type, prop
 from tests.palantir.converter.helpers import _convert, _concept_names
 
 
-def test_default_policy_admits_active_endorsed_andintermediary(tmp_path: Path):
+def test_default_policy_admits_active_endorsed_and_intermediary(tmp_path: Path):
     model = _convert(tmp_path, [
         object_type("alpha", "Alpha", status="active"),
         object_type("bravo", "Bravo", status="endorsed"),
