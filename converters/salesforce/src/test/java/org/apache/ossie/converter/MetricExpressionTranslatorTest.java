@@ -21,6 +21,7 @@ package org.apache.ossie.converter;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -84,6 +85,21 @@ class MetricExpressionTranslatorTest {
                 Arguments.of("1 + 2 * 3 - 4 / 2", "((1 + (2 * 3)) - (4 / 2))"),
                 Arguments.of(".25 + 1e2", "(0.25 + 100)"),
                 Arguments.of("SUM(orders.quantity) + -2", "(SUM([orders].[quantity]) + (-2))"),
+                Arguments.of("SUM(- -orders.amount)", "SUM([orders].[amount])"),
+                Arguments.of("SUM(+ - - +orders.amount)", "SUM([orders].[amount])"),
+                Arguments.of("SUM(- + - -orders.amount)", "SUM((-[orders].[amount]))"),
+                Arguments.of("SUM(orders.amount - -orders.discount)",
+                        "SUM(([orders].[amount] - (-[orders].[discount])))"),
+                Arguments.of("SUM(orders.amount) / - -SUM(orders.quantity)",
+                        "(SUM([orders].[amount]) / SUM([orders].[quantity]))"),
+                Arguments.of("SUM((((orders.amount + orders.discount))) * 2)",
+                        "SUM((([orders].[amount] + [orders].[discount]) * 2))"),
+                Arguments.of("SUM(CASE WHEN NOT NOT NOT orders.active THEN orders.amount ELSE 0 END)",
+                        "SUM((IF (NOT [orders].[active]) THEN [orders].[amount] ELSE 0 END))"),
+                Arguments.of("SUM(CASE WHEN NOT NOT NOT NOT orders.active THEN orders.amount ELSE 0 END)",
+                        "SUM((IF (NOT (NOT [orders].[active])) THEN [orders].[amount] ELSE 0 END))"),
+                Arguments.of("SUM(CASE WHEN orders.status = '- - NOT NOT NOT ((x))' THEN - -orders.amount ELSE 0 END)",
+                        "SUM((IF ([orders].[status] = '- - NOT NOT NOT ((x))') THEN [orders].[amount] ELSE 0 END))"),
                 Arguments.of("CASE WHEN MAX(orders.status) = 'z' THEN 1 ELSE 0 END",
                         "(IF (MAX([orders].[status]) = 'z') THEN 1 ELSE 0 END)")
         );
@@ -250,6 +266,57 @@ class MetricExpressionTranslatorTest {
         for (int i = 0; i < 20; i++) formula = "NULLIF(" + formula + ", 0)";
         String expanded = formula;
         assertThrows(ConversionException.class, () -> translate("SNOWFLAKE", expanded));
+    }
+
+    @Test
+    void redundantParenthesesStayWithinTheBoundedFastParsingPath() {
+        assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
+            for (String dialect : List.of("SNOWFLAKE", "ANSI_SQL")) {
+                for (int depth : List.of(20, 60, 126)) {
+                    String grouped = "(".repeat(depth) + "orders.amount" + ")".repeat(depth);
+                    assertEquals("SUM([orders].[amount])", translate(dialect, "SUM(" + grouped + ")"));
+                    assertEquals("SUM([orders].[amount])", translate(dialect,
+                            "(".repeat(depth) + "SUM(orders.amount)" + ")".repeat(depth)));
+                }
+                assertEquals("SUM([orders].[amount])", translate(dialect, "SUM(" + "- ".repeat(128) + "orders.amount)"));
+                assertEquals("SUM((IF (NOT (NOT [orders].[active])) THEN 1 ELSE 0 END))",
+                        translate(dialect, "SUM(CASE WHEN " + "NOT ".repeat(128) + "orders.active THEN 1 ELSE 0 END)"));
+            }
+        });
+    }
+
+    @Test
+    void normalizationRetainsOriginalLimitsAndOperandTypes() {
+        for (String dialect : List.of("SNOWFLAKE", "ANSI_SQL")) {
+            for (String expression : List.of("SUM(" + "- ".repeat(129) + "orders.amount)",
+                    "SUM(CASE WHEN " + "NOT ".repeat(129) + "orders.active THEN 1 ELSE 0 END)",
+                    "SUM(" + "(".repeat(128) + "orders.amount" + ")".repeat(128) + ")",
+                    "SUM(- -orders.status)", "COUNT(- -orders.amount)",
+                    "SUM(CASE WHEN NOT NOT NOT NOT orders.amount THEN 1 ELSE 0 END)",
+                    "SUM(CASE WHEN orders.amount IS NOT NOT NOT NULL THEN 1 ELSE 0 END)",
+                    "SUM(CASE WHEN orders.amount IS NOT NOT NOT NOT NULL THEN 1 ELSE 0 END)",
+                    "COUNT(((DISTINCT orders.amount)))",
+                    "SUM(orders.amount)) + (1", "SUM(--orders.amount)")) {
+                assertTrue(assertThrows(ConversionException.class, () -> translate(dialect, expression), expression)
+                        .getMessage().contains("Metric 'net_value':"));
+            }
+        }
+    }
+
+    @Test
+    void redundantGroupingCannotTurnTuplesIntoFunctionArguments() {
+        for (String dialect : List.of("SNOWFLAKE", "ANSI_SQL")) {
+            for (String function : List.of("COALESCE", "ROUND")) {
+                for (int depth : List.of(1, 20)) {
+                    String tuple = "(".repeat(depth) + "SUM(orders.amount), 2" + ")".repeat(depth);
+                    assertTrue(assertThrows(ConversionException.class,
+                            () -> translate(dialect, function + "(" + tuple + ")"))
+                            .getMessage().contains("tuple-valued function arguments"));
+                }
+            }
+            assertEquals("IFNULL(SUM([orders].[amount]), 2)",
+                    translate(dialect, "COALESCE((SUM(orders.amount)), 2)"));
+        }
     }
 
     @Test
