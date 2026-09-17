@@ -34,6 +34,7 @@ class OssieDialect(str, Enum):
     BIGQUERY = "BIGQUERY"
     SIGMA = "SIGMA"
     THOUGHTSPOT = "THOUGHTSPOT"
+    DAX = "DAX"
 
 
 class OssieDataType(str, Enum):

@@ -435,6 +435,7 @@ Broad ecosystem adoption depends on practical tools that let teams validate thei
 - [Salesforce Converter](converters/salesforce/) — Ossie ↔ Salesforce converter
 - [Apache Polaris Converter](converters/polaris/) — Ossie → Apache Polaris converter
 - [OrionBelt Converter](converters/orionbelt/) — bidirectional Ossie ↔ OrionBelt OBML converter
+- [Microsoft Converter](converters/microsoft/) — bidirectional Ossie ↔ Power BI / Fabric semantic model (TMSL) converter
 
 **Related Issues:**
 

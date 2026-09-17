@@ -232,7 +232,7 @@ A converter should map `ai_context` when the target vendor supports equivalent c
 
 1. **Validate input**: Use the [Ossie JSON Schema](../core-spec/ossie-schema.json) and the [validation script](../validation/validate.py) to ensure the source Ossie model is valid before conversion.
 
-2. **Parse the Ossie model**: Load the YAML file and iterate over the top-level `semantic_model` entries.
+2. **Parse the Ossie model**: Load the JSON or YAML document as one model.
 
 3. **Map datasets**: For each dataset, translate the `name`, `source`, `primary_key`, `unique_keys`, and `fields` to the vendor's format. Parse the `source` string (typically `database.schema.table`) into the vendor's catalog structure.
 

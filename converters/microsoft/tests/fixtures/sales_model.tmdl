@@ -1,0 +1,211 @@
+database sales_model
+	compatibilityLevel: 1702
+
+	/// Retail sales semantic model
+	model Model
+		culture: en-US
+
+		/// Sales fact table
+		table Sales
+
+			/// Sum of sales amount
+			measure 'Total Sales' = SUM ( Sales[Amount] )
+				formatString: \$#,0.00
+
+				kpi
+					targetExpression = 1000000
+					statusGraphic: Three Circles Colored
+					statusExpression = SWITCH(TRUE(), [Total Sales] > 1000000, 1, -1)
+
+			measure 'Order Count' =
+					COUNTROWS (
+					    Sales
+					)
+
+			column SalesKey
+				dataType: int64
+				isKey
+				sourceColumn: sales_key
+
+			column OrderDate
+				dataType: dateTime
+				sourceColumn: order_date
+
+			column ShipDate
+				dataType: dateTime
+				sourceColumn: ship_date
+
+			column CustomerKey
+				dataType: int64
+				sourceColumn: customer_key
+
+			/// Extended sales amount
+			column Amount
+				dataType: decimal
+				formatString: #,0.00
+				displayFolder: Financials
+				summarizeBy: sum
+				sourceColumn: amount
+
+				annotation PBI_FormatHint = {"isCustom":true}
+
+			column AmountWithTax = Sales[Amount] * 1.2
+				dataType: decimal
+
+			partition Sales = m
+				mode: import
+				source =
+						let
+						    Source = Sql.Database("server", "retail"),
+						    Data = Source{[Schema="dbo",Item="sales"]}[Data]
+						in
+						    Data
+
+			annotation PBI_ResultType = Table
+
+		table Customer
+
+			column CustomerKey
+				dataType: int64
+				isKey
+				sourceColumn: customer_key
+
+			column Email
+				dataType: string
+				isUnique
+				sourceColumn: email
+
+			column Country
+				dataType: string
+				sourceColumn: country
+
+			partition Customer = entity
+				mode: directQuery
+				source
+					entityName: customer
+					schemaName: dbo
+
+		table Calendar
+			dataCategory: Time
+
+			column Date
+				dataType: dateTime
+				isKey
+				sourceColumn: date
+
+				variation Variation
+					isDefault
+					relationship: calendar-to-localdate
+					defaultHierarchy: LocalDateTable_9f2a1b3c.'Date Hierarchy'
+
+			column FiscalYear
+				dataType: int64
+				dataCategory: Time
+				sourceColumn: fiscal_year
+				sortByColumn: Date
+
+			hierarchy 'Calendar Drilldown'
+
+				level Year
+					column: FiscalYear
+
+				level Date
+					column: Date
+
+			partition Calendar = query
+				source
+					query = SELECT * FROM dbo.calendar
+
+		table LocalDateTable_9f2a1b3c
+			showAsVariationsOnly
+
+			column Date
+				dataType: dateTime
+				sourceColumn: Date
+
+			column Year = YEAR([Date])
+				dataType: int64
+
+			column Quarter = "Q" & FORMAT([Date], "Q")
+				dataType: string
+
+			column Month = FORMAT([Date], "MMMM")
+				dataType: string
+
+			column Day = DAY([Date])
+				dataType: int64
+
+			hierarchy 'Date Hierarchy'
+
+				level Year
+					column: Year
+
+				level Quarter
+					column: Quarter
+
+				level Month
+					column: Month
+
+				level Day
+					column: Day
+
+		table 'Internal Staging'
+			isPrivate
+
+			column Junk
+				dataType: string
+				sourceColumn: junk
+
+		table 'Time Intelligence'
+
+			calculationGroup
+
+				calculationItem YTD = TOTALYTD ( SELECTEDMEASURE (), Calendar[Date] )
+
+			column Calculation
+				dataType: string
+				sourceColumn: Calculation
+
+		relationship a1b2c3d4
+			fromColumn: Sales.CustomerKey
+			toColumn: Customer.CustomerKey
+
+		relationship e5f6a7b8
+			fromColumn: Sales.OrderDate
+			toColumn: Calendar.Date
+
+		relationship calendar-to-localdate
+			fromColumn: Calendar.Date
+			toColumn: LocalDateTable_9f2a1b3c.Date
+
+		relationship inactive-one
+			isActive: false
+			fromColumn: Sales.ShipDate
+			toColumn: Calendar.Date
+
+		relationship many-to-many
+			toCardinality: many
+			fromColumn: Sales.Amount
+			toColumn: Customer.Country
+
+		relationship dangling
+			fromColumn: Sales.CustomerKey
+			toColumn: 'Internal Staging'.Junk
+
+		role 'Regional Manager'
+			modelPermission: read
+
+			tablePermission Sales = [Region] = USERNAME()
+
+		perspective Executive
+
+			perspectiveTable Sales
+
+				perspectiveMeasure 'Total Sales'
+
+		cultureInfo en-US
+
+		expression ServerName = "sql.contoso.com" meta [IsParameterQuery=true, Type="Text"]
+
+		queryGroup Staging
+

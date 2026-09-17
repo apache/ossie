@@ -305,15 +305,47 @@ class ValidatorIntegrationTest(unittest.TestCase):
                 text=True,
             )
 
+    def test_invalid_document_roots_report_schema_errors(self):
+        for content in ("", "null\n", "[]\n", "42\n"):
+            with self.subTest(content=content):
+                result = self.run_validator(content)
+
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("Validation FAILED", result.stdout)
+                self.assertIn("[Schema]", result.stdout)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_wrapped_models_report_schema_errors(self):
+        model = {"name": "sales", "datasets": [{"name": "orders", "source": "orders"}]}
+        for wrapped in (model, [], [model], [model, model], None):
+            with self.subTest(semantic_model=wrapped):
+                content = yaml.safe_dump({"version": "0.2.0.dev0", "semantic_model": wrapped})
+                result = self.run_validator(content)
+
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("Validation FAILED", result.stdout)
+                self.assertIn("[Schema]", result.stdout)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_malformed_datasets_report_schema_errors(self):
+        for datasets in (None, {}, "orders", [None]):
+            with self.subTest(datasets=datasets):
+                content = yaml.safe_dump({"version": "0.2.0.dev0", "name": "sales", "datasets": datasets})
+                result = self.run_validator(content)
+
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("Validation FAILED", result.stdout)
+                self.assertIn("[Schema]", result.stdout)
+                self.assertNotIn("Traceback", result.stderr)
+
     def test_duplicate_key_exits_nonzero(self):
         result = self.run_validator(
             "version: 0.2.0.dev0\n"
-            "semantic_model:\n"
-            "  - name: sales\n"
-            "    name: finance\n"
-            "    datasets:\n"
-            "      - name: orders\n"
-            "        source: analytics.orders\n"
+            "name: sales\n"
+            "name: finance\n"
+            "datasets:\n"
+            "  - name: orders\n"
+            "    source: analytics.orders\n"
         )
 
         self.assertEqual(result.returncode, 1)
@@ -323,28 +355,66 @@ class ValidatorIntegrationTest(unittest.TestCase):
     def test_valid_model_still_passes(self):
         result = self.run_validator(
             "version: 0.2.0.dev0\n"
-            "semantic_model:\n"
-            "  - name: sales\n"
-            "    datasets:\n"
-            "      - name: orders\n"
-            "        source: analytics.orders\n"
+            "name: sales\n"
+            "datasets:\n"
+            "  - name: orders\n"
+            "    source: analytics.orders\n"
         )
 
         self.assertEqual(result.returncode, 0)
         self.assertIn("Validation PASSED", result.stdout)
 
+    def test_relationship_column_counts_are_checked_in_flat_documents(self):
+        cases = (
+            (["customer_id"], ["id"], 0),
+            (["customer_id", "region_id"], ["id"], 1),
+            (["customer_id"], ["id", "region_id"], 1),
+        )
+        for from_columns, to_columns, expected_code in cases:
+            with self.subTest(from_columns=from_columns, to_columns=to_columns):
+                document = {
+                    "version": "0.2.0.dev0",
+                    "name": "sales",
+                    "datasets": [
+                        {"name": "orders", "source": "analytics.orders"},
+                        {
+                            "name": "customers",
+                            "source": "analytics.customers",
+                            "primary_key": ["id"],
+                        },
+                    ],
+                    "relationships": [
+                        {
+                            "name": "orders_to_customers",
+                            "from": "orders",
+                            "to": "customers",
+                            "from_columns": from_columns,
+                            "to_columns": to_columns,
+                        }
+                    ],
+                }
+                result = self.run_validator(yaml.safe_dump(document))
+
+                self.assertEqual(result.returncode, expected_code)
+                self.assertNotIn("Traceback", result.stderr)
+                if expected_code:
+                    self.assertIn("Validation FAILED", result.stdout)
+                    self.assertIn("[Arity]", result.stdout)
+                    self.assertIn("must have the same number of columns", result.stdout)
+                else:
+                    self.assertIn("Validation PASSED", result.stdout)
+
     def test_root_dialects_and_vendors_are_rejected(self):
-        # The document root is version and semantic_model only; the dialect and
-        # vendor enumerations belong under expression.dialects and custom_extensions.
+        # Dialects and vendors belong under expression.dialects and custom_extensions,
+        # not alongside the model properties at the document root.
         result = self.run_validator(
             "version: 0.2.0.dev0\n"
             "dialects: [ANSI_SQL]\n"
             "vendors: [DBT]\n"
-            "semantic_model:\n"
-            "  - name: sales\n"
-            "    datasets:\n"
-            "      - name: orders\n"
-            "        source: analytics.orders\n"
+            "name: sales\n"
+            "datasets:\n"
+            "  - name: orders\n"
+            "    source: analytics.orders\n"
         )
 
         self.assertEqual(result.returncode, 1)
