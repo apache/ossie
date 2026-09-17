@@ -68,18 +68,24 @@ public class RelationshipMappingHandler implements PipelineStep {
     private void mapOssieToSalesforce(
             Map<String, Object> sourceData, Map<String, Object> outputData, Map<String, String> mappings) {
 
-        Map<String, String> relationshipMappings = MappingUtils.filterMappingsByPrefix(mappings, RELATIONSHIPS);
-        // This handler owns relationships even when there are none. Leaving these entries
-        // behind lets the final generic handler copy raw Ossie relationships into the output.
-        relationshipMappings.keySet().forEach(mappings::remove);
-
         List<Object> ossieRelationships = getList(sourceData, RELATIONSHIPS);
         if (ossieRelationships == null) {
             return;
         }
-        SalesforceModelValidator.validateRelationshipDeclarations(sourceData, outputData);
+
+        // Validate and filter relationships - remove those with non-existent fields
+        List<Object> validRelationships = validateAndFilterRelationships(ossieRelationships, outputData);
+        if (validRelationships.isEmpty()) {
+            return;
+        }
+
+        // Update sourceData with filtered relationships
+        sourceData.put(RELATIONSHIPS, validRelationships);
+
+        Map<String, String> relationshipMappings = MappingUtils.filterMappingsByPrefix(mappings, RELATIONSHIPS);
 
         Map<String, Object> mappedData = GenericMappingEngine.applyMappings(sourceData, relationshipMappings);
+        relationshipMappings.keySet().forEach(mappings::remove);
 
         outputData.putAll(mappedData);
 
@@ -94,7 +100,6 @@ public class RelationshipMappingHandler implements PipelineStep {
         if (sfRelationships != null) {
             applyDefaults(sfRelationships);
         }
-        SalesforceModelValidator.validateRelationships(sourceData, outputData);
     }
 
     /**
@@ -272,13 +277,108 @@ public class RelationshipMappingHandler implements PipelineStep {
         for (Object relObj : sfRelationships) {
             Map<String, Object> sfRel = asMap(relObj);
 
-            SalesforceModelValidator.validateRelationshipOptions(sfRel);
-            // Ossie defines `from` as the many side and `to` as the one side.
-            // An explicit native value remains an intentional round-trip override.
-            sfRel.putIfAbsent(CARDINALITY, "ManyToOne");
+            sfRel.putIfAbsent(CARDINALITY, DEFAULT_CARDINALITY);
             sfRel.putIfAbsent(IS_ENABLED, true);
             sfRel.putIfAbsent(JOIN_TYPE, DEFAULT_JOIN_TYPE);
         }
+    }
+
+    /**
+     * Validates and filters relationships, removing those that reference non-existent fields. (Calculated fields that are not supported)
+     *
+     * @param ossieRelationships List of Ossie relationships to validate
+     * @param outputData The output data containing semanticDataObjects with their fields
+     * @return Filtered list of valid relationships
+     */
+    private List<Object> validateAndFilterRelationships(List<Object> ossieRelationships, Map<String, Object> outputData) {
+        List<Object> validRelationships = new ArrayList<>();
+        List<Object> sfDataObjects = getList(outputData, SEMANTIC_DATA_OBJECTS);
+
+        for (Object relObj : ossieRelationships) {
+            Map<String, Object> ossieRel = asMap(relObj);
+            String relName = getString(ossieRel, NAME);
+            String fromEntity = getString(ossieRel, FROM);
+            String toEntity = getString(ossieRel, TO);
+
+            Map<String, Object> fromDataObject = findDataObjectByName(sfDataObjects, fromEntity);
+            Map<String, Object> toDataObject = findDataObjectByName(sfDataObjects, toEntity);
+
+            if (fromDataObject == null || toDataObject == null) {
+                logger.debug("Removing relationship '{}' - entity not found", relName);
+                continue;
+            }
+
+            List<Object> fromColumns = getList(ossieRel, FROM_COLUMNS);
+            List<Object> toColumns = getList(ossieRel, TO_COLUMNS);
+
+            if (!validateColumns(fromColumns, fromDataObject, fromEntity, relName) ||
+                !validateColumns(toColumns, toDataObject, toEntity, relName)) {
+                continue;
+            }
+            validRelationships.add(ossieRel);
+        }
+        return validRelationships;
+    }
+
+    /**
+     * Validates that all columns exist in the given data object.
+     *
+     * @param columns List of column names to validate
+     * @param dataObject The data object containing the fields
+     * @param entityName The entity name (for logging)
+     * @param relName The relationship name (for logging)
+     * @return true if all columns exist, false otherwise
+     */
+    private boolean validateColumns(List<Object> columns, Map<String, Object> dataObject,
+                                     String entityName, String relName) {
+        if (columns == null || columns.isEmpty()) {
+            return true;
+        }
+
+        for (Object colObj : columns) {
+            String columnName = (String) colObj;
+            if (!fieldExistsInDataObject(dataObject, columnName)) {
+                logger.debug("Removing relationship '{}' - column '{}' not found in entity '{}'",
+                        relName, columnName, entityName);
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Finds a data object by its apiName.
+     */
+    private Map<String, Object> findDataObjectByName(List<Object> dataObjects, String name) {
+        for (Object obj : dataObjects) {
+            Map<String, Object> dataObject = asMap(obj);
+            String apiName = getString(dataObject, API_NAME);
+            if (name.equals(apiName)) {
+                return dataObject;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Checks if a field exists in a data object's semanticDimensions or semanticMeasurements.
+     */
+    private boolean fieldExistsInDataObject(Map<String, Object> dataObject, String fieldName) {
+        // Check both semanticDimensions and semanticMeasurements
+        for (String fieldListKey : List.of(SEMANTIC_DIMENSIONS, SEMANTIC_MEASUREMENTS)) {
+            List<Object> fields = getList(dataObject, fieldListKey);
+            if (fields != null) {
+                for (Object fieldObj : fields) {
+                    Map<String, Object> field = asMap(fieldObj);
+                    String apiName = getString(field, API_NAME);
+                    if (fieldName.equals(apiName)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /**

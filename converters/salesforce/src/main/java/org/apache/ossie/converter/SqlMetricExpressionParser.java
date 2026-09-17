@@ -19,7 +19,7 @@
 
 package org.apache.ossie.converter;
 
-import static org.apache.ossie.converter.ExpressionAst.*;
+import static org.apache.ossie.converter.MetricExpression.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -32,17 +32,18 @@ import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.statement.select.AllColumns;
 
 /** Adapts a completely consumed JSqlParser expression into the explicitly supported compiler AST. */
-final class SqlExpressionParser {
+final class SqlMetricExpressionParser {
     private final String dialect;
     private int depth;
-    private SqlExpressionParser(String dialect) { this.dialect = dialect; }
+    private SqlMetricExpressionParser(String dialect) { this.dialect = dialect; }
 
     static Node parse(String text, String dialect) {
+        TuaMetricExpressionParser.tokenize(text, dialect);
         try {
             Expression expression = CCJSqlParserUtil.parseCondExpression(text, false,
                     parser -> parser.withSquareBracketQuotation(dialect.equals("ANSI_SQL")));
             if (expression == null) throw new IllegalArgumentException("could not parse a complete SQL expression");
-            return new SqlExpressionParser(dialect).adapt(expression);
+            return new SqlMetricExpressionParser(dialect).adapt(expression);
         } catch (net.sf.jsqlparser.JSQLParserException e) {
             throw new IllegalArgumentException(dialect + " expression has unsupported or unexpected token: "
                     + e.getMessage(), e);
@@ -62,7 +63,7 @@ final class SqlExpressionParser {
             return adapt(list.get(0));
         }
         if (expression instanceof LongValue || expression instanceof DoubleValue) {
-            return new Literal(ExpressionTokens.number(expression.toString()));
+            return new Literal(TuaMetricExpressionParser.number(expression.toString()));
         }
         if (expression instanceof NullValue) return new Literal(null);
         if (expression instanceof BooleanValue value) return new Literal(value.getValue());
@@ -120,8 +121,7 @@ final class SqlExpressionParser {
         if (name == null || !name.matches("[A-Za-z_][A-Za-z_0-9]*")) {
             throw new IllegalArgumentException("quoted or qualified function names are unsupported");
         }
-        boolean positionSyntax = name.equalsIgnoreCase("POSITION") && function.getNamedParameters() != null;
-        if (function.isUnique() || function.isEscaped() || function.getNamedParameters() != null && !positionSyntax
+        if (function.isUnique() || function.isEscaped() || function.getNamedParameters() != null
                 || function.getAttribute() != null || function.getKeep() != null
                 || function.getNullHandling() != null || function.isIgnoreNullsOutside()
                 || function.isIgnoreNulls() || function.getLimit() != null
@@ -134,14 +134,6 @@ final class SqlExpressionParser {
             throw new IllegalArgumentException("explicit ALL function modifier is outside the supported SQL subset");
         }
         List<Node> arguments = new ArrayList<>();
-        if (positionSyntax) {
-            var named = function.getNamedParameters();
-            if (named.size() != 2 || named.getNames().size() != 2
-                    || !"IN".equalsIgnoreCase(named.getNames().get(1))) {
-                throw new IllegalArgumentException("unsupported POSITION argument syntax");
-            }
-            for (Expression argument : named) arguments.add(adapt(argument));
-        }
         if (function.getParameters() != null) {
             for (Expression argument : function.getParameters()) arguments.add(adapt(argument));
         }
@@ -177,7 +169,7 @@ final class SqlExpressionParser {
             }
             parts.add(new MetricFieldResolver.Identifier(part, quoted));
         }
-        return new Field(new ExpressionCompiler.Reference(parts, bracket));
+        return new Field(parts, bracket);
     }
 
     private IllegalArgumentException unsupported(Expression expression) {

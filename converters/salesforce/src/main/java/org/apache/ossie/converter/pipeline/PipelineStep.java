@@ -20,7 +20,6 @@
 package org.apache.ossie.converter.pipeline;
 
 import java.util.Map;
-import org.apache.ossie.converter.ConversionContext;
 
 /**
  * Base interface for pipeline steps.
@@ -36,9 +35,4 @@ public interface PipelineStep {
      * @param mappings Property mappings
      */
     void execute(Map<String, Object> sourceData, Map<String, Object> outputData, Map<String, String> mappings);
-
-    /** Execute with the field catalog and other state belonging to this model only. */
-    default void execute(ConversionContext context, Map<String, String> mappings) {
-        execute(context.sourceData(), context.outputData(), mappings);
-    }
 }

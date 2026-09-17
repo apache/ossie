@@ -56,7 +56,6 @@
     </properties>
 
     <dependencies>
-        <!-- Source SQL parsing only; target Tua support is explicitly validated by our compiler. -->
         <dependency>
             <groupId>com.github.jsqlparser</groupId>
             <artifactId>jsqlparser</artifactId>

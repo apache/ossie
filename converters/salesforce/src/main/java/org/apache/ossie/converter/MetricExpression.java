@@ -24,11 +24,13 @@ import java.util.List;
 import java.util.Set;
 
 /** Immutable compiler nodes. Neither source parsing nor type checking emits target text. */
-final class ExpressionAst {
-    private ExpressionAst() {}
+final class MetricExpression {
+    private MetricExpression() {}
     sealed interface Node permits Literal, Field, Unary, Binary, Call, Conditional {}
     record Literal(Object value) implements Node {}
-    record Field(ExpressionCompiler.Reference reference) implements Node {}
+    record Field(List<MetricFieldResolver.Identifier> parts, boolean tableau) implements Node {
+        Field { parts = List.copyOf(parts); }
+    }
     record Unary(String operator, Node operand) implements Node {}
     record Binary(String operator, Node left, Node right) implements Node {}
     record Call(String name, List<Node> arguments, boolean distinct) implements Node {
@@ -38,6 +40,7 @@ final class ExpressionAst {
     record Conditional(List<Node> branches, Node otherwise) implements Node {
         Conditional { branches = List.copyOf(branches); }
     }
+    enum Level { CONSTANT, ROW, AGGREGATE }
     enum Type {
         INTEGER("Integer"), DECIMAL("Decimal"), FLOAT("Float"), STRING("String"),
         BOOLEAN("Boolean"), DATE("Date"), DATETIME("DateTime"), DATETIME_TZ("DateTimeTz"),
@@ -51,8 +54,8 @@ final class ExpressionAst {
             return UNKNOWN;
         }
     }
-    record Typed(Node node, Type type, ExpressionCompiler.Level level, Set<String> datasets,
-                 List<Typed> children, ExpressionCompiler.Binding binding, BigDecimal number) {
+    record Typed(Node node, Type type, Level level, Set<String> datasets,
+                 List<Typed> children, MetricFieldResolver.ResolvedField binding, BigDecimal number) {
         Typed { datasets = Set.copyOf(datasets); children = List.copyOf(children); }
     }
 }

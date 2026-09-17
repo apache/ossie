@@ -20,11 +20,9 @@
 package org.apache.ossie.converter;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.fasterxml.jackson.dataformat.yaml.YAMLGenerator;
 import org.apache.ossie.exception.ConversionException;
@@ -80,18 +78,14 @@ public abstract class AbstractConverter implements Converter {
         this.mapper = mapper;
 
         this.jsonMapper = new ObjectMapper()
-            .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
-            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
             .enable(SerializationFeature.INDENT_OUTPUT);
 
         YAMLFactory yamlFactory = new YAMLFactory()
             .disable(YAMLGenerator.Feature.WRITE_DOC_START_MARKER)
             .enable(YAMLGenerator.Feature.MINIMIZE_QUOTES)
             .enable(YAMLGenerator.Feature.LITERAL_BLOCK_STYLE);
-        yamlFactory.enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
 
         this.yamlMapper = new ObjectMapper(yamlFactory)
-            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
             .enable(SerializationFeature.INDENT_OUTPUT);
 
         this.customExtensionHandler = new CustomExtensionHandler(this.jsonMapper);

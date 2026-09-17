@@ -22,7 +22,6 @@ package org.apache.ossie.app;
 import org.apache.ossie.converter.Converter;
 import org.apache.ossie.converter.ConverterFactory;
 import org.apache.ossie.converter.ConversionDirection;
-import org.apache.ossie.converter.SalesforceBindings;
 import org.apache.ossie.exception.ConversionException;
 import org.apache.ossie.exception.InvalidInputException;
 import org.apache.ossie.exception.ValidationException;
@@ -41,7 +40,7 @@ public class OssieSalesforceConverter {
 
     public static void main(String[] args) {
         if (args.length < 2) {
-            System.err.println("Usage: ossie-salesforce-converter <direction> <input-file> [--bindings <bindings.yaml>]");
+            System.err.println("Usage: ossie-salesforce-converter <direction> <input-file>");
             System.err.println("  direction: toSF | toOssie");
             System.exit(1);
         }
@@ -52,19 +51,11 @@ public class OssieSalesforceConverter {
             Path inputPath = Paths.get(args[1]);
 
             ConversionDirection direction = parseDirection(directionArg);
-            SalesforceBindings bindings = SalesforceBindings.none();
-            if (args.length != 2) {
-                if (args.length != 4 || !"--bindings".equals(args[2])
-                        || direction != ConversionDirection.OSSIE_TO_SALESFORCE) {
-                    throw new InvalidInputException("Expected toSF <input.yaml> [--bindings <bindings.yaml>]");
-                }
-                bindings = SalesforceBindings.fromPath(Paths.get(args[3]));
-            }
-            app.convert(direction, inputPath, bindings);
+            app.convert(direction, inputPath);
         } catch (InvalidInputException e) {
             System.err.println("Error: " + e.getMessage());
             System.exit(2);
-        } catch (ConversionException | ValidationException e) {
+        } catch (ConversionException e) {
             System.err.println("Error: " + e.getMessage());
             System.exit(3);
         } catch (ValidationException e) {
@@ -74,7 +65,7 @@ public class OssieSalesforceConverter {
     }
 
     private static ConversionDirection parseDirection(String direction) {
-        return switch (direction.toLowerCase(java.util.Locale.ROOT)) {
+        return switch (direction.toLowerCase()) {
             case "tosf" -> ConversionDirection.OSSIE_TO_SALESFORCE;
             case "toossie" -> ConversionDirection.SALESFORCE_TO_OSSIE;
             default -> throw new InvalidInputException(
@@ -91,10 +82,6 @@ public class OssieSalesforceConverter {
      * @param inputPath path to the input file
      */
     public void convert(ConversionDirection direction, Path inputPath) {
-        convert(direction, inputPath, SalesforceBindings.none());
-    }
-
-    public void convert(ConversionDirection direction, Path inputPath, SalesforceBindings bindings) {
         if (!Files.exists(inputPath)) {
             throw new InvalidInputException("Input file not found: " + inputPath);
         }
@@ -104,7 +91,7 @@ public class OssieSalesforceConverter {
             outputDir = Path.of(".");
         }
 
-        Converter converter = ConverterFactory.getConverter(direction, bindings);
+        Converter converter = ConverterFactory.getConverter(direction);
         converter.convert(inputPath, outputDir);
     }
 
