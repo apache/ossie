@@ -166,15 +166,49 @@ OBML_PHYSICAL_TO_OSSIE_DATATYPE = {
 }
 
 
-def obml_datatype_to_ossie(data_type: str | None) -> str | None:
+def obml_datatype_to_ossie(data_type: object) -> str | None:
     """Map an explicit OBML measure/metric ``dataType`` to an Ossie ``DataType``.
 
     Returns ``None`` when there is no mapping, so the caller emits nothing rather
-    than an unknown type. ``decimal(p, s)`` maps to ``Decimal``.
+    than an unknown type. ``decimal(p, s)`` maps to ``Decimal``. A hand-authored
+    document may carry a non-string ``dataType`` (``123``) that no schema check
+    has rejected yet; that has no mapping either, rather than aborting the whole
+    conversion.
     """
-    if not data_type:
+    if not isinstance(data_type, str):
         return None
     normalized = data_type.strip().lower()
+    if not normalized:
+        return None
     if normalized.startswith("decimal"):
         return "Decimal"
     return OBML_PHYSICAL_TO_OSSIE_DATATYPE.get(normalized)
+
+
+def obml_decimal_default(settings: object) -> str:
+    """The ``dataType`` an Ossie ``Decimal`` metric becomes in this model.
+
+    OBML lets a model set ``settings.defaultNumericDataType`` (always a
+    ``decimal(p, s)``, which OrionBelt enforces), and a model configured for
+    ``decimal(20, 6)`` should not have its metrics written as the built-in
+    ``decimal(18, 2)``. Anything other than a decimal string there falls back to
+    the built-in default.
+    """
+    if isinstance(settings, dict):
+        configured = settings.get("defaultNumericDataType")
+        if isinstance(configured, str) and configured.strip().lower().startswith("decimal"):
+            return configured
+    return OBML_DECIMAL_DEFAULT
+
+
+def ossie_metric_datatype_to_obml(ossie_datatype: object, decimal_default: str) -> str | None:
+    """Map an Ossie metric ``datatype`` to the OBML measure/metric ``dataType``.
+
+    ``Decimal`` takes the model's numeric default; ``Opaque``, an unknown value
+    or a non-string has no mapping.
+    """
+    if not isinstance(ossie_datatype, str):
+        return None
+    if ossie_datatype == "Decimal":
+        return decimal_default
+    return OSSIE_DATATYPE_TO_OBML_PHYSICAL.get(ossie_datatype)

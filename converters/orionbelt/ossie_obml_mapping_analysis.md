@@ -159,7 +159,7 @@ These OBML features have no direct Ossie equivalent. Where possible, metadata is
 ### 3.1 Ossie → OBML
 
 1. Parse `source` string to extract `database`, `schema`, and `table`
-2. Convert fields to columns; `abstractType` comes from the spec `datatype` (`Decimal` narrows to `float`), then legacy `data_type`, then a name heuristic (also used for `Opaque`); metric `datatype` sets the exact measure/metric `dataType` (`Decimal` → `decimal(18, 2)`)
+2. Convert fields to columns; `abstractType` comes from the spec `datatype` (`Decimal` narrows to `float`), then legacy `data_type`, then a name heuristic (also used for `Opaque`); metric `datatype` sets the exact measure/metric `dataType` (`Decimal` → the model's `settings.defaultNumericDataType`, else `decimal(18, 2)`). A stashed `obml_abstract_type` or `obml_data_type` is restored while it agrees with `datatype`; an edited `datatype` wins over it
 3. Restructure global relationships into inline joins on data objects
 4. Decompose metric SQL expressions into OBML measures + metrics
 5. Extract dimension-flagged fields into the top-level `dimensions` section (excluding FK/PK join keys)
