@@ -19,195 +19,269 @@
 
 package org.apache.ossie.converter;
 
-import static org.apache.ossie.util.DataStructureUtils.*;
+import static org.apache.ossie.util.DataStructureUtils.getList;
+import static org.apache.ossie.util.DataStructureUtils.getString;
+import static org.apache.ossie.util.DataStructureUtils.streamMaps;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/** Model-scoped indexes bind metric references to validated exported semantic identities. */
+/** Binds metric references to declared fields that the Salesforce converter actually exported. */
 final class MetricFieldResolver {
-    record Identifier(String text, boolean quoted) {}
-    record ResolvedField(String expression, String datatype, String dataset) {}
-    private record Field(String dataset, String name, Map<String, Object> properties) {}
 
-    private final NameIndex<Map<String, Object>> datasets = new NameIndex<>();
-    private final NameIndex<Field> unqualifiedFields = new NameIndex<>();
-    private final Map<String, NameIndex<Field>> fieldsByDataset = new HashMap<>();
-    private final Map<String, List<Map<String, Object>>> targetDatasets;
-    private final Map<String, Map<String, List<Map<String, Object>>>> targetFields = new HashMap<>();
-    private final Map<String, List<Map<String, Object>>> targetCalculatedFields;
-    private final Map<String, Integer> components;
-    private final FieldExpressionPlan fieldPlan;
+    record Identifier(String text, boolean quoted) {}
+
+    record ResolvedField(String expression, String datatype, String dataset) {}
+
+    private record Field(Map<String, Object> dataset, Map<String, Object> field) {}
+
+    private final List<Map<String, Object>> datasets;
+    private final List<Map<String, Object>> targetDatasets;
+    private final List<Map<String, Object>> relationships;
+    private final List<Map<String, Object>> declaredRelationships;
+    private record Reference(List<Identifier> parts, boolean tableau) {
+        Reference { parts = List.copyOf(parts); }
+    }
+    private final Map<Reference, ResolvedField> resolved = new HashMap<>();
+    private final Map<String, Set<String>> reachable = new HashMap<>();
+    private final List<String> invalidRelationships = new ArrayList<>();
+    private Map<String, Set<String>> graph;
 
     MetricFieldResolver(Map<String, Object> sourceModel, Map<String, Object> targetModel) {
-        this(sourceModel, targetModel, null);
+        datasets = items(sourceModel, "datasets");
+        targetDatasets = items(targetModel, "semanticDataObjects");
+        relationships = items(targetModel, "semanticRelationships");
+        declaredRelationships = items(sourceModel, "relationships");
     }
 
-    MetricFieldResolver(Map<String, Object> sourceModel, Map<String, Object> targetModel,
-                        FieldExpressionPlan fieldPlan) {
-        this.fieldPlan = fieldPlan;
-        for (Map<String, Object> dataset : items(sourceModel, "datasets")) {
-            String datasetName = getString(dataset, "name");
-            datasets.add(datasetName, dataset);
-            NameIndex<Field> fields = fieldsByDataset.computeIfAbsent(datasetName, ignored -> new NameIndex<>());
-            for (Map<String, Object> properties : items(dataset, "fields")) {
-                String name = getString(properties, "name");
-                Field field = new Field(datasetName, name, properties);
-                fields.add(name, field);
-                unqualifiedFields.add(name, field);
-            }
-        }
-        List<Map<String, Object>> targets = items(targetModel, "semanticDataObjects");
-        targetDatasets = index(targets, item -> getString(item, "apiName"));
-        for (Map<String, Object> dataset : targets) {
-            List<Map<String, Object>> fields = new ArrayList<>(items(dataset, "semanticDimensions"));
-            fields.addAll(items(dataset, "semanticMeasurements"));
-            targetFields.put(getString(dataset, "apiName"), index(fields, item -> getString(item, "apiName")));
-        }
-        targetCalculatedFields = index(items(targetModel, "semanticCalculatedDimensions"),
-                item -> getString(item, "apiName"));
-        components = connectedComponents(targetDatasets.keySet(), items(targetModel, "semanticRelationships"));
-    }
-
-    /** Connectivity is a prerequisite; it is not a proof of native join-grain equivalence. */
+    /** Only unchanged, enabled edges can establish a metric's dataset connectivity. */
     void validateDatasets(Set<String> referenced) {
         if (referenced.size() < 2) return;
-        Integer component = components.get(referenced.iterator().next());
-        if (component == null || referenced.stream().anyMatch(name -> !component.equals(components.get(name)))) {
+        if (graph == null) graph = validatedGraph();
+        String first = referenced.stream().sorted().findFirst().orElseThrow();
+        Set<String> visited = reachable.computeIfAbsent(first, this::reachableFrom);
+        if (!visited.containsAll(referenced)) {
             throw new IllegalArgumentException("Metric references disconnected datasets "
                     + referenced.stream().sorted().collect(Collectors.joining(", "))
-                    + "; declare supported relationships connecting them before exporting the metric");
+                    + "; declare supported relationships connecting them before exporting the metric"
+                    + (invalidRelationships.isEmpty() ? "" : "; unusable relationships: " + String.join("; ", invalidRelationships)));
         }
     }
 
-    boolean hasUnqualifiedField(Identifier identifier, boolean tableau) {
-        return !unqualifiedFields.find(identifier, tableau).isEmpty();
+    private Map<String, Set<String>> validatedGraph() {
+        Map<String, Set<String>> result = new HashMap<>();
+        for (Map<String, Object> dataset : targetDatasets) {
+            String name = getString(dataset, "apiName");
+            if (name != null) result.put(name, new HashSet<>());
+        }
+        for (Map<String, Object> relationship : relationships) {
+            if (!Boolean.TRUE.equals(relationship.get("isEnabled"))) continue;
+            String name = getString(relationship, "apiName");
+            String left = getString(relationship, "leftSemanticDefinitionApiName");
+            String right = getString(relationship, "rightSemanticDefinitionApiName");
+            try {
+                if (!result.containsKey(left) || !result.containsKey(right)) {
+                    throw new IllegalArgumentException("missing exported endpoint");
+                }
+                validateRelationship(relationship, name, left, right);
+                result.get(left).add(right);
+                result.get(right).add(left);
+            } catch (IllegalArgumentException e) {
+                invalidRelationships.add("'" + name + "': " + e.getMessage());
+            }
+        }
+        return result;
     }
 
-    ExpressionCompiler.Binding resolveBinding(ExpressionCompiler.Reference reference) {
-        return binding(reference.parts(), reference.tableau());
+    private void validateRelationship(Map<String, Object> target, String name, String left, String right) {
+        List<Map<String, Object>> matches = declaredRelationships.stream()
+                .filter(source -> name != null && name.equals(getString(source, "name"))).toList();
+        if (matches.size() != 1) throw new IllegalArgumentException("expected one source relationship");
+        Map<String, Object> source = matches.get(0);
+        if (!left.equals(getString(source, "from")) || !right.equals(getString(source, "to"))) {
+            throw new IllegalArgumentException("changed endpoints");
+        }
+        List<Object> from = getList(source, "from_columns");
+        List<Object> to = getList(source, "to_columns");
+        List<Map<String, Object>> criteria = items(target, "criteria");
+        if (from == null || to == null || from.isEmpty() || from.size() != to.size() || from.size() != criteria.size()) {
+            throw new IllegalArgumentException("changed or missing composite join keys");
+        }
+        for (int i = 0; i < from.size(); i++) {
+            Map<String, Object> pair = criteria.get(i);
+            if (!(from.get(i) instanceof String leftKey) || !(to.get(i) instanceof String rightKey)
+                    || !leftKey.equals(pair.get("leftSemanticFieldApiName"))
+                    || !rightKey.equals(pair.get("rightSemanticFieldApiName"))) {
+                throw new IllegalArgumentException("changed join key correspondence");
+            }
+            for (String side : List.of("leftFieldType", "rightFieldType")) {
+                if (pair.containsKey(side) && !"TableField".equals(pair.get(side))) {
+                    throw new IllegalArgumentException("calculated join keys are unsupported");
+                }
+            }
+            resolve(List.of(new Identifier(left, true), new Identifier(leftKey, true)), true);
+            resolve(List.of(new Identifier(right, true), new Identifier(rightKey, true)), true);
+        }
+    }
+
+    private Set<String> reachableFrom(String start) {
+        Set<String> visited = new HashSet<>();
+        ArrayDeque<String> pending = new ArrayDeque<>();
+        pending.add(start);
+        while (!pending.isEmpty()) {
+            String dataset = pending.removeFirst();
+            if (visited.add(dataset)) pending.addAll(graph.getOrDefault(dataset, Set.of()));
+        }
+        return Set.copyOf(visited);
     }
 
     ResolvedField resolve(List<Identifier> parts, boolean tableau) {
-        ExpressionCompiler.Binding value = binding(parts, tableau);
-        return new ResolvedField(value.expression(), value.datatype(), value.dataset());
+        return resolved.computeIfAbsent(new Reference(parts, tableau), key -> resolveUncached(key.parts(), key.tableau()));
     }
 
-    private ExpressionCompiler.Binding binding(List<Identifier> parts, boolean tableau) {
+    private ResolvedField resolveUncached(List<Identifier> parts, boolean tableau) {
         String reference = parts.stream().map(Identifier::text).collect(Collectors.joining("."));
         if (parts.isEmpty() || parts.size() > 2) {
             throw new IllegalArgumentException("Reference '" + reference
                     + "' must name a declared field or dataset.field; physical source paths are unsupported");
         }
         if (tableau && parts.size() != 2) {
-            throw new IllegalArgumentException("TABLEAU field reference '" + reference + "' must use [dataset].[field]");
+            throw new IllegalArgumentException("TABLEAU field reference '" + reference
+                    + "' must use [dataset].[field]");
         }
-        List<Field> candidates;
+
+        List<Map<String, Object>> candidates = datasets;
         if (parts.size() == 2) {
-            List<Map<String, Object>> matches = datasets.find(parts.get(0), tableau);
-            if (matches.isEmpty()) throw new IllegalArgumentException("Unknown dataset in reference '" + reference
-                    + "'; use a declared dataset name, not its physical source");
-            if (matches.size() > 1) throw new IllegalArgumentException("Ambiguous dataset in reference '" + reference
-                    + "'; dataset declarations must have distinct names");
-            candidates = fieldsByDataset.get(getString(matches.get(0), "name")).find(parts.get(1), tableau);
-        } else {
-            candidates = unqualifiedFields.find(parts.get(0), tableau);
+            candidates = datasets.stream()
+                    .filter(dataset -> matches(parts.get(0), getString(dataset, "name"), tableau))
+                    .toList();
+            if (candidates.isEmpty()) {
+                throw new IllegalArgumentException("Unknown dataset in reference '" + reference
+                        + "'; use a declared dataset name, not its physical source");
+            }
+            if (candidates.size() > 1) {
+                throw new IllegalArgumentException("Ambiguous dataset in reference '" + reference
+                        + "'; dataset declarations must have distinct names");
+            }
         }
-        if (candidates.isEmpty()) throw new IllegalArgumentException("Unknown field reference '" + reference
-                + "'; declare the field under datasets[].fields before exporting the metric");
-        if (candidates.size() > 1) throw new IllegalArgumentException("Ambiguous field reference '" + reference
-                + "'; qualify the dataset and remove duplicate field declarations");
-        Field match = candidates.get(0);
-        if (datasets.declarations(match.dataset, tableau).size() > 1) {
+
+        Identifier fieldName = parts.get(parts.size() - 1);
+        List<Field> fields = new ArrayList<>();
+        for (Map<String, Object> dataset : candidates) {
+            for (Map<String, Object> field : items(dataset, "fields")) {
+                if (matches(fieldName, getString(field, "name"), tableau)) {
+                    fields.add(new Field(dataset, field));
+                }
+            }
+        }
+        if (fields.isEmpty()) {
+            throw new IllegalArgumentException("Unknown field reference '" + reference
+                    + "'; declare the field under datasets[].fields before exporting the metric");
+        }
+        if (fields.size() > 1) {
+            throw new IllegalArgumentException("Ambiguous field reference '" + reference
+                    + "'; qualify the dataset and remove duplicate field declarations");
+        }
+
+        Field match = fields.get(0);
+        String datasetName = getString(match.dataset(), "name");
+        // An unqualified field must not accidentally select one of two equivalent datasets.
+        if (datasets.stream().filter(dataset -> equivalentDeclaration(
+                datasetName, getString(dataset, "name"), tableau)).count() > 1) {
             throw new IllegalArgumentException("Ambiguous dataset for reference '" + reference
                     + "'; dataset declarations must have distinct names");
         }
-        Map<String, Object> targetDataset = exported(targetDatasets, match.dataset, "dataset", reference);
-        if (fieldPlan != null && !fieldPlan.isDirect(match.dataset, match.name)) {
-            Map<String, Object> targetField = exported(targetCalculatedFields,
-                    fieldPlan.calculatedApiName(match.dataset, match.name), "field", reference);
-            ExpressionCompiler.Binding resolved = fieldPlan.resolve(match.dataset, match.name);
-            if (!fieldPlan.hasPhysicalDependencies(match.dataset, match.name)) {
-                throw new IllegalArgumentException("Field reference '" + reference
-                        + "' is a constant row field without a physical dataset anchor; "
-                        + "combine it with a direct field in a derived row expression before using it in a metric");
-            }
-            checkType(resolved.datatype(), getString(targetField, "dataType"), reference);
-            return resolved;
-        }
-        Map<String, Object> targetField = exported(targetFields.get(match.dataset), match.name, "field", reference);
-        String datatype = getString(match.properties, "datatype");
-        String targetType = getString(targetField, "dataType");
-        if (datatype == null || datatype.isBlank()) datatype = SalesforceDataTypeMapper.toOssie(targetType);
-        checkType(datatype, targetType, reference);
-        String datasetName = getString(targetDataset, "apiName");
-        return new ExpressionCompiler.Binding(bracket(datasetName) + "." + bracket(getString(targetField, "apiName")),
-                datatype, datasetName);
-    }
+        String sourceFieldName = getString(match.field(), "name");
+        Map<String, Object> targetDataset = exportedItem(targetDatasets, datasetName,
+                "dataset", reference);
+        List<Map<String, Object>> targetFields = new ArrayList<>(items(targetDataset, "semanticDimensions"));
+        targetFields.addAll(items(targetDataset, "semanticMeasurements"));
+        Map<String, Object> targetField = exportedItem(targetFields, sourceFieldName, "field", reference);
 
-    private static void checkType(String datatype, String targetType, String reference) {
+        String datatype = getString(match.field(), "datatype");
+        String targetType = getString(targetField, "dataType");
+        if (datatype == null || datatype.isBlank()) {
+            datatype = SalesforceDataTypeMapper.toOssie(targetType);
+        }
         if (SalesforceDataTypeMapper.toSalesforce(datatype) == null) {
             throw new IllegalArgumentException("Field reference '" + reference
                     + "' has no supported datatype; declare a portable field datatype");
         }
-        if (targetType == null || targetType.isBlank() || !SalesforceDataTypeMapper.areCompatible(datatype, targetType)) {
-            throw new IllegalArgumentException("Field reference '" + reference + "' has datatype '" + datatype
-                    + "' but exported Salesforce dataType '" + targetType + "'; use compatible field types");
+        if (targetType == null || targetType.isBlank()
+                || !SalesforceDataTypeMapper.areCompatible(datatype, targetType)) {
+            throw new IllegalArgumentException("Field reference '" + reference + "' has datatype '"
+                    + datatype + "' but exported Salesforce dataType '" + targetType
+                    + "'; use compatible field types");
+        }
+
+        validateDirectBinding(targetField, reference);
+        String targetDatasetName = getString(targetDataset, "apiName");
+        String targetFieldName = getString(targetField, "apiName");
+        return new ResolvedField(bracket(targetDatasetName) + "." + bracket(targetFieldName),
+                datatype, targetDatasetName);
+    }
+
+    private static void validateDirectBinding(Map<String, Object> targetField, String reference) {
+        String column = getString(targetField, "dataObjectFieldName");
+        try {
+            if (column == null || column.isBlank()) throw new IllegalArgumentException("missing physical column");
+            MetricExpression.Node parsed = SqlMetricExpressionParser.parse(column, "ANSI_SQL");
+            if (!(parsed instanceof MetricExpression.Field field) || field.parts().size() != 1
+                    || field.parts().get(0).quoted() || !column.equals(field.parts().get(0).text())) {
+                throw new IllegalArgumentException("expected one unquoted physical column");
+            }
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Field reference '" + reference
+                    + "' was not exported with a supported direct physical binding; derived, qualified or quoted "
+                    + "field bindings need separate conversion support: " + e.getMessage(), e);
         }
     }
 
-    private static Map<String, Object> exported(Map<String, List<Map<String, Object>>> index,
-                                                String name, String kind, String reference) {
-        List<Map<String, Object>> matches = index == null ? List.of() : index.getOrDefault(name, List.of());
-        if (matches.isEmpty()) throw new IllegalArgumentException("Declared " + kind + " in reference '" + reference
-                + "' was not exported as a direct Salesforce semantic " + kind
-                + "; calculated or omitted fields are unsupported in metric references without a compiled field plan");
-        if (matches.size() > 1) throw new IllegalArgumentException("Ambiguous exported Salesforce " + kind
-                + " for reference '" + reference + "'; apiName values must be unique");
+    private static Map<String, Object> exportedItem(List<Map<String, Object>> items,
+            String name, String kind, String reference) {
+        List<Map<String, Object>> matches = items.stream()
+                .filter(item -> name.equals(getString(item, "apiName"))).toList();
+        if (matches.isEmpty()) {
+            throw new IllegalArgumentException("Declared " + kind + " in reference '" + reference
+                    + "' was not exported as a direct Salesforce semantic " + kind
+                    + "; calculated or omitted fields are unsupported in metric references");
+        }
+        if (matches.size() > 1) {
+            throw new IllegalArgumentException("Ambiguous exported Salesforce " + kind + " for reference '"
+                    + reference + "'; apiName values must be unique");
+        }
         return matches.get(0);
     }
 
-    private static Map<String, Integer> connectedComponents(Set<String> names, List<Map<String, Object>> relationships) {
-        Map<String, Set<String>> graph = new LinkedHashMap<>();
-        names.forEach(name -> graph.put(name, new HashSet<>()));
-        for (Map<String, Object> relationship : relationships) {
-            if (Boolean.FALSE.equals(relationship.get("isEnabled"))) continue;
-            String left = getString(relationship, "leftSemanticDefinitionApiName");
-            String right = getString(relationship, "rightSemanticDefinitionApiName");
-            if (graph.containsKey(left) && graph.containsKey(right)) {
-                graph.get(left).add(right); graph.get(right).add(left);
-            }
+    private static boolean matches(Identifier reference, String declaration, boolean tableau) {
+        if (declaration == null) {
+            return false;
         }
-        Map<String, Integer> result = new HashMap<>();
-        for (String name : names) {
-            if (result.containsKey(name)) continue;
-            int component = result.size();
-            ArrayDeque<String> pending = new ArrayDeque<>(); pending.add(name);
-            while (!pending.isEmpty()) {
-                String current = pending.removeFirst();
-                if (result.putIfAbsent(current, component) == null) pending.addAll(graph.get(current));
-            }
-        }
-        return Map.copyOf(result);
+        return tableau ? reference.text().equals(declaration)
+                : normalize(reference).equals(normalizeDeclaration(declaration));
     }
 
-    static String normalize(Identifier identifier) {
+    private static boolean equivalentDeclaration(String first, String second, boolean tableau) {
+        return second != null && (tableau ? first.equals(second)
+                : normalizeDeclaration(first).equals(normalizeDeclaration(second)));
+    }
+
+    private static String normalize(Identifier identifier) {
         return identifier.quoted() ? identifier.text() : identifier.text().toUpperCase(Locale.ROOT);
     }
 
-    static String normalizeDeclaration(String name) {
+    private static String normalizeDeclaration(String name) {
         if (name.startsWith("\"") && name.endsWith("\"") && name.length() >= 2) {
             String text = name.substring(1, name.length() - 1);
-            if (text.isEmpty() || text.replace("\"\"", "").contains("\"")) {
+            String unescaped = text.replace("\"\"", "");
+            if (text.isEmpty() || unescaped.contains("\"")) {
                 throw new IllegalArgumentException("Invalid quoted declaration name '" + name + "'");
             }
             return text.replace("\"\"", "\"");
@@ -215,35 +289,13 @@ final class MetricFieldResolver {
         return name.toUpperCase(Locale.ROOT);
     }
 
-    static String bracket(String name) {
+    private static String bracket(String name) {
         if (name == null || name.isBlank() || name.indexOf('[') >= 0 || name.indexOf(']') >= 0
                 || name.chars().anyMatch(Character::isISOControl)) {
             throw new IllegalArgumentException("Exported apiName '" + name
                     + "' cannot be represented safely in a TABLEAU field reference; rename it");
         }
         return "[" + name + "]";
-    }
-
-    private static <T> Map<String, List<T>> index(List<T> values, Function<T, String> name) {
-        Map<String, List<T>> result = new HashMap<>();
-        values.forEach(value -> result.computeIfAbsent(name.apply(value), ignored -> new ArrayList<>()).add(value));
-        return result;
-    }
-
-    private static final class NameIndex<T> {
-        private final Map<String, List<T>> exact = new HashMap<>();
-        private final Map<String, List<T>> sql = new HashMap<>();
-        void add(String name, T value) {
-            if (name == null) return;
-            exact.computeIfAbsent(name, ignored -> new ArrayList<>()).add(value);
-            sql.computeIfAbsent(normalizeDeclaration(name), ignored -> new ArrayList<>()).add(value);
-        }
-        List<T> find(Identifier identifier, boolean tableau) {
-            return (tableau ? exact : sql).getOrDefault(tableau ? identifier.text() : normalize(identifier), List.of());
-        }
-        List<T> declarations(String name, boolean tableau) {
-            return (tableau ? exact : sql).getOrDefault(tableau ? name : normalizeDeclaration(name), List.of());
-        }
     }
 
     private static List<Map<String, Object>> items(Map<String, Object> map, String key) {

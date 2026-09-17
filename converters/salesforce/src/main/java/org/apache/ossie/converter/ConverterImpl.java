@@ -26,6 +26,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ossie.converter.pipeline.*;
+import org.apache.ossie.converter.pipeline.*;
 import org.apache.ossie.exception.ConversionException;
 import org.apache.ossie.validator.SchemaValidator;
 
@@ -44,28 +45,14 @@ public class ConverterImpl extends AbstractConverter {
     private final DirectionConfig directionConfig;
     private final List<PipelineStep> steps;
     private final SchemaValidator schemaValidator;
-    private final SchemaValidator targetSchemaValidator;
-    private final SalesforceBindings bindings;
 
     public ConverterImpl(ConversionDirection direction) {
-        this(direction, PipelineConfigLoader.loadFromResource(), SalesforceBindings.none());
-    }
-
-    public ConverterImpl(ConversionDirection direction, SalesforceBindings bindings) {
-        this(direction, PipelineConfigLoader.loadFromResource(), bindings);
+        this(direction, PipelineConfigLoader.loadFromResource());
     }
 
     ConverterImpl(ConversionDirection direction, PipelineConfig config) {
-        this(direction, config, SalesforceBindings.none());
-    }
-
-    private ConverterImpl(ConversionDirection direction, PipelineConfig config, SalesforceBindings bindings) {
         super();
         this.direction = direction;
-        this.bindings = java.util.Objects.requireNonNull(bindings, "bindings");
-        if (direction != ConversionDirection.OSSIE_TO_SALESFORCE && !bindings.isEmpty()) {
-            throw new ConversionException("Salesforce bindings apply only to toSF conversion");
-        }
 
         // Get handler list for this direction
         List<String> handlerNames = config.getPipelines().get(direction.toPipelineKey());
@@ -86,11 +73,6 @@ public class ConverterImpl extends AbstractConverter {
             schemaMapper,
             directionConfig.getSchemaPath()
         );
-
-        // Output validation is part of conversion, not only an optional test assertion.
-        this.targetSchemaValidator = new SchemaValidator(jsonMapper,
-                direction == ConversionDirection.OSSIE_TO_SALESFORCE
-                        ? SchemaValidator.SALESFORCE_SCHEMA_PATH : SchemaValidator.OSSIE_SCHEMA_PATH);
 
         // Initialize pipeline steps using factory
         HandlerFactory factory = new HandlerFactory(customExtensionHandler);
@@ -117,12 +99,6 @@ public class ConverterImpl extends AbstractConverter {
     private List<String> convertOssieToSalesforce(Map<String, Object> ossieRoot) {
         List<Object> semanticModels = getList(ossieRoot, SEMANTIC_MODEL);
         List<String> results = new ArrayList<>();
-        java.util.Set<String> names = new java.util.HashSet<>();
-        for (Object modelObj : semanticModels) {
-            String name = getString(asMap(modelObj), NAME);
-            if (!names.add(name)) throw new ConversionException("Duplicate model name '" + name + "'");
-        }
-        bindings.validateModels(names);
 
         for (Object modelObj : semanticModels) {
             Map<String, Object> sourceData = asMap(modelObj);
@@ -141,7 +117,6 @@ public class ConverterImpl extends AbstractConverter {
             Map<String, Object> ossieRoot = new LinkedHashMap<>();
             ossieRoot.put(VERSION, OSSIE_VERSION);
             ossieRoot.put(SEMANTIC_MODEL, List.of(outputData));
-            targetSchemaValidator.validate(ossieRoot);
             return List.of(toYaml(ossieRoot));
         } catch (JsonProcessingException e) {
             throw new ConversionException("Failed to wrap output in Ossie root", e);
@@ -154,21 +129,10 @@ public class ConverterImpl extends AbstractConverter {
             ? mapper.getOssieToSalesforceMappings()
             : mapper.getSalesforceToOssieMappings());
 
-        ConversionContext context = new ConversionContext(sourceData, outputData);
         for (PipelineStep step : steps) {
-            try {
-                step.execute(context, mappings);
-            } catch (IllegalArgumentException e) {
-                String name = getString(sourceData,
-                        direction == ConversionDirection.OSSIE_TO_SALESFORCE ? NAME : API_NAME);
-                throw new ConversionException("Model '" + name + "': " + e.getMessage(), e);
-            }
+            step.execute(sourceData, outputData, mappings);
         }
-        if (direction == ConversionDirection.OSSIE_TO_SALESFORCE) {
-            bindings.apply(sourceData, outputData);
-            new SalesforceModelValidator().validate(sourceData, outputData, context.fieldPlan());
-            targetSchemaValidator.validate(outputData);
-        }
+
         return serialize(outputData);
     }
 

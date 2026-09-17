@@ -22,10 +22,8 @@
 A two-way converter between [Ossie semantic models](../../core-spec/spec.md) and [Salesforce Semantic Model](https://developer.salesforce.com/docs/data/semantic-layer/guide/salesforce-semantic-model-schema.html).
 
 This converter supports conversion in both directions between Ossie YAML and
-Salesforce Semantic Model JSON. Each input must contain one document; duplicate
-mapping keys and trailing documents are rejected before conversion. Supported
-unmapped Salesforce properties are preserved in `custom_extensions`; see the
-mapping reference for direction-specific limits.
+Salesforce Semantic Model JSON. Unmapped Salesforce properties are preserved in
+`custom_extensions`; see the mapping reference for direction-specific limits.
 
 ## Requirements
 
@@ -44,8 +42,7 @@ This produces a self-contained executable jar at `target/ossie-salesforce-conver
 
 ## Setup
 
-Both conversion directions validate input and output. Obtain the Salesforce schema
-before building so it is bundled into the jar; conversion fails if it is missing.
+Obtain the Salesforce schema before building so it is bundled into the jar.
 Maven copies the canonical Ossie schema from `../../core-spec/ossie-schema.json`.
 
 ### Salesforce Semantic Model Schema
@@ -60,10 +57,9 @@ Run the complete suite, including Salesforce schema checks, with:
 mvn -DrequireSalesforceSchema=true clean verify
 ```
 
-The property explicitly fails the suite when the Salesforce schema is missing,
-including tests that otherwise skip for missing resources. Public API and CLI
-checks require both schemas. `verify` also checks Apache license headers. Do not
-commit downloaded schemas.
+The property makes a missing Salesforce schema fail the test run. Without it,
+schema-dependent tests retain their existing skip behavior. `verify` also checks
+Apache license headers. Do not commit downloaded schemas.
 
 ## Usage
 
@@ -138,8 +134,8 @@ ossieToSf.convert(Paths.get("input/model.yaml"), Paths.get("output/"));
 
 ### Features
 
-- **Schema-validated** - Input and final output are validated against JSON Schema
-- **Explicit conversion boundaries** - Supported native metadata is preserved; unsupported expressions, missing references and omitted declared entities fail conversion
+- **Schema-validated** - Input is validated against JSON Schema before processing
+- **Lossless conversion** - Unmapped properties are preserved in `custom_extensions`
 - **Bidirectional** - Supports both directions, with direction-specific limits documented below
 - **Supports Ossie Specification v0.2.0.dev0**
 
@@ -172,7 +168,7 @@ ossieToSf.convert(Paths.get("input/model.yaml"), Paths.get("output/"));
 | `datasets[].name` | `semanticDataObjects[].apiName` |
 | `datasets[].source` | `semanticDataObjects[].dataObjectName` |
 | Direct `fields[]` | Split into `semanticDimensions[]` and `semanticMeasurements[]` based on `dimension` presence |
-| Derived row fields | Validated Tua in `semanticCalculatedDimensions[]`, with dataset-qualified generated names |
+| Calculated Tableau fields | `semanticCalculatedDimensions[]` through the existing expression-analysis path |
 | `expression.dialects[].expression` | `dataObjectFieldName` |
 | Field `datatype` | Field `dataType` when a safe mapping exists |
 | `relationships[]` | `semanticRelationships[]` |
@@ -211,22 +207,22 @@ type exists:
 | `Boolean` | `Boolean` |
 | `Date` | `Date` |
 | `DateTime`, `DateTimeTz` | `DateTime` |
-| `Time`, `Opaque` | Rejected unless a compatible exact native extension type exists |
+| `Time`, `Opaque` | Omitted with a warning unless an exact extension type exists |
 
 Salesforce has one `DateTime` type, so exporting timezone-free Ossie `DateTime`
 loses its distinction from `DateTimeTz`; the converter logs a warning because a
 subsequent Salesforce import interprets that value as `DateTimeTz`.
 
 An exact Salesforce extension value takes precedence over the portable mapping.
-If it conflicts with `datatype`, conversion fails. An absent direct-field datatype
-can remain unspecified in metadata, but an expression using it needs a known,
-compatible type.
+If it conflicts with `datatype`, the converter preserves the exact Salesforce
+value and logs a warning.
 
 ### Field Role and Time Dimensions
 
 `datatype` does not determine whether an Ossie field is a dimension or a fact.
 For direct fields, the presence of the `dimension` object determines whether the
-field is exported to `semanticDimensions` or `semanticMeasurements`. A derived row expression becomes a model-level calculated dimension.
+field is exported to `semanticDimensions` or `semanticMeasurements`. A calculated
+Tableau expression follows the converter's existing calculated-dimension path.
 
 On import, Salesforce `Date` and `DateTime` dimensions set `dimension.is_time` to
 `true`; other dimension types set it to `false`. On export, `dimension.is_time`
@@ -234,78 +230,38 @@ does not invent or override a scalar type. This preserves Ossie's separation of
 logical data type from temporal role, including integer year and string month
 dimensions.
 
-### Relationships
+### Relationship Handling
 
-Every declared relationship must be exported with the same endpoint and ordered
-join-key pairs. Missing fields, unequal composite-key lengths, duplicate names,
-and calculated join keys fail conversion; no relationship is silently filtered.
-The default cardinality is `ManyToOne`, following OSI. Valid explicit Salesforce
-cardinality metadata is preserved for native round trips. Declared primary and
-unique keys are checked against references and the unique side of the chosen
-cardinality. This checks metadata consistency, not uniqueness in actual data.
-
-On Salesforce import, unsupported Formula/SemanticField relationships remain in
-model extensions. Export currently rejects those joins explicitly. Core
-relationships and native extension arrays must not cause one another to disappear.
-An extension-only relationship with omitted enablement metadata cannot establish
-proven connectivity for a cross-dataset calculation.
-
-### Field expressions and physical bindings
-
-Field conversion parses the selected expression dialect (`TABLEAU`, then `SNOWFLAKE`, then `ANSI_SQL`) and builds one dependency plan per model. Every declared field must either produce a direct field or a supported calculated dimension. Unsupported expressions fail with the dataset and field name; they are never silently omitted.
-
-A direct SQL identifier defines a physical column. For example, a field named `amount` with expression `revenue__c` emits `apiName: amount` and `dataObjectFieldName: revenue__c`. Double-quoted identifiers preserve their contents, including spaces, operators, periods, and escaped quotes. A verified qualification such as `warehouse.sales.orders.revenue__c` is reduced to its column name. Qualifiers must match the declared dataset name or its physical source; the converter does not guess unrelated catalog paths.
-
-A derived SQL expression can reference declared fields or physical columns exposed by direct fields in that same dataset. For example, with direct fields `amount = revenue__c` and `cost = cost__c`, both `amount - cost` and `revenue__c - cost__c` bind to `[Orders].[amount] - [Orders].[cost]`. A name matching different physical columns or semantic fields is rejected as ambiguous. SQL unquoted identifiers use case folding; quoted identifiers preserve case. A single-identifier SQL expression always defines a physical binding, even when it matches another semantic field name. A native `TABLEAU` expression such as `[Orders].[amount]` instead denotes a semantic alias and is emitted as a calculated dimension.
-
-Derived fields can depend on other derived fields, including declarations appearing later in the input. The plan expands those dependencies into row expressions over direct semantic fields. This lets metrics consume derived fields without relying on an undocumented global calculated-field reference syntax. Each calculated dimension uses `syntax: Tua`, a stable name based on `dataset__field`, and flattened direct-field dependencies. Name collisions, including collisions with metric names and sanitized names from other datasets, receive deterministic hash suffixes.
-
-Row fields must stay within their dataset and cannot contain aggregations.
-A constant-only row field can be emitted as a calculated dimension, but a metric
-cannot reference it until a native dataset anchor is supported; otherwise
-`SUM(dataset.constant_one)` would collapse to an unscoped `SUM(1)`. Put aggregate expressions in `metrics`. Referenced fields need supported, compatible datatypes; inferred result types must agree with declared types. Unknown references, dependency cycles, unsupported operations, and incompatible types stop conversion. Dependency chains are limited to 128 fields, and the shared expression emitter limits expanded formulas to 131,072 characters. These are converter resource limits, not advertised Tableau platform limits.
-
-Environment-specific Salesforce bindings are applied after expressions have been bound in their original source scope. They can change the target data object and direct physical column names while preserving semantic API names, formulas, dependency identities, and the OSI input. Thus rebinding `amount` to `NetRevenue__c` still leaves its formulas referring to `[Orders].[amount]`.
-
-On Salesforce import, direct `dataObjectFieldName` values are represented as quoted `ANSI_SQL` identifiers. Calculated expressions remain `TABLEAU`. This preserves punctuation and avoids mislabeling physical column names as native Tableau formulas.
-
-These checks establish local binding and supported translation behavior. Native formula validation and result equivalence still require validation against the intended Tableau Next environment and dataset.
+**Unsupported relationships** (containing Formula or SemanticField types) are stored in `custom_extensions` at the model level rather than being converted to Ossie relationships.
 
 ### Metric expressions
 
-Fields and metrics select `TABLEAU`, then `SNOWFLAKE`, then `ANSI_SQL`, independent
-of entry order. Duplicate dialect entries, an empty selected expression or an
-unsupported selected expression fail without falling back to another dialect.
-The source OSI model needs no new dialect entries or formula edits.
+Metrics select `TABLEAU`, then `SNOWFLAKE`, then `ANSI_SQL`, independent of entry
+order. The selected expression is parsed and validated; an invalid preferred
+expression fails rather than falling back to another dialect. Duplicate selected
+dialect entries are errors. Successful conversion exports every declared metric.
 
 The target is the Salesforce/Tableau Next semantic model's
 [Tua calculation language](https://developer.salesforce.com/docs/data/semantic-layer/guide/query-api-in-depth-functions.html).
-Calculated measurements emit `syntax: Tua`, `aggregationType: UserAgg` and
-`level: AggregateFunction`. The default numeric `dataType` is `Number`; compatible
-native `Currency`/`Percentage` and display metadata such as labels and decimal
-places are retained. Stale extension expressions cannot replace compiled formulas. Salesforce
-extension data must be a single JSON object with unique keys; invalid metadata
-fails with the owning entity name.
-See [calculated fields](https://developer.salesforce.com/docs/data/semantic-layer/guide/query-api-in-depth-calculated-fields.html)
+Calculated measurements emit `syntax: Tua`, `dataType: Number`, and
+`aggregationType: UserAgg`, so an already aggregated formula is not aggregated
+again. See [calculated fields](https://developer.salesforce.com/docs/data/semantic-layer/guide/query-api-in-depth-calculated-fields.html)
 and [aggregation rules](https://developer.salesforce.com/docs/data/semantic-layer/guide/query-api-in-depth-aggregation.html).
 
-| SQL input | Tua output / restriction |
-|-----------|--------------------------|
+| SQL input | Tua output |
+|-----------|------------|
 | `SUM`, `AVG`, `MIN`, `MAX`, `COUNT(field)` | Same aggregate |
 | `COUNT(DISTINCT field)` | `COUNTD(field)` |
 | `+`, `-`, `*`, `/`, parentheses, numeric constants | Explicitly grouped arithmetic |
 | Searched `CASE WHEN` | `IF … THEN … ELSEIF … ELSE … END` |
 | Comparisons, `AND`, `OR`, `NOT` | Equivalent grouped operators |
-| `COALESCE(a, b, …)` | Nested two-argument `IFNULL` |
+| `COALESCE(a, b, …)` | Nested `IFNULL` |
 | `NULLIF(a, b)` | `IF a = b THEN NULL ELSE a END` |
 | `IS NULL`, `IS NOT NULL` | `ISNULL`, `NOT ISNULL` |
 | `ABS`, `ROUND`, `CEIL`, `FLOOR` | `ABS`, `ROUND`, `CEILING`, `FLOOR` |
-| `YEAR(date)` | `YEAR`; requires `Date` or timezone-free `DateTime` |
-| `LENGTH(text)` | `LEN` |
-| `POSITION(needle IN text)` | `FIND(text, needle)` |
-| `SUBSTRING(text, start[, length])` | `MID`; start must be provably positive and optional length nonnegative |
 
-These constructs compose. For example:
+These constructs compose. For example, with declared numeric fields `profit` and
+`revenue` in dataset `orders`:
 
 ```yaml
 metrics:
@@ -314,170 +270,146 @@ metrics:
     expression:
       dialects:
         - dialect: SNOWFLAKE
-          expression: total_profit / NULLIF(total_revenue, 0)
-  - name: total_profit
-    datatype: Decimal
-    expression:
-      dialects:
-        - dialect: SNOWFLAKE
-          expression: SUM(orders.profit)
-  - name: total_revenue
-    datatype: Decimal
-    expression:
-      dialects:
-        - dialect: SNOWFLAKE
-          expression: SUM(orders.revenue)
+          expression: SUM(orders.profit) / NULLIF(SUM(orders.revenue), 0)
 ```
 
-Named metric references resolve independently of declaration order, are checked
-for cycles and are inlined as aggregate expressions. Compiled dependencies are
-cached per model. `[metric]` is the corresponding native `TABLEAU` reference.
-A field and metric sharing an unqualified name are ambiguous; qualify the field
-or use a unique metric name. Aggregating an already aggregated metric fails.
+The resulting expression is:
 
-**Binding and types.** Metric references use declared logical field names,
-including supported derived fields. Physical column names and source paths are
-not metric aliases. Unqualified SQL fields must be unique across datasets.
-Regular SQL names normalize to uppercase; double-quoted names match the normalized
+```text
+(SUM([orders].[profit]) / (IF (SUM([orders].[revenue]) = 0) THEN NULL ELSE SUM([orders].[revenue]) END))
+```
+
+**Binding and types.** References resolve against declared dataset and field
+names, then against fields actually emitted to Salesforce. Physical column names
+and source paths are not aliases. Unqualified SQL fields must be unique. Regular
+SQL names normalize to uppercase; double-quoted names match the normalized
 declaration exactly, following the [expression specification](../../core-spec/expression_language.md).
 Thus `"ORDERS"."AMOUNT"` matches regular declarations `orders.amount`, while
-`"orders"."amount"` requires explicitly quoted lowercase declarations. Native
-`TABLEAU` uses exact `[dataset].[field]` names. Legacy complete bracket references
-in `ANSI_SQL` are retained as a compatibility case; Snowflake requires SQL quotes.
+`"orders"."amount"` requires explicitly quoted lowercase declarations. Target
+API names are preserved; conversion does not rename fields or discover columns.
 Names containing brackets or control characters fail because their Tua escaping
-is not established.
+is not established. Referenced fields must also have a single, unqualified physical
+column binding in the exported model. This rejects derived expressions such as
+`profit+tax` that the existing field mapper can misclassify as physical columns.
+Derived-field compilation and normalization of qualified/quoted physical bindings
+belong to separate converter work.
 
-Referenced fields need known compatible datatypes. Arithmetic and `SUM`/`AVG`
-require numbers; branches and comparisons require compatible operand types.
-Metrics must return numbers and be aggregated or constant. Declared `Integer`
-results cannot conceal fractional expressions. `CEIL`, `FLOOR` and `ROUND` at
-nonpositive precision infer integral values. All-null metrics need an explicit
-numeric datatype. Mixed row/aggregate expressions and nested aggregates fail.
+`TABLEAU` references use exact `[dataset].[field]` API names. Its supported formula
+subset is the Tua equivalents above, including `IF`, `IFNULL`, `ISNULL`, `COUNTD`
+and `CEILING`. Existing `ANSI_SQL` expressions using complete bracket notation
+retain that spelling as a compatibility case and receive the same validation.
+Bracket notation is not accepted as Snowflake SQL.
 
-One aggregate cannot combine fields from different datasets. Separate aggregates
-may reference datasets connected through enabled exported relationships, including
-references introduced by metric dependencies. Connectivity checks do not prove
-that the target query planner preserves the intended grain.
+Fields need a known compatible datatype, either declared in OSI or restored from
+an existing Salesforce field type. Arithmetic and `SUM`/`AVG` require numbers;
+`MIN`/`MAX` also permit text and temporal values inside numeric calculations.
+Comparisons and conditional/null-handling branches must have compatible types.
+Metrics must return numbers; a declared `Integer` result cannot conceal a
+fractional expression. Missing metric types are inferred. A formula must be
+aggregated or constant: mixed row/aggregate expressions, nested aggregates, and
+aggregates without a dataset field fail. A single aggregate cannot combine fields
+from multiple datasets. Separate aggregates can use datasets connected through
+explicitly enabled exported relationships. Each usable edge must match one source
+relationship by name, endpoints and ordered join-key pairs; join fields must resolve
+as direct fields. Missing or corrupted edges cannot establish connectivity. These
+checks protect metrics without changing the relationship mapper or proving join grain.
 
-**Boundaries.** Parser acceptance never implies target support. Windows, LOD,
-subqueries, SQL casts, simple `CASE`, UDFs, `COUNT(*)`, comments, backslash string
-escapes, implicit type coercions and unlisted functions are unsupported. No raw
-SQL fallback is emitted. `COUNT`/`COUNTD` accept declared fields. `ROUND` accepts
-one argument or an integer-literal precision; rounding-mode overloads are rejected.
-Literal zero divisors fail; `NULLIF` can guard a denominator. Each expression is
-bounded to 32,768 input characters, 8,192 tokens, 128 syntax/dependency levels and
-131,072 generated characters. These are converter resource limits, not platform
-limits. Errors identify the field/metric and rejected construct or reference.
+**Limits and compatibility.** `COUNT`/`COUNTD` take a field. `ROUND` supports one
+argument or a second integer-literal precision; rounding-mode overloads are not
+supported. `CEIL`/`FLOOR` take one argument. They and `ROUND` at zero or negative
+precision infer integral values, so compatible `Integer` metrics are accepted. Simple `CASE`, date/time and string
+functions, casts, metric/calculated-field references, windows, LOD, `COUNT(*)`,
+SQL comments and backslash string escapes are outside this subset. String and
+Boolean literals are supported in predicates. No null-to-zero setting or implicit
+cast is added. Errors name the metric and explain the rejected construct or
+reference. Literal zero divisors fail; use `NULLIF` to make a zero denominator
+nullable. Expressions have bounded size, nesting and generated output.
 
-### Environment bindings
+This replaces the unvalidated SQL fallback introduced in
+[#402](https://github.com/apache/ossie/pull/402). Previously accepted invalid,
+unsupported or untyped formulas now fail, including invalid `TABLEAU` input.
+Metric/model extension preservation remains owned by #402. CLI conversion errors
+are printed to stderr with exit code 3; this small change overlaps the conversion
+error handling in [#286](https://github.com/apache/ossie/pull/286).
 
-Use an optional JSON or YAML manifest to bind the same OSI model to a Salesforce
-environment. This file contains deployment names, never business formulas:
+**Implementation choice.** The existing mapping pipeline calls a focused Java
+metric compiler. JSqlParser 5.3 parses SQL; a bounded Tua frontend handles native
+formulas. Both produce a small immutable metric AST. Type/aggregation checks finish
+before the private emitter writes Tua. No Python runtime is needed. JSqlParser is
+used under its Apache-2.0 option; its unused JMH benchmark dependency is excluded.
 
-```yaml
-models:
-  sales:
-    dataspace: default
-    datasets:
-      orders:
-        dataObjectName: Orders__dll
-        dataObjectType: Dlo
-        fields:
-          profit: NetProfit__c
-          revenue: Revenue__c
-```
+The implementation has five components: `SqlMetricExpressionParser`,
+`TuaMetricExpressionParser`, `MetricExpression`, `MetricExpressionTranslator` and
+`MetricFieldResolver`. The resolver caches successful bindings and verified graph
+reachability within one model. To add supported syntax, update the relevant
+frontend and metric rule with composition and semantic tests. There is no generic
+model-planning or deployment framework in this change.
 
-Only listed values are overridden. Model, dataset and field keys are exact OSI
-names. Fields must be direct physical bindings. Unknown names/properties,
-duplicate keys, multiple YAML documents and bindings for calculated fields fail.
-Native object types must match the bundled Salesforce schema; this is not catalog
-discovery or DLO/DMO provisioning. Semantic names, formulas and the OSI file remain
-unchanged. Without a manifest, existing source and extension mappings apply.
-
-```bash
-java -jar target/ossie-salesforce-converter-0.1.0-SNAPSHOT.jar \
-  toSF input.yaml --bindings bindings.yaml
-```
-
-```java
-SalesforceBindings bindings = SalesforceBindings.fromPath(Path.of("bindings.yaml"));
-Converter converter = ConverterFactory.getConverter(
-    ConversionDirection.OSSIE_TO_SALESFORCE, bindings);
-List<String> output = converter.convert(osiYaml);
-```
-
-Bindings are export-only. CLI usage/input errors exit with code 1/2; conversion
-and schema errors are printed to stderr with exit code 3. All models are converted
-and validated before the file API begins writing any output, so conversion failure
-in a later model does not leave earlier model files behind.
+**Validation boundary.** Unit tests cover parsing, binding and failure behavior.
+Independent local Tua evaluation tests use synthetic rows with nulls, duplicates,
+empty inputs and zero denominators. Those tests model the intended semantics;
+they are not native Tableau Next execution. The published Salesforce **output**
+schema checks structure, not formula syntax, catalog bindings or authoring API
+acceptance. Before deployment, validate authoring and native queries in a test
+org, including numeric precision, rounding ties, empty groups, null behavior and
+unguarded dynamic division and multi-dataset grain. This converter does not provision Data 360 bindings or enrich
+missing fields.
 
 ## Architecture
 
-```text
-OSI input -> source schema validation -> ConversionContext (one per model)
-  -> dataset mapping
-  -> FieldExpressionPlan: classify physical fields, bind and compile derived fields
-  -> validated relationships
-  -> MetricCompilationPlan: resolve fields/metrics, detect cycles, compile dependencies
-  -> native metadata restoration
-  -> physical environment bindings
-  -> final identity/reference/coverage checks -> target schema validation -> output
-
-ExpressionCompiler:
-  SQL -> JSqlParser frontend --+
-                              +-> immutable AST -> typed/aggregation analysis -> Tua emitter
-  TABLEAU -> bounded frontend -+
+```
+                    ┌───────────────────────┐
+                    │ OssieSalesforceConverter│
+                    │      (CLI App)        │
+                    └───────────┬───────────┘
+                            │
+                    ┌───────┴────────┐
+                    │ ConverterFactory│
+                    └───────┬────────┘
+                            │
+              ┌─────────────┴─────────────┐
+              │      ConverterImpl        │
+              │   (Pipeline-based)        │
+              │                           │
+              │ • Configurable pipeline   │
+              │ • Bidirectional mapping   │
+              └─────────────┬─────────────┘
+                            │
+              ┌─────────────┴─────────────┐
+              │    Pipeline Handlers      │
+              ├───────────────────────────┤
+              │ • DatasetMappingHandler   │
+              │ • FieldMappingHandler     │
+              │ • RelationshipHandler     │
+              │ • MetricMappingHandler    │
+              │ • SemanticModelHandler    │
+              └─────────────┬─────────────┘
+                            │
+              ┌─────────────┴─────────────┐
+              │   Support Components      │
+              ├───────────────────────────┤
+              │ • GenericMappingEngine    │
+              │ • CustomExtensionHandler  │
+              │ • SchemaValidator         │
+              └───────────────────────────┘
 ```
 
-JSqlParser 5.3 is used under its Apache-2.0 option for SQL syntax parsing. It does
-not provide Tua semantics. `ExpressionFunctionRegistry` defines supported
-dialect/function/arity combinations; `ExpressionAnalyzer` checks types and
-aggregation; `TuaExpressionEmitter` writes only validated nodes. Supporting a new
-function requires an explicit registry entry, semantic checks, lowering rule and
-tests. SQLGlot is not required at runtime, and no Python bridge is introduced.
+**ConverterFactory** — Creates converter instances for specified direction
 
-`MetricFieldResolver` builds model-scoped identity and relationship indexes once.
-Field and metric dependency plans cache compilation while enforcing depth and
-output limits. No model state is stored in reusable handlers. The existing generic
-mapping pipeline, schema resources, datatype mapper and public converter APIs remain
-in use. `PipelineStep` retains the original map-based method for custom handlers.
+**Pipeline Configuration** — Handlers and direction-specific settings defined in `ossie-salesforce-converter-config.yaml`
 
-Final validation detects dangling references, duplicate identities, omitted core
-or native-extension entities, disconnected calculations and inconsistent join keys.
-Extension-only calculations also pass the shared expression compiler. Schema
-validation runs after all extensions and bindings; neither can bypass the final
-checks. A native extension array that conflicts with an emitted core array fails
-instead of silently losing distinct entities.
+**GenericMappingEngine** — Path-based property mapping using `mappings.yaml` configuration
 
-## Validation
+**CustomExtensionHandler** — Preserves unmapped Salesforce properties in Ossie's `custom_extensions` for lossless bi-directional conversion
 
-```bash
-mvn -DrequireSalesforceSchema=true clean verify
-```
-
-The suite covers parser/AST rejection, quoted names, types, aggregation, field and
-metric dependency graphs, binding overlays, relationship preservation, native
-metadata, CLI failures and both conversion directions. An independent local Tua
-evaluator checks results over synthetic rows including nulls, duplicates, empty
-inputs, decimals, dates and string fields. Stress cases exercise dependency depth,
-expansion bounds and many metrics sharing one dependency. `verify` also runs Apache
-RAT license-header checks.
-
-These are local checks, not native Tableau Next execution. The Salesforce output
-schema validates structure, not tenant catalog existence or backend formula
-semantics. Deployment still needs native formula/authoring validation and result
-comparison in the intended org, especially numeric precision, rounding ties, nulls,
-empty groups, timezones and multi-dataset grain. General Snowflake/ANSI SQL cannot
-be promised equivalent where Tua has no supported construct. Unsupported cases
-must use an explicit new lowering or a separately designed native execution route.
+**SchemaValidator** — Validates input against JSON schemas before conversion
 
 ## Examples
 
-- `src/test/resources/examples/ossieToSalesforce.yaml`: valid OSI export fixture
-- `src/test/java/org/apache/ossie/MetricExportIntegrationTest.java`: public API, dependencies and bindings
-- `src/test/java/org/apache/ossie/converter/ExpressionCompilerTest.java`: supported/rejected expressions
-- `src/test/java/org/apache/ossie/converter/FieldExpressionPlanTest.java`: derived fields and scope
-- `src/test/java/org/apache/ossie/SalesforceToOssieConverterTest.java`: reverse conversion
+See the test suite for sample models demonstrating various features:
+- `src/test/resources/examples/ossieToSalesforce.yaml` - Ossie model example
+- `src/test/java/org/apache/ossie/OssieToSalesforceConverterTest.java` - Ossie to Salesforce conversion tests
+- `src/test/java/org/apache/ossie/SalesforceToOssieConverterTest.java` - Salesforce to Ossie conversion tests
 
 ## License
 

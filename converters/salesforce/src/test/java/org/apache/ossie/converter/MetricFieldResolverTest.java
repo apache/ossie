@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import org.apache.ossie.converter.MetricFieldResolver.Identifier;
@@ -92,6 +93,7 @@ class MetricFieldResolverTest {
     void tableauReferencesUseExactApiNamesAndRequireDataset() {
         MetricFieldResolver resolver = resolver("Orders", "revenue", "Integer", "Number");
         assertEquals("[Orders].[revenue]", resolver.resolve(sql("Orders", "revenue"), true).expression());
+        assertEquals("[Orders].[revenue]", resolver.resolve(sql("orders", "revenue"), false).expression());
         assertError(resolver, sql("orders", "revenue"), true, "Unknown dataset");
         assertError(resolver, sql("Orders", "Revenue"), true, "Unknown field");
         assertError(resolver, sql("revenue"), true, "must use [dataset].[field]");
@@ -146,6 +148,19 @@ class MetricFieldResolverTest {
         assertError(calculatedField, sql("Orders", "amount"), false, "calculated or omitted fields");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"profit+tax", "profit-tax", "profit=tax", "1", "TRUE", "(profit)",
+            "Orders.profit", "\"profit\"", "[profit]", "SUM(profit)", "profit;tax", ""})
+    void rejectsExpressionsMisclassifiedAsPhysicalFields(String binding) {
+        Map<String, Object> target = new LinkedHashMap<>(targetField("revenue", "Number"));
+        if (binding.isEmpty()) target.remove("dataObjectFieldName");
+        else target.put("dataObjectFieldName", binding);
+        MetricFieldResolver resolver = new MetricFieldResolver(
+                Map.of("datasets", List.of(dataset("Orders", field("revenue", "Decimal")))),
+                Map.of("semanticDataObjects", List.of(targetDataset("Orders", target))));
+        assertError(resolver, sql("Orders", "revenue"), false, "revenue");
+    }
+
     @Test
     void rejectsDuplicateExportedObjectsAndFieldsAcrossKinds() {
         Map<String, Object> source = Map.of("datasets", List.of(dataset("Orders", field("amount", "Decimal"))));
@@ -196,21 +211,92 @@ class MetricFieldResolverTest {
 
     @Test
     void disabledRelationshipsDoNotConnectDatasets() {
-        MetricFieldResolver resolver = graphResolver(List.of(Map.of(
-                "leftSemanticDefinitionApiName", "Orders",
-                "rightSemanticDefinitionApiName", "Returns", "isEnabled", false)), "Orders", "Returns");
+        Map<String, Object> disabled = new LinkedHashMap<>(relationship("Orders", "Returns"));
+        disabled.put("isEnabled", false);
+        MetricFieldResolver resolver = graphResolver(List.of(disabled), "Orders", "Returns");
         assertThrows(IllegalArgumentException.class,
                 () -> resolver.validateDatasets(java.util.Set.of("Orders", "Returns")));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"changed endpoint", "swapped keys", "empty criteria", "missing criterion",
+            "missing join field", "formula join", "missing enabled", "missing declaration", "duplicate declaration"})
+    void unverifiedRelationshipsCannotEstablishConnectivity(String defect) {
+        Map<String, Object> valid = relationship("Orders", "Customers");
+        Map<String, Object> changed = new LinkedHashMap<>(valid);
+        List<Map<String, Object>> declarations = List.of(sourceRelationship(valid));
+        switch (defect) {
+            case "changed endpoint" -> changed.put("rightSemanticDefinitionApiName", "Returns");
+            case "swapped keys" -> changed.put("criteria", List.of(criterion("id", "tenant"), criterion("tenant", "id")));
+            case "empty criteria" -> changed.put("criteria", List.of());
+            case "missing criterion" -> changed.put("criteria", List.of(criterion("id", "id")));
+            case "missing join field" -> {
+                changed.put("criteria", List.of(criterion("missing", "id"), criterion("tenant", "tenant")));
+                Map<String, Object> source = new LinkedHashMap<>(sourceRelationship(valid));
+                source.put("from_columns", List.of("missing", "tenant"));
+                declarations = List.of(source);
+            }
+            case "formula join" -> changed.put("criteria", List.of(
+                    Map.of("leftSemanticFieldApiName", "id", "rightSemanticFieldApiName", "id", "leftFieldType", "Formula"),
+                    criterion("tenant", "tenant")));
+            case "missing enabled" -> changed.remove("isEnabled");
+            case "missing declaration" -> declarations = List.of();
+            case "duplicate declaration" -> declarations = List.of(sourceRelationship(valid), sourceRelationship(valid));
+            default -> throw new AssertionError(defect);
+        }
+        MetricFieldResolver resolver = graphResolver(declarations, List.of(changed), "Orders", "Customers", "Returns");
+        Set<String> referenced = Set.of("Orders", defect.equals("changed endpoint") ? "Returns" : "Customers");
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> resolver.validateDatasets(referenced), defect);
+        assertTrue(error.getMessage().contains("disconnected"), error.getMessage());
+    }
+
+    @Test
+    void computedPhysicalJoinKeyCannotEstablishConnectivity() {
+        Map<String, Object> edge = relationship("Orders", "Customers");
+        Map<String, Object> computed = new LinkedHashMap<>(targetField("id", "Number"));
+        computed.put("dataObjectFieldName", "profit+tax");
+        MetricFieldResolver resolver = new MetricFieldResolver(Map.of(
+                "datasets", List.of(dataset("Orders", field("id", "Integer"), field("tenant", "Integer")),
+                        dataset("Customers", field("id", "Integer"), field("tenant", "Integer"))),
+                "relationships", List.of(sourceRelationship(edge))), Map.of(
+                "semanticDataObjects", List.of(targetDataset("Orders", computed, targetField("tenant", "Number")),
+                        targetDataset("Customers", targetField("id", "Number"), targetField("tenant", "Number"))),
+                "semanticRelationships", List.of(edge)));
+        assertThrows(IllegalArgumentException.class,
+                () -> resolver.validateDatasets(Set.of("Orders", "Customers")));
+    }
+
     private static MetricFieldResolver graphResolver(List<Map<String, Object>> relationships, String... datasets) {
-        return new MetricFieldResolver(Map.of(), Map.of(
-                "semanticDataObjects", java.util.Arrays.stream(datasets).map(name -> targetDataset(name)).toList(),
+        return graphResolver(relationships.stream().map(MetricFieldResolverTest::sourceRelationship).toList(),
+                relationships, datasets);
+    }
+
+    private static MetricFieldResolver graphResolver(List<Map<String, Object>> declarations,
+            List<Map<String, Object>> relationships, String... datasets) {
+        return new MetricFieldResolver(Map.of(
+                "datasets", java.util.Arrays.stream(datasets)
+                        .map(name -> dataset(name, field("id", "Integer"), field("tenant", "Integer"))).toList(),
+                "relationships", declarations), Map.of(
+                "semanticDataObjects", java.util.Arrays.stream(datasets)
+                        .map(name -> targetDataset(name, targetField("id", "Number"), targetField("tenant", "Number"))).toList(),
                 "semanticRelationships", relationships));
     }
 
     private static Map<String, Object> relationship(String left, String right) {
-        return Map.of("leftSemanticDefinitionApiName", left, "rightSemanticDefinitionApiName", right);
+        return Map.of("apiName", left + "_to_" + right, "leftSemanticDefinitionApiName", left,
+                "rightSemanticDefinitionApiName", right, "isEnabled", true,
+                "criteria", List.of(criterion("id", "id"), criterion("tenant", "tenant")));
+    }
+
+    private static Map<String, Object> criterion(String left, String right) {
+        return Map.of("leftSemanticFieldApiName", left, "rightSemanticFieldApiName", right);
+    }
+
+    private static Map<String, Object> sourceRelationship(Map<String, Object> target) {
+        return Map.of("name", target.get("apiName"), "from", target.get("leftSemanticDefinitionApiName"),
+                "to", target.get("rightSemanticDefinitionApiName"),
+                "from_columns", List.of("id", "tenant"), "to_columns", List.of("id", "tenant"));
     }
 
     private static List<Identifier> sql(String... parts) {
@@ -223,7 +309,8 @@ class MetricFieldResolverTest {
     }
 
     private static Map<String, Object> field(String name, String datatype) {
-        return Map.of("name", name, "datatype", datatype);
+        return Map.of("name", name, "datatype", datatype, "expression", Map.of("dialects", List.of(
+                Map.of("dialect", "ANSI_SQL", "expression", "physical_column__c"))));
     }
 
     @SafeVarargs
@@ -232,7 +319,7 @@ class MetricFieldResolverTest {
     }
 
     private static Map<String, Object> targetField(String name, String datatype) {
-        return Map.of("apiName", name, "dataType", datatype);
+        return Map.of("apiName", name, "dataType", datatype, "dataObjectFieldName", "physical_column__c");
     }
 
     private static void assertError(MetricFieldResolver resolver, List<Identifier> parts,

@@ -357,6 +357,35 @@ semantic_model:
       - product_id
       to_columns:
       - product_id
+    - name: Customers_ByDomain
+      from: Customers
+      to: Orders
+      from_columns:
+      - customer_email_domain
+      to_columns:
+      - order_id
+      custom_extensions:
+      - vendor_name: SALESFORCE
+        data: |-
+          {
+            "label" : "Invalid Relationship - Uses Calculated Field"
+          }
+    - name: Orders_ByYear
+      from: Orders
+      to: Products
+      from_columns:
+      - order_year
+      to_columns:
+      - product_id
+      custom_extensions:
+      - vendor_name: SALESFORCE
+        data: |-
+          {
+            "label" : "Invalid Relationship - Uses Calculated Field",
+            "cardinality" : "ManyToMany",
+            "joinType" : "Auto",
+            "isEnabled" : true
+          }
     metrics:
     - description: Sum of all order amounts
       name: total_revenue

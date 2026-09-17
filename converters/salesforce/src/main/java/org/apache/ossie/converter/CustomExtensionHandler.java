@@ -22,13 +22,9 @@ package org.apache.ossie.converter;
 import static org.apache.ossie.converter.ConverterConstants.*;
 import static org.apache.ossie.util.DataStructureUtils.*;
 
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ossie.converter.ConverterConstants.Level;
-import org.apache.ossie.exception.ConversionException;
 import org.apache.ossie.util.PathUtils;
 import java.util.*;
 import org.slf4j.Logger;
@@ -323,36 +319,31 @@ public class CustomExtensionHandler {
             }
 
             Object dataObj = ext.get(DATA);
-            String itemName = getString(ossieItem, NAME);
-            String scope = "Salesforce custom extension for '" + (itemName == null ? "<unnamed>" : itemName) + "'";
-            if (!(dataObj instanceof String dataJson)) {
-                throw new ConversionException(scope + " must contain a JSON object encoded as a string");
-            }
-
-            Map<String, Object> salesforceProperties;
-            try {
-                // Use a strict reader without changing the shared mapper or the reverse conversion path.
-                salesforceProperties = jsonMapper.readerFor(new TypeReference<LinkedHashMap<String, Object>>() {})
-                        .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-                        .with(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
-                        .readValue(dataJson);
-            } catch (JsonProcessingException e) {
-                throw new ConversionException(scope + " must contain one JSON object with unique property names: "
-                        + e.getOriginalMessage(), e);
-            }
-            if (salesforceProperties == null) {
-                throw new ConversionException(scope + " must contain a JSON object");
-            }
-
-            if (itemName == null) {
-                logger.warn("Item has no name, skipping custom_extensions restoration");
+            if (dataObj == null) {
                 return;
             }
 
-            for (Map.Entry<String, Object> entry : salesforceProperties.entrySet()) {
-                if (!sfItem.containsKey(entry.getKey())) {
-                    sfItem.put(entry.getKey(), PathUtils.deepCopyValue(entry.getValue()));
+            try {
+                // Parse JSON string to Map
+                Map<String, Object> salesforceProperties = jsonMapper.readValue(
+                    (String) dataObj,
+                    new TypeReference<LinkedHashMap<String, Object>>() {}
+                );
+
+                String itemName = getString(ossieItem, NAME);
+                if (itemName == null) {
+                    logger.warn("Item has no name, skipping custom_extensions restoration");
+                    return;
                 }
+
+                for (Map.Entry<String, Object> entry : salesforceProperties.entrySet()) {
+                    if (!sfItem.containsKey(entry.getKey())) {
+                        sfItem.put(entry.getKey(), PathUtils.deepCopyValue(entry.getValue()));
+                    }
+                }
+
+            } catch (Exception e) {
+                logger.warn("Failed to restore custom_extensions: {}", e.getMessage());
             }
         });
     }

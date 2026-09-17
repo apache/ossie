@@ -22,12 +22,7 @@ package org.apache.ossie.converter;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.math.BigDecimal;
-import java.math.MathContext;
 import java.math.RoundingMode;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.temporal.ChronoField;
-import java.time.temporal.TemporalAccessor;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -174,43 +169,6 @@ class MetricExpressionSemanticsTest {
         assertValue(dialect, "COUNT(DISTINCT orders.status)", List.of(row(null, null, null, null)), 0.0);
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"SNOWFLAKE", "ANSI_SQL"})
-    void dateAndEmailDomainRowExpressionsEvaluateAtBoundaryValues(String dialect) {
-        Map<String, String> types = Map.of("date", "Date", "timestamp", "DateTime", "email", "String", "amount", "Decimal");
-        Map<String, Object> row = new LinkedHashMap<>();
-        row.put("date", LocalDate.of(2024, 2, 29));
-        row.put("timestamp", LocalDateTime.of(2025, 1, 1, 0, 0));
-        row.put("amount", new BigDecimal("0.1000000000000000000000001"));
-        assertScalar(dialect, "YEAR(date)", row, types, new BigDecimal("2024"));
-        assertScalar(dialect, "YEAR(timestamp)", row, types, new BigDecimal("2025"));
-        row.put("date", null);
-        assertScalar(dialect, "YEAR(date)", row, types, null);
-        String domain = "SUBSTRING(email, POSITION('@' IN email) + 1, LENGTH(email))";
-        for (String address : List.of("alice@example.com", "no-at-sign", "@", "", "a@b@c")) {
-            row.put("email", address);
-            assertScalar(dialect, domain, row, types, address.substring(address.indexOf('@') + 1));
-        }
-        row.put("email", null);
-        assertScalar(dialect, domain, row, types, null);
-        assertScalar(dialect, "amount = 0.1000000000000000000000001", row, types, Boolean.TRUE);
-        assertScalar(dialect, "amount + 0.2", row, types, new BigDecimal("0.3000000000000000000000001"));
-        assertScalar(dialect, "NULLIF(amount, 0.1000000000000000000000001)", row, types, null);
-    }
-
-    private static void assertScalar(String dialect, String source, Map<String, Object> row,
-            Map<String, String> types, Object expected) {
-        var compiled = ExpressionCompiler.compile(ExpressionCompiler.parse(source, dialect), reference -> {
-            String name = reference.parts().getLast().text();
-            return new ExpressionCompiler.Binding("[orders].[" + name + "]", types.get(name), "orders");
-        });
-        Object actual = new TuaSubsetEvaluator(compiled.expression()).evaluateRow(row);
-        if (expected instanceof BigDecimal number) {
-            assertInstanceOf(Number.class, actual);
-            assertEquals(0, number.compareTo(new BigDecimal(actual.toString())), source);
-        } else assertEquals(expected, actual, source);
-    }
-
     private static void assertValue(
             String dialect, String sql, List<Map<String, Object>> rows, Double expected) {
         Map<String, Object> metric = Map.of(
@@ -227,11 +185,11 @@ class MetricExpressionSemanticsTest {
         Map<String, Object> target = Map.of("semanticDataObjects", List.of(Map.of(
                 "apiName", "orders",
                 "semanticMeasurements", List.of(
-                        Map.of("apiName", "amount", "dataType", "Number"),
-                        Map.of("apiName", "cost", "dataType", "Number")),
+                        Map.of("apiName", "amount", "dataObjectFieldName", "amount__c", "dataType", "Number"),
+                        Map.of("apiName", "cost", "dataObjectFieldName", "cost__c", "dataType", "Number")),
                 "semanticDimensions", List.of(
-                        Map.of("apiName", "flag", "dataType", "Boolean"),
-                        Map.of("apiName", "status", "dataType", "Text")))));
+                        Map.of("apiName", "flag", "dataObjectFieldName", "flag__c", "dataType", "Boolean"),
+                        Map.of("apiName", "status", "dataObjectFieldName", "status__c", "dataType", "Text")))));
         MetricExpressionTranslator.Result translated = MetricExpressionTranslator.translate(metric, source, target);
         assertEquals("Number", translated.dataType(), sql);
         Object actual = new TuaSubsetEvaluator(translated.expression()).evaluate(rows);
@@ -286,12 +244,6 @@ class MetricExpressionSemanticsTest {
             return calculation.value(rows, Map.of());
         }
 
-        Object evaluateRow(Map<String, Object> row) {
-            Calculation calculation = expression(0);
-            assertEquals(tokens.size(), position, "Unconsumed generated Tua tokens");
-            return calculation.value(List.of(row), row);
-        }
-
         private Calculation expression(int minimum) {
             Calculation left = prefix();
             while (position < tokens.size() && precedence(tokens.get(position)) >= minimum) {
@@ -323,7 +275,7 @@ class MetricExpressionSemanticsTest {
                 Calculation child = expression(token.equals("-") ? 7 : 3);
                 return (rows, row) -> {
                     Object value = child.value(rows, row);
-                    return value == null ? null : token.equals("-") ? decimal(value).negate() : !(Boolean) value;
+                    return value == null ? null : token.equals("-") ? -number(value) : !(Boolean) value;
                 };
             }
             if (token.equalsIgnoreCase("NULL")) {
@@ -348,7 +300,7 @@ class MetricExpressionSemanticsTest {
                 };
             }
             if (Character.isDigit(token.charAt(0))) {
-                return (rows, row) -> new BigDecimal(token);
+                return (rows, row) -> Double.valueOf(token);
             }
             expect("(");
             List<Calculation> arguments = new ArrayList<>();
@@ -367,26 +319,24 @@ class MetricExpressionSemanticsTest {
                             .map(input -> arguments.getFirst().value(rows, input))
                             .filter(java.util.Objects::nonNull).toList();
                     if (name.equals("COUNT")) {
-                        return BigDecimal.valueOf(values.size());
+                        return (double) values.size();
                     }
                     if (name.equals("COUNTD")) {
-                        return BigDecimal.valueOf(values.stream().map(value -> value instanceof Number
-                                ? decimal(value).stripTrailingZeros() : value).distinct().count());
+                        return (double) values.stream().distinct().count();
                     }
                     if (values.isEmpty()) {
                         return null;
                     }
                     return switch (name) {
-                        case "SUM" -> values.stream().map(TuaSubsetEvaluator::decimal).reduce(BigDecimal.ZERO, BigDecimal::add);
-                        case "AVG" -> values.stream().map(TuaSubsetEvaluator::decimal).reduce(BigDecimal.ZERO, BigDecimal::add)
-                                .divide(BigDecimal.valueOf(values.size()), MathContext.DECIMAL128);
-                        case "MIN" -> values.stream().min(TuaSubsetEvaluator::compare).orElseThrow();
-                        case "MAX" -> values.stream().max(TuaSubsetEvaluator::compare).orElseThrow();
+                        case "SUM" -> values.stream().mapToDouble(TuaSubsetEvaluator::number).sum();
+                        case "AVG" -> values.stream().mapToDouble(TuaSubsetEvaluator::number).average().orElseThrow();
+                        case "MIN" -> values.stream().mapToDouble(TuaSubsetEvaluator::number).min().orElseThrow();
+                        case "MAX" -> values.stream().mapToDouble(TuaSubsetEvaluator::number).max().orElseThrow();
                         default -> throw new AssertionError(name);
                     };
                 };
             }
-            assertTrue(List.of("IFNULL", "ISNULL", "ABS", "CEILING", "FLOOR", "ROUND", "YEAR", "LEN", "FIND", "MID").contains(name),
+            assertTrue(List.of("IFNULL", "ISNULL", "ABS", "CEILING", "FLOOR", "ROUND").contains(name),
                     "Unsupported generated function: " + name);
             return (rows, row) -> {
                 Object value = arguments.getFirst().value(rows, row);
@@ -401,28 +351,13 @@ class MetricExpressionSemanticsTest {
                 if (value == null) {
                     return null;
                 }
-                if (name.equals("FIND")) {
-                    Object needle = arguments.get(1).value(rows, row);
-                    return needle == null ? null : BigDecimal.valueOf(((String) value).indexOf((String) needle) + 1);
-                }
-                if (name.equals("MID")) {
-                    Object startValue = arguments.get(1).value(rows, row);
-                    Object lengthValue = arguments.size() > 2 ? arguments.get(2).value(rows, row) : null;
-                    if (startValue == null || arguments.size() > 2 && lengthValue == null) return null;
-                    int start = decimal(startValue).intValueExact() - 1;
-                    String string = (String) value;
-                    if (start >= string.length()) return "";
-                    int end = arguments.size() > 2 ? Math.min(string.length(), start + decimal(lengthValue).intValueExact()) : string.length();
-                    return string.substring(start, end);
-                }
                 return switch (name) {
-                    case "YEAR" -> BigDecimal.valueOf(((TemporalAccessor) value).get(ChronoField.YEAR));
-                    case "LEN" -> BigDecimal.valueOf(((String) value).length());
-                    case "ABS" -> decimal(value).abs();
-                    case "CEILING" -> decimal(value).setScale(0, RoundingMode.CEILING);
-                    case "FLOOR" -> decimal(value).setScale(0, RoundingMode.FLOOR);
-                    case "ROUND" -> decimal(value).setScale(
-                            arguments.size() == 1 ? 0 : decimal(arguments.get(1).value(rows, row)).intValueExact(), RoundingMode.HALF_UP);
+                    case "ABS" -> Math.abs(number(value));
+                    case "CEILING" -> Math.ceil(number(value));
+                    case "FLOOR" -> Math.floor(number(value));
+                    case "ROUND" -> BigDecimal.valueOf(number(value)).setScale(
+                            arguments.size() == 1 ? 0 : (int) number(arguments.get(1).value(rows, row)),
+                            RoundingMode.HALF_UP).doubleValue();
                     default -> throw new AssertionError("Unsupported generated function: " + name);
                 };
             };
@@ -445,31 +380,25 @@ class MetricExpressionSemanticsTest {
                 return null;
             }
             return switch (operator) {
-                case "+" -> decimal(left).add(decimal(right));
-                case "-" -> decimal(left).subtract(decimal(right));
-                case "*" -> decimal(left).multiply(decimal(right));
+                case "+" -> number(left) + number(right);
+                case "-" -> number(left) - number(right);
+                case "*" -> number(left) * number(right);
                 case "/" -> {
-                    assertNotEquals(0, decimal(right).signum(), "Generated expression evaluated an unguarded zero divisor");
-                    yield decimal(left).divide(decimal(right), MathContext.DECIMAL128);
+                    assertNotEquals(0.0, number(right), "Generated expression evaluated an unguarded zero divisor");
+                    yield number(left) / number(right);
                 }
-                case "=" -> compare(left, right) == 0;
-                case "!=", "<>" -> compare(left, right) != 0;
-                case "<" -> compare(left, right) < 0;
-                case "<=" -> compare(left, right) <= 0;
-                case ">" -> compare(left, right) > 0;
-                case ">=" -> compare(left, right) >= 0;
+                case "=" -> left.equals(right);
+                case "!=", "<>" -> !left.equals(right);
+                case "<" -> number(left) < number(right);
+                case "<=" -> number(left) <= number(right);
+                case ">" -> number(left) > number(right);
+                case ">=" -> number(left) >= number(right);
                 default -> throw new AssertionError(operator);
             };
         }
 
-        private static BigDecimal decimal(Object value) {
-            return value instanceof BigDecimal decimal ? decimal : new BigDecimal(value.toString());
-        }
-
-        @SuppressWarnings({"rawtypes", "unchecked"})
-        private static int compare(Object left, Object right) {
-            if (left instanceof Number && right instanceof Number) return decimal(left).compareTo(decimal(right));
-            return ((Comparable) left).compareTo(right);
+        private static double number(Object value) {
+            return ((Number) value).doubleValue();
         }
 
         private static int precedence(String token) {

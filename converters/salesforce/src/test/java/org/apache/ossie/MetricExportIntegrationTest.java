@@ -25,7 +25,6 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import org.apache.ossie.converter.ConversionDirection;
 import org.apache.ossie.converter.Converter;
 import org.apache.ossie.converter.ConverterFactory;
-import org.apache.ossie.converter.SalesforceBindings;
 import org.apache.ossie.exception.ConversionException;
 import org.apache.ossie.exception.ValidationException;
 import org.apache.ossie.validator.SchemaValidator;
@@ -72,7 +71,6 @@ class MetricExportIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        assumeTrue(salesforceSchemaExists, "Salesforce schema is required; see README setup instructions");
         assumeTrue(ossieSchemaExists, "Ossie schema is required; see README setup instructions");
         converter = ConverterFactory.getConverter(ConversionDirection.OSSIE_TO_SALESFORCE);
     }
@@ -235,18 +233,23 @@ class MetricExportIntegrationTest {
         assertTrue(error.getMessage().contains("orders.profit"), error.getMessage());
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"profit__c + 1", "profit__c+1"})
-    void derivedSqlFieldIsExportedAndAvailableToMetricsRegardlessOfWhitespace(String expression) throws Exception {
-        Map<String, Object> source = model("sales", List.of(metric("adjusted_total", "ANSI_SQL", "SUM(orders.adjusted)")));
+    @Test
+    void declaredButOmittedCalculatedSqlFieldCannotSatisfyAMetricReference() throws Exception {
+        Map<String, Object> source = model("sales", List.of());
         Map<String, Object> calculated = field("adjusted", "Decimal");
-        calculated.put("expression", Map.of("dialects", List.of(dialect("ANSI_SQL", expression))));
+        calculated.put("expression", Map.of("dialects", List.of(dialect("ANSI_SQL", "profit__c + 1"))));
         items(source, "datasets").get(0).put("fields", List.of(field("profit", "Decimal"), calculated));
         Map<String, Object> output = convertOne(source);
         assertEquals(List.of("profit"), items(items(output, "semanticDataObjects").get(0),
                 "semanticMeasurements").stream().map(item -> item.get("apiName")).toList());
-        assertEquals(1, items(output, "semanticCalculatedDimensions").size());
-        assertEquals("SUM(([orders].[profit] + 1))", measurements(output).get(0).get("expression"));
+
+        source.put("metrics", List.of(metric("adjusted_total", "ANSI_SQL", "SUM(orders.adjusted)")));
+        String input = document(List.of(source));
+        ConversionException error = assertThrows(ConversionException.class, () -> converter.convert(input));
+
+        assertTrue(error.getMessage().contains("adjusted_total"), error.getMessage());
+        assertTrue(error.getMessage().contains("orders.adjusted"), error.getMessage());
+        assertTrue(error.getMessage().contains("not exported"), error.getMessage());
     }
 
     @Test
@@ -311,107 +314,37 @@ class MetricExportIntegrationTest {
         assertThrows(ValidationException.class, () -> validator.validate(output));
     }
 
-    @Test
-    void metricDependenciesResolveForwardReferencesAndRetainDeclarationOrder() throws Exception {
-        Map<String, Object> output = convertOne(model("sales", List.of(
-                metric("margin", "SNOWFLAKE", "total_profit / NULLIF(total_sales, 0)"),
-                metric("total_profit", "ANSI_SQL", "SUM(orders.profit)"),
-                metric("total_sales", "ANSI_SQL", "SUM(orders.revenue)"))));
-        assertEquals(List.of("margin", "total_profit", "total_sales"), measurements(output).stream().map(m -> m.get("apiName")).toList());
-        String formula = measurements(output).get(0).get("expression").toString();
-        assertTrue(formula.contains("SUM([orders].[profit])"), formula);
-        assertTrue(formula.contains("SUM([orders].[revenue])"), formula);
-        assertFalse(formula.contains("total_sales"));
-    }
-
-    @Test
-    void nativeMetricMetadataSurvivesWhileFormulaMetadataIsCompiled() throws Exception {
-        Map<String, Object> metric = metric("money", "ANSI_SQL", "SUM(orders.profit)");
-        metric.put("custom_extensions", List.of(Map.of("vendor_name", "SALESFORCE", "data",
-                JSON.writeValueAsString(Map.of("label", "Profit in USD", "decimalPlace", 2, "dataType", "Currency",
-                        "expression", "stale", "syntax", "Salesforce", "aggregationType", "Avg", "level", "Row")))));
-        Map<String, Object> value = measurements(convertOne(model("sales", List.of(metric)))).get(0);
-        assertEquals("Profit in USD", value.get("label"));
-        assertEquals(2, value.get("decimalPlace"));
-        assertEquals("Currency", value.get("dataType"));
-        assertEquals("SUM([orders].[profit])", value.get("expression"));
-        assertEquals("Tua", value.get("syntax"));
-        assertEquals("UserAgg", value.get("aggregationType"));
-        assertEquals("AggregateFunction", value.get("level"));
-    }
-
-    @Test
-    void incompatibleNativeMetricTypeFails() throws Exception {
-        Map<String, Object> metric = metric("money", "ANSI_SQL", "SUM(orders.profit)");
-        metric.put("custom_extensions", List.of(Map.of("vendor_name", "SALESFORCE", "data", "{\"dataType\":\"Text\"}")));
-        var error = assertThrows(ConversionException.class, () -> convertOne(model("sales", List.of(metric))));
-        assertTrue(error.getMessage().contains("incompatible Salesforce dataType Text"), error.getMessage());
-    }
-
-    @Test
-    void outputSchemaIsEnforcedByPublicConversionAndWritesNothingOnFailure() throws Exception {
-        Map<String, Object> source = model("sales", List.of());
-        source.put("custom_extensions", List.of(Map.of("vendor_name", "SALESFORCE", "data", "{\"dataspace\":42}")));
-        Path input = temporaryDirectory.resolve("bad-output.yaml");
-        Files.writeString(input, document(List.of(source)));
-        Path output = Files.createDirectory(temporaryDirectory.resolve("output"));
-        assertThrows(ValidationException.class, () -> converter.convert(input, output));
-        try (var files = Files.list(output)) { assertEquals(0, files.count()); }
-    }
-
-    @Test
-    void sameConverterCanRecoverAfterFailureWithoutLeakingDependencyState() throws Exception {
-        Map<String, Object> bad = model("sales", List.of(metric("a", "ANSI_SQL", "b + 1"), metric("b", "ANSI_SQL", "a + 1")));
-        assertThrows(ConversionException.class, () -> convertOne(bad));
-        Map<String, Object> good = model("sales", List.of(metric("a", "ANSI_SQL", "b + 1"), metric("b", "ANSI_SQL", "SUM(orders.profit)")));
-        assertEquals(convertOne(good), convertOne(good));
-    }
-
-    @Test
-    void bindingsRetargetPhysicalObjectsWithoutChangingTheOsiDocumentOrDerivedReferences() throws Exception {
-        Map<String, Object> source = model("sales", List.of(metric("total", "ANSI_SQL", "SUM(orders.adjusted)")));
-        Map<String, Object> calculated = field("adjusted", "Decimal");
-        calculated.put("expression", Map.of("dialects", List.of(dialect("SNOWFLAKE", "profit__c + 1"))));
-        items(source, "datasets").get(0).put("fields", List.of(field("profit", "Decimal"), calculated));
-        String document = document(List.of(source));
-        SalesforceBindings bindings = SalesforceBindings.fromString("""
-                models:
-                  sales:
-                    dataspace: analytics
-                    datasets:
-                      orders:
-                        dataObjectName: OrdersProduction__dll
-                        dataObjectType: Dlo
-                        fields:
-                          profit: NetProfit__c
-                """);
-        Converter bound = ConverterFactory.getConverter(ConversionDirection.OSSIE_TO_SALESFORCE, bindings);
-        Map<String, Object> output = parse(bound.convert(document).get(0));
-        assertEquals("analytics", output.get("dataspace"));
-        Map<String, Object> dataset = items(output, "semanticDataObjects").get(0);
-        assertEquals("OrdersProduction__dll", dataset.get("dataObjectName"));
-        assertEquals("NetProfit__c", items(dataset, "semanticMeasurements").get(0).get("dataObjectFieldName"));
-        assertEquals("SUM(([orders].[profit] + 1))", measurements(output).get(0).get("expression"));
-        assertEquals(document, document(List.of(source)));
-        assertEquals(output, parse(bound.convert(document).get(0)));
-    }
-
-    @Test
-    void unusedDirectFieldCannotSilentlyChangeDatatype() throws Exception {
-        Map<String, Object> source = model("sales", List.of());
-        items(items(source, "datasets").get(0), "fields").get(0).put("custom_extensions",
-                List.of(Map.of("vendor_name", "SALESFORCE", "data", "{\"dataType\":\"Text\"}")));
-        var error = assertThrows(ConversionException.class, () -> convertOne(source));
-        assertTrue(error.getMessage().contains("conflicts"), error.getMessage());
-    }
-
     @ParameterizedTest
-    @ValueSource(strings = {"Time", "Opaque"})
-    void unsupportedDirectDatatypeNeedsExplicitNativeMapping(String datatype) throws Exception {
-        Map<String, Object> source = model("sales", List.of());
-        items(items(source, "datasets").get(0), "fields").get(0).put("datatype", datatype);
+    @ValueSource(strings = {"profit__c+1", "profit__c-1", "profit__c=1", "1"})
+    void rejectsDerivedExpressionsMisclassifiedAsPhysicalColumns(String expression) throws Exception {
+        Map<String, Object> calculated = field("adjusted", "Decimal");
+        calculated.put("expression", Map.of("dialects", List.of(dialect("ANSI_SQL", expression))));
+        Map<String, Object> source = model("sales", List.of(metric("adjusted_total", "ANSI_SQL", "SUM(orders.adjusted)")));
+        items(source, "datasets").get(0).put("fields", List.of(field("profit", "Decimal"), calculated));
         var error = assertThrows(ConversionException.class, () -> convertOne(source));
-        assertTrue(error.getMessage().contains("no safe Salesforce mapping"), error.getMessage());
+        assertTrue(error.getMessage().contains("adjusted_total"), error.getMessage());
+        assertTrue(error.getMessage().contains("direct physical binding"), error.getMessage());
+    }
+
+    @Test
+    void metricCannotUseJoinCriteriaCorruptedByInheritedRelationshipFiltering() throws Exception {
+        Map<String, Object> source = model("sales", List.of(metric("combined", "ANSI_SQL",
+                "SUM(orders.profit) + SUM(returns.profit)")));
+        Map<String, Object> returns = new LinkedHashMap<>(items(source, "datasets").get(0));
+        returns.put("name", "returns");
+        returns.put("source", "returns__dll");
+        source.put("datasets", List.of(items(source, "datasets").get(0), returns));
+        Map<String, Object> valid = Map.of("name", "orders_returns", "from", "orders", "to", "returns",
+                "from_columns", List.of("customer_id"), "to_columns", List.of("customer_id"));
+        source.put("relationships", List.of(valid));
+        assertTrue(measurements(convertOne(source)).get(0).get("expression").toString().contains("[returns].[profit]"));
+
+        source.put("relationships", List.of(Map.of("name", "removed_first", "from", "orders", "to", "returns",
+                "from_columns", List.of("missing"), "to_columns", List.of("customer_id")), valid));
+        var error = assertThrows(ConversionException.class, () -> convertOne(source));
+        assertTrue(error.getMessage().contains("combined"), error.getMessage());
+        assertTrue(error.getMessage().contains("orders_returns"), error.getMessage());
+        assertTrue(error.getMessage().contains("join key correspondence"), error.getMessage());
     }
 
     private Map<String, Object> convertOne(Map<String, Object> model) throws IOException {

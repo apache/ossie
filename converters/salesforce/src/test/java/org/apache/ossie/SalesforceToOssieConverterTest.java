@@ -178,8 +178,8 @@ class SalesforceToOssieConverterTest {
         List<Map<String, Object>> dialects = (List<Map<String, Object>>) expression.get("dialects");
         assertNotNull(dialects);
         assertEquals(1, dialects.size());
-        assertEquals("ANSI_SQL", dialects.get(0).get("dialect"));
-        assertEquals("\"customer_id__c\"", dialects.get(0).get("expression"));
+        assertEquals("TABLEAU", dialects.get(0).get("dialect"));
+        assertEquals("customer_id__c", dialects.get(0).get("expression"));
     }
 
     @Test

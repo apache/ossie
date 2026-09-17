@@ -34,9 +34,4 @@ public class ConverterFactory {
     public static Converter getConverter(ConversionDirection direction) {
         return new ConverterImpl(direction);
     }
-
-    /** Creates a converter with an external environment binding catalog. */
-    public static Converter getConverter(ConversionDirection direction, SalesforceBindings bindings) {
-        return new ConverterImpl(direction, bindings);
-    }
 }

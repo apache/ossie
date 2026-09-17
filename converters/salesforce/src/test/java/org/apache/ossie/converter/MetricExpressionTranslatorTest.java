@@ -45,7 +45,7 @@ class MetricExpressionTranslatorTest {
 
     private static Map<String, Object> target() {
         return Map.of("semanticDataObjects", List.of(Map.of("apiName", "orders", "semanticMeasurements",
-                TYPES.entrySet().stream().map(entry -> Map.of("apiName", entry.getKey(), "dataType",
+                TYPES.entrySet().stream().map(entry -> Map.of("apiName", entry.getKey(), "dataObjectFieldName", entry.getKey() + "__c", "dataType",
                         SalesforceDataTypeMapper.toSalesforce(entry.getValue()))).toList())));
     }
 
@@ -160,6 +160,8 @@ class MetricExpressionTranslatorTest {
                 Arguments.of("NULLIF(SUM(orders.amount))", "expects 2"),
                 Arguments.of("MEDIAN(orders.amount)", "unsupported function"),
                 Arguments.of("CAST(orders.amount AS DECIMAL)", "unsupported SQL expression CastExpression"),
+                Arguments.of("SUM(YEAR(orders.ordered))", "unsupported function"),
+                Arguments.of("SUM(LENGTH(orders.status))", "unsupported function"),
                 Arguments.of("SUM(orders.amount) OVER ()", "unsupported SQL expression AnalyticExpression"),
                 Arguments.of("SUM(orders.amount) FILTER (WHERE orders.active)", "unsupported SQL expression AnalyticExpression"),
                 Arguments.of("{ FIXED : SUM(orders.amount) }", "unsupported character"),
@@ -242,6 +244,8 @@ class MetricExpressionTranslatorTest {
     void limitsNestingAndExpansionWithoutStackOverflow() {
         assertThrows(ConversionException.class, () -> translate("SNOWFLAKE", "(".repeat(200) + "1" + ")".repeat(200)));
         assertThrows(ConversionException.class, () -> translate("SNOWFLAKE", "-".repeat(200) + "1"));
+        assertThrows(ConversionException.class, () -> translate("SNOWFLAKE", "1+".repeat(5000) + "1"));
+        assertThrows(ConversionException.class, () -> translate("SNOWFLAKE", "1".repeat(32769)));
         String formula = "SUM(orders.amount)";
         for (int i = 0; i < 20; i++) formula = "NULLIF(" + formula + ", 0)";
         String expanded = formula;
@@ -254,18 +258,72 @@ class MetricExpressionTranslatorTest {
                 translate("SNOWFLAKE", "CASE WHEN MIN(orders.ordered) = MAX(orders.ordered) THEN 1 ELSE 0 END"));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"SUM(ALL orders.amount)", "SUM(UNIQUE orders.amount)",
+            "SUM(orders.amount IGNORE NULLS)", "SUM(orders.amount RESPECT NULLS)",
+            "SUM(orders.amount) IGNORE NULLS", "SUM(orders.amount LIMIT 1)",
+            "SUM(orders.amount HAVING MAX orders.quantity)", "SUM(orders.amount ORDER BY orders.quantity)",
+            "SUM(orders.amount) KEEP (DENSE_RANK LAST ORDER BY orders.quantity)",
+            "SUM(orders.amount).attribute", "private_schema.SUM(orders.amount)", "\"SUM\"(orders.amount)",
+            "SUM(CASE orders.amount WHEN 1 THEN 2 ELSE 0 END)", "N'prefixed'",
+            "orders.status ISNULL", "orders.status NOTNULL", "PRIOR orders.amount = orders.quantity",
+            "!orders.active", "(SELECT amount FROM orders)", "orders.amount IN (1, 2)",
+            "SUM(orders.amount) AS alias", "orders.amount(+) = orders.quantity"})
+    void parserAcceptanceNeverDiscardsUnsupportedSqlModifiers(String expression) {
+        assertThrows(ConversionException.class, () -> translate("SNOWFLAKE", expression), expression);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"CEIL(AVG(orders.amount))", "FLOOR(AVG(orders.amount))",
+            "ROUND(AVG(orders.amount))", "ROUND(AVG(orders.amount), 0)", "ROUND(AVG(orders.amount), -2)"})
+    void integralRoundingSatisfiesAnIntegerMetricDeclaration(String expression) {
+        Map<String, Object> metric = metric("SNOWFLAKE", expression);
+        metric.put("datatype", "Integer");
+        String output = MetricExpressionTranslator.translate(metric, source(), target()).expression();
+        metric.put("expression", Map.of("dialects", List.of(Map.of("dialect", "TABLEAU", "expression", output))));
+        assertEquals(output, MetricExpressionTranslator.translate(metric, source(), target()).expression());
+    }
+
+    @Test
+    void positiveRoundingPrecisionDoesNotClaimAnIntegralResult() {
+        Map<String, Object> metric = metric("SNOWFLAKE", "ROUND(AVG(orders.amount), 2)");
+        metric.put("datatype", "Integer");
+        assertThrows(ConversionException.class, () -> MetricExpressionTranslator.translate(metric, source(), target()));
+        assertEquals("0.12345678901234567890123456789", translate("SNOWFLAKE", "0.12345678901234567890123456789"));
+    }
+
+    @Test
+    void quotedDotsAndEscapesPreserveFieldReferenceBoundaries() {
+        Map<String, Object> source = Map.of("datasets", List.of(Map.of("name", "ORDER.ITEMS", "fields",
+                List.of(Map.of("name", "NET REVENUE", "datatype", "Decimal")))));
+        Map<String, Object> target = Map.of("semanticDataObjects", List.of(Map.of("apiName", "ORDER.ITEMS",
+                "semanticMeasurements", List.of(Map.of("apiName", "NET REVENUE", "dataType", "Number",
+                        "dataObjectFieldName", "net__c")))));
+        for (String dialect : List.of("SNOWFLAKE", "ANSI_SQL")) {
+            assertEquals("SUM([ORDER.ITEMS].[NET REVENUE])", MetricExpressionTranslator.translate(
+                    metric(dialect, "SUM(\"ORDER.ITEMS\".\"NET REVENUE\")"), source, target).expression());
+            var field = (MetricExpression.Field) SqlMetricExpressionParser.parse("\"a\"\"b.c\".\"d\"\"e\"", dialect);
+            assertEquals(List.of(new MetricFieldResolver.Identifier("a\"b.c", true),
+                    new MetricFieldResolver.Identifier("d\"e", true)), field.parts());
+        }
+        assertThrows(IllegalArgumentException.class, () -> SqlMetricExpressionParser.parse("[a.b].[c]]d]", "ANSI_SQL"));
+    }
+
     @Test
     void separateAggregatesRequireConnectedDatasets() {
-        Map<String, Object> twoSources = Map.of("datasets", List.of(
+        Map<String, Object> twoSources = Map.of("relationships", List.of(Map.of("name", "orders_returns",
+                "from", "orders", "to", "returns", "from_columns", List.of("amount"), "to_columns", List.of("amount"))),
+                "datasets", List.of(
                 Map.of("name", "orders", "fields", List.of(Map.of("name", "amount", "datatype", "Decimal"))),
                 Map.of("name", "returns", "fields", List.of(Map.of("name", "amount", "datatype", "Decimal")))));
         Map<String, Object> twoTargets = new LinkedHashMap<>(Map.of("semanticDataObjects", List.of(
-                Map.of("apiName", "orders", "semanticMeasurements", List.of(Map.of("apiName", "amount", "dataType", "Number"))),
-                Map.of("apiName", "returns", "semanticMeasurements", List.of(Map.of("apiName", "amount", "dataType", "Number"))))));
+                Map.of("apiName", "orders", "semanticMeasurements", List.of(Map.of("apiName", "amount", "dataObjectFieldName", "amount__c", "dataType", "Number"))),
+                Map.of("apiName", "returns", "semanticMeasurements", List.of(Map.of("apiName", "amount", "dataObjectFieldName", "amount__c", "dataType", "Number"))))));
         Map<String, Object> metric = metric("SNOWFLAKE", "SUM(orders.amount) - SUM(returns.amount)");
         assertThrows(ConversionException.class, () -> MetricExpressionTranslator.translate(metric, twoSources, twoTargets));
-        twoTargets.put("semanticRelationships", List.of(Map.of("leftSemanticDefinitionApiName", "orders",
-                "rightSemanticDefinitionApiName", "returns")));
+        twoTargets.put("semanticRelationships", List.of(Map.of("apiName", "orders_returns", "isEnabled", true,
+                "leftSemanticDefinitionApiName", "orders", "rightSemanticDefinitionApiName", "returns", "criteria",
+                List.of(Map.of("leftSemanticFieldApiName", "amount", "rightSemanticFieldApiName", "amount")))));
         assertEquals("(SUM([orders].[amount]) - SUM([returns].[amount]))",
                 MetricExpressionTranslator.translate(metric, twoSources, twoTargets).expression());
         assertThrows(ConversionException.class, () -> MetricExpressionTranslator.translate(
