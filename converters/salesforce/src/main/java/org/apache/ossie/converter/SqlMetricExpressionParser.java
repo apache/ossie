@@ -30,6 +30,8 @@ import net.sf.jsqlparser.expression.operators.relational.ParenthesedExpressionLi
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.statement.select.AllColumns;
+import org.apache.ossie.converter.TuaMetricExpressionParser.Kind;
+import org.apache.ossie.converter.TuaMetricExpressionParser.Token;
 
 /** Adapts a completely consumed JSqlParser expression into the explicitly supported compiler AST. */
 final class SqlMetricExpressionParser {
@@ -38,7 +40,7 @@ final class SqlMetricExpressionParser {
     private SqlMetricExpressionParser(String dialect) { this.dialect = dialect; }
 
     static Node parse(String text, String dialect) {
-        TuaMetricExpressionParser.tokenize(text, dialect);
+        text = normalize(text, dialect);
         try {
             Expression expression = CCJSqlParserUtil.parseCondExpression(text, false,
                     parser -> parser.withSquareBracketQuotation(dialect.equals("ANSI_SQL")));
@@ -50,6 +52,71 @@ final class SqlMetricExpressionParser {
         } catch (StackOverflowError e) {
             throw new IllegalArgumentException("expression nesting exceeds parser limits", e);
         }
+    }
+
+    /** Simplifies redundant syntax within the original input bounds, without reparsing SQL. */
+    private static String normalize(String text, String dialect) {
+        List<Token> tokens = TuaMetricExpressionParser.tokenize(text, dialect);
+        int[] closing = new int[tokens.size()];
+        int[] openings = new int[128];
+        int nesting = 0;
+        for (int i = 0; i < tokens.size() - 1; i++) {
+            if (symbol(tokens.get(i), "(")) openings[nesting++] = i;
+            if (symbol(tokens.get(i), ")")) {
+                if (nesting == 0) throw new IllegalArgumentException("unexpected closing parenthesis");
+                closing[openings[--nesting]] = i;
+            }
+        }
+        boolean[] redundant = new boolean[tokens.size()];
+        for (int i = 1; i < tokens.size() - 2; i++) {
+            // Only remove a group inside another opening parenthesis. Keep the
+            // function argument list and innermost group, including tuple/modifier syntax.
+            if (symbol(tokens.get(i - 1), "(") && symbol(tokens.get(i), "(")
+                    && symbol(tokens.get(i + 1), "(") && closing[i] == closing[i + 1] + 1) {
+                redundant[i] = redundant[closing[i]] = true;
+            }
+        }
+        StringBuilder result = new StringBuilder(text.length());
+        for (int i = 0; i < tokens.size() - 1;) {
+            if (redundant[i]) { i++; continue; }
+            Token token = tokens.get(i);
+            boolean sign = symbol(token, "+") || symbol(token, "-");
+            boolean not = token.kind() == Kind.WORD && token.text().equalsIgnoreCase("NOT");
+            // Preserve binary +/- and predicate modifiers such as IS NOT. Only
+            // prefix operators can be simplified; malformed modifiers must still fail.
+            if ((not || sign) && (i == 0 || startsOperandAfter(tokens.get(i - 1)))) {
+                int end = i;
+                int negatives = 0;
+                while (end < tokens.size() - 1) {
+                    Token next = tokens.get(end);
+                    if (not ? next.kind() != Kind.WORD || !next.text().equalsIgnoreCase("NOT")
+                            : !symbol(next, "+") && !symbol(next, "-")) break;
+                    if (symbol(next, "-")) negatives++;
+                    if (++end - i > 128) throw new IllegalArgumentException("too many unary operators");
+                }
+                // Retain a unary operation even when parity is even: dropping all
+                // operators would bypass numeric/Boolean checks and COUNT(field) rules.
+                result.append(not ? (end - i) % 2 == 0 ? "NOT NOT " : "NOT "
+                        : negatives % 2 == 0 ? "+ " : "- ");
+                i = end;
+            } else {
+                // Raw slices preserve escaped strings and quoted identifier spelling.
+                result.append(text, token.offset(), tokens.get(i + 1).offset()).append(' ');
+                i++;
+            }
+        }
+        return result.toString();
+    }
+
+    private static boolean symbol(Token token, String value) {
+        return token.kind() == Kind.SYMBOL && token.text().equals(value);
+    }
+
+    private static boolean startsOperandAfter(Token token) {
+        return token.kind() == Kind.SYMBOL
+                && Set.of("(", ",", "+", "-", "*", "/", "=", "!=", "<>", "<", "<=", ">", ">=").contains(token.text())
+                || token.kind() == Kind.WORD
+                && Set.of("WHEN", "THEN", "ELSE", "AND", "OR", "NOT", "DISTINCT").contains(token.text().toUpperCase(Locale.ROOT));
     }
 
     private Node adapt(Expression expression) {
@@ -132,6 +199,9 @@ final class SqlMetricExpressionParser {
         }
         if (function.isAllColumns()) {
             throw new IllegalArgumentException("explicit ALL function modifier is outside the supported SQL subset");
+        }
+        if (function.getParameters() instanceof ParenthesedExpressionList<?> grouped && grouped.size() != 1) {
+            throw new IllegalArgumentException("tuple-valued function arguments are unsupported");
         }
         List<Node> arguments = new ArrayList<>();
         if (function.getParameters() != null) {

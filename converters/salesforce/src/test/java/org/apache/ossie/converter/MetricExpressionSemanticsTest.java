@@ -169,6 +169,94 @@ class MetricExpressionSemanticsTest {
         assertValue(dialect, "COUNT(DISTINCT orders.status)", List.of(row(null, null, null, null)), 0.0);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"SNOWFLAKE", "ANSI_SQL"})
+    void conditionalBranchesPreserveOrderAndImplicitNull(String dialect) {
+        List<Map<String, Object>> orders = List.of(
+                row(10.0, 0.0, true), row(0.0, 0.0, false),
+                row(-4.0, 0.0, null), row(null, null, null));
+        // Positive amounts match both of the first two conditions; the first must win.
+        assertValue(dialect,
+                "SUM(CASE WHEN orders.amount > 0 THEN 1 WHEN orders.amount >= 0 THEN 2 "
+                        + "WHEN orders.amount < 0 THEN 3 ELSE 4 END)",
+                orders, 10.0);
+        assertValue(dialect,
+                "SUM(CASE WHEN orders.amount > 0 THEN 1 WHEN orders.amount >= 0 THEN 2 END)",
+                orders, 3.0);
+        assertValue(dialect,
+                "SUM(CASE WHEN orders.amount > 0 THEN 1 WHEN orders.amount = 0 THEN 2 END)",
+                List.of(row(-4.0, null, null), row(null, null, null)), null);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"SNOWFLAKE", "ANSI_SQL"})
+    void nestedConditionalsSkipUnusedConditionsAndResults(String dialect) {
+        assertValue(dialect,
+                "SUM(CASE WHEN orders.amount > 0 THEN "
+                        + "CASE WHEN orders.flag THEN 1 WHEN 1 / orders.cost > 0 THEN 99 ELSE 99 END "
+                        + "WHEN orders.amount = 0 THEN 2 WHEN orders.amount < 0 THEN "
+                        + "CASE WHEN orders.flag IS NULL THEN 3 ELSE 1 / orders.cost END ELSE 4 END)",
+                List.of(row(10.0, 0.0, true), row(0.0, 0.0, false),
+                        row(-4.0, 0.0, null), row(null, 0.0, null)), 10.0);
+        assertValue(dialect,
+                "SUM(CASE WHEN orders.amount >= 0 THEN 1 "
+                        + "WHEN 1 / orders.cost > 0 THEN 2 ELSE 1 / orders.cost END)",
+                List.of(row(10.0, 0.0, true), row(0.0, 0.0, false)), 2.0);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"SNOWFLAKE", "ANSI_SQL"})
+    void numericComparisonsTreatSignedZerosAsEqual(String dialect) {
+        List<Map<String, Object>> zeros = List.of(row(-0.0, null, null), row(0.0, null, null));
+        assertValue(dialect,
+                "SUM(CASE WHEN orders.amount = 0 THEN 1 ELSE 0 END)", zeros, 2.0);
+        for (String operator : List.of("!=", "<>")) {
+            assertValue(dialect,
+                    "SUM(CASE WHEN orders.amount " + operator + " 0 THEN 1 ELSE 0 END)", zeros, 0.0);
+        }
+        assertValue(dialect,
+                "SUM(CASE WHEN orders.amount <= 0 AND orders.amount >= 0 THEN 1 ELSE 0 END)",
+                zeros, 2.0);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"SNOWFLAKE", "ANSI_SQL"})
+    void distinctCountTreatsSignedZerosAsOneValue(String dialect) {
+        List<Map<String, Object>> orders = List.of(
+                row(-0.0, null, null), row(0.0, null, null),
+                row(1.0, null, null), row(null, null, null));
+        assertValue(dialect, "COUNT(DISTINCT orders.amount)", orders, 2.0);
+        assertValue(dialect, "COUNT(orders.amount)", orders, 3.0);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"SNOWFLAKE", "ANSI_SQL"})
+    void nullifGuardsEitherSignOfZero(String dialect) {
+        assertValue(dialect, "SUM(1 / NULLIF(orders.cost, 0))",
+                List.of(row(null, -0.0, null), row(null, 0.0, null)), null);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0", "-0"})
+    void evaluatorRejectsEitherSignOfUnguardedZero(String zero) {
+        AssertionError error = assertThrows(AssertionError.class,
+                () -> new TuaSubsetEvaluator("1 / " + zero).evaluate(List.of()));
+        assertTrue(error.getMessage().contains("unguarded zero divisor"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"SNOWFLAKE", "ANSI_SQL"})
+    void repeatedUnaryOperatorsPreserveValuesAndUnknownPredicates(String dialect) {
+        List<Map<String, Object>> orders = List.of(
+                row(3.0, null, true), row(7.0, null, false),
+                row(11.0, null, null), row(null, null, null));
+        assertValue(dialect, "SUM(- -orders.amount)", orders, 21.0);
+        assertValue(dialect,
+                "SUM(CASE WHEN NOT NOT NOT orders.flag THEN orders.amount ELSE 0 END)", orders, 7.0);
+        assertValue(dialect,
+                "SUM(CASE WHEN NOT NOT NOT NOT orders.flag THEN orders.amount ELSE 0 END)", orders, 3.0);
+    }
+
     private static void assertValue(
             String dialect, String sql, List<Map<String, Object>> rows, Double expected) {
         Map<String, Object> metric = Map.of(
@@ -263,13 +351,24 @@ class MetricExpressionSemanticsTest {
                 return result;
             }
             if (token.equalsIgnoreCase("IF")) {
-                Calculation condition = expression(0);
-                expect("THEN");
-                Calculation yes = expression(0);
+                List<Calculation> conditions = new ArrayList<>();
+                List<Calculation> results = new ArrayList<>();
+                do {
+                    conditions.add(expression(0));
+                    expect("THEN");
+                    results.add(expression(0));
+                } while (take("ELSEIF"));
                 expect("ELSE");
-                Calculation no = expression(0);
+                Calculation otherwise = expression(0);
                 expect("END");
-                return (rows, row) -> (Boolean.TRUE.equals(condition.value(rows, row)) ? yes : no).value(rows, row);
+                return (rows, row) -> {
+                    for (int i = 0; i < conditions.size(); i++) {
+                        if (Boolean.TRUE.equals(conditions.get(i).value(rows, row))) {
+                            return results.get(i).value(rows, row);
+                        }
+                    }
+                    return otherwise.value(rows, row);
+                };
             }
             if (token.equalsIgnoreCase("NOT") || token.equals("-")) {
                 Calculation child = expression(token.equals("-") ? 7 : 3);
@@ -322,7 +421,9 @@ class MetricExpressionSemanticsTest {
                         return (double) values.size();
                     }
                     if (name.equals("COUNTD")) {
-                        return (double) values.stream().distinct().count();
+                        return (double) values.stream()
+                                .map(value -> value instanceof Number && number(value) == 0.0 ? 0.0 : value)
+                                .distinct().count();
                     }
                     if (values.isEmpty()) {
                         return null;
@@ -384,17 +485,22 @@ class MetricExpressionSemanticsTest {
                 case "-" -> number(left) - number(right);
                 case "*" -> number(left) * number(right);
                 case "/" -> {
-                    assertNotEquals(0.0, number(right), "Generated expression evaluated an unguarded zero divisor");
+                    assertTrue(number(right) != 0.0, "Generated expression evaluated an unguarded zero divisor");
                     yield number(left) / number(right);
                 }
-                case "=" -> left.equals(right);
-                case "!=", "<>" -> !left.equals(right);
+                case "=" -> equal(left, right);
+                case "!=", "<>" -> !equal(left, right);
                 case "<" -> number(left) < number(right);
                 case "<=" -> number(left) <= number(right);
                 case ">" -> number(left) > number(right);
                 case ">=" -> number(left) >= number(right);
                 default -> throw new AssertionError(operator);
             };
+        }
+
+        private static boolean equal(Object left, Object right) {
+            return left instanceof Number && right instanceof Number
+                    ? number(left) == number(right) : left.equals(right);
         }
 
         private static double number(Object value) {
