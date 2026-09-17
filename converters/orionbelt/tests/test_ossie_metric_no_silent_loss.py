@@ -380,3 +380,15 @@ def _unconverted_stash(obml: dict[str, Any]) -> list[dict[str, Any]]:
             if "obml_unconverted_metrics" in data:
                 return data["obml_unconverted_metrics"]
     return []
+
+
+def test_explicit_datatype_roundtrips() -> None:
+    """A field's spec `datatype` survives both directions (apache/ossie#409)."""
+    _, col = conv.OssietoOBML(ossie={})._convert_field(
+        {"name": "total_amount", "datatype": "String"}
+    )
+    assert col["abstractType"] == "string"
+    field = conv.OBMLtoOssie(obml={})._convert_column(
+        "total_amount", {"code": "total_amount", "abstractType": "string"}, "Orders", {}
+    )
+    assert field.get("datatype") == "String"

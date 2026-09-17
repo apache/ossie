@@ -34,6 +34,8 @@ from ossie_orionbelt._common import (
     _OSSIE_VERSION,
     _SQL_PARSEABLE_DIALECTS,
     _VENDOR_OSSIE,
+    OSSIE_DATATYPE_TO_OBML_ABSTRACT,
+    OSSIE_DATATYPE_TO_OBML_PHYSICAL,
     OSSIE_TO_OBML_TYPE,
 )
 
@@ -374,10 +376,17 @@ class OssietoOBML:
             elif code == name and dialects:
                 code = dialects[0].get("expression", name)
 
-        # Determine abstract type: prefer explicit data_type, fall back to heuristic
-        ossie_type = field.get("data_type", "")
-        if ossie_type and ossie_type in OSSIE_TO_OBML_TYPE:
-            abstract_type = OSSIE_TO_OBML_TYPE[ossie_type]
+        # Determine abstract type. Precedence: the spec `datatype` (capitalised
+        # `DataType` enum) > legacy lowercase `data_type` > name heuristic. An
+        # OBML-origin field additionally restores its exact `abstractType` from
+        # the stashed extension below (highest precedence), keeping
+        # OBML -> Ossie -> OBML lossless.
+        ossie_datatype = field.get("datatype", "")
+        legacy_type = field.get("data_type", "")
+        if ossie_datatype in OSSIE_DATATYPE_TO_OBML_ABSTRACT:
+            abstract_type = OSSIE_DATATYPE_TO_OBML_ABSTRACT[ossie_datatype]
+        elif legacy_type and legacy_type in OSSIE_TO_OBML_TYPE:
+            abstract_type = OSSIE_TO_OBML_TYPE[legacy_type]
         else:
             abstract_type = self._infer_obml_type(field)
 
@@ -411,6 +420,11 @@ class OssietoOBML:
             if ext.get("vendor_name") in _OBML_VENDOR_READ:
                 try:
                     ext_data = json.loads(ext.get("data", "{}"))
+                    # Restore the exact OBML abstractType stashed on export, so a
+                    # narrowing datatype map (e.g. Decimal -> float) never
+                    # degrades an OBML-origin round trip.
+                    if ext_data.get("obml_abstract_type"):
+                        col["abstractType"] = ext_data["obml_abstract_type"]
                     if ext_data.get("obml_sql_type"):
                         col["sqlType"] = ext_data["obml_sql_type"]
                     if ext_data.get("obml_sql_precision") is not None:
@@ -829,6 +843,15 @@ class OssietoOBML:
             target = metrics.get(m["name"]) or measures.get(m["name"])
             if target is not None:
                 self._carry_foreign_extensions(m.get("custom_extensions"), target)
+                # Ossie metric `datatype` -> OBML exact `dataType` (its natural
+                # home; `Decimal` -> decimal(p, s)). Don't override a dataType
+                # already restored from an OBML-origin extension, and skip
+                # Opaque/unknown (absent from the map).
+                ossie_dt = m.get("datatype")
+                if ossie_dt and not target.get("dataType"):
+                    obml_dt = OSSIE_DATATYPE_TO_OBML_PHYSICAL.get(ossie_dt)
+                    if obml_dt:
+                        target["dataType"] = obml_dt
 
         return measures, metrics
 
