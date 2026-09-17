@@ -160,9 +160,10 @@ SPEC_NAMES = ["flights", "retail", "tpch"]
 def spec_model(request) -> OssieOntology:
     """The parsed ontology for the spec named by an indirect parametrize.
 
-    Formulas stay as raw text: these suites snapshot the shape of the spec, and
-    parsing them would pull the optional `relationalai` extra in through the
-    formula factories for no gain.
+    Built with the default factories, so formulas arrive parsed and validated.
+    That needs nothing optional: the grammar lives in `ossie_ontology.expr` and
+    depends only on `ply`, while the `relationalai` extra is what the PyRel
+    emitter needs -- a different layer, and not one these suites reach.
     """
     return OssieParser().parse(_SPECS_DIR / f"{request.param}.yaml")
 

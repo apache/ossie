@@ -66,7 +66,7 @@ class Expression(Node):
         return self._op
 
     def __hash__(self):
-        return hash((self._op, *([a.__hash__() for a in self._args])))
+        return hash((self._op, *self._args))
 
     def __str__(self):
         left, right = self._args
