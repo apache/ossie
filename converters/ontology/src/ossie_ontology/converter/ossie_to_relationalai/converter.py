@@ -57,9 +57,9 @@ from relationalai.semantics import Concept as RAIConcept
 # from that spec; returns whatever pyrel construct should stand in for it.
 #
 # The default resolves the dataset's `source` to a warehouse table. Substituting
-# a provider is how a caller reads from somewhere else — a downstream project
-# supplies one backed by inline CSV so its tests need no warehouse — without
-# this converter having to know that any such alternative exists.
+# a provider is how a caller reads from somewhere else — from inline CSV, for
+# example, so a test corpus needs no warehouse — without this converter having
+# to know that any such alternative exists.
 TableProvider = Callable[["OntologyModel", Dataset, dict[str, RAIConcept]], Any]
 
 

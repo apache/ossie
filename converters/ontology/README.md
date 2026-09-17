@@ -30,16 +30,36 @@ Converters between Ossie, Palantir, Spec, and RelationalAI ontology formats.
 
 ### The `relationalai` extra
 
-`ossie_to_relationalai` is the only converter that needs a vendor SDK, so it is
-gated behind an optional extra rather than the base install:
+> **`relationalai` is proprietary and declares no license.** Its PyPI
+> distribution carries no `License` field, no license classifier and no
+> `LICENSE` file, and the [project page](https://pypi.org/project/relationalai/)
+> lists none either — so it grants no use or redistribution rights by default.
+> Get the applicable terms from RelationalAI (`support@relational.ai`) before
+> installing it. Ossie is Apache-2.0 and neither bundles nor depends on it.
+>
+> Installing the package is also not enough to *run* what this converter emits.
+> That needs a Snowflake account with the RelationalAI Native App installed from
+> the [Marketplace](https://app.snowflake.com/marketplace/listing/GZTYZOOIX8H/relationalai-relationalai),
+> and access enabled by RelationalAI on request — see the
+> [setup guide](https://docs.relational.ai/manage/get-started/install/). Ossie
+> never executes the generated source: it converts and compiles in-process,
+> offline, against no engine.
+
+`ossie_to_relationalai` is the only converter that needs a vendor SDK. Because
+that SDK is non-free, it is kept out of the base install entirely and gated
+behind an opt-in extra, so nobody acquires it without asking for it:
 
 ```bash
-pip install "apache-ossie-ontology[relationalai]"
+pip install "apache-ossie-ontology[relationalai]"    # opt in, having read the above
+pip install apache-ossie-ontology                    # everything else, no vendor SDK
 ```
 
 Nothing reachable from `ossie_ontology/__init__.py` imports `relationalai`, so
 everything else — parsing Ossie, converting Palantir, reading and writing the
-spec — installs and runs without it. Its tests skip themselves when it is absent.
+spec — installs and runs without it. `tests/test_optional_extra.py` asserts that
+boundary in a subprocess with the SDK masked, so the base install cannot start
+depending on it by accident. The converter's own tests skip themselves when it
+is absent.
 
 The PyRel-side model it targets — `OntologyModel` and its bindings, roles and
 CSV plumbing — lives under `ossie_ontology/vendor/relationalai/`,
@@ -77,10 +97,30 @@ Two things about the environment this needs. Constructing a model makes
 And each dataset's `source` is read from the configured connection to get its
 column types, so the call above needs one that can reach those tables.
 
-To convert without a warehouse, pass `use_csv_only=True`: every dataset is then
-treated as an inline CSV rather than looked up, and nothing leaves the process.
+To convert without a warehouse, pass a different `table_provider`. The default,
+`warehouse_table`, resolves each dataset's `source` against the connection —
+which is what gets the column identifiers right, since Snowflake folds an
+unquoted name to upper case. The alternative, `declared_table`, declares the
+columns from the Ossie spec instead and reads nothing:
+
+```python
+from ossie_ontology.converter.ossie_to_relationalai import declared_table
+
+model = OssieToRelationalAIConverter.convert(ontology, table_provider=declared_table)
+```
+
+Nothing leaves the process, so the tables the generated source names need not
+exist. The tradeoff is the one `warehouse_table` avoids: the declared
+identifiers have to match how the table was actually created.
+
 That is how the test suite runs — see `tests/conftest.py` for the offline config
-it pins, and `tests/test_ossie_to_relationalai.py` for the full offline setup.
+it pins and the network guard it installs, and `tests/relationalai/test_converter.py`
+for the rest of the offline setup.
+
+`table_provider` is also the extension point for reading rows from somewhere
+else entirely — from inline CSV, for example, so a test corpus needs no
+warehouse. This package ships no such provider and has no CSV handling at all,
+because reading rows is not part of converting an ontology.
 
 ## Prerequisites
 

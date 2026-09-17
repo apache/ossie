@@ -79,8 +79,7 @@ def convert(spec: str, specs_dir: Path) -> OntologyModel:
     how its identifiers were cased — which is exactly why these tests pick.
 
     No rows are supplied and none are needed; reading real data is an extension
-    (a downstream project supplies a CSV-backed provider), not something this
-    converter knows.
+    — a CSV-backed provider, for example — not something this converter knows.
     """
     # pyrel keeps constructed models in a process-wide registry; clearing it
     # keeps each case independent and its generated names stable.
