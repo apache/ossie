@@ -40,7 +40,18 @@ keywords = [
 ]
 dependencies = [
     "pydantic",
+    "ply",
     "pyyaml",
+]
+
+# Extras are opt-in: `pip install "apache-ossie-ontology[relationalai]"`.
+# `relationalai` is the vendor SDK the Ossie -> RelationalAI converter emits
+# against. Parsing Ossie, converting Palantir, and reading/writing the spec all
+# work without it, and nothing reachable from `ossie_ontology/__init__.py`
+# imports it — so it stays out of the base install.
+[project.optional-dependencies]
+relationalai = [
+    "relationalai==1.27.1",
 ]
 
 [project.urls]
@@ -55,6 +66,7 @@ testpaths = ["tests"]
 
 [tool.pyright]
 pythonVersion = "3.11"
+exclude = ["tests/snapshots", "build", "venv"]
 
 [tool.uv]
 required-version = ">=0.9.0"

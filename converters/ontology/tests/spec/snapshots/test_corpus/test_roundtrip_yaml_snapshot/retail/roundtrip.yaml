@@ -1,0 +1,1192 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+version: 0.2.0.dev0
+name: RETAIL_REFACTORED
+description: Retail ontology with employees, stores, products, transactions, orders, payments, and weekly sales facts.
+ontology:
+- concept: Payment
+  type: EntityType
+  description: Order Payment.
+  identify_by:
+  - id
+  relationships:
+  - name: id
+    roles:
+    - concept: PaymentId
+    verbalizes:
+    - '{Payment} is identified by {PaymentId}'
+    multiplicity: OneToOne
+  - name: type
+    roles:
+    - concept: String
+    multiplicity: ManyToOne
+  - name: amount
+    roles:
+    - concept: Decimal
+    multiplicity: ManyToOne
+- concept: CashPayment
+  type: EntityType
+  description: Payment made in cash.
+  extends:
+  - Payment
+  derived_by:
+  - Payment.type == 'cash'
+  relationships:
+  - name: cashReceived
+    roles:
+    - concept: Decimal
+    multiplicity: ManyToOne
+  - name: change
+    roles:
+    - concept: Decimal
+    multiplicity: ManyToOne
+- concept: CardPayment
+  type: EntityType
+  description: Payment made by card.
+  extends:
+  - Payment
+  derived_by:
+  - Payment.type == 'card'
+  relationships:
+  - name: cardNumber
+    roles:
+    - concept: String
+    multiplicity: ManyToOne
+  - name: cardHolderName
+    roles:
+    - concept: String
+    multiplicity: ManyToOne
+- concept: OrderLineItem
+  type: EntityType
+  description: LineItem in an Order.
+  identify_by:
+  - order
+  - nr
+  relationships:
+  - name: order
+    roles:
+    - concept: Order
+    verbalizes:
+    - '{OrderLineItem} belongs to {Order}'
+    multiplicity: ManyToOne
+  - name: nr
+    roles:
+    - concept: Integer
+    verbalizes:
+    - '{OrderLineItem} has line item number {Integer}'
+    multiplicity: ManyToOne
+  - name: lineitem_extended_price
+    description: Extended price for the line item.
+    roles:
+    - concept: Decimal
+      name: lineitem_extended_price
+    verbalizes:
+    - '{OrderLineItem} has extended price {Decimal:lineitem_extended_price}'
+    multiplicity: ManyToOne
+  - name: lineitem_discount
+    description: Discount factor applied to the line.
+    roles:
+    - concept: Decimal
+      name: lineitem_discount
+    verbalizes:
+    - '{OrderLineItem} has discount factor {Decimal:lineitem_discount}'
+    multiplicity: ManyToOne
+  - name: net_revenue
+    description: The net extended price of the order line after discount, but before tax.
+    roles:
+    - concept: Decimal
+      name: net_revenue
+    verbalizes:
+    - '{OrderLineItem} has net revenue {Decimal:net_revenue}'
+    multiplicity: ManyToOne
+    derived_by:
+    - extended_price == OrderLineItem.lineitem_extended_price AND discount == OrderLineItem.lineitem_discount AND net_revenue == extended_price * (1 - discount)
+  - name: discounted_amount
+    description: The amount paid after subtracting the discount from the extended price.
+    roles:
+    - concept: Amount
+      name: discounted_amount
+    verbalizes:
+    - '{OrderLineItem} has discounted amount {Amount:discounted_amount}'
+    multiplicity: ManyToOne
+    derived_by:
+    - discounted_amount == Amount(OrderLineItem.lineitem_extended_price - OrderLineItem.lineitem_discount)
+- concept: Order
+  type: EntityType
+  description: Order in a Store.
+  identify_by:
+  - nr
+  relationships:
+  - name: nr
+    roles:
+    - concept: OrderNr
+    verbalizes:
+    - '{Order} is identified by {OrderNr}'
+    multiplicity: OneToOne
+  - name: orderDate
+    roles:
+    - concept: Date
+    verbalizes:
+    - '{Order} has {Date}'
+    multiplicity: ManyToOne
+- concept: Transaction
+  type: EntityType
+  description: Transaction registered by a point-of-sale terminal.
+  identify_by:
+  - nr
+  relationships:
+  - name: nr
+    roles:
+    - concept: TransactionNr
+    verbalizes:
+    - '{Transaction} is identified by {TransactionNr}'
+    multiplicity: OneToOne
+  - name: registeredBy
+    roles:
+    - concept: Terminal
+    verbalizes:
+    - '{Transaction} is registered by {Terminal}'
+    multiplicity: ManyToOne
+  - name: returns
+    roles:
+    - concept: Item
+    - concept: Amount
+    verbalizes:
+    - '{Transaction} refunds {Item} for {Amount}'
+    multiplicity: ManyToOne
+  - name: sales
+    roles:
+    - concept: Item
+    - concept: Amount
+    verbalizes:
+    - '{Transaction} sells {Item} for {Amount}'
+    multiplicity: ManyToOne
+  - name: transactionTerminalStore
+    roles:
+    - concept: Terminal
+    - concept: Store
+    verbalizes:
+    - '{Transaction} registered at {Terminal} deployed to {Store}'
+    derived_by:
+    - Transaction.registeredBy(Terminal) AND Terminal.deployedTo(Store)
+  - name: storeNrViaBinaryChain
+    roles:
+    - concept: StoreNr
+      name: store_nr
+    verbalizes:
+    - '{Transaction} was registered at a terminal deployed to store {StoreNr:store_nr}'
+    multiplicity: ManyToOne
+    derived_by:
+    - store_nr == Transaction.registeredBy(Terminal).deployedTo.nr
+  - name: storeNrViaTernaryChain
+    roles:
+    - concept: StoreNr
+      name: store_nr
+    verbalizes:
+    - '{Transaction} occurred at store {StoreNr:store_nr}'
+    multiplicity: ManyToOne
+    derived_by:
+    - store_nr == Transaction.transactionTerminalStore(Terminal).nr
+  - name: transactionRegion
+    roles:
+    - concept: Region
+    verbalizes:
+    - '{Transaction} occurred in {Region}'
+    multiplicity: ManyToOne
+    derived_by:
+    - Transaction.registeredBy(Terminal) AND Terminal.deployedTo(Store) AND Store.storeToRegion(Region)
+  - name: transactionStoreManager
+    roles:
+    - concept: Employee
+    verbalizes:
+    - '{Transaction} associated with store manager {Employee}'
+    multiplicity: ManyToOne
+    derived_by:
+    - Transaction.registeredBy(Terminal) AND Terminal.deployedTo(Store) AND Store.storeToManager(Employee)
+- concept: Terminal
+  type: EntityType
+  description: A point-of-sale terminal for conducting retail transactions.
+  identify_by:
+  - id
+  relationships:
+  - name: id
+    roles:
+    - concept: RegisterId
+    verbalizes:
+    - '{Terminal} is identified by {RegisterId}'
+    multiplicity: OneToOne
+  - name: deployedTo
+    roles:
+    - concept: Store
+    verbalizes:
+    - '{Terminal} is deployed to {Store}'
+    multiplicity: ManyToOne
+- concept: Store
+  type: EntityType
+  description: Physical store that offers items for sale to the public.
+  identify_by:
+  - nr
+  relationships:
+  - name: nr
+    roles:
+    - concept: StoreNr
+    verbalizes:
+    - '{Store} is identified by {StoreNr}'
+    multiplicity: OneToOne
+  - name: storeToManager
+    roles:
+    - concept: Employee
+    verbalizes:
+    - '{Store} is managed by {Employee}'
+    multiplicity: ManyToOne
+  - name: storeToRegion
+    roles:
+    - concept: Region
+    verbalizes:
+    - '{Store} belongs to {Region}'
+    multiplicity: ManyToOne
+  - name: avgReturns
+    roles:
+    - concept: Item
+    - concept: Amount
+      name: amt
+    verbalizes:
+    - '{Store} reports returns of {Item} for average {Amount:amt}'
+    multiplicity: ManyToOne
+    derived_by:
+    - amt == AVG[Amount WHERE Transaction.registeredBy(Terminal) AND Transaction.returns(Transaction, Item, Amount) AND Terminal.deployedTo(Store) GROUP BY Item, Store]
+  - name: avgReturnsWithMarkup
+    roles:
+    - concept: Item
+    - concept: Amount
+      name: amt
+    verbalizes:
+    - '{Store} reports returns of {Item} for 10%-marked-up average {Amount:amt}'
+    multiplicity: ManyToOne
+    derived_by:
+    - amt == Amount(AVG[Amount WHERE Transaction.registeredBy(Terminal) AND Transaction.returns(Transaction, Item, Amount) AND Terminal.deployedTo(Store) GROUP BY Item, Store] * 1.1)
+- concept: Region
+  type: EntityType
+  description: Region of a country.
+  identify_by:
+  - name
+  relationships:
+  - name: name
+    roles:
+    - concept: RegionName
+    verbalizes:
+    - '{Region} is identified by {RegionName}'
+    multiplicity: OneToOne
+- concept: Class
+  type: EntityType
+  description: Class of the Product.
+  identify_by:
+  - nr
+  relationships:
+  - name: nr
+    roles:
+    - concept: ClassNr
+    verbalizes:
+    - '{Class} is identified by {ClassNr}'
+    multiplicity: OneToOne
+  - name: classToCategory
+    roles:
+    - concept: Category
+    verbalizes:
+    - '{Class} is part of {Category}'
+    multiplicity: ManyToOne
+  - name: classToLabel
+    roles:
+    - concept: ClassLabel
+    verbalizes:
+    - '{Class} has {ClassLabel}'
+    multiplicity: OneToOne
+- concept: ClassLabel
+  type: EntityType
+  description: ClassLabel of the Product.
+  identify_by:
+  - name
+  relationships:
+  - name: name
+    roles:
+    - concept: ClassLabelName
+    verbalizes:
+    - '{ClassLabel} is identified by {ClassLabelName}'
+    multiplicity: OneToOne
+- concept: Category
+  type: EntityType
+  description: Category of the Product.
+  identify_by:
+  - name
+  relationships:
+  - name: name
+    roles:
+    - concept: CategoryName
+    verbalizes:
+    - '{Category} is identified by {CategoryName}'
+    multiplicity: OneToOne
+- concept: Item
+  type: EntityType
+  description: An item for sale at a retailer.
+  identify_by:
+  - upc
+  relationships:
+  - name: upc
+    roles:
+    - concept: UniversalProductCode
+    verbalizes:
+    - '{Item} is identified by {UniversalProductCode}'
+    multiplicity: OneToOne
+  - name: description
+    roles:
+    - concept: String
+    multiplicity: ManyToOne
+  - name: itemToClass
+    roles:
+    - concept: Class
+    verbalizes:
+    - '{Item} is grouped by {Class}'
+    multiplicity: ManyToOne
+  - name: weekly_sales
+    roles:
+    - concept: Store
+    - concept: Integer
+    - concept: Decimal
+    verbalizes:
+    - '{Item} sold at {Store} in week {Integer} for {Decimal}'
+    multiplicity: ManyToOne
+  - name: weekly_gross_sales
+    roles:
+    - concept: Store
+    - concept: Integer
+    - concept: Decimal
+    verbalizes:
+    - '{Item} sold at {Store} in week {Integer} for gross {Decimal}'
+    multiplicity: ManyToOne
+  - name: weekly_gross_returns
+    roles:
+    - concept: Store
+    - concept: Integer
+    - concept: Decimal
+    verbalizes:
+    - '{Item} returned at {Store} in week {Integer} for {Decimal}'
+    multiplicity: ManyToOne
+  - name: weekly_net_revenue
+    roles:
+    - concept: Store
+    - concept: Integer
+    - concept: Decimal
+    verbalizes:
+    - '{Item} sold at {Store} in week {Integer} for net {Decimal}'
+    multiplicity: ManyToOne
+  - name: item_store_sales
+    roles:
+    - concept: Store
+    - concept: Decimal
+    verbalizes:
+    - '{Item} sold at {Store} for total {Decimal}'
+    multiplicity: ManyToOne
+- concept: Employee
+  type: EntityType
+  description: Employee of the company.
+  identify_by:
+  - nr
+  relationships:
+  - name: nr
+    roles:
+    - concept: EmployeeNr
+    verbalizes:
+    - '{Employee} is identified by {EmployeeNr}'
+    multiplicity: OneToOne
+  - name: reportsTo
+    roles:
+    - concept: Employee
+      name: mgr
+    verbalizes:
+    - '{Employee} reports to {Employee:mgr}'
+    multiplicity: ManyToOne
+  - name: firstName
+    roles:
+    - concept: String
+    multiplicity: ManyToOne
+  - name: lastName
+    roles:
+    - concept: String
+    multiplicity: ManyToOne
+- concept: PermanentEmployee
+  type: EntityType
+  description: Employee with indefinite contract.
+  extends:
+  - Employee
+  relationships:
+  - name: salary
+    roles:
+    - concept: Integer
+    verbalizes:
+    - '{PermanentEmployee} has monthly salary {Integer}'
+    multiplicity: ManyToOne
+- concept: Contractor
+  type: EntityType
+  description: Employee with temporary contract.
+  extends:
+  - Employee
+  relationships:
+  - name: hourlyRate
+    roles:
+    - concept: Integer
+    verbalizes:
+    - '{Contractor} is paid hourly {Integer}'
+    multiplicity: ManyToOne
+- concept: PaymentId
+  type: ValueType
+  description: Unique id for a Payment.
+  extends:
+  - Integer
+- concept: OrderNr
+  type: ValueType
+  description: Unique id for an Order.
+  extends:
+  - Integer
+- concept: RegionName
+  type: ValueType
+  description: Unique name for a Region.
+  extends:
+  - String
+- concept: ClassLabelName
+  type: ValueType
+  description: Unique name for a ClassLabel.
+  extends:
+  - String
+- concept: CategoryName
+  type: ValueType
+  description: Unique name for a Category.
+  extends:
+  - String
+- concept: ClassNr
+  type: ValueType
+  description: Unique number generated for Class.
+  extends:
+  - Integer
+- concept: UniversalProductCode
+  type: ValueType
+  description: 12-digit number used for tracking trade items.
+  extends:
+  - Integer
+  requires:
+  - 0 < UniversalProductCode AND UniversalProductCode <= 999999999999
+- concept: TransactionNr
+  type: ValueType
+  description: Unique transaction number generated by a point-of-sale terminal.
+  extends:
+  - Integer
+  requires:
+  - TransactionNr > 0
+- concept: StoreNr
+  type: ValueType
+  description: Unique identifier for a physical store.
+  extends:
+  - Integer
+- concept: RegisterId
+  type: ValueType
+  description: Unique identifier for point-of-sale terminals (cash registers).
+  extends:
+  - Integer
+  requires:
+  - RegisterId > 0
+- concept: EmployeeNr
+  type: ValueType
+  description: Unique company-assigned employee number.
+  extends:
+  - Integer
+  requires:
+  - EmployeeNr > 0
+- concept: Amount
+  type: ValueType
+  description: Amount of money exchanged in return for some item(s).
+  extends:
+  - Decimal
+ontology_mappings:
+- name: retail_refactored_mapping
+  semantic_model:
+    name: Retail refactored semantic model
+    datasets:
+    - name: EMPLOYEES
+      source: DB.SCHEMA.EMPLOYEES
+      fields:
+      - name: empNr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: empNr
+      - name: lastName
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: lastName
+      - name: firstName
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: firstName
+      - name: mgr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: mgr
+      - name: addr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: addr
+      - name: city
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: city
+      - name: state
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: state
+      - name: zip
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: zip
+    - name: CONTRACTORS
+      source: DB.SCHEMA.CONTRACTORS
+      fields:
+      - name: empNr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: empNr
+      - name: hourlyRate
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: hourlyRate
+    - name: PERMANENT_EMPLOYEES
+      source: DB.SCHEMA.PERMANENT_EMPLOYEES
+      fields:
+      - name: empNr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: empNr
+      - name: salary
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: salary
+    - name: LOCATIONS
+      source: DB.SCHEMA.LOCATIONS
+      fields:
+      - name: storeNr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: storeNr
+      - name: mgr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: mgr
+      - name: region
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: region
+      - name: addr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: addr
+      - name: city
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: city
+      - name: state
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: state
+      - name: zip
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: zip
+    - name: PRODUCTS
+      source: DB.SCHEMA.PRODUCTS
+      fields:
+      - name: upc
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: upc
+      - name: description
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: description
+      - name: classNr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: classNr
+      - name: classLabel
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: classLabel
+      - name: category
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: category
+    - name: TRANSACTIONS
+      source: DB.SCHEMA.TRANSACTIONS
+      fields:
+      - name: txn
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: txn
+      - name: sku
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: sku
+      - name: terminal
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: terminal
+      - name: amt
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: amt
+      - name: refundYN
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: refundYN
+      - name: timestamp
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: timestamp
+    - name: TERMINALS
+      source: DB.SCHEMA.TERMINALS
+      fields:
+      - name: id
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: id
+      - name: store
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: store
+      - name: svcDate
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: svcDate
+    - name: LINEITEMS
+      source: DB.SCHEMA.LINEITEMS
+      fields:
+      - name: quantity
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: quantity
+      - name: extendedPrice
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: extendedPrice
+      - name: discount
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: discount
+      - name: tax
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: tax
+      - name: orderNr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: orderNr
+      - name: lineItemNr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: lineItemNr
+      - name: upc
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: upc
+      - name: status
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: status
+      - name: shipMode
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: shipMode
+      - name: shipDate
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: shipDate
+      - name: receiptDate
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: receiptDate
+    - name: ORDERS
+      source: DB.SCHEMA.ORDERS
+      fields:
+      - name: nr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: nr
+      - name: store
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: store
+      - name: ordDate
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: ordDate
+    - name: PAYMENTS
+      source: DB.SCHEMA.PAYMENTS
+      fields:
+      - name: id
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: id
+      - name: orderNr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: orderNr
+      - name: paymentDate
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: paymentDate
+      - name: amount
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: amount
+      - name: type
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: type
+      - name: cardNumber
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: cardNumber
+      - name: cardExpiry
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: cardExpiry
+      - name: cardHolderName
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: cardHolderName
+      - name: cashReceived
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: cashReceived
+    - name: RETAIL_FACTS
+      source: DB.SCHEMA.RETAIL_FACTS
+      fields:
+      - name: item_nr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: item_nr
+      - name: store_nr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: store_nr
+      - name: week_nr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: week_nr
+      - name: sls
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: sls
+      - name: returns
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: returns
+  concept_mappings:
+  - concept: Employee
+    object_mappings:
+    - referent_mappings:
+      - relationship: nr
+        expression: EMPLOYEES.empNr
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: nr
+          expression: EMPLOYEES.empNr
+      children:
+      - object_mapping:
+          concept: Employee
+          referent_mappings:
+          - relationship: nr
+            expression: EMPLOYEES.mgr
+        relationship: reportsTo
+      - object_mapping:
+          concept: String
+          expression: EMPLOYEES.firstName
+        relationship: firstName
+      - object_mapping:
+          concept: String
+          expression: EMPLOYEES.lastName
+        relationship: lastName
+  - concept: Contractor
+    object_mappings:
+    - concept: Employee
+      referent_mappings:
+      - relationship: nr
+        expression: CONTRACTORS.empNr
+    link_mappings:
+    - object_mapping:
+        concept: Employee
+        referent_mappings:
+        - relationship: nr
+          expression: CONTRACTORS.empNr
+      children:
+      - object_mapping:
+          concept: Integer
+          expression: CONTRACTORS.hourlyRate
+        relationship: hourlyRate
+  - concept: PermanentEmployee
+    object_mappings:
+    - concept: Employee
+      referent_mappings:
+      - relationship: nr
+        expression: PERMANENT_EMPLOYEES.empNr
+    link_mappings:
+    - object_mapping:
+        concept: Employee
+        referent_mappings:
+        - relationship: nr
+          expression: PERMANENT_EMPLOYEES.empNr
+      children:
+      - object_mapping:
+          concept: Integer
+          expression: PERMANENT_EMPLOYEES.salary
+        relationship: salary
+  - concept: Item
+    object_mappings:
+    - referent_mappings:
+      - relationship: upc
+        expression: PRODUCTS.upc
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: upc
+          expression: PRODUCTS.upc
+      children:
+      - object_mapping:
+          concept: Class
+          referent_mappings:
+          - relationship: nr
+            expression: PRODUCTS.classNr
+        relationship: itemToClass
+      - object_mapping:
+          concept: String
+          expression: PRODUCTS.description
+        relationship: description
+    - object_mapping:
+        referent_mappings:
+        - relationship: upc
+          expression: RETAIL_FACTS.item_nr
+      children:
+      - object_mapping:
+          concept: Store
+          referent_mappings:
+          - relationship: nr
+            expression: RETAIL_FACTS.store_nr
+        children:
+        - object_mapping:
+            concept: Integer
+            expression: RETAIL_FACTS.week_nr
+          children:
+          - object_mapping:
+              concept: Decimal
+              expression: RETAIL_FACTS.sls
+            relationship: weekly_sales
+          - object_mapping:
+              concept: Decimal
+              expression: RETAIL_FACTS.sls + RETAIL_FACTS.returns
+            relationship: weekly_gross_sales
+          - object_mapping:
+              concept: Decimal
+              expression: RETAIL_FACTS.returns
+            relationship: weekly_gross_returns
+          - object_mapping:
+              concept: Decimal
+              expression: RETAIL_FACTS.sls * 0.9 - RETAIL_FACTS.returns * 1.1 + 100
+            relationship: weekly_net_revenue
+    - object_mapping:
+        referent_mappings:
+        - relationship: upc
+          expression: RETAIL_FACTS.item_nr
+      children:
+      - object_mapping:
+          concept: Store
+          referent_mappings:
+          - relationship: nr
+            expression: RETAIL_FACTS.store_nr
+        children:
+        - object_mapping:
+            concept: Decimal
+            expression: SUM[RETAIL_FACTS.sls WHERE RETAIL_FACTS.sls > 0 GROUP BY RETAIL_FACTS.item_nr, RETAIL_FACTS.store_nr]
+          relationship: item_store_sales
+  - concept: Category
+    object_mappings:
+    - referent_mappings:
+      - relationship: name
+        expression: PRODUCTS.category
+  - concept: ClassLabel
+    object_mappings:
+    - referent_mappings:
+      - relationship: name
+        expression: PRODUCTS.classLabel
+  - concept: Class
+    object_mappings:
+    - referent_mappings:
+      - relationship: nr
+        expression: PRODUCTS.classNr
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: nr
+          expression: PRODUCTS.classNr
+      children:
+      - object_mapping:
+          concept: Category
+          referent_mappings:
+          - relationship: name
+            expression: PRODUCTS.category
+        relationship: classToCategory
+      - object_mapping:
+          concept: ClassLabel
+          referent_mappings:
+          - relationship: name
+            expression: PRODUCTS.classLabel
+        relationship: classToLabel
+  - concept: Region
+    object_mappings:
+    - referent_mappings:
+      - relationship: name
+        expression: LOCATIONS.region
+  - concept: Store
+    object_mappings:
+    - referent_mappings:
+      - relationship: nr
+        expression: LOCATIONS.storeNr
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: nr
+          expression: LOCATIONS.storeNr
+      children:
+      - object_mapping:
+          concept: Employee
+          referent_mappings:
+          - relationship: nr
+            expression: LOCATIONS.mgr
+        relationship: storeToManager
+      - object_mapping:
+          concept: Region
+          referent_mappings:
+          - relationship: name
+            expression: LOCATIONS.region
+        relationship: storeToRegion
+  - concept: Terminal
+    object_mappings:
+    - referent_mappings:
+      - relationship: id
+        expression: TERMINALS.id
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: id
+          expression: TERMINALS.id
+      children:
+      - object_mapping:
+          concept: Store
+          referent_mappings:
+          - relationship: nr
+            expression: TERMINALS.store
+        relationship: deployedTo
+  - concept: Transaction
+    object_mappings:
+    - referent_mappings:
+      - relationship: nr
+        expression: TRANSACTIONS.txn
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: nr
+          expression: TRANSACTIONS.txn
+      children:
+      - object_mapping:
+          concept: Terminal
+          referent_mappings:
+          - relationship: id
+            expression: TRANSACTIONS.terminal
+        relationship: registeredBy
+      - object_mapping:
+          concept: Item
+          referent_mappings:
+          - relationship: upc
+            expression: TRANSACTIONS.sku
+        children:
+        - object_mapping:
+            concept: Amount
+            expression: TRANSACTIONS.amt WHERE (TRANSACTIONS.refundYN == 'Y')
+          relationship: returns
+        - object_mapping:
+            concept: Amount
+            expression: TRANSACTIONS.amt WHERE (NOT TRANSACTIONS.refundYN == 'Y')
+          relationship: sales
+  - concept: Order
+    object_mappings:
+    - referent_mappings:
+      - relationship: nr
+        expression: ORDERS.nr
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: nr
+          expression: ORDERS.nr
+      children:
+      - object_mapping:
+          concept: Date
+          expression: ORDERS.ordDate
+        relationship: orderDate
+  - concept: OrderLineItem
+    object_mappings:
+    - referent_mappings:
+      - relationship: order
+        referent_mappings:
+        - relationship: nr
+          expression: LINEITEMS.orderNr
+      - relationship: nr
+        expression: LINEITEMS.lineItemNr
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: order
+          referent_mappings:
+          - relationship: nr
+            expression: LINEITEMS.orderNr
+        - relationship: nr
+          expression: LINEITEMS.lineItemNr
+      children:
+      - object_mapping:
+          concept: Decimal
+          expression: LINEITEMS.extendedPrice
+        relationship: lineitem_extended_price
+      - object_mapping:
+          concept: Decimal
+          expression: LINEITEMS.discount
+        relationship: lineitem_discount
+  - concept: Payment
+    object_mappings:
+    - referent_mappings:
+      - relationship: id
+        expression: PAYMENTS.id
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: id
+          expression: PAYMENTS.id
+      children:
+      - object_mapping:
+          concept: String
+          expression: PAYMENTS.type
+        relationship: type
+      - object_mapping:
+          concept: Decimal
+          expression: PAYMENTS.amount
+        relationship: amount
+  - concept: CardPayment
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: id
+          expression: PAYMENTS.id WHERE (PAYMENTS.type == 'card')
+      children:
+      - object_mapping:
+          concept: String
+          expression: PAYMENTS.cardNumber
+        relationship: cardNumber
+      - object_mapping:
+          concept: String
+          expression: PAYMENTS.cardHolderName
+        relationship: cardHolderName
+  - concept: CashPayment
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: id
+          expression: PAYMENTS.id WHERE (PAYMENTS.type == 'cash')
+      children:
+      - object_mapping:
+          concept: Decimal
+          expression: PAYMENTS.cashReceived
+        relationship: cashReceived
+      - object_mapping:
+          concept: Decimal
+          expression: PAYMENTS.cashReceived - PAYMENTS.amount
+        relationship: change

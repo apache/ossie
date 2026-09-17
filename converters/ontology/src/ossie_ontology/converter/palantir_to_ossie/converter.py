@@ -24,7 +24,7 @@ import warnings
 
 from ossie_ontology.common.graph import topological_sort_break_cycles
 from ossie_ontology.common.utils import to_pascal_case, to_verbalization_string
-from ossie_ontology.external.palantir.model import (
+from ossie_ontology.vendor.palantir.model import (
     ArrayDataType,
     DataSet as PalantirDataSet,
     DataSetColumn,
@@ -138,7 +138,10 @@ class PalantirToOssieConverter:
         return resource.status() in statuses
 
     def __init__(self, formula_factory: FormulaFactory | None = None):
-        self._formula_factory = formula_factory or FormulaFactory()
+        # See OssieParser: parsing is the default, the raw factory is the opt-out.
+        from ossie_ontology.expr.factory import FormulaParserFactory
+
+        self._formula_factory = formula_factory or FormulaParserFactory()
 
     # ------------------------------------------------------------------
     # Entry point

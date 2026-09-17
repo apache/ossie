@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 
 from ossie_ontology.common.graph import topological_sort
+from ossie_ontology.reasoner import OntologyReasoner
 from ossie_ontology.model import (
     Concept,
     ConceptMapping,
@@ -88,8 +89,11 @@ class SpecToOssieConverter:
 
     def __init__(self, formula_factory: FormulaFactory | None = None,
                  mapping_formula_factory: MappingFormulaFactory | None = None):
-        self._formula_factory = formula_factory or FormulaFactory()
-        self._mapping_formula_factory = mapping_formula_factory or MappingFormulaFactory()
+        # See OssieParser: parsing is the default, the raw factory is the opt-out.
+        from ossie_ontology.expr.factory import FormulaParserFactory, MappingFormulaParserFactory
+
+        self._formula_factory = formula_factory or FormulaParserFactory()
+        self._mapping_formula_factory = mapping_formula_factory or MappingFormulaParserFactory()
 
     def convert(self, spec: OssieSpec) -> OssieOntology:
         ontology = OntologyComponent()
@@ -300,7 +304,10 @@ class SpecToOssieConverter:
                 )
         expression: DatasetField | Formula | None = None
         if om_spec.expression is not None:
-            expression = self._resolve_mapping_expression(om_spec.expression, semantic_model, concept, ontology)
+            expression = self._resolve_mapping_expression(
+                om_spec.expression, semantic_model,
+                SpecToOssieConverter._expression_type(concept if concept is not None else container), ontology,
+            )
         referent_mappings = None
         if om_spec.referent_mappings is not None:
             rm_container = concept if concept is not None else container
@@ -344,7 +351,6 @@ class SpecToOssieConverter:
         container: Concept,
         lm_spec: SpecLinkMapping,
     ) -> LinkMapping:
-        object_mapping = self._convert_object_mapping(model, ontology, semantic_model, container, lm_spec.object_mapping)
         relationship: Relationship | None = None
         if lm_spec.relationship is not None:
             relationship = ontology.lookup_concept_relationship(container, lm_spec.relationship)
@@ -353,14 +359,37 @@ class SpecToOssieConverter:
                     f"LinkMapping references unknown relationship "
                     f"'{container.name}.{lm_spec.relationship}' in ontology '{model.name}'."
                 )
+        # Resolved first: the object_mapping below describes the *target* of the
+        # relationship, not the container it was looked up on, and it needs that
+        # target to know what a bare `expression:` holds.
+        target = relationship.last_role.player if relationship is not None else container
+        object_mapping = self._convert_object_mapping(model, ontology, semantic_model, target, lm_spec.object_mapping)
         children: list[LinkMapping] | None = None
         if lm_spec.children is not None:
-            child_container = relationship.last_role.player if relationship is not None else container
+            child_container = target
             children = [
                 self._convert_link_mapping(model, ontology, semantic_model, child_container, child)
                 for child in lm_spec.children
             ]
         return LinkMapping(object_mapping=object_mapping, relationship=relationship, children=children)
+
+    @staticmethod
+    def _expression_type(target: Concept) -> Concept | None:
+        """The concept a bare `expression:` on an object mapping actually holds.
+
+        For a value type that is the type itself. For an entity the expression
+        is not the entity — it is what identifies it — so the type is the player
+        of its identifying relationship, which is what
+        `_convert_referent_mapping` already reads off `rel.last_role.player`.
+        A composite reference scheme cannot be keyed by one expression at all;
+        `_build_entity_binding` reports that, so pin nothing and let it.
+        """
+        scheme = OntologyReasoner.ref_scheme(target)
+        if scheme is None:
+            return target
+        if len(scheme) != 1:
+            return None
+        return scheme[0].last_role.player
 
     # ----- Formula helpers -----------------------------------------------
 

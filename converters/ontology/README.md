@@ -19,13 +19,68 @@
 
 # Ossie Ontology Converters
 
-Converters between Ossie, Palantir, and Spec ontology formats.
+Converters between Ossie, Palantir, Spec, and RelationalAI ontology formats.
 
-| Converter           | Direction |
-|---------------------|-----------|
-| `palantir_to_ossie` | Palantir ontology → Ossie model |
-| `ossie_to_spec`     | Ossie model → Spec YAML |
-| `spec_to_ossie`     | Spec YAML → Ossie model |
+| Converter               | Direction |
+|-------------------------|-----------|
+| `palantir_to_ossie`     | Palantir ontology → Ossie model |
+| `ossie_to_spec`         | Ossie model → Spec YAML |
+| `spec_to_ossie`         | Spec YAML → Ossie model |
+| `ossie_to_relationalai` | Ossie model → RelationalAI (PyRel) |
+
+### The `relationalai` extra
+
+`ossie_to_relationalai` is the only converter that needs a vendor SDK, so it is
+gated behind an optional extra rather than the base install:
+
+```bash
+pip install "apache-ossie-ontology[relationalai]"
+```
+
+Nothing reachable from `ossie_ontology/__init__.py` imports `relationalai`, so
+everything else — parsing Ossie, converting Palantir, reading and writing the
+spec — installs and runs without it. Its tests skip themselves when it is absent.
+
+The PyRel-side model it targets — `OntologyModel` and its bindings, roles and
+CSV plumbing — lives under `ossie_ontology/vendor/relationalai/`,
+next to `ossie_ontology/vendor/palantir/`. The converter package itself holds
+only the translation. The one piece that sits elsewhere is the formula emitter,
+`ossie_ontology/expr/formula/visitor/converter.py`, which stays with the other
+formula visitors it is a variant of.
+
+It converts an `OssieOntology` into an in-memory `OntologyModel`, which can then
+be serialized to PyRel source:
+
+```python
+from pathlib import Path
+
+from relationalai.semantics.metamodel.pyrel_codegen import to_pyrel
+
+from ossie_ontology.parser import OssieParser
+from ossie_ontology.converter.ossie_to_relationalai import OssieToRelationalAIConverter
+
+ontology = OssieParser().parse(Path("model.yaml"))
+
+model = OssieToRelationalAIConverter.convert(ontology)
+Path("model_pyrel.py").write_text(to_pyrel(model.base_model().to_metamodel()))
+```
+
+`OssieParser` parses and validates `derived_by` and `requires` expressions into
+an AST by default, which is what the conversion needs — an unparsed formula is
+skipped and never reaches PyRel. To keep formulas as raw text instead, pass the
+plain `FormulaFactory` and `MappingFormulaFactory` from `ossie_ontology.model`.
+`SpecToOssieConverter` and `PalantirToOssieConverter` take the same argument and
+default the same way.
+
+Two things about the environment this needs. Constructing a model makes
+`relationalai` resolve its configuration, so a `raiconfig.yaml` must be present.
+And each dataset's `source` is read from the configured connection to get its
+column types, so the call above needs one that can reach those tables.
+
+To convert without a warehouse, pass `use_csv_only=True`: every dataset is then
+treated as an inline CSV rather than looked up, and nothing leaves the process.
+That is how the test suite runs — see `tests/conftest.py` for the offline config
+it pins, and `tests/test_ossie_to_relationalai.py` for the full offline setup.
 
 ## Prerequisites
 
