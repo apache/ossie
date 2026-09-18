@@ -17,6 +17,7 @@
 package plugin
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -25,6 +26,7 @@ import (
 var installCmd = &cobra.Command{
 	Use:   "install [name[@version] | url]",
 	Short: "Install a plugin from the registry or a URL",
+	Args:  cobra.MaximumNArgs(1),
 	RunE:  runPluginInstall,
 }
 
@@ -33,6 +35,17 @@ func init() {
 }
 
 func runPluginInstall(cmd *cobra.Command, args []string) error {
+	all, err := cmd.Flags().GetBool("all")
+	if err != nil {
+		return err
+	}
+	hasName := len(args) == 1
+	if all && hasName {
+		return errors.New("--all cannot be combined with a plugin name")
+	}
+	if !all && !hasName {
+		return errors.New("requires a plugin name or --all")
+	}
 	fmt.Fprintln(cmd.OutOrStdout(), "not yet implemented")
 	return nil
 }

@@ -25,6 +25,7 @@ import (
 var convertCmd = &cobra.Command{
 	Use:   "convert --from <platform> --input <path> | --to <platform> --input <path>",
 	Short: "Convert a semantic model between Ossie and a platform format",
+	Args:  cobra.NoArgs,
 	RunE:  runConvert,
 }
 
