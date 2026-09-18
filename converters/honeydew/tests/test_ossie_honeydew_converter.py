@@ -52,7 +52,7 @@ OSSIE_VERSION = "0.2.0.dev0"
 
 def _ossie(model_dict):
     return yaml.dump(
-        {"version": OSSIE_VERSION, "semantic_model": [model_dict]},
+        {"version": OSSIE_VERSION, **model_dict},
         default_flow_style=False,
         sort_keys=False,
     )
@@ -134,13 +134,15 @@ def _write_workspace(tmp_dir, workspace_name, entities):
 
 
 def _ossie_roundtrip(model_dict, tmp_path):
-    """Ossie → Honeydew → Ossie; returns the semantic model dict."""
+    """Ossie → Honeydew → Ossie; returns the round-tripped model without 'version'."""
     files = convert_ossie_to_honeydew(_ossie(model_dict))
     for rel_path, content in files.items():
         p = tmp_path / rel_path
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content)
-    return yaml.safe_load(convert_honeydew_to_ossie(str(tmp_path)))["semantic_model"][0]
+    doc = yaml.safe_load(convert_honeydew_to_ossie(str(tmp_path)))
+    assert doc.pop("version") == OSSIE_VERSION
+    return doc
 
 
 def _honeydew_roundtrip(entities, tmp_path):
@@ -596,24 +598,19 @@ def test_ossie_to_honeydew_metric_entity_hint_overrides_expression():
 
 def test_ossie_to_honeydew_invalid_version_raises():
     with pytest.raises(HoneydewConversionError, match="Unsupported"):
-        convert_ossie_to_honeydew("version: '9.9.9'\nsemantic_model:\n  - name: m\n")
+        convert_ossie_to_honeydew("version: '9.9.9'\nname: m\ndatasets: []\n")
 
 
-def test_ossie_to_honeydew_missing_semantic_model_raises():
-    with pytest.raises(HoneydewConversionError):
-        convert_ossie_to_honeydew(f"version: '{OSSIE_VERSION}'\n")
+def test_ossie_to_honeydew_missing_name_raises():
+    with pytest.raises(HoneydewConversionError, match="Missing 'name'"):
+        convert_ossie_to_honeydew(f"version: '{OSSIE_VERSION}'\ndatasets: []\n")
 
 
-def test_ossie_to_honeydew_multiple_models_warns():
-    doc = yaml.dump({"version": OSSIE_VERSION, "semantic_model": [
-        {"name": "m1", "datasets": []},
-        {"name": "m2", "datasets": []},
-    ]})
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        files = convert_ossie_to_honeydew(doc)
-    assert any("only the first" in str(x.message) for x in w)
-    assert yaml.safe_load(files["workspace.yml"]) == {"type": "workspace", "name": "m1"}
+def test_ossie_to_honeydew_legacy_wrapper_raises():
+    """The pre-#383 'semantic_model:' wrapper is no longer a valid document."""
+    doc = yaml.dump({"version": OSSIE_VERSION, "semantic_model": [{"name": "m", "datasets": []}]})
+    with pytest.raises(HoneydewConversionError, match="legacy 'semantic_model:' wrapper"):
+        convert_ossie_to_honeydew(doc)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -621,7 +618,7 @@ def test_ossie_to_honeydew_multiple_models_warns():
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _hd_root(sm):
-    return {"version": OSSIE_VERSION, "vendors": ["HONEYDEW"], "semantic_model": [sm]}
+    return {"version": OSSIE_VERSION, **sm}
 
 
 def _ansi(expr):
@@ -813,8 +810,7 @@ def test_honeydew_to_ossie_missing_workspace_raises(tmp_path):
 def test_honeydew_to_ossie_missing_schema_dir_empty_model(tmp_path):
     (tmp_path / "workspace.yml").write_text(yaml.dump({"type": "workspace", "name": "ws"}))
     result = yaml.safe_load(convert_honeydew_to_ossie(str(tmp_path)))
-    assert result == {"version": OSSIE_VERSION, "vendors": ["HONEYDEW"],
-                      "semantic_model": [{"name": "ws", "datasets": []}]}
+    assert result == {"version": OSSIE_VERSION, "name": "ws", "datasets": []}
 
 
 def test_honeydew_to_ossie_empty_metric_sql_skipped(tmp_path):
@@ -824,7 +820,7 @@ def test_honeydew_to_ossie_empty_metric_sql_skipped(tmp_path):
                      "datatype": "number", "sql": ""}]}])
     with warnings.catch_warnings(record=True):
         result = yaml.safe_load(convert_honeydew_to_ossie(str(tmp_path)))
-    assert "metrics" not in result["semantic_model"][0]
+    assert "metrics" not in result
 
 
 def test_honeydew_to_ossie_duplicate_relations_deduplicated(tmp_path):
@@ -839,7 +835,7 @@ def test_honeydew_to_ossie_duplicate_relations_deduplicated(tmp_path):
          "dataset_attrs": []},
     ])
     result = yaml.safe_load(convert_honeydew_to_ossie(str(tmp_path)))
-    assert len(result["semantic_model"][0].get("relationships", [])) == 1
+    assert len(result.get("relationships", [])) == 1
 
 
 def test_honeydew_to_ossie_relation_target_columns_are_unique_keys(tmp_path):
@@ -855,7 +851,7 @@ def test_honeydew_to_ossie_relation_target_columns_are_unique_keys(tmp_path):
         {"name": "customers", "keys": ["id"], "key_dataset": "customers",
          "sql": "db.s.customers", "dataset_attrs": []},
     ])
-    sm = yaml.safe_load(convert_honeydew_to_ossie(str(tmp_path)))["semantic_model"][0]
+    sm = yaml.safe_load(convert_honeydew_to_ossie(str(tmp_path)))
     datasets = {ds["name"]: ds for ds in sm["datasets"]}
     rel = sm["relationships"][0]
     target_ds = datasets[rel["to"]]
@@ -1002,8 +998,7 @@ def test_ossie_roundtrip_tpcds_example(tmp_path):
         p = tmp_path / rel_path
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content)
-    result = yaml.safe_load(convert_honeydew_to_ossie(str(tmp_path)))
-    sm = result["semantic_model"][0]
+    sm = yaml.safe_load(convert_honeydew_to_ossie(str(tmp_path)))
     assert sm["name"] == "tpcds_retail_model"
     ds_names = {ds["name"] for ds in sm["datasets"]}
     assert "store_sales" in ds_names and "customer" in ds_names
@@ -1418,31 +1413,6 @@ def test_connectionless_relation_warns():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Vendors round-trip
-# ─────────────────────────────────────────────────────────────────────────────
-
-@pytest.mark.parametrize("input_vendors,expected_vendors", [
-    (["SNOWFLAKE", "HONEYDEW"], ["HONEYDEW", "SNOWFLAKE"]),
-    (["SNOWFLAKE"], ["HONEYDEW", "SNOWFLAKE"]),
-    (["HONEYDEW"], ["HONEYDEW"]),
-])
-def test_vendors_roundtrip(tmp_path, input_vendors, expected_vendors):
-    doc = yaml.dump({
-        "version": OSSIE_VERSION,
-        "vendors": input_vendors,
-        "semantic_model": [{"name": "m", "datasets": []}],
-    })
-    files = convert_ossie_to_honeydew(doc)
-    for rel_path, content in files.items():
-        p = tmp_path / rel_path
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content)
-    result = yaml.safe_load(convert_honeydew_to_ossie(str(tmp_path)))
-    assert result == {"version": OSSIE_VERSION, "vendors": expected_vendors,
-                      "semantic_model": [{"name": "m", "datasets": []}]}
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # main() CLI smoke tests
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1451,9 +1421,8 @@ def test_main_ossie_to_honeydew(tmp_path):
     input_file = tmp_path / "model.yaml"
     input_file.write_text(yaml.dump({
         "version": OSSIE_VERSION,
-        "semantic_model": [{"name": "m", "datasets": [
-            {"name": "orders", "source": "db.s.orders", "fields": []}
-        ]}],
+        "name": "m",
+        "datasets": [{"name": "orders", "source": "db.s.orders", "fields": []}],
     }))
     output_dir = tmp_path / "out"
     result = subprocess.run(
@@ -1482,11 +1451,11 @@ def test_main_honeydew_to_ossie(tmp_path):
     assert result.returncode == 0
     assert yaml.safe_load(output_file.read_text()) == {
         "version": OSSIE_VERSION,
-        "vendors": ["HONEYDEW"],
-        "semantic_model": [{"name": "ws", "datasets": [
+        "name": "ws",
+        "datasets": [
             {"name": "orders", "source": "DB.S.ORDERS", "primary_key": ["id"],
              "unique_keys": [["id"]]},
-        ]}],
+        ],
     }
 
 
@@ -1494,9 +1463,8 @@ def test_main_path_traversal_rejected(tmp_path):
     import subprocess
     input_file = tmp_path / "model.yaml"
     input_file.write_text(
-        f"version: '{OSSIE_VERSION}'\nsemantic_model:\n"
-        "  - name: m\n    datasets:\n"
-        "      - name: '../../evil'\n        source: db.s.evil\n        fields: []\n"
+        f"version: '{OSSIE_VERSION}'\nname: m\ndatasets:\n"
+        "  - name: '../../evil'\n    source: db.s.evil\n    fields: []\n"
     )
     output_dir = tmp_path / "out"
     result = subprocess.run(
