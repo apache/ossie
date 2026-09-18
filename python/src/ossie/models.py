@@ -194,7 +194,7 @@ class OssieMetric(BaseModel):
 
 
 class OssieSemanticModel(BaseModel):
-    """Top-level container representing a complete semantic model."""
+    """Semantic model: the datasets, relationships, and metrics for one business domain."""
 
     model_config = ConfigDict(frozen=True)
 

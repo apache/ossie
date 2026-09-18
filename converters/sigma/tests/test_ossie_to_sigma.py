@@ -17,6 +17,7 @@
 
 from pathlib import Path
 
+import pytest
 import yaml
 from ossie import (
     OssieDataset,
@@ -28,7 +29,6 @@ from ossie import (
     OssieMetric,
 )
 
-import pytest
 from ossie import OssieRelationship
 from pydantic import ValidationError
 
@@ -121,7 +121,7 @@ def test_relationship_ids_are_scoped_by_owning_dataset():
             OssieRelationship(
                 name="Parent", **{"from": "shipments"}, to="carriers", from_columns=["x"], to_columns=["y"]
             ),
-        ]
+        ],
     )
 
     spec = OssieToSigmaConverter().convert(document).output
@@ -205,7 +205,7 @@ def test_untranslatable_expression_omits_the_column_instead_of_faking_a_formula(
                     ]
                 ),
             )
-        ]
+        ],
     )
 
     result = OssieToSigmaConverter().convert(document)
@@ -259,7 +259,7 @@ def test_datatypes_only_ever_emit_the_two_documented_format_kinds():
                     )
                 ],
             )
-        ]
+        ],
     )
 
     columns = OssieToSigmaConverter().convert(document).output["pages"][0]["elements"][0]["columns"]
