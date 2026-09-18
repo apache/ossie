@@ -65,6 +65,41 @@ class _EntityEntry:
     entity_type: EntityType
 
 
+def _has_nonportable_semantics(
+    metric: Metric,
+    metric_index: Dict[str, Metric],
+    visiting: Optional[set[str]] = None,
+) -> bool:
+    """Return whether a metric uses semantics Ossie cannot represent."""
+    if metric.type is MetricType.CUMULATIVE:
+        return True
+
+    visiting = visiting or set()
+    if metric.name in visiting:
+        return False
+    visiting.add(metric.name)
+
+    params = metric.type_params
+    if params.window is not None or params.grain_to_date is not None:
+        return True
+    if params.join_to_timespine or params.fill_nulls_with is not None:
+        return True
+
+    inputs = list(params.metrics or [])
+    if params.numerator is not None:
+        inputs.append(params.numerator)
+    if params.denominator is not None:
+        inputs.append(params.denominator)
+
+    for input_metric in inputs:
+        if input_metric.offset_window is not None or input_metric.offset_to_grain is not None:
+            return True
+        dependency = metric_index.get(input_metric.name)
+        if dependency is not None and _has_nonportable_semantics(dependency, metric_index, visiting):
+            return True
+    return False
+
+
 @dataclass(frozen=True)
 class _RelationshipDirection:
     from_dataset: str
@@ -109,6 +144,13 @@ class MSIToOssieConverter:
             if metric.type is MetricType.CUMULATIVE:
                 issues.append(
                     ConverterIssue(issue_type=ConverterIssueType.CUMULATIVE_SEMANTICS_LOSS, element_name=metric.name)
+                )
+            elif _has_nonportable_semantics(metric, metric_index):
+                issues.append(
+                    ConverterIssue(
+                        issue_type=ConverterIssueType.NON_PORTABLE_METRIC_SEMANTICS,
+                        element_name=metric.name,
+                    )
                 )
             expr = self._resolve_metric_expression(metric, metric_index, expression_cache)
             ossie_metrics.append(
