@@ -590,9 +590,11 @@ def _references_dropped(expr, self_name, dropped_dims, dropped_measures):
     that merely shares a dropped dimension's name is not over-dropped. The one
     ambiguity the regex can't resolve without a SQL parser is a bare, unqualified
     *source column* sharing a dropped dimension's name -- there it errs on dropping.
+
+    Matching is case-insensitive, as Databricks SQL identifiers are case-insensitive.
     """
     for m in dropped_measures:
-        if re.search(r"measure\(\s*" + re.escape(m) + r"\s*\)", expr):
+        if re.search(r"measure\(\s*" + re.escape(m) + r"\s*\)", expr, re.IGNORECASE):
             return m
     for d in dropped_dims:
         # Match only a bare, unqualified token: the negative look-behind/ahead for a
@@ -600,7 +602,7 @@ def _references_dropped(expr, self_name, dropped_dims, dropped_measures):
         # qualified paths (`alias.name` / `name.col`), so a join alias or joined
         # column sharing a dropped name is not falsely cascade-dropped.
         if d != self_name and re.search(
-                r"(?<![\w.])" + re.escape(d) + r"(?![\w.])", expr):
+                r"(?<![\w.])" + re.escape(d) + r"(?![\w.])", expr, re.IGNORECASE):
             return d
     return None
 

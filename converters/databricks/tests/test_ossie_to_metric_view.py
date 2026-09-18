@@ -272,6 +272,31 @@ def test_cascade_drop_downstream_dimension_reference():
     assert dims == ["keep"]   # region dropped; label cascade-dropped; keep survives
 
 
+def test_cascade_drop_matches_dropped_name_case_insensitively():
+    """Databricks SQL identifiers are case-insensitive, so a measure that references a
+    dropped field in a different case (COUNT(DISTINCT REGION_NAME) over a dropped
+    region_name) must cascade-drop rather than survive as a dangling reference."""
+    import yaml
+    ossie = yaml.safe_dump({
+        "version": exporter.OSSIE_VERSION,
+        "name": "m",
+        "datasets": [{"name": "d", "source": "c.s.t", "fields": [
+            {"name": "id", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "id"}]}},
+            {"name": "region_name", "expression": {"dialects": [{"dialect": "T_SQL", "expression": "region_name"}]}},  # dropped: no DBX/ANSI
+        ]}],
+        "metrics": [
+            # references the dropped region_name in upper case
+            {"name": "region_count", "expression": {"dialects": [
+                {"dialect": "DATABRICKS", "expression": "COUNT(DISTINCT REGION_NAME)"}]}},
+        ],
+    })
+    out = parse(exporter.convert_ossie_to_metric_view(ossie))
+    measures = [m["name"] for m in out.get("measures", [])]
+    dims = [d["name"] for d in out.get("dimensions", [])]
+    assert measures == []      # region_count cascade-dropped despite the case mismatch
+    assert dims == ["id"]      # the unrelated dimension survives
+
+
 def test_orientation_unverifiable_when_to_side_has_no_key_warns():
     """If the `from` columns are a declared key but the `to` side declares no key, the
     from/to orientation can't be verified; the converter leaves it as-is (no reorient)
