@@ -1,0 +1,65 @@
+name: svacc_sales_sv
+description: 销售分析语义视图
+tables:
+- name: o
+  base_table:
+    database: retail
+    schema: public
+    table: svacc_orders
+  primary_key:
+    columns:
+    - order_id
+  dimensions:
+  - name: region_dim
+    expr: o.region
+  - name: status_dim
+    expr: o.status
+  metrics:
+  - name: total
+    expr: sum(o.amount)
+  - name: order_count
+    expr: "count(*)"
+- name: c
+  base_table:
+    database: retail
+    schema: public
+    table: svacc_customers
+  primary_key:
+    columns:
+    - customer_id
+  dimensions:
+  - name: city_dim
+    expr: c.city
+    description: 客户城市
+  metrics:
+  - name: credit
+    expr: sum(c.credit_limit)
+  - name: avg_credit
+    expr: avg(c.credit_limit)
+- name: i
+  base_table:
+    database: retail
+    schema: public
+    table: svacc_order_items
+  primary_key:
+    columns:
+    - item_id
+  metrics:
+  - name: item_qty
+    expr: sum(i.quantity)
+relationships:
+- name: rel_oc
+  left_table: o
+  right_table: c
+  relationship_columns:
+  - left_column: customer_id
+    right_column: customer_id
+  relationship_type: many_to_one
+- name: rel_io
+  left_table: i
+  right_table: o
+  relationship_columns:
+  - left_column: order_id
+    right_column: order_id
+  relationship_type: many_to_one
+

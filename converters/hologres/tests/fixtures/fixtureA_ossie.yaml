@@ -1,0 +1,35 @@
+version: 0.2.0.dev0
+name: svacc_order_sv
+description: Single-table order analysis
+datasets:
+- name: o
+  source: retail.public.svacc_orders
+  primary_key:
+  - order_id
+  fields:
+  - name: region_dim
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: region
+  - name: status_dim
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: status
+    description: The order's current status
+metrics:
+- name: total_revenue
+  expression:
+    dialects:
+    - dialect: ANSI_SQL
+      expression: SUM(o.amount)
+  description: Total revenue
+- name: order_count
+  expression:
+    dialects:
+    - dialect: ANSI_SQL
+      expression: COUNT(*)
+  custom_extensions:
+  - vendor_name: HOLOGRES
+    data: '{"_v": 1, "owner": "o"}'

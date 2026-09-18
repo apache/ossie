@@ -1,0 +1,78 @@
+version: 0.2.0.dev0
+name: svacc_sales_sv
+description: 销售分析语义视图
+datasets:
+- name: o
+  source: retail.public.svacc_orders
+  primary_key:
+  - order_id
+  fields:
+  - name: region_dim
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: region
+  - name: status_dim
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: status
+- name: c
+  source: retail.public.svacc_customers
+  primary_key:
+  - customer_id
+  fields:
+  - name: city_dim
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: city
+    description: 客户城市
+- name: i
+  source: retail.public.svacc_order_items
+  primary_key:
+  - item_id
+relationships:
+- name: rel_oc
+  from: o
+  to: c
+  from_columns:
+  - customer_id
+  to_columns:
+  - customer_id
+- name: rel_io
+  from: i
+  to: o
+  from_columns:
+  - order_id
+  to_columns:
+  - order_id
+metrics:
+- name: total
+  expression:
+    dialects:
+    - dialect: ANSI_SQL
+      expression: SUM(o.amount)
+- name: order_count
+  expression:
+    dialects:
+    - dialect: ANSI_SQL
+      expression: COUNT(*)
+  custom_extensions:
+  - vendor_name: HOLOGRES
+    data: '{"_v": 1, "owner": "o"}'
+- name: credit
+  expression:
+    dialects:
+    - dialect: ANSI_SQL
+      expression: SUM(c.credit_limit)
+- name: avg_credit
+  expression:
+    dialects:
+    - dialect: ANSI_SQL
+      expression: AVG(c.credit_limit)
+- name: item_qty
+  expression:
+    dialects:
+    - dialect: ANSI_SQL
+      expression: SUM(i.quantity)
