@@ -158,6 +158,7 @@ def test_stale_measure_is_kept_with_warning(result, model):
 
 def test_output_round_trips_through_ossie_yaml(result):
     serialized = yaml.safe_load(result.output.to_ossie_yaml())
+    assert next(iter(serialized)) == "version"
     assert serialized["name"] == "Sample Sales"
     assert "semantic_model" not in serialized
     document = OssieDocument.model_validate(serialized)

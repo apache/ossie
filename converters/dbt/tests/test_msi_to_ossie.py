@@ -1209,6 +1209,7 @@ class TestOssieJsonSerialization:
         parsed = json.loads(result.to_ossie_json())
 
         assert parsed["version"] == "0.2.0.dev0"
+        assert next(iter(parsed)) == "version"
         assert "semantic_model" not in parsed
         assert parsed["name"] == "my_project"
 

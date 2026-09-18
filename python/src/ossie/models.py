@@ -19,7 +19,7 @@ from enum import Enum
 from typing import Any, Optional, Union
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer
 
 
 class OssieDialect(str, Enum):
@@ -213,6 +213,14 @@ class OssieDocument(OssieSemanticModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     version: str = "0.2.0.dev0"
+
+    @model_serializer(mode="wrap")
+    def _serialize_document(self, handler: SerializerFunctionWrapHandler):
+        # Omit a custom return type to retain Pydantic's serialization schema.
+        data = handler(self)
+        if "version" in data:
+            return {"version": data.pop("version"), **data}
+        return data
 
     def to_ossie_yaml(self, **kwargs: Any) -> str:
         """Serialize to Ossie-compliant YAML (uses field aliases and excludes None values)."""

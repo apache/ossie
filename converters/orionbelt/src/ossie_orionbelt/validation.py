@@ -207,13 +207,19 @@ def validate_ossie(ossie_dict: dict[str, Any], schema_path: Path | None = None) 
     _validate_json_schema(ossie_dict, schema_path or _OSSIE_SCHEMA_PATH, result, draft="draft2020")
 
     # The semantic checks below assume a well-formed structure (lists of dicts).
-    # JSON Schema validation above already reports structural errors, so guard
-    # every level here rather than raising on malformed input.
+    # Guard every level rather than raising on malformed input, even when
+    # JSON Schema validation is unavailable.
     def _as_dict_list(value: Any) -> list[dict[str, Any]]:
         return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
 
-    # Legacy wrappers are schema errors, not model contents to traverse.
-    if not isinstance(ossie_dict, dict) or "semantic_model" in ossie_dict:
+    if not isinstance(ossie_dict, dict):
+        result.semantic_errors.append("[INVALID_DOCUMENT] Ossie document must be an object")
+        return result
+    if "semantic_model" in ossie_dict:
+        result.semantic_errors.append(
+            "[LEGACY_WRAPPER] Legacy 'semantic_model' wrappers are not supported; "
+            "place model properties at the document root"
+        )
         return result
     model = ossie_dict
 
