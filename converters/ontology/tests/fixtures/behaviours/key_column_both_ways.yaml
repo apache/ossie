@@ -1,0 +1,179 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# One column keying an entity through both mapping styles at once.
+#
+# `SALES.storeNr` is read twice: once as a bare `expression` on the soldAt link
+# node, and once through a `referent_mappings` entry keying Store by `nr`. Both
+# say the column holds a store number, so both must pin the field to `StoreNr`.
+#
+# They did not agree. The referent path took the type from the relationship's
+# last role, the object-mapping path took it from `concept:` -- the entity --
+# and the two spellings of one fact collided with "Field 'storeNr' is already
+# mapped as concept 'StoreNr' but this mapping expects 'Store'".
+#
+# Otherwise identical to ref_scheme.yaml, which this was derived from:
+#
+#   * Store is mapped with `expression:` and no `referent_mappings`, so the
+#     converter has to ask the reasoner which relationship identifies it before
+#     it can name the keyword argument of `Store.new(...)`.
+#   * Sale -> soldAt -> Store is a bare-expression link node that carries
+#     children, so the converter builds a child binding scoped to the Store the
+#     expression identifies, again via the ref scheme.
+#   * LargeSale is derived and extends nothing, so the formula emitter takes its
+#     ref-scheme branch rather than the subtype branch that CardPayment in
+#     retail.yaml covers.
+version: 0.2.0.dev0
+name: KeyColumnBothWays
+ontology:
+- concept: StoreNr
+  type: ValueType
+  extends: [Integer]
+- concept: Region
+  type: ValueType
+  extends: [String]
+- concept: SaleNr
+  type: ValueType
+  extends: [Integer]
+- concept: Amount
+  type: ValueType
+  extends: [Decimal]
+- concept: Store
+  type: EntityType
+  identify_by: [nr]
+  relationships:
+  - name: nr
+    roles:
+    - concept: StoreNr
+      name: n
+    verbalizes: ['{Store} has {StoreNr:n}']
+    multiplicity: OneToOne
+  - name: region
+    roles:
+    - concept: Region
+      name: r
+    verbalizes: ['{Store} is in {Region:r}']
+    multiplicity: ManyToOne
+- concept: Sale
+  type: EntityType
+  identify_by: [nr]
+  relationships:
+  - name: nr
+    roles:
+    - concept: SaleNr
+      name: n
+    verbalizes: ['{Sale} has {SaleNr:n}']
+    multiplicity: OneToOne
+  - name: soldAt
+    roles:
+    - concept: Store
+      name: s
+    verbalizes: ['{Sale} was sold at {Store:s}']
+    multiplicity: ManyToOne
+  - name: amount
+    roles:
+    - concept: Amount
+      name: a
+    verbalizes: ['{Sale} totals {Amount:a}']
+    multiplicity: ManyToOne
+- concept: LargeSale
+  type: EntityType
+  identify_by: [nr]
+  derived_by: ['Sale.nr(n) AND Sale.amount(a) AND a > 1000']
+  relationships:
+  - name: nr
+    roles:
+    - concept: SaleNr
+      name: n
+    verbalizes: ['{LargeSale} has {SaleNr:n}']
+    multiplicity: OneToOne
+ontology_mappings:
+- name: ref_scheme_mapping
+  semantic_model:
+    name: Ref scheme semantic model
+    datasets:
+    - name: STORES
+      source: DB.SCHEMA.STORES
+      fields:
+      - name: storeNr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: storeNr
+      - name: region
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: region
+    - name: SALES
+      source: DB.SCHEMA.SALES
+      fields:
+      - name: saleNr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: saleNr
+      - name: storeNr
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: storeNr
+      - name: storeRegion
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: storeRegion
+      - name: amount
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: amount
+  concept_mappings:
+  - concept: Store
+    object_mappings:
+    - expression: STORES.storeNr
+    - referent_mappings:
+      - relationship: nr
+        expression: SALES.storeNr
+    link_mappings:
+    - object_mapping:
+        expression: STORES.storeNr
+      children:
+      - object_mapping:
+          concept: Region
+          expression: STORES.region
+        relationship: region
+  - concept: Sale
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: nr
+          expression: SALES.saleNr
+      children:
+      - object_mapping:
+          concept: Amount
+          expression: SALES.amount
+        relationship: amount
+      - object_mapping:
+          concept: Store
+          expression: SALES.storeNr
+        relationship: soldAt
+        children:
+        - object_mapping:
+            concept: Region
+            expression: SALES.storeRegion
+          relationship: region

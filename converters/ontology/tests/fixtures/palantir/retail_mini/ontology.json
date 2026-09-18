@@ -1,0 +1,75 @@
+{
+  "objectTypes": [
+    {
+      "rid": "ri.ot.store",
+      "id": "store",
+      "displayName": "Store",
+      "properties": [
+        {
+          "rid": "ri.p.store_id",
+          "id": "store_id",
+          "baseType": {
+            "type": "STRING"
+          }
+        },
+        {
+          "rid": "ri.p.store_name",
+          "id": "store_name",
+          "baseType": {
+            "type": "STRING"
+          }
+        }
+      ],
+      "primaryKeys": [
+        "store_id"
+      ]
+    },
+    {
+      "rid": "ri.ot.sale",
+      "id": "sale",
+      "displayName": "Sale",
+      "properties": [
+        {
+          "rid": "ri.p.sale_id",
+          "id": "sale_id",
+          "baseType": {
+            "type": "STRING"
+          }
+        },
+        {
+          "rid": "ri.p.amount",
+          "id": "amount",
+          "baseType": {
+            "type": "STRING"
+          }
+        },
+        {
+          "rid": "ri.p.store_id",
+          "id": "store_id",
+          "baseType": {
+            "type": "STRING"
+          }
+        }
+      ],
+      "primaryKeys": [
+        "sale_id"
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "rid": "ri.rel.sale_store",
+      "id": "sale_store",
+      "definition": {
+        "type": "oneToMany",
+        "oneToMany": {
+          "objectTypeRidOneSide": "ri.ot.store",
+          "objectTypeRidManySide": "ri.ot.sale",
+          "oneSidePrimaryKeyToManySidePropertyMapping": {
+            "ri.p.store_id": "ri.p.store_id"
+          }
+        }
+      }
+    }
+  ]
+}

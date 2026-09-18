@@ -1,0 +1,80 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+version: 0.2.0.dev0
+name: Sample model with agg formula referencing a relationship
+ontology:
+  - concept: TotalSales
+    type: ValueType
+    extends: [Decimal]
+  - concept: Item
+    type: EntityType
+    identify_by: [itemId]
+    relationships:
+      - name: itemId
+        roles:
+          - concept: Integer
+        multiplicity: OneToOne
+      - name: grossReturns
+        roles:
+          - concept: Store
+          - concept: Decimal
+        multiplicity: ManyToOne
+      - name: weekSales
+        roles:
+          - concept: TotalSales
+        multiplicity: ManyToOne
+  - concept: Store
+    type: EntityType
+    identify_by: [storeId]
+    relationships:
+      - name: storeId
+        roles:
+          - concept: Integer
+        multiplicity: OneToOne
+ontology_mappings:
+  - name: mapping
+    semantic_model:
+      name: sales_model
+      datasets:
+        - name: SALES
+          source: SALES
+          fields:
+            - name: item_id
+              expression: {}
+            - name: amount
+              expression: {}
+    concept_mappings:
+      - concept: Item
+        object_mappings:
+          - referent_mappings:
+              - relationship: itemId
+                expression: SALES.item_id
+        link_mappings:
+          - object_mapping:
+              referent_mappings:
+                - relationship: itemId
+                  expression: SALES.item_id
+            children:
+              - relationship: weekSales
+                object_mapping:
+                  expression: 'SUM[SALES.amount WHERE Item.grossReturns(Store) > 0 GROUP BY SALES.item_id]'
+      - concept: Store
+        object_mappings:
+          - referent_mappings:
+              - relationship: storeId
+                expression: SALES.item_id

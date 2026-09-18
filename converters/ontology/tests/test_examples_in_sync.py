@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pytest
 
-_FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+_SPECS_DIR = Path(__file__).resolve().parent / "fixtures" / "specs"
 # tests/ -> ontology -> converters -> <repo root>
 _EXAMPLES_DIR = Path(__file__).resolve().parents[3] / "examples"
 
@@ -43,7 +43,7 @@ def test_vendored_input_matches_example(vendored_name: str, example_name: str):
     if not example_path.is_file():
         pytest.skip(f"canonical example not present at {example_path}")
 
-    vendored_path = _FIXTURES_DIR / vendored_name
+    vendored_path = _SPECS_DIR / vendored_name
     assert vendored_path.is_file(), f"vendored input missing: {vendored_path}"
     assert vendored_path.read_text(encoding="utf-8") == example_path.read_text(encoding="utf-8"), (
         f"'{vendored_path}' is out of sync with '{example_path}'. "
