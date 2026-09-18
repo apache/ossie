@@ -47,6 +47,25 @@ _OSSIE_METADATA_SECTION = "ossie"
 _LEGACY_OSSIE_METADATA_SECTION = "osi"
 _HD_ATTR_KEYS = ("display_name", "hidden", "folder", "format_string", "timegrain")
 
+# Ossie's portable datatype vocabulary (core-spec 'datatypes' enum) mapped onto
+# Honeydew's (bool, date, float, number, string, time, timestamp). Honeydew's
+# "number" is integral and "float" is approximate, so Decimal — exact base-10,
+# but not integral — maps to "float" as the closest available type. Honeydew has
+# no timezone-aware type, so DateTimeTz also lands on "timestamp". "Opaque" is
+# left out on purpose: it carries no portable meaning, so those fields keep
+# falling back to the dimension-shape heuristic.
+_OSSIE_TO_HONEYDEW_DATATYPE = {
+    "String": "string",
+    "Integer": "number",
+    "Decimal": "float",
+    "Float": "float",
+    "Boolean": "bool",
+    "Date": "date",
+    "Time": "time",
+    "DateTime": "timestamp",
+    "DateTimeTz": "timestamp",
+}
+
 
 class HoneydewConversionError(Exception):
     """Raised when conversion between Ossie and Honeydew fails."""
@@ -438,9 +457,19 @@ def _pick_ansi_expression(expression: Any, field_name: str) -> str | None:
 
 
 def _ossie_field_to_honeydew_datatype(field: dict[str, Any]) -> str:
+    """Pick the Honeydew datatype for an Ossie field.
+
+    A Honeydew datatype round-tripped through a ``HONEYDEW`` custom extension
+    wins, then the field's declared ``datatype``. Fields that declare none (or
+    declare ``Opaque``) fall back to inferring the type from the shape of
+    ``dimension``.
+    """
     hd_ext = _get_honeydew_extension(field)
     if hd_ext.get("datatype"):
         return hd_ext["datatype"]
+    declared = field.get("datatype")
+    if isinstance(declared, str) and declared in _OSSIE_TO_HONEYDEW_DATATYPE:
+        return _OSSIE_TO_HONEYDEW_DATATYPE[declared]
     dimension = field.get("dimension")
     if isinstance(dimension, dict) and dimension.get("is_time"):
         return "timestamp"
