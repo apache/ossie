@@ -168,7 +168,8 @@ def test_document_serialization_schema_preserves_model_fields() -> None:
 
     assert schema["properties"]["version"]["type"] == "string"
     assert schema["properties"]["datasets"]["type"] == "array"
-    assert set(schema["required"]) == {"name", "datasets"}
+    # Early Pydantic 2.x versions also require defaulted fields in serialization schemas.
+    assert {"name", "datasets"} <= set(schema["required"])
     assert schema["additionalProperties"] is False
 
 
