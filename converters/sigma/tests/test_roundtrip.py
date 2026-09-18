@@ -39,6 +39,7 @@ def test_sigma_osi_sigma_roundtrip_through_yaml_serialization(fixture_name):
     yaml_text = document.to_ossie_yaml()
 
     serialized = yaml.safe_load(yaml_text)
+    assert next(iter(serialized)) == "version"
     assert serialized["name"] == spec["name"]
     assert "semantic_model" not in serialized
     assert "dialects" not in serialized
