@@ -120,6 +120,39 @@ def test_is_time_maps_to_default_timeframes():
         "raw", "date", "week", "month", "quarter", "year"]
 
 
+@pytest.mark.parametrize("datatype", ["Date", "Time", "DateTime", "DateTimeTz"])
+def test_temporal_datatype_auto_detected_as_time_dimension(datatype):
+    # With no explicit dimension.is_time, a temporal datatype defaults to a
+    # time dimension and receives the default timeframes.
+    files = export(minimal(datasets=[
+        {"name": "orders", "source": "db.sch.orders",
+         "fields": [_field("event_time", datatype=datatype,
+                           dimension={"is_time": None})]}]))
+    dims = parse(files["views/orders.view.yaml"])["dimensions"]
+    assert dims["event_time"]["timeframes"] == [
+        "raw", "date", "week", "month", "quarter", "year"]
+
+
+def test_non_temporal_datatype_is_not_a_time_dimension():
+    files = export(minimal(datasets=[
+        {"name": "orders", "source": "db.sch.orders",
+         "fields": [_field("amount", datatype="Integer",
+                           dimension={"is_time": None})]}]))
+    assert "timeframes" not in parse(
+        files["views/orders.view.yaml"])["dimensions"]["amount"]
+
+
+def test_explicit_is_time_false_overrides_temporal_datatype():
+    # An explicit is_time: false opts a temporal-typed column out of
+    # time-dimension treatment regardless of datatype.
+    files = export(minimal(datasets=[
+        {"name": "orders", "source": "db.sch.orders",
+         "fields": [_field("audit_ts", datatype="DateTimeTz",
+                           dimension={"is_time": False})]}]))
+    assert "timeframes" not in parse(
+        files["views/orders.view.yaml"])["dimensions"]["audit_ts"]
+
+
 def test_single_primary_key_marks_dimension():
     files = export(minimal(datasets=[
         {"name": "orders", "source": "db.sch.orders", "primary_key": ["id"],
