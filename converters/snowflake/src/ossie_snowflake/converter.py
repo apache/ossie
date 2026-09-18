@@ -466,6 +466,20 @@ def _split_identifiers(source_str):
     parts.append("".join(current).strip())
     return parts
 
+
+def _try_parse_source_relation(source_stripped):
+    """Return a three-part relation, or None if its identifiers are invalid."""
+    parts = _split_identifiers(source_stripped)
+    if len(parts) == 3 and all(_is_identifier(part) for part in parts):
+        # Only uppercase unquoted identifiers; preserve quoted ones as-is.
+        return {
+            "database": _normalize_identifier(parts[0]),
+            "schema": _normalize_identifier(parts[1]),
+            "table": _normalize_identifier(parts[2]),
+        }
+    return None
+
+
 def _parse_source(source):
     """Parses an Ossie dataset source string into a Snowflake base_table dict.
 
@@ -483,17 +497,9 @@ def _parse_source(source):
     if _is_query_source(source_stripped):
         return {"definition": source_stripped}
 
-    # Anything else must be a relation name whose three parts are real
-    # identifiers; otherwise SQL text that was not recognised as a query would
-    # silently become a bogus database/schema/table.
-    parts = _split_identifiers(source_stripped)
-    if len(parts) == 3 and all(_is_identifier(part) for part in parts):
-        # Only uppercase unquoted identifiers; preserve quoted ones as-is.
-        return {
-            "database": _normalize_identifier(parts[0]),
-            "schema": _normalize_identifier(parts[1]),
-            "table": _normalize_identifier(parts[2]),
-        }
+    relation = _try_parse_source_relation(source_stripped)
+    if relation is not None:
+        return relation
 
     raise OssieConversionError(
         f"Source '{source}' must be a fully qualified db.schema.table "

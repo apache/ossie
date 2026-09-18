@@ -116,6 +116,21 @@ class TestParseSource:
         result = _parse_source("db.schema.table")
         assert result == {"database": "DB", "schema": "SCHEMA", "table": "TABLE"}
 
+    @pytest.mark.parametrize("source, expected", [
+        ("  my_db . public . orders  ",
+         {"database": "MY_DB", "schema": "PUBLIC", "table": "ORDERS"}),
+        ('  "my.db" . public . "Order Details"  ',
+         {"database": '"my.db"', "schema": "PUBLIC", "table": '"Order Details"'}),
+        ('" padded " . public . orders',
+         {"database": '" padded "', "schema": "PUBLIC", "table": "ORDERS"}),
+        ("from.public.orders",
+         {"database": "FROM", "schema": "PUBLIC", "table": "ORDERS"}),
+        ("db.public.qualify",
+         {"database": "DB", "schema": "PUBLIC", "table": "QUALIFY"}),
+    ])
+    def test_existing_relation_normalization(self, source, expected):
+        assert _parse_source(source) == expected
+
     def test_quoted_identifiers_preserved(self):
         result = _parse_source('"myDb"."mySchema"."myTable"')
         assert result == {
@@ -229,6 +244,8 @@ class TestParseSource:
         '"select"',
         '"my"".db"',
         '"/*db*/"',
+        '"@"',
+        '"café"',
     ])
     def test_quoted_database_stays_a_relation(self, database):
         assert _parse_source(f"{database}.public.orders") == {
@@ -254,6 +271,11 @@ class TestParseSource:
         "foo bar.schema.table",                        # whitespace inside an unquoted part
         "db.schema.table;",                            # trailing statement terminator
         "1db.schema.table",                            # unquoted identifier cannot start with a digit
+        "db.public.orders AT (OFFSET => -60)",
+        "db.public.orders AS o",
+        "db.public.orders; db.public.other",
+        "/* comment */ db.public.orders",
+        "db.public.orders -- comment",
     ])
     def test_relation_shaped_garbage_is_rejected_not_uppercased(self, source):
         with pytest.raises(OssieConversionError, match="fully qualified"):
