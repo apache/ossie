@@ -52,6 +52,7 @@ public class OssieSalesforceConverter {
         } catch (InvalidInputException e) {
             System.exit(2);
         } catch (ConversionException e) {
+            System.err.println("Error: " + e.getMessage());
             System.exit(3);
         }
     }

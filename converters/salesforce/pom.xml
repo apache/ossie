@@ -52,9 +52,23 @@
         <json-schema-validator.version>1.5.9</json-schema-validator.version>
         <maven-shade-plugin.version>3.6.2</maven-shade-plugin.version>
         <maven-resources-plugin.version>3.5.0</maven-resources-plugin.version>
+        <jsqlparser.version>5.3</jsqlparser.version>
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>com.github.jsqlparser</groupId>
+            <artifactId>jsqlparser</artifactId>
+            <version>${jsqlparser.version}</version>
+            <exclusions>
+                <!-- JSqlParser declares its benchmark harness as a runtime dependency.
+                     The parser classes do not depend on JMH. -->
+                <exclusion>
+                    <groupId>org.openjdk.jmh</groupId>
+                    <artifactId>jmh-core</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
