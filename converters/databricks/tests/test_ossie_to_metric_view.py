@@ -297,6 +297,53 @@ def test_cascade_drop_matches_dropped_name_case_insensitively():
     assert dims == ["id"]      # the unrelated dimension survives
 
 
+def test_cascade_drop_does_not_over_drop_function_named_like_dropped_field():
+    """A dropped field whose name collides with a SQL function/keyword token in a
+    surviving expression must NOT cascade-drop it. `COUNT(...)` is a function call,
+    not a reference to a dropped `count` dimension. Because identifiers are matched
+    case-insensitively, the collision would otherwise fire on any case, so the match
+    must exclude function-call tokens (`NAME(...)`)."""
+    import yaml
+    ossie = yaml.safe_dump({
+        "version": exporter.OSSIE_VERSION,
+        "name": "m",
+        "datasets": [{"name": "d", "source": "c.s.t", "fields": [
+            {"name": "id", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "id"}]}},
+            # dropped (no DBX/ANSI); its bare name collides with the COUNT() function
+            {"name": "count", "expression": {"dialects": [{"dialect": "T_SQL", "expression": "count"}]}},
+        ]}],
+        "metrics": [
+            {"name": "total", "expression": {"dialects": [
+                {"dialect": "DATABRICKS", "expression": "COUNT(DISTINCT id)"}]}},
+        ],
+    })
+    out = parse(exporter.convert_ossie_to_metric_view(ossie))
+    measures = [m["name"] for m in out.get("measures", [])]
+    # `total` is not cascade-dropped: COUNT(...) is a function call, not a `count` ref.
+    assert measures == ["total"]
+
+
+def test_cascade_drop_does_not_drop_self_reference_differing_only_in_case():
+    """A dropped field and a surviving dimension whose names differ only in case can
+    coexist (a dropped field is not deduped against survivors). The survivor's bare
+    self-reference must not be read as a reference to the dropped field, so the
+    self-guard is case-folded and the survivor is kept rather than cascade-dropped."""
+    import yaml
+    ossie = yaml.safe_dump({
+        "version": exporter.OSSIE_VERSION,
+        "name": "m",
+        "datasets": [{"name": "d", "source": "c.s.t", "fields": [
+            # dropped (no DBX/ANSI); name differs from the survivor only in case
+            {"name": "REGION", "expression": {"dialects": [{"dialect": "T_SQL", "expression": "REGION"}]}},
+            {"name": "region", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "region"}]}},
+        ]}],
+    })
+    out = parse(exporter.convert_ossie_to_metric_view(ossie))
+    dims = [d["name"] for d in out.get("dimensions", [])]
+    # `region` survives: its bare `region` is a self-reference, not a ref to dropped REGION
+    assert dims == ["region"]
+
+
 def test_orientation_unverifiable_when_to_side_has_no_key_warns():
     """If the `from` columns are a declared key but the `to` side declares no key, the
     from/to orientation can't be verified; the converter leaves it as-is (no reorient)

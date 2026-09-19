@@ -587,22 +587,32 @@ def _references_dropped(expr, self_name, dropped_dims, dropped_measures):
     Measures are only referenceable via `measure(<name>)` (exact). Dimensions are
     referenced by their bare, *unqualified* name: a name that is part of a qualified
     path (`alias.name` or `name.col`) is ignored, so a join alias or joined column
-    that merely shares a dropped dimension's name is not over-dropped. The one
-    ambiguity the regex can't resolve without a SQL parser is a bare, unqualified
-    *source column* sharing a dropped dimension's name -- there it errs on dropping.
+    that merely shares a dropped dimension's name is not over-dropped. A bare token
+    immediately followed by `(` is a function/keyword call (e.g. `COUNT(...)`), never
+    a dimension reference, so it is excluded too.
 
-    Matching is case-insensitive, as Databricks SQL identifiers are case-insensitive.
+    Without a real SQL parser the bare-name match still can't tell an identifier from
+    a same-spelled keyword that is *not* a call (a type in `CAST(x AS DATE)`, a unit
+    in `EXTRACT(YEAR FROM d)` / `INTERVAL 1 DAY`, `CASE ... END`, `DISTINCT`) or from
+    text inside a string literal; a dropped dimension named like one of those errs on
+    dropping. This is the residual the paren-guard does not close.
+
+    Matching is case-insensitive, as Databricks SQL identifiers are case-insensitive;
+    the self-reference guard is case-folded to match, so a measure or dimension is
+    never dropped for referencing itself under a different case.
     """
     for m in dropped_measures:
-        if re.search(r"measure\(\s*" + re.escape(m) + r"\s*\)", expr, re.IGNORECASE):
+        if m.lower() != self_name.lower() and re.search(
+                r"measure\(\s*" + re.escape(m) + r"\s*\)", expr, re.IGNORECASE):
             return m
     for d in dropped_dims:
-        # Match only a bare, unqualified token: the negative look-behind/ahead for a
-        # word char or `.` excludes both substrings of a larger identifier and
-        # qualified paths (`alias.name` / `name.col`), so a join alias or joined
-        # column sharing a dropped name is not falsely cascade-dropped.
-        if d != self_name and re.search(
-                r"(?<![\w.])" + re.escape(d) + r"(?![\w.])", expr, re.IGNORECASE):
+        # Match only a bare, unqualified token that is not a function call: the
+        # negative look-behind/ahead for a word char or `.` excludes substrings of a
+        # larger identifier and qualified paths (`alias.name` / `name.col`), and the
+        # trailing `(?!\s*\()` excludes `NAME(...)` calls, so a dropped dim named e.g.
+        # `count` does not falsely match a surviving `COUNT(...)`.
+        if d.lower() != self_name.lower() and re.search(
+                r"(?<![\w.])" + re.escape(d) + r"(?![\w.])(?!\s*\()", expr, re.IGNORECASE):
             return d
     return None
 
