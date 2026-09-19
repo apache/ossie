@@ -176,25 +176,28 @@ def validate_unique_names(data: dict) -> list[str]:
 
     model_name = model.get("name", "<unnamed>")
 
+    # Guard on "is not None", not truthiness: "" is a schema-valid name (no
+    # minLength) and must not slip past duplicate detection.
+
     # Check unique dataset names
-    dataset_names = [d.get("name") for d in model.get("datasets", []) if d.get("name")]
+    dataset_names = [d.get("name") for d in model.get("datasets", []) if d.get("name") is not None]
     for dup in find_duplicates(dataset_names):
         errors.append(f"[Unique] Duplicate dataset name '{dup}' in model '{model_name}'")
 
     # Check unique field names within each dataset
     for dataset in model.get("datasets", []):
         dataset_name = dataset.get("name", "<unnamed>")
-        field_names = [f.get("name") for f in dataset.get("fields", []) if f.get("name")]
+        field_names = [f.get("name") for f in dataset.get("fields", []) if f.get("name") is not None]
         for dup in find_duplicates(field_names):
             errors.append(f"[Unique] Duplicate field name '{dup}' in dataset '{dataset_name}'")
 
     # Check unique metric names
-    metric_names = [m.get("name") for m in model.get("metrics", []) if m.get("name")]
+    metric_names = [m.get("name") for m in model.get("metrics", []) if m.get("name") is not None]
     for dup in find_duplicates(metric_names):
         errors.append(f"[Unique] Duplicate metric name '{dup}' in model '{model_name}'")
 
     # Check unique relationship names
-    rel_names = [r.get("name") for r in model.get("relationships", []) if r.get("name")]
+    rel_names = [r.get("name") for r in model.get("relationships", []) if r.get("name") is not None]
     for dup in find_duplicates(rel_names):
         errors.append(f"[Unique] Duplicate relationship name '{dup}' in model '{model_name}'")
 
@@ -211,6 +214,8 @@ def validate_references(data: dict) -> list[str]:
     errors = []
 
     model_name = model.get("name", "<unnamed>")
+    # Exclude falsy dataset names so a relationship pointing at "" is reported
+    # as unknown rather than matched.
     datasets = {d.get("name"): d for d in model.get("datasets", []) if d.get("name")}
 
     for rel in model.get("relationships", []):
@@ -218,9 +223,11 @@ def validate_references(data: dict) -> list[str]:
         from_ds = rel.get("from")
         to_ds = rel.get("to")
 
-        if from_ds and from_ds not in datasets:
+        # "is not None", not truthiness: "" is a declared-but-invalid reference
+        # that must be reported, not skipped.
+        if from_ds is not None and from_ds not in datasets:
             errors.append(f"[Reference] Relationship '{rel_name}' in model '{model_name}' references unknown dataset '{from_ds}'")
-        if to_ds and to_ds not in datasets:
+        if to_ds is not None and to_ds not in datasets:
             errors.append(f"[Reference] Relationship '{rel_name}' in model '{model_name}' references unknown dataset '{to_ds}'")
 
         # The spec defines to_columns as "Primary/unique key columns in the
@@ -292,7 +299,9 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
         # Try parsing as expression first (for field expressions like "column_name")
         sqlglot.parse_one(expr, dialect=sqlglot_dialect)
         return None
-    except (ParseError, TokenError):
+    except Exception:
+        # Any failure (a parse error, or a RecursionError on deeply nested
+        # input) falls through to the SELECT-wrapped retry below.
         pass
 
     try:
@@ -301,6 +310,11 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
         return None
     except (ParseError, TokenError) as e:
         return f"[SQL] {context}: {str(e).split(chr(10))[0]}"
+    except RecursionError:
+        # Deeply nested input exhausts the recursion limit, not a parser error.
+        return f"[SQL] {context}: expression is too deeply nested to parse"
+    except Exception as e:
+        return f"[SQL] {context}: {str(e).split(chr(10))[0] or type(e).__name__}"
 
 
 def validate_sql(data: dict) -> list[str]:
@@ -383,6 +397,10 @@ def main():
             data = yaml.load(f, Loader=UniqueKeyLoader)
         except yaml.YAMLError as e:
             print(f"Error: Invalid YAML: {e}")
+            sys.exit(1)
+        except RecursionError:
+            # Deeply nested input surfaces as RecursionError, not YAMLError.
+            print("Error: Invalid YAML: input is too deeply nested to parse")
             sys.exit(1)
 
     # Run validations

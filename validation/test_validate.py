@@ -420,6 +420,38 @@ class ValidatorIntegrationTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("'dialects', 'vendors' were unexpected", result.stdout)
 
+    def test_deeply_nested_yaml_fails_cleanly(self):
+        # Deeply nested flow collections exhaust the recursion limit during
+        # composition, surfacing as RecursionError rather than YAMLError. The
+        # validator must exit with a diagnostic, never a raw traceback.
+        result = self.run_validator("[" * 3000 + "]" * 3000 + "\n")
+
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertIn("too deeply nested", result.stdout)
+
+    def test_empty_relationship_endpoint_is_reported(self):
+        # "" is a schema-valid string but names no dataset; the reference check
+        # must report it end-to-end instead of silently passing the model.
+        result = self.run_validator(
+            "version: 0.2.0.dev0\n"
+            "name: sales\n"
+            "datasets:\n"
+            "  - name: orders\n"
+            "    source: analytics.orders\n"
+            "relationships:\n"
+            "  - name: orders_to_missing\n"
+            "    from: orders\n"
+            "    to: ''\n"
+            "    from_columns: [customer_id]\n"
+            "    to_columns: [id]\n"
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertIn("Validation FAILED", result.stdout)
+        self.assertIn("references unknown dataset ''", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

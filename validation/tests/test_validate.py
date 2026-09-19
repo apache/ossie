@@ -166,6 +166,22 @@ def test_unique_names_are_checked_in_the_root_model() -> None:
     assert errors == ["[Unique] Duplicate dataset name 'orders' in model 'm'"]
 
 
+def test_duplicate_empty_dataset_names_are_reported() -> None:
+    # The schema accepts an empty string as a name, so two empty names must not
+    # slip past duplicate detection via a truthiness filter.
+    empty = {"name": "", "source": "db.s.empty"}
+    errors = _VALIDATE.validate_unique_names(_document([empty, empty], []))
+
+    assert errors == ["[Unique] Duplicate dataset name '' in model 'm'"]
+
+
+def test_missing_names_are_not_treated_as_duplicates() -> None:
+    # A missing name (None) is a schema violation reported elsewhere; the
+    # uniqueness check skips it rather than flagging spurious duplicate None.
+    nameless = {"source": "db.s.nameless"}
+    assert _VALIDATE.validate_unique_names(_document([nameless, nameless], [])) == []
+
+
 def test_sql_checks_traverse_root_fields_and_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
     seen = []
 
@@ -259,6 +275,40 @@ def test_still_reports_unknown_datasets() -> None:
     assert errors == [
         "[Reference] Relationship 'orders_to_customers' in model 'm' references unknown dataset 'nope'"
     ]
+
+
+@pytest.mark.parametrize("endpoint", ["from", "to"])
+def test_empty_endpoint_is_reported_as_unknown_dataset(endpoint: str) -> None:
+    # "" is a schema-valid string but never names a real dataset; a truthiness
+    # guard would skip it, so the empty endpoint must be reported, not ignored.
+    rel = _relationship(to_columns=["id"])
+    rel[endpoint] = ""
+    errors = validate_references(_document([_ORDERS, _CUSTOMERS], [rel]))
+
+    assert errors == [
+        "[Reference] Relationship 'orders_to_customers' in model 'm' references unknown dataset ''"
+    ]
+
+
+def test_missing_endpoints_are_skipped() -> None:
+    # A missing from/to (None) is a schema violation reported elsewhere; the
+    # reference check must not invent a reference to the string 'None'.
+    rel = _relationship(to_columns=["id"])
+    del rel["from"]
+    del rel["to"]
+
+    assert validate_references(_document([_ORDERS, _CUSTOMERS], [rel])) == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_deeply_nested_sql_reports_a_diagnostic_instead_of_crashing() -> None:
+    # Pathologically nested SQL exhausts sqlglot's recursion limit; the
+    # validator must turn that into a diagnostic rather than propagating
+    # RecursionError and aborting the run.
+    expression = "(" * 5000 + "1" + ")" * 5000
+    result = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert result == "[SQL] ctx: expression is too deeply nested to parse"
 
 
 def test_tolerates_null_unique_keys() -> None:
