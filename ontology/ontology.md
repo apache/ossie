@@ -392,24 +392,24 @@ from an external format such as OWL/RDF and round-tripping it back out.
 
 Keys are free-form, and values may be any JSON. The spec does not interpret or constrain the structure of
 `custom_properties`; tools that do not understand a given property should preserve it as-is. For example,
-an OWL importer might map an `owl:Class` to a concept while retaining its IRI and annotations:
+an OWL importer might map an `owl:Class` to a concept while retaining its annotations and axioms:
 
 ```yaml
 ontology:
   - concept: Person
     type: EntityType
+    uri: "http://xmlns.com/foaf/0.1/Person"
     custom_properties:
-      iri: "http://xmlns.com/foaf/0.1/Person"
       label: "Person"
       equivalent_class: "https://schema.org/Person"
     relationships:
       - name: knows
+        uri: "http://xmlns.com/foaf/0.1/knows"
         roles:
           - concept: Person
             name: acquaintance
         verbalizes: [ "{Person} knows {Person:acquaintance}" ]
         custom_properties:
-          iri: "http://xmlns.com/foaf/0.1/knows"
           inverse_of: "http://xmlns.com/foaf/0.1/knows"
 ```
 
