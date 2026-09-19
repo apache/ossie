@@ -28,21 +28,31 @@ def _strip_qualifier(col: str) -> str:
     return col.rsplit(".", 1)[-1] if "." in col else col
 
 
+def _unqualify_column(node: exp.Expression) -> exp.Expression:
+    """Drop the table/schema/database parts of a column reference; other nodes pass through."""
+    return exp.Column(this=node.this) if isinstance(node, exp.Column) else node
+
+
 def _col_name(node: exp.Expression) -> str:
-    """Return the bare (unqualified) column name from a sqlglot expression node."""
+    """Return an aggregate argument with the dataset qualifier stripped from every column reference.
+
+    MSI evaluates a metric's ``expr`` inside its own semantic model, so column
+    references must be unqualified: ``orders.amount`` → ``amount`` and
+    ``orders.gross - orders.tax`` → ``gross - tax``.
+    """
     if isinstance(node, exp.Column):
         return node.name
-    rendered = node.sql()
-    return _strip_qualifier(rendered)
+    return node.transform(_unqualify_column).sql()
 
 
 def _extract_agg_info(expression: str) -> Optional[Tuple[AggregationType, str, Optional[float], bool]]:
     """Parse a SQL aggregation expression using sqlglot.
 
-    Returns ``(agg_type, bare_col, percentile, use_discrete_percentile)`` for recognised patterns,
+    Returns ``(agg_type, expr, percentile, use_discrete_percentile)`` for recognised patterns,
     ``None`` otherwise. ``percentile`` is only set for ``PERCENTILE`` aggregations; it is ``None``
     for all others. ``use_discrete_percentile`` is ``True`` only for ``PERCENTILE_DISC``.
-    The returned column name has any dataset qualifier stripped.
+    ``expr`` is the aggregate argument with the dataset qualifier stripped from every column
+    reference (a bare column name in the common case).
     """
     try:
         tree = sqlglot.parse_one(expression.strip())
