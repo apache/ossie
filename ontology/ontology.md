@@ -88,6 +88,7 @@ hierarchically, grouping each relationship under the concept that plays its firs
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools |
 | `ontology` | list | Yes | Concepts and relationships they group that form this ontology |
+| `custom_properties` | object | No | Open set of custom properties not covered by this spec (see [Custom properties](#custom-properties)) |
 
 Each component of an ontology declares a concept and lists the relationships where that
 concept plays the first role. The concept's name is the value of the `concept` field, and
@@ -111,6 +112,7 @@ Concepts have the following schema:
 | `identify_by` | list | No | Names of relationships that uniquely reference objects of this concept |
 | `requires` | list | No | Expressions that constrain this concept's population |
 | `relationships` | list | No | Relationships where this concept plays the first role |
+| `custom_properties` | object | No | Open set of custom properties not covered by this spec (see [Custom properties](#custom-properties)) |
 
 Each concept is either an entity type or a value type.
 
@@ -155,6 +157,7 @@ Each relationship that is declared under a concept conforms to the following sch
 | `derived_by` | list | No | Expressions that derive links of this relationship |
 | `requires` | list | No | Expressions that constrain this relationship's population |
 | `verbalizes` | list | Yes | Patterns describing how to verbalize links |
+| `custom_properties` | object | No | Open set of custom properties not covered by this spec (see [Custom properties](#custom-properties)) |
 
 Each relationship is uniquely identified by prepending its declared name with that of the containing
 concept. For instance, in:
@@ -198,6 +201,7 @@ using this schema:
 |-------|------|----------|-------------|
 | `concept` | string | Yes | Name of the concept that plays this role |
 | `name` | string | No | Optional role name |
+| `custom_properties` | object | No | Open set of custom properties not covered by this spec (see [Custom properties](#custom-properties)) |
 
 For instance, in:
 
@@ -378,6 +382,35 @@ ontology:
 
 the first expression requires any value that plays the `Amount` role to be positive while the second
 requires any item that has sales in some store to be offered in that store.
+
+### Custom properties
+
+The ontology root, concepts, relationships, and roles may each carry a `custom_properties` object: an
+open set of key-value pairs for data that the core spec does not model. This gives tools a place to
+attach their own metadata, or to preserve information when importing an ontology from an external
+format so that it can be round-tripped.
+
+Keys are free-form, and values may be any JSON. The spec does not interpret or constrain the structure of
+`custom_properties`; tools that do not understand a given property should preserve it as-is. For example,
+a metrics tool might annotate a value type with how it is computed and displayed:
+
+```yaml
+ontology:
+  - concept: ContributionMargin
+    type: ValueType
+    extends: [Decimal]
+    description: Revenue remaining after variable costs
+    custom_properties:
+      abbreviation: CM
+      formula: revenue - variable_costs
+      unit: EUR
+      better_when: higher
+      owner: finance-analytics
+```
+
+An importer from a semantic-web format might instead use the source vocabulary's qualified names as keys,
+as in the [FOAF example](../examples/foaf_owl_import.yaml). Both are valid; the choice of keys belongs to
+the tool that writes them.
 
 ## Ontology mappings
 
@@ -590,6 +623,8 @@ though `Store` plays a role in three of the relationships.
 - **0.2.0.dev0** (2026-05-29): Basic support for ontologies and logical schema mappings
   - Core ontology structure: Concepts, relationships, and business rules (requires and derived_by)
   - Schema mappings from one or more logical models into an ontology
+  - `custom_properties` on the ontology root, concepts, relationships, and roles for carrying
+    data not covered by the core spec (e.g. when importing from OWL/RDF)
 
 ---
 

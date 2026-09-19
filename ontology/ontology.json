@@ -43,6 +43,9 @@
         "$ref": "#/$defs/OntologyMap"
       }
     },
+    "custom_properties": {
+      "$ref": "#/$defs/CustomProperties"
+    },
     "prefixes": {
       "type": "object",
       "description": "Maps namespace prefixes to the URIs they abbreviate, enabling QName expansion (e.g., 'foaf' -> 'http://xmlns.com/foaf/0.1/').",
@@ -55,6 +58,11 @@
   "required": ["version", "name", "ontology"],
   "additionalProperties": false,
   "$defs": {
+    "CustomProperties": {
+      "type": "object",
+      "description": "Open set of custom properties for carrying data that is not covered by the core ontology spec, for example when importing an ontology from an external format such as OWL/RDF. Keys are free-form and values may be any JSON; the spec does not interpret their structure.",
+      "additionalProperties": true
+    },
     "OntologyComponent": {
       "type": "object",
       "description": "Ontology component that defines a single concept and any relationships that are keyed primarily by that concept",
@@ -104,6 +112,9 @@
             "$ref": "#/$defs/Relationship"
           },
           "description": "Defines relationships that pertain primarily to the concept defined in this component"
+        },
+        "custom_properties": {
+          "$ref": "#/$defs/CustomProperties"
         },
         "uri": {
           "type": "string",
@@ -159,6 +170,9 @@
             "type": "string"
           },
           "description": "Natural language expressions that verbalize this relationship"
+        },
+        "custom_properties": {
+          "$ref": "#/$defs/CustomProperties"
         },
         "uri": {
           "type": "string",
@@ -231,6 +245,9 @@
         "name": {
           "type": "string",
           "description": "Optional name of this role, used when the same concept plays multiple roles in the same relationship"
+        },
+        "custom_properties": {
+          "$ref": "#/$defs/CustomProperties"
         }
       },
       "required": ["concept"],
