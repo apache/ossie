@@ -28,7 +28,7 @@ dev = [
 [project]
 name = "apache-ossie-ontology"
 version = "0.1.0"
-description = "Ossie ontology converters — Palantir → Ossie, Ossie → Spec, Spec → Ossie"
+description = "Ossie ontology converters — Palantir → Ossie, Spec ↔ Ossie, LinkML ↔ Ossie"
 authors = [{ name = "RelationalAI", email = "support@relational.ai" }]
 requires-python = ">=3.11"
 readme = "README.md"
@@ -39,6 +39,7 @@ keywords = [
     "Ontology"
 ]
 dependencies = [
+    "neverblink-linkml",
     "pydantic",
     "pyyaml",
 ]
