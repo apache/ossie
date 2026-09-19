@@ -387,31 +387,30 @@ requires any item that has sales in some store to be offered in that store.
 
 The ontology root, concepts, relationships, and roles may each carry a `custom_properties` object: an
 open set of key-value pairs for data that the core spec does not model. This gives tools a place to
-preserve information that would otherwise be lost, which is especially useful when importing an ontology
-from an external format such as OWL/RDF and round-tripping it back out.
+attach their own metadata, or to preserve information when importing an ontology from an external
+format so that it can be round-tripped.
 
 Keys are free-form, and values may be any JSON. The spec does not interpret or constrain the structure of
 `custom_properties`; tools that do not understand a given property should preserve it as-is. For example,
-an OWL importer might map an `owl:Class` to a concept while retaining its annotations and axioms:
+a metrics tool might annotate a value type with how it is computed and displayed:
 
 ```yaml
 ontology:
-  - concept: Person
-    type: EntityType
-    uri: "http://xmlns.com/foaf/0.1/Person"
+  - concept: ContributionMargin
+    type: ValueType
+    extends: [Decimal]
+    description: Revenue remaining after variable costs
     custom_properties:
-      label: "Person"
-      equivalent_class: "https://schema.org/Person"
-    relationships:
-      - name: knows
-        uri: "http://xmlns.com/foaf/0.1/knows"
-        roles:
-          - concept: Person
-            name: acquaintance
-        verbalizes: [ "{Person} knows {Person:acquaintance}" ]
-        custom_properties:
-          inverse_of: "http://xmlns.com/foaf/0.1/knows"
+      abbreviation: CM
+      formula: revenue - variable_costs
+      unit: EUR
+      better_when: higher
+      owner: finance-analytics
 ```
+
+An importer from a semantic-web format might instead use the source vocabulary's qualified names as keys,
+as in the [FOAF example](../examples/foaf_owl_import.yaml). Both are valid; the choice of keys belongs to
+the tool that writes them.
 
 ## Ontology mappings
 
