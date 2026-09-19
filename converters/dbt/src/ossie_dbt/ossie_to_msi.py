@@ -16,17 +16,18 @@
 # under the License.
 
 from dataclasses import dataclass
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Tuple
 
 from ossie import (
     OssieDataset,
     OssieDialect,
+    OssieDialectExpression,
     OssieDocument,
     OssieExpression,
     OssieField,
     OssieSemanticModel,
 )
-from ossie_dbt.converter_issues import ConverterResult
+from ossie_dbt.converter_issues import ConverterIssue, ConverterIssueType, ConverterResult
 from ossie_dbt.expression_utils import (
     _extract_agg_info,
     _get_dataset_qualifier,
@@ -59,7 +60,6 @@ from metricflow_semantic_interfaces.implementations.semantic_model import (
     PydanticSemanticModel,
 )
 from metricflow_semantic_interfaces.type_enums import (
-    AggregationType,
     DimensionType,
     EntityType,
     MetricType,
@@ -91,7 +91,8 @@ class OssieToMSIConverter:
       - single-agg patterns (`SUM(col)`, `COUNT(DISTINCT col)`, …) → SIMPLE
         metric with `metric_aggregation_params` (no measure reference needed)
       - `(expr_a) / (expr_b)` → RATIO (with auto-generated sub-metrics)
-      - anything else → SIMPLE with the raw expression stored in `expr`
+      - expressions that cannot be represented without changing their
+        aggregation semantics are dropped with a ConverterIssue
     """
 
     def __init__(self, dialect: OssieDialect = OssieDialect.ANSI_SQL) -> None:
@@ -99,11 +100,10 @@ class OssieToMSIConverter:
 
     def convert(self, document: OssieDocument) -> ConverterResult[PydanticSemanticManifest]:
         semantic_models: List[PydanticSemanticModel] = []
-        metrics: List[PydanticMetric] = []
 
         for dataset in document.datasets:
             semantic_models.append(self._convert_dataset(dataset, document))
-        metrics.extend(self._convert_metrics(document))
+        metrics, issues = self._convert_metrics(document)
 
         return ConverterResult(
             output=PydanticSemanticManifest(
@@ -111,7 +111,7 @@ class OssieToMSIConverter:
                 metrics=metrics,
                 project_configuration=PydanticProjectConfiguration(),
             ),
-            issues=[],
+            issues=issues,
         )
 
     # ------------------------------------------------------------------
@@ -267,12 +267,33 @@ class OssieToMSIConverter:
     # Metric conversion
     # ------------------------------------------------------------------
 
-    def _convert_metrics(self, ossie_sm: OssieSemanticModel) -> List[PydanticMetric]:
+    def _convert_metrics(
+        self, ossie_sm: OssieSemanticModel
+    ) -> Tuple[List[PydanticMetric], List[ConverterIssue]]:
         metrics: List[PydanticMetric] = []
+        issues: List[ConverterIssue] = []
         for metric in ossie_sm.metrics or []:
-            expr_str = self._get_expression(metric.expression)
-            metrics.extend(self._convert_metric(metric.name, expr_str, metric.description, ossie_sm.datasets))
-        return metrics
+            dialect_expr = self._get_dialect_expression(metric.expression)
+            converted = (
+                self._convert_metric(
+                    metric.name,
+                    dialect_expr.expression,
+                    metric.description,
+                    ossie_sm.datasets,
+                )
+                if dialect_expr is not None and dialect_expr.dialect in self._SQL_DIALECTS
+                else None
+            )
+            if converted is None:
+                issues.append(
+                    ConverterIssue(
+                        issue_type=ConverterIssueType.UNSUPPORTED_METRIC_EXPRESSION,
+                        element_name=metric.name,
+                    )
+                )
+            else:
+                metrics.extend(converted)
+        return metrics, issues
 
     def _convert_metric(
         self,
@@ -280,7 +301,7 @@ class OssieToMSIConverter:
         expr_str: str,
         description: Optional[str],
         datasets: List[OssieDataset],
-    ) -> List[PydanticMetric]:
+    ) -> Optional[List[PydanticMetric]]:
         """Return one or more PydanticMetric objects for the given Ossie expression.
 
         Simple metrics use `metric_aggregation_params` to store aggregation type
@@ -331,6 +352,8 @@ class OssieToMSIConverter:
             den_name = f"{name}__denominator"
             num_metrics = self._convert_metric(num_name, num_expr, None, datasets)
             den_metrics = self._convert_metric(den_name, den_expr, None, datasets)
+            if num_metrics is None or den_metrics is None:
+                return None
             ratio_metric = PydanticMetric(
                 name=name,
                 description=description,
@@ -345,30 +368,7 @@ class OssieToMSIConverter:
             )
             return [*num_metrics, *den_metrics, ratio_metric]
 
-        # --- Fallback: complex expression that can't be decomposed ---
-        # Store the raw expression in `expr` with a best-guess aggregation type.
-        # The caller is responsible for reviewing and correcting these metrics.
-        fallback_dataset = datasets[0].name if datasets else ""
-        return [
-            PydanticMetric(
-                name=name,
-                description=description,
-                type=MetricType.SIMPLE,
-                type_params=PydanticMetricTypeParams(
-                    expr=expr_str,
-                    metric_aggregation_params=PydanticMetricAggregationParams(
-                        semantic_model=fallback_dataset,
-                        agg=AggregationType.SUM,
-                        agg_params=None,
-                        agg_time_dimension=None,
-                        non_additive_dimension=None,
-                    ),
-                ),
-                filter=None,
-                metadata=None,
-                config=None,
-            )
-        ]
+        return None
 
     # ------------------------------------------------------------------
     # Helpers
@@ -406,10 +406,24 @@ class OssieToMSIConverter:
 
     def _get_expression(self, ossie_expr: OssieExpression) -> str:
         """Return the expression string for the preferred dialect (fallback: first available)."""
+        dialect_expr = self._get_dialect_expression(ossie_expr)
+        return dialect_expr.expression if dialect_expr is not None else ""
+
+    def _get_dialect_expression(
+        self, ossie_expr: OssieExpression
+    ) -> Optional[OssieDialectExpression]:
+        """Return the expression for the preferred dialect (fallback: first available)."""
         for dialect_expr in ossie_expr.dialects:
             if dialect_expr.dialect is self._dialect:
-                return dialect_expr.expression
-        return ossie_expr.dialects[0].expression if ossie_expr.dialects else ""
+                return dialect_expr
+        return ossie_expr.dialects[0] if ossie_expr.dialects else None
+
+    _SQL_DIALECTS = {
+        OssieDialect.ANSI_SQL,
+        OssieDialect.BIGQUERY,
+        OssieDialect.DATABRICKS,
+        OssieDialect.SNOWFLAKE,
+    }
 
     @staticmethod
     def _parse_source(source: str) -> PydanticNodeRelation:

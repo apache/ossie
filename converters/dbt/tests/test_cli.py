@@ -59,3 +59,26 @@ def test_ossie_to_msi_writes_valid_manifest_json(tmp_path: Path, monkeypatch: py
     manifest = json.loads(output_path.read_text())
     assert "semantic_models" in manifest
     assert "metrics" in manifest
+
+
+def test_ossie_to_msi_reports_unsupported_metric(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    document = _ossie_doc(
+        datasets=[_ossie_dataset(name="orders")],
+        metrics=[_ossie_metric("gross_margin", "SUM(revenue) - SUM(cost)")],
+    )
+    input_path = tmp_path / "model.yaml"
+    output_path = tmp_path / "semantic_manifest.json"
+    input_path.write_text(document.to_ossie_yaml())
+
+    _run_cli(["ossie-to-msi", "-i", str(input_path), "-o", str(output_path)], monkeypatch)
+
+    manifest = json.loads(output_path.read_text())
+    assert manifest["metrics"] == []
+    assert (
+        "[WARNING] UNSUPPORTED_METRIC_EXPRESSION: gross_margin was dropped during conversion"
+        in capsys.readouterr().err
+    )
