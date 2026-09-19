@@ -62,21 +62,30 @@ def ossie_to_gooddata(
     datasets: list[GdDataset] = []
     date_instances: list[GdDateInstance] = []
 
-    for sm in ossie_model.get("semantic_model", []):
-        relationship_map = _build_relationship_map(sm)
-        # Pre-pass: for each Ossie dataset, record whether it is a date instance
-        # and map its physical source columns to the attribute ids that will
-        # be generated. Reference target columns resolve via this map.
-        target_info = _build_target_info(sm)
+    if not isinstance(ossie_model, dict):
+        raise ValueError("Ossie input must be a mapping")
+    if "semantic_model" in ossie_model:
+        raise ValueError("Ossie model properties must be at the root; semantic_model wrappers are not supported")
+    if "dialects" in ossie_model or "vendors" in ossie_model:
+        raise ValueError("Root dialects and vendors are not supported by the Ossie spec")
+    if not isinstance(ossie_model.get("name"), str) or not isinstance(ossie_model.get("datasets"), list):
+        raise ValueError("Ossie input requires name and datasets at the root")
 
-        for ds in sm.get("datasets", []):
-            gd_ds, date_inst = _convert_ossie_dataset(
-                ds, relationship_map, target_info, data_source_id,
-            )
-            if date_inst:
-                date_instances.append(date_inst)
-            else:
-                datasets.append(gd_ds)
+    sm = ossie_model
+    relationship_map = _build_relationship_map(sm)
+    # Pre-pass: for each Ossie dataset, record whether it is a date instance
+    # and map its physical source columns to the attribute ids that will
+    # be generated. Reference target columns resolve via this map.
+    target_info = _build_target_info(sm)
+
+    for ds in sm.get("datasets", []):
+        gd_ds, date_inst = _convert_ossie_dataset(
+            ds, relationship_map, target_info, data_source_id,
+        )
+        if date_inst:
+            date_instances.append(date_inst)
+        else:
+            datasets.append(gd_ds)
 
     return GdDeclarativeModel(ldm=GdLdm(datasets=datasets, date_instances=date_instances))
 

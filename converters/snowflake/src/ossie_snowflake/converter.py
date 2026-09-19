@@ -81,11 +81,11 @@ def convert_ossie_to_snowflake(ossie_yaml_str):
     """Top-level entry point. Parses Ossie YAML, validates, converts, returns
     Snowflake YAML string.
 
-    Expects the standard Ossie wrapped format::
+    Expects the standard Ossie document format::
 
         version: "0.2.0.dev0"
-        semantic_model:
-          - name: ...
+        name: ...
+        datasets: [...]
 
     Args:
         ossie_yaml_str: Ossie YAML as a string.
@@ -107,25 +107,21 @@ def convert_ossie_to_snowflake(ossie_yaml_str):
             f"Supported: {SUPPORTED_VERSION}"
         )
 
-    semantic_model = root.get("semantic_model")
-    if not isinstance(semantic_model, list) or len(semantic_model) == 0:
+    if "semantic_model" in root:
         raise OssieConversionError(
-            "Invalid Ossie YAML: 'semantic_model' must be a non-empty list"
+            "Legacy 'semantic_model' wrappers are not supported; "
+            "place the model properties directly at the document root"
         )
 
-    if len(semantic_model) > 1:
-        warnings.warn(
-            f"Ossie YAML contains {len(semantic_model)} semantic models; "
-            f"only the first will be converted"
-        )
+    if "dialects" in root or "vendors" in root:
+        raise OssieConversionError("Root dialects and vendors are not supported by the Ossie spec")
 
-    ossie = semantic_model[0]
-    if not isinstance(ossie, dict):
-        raise OssieConversionError(
-            "Invalid Ossie YAML: 'semantic_model' entries must be mappings"
-        )
-
-    snowflake_model = _convert_model(ossie)
+    # Document metadata is consumed here; it is not a dropped model property.
+    model = {
+        key: value for key, value in root.items()
+        if key != "version"
+    }
+    snowflake_model = _convert_model(model)
 
     return yaml.dump(
         snowflake_model,

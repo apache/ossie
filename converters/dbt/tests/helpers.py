@@ -27,7 +27,6 @@ from ossie import (
     OssieField,
     OssieMetric,
     OssieRelationship,
-    OssieSemanticModel,
 )
 from metricflow_semantic_interfaces.implementations.elements.dimension import (
     PydanticDimension,
@@ -218,12 +217,8 @@ def _ossie_doc(
     model_name: str = "test",
 ) -> OssieDocument:
     return OssieDocument(
-        semantic_model=[
-            OssieSemanticModel(
-                name=model_name,
-                datasets=datasets or [],
-                metrics=metrics if metrics else None,
-                relationships=relationships if relationships else None,
-            )
-        ]
+        name=model_name,
+        datasets=datasets or [],
+        metrics=metrics if metrics else None,
+        relationships=relationships if relationships else None,
     )

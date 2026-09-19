@@ -97,7 +97,7 @@ class TestOBMLtoOssieFilters:
     def test_filters_in_custom_extensions(self):
         converter = conv.OBMLtoOssie(_OBML_WITH_FILTERS)
         ossie = converter.convert()
-        sem = ossie["semantic_model"][0]
+        sem = ossie
         exts = sem.get("custom_extensions", [])
         assert len(exts) >= 1
         common = next(e for e in exts if e["vendor_name"] == "ORIONBELT")
@@ -111,7 +111,7 @@ class TestOBMLtoOssieFilters:
         obml = {**_OBML_WITH_FILTERS, "filters": []}
         converter = conv.OBMLtoOssie(obml)
         ossie = converter.convert()
-        sem = ossie["semantic_model"][0]
+        sem = ossie
         common = next(e for e in sem["custom_extensions"] if e["vendor_name"] == "ORIONBELT")
         data = json.loads(common["data"])
         assert "obml_filters" not in data

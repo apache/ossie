@@ -121,7 +121,7 @@ _OBML_V26: dict[str, Any] = {
 
 
 def _ossie_metric(ossie: dict, name: str) -> dict:
-    for m in ossie["semantic_model"][0].get("metrics", []):
+    for m in ossie.get("metrics", []):
         if m["name"] == name:
             return m
     raise AssertionError(f"missing Ossie metric {name!r}")

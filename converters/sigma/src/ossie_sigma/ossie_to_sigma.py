@@ -1,3 +1,20 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 """Apache Ossie (OssieDocument) -> Sigma data model spec (JSON)."""
 
 from __future__ import annotations
@@ -17,7 +34,7 @@ from ossie import (
     OssieVendor,
 )
 
-from ossie_sigma.converter_issues import ConverterError, ConverterIssue, ConverterIssueType, ConverterResult
+from ossie_sigma.converter_issues import ConverterIssue, ConverterIssueType, ConverterResult
 from ossie_sigma.expression_utils import ansi_sql_text, infer_single_dataset_qualifier, sigma_dialect_text
 from ossie_sigma.sigma_formula import sql_to_sigma_formula
 from ossie_sigma.spec_keys import MODEL_LEVEL_SPEC_KEYS
@@ -126,22 +143,7 @@ class OssieToSigmaConverter:
     def convert(self, document: OssieDocument) -> ConverterResult[dict[str, Any]]:
         issues: list[ConverterIssue] = []
 
-        if not document.semantic_model:
-            raise ConverterError(
-                "OssieDocument.semantic_model is empty; there is no semantic model to convert "
-                "into a Sigma data model spec."
-            )
-
-        if len(document.semantic_model) > 1:
-            issues.append(
-                ConverterIssue(
-                    ConverterIssueType.EXTRA_MODEL_DROPPED,
-                    "document",
-                    "Sigma data models are single semantic models; only semantic_model[0] "
-                    f"was converted, {len(document.semantic_model) - 1} additional model(s) were dropped.",
-                )
-            )
-        model = document.semantic_model[0]
+        model = document
         model_ext = _sigma_ext(model) or {}
 
         spec: dict[str, Any] = {"kind": "data-model", "name": model.name}

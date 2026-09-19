@@ -175,9 +175,11 @@ class Metric(OssieObject):
 
 
 class SemanticModel(OssieObject):
-    """A complete logical/semantic model (the body that the core spec calls
-    `semantic_model`): datasets plus the join paths and metrics defined over
-    them. One or more SemanticModels can feed a single OntologyMapping."""
+    """Model contents: datasets plus the join paths and metrics defined over them.
+
+    OntologyMapping embeds these contents under ``semantic_model``; standalone
+    core documents place them at the root alongside document metadata.
+    """
     name: str
     description: str | None = None
     ai_context: AiContext | None = None

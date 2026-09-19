@@ -21,6 +21,17 @@
 
 The Apache Ossie Python package provides Pydantic v2 models for the Apache Ossie semantic model specification. It is the shared foundation used by Apache Ossie converters to parse, construct, validate, and serialize Ossie documents from Python application.
 
+Each `OssieDocument` is one semantic model: `name`, `datasets`, `relationships`,
+and `metrics` sit at the root alongside `version`.
+Construct documents with `OssieDocument(name="sales", datasets=[...])` and access
+their datasets as `document.datasets`. JSON and YAML serialization use the same
+flat shape. The former `semantic_model` wrapper is rejected. Unwrap old
+single-model documents and split multi-model documents into separate files,
+preserving model contents and setting `version` in each file before loading them.
+
+`OssieSemanticModel` remains available for embedded models, such as ontology
+components, which do not include document metadata.
+
 ## Development
 
 ### Prerequisites

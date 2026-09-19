@@ -481,7 +481,7 @@ class TestOssieToMSIRoundTrip:
 
         ossie_doc = MSIToOssieConverter().convert(msi).output
 
-        dataset = ossie_doc.semantic_model[0].datasets[0]
+        dataset = ossie_doc.datasets[0]
         assert dataset.name == "orders"
 
         field_names = {f.name for f in dataset.fields or []}
@@ -490,7 +490,7 @@ class TestOssieToMSIRoundTrip:
         assert "created_at" in field_names
         assert "amount" in field_names
 
-        metrics = ossie_doc.semantic_model[0].metrics or []
+        metrics = ossie_doc.metrics or []
         assert len(metrics) == 1
         assert metrics[0].name == "revenue"
         assert metrics[0].expression.dialects[0].expression == "SUM(orders.amount)"
@@ -528,7 +528,7 @@ class TestOssieToMSIRoundTrip:
             _manifest(semantic_models=[orders], metrics=[metric])
         ).output
 
-        ossie_expr = ossie_doc.semantic_model[0].metrics[0].expression.dialects[0].expression
+        ossie_expr = ossie_doc.metrics[0].expression.dialects[0].expression
         assert ossie_expr == "PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY orders.amount)"
 
         back = OssieToMSIConverter().convert(ossie_doc).output

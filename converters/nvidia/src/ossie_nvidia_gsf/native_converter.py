@@ -239,7 +239,7 @@ def convert_ossie_to_gsf(
     database_name: str | None = None,
 ) -> str:
     """Convert one Apache Ossie model to a native ``GsfModelDocument``."""
-    _, model = _parse_ossie(ossie_yaml)
+    model = _parse_ossie(ossie_yaml)
     source_datasets = model.get("datasets") or []
     if not isinstance(source_datasets, list) or not source_datasets:
         raise GSFConversionError(
@@ -773,7 +773,7 @@ def convert_gsf_to_ossie(
         semantic_model["relationships"] = relationships
     if metrics:
         semantic_model["metrics"] = metrics
-    return _dump_yaml({"version": OSSIE_VERSION, "semantic_model": [semantic_model]})
+    return _dump_yaml({"version": OSSIE_VERSION, **semantic_model})
 
 
 def _build_catalog(
@@ -1366,21 +1366,24 @@ def _parse_gsf(value: str) -> dict[str, Any]:
     return root
 
 
-def _parse_ossie(value: str) -> tuple[dict[str, Any], dict[str, Any]]:
+def _parse_ossie(value: str) -> dict[str, Any]:
     root = _load_yaml(value, "Ossie")
-    unknown = sorted(set(root) - {"version", "semantic_model"})
+    if "semantic_model" in root:
+        raise GSFConversionError(
+            "Ossie model properties must be at the root; semantic_model wrappers are not supported"
+        )
+    unknown = sorted(set(root) - {
+        "version", "name", "description", "ai_context",
+        "datasets", "relationships", "metrics", "custom_extensions",
+    })
     if unknown:
         raise GSFConversionError(
             "Unsupported Ossie root properties: " + ", ".join(unknown)
         )
     _check_ossie_version(root.get("version"))
-    models = root.get("semantic_model")
-    if not isinstance(models, list) or len(models) != 1:
-        raise GSFConversionError("Ossie input must contain exactly one semantic model")
-    model = models[0]
-    if not isinstance(model, dict) or not model.get("name"):
+    if not isinstance(root.get("name"), str) or not root["name"]:
         raise GSFConversionError("Ossie semantic model requires a name")
-    return root, model
+    return root
 
 
 def _check_ossie_version(value: Any) -> None:

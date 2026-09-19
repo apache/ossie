@@ -37,7 +37,7 @@ def test_fields_is_accepted_as_alias_for_dimensions():
         "fields:\n- {name: region, expr: region}\n"
     )
     ossie = parse(importer.convert_metric_view_to_ossie(mv))
-    fields = ossie["semantic_model"][0]["datasets"][0].get("fields", [])
+    fields = ossie["datasets"][0].get("fields", [])
     assert [f["name"] for f in fields] == ["region"]
 
 
@@ -58,14 +58,14 @@ def test_both_dimensions_and_fields_present_warns_and_uses_dimensions():
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         ossie = parse(importer.convert_metric_view_to_ossie(mv))
-    names = [f["name"] for f in ossie["semantic_model"][0]["datasets"][0].get("fields", [])]
+    names = [f["name"] for f in ossie["datasets"][0].get("fields", [])]
     assert names == ["kept"]
     assert any("fields" in str(w.message) and "ignored" in str(w.message) for w in caught)
 
 
 def test_stash_written_at_each_level():
     ossie = parse(importer.convert_metric_view_to_ossie(load_fixture("fixtureB_metric_view.yaml")))
-    model = ossie["semantic_model"][0]
+    model = ossie
 
     # model-level filter
     assert any(e["vendor_name"] == "DATABRICKS" and "filter" in e["data"]
@@ -81,7 +81,7 @@ def test_stash_written_at_each_level():
 def test_name_override():
     ossie = parse(importer.convert_metric_view_to_ossie(
         load_fixture("fixtureB_metric_view.yaml"), model_name="custom"))
-    assert ossie["semantic_model"][0]["name"] == "custom"
+    assert ossie["name"] == "custom"
 
 
 def test_cross_join_rejected():
@@ -104,7 +104,7 @@ def test_complex_joined_dimension_filed_under_join_dataset():
         "dimensions:\n- name: full\n  expr: cust.a || cust.b\n"
     )
     ossie = parse(importer.convert_metric_view_to_ossie(mv))
-    cust = next(d for d in ossie["semantic_model"][0]["datasets"] if d["name"] == "cust")
+    cust = next(d for d in ossie["datasets"] if d["name"] == "cust")
     assert any(f["name"] == "full" for f in cust.get("fields", []))
 
 
@@ -149,7 +149,7 @@ def test_one_to_many_join_flips_from_to_and_stashes_source():
         "measures:\n- {name: order_count, expr: COUNT(*)}\n"
     )
     ossie = parse(importer.convert_metric_view_to_ossie(mv))
-    model = ossie["semantic_model"][0]
+    model = ossie
     rel = model["relationships"][0]
     assert rel["from"] == "line_items"          # many side (holds the FK)
     assert rel["to"] == "orders"                # one side (holds the PK)
@@ -169,7 +169,7 @@ def test_at_most_one_match_recovers_unique_key():
         "  rely: {at_most_one_match: true}\n"
     )
     ossie = parse(importer.convert_metric_view_to_ossie(mv))
-    cust = next(d for d in ossie["semantic_model"][0]["datasets"] if d["name"] == "customer")
+    cust = next(d for d in ossie["datasets"] if d["name"] == "customer")
     assert cust.get("unique_keys") == [["id"]]
 
 
@@ -187,7 +187,7 @@ def test_sql_source_name_defaults_to_metric_view():
     `metric_view` (not a token sliced out of the SQL)."""
     mv = "version: '1.1'\nsource: SELECT a, b FROM main.sales.orders\n"
     ossie = parse(importer.convert_metric_view_to_ossie(mv))
-    assert ossie["semantic_model"][0]["name"] == "metric_view"
+    assert ossie["name"] == "metric_view"
 
 
 def test_join_missing_source_raises():
@@ -202,7 +202,7 @@ def test_measure_rewrite_with_regex_special_name():
     --name containing regex backreference syntax (e.g. \1) does not raise a re.error."""
     mv = "version: '1.1'\nsource: c.s.fact\nmeasures:\n- {name: rev, expr: SUM(source.amount)}\n"
     ossie = parse(importer.convert_metric_view_to_ossie(mv, model_name=r"a\1b"))
-    expr = ossie["semantic_model"][0]["metrics"][0]["expression"]["dialects"][0]["expression"]
+    expr = ossie["metrics"][0]["expression"]["dialects"][0]["expression"]
     assert expr == r"SUM(a\1b.amount)"
 
 
@@ -236,7 +236,7 @@ def test_boollike_string_values_stay_strings_for_a_yaml_1_1_reader():
     mv = ("version: '1.1'\nsource: c.s.t\n"
           "dimensions:\n- {name: status, expr: status, synonyms: [on, off]}\n")
     ossie_out = importer.convert_metric_view_to_ossie(mv)
-    field = yaml.safe_load(ossie_out)["semantic_model"][0]["datasets"][0]["fields"][0]
+    field = yaml.safe_load(ossie_out)["datasets"][0]["fields"][0]
     assert field["ai_context"]["synonyms"] == ["on", "off"]
 
 
@@ -253,7 +253,7 @@ def test_fact_qualifier_variants_in_on_decompose():
         "customer.c_custkey = o_custkey",          # reversed operand order, bare fact
     ):
         rel = parse(importer.convert_metric_view_to_ossie(
-            base.format(cond=cond)))["semantic_model"][0]["relationships"][0]
+            base.format(cond=cond)))["relationships"][0]
         assert rel["from"] == "orders" and rel["to"] == "customer"
         assert rel["from_columns"] == ["o_custkey"]
         assert rel["to_columns"] == ["c_custkey"]
@@ -264,7 +264,7 @@ def test_multi_column_on_with_bare_and_tablename_fact():
     mv = ("version: '1.1'\nsource: c.s.orders\n"
           "joins:\n- name: customer\n  source: c.s.customer\n"
           "  on: o_a = customer.c_a AND orders.o_b = customer.c_b\n")
-    rel = parse(importer.convert_metric_view_to_ossie(mv))["semantic_model"][0]["relationships"][0]
+    rel = parse(importer.convert_metric_view_to_ossie(mv))["relationships"][0]
     assert rel["from_columns"] == ["o_a", "o_b"]
     assert rel["to_columns"] == ["c_a", "c_b"]
 
@@ -300,7 +300,7 @@ def test_with_paren_subquery_source_accepted():
     not mistaken for a (non-3-part) identifier (review finding)."""
     mv = "version: '1.1'\nsource: WITH(t AS (SELECT 1 AS a)) SELECT a FROM t\n"
     ossie = parse(importer.convert_metric_view_to_ossie(mv))
-    assert ossie["semantic_model"][0]["datasets"][0]["source"].startswith("WITH(")
+    assert ossie["datasets"][0]["source"].startswith("WITH(")
 
 
 def test_nested_join_bare_column_rejected():

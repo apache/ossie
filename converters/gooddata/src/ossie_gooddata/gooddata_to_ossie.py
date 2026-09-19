@@ -95,7 +95,7 @@ def gooddata_to_ossie(
 
     return {
         "version": OSSIE_VERSION,
-        "semantic_model": [semantic_model],
+        **semantic_model,
     }
 
 

@@ -24,11 +24,15 @@ on:
     branches: [ "main" ]
     paths:
       - 'converters/gooddata/**'
+      - 'core-spec/**'
+      - 'examples/**'
       - '.github/workflows/converter-gooddata-ci.yml'    
   pull_request:
     branches: [ "main" ]
     paths:
       - 'converters/gooddata/**'
+      - 'core-spec/**'
+      - 'examples/**'
       - '.github/workflows/converter-gooddata-ci.yml'    
 
 jobs:

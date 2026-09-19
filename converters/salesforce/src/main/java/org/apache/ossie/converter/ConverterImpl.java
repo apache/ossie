@@ -20,17 +20,14 @@
 package org.apache.ossie.converter;
 
 import static org.apache.ossie.converter.ConverterConstants.*;
-import static org.apache.ossie.util.DataStructureUtils.*;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ossie.converter.pipeline.*;
-import org.apache.ossie.converter.pipeline.*;
 import org.apache.ossie.exception.ConversionException;
 import org.apache.ossie.validator.SchemaValidator;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -97,29 +94,21 @@ public class ConverterImpl extends AbstractConverter {
     }
 
     private List<String> convertOssieToSalesforce(Map<String, Object> ossieRoot) {
-        List<Object> semanticModels = getList(ossieRoot, SEMANTIC_MODEL);
-        List<String> results = new ArrayList<>();
-
-        for (Object modelObj : semanticModels) {
-            Map<String, Object> sourceData = asMap(modelObj);
-            String result = executePipeline(sourceData);
-            results.add(result);
-        }
-        return results;
+        return List.of(executePipeline(ossieRoot));
     }
 
     private List<String> convertSalesforceToOssie(Map<String, Object> sourceData) {
         String result = executePipeline(sourceData);
 
-        // Wrap output in Ossie root structure
+        // Add document metadata alongside the semantic model fields.
         try {
             Map<String, Object> outputData = yamlMapper.readValue(result, new TypeReference<>() {});
             Map<String, Object> ossieRoot = new LinkedHashMap<>();
             ossieRoot.put(VERSION, OSSIE_VERSION);
-            ossieRoot.put(SEMANTIC_MODEL, List.of(outputData));
+            ossieRoot.putAll(outputData);
             return List.of(toYaml(ossieRoot));
         } catch (JsonProcessingException e) {
-            throw new ConversionException("Failed to wrap output in Ossie root", e);
+            throw new ConversionException("Failed to create Ossie document", e);
         }
     }
 
@@ -155,15 +144,6 @@ public class ConverterImpl extends AbstractConverter {
                 : yamlMapper.readValue(result, new TypeReference<>() {});
 
             String field = directionConfig.getExtractModelNameFrom();
-
-            // Handle Ossie format (wrapped in semantic_model array)
-            if (direction == ConversionDirection.SALESFORCE_TO_OSSIE) {
-                List<Object> models = getList(data, SEMANTIC_MODEL);
-                if (models != null && !models.isEmpty()) {
-                    Map<String, Object> firstModel = asMap(models.get(0));
-                    return firstModel.get(field).toString();
-                }
-            }
 
             return data.get(field).toString();
         } catch (JsonProcessingException e) {

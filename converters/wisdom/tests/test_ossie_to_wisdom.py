@@ -28,7 +28,6 @@ from ossie import (
     OssieExpression,
     OssieField,
     OssieRelationship,
-    OssieSemanticModel,
 )
 from ossie_wisdom import ConverterIssueType, OssieToWisdomConverter, WisdomToOssieConverter
 
@@ -142,7 +141,7 @@ def test_deterministic_output(ossie_document, export):
     assert again == export
 
 
-def test_extra_models_and_unrepresentable_elements_are_reported():
+def test_unrepresentable_elements_are_reported():
     dataset = OssieDataset(
         name="orders",
         source="analytics.sales.orders",
@@ -151,27 +150,20 @@ def test_extra_models_and_unrepresentable_elements_are_reported():
             OssieField(name="order_id", expression=_snowflake("order_id"), ai_context="the identifier"),
         ],
     )
-    second = OssieSemanticModel(name="second", datasets=[OssieDataset(name="d", source="a.b.c")])
     document = OssieDocument(
-        semantic_model=[
-            OssieSemanticModel(
-                name="first",
-                datasets=[dataset],
-                relationships=[
-                    OssieRelationship(
-                        name="orders_to_missing",
-                        from_dataset="orders",
-                        to="missing",
-                        from_columns=["x"],
-                        to_columns=["y"],
-                    )
-                ],
-            ),
-            second,
-        ]
+        name="first",
+        datasets=[dataset],
+        relationships=[
+            OssieRelationship(
+                name="orders_to_missing",
+                from_dataset="orders",
+                to="missing",
+                from_columns=["x"],
+                to_columns=["y"],
+            )
+        ],
     )
     result = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
-    assert [issue.element_name for issue in _issues_of(result, ConverterIssueType.EXTRA_MODEL_DROPPED)] == ["second"]
     assert [issue.element_name for issue in _issues_of(result, ConverterIssueType.UNIQUE_KEYS_DROPPED)] == ["orders"]
     assert [issue.element_name for issue in _issues_of(result, ConverterIssueType.AI_CONTEXT_DROPPED)] == [
         "orders.order_id"
@@ -184,23 +176,19 @@ def test_extra_models_and_unrepresentable_elements_are_reported():
 
 def test_one_to_one_note_restores_relationship_type():
     document = OssieDocument(
-        semantic_model=[
-            OssieSemanticModel(
-                name="m",
-                datasets=[
-                    OssieDataset(name="a", source="db.s.a"),
-                    OssieDataset(name="b", source="db.s.b"),
-                ],
-                relationships=[
-                    OssieRelationship(
-                        name="a_to_b",
-                        from_dataset="a",
-                        to="b",
-                        from_columns=["id"],
-                        to_columns=["id"],
-                        ai_context="one-to-one relationship",
-                    )
-                ],
+        name="m",
+        datasets=[
+            OssieDataset(name="a", source="db.s.a"),
+            OssieDataset(name="b", source="db.s.b"),
+        ],
+        relationships=[
+            OssieRelationship(
+                name="a_to_b",
+                from_dataset="a",
+                to="b",
+                from_columns=["id"],
+                to_columns=["id"],
+                ai_context="one-to-one relationship",
             )
         ]
     )
@@ -213,13 +201,9 @@ def test_unresolved_metric_attaches_to_first_dataset():
     from ossie import OssieMetric
 
     document = OssieDocument(
-        semantic_model=[
-            OssieSemanticModel(
-                name="m",
-                datasets=[OssieDataset(name="a", source="db.s.a"), OssieDataset(name="b", source="db.s.b")],
-                metrics=[OssieMetric(name="row_count", expression=_snowflake("COUNT(*)"))],
-            )
-        ]
+        name="m",
+        datasets=[OssieDataset(name="a", source="db.s.a"), OssieDataset(name="b", source="db.s.b")],
+        metrics=[OssieMetric(name="row_count", expression=_snowflake("COUNT(*)"))]
     )
     result = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
     export = result.output

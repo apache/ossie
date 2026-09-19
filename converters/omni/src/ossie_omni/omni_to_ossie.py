@@ -282,7 +282,7 @@ def convert_omni_to_ossie(files, model_name=None, topic=None):
         stash["extra_files"] = extra_files
     write_stash(model, stash)
 
-    return dump_yaml({"version": OSSIE_VERSION, "semantic_model": [model]})
+    return dump_yaml({"version": OSSIE_VERSION, **model})
 
 
 def _convert_view(vname, view, meta):

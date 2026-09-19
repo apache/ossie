@@ -1,3 +1,20 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 """End-to-end round trips through the same serialization boundary the CLI uses
 (OssieDocument -> YAML text -> re-parsed OssieDocument), for every fixture."""
 
@@ -21,7 +38,12 @@ def test_sigma_osi_sigma_roundtrip_through_yaml_serialization(fixture_name):
     document = SigmaToOssieConverter().convert(spec).output
     yaml_text = document.to_ossie_yaml()
 
-    reparsed_document = OssieDocument.model_validate(yaml.safe_load(yaml_text))
+    serialized = yaml.safe_load(yaml_text)
+    assert serialized["name"] == spec["name"]
+    assert "semantic_model" not in serialized
+    assert "dialects" not in serialized
+    assert "vendors" not in serialized
+    reparsed_document = OssieDocument.model_validate(serialized)
     reconstructed_spec = OssieToSigmaConverter().convert(reparsed_document).output
 
     assert normalize(reconstructed_spec) == normalize(spec)
@@ -39,7 +61,7 @@ def test_osi_sigma_osi_roundtrip_preserves_portable_fields(fixture_name):
     document_2 = SigmaToOssieConverter().convert(spec_2).output
 
     def portable(document):
-        model = document.semantic_model[0]
+        model = document
         return {
             "datasets": [(d.name, d.source, [(f.name, f.datatype) for f in d.fields or []]) for d in model.datasets],
             "relationships": [(r.name, r.from_dataset, r.to, r.from_columns, r.to_columns) for r in model.relationships or []],

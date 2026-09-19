@@ -25,6 +25,11 @@ This converter supports conversion in both directions between Ossie YAML and
 Salesforce Semantic Model JSON. Unmapped Salesforce properties are preserved in
 `custom_extensions`; see the mapping reference for direction-specific limits.
 
+Each Ossie file contains one model, with `version`, `name`, `datasets`,
+`relationships`, and `metrics` at the document root. Legacy `semantic_model`
+wrappers are rejected; split older multi-model files and flatten each model
+before conversion. The string API returns a singleton list in both directions.
+
 ## Requirements
 
 - **Java 21+**
@@ -42,7 +47,7 @@ This produces a self-contained executable jar at `target/ossie-salesforce-conver
 
 ## Setup
 
-Both schemas must be obtained and placed under `src/main/resources/schemas/` before building, so they get bundled into the jar.
+The canonical Ossie schema is bundled automatically during the build. Obtain the Salesforce schema below and place it under `src/main/resources/schemas/` before building.
 
 ### Salesforce Semantic Model Schema
 
@@ -52,9 +57,8 @@ Both schemas must be obtained and placed under `src/main/resources/schemas/` bef
 
 ### Apache Ossie Schema
 
-1. Visit the [Ossie schema on GitHub](https://github.com/apache/ossie/blob/main/core-spec/ossie-schema.json)
-2. Copy the raw JSON contents
-3. Save it to `src/main/resources/schemas/ossie-schema.json`
+The build copies [the canonical Ossie schema](../../core-spec/ossie-schema.json)
+into the jar. No separate download or duplicate schema file is needed.
 
 ## Usage
 

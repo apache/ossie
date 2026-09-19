@@ -144,7 +144,7 @@ def test_generated_ossie_passes_official_validation(tmp_path: Path) -> None:
 
 def test_round_trip_preserves_ossie_semantics_and_global_metrics() -> None:
     result = yaml.safe_load(convert_gsf_to_ossie(convert_ossie_to_gsf(_ossie_yaml())))
-    model = result["semantic_model"][0]
+    model = result
     datasets = {dataset["name"]: dataset for dataset in model["datasets"]}
     order_fields = {field["name"]: field for field in datasets["orders"]["fields"]}
 
@@ -167,7 +167,7 @@ def test_round_trip_preserves_ossie_semantics_and_global_metrics() -> None:
 
 def test_edited_ossie_expressions_replace_preserved_native_sql() -> None:
     ossie = yaml.safe_load(convert_gsf_to_ossie(_gsf_yaml()))
-    model = ossie["semantic_model"][0]
+    model = ossie
     orders = next(
         dataset for dataset in model["datasets"] if dataset["name"] == "orders"
     )
@@ -224,7 +224,7 @@ def test_native_round_trip_preserves_ids_catalog_sql_source_and_zones() -> None:
     native["semantic_layer"]["sql_attributes"]["manual"] = []
 
     ossie = yaml.safe_load(convert_gsf_to_ossie(yaml.safe_dump(native)))
-    assert _native_extension(ossie["semantic_model"][0])["native_document"] == native
+    assert _native_extension(ossie)["native_document"] == native
 
     restored = yaml.safe_load(
         convert_ossie_to_gsf(yaml.safe_dump(ossie, sort_keys=False))
@@ -250,7 +250,7 @@ def test_native_round_trip_preserves_ids_catalog_sql_source_and_zones() -> None:
 
 def test_relationship_edits_replace_preserved_native_records() -> None:
     ossie = yaml.safe_load(convert_gsf_to_ossie(_gsf_yaml()))
-    relationship = ossie["semantic_model"][0]["relationships"][0]
+    relationship = ossie["relationships"][0]
     relationship["from_columns"] = ["order_id"]
 
     regenerated = yaml.safe_load(
@@ -275,7 +275,7 @@ def test_relationship_edits_replace_preserved_native_records() -> None:
 
 def test_relationship_deletion_removes_preserved_native_records() -> None:
     ossie = yaml.safe_load(convert_gsf_to_ossie(_gsf_yaml()))
-    ossie["semantic_model"][0].pop("relationships")
+    ossie.pop("relationships")
 
     regenerated = yaml.safe_load(
         convert_ossie_to_gsf(yaml.safe_dump(ossie, sort_keys=False))
@@ -326,7 +326,7 @@ def test_relationship_reconciliation_preserves_catalog_only_records() -> None:
     native["data_layer"]["foreign_keys"].append(audit_fk)
 
     ossie = yaml.safe_load(convert_gsf_to_ossie(yaml.safe_dump(native)))
-    ossie["semantic_model"][0].pop("relationships")
+    ossie.pop("relationships")
     regenerated = yaml.safe_load(
         convert_ossie_to_gsf(yaml.safe_dump(ossie, sort_keys=False))
     )
@@ -337,7 +337,7 @@ def test_relationship_reconciliation_preserves_catalog_only_records() -> None:
 
 def test_multiple_databases_are_supported_and_name_falls_back() -> None:
     ossie = yaml.safe_load(_ossie_yaml())
-    model = ossie["semantic_model"][0]
+    model = ossie
     model["datasets"][1]["source"] = "crm.public.customers"
     model["relationships"] = []
     model["metrics"] = []
@@ -353,14 +353,14 @@ def test_multiple_databases_are_supported_and_name_falls_back() -> None:
 
     assert database_names == {"analytics", "crm"}
     assert len(native["data_layer"]["databases"]) == 2
-    assert restored["semantic_model"][0]["name"] == "gsf_model"
+    assert restored["name"] == "gsf_model"
 
 
 def test_shared_physical_source_uses_one_catalog_table_and_valid_ossie(
     tmp_path: Path,
 ) -> None:
     ossie = yaml.safe_load(_ossie_yaml())
-    model = ossie["semantic_model"][0]
+    model = ossie
     model["datasets"].append(
         {
             "name": "order_amounts",
@@ -400,7 +400,7 @@ def test_shared_physical_source_uses_one_catalog_table_and_valid_ossie(
 
     restored = yaml.safe_load(convert_gsf_to_ossie(native_yaml))
     assert {
-        dataset["name"] for dataset in restored["semantic_model"][0]["datasets"]
+        dataset["name"] for dataset in restored["datasets"]
     } >= {"orders", "order_amounts"}
     output_path = tmp_path / "shared-source.ossie.yaml"
     output_path.write_text(yaml.safe_dump(restored), encoding="utf-8")
@@ -415,7 +415,7 @@ def test_shared_physical_source_uses_one_catalog_table_and_valid_ossie(
 
 def test_cross_database_ossie_metric_is_rejected() -> None:
     ossie = yaml.safe_load(_ossie_yaml())
-    ossie["semantic_model"][0]["datasets"][1]["source"] = "crm.public.customers"
+    ossie["datasets"][1]["source"] = "crm.public.customers"
 
     with pytest.raises(GSFConversionError, match="spans multiple databases"):
         convert_ossie_to_gsf(yaml.safe_dump(ossie))
@@ -423,7 +423,7 @@ def test_cross_database_ossie_metric_is_rejected() -> None:
 
 def test_cross_database_full_query_field_is_rejected() -> None:
     ossie = yaml.safe_load(_ossie_yaml())
-    model = ossie["semantic_model"][0]
+    model = ossie
     model["datasets"][1]["source"] = "crm.public.customers"
     model["metrics"] = []
     model["relationships"] = []
@@ -451,7 +451,7 @@ def test_cross_database_full_query_field_is_rejected() -> None:
 @pytest.mark.parametrize("kind", ["sql_attribute", "custom_analysis"])
 def test_cross_database_gsf_sql_objects_are_rejected(kind: str) -> None:
     ossie = yaml.safe_load(_ossie_yaml())
-    model = ossie["semantic_model"][0]
+    model = ossie
     model["datasets"][1]["source"] = "crm.public.customers"
     model["metrics"] = []
     model["relationships"] = []
@@ -512,8 +512,8 @@ def test_relationships_emit_join_physical_fk_and_semantic_fk() -> None:
 
     native["data_layer"]["joins"] = []
     restored = yaml.safe_load(convert_gsf_to_ossie(yaml.safe_dump(native)))
-    assert restored["semantic_model"][0]["relationships"][0]["from"] == "orders"
-    assert restored["semantic_model"][0]["relationships"][0]["to"] == "customers"
+    assert restored["relationships"][0]["from"] == "orders"
+    assert restored["relationships"][0]["to"] == "customers"
 
 
 def test_gsf_requires_one_represented_table_per_term() -> None:
@@ -565,7 +565,7 @@ def test_date_part_keywords_do_not_become_catalog_columns(
     unit: str,
 ) -> None:
     ossie = yaml.safe_load(_ossie_yaml())
-    ossie["semantic_model"][0]["datasets"][0]["fields"].append(
+    ossie["datasets"][0]["fields"].append(
         {
             "name": "order_age",
             "expression": {
@@ -684,7 +684,7 @@ def test_columns_named_like_units_survive_outside_the_unit_slot(
 ) -> None:
     """Only the unit argument itself is treated as a keyword."""
     ossie = yaml.safe_load(_ossie_yaml())
-    ossie["semantic_model"][0]["datasets"][0]["fields"].append(
+    ossie["datasets"][0]["fields"].append(
         {
             "name": "order_age",
             "expression": {
@@ -732,7 +732,7 @@ def test_expression_dialect_follows_the_gsf_connection() -> None:
     ossie = yaml.safe_load(convert_gsf_to_ossie(yaml.safe_dump(native)))
     orders = next(
         dataset
-        for dataset in ossie["semantic_model"][0]["datasets"]
+        for dataset in ossie["datasets"]
         if dataset["name"] == "orders"
     )
     dialects = {
@@ -752,7 +752,7 @@ def test_dialects_ossie_cannot_name_stay_ansi() -> None:
     ossie = yaml.safe_load(convert_gsf_to_ossie(yaml.safe_dump(native)))
     orders = next(
         dataset
-        for dataset in ossie["semantic_model"][0]["datasets"]
+        for dataset in ossie["datasets"]
         if dataset["name"] == "orders"
     )
     net_total = next(
@@ -767,7 +767,7 @@ def test_every_mappable_datatype_survives_a_round_trip(datatype: str) -> None:
     ossie = yaml.safe_load(_ossie_yaml())
     orders = next(
         dataset
-        for dataset in ossie["semantic_model"][0]["datasets"]
+        for dataset in ossie["datasets"]
         if dataset["name"] == "orders"
     )
     next(field for field in orders["fields"] if field["name"] == "order_id")[
@@ -778,7 +778,7 @@ def test_every_mappable_datatype_survives_a_round_trip(datatype: str) -> None:
     restored = yaml.safe_load(convert_gsf_to_ossie(native))
     field = next(
         item
-        for dataset in restored["semantic_model"][0]["datasets"]
+        for dataset in restored["datasets"]
         if dataset["name"] == "orders"
         for item in dataset["fields"]
         if item["name"] == "order_id"
@@ -842,7 +842,7 @@ def test_gsf_column_types_reach_the_ossie_field() -> None:
     ossie = yaml.safe_load(convert_gsf_to_ossie(yaml.safe_dump(native)))
     fields = {
         field["name"]: field.get("datatype")
-        for dataset in ossie["semantic_model"][0]["datasets"]
+        for dataset in ossie["datasets"]
         if dataset["name"] == "orders"
         for field in dataset["fields"]
     }
@@ -870,7 +870,7 @@ def test_a_live_gsf_column_type_outranks_an_ossie_datatype() -> None:
     ossie = yaml.safe_load(convert_gsf_to_ossie(yaml.safe_dump(native)))
     next(
         field
-        for dataset in ossie["semantic_model"][0]["datasets"]
+        for dataset in ossie["datasets"]
         if dataset["name"] == "orders"
         for field in dataset["fields"]
         if field["name"] == "order_id"
@@ -902,7 +902,7 @@ def test_old_fictional_gsf_root_is_rejected() -> None:
 
 def test_model_name_override() -> None:
     result = yaml.safe_load(convert_gsf_to_ossie(_gsf_yaml(), model_name="sales"))
-    assert result["semantic_model"][0]["name"] == "sales"
+    assert result["name"] == "sales"
 
 
 @pytest.mark.parametrize(
@@ -966,4 +966,22 @@ def test_cli_converts_native_files(
     main(["import", "-i", str(gsf_path), "--name", "sales"])
     output = yaml.safe_load(capsys.readouterr().out)
     assert output["version"] == OSSIE_VERSION
-    assert output["semantic_model"][0]["name"] == "sales"
+    assert output["name"] == "sales"
+
+
+@pytest.mark.parametrize("wrapper", [None, [], {}, [{"name": "old", "datasets": []}]])
+def test_rejects_legacy_wrapper_even_with_root_model(wrapper: Any) -> None:
+    document = yaml.safe_load(_ossie_yaml())
+    document["semantic_model"] = wrapper
+
+    with pytest.raises(GSFConversionError, match="at the root"):
+        convert_ossie_to_gsf(yaml.safe_dump(document))
+
+
+@pytest.mark.parametrize("property_name", ["dialects", "vendors"])
+def test_rejects_removed_root_metadata(property_name: str) -> None:
+    document = yaml.safe_load(_ossie_yaml())
+    document[property_name] = []
+
+    with pytest.raises(GSFConversionError, match="Unsupported Ossie root properties"):
+        convert_ossie_to_gsf(yaml.safe_dump(document))

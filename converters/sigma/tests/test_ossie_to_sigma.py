@@ -1,3 +1,20 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 from pathlib import Path
 
 import yaml
@@ -9,13 +26,13 @@ from ossie import (
     OssieExpression,
     OssieField,
     OssieMetric,
-    OssieSemanticModel,
 )
 
 import pytest
 from ossie import OssieRelationship
+from pydantic import ValidationError
 
-from ossie_sigma.converter_issues import ConverterError, ConverterIssueType
+from ossie_sigma.converter_issues import ConverterIssueType
 from ossie_sigma.ossie_to_sigma import OssieToSigmaConverter, _stable_id
 from ossie_sigma.sigma_to_ossie import SigmaToOssieConverter
 
@@ -90,24 +107,20 @@ def test_relationship_ids_are_scoped_by_owning_dataset():
     """Two unrelated relationships sharing a name, on different table pairs, must not
     collide onto the same synthesized Sigma relationship id."""
     document = OssieDocument(
-        semantic_model=[
-            OssieSemanticModel(
-                name="m",
-                datasets=[
-                    OssieDataset(name="orders", source="db.public.orders"),
-                    OssieDataset(name="shipments", source="db.public.shipments"),
-                    OssieDataset(name="customers", source="db.public.customers"),
-                    OssieDataset(name="carriers", source="db.public.carriers"),
-                ],
-                relationships=[
-                    OssieRelationship(
-                        name="Parent", **{"from": "orders"}, to="customers", from_columns=["x"], to_columns=["y"]
-                    ),
-                    OssieRelationship(
-                        name="Parent", **{"from": "shipments"}, to="carriers", from_columns=["x"], to_columns=["y"]
-                    ),
-                ],
-            )
+        name="m",
+        datasets=[
+            OssieDataset(name="orders", source="db.public.orders"),
+            OssieDataset(name="shipments", source="db.public.shipments"),
+            OssieDataset(name="customers", source="db.public.customers"),
+            OssieDataset(name="carriers", source="db.public.carriers"),
+        ],
+        relationships=[
+            OssieRelationship(
+                name="Parent", **{"from": "orders"}, to="customers", from_columns=["x"], to_columns=["y"]
+            ),
+            OssieRelationship(
+                name="Parent", **{"from": "shipments"}, to="carriers", from_columns=["x"], to_columns=["y"]
+            ),
         ]
     )
 
@@ -122,10 +135,9 @@ def test_relationship_ids_are_scoped_by_owning_dataset():
     assert len(set(rel_ids)) == 2, "relationships with the same name on different dataset pairs must not collide"
 
 
-def test_empty_semantic_model_raises_a_clear_error():
-    document = OssieDocument(semantic_model=[])
-    with pytest.raises(ConverterError):
-        OssieToSigmaConverter().convert(document)
+def test_legacy_semantic_model_wrapper_is_rejected():
+    with pytest.raises(ValidationError, match="semantic_model"):
+        OssieDocument(semantic_model=[])
 
 
 def test_model_level_metadata_round_trips_through_ossie_and_back():
@@ -149,53 +161,49 @@ def test_untranslatable_expression_omits_the_column_instead_of_faking_a_formula(
     whole document before applying any of it, so a placeholder would fail the entire
     upload rather than degrade one column."""
     document = OssieDocument(
-        semantic_model=[
-            OssieSemanticModel(
-                name="m",
-                datasets=[
-                    OssieDataset(
-                        name="orders",
-                        source="db.public.orders",
-                        fields=[
-                            OssieField(
-                                name="ok",
-                                expression=OssieExpression(
-                                    dialects=[OssieDialectExpression(dialect=OssieDialect.ANSI_SQL, expression="amount")]
-                                ),
-                            ),
-                            OssieField(
-                                name="untranslatable",
-                                expression=OssieExpression(
-                                    dialects=[
-                                        OssieDialectExpression(
-                                            dialect=OssieDialect.ANSI_SQL,
-                                            expression="SUM(amount) OVER (PARTITION BY region)",
-                                        )
-                                    ]
-                                ),
-                            ),
-                            OssieField(
-                                name="no_usable_dialect",
-                                expression=OssieExpression(
-                                    dialects=[OssieDialectExpression(dialect=OssieDialect.MDX, expression="[Measures].[X]")]
-                                ),
-                            ),
-                        ],
-                    )
-                ],
-                metrics=[
-                    OssieMetric(
-                        name="untranslatable_metric",
+        name="m",
+        datasets=[
+            OssieDataset(
+                name="orders",
+                source="db.public.orders",
+                fields=[
+                    OssieField(
+                        name="ok",
+                        expression=OssieExpression(
+                            dialects=[OssieDialectExpression(dialect=OssieDialect.ANSI_SQL, expression="amount")]
+                        ),
+                    ),
+                    OssieField(
+                        name="untranslatable",
                         expression=OssieExpression(
                             dialects=[
                                 OssieDialectExpression(
                                     dialect=OssieDialect.ANSI_SQL,
-                                    expression="SUM(orders.amount) OVER (PARTITION BY orders.region)",
+                                    expression="SUM(amount) OVER (PARTITION BY region)",
                                 )
                             ]
                         ),
-                    )
+                    ),
+                    OssieField(
+                        name="no_usable_dialect",
+                        expression=OssieExpression(
+                            dialects=[OssieDialectExpression(dialect=OssieDialect.MDX, expression="[Measures].[X]")]
+                        ),
+                    ),
                 ],
+            )
+        ],
+        metrics=[
+            OssieMetric(
+                name="untranslatable_metric",
+                expression=OssieExpression(
+                    dialects=[
+                        OssieDialectExpression(
+                            dialect=OssieDialect.ANSI_SQL,
+                            expression="SUM(orders.amount) OVER (PARTITION BY orders.region)",
+                        )
+                    ]
+                ),
             )
         ]
     )
@@ -221,37 +229,33 @@ def test_synthesized_spec_carries_a_schema_version():
 
 def test_datatypes_only_ever_emit_the_two_documented_format_kinds():
     document = OssieDocument(
-        semantic_model=[
-            OssieSemanticModel(
-                name="m",
-                datasets=[
-                    OssieDataset(
-                        name="t",
-                        source="db.public.t",
-                        fields=[
-                            OssieField(
-                                name=datatype.lower(),
-                                datatype=datatype,
-                                expression=OssieExpression(
-                                    dialects=[
-                                        OssieDialectExpression(
-                                            dialect=OssieDialect.ANSI_SQL, expression=datatype.lower()
-                                        )
-                                    ]
-                                ),
-                            )
-                            for datatype in (
-                                "String",
-                                "Integer",
-                                "Decimal",
-                                "Float",
-                                "Boolean",
-                                "Date",
-                                "Time",
-                                "DateTime",
-                                "DateTimeTz",
-                            )
-                        ],
+        name="m",
+        datasets=[
+            OssieDataset(
+                name="t",
+                source="db.public.t",
+                fields=[
+                    OssieField(
+                        name=datatype.lower(),
+                        datatype=datatype,
+                        expression=OssieExpression(
+                            dialects=[
+                                OssieDialectExpression(
+                                    dialect=OssieDialect.ANSI_SQL, expression=datatype.lower()
+                                )
+                            ]
+                        ),
+                    )
+                    for datatype in (
+                        "String",
+                        "Integer",
+                        "Decimal",
+                        "Float",
+                        "Boolean",
+                        "Date",
+                        "Time",
+                        "DateTime",
+                        "DateTimeTz",
                     )
                 ],
             )

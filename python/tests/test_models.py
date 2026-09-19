@@ -28,6 +28,7 @@ from ossie import (
     OssieDocument,
     OssieExpression,
     OssieField,
+    OssieSemanticModel,
 )
 
 
@@ -42,30 +43,26 @@ def _expression(value: str = "value") -> OssieExpression:
 def _document() -> dict:
     return {
         "version": "0.2.0.dev0",
-        "semantic_model": [
+        "name": "typed_model",
+        "datasets": [
             {
-                "name": "typed_model",
-                "datasets": [
+                "name": "events",
+                "source": "catalog.schema.events",
+                "fields": [
                     {
-                        "name": "events",
-                        "source": "catalog.schema.events",
-                        "fields": [
-                            {
-                                "name": "occurred_at",
-                                "expression": _expression_data("occurred_at"),
-                                "dimension": {},
-                                "datatype": "DateTimeTz",
-                            }
-                        ],
+                        "name": "occurred_at",
+                        "expression": _expression_data("occurred_at"),
+                        "dimension": {},
+                        "datatype": "DateTimeTz",
                     }
                 ],
-                "metrics": [
-                    {
-                        "name": "revenue",
-                        "expression": _expression_data("SUM(events.revenue)"),
-                        "datatype": "Decimal",
-                    }
-                ],
+            }
+        ],
+        "metrics": [
+            {
+                "name": "revenue",
+                "expression": _expression_data("SUM(events.revenue)"),
+                "datatype": "Decimal",
             }
         ],
     }
@@ -89,22 +86,96 @@ def test_data_type_enum_matches_core_schema() -> None:
 def test_field_and_metric_datatypes_survive_serialization() -> None:
     document = OssieDocument.model_validate(_document())
 
-    field = document.semantic_model[0].datasets[0].fields[0]
-    metric = document.semantic_model[0].metrics[0]
+    field = document.datasets[0].fields[0]
+    metric = document.metrics[0]
     assert field.datatype is OssieDataType.DATE_TIME_TZ
     assert metric.datatype is OssieDataType.DECIMAL
 
     as_json = json.loads(document.to_ossie_json())
     as_yaml = yaml.safe_load(document.to_ossie_yaml())
     for serialized in (as_json, as_yaml):
-        model = serialized["semantic_model"][0]
+        model = serialized
         assert model["datasets"][0]["fields"][0]["datatype"] == "DateTimeTz"
         assert model["metrics"][0]["datatype"] == "Decimal"
 
 
+def test_document_serialization_preserves_flat_model_and_metadata() -> None:
+    data = _document()
+    data.update(
+        description="A portable model",
+        ai_context="Use the event timestamp",
+        custom_extensions=[{"vendor_name": "SIGMA", "data": '{"id":"model-1"}'}],
+        relationships=[
+            {
+                "name": "event_link",
+                "from": "events",
+                "to": "events",
+                "from_columns": ["id"],
+                "to_columns": ["id"],
+            }
+        ],
+    )
+    document = OssieDocument.model_validate(data)
+
+    for serialized in (json.loads(document.to_ossie_json()), yaml.safe_load(document.to_ossie_yaml())):
+        assert serialized == data
+        assert "semantic_model" not in serialized
+        assert OssieDocument.model_validate(serialized) == document
+
+
+@pytest.mark.parametrize(
+    "legacy_value",
+    [
+        None,
+        [],
+        {"name": "legacy", "datasets": []},
+        [{"name": "legacy", "datasets": []}],
+        [{"name": "first", "datasets": []}, {"name": "second", "datasets": []}],
+    ],
+)
+@pytest.mark.parametrize("include_root_model", [False, True])
+def test_document_rejects_legacy_wrapper(legacy_value: object, include_root_model: bool) -> None:
+    data = _document() if include_root_model else {"version": "0.2.0.dev0"}
+    data["semantic_model"] = legacy_value
+
+    with pytest.raises(ValidationError) as error:
+        OssieDocument.model_validate(data)
+
+    assert any(
+        item["loc"] == ("semantic_model",) and item["type"] == "extra_forbidden"
+        for item in error.value.errors()
+    )
+
+
+@pytest.mark.parametrize("property_name", ["name", "datasets"])
+def test_document_requires_root_model_properties(property_name: str) -> None:
+    data = _document()
+    del data[property_name]
+
+    with pytest.raises(ValidationError):
+        OssieDocument.model_validate(data)
+
+
+@pytest.mark.parametrize("property_name", ["dialects", "vendors"])
+def test_document_rejects_removed_root_metadata(property_name: str) -> None:
+    data = _document()
+    data[property_name] = []
+    with pytest.raises(ValidationError):
+        OssieDocument.model_validate(data)
+
+
+def test_embedded_semantic_model_has_no_document_metadata() -> None:
+    data = _document()
+    del data["version"]
+
+    embedded = OssieSemanticModel.model_validate(data)
+
+    assert embedded.model_dump(by_alias=True, exclude_none=True, mode="json") == data
+
+
 def test_invalid_datatype_is_rejected() -> None:
     document = _document()
-    field = document["semantic_model"][0]["datasets"][0]["fields"][0]
+    field = document["datasets"][0]["fields"][0]
     field["datatype"] = "timestamp"
 
     with pytest.raises(ValidationError):

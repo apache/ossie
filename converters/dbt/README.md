@@ -66,6 +66,12 @@ By default the Ossie semantic model is named `semantic_model`. Override it with 
 ossie-dbt msi-to-ossie -i target/semantic_manifest.json -o semantic_model.yaml --model-name my_project
 ```
 
+The Ossie output contains one model at the document root (`name`, `datasets`,
+`relationships`, and `metrics`, alongside document metadata). Each dbt semantic
+model becomes an Ossie dataset; dbt manifests can still contain multiple
+`semantic_models`. Ossie input must use the flat root format without a
+`semantic_model` wrapper.
+
 Conversion issues (e.g. dropped CONVERSION or PRIVATE metrics) are printed as warnings to stderr. The output file is still written.
 
 ### Apache Ossie → dbt

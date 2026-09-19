@@ -212,74 +212,75 @@ def validate_ossie(ossie_dict: dict[str, Any], schema_path: Path | None = None) 
     def _as_dict_list(value: Any) -> list[dict[str, Any]]:
         return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
 
-    models = _as_dict_list(ossie_dict.get("semantic_model", []))
+    # Legacy wrappers are schema errors, not model contents to traverse.
+    if not isinstance(ossie_dict, dict) or "semantic_model" in ossie_dict:
+        return result
+    model = ossie_dict
 
     # 2. Unique name checks
-    for model in models:
-        model_name = model.get("name", "<unnamed>")
-        datasets = _as_dict_list(model.get("datasets", []))
+    model_name = model.get("name", "<unnamed>")
+    datasets = _as_dict_list(model.get("datasets", []))
 
-        # Unique dataset names
-        dataset_names: list[str] = []
-        for ds in datasets:
-            name = ds.get("name", "")
-            if name in dataset_names:
+    # Unique dataset names
+    dataset_names: list[str] = []
+    for ds in datasets:
+        name = ds.get("name", "")
+        if name in dataset_names:
+            result.semantic_errors.append(
+                f"[DUPLICATE_DATASET] Duplicate dataset name '{name}' in model '{model_name}'"
+            )
+        dataset_names.append(name)
+
+    # Unique field names within each dataset
+    for ds in datasets:
+        ds_name = ds.get("name", "<unnamed>")
+        field_names: list[str] = []
+        for field in _as_dict_list(ds.get("fields", [])):
+            fname = field.get("name", "")
+            if fname in field_names:
                 result.semantic_errors.append(
-                    f"[DUPLICATE_DATASET] Duplicate dataset name '{name}' in model '{model_name}'"
+                    f"[DUPLICATE_FIELD] Duplicate field name '{fname}' in dataset '{ds_name}'"
                 )
-            dataset_names.append(name)
+            field_names.append(fname)
 
-        # Unique field names within each dataset
-        for ds in datasets:
-            ds_name = ds.get("name", "<unnamed>")
-            field_names: list[str] = []
-            for field in _as_dict_list(ds.get("fields", [])):
-                fname = field.get("name", "")
-                if fname in field_names:
-                    result.semantic_errors.append(
-                        f"[DUPLICATE_FIELD] Duplicate field name '{fname}' in dataset '{ds_name}'"
-                    )
-                field_names.append(fname)
+    # Unique metric names
+    metric_names: list[str] = []
+    for m in _as_dict_list(model.get("metrics", [])):
+        mname = m.get("name", "")
+        if mname in metric_names:
+            result.semantic_errors.append(
+                f"[DUPLICATE_METRIC] Duplicate metric name '{mname}' in model '{model_name}'"
+            )
+        metric_names.append(mname)
 
-        # Unique metric names
-        metric_names: list[str] = []
-        for m in _as_dict_list(model.get("metrics", [])):
-            mname = m.get("name", "")
-            if mname in metric_names:
-                result.semantic_errors.append(
-                    f"[DUPLICATE_METRIC] Duplicate metric name '{mname}' in model '{model_name}'"
-                )
-            metric_names.append(mname)
-
-        # Unique relationship names
-        rel_names: list[str] = []
-        for r in _as_dict_list(model.get("relationships", [])):
-            rname = r.get("name", "")
-            if rname in rel_names:
-                result.semantic_errors.append(
-                    f"[DUPLICATE_RELATIONSHIP] Duplicate relationship name "
-                    f"'{rname}' in model '{model_name}'"
-                )
-            rel_names.append(rname)
+    # Unique relationship names
+    rel_names: list[str] = []
+    for r in _as_dict_list(model.get("relationships", [])):
+        rname = r.get("name", "")
+        if rname in rel_names:
+            result.semantic_errors.append(
+                f"[DUPLICATE_RELATIONSHIP] Duplicate relationship name "
+                f"'{rname}' in model '{model_name}'"
+            )
+        rel_names.append(rname)
 
     # 3. Reference checks — relationships reference existing datasets
-    for model in models:
-        datasets = _as_dict_list(model.get("datasets", []))
-        ds_name_set = {ds.get("name") for ds in datasets if ds.get("name")}
-        for rel in _as_dict_list(model.get("relationships", [])):
-            rel_name = rel.get("name", "<unnamed>")
-            from_ds = rel.get("from")
-            to_ds = rel.get("to")
-            if from_ds and from_ds not in ds_name_set:
-                result.semantic_errors.append(
-                    f"[UNKNOWN_DATASET_REF] Relationship '{rel_name}' "
-                    f"references unknown dataset '{from_ds}'"
-                )
-            if to_ds and to_ds not in ds_name_set:
-                result.semantic_errors.append(
-                    f"[UNKNOWN_DATASET_REF] Relationship '{rel_name}' "
-                    f"references unknown dataset '{to_ds}'"
-                )
+    datasets = _as_dict_list(model.get("datasets", []))
+    ds_name_set = {ds.get("name") for ds in datasets if ds.get("name")}
+    for rel in _as_dict_list(model.get("relationships", [])):
+        rel_name = rel.get("name", "<unnamed>")
+        from_ds = rel.get("from")
+        to_ds = rel.get("to")
+        if from_ds and from_ds not in ds_name_set:
+            result.semantic_errors.append(
+                f"[UNKNOWN_DATASET_REF] Relationship '{rel_name}' "
+                f"references unknown dataset '{from_ds}'"
+            )
+        if to_ds and to_ds not in ds_name_set:
+            result.semantic_errors.append(
+                f"[UNKNOWN_DATASET_REF] Relationship '{rel_name}' "
+                f"references unknown dataset '{to_ds}'"
+            )
 
     return result
 

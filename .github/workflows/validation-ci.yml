@@ -24,6 +24,7 @@ on:
     branches: ["main"]
     paths:
       - "validation/**"
+      - "python/**"
       - "core-spec/**"
       - "examples/tpcds_semantic_model.yaml"
       - ".github/workflows/validation-ci.yml"
@@ -31,6 +32,7 @@ on:
     branches: ["main"]
     paths:
       - "validation/**"
+      - "python/**"
       - "core-spec/**"
       - "examples/tpcds_semantic_model.yaml"
       - ".github/workflows/validation-ci.yml"
@@ -60,7 +62,10 @@ jobs:
         run: uv run validation/test_validate.py
 
       - name: Run validation pytest tests
-        run: uv run --with pytest --with pyyaml --with jsonschema -m pytest validation/tests/
+        run: uv run --with pytest --with pyyaml --with jsonschema --with sqlglot -m pytest validation/tests/
+
+      - name: Run shared Python model tests
+        run: uv run --with pytest --with jsonschema --with ./python -m pytest python/tests/
 
       - name: Validate canonical example
         run: uv run validation/validate.py examples/tpcds_semantic_model.yaml

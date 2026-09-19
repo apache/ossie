@@ -23,6 +23,11 @@ Offline conversion between Apache Ossie YAML and NVIDIA GSF's native
 `GsfModelDocument` YAML contract. Conversion itself does not require GSF,
 Neo4j, a database, or network access.
 
+Ossie input and output use one model per document, with `name`, `datasets`,
+`relationships`, and `metrics` directly at the root beside `version`. Migrate
+legacy `semantic_model` wrappers before conversion; see the
+[format migration guidance](../../core-spec/spec.md#migrating-earlier-document-shapes).
+
 ## Mapping
 
 | Apache Ossie | Native GSF model document |

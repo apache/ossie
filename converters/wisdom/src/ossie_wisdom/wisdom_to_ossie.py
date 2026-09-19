@@ -35,7 +35,6 @@ from ossie import (
     OssieField,
     OssieMetric,
     OssieRelationship,
-    OssieSemanticModel,
 )
 from ossie_wisdom.converter_issues import ConverterIssue, ConverterIssueType, ConverterResult
 
@@ -77,7 +76,7 @@ class WisdomToOssieConverter:
         dataset_names = {d.name for d in datasets}
         relationships = self._convert_relationships(domain, dataset_names, issues)
 
-        model = OssieSemanticModel(
+        document = OssieDocument(
             name=domain.get("ref", {}).get("name") or export.get("export_metadata", {}).get("domain_name", "domain"),
             description=domain.get("description") or None,
             ai_context=self._build_ai_context(domain),
@@ -85,7 +84,7 @@ class WisdomToOssieConverter:
             relationships=relationships or None,
             metrics=[metric for _, metric in metrics] or None,
         )
-        return ConverterResult(output=OssieDocument(semantic_model=[model]), issues=issues)
+        return ConverterResult(output=document, issues=issues)
 
     def _build_dialect_index(self, export: dict, issues: List[ConverterIssue]) -> Dict[str, OssieDialect]:
         index: Dict[str, OssieDialect] = {}

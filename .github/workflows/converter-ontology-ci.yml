@@ -24,11 +24,15 @@ on:
     branches: [ "main" ]
     paths:
       - 'converters/ontology/**'
+      - 'core-spec/**'
+      - 'examples/**'
       - '.github/workflows/converter-ontology-ci.yml'
   pull_request:
     branches: [ "main" ]
     paths:
       - 'converters/ontology/**'
+      - 'core-spec/**'
+      - 'examples/**'
       - '.github/workflows/converter-ontology-ci.yml'
 
 jobs:

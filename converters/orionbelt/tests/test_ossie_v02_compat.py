@@ -20,7 +20,7 @@
 Covers the v2.6 spec bump from Ossie v0.1.1 → v0.2.0.dev0:
 
 - Emitted ``version`` is the v0.2 constant
-- Top-level ``dialects`` / ``vendors`` informational arrays are present
+- Dialects and vendors are represented per expression and extension, not at the root
 - Dataset ``primary_key`` is promoted from per-column ``primaryKey: true``
 - Dataset ``unique_keys`` round-trips lossly via OBSL custom_extensions
 - Field ``label`` round-trips via OBSL custom_extensions
@@ -120,42 +120,38 @@ _OBML_WITH_PK_AND_LABEL: dict[str, Any] = {
 
 _OSSIE_V01_INPUT: dict[str, Any] = {
     "version": "0.1.1",
-    "semantic_model": [
+    "name": "ecommerce",
+    "datasets": [
         {
-            "name": "ecommerce",
-            "datasets": [
+            "name": "Orders",
+            "source": "WAREHOUSE.PUBLIC.orders",
+            # Legacy: PK stashed in custom_extensions (pre-v0.2 shape)
+            "custom_extensions": [
                 {
-                    "name": "Orders",
-                    "source": "WAREHOUSE.PUBLIC.orders",
-                    # Legacy: PK stashed in custom_extensions (pre-v0.2 shape)
-                    "custom_extensions": [
+                    "vendor_name": "COMMON",
+                    "data": json.dumps(
                         {
-                            "vendor_name": "COMMON",
-                            "data": json.dumps(
-                                {
-                                    "obml_primary_key": ["order_id"],
-                                    "obml_unique_keys": [["order_id"], ["order_number"]],
-                                }
-                            ),
+                            "obml_primary_key": ["order_id"],
+                            "obml_unique_keys": [["order_id"], ["order_number"]],
                         }
-                    ],
-                    "fields": [
-                        {
-                            "name": "order_id",
-                            "expression": {
-                                "dialects": [{"dialect": "ANSI_SQL", "expression": "order_id"}]
-                            },
-                            "data_type": "string",
-                        },
-                        {
-                            "name": "amount",
-                            "expression": {
-                                "dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}]
-                            },
-                            "data_type": "number",
-                        },
-                    ],
+                    ),
                 }
+            ],
+            "fields": [
+                {
+                    "name": "order_id",
+                    "expression": {
+                        "dialects": [{"dialect": "ANSI_SQL", "expression": "order_id"}]
+                    },
+                    "data_type": "string",
+                },
+                {
+                    "name": "amount",
+                    "expression": {
+                        "dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}]
+                    },
+                    "data_type": "number",
+                },
             ],
         }
     ],
@@ -174,17 +170,18 @@ class TestEmittedVersion:
         assert ossie["version"].startswith("0.2")
 
     def test_no_root_dialects_or_vendors(self) -> None:
-        # The published Ossie core schema forbids root-level dialects/vendors
-        # (root is additionalProperties:false). See Ossie PR #148.
+        # Root advertisements are optional; the converter emits dialects and
+        # vendors at each expression/extension that uses them.
         ossie = conv.OBMLtoOssie(_OBML_WITH_PK_AND_LABEL).convert()
         assert "dialects" not in ossie
         assert "vendors" not in ossie
-        assert set(ossie.keys()) <= {"version", "semantic_model"}
+        assert "semantic_model" not in ossie
+        assert {"version", "name", "datasets"} <= set(ossie)
 
     def test_dialect_tagged_per_expression(self) -> None:
         # Dialects live on each expression, the schema-valid home.
         ossie = conv.OBMLtoOssie(_OBML_WITH_PK_AND_LABEL).convert()
-        for metric in ossie["semantic_model"][0].get("metrics", []):
+        for metric in ossie.get("metrics", []):
             tags = [d["dialect"] for d in metric["expression"]["dialects"]]
             assert "ANSI_SQL" in tags
 
@@ -194,7 +191,7 @@ class TestEmittedVersion:
         # field label (no vendor tag needed).
         ossie = conv.OBMLtoOssie(_OBML_WITH_PK_AND_LABEL).convert()
         assert "ORIONBELT" in _collect_vendor_names(ossie)
-        fields = ossie["semantic_model"][0]["datasets"][0]["fields"]
+        fields = ossie["datasets"][0]["fields"]
         assert any(f.get("label") for f in fields), "expected a native Ossie field label"
 
 
@@ -206,7 +203,7 @@ class TestEmittedVersion:
 class TestPrimaryKey:
     def test_composite_pk_emitted_in_declaration_order(self) -> None:
         ossie = conv.OBMLtoOssie(_OBML_WITH_PK_AND_LABEL).convert()
-        ds = ossie["semantic_model"][0]["datasets"][0]
+        ds = ossie["datasets"][0]
         # Two columns flagged primaryKey: emit composite in declaration order
         assert ds["primary_key"] == ["order_id", "line_no"]
 
@@ -223,26 +220,22 @@ class TestPrimaryKey:
     def test_unknown_pk_column_emits_warning(self) -> None:
         bad = {
             "version": "0.2.0.dev0",
-            "semantic_model": [
+            "name": "x",
+            "datasets": [
                 {
-                    "name": "x",
-                    "datasets": [
+                    "name": "Orders",
+                    "source": "a.b.c",
+                    "primary_key": ["no_such_column"],
+                    "fields": [
                         {
-                            "name": "Orders",
-                            "source": "a.b.c",
-                            "primary_key": ["no_such_column"],
-                            "fields": [
-                                {
-                                    "name": "amount",
-                                    "expression": {
-                                        "dialects": [
-                                            {"dialect": "ANSI_SQL", "expression": "amount"}
-                                        ]
-                                    },
-                                    "data_type": "number",
-                                },
-                            ],
-                        }
+                            "name": "amount",
+                            "expression": {
+                                "dialects": [
+                                    {"dialect": "ANSI_SQL", "expression": "amount"}
+                                ]
+                            },
+                            "data_type": "number",
+                        },
                     ],
                 }
             ],
@@ -256,7 +249,7 @@ class TestPrimaryKey:
 class TestUniqueKeys:
     def test_unique_keys_roundtrip(self) -> None:
         ossie = conv.OBMLtoOssie(_OBML_WITH_PK_AND_LABEL).convert()
-        ds = ossie["semantic_model"][0]["datasets"][0]
+        ds = ossie["datasets"][0]
         assert ds.get("unique_keys") == [["order_id"], ["order_id", "line_no"]]
 
 
@@ -268,7 +261,7 @@ class TestUniqueKeys:
 class TestFieldLabel:
     def test_label_emitted_from_custom_extensions(self) -> None:
         ossie = conv.OBMLtoOssie(_OBML_WITH_PK_AND_LABEL).convert()
-        fields = ossie["semantic_model"][0]["datasets"][0]["fields"]
+        fields = ossie["datasets"][0]["fields"]
         order_id_field = next(f for f in fields if f["name"] == "order_id")
         assert order_id_field["label"] == "filter"
 
@@ -299,7 +292,7 @@ class TestLegacyShim:
         # Manually invoke the shim
         converter.ossie = json.loads(json.dumps(_OSSIE_V01_INPUT))  # deep copy
         converter._normalize_legacy_v01()
-        ds = converter.ossie["semantic_model"][0]["datasets"][0]
+        ds = converter.ossie["datasets"][0]
         assert ds["primary_key"] == ["order_id"]
         assert ds["unique_keys"] == [["order_id"], ["order_number"]]
 
@@ -313,25 +306,21 @@ class TestLegacyShim:
         # v0.2 input declaring primary_key directly — shim must be a no-op
         v02 = {
             "version": "0.2.0.dev0",
-            "semantic_model": [
+            "name": "x",
+            "datasets": [
                 {
-                    "name": "x",
-                    "datasets": [
+                    "name": "Orders",
+                    "source": "a.b.c",
+                    "primary_key": ["order_id"],
+                    "fields": [
                         {
-                            "name": "Orders",
-                            "source": "a.b.c",
-                            "primary_key": ["order_id"],
-                            "fields": [
-                                {
-                                    "name": "order_id",
-                                    "expression": {
-                                        "dialects": [
-                                            {"dialect": "ANSI_SQL", "expression": "order_id"}
-                                        ]
-                                    },
-                                    "data_type": "string",
-                                }
-                            ],
+                            "name": "order_id",
+                            "expression": {
+                                "dialects": [
+                                    {"dialect": "ANSI_SQL", "expression": "order_id"}
+                                ]
+                            },
+                            "data_type": "string",
                         }
                     ],
                 }
@@ -372,13 +361,12 @@ class TestSchemaValidation:
         assert errors == [], [e.message for e in errors[:5]]
 
     def test_schema_rejects_root_dialects_and_vendors(self, schema_validator: Any) -> None:
-        """Guard Ossie PR #148: root-level dialects/vendors are non-conformant."""
+        """Dialect and vendor metadata belongs to expressions and extensions."""
         ossie = conv.OBMLtoOssie(_OBML_WITH_PK_AND_LABEL).convert()
         ossie["dialects"] = ["ANSI_SQL"]
         ossie["vendors"] = ["ORIONBELT"]
         messages = [e.message for e in schema_validator.iter_errors(ossie)]
-        assert any("dialects" in m for m in messages), messages
-        assert any("vendors" in m for m in messages), messages
+        assert any("Additional properties" in message for message in messages)
 
 
 # ---------------------------------------------------------------------------
@@ -390,36 +378,32 @@ class TestMAQLDialect:
     def test_maql_only_metric_does_not_raise(self) -> None:
         ossie_in: dict[str, Any] = {
             "version": "0.2.0.dev0",
-            "semantic_model": [
+            "name": "gd",
+            "datasets": [
                 {
-                    "name": "gd",
-                    "datasets": [
+                    "name": "Sales",
+                    "source": "a.b.sales",
+                    "fields": [
                         {
-                            "name": "Sales",
-                            "source": "a.b.sales",
-                            "fields": [
-                                {
-                                    "name": "amount",
-                                    "expression": {
-                                        "dialects": [
-                                            {"dialect": "ANSI_SQL", "expression": "amount"}
-                                        ]
-                                    },
-                                    "data_type": "number",
-                                }
-                            ],
-                        }
-                    ],
-                    "metrics": [
-                        {
-                            "name": "total_revenue_maql",
+                            "name": "amount",
                             "expression": {
                                 "dialects": [
-                                    {"dialect": "MAQL", "expression": "SELECT SUM(amount)"},
+                                    {"dialect": "ANSI_SQL", "expression": "amount"}
                                 ]
                             },
+                            "data_type": "number",
                         }
                     ],
+                }
+            ],
+            "metrics": [
+                {
+                    "name": "total_revenue_maql",
+                    "expression": {
+                        "dialects": [
+                            {"dialect": "MAQL", "expression": "SELECT SUM(amount)"},
+                        ]
+                    },
                 }
             ],
         }
@@ -429,3 +413,23 @@ class TestMAQLDialect:
         converter = conv.OssietoOBML(ossie_in)
         converter.convert()
         # No crash is the contract; warnings are acceptable.
+
+
+@pytest.mark.parametrize(
+    "wrapper",
+    [[], [{"name": "first"}], [{"name": "first"}, {"name": "second"}], {"name": "first"}, None],
+)
+def test_legacy_model_wrappers_are_rejected(wrapper):
+    document = {"version": "0.2.0.dev0", "semantic_model": wrapper}
+    assert not conv.validate_ossie(document).valid
+    with pytest.raises(ValueError, match="Legacy 'semantic_model'"):
+        conv.OssietoOBML(document).convert()
+
+
+@pytest.mark.parametrize("property_name", ["dialects", "vendors"])
+@pytest.mark.parametrize("value", [None, [], ["legacy"]])
+def test_removed_root_metadata_is_rejected(property_name, value):
+    document = conv.OBMLtoOssie(_OBML_WITH_PK_AND_LABEL).convert()
+    document[property_name] = value
+    with pytest.raises(ValueError, match="Root dialects and vendors"):
+        conv.OssietoOBML(document).convert()

@@ -195,39 +195,35 @@ def test_omitted_datatype_keeps_role_default_without_warning(converter):
 def test_temporal_datatype_does_not_turn_regular_dataset_into_date_instance():
     """Verify a temporal role does not imply GoodData's special date dataset kind."""
     model = {
-        "semantic_model": [
+        "name": "events",
+        "datasets": [
             {
-                "name": "events",
-                "datasets": [
-                    {
-                        "name": "event_times",
-                        "source": "analytics.event_times",
-                        "fields": [
-                            _direct_field(
-                                "occurred_at",
-                                datatype="DateTimeTz",
-                                dimension={},
-                                description="Event occurrence time",
-                            )
-                        ],
-                    },
-                    {
-                        "name": "observations",
-                        "source": "analytics.observations",
-                        "fields": [_direct_field("event_time", dimension={})],
-                    },
+                "name": "event_times",
+                "source": "analytics.event_times",
+                "fields": [
+                    _direct_field(
+                        "occurred_at",
+                        datatype="DateTimeTz",
+                        dimension={},
+                        description="Event occurrence time",
+                    )
                 ],
-                "relationships": [
-                    {
-                        "name": "observation_event_time",
-                        "from": "observations",
-                        "to": "event_times",
-                        "from_columns": ["event_time"],
-                        "to_columns": ["occurred_at"],
-                    }
-                ],
+            },
+            {
+                "name": "observations",
+                "source": "analytics.observations",
+                "fields": [_direct_field("event_time", dimension={})],
+            },
+        ],
+        "relationships": [
+            {
+                "name": "observation_event_time",
+                "from": "observations",
+                "to": "event_times",
+                "from_columns": ["event_time"],
+                "to_columns": ["occurred_at"],
             }
-        ]
+        ],
     }
 
     result = ossie_to_gooddata(model)
@@ -246,20 +242,16 @@ def test_temporal_datatype_does_not_turn_regular_dataset_into_date_instance():
 def test_legacy_all_explicit_time_fields_still_create_date_instance():
     """Verify the converter's pre-datatype date-dataset heuristic remains compatible."""
     model = {
-        "semantic_model": [
+        "name": "calendar",
+        "datasets": [
             {
-                "name": "calendar",
-                "datasets": [
-                    {
-                        "name": "calendar_dates",
-                        "source": "analytics.calendar_dates",
-                        "fields": [
-                            _direct_field("date_label", dimension={"is_time": True})
-                        ],
-                    }
+                "name": "calendar_dates",
+                "source": "analytics.calendar_dates",
+                "fields": [
+                    _direct_field("date_label", dimension={"is_time": True})
                 ],
             }
-        ]
+        ],
     }
 
     result = ossie_to_gooddata(model)
@@ -370,3 +362,25 @@ def test_data_source_table_id(ossie_tpcds_dict: dict):
     assert store_sales.data_source_table_id is not None
     assert store_sales.data_source_table_id.data_source_id == "tpcds"
     assert "store_sales" in store_sales.data_source_table_id.path
+
+
+@pytest.mark.parametrize("wrapper", [None, [], {}, [{"name": "old", "datasets": []}]])
+def test_rejects_legacy_wrapper_even_with_root_model(ossie_tpcds_dict: dict, wrapper):
+    document = {**ossie_tpcds_dict, "semantic_model": wrapper}
+
+    with pytest.raises(ValueError, match="at the root"):
+        ossie_to_gooddata(document)
+
+
+@pytest.mark.parametrize("document", [None, [], {}, {"name": "sales"}])
+def test_rejects_missing_root_model(document):
+    with pytest.raises(ValueError, match="mapping|name and datasets"):
+        ossie_to_gooddata(document)
+
+
+@pytest.mark.parametrize("property_name", ["dialects", "vendors"])
+@pytest.mark.parametrize("value", [None, [], ["legacy"]])
+def test_removed_root_metadata_is_rejected(ossie_tpcds_dict: dict, property_name, value):
+    document = {**ossie_tpcds_dict, property_name: value}
+    with pytest.raises(ValueError, match="Root dialects and vendors"):
+        ossie_to_gooddata(document)

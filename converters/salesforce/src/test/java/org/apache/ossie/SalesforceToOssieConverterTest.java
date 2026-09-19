@@ -100,17 +100,13 @@ class SalesforceToOssieConverterTest {
         String ossieYaml = results.get(0);
         assertNotNull(ossieYaml);
         assertTrue(ossieYaml.contains("version: 0.2.0.dev0"));
-        assertTrue(ossieYaml.contains("semantic_model:"));
+        assertFalse(ossieYaml.contains("semantic_model:"));
 
         Map<String, Object> ossieRoot = yamlMapper.readValue(ossieYaml, Map.class);
         assertNotNull(ossieRoot);
         assertEquals("0.2.0.dev0", ossieRoot.get("version"));
 
-        List<Map<String, Object>> semanticModels = (List<Map<String, Object>>) ossieRoot.get("semantic_model");
-        assertNotNull(semanticModels);
-        assertEquals(1, semanticModels.size());
-
-        Map<String, Object> model = semanticModels.get(0);
+        Map<String, Object> model = ossieRoot;
         assertEquals("Customer_Orders_Model", model.get("name"));
         assertNotNull(model.get("description"));
     }
@@ -119,7 +115,7 @@ class SalesforceToOssieConverterTest {
     void testDatasetMapping() throws Exception {
         List<String> results = converter.convert(salesforceJson);
         Map<String, Object> ossieRoot = yamlMapper.readValue(results.get(0), Map.class);
-        Map<String, Object> model = ((List<Map<String, Object>>) ossieRoot.get("semantic_model")).get(0);
+        Map<String, Object> model = ossieRoot;
 
         List<Map<String, Object>> datasets = (List<Map<String, Object>>) model.get("datasets");
         assertNotNull(datasets);
@@ -140,7 +136,7 @@ class SalesforceToOssieConverterTest {
     void testFieldMapping() throws Exception {
         List<String> results = converter.convert(salesforceJson);
         Map<String, Object> ossieRoot = yamlMapper.readValue(results.get(0), Map.class);
-        Map<String, Object> model = ((List<Map<String, Object>>) ossieRoot.get("semantic_model")).get(0);
+        Map<String, Object> model = ossieRoot;
         List<Map<String, Object>> datasets = (List<Map<String, Object>>) model.get("datasets");
 
         Map<String, Object> customersDataset = datasets.get(0);
@@ -186,7 +182,7 @@ class SalesforceToOssieConverterTest {
     void testCalculatedDimensionConversion() throws Exception {
         List<String> results = converter.convert(salesforceJson);
         Map<String, Object> ossieRoot = yamlMapper.readValue(results.get(0), Map.class);
-        Map<String, Object> model = ((List<Map<String, Object>>) ossieRoot.get("semantic_model")).get(0);
+        Map<String, Object> model = ossieRoot;
         List<Map<String, Object>> datasets = (List<Map<String, Object>>) model.get("datasets");
 
         // customer_email_domain should be converted to a field in Customers dataset (single dependency)
@@ -224,7 +220,7 @@ class SalesforceToOssieConverterTest {
     void testRelationshipMapping() throws Exception {
         List<String> results = converter.convert(salesforceJson);
         Map<String, Object> ossieRoot = yamlMapper.readValue(results.get(0), Map.class);
-        Map<String, Object> model = ((List<Map<String, Object>>) ossieRoot.get("semantic_model")).get(0);
+        Map<String, Object> model = ossieRoot;
 
         List<Map<String, Object>> relationships = (List<Map<String, Object>>) model.get("relationships");
         assertNotNull(relationships);
@@ -250,7 +246,7 @@ class SalesforceToOssieConverterTest {
     void testUnsupportedRelationshipsInCustomExtensions() throws Exception {
         List<String> results = converter.convert(salesforceJson);
         Map<String, Object> ossieRoot = yamlMapper.readValue(results.get(0), Map.class);
-        Map<String, Object> model = ((List<Map<String, Object>>) ossieRoot.get("semantic_model")).get(0);
+        Map<String, Object> model = ossieRoot;
 
         // Unsupported relationships (Formula/SemanticField) should be in custom_extensions
         List<Map<String, Object>> customExtensions = (List<Map<String, Object>>) model.get("custom_extensions");
@@ -271,7 +267,7 @@ class SalesforceToOssieConverterTest {
     void testMetricMapping() throws Exception {
         List<String> results = converter.convert(salesforceJson);
         Map<String, Object> ossieRoot = yamlMapper.readValue(results.get(0), Map.class);
-        Map<String, Object> model = ((List<Map<String, Object>>) ossieRoot.get("semantic_model")).get(0);
+        Map<String, Object> model = ossieRoot;
 
         List<Map<String, Object>> metrics = (List<Map<String, Object>>) model.get("metrics");
         assertNotNull(metrics);
@@ -294,7 +290,7 @@ class SalesforceToOssieConverterTest {
     void testCustomExtensionsPreservation() throws Exception {
         List<String> results = converter.convert(salesforceJson);
         Map<String, Object> ossieRoot = yamlMapper.readValue(results.get(0), Map.class);
-        Map<String, Object> model = ((List<Map<String, Object>>) ossieRoot.get("semantic_model")).get(0);
+        Map<String, Object> model = ossieRoot;
 
         // Check model-level custom_extensions
         List<Map<String, Object>> customExtensions = (List<Map<String, Object>>) model.get("custom_extensions");
@@ -318,7 +314,7 @@ class SalesforceToOssieConverterTest {
     void testTimeDimensionMapping() throws Exception {
         List<String> results = converter.convert(salesforceJson);
         Map<String, Object> ossieRoot = yamlMapper.readValue(results.get(0), Map.class);
-        Map<String, Object> model = ((List<Map<String, Object>>) ossieRoot.get("semantic_model")).get(0);
+        Map<String, Object> model = ossieRoot;
         List<Map<String, Object>> datasets = (List<Map<String, Object>>) model.get("datasets");
 
         Map<String, Object> ordersDataset = datasets.get(1);
@@ -409,18 +405,14 @@ class SalesforceToOssieConverterTest {
 
     @Test
     void testConverterImplExtractModelNameFromOssieFormat() throws Exception {
-        // Test extractModelName specifically handles Ossie wrapped format
+        // The generated document keeps the model name at the root.
         List<String> results = converter.convert(salesforceJson);
         String ossieYaml = results.get(0);
 
-        // The result is wrapped Ossie format - extractModelName should handle this
+        // The same name is used for file output.
         Map<String, Object> ossieRoot = yamlMapper.readValue(ossieYaml, Map.class);
-        assertTrue(ossieRoot.containsKey("semantic_model"));
+        assertFalse(ossieRoot.containsKey("semantic_model"));
 
-        // Verify it's properly wrapped
-        List<Map<String, Object>> models = (List<Map<String, Object>>) ossieRoot.get("semantic_model");
-        assertNotNull(models);
-        assertEquals(1, models.size());
-        assertEquals("Customer_Orders_Model", models.get(0).get("name"));
+        assertEquals("Customer_Orders_Model", ossieRoot.get("name"));
     }
 }

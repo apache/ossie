@@ -31,7 +31,6 @@ from ossie import (
     OssieField,
     OssieMetric,
     OssieRelationship,
-    OssieSemanticModel,
 )
 from ossie_dbt.converter_issues import ConverterIssue, ConverterIssueType, ConverterResult
 from ossie_dbt.filter_utils import _collect_filter_sql, _merge_filter_sqls
@@ -122,15 +121,10 @@ class MSIToOssieConverter:
         return ConverterResult(
             output=OssieDocument(
                 version="0.2.0.dev0",
-                dialects=[self._dialect],
-                semantic_model=[
-                    OssieSemanticModel(
-                        name=ossie_model_name,
-                        datasets=datasets,
-                        relationships=relationships if relationships else None,
-                        metrics=ossie_metrics if ossie_metrics else None,
-                    )
-                ],
+                name=ossie_model_name,
+                datasets=datasets,
+                relationships=relationships if relationships else None,
+                metrics=ossie_metrics if ossie_metrics else None,
             ),
             issues=issues,
         )

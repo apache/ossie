@@ -24,11 +24,15 @@ on:
     branches: [ "main" ]
     paths:
       - 'converters/polaris/**'
+      - 'core-spec/**'
+      - 'examples/**'
       - '.github/workflows/converter-polaris-ci.yml'
   pull_request:
     branches: [ "main" ]
     paths:
       - 'converters/polaris/**'
+      - 'core-spec/**'
+      - 'examples/**'
       - '.github/workflows/converter-polaris-ci.yml'
 
 jobs:

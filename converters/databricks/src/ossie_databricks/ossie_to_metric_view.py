@@ -77,13 +77,18 @@ def convert_ossie_to_metric_view(ossie_yaml_str, source=None):
             f"Unsupported Apache Ossie version '{version}'. Supported: {OSSIE_VERSION}"
         )
 
-    models = root.get("semantic_model")
-    if not isinstance(models, list) or not models:
-        raise ConversionError("'semantic_model' must be a non-empty list")
-    if len(models) > 1:
-        _warn("model", "multiple semantic models found; converting only the first")
+    if "semantic_model" in root:
+        raise ConversionError(
+            "Legacy 'semantic_model' wrappers are not supported; "
+            "place the model properties directly at the document root"
+        )
 
-    view = _convert_model(models[0], explicit_source=source)
+    if "dialects" in root or "vendors" in root:
+        raise ConversionError("Root dialects and vendors are not supported by the Ossie spec")
+    if not isinstance(root.get("name"), str):
+        raise ConversionError("Ossie model requires a string 'name' at the document root")
+
+    view = _convert_model(root, explicit_source=source)
     return dump_yaml(view)
 
 

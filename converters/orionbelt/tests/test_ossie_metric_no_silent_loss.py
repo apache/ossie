@@ -44,22 +44,18 @@ def _ossie_model(metrics: list[dict[str, Any]]) -> dict[str, Any]:
     """Minimal single-dataset Ossie v0.2 model carrying the given metrics."""
     return {
         "version": "0.2.0.dev0",
-        "semantic_model": [
+        "name": "sales",
+        "datasets": [
             {
-                "name": "sales",
-                "datasets": [
-                    {
-                        "name": "Orders",
-                        "source": "ANALYTICS.PUBLIC.ORDERS",
-                        "fields": [
-                            {"name": "amount", "data_type": "number"},
-                            {"name": "id", "data_type": "integer"},
-                        ],
-                    }
+                "name": "Orders",
+                "source": "ANALYTICS.PUBLIC.ORDERS",
+                "fields": [
+                    {"name": "amount", "data_type": "number"},
+                    {"name": "id", "data_type": "integer"},
                 ],
-                "metrics": metrics,
             }
         ],
+        "metrics": metrics,
     }
 
 
@@ -230,7 +226,7 @@ class TestNoSilentLoss:
         obml = conv.OssietoOBML(ossie).convert()
         ossie_again = conv.OBMLtoOssie(obml, "sales").convert()
 
-        metrics = ossie_again["semantic_model"][0].get("metrics", [])
+        metrics = ossie_again.get("metrics", [])
         restored = next((m for m in metrics if m["name"] == "Mdx Thing"), None)
         assert restored is not None
         # Verbatim: expression dialect + description survive the round trip.
@@ -269,7 +265,7 @@ class TestRestoredMetricMetadata:
         ossie_again = conv.OBMLtoOssie(obml, "sales").convert()
 
         restored = next(
-            m for m in ossie_again["semantic_model"][0]["metrics"] if m["name"] == "Cube Metric"
+            m for m in ossie_again["metrics"] if m["name"] == "Cube Metric"
         )
         assert [d["dialect"] for d in restored["expression"]["dialects"]] == ["MDX"]
         assert any(e["vendor_name"] == "GOODDATA" for e in restored["custom_extensions"])
@@ -310,7 +306,7 @@ class TestStaleStashNameCollision:
         converter = conv.OBMLtoOssie(obml, "sales")
         ossie_again = converter.convert()
 
-        metrics = ossie_again["semantic_model"][0].get("metrics", [])
+        metrics = ossie_again.get("metrics", [])
         revenue = [m for m in metrics if m["name"] == "Revenue"]
         # Exactly one "Revenue" — no duplicate that would fail validation.
         assert len(revenue) == 1
@@ -365,7 +361,7 @@ class TestIdempotency:
         warnings_after_first = list(converter.warnings)
         ossie_again = converter.convert()
 
-        metrics = ossie_again["semantic_model"][0].get("metrics", [])
+        metrics = ossie_again.get("metrics", [])
         assert [m["name"] for m in metrics].count("Mdx Thing") == 1
         assert converter.warnings == warnings_after_first
 

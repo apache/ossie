@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import json
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
@@ -35,16 +36,18 @@ validate_references = _VALIDATE.validate_references
 validate_relationship_column_arity = _VALIDATE.validate_relationship_column_arity
 
 
+@pytest.fixture
+def core_schema() -> dict:
+    schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    return json.loads(schema_path.read_text())
+
+
 def _document(datasets: list[dict], relationships: list[dict]) -> dict:
     return {
         "version": "0.2.0.dev0",
-        "semantic_model": [
-            {
-                "name": "m",
-                "datasets": datasets,
-                "relationships": relationships,
-            }
-        ],
+        "name": "m",
+        "datasets": datasets,
+        "relationships": relationships,
     }
 
 
@@ -56,6 +59,131 @@ _CUSTOMERS = {
 }
 
 _ORDERS = {"name": "orders", "source": "db.s.orders"}
+
+
+def test_accepts_a_single_root_model(core_schema: dict) -> None:
+    document = _document([_ORDERS, _CUSTOMERS], [])
+
+    assert _VALIDATE.validate_schema(document, core_schema) == []
+
+
+def test_rejects_empty_root_datasets(core_schema: dict) -> None:
+    errors = _VALIDATE.validate_schema(_document([], []), core_schema)
+
+    assert errors == ["[Schema] datasets: [] should be non-empty"]
+
+
+def test_embedded_semantic_model_does_not_require_document_version(core_schema: dict) -> None:
+    # Ontology components reference this definition without a document envelope.
+    embedded_schema = {
+        "$ref": "#/$defs/SemanticModel",
+        "$defs": core_schema["$defs"],
+    }
+    model = _document([_ORDERS, _CUSTOMERS], [])
+    del model["version"]
+
+    assert _VALIDATE.validate_schema(model, embedded_schema) == []
+
+
+@pytest.mark.parametrize("unknown_property", ["dataset", "owner", "dialects", "vendors"])
+def test_rejects_unknown_root_properties(core_schema: dict, unknown_property: str) -> None:
+    document = _document([_ORDERS], [])
+    document[unknown_property] = "unexpected"
+
+    errors = _VALIDATE.validate_schema(document, core_schema)
+
+    assert any(
+        "Additional properties are not allowed" in error and unknown_property in error
+        for error in errors
+    )
+
+
+@pytest.mark.parametrize("required_property", ["version", "name", "datasets"])
+def test_requires_model_and_document_properties(core_schema: dict, required_property: str) -> None:
+    document = _document([_ORDERS], [])
+    del document[required_property]
+
+    errors = _VALIDATE.validate_schema(document, core_schema)
+
+    assert any(f"'{required_property}' is a required property" in error for error in errors)
+
+
+@pytest.mark.parametrize("property_name", ["name", "datasets"])
+def test_rejects_null_model_properties(core_schema: dict, property_name: str) -> None:
+    document = _document([_ORDERS], [])
+    document[property_name] = None
+
+    errors = _VALIDATE.validate_schema(document, core_schema)
+
+    assert any(f"[Schema] {property_name}:" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "wrapped",
+    [
+        None,
+        [],
+        {"name": "one", "datasets": []},
+        [{"name": "one", "datasets": []}],
+        [{"name": "one", "datasets": []}, {"name": "two", "datasets": []}],
+    ],
+)
+def test_rejects_legacy_or_object_wrappers(core_schema: dict, wrapped: object) -> None:
+    document = {"version": "0.2.0.dev0", "semantic_model": wrapped}
+
+    assert _VALIDATE.validate_schema(document, core_schema)
+
+    # A wrapper must also be rejected when a valid root model is present.
+    document.update(_document([_ORDERS], []))
+    errors = _VALIDATE.validate_schema(document, core_schema)
+
+    assert any(
+        "Additional properties are not allowed" in error and "semantic_model" in error
+        for error in errors
+    )
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        None,
+        [],
+        42,
+        {"version": "0.2.0.dev0"},
+        {"version": "0.2.0.dev0", "semantic_model": [{"name": "old", "datasets": []}]},
+    ],
+)
+def test_semantic_checks_skip_non_model_payloads(data: object) -> None:
+    assert _VALIDATE.validate_unique_names(data) == []
+    assert validate_references(data) == []
+    assert validate_relationship_column_arity(data) == []
+    assert _VALIDATE.validate_sql(data) == []
+
+
+def test_unique_names_are_checked_in_the_root_model() -> None:
+    errors = _VALIDATE.validate_unique_names(_document([_ORDERS, _ORDERS], []))
+
+    assert errors == ["[Unique] Duplicate dataset name 'orders' in model 'm'"]
+
+
+def test_sql_checks_traverse_root_fields_and_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = []
+
+    def record_expression(expression: str, dialect: str, context: str) -> None:
+        seen.append((expression, dialect, context))
+
+    monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", True)
+    monkeypatch.setattr(_VALIDATE, "validate_sql_expression", record_expression)
+    expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": "value"}]}
+    dataset = {**_ORDERS, "fields": [{"name": "value", "expression": expression}]}
+    document = _document([dataset], [])
+    document["metrics"] = [{"name": "total", "expression": expression}]
+
+    assert _VALIDATE.validate_sql(document) == []
+    assert seen == [
+        ("value", "ANSI_SQL", "Field 'orders.value' in model 'm' (ANSI_SQL)"),
+        ("value", "ANSI_SQL", "Metric 'total' in model 'm' (ANSI_SQL)"),
+    ]
 
 
 def _relationship(to_columns: list[str], to: str = "customers") -> dict:
@@ -162,6 +290,107 @@ def test_skips_malformed_flat_unique_keys() -> None:
     )
 
     assert errors == []
+
+
+@pytest.fixture
+def run_validator(tmp_path, monkeypatch, capsys):
+    def run(document):
+        model_path = tmp_path / "model.json"
+        model_path.write_text(json.dumps(document))
+        monkeypatch.setattr(_VALIDATE.sys, "argv", [str(_VALIDATE_PATH), str(model_path)])
+        with pytest.raises(SystemExit) as caught:
+            _VALIDATE.main()
+        return caught.value.code, capsys.readouterr().out
+
+    return run
+
+
+@pytest.mark.parametrize("target", [
+    "missing_customers",
+    "Warning: missing_customers",
+    "[SQL] Warning: missing_customers",
+    "[Reference] Warning: missing_customers",
+])
+def test_unknown_dataset_is_an_error_regardless_of_its_name(run_validator, target):
+    document = _document([_ORDERS], [_relationship(to_columns=["id"], to=target)])
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "Validation FAILED with 1 error(s)" in output
+    assert f"references unknown dataset '{target}'" in output
+    assert "Validation PASSED" not in output
+
+
+def test_duplicate_dataset_with_warning_in_name_is_an_error(run_validator):
+    dataset = {"name": "Warning: orders", "source": "db.s.orders"}
+
+    exit_code, output = run_validator(_document([dataset, dataset], []))
+
+    assert exit_code == 1
+    assert "Validation FAILED with 1 error(s)" in output
+    assert "Duplicate dataset name 'Warning: orders'" in output
+
+
+def test_schema_error_containing_warning_text_is_an_error(run_validator):
+    document = _document([_ORDERS], [])
+    document["Warning: unexpected"] = True
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "Validation FAILED with 1 error(s)" in output
+    assert "[Schema]" in output
+    assert "Warning: unexpected" in output
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_sql_error_in_metric_with_warning_in_name_is_an_error(run_validator):
+    document = _document([_ORDERS], [])
+    document["metrics"] = [{
+        "name": "Warning: broken_metric",
+        "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "SUM("}]},
+    }]
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "Validation FAILED with 1 error(s)" in output
+    assert "[SQL] Metric 'Warning: broken_metric'" in output
+
+
+def test_key_coverage_warning_remains_nonfatal(run_validator):
+    document = _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["region"])])
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 0
+    assert "[Reference] Warning:" in output
+    assert "Validation PASSED" in output
+
+
+def test_missing_sqlglot_warning_remains_nonfatal(run_validator, monkeypatch):
+    monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", False)
+
+    exit_code, output = run_validator(_document([_ORDERS], []))
+
+    assert exit_code == 0
+    assert "[SQL] Warning: sqlglot not installed" in output
+    assert "Validation PASSED" in output
+
+
+def test_genuine_warning_does_not_hide_reference_error(run_validator):
+    document = _document([_ORDERS, _CUSTOMERS], [
+        _relationship(to_columns=["region"]),
+        {**_relationship(to_columns=["id"], to="Warning: missing"), "name": "broken"},
+    ])
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "[Reference] Warning:" in output
+    assert "references unknown dataset 'Warning: missing'" in output
+    assert "Validation FAILED with 1 error(s)" in output
 
 
 def _arity_relationship(from_columns: list[str], to_columns: list[str]) -> dict:

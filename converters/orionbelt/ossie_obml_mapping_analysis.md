@@ -25,7 +25,7 @@
 
 | Aspect | Ossie v0.2.0.dev0 | OBML v1.0 |
 |---|---|---|
-| **Top-level** | `semantic_model[]` (array of models) | Single model with `dataObjects`, `dimensions`, `measures`, `metrics` sections |
+| **Top-level** | Single model at the root (`version`, `name`, `datasets`, ...) | Single model with `dataObjects`, `dimensions`, `measures`, `metrics` sections |
 | **Tables / Entities** | `datasets[]` (flat array) | `dataObjects{}` (named dictionary) |
 | **Column identifiers** | `fields[].name` (snake_case code) | `columns{}.code` (with display name as dict key) |
 | **Expressions** | `expression.dialects[]` per field (multi-dialect) | Single SQL expression via `code` (single dialect) |

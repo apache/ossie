@@ -35,7 +35,7 @@ Requires Java 21+.
 
 ### Import (Polaris → Apache Ossie)
 
-Reads all namespaces and tables from a Polaris catalog and generates an Ossie YAML file.
+Reads all namespaces and tables from a Polaris catalog and generates one Ossie YAML file per nonempty namespace.
 
 ```bash
 java -jar target/ossie-polaris-converter-0.1.0-SNAPSHOT.jar import \
@@ -43,14 +43,26 @@ java -jar target/ossie-polaris-converter-0.1.0-SNAPSHOT.jar import \
   --catalog my_catalog \
   --client-id <client-id> \
   --client-secret <client-secret> \
-  -o output.yaml
+  --output-dir models
 ```
 
-Each Polaris namespace becomes a separate Ossie semantic model containing datasets for every table in that namespace.
+Each nonempty Polaris namespace becomes a separate Ossie document containing
+datasets for every table in that namespace. Files have the flat Ossie structure:
+`version`, `name`, `datasets`, `relationships`, and `metrics` are at the root.
+
+`--output-dir` creates the directory if needed. Namespaces are sorted, and filenames
+combine a numbered prefix with a sanitized namespace name (for example,
+`0001-sales.yaml`). This keeps filenames safe and distinct even when namespace
+names would otherwise collide. Existing files in the output directory are never overwritten.
+
+For a catalog with exactly one nonempty namespace, use `-o model.yaml` to write a
+single file, or omit both output options to print it to stdout. Multiple nonempty
+namespaces require `--output-dir`; they are never combined or silently dropped.
+An empty catalog produces a warning and no document.
 
 ### Export (Apache Ossie → Polaris)
 
-Reads an Ossie YAML file and creates namespaces and Iceberg tables in a Polaris catalog.
+Reads one flat Ossie YAML file and creates a namespace and Iceberg tables in a Polaris catalog.
 
 ```bash
 java -jar target/ossie-polaris-converter-0.1.0-SNAPSHOT.jar export \
@@ -61,7 +73,9 @@ java -jar target/ossie-polaris-converter-0.1.0-SNAPSHOT.jar export \
   model.yaml
 ```
 
-Each Ossie semantic model becomes a Polaris namespace, and each dataset becomes an Iceberg table.
+The Ossie model becomes a Polaris namespace, and each dataset becomes an Iceberg
+table. Legacy `semantic_model` wrappers are rejected; split older multi-model
+files and flatten each model before exporting.
 
 ### Options
 
@@ -72,7 +86,8 @@ Each Ossie semantic model becomes a Polaris namespace, and each dataset becomes 
 | `--client-id ID` | OAuth2 client ID |
 | `--client-secret SECRET` | OAuth2 client secret |
 | `--token TOKEN` | Pre-existing bearer token (alternative to client credentials) |
-| `-o FILE` | Output file for import mode (default: stdout) |
+| `-o FILE` | Output file for one nonempty namespace (default: stdout); replaces an existing file |
+| `--output-dir DIR` | One file per nonempty namespace; cannot be combined with `-o` |
 
 ## Mapping Reference
 
@@ -80,7 +95,7 @@ Each Ossie semantic model becomes a Polaris namespace, and each dataset becomes 
 
 | Polaris / Iceberg | Ossie |
 |-------------------|-----|
-| Namespace | `semantic_model` (name, description) |
+| Namespace | Document root (`name`, `description`) |
 | Table | `dataset` (name) |
 | Table location (`catalog.namespace.table`) | `dataset.source` |
 | Schema fields | `field` with `ANSI_SQL` dialect expression and logical `datatype` |
@@ -93,7 +108,7 @@ Each Ossie semantic model becomes a Polaris namespace, and each dataset becomes 
 
 | Ossie | Polaris / Iceberg |
 |-----|-------------------|
-| `semantic_model` | Namespace |
+| Document root (`name`, `description`) | Namespace |
 | `dataset` | Table |
 | `dataset.source` | Stored in table property `ossie.source` |
 | `dataset.primary_key` | `identifier-field-ids` |

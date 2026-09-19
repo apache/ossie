@@ -152,7 +152,7 @@ class TestOBMLtoOssiePoP:
         return result, converter.warnings
 
     def _find_metric(self, ossie: dict, name: str) -> dict | None:
-        for m in ossie["semantic_model"][0].get("metrics", []):
+        for m in ossie.get("metrics", []):
             if m["name"] == name:
                 return m
         return None
@@ -342,7 +342,7 @@ class TestPoPEdgeCases:
         }
         converter = conv.OBMLtoOssie(obml)
         ossie = converter.convert()
-        metrics = ossie["semantic_model"][0].get("metrics", [])
+        metrics = ossie.get("metrics", [])
         assert all(m["name"] != "Bad PoP" for m in metrics)
         assert any("Bad PoP" in w for w in converter.warnings)
 
@@ -371,7 +371,7 @@ class TestPoPEdgeCases:
         }
         converter = conv.OBMLtoOssie(obml)
         ossie = converter.convert()
-        metrics = ossie["semantic_model"][0].get("metrics", [])
+        metrics = ossie.get("metrics", [])
         assert all(m["name"] != "Bad PoP" for m in metrics)
         assert any("Bad PoP" in w for w in converter.warnings)
 
@@ -415,7 +415,7 @@ class TestPoPEdgeCases:
 
         # Check synonyms in Ossie ai_context
         ossie_metric = next(
-            m for m in ossie["semantic_model"][0]["metrics"] if m["name"] == "YoY Growth"
+            m for m in ossie["metrics"] if m["name"] == "YoY Growth"
         )
         assert "year-over-year" in ossie_metric.get("ai_context", {}).get("synonyms", [])
 
@@ -430,7 +430,7 @@ class TestPoPEdgeCases:
         """Model with measures, derived, cumulative, and PoP metrics all convert."""
         converter = conv.OBMLtoOssie(_OBML_WITH_POP)
         ossie = converter.convert()
-        metric_names = [m["name"] for m in ossie["semantic_model"][0]["metrics"]]
+        metric_names = [m["name"] for m in ossie["metrics"]]
 
         # Revenue (measure → Ossie metric) plus all 4 PoP metrics + derived
         assert "Revenue" in metric_names

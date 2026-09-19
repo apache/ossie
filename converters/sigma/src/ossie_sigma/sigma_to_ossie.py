@@ -1,3 +1,20 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 """Sigma data model spec (JSON) -> Apache Ossie (OssieDocument)."""
 
 from __future__ import annotations
@@ -15,7 +32,6 @@ from ossie import (
     OssieField,
     OssieMetric,
     OssieRelationship,
-    OssieSemanticModel,
     OssieVendor,
 )
 
@@ -449,7 +465,7 @@ class SigmaToOssieConverter:
                     )
                 )
 
-        semantic_model = OssieSemanticModel(
+        document = OssieDocument(
             name=spec.get("name", "sigma_data_model"),
             description=spec.get("description"),
             datasets=datasets,
@@ -458,5 +474,4 @@ class SigmaToOssieConverter:
             custom_extensions=[_vendor_ext(model_ext)] if model_ext else None,
         )
 
-        document = OssieDocument(semantic_model=[semantic_model])
         return ConverterResult(output=document, issues=issues)

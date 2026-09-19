@@ -106,7 +106,7 @@ class TestOBMLtoOssieCumulative:
         return result, converter.warnings
 
     def _find_metric(self, ossie: dict, name: str) -> dict | None:
-        for m in ossie["semantic_model"][0].get("metrics", []):
+        for m in ossie.get("metrics", []):
             if m["name"] == name:
                 return m
         return None
@@ -276,7 +276,7 @@ class TestCumulativeEdgeCases:
         converter = conv.OBMLtoOssie(obml)
         ossie = converter.convert()
         # Should be skipped with a warning
-        metrics = ossie["semantic_model"][0].get("metrics", [])
+        metrics = ossie.get("metrics", [])
         assert all(m["name"] != "Bad Cumulative" for m in metrics)
         assert any("Bad Cumulative" in w for w in converter.warnings)
 
@@ -315,7 +315,7 @@ class TestCumulativeEdgeCases:
         ossie = converter1.convert()
 
         # Check synonyms in Ossie ai_context
-        ossie_metric = ossie["semantic_model"][0]["metrics"][-1]
+        ossie_metric = ossie["metrics"][-1]
         assert "cumulative revenue" in ossie_metric.get("ai_context", {}).get("synonyms", [])
 
         # Roundtrip back
@@ -329,7 +329,7 @@ class TestCumulativeEdgeCases:
         """Model with measures, derived metrics, and cumulative metrics all convert."""
         converter = conv.OBMLtoOssie(_OBML_WITH_CUMULATIVES)
         ossie = converter.convert()
-        metric_names = [m["name"] for m in ossie["semantic_model"][0]["metrics"]]
+        metric_names = [m["name"] for m in ossie["metrics"]]
 
         # All four should be present: Revenue (measure), Running Revenue,
         # Rolling 7d Revenue, MTD Revenue, Derived Metric

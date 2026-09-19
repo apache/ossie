@@ -38,6 +38,10 @@ Metric View only features (filter, window, format, rely, ...) are instead **pres
 [requirement](#requirements) **raises a `ConversionError`** -- the converter never
 silently drops a field or produces an invalid result.
 
+Ossie documents contain one model directly at the root, with `version`, `name`,
+`datasets`, and optional model properties. Legacy `semantic_model` wrappers
+(arrays or objects) are rejected.
+
 ## Installation
 
 ```bash
@@ -77,7 +81,7 @@ Each row maps in both directions; the **Notes** flag where a behavior is specifi
 
 | Apache Ossie | Metric View (v1.1) | Notes |
 |---|---|---|
-| `semantic_model.description` | `comment` | Model-level description only. |
+| `description` | `comment` | Model-level description only. |
 | root dataset | `source` | The fact/grain. |
 | other `datasets` | nested `joins[]` | Export: the relationship graph is reassembled into the join tree; a dataset reached by two paths (a diamond) fans out into one aliased join per path. |
 | `relationship` `from_columns`/`to_columns` | join `on` (differing names) / `using` (shared names) | Decomposed into columns on import; rebuilt into `on`/`using` on export. |

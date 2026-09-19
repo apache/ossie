@@ -40,7 +40,7 @@ def test_tpcds_export_matches_expected():
 
 
 def test_unsupported_version_rejected():
-    ossie = "version: '9.9.9'\nsemantic_model:\n  - name: m\n    datasets:\n      - {name: d, source: c.s.t}\n"
+    ossie = "version: '9.9.9'\nname: m\ndatasets:\n  - {name: d, source: c.s.t}\n"
     with pytest.raises(ConversionError):
         exporter.convert_ossie_to_metric_view(ossie)
 
@@ -48,17 +48,13 @@ def test_unsupported_version_rejected():
 def _model(rels):
     return {
         "version": exporter.OSSIE_VERSION,
-        "semantic_model": [
-            {
-                "name": "m",
-                "datasets": [
-                    {"name": "a", "source": "c.s.a"},
-                    {"name": "b", "source": "c.s.b"},
-                    {"name": "x", "source": "c.s.x"},
-                ],
-                "relationships": rels,
-            }
+        "name": "m",
+        "datasets": [
+            {"name": "a", "source": "c.s.a"},
+            {"name": "b", "source": "c.s.b"},
+            {"name": "x", "source": "c.s.x"},
         ],
+        "relationships": rels,
     }
 
 
@@ -92,8 +88,7 @@ def test_mto_diamond_fans_out():
     """A shared dimension reached by two parents (orders->customers->regions and
     orders->suppliers->regions) is fanned out into two aliased joins, not rejected."""
     import yaml
-    ossie = yaml.safe_dump({"version": exporter.OSSIE_VERSION, "semantic_model": [{
-        "name": "m",
+    ossie = yaml.safe_dump({"version": exporter.OSSIE_VERSION, "name": "m",
         "datasets": [
             {"name": "orders", "source": "c.s.orders", "fields": [_field("amt", "amount")]},
             {"name": "customers", "source": "c.s.customers"},
@@ -105,8 +100,7 @@ def test_mto_diamond_fans_out():
             {"name": "r2", "from": "orders", "to": "suppliers", "from_columns": ["sid"], "to_columns": ["id"]},
             {"name": "r3", "from": "customers", "to": "regions", "from_columns": ["rid"], "to_columns": ["id"]},
             {"name": "r4", "from": "suppliers", "to": "regions", "from_columns": ["rid"], "to_columns": ["id"]},
-        ],
-    }]})
+        ]})
     out = parse(exporter.convert_ossie_to_metric_view(ossie))
     region_joins = [j for top in out["joins"] for j in top.get("joins", []) if j["source"] == "c.s.regions"]
     assert {j["name"] for j in region_joins} == {"customers_regions", "suppliers_regions"}
@@ -120,8 +114,7 @@ def test_otm_diamond_fans_out():
     """customers (fact) -> past_orders/future_orders -> line_items: the shared
     line_items is fanned out, and every join is one_to_many."""
     import yaml
-    ossie = yaml.safe_dump({"version": exporter.OSSIE_VERSION, "semantic_model": [{
-        "name": "m",
+    ossie = yaml.safe_dump({"version": exporter.OSSIE_VERSION, "name": "m",
         "datasets": [
             {"name": "customers", "source": "c.s.customers"},
             {"name": "past_orders", "source": "c.s.past_orders"},
@@ -134,8 +127,7 @@ def test_otm_diamond_fans_out():
             {"name": "r3", "from": "line_items", "to": "past_orders", "from_columns": ["oid"], "to_columns": ["id"]},
             {"name": "r4", "from": "line_items", "to": "future_orders", "from_columns": ["oid"], "to_columns": ["id"]},
         ],
-        "metrics": [{"name": "cnt", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "COUNT(*)"}]}}],
-    }]})
+        "metrics": [{"name": "cnt", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "COUNT(*)"}]}}]})
     out = parse(exporter.convert_ossie_to_metric_view(ossie, source="customers"))
     leaf_names = {j["name"] for top in out["joins"] for j in top.get("joins", [])}
     assert leaf_names == {"past_orders_line_items", "future_orders_line_items"}
@@ -172,14 +164,12 @@ def _single_fact_model(metric_expr):
     import yaml
     return yaml.safe_dump({
         "version": exporter.OSSIE_VERSION,
-        "semantic_model": [{
-            "name": "m",
-            "datasets": [{"name": "orders", "source": "c.s.orders",
-                          "fields": [{"name": "k", "expression": {"dialects": [
-                              {"dialect": "DATABRICKS", "expression": "k"}]}}]}],
-            "metrics": [{"name": "rev", "expression": {"dialects": [
-                {"dialect": "DATABRICKS", "expression": metric_expr}]}}],
-        }],
+        "name": "m",
+        "datasets": [{"name": "orders", "source": "c.s.orders",
+                      "fields": [{"name": "k", "expression": {"dialects": [
+                          {"dialect": "DATABRICKS", "expression": "k"}]}}]}],
+        "metrics": [{"name": "rev", "expression": {"dialects": [
+            {"dialect": "DATABRICKS", "expression": metric_expr}]}}],
     })
 
 
@@ -199,7 +189,7 @@ def test_invalid_source_rejected():
     import yaml
     ossie = yaml.safe_dump({
         "version": exporter.OSSIE_VERSION,
-        "semantic_model": [{"name": "m", "datasets": [{"name": "d", "source": "justatable"}]}],
+        "name": "m", "datasets": [{"name": "d", "source": "justatable"}],
     })
     with pytest.raises(ConversionError, match="source"):
         exporter.convert_ossie_to_metric_view(ossie)
@@ -212,17 +202,15 @@ def test_duplicate_dimension_name_rejected():
     import yaml
     ossie = yaml.safe_dump({
         "version": exporter.OSSIE_VERSION,
-        "semantic_model": [{
-            "name": "m",
-            "datasets": [
-                {"name": "orders", "source": "c.s.orders",
-                 "fields": [{"name": "id", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "id"}]}}]},
-                {"name": "customer", "source": "c.s.customer",
-                 "fields": [{"name": "id", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "id"}]}}]},
-            ],
-            "relationships": [{"name": "r", "from": "orders", "to": "customer",
-                              "from_columns": ["cid"], "to_columns": ["id"]}],
-        }],
+        "name": "m",
+        "datasets": [
+            {"name": "orders", "source": "c.s.orders",
+             "fields": [{"name": "id", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "id"}]}}]},
+            {"name": "customer", "source": "c.s.customer",
+             "fields": [{"name": "id", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "id"}]}}]},
+        ],
+        "relationships": [{"name": "r", "from": "orders", "to": "customer",
+                          "from_columns": ["cid"], "to_columns": ["id"]}],
     })
     with pytest.raises(ConversionError, match="collides"):
         exporter.convert_ossie_to_metric_view(ossie)
@@ -234,16 +222,14 @@ def test_measure_name_collides_with_dimension_rejected():
     import yaml
     ossie = yaml.safe_dump({
         "version": exporter.OSSIE_VERSION,
-        "semantic_model": [{
-            "name": "m",
-            "datasets": [
-                {"name": "orders", "source": "c.s.orders",
-                 "fields": [{"name": "total", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "total"}]}}]},
-            ],
-            "metrics": [
-                {"name": "Total", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "SUM(total)"}]}},
-            ],
-        }],
+        "name": "m",
+        "datasets": [
+            {"name": "orders", "source": "c.s.orders",
+             "fields": [{"name": "total", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "total"}]}}]},
+        ],
+        "metrics": [
+            {"name": "Total", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "SUM(total)"}]}},
+        ],
     })
     with pytest.raises(ConversionError, match="collides"):
         exporter.convert_ossie_to_metric_view(ossie)
@@ -255,16 +241,14 @@ def test_cascade_drop_downstream_measure_reference():
     import yaml
     ossie = yaml.safe_dump({
         "version": exporter.OSSIE_VERSION,
-        "semantic_model": [{
-            "name": "m",
-            "datasets": [{"name": "f", "source": "c.s.f"}],
-            "metrics": [
-                {"name": "base", "expression": {"dialects": [{"dialect": "SNOWFLAKE", "expression": "SUM(x)"}]}},   # dropped (no DBX/ANSI)
-                {"name": "derived", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "measure(base) * 2"}]}},
-                {"name": "derived2", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "measure(derived) + 1"}]}},  # transitive
-                {"name": "ok", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "COUNT(*)"}]}},
-            ],
-        }],
+        "name": "m",
+        "datasets": [{"name": "f", "source": "c.s.f"}],
+        "metrics": [
+            {"name": "base", "expression": {"dialects": [{"dialect": "SNOWFLAKE", "expression": "SUM(x)"}]}},   # dropped (no DBX/ANSI)
+            {"name": "derived", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "measure(base) * 2"}]}},
+            {"name": "derived2", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "measure(derived) + 1"}]}},  # transitive
+            {"name": "ok", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "COUNT(*)"}]}},
+        ],
     })
     out = parse(exporter.convert_ossie_to_metric_view(ossie))
     names = [m["name"] for m in out.get("measures", [])]
@@ -276,14 +260,12 @@ def test_cascade_drop_downstream_dimension_reference():
     import yaml
     ossie = yaml.safe_dump({
         "version": exporter.OSSIE_VERSION,
-        "semantic_model": [{
-            "name": "m",
-            "datasets": [{"name": "f", "source": "c.s.f", "fields": [
-                {"name": "region", "expression": {"dialects": [{"dialect": "SNOWFLAKE", "expression": "r"}]}},   # dropped dim
-                {"name": "label", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "upper(region)"}]}},  # references region
-                {"name": "keep", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "id"}]}},
-            ]}],
-        }],
+        "name": "m",
+        "datasets": [{"name": "f", "source": "c.s.f", "fields": [
+            {"name": "region", "expression": {"dialects": [{"dialect": "SNOWFLAKE", "expression": "r"}]}},   # dropped dim
+            {"name": "label", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "upper(region)"}]}},  # references region
+            {"name": "keep", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "id"}]}},
+        ]}],
     })
     out = parse(exporter.convert_ossie_to_metric_view(ossie))
     dims = [d["name"] for d in out.get("dimensions", [])]
@@ -298,18 +280,16 @@ def test_orientation_unverifiable_when_to_side_has_no_key_warns():
     import yaml
     ossie = yaml.safe_dump({
         "version": exporter.OSSIE_VERSION,
-        "semantic_model": [{
-            "name": "m",
-            "datasets": [
-                {"name": "a", "source": "c.s.a", "primary_key": ["a_id"], "fields": [
-                    {"name": "a_name", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "a_name"}]}}]},
-                {"name": "b", "source": "c.s.b", "fields": [
-                    {"name": "b_name", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "b_name"}]}}]},
-            ],
-            # from columns cover a's PK, but b (the `to` side) declares no key
-            "relationships": [{"name": "a_to_b", "from": "a", "to": "b",
-                               "from_columns": ["a_id"], "to_columns": ["b_x"]}],
-        }],
+        "name": "m",
+        "datasets": [
+            {"name": "a", "source": "c.s.a", "primary_key": ["a_id"], "fields": [
+                {"name": "a_name", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "a_name"}]}}]},
+            {"name": "b", "source": "c.s.b", "fields": [
+                {"name": "b_name", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "b_name"}]}}]},
+        ],
+        # from columns cover a's PK, but b (the `to` side) declares no key
+        "relationships": [{"name": "a_to_b", "from": "a", "to": "b",
+                           "from_columns": ["a_id"], "to_columns": ["b_x"]}],
     })
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -325,22 +305,20 @@ def test_cascade_drop_skips_qualified_join_alias_collision():
     import yaml
     ossie = yaml.safe_dump({
         "version": exporter.OSSIE_VERSION,
-        "semantic_model": [{
-            "name": "m",
-            "datasets": [
-                {"name": "orders", "source": "c.s.orders", "fields": [
-                    # dropped (no DBX/ANSI dialect); its name collides with the `region` join
-                    {"name": "region", "expression": {"dialects": [{"dialect": "SNOWFLAKE", "expression": "r"}]}},
-                    # references the join alias `region`, not the dropped field -> must survive
-                    {"name": "summary", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "region.r_name"}]}},
-                ]},
-                {"name": "region", "source": "c.s.region", "primary_key": ["r_key"], "fields": [
-                    {"name": "r_name", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "r_name"}]}},
-                ]},
-            ],
-            "relationships": [{"name": "orr", "from": "orders", "to": "region",
-                               "from_columns": ["o_rkey"], "to_columns": ["r_key"]}],
-        }],
+        "name": "m",
+        "datasets": [
+            {"name": "orders", "source": "c.s.orders", "fields": [
+                # dropped (no DBX/ANSI dialect); its name collides with the `region` join
+                {"name": "region", "expression": {"dialects": [{"dialect": "SNOWFLAKE", "expression": "r"}]}},
+                # references the join alias `region`, not the dropped field -> must survive
+                {"name": "summary", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "region.r_name"}]}},
+            ]},
+            {"name": "region", "source": "c.s.region", "primary_key": ["r_key"], "fields": [
+                {"name": "r_name", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "r_name"}]}},
+            ]},
+        ],
+        "relationships": [{"name": "orr", "from": "orders", "to": "region",
+                           "from_columns": ["o_rkey"], "to_columns": ["r_key"]}],
     })
     out = parse(exporter.convert_ossie_to_metric_view(ossie))
     dims = [d["name"] for d in out.get("dimensions", [])]
@@ -355,21 +333,19 @@ def _orders_lineitems_ossie():
     import yaml
     return yaml.safe_dump({
         "version": exporter.OSSIE_VERSION,
-        "semantic_model": [{
-            "name": "sales",
-            "datasets": [
-                {"name": "orders", "source": "c.s.orders", "primary_key": ["order_id"],
-                 "fields": [{"name": "order_date", "expression": {"dialects": [
-                     {"dialect": "DATABRICKS", "expression": "o_order_date"}]}}]},
-                {"name": "line_items", "source": "c.s.line_items",
-                 "fields": [{"name": "product_sk", "expression": {"dialects": [
-                     {"dialect": "DATABRICKS", "expression": "l_product_sk"}]}}]},
-            ],
-            "relationships": [{"name": "li_to_order", "from": "line_items", "to": "orders",
-                               "from_columns": ["l_order_id"], "to_columns": ["order_id"]}],
-            "metrics": [{"name": "order_count", "expression": {"dialects": [
-                {"dialect": "DATABRICKS", "expression": "COUNT(*)"}]}}],
-        }],
+        "name": "sales",
+        "datasets": [
+            {"name": "orders", "source": "c.s.orders", "primary_key": ["order_id"],
+             "fields": [{"name": "order_date", "expression": {"dialects": [
+                 {"dialect": "DATABRICKS", "expression": "o_order_date"}]}}]},
+            {"name": "line_items", "source": "c.s.line_items",
+             "fields": [{"name": "product_sk", "expression": {"dialects": [
+                 {"dialect": "DATABRICKS", "expression": "l_product_sk"}]}}]},
+        ],
+        "relationships": [{"name": "li_to_order", "from": "line_items", "to": "orders",
+                           "from_columns": ["l_order_id"], "to_columns": ["order_id"]}],
+        "metrics": [{"name": "order_count", "expression": {"dialects": [
+            {"dialect": "DATABRICKS", "expression": "COUNT(*)"}]}}],
     })
 
 
@@ -406,20 +382,18 @@ def test_one_to_many_subtree_must_stay_one_to_many():
     import yaml
     ossie = yaml.safe_dump({
         "version": exporter.OSSIE_VERSION,
-        "semantic_model": [{
-            "name": "m",
-            "datasets": [
-                {"name": "orders", "source": "c.s.orders"},
-                {"name": "line_items", "source": "c.s.line_items"},
-                {"name": "product", "source": "c.s.product"},
-            ],
-            "relationships": [
-                {"name": "li_to_order", "from": "line_items", "to": "orders",     # orders->li : OTM
-                 "from_columns": ["l_order_id"], "to_columns": ["order_id"]},
-                {"name": "li_to_product", "from": "line_items", "to": "product",  # li->product : MTO
-                 "from_columns": ["l_product_sk"], "to_columns": ["p_sk"]},
-            ],
-        }],
+        "name": "m",
+        "datasets": [
+            {"name": "orders", "source": "c.s.orders"},
+            {"name": "line_items", "source": "c.s.line_items"},
+            {"name": "product", "source": "c.s.product"},
+        ],
+        "relationships": [
+            {"name": "li_to_order", "from": "line_items", "to": "orders",     # orders->li : OTM
+             "from_columns": ["l_order_id"], "to_columns": ["order_id"]},
+            {"name": "li_to_product", "from": "line_items", "to": "product",  # li->product : MTO
+             "from_columns": ["l_product_sk"], "to_columns": ["p_sk"]},
+        ],
     })
     with pytest.raises(ConversionError, match="one-to-many"):
         exporter.convert_ossie_to_metric_view(ossie, source="orders")
@@ -433,12 +407,10 @@ def test_primary_key_deduces_at_most_one_match():
     def model(dim_extra):
         dim = {"name": "customer", "source": "c.s.customer"}
         dim.update(dim_extra)
-        return yaml.safe_dump({"version": exporter.OSSIE_VERSION, "semantic_model": [{
-            "name": "m",
+        return yaml.safe_dump({"version": exporter.OSSIE_VERSION, "name": "m",
             "datasets": [{"name": "orders", "source": "c.s.orders"}, dim],
             "relationships": [{"name": "r", "from": "orders", "to": "customer",
-                               "from_columns": ["cid"], "to_columns": ["id"]}],
-        }]})
+                               "from_columns": ["cid"], "to_columns": ["id"]}]})
 
     join = parse(exporter.convert_ossie_to_metric_view(model({"primary_key": ["id"]})))["joins"][0]
     assert join.get("rely") == {"at_most_one_match": True}
@@ -454,8 +426,7 @@ def test_mislabeled_from_to_reoriented_by_key():
     import yaml
 
     def model(frm, to, from_cols, to_cols):
-        return yaml.safe_dump({"version": exporter.OSSIE_VERSION, "semantic_model": [{
-            "name": "m",
+        return yaml.safe_dump({"version": exporter.OSSIE_VERSION, "name": "m",
             "datasets": [
                 {"name": "orders", "source": "c.s.orders", "primary_key": ["order_id"],
                  "fields": [_field("amt", "amount")]},
@@ -463,8 +434,7 @@ def test_mislabeled_from_to_reoriented_by_key():
                  "fields": [_field("cname", "c_name")]},
             ],
             "relationships": [{"name": "r", "from": frm, "to": to,
-                               "from_columns": from_cols, "to_columns": to_cols}],
-        }]})
+                               "from_columns": from_cols, "to_columns": to_cols}]})
 
     well = parse(exporter.convert_ossie_to_metric_view(
         model("orders", "customer", ["cust_id"], ["c_id"])))
@@ -481,15 +451,13 @@ def test_dataset_named_source_is_renamed():
     """A dataset literally named `source` must not collide with the fact's reserved
     `source` alias (would otherwise emit an ambiguous join)."""
     import yaml
-    ossie = yaml.safe_dump({"version": exporter.OSSIE_VERSION, "semantic_model": [{
-        "name": "m",
+    ossie = yaml.safe_dump({"version": exporter.OSSIE_VERSION, "name": "m",
         "datasets": [
             {"name": "orders", "source": "c.s.orders"},
             {"name": "source", "source": "c.s.dim", "fields": [_field("x", "xcol")]},
         ],
         "relationships": [{"name": "r", "from": "orders", "to": "source",
-                           "from_columns": ["sid"], "to_columns": ["id"]}],
-    }]})
+                           "from_columns": ["sid"], "to_columns": ["id"]}]})
     out = parse(exporter.convert_ossie_to_metric_view(ossie))
     join = out["joins"][0]
     assert join["name"] != "source"
@@ -501,8 +469,7 @@ def test_fanout_alias_collision_deduped():
     """A real dataset whose name equals a synthesized fan-out alias still gets a
     distinct alias -- no two joins share a name."""
     import yaml
-    ossie = yaml.safe_dump({"version": exporter.OSSIE_VERSION, "semantic_model": [{
-        "name": "m",
+    ossie = yaml.safe_dump({"version": exporter.OSSIE_VERSION, "name": "m",
         "datasets": [
             {"name": "orders", "source": "c.s.orders"},
             {"name": "customers", "source": "c.s.customers"},
@@ -516,8 +483,7 @@ def test_fanout_alias_collision_deduped():
             {"name": "r3", "from": "customers", "to": "regions", "from_columns": ["rid"], "to_columns": ["id"]},
             {"name": "r4", "from": "suppliers", "to": "regions", "from_columns": ["rid"], "to_columns": ["id"]},
             {"name": "r5", "from": "orders", "to": "customers_regions", "from_columns": ["xid"], "to_columns": ["id"]},
-        ],
-    }]})
+        ]})
     out = parse(exporter.convert_ossie_to_metric_view(ossie))
     names = []
 
@@ -534,7 +500,7 @@ def test_malformed_input_raises_conversion_error():
     """Missing required keys surface as ConversionError, not a raw KeyError traceback."""
     import yaml
     bad = yaml.safe_dump({"version": exporter.OSSIE_VERSION,
-                          "semantic_model": [{"name": "m", "datasets": [{"source": "c.s.t"}]}]})
+                          "name": "m", "datasets": [{"source": "c.s.t"}]})
     with pytest.raises(ConversionError, match="missing required 'name'"):
         exporter.convert_ossie_to_metric_view(bad)
 
@@ -543,8 +509,7 @@ def test_nameless_relationship_with_ai_context_does_not_crash():
     """A relationship may omit `name`; the dropped-ai_context warning must not raise a
     raw KeyError when it has ai_context but no name."""
     import yaml
-    ossie = yaml.safe_dump({"version": exporter.OSSIE_VERSION, "semantic_model": [{
-        "name": "m",
+    ossie = yaml.safe_dump({"version": exporter.OSSIE_VERSION, "name": "m",
         "datasets": [
             {"name": "orders", "source": "c.s.orders", "fields": [_field("amt", "amt")]},
             {"name": "customers", "source": "c.s.customers"},
@@ -552,8 +517,7 @@ def test_nameless_relationship_with_ai_context_does_not_crash():
         "relationships": [
             {"from": "orders", "to": "customers", "from_columns": ["cid"],
              "to_columns": ["id"], "ai_context": "joins orders to customers"},
-        ],
-    }]})
+        ]})
     out = parse(exporter.convert_ossie_to_metric_view(ossie))  # must not raise
     assert out["joins"][0]["name"] == "customers"
 
@@ -567,8 +531,7 @@ def test_fanout_complex_expr_dropped_not_emitted_ambiguously():
     dimension per instance, but a complex expression -- which cannot be attributed to a
     single instance -- is dropped rather than emitted ambiguously."""
     import yaml
-    ossie = yaml.safe_dump({"version": exporter.OSSIE_VERSION, "semantic_model": [{
-        "name": "m",
+    ossie = yaml.safe_dump({"version": exporter.OSSIE_VERSION, "name": "m",
         "datasets": [
             {"name": "orders", "source": "c.s.orders"},
             {"name": "customers", "source": "c.s.customers"},
@@ -581,8 +544,7 @@ def test_fanout_complex_expr_dropped_not_emitted_ambiguously():
             {"name": "r2", "from": "orders", "to": "suppliers", "from_columns": ["sid"], "to_columns": ["id"]},
             {"name": "r3", "from": "customers", "to": "regions", "from_columns": ["rid"], "to_columns": ["id"]},
             {"name": "r4", "from": "suppliers", "to": "regions", "from_columns": ["rid"], "to_columns": ["id"]},
-        ],
-    }]})
+        ]})
     dims = parse(exporter.convert_ossie_to_metric_view(ossie)).get("dimensions", [])
     # the simple column fans out into two unambiguous, alias-qualified dimensions ...
     assert sum(1 for d in dims if d["name"].endswith("_r_name")) == 2
@@ -602,8 +564,7 @@ def test_nested_join_uses_full_path_qualification():
     Databricks nested-join rule -- not the single-level `nation.n_name`. A depth-1 join
     stays single-name."""
     import yaml
-    ossie = yaml.safe_dump({"version": exporter.OSSIE_VERSION, "semantic_model": [{
-        "name": "m",
+    ossie = yaml.safe_dump({"version": exporter.OSSIE_VERSION, "name": "m",
         "datasets": [
             {"name": "orders", "source": "c.s.orders", "fields": [_field("amt", "amount")]},
             {"name": "customer", "source": "c.s.customer", "fields": [_field("cname", "c_name")]},
@@ -612,8 +573,7 @@ def test_nested_join_uses_full_path_qualification():
         "relationships": [
             {"name": "r1", "from": "orders", "to": "customer", "from_columns": ["ckey"], "to_columns": ["c_key"]},
             {"name": "r2", "from": "customer", "to": "nation", "from_columns": ["nkey"], "to_columns": ["n_key"]},
-        ],
-    }]})
+        ]})
     out = parse(exporter.convert_ossie_to_metric_view(ossie))
     exprs = {d["name"]: d["expr"] for d in out["dimensions"]}
     assert exprs["cname"] == "customer.c_name"            # depth-1: the join's own name
@@ -626,8 +586,7 @@ def test_nested_join_uses_full_path_qualification():
 def test_case_variant_dataset_name_rejected():
     """DBR identifiers are case-insensitive, so two datasets differing only in case
     (`customer`/`Customer`) collide and are rejected (review finding)."""
-    ossie = ("version: 0.2.0.dev0\nsemantic_model:\n- name: m\n  datasets:\n"
-           "  - {name: customer, source: c.s.c}\n  - {name: Customer, source: c.s.c2}\n")
+    ossie = ('version: 0.2.0.dev0\nname: m\ndatasets:\n- {name: customer, source: c.s.c}\n- {name: Customer, source: c.s.c2}\n')
     with pytest.raises(ConversionError, match="duplicate"):
         exporter.convert_ossie_to_metric_view(ossie)
 
@@ -635,9 +594,7 @@ def test_case_variant_dataset_name_rejected():
 def test_non_string_field_expression_raises_clean_error():
     """A non-string dialect expression raises a ConversionError, not a raw crash
     (review finding)."""
-    ossie = ("version: 0.2.0.dev0\nsemantic_model:\n- name: m\n  datasets:\n"
-           "  - name: o\n    source: c.s.o\n    fields:\n    - name: d\n      expression:\n"
-           "        dialects:\n        - {dialect: DATABRICKS, expression: 123}\n")
+    ossie = ('version: 0.2.0.dev0\nname: m\ndatasets:\n- name: o\n  source: c.s.o\n  fields:\n  - name: d\n    expression:\n      dialects:\n      - {dialect: DATABRICKS, expression: 123}\n')
     with pytest.raises(ConversionError, match="must be a string"):
         exporter.convert_ossie_to_metric_view(ossie)
 
@@ -645,9 +602,7 @@ def test_non_string_field_expression_raises_clean_error():
 def test_scalar_join_columns_rejected():
     """`from_columns`/`to_columns` given as a scalar string (not a list) raise a clear
     'must be lists' error rather than a misleading character-count length error."""
-    ossie = ("version: 0.2.0.dev0\nsemantic_model:\n- name: m\n  datasets:\n"
-           "  - {name: a, source: c.s.a}\n  - {name: b, source: c.s.b}\n  relationships:\n"
-           "  - {name: ab, from: a, to: b, from_columns: cid, to_columns: id}\n")
+    ossie = ('version: 0.2.0.dev0\nname: m\ndatasets:\n- {name: a, source: c.s.a}\n- {name: b, source: c.s.b}\nrelationships:\n- {name: ab, from: a, to: b, from_columns: cid, to_columns: id}\n')
     with pytest.raises(ConversionError, match="must be lists"):
         exporter.convert_ossie_to_metric_view(ossie)
 
@@ -658,13 +613,49 @@ def test_malformed_stash_json_raises_conversion_error():
     import yaml
     ossie = yaml.safe_dump({
         "version": exporter.OSSIE_VERSION,
-        "semantic_model": [{
-            "name": "m",
-            "custom_extensions": [{"vendor_name": "DATABRICKS", "data": "{not valid json"}],
-            "datasets": [{"name": "f", "source": "c.s.f",
-                          "fields": [{"name": "x", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "x"}]}}]}],
-            "metrics": [{"name": "n", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "COUNT(*)"}]}}],
-        }],
+        "name": "m",
+        "custom_extensions": [{"vendor_name": "DATABRICKS", "data": "{not valid json"}],
+        "datasets": [{"name": "f", "source": "c.s.f",
+                      "fields": [{"name": "x", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "x"}]}}]}],
+        "metrics": [{"name": "n", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "COUNT(*)"}]}}],
     })
     with pytest.raises(ConversionError, match="not valid JSON"):
         exporter.convert_ossie_to_metric_view(ossie)
+
+
+@pytest.mark.parametrize(
+    "wrapper",
+    [[], [{"name": "first"}], [{"name": "first"}, {"name": "second"}], {"name": "first"}, None],
+)
+def test_legacy_model_wrappers_are_rejected(wrapper):
+    import yaml
+
+    document = {"version": exporter.OSSIE_VERSION, "semantic_model": wrapper}
+    with pytest.raises(ConversionError, match="Legacy 'semantic_model'"):
+        exporter.convert_ossie_to_metric_view(yaml.safe_dump(document))
+
+
+@pytest.mark.parametrize("property_name", ["dialects", "vendors"])
+@pytest.mark.parametrize("value", [None, [], ["legacy"]])
+def test_removed_root_metadata_is_rejected(property_name, value):
+    import yaml
+
+    document = parse(load_fixture("fixtureA_ossie.yaml"))
+    document[property_name] = value
+    with pytest.raises(ConversionError, match="Root dialects and vendors"):
+        exporter.convert_ossie_to_metric_view(yaml.safe_dump(document))
+
+
+@pytest.mark.parametrize(
+    "name_properties",
+    [{}, {"name": None}, {"name": 123}, {"name": True}, {"name": []}, {"name": {}}],
+    ids=["missing", "null", "number", "boolean", "list", "object"],
+)
+def test_root_name_must_be_a_string(name_properties):
+    import yaml
+
+    document = parse(load_fixture("fixtureA_ossie.yaml"))
+    del document["name"]
+    document.update(name_properties)
+    with pytest.raises(ConversionError, match="string 'name' at the document root"):
+        exporter.convert_ossie_to_metric_view(yaml.safe_dump(document))
