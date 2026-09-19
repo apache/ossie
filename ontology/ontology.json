@@ -45,10 +45,10 @@
     },
     "prefixes": {
       "type": "object",
-      "description": "Maps namespace prefixes to the URIs they abbreviate, enabling QName expansion (e.g., 'foaf' -> 'http://xmlns.com/foaf/0.1/').",
+      "description": "Maps namespace prefixes to the IRIs they abbreviate, enabling QName expansion (e.g., 'foaf' -> 'http://xmlns.com/foaf/0.1/').",
       "additionalProperties": {
         "type": "string",
-        "format": "uri"
+        "format": "iri"
       }
     }
   },
@@ -105,9 +105,9 @@
           },
           "description": "Defines relationships that pertain primarily to the concept defined in this component"
         },
-        "uri": {
+        "iri": {
           "type": "string",
-          "description": "Optional global identifier for this concept, expressed as a full URI or as a QName (prefix:local) resolved against the ontology-level 'prefixes' map."
+          "description": "Optional global identifier for this concept, expressed as a full IRI or as a QName (prefix:local) resolved against the ontology-level 'prefixes' map."
         }
       },
       "required": ["concept", "type"],
@@ -160,9 +160,9 @@
           },
           "description": "Natural language expressions that verbalize this relationship"
         },
-        "uri": {
+        "iri": {
           "type": "string",
-          "description": "Optional global identifier for this relationship, expressed as a full URI or as a QName (prefix:local) resolved against the ontology-level 'prefixes' map."
+          "description": "Optional global identifier for this relationship, expressed as a full IRI or as a QName (prefix:local) resolved against the ontology-level 'prefixes' map."
         }
       },
       "required": ["name", "verbalizes"],

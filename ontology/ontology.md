@@ -88,6 +88,7 @@ hierarchically, grouping each relationship under the concept that plays its firs
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools |
 | `ontology` | list | Yes | Concepts and relationships they group that form this ontology |
+| `prefixes` | object | No | Namespace prefixes used to abbreviate [IRIs](#global-identifiers) |
 
 Each component of an ontology declares a concept and lists the relationships where that
 concept plays the first role. The concept's name is the value of the `concept` field, and
@@ -111,6 +112,7 @@ Concepts have the following schema:
 | `identify_by` | list | No | Names of relationships that uniquely reference objects of this concept |
 | `requires` | list | No | Expressions that constrain this concept's population |
 | `relationships` | list | No | Relationships where this concept plays the first role |
+| `iri` | string | No | Optional [global identifier](#global-identifiers) of this concept |
 
 Each concept is either an entity type or a value type.
 
@@ -155,6 +157,7 @@ Each relationship that is declared under a concept conforms to the following sch
 | `derived_by` | list | No | Expressions that derive links of this relationship |
 | `requires` | list | No | Expressions that constrain this relationship's population |
 | `verbalizes` | list | Yes | Patterns describing how to verbalize links |
+| `iri` | string | No | Optional [global identifier](#global-identifiers) of this relationship |
 
 Each relationship is uniquely identified by prepending its declared name with that of the containing
 concept. For instance, in:
@@ -379,6 +382,60 @@ ontology:
 the first expression requires any value that plays the `Amount` role to be positive while the second
 requires any item that has sales in some store to be offered in that store.
 
+### Global identifiers
+
+Concept and relationship names are local to the ontology that declares them. To relate a concept
+or relationship to a definition outside the ontology, for instance a class or property in an
+existing RDF or OWL vocabulary, it can carry an optional `iri` field that holds a globally unique
+identifier. An IRI (Internationalized Resource Identifier, [RFC 3987](https://www.rfc-editor.org/info/rfc3987/))
+is a generalization of a URI that permits characters beyond ASCII. Any URI is also a valid IRI.
+
+The `iri` field accepts two forms:
+
+- A full IRI, e.g. `http://xmlns.com/foaf/0.1/Agent`.
+- A QName of the form `prefix:local`, e.g. `foaf:Agent`, where `prefix` is declared in the
+  ontology-level `prefixes` map. The QName expands to the prefix's IRI followed by the local
+  part, so `foaf:Agent` expands to `http://xmlns.com/foaf/0.1/Agent`.
+
+The `prefixes` map is declared at the top level of the specification. Each key is a prefix and each
+value is the IRI that the prefix abbreviates:
+
+```yaml
+name: OrganizationOntology
+prefixes:
+  foaf: http://xmlns.com/foaf/0.1/
+  org: http://www.w3.org/ns/org#
+ontology:
+  - concept: Agent
+    type: EntityType
+    iri: foaf:Agent
+    description: "A generic agent (person, organization, etc.)"
+    relationships:
+      - name: has_homepage
+        iri: foaf:homepage
+        roles:
+          - concept: Homepage
+        multiplicity: ManyToOne
+        verbalizes: [ "{Agent} has {Homepage}" ]
+  - concept: Homepage
+    type: ValueType
+    extends: [String]
+  - concept: Organization
+    type: EntityType
+    extends: [Agent]
+    iri: http://www.w3.org/ns/org#Organization
+```
+
+Here `Agent` and `Agent.has_homepage` are identified by QNames that resolve against the `foaf`
+prefix, while `Organization` is identified by a full IRI. Both forms denote the same kind of
+identifier; the QName is merely shorthand. A QName whose prefix is not declared in `prefixes`
+is invalid.
+
+An IRI does not change how a concept or relationship is referenced within its own ontology.
+Expressions, roles, and mappings continue to use local names. The IRI serves tools that translate
+between this specification and IRI-based languages and lets multiple ontologies state that they
+refer to the same externally defined concept or relationship.
+
 ## Ontology mappings
 
 Ontology mappings declare how to map the values of fields at the logical level to objects and links
@@ -590,6 +647,7 @@ though `Store` plays a role in three of the relationships.
 - **0.2.0.dev0** (2026-05-29): Basic support for ontologies and logical schema mappings
   - Core ontology structure: Concepts, relationships, and business rules (requires and derived_by)
   - Schema mappings from one or more logical models into an ontology
+  - Optional IRIs on concepts and relationships, with namespace prefixes declared at the top level
 
 ---
 
