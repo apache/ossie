@@ -9,10 +9,9 @@ ontology:
     type: EntityType
     custom_properties:
       iri: "http://xmlns.com/foaf/0.1/Person"
-      rdfs:label@en: "Person"
-      rdfs:label@fr: "Personne"
-      rdfs:comment@en: "A person."
-      owl:equivalentClass: "https://schema.org/Person"
+      label: "Person"
+      comment: "A person."
+      equivalent_class: "https://schema.org/Person"
     relationships:
       - name: name
         roles:
@@ -21,18 +20,18 @@ ontology:
         multiplicity: ManyToOne
         custom_properties:
           iri: "http://xmlns.com/foaf/0.1/name"
-          rdfs:label@en: "name"
+          label: "name"
       - name: knows
         roles:
           - concept: Person
             name: acquaintance
             custom_properties:
-              rdfs:range: "http://xmlns.com/foaf/0.1/Person"
+              range: "http://xmlns.com/foaf/0.1/Person"
         verbalizes: [ "{Person} knows {Person:acquaintance}" ]
         custom_properties:
           iri: "http://xmlns.com/foaf/0.1/knows"
-          rdfs:label@en: "knows"
-          owl:inverseOf: "http://xmlns.com/foaf/0.1/knows"
+          label: "knows"
+          inverse_of: "http://xmlns.com/foaf/0.1/knows"
 custom_properties:
-  owl:Ontology: "http://xmlns.com/foaf/0.1/"
-  dc:title: "Friend of a Friend (FOAF) vocabulary"
+  ontology_iri: "http://xmlns.com/foaf/0.1/"
+  title: "Friend of a Friend (FOAF) vocabulary"

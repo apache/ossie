@@ -60,7 +60,7 @@
   "$defs": {
     "CustomProperties": {
       "type": "object",
-      "description": "Open set of custom properties for carrying data that is not covered by the core ontology spec, for example when importing an ontology from an external format such as OWL/RDF. Keys are free-form; CURIEs such as 'owl:equivalentClass' or 'rdfs:label' are recommended when round-tripping semantic-web sources. Values may be any JSON.",
+      "description": "Open set of custom properties for carrying data that is not covered by the core ontology spec, for example when importing an ontology from an external format such as OWL/RDF. Keys are free-form and values may be any JSON; the spec does not interpret their structure.",
       "additionalProperties": true
     },
     "OntologyComponent": {

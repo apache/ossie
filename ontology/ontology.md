@@ -390,10 +390,9 @@ open set of key-value pairs for data that the core spec does not model. This giv
 preserve information that would otherwise be lost, which is especially useful when importing an ontology
 from an external format such as OWL/RDF and round-tripping it back out.
 
-Keys are free-form, and values may be any JSON. When carrying data from a semantic-web source, CURIEs
-such as `owl:equivalentClass` or `rdfs:label` are recommended so the origin of each property stays clear.
-Tools that do not understand a given property should preserve it as-is. For example, an OWL importer might
-map an `owl:Class` to a concept while retaining its IRI and annotations:
+Keys are free-form, and values may be any JSON. The spec does not interpret or constrain the structure of
+`custom_properties`; tools that do not understand a given property should preserve it as-is. For example,
+an OWL importer might map an `owl:Class` to a concept while retaining its IRI and annotations:
 
 ```yaml
 ontology:
@@ -401,9 +400,8 @@ ontology:
     type: EntityType
     custom_properties:
       iri: "http://xmlns.com/foaf/0.1/Person"
-      rdfs:label@en: "Person"
-      rdfs:label@fr: "Personne"
-      owl:equivalentClass: "https://schema.org/Person"
+      label: "Person"
+      equivalent_class: "https://schema.org/Person"
     relationships:
       - name: knows
         roles:
@@ -412,34 +410,7 @@ ontology:
         verbalizes: [ "{Person} knows {Person:acquaintance}" ]
         custom_properties:
           iri: "http://xmlns.com/foaf/0.1/knows"
-          owl:inverseOf: "http://xmlns.com/foaf/0.1/knows"
-```
-
-#### Language-tagged literals
-
-RDF literals often carry a language tag (for example `rdfs:label` with values `"Person"@en` and
-`"Personne"@fr`). The recommended convention is to append the [BCP 47](https://www.rfc-editor.org/info/bcp47)
-language tag to the key after an `@`, giving keys of the form `prefix:local@lang`:
-
-```yaml
-custom_properties:
-  rdfs:label@en: "Person"
-  rdfs:label@fr: "Personne"
-```
-
-`@` is not a legal character in a CURIE local name, so `prefix:local@lang` parses unambiguously into the
-property and its language. This form holds at most one value per language per key. When a property needs
-multiple values in the same language, or carries a non-language datatype such as `xsd:date`, use the
-[JSON-LD](https://www.w3.org/TR/json-ld11/) value-object form instead, which is lossless:
-
-```yaml
-custom_properties:
-  rdfs:label:
-    - { "@value": "Person", "@language": "en" }
-    - { "@value": "Persona", "@language": "en" }
-  dcterms:created:
-    "@value": "2020-01-01"
-    "@type": "xsd:date"
+          inverse_of: "http://xmlns.com/foaf/0.1/knows"
 ```
 
 ## Ontology mappings
