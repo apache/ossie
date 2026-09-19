@@ -287,12 +287,90 @@ class OssieToSalesforceConverterTest {
     }
 
     @Test
-    void testMetricsNotConvertedInOssieToSalesforce() throws Exception {
+    void testMetricsConvertedToSemanticCalculatedMeasurements() throws Exception {
         List<String> results = converter.convert(ossieYaml);
         Map<String, Object> sfModel = jsonMapper.readValue(results.get(0), new TypeReference<Map<String, Object>>() {});
 
         List<Map<String, Object>> calcMeasurements = (List<Map<String, Object>>) sfModel.get("semanticCalculatedMeasurements");
-        assertNull(calcMeasurements, "Metrics from Ossie are not converted to semanticCalculatedMeasurements in Ossie->SF direction");
+        assertNotNull(calcMeasurements, "Metrics from Ossie should convert to semanticCalculatedMeasurements");
+        assertEquals(2, calcMeasurements.size());
+
+        Map<String, Object> totalRevenue = calcMeasurements.stream()
+                .filter(m -> "total_revenue".equals(m.get("apiName")))
+                .findFirst()
+                .orElse(null);
+        assertNotNull(totalRevenue);
+        assertEquals("Sum of all order amounts", totalRevenue.get("description"));
+        assertEquals("Number", totalRevenue.get("dataType"));
+        // The fixture's metrics only carry an ANSI_SQL dialect (no TABLEAU) -- falls back to
+        // exporting it unresolved/untranslated rather than failing the whole conversion.
+        assertEquals("SUM([Orders].[amount])", totalRevenue.get("expression"));
+
+        Map<String, Object> avgOrderValue = calcMeasurements.stream()
+                .filter(m -> "avg_order_value".equals(m.get("apiName")))
+                .findFirst()
+                .orElse(null);
+        assertNotNull(avgOrderValue);
+        assertEquals("AVG([Orders].[amount])", avgOrderValue.get("expression"));
+    }
+
+    @Test
+    void testMetricExpressionPrefersTableauDialectOverAnsiSql() throws Exception {
+        // Normalize line endings first: the fixture file may check out with CRLF depending on
+        // the platform's autocrlf setting, but the substitution below is written with LF.
+        String yamlWithTableauMetric = ossieYaml.replace("\r\n", "\n").replace(
+                "    metrics:\n"
+                        + "    - description: Sum of all order amounts\n"
+                        + "      name: total_revenue\n"
+                        + "      datatype: Decimal\n"
+                        + "      expression:\n"
+                        + "        dialects:\n"
+                        + "        - dialect: ANSI_SQL\n"
+                        + "          expression: SUM([Orders].[amount])\n",
+                "    metrics:\n"
+                        + "    - description: Sum of all order amounts\n"
+                        + "      name: total_revenue\n"
+                        + "      datatype: Decimal\n"
+                        + "      expression:\n"
+                        + "        dialects:\n"
+                        + "        - dialect: ANSI_SQL\n"
+                        + "          expression: SUM([Orders].[amount])\n"
+                        + "        - dialect: TABLEAU\n"
+                        + "          expression: SUM(Orders.amount)\n");
+        assertTrue(yamlWithTableauMetric.contains("dialect: TABLEAU"), "fixture text substitution did not match");
+
+        List<String> results = converter.convert(yamlWithTableauMetric);
+        Map<String, Object> sfModel = jsonMapper.readValue(results.get(0), new TypeReference<Map<String, Object>>() {});
+        List<Map<String, Object>> calcMeasurements = (List<Map<String, Object>>) sfModel.get("semanticCalculatedMeasurements");
+
+        Map<String, Object> totalRevenue = calcMeasurements.stream()
+                .filter(m -> "total_revenue".equals(m.get("apiName")))
+                .findFirst()
+                .orElse(null);
+        assertNotNull(totalRevenue);
+        assertEquals("SUM(Orders.amount)", totalRevenue.get("expression"),
+                "TABLEAU dialect should be preferred over ANSI_SQL when both are present");
+    }
+
+    @Test
+    void testMetricWithNoConvertibleDialectFailsConversion() throws Exception {
+        // Normalize line endings first: the fixture file may check out with CRLF depending on
+        // the platform's autocrlf setting, but the substitution below is written with LF.
+        // The Ossie schema requires every metric to have an expression and restricts `dialect`
+        // to its own enum, so this uses BIGQUERY (a valid dialect, but neither TABLEAU nor
+        // ANSI_SQL) rather than omitting the expression or inventing an unrecognized dialect.
+        String yamlWithUnconvertibleDialect = ossieYaml.replace("\r\n", "\n").replace(
+                "        - dialect: ANSI_SQL\n"
+                        + "          expression: SUM([Orders].[amount])\n",
+                "        - dialect: BIGQUERY\n"
+                        + "          expression: SUM(Orders.amount)\n");
+        assertTrue(yamlWithUnconvertibleDialect.contains("dialect: BIGQUERY"),
+                "fixture text substitution did not match");
+
+        Exception exception =
+                assertThrows(Exception.class, () -> converter.convert(yamlWithUnconvertibleDialect));
+        String message = exception.getMessage() != null ? exception.getMessage() : exception.getCause().getMessage();
+        assertTrue(message.contains("total_revenue"), "error should name the unconvertible metric: " + message);
     }
 
     @Test

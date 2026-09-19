@@ -24,6 +24,7 @@ import static org.apache.ossie.util.DataStructureUtils.*;
 
 import org.apache.ossie.converter.ConverterConstants.Level;
 import org.apache.ossie.converter.pipeline.PipelineStep;
+import org.apache.ossie.exception.ConversionException;
 import java.util.*;
 
 import org.apache.ossie.util.MappingUtils;
@@ -78,9 +79,16 @@ public class MetricMappingHandler implements PipelineStep {
 
         // Filter mappings to get only metric-related entries
         Map<String, String> metricMappings = MappingUtils.filterMappingsByPrefix(mappings, METRICS);
+
+        Map<String, Object> mappedData = GenericMappingEngine.applyMappings(sourceData, metricMappings);
         metricMappings.keySet().forEach(mappings::remove);
 
-        logger.debug("Metrics are not mapped in Ossie to Salesforce direction");
+        outputData.putAll(mappedData);
+
+        List<Object> sfMetrics = getList(outputData, SEMANTIC_CALCULATED_MEASUREMENTS);
+        if (sfMetrics != null) {
+            unwrapExpressions(ossieMetrics, sfMetrics);
+        }
     }
 
     /**
@@ -117,6 +125,67 @@ public class MetricMappingHandler implements PipelineStep {
         sourceData.remove(SEMANTIC_CALCULATED_MEASUREMENTS);
     }
 
+
+    /**
+     * Unwraps expressions for Ossie→SF conversion, mirroring {@link #wrapExpressions}.
+     *
+     * <p>Picks an expression out of each Ossie metric's {@code expression.dialects[]} and
+     * flattens it into the Salesforce metric's {@code expression} string. {@code TABLEAU} is
+     * preferred (it is what Salesforce/Tableau CRM itself speaks); a model authored without one
+     * falls back to {@code ANSI_SQL} best-effort, since resolving/rewriting an expression into
+     * TABLEAU syntax is the scope of #222's expression-language work, not this fix. A metric with
+     * neither dialect fails the conversion rather than being silently omitted (#399).
+     */
+    private void unwrapExpressions(List<Object> ossieMetrics, List<Object> sfMetrics) {
+        for (int i = 0; i < ossieMetrics.size() && i < sfMetrics.size(); i++) {
+            Map<String, Object> ossieMetric = asMap(ossieMetrics.get(i));
+            Map<String, Object> sfMetric = asMap(sfMetrics.get(i));
+
+            String expressionValue = extractExpression(ossieMetric, DIALECT_TABLEAU);
+            if (expressionValue == null) {
+                expressionValue = extractExpression(ossieMetric, DIALECT_ANSI_SQL);
+                if (expressionValue != null) {
+                    logger.warn(
+                            "Metric '{}' has no TABLEAU-dialect expression; exporting its "
+                                    + "ANSI_SQL expression to Salesforce unresolved/untranslated",
+                            getString(ossieMetric, NAME));
+                }
+            }
+            if (expressionValue == null) {
+                throw new ConversionException(
+                        "Metric '" + getString(ossieMetric, NAME) + "' has neither a TABLEAU nor "
+                                + "an ANSI_SQL expression to export to Salesforce; add one to "
+                                + "expression.dialects[] or remove the metric.");
+            }
+            sfMetric.put(EXPRESSION, expressionValue);
+
+            String datatype = SalesforceDataTypeMapper.toSalesforce(getString(ossieMetric, OSSIE_DATATYPE));
+            if (datatype != null) {
+                sfMetric.put(DATA_TYPE, datatype);
+            }
+        }
+    }
+
+    /**
+     * Finds the given dialect's expression string in an Ossie metric's
+     * {@code expression.dialects[]}, or {@code null} when the metric has no expression or no
+     * entry for that dialect.
+     */
+    private String extractExpression(Map<String, Object> ossieMetric, String dialect) {
+        Map<String, Object> expression = getMap(ossieMetric, EXPRESSION);
+        if (expression == null) {
+            return null;
+        }
+        List<Object> dialects = getList(expression, DIALECTS);
+        if (dialects == null) {
+            return null;
+        }
+        return streamMaps(dialects)
+                .filter(d -> dialect.equals(getString(d, DIALECT)))
+                .map(d -> getString(d, EXPRESSION))
+                .findFirst()
+                .orElse(null);
+    }
 
     /**
      * Wraps expressions for SF→Ossie conversion.
