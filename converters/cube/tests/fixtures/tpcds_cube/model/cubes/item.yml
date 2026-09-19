@@ -1,0 +1,93 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+cubes:
+- name: item
+  sql_table: tpcds.public.item
+  description: Item/Product dimension with product attributes
+  meta:
+    ai_context: 'Also known as: products, items, merchandise.'
+    ossie:
+      unique_keys:
+      - - i_item_sk
+      ai_context:
+        synonyms:
+        - products
+        - items
+        - merchandise
+  dimensions:
+  - name: i_item_sk
+    sql: i_item_sk
+    type: number
+    primary_key: true
+    description: Surrogate key for item
+  - name: i_item_id
+    sql: i_item_id
+    type: string
+    description: Business key for item
+    meta:
+      ai_context: 'Also known as: item ID, product ID, SKU.'
+      ossie:
+        ai_context:
+          synonyms:
+          - item ID
+          - product ID
+          - SKU
+  - name: i_item_desc
+    sql: i_item_desc
+    type: string
+    description: Item description
+    meta:
+      ai_context: 'Also known as: product description, item name.'
+      ossie:
+        ai_context:
+          synonyms:
+          - product description
+          - item name
+  - name: i_brand
+    sql: i_brand
+    type: string
+    description: Brand name
+    meta:
+      ai_context: 'Also known as: brand, manufacturer.'
+      ossie:
+        ai_context:
+          synonyms:
+          - brand
+          - manufacturer
+  - name: i_category
+    sql: i_category
+    type: string
+    description: Item category
+    meta:
+      ai_context: 'Also known as: product category, department.'
+      ossie:
+        ai_context:
+          synonyms:
+          - product category
+          - department
+  - name: i_current_price
+    sql: i_current_price
+    type: number
+    description: Current price of the item
+    meta:
+      ai_context: 'Also known as: price, list price.'
+      ossie:
+        ai_context:
+          synonyms:
+          - price
+          - list price

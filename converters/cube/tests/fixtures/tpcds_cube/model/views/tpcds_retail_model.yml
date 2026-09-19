@@ -1,0 +1,55 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+views:
+- name: tpcds_retail_model
+  cubes:
+  - join_path: store_sales
+    includes: '*'
+  - join_path: store_sales.date_dim
+    includes: '*'
+  - join_path: store_sales.customer
+    includes: '*'
+  - join_path: store_sales.item
+    includes: '*'
+  - join_path: store_sales.store
+    includes: '*'
+  description: TPC-DS retail semantic model for sales and customer analytics
+  meta:
+    ai_context: Use this semantic model for retail analytics. It provides comprehensive
+      sales, customer, product, and store data from the TPC-DS benchmark. The model
+      supports time-based analysis, customer segmentation, product performance, and
+      store operations metrics.
+    ossie:
+      custom_extensions:
+      - vendor_name: SALESFORCE
+        data: |
+          \{
+            "tableau_workbook_id": "tpcds_retail_dashboard",
+            "einstein_enabled": true,
+            "crm_sync": \{
+              "enabled": true,
+              "sync_frequency": "daily",
+              "customer_mapping": "customer.c_customer_id -> Account.AccountNumber"
+            \},
+            "tableau_semantics": \{
+              "published": true,
+              "version": "0.1.1"
+            \}
+          \}
+      - vendor_name: DBT
+        data: '\{"project_name": "tpcds_analytics", "models_path": "models/semantic"\}'
