@@ -1,0 +1,312 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# The TPC-DS retail model shared across this converter's sibling test
+# fixtures: 5 core datasets (store_sales, date_dim, customer, item, store),
+# their 4 core relationships and 5 core metrics, plus one additional SQL
+# View dataset (store_returns_sv) and three additional relationships added
+# deliberately to exercise a composite-key join, a non-equality join
+# condition, and a ONE_TO_MANY join declared from its "one" side (store has
+# many store_returns) -- TML's own from/to naming does not encode which side
+# of a join is which, cardinality does, and ONE_TO_MANY is the one value
+# where Ossie's spec (core-spec/spec.yaml: `from` is the many side, `to` is
+# the one side) requires the emitted relationship's endpoints to be the
+# reverse of how this join is declared here -- plus four additional metrics
+# covering the remaining metric shapes and formula constructs this converter
+# has to handle, and one non-Latin (CJK) display name on `customer` with no
+# ASCII form to fold onto (see tml_to_ossie.py's
+# `_field_or_metric_identifier`).
+model:
+  name: tpcds_retail_model
+  description: "TPC-DS retail semantic model used as a shared test fixture."
+  model_tables:
+    - name: store_sales
+      joins:
+        - referencing_join: store_sales_to_date
+        - referencing_join: store_sales_to_customer
+        - referencing_join: store_sales_to_item
+        - referencing_join: store_sales_to_store
+    - name: date_dim
+    - name: customer
+    - name: item
+    - name: store
+      joins:
+        # A ONE_TO_MANY join declared from the "one" side: a store has many
+        # store_returns. Exercises the endpoint swap this converter applies
+        # to a ONE_TO_MANY join -- the emitted Ossie relationship's `from`
+        # is store_returns_sv (the many side) and `to` is store (the one
+        # side), the reverse of this join's own declared from/to.
+        - with: store_returns_sv
+          'on': "[store::s_store_sk] = [store_returns_sv::sr_store_sk]"
+          type: INNER
+          cardinality: ONE_TO_MANY
+    - name: store_returns_sv
+      joins:
+        # A composite-key equality join: store_sales's own natural key is
+        # (ss_item_sk, ss_ticket_number), so this is the one relationship
+        # in the model whose from_columns/to_columns each carry two
+        # columns.
+        - with: store_sales
+          'on': "[store_returns_sv::sr_item_sk] = [store_sales::ss_item_sk] and [store_returns_sv::sr_ticket_number] = [store_sales::ss_ticket_number]"
+          type: INNER
+          cardinality: MANY_TO_ONE
+        # A non-equality join condition: one equality pair narrowed by a
+        # residual `<=` predicate, so the relationship is still emitted
+        # (with the residual predicate riding along) but does not qualify
+        # as key evidence.
+        - with: item
+          'on': "[store_returns_sv::sr_item_sk] = [item::i_item_sk] and [store_returns_sv::sr_return_amt] <= [item::i_current_price]"
+          type: INNER
+          cardinality: MANY_TO_ONE
+  columns:
+    # -- store_sales: physical attributes. ss_ticket_number is deliberately
+    # -- not listed here, so it stays a Table-only physical column.
+    - name: ss_sold_date_sk
+      column_id: store_sales::ss_sold_date_sk
+      properties:
+        column_type: ATTRIBUTE
+    - name: ss_item_sk
+      column_id: store_sales::ss_item_sk
+      properties:
+        column_type: ATTRIBUTE
+    - name: ss_customer_sk
+      column_id: store_sales::ss_customer_sk
+      properties:
+        column_type: ATTRIBUTE
+    - name: ss_store_sk
+      column_id: store_sales::ss_store_sk
+      properties:
+        column_type: ATTRIBUTE
+    - name: ss_quantity
+      column_id: store_sales::ss_quantity
+      properties:
+        column_type: ATTRIBUTE
+    - name: ss_sales_price
+      column_id: store_sales::ss_sales_price
+      properties:
+        column_type: ATTRIBUTE
+    - name: ss_ext_sales_price
+      column_id: store_sales::ss_ext_sales_price
+      properties:
+        column_type: ATTRIBUTE
+    - name: ss_net_profit
+      column_id: store_sales::ss_net_profit
+      properties:
+        column_type: ATTRIBUTE
+    # -- date_dim
+    - name: d_date_sk
+      column_id: date_dim::d_date_sk
+      properties:
+        column_type: ATTRIBUTE
+    - name: d_date
+      column_id: date_dim::d_date
+      properties:
+        column_type: ATTRIBUTE
+    - name: d_year
+      column_id: date_dim::d_year
+      properties:
+        column_type: ATTRIBUTE
+    - name: d_quarter_name
+      column_id: date_dim::d_quarter_name
+      properties:
+        column_type: ATTRIBUTE
+    - name: d_moy
+      column_id: date_dim::d_moy
+      properties:
+        column_type: ATTRIBUTE
+    # -- customer. customer_full_name is a computed attribute (a formula,
+    # -- not a column_id), attributed to this dataset because both of its
+    # -- column references resolve here.
+    - name: c_customer_sk
+      column_id: customer::c_customer_sk
+      properties:
+        column_type: ATTRIBUTE
+    - name: c_customer_id
+      column_id: customer::c_customer_id
+      properties:
+        column_type: ATTRIBUTE
+    - name: c_first_name
+      column_id: customer::c_first_name
+      properties:
+        column_type: ATTRIBUTE
+    - name: c_last_name
+      column_id: customer::c_last_name
+      properties:
+        column_type: ATTRIBUTE
+    - name: customer_full_name
+      formula_id: formula_customer_full_name
+      properties:
+        column_type: ATTRIBUTE
+    - name: c_email_address
+      column_id: customer::c_email_address
+      properties:
+        column_type: ATTRIBUTE
+    # A non-Latin (CJK) display name: identifiers.normalise has no ASCII
+    # form to fold it onto, so this field falls back to its physical
+    # column's own warehouse name (c_kana_name -> "c_kana_name") instead of
+    # being dropped -- see identifiers.py / tml_to_ossie.py's
+    # _field_or_metric_identifier.
+    - name: カナ名
+      column_id: customer::カナ名
+      properties:
+        column_type: ATTRIBUTE
+    # -- item
+    - name: i_item_sk
+      column_id: item::i_item_sk
+      properties:
+        column_type: ATTRIBUTE
+    - name: i_item_id
+      column_id: item::i_item_id
+      properties:
+        column_type: ATTRIBUTE
+    - name: i_item_desc
+      column_id: item::i_item_desc
+      properties:
+        column_type: ATTRIBUTE
+    - name: i_brand
+      column_id: item::i_brand
+      properties:
+        column_type: ATTRIBUTE
+    - name: i_category
+      column_id: item::i_category
+      properties:
+        column_type: ATTRIBUTE
+    - name: i_current_price
+      column_id: item::i_current_price
+      properties:
+        column_type: ATTRIBUTE
+    # -- store. s_store_name's db_column_name differs (STORE_NM); "on" is
+    # -- a YAML 1.1 boolean token and a Snowflake BOOL column.
+    - name: s_store_sk
+      column_id: store::s_store_sk
+      properties:
+        column_type: ATTRIBUTE
+    - name: s_store_id
+      column_id: store::s_store_id
+      properties:
+        column_type: ATTRIBUTE
+    - name: s_store_name
+      column_id: store::s_store_name
+      properties:
+        column_type: ATTRIBUTE
+    - name: s_city
+      column_id: store::s_city
+      properties:
+        column_type: ATTRIBUTE
+    - name: s_state
+      column_id: store::s_state
+      properties:
+        column_type: ATTRIBUTE
+    - name: s_number_employees
+      column_id: store::s_number_employees
+      properties:
+        column_type: ATTRIBUTE
+    - name: "on"
+      column_id: "store::on"
+      description: "Whether the store is currently active and open for business."
+      properties:
+        column_type: ATTRIBUTE
+    # -- store_returns_sv. sr_return_quantity is deliberately not listed
+    # -- here, so it stays a SQL View-only physical column, referenced only
+    # -- from total_return_quantity's formula below.
+    - name: sr_item_sk
+      column_id: store_returns_sv::sr_item_sk
+      properties:
+        column_type: ATTRIBUTE
+    - name: sr_ticket_number
+      column_id: store_returns_sv::sr_ticket_number
+      properties:
+        column_type: ATTRIBUTE
+    - name: sr_return_amt
+      column_id: store_returns_sv::sr_return_amt
+      properties:
+        column_type: ATTRIBUTE
+    # -- the 5 core TPC-DS metrics
+    - name: total_sales
+      formula_id: formula_total_sales
+      properties:
+        column_type: MEASURE
+    - name: total_profit
+      formula_id: formula_total_profit
+      properties:
+        column_type: MEASURE
+    - name: customer_lifetime_value
+      formula_id: formula_customer_lifetime_value
+      properties:
+        column_type: MEASURE
+    - name: sales_by_brand
+      formula_id: formula_sales_by_brand
+      properties:
+        column_type: MEASURE
+    - name: store_productivity
+      formula_id: formula_store_productivity
+      properties:
+        column_type: MEASURE
+    # -- additional metrics: one of each remaining metric shape, a
+    # -- cross-referencing formula, and a brace-carrying window formula.
+    - name: total_return_quantity
+      column_id: store_returns_sv::sr_return_quantity
+      properties:
+        column_type: MEASURE
+        aggregation: SUM
+    - name: avg_price_adjustment
+      formula_id: formula_avg_price_adjustment
+      properties:
+        column_type: MEASURE
+        aggregation: AVERAGE
+    - name: profit_margin
+      formula_id: formula_profit_margin
+      properties:
+        column_type: MEASURE
+    - name: prior_period_profit
+      formula_id: formula_prior_period_profit
+      properties:
+        column_type: MEASURE
+  formulas:
+    - id: formula_customer_full_name
+      name: customer_full_name
+      expr: "concat ( concat ( [customer::c_first_name] , ' ' ) , [customer::c_last_name] )"
+    - id: formula_total_sales
+      name: total_sales
+      expr: "sum ( [store_sales::ss_ext_sales_price] )"
+    - id: formula_total_profit
+      name: total_profit
+      expr: "sum ( [store_sales::ss_net_profit] )"
+    - id: formula_customer_lifetime_value
+      name: customer_lifetime_value
+      expr: "sum ( [store_sales::ss_ext_sales_price] ) / unique count ( [customer::c_customer_sk] )"
+    - id: formula_sales_by_brand
+      name: sales_by_brand
+      expr: "sum ( [store_sales::ss_ext_sales_price] )"
+    - id: formula_store_productivity
+      name: store_productivity
+      expr: "sum ( [store_sales::ss_ext_sales_price] ) / nullif ( sum ( [store::s_number_employees] ) , 0 )"
+    - id: formula_avg_price_adjustment
+      name: avg_price_adjustment
+      expr: "[store_sales::ss_ext_sales_price] - [store_sales::ss_sales_price]"
+    # A formula cross-referencing two other formulas by id -- the id form
+    # (`[formula_<Name>]`), never the display-name form.
+    - id: formula_profit_margin
+      name: profit_margin
+      expr: "[formula_total_profit] / [formula_total_sales]"
+    # A brace-carrying window formula. The `{ }` reset-group argument means
+    # this has to be a folded block scalar (`>-`), or the YAML will not
+    # parse.
+    - id: formula_prior_period_profit
+      name: prior_period_profit
+      expr: >-
+        last_value ( sum ( [store_sales::ss_net_profit] ) , query_groups ( ) , { [date_dim::d_date] } )

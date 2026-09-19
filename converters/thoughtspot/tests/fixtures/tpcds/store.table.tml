@@ -1,0 +1,59 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# `s_store_name`'s display name deliberately differs from its warehouse
+# column name, so the portable expression built for it has to use the
+# warehouse name rather than the display name. `"on"` is both a YAML 1.1
+# boolean token spelled out as a column name, and a BOOL-typed column (the
+# Snowflake-specific spelling), quoted throughout so no YAML 1.1 reader can
+# coerce it to a boolean.
+table:
+  name: store
+  db: TPCDS
+  schema: PUBLIC
+  db_table: STORE
+  connection:
+    name: TPC-DS Snowflake
+  columns:
+    - name: s_store_sk
+      db_column_name: s_store_sk
+      db_column_properties:
+        data_type: INT64
+    - name: s_store_id
+      db_column_name: s_store_id
+      db_column_properties:
+        data_type: VARCHAR
+    - name: s_store_name
+      db_column_name: STORE_NM
+      db_column_properties:
+        data_type: VARCHAR
+    - name: s_city
+      db_column_name: s_city
+      db_column_properties:
+        data_type: VARCHAR
+    - name: s_state
+      db_column_name: s_state
+      db_column_properties:
+        data_type: VARCHAR
+    - name: s_number_employees
+      db_column_name: s_number_employees
+      db_column_properties:
+        data_type: INT64
+    - name: "on"
+      db_column_name: "on"
+      db_column_properties:
+        data_type: BOOL
