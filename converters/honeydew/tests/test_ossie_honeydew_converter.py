@@ -183,9 +183,31 @@ def test_parse_ossie_source(source, expected_sql, expected_type):
 
 
 @pytest.mark.parametrize("field,expected_dt", [
+    # Declared datatype wins over the dimension-shape heuristic
+    ({"datatype": "String"}, "string"),
+    ({"datatype": "Integer"}, "number"),
+    ({"datatype": "Decimal"}, "float"),
+    ({"datatype": "Float"}, "float"),
+    ({"datatype": "Boolean"}, "bool"),
+    ({"datatype": "Date"}, "date"),
+    ({"datatype": "Time"}, "time"),
+    ({"datatype": "DateTime"}, "timestamp"),
+    ({"datatype": "DateTimeTz"}, "timestamp"),
+    ({"datatype": "Boolean", "dimension": {"is_time": False}}, "bool"),
+    ({"datatype": "Date", "dimension": {"is_time": False}}, "date"),
+    # is_time is a role flag, not a type: a year grain stays an Integer
+    ({"datatype": "Integer", "dimension": {"is_time": True}}, "number"),
+    # No usable datatype → fall back to the dimension-shape heuristic
+    ({"datatype": "Opaque", "dimension": {"is_time": True}}, "timestamp"),
+    ({"datatype": "Opaque"}, "number"),
+    ({"datatype": "nonsense"}, "number"),
+    ({"datatype": {"not": "a string"}, "dimension": {"is_time": False}}, "string"),
     ({"dimension": {"is_time": True}}, "timestamp"),
     ({"dimension": {"is_time": False}}, "string"),
     ({}, "number"),
+    # A round-tripped Honeydew datatype outranks the declared one
+    ({"datatype": "String",
+      "custom_extensions": [{"vendor_name": "HONEYDEW", "data": '{"datatype": "bool"}'}]}, "bool"),
 ])
 def test_ossie_field_to_honeydew_datatype(field, expected_dt):
     assert _ossie_field_to_honeydew_datatype(field) == expected_dt
@@ -570,6 +592,29 @@ _REL_MODEL = {
         {"type": "entity", "name": "li", "keys": ["order_id", "line_number"],
          "key_dataset": "li", "relations": []},
         id="composite-pk",
+    ),
+    # ── declared datatypes reach the dataset attributes ───────────────────────
+    pytest.param(
+        {"name": "m", "datasets": [{"name": "orders", "source": "db.s.orders", "fields": [
+            {"name": "is_rush", "datatype": "Boolean",
+             "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "is_rush"}]}},
+            {"name": "ordered_on", "datatype": "Date", "dimension": {"is_time": True},
+             "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "ordered_on"}]}},
+            {"name": "qty", "datatype": "Integer",
+             "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "qty"}]}},
+            {"name": "note", "datatype": "Opaque", "dimension": {"is_time": False},
+             "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "note"}]}},
+        ]}]},
+        "schema/orders/datasets/orders.yml",
+        {"type": "dataset", "entity": "orders", "name": "orders",
+         "sql": "db.s.orders", "dataset_type": "table",
+         "attributes": [
+             {"column": "is_rush", "name": "is_rush", "datatype": "bool"},
+             {"column": "ordered_on", "name": "ordered_on", "datatype": "date"},
+             {"column": "qty", "name": "qty", "datatype": "number"},
+             {"column": "note", "name": "note", "datatype": "string"},
+         ]},
+        id="declared-datatypes",
     ),
 ])
 def test_ossie_to_honeydew_file_content(model, path, expected):
@@ -1386,6 +1431,26 @@ def test_fields_to_honeydew_complex_sql_goes_to_calc():
     assert dataset_attrs == []
     assert calc_attrs == [{"type": "calculated_attribute", "entity": "orders", "name": "disc",
                            "datatype": "number", "sql": "price * 0.9"}]
+
+
+def test_fields_to_honeydew_uses_declared_datatype():
+    fields = [
+        {"name": "is_active", "datatype": "Boolean",
+         "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "is_active"}]},
+         "dimension": {"is_time": False}},
+        {"name": "shipped_on", "datatype": "Date",
+         "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "shipped_on"}]},
+         "dimension": {"is_time": True}},
+        {"name": "disc", "datatype": "Float",
+         "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "price * 0.9"}]}},
+    ]
+    dataset_attrs, calc_attrs = _fields_to_honeydew(fields, "orders")
+    assert dataset_attrs == [
+        {"column": "is_active", "name": "is_active", "datatype": "bool"},
+        {"column": "shipped_on", "name": "shipped_on", "datatype": "date"},
+    ]
+    assert calc_attrs == [{"type": "calculated_attribute", "entity": "orders", "name": "disc",
+                           "datatype": "float", "sql": "price * 0.9"}]
 
 
 def test_fields_to_honeydew_missing_name_raises():
