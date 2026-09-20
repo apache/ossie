@@ -129,6 +129,8 @@ def test_is_plain_column_ref():
         ("SUM(ss_ext_sales_price)", "store_sales", "Sum([ss_ext_sales_price])"),
         ("COUNT(DISTINCT customer_id)", "customer", "CountDistinct([customer_id])"),
         ("CASE WHEN status = 'won' THEN 1 ELSE 0 END", "deals", 'If((["status"] = "won"), 1, 0)'.replace('["status"]', "[status]")),
+        ('-"X"', "T", "-[X]"),
+        ("-1", None, "-1"),
     ],
 )
 def test_reverse_translation_basic(sql, dataset_alias, expected):
