@@ -40,12 +40,17 @@ _ISSUE_REASON: dict[ConverterIssueType, str] = {
     ConverterIssueType.PRIVATE_METRIC_DROPPED: "Ossie has no visibility modifiers",
     ConverterIssueType.NATURAL_ENTITY_DROPPED: "Ossie has no natural-key entity type",
     ConverterIssueType.CUMULATIVE_SEMANTICS_LOSS: "Ossie expressions cannot represent window or grain semantics; the base aggregation was preserved",
+    ConverterIssueType.AMBIGUOUS_REFERENCE_METRIC_DROPPED: (
+        "an input metric is listed more than once under one reference with differing filters, "
+        "so the expression reference is ambiguous; give each occurrence a distinct alias"
+    ),
 }
 
 _DROPPED_ISSUE_TYPES = {
     ConverterIssueType.CONVERSION_METRIC_DROPPED,
     ConverterIssueType.PRIVATE_METRIC_DROPPED,
     ConverterIssueType.NATURAL_ENTITY_DROPPED,
+    ConverterIssueType.AMBIGUOUS_REFERENCE_METRIC_DROPPED,
 }
 
 

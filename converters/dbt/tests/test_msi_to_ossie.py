@@ -760,12 +760,13 @@ class TestMetricConversion:
             r"SUM(CASE WHEN order__path LIKE 'a\b' THEN orders.amount END) * 2"
         )
 
-    def test_derived_metric_rejects_a_reference_listed_twice_with_differing_filters(self) -> None:
-        """An input metric listed twice under one reference, resolving differently, is ambiguous.
+    def test_derived_metric_drops_a_used_reference_listed_twice_with_differing_filters(self) -> None:
+        """An input metric listed twice under one used reference, resolving differently, is ambiguous.
 
         MetricFlow accepts this shape — `DerivedMetricRule._validate_alias_collision`
-        only compares entries that set an alias — so the converter has to reject it
-        rather than silently pick one of the two filters.
+        only compares entries that set an alias — so the converter has to handle it. It
+        drops the metric and records an issue, as it does for every other unsupported
+        shape, rather than failing the whole conversion.
         """
         sm = semantic_model_with_guaranteed_meta(
             name="orders",
@@ -787,8 +788,76 @@ class TestMetricConversion:
             metadata=default_meta(),
             config=None,
         )
-        with pytest.raises(ValueError, match="listed more than once"):
-            MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[revenue_m, both]))
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[revenue_m, both]))
+
+        assert [m.name for m in _ossie_metrics(result.output)] == ["revenue"]
+        assert len(result.issues) == 1
+        assert result.issues[0].issue_type == ConverterIssueType.AMBIGUOUS_REFERENCE_METRIC_DROPPED
+        assert result.issues[0].element_name == "both"
+
+    def test_derived_metric_accepts_a_duplicate_reference_the_expression_never_uses(self) -> None:
+        """A reference that is never substituted cannot be ambiguous, however it resolves."""
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            measures=[_measure("revenue", agg=AggregationType.SUM, expr="amount")],
+        )
+        revenue_m = _simple_metric("revenue", "revenue")
+        constant = PydanticMetric(
+            name="constant",
+            description=None,
+            type=MetricType.DERIVED,
+            type_params=PydanticMetricTypeParams(
+                expr="1 + 1",
+                metrics=[
+                    PydanticMetricInput(name="revenue", filter=_filter("{{ Dimension('order__region') }} = 'EU'")),
+                    PydanticMetricInput(name="revenue", filter=_filter("{{ Dimension('order__region') }} = 'US'")),
+                ],
+            ),
+            filter=None,
+            metadata=default_meta(),
+            config=None,
+        )
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[revenue_m, constant]))
+
+        assert next(m for m in _ossie_metrics(result.output) if m.name == "constant").expression.dialects[
+            0
+        ].expression == "1 + 1"
+        assert result.issues == []
+
+    def test_derived_metric_accepts_a_duplicate_that_restates_the_enclosing_filter(self) -> None:
+        """Restating a filter the enclosing metric already applies is redundant, not ambiguous.
+
+        AND is idempotent, so the bare occurrence and the one repeating the parent's own
+        filter describe the same set of rows and must not be treated as two resolutions.
+        """
+        region_eu = "{{ Dimension('order__region') }} = 'EU'"
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            measures=[_measure("revenue", agg=AggregationType.SUM, expr="amount")],
+        )
+        revenue_m = _simple_metric("revenue", "revenue")
+        scaled = PydanticMetric(
+            name="scaled",
+            description=None,
+            type=MetricType.DERIVED,
+            type_params=PydanticMetricTypeParams(
+                expr="revenue * 2",
+                metrics=[
+                    PydanticMetricInput(name="revenue"),
+                    PydanticMetricInput(name="revenue", filter=_filter(region_eu)),
+                ],
+            ),
+            filter=_filter(region_eu),
+            metadata=default_meta(),
+            config=None,
+        )
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[revenue_m, scaled]))
+
+        scaled_ossie = next(m for m in _ossie_metrics(result.output) if m.name == "scaled")
+        assert scaled_ossie.expression.dialects[0].expression == (
+            "SUM(CASE WHEN order__region = 'EU' THEN orders.amount END) * 2"
+        )
+        assert result.issues == []
 
     def test_derived_metric_accepts_a_reference_listed_twice_resolving_identically(self) -> None:
         """A redundant duplicate is not ambiguous: both occurrences resolve to the same SQL."""
@@ -818,6 +887,12 @@ class TestMetricConversion:
 
         doubled_ossie = next(m for m in _ossie_metrics(result) if m.name == "doubled")
         assert doubled_ossie.expression.dialects[0].expression == "SUM(orders.amount) + SUM(orders.amount)"
+
+    def test_every_issue_type_has_a_cli_reason(self) -> None:
+        """The CLI looks each issue type up by key, so an unmapped one would crash the run."""
+        from ossie_dbt.cli import _ISSUE_REASON
+
+        assert set(_ISSUE_REASON) == set(ConverterIssueType)
 
     def test_derived_metric_nested(self, snapshot: SnapshotAssertion) -> None:
         sm = semantic_model_with_guaranteed_meta(

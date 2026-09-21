@@ -124,6 +124,7 @@ manifest_json = result.output.model_dump_json(by_alias=True, exclude_none=True, 
 | `PRIVATE_METRIC_DROPPED` | Ossie has no visibility modifiers |
 | `NATURAL_ENTITY_DROPPED` | Ossie has no natural-key entity type |
 | `CUMULATIVE_SEMANTICS_LOSS` | Window/grain semantics cannot be expressed in an Ossie expression string; the base aggregation is preserved |
+| `AMBIGUOUS_REFERENCE_METRIC_DROPPED` | An input metric is listed more than once under one reference with differing filters, so the expression reference is ambiguous; give each occurrence a distinct alias |
 
 **Ossie → MSI** reconstructs a best-effort MSI manifest from Ossie's simpler schema. Nothing is dropped for supported inputs, but Ossie carries less structural information than MSI, so the converter makes the following choices:
 

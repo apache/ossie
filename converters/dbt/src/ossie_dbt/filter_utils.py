@@ -154,8 +154,14 @@ def _collect_filter_sql(*filters: Optional[WhereFilterIntersection]) -> Optional
 
 
 def _merge_filter_sqls(*parts: Optional[str]) -> Optional[str]:
-    """Join non-None SQL filter strings with AND, wrapping each in parens when multiple."""
-    active = [p for p in parts if p]
+    """Join non-None SQL filter strings with AND, wrapping each in parens when multiple.
+
+    Repeated fragments are dropped. Filters are conjoined and AND is idempotent, so an
+    input metric that restates a filter an enclosing metric already applies contributes
+    nothing but ``(X) AND (X)`` noise — and would otherwise make two logically identical
+    resolutions of the same reference compare unequal.
+    """
+    active = list(dict.fromkeys(p for p in parts if p))
     if not active:
         return None
     if len(active) == 1:
