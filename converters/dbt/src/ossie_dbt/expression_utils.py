@@ -32,17 +32,24 @@ def _col_name(node: exp.Expression) -> str:
     """Return the bare (unqualified) column name from a sqlglot expression node."""
     if isinstance(node, exp.Column):
         return node.name
-    rendered = node.sql()
-    return _strip_qualifier(rendered)
+    return node.sql()
+
+
+def _is_scalar_expression(node: exp.Expression) -> bool:
+    """Return whether a node can safely be placed beneath a MetricFlow aggregation."""
+    return not isinstance(node, exp.Distinct) and not any(
+        isinstance(child, (exp.AggFunc, exp.Window)) for child in node.walk()
+    )
 
 
 def _extract_agg_info(expression: str) -> Optional[Tuple[AggregationType, str, Optional[float], bool]]:
     """Parse a SQL aggregation expression using sqlglot.
 
-    Returns ``(agg_type, bare_col, percentile, use_discrete_percentile)`` for recognised patterns,
+    Returns ``(agg_type, scalar_expr, percentile, use_discrete_percentile)`` for recognised patterns,
     ``None`` otherwise. ``percentile`` is only set for ``PERCENTILE`` aggregations; it is ``None``
     for all others. ``use_discrete_percentile`` is ``True`` only for ``PERCENTILE_DISC``.
-    The returned column name has any dataset qualifier stripped.
+    A simple column expression has its dataset qualifier stripped; compound scalar expressions
+    retain their qualifiers.
     """
     try:
         tree = sqlglot.parse_one(expression.strip())
@@ -52,12 +59,12 @@ def _extract_agg_info(expression: str) -> Optional[Tuple[AggregationType, str, O
     # COUNT(DISTINCT col)
     if isinstance(tree, exp.Count) and isinstance(tree.this, exp.Distinct):
         cols = tree.this.expressions
-        if len(cols) == 1:
+        if len(cols) == 1 and _is_scalar_expression(cols[0]):
             return AggregationType.COUNT_DISTINCT, _col_name(cols[0]), None, False
         return None
 
     # COUNT(col)
-    if isinstance(tree, exp.Count):
+    if isinstance(tree, exp.Count) and _is_scalar_expression(tree.this):
         return AggregationType.COUNT, _col_name(tree.this), None, False
 
     # SUM(CASE WHEN col THEN 1 ELSE 0 END) → SUM_BOOLEAN
@@ -71,21 +78,21 @@ def _extract_agg_info(expression: str) -> Optional[Tuple[AggregationType, str, O
             and default.name == "0"
             and isinstance(ifs[0].args.get("true"), exp.Literal)
             and ifs[0].args["true"].name == "1"
+            and _is_scalar_expression(case)
         ):
             return AggregationType.SUM_BOOLEAN, ifs[0].this.sql(), None, False
-        return None
 
-    # SUM(col)
-    if isinstance(tree, exp.Sum):
+    # SUM(scalar_expr)
+    if isinstance(tree, exp.Sum) and _is_scalar_expression(tree.this):
         return AggregationType.SUM, _col_name(tree.this), None, False
 
-    if isinstance(tree, exp.Avg):
+    if isinstance(tree, exp.Avg) and _is_scalar_expression(tree.this):
         return AggregationType.AVERAGE, _col_name(tree.this), None, False
 
-    if isinstance(tree, exp.Min):
+    if isinstance(tree, exp.Min) and _is_scalar_expression(tree.this):
         return AggregationType.MIN, _col_name(tree.this), None, False
 
-    if isinstance(tree, exp.Max):
+    if isinstance(tree, exp.Max) and _is_scalar_expression(tree.this):
         return AggregationType.MAX, _col_name(tree.this), None, False
 
     # PERCENTILE_CONT(p) WITHIN GROUP (ORDER BY col)
@@ -97,6 +104,7 @@ def _extract_agg_info(expression: str) -> Optional[Tuple[AggregationType, str, O
             isinstance(inner, (exp.PercentileCont, exp.PercentileDisc))
             and isinstance(order, exp.Order)
             and order.expressions
+            and _is_scalar_expression(order.expressions[0])
         ):
             ordered = order.expressions[0]
             col_node = ordered.this if isinstance(ordered, exp.Ordered) else ordered

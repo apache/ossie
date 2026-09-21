@@ -130,7 +130,12 @@ manifest_json = result.output.model_dump_json(by_alias=True, exclude_none=True, 
 - Composite primary and unique keys are rejected because MSI entities cannot preserve grouped key semantics
 - Single aggregations (`SUM(col)`, `COUNT(DISTINCT col)`, etc.) → SIMPLE metric with `metric_aggregation_params`
 - `(expr_a) / (expr_b)` → RATIO metric with auto-generated sub-metrics
-- Anything else → SIMPLE metric with the raw expression stored verbatim
+- A root aggregate over a scalar SQL expression (for example,
+  `SUM(CASE WHEN ... THEN amount ELSE 0 END)`) → SIMPLE metric with the
+  scalar expression in `expr` and the root function in `agg`
+- Expressions that cannot be decomposed without changing aggregation semantics,
+  and non-SQL measure expressions such as DAX, are dropped with an
+  `UNSUPPORTED_METRIC_EXPRESSION` issue
 - Time dimensions always receive `TimeGranularity.DAY` (Ossie carries no granularity field)
 
 ## Development
