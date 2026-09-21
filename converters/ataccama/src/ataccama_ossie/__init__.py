@@ -14,3 +14,18 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+
+"""Ataccama ONE -> Ossie semantic model importer."""
+
+from ataccama_ossie.ataccama_to_ossie import ataccama_to_ossie
+from ataccama_ossie.client import AtaccamaClient
+from ataccama_ossie.models import CatalogAttribute, CatalogItem, CatalogItemBundle, Term
+
+__all__ = [
+    "AtaccamaClient",
+    "CatalogAttribute",
+    "CatalogItem",
+    "CatalogItemBundle",
+    "Term",
+    "ataccama_to_ossie",
+]

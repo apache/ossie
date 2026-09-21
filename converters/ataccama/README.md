@@ -1,19 +1,39 @@
-# Ataccama OSI Converter
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+-->
+
+# Ataccama Ossie Converter
 
 Importer from [Ataccama ONE](https://docs.ataccama.com/ataccama-one-agentic/latest/rest-api/rest-api-overview.html)
-catalog metadata to the [OSI (Open Semantic Interchange)](https://github.com/open-semantic-interchange/OSI)
-semantic model specification.
+catalog metadata to the [Apache Ossie](https://github.com/apache/ossie)
+semantic model specification. The output is a single model document with
+`version`, `name`, and `datasets` at the root.
 
 Given one or more Ataccama **catalog items** (selected by URN), the converter produces
-a single OSI semantic model: each catalog item becomes a dataset, each catalog attribute
+a single Ossie semantic model: each catalog item becomes a dataset, each catalog attribute
 becomes a field, business terms are carried across as `ai_context`, and
 **data-quality scores** plus other governance metadata are attached as `ATACCAMA`
 custom extensions.
 
 ## Scope & direction
 
-- **Direction:** Ataccama → OSI (import only). See [Limitations](#limitations) for why
-  export (OSI → Ataccama) is not provided.
+- **Direction:** Ataccama → Ossie (import only). See [Limitations](#limitations) for why
+  export (Ossie → Ataccama) is not provided.
 - **Input:** explicit catalog-item URNs. Ataccama catalogs are large (tens of thousands
   of items, many of which are BI artifacts rather than tables), so the converter is
   intentionally scoped to the items you name rather than crawling everything.
@@ -38,31 +58,30 @@ The client reads connection settings from environment variables (or a `--env-fil
 
 ```bash
 # CLI
-ataccama-to-osi --env-file .ataccama.env \
+ataccama-to-ossie --env-file .ataccama.env \
     --urn urn:ata:<tenant>:catalog:catalog-item:<id> \
     --urn urn:ata:<tenant>:catalog:catalog-item:<id> \
     --model-name my_model \
-    --output my_model.osi.yaml
+    --output my_model.ossie.yaml
 
 # data-quality results are fetched by default; use --no-dq to skip them
-ataccama-to-osi --env-file .ataccama.env --urn <urn> --no-dq -o my_model.osi.yaml
+ataccama-to-ossie --env-file .ataccama.env --urn <urn> --no-dq -o my_model.ossie.yaml
 
 # opt-in: append DQ warnings to ai_context for datasets Ataccama flags as below quality
-ataccama-to-osi --env-file .ataccama.env --urn <urn> --dq-ai-warnings -o my_model.osi.yaml
+ataccama-to-ossie --env-file .ataccama.env --urn <urn> --dq-ai-warnings -o my_model.ossie.yaml
 
 # or supply a file of URNs (one per line)
-ataccama-to-osi --env-file .ataccama.env --urns-file items.txt -o my_model.osi.yaml
+ataccama-to-ossie --env-file .ataccama.env --urns-file items.txt -o my_model.ossie.yaml
 ```
 
 ```python
 # Library
-from ataccama_osi import AtaccamaClient, ataccama_to_osi
+from ataccama_ossie import AtaccamaClient, ataccama_to_ossie
 import yaml
 
-client = AtaccamaClient(base_url="https://<host>/api", token_url="...",
-                        client_id="...", client_secret="...")
+client = AtaccamaClient(base_url="https://<host>/api", token_url="...", client_id="...", client_secret="...")
 bundles = [client.fetch_bundle(urn) for urn in urns]
-document = ataccama_to_osi(bundles, model_name="my_model")
+document = ataccama_to_ossie(bundles, model_name="my_model")
 print(yaml.dump(document, sort_keys=False))
 ```
 
@@ -74,11 +93,11 @@ uv run pytest
 ```
 
 Tests run fully offline against a recorded catalog fixture
-(`tests/fixtures/ataccama_bundles.json`) and validate the output against the OSI schema.
+(`tests/fixtures/ataccama_bundles.json`, with license metadata and a `bundles` array) and validate the output against the Ossie schema.
 
 ## Concept mapping
 
-| Ataccama ONE | OSI Semantic Model |
+| Ataccama ONE | Ossie Semantic Model |
 |---|---|
 | `CatalogItem` | `dataset` |
 | `CatalogItem.name` | `dataset.name` (de-duplicated if repeated) |
@@ -108,6 +127,8 @@ Notes:
   percentage: `passed / (passed + failed)`. The DQ API returns only the pass/fail
   **counts**, not a preformatted percentage, so the converter formats it — the counts
   themselves are Ataccama's own, consistent with what the platform reports.
+  `pass_rate_pct` is rounded to one decimal place for display; threshold comparisons
+  use the unrounded ratio.
 - `threshold_pct` / `below_threshold` come from the monitor's configured overall
   threshold (`overallDqThresholds`, fetched from the monitor-config endpoint) — i.e.
   the same pass/fail bar shown in Ataccama. They are omitted when the monitor has no
@@ -122,7 +143,7 @@ Notes:
 By default the DQ block is descriptive data only. With `--dq-ai-warnings`, a plain-language
 warning is appended to `ai_context.instructions` for any dataset Ataccama flags as having
 data quality issues (data quality below configured threshold or active findings), so a
-downstream AI/BI tool reading the OSI model (not just the vendor extension) is told to
+downstream AI/BI tool reading the Ossie model (not just the vendor extension) is told to
 treat the data with caution. Example:
 
 > *Data-quality warning: 60.0% of quality checks passed on the latest run (below the
@@ -144,17 +165,17 @@ to skip them.
   `from_columns`/`to_columns`).
 
 Keys are only present where the source system defined them (typically database tables, not
-BI artifacts). Because OSI requires both ends of a relationship to exist in the model, a
+BI artifacts). Because Ossie requires both ends of a relationship to exist in the model, a
 foreign key whose referenced table is **not among the converted catalog items is skipped**
 — include both tables in the same run to get the relationship.
 
 ## Limitations
 
-The Ataccama Catalog API is a **catalog / governance / data-quality** surface, while OSI
-is an **analytics semantic model**. Some OSI constructs therefore have no source today:
+The Ataccama Catalog API is a **catalog / governance / data-quality** surface, while Ossie
+is an **analytics semantic model**. Some Ossie constructs therefore have no source today:
 
 - **Metrics** — Ataccama has no analytics metrics; none are emitted. (Data-quality
-  scores are attached as `ATACCAMA` extensions, not as OSI metrics.)
+  scores are attached as `ATACCAMA` extensions, not as Ossie metrics.)
 - **Data Trust Index (DTI)** — not exposed via REST. There is no DTI entity type or
   property in the metadata model; the score is computed by the UI/AI Agent from inputs
   (DQ %, ownership, terms, description) that the converter already carries, but no DTI
@@ -164,7 +185,7 @@ is an **analytics semantic model**. Some OSI constructs therefore have no source
   the authoritative connection/source URNs are preserved in `custom_extensions`.
 - **Expressions are physical** — attributes map to plain quoted column identifiers
   (`ANSI_SQL` only); there are no computed/multi-dialect expressions.
-- **Export (OSI → Ataccama)** is not provided: the public Catalog API can only `PATCH`
+- **Export (Ossie → Ataccama)** is not provided: the public Catalog API can only `PATCH`
   `description`/stewardship/aliases on existing items and cannot create catalog items,
   attributes, or relationships.
 - Items with no catalogued attributes (e.g. some dashboards/reports) produce a dataset

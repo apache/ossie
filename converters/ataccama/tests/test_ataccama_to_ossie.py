@@ -1,4 +1,21 @@
-"""Tests for the Ataccama -> OSI conversion (offline, using a recorded fixture).
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+"""Tests for the Ataccama -> Ossie conversion (offline, using a recorded fixture).
 
 Fixture items: BANK_TRANSACTIONS (a warehouse table with terms, DATE columns, and
 rich DQ results) and aggregation (a derived output with no locations and a 0% DQ case).
@@ -10,38 +27,37 @@ import json
 from pathlib import Path
 
 import pytest
-import yaml
 from jsonschema import Draft202012Validator
 
-from ataccama_osi.ataccama_to_osi import (
-    OSI_VERSION,
+from ataccama_ossie.ataccama_to_ossie import (
+    OSSIE_VERSION,
     _dataset_dq,
     _dataset_dq_warning,
     _quality_summary,
-    ataccama_to_osi,
+    ataccama_to_ossie,
     attribute_to_field,
     build_source,
     flatten_richtext,
 )
-from ataccama_osi.models import CatalogAttribute, CatalogItem, CatalogItemBundle, CatalogLocation
+from ataccama_ossie.models import CatalogAttribute, CatalogItem, CatalogItemBundle, CatalogLocation
 
 FIXTURE = Path(__file__).parent / "fixtures" / "ataccama_bundles.json"
-SCHEMA = Path(__file__).parents[3] / "core-spec" / "osi-schema.json"
+SCHEMA = Path(__file__).parents[3] / "core-spec" / "ossie-schema.json"
 
 
 @pytest.fixture
 def bundles() -> list[CatalogItemBundle]:
     raw = json.loads(FIXTURE.read_text())
-    return [CatalogItemBundle.from_dict(b) for b in raw]
+    return [CatalogItemBundle.from_dict(b) for b in raw["bundles"]]
 
 
 @pytest.fixture
 def document(bundles: list[CatalogItemBundle]) -> dict:
-    return ataccama_to_osi(bundles, model_name="test_model", tenant="example-tenant")
+    return ataccama_to_ossie(bundles, model_name="test_model", tenant="example-tenant")
 
 
 def _dataset(document: dict, name: str) -> dict:
-    return next(d for d in document["semantic_model"][0]["datasets"] if d["name"] == name)
+    return next(d for d in document["datasets"] if d["name"] == name)
 
 
 def _field(dataset: dict, name: str) -> dict:
@@ -59,11 +75,11 @@ def test_document_is_schema_valid(document: dict) -> None:
     schema = json.loads(SCHEMA.read_text())
     errors = list(Draft202012Validator(schema).iter_errors(document))
     assert not errors, [e.message for e in errors]
-    assert document["version"] == OSI_VERSION
+    assert document["version"] == OSSIE_VERSION
 
 
 def test_model_structure(document: dict) -> None:
-    model = document["semantic_model"][0]
+    model = document
     assert model["name"] == "test_model"
     assert {d["name"] for d in model["datasets"]} == {"BANK_TRANSACTIONS", "aggregation"}
 
@@ -149,7 +165,7 @@ def test_zero_pass_rate_case(document: dict) -> None:
 def test_no_dq_keys_when_dq_absent(bundles: list[CatalogItemBundle]) -> None:
     b = bundles[0]
     b.dq_results = None  # simulate --no-dq / item without a monitor
-    ds = ataccama_to_osi([b])["semantic_model"][0]["datasets"][0]
+    ds = ataccama_to_ossie([b])["datasets"][0]
     assert "dq" not in _ext(ds)
     assert all("dq" not in _ext(f) for f in ds["fields"])
 
@@ -172,7 +188,7 @@ def test_ai_warning_appended_when_below_ataccama_threshold() -> None:
         dq_results={"overallQuality": {"passedCount": 50, "failedCount": 50}, "overallDqFindings": []},
         dq_threshold_pct=75,
     )
-    ds = ataccama_to_osi([bundle], dq_ai_warnings=True)["semantic_model"][0]["datasets"][0]
+    ds = ataccama_to_ossie([bundle], dq_ai_warnings=True)["datasets"][0]
     instr = ds["ai_context"]["instructions"]
     assert "Data-quality warning" in instr and "configured 75% quality threshold" in instr
 
@@ -180,7 +196,7 @@ def test_ai_warning_appended_when_below_ataccama_threshold() -> None:
 def test_no_ai_warning_without_ataccama_signal(bundles: list[CatalogItemBundle]) -> None:
     # BANK_TRANSACTIONS is above its 75% bar with no active findings; aggregation has no
     # threshold configured. Neither should be flagged — Ataccama is the source of truth.
-    doc = ataccama_to_osi(bundles, dq_ai_warnings=True)
+    doc = ataccama_to_ossie(bundles, dq_ai_warnings=True)
     bank = _dataset(doc, "BANK_TRANSACTIONS")["ai_context"]["instructions"]
     assert "Data-quality warning" not in bank
     agg = (_dataset(doc, "aggregation").get("ai_context") or {}).get("instructions", "")
@@ -213,7 +229,7 @@ def _keyed_bundle(name, primary_keys=None, foreign_keys=None):
 
 def test_primary_key_and_unique_keys() -> None:
     b = _keyed_bundle("line_items", primary_keys=[{"name": "pk", "columns": ["order_id", "line_no"]}])
-    ds = ataccama_to_osi([b])["semantic_model"][0]["datasets"][0]
+    ds = ataccama_to_ossie([b])["datasets"][0]
     assert ds["primary_key"] == ["order_id", "line_no"]  # composite, order preserved
     assert ds["unique_keys"] == [["order_id", "line_no"]]
 
@@ -226,8 +242,8 @@ def test_relationship_emitted_when_target_in_set() -> None:
             {"name": "fk_order", "columns": ["order_id"], "referenced_table": "orders", "referenced_columns": ["id"]}
         ],
     )
-    doc = ataccama_to_osi([orders, line_items])
-    rels = doc["semantic_model"][0]["relationships"]
+    doc = ataccama_to_ossie([orders, line_items])
+    rels = doc["relationships"]
     assert rels == [
         {"name": "fk_order", "from": "line_items", "to": "orders", "from_columns": ["order_id"], "to_columns": ["id"]}
     ]
@@ -243,8 +259,8 @@ def test_relationship_skipped_when_target_not_in_set() -> None:
             {"name": "fk", "columns": ["order_id"], "referenced_table": "orders", "referenced_columns": ["id"]}
         ],
     )
-    doc = ataccama_to_osi([line_items])  # 'orders' not included
-    assert "relationships" not in doc["semantic_model"][0]
+    doc = ataccama_to_ossie([line_items])  # 'orders' not included
+    assert "relationships" not in doc
 
 
 def test_relationship_names_deduplicated() -> None:
@@ -256,15 +272,15 @@ def test_relationship_names_deduplicated() -> None:
             {"name": "fk", "columns": ["b"], "referenced_table": "orders", "referenced_columns": ["id"]},
         ],
     )
-    rels = ataccama_to_osi([orders, child])["semantic_model"][0]["relationships"]
+    rels = ataccama_to_ossie([orders, child])["relationships"]
     assert [r["name"] for r in rels] == ["fk", "fk_2"]
 
 
 def test_fixture_items_have_no_keys(document: dict) -> None:
     # BANK_TRANSACTIONS / aggregation have no PK/FK, so no key or relationship output.
-    for ds in document["semantic_model"][0]["datasets"]:
+    for ds in document["datasets"]:
         assert "primary_key" not in ds and "unique_keys" not in ds
-    assert "relationships" not in document["semantic_model"][0]
+    assert "relationships" not in document
 
 
 # --- helper unit tests ---
@@ -310,10 +326,9 @@ def test_is_time_inferred_from_datatype() -> None:
 
 def test_duplicate_dataset_names_are_disambiguated() -> None:
     items = [
-        CatalogItemBundle(item=CatalogItem(urn=f"urn:ata:t:catalog:catalog-item:{i}", name="Orders"))
-        for i in range(2)
+        CatalogItemBundle(item=CatalogItem(urn=f"urn:ata:t:catalog:catalog-item:{i}", name="Orders")) for i in range(2)
     ]
-    names = [d["name"] for d in ataccama_to_osi(items)["semantic_model"][0]["datasets"]]
+    names = [d["name"] for d in ataccama_to_ossie(items)["datasets"]]
     assert names == ["Orders", "Orders_2"]
 
 
@@ -324,3 +339,30 @@ def test_build_source_uses_reversed_locations_then_name() -> None:
         locations=[CatalogLocation(name="sales"), CatalogLocation(name="Workspaces")],
     )
     assert build_source(item) == "Workspaces.sales.customers"
+
+
+@pytest.mark.parametrize(
+    "passed,failed,threshold,expected",
+    [
+        (7496, 2504, 75, True),  # 74.96% rounds up to 75.0%, but fails.
+        (7504, 2496, 75.02, False),  # 75.04% rounds down to 75.0%, but passes.
+        (75, 25, 75, False),  # Exactly at the threshold passes.
+        (0, 100, 0, False),
+        (0, 100, 1, True),
+        (100, 0, 100, False),
+    ],
+)
+def test_threshold_uses_unrounded_rate(passed, failed, threshold, expected) -> None:
+    dq = _dataset_dq({"overallQuality": {"passedCount": passed, "failedCount": failed}}, threshold)
+    assert dq["pass_rate_pct"] == round(passed / (passed + failed) * 100, 1)
+    assert dq["below_threshold"] is expected
+    assert bool(_dataset_dq_warning(dq)) is expected
+
+
+@pytest.mark.parametrize("overall", [None, {}, {"passedCount": 0, "failedCount": 0}])
+def test_threshold_without_evaluated_checks(overall) -> None:
+    dq = _dataset_dq({"overallQuality": overall}, threshold_pct=75)
+    assert dq["threshold_pct"] == 75
+    assert "pass_rate_pct" not in dq
+    assert "below_threshold" not in dq
+    assert _dataset_dq_warning(dq) is None

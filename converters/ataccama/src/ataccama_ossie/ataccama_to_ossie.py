@@ -1,7 +1,24 @@
-"""Convert Ataccama ONE catalog metadata to an OSI semantic model.
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+"""Convert Ataccama ONE catalog metadata to an Ossie semantic model.
 
 Scope: the caller supplies one or more catalog items (as :class:`CatalogItemBundle`s);
-each becomes an OSI dataset, and the collection becomes a single OSI semantic model.
+each becomes an Ossie dataset, and the collection becomes a single Ossie semantic model.
 
 Mapping summary (see README for the full table and known limitations):
   CatalogItem            -> dataset (name, source, description, ai_context, custom_extensions)
@@ -15,9 +32,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ataccama_osi.models import CatalogAttribute, CatalogItem, CatalogItemBundle, Term
+from ataccama_ossie.models import CatalogAttribute, CatalogItem, CatalogItemBundle, Term
 
-OSI_VERSION = "0.2.0.dev0"
+OSSIE_VERSION = "0.2.0.dev0"
 VENDOR = "ATACCAMA"
 
 # Ataccama semantic data types that represent points in time.
@@ -66,7 +83,7 @@ def flatten_richtext(value: Any) -> str | None:
 
 
 def _unique_name(desired: str, used: set[str], *, fallback: str) -> str:
-    """Return a name unique within ``used`` (OSI requires unique dataset/field names)."""
+    """Return a name unique within ``used`` (Ossie requires unique dataset/field names)."""
     base = desired.strip() or fallback
     candidate = base
     n = 2
@@ -118,7 +135,7 @@ def _terms_ai_context(term_urns: list[str], terms: dict[str, Term]) -> dict[str,
 
 
 def _ataccama_extension(data: dict[str, Any]) -> dict[str, str]:
-    """Wrap Ataccama-specific metadata as an OSI custom_extension entry."""
+    """Wrap Ataccama-specific metadata as an Ossie custom_extension entry."""
     return {"vendor_name": VENDOR, "data": json.dumps(data, sort_keys=True)}
 
 
@@ -157,7 +174,9 @@ def _dataset_dq(dq_results: dict[str, Any] | None, threshold_pct: float | None =
     if threshold_pct is not None:
         dq["threshold_pct"] = threshold_pct
         if "pass_rate_pct" in dq:
-            dq["below_threshold"] = dq["pass_rate_pct"] < threshold_pct
+            # Use the unrounded rate for classification; pass_rate_pct is display-only.
+            total = dq["passed"] + dq["failed"]
+            dq["below_threshold"] = dq["passed"] / total * 100 < threshold_pct
 
     dimensions = []
     for dim in dq_results.get("dimensionResults", []) or []:
@@ -173,9 +192,7 @@ def _dataset_dq(dq_results: dict[str, Any] | None, threshold_pct: float | None =
 
     # Always report the active-finding count (0 = no open data-quality issues) so the
     # "clean" state is an explicit signal, not just an omission.
-    dq["active_findings"] = sum(
-        1 for f in dq_results.get("overallDqFindings", []) or [] if f.get("status") == "ACTIVE"
-    )
+    dq["active_findings"] = sum(1 for f in dq_results.get("overallDqFindings", []) or [] if f.get("status") == "ACTIVE")
     if dq_results.get("processingUrn"):
         dq["processing_urn"] = dq_results["processingUrn"]
     if dq_results.get("dqResultsLink"):
@@ -217,7 +234,9 @@ def _dataset_dq_warning(dq: dict[str, Any] | None) -> str | None:
     if not reasons:
         return None
     pass_rate = dq.get("pass_rate_pct")
-    prefix = f"{pass_rate}% of quality checks passed on the latest run" if pass_rate is not None else "quality checks failed"
+    prefix = (
+        f"{pass_rate}% of quality checks passed on the latest run" if pass_rate is not None else "quality checks failed"
+    )
     return (
         f"Data-quality warning: {prefix} ({'; '.join(reasons)}). "
         "Verify this data before using it for analysis or automated decisions."
@@ -318,7 +337,7 @@ def bundle_to_dataset(
     if fields:
         dataset["fields"] = fields
 
-    # Preserve everything with no OSI-core home so the model round-trips.
+    # Preserve everything with no Ossie-core home so the model round-trips.
     ext_data: dict[str, Any] = {"catalog_item_urn": item.urn}
     if item.connection_urn:
         ext_data["connection_urn"] = item.connection_urn
@@ -347,10 +366,10 @@ def bundle_to_dataset(
 
 
 def _build_relationships(bundles: list[CatalogItemBundle], datasets: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Derive OSI relationships from foreign keys.
+    """Derive Ossie relationships from foreign keys.
 
     Only relationships whose target table is also in the converted set are emitted —
-    OSI requires both endpoints of a relationship to exist as datasets, so an FK to a
+    Ossie requires both endpoints of a relationship to exist as datasets, so an FK to a
     table the caller didn't include is skipped (rather than producing an invalid model).
     """
     dataset_names = {d["name"] for d in datasets}
@@ -366,9 +385,7 @@ def _build_relationships(bundles: list[CatalogItemBundle], datasets: list[dict[s
                 continue  # target not in the converted set
             if not from_cols or len(from_cols) != len(to_cols):
                 continue  # need a well-formed, equal-cardinality column pairing
-            rel_name = _unique_name(
-                fk.get("name") or f"{from_name}_to_{to_name}", used_names, fallback="relationship"
-            )
+            rel_name = _unique_name(fk.get("name") or f"{from_name}_to_{to_name}", used_names, fallback="relationship")
             relationships.append(
                 {
                     "name": rel_name,
@@ -384,14 +401,14 @@ def _build_relationships(bundles: list[CatalogItemBundle], datasets: list[dict[s
 # --- top level -----------------------------------------------------------
 
 
-def ataccama_to_osi(
+def ataccama_to_ossie(
     bundles: list[CatalogItemBundle],
     model_name: str = "ataccama_model",
     model_description: str | None = None,
     tenant: str | None = None,
     dq_ai_warnings: bool = False,
 ) -> dict[str, Any]:
-    """Convert a list of catalog-item bundles into an OSI document dict (ready for YAML).
+    """Convert a list of catalog-item bundles into an Ossie document dict (ready for YAML).
 
     When ``dq_ai_warnings`` is set, datasets that Ataccama flags as below quality (below
     the configured threshold, or with active findings) get a natural-language warning
@@ -413,4 +430,4 @@ def ataccama_to_osi(
         model_ext["tenant"] = tenant
     semantic_model["custom_extensions"] = [_ataccama_extension(model_ext)]
 
-    return {"version": OSI_VERSION, "semantic_model": [semantic_model]}
+    return {"version": OSSIE_VERSION, **semantic_model}

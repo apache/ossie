@@ -1,4 +1,21 @@
-"""CLI: import selected Ataccama catalog items into an OSI semantic model.
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+"""CLI: import selected Ataccama catalog items into an Ossie semantic model.
 
 Scope is defined by explicit catalog-item URNs (``--urn`` repeated, or ``--urns-file``).
 
@@ -11,9 +28,9 @@ via ``--env-file``):
   ATACCAMA_CLIENT_SECRET  service-account client secret
 
 Example:
-  ataccama-to-osi --env-file .ataccama.env \\
+  ataccama-to-ossie --env-file .ataccama.env \\
       --urn urn:ata:tenant:catalog:catalog-item:... \\
-      --model-name my_model --output my_model.osi.yaml
+      --model-name my_model --output my_model.ossie.yaml
 """
 
 from __future__ import annotations
@@ -25,8 +42,8 @@ from pathlib import Path
 
 import yaml
 
-from ataccama_osi.ataccama_to_osi import ataccama_to_osi
-from ataccama_osi.client import AtaccamaClient
+from ataccama_ossie.ataccama_to_ossie import ataccama_to_ossie
+from ataccama_ossie.client import AtaccamaClient
 
 REQUIRED_VARS = ("ATACCAMA_BASE_URL", "ATACCAMA_TOKEN_URL", "ATACCAMA_CLIENT_ID", "ATACCAMA_CLIENT_SECRET")
 
@@ -60,11 +77,11 @@ def _collect_urns(args: argparse.Namespace) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Import Ataccama ONE catalog items into an OSI semantic model.")
+    parser = argparse.ArgumentParser(description="Import Ataccama ONE catalog items into an Ossie semantic model.")
     parser.add_argument("--urn", action="append", help="Catalog-item URN to convert (repeatable).")
     parser.add_argument("--urns-file", help="File with one catalog-item URN per line.")
-    parser.add_argument("--model-name", default="ataccama_model", help="OSI semantic model name.")
-    parser.add_argument("--model-description", default=None, help="OSI semantic model description.")
+    parser.add_argument("--model-name", default="ataccama_model", help="Ossie semantic model name.")
+    parser.add_argument("--model-description", default=None, help="Ossie semantic model description.")
     parser.add_argument("--output", "-o", default="-", help="Output YAML path ('-' for stdout).")
     parser.add_argument("--env-file", help="Optional KEY=VALUE file with Ataccama connection config.")
     parser.add_argument(
@@ -75,8 +92,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--no-relationships",
         action="store_true",
-        help="Skip fetching primary/foreign keys (relationships and primary_key/unique_keys "
-        "are included by default).",
+        help="Skip fetching primary/foreign keys (relationships and primary_key/unique_keys are included by default).",
     )
     parser.add_argument(
         "--dq-ai-warnings",
@@ -108,11 +124,9 @@ def main(argv: list[str] | None = None) -> int:
     bundles = []
     for urn in urns:
         print(f"Fetching {urn} ...", file=sys.stderr)
-        bundles.append(
-            client.fetch_bundle(urn, with_dq=not args.no_dq, with_relationships=not args.no_relationships)
-        )
+        bundles.append(client.fetch_bundle(urn, with_dq=not args.no_dq, with_relationships=not args.no_relationships))
 
-    document = ataccama_to_osi(
+    document = ataccama_to_ossie(
         bundles,
         model_name=args.model_name,
         model_description=args.model_description,

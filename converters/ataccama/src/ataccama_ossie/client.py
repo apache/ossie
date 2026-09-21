@@ -1,3 +1,20 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 """Live REST client for the Ataccama ONE public API.
 
 Handles OAuth2 client-credentials auth (tokens are short-lived, ~5 min, so we mint
@@ -7,11 +24,12 @@ and refresh them automatically) and cursor-based pagination (``after``/``size``)
 from __future__ import annotations
 
 import time
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 import requests
 
-from ataccama_osi.models import CatalogAttribute, CatalogItem, CatalogItemBundle, Term
+from ataccama_ossie.models import CatalogAttribute, CatalogItem, CatalogItemBundle, Term
 
 DEFAULT_PAGE_SIZE = 200
 # Refresh the token this many seconds before it actually expires.
@@ -19,7 +37,7 @@ TOKEN_EXPIRY_SKEW_S = 30
 
 
 class AtaccamaClient:
-    """Minimal client for the endpoints the OSI importer needs."""
+    """Minimal client for the endpoints the Ossie importer needs."""
 
     def __init__(
         self,
@@ -166,7 +184,9 @@ class AtaccamaClient:
             cols.sort(key=lambda c: c.get("properties", {}).get("order") or 0)
             local = [c["properties"].get("name") for c in cols]
             ref_cols = [c["properties"].get("referencedColumnName") for c in cols]
-            ref_tables = {c["properties"].get("referencedTableName") for c in cols if c["properties"].get("referencedTableName")}
+            ref_tables = {
+                c["properties"].get("referencedTableName") for c in cols if c["properties"].get("referencedTableName")
+            }
             result.append(
                 {
                     "name": fk.get("properties", {}).get("name"),
