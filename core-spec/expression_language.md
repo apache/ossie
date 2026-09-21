@@ -51,8 +51,8 @@ We expect there will be extensions to this language to cover concepts such as su
 
 ### Changes to YAML
 
-1) Create a new dialect in the Ossie spec: Ossie\_SQL\_2026, which refers to this language specification.   
-2) Make Ossie\_SQL\_2026 the default dialect if one is not chosen.
+1) OSSIE\_SQL\_2026 is registered as a dialect in the Ossie spec; it refers to this language specification.   
+2) Make OSSIE\_SQL\_2026 the default dialect if one is not chosen.
 
 ### Standards Reference
 

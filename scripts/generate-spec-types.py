@@ -63,7 +63,10 @@ SECTIONS = [
             "DATABRICKS": "Databricks SQL",
             "MAQL": "GoodData MAQL (Multi-Dimensional Analytical Query Language)",
             "BIGQUERY": "Google BigQuery GoogleSQL",
+            "SIGMA": "Sigma Computing spreadsheet-style formula language",
             "THOUGHTSPOT": "ThoughtSpot formula language (not SQL)",
+            "DAX": "Data Analysis Expressions (Power BI / Analysis Services)",
+            "OSSIE_SQL_2026": "Ossie portable SQL expression language (see expression_language.md)",
         },
     },
     {

@@ -37,7 +37,7 @@
   "$defs": {
     "Dialect": {
       "type": "string",
-      "enum": ["ANSI_SQL", "SNOWFLAKE", "MDX", "TABLEAU", "DATABRICKS", "MAQL", "BIGQUERY", "SIGMA", "THOUGHTSPOT", "DAX"],
+      "enum": ["ANSI_SQL", "SNOWFLAKE", "MDX", "TABLEAU", "DATABRICKS", "MAQL", "BIGQUERY", "SIGMA", "THOUGHTSPOT", "DAX", "OSSIE_SQL_2026"],
       "description": "Supported SQL and expression language dialects"
     },
     "Vendor": {
