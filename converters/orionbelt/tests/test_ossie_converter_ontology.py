@@ -128,6 +128,8 @@ class TestOntologyStructure:
         result = conv.validate_ossie_ontology(doc)
         assert result.valid, result.semantic_errors
         assert not result.semantic_errors
+        assert not result.schema_validation_performed
+        assert result.summary_lines()[0] == "  JSON Schema: skipped"
 
     def test_one_to_one_multiplicity(self) -> None:
         obml = {
