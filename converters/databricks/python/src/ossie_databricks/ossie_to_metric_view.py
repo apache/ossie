@@ -581,7 +581,7 @@ def _convert_metric(metric, fact, seen_names):
     return measure
 
 
-def _references_dropped(expr, self_name, dropped_dims, dropped_measures):
+def _references_dropped(expr, self_name, self_kind, dropped_dims, dropped_measures):
     """Return a dropped name referenced by `expr`, or None.
 
     Measures are only referenceable via `measure(<name>)` (exact). Dimensions are
@@ -597,21 +597,26 @@ def _references_dropped(expr, self_name, dropped_dims, dropped_measures):
     text inside a string literal; a dropped dimension named like one of those errs on
     dropping. This is the residual the paren-guard does not close.
 
-    Matching is case-insensitive, as Databricks SQL identifiers are case-insensitive;
-    the self-reference guard is case-folded to match, so a measure or dimension is
-    never dropped for referencing itself under a different case.
+    Matching is case-insensitive, as Databricks SQL identifiers are case-insensitive.
+    The self-reference guard is case-folded to match, and scoped to `self_kind`: a
+    field is exempt only from referencing itself within its own kind. A measure that
+    merely shares a dropped dimension's name (or vice versa) is a different object, so
+    it is still checked and cascade-dropped rather than exempted as a self-reference.
     """
     for m in dropped_measures:
-        if m.lower() != self_name.lower() and re.search(
-                r"measure\(\s*" + re.escape(m) + r"\s*\)", expr, re.IGNORECASE):
+        if self_kind == "measure" and m.lower() == self_name.lower():
+            continue
+        if re.search(r"measure\(\s*" + re.escape(m) + r"\s*\)", expr, re.IGNORECASE):
             return m
     for d in dropped_dims:
+        if self_kind == "dimension" and d.lower() == self_name.lower():
+            continue
         # Match only a bare, unqualified token that is not a function call: the
         # negative look-behind/ahead for a word char or `.` excludes substrings of a
         # larger identifier and qualified paths (`alias.name` / `name.col`), and the
         # trailing `(?!\s*\()` excludes `NAME(...)` calls, so a dropped dim named e.g.
         # `count` does not falsely match a surviving `COUNT(...)`.
-        if d.lower() != self_name.lower() and re.search(
+        if re.search(
                 r"(?<![\w.])" + re.escape(d) + r"(?![\w.])(?!\s*\()", expr, re.IGNORECASE):
             return d
     return None
@@ -630,7 +635,7 @@ def _cascade_drop(dimensions, measures, dropped_dims, dropped_measures):
             survivors = []
             for col in coll:
                 ref = _references_dropped(
-                    col["expr"], col["name"], dropped_dims, dropped_measures)
+                    col["expr"], col["name"], kind, dropped_dims, dropped_measures)
                 if ref is not None:
                     _warn(f"{kind} '{col['name']}'",
                           f"references dropped '{ref}'; dropping (downstream of a dropped field/metric)")

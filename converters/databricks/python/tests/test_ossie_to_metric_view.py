@@ -344,6 +344,31 @@ def test_cascade_drop_does_not_drop_self_reference_differing_only_in_case():
     assert dims == ["region"]
 
 
+def test_cascade_drop_measure_named_like_dropped_dimension_is_dropped():
+    """A measure sharing a dropped dimension's name (case-insensitively) is not a
+    self-reference: the self-guard is scoped to the field's own kind, so the measure's
+    reference to the dropped dimension is detected and the measure is cascade-dropped
+    rather than emitted with a dangling reference."""
+    import yaml
+    ossie = yaml.safe_dump({
+        "version": exporter.OSSIE_VERSION,
+        "name": "m",
+        "datasets": [{"name": "d", "source": "c.s.t", "fields": [
+            {"name": "id", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "id"}]}},
+            # dropped dimension; the measure below shares its name only in case
+            {"name": "Region", "expression": {"dialects": [{"dialect": "T_SQL", "expression": "Region"}]}},
+        ]}],
+        "metrics": [
+            {"name": "region", "expression": {"dialects": [{"dialect": "DATABRICKS", "expression": "SUM(Region)"}]}},
+        ],
+    })
+    out = parse(exporter.convert_ossie_to_metric_view(ossie))
+    measures = [m["name"] for m in out.get("measures", [])]
+    # `region` references the dropped `Region` dimension, so it is cascade-dropped
+    # rather than exempted as a false cross-kind self-reference.
+    assert "region" not in measures
+
+
 def test_orientation_unverifiable_when_to_side_has_no_key_warns():
     """If the `from` columns are a declared key but the `to` side declares no key, the
     from/to orientation can't be verified; the converter leaves it as-is (no reorient)
