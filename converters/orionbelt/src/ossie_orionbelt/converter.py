@@ -16,12 +16,12 @@
 # specific language governing permissions and limitations
 # under the License.
 """
-OSI ↔ OBML Bidirectional Converter
+Ossie ↔ OBML Bidirectional Converter
 ===================================
 Converts between Ossie (v0.2.0.dev0) YAML models
 and OrionBelt Markup Language (OBML v1.0) YAML models.
 
-OSI v0.1.1 inputs are still accepted on read — the legacy shim
+Ossie v0.1.1 inputs are still accepted on read — the legacy shim
 ``_normalize_legacy_v01`` promotes pre-v0.2 custom_extensions into the
 v0.2 first-class fields before regular parsing runs.
 
@@ -31,9 +31,9 @@ This module is a thin **facade**. The converter implementation is split across
 sibling modules to keep each file focused:
 
 * :mod:`ossie_orionbelt._common` — shared constants and mapping tables
-* :mod:`ossie_orionbelt.osi_to_obml` — :class:`OSItoOBML`
-* :mod:`ossie_orionbelt.obml_to_osi` — :class:`OBMLtoOSI`
-* :mod:`ossie_orionbelt.ontology` — :class:`OBMLtoOSIOntology`
+* :mod:`ossie_orionbelt.ossie_to_obml` — :class:`OssietoOBML`
+* :mod:`ossie_orionbelt.obml_to_ossie` — :class:`OBMLtoOssie`
+* :mod:`ossie_orionbelt.ontology` — :class:`OBMLtoOssieOntology`
 * :mod:`ossie_orionbelt.validation` — :class:`ValidationResult` + ``validate_*``
 
 Every public name is re-exported here so ``ossie_orionbelt.converter.<name>``
@@ -58,10 +58,10 @@ from ossie_orionbelt._common import (
     _OBML_VENDOR_READ as _OBML_VENDOR_READ,
 )
 from ossie_orionbelt._common import (
-    _OSI_VENDOR_READ as _OSI_VENDOR_READ,
+    _OSSIE_VENDOR_READ as _OSSIE_VENDOR_READ,
 )
 from ossie_orionbelt._common import (
-    _OSI_VERSION as _OSI_VERSION,
+    _OSSIE_VERSION as _OSSIE_VERSION,
 )
 from ossie_orionbelt._common import (
     _SQL_PARSEABLE_DIALECTS as _SQL_PARSEABLE_DIALECTS,
@@ -70,26 +70,26 @@ from ossie_orionbelt._common import (
     _VENDOR_OBML as _VENDOR_OBML,
 )
 from ossie_orionbelt._common import (
-    _VENDOR_OSI as _VENDOR_OSI,
+    _VENDOR_OSSIE as _VENDOR_OSSIE,
 )
 
 # Shared constants / mapping tables (re-exported for backwards compatibility).
 # The ``X as X`` aliases mark these as intentional re-exports so historic
 # ``from ossie_orionbelt.converter import <name>`` imports keep working.
 from ossie_orionbelt._common import (
-    OBML_TO_OSI_TYPE as OBML_TO_OSI_TYPE,
+    OBML_TO_OSSIE_TYPE as OBML_TO_OSSIE_TYPE,
 )
 from ossie_orionbelt._common import (
-    OSI_TO_OBML_TYPE as OSI_TO_OBML_TYPE,
+    OSSIE_TO_OBML_TYPE as OSSIE_TO_OBML_TYPE,
 )
-from ossie_orionbelt.obml_to_osi import OBMLtoOSI as OBMLtoOSI
-from ossie_orionbelt.ontology import OBMLtoOSIOntology as OBMLtoOSIOntology
-from ossie_orionbelt.osi_to_obml import OSItoOBML as OSItoOBML
+from ossie_orionbelt.obml_to_ossie import OBMLtoOssie as OBMLtoOssie
+from ossie_orionbelt.ontology import OBMLtoOssieOntology as OBMLtoOssieOntology
+from ossie_orionbelt.ossie_to_obml import OssietoOBML as OssietoOBML
 from ossie_orionbelt.validation import (
     _OBML_SCHEMA_PATH as _OBML_SCHEMA_PATH,
 )
 from ossie_orionbelt.validation import (
-    _OSI_SCHEMA_PATH as _OSI_SCHEMA_PATH,
+    _OSSIE_SCHEMA_PATH as _OSSIE_SCHEMA_PATH,
 )
 from ossie_orionbelt.validation import (
     _SCHEMAS_DIR as _SCHEMAS_DIR,
@@ -107,22 +107,22 @@ from ossie_orionbelt.validation import (
     validate_obml as validate_obml,
 )
 from ossie_orionbelt.validation import (
-    validate_osi as validate_osi,
+    validate_ossie as validate_ossie,
 )
 from ossie_orionbelt.validation import (
-    validate_osi_ontology as validate_osi_ontology,
+    validate_ossie_ontology as validate_ossie_ontology,
 )
 
 __all__ = [
-    "OBML_TO_OSI_TYPE",
-    "OSI_TO_OBML_TYPE",
-    "OBMLtoOSI",
-    "OBMLtoOSIOntology",
-    "OSItoOBML",
+    "OBML_TO_OSSIE_TYPE",
+    "OSSIE_TO_OBML_TYPE",
+    "OBMLtoOssie",
+    "OBMLtoOssieOntology",
+    "OssietoOBML",
     "ValidationResult",
     "validate_obml",
-    "validate_osi",
-    "validate_osi_ontology",
+    "validate_ossie",
+    "validate_ossie_ontology",
     "main",
 ]
 
@@ -133,23 +133,23 @@ __all__ = [
 
 
 def main():
-    parser = argparse.ArgumentParser(description="OSI ↔ OBML Bidirectional Converter")
-    parser.add_argument("direction", choices=["osi2obml", "obml2osi"], help="Conversion direction")
+    parser = argparse.ArgumentParser(description="Ossie ↔ OBML Bidirectional Converter")
+    parser.add_argument("direction", choices=["ossie2obml", "obml2ossie"], help="Conversion direction")
     parser.add_argument("input", nargs="?", help="Input YAML file")
     parser.add_argument("-o", "--output", help="Output YAML file")
     parser.add_argument(
-        "--name", default="semantic_model", help="Model name for OBML→OSI conversion"
+        "--name", default="semantic_model", help="Model name for OBML→Ossie conversion"
     )
     parser.add_argument(
-        "--description", default="", help="Model description for OBML→OSI conversion"
+        "--description", default="", help="Model description for OBML→Ossie conversion"
     )
     parser.add_argument(
-        "--ai-instructions", default="", help="AI instructions for OBML→OSI conversion"
+        "--ai-instructions", default="", help="AI instructions for OBML→Ossie conversion"
     )
     parser.add_argument(
-        "--database", default="ANALYTICS", help="Default database for OSI→OBML conversion"
+        "--database", default="ANALYTICS", help="Default database for Ossie→OBML conversion"
     )
-    parser.add_argument("--schema", default="PUBLIC", help="Default schema for OSI→OBML conversion")
+    parser.add_argument("--schema", default="PUBLIC", help="Default schema for Ossie→OBML conversion")
     parser.add_argument(
         "--no-validate", action="store_true", help="Skip OBML validation after conversion"
     )
@@ -163,12 +163,12 @@ def main():
     with open(input_path) as f:
         data = yaml.safe_load(f)
 
-    if args.direction == "osi2obml":
-        converter = OSItoOBML(data, args.database, args.schema)
+    if args.direction == "ossie2obml":
+        converter = OssietoOBML(data, args.database, args.schema)
         result = converter.convert()
         warnings = converter.warnings
     else:
-        converter = OBMLtoOSI(data, args.name, args.description, args.ai_instructions)
+        converter = OBMLtoOssie(data, args.name, args.description, args.ai_instructions)
         result = converter.convert()
         warnings = converter.warnings
 
@@ -193,7 +193,7 @@ def main():
     if not args.no_validate:
         has_errors = False
 
-        if args.direction == "osi2obml":
+        if args.direction == "ossie2obml":
             # Validate OBML output
             print("\n🔍 Validating OBML output...", file=sys.stderr)
             vr = validate_obml(result)
@@ -205,7 +205,7 @@ def main():
                 print("❌ OBML output has validation errors", file=sys.stderr)
                 has_errors = True
         else:
-            # Validate OBML input (source) and OSI output
+            # Validate OBML input (source) and Ossie output
             print("\n🔍 Validating OBML input...", file=sys.stderr)
             vr_obml = validate_obml(data)
             for line in vr_obml.summary_lines():
@@ -216,14 +216,14 @@ def main():
                 print("❌ OBML input has validation errors", file=sys.stderr)
                 has_errors = True
 
-            print("\n🔍 Validating OSI output...", file=sys.stderr)
-            vr_osi = validate_osi(result)
-            for line in vr_osi.summary_lines():
+            print("\n🔍 Validating Ossie output...", file=sys.stderr)
+            vr_ossie = validate_ossie(result)
+            for line in vr_ossie.summary_lines():
                 print(line, file=sys.stderr)
-            if vr_osi.valid:
-                print("✅ OSI output is valid", file=sys.stderr)
+            if vr_ossie.valid:
+                print("✅ Ossie output is valid", file=sys.stderr)
             else:
-                print("❌ OSI output has validation errors", file=sys.stderr)
+                print("❌ Ossie output has validation errors", file=sys.stderr)
                 has_errors = True
 
         if has_errors:

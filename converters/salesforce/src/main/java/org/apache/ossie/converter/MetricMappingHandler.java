@@ -58,21 +58,21 @@ public class MetricMappingHandler implements PipelineStep {
     @Override
     public void execute(Map<String, Object> sourceData, Map<String, Object> outputData, Map<String, String> mappings) {
         logger.debug("Mapping metrics in {} direction", direction);
-        if (direction == ConversionDirection.OSI_TO_SALESFORCE) {
-            mapOsiToSalesforce(sourceData, outputData, mappings);
+        if (direction == ConversionDirection.OSSIE_TO_SALESFORCE) {
+            mapOssieToSalesforce(sourceData, outputData, mappings);
         } else {
-            mapSalesforceToOsi(sourceData, outputData, mappings);
+            mapSalesforceToOssie(sourceData, outputData, mappings);
         }
     }
 
     /**
      * Maps Ossie metrics to Salesforce semanticCalculatedMeasurements.
      */
-    private void mapOsiToSalesforce(
+    private void mapOssieToSalesforce(
             Map<String, Object> sourceData, Map<String, Object> outputData, Map<String, String> mappings) {
 
-        List<Object> osiMetrics = getList(sourceData, METRICS);
-        if (osiMetrics == null) {
+        List<Object> ossieMetrics = getList(sourceData, METRICS);
+        if (ossieMetrics == null) {
             return;
         }
 
@@ -86,7 +86,7 @@ public class MetricMappingHandler implements PipelineStep {
     /**
      * Maps Salesforce semanticCalculatedMeasurements to Ossie metrics.
      */
-    private void mapSalesforceToOsi(
+    private void mapSalesforceToOssie(
             Map<String, Object> sourceData, Map<String, Object> outputData, Map<String, String> mappings) {
 
         List<Object> sfMetrics = getList(sourceData, SEMANTIC_CALCULATED_MEASUREMENTS);
@@ -105,9 +105,9 @@ public class MetricMappingHandler implements PipelineStep {
 
         outputData.putAll(mappedData);
 
-        List<Object> osiMetrics = getList(outputData, METRICS);
-        if (osiMetrics != null) {
-            wrapExpressions(sfMetrics, osiMetrics);
+        List<Object> ossieMetrics = getList(outputData, METRICS);
+        if (ossieMetrics != null) {
+            wrapExpressions(sfMetrics, ossieMetrics);
         }
 
         // Store unmapped SF properties in custom_extensions
@@ -121,21 +121,21 @@ public class MetricMappingHandler implements PipelineStep {
     /**
      * Wraps expressions for SF→Ossie conversion.
      */
-    private void wrapExpressions(List<Object> sfMetrics, List<Object> osiMetrics) {
-        for (int i = 0; i < sfMetrics.size() && i < osiMetrics.size(); i++) {
+    private void wrapExpressions(List<Object> sfMetrics, List<Object> ossieMetrics) {
+        for (int i = 0; i < sfMetrics.size() && i < ossieMetrics.size(); i++) {
             Map<String, Object> sfMetric = asMap(sfMetrics.get(i));
-            Map<String, Object> osiMetric = asMap(osiMetrics.get(i));
+            Map<String, Object> ossieMetric = asMap(ossieMetrics.get(i));
 
             // Get expression from SF metric
             String expressionValue = getString(sfMetric, EXPRESSION);
             if (expressionValue != null) {
                 // Wrap in Ossie dialect structure
-                osiMetric.put(EXPRESSION, wrapExpression(expressionValue));
+                ossieMetric.put(EXPRESSION, wrapExpression(expressionValue));
             }
 
             String datatype = SalesforceDataTypeMapper.toOssie(getString(sfMetric, DATA_TYPE));
             if (datatype != null) {
-                osiMetric.put(OSI_DATATYPE, datatype);
+                ossieMetric.put(OSSIE_DATATYPE, datatype);
             }
         }
     }

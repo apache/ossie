@@ -19,6 +19,16 @@
 
 # Apache Ossie Converters
 
+## Document format
+
+Converters use the flat `0.2.0.dev0` core format: one model per JSON/YAML document,
+with `name`, `datasets`, `relationships`, and `metrics` at the root alongside
+`version`. Legacy `semantic_model` arrays or object wrappers must be migrated
+before conversion; see the [migration guidance](../core-spec/spec.md#migrating-earlier-document-shapes).
+For catalog exports, write separate documents rather than wrapping multiple
+models in one file. Ontology documents retain their embedded `semantic_model`
+property as defined by the ontology schema.
+
 ## Overview
 
 An Ossie Converter translates between the Ossie semantic model format and a specific vendor's semantic implementation. This enables teams to author a semantic model once in the Ossie standard and then generate the corresponding vendor-specific representation automatically.
@@ -76,6 +86,7 @@ The Ossie specification currently defines extensions for the following vendors:
 | `OMNI` | Omni semantic model |
 | `WISDOM` | WisdomAI domain |
 | `NVIDIA_GSF` | NVIDIA Generative Semantic Fabric standalone YAML |
+| `SIGMA` | Sigma Computing data model |
 
 Each vendor may define custom extensions (via the `custom_extensions` field in the Ossie spec) to carry vendor-specific metadata that does not have an equivalent in the core specification.
 
@@ -229,9 +240,9 @@ A converter should map `ai_context` when the target vendor supports equivalent c
 
 ### Step-by-Step Guide
 
-1. **Validate input**: Use the [Ossie JSON Schema](../core-spec/osi-schema.json) and the [validation script](../validation/validate.py) to ensure the source Ossie model is valid before conversion.
+1. **Validate input**: Use the [Ossie JSON Schema](../core-spec/ossie-schema.json) and the [validation script](../validation/validate.py) to ensure the source Ossie model is valid before conversion.
 
-2. **Parse the Ossie model**: Load the YAML file and iterate over the top-level `semantic_model` entries.
+2. **Parse the Ossie model**: Load the JSON or YAML document as one model.
 
 3. **Map datasets**: For each dataset, translate the `name`, `source`, `primary_key`, `unique_keys`, and `fields` to the vendor's format. Parse the `source` string (typically `database.schema.table`) into the vendor's catalog structure.
 

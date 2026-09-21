@@ -38,6 +38,10 @@ Metric View only features (filter, window, format, rely, ...) are instead **pres
 [requirement](#requirements) **raises a `ConversionError`** -- the converter never
 silently drops a field or produces an invalid result.
 
+Ossie documents contain one model directly at the root, with `version`, `name`,
+`datasets`, and optional model properties. Legacy `semantic_model` wrappers
+(arrays or objects) are rejected.
+
 ## Installation
 
 ```bash
@@ -77,7 +81,7 @@ Each row maps in both directions; the **Notes** flag where a behavior is specifi
 
 | Apache Ossie | Metric View (v1.1) | Notes |
 |---|---|---|
-| `semantic_model.description` | `comment` | Model-level description only. |
+| `description` | `comment` | Model-level description only. |
 | root dataset | `source` | The fact/grain. |
 | other `datasets` | nested `joins[]` | Export: the relationship graph is reassembled into the join tree; a dataset reached by two paths (a diamond) fans out into one aliased join per path. |
 | `relationship` `from_columns`/`to_columns` | join `on` (differing names) / `using` (shared names) | Decomposed into columns on import; rebuilt into `on`/`using` on export. |
@@ -86,10 +90,10 @@ Each row maps in both directions; the **Notes** flag where a behavior is specifi
 | `dataset.fields[]` | `dimensions[]` | Export: fields flatten into one list and a joined column is qualified by its full join path (`customer.c_name`; `customer.region.r_name` when nested). |
 | `field.expression.dialects[]` | `expr` | Export: prefer the `DATABRICKS` dialect, else `ANSI_SQL`. |
 | `metrics[]` | `measures[]` | Export: fact columns are referenced bare (`SUM(amount)`). |
-| `field.label` | `display_name` | |
+| `field.label` | dimension `display_name` | A measure's `display_name` has no `label` on the Apache Ossie metric shape, so it rides in the stash instead (see the `custom_extensions` row). |
 | `field` / `metric` `description` | `comment` | |
 | `ai_context.synonyms` | `synonyms` | |
-| `custom_extensions[DATABRICKS]` | `filter`, `window`, `format`, `rely`, `materialization` | Import stashes Metric View only features here; export restores them -- keeping `MV -> Apache Ossie -> MV` lossless. |
+| `custom_extensions[DATABRICKS]` | `filter`, `window`, `format`, `rely`, `materialization`, measure `display_name` | Import stashes Metric View only features here; export restores them -- keeping `MV -> Apache Ossie -> MV` lossless. |
 
 ## Requirements
 

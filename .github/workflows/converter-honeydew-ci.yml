@@ -24,11 +24,15 @@ on:
     branches: [ "main" ]
     paths:
       - 'converters/honeydew/**'
+      - 'core-spec/**'
+      - 'examples/**'
       - '.github/workflows/converter-honeydew-ci.yml'    
   pull_request:
     branches: [ "main" ]
     paths:
       - 'converters/honeydew/**'
+      - 'core-spec/**'
+      - 'examples/**'
       - '.github/workflows/converter-honeydew-ci.yml'    
 
 jobs:

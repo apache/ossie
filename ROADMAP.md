@@ -268,7 +268,7 @@ Enterprise adoption requires consistent identifiers, validation, and governance 
 
 **Related Issues:**
 
-- [Issue #102 — Add semantic versioning and Git releases for core-spec/osi-schema.json](https://github.com/apache/ossie/issues/102)
+- [Issue #102 — Add semantic versioning and Git releases for core-spec/ossie-schema.json](https://github.com/apache/ossie/issues/102)
 - [Issue #92 — Community Implementation: Trust Control Center — Ossie-compatible governance & reconciliation platform](https://github.com/apache/ossie/issues/92)
 - [Issue #87 — New Flags: Restricted and Internal only indicators](https://github.com/apache/ossie/issues/87)
 
@@ -428,13 +428,14 @@ Broad ecosystem adoption depends on practical tools that let teams validate thei
 
 **Existing Artifacts:**
 
-- [JSON Schema (osi-schema.json)](core-spec/osi-schema.json) — schema for structural validation
+- [JSON Schema (ossie-schema.json)](core-spec/ossie-schema.json) — schema for structural validation
 - [Validation Script (validate.py)](validation/validate.py) — validates Ossie YAML against JSON Schema, unique names, references, and SQL syntax
 - [Snowflake Converter](converters/snowflake/) — Ossie → Snowflake Cortex Analyst YAML converter
 - [GoodData Converter](converters/gooddata/) — bidirectional Ossie ↔ GoodData LDM converter
 - [Salesforce Converter](converters/salesforce/) — Ossie ↔ Salesforce converter
 - [Apache Polaris Converter](converters/polaris/) — Ossie → Apache Polaris converter
 - [OrionBelt Converter](converters/orionbelt/) — bidirectional Ossie ↔ OrionBelt OBML converter
+- [Microsoft Converter](converters/microsoft/) — bidirectional Ossie ↔ Power BI / Fabric semantic model (TMSL) converter
 
 **Related Issues:**
 

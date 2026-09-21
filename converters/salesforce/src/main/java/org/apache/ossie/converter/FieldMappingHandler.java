@@ -76,10 +76,10 @@ public class FieldMappingHandler implements PipelineStep {
     @Override
     public void execute(Map<String, Object> sourceData, Map<String, Object> outputData, Map<String, String> mappings) {
         logger.debug("Mapping fields in {} direction", direction);
-        if (direction == ConversionDirection.OSI_TO_SALESFORCE) {
-            mapOsiToSalesforce(sourceData, outputData);
+        if (direction == ConversionDirection.OSSIE_TO_SALESFORCE) {
+            mapOssieToSalesforce(sourceData, outputData);
         } else {
-            mapSalesforceToOsi(sourceData, outputData);
+            mapSalesforceToOssie(sourceData, outputData);
         }
     }
 
@@ -89,31 +89,31 @@ public class FieldMappingHandler implements PipelineStep {
      * @param outputData The output map containing semanticModel
      * @param sourceData The source Ossie data
      */
-    private void mapOsiToSalesforce(
+    private void mapOssieToSalesforce(
             Map<String, Object> sourceData, Map<String, Object> outputData) {
 
-        List<Object> osiDatasets = getList(sourceData, DATASETS);
+        List<Object> ossieDatasets = getList(sourceData, DATASETS);
 
         List<Object> sfDataObjects = getList(outputData, SEMANTIC_DATA_OBJECTS);
 
-        for (Object osiDatasetObj : osiDatasets) {
-            Map<String, Object> osiDataset = asMap(osiDatasetObj);
+        for (Object ossieDatasetObj : ossieDatasets) {
+            Map<String, Object> ossieDataset = asMap(ossieDatasetObj);
 
-            String datasetName = getString(osiDataset, NAME);
+            String datasetName = getString(ossieDataset, NAME);
             if (datasetName == null) continue;
 
             // Find matching SemanticDataObject
             Map<String, Object> sfDataObject = findItemById(sfDataObjects, API_NAME, datasetName);
             if (sfDataObject == null) continue;
 
-            processFieldsForDataset(osiDataset, sfDataObject, outputData);
+            processFieldsForDataset(ossieDataset, sfDataObject, outputData);
         }
     }
 
     /**
      * Maps Salesforce SemanticDimensions and SemanticMeasurements to Ossie dataset fields.
      */
-    private void mapSalesforceToOsi(
+    private void mapSalesforceToOssie(
             Map<String, Object> sourceData, Map<String, Object> outputData) {
 
         List<Object> sfDataObjects = getList(sourceData, SEMANTIC_DATA_OBJECTS);
@@ -121,7 +121,7 @@ public class FieldMappingHandler implements PipelineStep {
             return;
         }
 
-        List<Object> osiDatasets = getList(outputData, DATASETS);
+        List<Object> ossieDatasets = getList(outputData, DATASETS);
 
         for (Object sfDataObjectObj : sfDataObjects) {
             Map<String, Object> sfDataObject = asMap(sfDataObjectObj);
@@ -130,11 +130,11 @@ public class FieldMappingHandler implements PipelineStep {
             if (apiName == null) continue;
 
             // Find matching Ossie dataset by name (mapped from apiName)
-            Map<String, Object> osiDataset = findItemById(osiDatasets, NAME, apiName);
-            if (osiDataset == null) continue;
+            Map<String, Object> ossieDataset = findItemById(ossieDatasets, NAME, apiName);
+            if (ossieDataset == null) continue;
 
             // Convert SF dimensions and measurements to Ossie fields
-            convertSalesforceFieldsToOsi(sfDataObject, osiDataset);
+            convertSalesforceFieldsToOssie(sfDataObject, ossieDataset);
         }
 
         // Process model-level calculated dimensions
@@ -147,17 +147,17 @@ public class FieldMappingHandler implements PipelineStep {
     /**
      * Converts Salesforce dimensions and measurements to Ossie fields for a dataset.
      */
-    private void convertSalesforceFieldsToOsi(
-            Map<String, Object> sfDataObject, Map<String, Object> osiDataset) {
-        List<Object> osiFields = getOrCreateList(osiDataset, FIELDS);
+    private void convertSalesforceFieldsToOssie(
+            Map<String, Object> sfDataObject, Map<String, Object> ossieDataset) {
+        List<Object> ossieFields = getOrCreateList(ossieDataset, FIELDS);
 
         // Process semanticDimensions → Ossie fields
         List<Object> sfDimensions = getList(sfDataObject, SEMANTIC_DIMENSIONS);
         if (sfDimensions != null) {
             for (Object sfDimObj : sfDimensions) {
                 Map<String, Object> sfDim = asMap(sfDimObj);
-                Map<String, Object> osiField = convertDimensionToOsiField(sfDim);
-                osiFields.add(osiField);
+                Map<String, Object> ossieField = convertDimensionToOssieField(sfDim);
+                ossieFields.add(ossieField);
             }
         }
 
@@ -166,8 +166,8 @@ public class FieldMappingHandler implements PipelineStep {
         if (sfMeasurements != null) {
             for (Object sfMeasObj : sfMeasurements) {
                 Map<String, Object> sfMeas = asMap(sfMeasObj);
-                Map<String, Object> osiField = convertMeasurementToOsiField(sfMeas);
-                osiFields.add(osiField);
+                Map<String, Object> ossieField = convertMeasurementToOssieField(sfMeas);
+                ossieFields.add(ossieField);
             }
         }
     }
@@ -175,10 +175,10 @@ public class FieldMappingHandler implements PipelineStep {
     /**
      * Converts a Salesforce dimension to an Ossie field with dimension property.
      */
-    private Map<String, Object> convertDimensionToOsiField(Map<String, Object> sfDimension) {
-        Map<String, Object> osiField = new LinkedHashMap<>();
+    private Map<String, Object> convertDimensionToOssieField(Map<String, Object> sfDimension) {
+        Map<String, Object> ossieField = new LinkedHashMap<>();
 
-        mapCommonFieldProperties(sfDimension, osiField);
+        mapCommonFieldProperties(sfDimension, ossieField);
 
         // Add dimension property with is_time based on dataType
         Map<String, Object> dimensionProp = new LinkedHashMap<>();
@@ -188,60 +188,60 @@ public class FieldMappingHandler implements PipelineStep {
         } else {
             dimensionProp.put(IS_TIME, false);
         }
-        osiField.put(DIMENSION, dimensionProp);
+        ossieField.put(DIMENSION, dimensionProp);
 
         // Wrap dataObjectFieldName in expression structure
         String dataObjectFieldName = getString(sfDimension, DATA_OBJECT_FIELD_NAME);
         if (dataObjectFieldName != null) {
-            osiField.put(EXPRESSION, wrapExpression(dataObjectFieldName));
+            ossieField.put(EXPRESSION, wrapExpression(dataObjectFieldName));
         }
 
         // Store unmapped properties in custom_extensions
-        customExtensionHandler.storeUnmappedItemProperties(osiField, sfDimension, SF_FIELD_HANDLED_PROPS);
+        customExtensionHandler.storeUnmappedItemProperties(ossieField, sfDimension, SF_FIELD_HANDLED_PROPS);
 
-        return osiField;
+        return ossieField;
     }
 
     /**
      * Converts a Salesforce measurement to an Ossie field without dimension property.
      */
-    private Map<String, Object> convertMeasurementToOsiField(Map<String, Object> sfMeasurement) {
-        Map<String, Object> osiField = new LinkedHashMap<>();
+    private Map<String, Object> convertMeasurementToOssieField(Map<String, Object> sfMeasurement) {
+        Map<String, Object> ossieField = new LinkedHashMap<>();
 
-        mapCommonFieldProperties(sfMeasurement, osiField);
+        mapCommonFieldProperties(sfMeasurement, ossieField);
 
         String dataObjectFieldName = getString(sfMeasurement, DATA_OBJECT_FIELD_NAME);
         if (dataObjectFieldName != null) {
-            osiField.put(EXPRESSION, wrapExpression(dataObjectFieldName));
+            ossieField.put(EXPRESSION, wrapExpression(dataObjectFieldName));
         }
 
         // Store unmapped properties in custom_extensions
-        customExtensionHandler.storeUnmappedItemProperties(osiField, sfMeasurement, SF_FIELD_HANDLED_PROPS);
+        customExtensionHandler.storeUnmappedItemProperties(ossieField, sfMeasurement, SF_FIELD_HANDLED_PROPS);
 
-        return osiField;
+        return ossieField;
     }
 
     /**
      * Maps common field properties from Salesforce to Ossie format.
      * Common properties: name (from apiName), label, description.
      */
-    private void mapCommonFieldProperties(Map<String, Object> sfField, Map<String, Object> osiField) {
+    private void mapCommonFieldProperties(Map<String, Object> sfField, Map<String, Object> ossieField) {
         String apiName = getString(sfField, API_NAME);
-        osiField.put(NAME, apiName);
+        ossieField.put(NAME, apiName);
 
         String label = getString(sfField, LABEL);
         if (label != null) {
-            osiField.put(LABEL, label);
+            ossieField.put(LABEL, label);
         }
 
         String description = getString(sfField, DESCRIPTION);
         if (description != null) {
-            osiField.put(DESCRIPTION, description);
+            ossieField.put(DESCRIPTION, description);
         }
 
         String datatype = SalesforceDataTypeMapper.toOssie(getString(sfField, DATA_TYPE));
         if (datatype != null) {
-            osiField.put(OSI_DATATYPE, datatype);
+            ossieField.put(OSSIE_DATATYPE, datatype);
         }
     }
 
@@ -274,26 +274,26 @@ public class FieldMappingHandler implements PipelineStep {
      *   <tr><td>Calculated</td><td>N/A</td><td>MODEL.semanticCalculatedDimensions</td></tr>
      * </table>
      *
-     * @param osiDataset The Ossie dataset
+     * @param ossieDataset The Ossie dataset
      * @param sfDataObject The Salesforce data object to add direct fields to
      * @param outputData The Salesforce model for adding calculated dimensions
      */
     private void processFieldsForDataset(
-            Map<String, Object> osiDataset, Map<String, Object> sfDataObject, Map<String, Object> outputData) {
-        List<Object> osiFields = getList(osiDataset, FIELDS);
-        if (osiFields == null) {
+            Map<String, Object> ossieDataset, Map<String, Object> sfDataObject, Map<String, Object> outputData) {
+        List<Object> ossieFields = getList(ossieDataset, FIELDS);
+        if (ossieFields == null) {
             return;
         }
 
         List<Object> sfDimensions = getList(sfDataObject, SEMANTIC_DIMENSIONS);
         List<Object> sfMeasurements = getList(sfDataObject, SEMANTIC_MEASUREMENTS);
 
-        for (Object osiFieldObj : osiFields) {
-            Map<String, Object> osiField = asMap(osiFieldObj);
+        for (Object ossieFieldObj : ossieFields) {
+            Map<String, Object> ossieField = asMap(ossieFieldObj);
 
             // Determine field type based on Ossie structure
-            boolean hasDimension = osiField.containsKey(DIMENSION);
-            ExpressionInfo expressionInfo = unwrapExpression(osiField);
+            boolean hasDimension = ossieField.containsKey(DIMENSION);
+            ExpressionInfo expressionInfo = unwrapExpression(ossieField);
 
             String expression = expressionInfo.expression();
             String dialect = expressionInfo.dialect();
@@ -308,11 +308,11 @@ public class FieldMappingHandler implements PipelineStep {
 
             if (isCalculated) {
                 // Create a semantic calculated dimension
-                Map<String, Object> calcDim = createSemanticCalculatedDimension(osiField, expression);
+                Map<String, Object> calcDim = createSemanticCalculatedDimension(ossieField, expression);
 
-                customExtensionHandler.restoreSalesforceCustomExtension(calcDim, osiField);
+                customExtensionHandler.restoreSalesforceCustomExtension(calcDim, ossieField);
 
-                applyOsiDatatype(calcDim, osiField);
+                applyOssieDatatype(calcDim, ossieField);
 
                 applyFieldDefaults(calcDim);
 
@@ -323,11 +323,11 @@ public class FieldMappingHandler implements PipelineStep {
                 // Non calculated field - add to data object
                 FieldType fieldType = hasDimension? FieldType.DIMENSION : FieldType.MEASUREMENT;
 
-                Map<String, Object> sfField = mapFieldProperties(osiField, expression);
+                Map<String, Object> sfField = mapFieldProperties(ossieField, expression);
 
-                customExtensionHandler.restoreSalesforceCustomExtension(sfField, osiField);
+                customExtensionHandler.restoreSalesforceCustomExtension(sfField, ossieField);
 
-                applyOsiDatatype(sfField, osiField);
+                applyOssieDatatype(sfField, ossieField);
 
                 applyFieldDefaults(sfField);
 
@@ -344,24 +344,24 @@ public class FieldMappingHandler implements PipelineStep {
      * Maps field properties based on whether the field is calculated.
      * Includes common properties plus type-specific properties.
      *
-     * @param osiField The Ossie field
+     * @param ossieField The Ossie field
      * @param expression The extracted expression string
      * @return A map with Salesforce field properties
      */
     private Map<String, Object> mapFieldProperties(
-            Map<String, Object> osiField, String expression) {
+            Map<String, Object> ossieField, String expression) {
 
         Map<String, Object> sfField = new LinkedHashMap<>();
 
-        String name = getString(osiField, NAME);
+        String name = getString(ossieField, NAME);
         sfField.put(API_NAME, name);
 
-        String description = getString(osiField, DESCRIPTION);
+        String description = getString(ossieField, DESCRIPTION);
         if (description != null) {
             sfField.put(DESCRIPTION, description);
         }
 
-        String label = getString(osiField, LABEL);
+        String label = getString(ossieField, LABEL);
         if (label != null) {
             sfField.put(LABEL, label);
         }
@@ -374,27 +374,27 @@ public class FieldMappingHandler implements PipelineStep {
      * Creates a Salesforce semanticCalculatedDimension from an Ossie field with a calculated expression.
      * Per schema: required properties are apiName and expression.
      *
-     * @param osiField The Ossie field
+     * @param ossieField The Ossie field
      * @param expression The calculated expression
      * @return A map representing a semanticCalculatedDimension
      */
     private Map<String, Object> createSemanticCalculatedDimension(
-            Map<String, Object> osiField, String expression) {
+            Map<String, Object> ossieField, String expression) {
 
         Map<String, Object> calcDim = new LinkedHashMap<>();
 
         // Required properties
-        String name = getString(osiField, NAME);
+        String name = getString(ossieField, NAME);
         calcDim.put(API_NAME, name);
         calcDim.put(EXPRESSION, expression);
 
         // Optional properties
-        String description = getString(osiField, DESCRIPTION);
+        String description = getString(ossieField, DESCRIPTION);
         if (description != null) {
             calcDim.put(DESCRIPTION, description);
         }
 
-        String label = getString(osiField, LABEL);
+        String label = getString(ossieField, LABEL);
         if (label != null) {
             calcDim.put(LABEL, label);
         }
@@ -453,11 +453,11 @@ public class FieldMappingHandler implements PipelineStep {
      * Extracts the expression value and dialect from Ossie field's expression.dialects[0].expression.
      * This unwraps the nested structure to get the simple column reference and its dialect.
      *
-     * @param osiField The Ossie field containing expression structure
+     * @param ossieField The Ossie field containing expression structure
      * @return ExpressionInfo containing the expression string and dialect type, or null if not found
      */
-    private ExpressionInfo unwrapExpression(Map<String, Object> osiField) {
-        Object expressionObj = osiField.get(EXPRESSION);
+    private ExpressionInfo unwrapExpression(Map<String, Object> ossieField) {
+        Object expressionObj = ossieField.get(EXPRESSION);
 
         Map<String, Object> expression = asMap(expressionObj);
         Object dialectsObj = expression.get(DIALECTS);
@@ -553,44 +553,44 @@ public class FieldMappingHandler implements PipelineStep {
      * restored from custom_extensions. Exact extension data wins to preserve
      * Salesforce-specific distinctions such as Email and Currency.
      */
-    private void applyOsiDatatype(Map<String, Object> sfField, Map<String, Object> osiField) {
-        String osiDatatype = getString(osiField, OSI_DATATYPE);
+    private void applyOssieDatatype(Map<String, Object> sfField, Map<String, Object> ossieField) {
+        String ossieDatatype = getString(ossieField, OSSIE_DATATYPE);
         String exactSalesforceDataType = getString(sfField, DATA_TYPE);
-        String mappedSalesforceDataType = SalesforceDataTypeMapper.toSalesforce(osiDatatype);
+        String mappedSalesforceDataType = SalesforceDataTypeMapper.toSalesforce(ossieDatatype);
         String selectedSalesforceDataType = exactSalesforceDataType != null
                 ? exactSalesforceDataType
                 : mappedSalesforceDataType;
 
         if (SalesforceDataTypeMapper.isTimezoneLossyMapping(
-                osiDatatype, selectedSalesforceDataType)) {
+                ossieDatatype, selectedSalesforceDataType)) {
             logger.warn(
                     "Field '{}' has Ossie datatype 'DateTime'; Salesforce dataType 'DateTime' "
                             + "cannot preserve the timezone-free distinction and re-imports as 'DateTimeTz'",
-                    getString(osiField, NAME));
+                    getString(ossieField, NAME));
         }
 
         if (exactSalesforceDataType != null) {
-            if (osiDatatype != null
-                    && !SalesforceDataTypeMapper.areCompatible(osiDatatype, exactSalesforceDataType)) {
+            if (ossieDatatype != null
+                    && !SalesforceDataTypeMapper.areCompatible(ossieDatatype, exactSalesforceDataType)) {
                 logger.warn(
                         "Field '{}' has Ossie datatype '{}' that conflicts with exact Salesforce dataType '{}'; "
                                 + "preserving the Salesforce extension value",
-                        getString(osiField, NAME),
-                        osiDatatype,
+                        getString(ossieField, NAME),
+                        ossieDatatype,
                         exactSalesforceDataType);
             }
             return;
         }
 
-        if (osiDatatype == null) {
+        if (ossieDatatype == null) {
             return;
         }
 
         if (mappedSalesforceDataType == null) {
             logger.warn(
                     "Field '{}' has Ossie datatype '{}' with no safe Salesforce mapping; omitting dataType",
-                    getString(osiField, NAME),
-                    osiDatatype);
+                    getString(ossieField, NAME),
+                    ossieDatatype);
             return;
         }
         sfField.put(DATA_TYPE, mappedSalesforceDataType);
@@ -620,7 +620,7 @@ public class FieldMappingHandler implements PipelineStep {
 
         logger.debug("Processing {} semanticCalculatedDimensions", calcDims.size());
 
-        List<Object> osiDatasets = getList(outputData, DATASETS);
+        List<Object> ossieDatasets = getList(outputData, DATASETS);
         List<Object> remainingCalcDims = new ArrayList<>();
 
         for (Object calcDimObj : calcDims) {
@@ -630,11 +630,11 @@ public class FieldMappingHandler implements PipelineStep {
             String targetDataObject = getSingleDataObjectFromDependencies(dependencies);
 
             if (targetDataObject != null) {
-                Map<String, Object> osiDataset = findItemById(osiDatasets, NAME, targetDataObject);
-                if (osiDataset != null) {
-                    Map<String, Object> osiField = convertCalculatedDimensionToField(calcDim);
-                    List<Object> fields = getOrCreateList(osiDataset, FIELDS);
-                    fields.add(osiField);
+                Map<String, Object> ossieDataset = findItemById(ossieDatasets, NAME, targetDataObject);
+                if (ossieDataset != null) {
+                    Map<String, Object> ossieField = convertCalculatedDimensionToField(calcDim);
+                    List<Object> fields = getOrCreateList(ossieDataset, FIELDS);
+                    fields.add(ossieField);
 
                     // Update relationships for this converted field
                     String calcFieldName = getString(calcDim, API_NAME);
@@ -692,16 +692,16 @@ public class FieldMappingHandler implements PipelineStep {
 
     /**
      * Converts a Salesforce semanticCalculatedDimension to an Ossie field with dimension property.
-     * Similar to convertDimensionToOsiField but handles expression (not dataObjectFieldName).
+     * Similar to convertDimensionToOssieField but handles expression (not dataObjectFieldName).
      *
      * @param calcDim The Salesforce calculated dimension
      * @return An Ossie field map with dimension property and wrapped expression
      */
     private Map<String, Object> convertCalculatedDimensionToField(Map<String, Object> calcDim) {
-        Map<String, Object> osiField = new LinkedHashMap<>();
+        Map<String, Object> ossieField = new LinkedHashMap<>();
 
         // Common properties: name, label, description
-        mapCommonFieldProperties(calcDim, osiField);
+        mapCommonFieldProperties(calcDim, ossieField);
 
         // Add dimension property with is_time based on dataType
         Map<String, Object> dimensionProp = new LinkedHashMap<>();
@@ -711,17 +711,17 @@ public class FieldMappingHandler implements PipelineStep {
         } else {
             dimensionProp.put(IS_TIME, false);
         }
-        osiField.put(DIMENSION, dimensionProp);
+        ossieField.put(DIMENSION, dimensionProp);
 
         // Get expression (calculated dimensions have expression, not dataObjectFieldName)
         String expressionValue = getString(calcDim, EXPRESSION);
         if (expressionValue != null) {
-            osiField.put(EXPRESSION, wrapExpression(expressionValue));
+            ossieField.put(EXPRESSION, wrapExpression(expressionValue));
         }
 
         Set<String> handledProps = Set.of(API_NAME, LABEL, DESCRIPTION, EXPRESSION, DEPENDENCIES);
-        customExtensionHandler.storeUnmappedItemProperties(osiField, calcDim, handledProps);
-        return osiField;
+        customExtensionHandler.storeUnmappedItemProperties(ossieField, calcDim, handledProps);
+        return ossieField;
     }
 
     /**

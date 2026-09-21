@@ -24,11 +24,15 @@ on:
     branches: [ "main" ]
     paths:
       - 'converters/databricks/**'
+      - 'core-spec/**'
+      - 'examples/**'
       - '.github/workflows/converter-databricks-ci.yml'
   pull_request:
     branches: [ "main" ]
     paths:
       - 'converters/databricks/**'
+      - 'core-spec/**'
+      - 'examples/**'
       - '.github/workflows/converter-databricks-ci.yml'
 
 jobs:

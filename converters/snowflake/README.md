@@ -23,6 +23,10 @@ Converts Ossie YAML semantic models to [Snowflake Cortex Analyst](https://docs.s
 
 > **Note:** This converter is under active development. It handles common cases but has not been thoroughly tested against all edge cases — use with caution in production.
 
+Ossie documents contain one model directly at the root, with `version`, `name`,
+`datasets`, and optional model properties. Legacy `semantic_model` wrappers
+(arrays or objects) are rejected.
+
 ## Setup
 
 ```bash
