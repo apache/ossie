@@ -40,6 +40,7 @@ _ISSUE_REASON: dict[ConverterIssueType, str] = {
     ConverterIssueType.PRIVATE_METRIC_DROPPED: "Ossie has no visibility modifiers",
     ConverterIssueType.NATURAL_ENTITY_DROPPED: "Ossie has no natural-key entity type",
     ConverterIssueType.CUMULATIVE_SEMANTICS_LOSS: "Ossie expressions cannot represent window or grain semantics; the base aggregation was preserved",
+    ConverterIssueType.NON_PORTABLE_METRIC_SEMANTICS: "the metric uses semantics that Ossie cannot represent in an expression string",
 }
 
 _DROPPED_ISSUE_TYPES = {
