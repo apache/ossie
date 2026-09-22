@@ -68,7 +68,7 @@ ontology_mappings:
 | `join.joinType` | `Relationship.multiplicity` | `many-to-one`→`ManyToOne`, `one-to-one`→`OneToOne` |
 | `column.primaryKey` | entity `object_mappings[].expression` | `<table>.<pk_code>`; identifies the entity |
 | `join.columnsFrom` (FK) | `link_mappings[].object_mapping.expression` | `<table_A>.<fk_code>`; binds the relationship to its far role |
-| whole core model | `ontology_mappings[].semantic_model` | embedded from `OBMLtoOssie.convert()` without standalone document metadata (`version`, `dialects`, `vendors`) |
+| whole core model | `ontology_mappings[].semantic_model` | complete output from `OBMLtoOssie.convert()`, including `version` |
 
 `<table>` is the final identifier of the dataset `source` (e.g. `db.schema.t` → `t`),
 falling back to the dataset name when `source` has no dotted physical table.
