@@ -34,11 +34,13 @@ import re
 _OSSIE_VERSION = "0.2.0.dev0"
 
 # SQL dialects (of the Ossie enum) whose aggregation expressions our regex-based
-# metric parser can read, in preference order. ANSI_SQL first; SNOWFLAKE and
-# DATABRICKS are SQL engines OrionBelt also targets, and their simple/expression
-# aggregations (``SUM(t.c)``, ``SUM(t.a * t.b)``) are syntactically identical to
-# ANSI. MDX / TABLEAU / MAQL are non-SQL languages and are never parsed as SQL.
-_SQL_PARSEABLE_DIALECTS = ("ANSI_SQL", "SNOWFLAKE", "DATABRICKS")
+# metric parser can read, in preference order. ANSI_SQL first, then
+# OSSIE_SQL_2026 (the spec's portable, ANSI-compatible expression language);
+# SNOWFLAKE and DATABRICKS are SQL engines OrionBelt also targets, and their
+# simple/expression aggregations (``SUM(t.c)``, ``SUM(t.a * t.b)``) are
+# syntactically identical to ANSI. Non-SQL languages (MDX, TABLEAU, MAQL, SIGMA,
+# THOUGHTSPOT, DAX) are never parsed as SQL.
+_SQL_PARSEABLE_DIALECTS = ("ANSI_SQL", "OSSIE_SQL_2026", "SNOWFLAKE", "DATABRICKS")
 
 # Matches a ``dataset.column`` reference inside a SQL expression, where each
 # side is a bare identifier or a quoted identifier (double quotes, backticks, or
