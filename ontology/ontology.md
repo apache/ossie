@@ -401,10 +401,6 @@ ontology_mappings:
     concept_mappings: []
 ```
 
-**Breaking change in `0.2.0.dev0` (unreleased):** Add `version: 0.2.0.dev0` inside
-each existing `semantic_model`, keeping its other fields in place. The ontology's
-top-level `version` does not replace this field.
-
 ### Concept mappings
 
 Each concept mapping declares how to populate a concept with objects and how to populate the relationships

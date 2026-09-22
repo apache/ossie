@@ -150,8 +150,7 @@ model array cannot produce a valid model document. Preserve model contents and
 custom extensions; never silently select only the first model or overwrite a file
 when splitting a document.
 
-For [ontology maps](../ontology/ontology.md#ontology-mappings), keep the
-`semantic_model` property and add `version: 0.2.0.dev0` inside it. Each embedded
+For [ontology maps](../ontology/ontology.md#ontology-mappings), each embedded
 model must be a complete core document.
 
 ---

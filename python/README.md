@@ -29,8 +29,7 @@ flat shape. The former `semantic_model` wrapper is rejected. Unwrap old
 single-model documents and split multi-model documents into separate files,
 preserving model contents and setting `version` in each file before loading them.
 
-Use `OssieDocument` for models embedded in ontology maps; they require `version`.
-`OssieSemanticModel` provides the model fields without `version`.
+Use `OssieDocument` for models embedded in ontology maps.
 
 ## Development
 
