@@ -151,9 +151,10 @@ custom extensions; never silently select only the first model or overwrite a fil
 when splitting a document.
 
 The reusable `$defs/SemanticModel` schema still describes model contents without
-standalone document metadata. In particular, an ontology map continues to embed
-those contents under its `semantic_model` property. This standalone document
-change does not rename or flatten that ontology property.
+document metadata. An [ontology map](../ontology/ontology.md#ontology-mappings)
+embeds a complete core document under its `semantic_model` property, referencing
+the root schema and requiring its own `version: 0.2.0.dev0`. Keep that property
+and add `version` to each embedded model when migrating earlier ontology maps.
 
 ---
 

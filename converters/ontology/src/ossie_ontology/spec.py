@@ -175,11 +175,8 @@ class Metric(OssieObject):
 
 
 class SemanticModel(OssieObject):
-    """Model contents: datasets plus the join paths and metrics defined over them.
-
-    OntologyMapping embeds these contents under ``semantic_model``; standalone
-    core documents place them at the root alongside document metadata.
-    """
+    """Complete core document embedded under OntologyMapping.semantic_model."""
+    version: Literal["0.2.0.dev0"]
     name: str
     description: str | None = None
     ai_context: AiContext | None = None

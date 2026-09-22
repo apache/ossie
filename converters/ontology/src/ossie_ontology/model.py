@@ -685,8 +685,8 @@ class Metric:
 
 
 class SemanticModel:
-    """Bundle of datasets, join paths and metrics. One or more SemanticModels
-    can feed a single OntologyMapping (see spec)."""
+    """Versioned core semantic model embedded in a single OntologyMapping."""
+    _version: str
     _name: str
     _description: str | None
     _ai_context: AiContext | None
@@ -704,7 +704,9 @@ class SemanticModel:
         description: str | None = None,
         ai_context: AiContext | None = None,
         custom_extensions: list[CustomExtension] | None = None,
+        version: str = "0.2.0.dev0",
     ):
+        self._version = version
         self._name = name
         self._description = description
         self._ai_context = ai_context
@@ -715,6 +717,10 @@ class SemanticModel:
         self._dataset_name_map = {}
         self._join_path_name_map = {}
         self._metric_name_map = {}
+
+    @property
+    def version(self) -> str:
+        return self._version
 
     @property
     def name(self) -> str:

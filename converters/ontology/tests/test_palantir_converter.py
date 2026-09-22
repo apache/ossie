@@ -277,6 +277,23 @@ def _identifier_columns(model: OssieOntology, concept_name: str) -> list[str]:
     return columns
 
 
+# ----- document metadata ------------------------------------------------
+
+def test_generated_semantic_model_has_core_document_version(tmp_path: Path):
+    model = _convert(
+        tmp_path,
+        [_object_type("widget", "Widget", status="active")],
+        datasets=[_dataset("widget", ["widget_id"])],
+    )
+
+    document = OssieToSpecConverter.convert(model).dump_dict()
+
+    assert document["version"] == "0.2.0.dev0"
+    [mapping] = document["ontology_mappings"]
+    assert mapping["semantic_model"]["version"] == "0.2.0.dev0"
+    assert mapping["semantic_model"]["datasets"]
+
+
 # ----- object type statuses ---------------------------------------------
 
 def test_default_policy_admits_active_endorsed_and_intermediary(tmp_path: Path):

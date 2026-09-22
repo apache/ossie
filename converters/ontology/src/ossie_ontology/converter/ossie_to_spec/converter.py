@@ -144,6 +144,7 @@ def _convert_relationship(rel: Relationship) -> SpecRelationship:
 
 def _convert_semantic_model(semantic_model: SemanticModel) -> SpecSemanticModel:
     return SpecSemanticModel(
+        version=semantic_model.version,
         name=semantic_model.name,
         description=semantic_model.description,
         ai_context=semantic_model.ai_context,

@@ -73,8 +73,8 @@ def test_rejects_empty_root_datasets(core_schema: dict) -> None:
     assert errors == ["[Schema] datasets: [] should be non-empty"]
 
 
-def test_embedded_semantic_model_does_not_require_document_version(core_schema: dict) -> None:
-    # Ontology components reference this definition without a document envelope.
+def test_semantic_model_definition_does_not_require_document_version(core_schema: dict) -> None:
+    # The reusable contents definition remains independent of document metadata.
     embedded_schema = {
         "$ref": "#/$defs/SemanticModel",
         "$defs": core_schema["$defs"],

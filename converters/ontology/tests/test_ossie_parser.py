@@ -25,6 +25,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from ossie_ontology.converter.ossie_to_spec.converter import (
     OssieToSpecConverter,
@@ -47,6 +48,45 @@ def test_parse_returns_model_with_metadata(flights_model):
     assert flights_model.name == "Flights"
     assert flights_model.version == "0.2.0.dev0"
     assert flights_model.description == "Ontology of flights into and out of airports."
+
+
+def test_embedded_core_document_version_survives_roundtrip(flights_model, tmp_path):
+    assert all(
+        mapping.semantic_model.version == "0.2.0.dev0"
+        for mapping in flights_model.ontology_mappings
+    )
+
+    exported = OssieToSpecConverter.convert(flights_model).dump_yaml()
+    document = yaml.safe_load(exported)
+    assert all(
+        mapping["semantic_model"]["version"] == "0.2.0.dev0"
+        for mapping in document["ontology_mappings"]
+    )
+
+    path = tmp_path / "roundtrip.yaml"
+    path.write_text(exported)
+    reparsed = OssieParser().parse(path)
+    assert all(
+        mapping.semantic_model.version == "0.2.0.dev0"
+        for mapping in reparsed.ontology_mappings
+    )
+
+
+@pytest.mark.parametrize("version", ["missing", "0.1.0", "0.2.0", None, 2])
+def test_parse_rejects_invalid_embedded_version(flights_path, tmp_path, version):
+    document = yaml.safe_load(flights_path.read_text())
+    model = document["ontology_mappings"][0]["semantic_model"]
+    if version == "missing":
+        del model["version"]
+    else:
+        model["version"] = version
+    path = tmp_path / "invalid.yaml"
+    path.write_text(yaml.safe_dump(document))
+
+    with pytest.raises(ValidationError) as exc:
+        OssieParser().parse(path)
+
+    assert exc.value.errors()[0]["loc"] == ("ontology_mappings", 0, "semantic_model", "version")
 
 
 def test_parse_returns_populated_ontology(flights_model):
