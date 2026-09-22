@@ -385,22 +385,11 @@ Ontology mappings declare how to map the values of fields at the logical level t
 in the ontology. Just as ontologies are partitioned by concept, ontology maps partition into concept
 mappings that group by some concept.
 
-Each entry in `ontology_mappings` embeds one complete core semantic model document
-under `semantic_model`. This property references the root of the
-[core JSON Schema](../core-spec/ossie-schema.json), identified by
-`https://github.com/apache/ossie/core-spec/ossie-schema.json`, rather than its
-`$defs/SemanticModel` definition. The embedded document must include `version`,
-`name`, and a non-empty `datasets` array, just like a standalone core document.
-The ontology's top-level `version` does not supply the embedded model's version.
-
-For example, a minimal ontology with a semantic model is:
+Each mapping's `semantic_model` is a complete
+[core document](../core-spec/spec.md#semantic-model), with its own `version`,
+`name`, and at least one dataset. For example:
 
 ```yaml
-version: 0.2.0.dev0
-name: sales_ontology
-ontology:
-  - concept: Order
-    type: EntityType
 ontology_mappings:
   - name: sales_mapping
     semantic_model:
@@ -412,11 +401,9 @@ ontology_mappings:
     concept_mappings: []
 ```
 
-**Migration:** This is a breaking change to the unreleased `0.2.0.dev0` schema.
-Add `version: 0.2.0.dev0` to every existing
-`ontology_mappings[*].semantic_model`, preserving the model's contents. Keep the
-`semantic_model` property; do not flatten it into the ontology map or wrap it in
-an array. Validate each embedded model against the core root schema.
+**Breaking change in `0.2.0.dev0` (unreleased):** Add `version: 0.2.0.dev0` inside
+each existing `semantic_model`, keeping its other fields in place. The ontology's
+top-level `version` does not replace this field.
 
 ### Concept mappings
 
@@ -621,7 +608,7 @@ though `Store` plays a role in three of the relationships.
 ## Version History
 
 - **0.2.0.dev0** (2026-05-29): Basic support for ontologies and logical schema mappings
-  - Breaking: ontology maps embed complete core documents, requiring `version` in each `semantic_model`.
+  - Breaking: each ontology map's `semantic_model` now requires its own `version`.
   - Core ontology structure: Concepts, relationships, and business rules (requires and derived_by)
   - Schema mappings from one or more logical models into an ontology
 

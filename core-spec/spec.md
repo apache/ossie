@@ -150,11 +150,9 @@ model array cannot produce a valid model document. Preserve model contents and
 custom extensions; never silently select only the first model or overwrite a file
 when splitting a document.
 
-The reusable `$defs/SemanticModel` schema still describes model contents without
-document metadata. An [ontology map](../ontology/ontology.md#ontology-mappings)
-embeds a complete core document under its `semantic_model` property, referencing
-the root schema and requiring its own `version: 0.2.0.dev0`. Keep that property
-and add `version` to each embedded model when migrating earlier ontology maps.
+For [ontology maps](../ontology/ontology.md#ontology-mappings), keep the
+`semantic_model` property and add `version: 0.2.0.dev0` inside it. Each embedded
+model must be a complete core document.
 
 ---
 
