@@ -32,15 +32,13 @@ jobs:
       - uses: actions/github-script@v7
         with:
           script: |
-            // Only greet first-time contributors
-            const { data: prs } = await github.rest.pulls.list({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'all',
-              creator: context.payload.pull_request.user.login
+            // Only greet first-time contributors — search for prior PRs by this author
+            const author = context.payload.pull_request.user.login;
+            const { data: result } = await github.rest.search.issuesAndPullRequests({
+              q: `is:pr repo:${context.repo.owner}/${context.repo.repo} author:${author}`
             });
 
-            if (prs.length > 1) {
+            if (result.total_count > 1) {
               console.log('Not a first-time contributor, skipping welcome.');
               return;
             }
@@ -58,9 +56,9 @@ jobs:
                 '- ASF license headers are present on new source files',
                 '- Tests cover new functionality',
                 '',
-                '**Before your contribution can be merged**, you need an [Individual Contributor License Agreement (ICLA)](https://www.apache.org/licenses/contributor-agreements.html) on file with the ASF.',
+                'No ICLA is required to contribute. If you are elected as a committer in the future, you will need an [Individual Contributor License Agreement (ICLA)](https://www.apache.org/licenses/contributor-agreements.html) on file with the ASF.',
                 '',
-                '**Questions?** Ask in the PR comments or on our [Slack](https://join.slack.com/t/ossaboratories/shared_invite/zt-38v10kmo4-TZXFfGCPwPEM4SPhKrAHUw).',
+                '**Questions?** Ask in the PR comments or join us on [Slack](https://join.slack.com/t/apache-ossie/shared_invite/zt-42zw4rflt-Gpve8_NFJq7AsdAQTY~SCg).',
                 '',
                 'We appreciate your contribution!'
               ].join('\n')

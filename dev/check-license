@@ -23,7 +23,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-RAT_VERSION="0.16.1"
+RAT_VERSION="0.17"
 RAT_JAR="$SCRIPT_DIR/lib/apache-rat-${RAT_VERSION}.jar"
 RAT_URL="https://repo1.maven.org/maven2/org/apache/rat/apache-rat/${RAT_VERSION}/apache-rat-${RAT_VERSION}.jar"
 

@@ -34,6 +34,11 @@
 **/*.json
 **/*.csv
 
+# Microsoft BI fixture formats (TOM/BIM/TMDL treat leading lines as object descriptions)
+**/*.bim
+**/*.ipynb
+converters/microsoft/tests/fixtures/sales_model.tmdl
+
 # Snapshot/fixture test files
 **/snapshots/**
 **/__snapshots__/**

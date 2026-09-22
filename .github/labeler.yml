@@ -61,6 +61,22 @@ converter/wisdom:
   - changed-files:
       - any-glob-to-any-file: 'converters/wisdom/**'
 
+converter/sigma:
+  - changed-files:
+      - any-glob-to-any-file: 'converters/sigma/**'
+
+converter/microsoft:
+  - changed-files:
+      - any-glob-to-any-file: 'converters/microsoft/**'
+
+converter/nvidia:
+  - changed-files:
+      - any-glob-to-any-file: 'converters/nvidia/**'
+
+converter/ontology:
+  - changed-files:
+      - any-glob-to-any-file: 'converters/ontology/**'
+
 # Other areas
 cli:
   - changed-files:
