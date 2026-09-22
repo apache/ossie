@@ -35,10 +35,6 @@ Ossie documents contain one model directly at the root, with `version`, `name`,
 `datasets`, and optional model properties. Legacy `semantic_model` wrappers
 (arrays or objects) are rejected.
 
-Ontology exports embed a complete core document under
-`ontology_mappings[].semantic_model`, including `version`. For older exports,
-add `version: 0.2.0.dev0` inside that model.
-
 ## Requirements
 
 - Python 3.12+
