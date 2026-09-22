@@ -24,6 +24,7 @@ from pydantic import ValidationError
 
 from ossie import (
     OssieDataType,
+    OssieDialect,
     OssieDimension,
     OssieDocument,
     OssieExpression,
@@ -66,6 +67,34 @@ def _document() -> dict:
             }
         ],
     }
+
+
+def test_dialect_enum_matches_core_schema() -> None:
+    schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    schema = json.loads(schema_path.read_text())
+
+    assert {member.value for member in OssieDialect} == set(
+        schema["$defs"]["Dialect"]["enum"]
+    )
+
+
+def test_ossie_sql_2026_dialect_survives_serialization() -> None:
+    data = _document()
+    field = data["datasets"][0]["fields"][0]
+    metric = data["metrics"][0]
+    for item in (field, metric):
+        item["expression"]["dialects"][0]["dialect"] = "OSSIE_SQL_2026"
+
+    document = OssieDocument.model_validate(data)
+
+    for item in (document.datasets[0].fields[0], document.metrics[0]):
+        assert item.expression.dialects[0].dialect is OssieDialect.OSSIE_SQL_2026
+
+    as_json = json.loads(document.to_ossie_json())
+    as_yaml = yaml.safe_load(document.to_ossie_yaml())
+    for serialized in (as_json, as_yaml):
+        assert serialized == data
+        assert OssieDocument.model_validate(serialized) == document
 
 
 def test_data_type_enum_matches_core_schema() -> None:

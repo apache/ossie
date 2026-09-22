@@ -35,6 +35,7 @@ class OssieDialect(str, Enum):
     SIGMA = "SIGMA"
     THOUGHTSPOT = "THOUGHTSPOT"
     DAX = "DAX"
+    OSSIE_SQL_2026 = "OSSIE_SQL_2026"
 
 
 class OssieDataType(str, Enum):
