@@ -85,7 +85,7 @@ AI agents, and BI tools without their own data model. Measure correctness is inh
 Layer 2: a wide-table query is rewritten into a SQL measures query (with heuristic join and filter
 choices), so the same grain-safe evaluation guarantee holds.
 
-**Specification:** [apache/ossie#246](https://github.com/apache/ossie/pull/246) *(forthcoming)*
+**Specification:** *(open PR: [apache/ossie#246](https://github.com/apache/ossie/pull/246))*
 
 ### Layer 4 — Ontology
 
