@@ -30,7 +30,10 @@ import json
 
 import pytest
 
+from ossie_thoughtspot import tml
+
 from ossie_thoughtspot.constants import (
+    DATASET_STASH_ALIAS,
     FIELD_STASH_DATA_TYPE,
     FIELD_STASH_DATA_TYPE_WITNESS,
     RELATIONSHIP_STASH_CARDINALITY,
@@ -532,12 +535,19 @@ class TestEndpointsSwapWitness:
         log = IssueLog()
         doc = build_model(self._model(relationship), [cust, orders], log)
 
+        # The cardinality falls back with the swap. An Ossie relationship has no
+        # cardinality field -- `from` is the many side, `to` is the one side, so
+        # direction IS cardinality, and the two stashed facts describe one thing.
+        # Keeping the stashed ONE_TO_MANY beside the live (unswapped) orientation
+        # declared the join backwards; ThoughtSpot uses cardinality for fan-out,
+        # so the model returned multiplied rows. This test previously asserted
+        # ONE_TO_MANY here and so pinned that defect.
         [orders_entry] = [t for t in doc.body["model_tables"] if t["name"] == "ORDERS"]
         assert orders_entry["joins"] == [{
             "with": "CUST",
             "on": "[ORDERS::CID] = [CUST::OTHER_ID]",
             "type": "INNER",
-            "cardinality": "ONE_TO_MANY",
+            "cardinality": "MANY_TO_ONE",
         }]
         assert any(i["code"] == "TS-JOIN-ENDPOINTS-SWAP-STALE" for i in log.as_dicts())
 
@@ -807,3 +817,82 @@ class TestFullRoundTripBothEntryPoints:
         assert not _find_key(result.documents.model.body, "guid")
         for table in result.documents.tables:
             assert not _find_key(table.body, "guid")
+
+
+class TestAliasedSelfJoinEmitsOneTableDocument:
+    """N datasets over one warehouse table are ONE Table document.
+
+    An aliased self-join -- DATE_DIM joined twice as "Sold Date" and "Ship
+    Date" -- is two Ossie datasets whose stashed source table is the same.
+    Building a document per dataset emitted two Table documents both named
+    DATE_DIM; `dump_document_set` then gave them distinct FILEnames
+    (DATE_DIM.table.tml, DATE_DIM-2.table.tml), which hid the collision rather
+    than surfacing it, and importing the set created a duplicate ThoughtSpot
+    Table object.
+    """
+
+    @staticmethod
+    def _dataset(name, source_table, column, alias=None):
+        payload = {"_v": 1, "connection_name": "C", "tml_name": source_table}
+        if alias:
+            payload[DATASET_STASH_ALIAS] = alias
+        return {
+            "name": name,
+            "source": f"D.S.{source_table}",
+            "fields": [{
+                "name": column,
+                "expression": {"dialects": [
+                    {"dialect": "THOUGHTSPOT", "expression": f"[{name}::{column}]"}
+                ]},
+            }],
+            "custom_extensions": [
+                {"vendor_name": "THOUGHTSPOT", "data": json.dumps(payload)}
+            ],
+        }
+
+    def _convert(self, *datasets):
+        return convert({"version": "0.2.0.dev0", "name": "M", "datasets": list(datasets)})
+
+    def test_one_table_document_is_emitted_not_one_per_dataset(self):
+        result = self._convert(
+            self._dataset("Sold Date", "DATE_DIM", "d_sold", alias="Sold Date"),
+            self._dataset("Ship Date", "DATE_DIM", "d_ship", alias="Ship Date"),
+        )
+        assert [t.body["name"] for t in result.documents.tables] == ["DATE_DIM"]
+
+    def test_the_single_document_carries_every_aliass_columns(self):
+        result = self._convert(
+            self._dataset("Sold Date", "DATE_DIM", "d_sold", alias="Sold Date"),
+            self._dataset("Ship Date", "DATE_DIM", "d_ship", alias="Ship Date"),
+        )
+        [table] = result.documents.tables
+        assert [c["name"] for c in table.body["columns"]] == ["d_sold", "d_ship"]
+
+    def test_the_model_still_carries_one_aliased_entry_per_dataset(self):
+        result = self._convert(
+            self._dataset("Sold Date", "DATE_DIM", "d_sold", alias="Sold Date"),
+            self._dataset("Ship Date", "DATE_DIM", "d_ship", alias="Ship Date"),
+        )
+        assert result.documents.model.body["model_tables"] == [
+            {"name": "DATE_DIM", "alias": "Sold Date"},
+            {"name": "DATE_DIM", "alias": "Ship Date"},
+        ]
+
+    def test_only_one_file_is_written_so_nothing_is_overwritten(self):
+        result = self._convert(
+            self._dataset("Sold Date", "DATE_DIM", "d_sold", alias="Sold Date"),
+            self._dataset("Ship Date", "DATE_DIM", "d_ship", alias="Ship Date"),
+        )
+        names = [name for name, _ in tml.dump_document_set(result.documents)]
+        assert names == ["DATE_DIM.table.tml", "M.model.tml"]
+
+    def test_two_entries_with_no_distinguishing_alias_are_an_error(self):
+        # References resolve by alias-or-name, so an undistinguished pair is
+        # ambiguous on import rather than merely redundant.
+        result = self._convert(
+            self._dataset("A", "DATE_DIM", "d1"),
+            self._dataset("B", "DATE_DIM", "d2"),
+        )
+        codes = [i["code"] for i in result.issues.as_dicts()]
+        assert "TS-MODEL-TABLE-ENTRY-AMBIGUOUS" in codes
+        assert result.issues.has_errors()

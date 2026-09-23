@@ -19,7 +19,11 @@ import pytest
 from ossie_thoughtspot import stash
 from ossie_thoughtspot.constants import METRIC_STASH_SHAPE, STASH_TML_NAME
 from ossie_thoughtspot.issues import IssueLog
-from ossie_thoughtspot.tml_to_ossie import _contains_aggregate_call, convert_field, convert_metric
+from ossie_thoughtspot.expressions import GROUP_AGGREGATE_CALL_NAMES, Variant
+from ossie_thoughtspot.tml import DocumentSet, TmlDocument
+from ossie_thoughtspot.tml_to_ossie import (
+    _contains_aggregate_call, convert, convert_field, convert_metric,
+)
 
 
 def _resolve(table, column):
@@ -501,3 +505,56 @@ class TestContainsAggregateCall:
     ])
     def test_not_detected(self, expr):
         assert _contains_aggregate_call(expr) is False
+
+
+class TestEveryGroupedAggregateIsRecognisedAsAlreadyAggregated:
+    """The double-aggregation guard has to know the WHOLE aggregate vocabulary.
+
+    `_AGGREGATE_CALL_NAMES` named `group_aggregate` alone, above a comment
+    asserting "there is exactly one such construct", while the same package's
+    reverse inventory registered four shorthands and two further
+    `sql_*_aggregate_op` variants. A MEASURE column whose formula used any of
+    them was classified as a scalar formula and had its own `aggregation`
+    composed on top -- `sum ( group_sum ( ... ) )` -- with no issue raised.
+    That is a wrong number, not a wrong spelling.
+
+    Derived from the shared vocabulary rather than listed here, so a name added
+    to the inventory is covered by this test without a second edit.
+    """
+
+    @pytest.mark.parametrize("call", sorted(GROUP_AGGREGATE_CALL_NAMES))
+    def test_a_grouped_aggregate_formula_is_not_wrapped_again(self, call):
+        expr = f"{call} ( [ORDERS::Amount] , {{ [ORDERS::Region] }} , query_filters ( ) )"
+        emitted = self._thoughtspot_expression_for(expr)
+        assert emitted == expr, f"{call} was re-aggregated: {emitted!r}"
+
+    @pytest.mark.parametrize("variant", sorted(
+        v.value for v in Variant if v.value.endswith("_aggregate_op")
+    ))
+    def test_an_aggregate_passthrough_is_not_wrapped_again(self, variant):
+        expr = f'{variant} ( "MAX({{0}})" , [ORDERS::Amount] )'
+        emitted = self._thoughtspot_expression_for(expr)
+        assert emitted == expr, f"{variant} was re-aggregated: {emitted!r}"
+
+    @staticmethod
+    def _thoughtspot_expression_for(expr):
+        table = TmlDocument(kind="table", guid=None, body={
+            "name": "ORDERS", "db": "D", "schema": "S", "db_table": "ORDERS",
+            "connection": {"name": "C"},
+            "columns": [
+                {"name": "Amount", "db_column_name": "AMT",
+                 "db_column_properties": {"data_type": "DOUBLE"}},
+                {"name": "Region", "db_column_name": "RGN",
+                 "db_column_properties": {"data_type": "VARCHAR"}},
+            ]})
+        model = TmlDocument(kind="model", guid=None, body={
+            "name": "M", "model_tables": [{"name": "ORDERS"}],
+            "formulas": [{"id": "f1", "name": "R", "expr": expr}],
+            "columns": [{"name": "R", "formula_id": "f1",
+                         "properties": {"column_type": "MEASURE", "aggregation": "SUM"}}]})
+        result = convert(DocumentSet(model=model, tables=(table,)))
+        for metric in result.model.get("metrics") or []:
+            for entry in metric["expression"]["dialects"]:
+                if entry["dialect"] == "THOUGHTSPOT":
+                    return entry["expression"]
+        raise AssertionError("no THOUGHTSPOT dialect entry was emitted")

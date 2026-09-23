@@ -38,6 +38,7 @@ Public surface:
 from .catalog import CATALOG, CONVENTION_DIVERGENCES, spec_construct_names
 from .emit import emit_direct, emit_passthrough, emit_unmappable
 from .reverse import (
+    GROUP_AGGREGATE_CALL_NAMES,
     REVERSE,
     ReverseConstruct,
     ReverseDisposition,
@@ -54,6 +55,7 @@ __all__ = [
     "CONVENTION_DIVERGENCES",
     "Classification",
     "Construct",
+    "GROUP_AGGREGATE_CALL_NAMES",
     "REVERSE",
     "ReverseConstruct",
     "ReverseDisposition",

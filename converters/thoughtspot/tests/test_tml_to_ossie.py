@@ -58,7 +58,9 @@ from ossie_thoughtspot.constants import (
 )
 from ossie_thoughtspot.errors import ConversionError
 from ossie_thoughtspot.tml import DocumentSet, TmlDocument
-from ossie_thoughtspot.tml_to_ossie import OssieConversion, convert
+from ossie_thoughtspot.tml_to_ossie import (
+    OssieConversion, _parse_join_condition, _strip_wrapping_parens, convert,
+)
 
 
 def _table(name, db="SALES", schema="PUBLIC", db_table=None, columns=None,
@@ -1410,3 +1412,46 @@ class TestAModelThatYieldsNoDatasets:
         document = self._convert_empty().model
         with pytest.raises(ConversionError):
             ossie_to_thoughtspot.convert(document)
+
+
+class TestJoinConditionParenthesisation:
+    """The same join must convert identically however it is parenthesised.
+
+    `formula._scan` tracks paren depth -- right for a general expression, and
+    exactly wrong for a join condition wrapped in redundant parentheses, an
+    ordinary TML spelling. Every `and` sat at depth 1, nothing split, no
+    equality pair matched, and the whole relationship was demoted to an
+    unrepresentable-join stash entry: the Ossie datasets came out disconnected
+    and `derive_keys` had no candidate to work from. A relationship silently
+    becoming no relationship is the expensive kind of wrong.
+    """
+
+    PAIRS = [("x", "y"), ("p", "q")]
+
+    @pytest.mark.parametrize("condition", [
+        "[A::x] = [B::y] and [A::p] = [B::q]",
+        "( [A::x] = [B::y] and [A::p] = [B::q] )",
+        "(( [A::x] = [B::y] and [A::p] = [B::q] ))",
+        "([A::x] = [B::y]) and ([A::p] = [B::q])",
+        "( ( [A::x] = [B::y] ) and ( [A::p] = [B::q] ) )",
+    ])
+    def test_every_spelling_yields_the_same_equality_pairs(self, condition):
+        pairs, residuals = _parse_join_condition(condition, "A", "B")
+        assert pairs == self.PAIRS
+        assert residuals == []
+
+    def test_a_parenthesised_residual_still_survives_as_a_residual(self):
+        # Stripping must not swallow a genuine non-equality predicate.
+        pairs, residuals = _parse_join_condition(
+            "( [A::x] = [B::y] ) and ( [A::p] > [B::q] )", "A", "B"
+        )
+        assert pairs == [("x", "y")]
+        assert residuals == ["[A::p] > [B::q]"]
+
+    def test_parens_that_do_not_wrap_the_whole_are_left_alone(self):
+        # `(a) and (b)` is not a wrapped condition: the first paren closes
+        # before the end, so stripping it would corrupt the string.
+        assert _strip_wrapping_parens("(a) and (b)") == "(a) and (b)"
+
+    def test_a_paren_inside_a_quoted_literal_does_not_count(self):
+        assert _strip_wrapping_parens("( 'a)b' )") == "'a)b'"

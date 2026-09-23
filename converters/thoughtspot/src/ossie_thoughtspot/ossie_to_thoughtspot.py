@@ -1206,7 +1206,12 @@ def _restore_ai_context(properties: dict, ai_context: object, log: IssueLog, *, 
     synonyms = ai_context.get("synonyms")
     if synonyms:
         properties["synonyms"] = list(synonyms)
-        properties["synonym_type"] = "USER_DEFINED"
+        # Only when the source did not state one. This runs AFTER the stashed
+        # column_properties are merged in, so an unconditional assignment
+        # overwrote a faithfully round-tripped `AUTO_GENERATED` with
+        # `USER_DEFINED` and logged nothing -- changing a column's synonym
+        # provenance, which the never-a-silent-loss contract forbids.
+        properties.setdefault("synonym_type", "USER_DEFINED")
     instructions = ai_context.get("instructions")
     if instructions:
         properties["ai_context"] = instructions
@@ -1582,7 +1587,22 @@ def _restore_relationship_condition(
     """The equality-only `on:` condition for a relationship with no stashed
     `on_expression` -- reconstructed from `from_columns`/`to_columns` alone,
     which is all a hand-authored relationship (no stash) has to go on."""
-    pairs = zip(from_columns or [], to_columns or [])
+    from_columns = from_columns or []
+    to_columns = to_columns or []
+    # `zip` truncates to the shorter list, so a relationship whose two arrays
+    # disagree emitted a condition covering only the shorter one -- the extra
+    # predicates vanished with nothing logged, and the imported join then
+    # matched MORE rows than the Ossie document declared. Every other arity
+    # mismatch in this package raises rather than truncating; upstream
+    # apache/ossie#375 made equal arity a validation rule, so a document
+    # reaching here unequal is malformed.
+    if len(from_columns) != len(to_columns):
+        raise ConversionError(
+            f"relationship {from_prefix!r} -> {to_prefix!r} has "
+            f"{len(from_columns)} from_columns and {len(to_columns)} to_columns; "
+            f"they must have equal arity to form a join condition"
+        )
+    pairs = zip(from_columns, to_columns)
     return " and ".join(
         f"{identifiers.format_column_ref(from_prefix, fc)} = "
         f"{identifiers.format_column_ref(to_prefix, tc)}"
@@ -1702,7 +1722,27 @@ def _join_entry_for_relationship(rel: dict, log: IssueLog) -> tuple[str, dict, d
             )
         on_expression = _restore_relationship_condition(from_prefix, to_prefix, from_columns, to_columns)
     join_type = _normalise_join_type(payload.get(RELATIONSHIP_STASH_TYPE) or "INNER")
-    cardinality = payload.get(RELATIONSHIP_STASH_CARDINALITY) or "MANY_TO_ONE"
+    # Gated on the SAME witness as the endpoint swap, because it states the same
+    # fact. An Ossie relationship carries no cardinality field: `from` is the many
+    # side and `to` is the one side, so direction IS cardinality. When the witness
+    # is stale the swap above is deliberately not undone and the orientation is
+    # taken live -- and a stashed `ONE_TO_MANY` read alongside that live
+    # orientation declares the join backwards, which ThoughtSpot uses for
+    # fan-out, so the model returns multiplied rows.
+    #
+    # The stale-swap issue already promises the join is emitted "exactly as a
+    # hand-authored relationship with no stash at all would be". A hand-authored
+    # one gets the MANY_TO_ONE default; reading the stash here broke that promise.
+    # Gated on the stale-swap condition itself, not on the witness directly: a
+    # relationship that never carried a swap stash (hand-authored, never round
+    # -tripped) has a cardinality that stands on its own, and there is nothing
+    # stale about it. Only a swap that WAS stashed and has since gone stale
+    # invalidates it.
+    stashed_swap_is_stale = had_stashed_swap and not endpoints_swapped
+    cardinality = (
+        "MANY_TO_ONE" if stashed_swap_is_stale
+        else (payload.get(RELATIONSHIP_STASH_CARDINALITY) or "MANY_TO_ONE")
+    )
 
     live_name = rel.get("name")
     stashed_referencing_join = payload.get(RELATIONSHIP_STASH_REFERENCING_JOIN)
@@ -1824,6 +1864,35 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
         table_entry: dict = {"name": table_ref}
         if alias:
             table_entry["alias"] = alias
+        # Two entries naming one table must be told apart by their aliases --
+        # `model_tables[].joins[].with` and every `[PREFIX::Column]` reference
+        # resolve by alias-or-name, so an undistinguished pair is ambiguous on
+        # import. Found while fixing the duplicate-Table-document defect: the
+        # aliased case is the normal self-join and is fine; this is the case
+        # where the aliases did not survive.
+        clash = next(
+            (e for e in model_tables
+             if e["name"] == table_entry["name"]
+             and e.get("alias") == table_entry.get("alias")),
+            None,
+        )
+        if clash is not None:
+            log.add(
+                code="TS-MODEL-TABLE-ENTRY-AMBIGUOUS",
+                severity=Severity.ERROR,
+                message=(
+                    f"datasets {dataset_prefix!r} and an earlier one both resolve "
+                    f"to table {table_ref!r} with the same alias "
+                    f"({table_entry.get('alias')!r}); model_tables[] entries are "
+                    f"referenced by alias-or-name, so the two are indistinguishable "
+                    f"and every reference to either is ambiguous on import"
+                ),
+                object_ref=f"dataset:{dataset_prefix}",
+                remedy=(
+                    "Give the datasets distinct aliases, or a distinct source "
+                    "table each if they are not a self-join."
+                ),
+            )
         model_tables.append(table_entry)
         model_tables_by_prefix[dataset_prefix] = table_entry
 
@@ -2033,6 +2102,65 @@ class TmlConversion:
     issues: IssueLog
 
 
+def _deduplicate_table_documents(
+    tables: list[TmlDocument], log: IssueLog
+) -> list[TmlDocument]:
+    """One Table document per distinct table name, not one per dataset.
+
+    An aliased self-join is N Ossie datasets over ONE warehouse table -- a model
+    joining DATE_DIM twice as "Sold Date" and "Ship Date" is two datasets whose
+    stashed source table is the same. Building a document per dataset emitted
+    two Table documents both named `DATE_DIM`; `dump_document_set` then gave
+    them distinct FILEnames (`DATE_DIM.table.tml`, `DATE_DIM-2.table.tml`),
+    which hid the collision rather than surfacing it, and importing the set
+    created a duplicate ThoughtSpot Table object. The model side was already
+    correct: `model_tables[]` carries one entry per dataset with its own alias,
+    all pointing at the single table name.
+
+    Columns are unioned by name, first occurrence winning, because two aliases
+    of one table may surface different subsets of it and the Table document has
+    to hold every column any alias references. A body that differs beyond its
+    columns cannot be merged that way, so the first is kept and the difference
+    reported rather than silently resolved.
+    """
+    by_name: dict[str, TmlDocument] = {}
+    order: list[str] = []
+    for table in tables:
+        name = table.body.get("name")
+        first = by_name.get(name)
+        if first is None:
+            by_name[name] = table
+            order.append(name)
+            continue
+
+        seen_columns = {c.get("name") for c in first.body.get("columns") or []}
+        for column in table.body.get("columns") or []:
+            if column.get("name") not in seen_columns:
+                first.body.setdefault("columns", []).append(column)
+                seen_columns.add(column.get("name"))
+
+        ignoring_columns = (
+            {k: v for k, v in first.body.items() if k != "columns"},
+            {k: v for k, v in table.body.items() if k != "columns"},
+        )
+        if ignoring_columns[0] != ignoring_columns[1]:
+            log.add(
+                code="TS-TABLE-ALIAS-BODY-DIVERGENT",
+                severity=Severity.WARNING,
+                message=(
+                    f"two datasets resolve to table {name!r} but describe it "
+                    f"differently (connection, description or properties); the "
+                    f"first description is emitted and the second is not"
+                ),
+                object_ref=f"table:{name}",
+                remedy=(
+                    "Make the aliased datasets agree, or give them distinct "
+                    "source tables if they are genuinely different tables."
+                ),
+            )
+    return [by_name[name] for name in order]
+
+
 def convert(ossie_document: dict) -> TmlConversion:
     """Convert one Ossie document into one ThoughtSpot TML document set.
 
@@ -2081,6 +2209,8 @@ def convert(ossie_document: dict) -> TmlConversion:
         raise ConversionError("the Ossie document has no datasets to convert")
 
     log = IssueLog()
-    tables = [build_table(dataset, log) for dataset in semantic_model.get("datasets") or []]
+    tables = _deduplicate_table_documents(
+        [build_table(dataset, log) for dataset in semantic_model.get("datasets") or []], log
+    )
     model = build_model(semantic_model, tables, log)
     return TmlConversion(documents=DocumentSet(model=model, tables=tuple(tables)), issues=log)

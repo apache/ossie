@@ -32,11 +32,12 @@ name: tpcds_retail_model
 datasets:
 - name: store_sales
   source: TPCDS.PUBLIC.STORE_SALES
-  primary_key: &id001
+  primary_key:
   - ss_item_sk
   - ss_ticket_number
   unique_keys:
-  - *id001
+  - - ss_item_sk
+    - ss_ticket_number
   fields:
   - name: ss_sold_date_sk
     label: ss_sold_date_sk
@@ -118,10 +119,10 @@ datasets:
       "INT64"}, "name": "ss_ticket_number"}]}'
 - name: date_dim
   source: TPCDS.PUBLIC.DATE_DIM
-  primary_key: &id002
+  primary_key:
   - d_date_sk
   unique_keys:
-  - *id002
+  - - d_date_sk
   fields:
   - name: d_date_sk
     label: d_date_sk
@@ -174,10 +175,10 @@ datasets:
       "tml_object_source_witness": "TPCDS.PUBLIC.DATE_DIM"}'
 - name: customer
   source: TPCDS.PUBLIC.CUSTOMER
-  primary_key: &id003
+  primary_key:
   - c_customer_sk
   unique_keys:
-  - *id003
+  - - c_customer_sk
   fields:
   - name: c_customer_sk
     label: c_customer_sk
@@ -250,10 +251,10 @@ datasets:
       "tml_object_source_witness": "TPCDS.PUBLIC.CUSTOMER"}'
 - name: item
   source: TPCDS.PUBLIC.ITEM
-  primary_key: &id004
+  primary_key:
   - i_item_sk
   unique_keys:
-  - *id004
+  - - i_item_sk
   fields:
   - name: i_item_sk
     label: i_item_sk
@@ -315,10 +316,10 @@ datasets:
       "tml_object_source_witness": "TPCDS.PUBLIC.ITEM"}'
 - name: store
   source: TPCDS.PUBLIC.STORE
-  primary_key: &id005
+  primary_key:
   - s_store_sk
   unique_keys:
-  - *id005
+  - - s_store_sk
   fields:
   - name: s_store_sk
     label: s_store_sk

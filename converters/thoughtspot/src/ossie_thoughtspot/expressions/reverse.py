@@ -562,6 +562,17 @@ for _name, _agg in _GROUP_SHORTHAND_AGGREGATES.items():
         ),
     )
 
+#: Every ThoughtSpot call name that performs a GROUPED aggregation: the general
+#: `group_aggregate` plus the shorthands above. Exported because `tml_to_ossie`
+#: must recognise all of them as "already aggregated" -- it previously named
+#: `group_aggregate` alone, on the stated belief that "there is exactly one such
+#: construct", and so composed a metric's own `aggregation` on top of a
+#: `group_sum(...)` formula: `sum ( group_sum ( ... ) )`, silently doubled.
+#: Derived from the inventory rather than retyped, so a shorthand added above is
+#: covered without a second edit.
+GROUP_AGGREGATE_CALL_NAMES = frozenset({"group_aggregate", *_GROUP_SHORTHAND_AGGREGATES})
+
+
 _SEMI_ADDITIVE_ISSUE = (
     "{name} declares a genuine partition and order axis, and that window clause round-trips "
     "faithfully — but semi-additivity is a roll-up declaration (do not re-sum this measure "

@@ -75,7 +75,21 @@ def find_forbidden_key(value: Any, forbidden: frozenset[str] | None = None) -> s
 
 def read_stash(obj: dict) -> dict[str, Any]:
     """Return this object's parsed THOUGHTSPOT payload, or {} if it has none."""
-    for entry in obj.get("custom_extensions") or []:
+    extensions = obj.get("custom_extensions") or []
+    if not isinstance(extensions, list):
+        raise ConversionError(
+            f"custom_extensions must be a list, not {type(extensions).__name__}"
+        )
+    for entry in extensions:
+        # A hand-authored document can put anything here. Without this the
+        # `.get` below raised a bare AttributeError, which escapes the CLI's
+        # (ConversionError, OSError) handler and prints a traceback -- breaking
+        # this module's own never-a-bare-traceback contract.
+        if not isinstance(entry, dict):
+            raise ConversionError(
+                f"each custom_extensions entry must be a mapping, not "
+                f"{type(entry).__name__}"
+            )
         if entry.get("vendor_name") != VENDOR_KEY:
             continue
         raw = entry.get("data")

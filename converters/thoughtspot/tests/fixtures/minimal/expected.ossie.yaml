@@ -42,10 +42,10 @@ datasets:
       {"data_type": "DOUBLE"}, "name": "order_total"}]}'
 - name: customers
   source: MINIMAL.PUBLIC.CUSTOMERS
-  primary_key: &id001
+  primary_key:
   - customer_id
   unique_keys:
-  - *id001
+  - - customer_id
   fields:
   - name: customer_name
     label: customer_name

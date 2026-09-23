@@ -149,5 +149,11 @@ def derive_keys(
             ),
         )
 
-    primary_key = seen[0] if len(seen) == 1 else None
+    # `list(...)`, not `seen[0]`: returning the same list OBJECT in both slots
+    # made PyYAML emit a YAML anchor/alias pair -- `primary_key: &id001` with
+    # `unique_keys: [*id001]` -- into every generated document, and into both
+    # committed fixtures, where the tests pinned it rather than caught it.
+    # Aliases are valid YAML but a common hardening default disables them, and a
+    # non-PyYAML reader that does not resolve them reads null.
+    primary_key = list(seen[0]) if len(seen) == 1 else None
     return primary_key, seen

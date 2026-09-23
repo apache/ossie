@@ -129,7 +129,7 @@ from .constants import (
     STASH_TML_NAME,
 )
 from .errors import ConversionError
-from .expressions import CATALOG, Variant, emit_direct
+from .expressions import CATALOG, GROUP_AGGREGATE_CALL_NAMES, Variant, emit_direct
 from .issues import IssueLog, Severity
 from .tml import DocumentSet
 
@@ -711,12 +711,19 @@ _AGGREGATION_CATALOG_SPEC = {
 #: it appears in an expression — see `_contains_aggregate_call`.
 _NATIVE_AGGREGATE_SPECS = (*_AGGREGATION_CATALOG_SPEC.values(), "MEDIAN(expr)")
 
-#: `group_aggregate` is ThoughtSpot's own construct for a grouped/windowed
-#: aggregation — the *performant* pattern the catalog's window-function rows
-#: prefer over a raw `sql_*_aggregate_op` pass-through — and it is not a target of
-#: any TML `aggregation` enum value, so it cannot come from `_AGGREGATION_CATALOG_SPEC`.
-#: There is exactly one such construct, so it is named directly rather than derived.
-_GROUP_AGGREGATE_CALL = "group_aggregate"
+#: ThoughtSpot's grouped/windowed aggregations — the *performant* pattern the
+#: catalog's window-function rows prefer over a raw `sql_*_aggregate_op`
+#: pass-through. None is the target of any TML `aggregation` enum value, so they
+#: cannot come from `_AGGREGATION_CATALOG_SPEC`.
+#:
+#: Imported from the reverse inventory rather than named here. This constant
+#: previously read `"group_aggregate"` alone, above a comment asserting "there is
+#: exactly one such construct" — while the same package's reverse inventory
+#: registered four more (`group_sum`, `group_count`, `group_stddev`,
+#: `group_variance`). A MEASURE column carrying `group_sum ( ... )` was therefore
+#: classified as a scalar formula and had its own `aggregation` composed on top,
+#: emitting `sum ( group_sum ( ... ) )` with no issue raised.
+_GROUP_AGGREGATE_CALLS = GROUP_AGGREGATE_CALL_NAMES
 
 #: Every `Variant` that denotes an *aggregate* `sql_*_op` pass-through wrapper,
 #: derived by filtering the enum on its own `_aggregate_op` naming convention
@@ -740,7 +747,7 @@ _AGGREGATE_CALL_NAMES = (
         formula.split_call(emit_direct(CATALOG[spec], ["x"]))[0].lower()
         for spec in _NATIVE_AGGREGATE_SPECS
     )
-    | {_GROUP_AGGREGATE_CALL}
+    | _GROUP_AGGREGATE_CALLS
     | _SQL_AGGREGATE_OP_CALLS
 )
 
@@ -1567,6 +1574,32 @@ def _split_top_level_and(text: str) -> list[str]:
     return [p for p in parts if p]
 
 
+def _strip_wrapping_parens(text: str) -> str:
+    """`( x )` -> `x`, repeatedly, but only when the parens truly wrap the whole.
+
+    `(a) and (b)` is left alone: its first `(` closes before the end, so the
+    outer pair is not a wrapper. Depth comes from `formula._scan`, the same
+    tracker the rest of this module splits on, so a paren inside a quoted
+    literal or a `[TABLE::Column]` body never counts.
+    """
+    stripped = text.strip()
+    while stripped.startswith("(") and stripped.endswith(")"):
+        # `_scan` reports depth 0 AT the opening paren and again AT its match,
+        # so the wrapper test is whether depth returns to 0 strictly between
+        # them -- index 0 and the final index are both 0 for a true wrapper.
+        depth_reaches_zero_early = any(
+            depth == 0 and 0 < index < len(stripped) - 1
+            for index, _ch, depth, _in_quote in formula._scan(stripped)
+        )
+        if depth_reaches_zero_early:
+            return stripped
+        inner = stripped[1:-1].strip()
+        if not inner:
+            return stripped
+        stripped = inner
+    return stripped
+
+
 def _parse_join_condition(
     on_expression: str, from_prefix: str, to_prefix: str
 ) -> tuple[list[tuple[str, str]], list[str]]:
@@ -1587,7 +1620,15 @@ def _parse_join_condition(
     """
     equality_pairs: list[tuple[str, str]] = []
     residuals: list[str] = []
-    for part in _split_top_level_and(on_expression):
+    # Redundant wrapping parentheses are stripped before the split and again per
+    # part. `formula._scan` tracks paren depth -- correct for a general
+    # expression, and exactly wrong here: a condition written
+    # `( [A::x] = [B::y] and [A::p] = [B::q] )`, an ordinary TML spelling, puts
+    # every `and` at depth 1, so nothing split, no equality pair matched, and the
+    # whole relationship was demoted to an unrepresentable-join stash entry --
+    # leaving the Ossie datasets disconnected and `derive_keys` with no candidate.
+    for part in _split_top_level_and(_strip_wrapping_parens(on_expression)):
+        part = _strip_wrapping_parens(part)
         match = _EQUALITY_PAIR_RE.match(part)
         if match is None:
             residuals.append(part)

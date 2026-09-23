@@ -45,6 +45,7 @@ committed here.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -293,3 +294,25 @@ class TestTpcdsFixtureCoversItsRequiredConstructs:
             extensions[VENDOR_KEY][METRIC_STASH_SHAPE]
             == METRIC_SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION
         )
+
+
+@pytest.mark.parametrize("fixture_name", FIXTURE_SETS)
+def test_no_generated_document_uses_a_yaml_anchor_or_alias(fixture_name):
+    """Emitted YAML must be alias-free.
+
+    `derive_keys` returned the SAME list object as `primary_key` and as
+    `unique_keys[0]`, so PyYAML emitted `primary_key: &id001` / `- *id001` into
+    every generated document and into both committed fixtures -- where the
+    parsed-content comparison could not see it, because aliases resolve to the
+    same value. Aliases are valid YAML, but a reader with them disabled (a
+    common hardening default) fails, and one that ignores them reads null.
+    Asserted on the TEXT, which is the only level at which it is visible.
+    """
+    fixture_dir = FIXTURES_ROOT / fixture_name
+    text = (fixture_dir / "expected.ossie.yaml").read_text(encoding="utf-8")
+    offenders = [
+        f"line {n}: {line.strip()}"
+        for n, line in enumerate(text.splitlines(), 1)
+        if re.search(r"(?:^|\s)[&*]id\d+\b", line)
+    ]
+    assert not offenders, "generated YAML contains anchors/aliases:\n" + "\n".join(offenders)

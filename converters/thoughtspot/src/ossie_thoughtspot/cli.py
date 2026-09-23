@@ -124,7 +124,10 @@ def _safe_target_path(directory: Path, filename: str) -> Path:
     """
     resolved_directory = directory.resolve()
     target = (resolved_directory / filename).resolve()
-    if target != resolved_directory and resolved_directory not in target.parents:
+    # `==`, not `!=`: a filename resolving to the output directory ITSELF is the
+    # case this guard exists to catch, and the old `target != resolved_directory
+    # and ...` spelling made that case short-circuit to False and pass.
+    if target == resolved_directory or resolved_directory not in target.parents:
         raise ConversionError(
             f"refusing to write {filename!r}: it resolves outside the output directory "
             f"{resolved_directory}"
@@ -163,7 +166,7 @@ def _cmd_to_ossie(args: argparse.Namespace) -> int:
         texts = [(path, Path(path).read_text(encoding="utf-8")) for path in args.tml_files]
         document_set = tml.load_document_set(texts)
         result = tml_to_ossie.convert(document_set)
-    except (ConversionError, OSError) as e:
+    except (ConversionError, OSError, UnicodeDecodeError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
@@ -204,7 +207,7 @@ def _cmd_to_tml(args: argparse.Namespace) -> int:
         # TML/Ossie content, and `dump_document_set` sanitises filenames for exactly this
         # reason (see `_safe_target_path`).
         targets = [(_safe_target_path(output_dir, name), text_) for name, text_ in files]
-    except (ConversionError, OSError) as e:
+    except (ConversionError, OSError, UnicodeDecodeError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 

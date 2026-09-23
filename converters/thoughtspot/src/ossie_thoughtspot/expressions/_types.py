@@ -52,6 +52,13 @@ class Variant(str, Enum):
     STRING = "sql_string_op"
     INT_AGGREGATE = "sql_int_aggregate_op"
     NUMBER_AGGREGATE = "sql_number_aggregate_op"
+    # Declared for completeness of the *_aggregate_op family even though no
+    # catalog row targets them today: `tml_to_ossie` derives "what already
+    # aggregates" by filtering this enum on the `_aggregate_op` suffix, so a
+    # missing member there is a missed double-aggregation guard, not merely an
+    # absent rendering option. Both are named in the reverse inventory.
+    STRING_AGGREGATE = "sql_string_aggregate_op"
+    DATE_TIME_AGGREGATE = "sql_date_time_aggregate_op"
 
 
 class VariadicStyle(str, Enum):
