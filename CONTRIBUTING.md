@@ -127,13 +127,6 @@ The main Ossie repository does not accept new converters. Develop new semantic
 model and ontology converters in separate repositories, and discuss any proposed
 Apache Ossie hosting on `dev@ossie.apache.org`.
 
-Contributions to existing converters are welcome; they remain in place for now.
-Any migration will be considered separately with their maintainers and the
-community. The long-term role of reference implementations and the structure of
-separate converter repositories are still under discussion. See the
-[community discussion](https://lists.apache.org/thread/5vqckvd5jjb15t6zkjrmjvorxxcfv8yg)
-for background.
-
 ### Specification Changes
 
 Changes to the Apache Ossie specification carry a higher bar and follow a structured
