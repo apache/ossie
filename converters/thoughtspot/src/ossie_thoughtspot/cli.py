@@ -135,6 +135,32 @@ def _safe_target_path(directory: Path, filename: str) -> Path:
     return target
 
 
+def _colliding(paths: list[Path]) -> list[Path]:
+    """Any path this run would write more than once.
+
+    Compared after `resolve()`, because two spellings of one file (a relative
+    path and an absolute one, a symlinked directory) are the same file on disk.
+    Checked BEFORE any write: `--issues` pointing at `-o` passed the
+    does-it-already-exist check on a fresh run, and then `_write_issues`
+    replaced the converted document with the JSON issue log and the command
+    exited 0. `--force` does not license this -- it permits overwriting files
+    that were already there, not destroying one of this run's own outputs.
+    """
+    seen: dict[Path, int] = {}
+    for path in paths:
+        resolved = path.resolve()
+        seen[resolved] = seen.get(resolved, 0) + 1
+    return sorted(path for path, count in seen.items() if count > 1)
+
+
+def _refuse_collision(paths: list[Path]) -> str:
+    names = ", ".join(str(p) for p in paths)
+    return (
+        f"refusing to write the same path twice in one run: {names}. "
+        f"--issues must name a different file from the converted output."
+    )
+
+
 def _existing(paths: list[Path]) -> list[Path]:
     return [p for p in paths if p.exists()]
 
@@ -171,6 +197,10 @@ def _cmd_to_ossie(args: argparse.Namespace) -> int:
         return 1
 
     targets = [output_path] + ([issues_path] if issues_path else [])
+    collisions = _colliding(targets)
+    if collisions:
+        print(f"Error: {_refuse_collision(collisions)}", file=sys.stderr)
+        return 1
     if not args.force:
         existing = _existing(targets)
         if existing:
@@ -212,6 +242,10 @@ def _cmd_to_tml(args: argparse.Namespace) -> int:
         return 1
 
     all_targets = [path for path, _ in targets] + ([issues_path] if issues_path else [])
+    collisions = _colliding(all_targets)
+    if collisions:
+        print(f"Error: {_refuse_collision(collisions)}", file=sys.stderr)
+        return 1
     if not args.force:
         existing = _existing(all_targets)
         if existing:

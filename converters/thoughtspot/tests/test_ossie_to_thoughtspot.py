@@ -896,3 +896,59 @@ class TestAliasedSelfJoinEmitsOneTableDocument:
         codes = [i["code"] for i in result.issues.as_dicts()]
         assert "TS-MODEL-TABLE-ENTRY-AMBIGUOUS" in codes
         assert result.issues.has_errors()
+
+
+class TestMergingTwoDatasetsThatShareOneSqlView:
+    """A SQL View keeps its columns under `sql_view_columns`, not `columns`.
+
+    `_deduplicate_table_documents` merged only `columns`, so two aliased
+    datasets over one SQL View lost the second's fields entirely -- and then
+    `build_model`, checking both aliases against the single merged document,
+    raised TS-MODEL-COLUMN-ID-MISSING for the fields that were dropped. The
+    spurious body-divergence warning fired too, because `sql_view_columns` was
+    not excluded from that comparison either.
+
+    Reading the wrong column key is this converter's most repeated mistake --
+    three separate silent failures now -- which is why the kind-to-key rule is
+    named once in `_column_key_for`.
+    """
+
+    @staticmethod
+    def _sql_view_dataset(alias, column):
+        payload = {
+            "_v": 1, "connection_name": "C", "tml_name": "RETURNS_SV",
+            "alias": alias, "sql_output_columns": {column: column},
+        }
+        return {
+            "name": alias, "source": "SELECT 1",
+            "fields": [{
+                "name": column,
+                "expression": {"dialects": [
+                    {"dialect": "THOUGHTSPOT", "expression": f"[{alias}::{column}]"}
+                ]},
+            }],
+            "custom_extensions": [
+                {"vendor_name": "THOUGHTSPOT", "data": json.dumps(payload)}
+            ],
+        }
+
+    def _convert(self):
+        return convert({"version": "0.2.0.dev0", "name": "M", "datasets": [
+            self._sql_view_dataset("A", "c_a"),
+            self._sql_view_dataset("B", "c_b"),
+        ]})
+
+    def test_both_aliases_columns_survive_the_merge(self):
+        [document] = self._convert().documents.tables
+        assert document.kind == "sql_view"
+        assert [c["name"] for c in document.body["sql_view_columns"]] == ["c_a", "c_b"]
+
+    def test_no_column_is_reported_missing(self):
+        result = self._convert()
+        codes = [i["code"] for i in result.issues.as_dicts()]
+        assert "TS-MODEL-COLUMN-ID-MISSING" not in codes
+        assert not result.issues.has_errors()
+
+    def test_no_spurious_body_divergence_is_reported(self):
+        codes = [i["code"] for i in self._convert().issues.as_dicts()]
+        assert "TS-TABLE-ALIAS-BODY-DIVERGENT" not in codes

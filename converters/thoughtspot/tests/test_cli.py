@@ -339,3 +339,56 @@ def test_ossie_to_thoughtspot_convert_agrees_with_the_cli_on_filenames(tmp_path)
     out_dir = tmp_path / "out"
     cli.main(["to-tml", str(ossie_path), "-o", str(out_dir)])
     assert {p.name for p in out_dir.iterdir()} == expected
+
+
+class TestOutputPathsMustNotCollide:
+    """No run may write the same path twice.
+
+    `--issues` pointing at `-o` passed the does-it-already-exist check on a
+    fresh run, then `_write_issues` replaced the converted document with the
+    JSON issue log and the command exited 0 -- the output silently destroyed by
+    the same invocation that produced it.
+    """
+
+    def test_to_ossie_refuses_issues_equal_to_output(self, tmp_path):
+        target = tmp_path / "out.yaml"
+        code = cli.main([
+            "to-ossie", *[str(p) for p in _tml_paths("minimal")],
+            "-o", str(target), "--issues", str(target),
+        ])
+        assert code == 1
+        assert not target.exists(), "nothing should have been written"
+
+    def test_force_does_not_license_a_self_collision(self, tmp_path):
+        # --force permits overwriting files that were already there; it does not
+        # permit destroying one of this run's own outputs.
+        target = tmp_path / "out.yaml"
+        assert cli.main([
+            "to-ossie", *[str(p) for p in _tml_paths("minimal")],
+            "-o", str(target), "--issues", str(target), "--force",
+        ]) == 1
+
+    def test_a_relative_and_absolute_spelling_of_one_path_still_collides(self, tmp_path, monkeypatch):
+        # Compared after resolve(), because two spellings are one file on disk.
+        monkeypatch.chdir(tmp_path)
+        assert cli.main([
+            "to-ossie", *[str(p) for p in _tml_paths("minimal")],
+            "-o", str(tmp_path / "out.yaml"), "--issues", "out.yaml",
+        ]) == 1
+
+    def test_to_tml_refuses_issues_aimed_at_a_generated_document(self, tmp_path):
+        ossie_file = tmp_path / "in.yaml"
+        _write_ossie_yaml_from_fixture("minimal", ossie_file)
+        out_dir = tmp_path / "tml"
+        assert cli.main([
+            "to-tml", str(ossie_file), "-o", str(out_dir),
+            "--issues", str(out_dir / "orders.table.tml"),
+        ]) == 1
+
+    def test_distinct_paths_are_still_accepted(self, tmp_path):
+        target, issues = tmp_path / "out.yaml", tmp_path / "issues.json"
+        assert cli.main([
+            "to-ossie", *[str(p) for p in _tml_paths("minimal")],
+            "-o", str(target), "--issues", str(issues),
+        ] ) == 0
+        assert target.exists() and issues.exists()

@@ -1179,11 +1179,26 @@ def _field_physical_display_name(field: dict) -> str | None:
     return None
 
 
+#: Every body key that can hold columns, for callers that must ignore all of them.
+_COLUMN_KEYS = frozenset({"columns", "sql_view_columns"})
+
+
+def _column_key_for(kind: str) -> str:
+    """Which body key holds a document's columns.
+
+    A SQL View stores them under `sql_view_columns`, a Table under `columns`.
+    Named once because reading the wrong one is this converter's most repeated
+    mistake: it has now caused three separate silent failures, most recently in
+    `_deduplicate_table_documents`, which merged only `columns` and so dropped
+    every field of a second dataset sharing one SQL View.
+    """
+    return "sql_view_columns" if kind == "sql_view" else "columns"
+
+
 def _physical_columns_of(table_doc: TmlDocument | None) -> list[dict]:
     if table_doc is None:
         return []
-    key = "sql_view_columns" if table_doc.kind == "sql_view" else "columns"
-    return table_doc.body.get(key) or []
+    return table_doc.body.get(_column_key_for(table_doc.kind)) or []
 
 
 def _restore_ai_context(properties: dict, ai_context: object, log: IssueLog, *, object_ref: str) -> None:
@@ -2133,17 +2148,21 @@ def _deduplicate_table_documents(
             order.append(name)
             continue
 
-        seen_columns = {c.get("name") for c in first.body.get("columns") or []}
-        for column in table.body.get("columns") or []:
+        column_key = _column_key_for(table.kind)
+        seen_columns = {c.get("name") for c in first.body.get(column_key) or []}
+        for column in table.body.get(column_key) or []:
             if column.get("name") not in seen_columns:
-                first.body.setdefault("columns", []).append(column)
+                first.body.setdefault(column_key, []).append(column)
                 seen_columns.add(column.get("name"))
 
+        # Both column keys are excluded from the divergence comparison, not just
+        # the one this kind uses: leaving `sql_view_columns` in made every merged
+        # SQL View report a spurious body difference on top of losing the data.
         ignoring_columns = (
-            {k: v for k, v in first.body.items() if k != "columns"},
-            {k: v for k, v in table.body.items() if k != "columns"},
+            {k: v for k, v in first.body.items() if k not in _COLUMN_KEYS},
+            {k: v for k, v in table.body.items() if k not in _COLUMN_KEYS},
         )
-        if ignoring_columns[0] != ignoring_columns[1]:
+        if first.kind != table.kind or ignoring_columns[0] != ignoring_columns[1]:
             log.add(
                 code="TS-TABLE-ALIAS-BODY-DIVERGENT",
                 severity=Severity.WARNING,
