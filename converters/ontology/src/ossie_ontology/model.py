@@ -1108,6 +1108,11 @@ def _parse_verbalization(relationship: Relationship, verbalization: str) -> Rela
     """
         Parse a verbalization string into an ordered list of :class:`VerbalizationRole` objects.
 
+        Tokens are matched to the relationship's roles by concept name (and role name
+        when given), so a reading may list the roles in any order; the returned roles
+        follow the reading order. Each role must appear exactly once. When a concept
+        plays several unnamed roles, its tokens take those roles in declared order.
+
         Format example:
 
             'every chain- super {Store} reports returns of {Item} big -box for average- {Amount:amt}'
@@ -1134,18 +1139,35 @@ def _parse_verbalization(relationship: Relationship, verbalization: str) -> Rela
         )
     segments: list[str] = []
     roles: list[VerbalizationRole] = []
+    used: set[int] = set()
     prev_end = 0
-    for idx, m in enumerate(tokens):
-        role = relationship.role(idx)
+    for m in tokens:
         segments.append(verbalization[prev_end:m.start()].strip())
         verb_concept_name = m.group(1).strip()
-        rel_role_name = role.explicit_name
         verb_role_name = m.group(2).strip() if m.group(2) else None
-        if rel_role_name != verb_role_name or role.player.name != verb_concept_name:
-            raise ValueError(
-                f"Role {idx}: '{role.player.name}:{role.name}' "
-                f"does not match verbalization role '{verb_concept_name}:{verb_role_name}'"
+        matches = [
+            role for role in relationship.roles
+            if role.player.name == verb_concept_name and role.explicit_name == verb_role_name
+        ]
+        if not matches:
+            declared = ", ".join(
+                VerbalizationRole(concept=r.player, name=r.explicit_name).verbalization_name()
+                for r in relationship.roles
             )
+            raise ValueError(
+                f"No role of relationship {relationship.full_name} ({declared}) "
+                f"matches verbalization role '{m.group(0)}' in '{verbalization}'"
+            )
+        # Match by concept (and role name) so readings may list roles in any order.
+        # When several roles still match (e.g. a ring without role names), take the
+        # first unused one, which keeps them in declared order.
+        role = next((r for r in matches if r.idx not in used), None)
+        if role is None:
+            raise ValueError(
+                f"Verbalization '{verbalization}' uses role '{m.group(0)}' more than once "
+                f"for relationship {relationship.full_name}"
+            )
+        used.add(role.idx)
         roles.append(VerbalizationRole(concept=role.player, name=verb_role_name))
         prev_end = m.end()
     segments.append(verbalization[prev_end:].strip())
