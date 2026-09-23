@@ -33,6 +33,22 @@ property as defined by the ontology schema.
 
 An Ossie Converter translates between the Ossie semantic model format and a specific vendor's semantic implementation. This enables teams to author a semantic model once in the Ossie standard and then generate the corresponding vendor-specific representation automatically.
 
+## Repository scope
+
+The main Ossie repository does not accept new converters, including semantic model
+and ontology converters. New converters should be developed in separate
+repositories. To propose hosting a converter under Apache Ossie, start a discussion
+on `dev@ossie.apache.org` about repository placement.
+
+Existing converters remain in place for now. Bug fixes, tests, documentation, and
+compatibility updates to those converters are welcome. Any migration will be
+considered separately with their maintainers and the community.
+
+The long-term role of reference implementations and the structure of separate
+converter repositories are still under discussion. See the
+[community discussion](https://lists.apache.org/thread/5vqckvd5jjb15t6zkjrmjvorxxcfv8yg)
+for background.
+
 ## Hub-and-Spoke Model
 
 Ossie converters follow a **hub-and-spoke** architecture:
@@ -300,7 +316,12 @@ Given the [TPC-DS example](../examples/tpcds_semantic_model.yaml) included in th
 
 ## Contributing a New Converter
 
-To add support for a new vendor:
+New converters belong in separate repositories, as described in
+[Repository scope](#repository-scope). Do not open a pull request to add a new
+converter to this repository. The implementation guidance below also applies to
+converters developed elsewhere.
+
+To implement support for a new vendor:
 
 1. Use a stable `vendor_name` string in each custom extension emitted by the converter.
 2. Define the custom extension schema for the vendor (what vendor-specific metadata fields are supported in the `data` JSON).

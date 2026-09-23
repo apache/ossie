@@ -37,8 +37,9 @@
 - [ ] New or modified terms are defined and documented
 
 ### Converters
+- [ ] No new converters are added to the main repository
 - [ ] Converter logic in `converters/` is updated to reflect spec or ontology changes
-- [ ] New converters include tests under the converter's test directory
+- [ ] Changes to existing converters include relevant tests under the converter's test directory
 
 ### Validation
 - [ ] Validation rules in `validation/` are updated if the spec changed

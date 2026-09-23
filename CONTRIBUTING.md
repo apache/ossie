@@ -43,7 +43,7 @@ are good starting points.
 
 - **Specification Feedback**: Review proposed specification changes and share your perspective on the mailing list, GitHub pull requests, and issues.
 - **Use Case Discussions**: Share how your organization uses semantic models and what challenges you face — this helps shape the specification to address real-world needs.
-- **Code Contributions**: Contribute to validation tooling, converters, examples, or any other part of the project.
+- **Code Contributions**: Contribute to validation tooling, existing converters, examples, or any other part of the project. See [Converter Contributions](#converter-contributions) before starting a new converter.
 - **Documentation**: Help improve and expand the project documentation.
 - **Community Support**: Answer questions, participate in discussions, and help onboard new contributors.
 
@@ -110,7 +110,7 @@ infrastructure (GitBox).
 
 ### Code, Documentation, and Tooling
 
-Non-specification contributions (bug fixes, tooling, documentation, converters,
+Non-specification contributions (bug fixes, tooling, documentation, existing converters,
 examples) follow standard GitHub pull request review:
 
 1. Open an issue or start a thread on `dev@` for anything non-trivial, so the
@@ -120,6 +120,16 @@ examples) follow standard GitHub pull request review:
 4. A committer reviews and merges once the change has at least one **+1** from a
    committer and no unresolved **-1**. The project follows a review-then-commit (RTC)
    model: changes are merged after review rather than committed first.
+
+### Converter Contributions
+
+The main Ossie repository does not accept new converters. Develop new semantic
+model and ontology converters in separate repositories, and discuss any proposed
+Apache Ossie hosting on `dev@ossie.apache.org`.
+
+Contributions to existing converters are welcome; they remain in place for now.
+See the [converter repository scope](converters/README.md#repository-scope) for
+details and the ongoing community discussion.
 
 ### Specification Changes
 

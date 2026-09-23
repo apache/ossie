@@ -231,7 +231,7 @@ No. Ossie is vendor-agnostic by design. The specification is developed and gover
 Yes, as long as a converter exists (or is built) for your tool. The hub-and-spoke model means that adding Ossie support to a single tool gives it interoperability with every other Ossie-compatible tool. Check the [Converters Guide](../converters/README.md) for currently supported vendors.
 
 **What if my vendor isn't supported yet?**
-You can contribute a converter. The [Converters Guide](../converters/README.md) provides a step-by-step guide for implementing import and export converters for new vendors. The community is happy to help with design reviews and testing.
+You can build a converter in a separate repository. The main Ossie repository does not accept new converters. The [Converters Guide](../converters/README.md) provides implementation guidance; see [repository scope](../converters/README.md#repository-scope) for hosting guidance and how to discuss Apache Ossie hosting with the community.
 
 **Do I need to rewrite my existing semantic models?**
 No. Import converters translate existing vendor-specific models into the Ossie format automatically. Your existing models remain intact — Ossie provides an additional interchange layer on top of them.
@@ -354,7 +354,7 @@ We welcome contributions from everyone — whether you are a developer, a data e
 
 - **Specification Feedback**: Review proposed specification changes and share your perspective on GitHub pull requests and issues.
 - **Use Case Discussions**: Share how your organization uses semantic models and what challenges you face — this helps shape the specification to address real-world needs.
-- **Code Contributions**: Contribute to validation tooling, converters, examples, or any other part of the project.
+- **Code Contributions**: Contribute to validation tooling, existing converters, examples, or any other part of the project. See [Converter Contributions](../CONTRIBUTING.md#converter-contributions) before starting a new converter.
 - **Documentation**: Help improve and expand the project documentation.
 - **Community Support**: Answer questions, participate in discussions, and help onboard new contributors.
 
