@@ -44,7 +44,8 @@ section) — the merged spelling (`CEIL(x)`, `TRUNC(x, d)`) is what
 this file.
 """
 from ossie_thoughtspot.expressions import CATALOG
-from ossie_thoughtspot.expressions._types import Classification, Variant
+from ossie_thoughtspot.expressions._types import Classification, Variant, VariadicStyle
+from ossie_thoughtspot.expressions.emit import emit_direct
 
 EXPECTED: dict[str, Classification] = {
     # Mathematical functions (25 rows: 23 direct / 2 passthrough)
@@ -226,10 +227,18 @@ def test_iff_is_an_alias_for_if():
 
 def test_coalesce_is_a_right_nested_ifnull_chain():
     # ThoughtSpot's ifnull is strictly two-argument, so an N-ary COALESCE
-    # becomes a right-nested chain rather than a flat N-ary call.
+    # becomes a right-nested chain rather than a flat N-ary call. The template
+    # is the BINARY step; the chain is built by folding it right-associatively,
+    # so the assertion is on what renders, not on how many "ifnull (" the
+    # template happens to spell. Pinning the spelling is what let the template
+    # sit at a hardcoded three arguments while the note above it said two was
+    # the common case -- COALESCE(a, b) raised.
     row = CATALOG["COALESCE(expr1, expr2, ...)"]
     assert row.classification is Classification.DIRECT
-    assert row.template.count("ifnull (") == 2
+    assert row.variadic is not None and row.variadic.style is VariadicStyle.FOLD
+    assert emit_direct(row, ["a", "b"]) == "ifnull ( a , b )"
+    assert emit_direct(row, ["a", "b", "c"]) == "ifnull ( a , ifnull ( b , c ) )"
+    assert emit_direct(row, ["a", "b", "c", "d"]) == "ifnull ( a , ifnull ( b , ifnull ( c , d ) ) )"
 
 
 def test_nvl_is_alias_for_two_argument_coalesce_via_ifnull():

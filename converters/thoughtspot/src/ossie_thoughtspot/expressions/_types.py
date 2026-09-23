@@ -54,6 +54,40 @@ class Variant(str, Enum):
     NUMBER_AGGREGATE = "sql_number_aggregate_op"
 
 
+class VariadicStyle(str, Enum):
+    """How a construct that takes any number of arguments is rendered.
+
+    A fixed `{0} , {1}` template cannot express one: it either rejects the real
+    arity or -- worse -- bakes a literal `...` into the output, which is how
+    `concat ( {0} , {1} , ... )` came to emit `concat ( [T::A] , [T::B] , ... )`
+    as if that were a formula.
+    """
+
+    #: `{*}` is replaced by the argument tail, joined with " , ". The whole
+    #: list lives inside one call: `concat ( a , b , c )`.
+    JOIN = "join"
+    #: The template is BINARY and applied right-associatively over the whole
+    #: list, for a ThoughtSpot function that has no n-ary form:
+    #: `ifnull ( a , ifnull ( b , c ) )`.
+    FOLD = "fold"
+
+
+@dataclass(frozen=True)
+class Variadic:
+    """The arity rule for a construct whose argument count is not fixed.
+
+    `min_args`  fewest arguments that render to something meaningful (2 for
+                every construct here -- a one-argument CONCAT or COALESCE is
+                the argument itself, not a call).
+    `tail_from` index at which the repeating tail begins, for JOIN. `IN` keeps
+                argument 0 positional (the column) and repeats from 1.
+    """
+
+    style: VariadicStyle
+    min_args: int = 2
+    tail_from: int = 0
+
+
 @dataclass(frozen=True)
 class Construct:
     """One row of the function-mapping document.
@@ -95,8 +129,31 @@ class Construct:
     template: str | None = None
     variant: Variant | None = None
     note: str = ""
+    variadic: Variadic | None = None
 
     def __post_init__(self) -> None:
+        if self.variadic is not None:
+            if self.classification is Classification.UNMAPPABLE:
+                raise ValueError(f"{self.spec_name}: an unmappable row has no arity to vary")
+            if self.variadic.style is VariadicStyle.JOIN and "{*}" not in (self.template or ""):
+                raise ValueError(
+                    f"{self.spec_name}: a join-variadic template must carry the {{*}} tail marker"
+                )
+            if self.variadic.style is VariadicStyle.FOLD and "{*}" in (self.template or ""):
+                raise ValueError(
+                    f"{self.spec_name}: a fold-variadic template is binary and takes no {{*}}"
+                )
+        # A literal "..." is how this defect shipped: every DIRECT variadic row
+        # carried the specification's own ellipsis notation straight into its
+        # template, where `str.format` never fills it, so a two-argument CONCAT
+        # rendered `concat ( a , b , ... )` -- syntactically invalid, and caught
+        # by nothing because the catalog sweep only asserted emission did not
+        # raise. Rejecting it here means a new row cannot reintroduce it.
+        if self.template and "..." in self.template:
+            raise ValueError(
+                f"{self.spec_name}: a template cannot contain a literal '...'; a construct "
+                f"that takes any number of arguments declares `variadic=` instead"
+            )
         if self.classification is Classification.PASSTHROUGH and self.variant is None:
             raise ValueError(f"{self.spec_name}: a passthrough row must name its variant")
         if self.classification is not Classification.PASSTHROUGH and self.variant is not None:

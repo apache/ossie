@@ -34,7 +34,9 @@ import pytest
 
 from ossie_thoughtspot.expressions import CATALOG
 from ossie_thoughtspot.expressions._types import Classification, Construct, Variant
-from ossie_thoughtspot.expressions.emit import _placeholder_count, emit_direct, emit_passthrough, emit_unmappable
+from ossie_thoughtspot.expressions.emit import (
+    _PLACEHOLDER_RE, _placeholder_count, emit_direct, emit_passthrough, emit_unmappable,
+)
 from ossie_thoughtspot.issues import IssueLog, Severity
 
 SUM = Construct("SUM(expr)", Classification.DIRECT, template="sum ( {0} )")
@@ -222,20 +224,64 @@ def test_emit_passthrough_detects_partition_by_with_irregular_whitespace():
 # precisely so that it does.
 # --------------------------------------------------------------------------
 
+def _rendering_defects(name: str, rendered: str) -> list[str]:
+    """What a rendered DIRECT formula must never contain.
+
+    This is the half the original sweep was missing. It derived the arity FROM
+    the template and then asserted only that emission did not raise, so a
+    template could declare any arity it liked and bake anything it liked into
+    the output and still pass. Five rows did exactly that: the specification's
+    own `...` ellipsis was copied into the template, where `str.format` never
+    fills it, and `concat ( a , b , ... )` was emitted as though it were a
+    formula. Asserting on the OUTPUT is what makes the sweep able to fail.
+    """
+    defects = []
+    if "..." in rendered:
+        defects.append(f"{name!r}: rendered output contains a literal '...': {rendered!r}")
+    if _PLACEHOLDER_RE.search(rendered):
+        defects.append(f"{name!r}: rendered output has an unfilled placeholder: {rendered!r}")
+    if rendered.count("(") != rendered.count(")"):
+        defects.append(f"{name!r}: unbalanced parentheses: {rendered!r}")
+    if rendered.count("{") != rendered.count("}"):
+        defects.append(f"{name!r}: unbalanced braces: {rendered!r}")
+    return defects
+
+
 def test_every_direct_catalog_row_renders_with_its_own_natural_arity():
     failures = []
     for name, construct in CATALOG.items():
         if construct.classification is not Classification.DIRECT:
             continue
-        arity = _placeholder_count(construct.template)
-        args = [f"arg{i}" for i in range(arity)]
-        try:
-            emit_direct(construct, args)
-        except Exception as exc:  # noqa: BLE001 - want to report every failure, not stop at the first
-            failures.append(f"{name!r} ({arity} args): {exc!r}")
+        # A variadic row has no single "natural" arity, so it is swept across a
+        # range either side of its declared minimum -- the two-argument case
+        # that COALESCE used to raise on, and the four-argument case that no
+        # fixed template could express at all.
+        if construct.variadic is not None:
+            arities = range(construct.variadic.min_args, construct.variadic.min_args + 3)
+        else:
+            arities = [_placeholder_count(construct.template)]
+        for arity in arities:
+            args = [f"arg{i}" for i in range(arity)]
+            try:
+                rendered = emit_direct(construct, args)
+            except Exception as exc:  # noqa: BLE001 - report every failure, not just the first
+                failures.append(f"{name!r} ({arity} args): {exc!r}")
+                continue
+            failures.extend(f"({arity} args) {d}" for d in _rendering_defects(name, rendered))
     assert not failures, "DIRECT rows that fail to render with their own natural arity:\n" + "\n".join(
         failures
     )
+
+
+def test_a_direct_row_below_its_variadic_minimum_is_refused():
+    # The other half: a variadic row must still REJECT an arity that cannot
+    # mean anything, rather than rendering a one-argument `concat`.
+    for name, construct in CATALOG.items():
+        if construct.variadic is None:
+            continue
+        too_few = [f"arg{i}" for i in range(construct.variadic.min_args - 1)]
+        with pytest.raises(ValueError, match="at least"):
+            emit_direct(construct, too_few)
 
 
 # --------------------------------------------------------------------------

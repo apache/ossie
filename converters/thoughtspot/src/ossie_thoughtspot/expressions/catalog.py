@@ -86,7 +86,7 @@ no entry in `spec_construct_names()` at all and are exempted instead.
 import re
 from pathlib import Path
 
-from ._types import Classification, Construct, Variant
+from ._types import Classification, Construct, Variadic, VariadicStyle, Variant
 
 # --------------------------------------------------------------------------
 # CATALOG: organised into families, one block per family below.
@@ -490,7 +490,8 @@ CATALOG.update(
     {
         "CONCAT(str1, str2, ...)": Construct(
             "CONCAT(str1, str2, ...)", Classification.DIRECT,
-            template="concat ( {0} , {1} , ... )",
+            template="concat ( {*} )",
+            variadic=Variadic(VariadicStyle.JOIN),
             note=(
                 "N-ary on both sides. + does not concatenate in ThoughtSpot — "
                 "it is numeric-only and the parser rejects string operands, so "
@@ -810,7 +811,8 @@ CATALOG.update(
         ),
         "GREATEST(x, y, ...)": Construct(
             "GREATEST(x, y, ...)", Classification.DIRECT,
-            template="greatest ( {0} , {1} , ... )",
+            template="greatest ( {*} )",
+            variadic=Variadic(VariadicStyle.JOIN),
             note=(
                 "Not max. ThoughtSpot's max is an aggregate; greatest is the "
                 "row-wise N-ary function. Mapping GREATEST to max would "
@@ -820,7 +822,8 @@ CATALOG.update(
         ),
         "LEAST(x, y, ...)": Construct(
             "LEAST(x, y, ...)", Classification.DIRECT,
-            template="least ( {0} , {1} , ... )",
+            template="least ( {*} )",
+            variadic=Variadic(VariadicStyle.JOIN),
             note="Not min, for the same reason as GREATEST.",
         ),
         "IF(condition, true_result, false_result)": Construct(
@@ -844,7 +847,8 @@ CATALOG.update(
         ),
         "COALESCE(expr1, expr2, ...)": Construct(
             "COALESCE(expr1, expr2, ...)", Classification.DIRECT,
-            template="ifnull ( {0} , ifnull ( {1} , {2} ) )",
+            template="ifnull ( {0} , {1} )",
+            variadic=Variadic(VariadicStyle.FOLD),
             note=(
                 "ThoughtSpot's ifnull is strictly two-argument, so an N-ary "
                 "COALESCE becomes a right-nested chain. Two arguments is the "
@@ -1011,7 +1015,8 @@ CATALOG.update(
         ),
         "IN": Construct(
             "IN", Classification.DIRECT,
-            template="{0} in {{ {1} , {2} , ... }}",
+            template="{0} in {{ {*} }}",
+            variadic=Variadic(VariadicStyle.JOIN, tail_from=1),
             note=(
                 "Literal lists only on both sides — no subqueries. The "
                 "curly-brace delimiter is confirmed, live-verified "
@@ -1026,7 +1031,8 @@ CATALOG.update(
         ),
         "NOT IN": Construct(
             "NOT IN", Classification.DIRECT,
-            template="not ( {0} in {{ {1} , {2} , ... }} )",
+            template="not ( {0} in {{ {*} }} )",
+            variadic=Variadic(VariadicStyle.JOIN, tail_from=1),
             note=(
                 "Emitted as a negated in rather than a not in keyword — the "
                 "bare keyword form is not reliably accepted. Braces doubled "

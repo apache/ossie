@@ -418,6 +418,65 @@ def _physical_db_column_name(
     return physical.get("db_column_name")
 
 
+def _resolve_name_collision(
+    built: dict,
+    siblings: list[dict],
+    log: IssueLog,
+    *,
+    kind: str,
+    display_name: str,
+    scope: str,
+) -> dict:
+    """Give `built` a name no sibling already holds, reporting if it had to.
+
+    Identifier normalisation is many-to-one -- `"Order Date"`, `"Order-Date"`
+    and `"order date"` all fold to `order_date` -- so two distinct TML columns
+    can arrive here wanting one Ossie identifier. Emitting both produces a
+    document with two same-named objects in one scope: `validation/validate.py`
+    rejects exact-string duplicates, but the deeper problem is that every
+    reference to that name is now ambiguous, and nothing said so.
+
+    Comparison folds case, matching `identifiers.Allocator` and for the same
+    reason: Ossie resolves regular identifiers case-insensitively
+    (`core-spec/expression_language.md:77`), so `Amount` and `amount` are one
+    name to a consumer even though upstream validation only catches the exact
+    match.
+
+    The first arrival keeps the plain name; later ones take `_2`, `_3`, ... The
+    rename is reported at WARNING rather than applied quietly -- a renamed field
+    is a field whose identifier no longer matches what the modeller typed, and
+    the author is the only one who can decide whether that matters.
+    """
+    taken = {sibling["name"].casefold() for sibling in siblings}
+    name = built["name"]
+    if name.casefold() not in taken:
+        return built
+
+    suffix = 1
+    candidate = name
+    while candidate.casefold() in taken:
+        suffix += 1
+        candidate = f"{name}_{suffix}"
+
+    log.add(
+        code=f"TS-{kind.upper()}-NAME-COLLISION",
+        severity=Severity.WARNING,
+        message=(
+            f"{kind} {display_name!r} normalises to identifier {name!r}, which "
+            f"another {kind} in {scope} already holds; it is emitted as "
+            f"{candidate!r} instead"
+        ),
+        object_ref=f"{kind}:{display_name}",
+        remedy=(
+            f"Rename one of the colliding ThoughtSpot columns if the generated "
+            f"identifier matters to downstream consumers."
+        ),
+    )
+    # `name` already exists as a key, so this preserves its position in the
+    # mapping and therefore the emitted YAML's key order.
+    return {**built, "name": candidate}
+
+
 def _field_or_metric_identifier(
     display_name: str,
     physical_hint: str | None,
@@ -2070,6 +2129,23 @@ def convert(document_set: DocumentSet) -> OssieConversion:
             continue
 
         if field is not None:
+            # Resolved here, before anything downstream records the name, because
+            # this is the first point at which the OWNING DATASET is known -- and
+            # `Field.name` is unique per dataset, so that is the only scope in
+            # which two fields genuinely collide.
+            #
+            # Deliberately not done inside `_field_or_metric_identifier`: its
+            # allocator is model-wide, which is the right scope for the fallback
+            # placeholders it exists to hand out but the wrong one for the common
+            # case. Routing every field through it would rename `orders.amount`
+            # and `customers.amount` -- legitimately distinct fields in different
+            # datasets -- to `amount` and `amount_2`.
+            owner = _field_owner_dataset(column, formulas, resolve)
+            if owner is not None and owner in fields_by_dataset:
+                field = _resolve_name_collision(
+                    field, fields_by_dataset[owner], log,
+                    kind="field", display_name=display_name, scope=f"dataset {owner!r}",
+                )
             if "column_id" in column:
                 # Safe to re-parse without a try/except: convert_field just
                 # parsed this same column_id successfully (that's how `field`
@@ -2091,7 +2167,6 @@ def convert(document_set: DocumentSet) -> OssieConversion:
                 ))
             if field_stash_payload:
                 field = _write_stash_safely(field, field_stash_payload, log, f"field:{display_name}")
-            owner = _field_owner_dataset(column, formulas, resolve)
             if owner is not None and owner in fields_by_dataset:
                 fields_by_dataset[owner].append(field)
             else:
@@ -2120,6 +2195,13 @@ def convert(document_set: DocumentSet) -> OssieConversion:
                 ))
             if metric_stash_payload:
                 metric = _write_stash_safely(metric, metric_stash_payload, log, f"metric:{display_name}")
+            # `Metric.name` is unique across the model's single flat `metrics[]`,
+            # so the sibling list IS the scope -- there is no owner to establish
+            # first, as there is for a field.
+            metric = _resolve_name_collision(
+                metric, metrics, log,
+                kind="metric", display_name=display_name, scope="the model",
+            )
             metrics.append(metric)
             continue
 

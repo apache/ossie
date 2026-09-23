@@ -229,6 +229,13 @@ def dump_document_set(document_set: DocumentSet) -> list[tuple[str, str]]:
     # filenames already claimed to collide with) — one extra digit of headroom besides.
     counter_reserve = len(f"-{len(documents) + 1}")
 
+    # Collisions are tracked case-INSENSITIVELY. The default filesystem on both
+    # macOS (APFS) and Windows (NTFS) is case-insensitive, so two documents named
+    # "Store_Sales" and "STORE_SALES" yield two distinct-looking filenames that
+    # are the same file on disk: the second write silently destroys the first,
+    # and nothing in this converter would notice -- `dump_document_set` returns
+    # both, the CLI writes both and exits 0, and one table is simply gone.
+    # Emitted names keep their original case; only the comparison folds.
     used: set[str] = set()
     out = []
     for document in documents:
@@ -239,9 +246,9 @@ def dump_document_set(document_set: DocumentSet) -> list[tuple[str, str]]:
 
         candidate = f"{stem}.{suffix}"
         counter = 1
-        while candidate in used:
+        while candidate.casefold() in used:
             counter += 1
             candidate = f"{stem}-{counter}.{suffix}"
-        used.add(candidate)
+        used.add(candidate.casefold())
         out.append((candidate, dump_document(document)))
     return out

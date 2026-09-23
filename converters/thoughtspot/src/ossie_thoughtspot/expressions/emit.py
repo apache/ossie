@@ -59,7 +59,7 @@ Two details that are easy to get subtly wrong (both pinned by tests in test_emit
 import json
 import re
 
-from ._types import Classification, Construct
+from ._types import Classification, Construct, VariadicStyle
 from ..issues import IssueLog, Severity
 
 _PLACEHOLDER_RE = re.compile(r"\{(\d+)\}")
@@ -76,6 +76,37 @@ def _placeholder_count(template: str) -> int:
     return max(indices) + 1 if indices else 0
 
 
+def _emit_variadic(construct: Construct, args: list[str]) -> str:
+    """Render a construct whose argument count is not fixed.
+
+    JOIN splits the template at its `{*}` marker, formats each side with the
+    positional head arguments, and drops the joined tail between them, so
+    `"{0} in {{ {*} }}"` with four arguments gives `a in { b , c , d }`. The
+    split matters: `str.format` cannot be run over a template still carrying
+    `{*}`, and running it after substitution would re-interpret any brace the
+    arguments themselves contain.
+
+    FOLD applies a BINARY template right-associatively, for a ThoughtSpot
+    function with no n-ary form — `COALESCE(a, b, c)` has to become
+    `ifnull ( a , ifnull ( b , c ) )`, not a flat call.
+    """
+    spec = construct.variadic
+    if len(args) < spec.min_args:
+        plural = "argument" if spec.min_args == 1 else "arguments"
+        raise ValueError(
+            f"{construct.spec_name} takes at least {spec.min_args} {plural}, got {len(args)}"
+        )
+
+    if spec.style is VariadicStyle.FOLD:
+        folded = args[-1]
+        for arg in reversed(args[:-1]):
+            folded = construct.template.format(arg, folded)
+        return folded
+
+    head, _, tail = construct.template.partition("{*}")
+    return head.format(*args) + " , ".join(args[spec.tail_from:]) + tail.format(*args)
+
+
 def emit_direct(construct: Construct, args: list[str]) -> str:
     """Render a DIRECT construct: substitute `args` into its template positionally.
 
@@ -83,12 +114,21 @@ def emit_direct(construct: Construct, args: list[str]) -> str:
     not have exactly the number of positional arguments the template declares —
     silently dropping or reusing an argument would produce a formula that imports
     cleanly and computes the wrong thing.
+
+    A construct declaring `variadic` is checked against a MINIMUM instead, and
+    rendered by `_emit_variadic`: CONCAT, GREATEST, LEAST, COALESCE, IN and
+    NOT IN all take any number of arguments, and a fixed placeholder count
+    cannot express that in either direction — it rejects the real arity, or it
+    renders the specification's own `...` notation into the output as if it
+    were syntax.
     """
     if construct.classification is not Classification.DIRECT:
         raise ValueError(
             f"{construct.spec_name}: emit_direct called on a "
             f"{construct.classification.value} construct, not direct"
         )
+    if construct.variadic is not None:
+        return _emit_variadic(construct, args)
     expected = _placeholder_count(construct.template)
     if len(args) != expected:
         plural = "argument" if expected == 1 else "arguments"
