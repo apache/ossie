@@ -52,6 +52,7 @@ from ._common import (
     OSSIE_TO_TMSL_DATATYPE,
     OSSIE_UNSUPPORTED,
     OSSIE_VERSION,
+    RELATIONSHIP_ENDPOINT_METADATA,
     TMSL_TO_OSSIE_DATATYPE,
     ConversionError,
     dialect_expressions,
@@ -78,15 +79,6 @@ _STASH_CONTROL_KEYS = frozenset(
 )
 _TABLE_CONTROL_KEYS = frozenset({"excludedColumns"})
 _RELATIONSHIP_CONTROL_KEYS = frozenset({"flipped", "name", "normalizedEndpoints"})
-_RELATIONSHIP_ENDPOINT_METADATA = frozenset(
-    {
-        "crossFilteringBehavior",
-        "fromCardinality",
-        "isActive",
-        "relyOnReferentialIntegrity",
-        "toCardinality",
-    }
-)
 _MEASURE_CONTROL_KEYS = frozenset({"table", "name"})
 _COLUMN_CONTROL_KEYS = frozenset({"dataType", "sourceColumn"})
 
@@ -870,7 +862,7 @@ def _convert_relationships(relationships, table_columns):
         }
         for key, value in stash.items():
             if key not in _RELATIONSHIP_CONTROL_KEYS and (
-                metadata_is_current or key not in _RELATIONSHIP_ENDPOINT_METADATA
+                metadata_is_current or key not in RELATIONSHIP_ENDPOINT_METADATA
             ):
                 tmsl.setdefault(key, value)
         _apply_ai_context(tmsl, relationship.get("ai_context"))

@@ -42,6 +42,7 @@ from ._common import (
     IDENTIFIER_RE,
     OSSIE_TO_TMSL_DATATYPE,
     OSSIE_VERSION,
+    RELATIONSHIP_ENDPOINT_METADATA,
     TEMPORAL_DATATYPES,
     TMSL_TO_OSSIE_DATATYPE,
     TMSL_UNSUPPORTED_COLUMN,
@@ -94,17 +95,6 @@ _RELATIONSHIP_CONSUMED = frozenset(
         "isActive",
     }
 )
-_RELATIONSHIP_ENDPOINT_METADATA = frozenset(
-    {
-        "crossFilteringBehavior",
-        "fromCardinality",
-        "isActive",
-        "relyOnReferentialIntegrity",
-        "toCardinality",
-    }
-)
-
-
 def convert_semantic_model_to_ossie(semantic_model: dict | str) -> str:
     """Convert a Power BI semantic model into an Apache Ossie semantic model.
 
@@ -564,7 +554,7 @@ def _convert_relationships(relationships, exported_names):
             # Recorded so an export restores the original one-to-many orientation
             # instead of silently rewriting the model shape.
             stash["flipped"] = True
-        if flipped or any(key in relationship for key in _RELATIONSHIP_ENDPOINT_METADATA):
+        if flipped or any(key in relationship for key in RELATIONSHIP_ENDPOINT_METADATA):
             # These properties describe this specific relationship. Remember its
             # normalized endpoints so later Ossie edits cannot replay stale metadata.
             stash["normalizedEndpoints"] = [
