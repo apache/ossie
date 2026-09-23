@@ -33,11 +33,11 @@ ThoughtSpot's own native functions with no counterpart in the Ossie specificatio
 
 | Disposition | Count | Share | Meaning |
 |---|---|---|---|
-| compose | 49 | 62% | A full, portable Ossie expression is produced. |
+| compose | 49 | 61% | A full, portable Ossie expression is produced. |
 | partial | 8 | 10% | A real Ossie expression is produced, but it is provably incomplete. |
-| dialect | 10 | 13% | Resolves to the Ossie `dialects[]` mechanism, not a portable expression. |
+| dialect | 11 | 14% | Resolves to the Ossie `dialects[]` mechanism, not a portable expression. |
 | stash | 12 | 15% | No Ossie expression exists at all; preserved verbatim for round-trip only. |
-| **Total** | **79** | **100%** |  |
+| **Total** | **80** | **100%** |  |
 
 ## Cross-cutting dispatch, not name-keyed
 
@@ -99,6 +99,7 @@ Two checks apply before an ordinary lookup by name into `REVERSE`, so they are n
 | `first_value_in_period` | stash | — | `TS-EXPR-SEMI-ADDITIVE` · ERROR | The window clause itself round-trips; only the roll-up declaration is lost. |
 | `sql_string_op` | dialect | dynamic — see `_dispatch_sql_op` in `reverse.py` | — | Resolves to the Ossie dialects[] mechanism for the connection's own dialect, not a portable expression — the right home for raw warehouse SQL. |
 | `sql_int_op` | dialect | dynamic — see `_dispatch_sql_op` in `reverse.py` | — | Resolves to the Ossie dialects[] mechanism for the connection's own dialect, not a portable expression — the right home for raw warehouse SQL. |
+| `sql_number_op` | dialect | dynamic — see `_dispatch_sql_op` in `reverse.py` | — | Resolves to the Ossie dialects[] mechanism for the connection's own dialect, not a portable expression — the right home for raw warehouse SQL. |
 | `sql_double_op` | dialect | dynamic — see `_dispatch_sql_op` in `reverse.py` | — | Resolves to the Ossie dialects[] mechanism for the connection's own dialect, not a portable expression — the right home for raw warehouse SQL. |
 | `sql_bool_op` | dialect | dynamic — see `_dispatch_sql_op` in `reverse.py` | — | Resolves to the Ossie dialects[] mechanism for the connection's own dialect, not a portable expression — the right home for raw warehouse SQL. |
 | `sql_date_op` | dialect | dynamic — see `_dispatch_sql_op` in `reverse.py` | — | Resolves to the Ossie dialects[] mechanism for the connection's own dialect, not a portable expression — the right home for raw warehouse SQL. |

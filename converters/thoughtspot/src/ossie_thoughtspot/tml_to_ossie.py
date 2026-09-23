@@ -85,6 +85,7 @@ from typing import Callable
 
 from . import datatypes, formula, identifiers, keys, stash
 from .constants import (
+    GROUP_AGGREGATE_CALL_NAMES,
     DATASET_STASH_ALIAS,
     DATASET_STASH_CONNECTION_NAME,
     DATASET_STASH_SOURCE_PARTS,
@@ -129,7 +130,7 @@ from .constants import (
     STASH_TML_NAME,
 )
 from .errors import ConversionError
-from .expressions import CATALOG, GROUP_AGGREGATE_CALL_NAMES, Variant, emit_direct
+from .expressions import CATALOG, Variant, emit_direct
 from .issues import IssueLog, Severity
 from .tml import DocumentSet
 

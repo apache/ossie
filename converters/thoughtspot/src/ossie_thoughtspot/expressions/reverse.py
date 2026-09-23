@@ -111,7 +111,13 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable
 
-from ..constants import DIALECT, PORTABLE_DIALECT
+from .catalog import CATALOG
+from ..constants import (
+    DIALECT,
+    GROUP_AGGREGATE_CALL_NAMES,
+    GROUP_SHORTHAND_AGGREGATES,
+    PORTABLE_DIALECT,
+)
 from ..issues import IssueLog, Severity
 
 
@@ -382,13 +388,39 @@ REVERSE["rank_percentile"] = ReverseConstruct(
 )
 
 
-def _frame_bound(offset: str) -> str:
-    n = int(offset.strip())
+def _frame_start_bound(num_backward: str) -> str:
+    """`moving_*`'s second argument -> the frame's START bound.
+
+    It counts rows BACKWARD, so a positive value is `PRECEDING`. Negative is
+    legal and means the window opens after the current row -- the live-confirmed
+    LEAD idiom, `moving_max(m, -1, 1, ord)`, is exactly one row ahead.
+    """
+    n = int(num_backward.strip())
     if n > 0:
         return f"{n} PRECEDING"
     if n == 0:
         return "CURRENT ROW"
     return f"{-n} FOLLOWING"
+
+
+def _frame_end_bound(num_forward: str) -> str:
+    """`moving_*`'s third argument -> the frame's END bound.
+
+    It counts rows FORWARD, so the sign means the OPPOSITE of the start bound's:
+    a positive value is `FOLLOWING`. Both bounds shared one function until now,
+    and every window with a non-zero forward count came out wrong --
+    `moving_average(m, 2, 3, ord)` emitted `BETWEEN 2 PRECEDING AND 3 PRECEDING`,
+    which is valid SQL over the wrong five rows rather than a loud failure, and
+    `(m, 0, 5, ord)` emitted `BETWEEN CURRENT ROW AND 5 PRECEDING`, which no
+    engine will run. Only a forward count of 0 was unaffected, which is why the
+    pinned test case did not show it.
+    """
+    n = int(num_forward.strip())
+    if n > 0:
+        return f"{n} FOLLOWING"
+    if n == 0:
+        return "CURRENT ROW"
+    return f"{-n} PRECEDING"
 
 
 _PARTITION_LOST_ISSUE = (
@@ -412,7 +444,7 @@ def _compose_moving(agg: str) -> ComposeFn:
         order_clause = ", ".join(order_cols)
         return (
             f"{agg}({m}) OVER (ORDER BY {order_clause} "
-            f"ROWS BETWEEN {_frame_bound(start)} AND {_frame_bound(end)})"
+            f"ROWS BETWEEN {_frame_start_bound(start)} AND {_frame_end_bound(end)})"
         )
     return _compose
 
@@ -529,15 +561,7 @@ REVERSE["group_aggregate"] = ReverseConstruct(
     note="Shape dispatch on the grouping/filter arguments — see _compose_grouped.",
 )
 
-_GROUP_SHORTHAND_AGGREGATES = {
-    # Only the shorthands the document names explicitly (its own worked example, "group_sum",
-    # and line ~420's "group_count / group_stddev / group_variance") — no group_average,
-    # group_max or group_min is invented, since the document never names them.
-    "group_sum": "SUM",
-    "group_count": "COUNT",
-    "group_stddev": "STDDEV",
-    "group_variance": "VARIANCE",
-}
+_GROUP_SHORTHAND_AGGREGATES = GROUP_SHORTHAND_AGGREGATES
 
 
 def _make_group_shorthand_dispatch(agg: str, source_name: str) -> DispatchFn:
@@ -562,15 +586,6 @@ for _name, _agg in _GROUP_SHORTHAND_AGGREGATES.items():
         ),
     )
 
-#: Every ThoughtSpot call name that performs a GROUPED aggregation: the general
-#: `group_aggregate` plus the shorthands above. Exported because `tml_to_ossie`
-#: must recognise all of them as "already aggregated" -- it previously named
-#: `group_aggregate` alone, on the stated belief that "there is exactly one such
-#: construct", and so composed a metric's own `aggregation` on top of a
-#: `group_sum(...)` formula: `sum ( group_sum ( ... ) )`, silently doubled.
-#: Derived from the inventory rather than retyped, so a shorthand added above is
-#: covered without a second edit.
-GROUP_AGGREGATE_CALL_NAMES = frozenset({"group_aggregate", *_GROUP_SHORTHAND_AGGREGATES})
 
 
 _SEMI_ADDITIVE_ISSUE = (
@@ -640,9 +655,9 @@ def _dispatch_sql_op(
 
 
 for _name in (
-    "sql_string_op", "sql_int_op", "sql_double_op", "sql_bool_op", "sql_date_op",
-    "sql_date_time_op", "sql_string_aggregate_op", "sql_int_aggregate_op",
-    "sql_number_aggregate_op", "sql_date_time_aggregate_op",
+    "sql_string_op", "sql_int_op", "sql_number_op", "sql_double_op", "sql_bool_op",
+    "sql_date_op", "sql_date_time_op", "sql_string_aggregate_op",
+    "sql_int_aggregate_op", "sql_number_aggregate_op", "sql_date_time_aggregate_op",
 ):
     REVERSE[_name] = ReverseConstruct(
         thoughtspot_name=_name,
@@ -724,8 +739,48 @@ REVERSE["concat (hyperlink markup)"] = ReverseConstruct(
 _FISCAL_MARKERS = {"fiscal", "'fiscal'"}
 
 
-def _is_fiscal_variant(args: list[str]) -> bool:
-    return bool(args) and args[-1].strip().lower() in _FISCAL_MARKERS
+#: Every ThoughtSpot call name the FORWARD catalog renders, read off its own
+#: templates so the two halves cannot drift.
+_FORWARD_CALL_NAMES = frozenset(
+    match.group(1)
+    for construct in CATALOG.values()
+    if construct.template
+    for match in [re.match(r"\s*([a-z_]+)\s*\(", construct.template)]
+    if match
+)
+
+
+#: A trailing `fiscal` argument selects the fiscal calendar, and that is only
+#: meaningful on a DATE function. The check below was applied to every name, so
+#: an ordinary string literal -- `concat([T::label], 'fiscal')` -- was routed
+#: into an ERROR-severity total-loss stash, discarding a composable CONCAT and,
+#: through the CLI's has_errors(), failing the whole conversion's exit code.
+#:
+#: Derived from both inventories by a date-token pattern rather than hand-listed,
+#: because a hand-list of ThoughtSpot's date vocabulary is exactly the kind of
+#: copy that goes stale -- the first draft of it here omitted `quarter_number`
+#: and `diff_months`, both of which this module's own tests exercise. The
+#: `diff_*`/`add_*` families are unioned in explicitly: they take a fiscal
+#: argument but appear in neither inventory under a date-shaped name.
+_DATE_NAME_TOKENS = re.compile(
+    r"year|quarter|month|week|day|date|time|hour|min(?:ute)?|second"
+)
+_FISCAL_CAPABLE_FUNCTIONS = frozenset(
+    name for name in (set(REVERSE) | _FORWARD_CALL_NAMES)
+    if _DATE_NAME_TOKENS.search(name)
+) | frozenset({
+    f"{verb}_{unit}"
+    for verb in ("diff", "add")
+    for unit in ("years", "quarters", "months", "weeks", "days", "hours", "minutes", "seconds")
+})
+
+
+def _is_fiscal_variant(name: str, args: list[str]) -> bool:
+    return (
+        name.strip().lower() in _FISCAL_CAPABLE_FUNCTIONS
+        and bool(args)
+        and args[-1].strip().lower() in _FISCAL_MARKERS
+    )
 
 
 _FISCAL_ISSUE_MESSAGE = (
@@ -871,7 +926,7 @@ def translate_thoughtspot(
     argument, concat hyperlink markup) and for why `object_ref` and `connection_dialect` are
     keyword-only additions beyond the plain `(name, args, log)` signature.
     """
-    if _is_fiscal_variant(args):
+    if _is_fiscal_variant(name, args):
         _stash_fiscal_variant(name, log, object_ref=object_ref)
         return None
 

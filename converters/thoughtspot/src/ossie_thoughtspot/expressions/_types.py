@@ -17,6 +17,8 @@
 
 """The small shared vocabulary the catalog, emitters and reverse map all use."""
 from dataclasses import dataclass
+import re
+
 from enum import Enum
 
 
@@ -95,6 +97,13 @@ class Variadic:
     tail_from: int = 0
 
 
+#: A `{0}`-style placeholder, removed before scanning for baked-in constants so
+#: the digits inside one are never mistaken for a literal.
+_ARGUMENT_PLACEHOLDER_RE = re.compile(r"\{\d+\}")
+#: A bare number or quoted string sitting in an argument position.
+_BAKED_LITERAL_RE = re.compile(r"(?<![\w.])\d+(?:\.\d+)?(?![\w.])|'[^']*'")
+
+
 @dataclass(frozen=True)
 class Construct:
     """One row of the function-mapping document.
@@ -137,6 +146,15 @@ class Construct:
     variant: Variant | None = None
     note: str = ""
     variadic: Variadic | None = None
+    exemplar_literals: tuple[str, ...] = ()
+
+    #: Names of the parameters this row's template bakes in as a LITERAL rather
+    #: than exposing as a placeholder -- `PERCENTILE_CONT`'s `p` rendered as
+    #: `0.75`, `NTILE`'s `n` as `4`, `LAG`'s `offset` as `1`. Such a row renders
+    #: without error, so the arity guard cannot tell it from a complete
+    #: template, and the generated reference document presented the example
+    #: value as if it were the mapping. Declaring it here is what lets the
+    #: document say so, and what lets the gate below refuse a NEW undeclared one.
 
     def __post_init__(self) -> None:
         if self.variadic is not None:
@@ -156,6 +174,22 @@ class Construct:
         # rendered `concat ( a , b , ... )` -- syntactically invalid, and caught
         # by nothing because the catalog sweep only asserted emission did not
         # raise. Rejecting it here means a new row cannot reintroduce it.
+        # Fail-closed on baked-in literals: a PASSTHROUGH body carrying a bare
+        # numeric or quoted constant in an argument position is either an
+        # exemplar -- which must SAY so -- or a defect. Eleven rows were the
+        # former and said nothing, so the generated reference document offered
+        # `NTILE(4)` as the mapping for `NTILE(n)` with no sign that the 4 was
+        # illustrative. An allowlist, not a blocklist: a new row is refused
+        # until it declares itself.
+        if self.classification is Classification.PASSTHROUGH and not self.exemplar_literals:
+            body = _ARGUMENT_PLACEHOLDER_RE.sub("", self.template or "")
+            baked = _BAKED_LITERAL_RE.findall(body)
+            if baked:
+                raise ValueError(
+                    f"{self.spec_name}: template bakes in literal(s) {baked} while "
+                    f"declaring no exemplar_literals. Name the parameter(s) the "
+                    f"literal stands for, or parameterise the template"
+                )
         if self.template and "..." in self.template:
             raise ValueError(
                 f"{self.spec_name}: a template cannot contain a literal '...'; a construct "

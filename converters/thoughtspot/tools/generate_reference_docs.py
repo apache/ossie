@@ -188,6 +188,16 @@ def generate_expression_mapping_doc() -> str:
             rendering = "—"
         elif c.classification is Classification.PASSTHROUGH:
             rendering = f"{_code_cell(c.template)} — pass-through via `{c.variant.value}`"
+            if c.exemplar_literals:
+                # Say plainly that the constant in the template is an example.
+                # Without this the document offered `NTILE(4)` as the mapping
+                # for `NTILE(n)`, and a reader had no way to tell the 4 from
+                # part of the rendering.
+                named = ", ".join(f"`{name}`" for name in c.exemplar_literals)
+                rendering += (
+                    f" — **example only**: {named} shown as a literal, "
+                    f"rebuild the template per occurrence"
+                )
         else:
             rendering = _code_cell(c.template)
         rows.append([_code_cell(name), c.classification.value, rendering, _prose_cell(c.note)])

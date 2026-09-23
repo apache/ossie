@@ -33,7 +33,9 @@ import re
 import pytest
 
 from ossie_thoughtspot.expressions import CATALOG
-from ossie_thoughtspot.expressions._types import Classification, Construct, Variant
+from ossie_thoughtspot.expressions._types import (
+    _ARGUMENT_PLACEHOLDER_RE, _BAKED_LITERAL_RE, Classification, Construct, Variant,
+)
 from ossie_thoughtspot.expressions.emit import (
     _PLACEHOLDER_RE, _placeholder_count, emit_direct, emit_passthrough, emit_unmappable,
 )
@@ -315,3 +317,37 @@ def test_every_passthrough_catalog_row_renders_with_its_own_natural_arity():
     assert not failures, "PASSTHROUGH rows that fail to render with their own natural arity:\n" + "\n".join(
         failures
     )
+
+
+def test_no_passthrough_row_bakes_in_an_undeclared_literal():
+    """Every baked-in constant must be declared, so the document can say so.
+
+    A PASSTHROUGH template that carries a bare constant in an argument position
+    renders WITHOUT error, so the arity guard cannot distinguish it from a
+    complete template. Eleven rows were in that state undeclared, and the
+    generated reference document offered `NTILE(4)` as the mapping for
+    `NTILE(n)` with nothing marking the 4 as illustrative.
+
+    `Construct.__post_init__` refuses a new undeclared one, so this asserts the
+    gate is armed over the real catalog rather than only over a synthetic row.
+    """
+    undeclared = [
+        name for name, construct in CATALOG.items()
+        if construct.classification is Classification.PASSTHROUGH
+        and not construct.exemplar_literals
+        and _BAKED_LITERAL_RE.search(_ARGUMENT_PLACEHOLDER_RE.sub("", construct.template or ""))
+    ]
+    assert not undeclared, (
+        "passthrough rows bake in a literal without declaring it:\n  " + "\n  ".join(undeclared)
+    )
+
+
+def test_every_declared_exemplar_actually_bakes_something_in():
+    """The gate's other direction: a declaration with nothing to declare is a
+    stale note that will outlive the template it describes."""
+    hollow = [
+        name for name, construct in CATALOG.items()
+        if construct.exemplar_literals
+        and not _BAKED_LITERAL_RE.search(_ARGUMENT_PLACEHOLDER_RE.sub("", construct.template or ""))
+    ]
+    assert not hollow, "rows declare exemplar_literals but bake in nothing:\n  " + "\n  ".join(hollow)

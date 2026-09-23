@@ -55,6 +55,26 @@ SPEC_SERIES = "0.2"
 #: `OSSIE_VERSION` constant documents.
 DOCUMENT_VERSION = "0.2.0.dev0"
 
+#: ThoughtSpot's grouped-aggregation calls, mapped to the plain aggregate each
+#: is shorthand for. `group_aggregate` is the general form and has no single
+#: aggregate, so it is named separately below.
+#:
+#: Here rather than beside the reverse inventory that first recorded them,
+#: because BOTH directions need them and for different jobs: the reverse
+#: inventory composes them into windowed SQL, and `tml_to_ossie` must recognise
+#: them as *already aggregated* so it does not compose a metric's own
+#: `aggregation` on top. When only the inventory knew them, the forward
+#: direction emitted `sum ( group_sum ( ... ) )` -- silently doubled.
+GROUP_SHORTHAND_AGGREGATES = {
+    "group_sum": "SUM",
+    "group_count": "COUNT",
+    "group_stddev": "STDDEV",
+    "group_variance": "VARIANCE",
+}
+
+#: Every grouped-aggregation call name: the shorthands plus the general form.
+GROUP_AGGREGATE_CALL_NAMES = frozenset({"group_aggregate", *GROUP_SHORTHAND_AGGREGATES})
+
 #: Shape version of the custom_extensions payload. Bump when the
 #: payload's shape changes, never for a value change.
 STASH_VERSION = 1

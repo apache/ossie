@@ -173,6 +173,7 @@ CATALOG.update(
         "PERCENTILE_CONT(p) WITHIN GROUP (ORDER BY expr)": Construct(
             "PERCENTILE_CONT(p) WITHIN GROUP (ORDER BY expr)", Classification.PASSTHROUGH,
             template="PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY {0})",
+            exemplar_literals=("p",),
             variant=Variant.NUMBER_AGGREGATE,
             note=(
                 "No native percentile function. p is a literal in the specification's "
@@ -184,6 +185,7 @@ CATALOG.update(
         "PERCENTILE_DISC(p) WITHIN GROUP (ORDER BY expr)": Construct(
             "PERCENTILE_DISC(p) WITHIN GROUP (ORDER BY expr)", Classification.PASSTHROUGH,
             template="PERCENTILE_DISC(0.75) WITHIN GROUP (ORDER BY {0})",
+            exemplar_literals=("p",),
             variant=Variant.NUMBER_AGGREGATE,
             note=(
                 "As PERCENTILE_CONT; the discrete/interpolated distinction is "
@@ -203,7 +205,8 @@ CATALOG.update(
         ),
         "APPROX_PERCENTILE(expr, p)": Construct(
             "APPROX_PERCENTILE(expr, p)", Classification.PASSTHROUGH,
-            template="APPROX_PERCENTILE({0}, 0.5)", variant=Variant.NUMBER_AGGREGATE,
+            template="APPROX_PERCENTILE({0}, 0.5)",
+            exemplar_literals=("p",), variant=Variant.NUMBER_AGGREGATE,
             note="p baked into the template as for the exact percentiles.",
         ),
     }
@@ -399,6 +402,7 @@ CATALOG.update(
         "TIMESTAMP_NTZ '2024-01-15 10:30:00'": Construct(
             "TIMESTAMP_NTZ '2024-01-15 10:30:00'", Classification.PASSTHROUGH,
             template="CAST('2024-01-15 10:30:00' AS TIMESTAMP)",
+            exemplar_literals=("the timestamp value",),
             variant=Variant.DATE_TIME,
             note=(
                 "to_date returns a DATE and drops the time part, so there is "
@@ -413,6 +417,7 @@ CATALOG.update(
         "TIME '10:30:00'": Construct(
             "TIME '10:30:00'", Classification.PASSTHROUGH,
             template="CAST('10:30:00' AS TIME)",
+            exemplar_literals=("the time value",),
             variant=Variant.DATE_TIME,
             note=(
                 "ThoughtSpot has no TIME column type — time ( ) extracts a "
@@ -448,6 +453,7 @@ CATALOG.update(
         "TO_TIMESTAMP(string, format)": Construct(
             "TO_TIMESTAMP(string, format)", Classification.PASSTHROUGH,
             template="TO_TIMESTAMP({0}, 'YYYY-MM-DD HH24:MI:SS')",
+            exemplar_literals=("format",),
             variant=Variant.DATE_TIME,
             note=(
                 "EXPERIMENTAL. Date-only to_date again. The format model "
@@ -458,7 +464,8 @@ CATALOG.update(
         ),
         "TO_CHAR(date_expr, format)": Construct(
             "TO_CHAR(date_expr, format)", Classification.PASSTHROUGH,
-            template="TO_CHAR({0}, 'YYYY-MM')", variant=Variant.STRING,
+            template="TO_CHAR({0}, 'YYYY-MM')",
+            exemplar_literals=("format",), variant=Variant.STRING,
             note=(
                 "EXPERIMENTAL. ThoughtSpot has no general date formatter. "
                 "Single-token formats do have native equivalents and the "
@@ -1333,6 +1340,7 @@ CATALOG.update(
         "NTILE(n) OVER (...)": Construct(
             "NTILE(n) OVER (...)", Classification.PASSTHROUGH,
             template="NTILE(4) OVER (ORDER BY SUM({0}))",
+            exemplar_literals=("n",),
             variant=Variant.INT_AGGREGATE,
             note="n is a literal, baked into the template, as the aggregate percentiles are.",
         ),
@@ -1372,6 +1380,7 @@ CATALOG.update(
         "LAG(expr, offset, default) OVER (...)": Construct(
             "LAG(expr, offset, default) OVER (...)", Classification.PASSTHROUGH,
             template="LAG({0}, 1) OVER (PARTITION BY {1} ORDER BY {2})",
+            exemplar_literals=("offset", "default"),
             variant=Variant.NUMBER_AGGREGATE,
             note=(
                 "Reclassified direct -> passthrough 2026-07-30. The "
@@ -1401,6 +1410,7 @@ CATALOG.update(
         "LEAD(expr, offset, default) OVER (...)": Construct(
             "LEAD(expr, offset, default) OVER (...)", Classification.PASSTHROUGH,
             template="LEAD({0}, 1) OVER (PARTITION BY {1} ORDER BY {2})",
+            exemplar_literals=("offset", "default"),
             variant=Variant.NUMBER_AGGREGATE,
             note=(
                 "Mirror of LAG, reclassified for the same reason and on the "
@@ -1460,6 +1470,7 @@ CATALOG.update(
         "NTH_VALUE(expr, n) OVER (...)": Construct(
             "NTH_VALUE(expr, n) OVER (...)", Classification.PASSTHROUGH,
             template="NTH_VALUE({0}, 2) OVER (ORDER BY {1})",
+            exemplar_literals=("n",),
             variant=Variant.NUMBER_AGGREGATE,
             note=(
                 "ThoughtSpot's semi-additive functions reach only the first "

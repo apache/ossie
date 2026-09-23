@@ -193,12 +193,36 @@ def test_moving_sum_composes_the_frame_and_loses_the_partition():
 
 def test_moving_average_max_min_compose_with_sign_conventions():
     log = _log()
-    # (m, 1, -1, ord): 1 PRECEDING .. 1 FOLLOWING (negative end flips to FOLLOWING).
+    # The two offsets count in OPPOSITE directions: argument 2 is rows BACKWARD
+    # (positive -> PRECEDING), argument 3 is rows FORWARD (positive -> FOLLOWING).
+    # Both bounds shared one "positive means PRECEDING" rule until 2026-09, which
+    # made every window with a non-zero forward count wrong -- and this test
+    # asserted that behaviour, its comment recording the misreading as fact.
+    #
+    # Two independent sources settle the convention:
+    #   - the Tableau mapping renders `WINDOW_AVG(x, -3, 0)`, Tableau's "3 rows
+    #     before to current row", as `moving_average(x, 3, 0, attr)`;
+    #   - the Looker mapping labels `moving_average(sum(REVENUE), 3, -1, date)`
+    #     a "3-Row Moving Average" -- which it is only if -1 means 1 PRECEDING,
+    #     giving rows -3..-1. Under the old rule it spanned five rows.
     assert translate_thoughtspot("moving_average", ["m", "1", "-1", "ord"], log, object_ref=OBJ) == (
-        "AVG(m) OVER (ORDER BY ord ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING)"
+        "AVG(m) OVER (ORDER BY ord ROWS BETWEEN 1 PRECEDING AND 1 PRECEDING)"
+    )
+    # The Looker mapping's own worked example, asserted directly.
+    assert translate_thoughtspot("moving_average", ["m", "3", "-1", "d"], log, object_ref=OBJ) == (
+        "AVG(m) OVER (ORDER BY d ROWS BETWEEN 3 PRECEDING AND 1 PRECEDING)"
+    )
+    # The Tableau mapping's own worked example.
+    assert translate_thoughtspot("moving_average", ["m", "3", "0", "d"], log, object_ref=OBJ) == (
+        "AVG(m) OVER (ORDER BY d ROWS BETWEEN 3 PRECEDING AND CURRENT ROW)"
+    )
+    # A forward-looking window, which the old rule rendered as PRECEDING --
+    # valid SQL over the wrong rows, the silent kind of wrong.
+    assert translate_thoughtspot("moving_average", ["m", "2", "3", "d"], log, object_ref=OBJ) == (
+        "AVG(m) OVER (ORDER BY d ROWS BETWEEN 2 PRECEDING AND 3 FOLLOWING)"
     )
     assert translate_thoughtspot("moving_max", ["m", "-1", "1", "ord"], log, object_ref=OBJ) == (
-        "MAX(m) OVER (ORDER BY ord ROWS BETWEEN 1 FOLLOWING AND 1 PRECEDING)"
+        "MAX(m) OVER (ORDER BY ord ROWS BETWEEN 1 FOLLOWING AND 1 FOLLOWING)"
     )
     assert translate_thoughtspot("moving_min", ["m", "0", "0", "ord"], log, object_ref=OBJ) == (
         "MIN(m) OVER (ORDER BY ord ROWS BETWEEN CURRENT ROW AND CURRENT ROW)"
@@ -207,8 +231,10 @@ def test_moving_average_max_min_compose_with_sign_conventions():
 
 def test_moving_sum_accepts_multiple_order_columns():
     log = _log()
+    # This test's subject is the ORDER BY list, not the frame; the bounds follow
+    # the convention pinned in test_moving_average_max_min_compose_with_sign_conventions.
     result = translate_thoughtspot("moving_sum", ["m", "1", "-1", "ord1", "ord2"], log, object_ref=OBJ)
-    assert result == "SUM(m) OVER (ORDER BY ord1, ord2 ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING)"
+    assert result == "SUM(m) OVER (ORDER BY ord1, ord2 ROWS BETWEEN 1 PRECEDING AND 1 PRECEDING)"
 
 
 def test_cumulative_sum_composes_the_running_total_and_loses_the_partition():
@@ -433,7 +459,17 @@ def test_concat_without_markup_is_not_this_modules_concern():
     assert log.issues == []
 
 
-def test_fiscal_calendar_variants_stash_regardless_of_the_underlying_function():
+def test_a_fiscal_literal_on_a_non_date_function_is_not_a_fiscal_variant():
+    # `concat([T::label], 'fiscal')` is a string function with a string literal.
+    # The fiscal check ran for EVERY name, so it was routed into an
+    # ERROR-severity total-loss stash -- discarding a composable CONCAT and,
+    # via the CLI's has_errors(), failing the whole conversion's exit code.
+    log = _log()
+    translate_thoughtspot("concat", ["[T::label]", "'fiscal'"], log, object_ref=OBJ)
+    assert not [i for i in log.issues if i.code == "TS-EXPR-FISCAL-CALENDAR"]
+
+
+def test_fiscal_calendar_variants_stash_regardless_of_the_underlying_date_function():
     for name, args in (
         ("year", ["d", "'fiscal'"]),
         ("quarter_number", ["d", "'fiscal'"]),
@@ -602,4 +638,4 @@ def test_every_reverse_construct_is_traceable_to_the_mapping_document():
 def test_reverse_inventory_census():
     # Pins the count so a silent addition/removal is visible in review, the same
     # discipline the forward CATALOG's 146-row census test applies.
-    assert len(REVERSE) == 79
+    assert len(REVERSE) == 80
