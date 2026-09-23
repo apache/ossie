@@ -72,7 +72,7 @@ with ordinary SQL, using `MEASURE()` in place of raw aggregates.
 This layer preserves full SQL invariants. Tools that generate SQL, embed SQL in notebooks, or
 build on the relational algebra can use Layer 2 without giving up any SQL guarantees.
 
-**Specification:** [`relational_semantics.md`](relational_semantics.md)
+**Specification:** [`relational_semantics.md`](relational_semantics.md) *(open PR: [apache/ossie#354](https://github.com/apache/ossie/pull/354))*
 
 ### Layer 3 — Wide Table Interface (Dimensional)
 
