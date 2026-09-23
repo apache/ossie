@@ -124,3 +124,33 @@ prioritization for defining semantics across layers.
 
 The grain-safe measure model underlying Layer 2 is grounded in Hyde and Fremlin,
 [*Measures in SQL*](https://doi.org/10.48550/arXiv.2406.00251) (arXiv:2406.00251).
+
+### Mailing List Discussion
+
+The following `dev@ossie.apache.org` threads trace how the layered model emerged and converged:
+
+- **[Ossie Foundational Semantics](https://lists.apache.org/thread/qo2fx0hl0cvlzn9q1ob9z7v7g81syj88)**
+  (Will Pugh, July 2026). Will proposed a foundational semantics spec (PR #246) covering the
+  wide-table query interface and asked the community for feedback and a path to a reference
+  implementation.
+
+- **[[DISCUSS] PRs #246 (Foundational Semantics) and #237 (Compliance Suite)](https://lists.apache.org/thread/mqlbbb4ndhb0qo9sf2yn60fb9tlzv59t)**
+  (Justin Talbot and Chris Eubank, August 2026). Raised concerns that PR #246 bundled normative
+  correctness guarantees (grain-safe aggregation) with opinionated choices (join paths, filter
+  propagation, join types) in a way that made adoption all-or-nothing for BI vendors. Argued for
+  separating the two into distinct layers.
+
+- **[[DISCUSS] SQL with measures as the Ossie BI / semantic layer interface](https://lists.apache.org/thread/0td2v8n2llqxyqw0r6w51fkt8klp8x5w)**
+  (Chris Eubank, August 2026) and
+  **[[DISCUSS] Ossie BI / semantic layer interface based on SQL with measures](https://lists.apache.org/thread/q95or2395khvs21nzmwkmwy1vpdgjy87)**
+  (Justin Talbot, August 2026). Proposed SQL with measures (the *Measures in SQL* model) as a
+  lower, SQL-native layer beneath the wide-table interface, giving SQL-fluent BI tools a path to
+  adopt Ossie without taking on multi-table join semantics.
+
+- **[[DISCUSS] Relational Query Interface spec (core-spec)](https://lists.apache.org/thread/b3nty67729wm5vc3ylnp8phgtxl90n4t)**
+  (Justin Talbot, September 2026). Announced PR #354, the Layer 2 specification.
+
+- **[[DISCUSS] Landing Ossie semantics and compliance suites](https://lists.apache.org/thread/1jhvnw8vg5fgtct347t62ycc2zkrox6l)**
+  (Chris Eubank, September 2026). Summarized the convergence: working-group discussion settled on
+  the hybrid layered model, with Layer 3 (PR #246) and Layer 2 (PR #354) as separate specs both
+  building on Layer 1, and Layer 3's output expressible in terms of Layer 2 primitives.
