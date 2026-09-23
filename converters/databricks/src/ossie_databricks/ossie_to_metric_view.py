@@ -34,6 +34,7 @@ from ._common import (
     ConversionError,
     MV_VERSION,
     OSSIE_VERSION,
+    STASH_ON_KEY,
     STASH_SOURCE_KEY,
     SYNONYM_LIMIT,
     dump_yaml,
@@ -409,7 +410,11 @@ def _build_join(node, parent_alias, datasets):
     # it -- from_columns when it is the `from`, to_columns when it is the `to`.
     parent_cols, child_cols = (
         (from_cols, to_cols) if node["parent_is_from"] else (to_cols, from_cols))
-    if parent_cols == child_cols:
+    if STASH_ON_KEY in stash:
+        # A condition the importer couldn't decompose (the columns only approximate it)
+        # is restored verbatim.
+        join["on"] = _stashed_on(rel, node, stash)
+    elif parent_cols == child_cols:
         # Equal column lists are an equi-join on shared names -> `using`, which
         # round-trips faithfully (the importer maps `using` to equal lists).
         join["using"] = list(parent_cols)
@@ -436,6 +441,23 @@ def _build_join(node, parent_alias, datasets):
     if nested:
         join["joins"] = nested
     return join
+
+
+def _stashed_on(rel, node, stash):
+    """Return the stashed raw `on`, provided the join is emitted as it was imported: the
+    joined dataset keeps its original join name as its alias and is still the child of
+    the relationship. The condition names the original aliases, so it can't be reused
+    under a renamed (fanned-out) alias or a re-rooted join tree."""
+    same_direction = node["parent_is_from"] == (
+        str(stash.get("cardinality") or "").lower() != CARD_ONE_TO_MANY)
+    if node["alias"] != node["dataset"] or not same_direction:
+        raise ConversionError(
+            f"Relationship '{rel.get('name')}': its stashed join condition "
+            f"('on: {stash[STASH_ON_KEY]}') refers to the join aliases it was imported "
+            f"with, but this join tree emits it as '{node['alias']}' in a different "
+            f"position; cannot re-qualify it."
+        )
+    return stash[STASH_ON_KEY]
 
 
 def _covers_unique_key(dataset, join_cols):

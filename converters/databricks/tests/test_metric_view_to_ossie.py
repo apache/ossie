@@ -125,16 +125,66 @@ def test_non_equi_on_rejected():
 
 
 def test_complex_equi_on_rejected():
-    """An equi `on` whose operand is a SQL fragment (OR, computed) can't be decomposed
-    into from/to columns, so it's rejected rather than producing schema-invalid Apache Ossie with
-    empty column lists."""
-    for cond in ("source.a = dim.b OR source.c = dim.d", "source.a = dim.b + 1"):
-        mv = (
-            "version: '1.1'\nsource: c.s.fact\n"
-            f"joins:\n- name: dim\n  source: c.s.dim\n  on: {cond}\n"
-        )
-        with pytest.raises(ConversionError, match="non-equi"):
-            importer.convert_metric_view_to_ossie(mv)
+    """An `on` with no equality that reads as one parent column = one child column (here
+    an OR of two) has no column pair to put in from/to columns, so it's rejected rather
+    than producing schema-invalid Apache Ossie with empty column lists."""
+    mv = (
+        "version: '1.1'\nsource: c.s.fact\n"
+        "joins:\n- name: dim\n  source: c.s.dim\n  on: source.a = dim.b OR source.c = dim.d\n"
+    )
+    with pytest.raises(ConversionError, match="non-equi"):
+        importer.convert_metric_view_to_ossie(mv)
+
+
+def _import_with_warnings(mv):
+    import warnings
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        ossie = parse(importer.convert_metric_view_to_ossie(mv))
+    return ossie, [str(w.message) for w in caught]
+
+
+def test_function_wrapped_on_is_stashed():
+    """A join on function-wrapped keys (apache/ossie#321) is imported: the relationship
+    takes the first column referenced on each side of the equality, and the original
+    condition is stashed verbatim, with a warning."""
+    cond = "UPPER(source.EXTERNAL_ID) = UPPER(COALESCE(accounts.ID_1, accounts.ID_2))"
+    mv = ("version: '1.1'\nsource: c.s.events\n"
+          f"joins:\n- name: accounts\n  source: c.s.accounts\n  on: {cond}\n")
+    ossie, warned = _import_with_warnings(mv)
+    rel = canon(ossie)["relationships"][0]
+    assert rel["from"] == "events" and rel["to"] == "accounts"
+    assert rel["from_columns"] == ["EXTERNAL_ID"]
+    assert rel["to_columns"] == ["ID_1"]
+    assert rel["custom_extensions"][0]["data"]["on"] == cond
+    assert any("join 'accounts'" in w and "preserved verbatim" in w for w in warned)
+
+
+def test_on_with_filter_predicate_is_stashed():
+    """An equi-join plus a filter predicate keeps the equi columns and stashes the whole
+    condition; the child side may come first in the equality."""
+    cond = "accounts.id = source.account_id AND accounts.status NOT IN ('closed', 'test')"
+    mv = ("version: '1.1'\nsource: c.s.events\n"
+          f"joins:\n- name: accounts\n  source: c.s.accounts\n  on: {cond}\n"
+          "  rely: {at_most_one_match: true}\n")
+    ossie, _ = _import_with_warnings(mv)
+    rel = canon(ossie)["relationships"][0]
+    assert rel["from_columns"] == ["account_id"]
+    assert rel["to_columns"] == ["id"]
+    assert rel["custom_extensions"][0]["data"]["on"] == cond
+    # The columns only approximate the condition, so no unique key is inferred from rely.
+    accounts = next(d for d in ossie["datasets"] if d["name"] == "accounts")
+    assert "unique_keys" not in accounts
+
+
+def test_plain_equi_on_has_no_stashed_condition():
+    """A decomposable equi-join is unchanged: no `on` in the stash, no warning."""
+    mv = ("version: '1.1'\nsource: c.s.orders\n"
+          "joins:\n- name: customer\n  source: c.s.customer\n"
+          "  on: source.o_custkey = customer.c_custkey\n")
+    ossie, warned = _import_with_warnings(mv)
+    assert "custom_extensions" not in ossie["relationships"][0]
+    assert not warned
 
 
 def test_one_to_many_join_flips_from_to_and_stashes_source():

@@ -84,7 +84,7 @@ Each row maps in both directions; the **Notes** flag where a behavior is specifi
 | `description` | `comment` | Model-level description only. |
 | root dataset | `source` | The fact/grain. |
 | other `datasets` | nested `joins[]` | Export: the relationship graph is reassembled into the join tree; a dataset reached by two paths (a diamond) fans out into one aliased join per path. |
-| `relationship` `from_columns`/`to_columns` | join `on` (differing names) / `using` (shared names) | Decomposed into columns on import; rebuilt into `on`/`using` on export. |
+| `relationship` `from_columns`/`to_columns` | join `on` (differing names) / `using` (shared names) | Decomposed into columns on import; rebuilt into `on`/`using` on export. An `on` that doesn't decompose (function-wrapped keys, a filter predicate, a non-equi operator) is imported with the first column referenced on each side of one of its equalities, and the full condition is stashed and restored verbatim on export (with a warning). |
 | `relationship.from`/`to` direction | join `cardinality` | Export: source on the many (`from`) side -> `many_to_one`; on the one (`to`) side -> `one_to_many`. |
 | `dataset.primary_key` / `unique_keys` | join `rely.at_most_one_match` | Both directions: export sets `at_most_one_match` when a key covers the join columns; import recovers a `unique_keys` from it. |
 | `dataset.fields[]` | `dimensions[]` | Export: fields flatten into one list and a joined column is qualified by its full join path (`customer.c_name`; `customer.region.r_name` when nested). |
@@ -106,8 +106,11 @@ invalid) when an input breaks one of these:
   multiple candidate facts without `--source`, is rejected (a diamond is allowed and
   fanned out);
 - a join has no condition (a cross join has no Apache Ossie relationship form);
-- a join condition is non-equi or otherwise can't be decomposed into equi-join columns
-  (Apache Ossie relationships are equi-joins, so the join has no Apache Ossie representation);
+- a join condition can't be decomposed into equi-join columns and no equality in it
+  compares a parent column to a child column (Apache Ossie relationships need at least
+  one column pair);
+- a stashed join condition would be exported under a different join alias or position
+  than it was imported with (for example after `--source` re-roots the tree);
 - the input YAML is malformed.
 
 ## Development
