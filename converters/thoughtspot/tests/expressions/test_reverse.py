@@ -199,12 +199,17 @@ def test_moving_average_max_min_compose_with_sign_conventions():
     # made every window with a non-zero forward count wrong -- and this test
     # asserted that behaviour, its comment recording the misreading as fact.
     #
-    # Two independent sources settle the convention:
-    #   - the Tableau mapping renders `WINDOW_AVG(x, -3, 0)`, Tableau's "3 rows
-    #     before to current row", as `moving_average(x, 3, 0, attr)`;
-    #   - the Looker mapping labels `moving_average(sum(REVENUE), 3, -1, date)`
-    #     a "3-Row Moving Average" -- which it is only if -1 means 1 PRECEDING,
-    #     giving rows -3..-1. Under the old rule it spanned five rows.
+    # The convention is ThoughtSpot's own, documented in its public formula
+    # reference: `moving_average(measure, num_backward, num_forward, ...)`.
+    # The two argument NAMES are the whole argument -- one counts backward, the
+    # other forward, so a positive value cannot mean PRECEDING in both.
+    #
+    # Deliberately NOT cited to the internal mapping documents that first
+    # settled this for me: they live in a private repository, and a citation an
+    # ASF reader cannot open is not evidence. (For the record, the corroboration
+    # they gave was also weaker than I first claimed -- one of the two examples
+    # has a forward count of 0, which renders CURRENT ROW under the old rule and
+    # the new one alike, so it distinguishes nothing.)
     assert translate_thoughtspot("moving_average", ["m", "1", "-1", "ord"], log, object_ref=OBJ) == (
         "AVG(m) OVER (ORDER BY ord ROWS BETWEEN 1 PRECEDING AND 1 PRECEDING)"
     )
@@ -638,4 +643,4 @@ def test_every_reverse_construct_is_traceable_to_the_mapping_document():
 def test_reverse_inventory_census():
     # Pins the count so a silent addition/removal is visible in review, the same
     # discipline the forward CATALOG's 146-row census test applies.
-    assert len(REVERSE) == 80
+    assert len(REVERSE) == 84

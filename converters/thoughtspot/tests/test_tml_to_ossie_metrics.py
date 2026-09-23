@@ -522,7 +522,27 @@ class TestEveryGroupedAggregateIsRecognisedAsAlreadyAggregated:
     to the inventory is covered by this test without a second edit.
     """
 
-    @pytest.mark.parametrize("call", sorted(GROUP_AGGREGATE_CALL_NAMES))
+    #: ThoughtSpot's grouped-aggregation functions, written out rather than read
+    #: from the constant under test. The first version of this test parametrised
+    #: itself from `GROUP_AGGREGATE_CALL_NAMES`, so it passed for ANY subset --
+    #: a guard that cannot fire, the exact class it was written to prevent, and
+    #: it duly passed while four of the nine were missing. Duplication is the
+    #: point: this list is the oracle, and it must be maintained by hand against
+    #: ThoughtSpot's formula reference.
+    THOUGHTSPOT_GROUP_FUNCTIONS = (
+        "group_aggregate", "group_average", "group_count", "group_max",
+        "group_min", "group_stddev", "group_sum", "group_unique_count",
+        "group_variance",
+    )
+
+    def test_the_constant_covers_every_thoughtspot_group_function(self):
+        missing = sorted(set(self.THOUGHTSPOT_GROUP_FUNCTIONS) - GROUP_AGGREGATE_CALL_NAMES)
+        assert not missing, (
+            f"these grouped aggregates are not recognised as already-aggregated, "
+            f"so a metric using one is double-aggregated silently: {missing}"
+        )
+
+    @pytest.mark.parametrize("call", THOUGHTSPOT_GROUP_FUNCTIONS)
     def test_a_grouped_aggregate_formula_is_not_wrapped_again(self, call):
         expr = f"{call} ( [ORDERS::Amount] , {{ [ORDERS::Region] }} , query_filters ( ) )"
         emitted = self._thoughtspot_expression_for(expr)

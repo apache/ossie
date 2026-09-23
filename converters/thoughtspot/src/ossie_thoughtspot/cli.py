@@ -146,11 +146,19 @@ def _colliding(paths: list[Path]) -> list[Path]:
     exited 0. `--force` does not license this -- it permits overwriting files
     that were already there, not destroying one of this run's own outputs.
     """
-    seen: dict[Path, int] = {}
+    # Case-folded as well as resolved. `Path.resolve()` does not fold case, and
+    # the default filesystem on macOS and Windows does -- so `-o out.yaml
+    # --issues OUT.YAML` named one file, slipped past this very guard, and the
+    # issue log overwrote the converted document with exit 0. `tml.py` already
+    # folds for exactly this reason; this guard was written a day later and did
+    # not, which is how the defect it exists to prevent survived its own fix.
+    seen: dict[str, Path] = {}
+    counts: dict[str, int] = {}
     for path in paths:
-        resolved = path.resolve()
-        seen[resolved] = seen.get(resolved, 0) + 1
-    return sorted(path for path, count in seen.items() if count > 1)
+        key = str(path.resolve()).casefold()
+        seen.setdefault(key, path.resolve())
+        counts[key] = counts.get(key, 0) + 1
+    return sorted(seen[key] for key, count in counts.items() if count > 1)
 
 
 def _refuse_collision(paths: list[Path]) -> str:

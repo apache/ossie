@@ -33,11 +33,11 @@ ThoughtSpot's own native functions with no counterpart in the Ossie specificatio
 
 | Disposition | Count | Share | Meaning |
 |---|---|---|---|
-| compose | 49 | 61% | A full, portable Ossie expression is produced. |
+| compose | 53 | 63% | A full, portable Ossie expression is produced. |
 | partial | 8 | 10% | A real Ossie expression is produced, but it is provably incomplete. |
-| dialect | 11 | 14% | Resolves to the Ossie `dialects[]` mechanism, not a portable expression. |
-| stash | 12 | 15% | No Ossie expression exists at all; preserved verbatim for round-trip only. |
-| **Total** | **80** | **100%** |  |
+| dialect | 11 | 13% | Resolves to the Ossie `dialects[]` mechanism, not a portable expression. |
+| stash | 12 | 14% | No Ossie expression exists at all; preserved verbatim for round-trip only. |
+| **Total** | **84** | **100%** |  |
 
 ## Cross-cutting dispatch, not name-keyed
 
@@ -93,6 +93,10 @@ Two checks apply before an ordinary lookup by name into `REVERSE`, so they are n
 | `group_count` | compose | dynamic — see `_make_group_shorthand_dispatch.<locals>._dispatch` in `reverse.py` | — | Shorthand for group_aggregate(count(m), ...) — same shape dispatch. Judgment call: the (m, grouping, filter) 3-argument shape is assumed by analogy with group_aggregate's live-confirmed form; the shorthand family's own arity was not independently live-tested. |
 | `group_stddev` | compose | dynamic — see `_make_group_shorthand_dispatch.<locals>._dispatch` in `reverse.py` | — | Shorthand for group_aggregate(stddev(m), ...) — same shape dispatch. Judgment call: the (m, grouping, filter) 3-argument shape is assumed by analogy with group_aggregate's live-confirmed form; the shorthand family's own arity was not independently live-tested. |
 | `group_variance` | compose | dynamic — see `_make_group_shorthand_dispatch.<locals>._dispatch` in `reverse.py` | — | Shorthand for group_aggregate(variance(m), ...) — same shape dispatch. Judgment call: the (m, grouping, filter) 3-argument shape is assumed by analogy with group_aggregate's live-confirmed form; the shorthand family's own arity was not independently live-tested. |
+| `group_max` | compose | dynamic — see `_make_group_shorthand_dispatch.<locals>._dispatch` in `reverse.py` | — | Shorthand for group_aggregate(max(m), ...) — same shape dispatch. Judgment call: the (m, grouping, filter) 3-argument shape is assumed by analogy with group_aggregate's live-confirmed form; the shorthand family's own arity was not independently live-tested. |
+| `group_min` | compose | dynamic — see `_make_group_shorthand_dispatch.<locals>._dispatch` in `reverse.py` | — | Shorthand for group_aggregate(min(m), ...) — same shape dispatch. Judgment call: the (m, grouping, filter) 3-argument shape is assumed by analogy with group_aggregate's live-confirmed form; the shorthand family's own arity was not independently live-tested. |
+| `group_average` | compose | dynamic — see `_make_group_shorthand_dispatch.<locals>._dispatch` in `reverse.py` | — | Shorthand for group_aggregate(avg(m), ...) — same shape dispatch. Judgment call: the (m, grouping, filter) 3-argument shape is assumed by analogy with group_aggregate's live-confirmed form; the shorthand family's own arity was not independently live-tested. |
+| `group_unique_count` | compose | dynamic — see `_make_group_shorthand_dispatch.<locals>._dispatch` in `reverse.py` | — | Shorthand for group_aggregate(count_distinct(m), ...) — same shape dispatch. Judgment call: the (m, grouping, filter) 3-argument shape is assumed by analogy with group_aggregate's live-confirmed form; the shorthand family's own arity was not independently live-tested. |
 | `last_value` | stash | — | `TS-EXPR-SEMI-ADDITIVE` · ERROR | The window clause itself round-trips; only the roll-up declaration is lost. |
 | `first_value` | stash | — | `TS-EXPR-SEMI-ADDITIVE` · ERROR | The window clause itself round-trips; only the roll-up declaration is lost. |
 | `last_value_in_period` | stash | — | `TS-EXPR-SEMI-ADDITIVE` · ERROR | The window clause itself round-trips; only the roll-up declaration is lost. |

@@ -70,6 +70,16 @@ GROUP_SHORTHAND_AGGREGATES = {
     "group_count": "COUNT",
     "group_stddev": "STDDEV",
     "group_variance": "VARIANCE",
+    # The four below were missing while this map served only the reverse
+    # inventory, whose rule is "name nothing the mapping document does not".
+    # That rule is right for traceability and wrong for the double-aggregation
+    # guard, whose source of truth is ThoughtSpot's own function list: a
+    # `group_max(...)` formula was classified as a scalar and had its column
+    # `aggregation` composed on top, emitting `sum ( group_max ( ... ) )`.
+    "group_max": "MAX",
+    "group_min": "MIN",
+    "group_average": "AVG",
+    "group_unique_count": "COUNT_DISTINCT",
 }
 
 #: Every grouped-aggregation call name: the shorthands plus the general form.
