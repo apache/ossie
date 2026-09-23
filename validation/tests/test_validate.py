@@ -166,6 +166,35 @@ def test_unique_names_are_checked_in_the_root_model() -> None:
     assert errors == ["[Unique] Duplicate dataset name 'orders' in model 'm'"]
 
 
+@pytest.mark.parametrize(
+    ("mutate", "path"),
+    [
+        (lambda doc: doc.update(name=""), "name"),
+        (lambda doc: doc["datasets"][0].update(name=""), "datasets -> 0 -> name"),
+        (lambda doc: doc["datasets"][0].update(source=""), "datasets -> 0 -> source"),
+    ],
+)
+def test_schema_rejects_empty_identifiers(core_schema: dict, mutate, path: str) -> None:
+    # Empty identifiers are invalid data. The schema (minLength: 1) rejects them
+    # up front, so no downstream check has to special-case "" -- and a single
+    # empty name is caught even though it never trips duplicate detection.
+    document = _document([dict(_ORDERS)], [])
+    mutate(document)
+
+    assert _VALIDATE.validate_schema(document, core_schema) == [
+        f"[Schema] {path}: '' should be non-empty"
+    ]
+
+
+def test_schema_rejects_empty_relationship_endpoints(core_schema: dict) -> None:
+    document = _document([dict(_ORDERS), dict(_CUSTOMERS)], [_relationship(to_columns=["id"])])
+    document["relationships"][0]["to"] = ""
+
+    assert _VALIDATE.validate_schema(document, core_schema) == [
+        "[Schema] relationships -> 0 -> to: '' should be non-empty"
+    ]
+
+
 def test_sql_checks_traverse_root_fields_and_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
     seen = []
 
@@ -259,6 +288,26 @@ def test_still_reports_unknown_datasets() -> None:
     assert errors == [
         "[Reference] Relationship 'orders_to_customers' in model 'm' references unknown dataset 'nope'"
     ]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_deeply_nested_sql_reports_a_diagnostic_instead_of_crashing() -> None:
+    # Pathologically nested SQL exhausts sqlglot's recursion limit; the
+    # validator must turn that into a diagnostic rather than propagating
+    # RecursionError and aborting the run.
+    expression = "(" * 5000 + "1" + ")" * 5000
+    result = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert result == "[SQL] ctx: expression is too deeply nested to parse"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_non_string_expression_surfaces_instead_of_being_reported_valid() -> None:
+    # Only RecursionError is caught, so a genuine bug -- a non-string expression
+    # reaching the parser -- raises loudly rather than being masked as valid SQL
+    # by the SELECT-wrapped retry.
+    with pytest.raises(TypeError):
+        _VALIDATE.validate_sql_expression(123, "ANSI_SQL", "ctx")
 
 
 def test_tolerates_null_unique_keys() -> None:

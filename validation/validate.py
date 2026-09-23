@@ -292,7 +292,11 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
         # Try parsing as expression first (for field expressions like "column_name")
         sqlglot.parse_one(expr, dialect=sqlglot_dialect)
         return None
-    except (ParseError, TokenError):
+    except (ParseError, TokenError, RecursionError):
+        # A bare column reference fails to parse alone; retry it wrapped in
+        # SELECT below. RecursionError (deeply nested input) is included so the
+        # retry reports it instead of crashing, while genuine errors such as a
+        # non-string expr raising TypeError still surface.
         pass
 
     try:
@@ -301,6 +305,10 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
         return None
     except (ParseError, TokenError) as e:
         return f"[SQL] {context}: {str(e).split(chr(10))[0]}"
+    except RecursionError:
+        # Deeply nested input exhausts the recursion limit rather than raising a
+        # parser error; report it instead of letting it abort validation.
+        return f"[SQL] {context}: expression is too deeply nested to parse"
 
 
 def validate_sql(data: dict) -> list[str]:
@@ -383,6 +391,10 @@ def main():
             data = yaml.load(f, Loader=UniqueKeyLoader)
         except yaml.YAMLError as e:
             print(f"Error: Invalid YAML: {e}")
+            sys.exit(1)
+        except RecursionError:
+            # Deeply nested input surfaces as RecursionError, not YAMLError.
+            print("Error: Invalid YAML: input is too deeply nested to parse")
             sys.exit(1)
 
     # Run validations
