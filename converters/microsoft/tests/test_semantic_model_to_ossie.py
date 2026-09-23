@@ -188,6 +188,43 @@ def test_keys_are_mapped(model):
 
 
 @pytest.mark.parametrize(
+    ("tmsl_property", "ossie_property", "ossie_value"),
+    [
+        ("isKey", "primary_key", ["C"]),
+        ("isUnique", "unique_keys", [["C"]]),
+    ],
+)
+def test_explicit_false_key_flags_round_trip_and_ossie_edits_win(
+    tmsl_property, ossie_property, ossie_value
+):
+    bim = {
+        "name": "key_flags",
+        "model": {
+            "tables": [
+                {
+                    "name": "T",
+                    "columns": [{"name": "C", tmsl_property: False}],
+                }
+            ]
+        },
+    }
+
+    ossie = build_ossie_document(bim)
+    dataset = _dataset(ossie, "T")
+    assert ossie_property not in dataset
+    assert read_stash(_field(dataset, "C"))[tmsl_property] is False
+
+    round_tripped = convert_ossie_to_semantic_model(ossie)
+    column = round_tripped["model"]["tables"][0]["columns"][0]
+    assert column[tmsl_property] is False
+
+    dataset[ossie_property] = ossie_value
+    edited = convert_ossie_to_semantic_model(ossie)
+    column = edited["model"]["tables"][0]["columns"][0]
+    assert column[tmsl_property] is True
+
+
+@pytest.mark.parametrize(
     "dataset_name,expected_source",
     [
         ("Sales", "retail.dbo.sales"),
@@ -207,6 +244,62 @@ def test_plain_column_uses_source_column_as_sql(model):
     assert _expression(amount, "ANSI_SQL") == "amount"
     assert amount["datatype"] == "Decimal"
     assert amount["description"] == "Extended sales amount"
+
+
+def test_dax_string_literal_remains_a_calculated_column():
+    bim = {
+        "name": "dax_literal",
+        "model": {
+            "tables": [
+                {
+                    "name": "T",
+                    "columns": [
+                        {
+                            "name": "World",
+                            "type": "calculated",
+                            "dataType": "string",
+                            "expression": '"Earth"',
+                        }
+                    ],
+                }
+            ]
+        },
+    }
+
+    ossie = build_ossie_document(bim)
+    field = _field(_dataset(ossie, "T"), "World")
+    assert _expression(field, "DAX") == '"Earth"'
+
+    column = convert_ossie_to_semantic_model(ossie)["model"]["tables"][0]["columns"][0]
+    assert column["type"] == "calculated"
+    assert column["expression"] == '"Earth"'
+
+
+def test_dax_expression_whitespace_survives_a_round_trip():
+    bim = {
+        "name": "dax_whitespace",
+        "model": {
+            "tables": [
+                {
+                    "name": "T",
+                    "columns": [
+                        {
+                            "name": "C",
+                            "type": "calculated",
+                            "dataType": "string",
+                            "expression": '\n"Value"\n',
+                        }
+                    ],
+                    "measures": [{"name": "M", "expression": "\nCOUNTROWS('T')\n"}],
+                }
+            ]
+        },
+    }
+
+    round_tripped = convert_ossie_to_semantic_model(build_ossie_document(bim))
+    table = round_tripped["model"]["tables"][0]
+    assert table["columns"][0]["expression"] == ["", '"Value"', ""]
+    assert table["measures"][0]["expression"] == ["", "COUNTROWS('T')", ""]
 
 
 def test_calculated_column_uses_dax_dialect(model):
@@ -253,6 +346,138 @@ def test_active_many_to_one_relationship(model):
     rel = next(r for r in model["relationships"] if r["from"] == "Sales" and r["to"] == "Customer")
     assert rel["from_columns"] == ["CustomerKey"]
     assert rel["to_columns"] == ["CustomerKey"]
+
+
+def test_explicit_active_state_survives_a_round_trip():
+    bim = {
+        "name": "active",
+        "model": {
+            "tables": [
+                {"name": "Sales", "columns": [{"name": "CustomerKey"}]},
+                {"name": "Customer", "columns": [{"name": "CustomerKey"}]},
+            ],
+            "relationships": [
+                {
+                    "name": "active_relationship",
+                    "fromTable": "Sales",
+                    "fromColumn": "CustomerKey",
+                    "toTable": "Customer",
+                    "toColumn": "CustomerKey",
+                    "isActive": True,
+                }
+            ],
+        },
+    }
+
+    ossie = build_ossie_document(bim)
+    relationship = ossie["relationships"][0]
+    stash = read_stash(relationship)
+    assert stash["isActive"] is True
+    assert stash["normalizedEndpoints"] == [
+        "Sales",
+        "CustomerKey",
+        "Customer",
+        "CustomerKey",
+    ]
+
+    round_tripped = convert_ossie_to_semantic_model(ossie)
+    assert (
+        round_tripped["model"]["relationships"][0]
+        == bim["model"]["relationships"][0]
+    )
+
+
+@pytest.mark.parametrize(
+    ("property_name", "property_value"),
+    [
+        ("fromCardinality", "many"),
+        ("toCardinality", "one"),
+        ("crossFilteringBehavior", "oneDirection"),
+        ("crossFilteringBehavior", "bothDirections"),
+        ("relyOnReferentialIntegrity", False),
+    ],
+)
+def test_corpus_backed_relationship_properties_survive_an_exact_round_trip(
+    property_name, property_value
+):
+    source_relationship = {
+        "name": "customer_sales",
+        "fromTable": "Sales",
+        "fromColumn": "CustomerKey",
+        "toTable": "Customer",
+        "toColumn": "CustomerKey",
+        property_name: property_value,
+    }
+    bim = {
+        "name": "relationship_properties",
+        "model": {
+            "tables": [
+                {"name": "Sales", "columns": [{"name": "CustomerKey"}]},
+                {"name": "Customer", "columns": [{"name": "CustomerKey"}]},
+            ],
+            "relationships": [source_relationship],
+        },
+    }
+
+    ossie = build_ossie_document(bim)
+    assert read_stash(ossie["relationships"][0])[property_name] == property_value
+
+    round_tripped = convert_ossie_to_semantic_model(ossie)
+    assert round_tripped["model"]["relationships"] == [source_relationship]
+
+
+def test_ossie_relationship_edits_win_over_stale_power_bi_metadata():
+    source_relationship = {
+        "name": "customer_sales",
+        "fromTable": "Sales",
+        "fromColumn": "CustomerKey",
+        "toTable": "Customer",
+        "toColumn": "CustomerKey",
+        "fromCardinality": "many",
+        "toCardinality": "one",
+        "isActive": True,
+        "crossFilteringBehavior": "bothDirections",
+        "relyOnReferentialIntegrity": True,
+    }
+    bim = {
+        "name": "relationship_precedence",
+        "model": {
+            "tables": [
+                {
+                    "name": "Sales",
+                    "columns": [{"name": "CustomerKey"}, {"name": "AlternateKey"}],
+                },
+                {
+                    "name": "Customer",
+                    "columns": [{"name": "CustomerKey"}, {"name": "AlternateKey"}],
+                },
+            ],
+            "relationships": [source_relationship],
+        },
+    }
+    ossie = build_ossie_document(bim)
+    relationship = ossie["relationships"][0]
+    relationship["name"] = "edited_relationship"
+
+    renamed = convert_ossie_to_semantic_model(ossie)
+    assert renamed["model"]["relationships"] == [
+        {**source_relationship, "name": "edited_relationship"}
+    ]
+
+    relationship["from_columns"] = ["AlternateKey"]
+    relationship["to_columns"] = ["AlternateKey"]
+
+    round_tripped = convert_ossie_to_semantic_model(ossie)
+
+    assert round_tripped["model"]["relationships"] == [
+        {
+            "name": "edited_relationship",
+            "fromTable": "Sales",
+            "fromColumn": "AlternateKey",
+            "toTable": "Customer",
+            "toColumn": "AlternateKey",
+        }
+    ]
 
 
 def test_one_to_many_relationship_is_flipped(model):

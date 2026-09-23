@@ -230,8 +230,10 @@ Nothing is discarded silently. The converter follows the two rules in
    expressions, and skipped relationships. This is a deny-list, not an allow-list: a
    TMSL property this converter has never heard of is preserved too, rather than
    silently dropped. The export direction replays it all, so a `model.bim` converted to
-   Apache Ossie and back is the same model. An authored Apache Ossie metric takes
-   precedence over a preserved measure with the same final table and name.
+   Apache Ossie and back is the same model, including explicitly serialized default
+   values such as active relationships and false column key flags, and the original
+   whitespace in DAX expressions. An authored Apache Ossie metric takes precedence over
+   a preserved measure with the same final table and name.
 
 2. **Report.** Anything that genuinely cannot be represented raises a `UserWarning`
    naming the object and the reason. Callers who need a hard guarantee can escalate:
