@@ -659,3 +659,72 @@ def test_root_name_must_be_a_string(name_properties):
     document.update(name_properties)
     with pytest.raises(ConversionError, match="string 'name' at the document root"):
         exporter.convert_ossie_to_metric_view(yaml.safe_dump(document))
+
+
+def test_field_in_ossie_sql_2026_only_is_exported():
+    """A dimension expressed only in OSSIE_SQL_2026 is exported, not dropped (#442)."""
+    import yaml
+    ossie = yaml.safe_dump({
+        "version": exporter.OSSIE_VERSION,
+        "name": "m",
+        "datasets": [{"name": "orders", "source": "c.s.orders", "fields": [
+            {"name": "region", "expression": {"dialects": [
+                {"dialect": "OSSIE_SQL_2026", "expression": "o_region"}]}},
+        ]}],
+    })
+    out = parse(exporter.convert_ossie_to_metric_view(ossie))
+    dims = {d["name"]: d["expr"] for d in out.get("dimensions", [])}
+    assert dims == {"region": "o_region"}
+
+
+def test_metric_in_ossie_sql_2026_only_is_exported():
+    """A measure expressed only in OSSIE_SQL_2026 is exported, not dropped (#442)."""
+    import yaml
+    ossie = yaml.safe_dump({
+        "version": exporter.OSSIE_VERSION,
+        "name": "m",
+        "datasets": [{"name": "orders", "source": "c.s.orders"}],
+        "metrics": [{"name": "rev", "expression": {"dialects": [
+            {"dialect": "OSSIE_SQL_2026", "expression": "SUM(amount)"}]}}],
+    })
+    out = parse(exporter.convert_ossie_to_metric_view(ossie))
+    measures = {m["name"]: m["expr"] for m in out.get("measures", [])}
+    assert measures == {"rev": "SUM(amount)"}
+
+
+def test_databricks_dialect_preferred_over_ossie_sql_2026():
+    """DATABRICKS wins over OSSIE_SQL_2026 when both are present."""
+    import yaml
+    ossie = yaml.safe_dump({
+        "version": exporter.OSSIE_VERSION,
+        "name": "m",
+        "datasets": [{"name": "orders", "source": "c.s.orders", "fields": [
+            {"name": "region", "expression": {"dialects": [
+                {"dialect": "OSSIE_SQL_2026", "expression": "portable_region"},
+                {"dialect": "DATABRICKS", "expression": "dbx_region"}]}},
+        ]}],
+    })
+    out = parse(exporter.convert_ossie_to_metric_view(ossie))
+    dims = {d["name"]: d["expr"] for d in out.get("dimensions", [])}
+    assert dims == {"region": "dbx_region"}
+
+
+def test_unsupported_dialect_only_is_dropped_with_warning():
+    """A field whose only dialect is unsupported (here SNOWFLAKE) is dropped and warns.
+    Guards the allowlist against silently accepting any dialect (#442)."""
+    import warnings
+    import yaml
+    ossie = yaml.safe_dump({
+        "version": exporter.OSSIE_VERSION,
+        "name": "m",
+        "datasets": [{"name": "orders", "source": "c.s.orders", "fields": [
+            {"name": "region", "expression": {"dialects": [
+                {"dialect": "SNOWFLAKE", "expression": "o_region"}]}},
+        ]}],
+    })
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        out = parse(exporter.convert_ossie_to_metric_view(ossie))
+    assert out.get("dimensions", []) == []
+    assert any("no DATABRICKS/ANSI_SQL/OSSIE_SQL_2026 dialect" in str(w.message)
+               for w in caught)

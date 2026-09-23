@@ -46,6 +46,8 @@ VENDOR = "DATABRICKS"
 # Expression dialects this converter understands, in preference order.
 DIALECT_DATABRICKS = "DATABRICKS"
 DIALECT_ANSI = "ANSI_SQL"
+# Ossie's portable, ANSI-SQL-compatible dialect; treated as an ANSI_SQL-equivalent fallback.
+DIALECT_OSSIE_SQL = "OSSIE_SQL_2026"
 
 # Metric Views cap the number of synonyms per column.
 SYNONYM_LIMIT = 10
@@ -219,16 +221,19 @@ def foreign_vendor_extensions(obj):
 
 
 def pick_expression(ossie_expression):
-    """Choose the SQL string for an Apache Ossie expression: DATABRICKS, else ANSI_SQL.
+    """Choose the SQL string for an Apache Ossie expression.
 
-    Returns None if neither dialect is present (the caller warns and skips). Does
-    not warn about other dialects here -- only the absence of a usable one matters.
+    Preference order: DATABRICKS, then ANSI_SQL, then OSSIE_SQL_2026 (the last two
+    are ANSI-SQL-compatible fallbacks). Returns None if none is present; the caller
+    warns and skips.
     """
     dialects = {
         d.get("dialect"): d.get("expression")
         for d in (ossie_expression or {}).get("dialects") or []
     }
-    expr = dialects.get(DIALECT_DATABRICKS) or dialects.get(DIALECT_ANSI)
+    expr = (dialects.get(DIALECT_DATABRICKS)
+            or dialects.get(DIALECT_ANSI)
+            or dialects.get(DIALECT_OSSIE_SQL))
     if expr is not None and not isinstance(expr, str):
         raise ConversionError(
             f"expression must be a string, got {type(expr).__name__}")

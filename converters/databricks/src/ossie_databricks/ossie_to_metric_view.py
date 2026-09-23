@@ -503,7 +503,7 @@ def _convert_field(field, name, qualifier, is_fact, prefix=None):
     scope = f"field '{name}'"
     expr = pick_expression(field.get("expression"))
     if expr is None:
-        _warn(scope, "no DATABRICKS/ANSI_SQL dialect; dropping field")
+        _warn(scope, "no DATABRICKS/ANSI_SQL/OSSIE_SQL_2026 dialect; dropping field")
         return None
 
     # Requalify a joined-table column with its full join-name path from the source
@@ -554,7 +554,7 @@ def _convert_metric(metric, fact, seen_names):
     seen_names.add(name.lower())
     expr = pick_expression(metric.get("expression"))
     if expr is None:
-        _warn(scope, "no DATABRICKS/ANSI_SQL dialect; dropping metric")
+        _warn(scope, "no DATABRICKS/ANSI_SQL/OSSIE_SQL_2026 dialect; dropping metric")
         return None
 
     # Fact-table columns are referenced by bare name in measure expressions (DBR
