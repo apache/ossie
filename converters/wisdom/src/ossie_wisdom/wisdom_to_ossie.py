@@ -277,6 +277,7 @@ class WisdomToOssieConverter:
                 from_dataset, to_dataset = right, left
                 from_columns = [pair[1] for pair in column_pairs]
                 to_columns = [pair[0] for pair in column_pairs]
+                ai_context = "one-to-many relationship"
             else:
                 from_dataset, to_dataset = left, right
                 from_columns = [pair[0] for pair in column_pairs]

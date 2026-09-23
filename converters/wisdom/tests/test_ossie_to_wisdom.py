@@ -118,10 +118,31 @@ def test_metrics_attach_to_referenced_tables(export):
 def test_relationship_types_restored(export):
     edges = export["domain"]["zsheet_json"]["relationshipGraph"]["relationships"]
     types = [edge["properties"]["relationshipType"] for edge in edges]
-    assert types == ["MANY_TO_ONE", "MANY_TO_ONE", "MANY_TO_MANY", "MANY_TO_ONE"]
+    assert types == ["MANY_TO_ONE", "ONE_TO_MANY", "MANY_TO_MANY", "MANY_TO_ONE"]
     compound = edges[3]["properties"]["compoundJoinCondition"]["nestedCondition"]
     assert compound["logicalOperator"] == "AND"
     assert len(compound["conditions"]) == 2
+
+
+def _without_uuids(value):
+    if isinstance(value, dict):
+        return {key: _without_uuids(item) for key, item in value.items() if key != "uuid"}
+    if isinstance(value, list):
+        return [_without_uuids(item) for item in value]
+    return value
+
+
+def test_relationships_round_trip_from_wisdom(export):
+    original = json.loads(FIXTURE.read_text())["domain"]["zsheet_json"]["relationshipGraph"]["relationships"]
+    # The OR-joined edge is not representable in Ossie and is dropped (with an issue) on the way in.
+    representable = [
+        edge
+        for edge in original
+        if edge["properties"].get("compoundJoinCondition", {}).get("nestedCondition", {}).get("logicalOperator") != "OR"
+    ]
+    edges = export["domain"]["zsheet_json"]["relationshipGraph"]["relationships"]
+    # ZSheet uuids are regenerated from names, so compare everything else.
+    assert _without_uuids(edges) == _without_uuids(representable)
 
 
 def test_connections_are_per_dialect(export):
@@ -195,6 +216,37 @@ def test_one_to_one_note_restores_relationship_type():
     export = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00").output
     edges = export["domain"]["zsheet_json"]["relationshipGraph"]["relationships"]
     assert edges[0]["properties"]["relationshipType"] == "ONE_TO_ONE"
+
+
+def test_one_to_many_note_restores_relationship_type_and_direction():
+    document = OssieDocument(
+        name="m",
+        datasets=[
+            OssieDataset(name="orders", source="db.s.orders"),
+            OssieDataset(name="customers", source="db.s.customers"),
+        ],
+        relationships=[
+            OssieRelationship(
+                name="orders_to_customers",
+                from_dataset="orders",
+                to="customers",
+                from_columns=["customer_fk"],
+                to_columns=["id"],
+                ai_context="one-to-many relationship",
+            )
+        ],
+    )
+    export = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00").output
+    edge = export["domain"]["zsheet_json"]["relationshipGraph"]["relationships"][0]
+    assert edge["properties"]["relationshipType"] == "ONE_TO_MANY"
+    assert edge["leftDataSource"]["zsheet"]["name"] == "customers"
+    assert edge["rightDataSource"]["zsheet"]["name"] == "orders"
+    condition = edge["properties"]["joinCondition"]
+    assert (condition["leftColumn"]["name"], condition["leftColumn"]["zsheetRef"]["name"]) == ("id", "customers")
+    assert (condition["rightColumn"]["name"], condition["rightColumn"]["zsheetRef"]["name"]) == (
+        "customer_fk",
+        "orders",
+    )
 
 
 def test_unresolved_metric_attaches_to_first_dataset():
