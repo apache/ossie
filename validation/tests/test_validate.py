@@ -186,6 +186,31 @@ def test_sql_checks_traverse_root_fields_and_metrics(monkeypatch: pytest.MonkeyP
     ]
 
 
+def test_ossie_sql_2026_maps_to_the_ansi_default_explicitly() -> None:
+    # OSSIE_SQL_2026 is ANSI-SQL-compatible, so it must resolve to the same
+    # sqlglot default (None) as ANSI_SQL. Assert it via an explicit key rather
+    # than DIALECT_MAP.get()'s default, which happened to return the same None.
+    assert "OSSIE_SQL_2026" in _VALIDATE.DIALECT_MAP
+    assert _VALIDATE.DIALECT_MAP["OSSIE_SQL_2026"] is _VALIDATE.DIALECT_MAP["ANSI_SQL"]
+    # It is parseable as ANSI SQL, so it stays validated rather than skipped.
+    assert "OSSIE_SQL_2026" not in _VALIDATE.SKIP_SQL_VALIDATION
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_validates_a_valid_ossie_sql_2026_expression() -> None:
+    error = _VALIDATE.validate_sql_expression("SUM(amount)", "OSSIE_SQL_2026", "ctx")
+
+    assert error is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_flags_an_invalid_ossie_sql_2026_expression() -> None:
+    error = _VALIDATE.validate_sql_expression("SUM(", "OSSIE_SQL_2026", "ctx")
+
+    assert error is not None
+    assert error.startswith("[SQL] ctx:")
+
+
 def _relationship(to_columns: list[str], to: str = "customers") -> dict:
     return {
         "name": "orders_to_customers",
@@ -357,6 +382,34 @@ def test_sql_error_in_metric_with_warning_in_name_is_an_error(run_validator):
     assert exit_code == 1
     assert "Validation FAILED with 1 error(s)" in output
     assert "[SQL] Metric 'Warning: broken_metric'" in output
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_field_expressed_only_in_ossie_sql_2026_validates(run_validator):
+    dataset = {**_ORDERS, "fields": [{
+        "name": "half_amount",
+        "expression": {"dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "amount * 0.5"}]},
+    }]}
+    document = _document([dataset], [])
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 0
+    assert "Validation PASSED" in output
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_metric_expressed_only_in_ossie_sql_2026_validates(run_validator):
+    document = _document([_ORDERS], [])
+    document["metrics"] = [{
+        "name": "total_amount",
+        "expression": {"dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(amount)"}]},
+    }]
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 0
+    assert "Validation PASSED" in output
 
 
 def test_key_coverage_warning_remains_nonfatal(run_validator):

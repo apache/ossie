@@ -66,6 +66,7 @@ except ImportError:
 # Map Ossie dialects to sqlglot dialects
 DIALECT_MAP = {
     "ANSI_SQL": None,  # sqlglot default
+    "OSSIE_SQL_2026": None,  # ANSI-SQL-compatible; parse with the sqlglot default
     "SNOWFLAKE": "snowflake",
     "DATABRICKS": "databricks",
     "BIGQUERY": "bigquery",
