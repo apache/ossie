@@ -59,6 +59,19 @@ DIALECT_DAX = "DAX"
 DIALECT_ANSI = "ANSI_SQL"
 DIALECT_OSSIE_SQL = "OSSIE_SQL_2026"
 
+# Power BI relationship properties whose meaning is tied to a specific endpoint pair.
+# Both converter directions use this set to avoid replaying stale vendor metadata after
+# an Ossie relationship's endpoints are edited.
+RELATIONSHIP_ENDPOINT_METADATA = frozenset(
+    {
+        "crossFilteringBehavior",
+        "fromCardinality",
+        "isActive",
+        "relyOnReferentialIntegrity",
+        "toCardinality",
+    }
+)
+
 # Bump when the shape of a stashed `data` blob changes.
 STASH_VERSION = 2
 

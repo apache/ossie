@@ -302,6 +302,33 @@ def test_dax_expression_whitespace_survives_a_round_trip():
     assert table["measures"][0]["expression"] == ["", "COUNTROWS('T')", ""]
 
 
+def test_single_line_dax_whitespace_survives_a_round_trip():
+    bim = {
+        "name": "dax_whitespace",
+        "model": {
+            "tables": [
+                {
+                    "name": "T",
+                    "columns": [
+                        {
+                            "name": "C",
+                            "type": "calculated",
+                            "dataType": "string",
+                            "expression": '  "Value"  ',
+                        }
+                    ],
+                    "measures": [{"name": "M", "expression": "  COUNTROWS('T')  "}],
+                }
+            ]
+        },
+    }
+
+    round_tripped = convert_ossie_to_semantic_model(build_ossie_document(bim))
+    table = round_tripped["model"]["tables"][0]
+    assert table["columns"][0]["expression"] == '  "Value"  '
+    assert table["measures"][0]["expression"] == "  COUNTROWS('T')  "
+
+
 def test_calculated_column_uses_dax_dialect(model):
     field = _field(_dataset(model, "Sales"), "AmountWithTax")
     assert _expression(field, "DAX") == "Sales[Amount] * 1.2"
