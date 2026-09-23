@@ -231,7 +231,7 @@ No. Ossie is vendor-agnostic by design. The specification is developed and gover
 Yes, as long as a converter exists (or is built) for your tool. The hub-and-spoke model means that adding Ossie support to a single tool gives it interoperability with every other Ossie-compatible tool. Check the [Converters Guide](../converters/README.md) for currently supported vendors.
 
 **What if my vendor isn't supported yet?**
-You can build a converter in a separate repository. The main Ossie repository does not accept new converters. The [Converters Guide](../converters/README.md) provides implementation guidance; see [repository scope](../converters/README.md#repository-scope) for hosting guidance and how to discuss Apache Ossie hosting with the community.
+You can build a converter in a separate repository. The main Ossie repository does not accept new converters. The [Converters Guide](../converters/README.md) provides implementation guidance; see [Converter Contributions](../CONTRIBUTING.md#converter-contributions) for hosting guidance and how to discuss Apache Ossie hosting with the community.
 
 **Do I need to rewrite my existing semantic models?**
 No. Import converters translate existing vendor-specific models into the Ossie format automatically. Your existing models remain intact — Ossie provides an additional interchange layer on top of them.
