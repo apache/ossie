@@ -25,10 +25,14 @@ Usage:
 """
 
 import argparse
+import re
 import sys
 import warnings
 
 import yaml
+from sqlglot import tokenize
+from sqlglot.errors import TokenError
+from sqlglot.tokens import TokenType
 
 
 SUPPORTED_VERSION = "0.2.0.dev0"
@@ -417,6 +421,30 @@ def _normalize_identifier(identifier):
         return stripped
     return stripped.upper()
 
+_UNQUOTED_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
+_QUOTED_IDENTIFIER = re.compile(r'^"(?:[^"]|"")+"$')
+
+
+def _is_query_source(source_stripped):
+    """Recognize SELECT/WITH sources without requiring a full SQL parse."""
+    # Use Snowflake's comment and identifier rules, including `$` in names.
+    # Full parsing could reject newer Snowflake syntax that should pass through.
+    try:
+        tokens = tokenize(source_stripped, read="snowflake")
+    except TokenError:
+        return False
+
+    for token in tokens:
+        if token.token_type != TokenType.L_PAREN:
+            return token.token_type in (TokenType.SELECT, TokenType.WITH)
+    return False
+
+
+def _is_identifier(part):
+    """True if `part` is a valid quoted or unquoted Snowflake identifier."""
+    return bool(_UNQUOTED_IDENTIFIER.match(part) or _QUOTED_IDENTIFIER.match(part))
+
+
 def _split_identifiers(source_str):
     """Split a dot-separated identifier string while respecting double quotes."""
     parts = []
@@ -434,6 +462,20 @@ def _split_identifiers(source_str):
     parts.append("".join(current).strip())
     return parts
 
+
+def _try_parse_source_relation(source_stripped):
+    """Return a three-part relation, or None if its identifiers are invalid."""
+    parts = _split_identifiers(source_stripped)
+    if len(parts) == 3 and all(_is_identifier(part) for part in parts):
+        # Only uppercase unquoted identifiers; preserve quoted ones as-is.
+        return {
+            "database": _normalize_identifier(parts[0]),
+            "schema": _normalize_identifier(parts[1]),
+            "table": _normalize_identifier(parts[2]),
+        }
+    return None
+
+
 def _parse_source(source):
     """Parses an Ossie dataset source string into a Snowflake base_table dict.
 
@@ -447,24 +489,17 @@ def _parse_source(source):
     if not source_stripped:
         return None
 
-    # Detect subqueries — require whitespace after the keyword to avoid false
-    # positives on table names like WITH_TABLE or SELECT_RESULTS.
-    upper = source_stripped.upper()
-    if upper.startswith(("SELECT ", "SELECT\n", "SELECT\t",
-                          "WITH ", "WITH\n", "WITH\t")):
+    # Preserve query text, including comments, after trimming outer whitespace.
+    if _is_query_source(source_stripped):
         return {"definition": source_stripped}
 
-    parts = _split_identifiers(source_stripped)
-    if len(parts) == 3:
-        # Only uppercase unquoted identifiers; preserve quoted ones as-is.
-        return {
-            "database": _normalize_identifier(parts[0]),
-            "schema": _normalize_identifier(parts[1]),
-            "table": _normalize_identifier(parts[2]),
-        }
+    relation = _try_parse_source_relation(source_stripped)
+    if relation is not None:
+        return relation
 
     raise OssieConversionError(
-        f"Source '{source}' must be a fully qualified db.schema.table or a subquery"
+        f"Source '{source}' must be a fully qualified db.schema.table "
+        "(quoted or unquoted identifiers) or a SELECT/WITH query"
     )
 
 
