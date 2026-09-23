@@ -372,9 +372,10 @@ def _convert_relationship(rel):
 def _extract_expression(expression, field_name):
     """Selects the best dialect expression for Snowflake.
 
-    Returns the expression string, or None if only unsupported dialects are
-    present (the field should be skipped). Raises OssieConversionError if the
-    expression or dialects list is missing entirely.
+    Preference order: SNOWFLAKE, then ANSI_SQL, then OSSIE_SQL_2026 (the last two
+    are ANSI-SQL-compatible fallbacks). Returns the expression string, or None if
+    only unsupported dialects are present (the field should be skipped). Raises
+    OssieConversionError if the expression or dialects list is missing entirely.
     """
     if expression is None or not isinstance(expression, dict):
         raise OssieConversionError(
@@ -389,6 +390,8 @@ def _extract_expression(expression, field_name):
 
     snowflake_expr = None
     ansi_expr = None
+    # OSSIE_SQL_2026 is ANSI-SQL-compatible; treated as an ANSI_SQL-equivalent fallback.
+    ossie_sql_expr = None
 
     for d in dialects:
         dialect_name = (d.get("dialect") or "").upper()
@@ -396,16 +399,21 @@ def _extract_expression(expression, field_name):
             snowflake_expr = d.get("expression")
         elif dialect_name == "ANSI_SQL":
             ansi_expr = d.get("expression")
+        elif dialect_name == "OSSIE_SQL_2026":
+            ossie_sql_expr = d.get("expression")
 
     if snowflake_expr is not None:
         return snowflake_expr
     if ansi_expr is not None:
         return ansi_expr
+    if ossie_sql_expr is not None:
+        return ossie_sql_expr
 
     dialect_names = [d.get("dialect", "") for d in dialects]
     warnings.warn(
         f"Skipping field/metric '{field_name}': no Snowflake-compatible expression "
-        f"(has dialects: {', '.join(dialect_names)}; requires SNOWFLAKE or ANSI_SQL)"
+        f"(has dialects: {', '.join(dialect_names)}; requires SNOWFLAKE, ANSI_SQL, "
+        f"or OSSIE_SQL_2026)"
     )
     return None
 
