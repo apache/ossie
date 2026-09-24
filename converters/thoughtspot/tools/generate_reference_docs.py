@@ -194,8 +194,9 @@ def generate_expression_mapping_doc() -> str:
                 # for `NTILE(n)`, and a reader had no way to tell the 4 from
                 # part of the rendering.
                 named = ", ".join(f"`{name}`" for name in c.exemplar_literals)
+                shown = "shown as a literal" if len(c.exemplar_literals) == 1 else "shown as literals"
                 rendering += (
-                    f" — **example only**: {named} shown as a literal, "
+                    f" — **example only**: {named} {shown}, "
                     f"rebuild the template per occurrence"
                 )
         else:

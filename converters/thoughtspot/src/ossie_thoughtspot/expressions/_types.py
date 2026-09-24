@@ -102,6 +102,53 @@ class Variadic:
 _ARGUMENT_PLACEHOLDER_RE = re.compile(r"\{\d+\}")
 #: A bare number or quoted string sitting in an argument position.
 _BAKED_LITERAL_RE = re.compile(r"(?<![\w.])\d+(?:\.\d+)?(?![\w.])|'[^']*'")
+#: An aggregate CALL baked into a template. `SUM` in
+#: `NTILE(4) OVER (ORDER BY SUM({0}))` stands for "whatever the caller is ranking
+#: by" exactly as the `4` stands for `n`, but it is a bare keyword rather than a
+#: number or a quoted string, so `_BAKED_LITERAL_RE` cannot see it. Five rows sat
+#: in that state undeclared while passing the literal gate, and the generated
+#: document offered `SUM` as the mapping for a row whose own `spec_name` says
+#: `AGG(expr)`.
+_BAKED_AGGREGATE_RE = re.compile(
+    r"(?<![\w.])(SUM|AVG|COUNT|MIN|MAX|MEDIAN|STDDEV|STDDEV_POP|STDDEV_SAMP"
+    r"|VARIANCE|VAR_POP|VAR_SAMP)\s*\(",
+    re.IGNORECASE,
+)
+
+
+def baked_literals(template: str | None) -> list[str]:
+    """Every bare number or quoted string `template` holds in an argument position."""
+    return _BAKED_LITERAL_RE.findall(_ARGUMENT_PLACEHOLDER_RE.sub("", template or ""))
+
+
+def baked_aggregates(template: str | None, spec_name: str) -> set[str]:
+    """Aggregate calls `template` bakes in that `spec_name` does not itself name.
+
+    A row whose specification IS the aggregate (`SUM(expr)`) is not baking an
+    exemplar in by writing `SUM` -- it is naming its own construct. A row whose
+    specification is `NTILE(n) OVER (...)`, `DENSE_RANK() OVER (...)` or
+    `Window aggregation -- AGG(expr) OVER (...)` and whose template nonetheless
+    says `SUM` has picked one aggregate to illustrate with, and has to say so.
+    """
+    body = _ARGUMENT_PLACEHOLDER_RE.sub("", template or "")
+    own = spec_name.split("(")[0].strip().upper()
+    return {
+        match.group(1).upper()
+        for match in _BAKED_AGGREGATE_RE.finditer(body)
+        if match.group(1).upper() != own
+    }
+
+
+def declares_an_aggregate_exemplar(exemplar_literals: tuple[str, ...]) -> bool:
+    """Whether some declared exemplar names an aggregate as the thing baked in.
+
+    Deliberately a substring test rather than an enum: these declarations are
+    free text destined for a generated document ("the ordering aggregate"), and
+    the check only has to be strong enough that a row baking `SUM` in cannot
+    satisfy it by declaring something unrelated, the way `NTILE` satisfied the
+    literal gate with `n` while its `SUM` went unmentioned.
+    """
+    return any("aggregate" in entry.lower() for entry in exemplar_literals)
 
 
 @dataclass(frozen=True)
@@ -181,14 +228,27 @@ class Construct:
         # `NTILE(4)` as the mapping for `NTILE(n)` with no sign that the 4 was
         # illustrative. An allowlist, not a blocklist: a new row is refused
         # until it declares itself.
-        if self.classification is Classification.PASSTHROUGH and not self.exemplar_literals:
-            body = _ARGUMENT_PLACEHOLDER_RE.sub("", self.template or "")
-            baked = _BAKED_LITERAL_RE.findall(body)
-            if baked:
+        if self.classification is Classification.PASSTHROUGH:
+            if not self.exemplar_literals:
+                baked = baked_literals(self.template)
+                if baked:
+                    raise ValueError(
+                        f"{self.spec_name}: template bakes in literal(s) {baked} while "
+                        f"declaring no exemplar_literals. Name the parameter(s) the "
+                        f"literal stands for, or parameterise the template"
+                    )
+            # The same rule for a baked-in AGGREGATE, which the literal scan above
+            # cannot see. Checked independently of `exemplar_literals` being empty:
+            # `NTILE` declared `n` and so satisfied the literal gate while the `SUM`
+            # its template also bakes in went unmentioned, which is exactly the state
+            # this catches.
+            aggregates = baked_aggregates(self.template, self.spec_name)
+            if aggregates and not declares_an_aggregate_exemplar(self.exemplar_literals):
                 raise ValueError(
-                    f"{self.spec_name}: template bakes in literal(s) {baked} while "
-                    f"declaring no exemplar_literals. Name the parameter(s) the "
-                    f"literal stands for, or parameterise the template"
+                    f"{self.spec_name}: template bakes in the aggregate(s) "
+                    f"{sorted(aggregates)} while no declared exemplar names an "
+                    f"aggregate. Add one that does (e.g. 'the ordering aggregate'), "
+                    f"or parameterise the template"
                 )
         if self.template and "..." in self.template:
             raise ValueError(

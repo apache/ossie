@@ -1178,7 +1178,9 @@ CATALOG.update(
         ),
         "DISTINCT aggregate modifier": Construct(
             "DISTINCT aggregate modifier", Classification.PASSTHROUGH,
-            template="SUM(DISTINCT {0})", variant=Variant.NUMBER_AGGREGATE,
+            template="SUM(DISTINCT {0})",
+            exemplar_literals=("the aggregate",),
+            variant=Variant.NUMBER_AGGREGATE,
             note=(
                 "CONVENTION_DIVERGENCE: described only in the Conditional "
                 "Aggregations prose/code block, never a table row. The "
@@ -1328,6 +1330,7 @@ CATALOG.update(
         "DENSE_RANK() OVER (...)": Construct(
             "DENSE_RANK() OVER (...)", Classification.PASSTHROUGH,
             template="dense_rank() over (order by sum({0}) desc)",
+            exemplar_literals=("the ordering aggregate", "the sort direction"),
             variant=Variant.INT_AGGREGATE,
             note=(
                 "ThoughtSpot's rank skips ranks after a tie; dense ranking has "
@@ -1340,9 +1343,14 @@ CATALOG.update(
         "NTILE(n) OVER (...)": Construct(
             "NTILE(n) OVER (...)", Classification.PASSTHROUGH,
             template="NTILE(4) OVER (ORDER BY SUM({0}))",
-            exemplar_literals=("n",),
+            exemplar_literals=("n", "the ordering aggregate"),
             variant=Variant.INT_AGGREGATE,
-            note="n is a literal, baked into the template, as the aggregate percentiles are.",
+            note=(
+                "n is a literal, baked into the template, as the aggregate "
+                "percentiles are. So is the SUM: the specification orders an "
+                "NTILE by whatever the caller chose, and this row illustrates "
+                "with one aggregate rather than mapping only that one."
+            ),
         ),
         "PERCENT_RANK() OVER (...)": Construct(
             "PERCENT_RANK() OVER (...)", Classification.DIRECT,
@@ -1368,6 +1376,7 @@ CATALOG.update(
         "CUME_DIST() OVER (...)": Construct(
             "CUME_DIST() OVER (...)", Classification.PASSTHROUGH,
             template="CUME_DIST() OVER (ORDER BY SUM({0}))",
+            exemplar_literals=("the ordering aggregate",),
             variant=Variant.NUMBER_AGGREGATE,
             note=(
                 "rank_percentile is NOT a substitute, despite PERCENT_RANK's "
@@ -1379,7 +1388,7 @@ CATALOG.update(
         ),
         "LAG(expr, offset, default) OVER (...)": Construct(
             "LAG(expr, offset, default) OVER (...)", Classification.PASSTHROUGH,
-            template="LAG({0}, 1) OVER (PARTITION BY {1} ORDER BY {2})",
+            template="LAG({0}, 1, 0) OVER (PARTITION BY {1} ORDER BY {2})",
             exemplar_literals=("offset", "default"),
             variant=Variant.NUMBER_AGGREGATE,
             note=(
@@ -1409,7 +1418,7 @@ CATALOG.update(
         ),
         "LEAD(expr, offset, default) OVER (...)": Construct(
             "LEAD(expr, offset, default) OVER (...)", Classification.PASSTHROUGH,
-            template="LEAD({0}, 1) OVER (PARTITION BY {1} ORDER BY {2})",
+            template="LEAD({0}, 1, 0) OVER (PARTITION BY {1} ORDER BY {2})",
             exemplar_literals=("offset", "default"),
             variant=Variant.NUMBER_AGGREGATE,
             note=(
@@ -1561,6 +1570,7 @@ CATALOG.update(
             "Window aggregation — AGG(expr) OVER (...)", Classification.PASSTHROUGH,
             template="SUM({0}) OVER (PARTITION BY {1} ORDER BY {2} "
                      "ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)",
+            exemplar_literals=("the aggregate", "the window frame"),
             variant=Variant.NUMBER_AGGREGATE,
             note=(
                 "CONVENTION_DIVERGENCE: the Window Aggregations section is "

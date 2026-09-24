@@ -34,7 +34,8 @@ import pytest
 
 from ossie_thoughtspot.expressions import CATALOG
 from ossie_thoughtspot.expressions._types import (
-    _ARGUMENT_PLACEHOLDER_RE, _BAKED_LITERAL_RE, Classification, Construct, Variant,
+    Classification, Construct, Variant, baked_aggregates, baked_literals,
+    declares_an_aggregate_exemplar,
 )
 from ossie_thoughtspot.expressions.emit import (
     _PLACEHOLDER_RE, _placeholder_count, emit_direct, emit_passthrough, emit_unmappable,
@@ -335,10 +336,34 @@ def test_no_passthrough_row_bakes_in_an_undeclared_literal():
         name for name, construct in CATALOG.items()
         if construct.classification is Classification.PASSTHROUGH
         and not construct.exemplar_literals
-        and _BAKED_LITERAL_RE.search(_ARGUMENT_PLACEHOLDER_RE.sub("", construct.template or ""))
+        and baked_literals(construct.template)
     ]
     assert not undeclared, (
         "passthrough rows bake in a literal without declaring it:\n  " + "\n  ".join(undeclared)
+    )
+
+
+def test_no_passthrough_row_bakes_in_an_undeclared_aggregate():
+    """The same rule for an aggregate, which the literal scan cannot see.
+
+    `SUM` in `NTILE(4) OVER (ORDER BY SUM({0}))` is an exemplar exactly as the
+    `4` is -- the specification orders an NTILE by whatever the caller chose --
+    but it is a bare keyword, so `_BAKED_LITERAL_RE` never matched it. Five rows
+    were in that state, and `NTILE` shows why declaring *something* is not
+    enough on its own: it declared `n`, satisfied the literal gate, and left its
+    `SUM` unmentioned. So this checks the declaration actually names an
+    aggregate rather than merely being non-empty.
+    """
+    undeclared = [
+        f"{name} (bakes in {sorted(aggregates)})"
+        for name, construct in CATALOG.items()
+        if construct.classification is Classification.PASSTHROUGH
+        for aggregates in [baked_aggregates(construct.template, construct.spec_name)]
+        if aggregates and not declares_an_aggregate_exemplar(construct.exemplar_literals)
+    ]
+    assert not undeclared, (
+        "passthrough rows bake in an aggregate without declaring it:\n  "
+        + "\n  ".join(undeclared)
     )
 
 
@@ -348,6 +373,7 @@ def test_every_declared_exemplar_actually_bakes_something_in():
     hollow = [
         name for name, construct in CATALOG.items()
         if construct.exemplar_literals
-        and not _BAKED_LITERAL_RE.search(_ARGUMENT_PLACEHOLDER_RE.sub("", construct.template or ""))
+        and not baked_literals(construct.template)
+        and not baked_aggregates(construct.template, construct.spec_name)
     ]
     assert not hollow, "rows declare exemplar_literals but bake in nothing:\n  " + "\n  ".join(hollow)
