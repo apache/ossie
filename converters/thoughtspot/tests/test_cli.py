@@ -385,6 +385,18 @@ class TestOutputPathsMustNotCollide:
             "--issues", str(out_dir / "orders.table.tml"),
         ]) == 1
 
+    def test_paths_differing_only_by_case_still_collide(self, tmp_path):
+        # `Path.resolve()` does not fold case and the default filesystem on
+        # macOS and Windows does, so this named ONE file and the issue log
+        # overwrote the converted document with exit 0 -- the defect the guard
+        # was written for, surviving its own fix. The parallel fix in
+        # `dump_document_set` was pinned; this one was not.
+        assert cli.main([
+            "to-ossie", *[str(p) for p in _tml_paths("minimal")],
+            "-o", str(tmp_path / "out.yaml"), "--issues", str(tmp_path / "OUT.YAML"),
+        ]) == 1
+        assert not list(tmp_path.iterdir()), "nothing should have been written"
+
     def test_distinct_paths_are_still_accepted(self, tmp_path):
         target, issues = tmp_path / "out.yaml", tmp_path / "issues.json"
         assert cli.main([

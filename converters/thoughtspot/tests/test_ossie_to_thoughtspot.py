@@ -1098,3 +1098,111 @@ class TestARenamedDatasetDoesNotDangleItsReferences:
         ]})
         assert result.documents.model.body["model_tables"][0]["alias"] == "emp"
         assert "TS-DATASET-ALIAS-STALE" not in [i["code"] for i in result.issues.as_dicts()]
+
+
+class TestFormulaIdsAreUniqueAcrossBothSources:
+    """`formulas[].id` has two sources sharing one namespace.
+
+    An id is either PRESERVED from the source document's stash or MINTED from
+    the display name, and neither checked the other. Two ways to collide:
+    two display names folding to one minted id (which `_DisplayNameAllocator`
+    used to mask, so narrowing its fold to what ThoughtSpot actually treats as
+    equal exposed it), and a hand-authored metric whose minted id equals a
+    preserved one. A duplicate id makes every `[formula_X]` reference to it
+    ambiguous, and ThoughtSpot parses an ambiguous bracket reference as search
+    tokens rather than failing -- so the import succeeds and the model is wrong.
+    """
+
+    @staticmethod
+    def _document(*metrics):
+        return {
+            "version": "0.2.0.dev0", "name": "M",
+            "datasets": [{"name": "t", "source": "D.S.T", "fields": [
+                {"name": "a", "expression": {"dialects": [
+                    {"dialect": "THOUGHTSPOT", "expression": "[t::a]"}]}}]}],
+            "metrics": list(metrics),
+        }
+
+    @staticmethod
+    def _metric(name, expression, preserved_id=None):
+        metric = {"name": name, "expression": {"dialects": [
+            {"dialect": "THOUGHTSPOT", "expression": expression}]}}
+        if preserved_id:
+            metric["custom_extensions"] = [{"vendor_name": "THOUGHTSPOT", "data": json.dumps(
+                {"_v": 1, "formula_id": preserved_id})}]
+        return metric
+
+    def test_two_names_minting_one_id_are_separated(self):
+        result = convert(self._document(
+            self._metric("Order Amount", "sum ( [t::a] )"),
+            self._metric("Order-Amount", "max ( [t::a] )"),
+        ))
+        ids = [f["id"] for f in result.documents.model.body["formulas"]]
+        assert len(ids) == len(set(ids)), f"duplicate formula ids: {ids}"
+
+    def test_a_minted_id_never_collides_with_a_preserved_one(self):
+        result = convert(self._document(
+            self._metric("Net Margin", "sum ( [t::a] )", preserved_id="formula_margin"),
+            self._metric("Margin", "max ( [t::a] )"),
+        ))
+        ids = [f["id"] for f in result.documents.model.body["formulas"]]
+        assert ids[0] == "formula_margin", "the preserved id must win"
+        assert len(ids) == len(set(ids)), f"duplicate formula ids: {ids}"
+
+    def test_the_surfacing_column_follows_the_renamed_id(self):
+        # A renamed id that the column still points at by its OLD value would
+        # leave the column bound to nothing.
+        result = convert(self._document(
+            self._metric("Order Amount", "sum ( [t::a] )"),
+            self._metric("Order-Amount", "max ( [t::a] )"),
+        ))
+        body = result.documents.model.body
+        emitted = {f["id"] for f in body["formulas"]}
+        referenced = {c["formula_id"] for c in body["columns"] if c.get("formula_id")}
+        assert referenced <= emitted, f"columns point at missing ids: {referenced - emitted}"
+
+    def test_the_rename_is_reported(self):
+        result = convert(self._document(
+            self._metric("Order Amount", "sum ( [t::a] )"),
+            self._metric("Order-Amount", "max ( [t::a] )"),
+        ))
+        assert "TS-MODEL-FORMULA-ID-COLLISION" in [i["code"] for i in result.issues.as_dicts()]
+
+
+class TestAnAliasedSelfJoinWithUnsurfacedColumnsIsNotAConflict:
+    """A Table's `columns[]` mixes two shapes; only the BINDING keys conflict.
+
+    Field-derived entries carry exactly name/db_column_name/db_column_properties;
+    verbatim `unsurfaced_columns` stash entries carry raw TML (`properties`,
+    `description`, ...). Comparing whole entries made a column surfaced through
+    one alias and unsurfaced through the other compare unequal -- an ERROR, and
+    a non-zero exit, on a document that was perfectly fine.
+    """
+
+    def test_an_ordinary_aliased_self_join_reports_no_conflict(self):
+        table = TmlDocument(kind="table", guid=None, body={
+            "name": "DATE_DIM", "db": "D", "schema": "S", "db_table": "DATE_DIM",
+            "connection": {"name": "Conn"},
+            "columns": [
+                {"name": c, "db_column_name": c.upper(),
+                 "properties": {"column_type": "ATTRIBUTE"},
+                 "db_column_properties": {"data_type": "DATE"}}
+                for c in ("d_date", "d_year")
+            ]})
+        model = TmlDocument(kind="model", guid=None, body={
+            "name": "M",
+            "model_tables": [{"name": "DATE_DIM", "alias": "sold"},
+                             {"name": "DATE_DIM", "alias": "ship"}],
+            "columns": [
+                {"name": "Sold Date", "column_id": "sold::d_date",
+                 "properties": {"column_type": "ATTRIBUTE"}},
+                {"name": "Sold Year", "column_id": "sold::d_year",
+                 "properties": {"column_type": "ATTRIBUTE"}},
+                {"name": "Ship Date", "column_id": "ship::d_date",
+                 "properties": {"column_type": "ATTRIBUTE"}},
+            ]})
+        ossie = tml_to_ossie_convert(DocumentSet(model=model, tables=(table,)))
+        result = convert(ossie.model)
+        codes = [i["code"] for i in result.issues.as_dicts()]
+        assert "TS-TABLE-COLUMN-CONFLICT" not in codes
+        assert not result.issues.has_errors()

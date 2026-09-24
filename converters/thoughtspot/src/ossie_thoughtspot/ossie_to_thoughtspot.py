@@ -1242,6 +1242,15 @@ def _field_physical_display_name(field: dict) -> str | None:
 #: name. Two documents carrying it are not evidence of one warehouse object.
 _UNNAMED_TABLE = "<unnamed>"
 
+#: The keys that decide WHICH warehouse column an entry reads. Only a
+#: disagreement on one of these is a conflict; comparing whole entries flagged
+#: an ordinary self-join, because a Table's `columns[]` mixes field-derived
+#: entries (name / db_column_name / db_column_properties) with verbatim
+#: `unsurfaced_columns` stash entries carrying raw TML keys, and a column
+#: surfaced through one alias and unsurfaced through the other compared unequal
+#: -- an ERROR, and a non-zero exit, on a document that was fine.
+_COLUMN_BINDING_KEYS = ("db_column_name", "sql_output_column")
+
 #: Every body key that can hold columns, for callers that must ignore all of them.
 _COLUMN_KEYS = frozenset({"columns", "sql_view_columns"})
 
@@ -1921,6 +1930,8 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
     tables_by_name = {t.body.get("name"): t for t in tables}
 
     model_tables: list[dict] = []
+    #: Every `formulas[].id` already handed out, across BOTH sources of them.
+    taken_formula_ids: set[str] = set()
     model_tables_by_prefix: dict[str, dict] = {}
     table_doc_by_prefix: dict[str, TmlDocument | None] = {}
 
@@ -2020,6 +2031,7 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
             columns_entry, formulas_entry = built
             columns.append(columns_entry)
             if formulas_entry is not None:
+                _allocate_formula_id(formulas_entry, columns_entry, taken_formula_ids, log)
                 formulas.append(formulas_entry)
 
     for metric in semantic_model.get("metrics") or []:
@@ -2027,6 +2039,7 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
         if built is None:
             continue
         formulas_entry, columns_entry = built
+        _allocate_formula_id(formulas_entry, columns_entry, taken_formula_ids, log)
         formulas.append(formulas_entry)
         columns.append(columns_entry)
 
@@ -2211,6 +2224,55 @@ class TmlConversion:
     issues: IssueLog
 
 
+def _allocate_formula_id(
+    formulas_entry: dict, columns_entry: dict, taken: set[str], log: IssueLog
+) -> None:
+    """Give this formula an id no other formula in the model holds.
+
+    `formulas[].id` comes from two places that share one namespace and neither
+    of which checks the other: a PRESERVED source id (the stash), and one MINTED
+    from the display name. Two ways for them to collide, both silent until now:
+
+    - two display names folding to one minted id. `_DisplayNameAllocator` used
+      to mask this by renaming one of the display names first, so narrowing its
+      fold to what ThoughtSpot actually treats as equal -- correct in itself --
+      exposed it;
+    - a hand-authored metric whose minted id happens to equal a preserved one.
+
+    A duplicate id makes every `[formula_X]` reference to it ambiguous, and
+    ThoughtSpot resolves an ambiguous bracket reference by parsing it as search
+    tokens rather than failing, so the import succeeds and the model is wrong.
+    The surfacing column's `formula_id` is rewritten in lockstep, which is why
+    this runs where both halves are in hand.
+    """
+    original = formulas_entry["id"]
+    candidate, suffix = original, 1
+    while candidate in taken:
+        suffix += 1
+        candidate = f"{original}_{suffix}"
+    taken.add(candidate)
+    if candidate == original:
+        return
+    log.add(
+        code="TS-MODEL-FORMULA-ID-COLLISION",
+        severity=Severity.WARNING,
+        message=(
+            f"formula {formulas_entry.get('name')!r} would take id {original!r}, "
+            f"which another formula in this model already holds; it is emitted as "
+            f"{candidate!r} instead, because a duplicate id makes every reference "
+            f"to it ambiguous"
+        ),
+        object_ref=f"formula:{formulas_entry.get('name')}",
+        remedy=(
+            "Rename one of the colliding formulas if the generated id matters to "
+            "a cross-reference written by hand."
+        ),
+    )
+    formulas_entry["id"] = candidate
+    if columns_entry is not None and columns_entry.get("formula_id") == original:
+        columns_entry["formula_id"] = candidate
+
+
 def _deduplicate_table_documents(
     tables: list[TmlDocument], log: IssueLog
 ) -> list[TmlDocument]:
@@ -2282,7 +2344,11 @@ def _deduplicate_table_documents(
             if previous is None:
                 first.body.setdefault(column_key, []).append(column)
                 existing[column_name] = column
-            elif previous != column:
+            elif any(
+                previous.get(key) != column.get(key)
+                and key in previous and key in column
+                for key in _COLUMN_BINDING_KEYS
+            ):
                 log.add(
                     code="TS-TABLE-COLUMN-CONFLICT",
                     severity=Severity.ERROR,
