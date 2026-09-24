@@ -16,6 +16,7 @@
 # under the License.
 
 import json
+import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
@@ -40,6 +41,71 @@ validate_relationship_column_arity = _VALIDATE.validate_relationship_column_arit
 def core_schema() -> dict:
     schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
     return json.loads(schema_path.read_text())
+
+
+@pytest.mark.parametrize(
+    ("content", "error_path"),
+    [
+        ("", "(root)"),
+        ("[]\n", "(root)"),
+        ("scalar\n", "(root)"),
+        ("semantic_model: invalid\n", "(root)"),
+    ],
+)
+def test_schema_invalid_documents_report_errors_without_traceback(
+    content: str,
+    error_path: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_path = tmp_path / "model.yaml"
+    model_path.write_text(content, encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["validate.py", str(model_path)])
+
+    with pytest.raises(SystemExit) as raised:
+        _VALIDATE.main()
+
+    output = capsys.readouterr().out
+    assert raised.value.code == 1
+    assert f"[Schema] {error_path}:" in output
+    assert "Semantic checks skipped until schema errors are fixed." in output
+
+
+def test_schema_errors_defer_semantic_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_path = tmp_path / "model.yaml"
+    model_path.write_text(
+        "version: 0.2.0.dev0\n"
+        "name: sales\n"
+        "unknown: true\n"
+        "datasets:\n"
+        "  - name: orders\n"
+        "    source: db.orders\n"
+        "  - name: orders\n"
+        "    source: db.orders_archive\n"
+        "relationships:\n"
+        "  - name: orders_to_customers\n"
+        "    from: orders\n"
+        "    to: customers\n"
+        "    from_columns: [customer_id]\n"
+        "    to_columns: [id]\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys, "argv", ["validate.py", str(model_path)])
+
+    with pytest.raises(SystemExit) as raised:
+        _VALIDATE.main()
+
+    output = capsys.readouterr().out
+    assert raised.value.code == 1
+    assert "[Schema] (root):" in output
+    assert "Semantic checks skipped until schema errors are fixed." in output
+    assert "[Unique]" not in output
+    assert "[Reference]" not in output
 
 
 def _document(datasets: list[dict], relationships: list[dict]) -> dict:

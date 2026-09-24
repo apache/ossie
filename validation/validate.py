@@ -145,7 +145,7 @@ class UniqueKeyLoader(yaml.SafeLoader):
                 self._check_unique_keys(child, visited)
 
 
-def validate_schema(data: dict, schema: dict) -> list[str]:
+def validate_schema(data: object, schema: dict) -> list[str]:
     """Validate against JSON Schema."""
     validator = Draft202012Validator(schema)
     errors = []
@@ -398,8 +398,8 @@ def main():
             sys.exit(1)
 
     # Run validations
-    errors = []
-    errors.extend(validate_schema(data, schema))
+    errors = validate_schema(data, schema)
+    semantic_checks_skipped = bool(errors)
 
     # Semantic checks rely on valid structure; let schema validation report
     # malformed inputs (including legacy arrays) without traversing them.
@@ -422,6 +422,8 @@ def main():
             print(f"\nValidation FAILED with {len(actual_errors)} error(s):\n")
             for error in actual_errors:
                 print(f"  {error}")
+            if semantic_checks_skipped:
+                print("\nSemantic checks skipped until schema errors are fixed.")
             sys.exit(1)
         else:
             print(f"Validation PASSED: {yaml_path.name}")
