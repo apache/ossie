@@ -56,3 +56,38 @@ def test_readme_describes_the_document_root_not_the_removed_wrapper():
             assert "removed" in line or "reject" in line, (
                 f"README still presents `semantic_model` as current: {line!r}"
             )
+
+
+def test_readme_construct_counts_match_the_catalog():
+    """The README's four construct counts, checked against the catalog itself.
+
+    The README states them as bare numbers in prose -- "all 146 constructs ...
+    108 with a native equivalent, 37 as a `sql_*_op` pass-through ... and 1
+    (`EXISTS_IN()`)". Nothing derived them, so adding or reclassifying a row
+    left the sentence quietly wrong, and it is the first quantitative claim a
+    reader meets. Each count is asserted to be PRESENT before it is compared,
+    so a reworded sentence fails here rather than passing vacuously.
+    """
+    from collections import Counter
+
+    from ossie_thoughtspot.expressions import CATALOG
+    from ossie_thoughtspot.expressions._types import Classification
+
+    text = README.read_text(encoding="utf-8")
+    by_class = Counter(c.classification for c in CATALOG.values())
+    expected = {
+        r"all (\d+) constructs": len(CATALOG),
+        r"(\d+) with a native equivalent": by_class[Classification.DIRECT],
+        r"(\d+) as a `sql_\*_op` pass-through": by_class[Classification.PASSTHROUGH],
+        r"and (\d+) \(`EXISTS_IN\(\)`\)": by_class[Classification.UNMAPPABLE],
+    }
+    for pattern, count in expected.items():
+        match = re.search(pattern, text)
+        assert match is not None, (
+            f"README no longer states the count matching {pattern!r}; it was "
+            f"rewritten without updating this guard, so the counts are now "
+            f"unchecked rather than wrong"
+        )
+        assert int(match.group(1)) == count, (
+            f"README says {match.group(1)} for {pattern!r}, catalog has {count}"
+        )
