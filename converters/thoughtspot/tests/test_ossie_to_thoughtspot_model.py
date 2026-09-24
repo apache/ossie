@@ -510,6 +510,9 @@ class TestPropertiesPlacement:
         doc = build_model(model, [orders], IssueLog())
         columns, _formulas = _all_columns_and_formulas(doc.body)
 
+        # `_all_columns_and_formulas` reads `body.get("columns") or []`, so an
+        # emitted model with no columns would pass this without checking one.
+        assert columns, "build_model emitted no columns to check placement on"
         for column in columns:
             assert "column_type" not in column
             assert column["properties"]["column_type"] in ("ATTRIBUTE", "MEASURE")

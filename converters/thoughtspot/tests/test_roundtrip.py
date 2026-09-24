@@ -198,10 +198,15 @@ class TestTmlRoundTripReproducesTableDocuments:
         document_set, _, tml_result = _tml_roundtrip(fixture_name)
         original_names = {t.body["name"] for t in document_set.tables}
         new_names = {t.body["name"] for t in tml_result.documents.tables}
+        # `set() == set()` is true, so the fixture having no tables at all would
+        # satisfy this and the two sibling tests below, which walk the same
+        # collection. Pinned here once, for all three.
+        assert original_names, f"{fixture_name} has no table documents to compare"
         assert new_names == original_names
 
     def test_every_physical_column_survives_with_its_exact_content(self, fixture_name):
         document_set, _, tml_result = _tml_roundtrip(fixture_name)
+        assert document_set.tables, f"{fixture_name} has no table documents"
         for original in document_set.tables:
             new = _table_by_name(tml_result.documents, original.body["name"])
             assert new.kind == original.kind
@@ -209,6 +214,7 @@ class TestTmlRoundTripReproducesTableDocuments:
 
     def test_shared_table_level_attributes_survive(self, fixture_name):
         document_set, _, tml_result = _tml_roundtrip(fixture_name)
+        assert document_set.tables, f"{fixture_name} has no table documents"
         for original in document_set.tables:
             new = _table_by_name(tml_result.documents, original.body["name"])
             # "joins_with" included: a Table-referenced join's own
