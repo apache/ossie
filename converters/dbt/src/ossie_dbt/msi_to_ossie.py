@@ -19,7 +19,7 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import combinations
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, FrozenSet, List, Optional, Sequence, Tuple
 
 from ossie import (
     OssieDataset,
@@ -33,6 +33,7 @@ from ossie import (
     OssieRelationship,
 )
 from ossie_dbt.converter_issues import ConverterIssue, ConverterIssueType, ConverterResult
+from ossie_dbt.expression_utils import ROW_COUNT_EXPR
 from ossie_dbt.filter_utils import _collect_filter_sql, _merge_filter_sqls
 
 from metricflow_semantic_interfaces.enum_extension import assert_values_exhausted
@@ -81,7 +82,11 @@ class AmbiguousDerivedReferenceError(Exception):
 
 
 class MSIToOssieConverter:
-    """Converts an MSI SemanticManifest into an Ossie Document."""
+    """Converts an MSI SemanticManifest into an Ossie Document.
+
+    Holds no per-call state on the instance, so one instance may be reused, including concurrently
+    from multiple threads, across any number of ``convert()`` calls.
+    """
 
     def __init__(self, dialect: OssieDialect = OssieDialect.ANSI_SQL) -> None:
         self._dialect = dialect
@@ -89,6 +94,16 @@ class MSIToOssieConverter:
     def convert(
         self, manifest: PydanticSemanticManifest, ossie_model_name: str = "semantic_model"
     ) -> ConverterResult[OssieDocument]:
+        # The transformer rewrites COUNT to SUM (leaving expr '1' as SUM(1)), which loses the dataset a row
+        # count belongs to. Remember these metrics so they come back as COUNT(<dataset>.*).
+        row_count_metrics: FrozenSet[str] = frozenset(
+            metric.name
+            for metric in manifest.metrics
+            if metric.type is MetricType.SIMPLE
+            and metric.type_params.metric_aggregation_params is not None
+            and metric.type_params.metric_aggregation_params.agg is AggregationType.COUNT
+            and metric.type_params.expr == ROW_COUNT_EXPR
+        )
         manifest = PydanticSemanticManifestTransformer.transform(manifest)
         issues: List[ConverterIssue] = []
 
@@ -118,7 +133,7 @@ class MSIToOssieConverter:
                     ConverterIssue(issue_type=ConverterIssueType.CUMULATIVE_SEMANTICS_LOSS, element_name=metric.name)
                 )
             try:
-                expr = self._resolve_metric_expression(metric, metric_index, expression_cache)
+                expr = self._resolve_metric_expression(metric, metric_index, expression_cache, row_count_metrics)
             except AmbiguousDerivedReferenceError:
                 # Every other unsupported shape drops one metric and records an issue;
                 # an ambiguous reference is no reason to fail the whole conversion.
@@ -232,6 +247,7 @@ class MSIToOssieConverter:
         metric: Metric,
         metric_index: Dict[str, Metric],
         cache: Dict[Tuple[str, Optional[str]], str],
+        row_count_metrics: FrozenSet[str],
         parent_filter: Optional[str] = None,
     ) -> str:
         """Recursively resolve a metric to a fully-inlined SQL expression string."""
@@ -243,13 +259,13 @@ class MSIToOssieConverter:
             return cache[cache_key]
 
         if metric.type is MetricType.SIMPLE:
-            expr = self._resolve_simple(metric, combined_filter)
+            expr = self._resolve_simple(metric, row_count_metrics, combined_filter)
         elif metric.type is MetricType.CUMULATIVE:
-            expr = self._resolve_cumulative(metric, metric_index, cache, combined_filter)
+            expr = self._resolve_cumulative(metric, metric_index, cache, row_count_metrics, combined_filter)
         elif metric.type is MetricType.RATIO:
-            expr = self._resolve_ratio(metric, metric_index, cache, combined_filter)
+            expr = self._resolve_ratio(metric, metric_index, cache, row_count_metrics, combined_filter)
         elif metric.type is MetricType.DERIVED:
-            expr = self._resolve_derived(metric, metric_index, cache, combined_filter)
+            expr = self._resolve_derived(metric, metric_index, cache, row_count_metrics, combined_filter)
         elif metric.type is MetricType.CONVERSION:
             # CONVERSION metrics are skipped in convert(); this branch should never be reached.
             raise RuntimeError(f"Unexpected CONVERSION metric in expression resolver: metric_name={metric.name!r}")
@@ -262,6 +278,7 @@ class MSIToOssieConverter:
     def _resolve_simple(
         self,
         metric: Metric,
+        row_count_metrics: FrozenSet[str],
         filter_sql: Optional[str] = None,
     ) -> str:
         """Resolve a SIMPLE metric using metric_aggregation_params (always set after transformation)."""
@@ -270,6 +287,9 @@ class MSIToOssieConverter:
             raise ValueError(
                 f"SIMPLE metric has no metric_aggregation_params after transformation: metric_name={metric.name!r}"
             )
+        # With a filter the count is emitted as SUM(CASE WHEN <filter> THEN 1 END), which has no `dataset.*` form.
+        if metric.name in row_count_metrics and not filter_sql:
+            return f"COUNT({agg_params_obj.semantic_model}.*)"
         col = metric.type_params.expr if metric.type_params.expr is not None else metric.name
         col = self._qualify_col(col, agg_params_obj.semantic_model)
         return self._build_agg_expression(agg_params_obj.agg, col, agg_params_obj.agg_params, filter_sql)
@@ -291,6 +311,7 @@ class MSIToOssieConverter:
         metric: Metric,
         metric_index: Dict[str, Metric],
         cache: Dict[Tuple[str, Optional[str]], str],
+        row_count_metrics: FrozenSet[str],
         filter_sql: Optional[str] = None,
     ) -> str:
         """Resolve a CUMULATIVE metric to its base aggregation expression.
@@ -308,6 +329,7 @@ class MSIToOssieConverter:
             self._lookup_metric(metric_index, sub_input.name, f"CUMULATIVE metric '{metric.name}'"),
             metric_index,
             cache,
+            row_count_metrics,
             sub_filter,
         )
 
@@ -316,6 +338,7 @@ class MSIToOssieConverter:
         metric: Metric,
         metric_index: Dict[str, Metric],
         cache: Dict[Tuple[str, Optional[str]], str],
+        row_count_metrics: FrozenSet[str],
         filter_sql: Optional[str] = None,
     ) -> str:
         """Resolve a RATIO metric as (numerator) / (denominator), both fully inlined."""
@@ -331,12 +354,14 @@ class MSIToOssieConverter:
             self._lookup_metric(metric_index, num_input.name, f"RATIO metric '{metric.name}' numerator"),
             metric_index,
             cache,
+            row_count_metrics,
             num_filter,
         )
         den_expr = self._resolve_metric_expression(
             self._lookup_metric(metric_index, den_input.name, f"RATIO metric '{metric.name}' denominator"),
             metric_index,
             cache,
+            row_count_metrics,
             den_filter,
         )
         return f"({num_expr}) / ({den_expr})"
@@ -346,6 +371,7 @@ class MSIToOssieConverter:
         metric: Metric,
         metric_index: Dict[str, Metric],
         cache: Dict[Tuple[str, Optional[str]], str],
+        row_count_metrics: FrozenSet[str],
         filter_sql: Optional[str] = None,
     ) -> str:
         """Resolve a DERIVED metric by substituting each input metric's expression into the expr string.
@@ -375,7 +401,7 @@ class MSIToOssieConverter:
             ref = input_metric.alias if input_metric.alias else input_metric.name
             dep_metric = self._lookup_metric(metric_index, input_metric.name, f"DERIVED metric '{metric.name}'")
             input_filter = _merge_filter_sqls(filter_sql, _collect_filter_sql(input_metric.filter))
-            resolved = self._resolve_metric_expression(dep_metric, metric_index, cache, input_filter)
+            resolved = self._resolve_metric_expression(dep_metric, metric_index, cache, row_count_metrics, input_filter)
             if dep_metric.type in (MetricType.DERIVED, MetricType.RATIO):
                 resolved = f"({resolved})"
             distinct = resolutions.setdefault(ref, [])

@@ -21,6 +21,7 @@ import pytest
 from syrupy.assertion import SnapshotAssertion
 
 from ossie import OssieDataType, OssieDimension
+from ossie_dbt.converter_issues import ConverterIssue, ConverterIssueType
 from ossie_dbt.msi_to_ossie import MSIToOssieConverter
 from ossie_dbt.ossie_to_msi import OssieToMSIConverter
 from metricflow_semantic_interfaces.implementations.elements.measure import (
@@ -319,6 +320,122 @@ class TestOssieToMSIMetricConversion:
         sm = result.semantic_models[0]
         assert len(sm.measures) == 0
 
+    @pytest.mark.parametrize("expression", ["COUNT(*)", "COUNT(orders.*)", "COUNT(2)", "COUNT(TRUE)", "COUNT(0)"])
+    def test_count_of_a_constant_normalizes_to_row_count_expr(self, expression: str) -> None:
+        doc = _ossie_doc(
+            datasets=[_ossie_dataset("orders", fields=[_ossie_field("order_id")])],
+            metrics=[_ossie_metric("order_count", expression)],
+        )
+        result = OssieToMSIConverter().convert(doc).output
+
+        m = result.metrics[0]
+        assert m.type_params.metric_aggregation_params is not None
+        assert m.type_params.metric_aggregation_params.agg == AggregationType.COUNT
+        assert m.type_params.expr == "1"
+
+    def test_qualified_count_star_uses_dataset_qualifier(self) -> None:
+        doc = _ossie_doc(
+            datasets=[
+                _ossie_dataset("customers", fields=[_ossie_field("customer_id")]),
+                _ossie_dataset("orders", fields=[_ossie_field("order_id")]),
+            ],
+            metrics=[_ossie_metric("order_count", "COUNT(orders.*)")],
+        )
+        result = OssieToMSIConverter().convert(doc).output
+
+        m = result.metrics[0]
+        assert m.type_params.expr == "1"
+        assert m.type_params.metric_aggregation_params is not None
+        assert m.type_params.metric_aggregation_params.semantic_model == "orders"
+
+    @staticmethod
+    def _customers_and_orders() -> list:
+        return [
+            _ossie_dataset("customers", fields=[_ossie_field("customer_id")]),
+            _ossie_dataset("orders", fields=[_ossie_field("order_id"), _ossie_field("amount")]),
+        ]
+
+    @pytest.mark.parametrize("expression", ["COUNT(*)", "COUNT(1)", "COUNT(2)", "COUNT(0)", "COUNT(TRUE)"])
+    def test_bare_row_count_with_multiple_datasets_is_dropped_with_a_warning(self, expression: str) -> None:
+        doc = _ossie_doc(datasets=self._customers_and_orders(), metrics=[_ossie_metric("order_count", expression)])
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.output.metrics == []
+        assert result.issues == [ConverterIssue(ConverterIssueType.ROW_COUNT_METRIC_DROPPED, "order_count")]
+
+    def test_ratio_with_a_bare_count_star_is_dropped_as_a_whole(self) -> None:
+        doc = _ossie_doc(
+            datasets=self._customers_and_orders(),
+            metrics=[
+                _ossie_metric("revenue", "SUM(orders.amount)"),
+                _ossie_metric("avg_order_value", "(SUM(orders.amount)) / (COUNT(*))"),
+            ],
+        )
+        result = OssieToMSIConverter().convert(doc)
+
+        assert [m.name for m in result.output.metrics] == ["revenue"]
+        assert result.issues == [ConverterIssue(ConverterIssueType.ROW_COUNT_METRIC_DROPPED, "avg_order_value")]
+
+    def test_qualified_count_star_in_ratio_binds_both_sides_to_the_same_dataset(self) -> None:
+        doc = _ossie_doc(
+            datasets=self._customers_and_orders(),
+            metrics=[_ossie_metric("avg_order_value", "(SUM(orders.amount)) / (COUNT(orders.*))")],
+        )
+        result = OssieToMSIConverter().convert(doc).output
+
+        by_name = {m.name: m for m in result.metrics}
+        for sub_metric in ("avg_order_value__numerator", "avg_order_value__denominator"):
+            params = by_name[sub_metric].type_params.metric_aggregation_params
+            assert params is not None
+            assert params.semantic_model == "orders"
+
+    def test_schema_qualified_count_star_matches_dataset_by_last_segment(self) -> None:
+        doc = _ossie_doc(
+            datasets=self._customers_and_orders(),
+            metrics=[_ossie_metric("order_count", "COUNT(db.orders.*)")],
+        )
+        result = OssieToMSIConverter().convert(doc).output
+
+        params = result.metrics[0].type_params.metric_aggregation_params
+        assert params is not None
+        assert params.semantic_model == "orders"
+
+    def test_count_star_of_unknown_dataset_is_dropped_with_a_warning(self) -> None:
+        doc = _ossie_doc(
+            datasets=self._customers_and_orders(),
+            metrics=[_ossie_metric("order_count", "COUNT(nope.*)")],
+        )
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.output.metrics == []
+        assert [i.element_name for i in result.issues] == ["order_count"]
+
+    def test_count_star_matching_several_datasets_by_last_segment_is_dropped_with_a_warning(self) -> None:
+        doc = _ossie_doc(
+            datasets=[
+                _ossie_dataset("a.orders", fields=[_ossie_field("order_id")]),
+                _ossie_dataset("b.orders", fields=[_ossie_field("order_id")]),
+            ],
+            metrics=[_ossie_metric("order_count", "COUNT(orders.*)")],
+        )
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.output.metrics == []
+        assert [i.element_name for i in result.issues] == ["order_count"]
+
+    @pytest.mark.parametrize(
+        "expression",
+        ["COUNT(DISTINCT *)", "COUNT(DISTINCT 1)", "COUNT(orders.*, amount)", "COUNT(db.orders, *)"],
+    )
+    def test_unsupported_count_star_forms_fall_back_to_the_raw_expression(self, expression: str) -> None:
+        doc = _ossie_doc(
+            datasets=[_ossie_dataset("orders", fields=[_ossie_field("order_id"), _ossie_field("amount")])],
+            metrics=[_ossie_metric("odd_count", expression)],
+        )
+        result = OssieToMSIConverter().convert(doc).output
+
+        assert result.metrics[0].type_params.expr == expression
+
     def test_ratio_expression_produces_ratio_metric(self) -> None:
         doc = _ossie_doc(
             datasets=[
@@ -495,6 +612,36 @@ class TestOssieToMSIRoundTrip:
         assert metrics[0].name == "revenue"
         assert metrics[0].expression.dialects[0].expression == "SUM(orders.amount)"
         assert ossie_doc.to_ossie_yaml() == snapshot
+
+    def test_count_star_keeps_its_dataset_across_round_trip(self) -> None:
+        """COUNT(orders.*) must not drift to another dataset (or to SUM) on Ossie → MSI → Ossie → MSI."""
+        original = _ossie_doc(
+            datasets=[
+                _ossie_dataset("customers", fields=[_ossie_field("customer_id")]),
+                _ossie_dataset("orders", fields=[_ossie_field("order_id"), _ossie_field("amount")]),
+            ],
+            metrics=[
+                _ossie_metric("order_count", "COUNT(orders.*)"),
+                _ossie_metric("avg_order_value", "(SUM(orders.amount)) / (COUNT(orders.*))"),
+            ],
+        )
+
+        msi = OssieToMSIConverter().convert(original).output
+        ossie_doc = MSIToOssieConverter().convert(msi).output
+
+        expressions = {m.name: m.expression.dialects[0].expression for m in ossie_doc.metrics or []}
+        assert expressions["order_count"] == "COUNT(orders.*)"
+        assert "COUNT(orders.*)" in expressions["avg_order_value"]
+
+        again = OssieToMSIConverter().convert(ossie_doc).output
+        order_count = next(m for m in again.metrics if m.name == "order_count")
+        params = order_count.type_params.metric_aggregation_params
+        assert params is not None
+        assert (params.agg, order_count.type_params.expr, params.semantic_model) == (
+            AggregationType.COUNT,
+            "1",
+            "orders",
+        )
 
     def test_discrete_percentile_survives_round_trip(self) -> None:
         """A PERCENTILE_DISC metric keeps use_discrete_percentile through MSI -> Ossie -> MSI."""

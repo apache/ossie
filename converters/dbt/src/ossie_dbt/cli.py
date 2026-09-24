@@ -25,11 +25,12 @@ Usage:
 import argparse
 import sys
 from pathlib import Path
+from typing import Sequence
 
 import yaml
 
 from ossie import OssieDocument
-from ossie_dbt.converter_issues import ConverterIssueType
+from ossie_dbt.converter_issues import ConverterIssue, ConverterIssueType
 from ossie_dbt.msi_to_ossie import MSIToOssieConverter
 from ossie_dbt.ossie_to_msi import OssieToMSIConverter
 
@@ -40,6 +41,7 @@ _ISSUE_REASON: dict[ConverterIssueType, str] = {
     ConverterIssueType.PRIVATE_METRIC_DROPPED: "Ossie has no visibility modifiers",
     ConverterIssueType.NATURAL_ENTITY_DROPPED: "Ossie has no natural-key entity type",
     ConverterIssueType.CUMULATIVE_SEMANTICS_LOSS: "Ossie expressions cannot represent window or grain semantics; the base aggregation was preserved",
+    ConverterIssueType.ROW_COUNT_METRIC_DROPPED: "COUNT(*) does not identify exactly one dataset to count rows of; write it as COUNT(<dataset>.*)",
     ConverterIssueType.AMBIGUOUS_REFERENCE_METRIC_DROPPED: (
         "an input metric is listed more than once under one reference with differing filters, "
         "so the expression reference is ambiguous; give each occurrence a distinct alias"
@@ -50,8 +52,16 @@ _DROPPED_ISSUE_TYPES = {
     ConverterIssueType.CONVERSION_METRIC_DROPPED,
     ConverterIssueType.PRIVATE_METRIC_DROPPED,
     ConverterIssueType.NATURAL_ENTITY_DROPPED,
+    ConverterIssueType.ROW_COUNT_METRIC_DROPPED,
     ConverterIssueType.AMBIGUOUS_REFERENCE_METRIC_DROPPED,
 }
+
+
+def _print_issues(issues: Sequence[ConverterIssue]) -> None:
+    for issue in issues:
+        verb = "was dropped" if issue.issue_type in _DROPPED_ISSUE_TYPES else "was converted with loss"
+        reason = _ISSUE_REASON[issue.issue_type]
+        print(f"[WARNING] {issue.issue_type.value}: {issue.element_name} {verb} during conversion because {reason}", file=sys.stderr)
 
 
 def _cmd_msi_to_ossie(args: argparse.Namespace) -> None:
@@ -61,11 +71,7 @@ def _cmd_msi_to_ossie(args: argparse.Namespace) -> None:
     manifest = parse_manifest_from_dbt_generated_manifest(input_path.read_text())
     result = MSIToOssieConverter().convert(manifest, ossie_model_name=args.model_name)
 
-    if result.issues:
-        for issue in result.issues:
-            verb = "was dropped" if issue.issue_type in _DROPPED_ISSUE_TYPES else "was converted with loss"
-            reason = _ISSUE_REASON[issue.issue_type]
-            print(f"[WARNING] {issue.issue_type.value}: {issue.element_name} {verb} during conversion because {reason}", file=sys.stderr)
+    _print_issues(result.issues)
 
     output_path.write_text(result.output.to_ossie_yaml())
     print(f"Written to {output_path}", file=sys.stderr)
@@ -78,6 +84,7 @@ def _cmd_ossie_to_msi(args: argparse.Namespace) -> None:
     raw = yaml.safe_load(input_path.read_text())
     document = OssieDocument.model_validate(raw)
     result = OssieToMSIConverter().convert(document)
+    _print_issues(result.issues)
 
     # PydanticSemanticManifest subclasses pydantic.v1.BaseModel, whose JSON
     # serializer is .json(), not the pydantic v2 .model_dump_json().
