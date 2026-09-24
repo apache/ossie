@@ -65,11 +65,11 @@ func TestArgumentValidation(t *testing.T) {
 		{name: "convert trailing arg", args: []string{"convert", "--from", "x", "--input", "y", "extra"}, wantErr: true},
 		{name: "plugin bare", args: []string{"plugin"}, wantErr: true},
 		{name: "plugin install --all with name", args: []string{"plugin", "install", "--all", "foo"}, wantErr: true},
-		// Valid invocations keep working.
+		// The implemented command still works; the valid stub invocations fail.
 		{name: "plugin list", args: []string{"plugin", "list"}},
-		{name: "plugin install by name", args: []string{"plugin", "install", "foo"}},
-		{name: "plugin install --all", args: []string{"plugin", "install", "--all"}},
-		{name: "convert flags only", args: []string{"convert", "--from", "x", "--input", "y"}},
+		{name: "plugin install by name", args: []string{"plugin", "install", "foo"}, wantErr: true},
+		{name: "plugin install --all", args: []string{"plugin", "install", "--all"}, wantErr: true},
+		{name: "convert flags only", args: []string{"convert", "--from", "x", "--input", "y"}, wantErr: true},
 	}
 
 	for _, tt := range tests {
