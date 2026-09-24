@@ -30,6 +30,17 @@
 
 Every construct the Ossie expression language specification defines, mapped to its ThoughtSpot rendering (`Ossie -> ThoughtSpot`, the direction `expressions/catalog.py` drives). Rows follow the source's own definition order, which groups related constructs together (aggregates, then type conversion, date/time, string, math/conditional, operators, window functions) — that grouping exists only as source comments, not as data the code carries, so it is not reproduced as separate sections here.
 
+## Reading the notation
+
+| Notation | Means |
+|---|---|
+| `{0}`, `{1}`, `{2}` | A positional argument slot, filled left to right from the construct's own arguments. |
+| `{*}` | The variadic tail: every remaining argument, joined with ` , `, inside the one call. Only on rows whose construct takes any number of arguments. |
+| `{{` and `}}` | An ESCAPED literal brace — it renders as a single `{` or `}`. Templates are filled with Python's `str.format`, which requires a literal brace to be doubled. |
+| `{ ... }` (brace, space) | NOT a placeholder. ThoughtSpot's own literal set syntax, as in `{ [attr] }`; it reaches the emitted formula unchanged. |
+| `per-... — see note` | The row has no single rendering: what it emits depends on a value not known when this document is generated. The row's Note describes the real dispatch. |
+| **example only** | The template bakes one caller-supplied value in as an illustrative constant. Rebuild the template per occurrence rather than reading the constant as the mapping. |
+
 ## Coverage
 
 | Classification | Count | Share |

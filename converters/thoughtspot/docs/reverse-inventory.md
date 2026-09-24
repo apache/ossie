@@ -29,6 +29,12 @@
 
 ThoughtSpot's own native functions with no counterpart in the Ossie specification (`ThoughtSpot -> Ossie`, the reverse of the expression mapping above), and how each reaches — or does not reach — a portable Ossie expression. This inventory is not yet called from the shipped `TML -> Ossie` conversion path; see `converters/thoughtspot/README.md`'s "Expression translation" section for the converter's current, more conservative default.
 
+## Reading the notation
+
+| Notation | Means |
+|---|---|
+| `{0}`, `{1}`, `{2}` | A positional argument slot, filled left to right from the construct's own arguments. |
+
 ## Coverage
 
 | Disposition | Count | Share | Meaning |

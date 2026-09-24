@@ -125,3 +125,50 @@ def test_committed_docs_match_generator_output_byte_for_byte(generator) -> None:
         "  uv run --python 3.13 python tools/generate_reference_docs.py\n\n"
         + "\n".join(mismatches)
     )
+
+
+def test_every_notation_a_document_uses_appears_in_its_legend(generator) -> None:
+    """The legend is derived from the rendered body, so it cannot drift.
+
+    `docs/expression-mapping.md` carried 138 `{0}`s, five `{*}`s, six escaped
+    `{{`/`}}` pairs and a dozen literal `{ [attr] }` sets with nothing anywhere
+    saying what any of them meant -- and those three look alike while doing
+    unrelated jobs, so a reader had no way to tell an argument slot from
+    ThoughtSpot's own set syntax. This asserts BOTH directions: every notation a
+    document uses is explained in that document, and no notation it does not use
+    is explained there.
+    """
+    documented_somewhere = set()
+    for name, build in generator.DOCS.items():
+        raw = build()
+        used = generator.notations_used(raw)
+        final = generator._insert_notation_legend(raw)
+        documented_somewhere |= used
+
+        if not used:
+            assert "## Reading the notation" not in final, (
+                f"{name} uses no notation but carries a legend"
+            )
+            continue
+
+        assert "## Reading the notation" in final, (
+            f"{name} uses {sorted(used)} but has no legend"
+        )
+        legend = final.split("## Reading the notation", 1)[1].split("\n## ", 1)[0]
+        for key, cell, _meaning in generator._NOTATION_ROWS:
+            if key in used:
+                assert cell in legend, f"{name}: legend omits {key} ({cell})"
+            else:
+                assert cell not in legend, (
+                    f"{name}: legend explains {key} ({cell}), which the document "
+                    f"does not use"
+                )
+
+    # Non-vacuity: if the detectors all stopped matching, every branch above
+    # would take the "no notation, no legend" path and pass while explaining
+    # nothing anywhere.
+    assert documented_somewhere, (
+        "no generated document was detected as using any notation, so this test "
+        "asserted nothing -- the detectors in `notations_used` have stopped "
+        "matching rather than the notations having gone"
+    )

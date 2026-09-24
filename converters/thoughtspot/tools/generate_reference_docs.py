@@ -554,6 +554,113 @@ def generate_vendor_payload_doc() -> str:
 # Registry + entry point.
 # ---------------------------------------------------------------------------
 
+
+# ---------------------------------------------------------------------------
+# Notation legend — emitted into every document that actually uses a notation,
+# and into no document that does not.
+# ---------------------------------------------------------------------------
+
+#: (key, notation cell, meaning cell). Order is the order they appear in the
+#: legend table.
+_NOTATION_ROWS = [
+    (
+        "positional",
+        "`{0}`, `{1}`, `{2}`",
+        "A positional argument slot, filled left to right from the construct's own "
+        "arguments.",
+    ),
+    (
+        "variadic",
+        "`{*}`",
+        "The variadic tail: every remaining argument, joined with ` , `, inside the one "
+        "call. Only on rows whose construct takes any number of arguments.",
+    ),
+    (
+        "escaped",
+        "`{{` and `}}`",
+        "An ESCAPED literal brace — it renders as a single `{` or `}`. Templates are "
+        "filled with Python's `str.format`, which requires a literal brace to be doubled.",
+    ),
+    (
+        "literal_set",
+        "`{ ... }` (brace, space)",
+        "NOT a placeholder. ThoughtSpot's own literal set syntax, as in `{ [attr] }`; it "
+        "reaches the emitted formula unchanged.",
+    ),
+    (
+        "dispatch",
+        "`per-... — see note`",
+        "The row has no single rendering: what it emits depends on a value not known "
+        "when this document is generated. The row's Note describes the real dispatch.",
+    ),
+    (
+        "exemplar",
+        "**example only**",
+        "The template bakes one caller-supplied value in as an illustrative constant. "
+        "Rebuild the template per occurrence rather than reading the constant as the "
+        "mapping.",
+    ),
+]
+
+
+def notations_used(body: str) -> set[str]:
+    """Which `_NOTATION_ROWS` keys `body` actually uses.
+
+    Derived from the rendered text rather than declared per document, so the
+    legend cannot list a notation the document does not use, or omit one it
+    does. `{{`/`}}` are stripped before looking for the literal-set form,
+    because a doubled brace also contains "brace followed by space".
+    """
+    without_escapes = body.replace("{{", "").replace("}}", "")
+    present = {
+        "positional": bool(re.search(r"\{\d+\}", body)),
+        "variadic": "{*}" in body,
+        "escaped": "{{" in body or "}}" in body,
+        "literal_set": bool(re.search(r"\{ ", without_escapes)),
+        "dispatch": "— see note" in body,
+        "exemplar": "**example only**" in body,
+    }
+    # The detectors above and `_NOTATION_ROWS` are two lists keyed the same way,
+    # and nothing else pairs them: renaming a row's key silently removed it from
+    # every legend while each half stayed internally consistent, so a document
+    # kept using `{*}` with nothing explaining it and both directions of the
+    # legend test still agreed. Checked here, where both halves are in hand.
+    declared = {key for key, _cell, _meaning in _NOTATION_ROWS}
+    if set(present) != declared:
+        raise AssertionError(
+            "the notation detectors and the legend rows have drifted apart; "
+            f"only in detectors: {sorted(set(present) - declared)}, "
+            f"only in rows: {sorted(declared - set(present))}"
+        )
+    return {key for key, used in present.items() if used}
+
+
+def _insert_notation_legend(text: str) -> str:
+    """`text` with a "Reading the notation" section, if it uses any notation.
+
+    Inserted centrally rather than by each `generate_*_doc`, so a new document
+    cannot ship without one. Placed immediately before the document's first
+    `##` section, which is where a reader meets the first table.
+
+    The document previously carried five `{*}` occurrences, 138 `{0}`s and a
+    dozen literal `{ [attr] }` sets with nothing anywhere saying what any of
+    them meant — and the three look alike while doing unrelated jobs.
+    """
+    used = notations_used(text)
+    if not used:
+        return text
+    rows = [[cell, meaning] for key, cell, meaning in _NOTATION_ROWS if key in used]
+    section = (
+        "## Reading the notation\n\n"
+        + _table(["Notation", "Means"], rows)
+        + "\n\n"
+    )
+    marker = "\n## "
+    index = text.find(marker)
+    if index == -1:
+        return text.rstrip("\n") + "\n\n" + section
+    return text[: index + 1] + section + text[index + 1 :]
+
 DOCS: dict[str, Callable[[], str]] = {
     "expression-mapping.md": generate_expression_mapping_doc,
     "reverse-inventory.md": generate_reverse_inventory_doc,
@@ -563,8 +670,13 @@ DOCS: dict[str, Callable[[], str]] = {
 
 
 def generate_all() -> dict[str, str]:
-    """{filename: content} for every document `DOCS` declares."""
-    return {name: fn() for name, fn in DOCS.items()}
+    """{filename: content} for every document `DOCS` declares.
+
+    The notation legend is applied HERE, to every document, rather than by each
+    generator: a document that grows its first `{0}` gets the legend without
+    anyone remembering, and one that uses no notation gets none.
+    """
+    return {name: _insert_notation_legend(fn()) for name, fn in DOCS.items()}
 
 
 def main() -> None:
