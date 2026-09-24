@@ -59,6 +59,7 @@ Every `custom_extensions` entry this converter writes uses `vendor_name` `THOUGH
 | `endpoints_swapped` | Relationship | shadows_derivable | Restored only if its witness companion key still matches the live document's current value; a mismatch means the document changed since the stash was written, so the value is re-derived instead. |
 | `referencing_join` | Relationship | shadows_derivable | Restored only if reconstructing it from the live document still agrees with the stashed value (self-verifying — no separate witness key); disagreement re-derives instead. |
 | `join_shape` | Relationship | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
+| `unsurfaced_formulas` | Model | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
 | `unattributed_formulas` | Model | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
 | `unrepresentable_joins` | Model | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
 | `model_properties` | Model | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |

@@ -104,6 +104,7 @@ from .constants import (
     MODEL_STASH_MODEL_JOINS_WITH,
     MODEL_STASH_MODEL_PROPERTIES,
     MODEL_STASH_PARAMETERS,
+    MODEL_STASH_UNSURFACED_FORMULAS,
     MODEL_STASH_UNATTRIBUTED_FORMULAS,
     MODEL_STASH_UNREPRESENTABLE_JOINS,
     PORTABLE_DIALECT,
@@ -2082,6 +2083,23 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
         )
         formulas.append(formulas_entry)
         columns.append(columns_entry)
+
+    for entry in model_payload.get(MODEL_STASH_UNSURFACED_FORMULAS) or []:
+        # Re-emitted with NO surfacing columns[] entry, because that is what
+        # they were: internal helpers other formulas reference. Giving them one
+        # -- as the unattributed-formula path deliberately does -- would make a
+        # formula the source kept private visible to users.
+        #
+        # The id is preserved rather than re-minted: it is what the surviving
+        # references name, and re-minting it from the display name is exactly
+        # how `[formula__startDate]` came back pointing at nothing.
+        unsurfaced_entry = {
+            "id": entry.get("id") or _formula_id_from(entry.get("name") or "formula"),
+            "name": entry.get("name") or "",
+            "expr": entry.get("expr") or "",
+        }
+        _allocate_formula_id(unsurfaced_entry, None, taken_formula_ids, log, preserved=True)
+        formulas.append(unsurfaced_entry)
 
     for entry in model_payload.get(MODEL_STASH_UNATTRIBUTED_FORMULAS) or []:
         # A formula spanning two or more Ossie datasets has no single

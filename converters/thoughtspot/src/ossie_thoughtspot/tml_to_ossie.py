@@ -118,6 +118,7 @@ from .constants import (
     MODEL_STASH_MODEL_JOINS_WITH,
     MODEL_STASH_MODEL_PROPERTIES,
     MODEL_STASH_PARAMETERS,
+    MODEL_STASH_UNSURFACED_FORMULAS,
     MODEL_STASH_UNATTRIBUTED_FORMULAS,
     MODEL_STASH_UNREPRESENTABLE_JOINS,
     PORTABLE_DIALECT,
@@ -2328,6 +2329,22 @@ def convert(document_set: DocumentSet) -> OssieConversion:
                 if properties:
                     unattributed[FIELD_STASH_COLUMN_PROPERTIES] = properties
                 model_stash.setdefault(MODEL_STASH_UNATTRIBUTED_FORMULAS, []).append(unattributed)
+
+    # Formulas no columns[] entry surfaces. The loop above walks columns[], so
+    # these were never visited and were dropped outright -- and the references
+    # to them, from formulas that ARE surfaced, then dangled. Preserved with
+    # their ids, which is what those references name.
+    surfaced_formula_ids = {
+        column["formula_id"] for column in model_columns if column.get("formula_id")
+    }
+    for formula_id, formula_entry in formulas.items():
+        if formula_id in surfaced_formula_ids or "expr" not in formula_entry:
+            continue
+        model_stash.setdefault(MODEL_STASH_UNSURFACED_FORMULAS, []).append({
+            "id": formula_id,
+            "name": formula_entry.get("name") or formula_id,
+            "expr": formula_entry["expr"],
+        })
 
     # -- Phase 3.5: unsurfaced physical columns, and SQL View output aliases --
     # A Table/SQL-View column with no Ossie FIELD of its own is not part of

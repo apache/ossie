@@ -99,6 +99,23 @@ STASH_VERSION = 1
 #: must agree on the exact spelling and nothing else enforces that.
 FIELD_STASH_DB_COLUMN_NAME = "db_column_name"
 
+#: Formulas present in `model.formulas[]` that NO `columns[]` entry surfaces --
+#: internal helpers, referenced by other formulas but not exposed to users. A
+#: date-parameter model is the common case: `_startDate`, `_endDate` and the
+#: like compute a window that the visible formulas then use.
+#:
+#: They were dropped outright: the converter walks `columns[]`, so a formula no
+#: column surfaces is never visited at all, and even the unattributed-formula
+#: stash only catches ones that WERE visited and could not be attributed. In one
+#: real model that was 32 of 41 formulas -- and the 9 visible ones that
+#: referenced them came back with dangling `[formula__startDate]` references, so
+#: the emitted document would not import.
+#:
+#: Stashed with their `id`, because that is what the surviving references name.
+#: Restored as `formulas[]` entries with NO surfacing column, which is what they
+#: were: giving them one would make an internal helper user-visible.
+MODEL_STASH_UNSURFACED_FORMULAS = "unsurfaced_formulas"
+
 #: A surfacing column's `aggregation` that is LOAD-BEARING and has no home in
 #: the Ossie metric's own expression, so it is preserved verbatim instead.
 #:
@@ -533,6 +550,7 @@ STASH_KEY_CLASSIFICATION: dict[str, "StashKeyClass"] = {
     RELATIONSHIP_STASH_JOIN_SHAPE: StashKeyClass.INFORMATION_ONLY,
 
     # -- Model scope --
+    MODEL_STASH_UNSURFACED_FORMULAS: StashKeyClass.INFORMATION_ONLY,
     MODEL_STASH_UNATTRIBUTED_FORMULAS: StashKeyClass.INFORMATION_ONLY,
     MODEL_STASH_UNREPRESENTABLE_JOINS: StashKeyClass.INFORMATION_ONLY,
     MODEL_STASH_MODEL_PROPERTIES: StashKeyClass.INFORMATION_ONLY,

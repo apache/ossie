@@ -1009,3 +1009,64 @@ class TestABareGroupAggregateKeepsItsColumnAggregation:
 
     def test_a_plain_aggregate_is_unaffected(self):
         assert self._round_trip("sum ( [T::a] )", "SUM") == "SUM"
+
+
+class TestAFormulaNoColumnSurfaces:
+    """An internal helper formula must survive, and stay internal.
+
+    A model's `formulas[]` may hold entries that no `columns[]` entry surfaces --
+    helpers other formulas reference but users never see. A date-parameter model
+    is the common case: `_startDate` computes a window the visible formulas use.
+
+    The converter walks `columns[]`, so these were never visited and were
+    dropped outright. In one real model that was 32 of 41 formulas, and the
+    visible formulas referencing them came back with dangling
+    `[formula__startDate]` references -- an ERROR, a non-zero exit, and a
+    document ThoughtSpot would refuse.
+    """
+
+    @staticmethod
+    def _round_trip():
+        table = TmlDocument(kind="table", guid=None, body={
+            "name": "T", "db": "D", "schema": "S", "db_table": "T",
+            "connection": {"name": "Conn"},
+            "columns": [{"name": "d", "db_column_name": "D",
+                         "db_column_properties": {"data_type": "DATE"}}]})
+        model = TmlDocument(kind="model", guid=None, body={
+            "name": "M", "model_tables": [{"name": "T"}],
+            "columns": [
+                {"name": "d", "column_id": "T::d", "properties": {"column_type": "ATTRIBUTE"}},
+                {"name": "In Period", "formula_id": "f_vis",
+                 "properties": {"column_type": "ATTRIBUTE"}},
+            ],
+            "formulas": [
+                # Surfaced by nothing -- an internal helper.
+                {"id": "formula__startDate", "name": "_startDate",
+                 "expr": "start_of_year ( [T::d] )"},
+                {"id": "f_vis", "name": "In Period",
+                 "expr": "[T::d] >= [formula__startDate]"},
+            ]})
+        ossie = tml_to_ossie.convert(DocumentSet(model=model, tables=(table,)))
+        return ossie_to_thoughtspot.convert(ossie.model)
+
+    def test_the_helper_formula_survives(self):
+        formulas = {f["name"] for f in self._round_trip().documents.model.body["formulas"]}
+        assert "_startDate" in formulas
+
+    def test_it_keeps_its_id_so_references_still_resolve(self):
+        body = self._round_trip().documents.model.body
+        emitted = {f["id"] for f in body["formulas"]}
+        referenced = {
+            ref for f in body["formulas"]
+            for ref in re.findall(r"\[(formula_[A-Za-z0-9_]+)\]", f["expr"])
+        }
+        assert not (referenced - emitted), f"dangling: {sorted(referenced - emitted)}"
+
+    def test_it_is_not_given_a_surfacing_column(self):
+        # It was internal in the source; surfacing it would expose a helper
+        # the modeller deliberately kept private.
+        body = self._round_trip().documents.model.body
+        assert "_startDate" not in {c["name"] for c in body["columns"]}
+
+    def test_the_conversion_reports_no_error(self):
+        assert not self._round_trip().issues.has_errors()
