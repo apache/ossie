@@ -55,8 +55,9 @@ def test_tpcds_example_parses():
 
     doc = yaml.safe_load(example_path.read_text(encoding="utf-8"))
     # A standalone core document carries `version` at the root alongside the
-    # semantic model contents.
-    doc.pop("version", None)
+    # semantic model contents. Keep it once SemanticModel declares it (#441).
+    if "version" not in SemanticModel.model_fields:
+        doc.pop("version", None)
     model = SemanticModel.model_validate(doc)
 
     assert model.name == "tpcds_retail_model"
