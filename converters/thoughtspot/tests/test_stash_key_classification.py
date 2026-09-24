@@ -70,7 +70,18 @@ def _keys_read_in_reverse_direction() -> set[str]:
 def test_every_stash_key_constant_is_a_real_constants_attribute():
     # Guards the scan itself: a typo in _all_stash_key_constants' regex or
     # in this file would otherwise silently check nothing.
-    for name in _all_stash_key_constants():
+    #
+    # The count assertion is the half that actually delivers that guarantee.
+    # Without it this test was the very thing it was written to prevent:
+    # breaking the regex (`^` -> `^ZZZ`) made the scan return nothing and this
+    # test still passed, while three sibling tests failed instead.
+    names = _all_stash_key_constants()
+    assert len(names) > 20, (
+        f"the constants.py scan found only {len(names)} stash-key constants, "
+        f"which means the regex has stopped matching rather than that the keys "
+        f"have gone: {names}"
+    )
+    for name in names:
         assert hasattr(constants, name), name
 
 
@@ -108,6 +119,19 @@ def test_every_shadows_derivable_key_has_a_witness_constant_or_documented_self_c
     }
     all_names = _all_stash_key_constants()
     name_by_value = {getattr(constants, n): n for n in all_names}
+    # Reclassifying every key to INFORMATION_ONLY enforced this requirement on
+    # nothing, and the only resulting failure was the generated docs going
+    # stale -- so a contributor following that failure's own remedy
+    # (regenerate) landed on a green suite with the witness rule silently gone.
+    derivable = [
+        key for key, classification in constants.STASH_KEY_CLASSIFICATION.items()
+        if classification is constants.StashKeyClass.SHADOWS_DERIVABLE
+    ]
+    assert derivable, (
+        "no key is classified SHADOWS_DERIVABLE, so this test checks nothing; "
+        "either the classification table lost its values or the class was "
+        "renamed"
+    )
     for key, classification in constants.STASH_KEY_CLASSIFICATION.items():
         if classification is not constants.StashKeyClass.SHADOWS_DERIVABLE:
             continue

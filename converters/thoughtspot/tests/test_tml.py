@@ -188,7 +188,17 @@ class TestFilenameSafety:
         out_dir = (tmp_path / "intended_output")
         out_dir.mkdir()
         resolved_out_dir = out_dir.resolve()
-        for filename, _text in dump_document_set(ds):
+        emitted = dump_document_set(ds)
+        # A security guard proves nothing about input it never received. Making
+        # `dump_document_set` skip traversal-shaped names instead of sanitising
+        # them left this test green for all six malicious names while the
+        # documents under test were simply not emitted. Both documents must come
+        # out, and then every one of them must land inside the directory.
+        assert len(emitted) == 2, (
+            f"expected the table and the model to be emitted, got "
+            f"{[n for n, _ in emitted]}"
+        )
+        for filename, _text in emitted:
             target = (out_dir / filename).resolve()
             assert target.is_relative_to(resolved_out_dir)
 

@@ -1165,15 +1165,28 @@ class TestFormulaIdsAreUniqueAcrossBothSources:
             self._metric("Order-Amount", "max ( [t::a] )"),
         ))
         body = result.documents.model.body
-        formula_name_by_id = {f["id"]: f["name"] for f in body["formulas"]}
-        for column in body["columns"]:
-            formula_id = column.get("formula_id")
-            if not formula_id:
-                continue
-            assert formula_id in formula_name_by_id, f"{formula_id!r} is emitted by no formula"
-            assert formula_name_by_id[formula_id] == column["name"], (
-                f"column {column['name']!r} surfaces formula "
-                f"{formula_name_by_id[formula_id]!r}"
+        # Driven from `formulas`, not from `columns`. Walking the columns and
+        # skipping the ones with no `formula_id` asserted NOTHING when the key
+        # went missing entirely: deleting the lockstep assignment outright left
+        # the whole suite green, while every renamed formula lost the
+        # `columns[]` -> `formulas[]` link this project's own TML invariants
+        # require ("all formula columns need a columns[] entry with formula_id
+        # matching the formulas[] id"). Each formula must now PRODUCE its
+        # surfacing column, so an absent key fails instead of being skipped.
+        assert len(body["formulas"]) == 2, (
+            f"expected both metrics to reach formulas[], got "
+            f"{[f['name'] for f in body['formulas']]}"
+        )
+        columns_by_name = {c["name"]: c for c in body["columns"]}
+        for formula in body["formulas"]:
+            column = columns_by_name.get(formula["name"])
+            assert column is not None, (
+                f"formula {formula['name']!r} has no surfacing columns[] entry"
+            )
+            assert column.get("formula_id") == formula["id"], (
+                f"column {formula['name']!r} carries formula_id "
+                f"{column.get('formula_id')!r}, but its formula's id is "
+                f"{formula['id']!r}"
             )
 
     def test_a_preserved_id_wins_however_the_document_is_ordered(self):

@@ -33,7 +33,13 @@ class TestToTml:
 
     def test_the_map_covers_the_whole_enum(self):
         # A datatype added to the Ossie enum must fail here, not silently
-        # convert to nothing.
+        # convert to nothing. A datatype REMOVED from it -- or the tuple
+        # emptied outright -- passed this test just as quietly, so the
+        # enumeration is pinned as well as walked.
+        assert len(OSSIE_DATATYPES) >= 10, (
+            f"OSSIE_DATATYPES has shrunk to {len(OSSIE_DATATYPES)} entries "
+            f"({OSSIE_DATATYPES}); this test now covers almost nothing"
+        )
         for datatype in OSSIE_DATATYPES:
             assert to_tml(datatype)
 
@@ -101,6 +107,12 @@ class TestDeclaredLoss:
     def test_round_trip_is_exact_for_every_non_lossy_type(self):
         # The property that makes `declared_loss` trustworthy: if it says a type
         # is lossless, TML -> Ossie -> TML really does return the same value.
+        checked = 0
         for datatype in OSSIE_DATATYPES:
             if declared_loss(datatype) is None:
+                checked += 1
                 assert to_ossie(to_tml(datatype)) == datatype
+        assert checked, (
+            "no datatype is declared lossless, so this property was asserted "
+            "over nothing"
+        )

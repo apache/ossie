@@ -73,13 +73,40 @@ def _shipped_files() -> list[Path]:
         "*.yml",
         "*.yaml",
     )
+    #: Patterns that MUST match at least one file. The two workflow patterns are
+    #: deliberately absent: the comment above records that this package has no
+    #: workflow file of its own today, so requiring one would fail on a true
+    #: statement.
+    #:
+    #: Without this, coverage could drop to zero in silence, one pattern at a
+    #: time -- and the `assert shipped` in each consumer could not catch it,
+    #: because `tests/**/*.py` always matches the consumer's own module, so the
+    #: aggregate is non-empty by construction whenever the test runs at all.
+    #: Renaming `docs/` left all three tests green; so did moving `src/`,
+    #: `tools/`, `docs/`, `README.md` and `pyproject.toml` together.
+    required = (
+        "src/**/*.py",
+        "tests/**/*.py",
+        "tools/**/*.py",
+        "docs/**/*.md",
+        "README.md",
+        "pyproject.toml",
+    )
     seen: set[Path] = set()
     files: list[Path] = []
+    empty: list[str] = []
     for pattern in patterns:
-        for path in sorted(PACKAGE_ROOT.glob(pattern)):
-            if path.is_file() and path not in seen:
+        matched = [p for p in sorted(PACKAGE_ROOT.glob(pattern)) if p.is_file()]
+        if pattern in required and not matched:
+            empty.append(pattern)
+        for path in matched:
+            if path not in seen:
                 seen.add(path)
                 files.append(path)
+    assert not empty, (
+        "these shipped-surface patterns matched no files, so everything they "
+        f"cover is now unchecked rather than clean: {empty}"
+    )
     return files
 
 

@@ -915,13 +915,23 @@ def test_every_referencing_join_carries_the_compulsory_with_field():
     Found by importing a converted REAL model into a live cluster, which is the
     only check that exercises the actual target platform.
     """
+    # Counted, not just walked. Three `or []` defaults in a row meant that
+    # emitting no joins at all -- the failure mode one layer up from emitting a
+    # join without `with` -- passed this test silently; it was only the 32 other
+    # tests that noticed. The count makes THIS test the one that fails.
+    checked = 0
     for fixture_name in FIXTURE_SETS:
         _, _, tml_result = _tml_roundtrip(fixture_name)
         for entry in tml_result.documents.model.body.get("model_tables") or []:
             for join in entry.get("joins") or []:
+                checked += 1
                 assert join.get("with"), (
                     f"{fixture_name}: joins[] entry on {entry['name']!r} has no `with`: {join}"
                 )
+    assert checked, (
+        "no joins[] entry was emitted by any fixture, so the compulsory `with` "
+        "field was checked on nothing"
+    )
 
 
 def test_the_models_obj_id_survives_the_round_trip():
