@@ -377,3 +377,46 @@ class TestAdditionalCoverage:
         # But dumping no longer loses one of them to a filename collision.
         names = [name for name, _text in dump_document_set(ds)]
         assert len(names) == len(set(names))
+
+
+class TestFilenamesAreDeconflictedCaseInsensitively:
+    """Two names differing only by case are ONE file on macOS and Windows.
+
+    This pins the FIX, not a fixture. The previous guard for this defect read a
+    committed fixture's text, so reverting the code left it green -- a test that
+    checks an artifact cannot see a change to the code that produces it.
+    """
+
+    @staticmethod
+    def _table(name):
+        return TmlDocument(kind="table", guid=None, body={
+            "name": name, "db": "D", "schema": "S", "db_table": name,
+            "connection": {"name": "C"},
+            "columns": [{"name": "c", "db_column_name": "C",
+                         "db_column_properties": {"data_type": "INT64"}}],
+        })
+
+    def _dump(self, *names):
+        document_set = DocumentSet(
+            model=TmlDocument(kind="model", guid=None, body={"name": "M", "model_tables": []}),
+            tables=tuple(self._table(name) for name in names),
+        )
+        return [filename for filename, _ in dump_document_set(document_set)]
+
+    def test_names_differing_only_by_case_get_distinct_filenames(self):
+        filenames = self._dump("Store_Sales", "STORE_SALES")
+        folded = [name.casefold() for name in filenames]
+        assert len(folded) == len(set(folded)), (
+            f"two documents would be written to one path on a case-insensitive "
+            f"filesystem: {filenames}"
+        )
+
+    def test_every_document_actually_lands_on_disk(self, tmp_path):
+        # The end of the defect, asserted end to end: the second write silently
+        # replaced the first, so a table simply vanished.
+        files = self._dump("Store_Sales", "STORE_SALES")
+        for filename in files:
+            (tmp_path / filename).write_text("x", encoding="utf-8")
+        assert len(list(tmp_path.iterdir())) == len(files), (
+            f"{len(files)} documents emitted, {len(list(tmp_path.iterdir()))} landed"
+        )

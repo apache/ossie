@@ -1455,3 +1455,74 @@ class TestJoinConditionParenthesisation:
 
     def test_a_paren_inside_a_quoted_literal_does_not_count(self):
         assert _strip_wrapping_parens("( 'a)b' )") == "'a)b'"
+
+
+class TestNormalisationCollisionsAreResolvedAndReported:
+    """Two display names folding to one identifier must not both be emitted.
+
+    `_resolve_name_collision` and both its call sites were reachable by no test
+    at all: stubbing the whole helper to a no-op left the suite green. These
+    pin the behaviour AND the issue, at both scopes -- fields are unique per
+    dataset, metrics across the model.
+    """
+
+    @staticmethod
+    def _table():
+        return TmlDocument(kind="table", guid=None, body={
+            "name": "orders", "db": "D", "schema": "S", "db_table": "ORDERS",
+            "connection": {"name": "C"},
+            "columns": [
+                {"name": n, "db_column_name": d, "db_column_properties": {"data_type": "DATE"}}
+                for n, d in (("Order Date", "ORDER_DATE"), ("Order-Date", "ORDER_DATE_2"))
+            ],
+        })
+
+    def _convert_two_colliding_fields(self):
+        model = TmlDocument(kind="model", guid=None, body={
+            "name": "M", "model_tables": [{"name": "orders"}],
+            "columns": [
+                {"name": n, "column_id": f"orders::{n}",
+                 "properties": {"column_type": "ATTRIBUTE"}}
+                for n in ("Order Date", "Order-Date")
+            ],
+        })
+        return convert(DocumentSet(model=model, tables=(self._table(),)))
+
+    def test_two_fields_folding_to_one_identifier_get_distinct_names(self):
+        result = self._convert_two_colliding_fields()
+        names = [f["name"] for f in result.model["datasets"][0]["fields"]]
+        assert len(names) == len(set(names)), f"duplicate field identifiers emitted: {names}"
+
+    def test_the_rename_is_reported_not_silent(self):
+        codes = [i["code"] for i in self._convert_two_colliding_fields().issues.as_dicts()]
+        assert "TS-FIELD-NAME-COLLISION" in codes, (
+            f"a field was renamed with nothing logged; codes were {codes}"
+        )
+
+    def test_the_issue_names_the_colliding_display_name(self):
+        issue = next(
+            i for i in self._convert_two_colliding_fields().issues.as_dicts()
+            if i["code"] == "TS-FIELD-NAME-COLLISION"
+        )
+        assert "Order-Date" in issue["message"]
+        assert issue["remedy"]
+
+    def test_metrics_collide_across_the_whole_model_and_are_reported(self):
+        model = TmlDocument(kind="model", guid=None, body={
+            "name": "M", "model_tables": [{"name": "orders"}],
+            "formulas": [
+                {"id": "f1", "name": "Total Amount", "expr": "sum ( [orders::Order Date] )"},
+                {"id": "f2", "name": "Total-Amount", "expr": "max ( [orders::Order Date] )"},
+            ],
+            "columns": [
+                {"name": "Total Amount", "formula_id": "f1",
+                 "properties": {"column_type": "MEASURE"}},
+                {"name": "Total-Amount", "formula_id": "f2",
+                 "properties": {"column_type": "MEASURE"}},
+            ],
+        })
+        result = convert(DocumentSet(model=model, tables=(self._table(),)))
+        names = [m["name"] for m in result.model.get("metrics") or []]
+        assert len(names) == len(set(names)), f"duplicate metric identifiers: {names}"
+        codes = [i["code"] for i in result.issues.as_dicts()]
+        assert "TS-METRIC-NAME-COLLISION" in codes, f"codes were {codes}"

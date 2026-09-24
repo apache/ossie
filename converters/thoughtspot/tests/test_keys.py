@@ -15,6 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import re
+
+from ossie_thoughtspot import _yaml
 from ossie_thoughtspot.issues import IssueLog, Severity
 from ossie_thoughtspot.keys import Relationship, derive_keys
 
@@ -130,3 +133,33 @@ def test_agreeing_qualifying_relationships_collapse_to_one_unique_key():
     assert pk == ["customer_id"]
     assert uniques == [["customer_id"]]
     assert log.as_dicts() == []
+
+
+class TestDerivedKeysDoNotAliasEachOther:
+    """`primary_key` and `unique_keys[0]` must not be the SAME list object.
+
+    When they were, PyYAML emitted `primary_key: &id001` / `- *id001`. The
+    existing guard reads the committed FIXTURE's text, so reverting
+    `keys.py`'s `list(...)` left the whole suite green -- an artifact test
+    cannot see a change to the code that produces the artifact. This one dumps
+    freshly derived keys and asserts on that text.
+    """
+
+    @staticmethod
+    def _derive_one_key():
+        return derive_keys("customers", [rel("r1", ["customer_id"])], IssueLog())
+
+    def test_primary_key_is_not_the_same_object_as_a_unique_key(self):
+        primary_key, unique_keys = self._derive_one_key()
+        assert primary_key is not None and unique_keys
+        assert all(primary_key is not entry for entry in unique_keys), (
+            "primary_key is the same list object as a unique_keys entry; PyYAML "
+            "will emit a YAML anchor/alias pair for it"
+        )
+
+    def test_freshly_dumped_keys_carry_no_anchor_or_alias(self):
+        primary_key, unique_keys = self._derive_one_key()
+        text = _yaml.dump({"primary_key": primary_key, "unique_keys": unique_keys})
+        assert not re.search(r"(?:^|\s)[&*]id\d+\b", text), (
+            f"generated YAML contains an anchor/alias:\n{text}"
+        )
