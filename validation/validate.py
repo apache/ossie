@@ -50,6 +50,8 @@ from pathlib import Path
 try:
     import yaml
     from jsonschema import Draft202012Validator
+    from referencing import Registry, Resource
+    from referencing.exceptions import Unresolvable
     from yaml.constructor import ConstructorError
 except ImportError:
     print("Missing dependencies. Install with:")
@@ -146,12 +148,26 @@ class UniqueKeyLoader(yaml.SafeLoader):
 
 
 def validate_schema(data: dict, schema: dict) -> list[str]:
-    """Validate against JSON Schema."""
-    validator = Draft202012Validator(schema)
+    """Validate against JSON Schema, resolving core references locally."""
+    core_path = Path(__file__).parent.parent / "core-spec" / "ossie-schema.json"
+    core = json.loads(core_path.read_text())
+    resource = Resource.from_contents(core)
+    # Ontology references use the raw URL; also register the canonical schema ID.
+    registry = Registry().with_resources([
+        (core["$id"], resource),
+        (
+            "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json",
+            resource,
+        ),
+    ])
+    validator = Draft202012Validator(schema, registry=registry)
     errors = []
-    for error in validator.iter_errors(data):
-        path = " -> ".join(str(p) for p in error.absolute_path) if error.absolute_path else "(root)"
-        errors.append(f"[Schema] {path}: {error.message}")
+    try:
+        for error in validator.iter_errors(data):
+            path = " -> ".join(str(p) for p in error.absolute_path) if error.absolute_path else "(root)"
+            errors.append(f"[Schema] {path}: {error.message}")
+    except Unresolvable as error:
+        errors.append(f"[Schema] Cannot resolve schema reference: {error.ref}")
     return errors
 
 

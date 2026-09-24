@@ -89,6 +89,23 @@ def test_parse_rejects_invalid_embedded_version(flights_path, tmp_path, version)
     assert exc.value.errors()[0]["loc"] == ("ontology_mappings", 0, "semantic_model", "version")
 
 
+@pytest.mark.parametrize("missing", [True, False], ids=["missing", "empty"])
+def test_parse_rejects_missing_or_empty_datasets(flights_path, tmp_path, missing):
+    document = yaml.safe_load(flights_path.read_text())
+    model = document["ontology_mappings"][0]["semantic_model"]
+    if missing:
+        del model["datasets"]
+    else:
+        model["datasets"] = []
+    path = tmp_path / "invalid.yaml"
+    path.write_text(yaml.safe_dump(document))
+
+    with pytest.raises(ValidationError) as exc:
+        OssieParser().parse(path)
+
+    assert exc.value.errors()[0]["loc"] == ("ontology_mappings", 0, "semantic_model", "datasets")
+
+
 def test_parse_returns_populated_ontology(flights_model):
     ontology = flights_model.ontology
     # Built-in concepts (String, Integer, Decimal, ...) are always present on top

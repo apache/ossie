@@ -706,6 +706,10 @@ class SemanticModel:
         custom_extensions: list[CustomExtension] | None = None,
         version: str = "0.2.0.dev0",
     ):
+        if version != "0.2.0.dev0":
+            raise ValueError(
+                f"Unsupported semantic model version {version!r}; expected '0.2.0.dev0'"
+            )
         self._version = version
         self._name = name
         self._description = description

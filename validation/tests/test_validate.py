@@ -16,6 +16,7 @@
 # under the License.
 
 import json
+import urllib.request
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
@@ -65,6 +66,35 @@ def test_accepts_a_single_root_model(core_schema: dict) -> None:
     document = _document([_ORDERS, _CUSTOMERS], [])
 
     assert _VALIDATE.validate_schema(document, core_schema) == []
+
+
+@pytest.fixture
+def offline(monkeypatch):
+    def reject_request(*args, **kwargs):
+        pytest.fail("Schema validation must not make HTTP requests")
+
+    monkeypatch.setattr(urllib.request, "urlopen", reject_request)
+    monkeypatch.setattr("jsonschema.validators.urlopen", reject_request, raising=False)
+
+
+@pytest.mark.parametrize("uri", [
+    "https://github.com/apache/ossie/core-spec/ossie-schema.json",
+    "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json",
+])
+@pytest.mark.parametrize("fragment, document", [
+    ("", _document([_ORDERS], [])),
+    ("#/$defs/AIContext", {"instructions": "Use for sales analysis"}),
+])
+def test_core_schema_references_resolve_offline(offline, uri, fragment, document):
+    assert _VALIDATE.validate_schema(document, {"$ref": uri + fragment}) == []
+
+
+def test_unresolvable_reference_is_a_validation_error(offline):
+    uri = "https://example.invalid/unknown-schema.json"
+
+    errors = _VALIDATE.validate_schema({}, {"$ref": uri})
+
+    assert errors == [f"[Schema] Cannot resolve schema reference: {uri}"]
 
 
 def test_rejects_empty_root_datasets(core_schema: dict) -> None:
@@ -294,15 +324,43 @@ def test_skips_malformed_flat_unique_keys() -> None:
 
 @pytest.fixture
 def run_validator(tmp_path, monkeypatch, capsys):
-    def run(document):
+    def run(document, schema_path=None):
         model_path = tmp_path / "model.json"
         model_path.write_text(json.dumps(document))
-        monkeypatch.setattr(_VALIDATE.sys, "argv", [str(_VALIDATE_PATH), str(model_path)])
+        args = [str(_VALIDATE_PATH), str(model_path)]
+        if schema_path is not None:
+            args.extend(["--schema", str(schema_path)])
+        monkeypatch.setattr(_VALIDATE.sys, "argv", args)
         with pytest.raises(SystemExit) as caught:
             _VALIDATE.main()
         return caught.value.code, capsys.readouterr().out
 
     return run
+
+
+@pytest.mark.parametrize("version, expected_exit", [("0.2.0.dev0", 0), ("0.1.0", 1)])
+def test_ontology_cli_validates_embedded_documents_offline(
+    run_validator, offline, version, expected_exit
+):
+    model = _document([_ORDERS], [])
+    model["version"] = version
+    document = {
+        "version": "0.2.0.dev0",
+        "name": "sales",
+        "ai_context": {"instructions": "Use for sales analysis"},
+        "ontology": [{"concept": "Order", "type": "EntityType"}],
+        "ontology_mappings": [{"semantic_model": model, "concept_mappings": []}],
+    }
+
+    exit_code, output = run_validator(
+        document, Path(__file__).parents[2] / "ontology/ontology.json"
+    )
+
+    assert exit_code == expected_exit
+    if expected_exit == 0:
+        assert "Validation PASSED" in output
+    else:
+        assert "ontology_mappings -> 0 -> semantic_model -> version" in output
 
 
 @pytest.mark.parametrize("target", [
