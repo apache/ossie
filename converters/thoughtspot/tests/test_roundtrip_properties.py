@@ -71,6 +71,7 @@ from ossie_thoughtspot.constants import (
     STASH_TML_NAME,
 )
 from ossie_thoughtspot.datatypes import OSSIE_DATATYPES
+from ossie_thoughtspot.issues import IssueLog
 
 from test_roundtrip import _issue_refs  # reuse rather than duplicate
 
@@ -417,7 +418,14 @@ _COLLISION_BASE_WORDS = ("Net Amount", "Customer ID", "Total-Sales", "on")
 
 
 def _collision_variants(word: str) -> list[str]:
-    variants = [word, word.upper(), word.lower(), f"  {word}  ", word.replace(" ", "-").replace("_", "-")]
+    # Variants that ThoughtSpot genuinely treats as one display name: case and
+    # surrounding whitespace. A punctuation variant (`Order Amount` vs
+    # `Order-Amount`) is NOT one -- those are distinct names in ThoughtSpot, and
+    # asserting they collide is what this property used to do, pinning an
+    # allocator that borrowed Ossie's identifier fold to make a ThoughtSpot
+    # display-name decision. `test_punctuation_variants_do_not_collide` below
+    # now pins the other direction.
+    variants = [word, word.upper(), word.lower(), f"  {word}  "]
     seen: list[str] = []
     for v in variants:
         if v not in seen:
@@ -536,3 +544,28 @@ class TestWarehouseColumnNameDiffersFromDisplayName:
         new_dataset = ossie_reloaded["datasets"][0]
         new_field = next(f for f in new_dataset["fields"] if f["label"] == display_name)
         assert new_field["name"] == identifiers.normalise(display_name)
+
+
+@given(word=st.sampled_from(_COLLISION_BASE_WORDS))
+@_SETTINGS
+def test_punctuation_variants_do_not_collide(word):
+    """`Order Amount` and `Order-Amount` are two names, not one.
+
+    The allocator folded display names through `identifiers.normalise` -- an
+    OSSIE identifier rule, which strips punctuation and non-ASCII. Applied to a
+    THOUGHTSPOT display name it invented collisions: one of each pair was
+    renamed, and the issue asserted a uniqueness requirement ThoughtSpot does
+    not have. Same for `Cafe`/`Cafe` with an accent, and for any two non-Latin
+    names whose ASCII residue matched.
+    """
+    punctuated = word.replace(" ", "-").replace("_", "-")
+    if punctuated == word:
+        return  # nothing to distinguish for this word
+    allocator = ossie_to_thoughtspot._DisplayNameAllocator()
+    log = IssueLog()
+    first = allocator.allocate(word, log, object_ref="field:a")
+    second = allocator.allocate(punctuated, log, object_ref="field:b")
+    assert first == word and second == punctuated, (
+        f"{word!r} and {punctuated!r} were treated as colliding"
+    )
+    assert not [i for i in log.as_dicts() if i["code"] == "TS-MODEL-DISPLAY-NAME-COLLISION"]

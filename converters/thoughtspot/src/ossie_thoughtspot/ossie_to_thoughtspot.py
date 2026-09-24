@@ -770,28 +770,27 @@ class _DisplayNameAllocator:
     candidate to a normalised (lowercase, underscore-joined) identifier even
     on its very first use, which is correct for an *Ossie* identifier
     (TML -> Ossie's own `field.name`) but wrong for a TML display name --
-    `Ossie -> TML` must use a field's `label` (or a metric's own
-    `name`, when there is no `label`) verbatim in the ordinary, non-colliding
-    case. This class reuses `identifiers.normalise` as the fold key -- the
-    exact case/punctuation-insensitive comparison Ossie identifier resolution
-    requires, and the same
-    one `identifiers.Allocator` computes internally -- and appends a numeric
-    suffix to the *original* text, never the folded one, only once a
-    collision is actually found.
+    `Ossie -> TML` must use a field's `label` (or a metric's own `name`, when
+    there is no `label`) verbatim in the ordinary, non-colliding case.
+
+    The fold is a plain CASEFOLD, not `identifiers.normalise`. What is being
+    allocated here is a ThoughtSpot display name, so the question is which
+    names ThoughtSpot considers the same -- and it is only case that it
+    ignores. Folding punctuation and non-ASCII as well, which is Ossie's
+    identifier rule, invented collisions between names that are perfectly
+    distinct in ThoughtSpot: `Order Amount` and `Order-Amount` both folded to
+    `order_amount`, as did `Cafe` and `Cafe\u0301`, and any two non-Latin names
+    whose only ASCII residue matched -- so one of each pair was renamed, with
+    an issue asserting a uniqueness requirement that does not exist. Borrowing
+    the other side's rule to make this side's decision is the mistake; the
+    suffix is still appended to the ORIGINAL text, never the folded one.
     """
 
     def __init__(self) -> None:
         self._taken: set[str] = set()
 
     def allocate(self, display_name: str, log: IssueLog, *, object_ref: str) -> str:
-        try:
-            fold_base = identifiers.normalise(display_name)
-        except ValueError:
-            # A name with no ASCII alphanumerics at all -- normalise() raises
-            # rather than returning one. Falls back to a plain casefold so
-            # this allocator still has *some* fold key to dedupe against,
-            # rather than propagating the exception into a model build.
-            fold_base = display_name.strip().casefold() or "field"
+        fold_base = display_name.strip().casefold() or "field"
         fold, candidate, suffix = fold_base, display_name, 1
         while fold in self._taken:
             suffix += 1
