@@ -38,7 +38,7 @@
     },
     "ontology_mappings": {
       "type": "array",
-      "description": "Collection of ontology maps from logical models, each embedding its own semantic model. Kept for backward compatibility; see ontology/mapping.json for the standalone mapping document, the recommended shape when more than one semantic model maps to this ontology.",
+      "description": "Deprecated. Embedded ontology maps, accepted only so existing documents continue to validate; write mappings as standalone documents validated against ontology/mapping.json instead.",
       "deprecated": true,
       "items": {
         "$ref": "#/$defs/OntologyMap"
