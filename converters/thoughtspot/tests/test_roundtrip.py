@@ -791,3 +791,69 @@ class TestAFormulaCrossReferenceKeepsItsTarget:
     def test_the_source_formula_ids_survive_verbatim(self):
         ids = {f["id"] for f in self._round_trip().documents.model.body["formulas"]}
         assert {"formula_margin", "formula_other", "formula_total"} <= ids
+
+
+class TestOnePhysicalColumnSurfacedTwice:
+    """Two Ossie fields over one warehouse column are still ONE column.
+
+    Showing the same date as "Sale Date" and, with a format pattern, as
+    "Sale Month" is ordinary modelling. Appending a column entry per field
+    emitted a duplicate -- and for a SQL View the two entries disagreed about
+    `sql_output_column`, because only one field carried the stashed alias and
+    the other had one guessed from its display name. The guess lowercased it
+    (`D` -> `d`), so it bound to nothing on a case-sensitive warehouse.
+    """
+
+    @staticmethod
+    def _sql_view_documents():
+        view = TmlDocument(kind="sql_view", guid=None, body={
+            "name": "v", "sql_query": "SELECT d, amt FROM src", "connection": {"name": "Conn"},
+            "sql_view_columns": [
+                {"name": "d", "sql_output_column": "D",
+                 "db_column_properties": {"data_type": "DATE"}},
+                {"name": "amt", "sql_output_column": "AMT",
+                 "db_column_properties": {"data_type": "DOUBLE"}},
+            ]})
+        model = TmlDocument(kind="model", guid=None, body={
+            "name": "dupsv_model", "model_tables": [{"name": "v"}],
+            "columns": [
+                {"name": "Sale Date", "column_id": "v::d",
+                 "properties": {"column_type": "ATTRIBUTE"}},
+                {"name": "Sale Month", "column_id": "v::d",
+                 "properties": {"column_type": "ATTRIBUTE", "format_pattern": "MMM"}},
+                {"name": "Amount", "column_id": "v::amt",
+                 "properties": {"column_type": "ATTRIBUTE"}},
+            ]})
+        return DocumentSet(model=model, tables=(view,))
+
+    def _round_trip_sql_view(self):
+        ossie = tml_to_ossie.convert(self._sql_view_documents())
+        return ossie_to_thoughtspot.convert(ossie.model).documents.tables[0]
+
+    def test_the_view_has_one_entry_per_physical_column(self):
+        columns = self._round_trip_sql_view().body["sql_view_columns"]
+        names = [c["name"] for c in columns]
+        assert names == sorted(set(names), key=names.index), f"duplicate entries: {names}"
+
+    def test_the_warehouse_alias_survives_rather_than_being_guessed(self):
+        columns = {c["name"]: c for c in self._round_trip_sql_view().body["sql_view_columns"]}
+        assert columns["d"]["sql_output_column"] == "D"
+        assert columns["amt"]["sql_output_column"] == "AMT"
+
+    def test_a_table_column_surfaced_twice_is_also_emitted_once(self):
+        table = TmlDocument(kind="table", guid=None, body={
+            "name": "orders", "db": "D", "schema": "S", "db_table": "ORDERS",
+            "connection": {"name": "C"},
+            "columns": [{"name": "order_date", "db_column_name": "ORDER_DATE",
+                         "db_column_properties": {"data_type": "DATE"}}]})
+        model = TmlDocument(kind="model", guid=None, body={
+            "name": "M", "model_tables": [{"name": "orders"}],
+            "columns": [
+                {"name": "Order Date", "column_id": "orders::order_date",
+                 "properties": {"column_type": "ATTRIBUTE"}},
+                {"name": "Order Day", "column_id": "orders::order_date",
+                 "properties": {"column_type": "ATTRIBUTE", "format_pattern": "dd"}},
+            ]})
+        ossie = tml_to_ossie.convert(DocumentSet(model=model, tables=(table,)))
+        columns = ossie_to_thoughtspot.convert(ossie.model).documents.tables[0].body["columns"]
+        assert [c["name"] for c in columns] == ["order_date"]

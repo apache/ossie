@@ -621,13 +621,62 @@ def _build_table_body(
     for field in dataset.get("fields") or []:
         column = _physical_table_column(field, log)
         if column is not None:
-            columns.append(column)
+            _merge_physical_column(columns, column, log, object_ref=object_ref)
     unsurfaced = payload.get(DATASET_STASH_UNSURFACED_COLUMNS)
     columns.extend(
         _unsurfaced_columns_still_unsurfaced(unsurfaced, {c["name"] for c in columns})
     )
     body["columns"] = columns
     return body
+
+
+def _merge_physical_column(
+    columns: list[dict], column: dict, log: IssueLog, *, object_ref: str,
+    authoritative: dict[str, set] | None = None,
+) -> None:
+    """Append `column`, or fold it into the entry already naming that column.
+
+    One warehouse column surfaced by TWO Ossie fields -- the same date shown as
+    "Order Date" and, with a format pattern, as "Order Day" -- is ordinary
+    modelling, but it is still ONE physical column. Appending per field emitted
+    a duplicate entry, and for a SQL View it was worse: the two entries
+    disagreed about `sql_output_column`, because only one field carried the
+    stashed alias and the other had its alias guessed from a display name. The
+    guessed one lowercased it, so it bound to nothing on a case-sensitive
+    warehouse.
+
+    Where both carry the same key, the first wins and nothing is reported --
+    they are the same column. Where they genuinely disagree the difference is
+    reported rather than resolved by position.
+    """
+    name = column.get("name")
+    existing = next((c for c in columns if c.get("name") == name), None)
+    if existing is None:
+        columns.append(column)
+        return
+    trusted = authoritative or {}
+    for key, value in column.items():
+        if key not in existing or existing[key] == value:
+            existing.setdefault(key, value)
+            continue
+        # A value the SOURCE document recorded beats one this converter
+        # guessed. Without this, "first wins" handed a SQL View the alias
+        # derived from a display name (`d`) over the stashed one (`D`) --
+        # lowercased, and so bound to nothing on a case-sensitive warehouse.
+        if value in trusted.get(key, ()) and existing[key] not in trusted.get(key, ()):
+            existing[key] = value
+            continue
+        if existing[key] in trusted.get(key, ()):
+            continue
+        log.add(
+            code="TS-DATASET-COLUMN-DISAGREEMENT",
+            severity=Severity.WARNING,
+            message=(
+                f"two fields surface warehouse column {name!r} but disagree on "
+                f"{key!r} ({existing[key]!r} vs {value!r}); the first is emitted"
+            ),
+            object_ref=object_ref,
+        )
 
 
 def _build_sql_view_body(
@@ -641,7 +690,10 @@ def _build_sql_view_body(
     for field in dataset.get("fields") or []:
         column = _physical_sql_view_column(field, output_aliases, log)
         if column is not None:
-            columns.append(column)
+            _merge_physical_column(
+                columns, column, log, object_ref=object_ref,
+                authoritative={"sql_output_column": set(output_aliases.values())},
+            )
     unsurfaced = payload.get(DATASET_STASH_UNSURFACED_COLUMNS)
     columns.extend(
         _unsurfaced_columns_still_unsurfaced(unsurfaced, {c["name"] for c in columns})
