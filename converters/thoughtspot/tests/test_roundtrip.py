@@ -857,3 +857,39 @@ class TestOnePhysicalColumnSurfacedTwice:
         ossie = tml_to_ossie.convert(DocumentSet(model=model, tables=(table,)))
         columns = ossie_to_thoughtspot.convert(ossie.model).documents.tables[0].body["columns"]
         assert [c["name"] for c in columns] == ["order_date"]
+
+
+def test_an_unattributed_formula_does_not_duplicate_another_formulas_id():
+    """The THIRD source of `formulas[].id` also goes through the allocator.
+
+    A formula spanning two datasets is stashed under
+    `MODEL_STASH_UNATTRIBUTED_FORMULAS` as name+expr only -- its id is dropped --
+    and the return leg mints a new one. That loop appended directly, bypassing
+    the id allocator entirely, so a pure round trip of a VALID document emitted
+    duplicate ids with nothing logged. The allocator's docstring said ids come
+    from "two places"; there are three.
+    """
+    def table(name, columns):
+        return TmlDocument(kind="table", guid=None, body={
+            "name": name, "db": "D", "schema": "S", "db_table": name,
+            "connection": {"name": "Conn"},
+            "columns": [{"name": c, "db_column_name": c.upper(),
+                         "db_column_properties": {"data_type": "DOUBLE"}} for c in columns]})
+    model = TmlDocument(kind="model", guid=None, body={
+        "name": "M", "model_tables": [{"name": "A"}, {"name": "B"}],
+        "formulas": [
+            {"id": "formula_order_amount", "name": "Order Amount", "expr": "sum ( [A::x] )"},
+            # Spans two datasets, so it becomes an unattributed formula. Its
+            # display name folds to the same minted id as the one above.
+            {"id": "formula_oa_label", "name": "Order-Amount", "expr": "[A::x] + [B::y]"},
+        ],
+        "columns": [
+            {"name": "Order Amount", "formula_id": "formula_order_amount",
+             "properties": {"column_type": "MEASURE"}},
+            {"name": "Order-Amount", "formula_id": "formula_oa_label",
+             "properties": {"column_type": "ATTRIBUTE"}},
+        ]})
+    ossie = tml_to_ossie.convert(DocumentSet(model=model, tables=(table("A", ["x"]), table("B", ["y"]))))
+    formulas = ossie_to_thoughtspot.convert(ossie.model).documents.model.body["formulas"]
+    ids = [f["id"] for f in formulas]
+    assert len(ids) == len(set(ids)), f"duplicate formula ids on a plain round trip: {ids}"

@@ -27,6 +27,7 @@ points back to back (`tml_to_ossie.convert` then `ossie_to_thoughtspot.
 convert`) rather than a hand-built Ossie fixture.
 """
 import json
+import re
 
 import pytest
 
@@ -1150,16 +1151,62 @@ class TestFormulaIdsAreUniqueAcrossBothSources:
         assert len(ids) == len(set(ids)), f"duplicate formula ids: {ids}"
 
     def test_the_surfacing_column_follows_the_renamed_id(self):
-        # A renamed id that the column still points at by its OLD value would
-        # leave the column bound to nothing.
+        # Asserted as a PAIR, not as a subset. `referenced <= emitted` cannot see
+        # this failure: when the column keeps the old id, that id is still
+        # emitted -- by the OTHER formula -- so the subset holds while the column
+        # now surfaces the wrong expression. That assertion survived having the
+        # lockstep rewrite stubbed out.
         result = convert(self._document(
             self._metric("Order Amount", "sum ( [t::a] )"),
             self._metric("Order-Amount", "max ( [t::a] )"),
         ))
         body = result.documents.model.body
-        emitted = {f["id"] for f in body["formulas"]}
-        referenced = {c["formula_id"] for c in body["columns"] if c.get("formula_id")}
-        assert referenced <= emitted, f"columns point at missing ids: {referenced - emitted}"
+        formula_name_by_id = {f["id"]: f["name"] for f in body["formulas"]}
+        for column in body["columns"]:
+            formula_id = column.get("formula_id")
+            if not formula_id:
+                continue
+            assert formula_id in formula_name_by_id, f"{formula_id!r} is emitted by no formula"
+            assert formula_name_by_id[formula_id] == column["name"], (
+                f"column {column['name']!r} surfaces formula "
+                f"{formula_name_by_id[formula_id]!r}"
+            )
+
+    def test_a_preserved_id_wins_however_the_document_is_ordered(self):
+        # Resolved by RESERVATION, not by processing order. The field loop runs
+        # before the metric loop, so ordering let a newly added field take a
+        # preserved metric's id -- and every source cross-reference written
+        # against that id then pointed at the field.
+        for ordering in ("preserved first", "preserved second"):
+            metrics = [
+                self._metric("Net Margin", "sum ( [t::a] )", preserved_id="formula_margin"),
+                self._metric("Margin", "max ( [t::a] )"),
+            ]
+            if ordering == "preserved second":
+                metrics.reverse()
+            result = convert(self._document(*metrics))
+            ids = {f["name"]: f["id"] for f in result.documents.model.body["formulas"]}
+            assert ids["Net Margin"] == "formula_margin", (
+                f"{ordering}: the preserved id was given away to {ids}"
+            )
+
+    def test_a_hand_added_field_cannot_take_a_preserved_metric_id(self):
+        document = self._document(
+            self._metric("Net Margin", "sum ( [t::a] )", preserved_id="formula_margin"),
+            self._metric("Double Net", "2 * [formula_margin]"),
+        )
+        document["datasets"][0]["fields"].append({
+            "name": "margin_f", "label": "Margin",
+            "expression": {"dialects": [
+                {"dialect": "THOUGHTSPOT", "expression": "[t::a] + 1"}]},
+        })
+        body = convert(document).documents.model.body
+        by_id = {f["id"]: f for f in body["formulas"]}
+        double_net = next(f for f in body["formulas"] if f["name"] == "Double Net")
+        referenced = re.search(r"\[(formula_[A-Za-z0-9_]+)\]", double_net["expr"]).group(1)
+        assert by_id[referenced]["name"] == "Net Margin", (
+            f"the reference was rebound to {by_id[referenced]['name']!r}"
+        )
 
     def test_the_rename_is_reported(self):
         result = convert(self._document(

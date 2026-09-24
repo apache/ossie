@@ -1249,7 +1249,7 @@ _UNNAMED_TABLE = "<unnamed>"
 #: `unsurfaced_columns` stash entries carrying raw TML keys, and a column
 #: surfaced through one alias and unsurfaced through the other compared unequal
 #: -- an ERROR, and a non-zero exit, on a document that was fine.
-_COLUMN_BINDING_KEYS = ("db_column_name", "sql_output_column")
+_COLUMN_BINDING_KEYS = ("db_column_name", "sql_output_column", "db_column_properties")
 
 #: Every body key that can hold columns, for callers that must ignore all of them.
 _COLUMN_KEYS = frozenset({"columns", "sql_view_columns"})
@@ -1930,8 +1930,19 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
     tables_by_name = {t.body.get("name"): t for t in tables}
 
     model_tables: list[dict] = []
-    #: Every `formulas[].id` already handed out, across BOTH sources of them.
-    taken_formula_ids: set[str] = set()
+    #: Every `formulas[].id` handed out, across all THREE sources: preserved
+    #: from a stash, minted from a display name, and minted for an unattributed
+    #: formula. Preserved ids are reserved FIRST, below, so that a minted one
+    #: can never take an id a source cross-reference already names.
+    taken_formula_ids: set[str] = {
+        preserved_id
+        for holder in (
+            [f for d in datasets for f in d.get("fields") or []]
+            + list(semantic_model.get("metrics") or [])
+        )
+        for preserved_id in [stash.read_stash(holder).get(FIELD_STASH_FORMULA_ID)]
+        if preserved_id
+    }
     model_tables_by_prefix: dict[str, dict] = {}
     table_doc_by_prefix: dict[str, TmlDocument | None] = {}
 
@@ -2031,7 +2042,11 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
             columns_entry, formulas_entry = built
             columns.append(columns_entry)
             if formulas_entry is not None:
-                _allocate_formula_id(formulas_entry, columns_entry, taken_formula_ids, log)
+                _allocate_formula_id(
+                    formulas_entry, columns_entry, taken_formula_ids, log,
+                    preserved=formulas_entry["id"] in taken_formula_ids
+                    and stash.read_stash(field).get(FIELD_STASH_FORMULA_ID) == formulas_entry["id"],
+                )
                 formulas.append(formulas_entry)
 
     for metric in semantic_model.get("metrics") or []:
@@ -2039,7 +2054,10 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
         if built is None:
             continue
         formulas_entry, columns_entry = built
-        _allocate_formula_id(formulas_entry, columns_entry, taken_formula_ids, log)
+        _allocate_formula_id(
+            formulas_entry, columns_entry, taken_formula_ids, log,
+            preserved=stash.read_stash(metric).get(FIELD_STASH_FORMULA_ID) == formulas_entry["id"],
+        )
         formulas.append(formulas_entry)
         columns.append(columns_entry)
 
@@ -2068,7 +2086,12 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
         expr = entry.get("expr", "")
         formula_id = _formula_id_from(allocated_name)
         # Raw, unwrapped `expr` -- see the matching comment in _build_field.
-        formulas.append({"id": formula_id, "name": allocated_name, "expr": expr})
+        unattributed_entry = {"id": formula_id, "name": allocated_name, "expr": expr}
+        # The THIRD source of ids. It minted and appended directly, so a pure
+        # round trip of a valid document could still emit duplicates -- the
+        # unattributed stash keeps only name and expr, dropping the original id.
+        _allocate_formula_id(unattributed_entry, None, taken_formula_ids, log)
+        formulas.append(unattributed_entry)
         stashed_properties = entry.get(FIELD_STASH_COLUMN_PROPERTIES) or {}
         properties = _drop_never_emit_true_properties(
             dict(stashed_properties), log, object_ref=object_ref
@@ -2225,7 +2248,8 @@ class TmlConversion:
 
 
 def _allocate_formula_id(
-    formulas_entry: dict, columns_entry: dict, taken: set[str], log: IssueLog
+    formulas_entry: dict, columns_entry: dict, taken: set[str], log: IssueLog,
+    *, preserved: bool = False,
 ) -> None:
     """Give this formula an id no other formula in the model holds.
 
@@ -2246,6 +2270,14 @@ def _allocate_formula_id(
     this runs where both halves are in hand.
     """
     original = formulas_entry["id"]
+    if preserved:
+        # A preserved id was reserved before any minting began, so it is already
+        # in `taken` -- by itself. It must never be renamed: it is the identity a
+        # source cross-reference was written against, and renaming it is what
+        # sends that reference to whichever formula minted the same string.
+        # Resolving this by processing order instead meant the FIELD loop, which
+        # runs first, could hand a preserved metric's id to a newly added field.
+        return
     candidate, suffix = original, 1
     while candidate in taken:
         suffix += 1
