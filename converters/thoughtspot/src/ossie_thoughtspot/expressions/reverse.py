@@ -106,6 +106,7 @@ ten `sql_*_op` names, whose disposition depends on whether the caller can supply
 (returns `None`, no issue) — only the ThoughtSpot hyperlink-markup content pattern inside its
 string arguments (`{caption}` / `{/caption}`) is reverse-inventory territory.
 """
+import functools
 import re
 from dataclasses import dataclass
 from enum import Enum
@@ -740,44 +741,60 @@ _FISCAL_MARKERS = {"fiscal", "'fiscal'"}
 
 
 #: Every ThoughtSpot call name the FORWARD catalog renders, read off its own
-#: templates so the two halves cannot drift.
-_FORWARD_CALL_NAMES = frozenset(
-    match.group(1)
-    for construct in CATALOG.values()
-    if construct.template
-    for match in [re.match(r"\s*([a-z_]+)\s*\(", construct.template)]
-    if match
-)
+#: templates so the two halves cannot drift. A function, not a module-level
+#: constant, for the same evaluation-order reason as the fiscal set below.
+@functools.lru_cache(maxsize=1)
+def _forward_call_names() -> frozenset[str]:
+    return frozenset(
+        match.group(1)
+        for construct in CATALOG.values()
+        if construct.template
+        for match in [re.match(r"\s*([a-z_]+)\s*\(", construct.template)]
+        if match
+    )
 
 
-#: A trailing `fiscal` argument selects the fiscal calendar, and that is only
-#: meaningful on a DATE function. The check below was applied to every name, so
-#: an ordinary string literal -- `concat([T::label], 'fiscal')` -- was routed
-#: into an ERROR-severity total-loss stash, discarding a composable CONCAT and,
-#: through the CLI's has_errors(), failing the whole conversion's exit code.
-#:
-#: Derived from both inventories by a date-token pattern rather than hand-listed,
-#: because a hand-list of ThoughtSpot's date vocabulary is exactly the kind of
-#: copy that goes stale -- the first draft of it here omitted `quarter_number`
-#: and `diff_months`, both of which this module's own tests exercise. The
-#: `diff_*`/`add_*` families are unioned in explicitly: they take a fiscal
-#: argument but appear in neither inventory under a date-shaped name.
+#: Word-shaped date tokens. `min(?:ute)?` with no boundaries matched the
+#: AGGREGATE `min` -- and `min_if`, `cumulative_min`, `moving_min` with it --
+#: all classed fiscal-capable, which is the very over-inclusion this gate
+#: exists to prevent. `time` likewise matched inside "run-time".
 _DATE_NAME_TOKENS = re.compile(
-    r"year|quarter|month|week|day|date|time|hour|min(?:ute)?|second"
+    r"(?:^|_)(?:year|quarter|month|week|weekend|day|date|time|hour|minute|second)(?:$|_)"
 )
-_FISCAL_CAPABLE_FUNCTIONS = frozenset(
-    name for name in (set(REVERSE) | _FORWARD_CALL_NAMES)
-    if _DATE_NAME_TOKENS.search(name)
-) | frozenset({
+
+#: The `diff_*`/`add_*` families take a fiscal argument but appear in neither
+#: inventory under a date-shaped name.
+_FISCAL_EXTRA_FUNCTIONS = frozenset(
     f"{verb}_{unit}"
     for verb in ("diff", "add")
     for unit in ("years", "quarters", "months", "weeks", "days", "hours", "minutes", "seconds")
-})
+)
+
+
+@functools.lru_cache(maxsize=1)
+def _fiscal_capable_functions() -> frozenset[str]:
+    """Names whose trailing `fiscal` argument really selects the fiscal calendar.
+
+    Computed ON FIRST CALL, not at import. The previous version was a
+    module-level constant evaluated partway down this file while `REVERSE` kept
+    growing below it, so twelve date functions registered later were silently
+    excluded -- and a fiscal call on one of them raised an uncaught `ValueError`
+    where it had previously reported a declared loss. Deriving the set was the
+    right instinct; deriving it before its source existed was the bug.
+    """
+    # `start_of_*` / `end_of_*` are date functions whatever unit they name --
+    # `start_of_min` abbreviates "minute" to `min`, which cannot be a token here
+    # without re-admitting the AGGREGATE `min`.
+    return frozenset(
+        name for name in (set(REVERSE) | _forward_call_names())
+        if _DATE_NAME_TOKENS.search(name)
+        or name.startswith(("start_of_", "end_of_"))
+    ) | _FISCAL_EXTRA_FUNCTIONS
 
 
 def _is_fiscal_variant(name: str, args: list[str]) -> bool:
     return (
-        name.strip().lower() in _FISCAL_CAPABLE_FUNCTIONS
+        name.strip().lower() in _fiscal_capable_functions()
         and bool(args)
         and args[-1].strip().lower() in _FISCAL_MARKERS
     )

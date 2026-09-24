@@ -29,6 +29,9 @@ exact emitted Ossie expression. Stash/partial entries assert the issue's
 code, severity and object_ref, since every stash issue names the function,
 the object and the reason.
 """
+import pytest
+
+from ossie_thoughtspot.expressions import reverse
 from ossie_thoughtspot.expressions.reverse import (
     REVERSE,
     ReverseConstruct,
@@ -644,3 +647,44 @@ def test_reverse_inventory_census():
     # Pins the count so a silent addition/removal is visible in review, the same
     # discipline the forward CATALOG's 146-row census test applies.
     assert len(REVERSE) == 84
+
+
+class TestTheFiscalGateSeesTheWholeInventory:
+    """The gate must be built AFTER the inventory it reads, not partway through.
+
+    `_FISCAL_CAPABLE_FUNCTIONS` was a module-level constant evaluated partway
+    down `reverse.py` while `REVERSE` kept growing below it, so twelve date
+    functions registered later were silently excluded -- and a fiscal call on
+    one of them raised an uncaught `ValueError` where it had previously
+    reported a declared loss. Deriving the set was right; deriving it before
+    its source existed was the bug.
+
+    Parametrised from names registered LATE in the module on purpose: a test
+    using only early names is blind to the ordering by construction, which is
+    exactly what the previous one was.
+    """
+
+    LATE_REGISTERED_DATE_FUNCTIONS = (
+        "month", "year_name", "day_of_week", "month_number_of_quarter",
+        "day_number_of_quarter", "week_number_of_month", "week_number_of_quarter",
+        "is_weekend", "start_of_hour", "start_of_min", "date",
+    )
+
+    @pytest.mark.parametrize("name", LATE_REGISTERED_DATE_FUNCTIONS)
+    def test_a_late_registered_date_function_is_fiscal_capable(self, name):
+        assert name in reverse._fiscal_capable_functions()
+
+    @pytest.mark.parametrize("name", LATE_REGISTERED_DATE_FUNCTIONS)
+    def test_a_fiscal_call_reports_rather_than_raising(self, name):
+        log = _log()
+        try:
+            translate_thoughtspot(name, ["[T::d]", "'fiscal'"], log, object_ref=OBJ)
+        except ValueError as exc:  # the failure mode under test
+            pytest.fail(f"{name} raised instead of reporting: {exc}")
+        assert "TS-EXPR-FISCAL-CALENDAR" in [i.code for i in log.issues]
+
+    @pytest.mark.parametrize("name", ["min", "min_if", "cumulative_min", "moving_min"])
+    def test_an_aggregate_is_not_fiscal_capable(self, name):
+        # `min(?:ute)?` without word boundaries matched the AGGREGATE `min`,
+        # re-creating the over-inclusion the gate exists to prevent.
+        assert name not in reverse._fiscal_capable_functions()
