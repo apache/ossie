@@ -2370,6 +2370,20 @@ def convert(document_set: DocumentSet) -> OssieConversion:
                 from_prefix, join, table_docs.get(from_prefix) or {}, known_datasets, log
             )
             if relationship is not None:
+                # `Relationship.name` is unique across the model's flat
+                # `relationships[]`, and an inline join's name is SYNTHESISED as
+                # `<from>_to_<to>` -- TML joins carry no name of their own. Two
+                # joins between one pair of tables therefore produced two
+                # relationships of one name: a document upstream's own
+                # `validation/validate.py` rejects ("Duplicate relationship
+                # name"), emitted with exit 0 and nothing logged. Fields and
+                # metrics were already de-collided here; relationships were the
+                # one scope left without a guard.
+                relationship = _resolve_name_collision(
+                    relationship, relationships, log,
+                    kind="relationship", display_name=relationship["name"],
+                    scope="the model",
+                )
                 relationships.append(relationship)
             if unrepresentable is not None:
                 model_stash.setdefault(MODEL_STASH_UNREPRESENTABLE_JOINS, []).append(unrepresentable)

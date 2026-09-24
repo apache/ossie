@@ -1526,3 +1526,58 @@ class TestNormalisationCollisionsAreResolvedAndReported:
         assert len(names) == len(set(names)), f"duplicate metric identifiers: {names}"
         codes = [i["code"] for i in result.issues.as_dicts()]
         assert "TS-METRIC-NAME-COLLISION" in codes, f"codes were {codes}"
+
+
+class TestRelationshipNamesAreUniqueAcrossTheModel:
+    """`Relationship.name` is unique across the flat `relationships[]`.
+
+    A TML join carries no name of its own, so this converter SYNTHESISES one as
+    `<from>_to_<to>`. Two joins between the same pair of tables -- a composite
+    key plus an as-of/range residual is the ordinary SCD-2 shape -- therefore
+    produced two relationships of one name. Upstream's own
+    `validation/validate.py` rejects that document ("Duplicate relationship
+    name"), and the converter emitted it with exit 0 and nothing logged.
+    Fields and metrics were already de-collided; relationships were the one
+    scope with no guard.
+    """
+
+    @staticmethod
+    def _table(name, columns):
+        return TmlDocument(kind="table", guid=None, body={
+            "name": name, "db": "D", "schema": "S", "db_table": name,
+            "connection": {"name": "C"},
+            "columns": [
+                {"name": c, "db_column_name": c.upper(),
+                 "db_column_properties": {"data_type": "INT64"}} for c in columns
+            ],
+        })
+
+    def _convert_two_joins_between_one_pair(self):
+        model = TmlDocument(kind="model", guid=None, body={
+            "name": "both_model",
+            "model_tables": [
+                {"name": "a", "joins": [
+                    {"with": "b", "on": "( [a::k1] = [b::k1] and [a::k2] = [b::k2] )",
+                     "type": "INNER", "cardinality": "MANY_TO_ONE"},
+                    {"with": "b", "on": "[a::k1] = [b::k1] and [a::d] >= [b::sd]",
+                     "type": "LEFT_OUTER", "cardinality": "MANY_TO_ONE"},
+                ]},
+                {"name": "b"},
+            ],
+            "columns": [
+                {"name": c, "column_id": f"a::{c}", "properties": {"column_type": "ATTRIBUTE"}}
+                for c in ("k1", "k2", "d")
+            ],
+        })
+        return convert(DocumentSet(
+            model=model,
+            tables=(self._table("a", ["k1", "k2", "d"]), self._table("b", ["k1", "k2", "sd"])),
+        ))
+
+    def test_two_joins_between_one_pair_get_distinct_relationship_names(self):
+        names = [r["name"] for r in self._convert_two_joins_between_one_pair().model["relationships"]]
+        assert len(names) == len(set(names)), f"duplicate relationship names: {names}"
+
+    def test_the_rename_is_reported(self):
+        codes = [i["code"] for i in self._convert_two_joins_between_one_pair().issues.as_dicts()]
+        assert "TS-RELATIONSHIP-NAME-COLLISION" in codes
