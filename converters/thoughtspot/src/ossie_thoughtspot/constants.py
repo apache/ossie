@@ -99,6 +99,20 @@ STASH_VERSION = 1
 #: must agree on the exact spelling and nothing else enforces that.
 FIELD_STASH_DB_COLUMN_NAME = "db_column_name"
 
+#: A surfacing column's `aggregation` that is LOAD-BEARING and has no home in
+#: the Ossie metric's own expression, so it is preserved verbatim instead.
+#:
+#: The one shape this is for: a formula whose outer call is a BARE
+#: `group_aggregate ( ... )`. Every other already-aggregating shape makes the
+#: column's aggregation a genuine no-op -- `sum ( ... )`, and the
+#: `group_sum`/`group_average` shorthands, all behave that way (verified on a
+#: live cluster: a model carrying `sum([SALES])` WITH `aggregation: SUM`
+#: returns the same number as the source). A bare `group_aggregate` does not:
+#: like a raw column, ThoughtSpot may APPLY the column aggregation to it. It
+#: was being discarded with the others and with nothing logged, which silently
+#: changes the number.
+METRIC_STASH_COLUMN_AGGREGATION = "column_aggregation_value"
+
 #: The source TML `obj_id` -- ThoughtSpot's own PORTABLE object handle, e.g.
 #: `SampleRetail-Apparel-LH-58435d2b` (display name, then the first segment of
 #: the GUID). Stashed under a distinct payload key so the forbidden-key scan,
@@ -473,6 +487,8 @@ STASH_KEY_CLASSIFICATION: dict[str, "StashKeyClass"] = {
     # it -- TML's id is independent of its name, so renaming the metric in Ossie
     # must NOT change the id, or every cross-reference written against it breaks.
     # Ossie has no object-identity concept, so nothing here can diverge from it.
+    # No Ossie counterpart: the metric's expression cannot carry it.
+    METRIC_STASH_COLUMN_AGGREGATION: StashKeyClass.INFORMATION_ONLY,
     MODEL_STASH_OBJ_ID: StashKeyClass.INFORMATION_ONLY,
     FIELD_STASH_FORMULA_ID: StashKeyClass.INFORMATION_ONLY,
     FIELD_STASH_DB_COLUMN_NAME: StashKeyClass.SHADOWS_DERIVABLE,

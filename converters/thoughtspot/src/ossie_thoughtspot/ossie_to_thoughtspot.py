@@ -91,6 +91,7 @@ from .constants import (
     FIELD_STASH_DATA_TYPE_WITNESS,
     FIELD_STASH_DB_COLUMN_NAME,
     FIELD_STASH_DB_COLUMN_NAME_WITNESS,
+    METRIC_STASH_COLUMN_AGGREGATION,
     METRIC_SHAPE_COLUMN_AGGREGATION,
     METRIC_SHAPE_FORMULA,
     METRIC_SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION,
@@ -1561,6 +1562,15 @@ def _build_metric(
             )
         else:
             properties["aggregation"], formula_expr = decomposed
+
+    # A LOAD-BEARING aggregation, preserved verbatim because the metric's
+    # expression had nowhere to carry it: a bare `group_aggregate ( ... )`
+    # takes its column's aggregation the way a raw column does, unlike every
+    # other already-aggregating shape. Restored before the conventional path
+    # below, which would otherwise not set one at all for this shape.
+    preserved_aggregation = payload.get(METRIC_STASH_COLUMN_AGGREGATION)
+    if preserved_aggregation and "aggregation" not in properties:
+        properties["aggregation"] = preserved_aggregation
 
     if "aggregation" not in properties:
         conventional = _outer_aggregation_of(ts_expr)

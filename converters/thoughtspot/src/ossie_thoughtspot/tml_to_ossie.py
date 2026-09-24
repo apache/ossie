@@ -105,6 +105,7 @@ from .constants import (
     FIELD_STASH_DB_COLUMN_NAME,
     FIELD_STASH_FORMULA_ID,
     FIELD_STASH_DB_COLUMN_NAME_WITNESS,
+    METRIC_STASH_COLUMN_AGGREGATION,
     METRIC_SHAPE_COLUMN_AGGREGATION,
     METRIC_SHAPE_FORMULA,
     METRIC_SHAPE_SCALAR_FORMULA_PLUS_AGGREGATION,
@@ -755,6 +756,19 @@ _AGGREGATE_CALL_NAMES = (
 )
 
 
+def _is_bare_group_aggregate(expr: str) -> bool:
+    """Whether `expr`'s outer call is `group_aggregate` itself.
+
+    The distinction that matters: a bare `group_aggregate ( ... )` takes its
+    surfacing column's `aggregation` the way a raw column does, while
+    `sum ( group_aggregate ( ... ) )` -- wrapped -- does not, and neither do the
+    `group_sum`/`group_average` shorthands, which behave like ordinary
+    formulas.
+    """
+    call = formula.split_call(expr)
+    return call is not None and call[0].strip().lower() == "group_aggregate"
+
+
 def _outer_call_is_aggregate(expr: str) -> bool:
     """Whether `expr`'s own outer call (not something nested inside it) is a
     native ThoughtSpot aggregate.
@@ -959,6 +973,7 @@ def convert_metric(
         )
         aggregation_raw = "NONE"
     aggregation = _AGGREGATION[aggregation_raw]
+    load_bearing_aggregation: str | None = None
 
     if "column_id" in column:
         metric_shape = METRIC_SHAPE_COLUMN_AGGREGATION
@@ -1021,13 +1036,30 @@ def convert_metric(
                 expr, resolve, log, object_ref=object_ref, kind="metric"
             )
         elif _outer_call_is_aggregate(expr):
-            # The documented no-op: the expression's own call already
-            # aggregates (sum ( ... ), group_aggregate ( ... ), ...), and
-            # ThoughtSpot's UI sets a column aggregation on a formula column
-            # like this routinely, whether or not it is redundant. Discarding
-            # it here is expected, not a loss, so nothing is logged --
-            # warning on this common, correct shape would train readers to
-            # ignore the issue log entirely.
+            # Mostly the documented no-op: the expression's own call already
+            # aggregates, and ThoughtSpot's UI sets a column aggregation on a
+            # formula column like this routinely whether or not it is
+            # redundant. Discarding it is expected, not a loss, so nothing is
+            # logged -- warning on this common, correct shape would train
+            # readers to ignore the issue log entirely. Confirmed on a live
+            # cluster: a model carrying `sum([SALES])` WITH `aggregation: SUM`
+            # returns the same numbers as the source.
+            #
+            # ONE EXCEPTION, and it changes the answer. A BARE
+            # `group_aggregate ( ... )` -- not itself wrapped in an aggregate --
+            # behaves like a raw column: ThoughtSpot may APPLY the column's
+            # aggregation to it. (`sum ( group_aggregate ( ... ) )` is wrapped,
+            # so there the property is inert again, as are the
+            # `group_sum`/`group_average` shorthands, which behave like any
+            # other formula.) This comment used to name `group_aggregate` among
+            # the no-ops, and the value was dropped with the rest -- silently,
+            # since nothing is logged on this path.
+            #
+            # Ossie's metric expression has nowhere to put it, so it is
+            # preserved verbatim in the stash rather than discarded or folded
+            # into the expression, which would change what the formula means.
+            if _is_bare_group_aggregate(expr):
+                load_bearing_aggregation = aggregation_raw
             metric_shape = METRIC_SHAPE_FORMULA
             dialects = expression_entries(
                 expr, resolve, log, object_ref=object_ref, kind="metric"
@@ -1081,6 +1113,8 @@ def convert_metric(
         stash_payload[STASH_TML_NAME] = display_name
     if metric_shape != METRIC_SHAPE_FORMULA:
         stash_payload[METRIC_STASH_SHAPE] = metric_shape
+    if load_bearing_aggregation is not None:
+        stash_payload[METRIC_STASH_COLUMN_AGGREGATION] = load_bearing_aggregation
     metric = _write_stash_safely(metric, stash_payload, log, object_ref)
 
     description = column.get("description")

@@ -957,3 +957,55 @@ def test_the_models_obj_id_survives_the_round_trip():
     # The guid must still never travel.
     assert "11111111-2222" not in emitted
     assert "guid:" not in emitted
+
+
+class TestABareGroupAggregateKeepsItsColumnAggregation:
+    """Not every already-aggregating formula makes the column property inert.
+
+    Verified against a live ThoughtSpot cluster and against domain review:
+
+    - `sum ( ... )`, and the `group_sum`/`group_average` shorthands, behave like
+      ordinary formulas -- the surfacing column's `aggregation` is a NO-OP. A
+      model carrying `sum([SALES])` WITH `aggregation: SUM` returns the same
+      numbers as its source.
+    - `sum ( group_aggregate ( ... ) )` -- wrapped -- is inert for the same reason.
+    - a BARE `group_aggregate ( ... )` is NOT. Like a raw column, ThoughtSpot may
+      APPLY the column's aggregation to it.
+
+    The converter grouped all of them as "the documented no-op" and discarded
+    the value, with nothing logged, so the one shape where it is load-bearing
+    silently lost it -- a changed answer, not a changed spelling.
+    """
+
+    BARE = "group_aggregate ( sum ( [T::a] ) , query_groups ( ) , query_filters ( ) )"
+
+    @staticmethod
+    def _round_trip(expr, aggregation):
+        table = TmlDocument(kind="table", guid=None, body={
+            "name": "T", "db": "D", "schema": "S", "db_table": "T",
+            "connection": {"name": "Conn"},
+            "columns": [{"name": c, "db_column_name": c.upper(),
+                         "db_column_properties": {"data_type": "DOUBLE"}} for c in ("a", "r")]})
+        properties = {"column_type": "MEASURE"}
+        if aggregation:
+            properties["aggregation"] = aggregation
+        model = TmlDocument(kind="model", guid=None, body={
+            "name": "M", "model_tables": [{"name": "T"}],
+            "formulas": [{"id": "f1", "name": "Metric", "expr": expr}],
+            "columns": [{"name": "Metric", "formula_id": "f1", "properties": properties}]})
+        ossie = tml_to_ossie.convert(DocumentSet(model=model, tables=(table,)))
+        returned = ossie_to_thoughtspot.convert(ossie.model).documents.model.body
+        column = next(c for c in returned["columns"] if c["name"] == "Metric")
+        return (column.get("properties") or {}).get("aggregation")
+
+    def test_a_bare_group_aggregate_keeps_it(self):
+        assert self._round_trip(self.BARE, "SUM") == "SUM"
+
+    def test_a_bare_group_aggregate_without_one_gains_none(self):
+        assert self._round_trip(self.BARE, None) is None
+
+    def test_a_wrapped_group_aggregate_is_unaffected(self):
+        assert self._round_trip(f"sum ( {self.BARE} )", "SUM") == "SUM"
+
+    def test_a_plain_aggregate_is_unaffected(self):
+        assert self._round_trip("sum ( [T::a] )", "SUM") == "SUM"
