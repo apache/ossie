@@ -1856,7 +1856,18 @@ def _join_entry_for_relationship(rel: dict, log: IssueLog) -> tuple[str, dict, d
         stashed_referencing_join = None
 
     if stashed_referencing_join:
-        model_join_entry: dict = {"referencing_join": stashed_referencing_join}
+        # `with` is COMPULSORY on every `model_tables[].joins[]` entry, including
+        # a referencing one -- the `referencing_join` pointer names the Table's
+        # `joins_with[]` entry, it does not replace the target. Omitting it
+        # produced a document that passes the Ossie schema, passes upstream's
+        # `validation/validate.py`, and is REFUSED by ThoughtSpot itself:
+        #   Compulsory Field worksheet->model_tables(2nd)->joins(1st)->with
+        #   is not populated.
+        # Found by importing a converted real model, which is the only check
+        # that exercises the actual target platform.
+        model_join_entry: dict = {
+            "with": to_prefix, "referencing_join": stashed_referencing_join,
+        }
         if payload.get(RELATIONSHIP_STASH_JOIN_SHAPE) == "referencing_with_inline_attrs":
             model_join_entry["type"] = join_type
             model_join_entry["cardinality"] = cardinality

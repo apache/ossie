@@ -324,8 +324,13 @@ class TestReferencingJoinRestoration:
         new_orders = _table_by_name(tml_result.documents, "orders")
         assert new_orders.body["joins_with"] == original_orders.body["joins_with"]
 
+        # `with` is COMPULSORY on every joins[] entry, referencing ones included.
+        # Both this assertion and the fixture it round-trips omitted it, so the
+        # converter and its test agreed with each other while ThoughtSpot refused
+        # the document: "Compulsory Field ...joins(1st)->with is not populated".
+        # Caught only by importing a converted real model.
         new_join = tml_result.documents.model.body["model_tables"][0]["joins"][0]
-        assert new_join == {"referencing_join": "orders_to_customers"}
+        assert new_join == {"with": "customers", "referencing_join": "orders_to_customers"}
 
     def test_tpcds_four_referencing_joins_are_restored_with_their_own_names(self):
         document_set, _, tml_result = _tml_roundtrip("tpcds")
@@ -339,7 +344,7 @@ class TestReferencingJoinRestoration:
         # The exact case a name synthesized from from/to dataset names gets
         # wrong: the target dataset is "date_dim", not "date", so a
         # resynthesized name would read "store_sales_to_date_dim".
-        assert {"referencing_join": "store_sales_to_date"} in store_sales_entry["joins"]
+        assert {"with": "date_dim", "referencing_join": "store_sales_to_date"} in store_sales_entry["joins"]
         assert {j["referencing_join"] for j in store_sales_entry["joins"]} == {
             "store_sales_to_date", "store_sales_to_customer", "store_sales_to_item", "store_sales_to_store",
         }
@@ -893,3 +898,27 @@ def test_an_unattributed_formula_does_not_duplicate_another_formulas_id():
     formulas = ossie_to_thoughtspot.convert(ossie.model).documents.model.body["formulas"]
     ids = [f["id"] for f in formulas]
     assert len(ids) == len(set(ids)), f"duplicate formula ids on a plain round trip: {ids}"
+
+
+def test_every_referencing_join_carries_the_compulsory_with_field():
+    """`with` is mandatory on every `model_tables[].joins[]` entry.
+
+    The referencing branch emitted only `referencing_join`. The resulting
+    document passes the Ossie schema AND upstream's `validation/validate.py` --
+    both of which validate the OSSIE side -- and ThoughtSpot refuses it:
+
+        Compulsory Field worksheet->model_tables(2nd)->joins(1st)->with
+        is not populated.
+
+    Nothing in this suite caught it because the hand-authored fixtures omitted
+    `with` too, so the converter and its tests shared one misunderstanding.
+    Found by importing a converted REAL model into a live cluster, which is the
+    only check that exercises the actual target platform.
+    """
+    for fixture_name in FIXTURE_SETS:
+        _, _, tml_result = _tml_roundtrip(fixture_name)
+        for entry in tml_result.documents.model.body.get("model_tables") or []:
+            for join in entry.get("joins") or []:
+                assert join.get("with"), (
+                    f"{fixture_name}: joins[] entry on {entry['name']!r} has no `with`: {join}"
+                )
