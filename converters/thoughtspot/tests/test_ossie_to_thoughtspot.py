@@ -1102,16 +1102,20 @@ class TestARenamedDatasetDoesNotDangleItsReferences:
 
 
 class TestFormulaIdsAreUniqueAcrossBothSources:
-    """`formulas[].id` has two sources sharing one namespace.
+    """`formulas[].id` has FOUR sources sharing one namespace.
 
-    An id is either PRESERVED from the source document's stash or MINTED from
-    the display name, and neither checked the other. Two ways to collide:
-    two display names folding to one minted id (which `_DisplayNameAllocator`
-    used to mask, so narrowing its fold to what ThoughtSpot actually treats as
-    equal exposed it), and a hand-authored metric whose minted id equals a
-    preserved one. A duplicate id makes every `[formula_X]` reference to it
-    ambiguous, and ThoughtSpot parses an ambiguous bracket reference as search
-    tokens rather than failing -- so the import succeeds and the model is wrong.
+    An id is either PRESERVED (from a field/metric stash, or from the
+    model-scope unsurfaced-formula stash) or MINTED (from a display name, or
+    for an unattributed formula), and no source checked the others. Three ways
+    to collide: two display names folding to one minted id (which
+    `_DisplayNameAllocator` used to mask, so narrowing its fold to what
+    ThoughtSpot actually treats as equal exposed it), a hand-authored metric
+    whose minted id equals a preserved one, and a minted id equal to an
+    UNSURFACED formula's preserved id -- that last one because the unsurfaced
+    ids were never reserved at all. A duplicate id makes every `[formula_X]`
+    reference to it ambiguous, and ThoughtSpot parses an ambiguous bracket
+    reference as search tokens rather than failing -- so the import succeeds
+    and the model is wrong.
     """
 
     @staticmethod
@@ -1213,6 +1217,63 @@ class TestFormulaIdsAreUniqueAcrossBothSources:
             self._metric("Order Amount", "sum ( [t::a] )"),
             self._metric("Order-Amount", "max ( [t::a] )"),
         ))
+        assert "TS-MODEL-FORMULA-ID-COLLISION" in [i["code"] for i in result.issues.as_dicts()]
+
+
+class TestAnUnsurfacedFormulaIdIsReservedAgainstMinting:
+    """An unsurfaced formula's preserved id must be reserved like any other.
+
+    Unsurfaced formulas are the hidden helpers other formulas reference; their
+    ids come from the model-scope stash and are preserved, so
+    `_allocate_formula_id` returns early and never reserves them -- and their
+    loop runs AFTER the minting loops. Nothing put them in the taken set, so a
+    field or metric minting the same slug produced two `formulas[]` entries
+    with one id, no issue, and exit 0.
+
+    Reachable by hand-editing the Ossie document, which is the point of a
+    portable format: add a field called "Revenue" to a model carrying a hidden
+    `formula_revenue`, and every surviving `[formula_revenue]` reference goes
+    ambiguous.
+    """
+
+    @staticmethod
+    def _document():
+        return {
+            "version": "0.2.0.dev0", "name": "M",
+            "custom_extensions": _stash_ext(
+                tml_name="M",
+                unsurfaced_formulas=[
+                    {"id": "formula_revenue", "name": "Revenue Helper", "expr": "1 + 1"}
+                ],
+            ),
+            "datasets": [{
+                "name": "ds", "source": "D.S.T",
+                "custom_extensions": _stash_ext(connection_name="C", tml_name="T", alias="ds"),
+                "fields": [
+                    {"name": "amount", "expression": {"dialects": [
+                        {"dialect": "THOUGHTSPOT", "expression": "[ds::amount]"}]}},
+                    # Minted, not preserved -- and it mints `formula_revenue`.
+                    {"name": "Revenue", "expression": {"dialects": [
+                        {"dialect": "THOUGHTSPOT", "expression": "sum ( [ds::amount] )"}]}},
+                ],
+            }],
+        }
+
+    def test_no_two_formulas_share_an_id(self):
+        body = convert(self._document()).documents.model.body
+        ids = [f["id"] for f in body["formulas"]]
+        assert len(ids) == len(set(ids)), f"duplicate formulas[].id emitted: {ids}"
+
+    def test_the_preserved_id_is_the_one_that_keeps_it(self):
+        # The minted side is what must move: the preserved id is the identity
+        # the surviving cross-references were written against.
+        body = convert(self._document()).documents.model.body
+        by_name = {f["name"]: f["id"] for f in body["formulas"]}
+        assert by_name["Revenue Helper"] == "formula_revenue"
+        assert by_name["Revenue"] != "formula_revenue"
+
+    def test_the_rename_is_reported(self):
+        result = convert(self._document())
         assert "TS-MODEL-FORMULA-ID-COLLISION" in [i["code"] for i in result.issues.as_dicts()]
 
 

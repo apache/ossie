@@ -160,9 +160,11 @@ class Construct:
                   for PASSTHROUGH, the SQL body passed to the variant; None if UNMAPPABLE.
 
                   Not every DIRECT/PASSTHROUGH template is a complete, positionally
-                  substitutable one — two shapes diverge from that default, and both fail
-                  loud (a raised ValueError, or rejection at TML import) rather than
-                  silently producing a wrong answer:
+                  substitutable one — THREE shapes diverge from that default. Read
+                  `variadic` and `exemplar_literals` before formatting this field: two of
+                  the three fail loud on a naive `.format()` (a raised ValueError or
+                  KeyError, or rejection at TML import), but the fold-variadic shape does
+                  NOT, and silently drops arguments instead:
 
                   - A "dispatch" template — literal text such as "per-type — see note" or
                     "per-pattern-shape — see note" — for a row whose actual ThoughtSpot
@@ -173,6 +175,18 @@ class Construct:
                     `.format()` dispatcher off this field alone will hit these ~20 rows and
                     must special-case them; each row's `note` says so and describes the
                     real dispatch.
+                  - A "variadic" template — six rows, flagged by a non-None `variadic`.
+                    A JOIN-style one carries the `{*}` tail marker (`concat ( {*} )`,
+                    `{0} in {{ {*} }}`) and `str.format` raises `KeyError('*')` on it, so
+                    that half is loud. A FOLD-style one is the exception to this whole
+                    paragraph: `COALESCE`'s template is the BINARY `ifnull ( {0} , {1} )`,
+                    applied right-associatively by `_emit_variadic` because ThoughtSpot
+                    has no n-ary `ifnull`. Formatting it directly with three arguments
+                    returns `ifnull ( a , b )` and drops the third WITHOUT error — the one
+                    place in this dataclass where reading `template` alone is silently
+                    wrong rather than loudly wrong. `emit_direct` routes every variadic
+                    row to `_emit_variadic`, so the converter itself is not exposed to
+                    this; an external caller reading the catalog is.
                   - An "exemplar" PASSTHROUGH template — a complete, renderable body that
                     bakes ONE caller-supplied value in as a literal while still declaring a
                     satisfiable arity (`PERCENTILE_CONT`/`DISC`'s `0.75`, `NTILE`'s `4`,

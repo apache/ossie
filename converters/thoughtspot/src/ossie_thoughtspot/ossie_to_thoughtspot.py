@@ -1960,10 +1960,22 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
     tables_by_name = {t.body.get("name"): t for t in tables}
 
     model_tables: list[dict] = []
-    #: Every `formulas[].id` handed out, across all THREE sources: preserved
-    #: from a stash, minted from a display name, and minted for an unattributed
-    #: formula. Preserved ids are reserved FIRST, below, so that a minted one
-    #: can never take an id a source cross-reference already names.
+    #: Every `formulas[].id` handed out, across all FOUR sources: preserved from
+    #: a field or metric stash, preserved from the model-scope unsurfaced-formula
+    #: stash, minted from a display name, and minted for an unattributed formula.
+    #: Every PRESERVED id is reserved FIRST, below, so that a minted one can
+    #: never take an id a source cross-reference already names.
+    #:
+    #: The unsurfaced ids belong here and were missing: they are preserved, so
+    #: `_allocate_formula_id` returns early for them and never reserves them,
+    #: and their loop runs AFTER the minting loops. An Ossie document that gained
+    #: a field by hand -- the point of a portable format -- whose display name
+    #: normalises onto a hidden helper's id (a field "Revenue" against a stashed
+    #: `formula_revenue`) emitted TWO `formulas[]` entries with one id, silently:
+    #: no issue, exit 0, and every `[formula_revenue]` reference in the model
+    #: thereafter ambiguous. ThoughtSpot resolves an ambiguous bracket reference
+    #: as search tokens rather than failing, so it imports and means something
+    #: else.
     taken_formula_ids: set[str] = {
         preserved_id
         for holder in (
@@ -1972,6 +1984,10 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
         )
         for preserved_id in [stash.read_stash(holder).get(FIELD_STASH_FORMULA_ID)]
         if preserved_id
+    } | {
+        entry["id"]
+        for entry in model_payload.get(MODEL_STASH_UNSURFACED_FORMULAS) or []
+        if isinstance(entry, dict) and entry.get("id")
     }
     model_tables_by_prefix: dict[str, dict] = {}
     table_doc_by_prefix: dict[str, TmlDocument | None] = {}
@@ -2326,12 +2342,20 @@ def _allocate_formula_id(
     """
     original = formulas_entry["id"]
     if preserved:
-        # A preserved id was reserved before any minting began, so it is already
-        # in `taken` -- by itself. It must never be renamed: it is the identity a
-        # source cross-reference was written against, and renaming it is what
-        # sends that reference to whichever formula minted the same string.
-        # Resolving this by processing order instead meant the FIELD loop, which
-        # runs first, could hand a preserved metric's id to a newly added field.
+        # A preserved id must never be renamed: it is the identity a source
+        # cross-reference was written against, and renaming it is what sends that
+        # reference to whichever formula minted the same string. Resolving this by
+        # processing order instead meant the FIELD loop, which runs first, could
+        # hand a preserved metric's id to a newly added field.
+        #
+        # Not reserved here: the caller's opening sweep has already put EVERY
+        # preserved id in `taken`, from all three preserved sources, before any
+        # minting begins -- and doing it before minting is the part that matters,
+        # which a reservation made at this point could not provide. That sweep is
+        # the invariant this branch depends on, so it is where a fourth preserved
+        # source has to be added; the unsurfaced-formula source was missing from
+        # it, and adding a `taken.add` here would have masked that rather than
+        # fixed it.
         return
     candidate, suffix = original, 1
     while candidate in taken:
