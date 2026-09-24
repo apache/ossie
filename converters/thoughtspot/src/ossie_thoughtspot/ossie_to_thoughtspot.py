@@ -1179,6 +1179,10 @@ def _field_physical_display_name(field: dict) -> str | None:
     return None
 
 
+#: The shared fallback `_table_name` returns when a dataset has no usable
+#: name. Two documents carrying it are not evidence of one warehouse object.
+_UNNAMED_TABLE = "<unnamed>"
+
 #: Every body key that can hold columns, for callers that must ignore all of them.
 _COLUMN_KEYS = frozenset({"columns", "sql_view_columns"})
 
@@ -2122,54 +2126,106 @@ def _deduplicate_table_documents(
 ) -> list[TmlDocument]:
     """One Table document per distinct table name, not one per dataset.
 
-    An aliased self-join is N Ossie datasets over ONE warehouse table -- a model
-    joining DATE_DIM twice as "Sold Date" and "Ship Date" is two datasets whose
-    stashed source table is the same. Building a document per dataset emitted
-    two Table documents both named `DATE_DIM`; `dump_document_set` then gave
-    them distinct FILEnames (`DATE_DIM.table.tml`, `DATE_DIM-2.table.tml`),
-    which hid the collision rather than surfacing it, and importing the set
-    created a duplicate ThoughtSpot Table object. The model side was already
-    correct: `model_tables[]` carries one entry per dataset with its own alias,
-    all pointing at the single table name.
+    An aliased self-join is N Ossie datasets over ONE warehouse table. Building
+    a document per dataset emitted N documents of the same name, which
+    `dump_document_set` then gave distinct FILEnames -- hiding the collision
+    rather than surfacing it, and creating duplicate ThoughtSpot objects on
+    import. The model side is already correct: `model_tables[]` carries one
+    entry per dataset, each with its own alias, all naming the one table.
 
-    Columns are unioned by name, first occurrence winning, because two aliases
-    of one table may surface different subsets of it and the Table document has
-    to hold every column any alias references. A body that differs beyond its
-    columns cannot be merged that way, so the first is kept and the difference
-    reported rather than silently resolved.
+    Three things this deliberately refuses to merge, each of which the first
+    version of this function got wrong and each of which silently corrupted the
+    output rather than failing:
+
+    - DIFFERENT KINDS. A Table and a SQL View are two different ThoughtSpot
+      objects; merging them wrote `sql_view_columns` into a `table:` document,
+      which is not valid TML. Two kinds under one name is a modelling error in
+      the source document, so it is an ERROR and neither is merged away.
+    - A CONFLICTING COLUMN. Columns are unioned by name because two aliases may
+      surface different subsets of one table -- but a same-named column with a
+      DIFFERENT body is not a subset difference, it is a contradiction. Taking
+      the first silently bound the second dataset's field to the wrong
+      warehouse column.
+    - UNNAMED DOCUMENTS. Keying on a missing name merged every nameless
+      document into one, because they all share the `<unnamed>` fallback.
     """
     by_name: dict[str, TmlDocument] = {}
     order: list[str] = []
     for table in tables:
         name = table.body.get("name")
         first = by_name.get(name)
-        if first is None:
-            by_name[name] = table
-            order.append(name)
+        if first is None or not name or name == _UNNAMED_TABLE:
+            # An unnamed document is never a merge candidate: `_table_name`'s
+            # fallback is a shared literal, so two of them are not evidence of
+            # one warehouse object. Keyed uniquely so both survive.
+            key = name if (first is None and name and name != _UNNAMED_TABLE) else f"{name}\x00{len(order)}"
+            by_name[key] = table
+            order.append(key)
             continue
 
-        column_key = _column_key_for(table.kind)
-        seen_columns = {c.get("name") for c in first.body.get(column_key) or []}
-        for column in table.body.get(column_key) or []:
-            if column.get("name") not in seen_columns:
-                first.body.setdefault(column_key, []).append(column)
-                seen_columns.add(column.get("name"))
+        if first.kind != table.kind:
+            log.add(
+                code="TS-TABLE-KIND-CONFLICT",
+                severity=Severity.ERROR,
+                message=(
+                    f"two datasets resolve to {name!r} but one is a {first.kind} "
+                    f"and the other a {table.kind}; these are different "
+                    f"ThoughtSpot objects and cannot be one document, so both "
+                    f"are emitted under the same name and the set will not import"
+                ),
+                object_ref=f"table:{name}",
+                remedy=(
+                    "Give the datasets distinct source tables, or make both the "
+                    "same kind."
+                ),
+            )
+            key = f"{name}\x00{len(order)}"
+            by_name[key] = table
+            order.append(key)
+            continue
 
-        # Both column keys are excluded from the divergence comparison, not just
-        # the one this kind uses: leaving `sql_view_columns` in made every merged
-        # SQL View report a spurious body difference on top of losing the data.
+        column_key = _column_key_for(first.kind)
+        existing = {c.get("name"): c for c in first.body.get(column_key) or []}
+        for column in table.body.get(column_key) or []:
+            column_name = column.get("name")
+            previous = existing.get(column_name)
+            if previous is None:
+                first.body.setdefault(column_key, []).append(column)
+                existing[column_name] = column
+            elif previous != column:
+                log.add(
+                    code="TS-TABLE-COLUMN-CONFLICT",
+                    severity=Severity.ERROR,
+                    message=(
+                        f"two datasets resolve to {name!r} and both define column "
+                        f"{column_name!r}, but differently; the first definition "
+                        f"is emitted, so the second dataset's field reads the "
+                        f"wrong warehouse column"
+                    ),
+                    object_ref=f"table:{name}",
+                    remedy=(
+                        "Make the two datasets agree on the column, or give them "
+                        "distinct source tables."
+                    ),
+                )
+
         ignoring_columns = (
             {k: v for k, v in first.body.items() if k not in _COLUMN_KEYS},
             {k: v for k, v in table.body.items() if k not in _COLUMN_KEYS},
         )
-        if first.kind != table.kind or ignoring_columns[0] != ignoring_columns[1]:
+        if ignoring_columns[0] != ignoring_columns[1]:
+            differing = sorted(
+                k for k in set(ignoring_columns[0]) | set(ignoring_columns[1])
+                if ignoring_columns[0].get(k) != ignoring_columns[1].get(k)
+            )
             log.add(
                 code="TS-TABLE-ALIAS-BODY-DIVERGENT",
                 severity=Severity.WARNING,
                 message=(
-                    f"two datasets resolve to table {name!r} but describe it "
-                    f"differently (connection, description or properties); the "
-                    f"first description is emitted and the second is not"
+                    f"two datasets resolve to {name!r} but describe it "
+                    f"differently ({', '.join(differing)}); the first "
+                    f"description is emitted and the second's is discarded "
+                    f"(its columns are still merged in)"
                 ),
                 object_ref=f"table:{name}",
                 remedy=(
@@ -2177,7 +2233,7 @@ def _deduplicate_table_documents(
                     "source tables if they are genuinely different tables."
                 ),
             )
-    return [by_name[name] for name in order]
+    return [by_name[key] for key in order]
 
 
 def convert(ossie_document: dict) -> TmlConversion:

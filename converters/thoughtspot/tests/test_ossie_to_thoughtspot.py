@@ -46,7 +46,7 @@ from ossie_thoughtspot.constants import (
 )
 from ossie_thoughtspot.errors import ConversionError
 from ossie_thoughtspot.issues import IssueLog
-from ossie_thoughtspot.ossie_to_thoughtspot import TmlConversion, build_model, build_table, convert
+from ossie_thoughtspot.ossie_to_thoughtspot import _column_key_for, TmlConversion, build_model, build_table, convert
 from ossie_thoughtspot.tml import (
     DocumentSet,
     TmlDocument,
@@ -952,3 +952,98 @@ class TestMergingTwoDatasetsThatShareOneSqlView:
     def test_no_spurious_body_divergence_is_reported(self):
         codes = [i["code"] for i in self._convert().issues.as_dicts()]
         assert "TS-TABLE-ALIAS-BODY-DIVERGENT" not in codes
+
+
+class TestDeduplicationRefusesUnsafeMerges:
+    """Merging two datasets onto one document is only safe when they agree.
+
+    Each case below was silently corrupted by the first version of
+    `_deduplicate_table_documents`, which merged on name alone.
+    """
+
+    @staticmethod
+    def _dataset(alias, column, *, kind="table", source_table="SHARED",
+                 warehouse_column=None, datatype="DOUBLE"):
+        payload = {"_v": 1, "connection_name": "C", "tml_name": source_table, "alias": alias}
+        if kind == "sql_view":
+            payload["sql_output_columns"] = {column: column}
+        field = {
+            "name": column, "datatype": datatype,
+            "expression": {"dialects": [
+                {"dialect": "THOUGHTSPOT", "expression": f"[{alias}::{column}]"}
+            ]},
+        }
+        if warehouse_column:
+            field["custom_extensions"] = [{"vendor_name": "THOUGHTSPOT", "data": json.dumps(
+                {"_v": 1, "db_column_name": warehouse_column,
+                 "db_column_name_display_name_witness": column})}]
+        return {
+            "name": alias,
+            "source": "SELECT 1" if kind == "sql_view" else f"D.S.{source_table}",
+            "fields": [field],
+            "custom_extensions": [{"vendor_name": "THOUGHTSPOT", "data": json.dumps(payload)}],
+        }
+
+    def _convert(self, *datasets):
+        return convert({"version": "0.2.0.dev0", "name": "M", "datasets": list(datasets)})
+
+    def test_a_table_and_a_sql_view_are_never_merged(self):
+        # Merging them wrote `sql_view_columns` into a `table:` document, which
+        # is not valid TML -- the fix made previously-valid output invalid.
+        result = self._convert(
+            self._dataset("A", "c_a"),
+            self._dataset("B", "c_b", kind="sql_view"),
+        )
+        kinds = sorted(d.kind for d in result.documents.tables)
+        assert kinds == ["sql_view", "table"], f"documents were merged: {kinds}"
+        for document in result.documents.tables:
+            present = {k for k in ("columns", "sql_view_columns") if k in document.body}
+            assert present == {_column_key_for(document.kind)}, (
+                f"{document.kind} document carries {present}"
+            )
+
+    def test_a_kind_conflict_is_an_error(self):
+        result = self._convert(
+            self._dataset("A", "c_a"),
+            self._dataset("B", "c_b", kind="sql_view"),
+        )
+        assert "TS-TABLE-KIND-CONFLICT" in [i["code"] for i in result.issues.as_dicts()]
+        assert result.issues.has_errors()
+
+    def test_a_conflicting_column_definition_is_an_error_not_a_silent_drop(self):
+        # Same column name, different warehouse column: taking the first bound
+        # the second dataset's field to the wrong column, with nothing logged.
+        result = self._convert(
+            self._dataset("A", "amount", warehouse_column="AMT_USD"),
+            self._dataset("B", "amount", warehouse_column="AMT_EUR"),
+        )
+        assert "TS-TABLE-COLUMN-CONFLICT" in [i["code"] for i in result.issues.as_dicts()]
+        assert result.issues.has_errors()
+
+    def test_a_matching_column_is_still_merged_quietly(self):
+        # The legitimate case must not become noisy: two aliases surfacing the
+        # same column identically is an ordinary self-join.
+        result = self._convert(
+            self._dataset("A", "amount", warehouse_column="AMT"),
+            self._dataset("B", "amount", warehouse_column="AMT"),
+        )
+        assert len(result.documents.tables) == 1
+        codes = [i["code"] for i in result.issues.as_dicts()]
+        assert "TS-TABLE-COLUMN-CONFLICT" not in codes
+
+    def test_two_unnamed_documents_are_not_merged_into_one(self):
+        # `_table_name`'s last resort is the shared literal `<unnamed>`, reached
+        # when a dataset has no stashed table name AND no name of its own, so
+        # keying on it merged every nameless document together. The datasets
+        # below must therefore be genuinely nameless -- an earlier version of
+        # this test gave them names and so passed without exercising the path.
+        nameless = [
+            {"name": "", "source": "",
+             "fields": [{"name": column, "expression": {"dialects": [
+                 {"dialect": "THOUGHTSPOT", "expression": f"[::{column}]"}]}}],
+             "custom_extensions": [{"vendor_name": "THOUGHTSPOT",
+                                    "data": json.dumps({"_v": 1, "connection_name": "C"})}]}
+            for column in ("c_a", "c_b")
+        ]
+        result = self._convert(*nameless)
+        assert [d.body.get("name") for d in result.documents.tables] == ["<unnamed>", "<unnamed>"]
