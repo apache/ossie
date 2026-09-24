@@ -111,3 +111,39 @@ def test_property_ossie_to_mv_to_ossie_seeded():
     from _roundtrip_helpers import RandomRnd, assert_ossie_roundtrip, build_ossie
     for seed in range(250):
         assert_ossie_roundtrip(build_ossie(RandomRnd(1_000_000 + seed)))
+
+
+def test_non_equi_on_round_trips_verbatim():
+    """A join condition the importer can't decompose (function-wrapped keys, a filter
+    predicate, a range) is restored exactly on export, including in a nested join."""
+    mv_in = (
+        "version: '1.1'\nsource: c.s.events\n"
+        "joins:\n- name: accounts\n  source: c.s.accounts\n"
+        "  on: UPPER(source.EXTERNAL_ID) = UPPER(COALESCE(accounts.ID_1, accounts.ID_2))\n"
+        "  joins:\n  - name: plans\n    source: c.s.plans\n"
+        "    on: accounts.plan_id = plans.id AND plans.valid_from <= accounts.created_at\n"
+        "- name: regions\n  source: c.s.regions\n"
+        "  on: source.region = regions.code AND regions.active NOT IN ('n')\n"
+        "  rely: {at_most_one_match: true}\n"
+        "measures:\n- name: n\n  expr: count(*)\n"
+    )
+    ossie = importer.convert_metric_view_to_ossie(mv_in)
+    mv_out = exporter.convert_ossie_to_metric_view(ossie)
+    assert parse(mv_out) == parse(mv_in)
+
+
+def test_stashed_on_under_renamed_alias_rejected():
+    """A stashed condition names the aliases it was imported with; if the export would
+    emit the join under a different alias (here, re-rooted at the joined dataset), it
+    can't be re-qualified and is rejected rather than emitted wrong."""
+    import pytest
+
+    from ossie_databricks import ConversionError
+    mv_in = (
+        "version: '1.1'\nsource: c.s.events\n"
+        "joins:\n- name: accounts\n  source: c.s.accounts\n"
+        "  on: UPPER(source.ext_id) = UPPER(accounts.id)\n"
+    )
+    ossie = importer.convert_metric_view_to_ossie(mv_in)
+    with pytest.raises(ConversionError, match="stashed join condition"):
+        exporter.convert_ossie_to_metric_view(ossie, source="accounts")

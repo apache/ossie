@@ -21,8 +21,10 @@ Pure offline conversion. Accepts a Metric View (one `source` with a nested `join
 tree). Metric View features Apache Ossie has no native field for -- filter, window, format,
 rely, cardinality, parameters, materialization -- are preserved in
 `custom_extensions[DATABRICKS]` so that converting back reproduces the original view.
-A join condition an Apache Ossie relationship cannot represent (a non-equi or cross join) is
-rejected, not stashed. See README.md.
+A join condition that doesn't decompose into equi-join columns (function-wrapped keys, extra
+filter predicates, a non-equi operator) is kept verbatim in the relationship's stash when a
+column pair can still be read from one of its equalities; otherwise it is rejected, as is a
+cross join. See README.md.
 
 Usage (CLI):
     ossie-databricks import -i view.yaml [-o model.yaml] [--name NAME]
@@ -38,11 +40,13 @@ from ._common import (
     DIALECT_DATABRICKS,
     MV_VERSION,
     OSSIE_VERSION,
+    STASH_ON_KEY,
     STASH_SOURCE_KEY,
     dump_yaml,
     is_simple_identifier,
     last_identifier,
     load_yaml,
+    read_stash,
     require,
     require_str,
     validate_source,
@@ -63,8 +67,13 @@ def _warn(scope, msg):
 
 
 # Operators that mean a join condition is NOT a simple equi-join (so it cannot be
-# expressed as from_columns/to_columns, and the join is rejected on import).
+# expressed as from_columns/to_columns; the raw condition is stashed instead).
 _NON_EQUI_RE = re.compile(r"[<>!]=|<>|[<>]")
+# A single `=` (not part of `<=`, `>=`, `!=`, `==`).
+_EQ_RE = re.compile(r"(?<![<>!=])=(?!=)")
+# A qualified column reference `alias.column` (not part of a longer dotted path or a
+# `schema.function(` call).
+_QUALIFIED_REF_RE = re.compile(r"(?<![\w.`])([A-Za-z_]\w*)\.([A-Za-z_]\w*)(?![\w.(`])")
 
 
 def _is_wildcard(col):
@@ -146,7 +155,10 @@ def _convert_view(view, model_name):
             # -- recovering key info Apache Ossie would otherwise lack. Only a many_to_one join
             # has the child on the `to` side (one_to_many flips it), so this naturally
             # skips one_to_many joins.
+            # Skipped for a stashed raw `on`: its columns are only an approximation of the
+            # condition, so they can't be asserted as a key.
             if (rel["to"] == child and rel.get("to_columns")
+                    and STASH_ON_KEY not in read_stash(rel)
                     and (join.get("rely") or {}).get("at_most_one_match")):
                 child_ds["unique_keys"] = [list(rel["to_columns"])]
             walk(child, child, join.get("joins"))
@@ -218,12 +230,20 @@ def _convert_join(join, parent_name, parent_alias, child):
     # _decompose_on returns (parent-side columns, child-side columns).
     parent_cols, child_cols, raw_on = _decompose_on(join, parent_alias, parent_name, child)
     if raw_on is not None:
-        raise ConversionError(
-            f"Join '{child}' uses a non-equi or unsupported join condition ('on: {raw_on}') "
-            f"that an Apache Ossie relationship cannot represent. Apache Ossie joins are equi-joins of simple "
-            f"`alias.column` pairs (the fact side may be qualified with `source`, the source "
-            f"table name, or left bare). Cannot import."
-        )
+        pair = _column_pair(raw_on, {parent_alias, parent_name}, child)
+        if pair is None:
+            raise ConversionError(
+                f"Join '{child}' uses a non-equi or unsupported join condition ('on: {raw_on}') "
+                f"that an Apache Ossie relationship cannot represent. Apache Ossie joins are equi-joins of simple "
+                f"`alias.column` pairs (the fact side may be qualified with `source`, the source "
+                f"table name, or left bare), and no such pair could be read from any equality "
+                f"in the condition. Cannot import."
+            )
+        parent_cols, child_cols = [pair[0]], [pair[1]]
+        _warn(f"join '{child}'",
+              f"condition '{raw_on}' is not a plain equi-join; preserved verbatim in "
+              f"custom_extensions (restored on export) but represented in Apache Ossie only "
+              f"as the column pair {pair[0]} = {pair[1]}")
     if "using" in join and not parent_cols:
         # `using: [cols]` -> equal lists on both sides. Two distinct list objects, so the
         # emitted YAML doesn't serialize one as an anchor/alias of the other.
@@ -241,8 +261,30 @@ def _convert_join(join, parent_name, parent_alias, child):
                "from_columns": parent_cols, "to_columns": child_cols}
 
     stash = {k: join[k] for k in _JOIN_STASH_KEYS if k in join}
+    if raw_on is not None:
+        stash[STASH_ON_KEY] = raw_on
     write_stash(rel, stash)
     return rel
+
+
+def _column_pair(on, parent_aliases, child_alias):
+    """Best-effort (parent_column, child_column) for a condition `_decompose_on` couldn't
+    split, or None. Takes the first `AND` clause holding a single `=` whose one side
+    references only the parent (via a qualifier in `parent_aliases`) and whose other side
+    references only the child, and returns the first column referenced on each side --
+    e.g. `UPPER(source.x) = UPPER(COALESCE(dim.a, dim.b))` -> ('x', 'a')."""
+    for clause in re.split(r"\s+AND\s+", on, flags=re.IGNORECASE):
+        sides = _EQ_RE.split(clause)
+        if len(sides) != 2:
+            continue
+        refs = [_QUALIFIED_REF_RE.findall(side) for side in sides]
+        if not all(refs):
+            continue
+        aliases = [{a for a, _ in r} for r in refs]
+        for p, c in ((0, 1), (1, 0)):
+            if aliases[p] <= parent_aliases and aliases[c] == {child_alias}:
+                return refs[p][0][1], refs[c][0][1]
+    return None
 
 
 def _decompose_on(join, parent_alias, parent_name, child_alias):
@@ -250,7 +292,8 @@ def _decompose_on(join, parent_alias, parent_name, child_alias):
 
     raw_on is None when `on` decomposes cleanly into equi-join column pairs; it
     holds the original string otherwise (a non-equi/complex condition the caller
-    rejects). `using` short-circuits to empty columns here and is handled by the caller.
+    stashes, or rejects if no column pair can be read from it). `using` short-circuits
+    to empty columns here and is handled by the caller.
 
     The child side of a clause is always referenced by its join name. The parent side
     may be referenced by its alias (`source` at the top level, else the parent join

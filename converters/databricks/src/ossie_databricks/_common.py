@@ -68,6 +68,11 @@ CARD_ONE_TO_MANY = "one_to_many"
 # fact on re-export. Absent for plain many-to-one stars, so they stay clean.
 STASH_SOURCE_KEY = "source_dataset"
 
+# Relationship-level stash key holding a join `on` that doesn't decompose into equi-join
+# columns (function-wrapped keys, extra filter predicates, non-equi operators). The
+# relationship's from/to columns are only an approximation of it; export restores it.
+STASH_ON_KEY = "on"
+
 # A bare SQL identifier (single column reference), e.g. `c_name`. Used to decide
 # whether an expression can be safely alias-prefixed on export / de-prefixed on
 # import.
