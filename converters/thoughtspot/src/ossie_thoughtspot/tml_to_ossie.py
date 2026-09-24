@@ -103,6 +103,7 @@ from .constants import (
     FIELD_STASH_DATA_TYPE,
     FIELD_STASH_DATA_TYPE_WITNESS,
     FIELD_STASH_DB_COLUMN_NAME,
+    FIELD_STASH_FORMULA_ID,
     FIELD_STASH_DB_COLUMN_NAME_WITNESS,
     METRIC_SHAPE_COLUMN_AGGREGATION,
     METRIC_SHAPE_FORMULA,
@@ -2200,6 +2201,11 @@ def convert(document_set: DocumentSet) -> OssieConversion:
                 properties, _FIELD_CONSUMED_PROPERTIES, log, f"field:{display_name}"
             )
             field_stash_payload: dict = {}
+            # The source formula id, so a `[formula_X]` cross-reference can be
+            # rebound to the SAME formula on the way back rather than to
+            # whichever one's display name happens to normalise to X.
+            if "formula_id" in column:
+                field_stash_payload[FIELD_STASH_FORMULA_ID] = column["formula_id"]
             if extra_properties:
                 field_stash_payload[FIELD_STASH_COLUMN_PROPERTIES] = extra_properties
             if "column_id" in column:
@@ -2228,6 +2234,11 @@ def convert(document_set: DocumentSet) -> OssieConversion:
                 properties, _METRIC_CONSUMED_PROPERTIES, log, f"metric:{display_name}"
             )
             metric_stash_payload: dict = {}
+            # The source formula id, so a `[formula_X]` cross-reference can be
+            # rebound to the SAME formula on the way back rather than to
+            # whichever one's display name happens to normalise to X.
+            if "formula_id" in column:
+                metric_stash_payload[FIELD_STASH_FORMULA_ID] = column["formula_id"]
             if extra_properties:
                 metric_stash_payload[FIELD_STASH_COLUMN_PROPERTIES] = extra_properties
             if "column_id" in column:

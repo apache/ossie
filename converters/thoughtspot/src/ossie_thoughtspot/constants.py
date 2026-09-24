@@ -99,6 +99,17 @@ STASH_VERSION = 1
 #: must agree on the exact spelling and nothing else enforces that.
 FIELD_STASH_DB_COLUMN_NAME = "db_column_name"
 
+#: The source TML `formulas[].id` of a computed field or metric, stashed
+#: verbatim. TML's `formulas[].id` and `formulas[].name` are INDEPENDENT -- a
+#: formula renamed after creation keeps its original id -- but the Ossie -> TML
+#: leg mints ids from display names and so resolved a verbatim `[formula_X]`
+#: cross-reference by matching X against normalised NAMES. When some other
+#: formula's name normalised to the referenced id's tail, the reference
+#: silently followed it: a metric defined as `(sum(a) - sum(b)) + 1` came back
+#: as `(sum(a) * 0.5) + 1`, exit 0, nothing logged. Preserving the id is what
+#: makes the binding survive; matching on names can only ever approximate it.
+FIELD_STASH_FORMULA_ID = "formula_id"
+
 #: The witness copy for FIELD_STASH_DB_COLUMN_NAME: the physical column's
 #: own display name (the bracket's column part, e.g. "Amount") as it stood
 #: the moment db_column_name was stashed. Ossie -> TML compares this against
@@ -441,6 +452,11 @@ STASH_KEY_CLASSIFICATION: dict[str, "StashKeyClass"] = {
     STASH_TML_NAME: StashKeyClass.SHADOWS_DERIVABLE,
 
     # -- Field/metric scope --
+    # INFORMATION_ONLY deliberately: Ossie has no formula-id concept, so there
+    # is no live value this can diverge FROM. That is also the point of keeping
+    # it -- TML's id is independent of its name, so renaming the metric in Ossie
+    # must NOT change the id, or every cross-reference written against it breaks.
+    FIELD_STASH_FORMULA_ID: StashKeyClass.INFORMATION_ONLY,
     FIELD_STASH_DB_COLUMN_NAME: StashKeyClass.SHADOWS_DERIVABLE,
     FIELD_STASH_DATA_TYPE: StashKeyClass.SHADOWS_DERIVABLE,
     FIELD_STASH_COLUMN_PROPERTIES: StashKeyClass.INFORMATION_ONLY,

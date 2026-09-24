@@ -71,6 +71,7 @@ from typing import Callable, Sequence
 
 from . import datatypes, formula, identifiers, stash
 from .constants import (
+    FIELD_STASH_FORMULA_ID,
     DATASET_STASH_ALIAS,
     DATASET_STASH_CONNECTION_NAME,
     DATASET_STASH_SOURCE_PARTS,
@@ -909,6 +910,7 @@ def _maybe_block_scalar(expr: str) -> str:
 def _rewrite_formula_references(
     expr: str,
     formula_id_by_normalised_name: dict[str, str],
+    emitted_formula_ids: frozenset[str],
     log: IssueLog,
     *,
     object_ref: str,
@@ -946,6 +948,12 @@ def _rewrite_formula_references(
         if "::" in body or not formula.is_formula_reference(body):
             continue
         referenced_name = body[len(formula.FORMULA_REFERENCE_PREFIX):]
+        # An exact match against an id this build actually emits is already
+        # correct and must win: falling through to the name map is what
+        # rebound a reference to a different formula whose display name
+        # happened to normalise to the referenced id's tail.
+        if body in emitted_formula_ids:
+            continue
         target_id = formula_id_by_normalised_name.get(_normalise_or_self(referenced_name))
         out.append(expr[cursor:start])
         if target_id is None:
@@ -1369,7 +1377,11 @@ def _build_field(
                 object_ref=object_ref,
             )
             return None
-        formula_id = _formula_id_from(name)
+        # The SOURCE id where one was preserved. TML's `formulas[].id` and
+        # `.name` are independent, so re-deriving the id from the display
+        # name silently rebound any `[formula_X]` reference written against
+        # the original id to whichever formula now normalises to X.
+        formula_id = payload.get(FIELD_STASH_FORMULA_ID) or _formula_id_from(name)
         # `expr` is stored raw here -- not yet rewritten for cross-references
         # to other formulas, and not yet block-scalar-wrapped. Both happen
         # once, uniformly, in build_model's own final pass over the fully
@@ -1435,7 +1447,8 @@ def _build_metric(
     display_name = _restore_tml_name(payload, live_name, log, object_ref=f"metric:{live_name}")
     object_ref = f"metric:{display_name}"
     name = allocator.allocate(display_name, log, object_ref=object_ref)
-    formula_id = _formula_id_from(name)
+    # As in `_build_field`: the preserved source id wins over a re-derived one.
+    formula_id = stash.read_stash(metric).get(FIELD_STASH_FORMULA_ID) or _formula_id_from(name)
 
     ts_expr = to_thoughtspot_expression(
         (metric.get("expression") or {}).get("dialects") or [],
@@ -1987,7 +2000,8 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
     }
     for entry in formulas:
         rewritten = _rewrite_formula_references(
-            entry["expr"], formula_id_by_normalised_name, log,
+            entry["expr"], formula_id_by_normalised_name,
+            frozenset(e["id"] for e in formulas), log,
             object_ref=f"formula:{entry['name']}",
         )
         entry["expr"] = _maybe_block_scalar(rewritten)

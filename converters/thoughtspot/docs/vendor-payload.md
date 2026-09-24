@@ -38,6 +38,7 @@ Every `custom_extensions` entry this converter writes uses `vendor_name` `THOUGH
 | Key | Scope | Classification | Treatment on the return trip |
 |---|---|---|---|
 | `tml_name` | Shared | shadows_derivable | Restored only if reconstructing it from the live document still agrees with the stashed value (self-verifying — no separate witness key); disagreement re-derives instead. |
+| `formula_id` | Field | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
 | `db_column_name` | Field | shadows_derivable | Restored only if its witness companion key still matches the live document's current value; a mismatch means the document changed since the stash was written, so the value is re-derived instead. |
 | `data_type` | Field | shadows_derivable | Restored only if its witness companion key still matches the live document's current value; a mismatch means the document changed since the stash was written, so the value is re-derived instead. |
 | `column_properties` | Field | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |

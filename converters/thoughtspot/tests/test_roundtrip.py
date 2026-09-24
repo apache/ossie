@@ -66,6 +66,8 @@ from pathlib import Path
 
 import pytest
 
+import re
+
 from ossie_thoughtspot import _yaml, datatypes, ossie_to_thoughtspot, stash, tml, tml_to_ossie
 from ossie_thoughtspot.constants import (
     DATASET_STASH_CONNECTION_NAME,
@@ -76,6 +78,7 @@ from ossie_thoughtspot.constants import (
     RELATIONSHIP_STASH_TYPE,
 )
 from ossie_thoughtspot.datatypes import OSSIE_DATATYPES
+from ossie_thoughtspot.tml import DocumentSet, TmlDocument
 
 FIXTURES_ROOT = Path(__file__).resolve().parent / "fixtures"
 FIXTURE_SETS = ("minimal", "tpcds")
@@ -730,3 +733,61 @@ def test_every_relationship_survives_by_from_to_columns_type_cardinality_and_nam
         assert new_payload.get(RELATIONSHIP_STASH_CARDINALITY) == original_payload.get(
             RELATIONSHIP_STASH_CARDINALITY
         )
+
+
+class TestAFormulaCrossReferenceKeepsItsTarget:
+    """A `[formula_X]` reference must come back naming the SAME formula.
+
+    TML's `formulas[].id` and `formulas[].name` are independent -- a formula
+    renamed after creation keeps its original id. The Ossie -> TML leg minted
+    ids from display names and resolved references by matching the reference's
+    tail against normalised NAMES, so when another formula's name normalised to
+    that tail, the reference silently followed it. A metric defined as
+    `(sum(a) - sum(b)) + 1` came back as `(sum(a) * 0.5) + 1`: a different
+    number, exit 0, nothing logged.
+    """
+
+    @staticmethod
+    def _documents():
+        table = TmlDocument(kind="table", guid=None, body={
+            "name": "t", "db": "D", "schema": "S", "db_table": "T",
+            "connection": {"name": "C"},
+            "columns": [
+                {"name": c, "db_column_name": c.upper(),
+                 "db_column_properties": {"data_type": "DOUBLE"}} for c in ("a", "b")
+            ],
+        })
+        # `formula_margin` belongs to "Net Margin"; "Margin" is a DIFFERENT
+        # formula whose name normalises to the referenced id's tail.
+        model = TmlDocument(kind="model", guid=None, body={
+            "name": "xref_model", "model_tables": [{"name": "t"}],
+            "formulas": [
+                {"id": "formula_margin", "name": "Net Margin",
+                 "expr": "sum ( [t::a] ) - sum ( [t::b] )"},
+                {"id": "formula_other", "name": "Margin", "expr": "sum ( [t::a] ) * 0.5"},
+                {"id": "formula_total", "name": "Total", "expr": "[formula_margin] + 1"},
+            ],
+            "columns": [
+                {"name": n, "formula_id": f, "properties": {"column_type": "MEASURE"}}
+                for n, f in (("Net Margin", "formula_margin"), ("Margin", "formula_other"),
+                             ("Total", "formula_total"))
+            ],
+        })
+        return DocumentSet(model=model, tables=(table,))
+
+    def _round_trip(self):
+        ossie = tml_to_ossie.convert(self._documents())
+        return ossie_to_thoughtspot.convert(ossie.model)
+
+    def test_the_reference_still_names_the_formula_it_started_on(self):
+        formulas = self._round_trip().documents.model.body["formulas"]
+        by_id = {f["id"]: f for f in formulas}
+        total = next(f for f in formulas if f["name"] == "Total")
+        referenced = re.search(r"\[(formula_[A-Za-z0-9_]+)\]", total["expr"]).group(1)
+        assert by_id[referenced]["expr"] == "sum ( [t::a] ) - sum ( [t::b] )", (
+            f"the reference was rebound to {by_id[referenced]['name']!r}"
+        )
+
+    def test_the_source_formula_ids_survive_verbatim(self):
+        ids = {f["id"] for f in self._round_trip().documents.model.body["formulas"]}
+        assert {"formula_margin", "formula_other", "formula_total"} <= ids

@@ -81,3 +81,6 @@ metrics:
     dialects:
     - dialect: THOUGHTSPOT
       expression: sum ( [orders::order_total] )
+  custom_extensions:
+  - vendor_name: THOUGHTSPOT
+    data: '{"_v": 1, "formula_id": "formula_total_order_amount"}'

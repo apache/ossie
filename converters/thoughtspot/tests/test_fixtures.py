@@ -271,10 +271,18 @@ class TestTpcdsFixtureCoversItsRequiredConstructs:
     def test_the_three_metric_shapes_are_all_present(self, dataset):
         metrics_by_name = {m["name"]: m for m in dataset["metrics"]}
 
-        # Bare aggregate over a physical column with no separate stash --
-        # this is also the default TML shape (`formula`), which the writer
-        # never stashes.
-        assert "custom_extensions" not in metrics_by_name["total_sales"]
+        # Bare aggregate over a physical column: the default TML shape
+        # (`formula`), which the writer never records a SHAPE for. It does now
+        # carry the source `formula_id`, so the assertion is that no shape is
+        # stashed -- not that nothing is. Asserting the absence of the whole
+        # stash conflated "this shape needs no marker" with "this object needs
+        # no stash", and broke the moment an unrelated key was added.
+        bare_aggregate = metrics_by_name["total_sales"]
+        bare_extensions = {
+            e["vendor_name"]: json.loads(e["data"])
+            for e in bare_aggregate.get("custom_extensions") or []
+        }
+        assert METRIC_STASH_SHAPE not in bare_extensions.get(VENDOR_KEY, {})
 
         # A physical column plus a load-bearing aggregation.
         column_aggregation = metrics_by_name["total_return_quantity"]
