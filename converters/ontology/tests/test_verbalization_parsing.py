@@ -237,6 +237,13 @@ def test_reading_with_repeated_role_raises():
         _rel("works for", Concept("Person"), [(Concept("Company"), None)], verbalization)
 
 
+def test_ring_reading_missing_role_name_points_to_unused_role():
+    """A ring token that lacks a role name names the unused role in the error."""
+    person = Concept("Person")
+    with pytest.raises(ValueError, match=re.escape("did you mean '{Person:parent}'?")):
+        _rel("parenthood", person, [(person, "parent")], "{Person} has parent {Person}")
+
+
 def test_ring_reading_without_role_names_is_positional():
     """When a concept plays two unnamed roles, tokens take them in declared order."""
     person = Concept("Person")

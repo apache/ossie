@@ -1163,9 +1163,17 @@ def _parse_verbalization(relationship: Relationship, verbalization: str) -> Rela
         # first unused one, which keeps them in declared order.
         role = next((r for r in matches if r.idx not in used), None)
         if role is None:
+            # If the same concept still has an unused role under another name, the
+            # token most likely just lacks that role name, so point the author to it.
+            unused = [
+                VerbalizationRole(concept=r.player, name=r.explicit_name).verbalization_name()
+                for r in relationship.roles
+                if r.player.name == verb_concept_name and r.idx not in used
+            ]
+            hint = f"; did you mean {' or '.join(repr(u) for u in unused)}?" if unused else ""
             raise ValueError(
                 f"Verbalization '{verbalization}' uses role '{m.group(0)}' more than once "
-                f"for relationship {relationship.full_name}"
+                f"for relationship {relationship.full_name}{hint}"
             )
         used.add(role.idx)
         roles.append(VerbalizationRole(concept=role.player, name=verb_role_name))
