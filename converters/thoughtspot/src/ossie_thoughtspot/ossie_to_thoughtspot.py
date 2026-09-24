@@ -1877,7 +1877,32 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
         dataset_prefix = dataset.get("name") or "<unnamed>"
         ds_payload = stash.read_stash(dataset)
         table_ref = _table_name(dataset, ds_payload)
+        # SELF-VERIFYING, not stash-if-present. `tml_to_ossie._build_dataset`
+        # writes the Ossie dataset's `name` FROM this alias, so the two agree
+        # unless the document has been edited since -- which makes
+        # `stashed == dataset["name"]` the currency check, the same shape
+        # `RELATIONSHIP_STASH_REFERENCING_JOIN` already uses.
+        #
+        # Without it, renaming a dataset emitted a model whose model_tables[]
+        # carried the OLD alias while every `column_id` and join target was
+        # built from the NEW name: the references dangled, and nothing said so.
+        # (`DATASET_STASH_ALIAS` was classified INFORMATION_ONLY -- "no Ossie
+        # counterpart to diverge from" -- which is what let this through.)
         alias = ds_payload.get(DATASET_STASH_ALIAS)
+        if alias is not None and alias != dataset.get("name"):
+            log.add(
+                code="TS-DATASET-ALIAS-STALE",
+                severity=Severity.WARNING,
+                message=(
+                    f"dataset {dataset_prefix!r} has a stashed alias {alias!r} that "
+                    f"no longer matches its own name; it was renamed since the "
+                    f"stash was written, so the live name is used as the "
+                    f"model_tables[] alias instead -- keeping the stale one would "
+                    f"leave every reference to this dataset pointing at nothing"
+                ),
+                object_ref=f"dataset:{dataset_prefix}",
+            )
+            alias = dataset.get("name")
         table_doc = tables_by_name.get(table_ref)
         table_doc_by_prefix[dataset_prefix] = table_doc
         if table_doc is None:

@@ -103,6 +103,8 @@ def test_every_shadows_derivable_key_has_a_witness_constant_or_documented_self_c
     """
     self_verifying = {
         "DATASET_STASH_SOURCE_PARTS", "STASH_TML_NAME", "RELATIONSHIP_STASH_REFERENCING_JOIN",
+        # `stashed == dataset["name"]`, checked in build_model.
+        "DATASET_STASH_ALIAS",
     }
     all_names = _all_stash_key_constants()
     name_by_value = {getattr(constants, n): n for n in all_names}

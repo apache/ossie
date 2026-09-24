@@ -467,7 +467,14 @@ STASH_KEY_CLASSIFICATION: dict[str, "StashKeyClass"] = {
     DATASET_STASH_SOURCE_PARTS: StashKeyClass.SHADOWS_DERIVABLE,
     DATASET_STASH_CONNECTION_NAME: StashKeyClass.INFORMATION_ONLY,
     DATASET_STASH_TABLE_NAME: StashKeyClass.INFORMATION_ONLY,
-    DATASET_STASH_ALIAS: StashKeyClass.INFORMATION_ONLY,
+    # SHADOWS_DERIVABLE, corrected from INFORMATION_ONLY. It does have an Ossie
+    # counterpart: `tml_to_ossie._build_dataset` writes the dataset's `name`
+    # FROM this alias, so the two diverge the moment anyone renames the dataset.
+    # Labelled INFORMATION_ONLY -- "nothing there could have diverged from it" --
+    # it was read without a currency check, and a rename emitted a model whose
+    # model_tables[] alias was stale while every reference used the new name.
+    # Self-verifying: `stashed == dataset["name"]` is the whole check.
+    DATASET_STASH_ALIAS: StashKeyClass.SHADOWS_DERIVABLE,
     DATASET_STASH_TABLE_PROPERTIES: StashKeyClass.INFORMATION_ONLY,
     DATASET_STASH_UNSURFACED_COLUMNS: StashKeyClass.INFORMATION_ONLY,  # value only -- see STASH_KEYS_WITH_DERIVABLE_MEMBERSHIP below for its membership axis
     DATASET_STASH_SQL_OUTPUT_COLUMNS: StashKeyClass.INFORMATION_ONLY,  # per-field dict lookup, never appended -- checked, does not share unsurfaced_columns' hybrid

@@ -1047,3 +1047,54 @@ class TestDeduplicationRefusesUnsafeMerges:
         ]
         result = self._convert(*nameless)
         assert [d.body.get("name") for d in result.documents.tables] == ["<unnamed>", "<unnamed>"]
+
+
+class TestARenamedDatasetDoesNotDangleItsReferences:
+    """The stashed alias is self-verifying against the dataset's own name.
+
+    `tml_to_ossie._build_dataset` writes the Ossie dataset `name` FROM the
+    alias, so the two agree unless the document was edited. Reading the alias
+    without that check emitted a model whose `model_tables[]` carried the OLD
+    alias while every `column_id` and join target used the NEW name -- the
+    references dangled and nothing said so. The stash key was classified
+    INFORMATION_ONLY ("no Ossie counterpart to diverge from"), which is what
+    let it through; it is SHADOWS_DERIVABLE now.
+    """
+
+    @staticmethod
+    def _dataset(name, stashed_alias, column):
+        return {
+            "name": name, "source": "D.S.EMPLOYEES",
+            "fields": [{"name": column, "expression": {"dialects": [
+                {"dialect": "THOUGHTSPOT", "expression": f"[{name}::{column}]"}]}}],
+            "custom_extensions": [{"vendor_name": "THOUGHTSPOT", "data": json.dumps(
+                {"_v": 1, "connection_name": "C", "tml_name": "EMPLOYEES",
+                 "alias": stashed_alias})}],
+        }
+
+    def _convert_with_a_renamed_dataset(self):
+        # "mgr" was renamed to "manager"; the stash still says "mgr".
+        return convert({"version": "0.2.0.dev0", "name": "M", "datasets": [
+            self._dataset("emp", "emp", "employee_id"),
+            self._dataset("manager", "mgr", "employee_name"),
+        ]})
+
+    def test_no_column_reference_points_at_a_missing_alias(self):
+        model = self._convert_with_a_renamed_dataset().documents.model.body
+        aliases = {e.get("alias") for e in model["model_tables"]}
+        dangling = [
+            c["column_id"] for c in model.get("columns") or []
+            if c.get("column_id") and c["column_id"].split("::")[0] not in aliases
+        ]
+        assert not dangling, f"references point at no model_tables[] entry: {dangling}"
+
+    def test_the_stale_alias_is_reported(self):
+        codes = [i["code"] for i in self._convert_with_a_renamed_dataset().issues.as_dicts()]
+        assert "TS-DATASET-ALIAS-STALE" in codes
+
+    def test_an_unrenamed_dataset_keeps_its_alias_and_says_nothing(self):
+        result = convert({"version": "0.2.0.dev0", "name": "M", "datasets": [
+            self._dataset("emp", "emp", "employee_id"),
+        ]})
+        assert result.documents.model.body["model_tables"][0]["alias"] == "emp"
+        assert "TS-DATASET-ALIAS-STALE" not in [i["code"] for i in result.issues.as_dicts()]

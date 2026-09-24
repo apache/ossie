@@ -47,7 +47,7 @@ Every `custom_extensions` entry this converter writes uses `vendor_name` `THOUGH
 | `source_parts` | Dataset | shadows_derivable | Restored only if reconstructing it from the live document still agrees with the stashed value (self-verifying — no separate witness key); disagreement re-derives instead. |
 | `connection_name` | Dataset | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
 | `table_name` | Dataset | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
-| `alias` | Dataset | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
+| `alias` | Dataset | shadows_derivable | Restored only if reconstructing it from the live document still agrees with the stashed value (self-verifying — no separate witness key); disagreement re-derives instead. |
 | `table_properties` | Dataset | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
 | `unsurfaced_columns` | Dataset | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. Each list entry is additionally checked against live coverage before being restored: an entry now covered by a live field is dropped rather than duplicated. |
 | `sql_output_columns` | Dataset | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
