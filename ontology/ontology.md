@@ -88,6 +88,7 @@ hierarchically, grouping each relationship under the concept that plays its firs
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools |
 | `ontology` | list | Yes | Concepts and relationships they group that form this ontology |
+| `ontology_mappings` | list | No | Embedded ontology maps (legacy shape, kept for backward compatibility); see [Mapping documents](#mapping-documents) for the standalone alternative |
 
 Each component of an ontology declares a concept and lists the relationships where that
 concept plays the first role. The concept's name is the value of the `concept` field, and
@@ -385,6 +386,63 @@ Ontology mappings declare how to map the values of fields at the logical level t
 in the ontology. Just as ontologies are partitioned by concept, ontology maps partition into concept
 mappings that group by some concept.
 
+### Mapping documents
+
+An ontology mapping can be expressed two ways. It can be embedded inside the ontology document
+itself, as an entry in the top-level `ontology_mappings` list; this is the original shape and
+remains valid for backward compatibility. Each entry has the following schema, mirroring
+`OntologyMap` in `ontology.json`:
+
+| Field | Type | Required | Description |
+|---------------|---------|-----|-------|
+| `name` | string | No | Name of this ontology map |
+| `description` | string | No | Human-readable description of this ontology map |
+| `semantic_model` | object | Yes | A complete, embedded semantic model document (see the core specification) |
+| `concept_mappings` | list | Yes | Maps logical model constructs to concepts and relationships in this ontology |
+
+Embedding a full semantic model inside the ontology document works cleanly when exactly one
+semantic model maps to the ontology. It does not compose: if a second team wants to bring a second
+semantic model to the same ontology, the natural next step is another entry in the same
+`ontology_mappings` list, which means duplicating the embedded model or coordinating changes
+through a file the second team does not otherwise own.
+
+Alternatively, and the recommended approach when more than one semantic model maps to an ontology,
+or when the mapping is owned by a different team than the ontology itself, a mapping can be written
+as its own standalone document, validated against `ontology/mapping.json`. Instead of embedding a
+semantic model, it references both the ontology and the semantic model it maps between:
+
+| Field | Type | Required | Description |
+|---------------|---------|-----|-------|
+| `version` | string | Yes | Mapping specification version |
+| `name` | string | Yes | Unique identifier for this mapping |
+| `description` | string | No | Human-readable description of this mapping |
+| `ontology` | object | Yes | Reference to the ontology document this mapping targets (see below) |
+| `semantic_model` | object | Yes | Reference to the semantic model document this mapping draws from (see below) |
+| `concept_mappings` | list | Yes | Maps logical model constructs to concepts and relationships in the referenced ontology |
+| `custom_extensions` | list | No | Vendor-specific attributes for extensibility, matching the core specification's mechanism |
+
+Both `ontology` and `semantic_model` are references, not embedded documents. A reference is an
+object with a `name`, which must equal the referenced document's own `name` and carries this
+reference's checkable identity, and an `iri`, which says where to resolve it from: a relative
+reference such as `./flights.ontology.yaml` when the two documents sit alongside each other, or an
+absolute IRI once a catalog resolves names to locations.
+
+A mapping document references exactly one ontology and exactly one semantic model. When an
+ontology has more than one semantic model mapped to it, each mapping is its own document; nothing
+in this specification lets a single mapping document reference two semantic models at once, so
+there is no need for `concept_mappings` expressions to disambiguate which semantic model a dataset
+belongs to.
+
+A mapping document is recognized by having `concept_mappings`, a field no ontology or semantic
+model document has; there is no separate field declaring which of the three document kinds a given
+file is. Tooling that needs to know a document's kind ahead of validating it, as
+`validation/validate.py`'s `--schema` flag does today, still needs to be told explicitly, the same
+as it does today for the two existing document kinds.
+
+See `examples/flights.ontology.yaml`, `examples/flights.semantic_model.yaml`, and
+`examples/flights.mapping.yaml` for the canonical `flights.yaml` example split into its three
+parts.
+
 ### Concept mappings
 
 Each concept mapping declares how to populate a concept with objects and how to populate the relationships
@@ -590,6 +648,9 @@ though `Store` plays a role in three of the relationships.
 - **0.2.0.dev0** (2026-05-29): Basic support for ontologies and logical schema mappings
   - Core ontology structure: Concepts, relationships, and business rules (requires and derived_by)
   - Schema mappings from one or more logical models into an ontology
+  - Standalone mapping documents (`ontology/mapping.json`) as an alternative to embedding a
+    semantic model inside `ontology_mappings`, for ontologies mapped to more than one semantic
+    model or mappings owned by a different team than the ontology
 
 ---
 

@@ -38,7 +38,8 @@
     },
     "ontology_mappings": {
       "type": "array",
-      "description": "Collection of ontology maps from logical models",
+      "description": "Collection of ontology maps from logical models, each embedding its own semantic model. Kept for backward compatibility; see ontology/mapping.json for the standalone mapping document, the recommended shape when more than one semantic model maps to this ontology.",
+      "deprecated": true,
       "items": {
         "$ref": "#/$defs/OntologyMap"
       }
