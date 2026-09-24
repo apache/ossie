@@ -827,10 +827,16 @@ class _DisplayNameAllocator:
 
 def _normalise_or_self(text: str) -> str:
     """`identifiers.normalise(text)`, or `text` itself when it has no ASCII
-    alphanumerics for `normalise` to fold onto -- the same fallback
-    `_DisplayNameAllocator.allocate` and `_formula_id_from` already use, so
-    all three agree on what "the fold key" is for a piece of text with no
-    normal form."""
+    alphanumerics for `normalise` to fold onto.
+
+    Shared with `_formula_id_from` and `_rewrite_formula_references`, so the
+    id-minting side and the reference-matching side cannot drift onto two
+    different rules. NOT shared with `_DisplayNameAllocator`, which folds on a
+    plain `display_name.strip().casefold()` and never calls `normalise` at all --
+    a deliberately narrower rule, because normalising made this converter invent
+    collisions between names ThoughtSpot treats as distinct ("Net Amount" and
+    "Net-Amount" both normalise to `net_amount`; ThoughtSpot keeps them apart).
+    The two folds genuinely differ and are meant to."""
     try:
         return identifiers.normalise(text)
     except ValueError:
@@ -878,8 +884,7 @@ def _formula_id_from(display_name: str) -> str:
 
     Real ThoughtSpot display names carry spaces and mixed case
     (``"Net Amount"``); ids do not (``formula_net_amount``). Deriving the id
-    from the *normalised* form of the display name -- the same fold
-    `_DisplayNameAllocator` already dedupes on -- rather than embedding the
+    from the *normalised* form of the display name rather than embedding the
     display name verbatim is what lets a THOUGHTSPOT-verbatim cross-reference
     elsewhere in the model (`[formula_net_amount]`) resolve
     against a formula this converter itself is generating: the reference was

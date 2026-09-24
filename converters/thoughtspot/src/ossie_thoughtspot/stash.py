@@ -90,7 +90,8 @@ def read_stash(obj: dict) -> dict[str, Any]:
     for entry in extensions:
         # A hand-authored document can put anything here. Without this the
         # `.get` below raised a bare AttributeError, which escapes the CLI's
-        # (ConversionError, OSError) handler and prints a traceback -- breaking
+        # (ConversionError, OSError, UnicodeDecodeError) handler and prints a
+        # traceback -- breaking
         # this module's own never-a-bare-traceback contract.
         if not isinstance(entry, dict):
             raise ConversionError(

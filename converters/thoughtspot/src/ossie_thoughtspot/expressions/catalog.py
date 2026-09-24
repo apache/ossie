@@ -671,9 +671,13 @@ CATALOG.update(
 # RADIANS/DEGREES are bare dialect-free arithmetic, not passthroughs. PI is a
 # literal at the precision ThoughtSpot's own documented trig composites use.
 # ThoughtSpot's trigonometry is degrees-native while the specification is
-# radians-native, so SIN/COS/TAN convert degrees->radians on the way in
-# (`* 180 / pi`) and ASIN/ACOS/ATAN convert radians->degrees on the way out
-# (`* pi / 180`) — opposite directions, easy to transpose by mistake.
+# radians-native, so SIN/COS/TAN convert radians->degrees on the way IN
+# (`* 180 / pi`, applied to the argument) and ASIN/ACOS/ATAN convert
+# degrees->radians on the way OUT (`* pi / 180`, applied to the result) —
+# opposite directions, easy to transpose by mistake, and this comment had them
+# transposed. The templates were and are correct; cross-check against the
+# DEGREES/RADIANS rows below, which state the same two conversions as their
+# whole definition: DEGREES is `* 180 / pi`, RADIANS is `* pi / 180`.
 # GREATEST/LEAST are deliberately NOT mapped to max/min: ThoughtSpot's max/min
 # are aggregate-only, so that mapping would both collapse the row-wise N-ary
 # result to one value and flip it from attribute to measure.

@@ -371,9 +371,11 @@ RELATIONSHIP_STASH_ON_EXPRESSION = "on_expression"
 #: `on_expression` (and the residual narrowing it carries) is still current
 #: and is restored; disagreement means the stash is stale, so both are
 #: dropped and the plain equality condition is re-derived from the live
-#: from_columns/to_columns instead, with an issue recording it. This is one
-#: of the two places (the other is FIELD_STASH_DATA_TYPE_WITNESS below) this
-#: converter uses a witness copy: "a relationship's verbatim on_expression".
+#: from_columns/to_columns instead, with an issue recording it. This is one of
+#: the FIVE witness copies this converter keeps -- the others being
+#: FIELD_STASH_DB_COLUMN_NAME_WITNESS, DATASET_STASH_TML_OBJECT_WITNESS,
+#: RELATIONSHIP_STASH_ENDPOINTS_SWAPPED_WITNESS and FIELD_STASH_DATA_TYPE_WITNESS.
+#: What this one witnesses: "a relationship's verbatim on_expression".
 RELATIONSHIP_STASH_ON_EXPRESSION_WITNESS = "on_expression_equality_witness"
 
 # --- Field/metric scope (attached to a `fields[]` or `metrics[]` entry) -----

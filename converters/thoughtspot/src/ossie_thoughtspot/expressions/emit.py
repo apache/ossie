@@ -204,12 +204,17 @@ def emit_passthrough(
             f"{construct.spec_name} expects {expected} {plural}, got {len(args)}"
         )
 
-    # Enforced rather than left to caller convention: every passthrough row
-    # that needs the group_aggregate wrap carries the literal string "PARTITION BY"
-    # in its SQL template (ROW_NUMBER, LAG, LEAD, the OVER fallback, window
-    # aggregation, and the RANK/PERCENT_RANK/CUME_DIST fallbacks all do). Checking
-    # the template against the kwarg in both directions turns "the catalog author
-    # must remember to pass this" into something this function refuses to get wrong.
+    # Enforced rather than left to caller convention: a passthrough row that needs
+    # the group_aggregate wrap carries the literal string "PARTITION BY" in its SQL
+    # template. Four rows do -- ROW_NUMBER, LAG, LEAD and window aggregation -- and
+    # they are the only ones this check can see. The OVER row's own template is the
+    # dispatch string "per-clause-shape — see note"; CUME_DIST's carries no
+    # PARTITION BY; and RANK and PERCENT_RANK are DIRECT rows, not passthrough rows
+    # at all. Those four fallbacks are described in prose in their `note`, which
+    # this guard never reads, so they are outside it by construction rather than by
+    # oversight. Checking the template against the kwarg in both directions turns
+    # "the catalog author must remember to pass this" into something this function
+    # refuses to get wrong.
     carries_partition_by = bool(re.search(r"partition\s+by", construct.template, re.IGNORECASE))
     if carries_partition_by and partition_column is None:
         raise ValueError(

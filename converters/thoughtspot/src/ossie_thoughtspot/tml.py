@@ -20,14 +20,20 @@
 Deliberately holds no Ossie vocabulary — it is the ThoughtSpot file format and nothing else,
 which is what makes it unit-testable without a fixture from the other side.
 
-Four invariants live here so no caller has to carry them. `guid` is read and never written,
+Three invariants are ENFORCED here so no caller has to carry them, and a fourth is
+supported here and applied by the caller. `guid` is read and never written,
 at any depth: it belongs at the document root, and a nested one — anywhere in the body, not
 only there — is *silently ignored* on import while ThoughtSpot creates a duplicate object
-with the same name. A formula expression containing braces is emitted as a `>-` block scalar
-or the YAML will not parse on re-read. Tables are emitted before the model, which references
+with the same name. Tables are emitted before the model, which references
 each one by name, so ordering is load-bearing. And everything goes through the YAML 1.2 codec
 so a column, synonym, or parameter value of `on`, `off`, `yes`, or `no` survives as the string
 it is instead of being coerced to a boolean.
+
+The fourth is the block scalar: a formula expression containing braces must be emitted as
+a `>-` block scalar or the YAML will not parse on re-read. This module supplies the
+mechanism (`block_scalar`) but does not decide when it applies -- that lives in
+`ossie_to_thoughtspot._maybe_block_scalar`, its only caller. So it is the one rule on this
+list a caller CAN still get wrong.
 
 Filenames minted for a document set are sanitised and length-capped: a table name is
 user-controlled data and may contain characters a filesystem treats specially — a path

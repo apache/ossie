@@ -753,7 +753,10 @@ _SQL_AGGREGATE_OP_CALLS = frozenset(
 #: Every ThoughtSpot call name that already aggregates: the native DIRECT catalog
 #: templates (derived from the catalog itself, never retyped by hand, via the same
 #: `emit_direct` the rest of this package uses to render them — see the task report
-#: for why), plus `group_aggregate` and the `sql_*_aggregate_op` pass-through family.
+#: for why), plus all NINE `group_*` names (`group_aggregate` and the eight
+#: shorthands `group_sum`/`group_count`/`group_stddev`/`group_variance`/`group_max`/
+#: `group_min`/`group_average`/`group_unique_count`), and the `sql_*_aggregate_op`
+#: pass-through family.
 #: This set alone is not the whole safety story — see `_contains_aggregate_call`,
 #: which also scans for these names at *any* nesting depth, not only as an
 #: expression's own outer call, because the catalog will always hold aggregate
@@ -2024,8 +2027,9 @@ def convert(document_set: DocumentSet) -> OssieConversion:
 
     Order matters and mirrors the module docstring above: datasets first (so
     their names -- the model_tables[] alias-or-name, verbatim -- exist),
-    then the cross-model resolver (needs every dataset's name and every
-    ATTRIBUTE column's identifier), then fields and metrics (need `resolve`),
+    then the cross-model resolver (needs every dataset's name, and which
+    physical columns the model surfaces as ATTRIBUTE fields -- membership only,
+    no identifier value), then fields and metrics (need `resolve`),
     then relationships (need nothing new, but key derivation needs every
     relationship gathered first), then keys.
 

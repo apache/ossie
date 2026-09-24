@@ -92,9 +92,11 @@ def derive_keys(
     # cardinality), the base "not a declared key" statement is our own,
     # unconditional explanation of why we did not derive a key from this
     # relationship. Upstream's *separate* to_columns coverage check
-    # (`validation/validate.py:159-165`) only warns when a declared key
-    # exists for this dataset AND this relationship's columns fail to cover
-    # any of it — `declared_keys and not any(set(key) <= to_column_set for
+    # (`validate_references` in `validation/validate.py` -- named rather than
+    # cited by line, because the line number this comment used to give had
+    # drifted onto an unrelated helper) only warns when a declared key exists
+    # for this dataset AND this relationship's columns fail to cover any of it
+    # — `declared_keys and not any(set(key) <= to_column_set for
     # key in declared_keys)`. So predicting that warning is only added when
     # that same condition genuinely holds here: a key was derived (`seen`)
     # and none of the derived keys is a subset of this relationship's

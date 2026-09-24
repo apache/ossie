@@ -57,7 +57,7 @@ expression whatsoever.
               since it *is* portable, just incomplete: a consumer that does not implement the
               THOUGHTSPOT dialect still gets something it can execute.
     DIALECT   the construct's natural home is the Ossie `dialects[]` mechanism, not a
-              portable expression — the ten `sql_*_op` / `sql_*_aggregate_op` names. No
+              portable expression — the eleven `sql_*_op` / `sql_*_aggregate_op` names. No
               ANSI_SQL sibling is ever emitted for these (the document is explicit: raw
               warehouse SQL's portability is exactly what is unknown).
     STASH     no Ossie expression exists at all. Always logs an ERROR (mirroring
@@ -100,7 +100,7 @@ Two more are shape-dependent rather than purely name-keyed, and use `ReverseCons
 declarative `template`/`compose_fn` path entirely): `group_aggregate` and its four named
 shorthands (`group_sum`, `group_count`, `group_stddev`, `group_variance`), whose disposition
 depends on the shape of the grouping and filter arguments (see `_compose_grouped`); and the
-ten `sql_*_op` names, whose disposition depends on whether the caller can supply
+eleven `sql_*_op` names, whose disposition depends on whether the caller can supply
 `connection_dialect` (see `_dispatch_sql_op`). `concat` is a third, narrower case: plain
 `concat` has a spec counterpart already in `CATALOG` and is not this module's concern at all
 (returns `None`, no issue) — only the ThoughtSpot hyperlink-markup content pattern inside its
@@ -609,7 +609,9 @@ for _name in ("last_value", "first_value", "last_value_in_period", "first_value_
 def _dispatch_sql_op(
     args: list[str], log: IssueLog, object_ref: str, connection_dialect: str | None
 ) -> str | None:
-    """The ten `sql_*_op` / `sql_*_aggregate_op` names. `args[0]` is the unquoted template
+    """The eleven `sql_*_op` / `sql_*_aggregate_op` names -- one MORE than the ten
+    `Variant` members, because `sql_date_op` is reachable in this direction and no
+    catalog row emits it. `args[0]` is the unquoted template
     body (this module's argument abstraction level — see the module docstring), `args[1:]`
     are the already-resolved column expressions the template's `{0}`, `{1}`, ... refer to.
 
@@ -740,9 +742,18 @@ REVERSE["concat (hyperlink markup)"] = ReverseConstruct(
 _FISCAL_MARKERS = {"fiscal", "'fiscal'"}
 
 
-#: Every ThoughtSpot call name the FORWARD catalog renders, read off its own
-#: templates so the two halves cannot drift. A function, not a module-level
-#: constant, for the same evaluation-order reason as the fiscal set below.
+#: Every call name a FORWARD catalog template BEGINS with, where that name is
+#: all lowercase letters and underscores -- read off the templates themselves so
+#: the two halves cannot drift. Deliberately not "every name the catalog
+#: renders": the regex is anchored at the template start and excludes digits, so
+#: it does not see a name behind a leading operator or paren (`rank_percentile`
+#: in `1 - rank_percentile (...)`, `asin`/`acos`/`atan` in `( asin ( {0} ) ...)`),
+#: a name with a digit in it (`log10`), or any nested call (`sum` inside
+#: `rank ( sum ( [m] ) , 'desc' )`). 50 names today. That is sufficient for its
+#: one consumer, `_fiscal_capable_functions`, since no missing name is
+#: date-shaped -- but a second consumer wanting the true set needs a real parse,
+#: not this. A function, not a module-level constant, for the same
+#: evaluation-order reason as the fiscal set below.
 @functools.lru_cache(maxsize=1)
 def _forward_call_names() -> frozenset[str]:
     return frozenset(

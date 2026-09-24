@@ -80,10 +80,18 @@ def normalise(display_name: str) -> str:
 class Allocator:
     """Allocates unique identifiers, resolving collisions with a numeric suffix.
 
-    Collision detection folds case, because Ossie resolves regular identifiers
-    case-insensitively (`core-spec/expression_language.md:77`) even though
-    `validation/validate.py` only rejects exact-string duplicates. Detecting on
-    the exact string would emit a document that validates and is still ambiguous.
+    Ossie resolves regular identifiers case-insensitively
+    (`core-spec/expression_language.md:77`) even though `validation/validate.py`
+    only rejects exact-string duplicates, so a case-only difference would
+    validate and still be ambiguous.
+
+    That guarantee is delivered by `normalise`, which lowercases -- not by the
+    `.casefold()` in `allocate` below. Every candidate is built from
+    `normalise(display_name)` and is therefore already lowercase and ASCII by the
+    time it is stored, so that call is a no-op on this path and is kept only as a
+    belt against `normalise` ever ceasing to lowercase. The place a casefold is
+    genuinely load-bearing is `tml_to_ossie._resolve_name_collision`, which
+    compares against sibling names it did not produce.
     """
 
     def __init__(self) -> None:
