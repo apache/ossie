@@ -72,6 +72,7 @@ from typing import Callable, Sequence
 from . import datatypes, formula, identifiers, stash
 from .constants import (
     FIELD_STASH_FORMULA_ID,
+    MODEL_STASH_OBJ_ID,
     DATASET_STASH_ALIAS,
     DATASET_STASH_CONNECTION_NAME,
     DATASET_STASH_SOURCE_PARTS,
@@ -2235,7 +2236,15 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
         # differently-scoped `joins_with[]` inside the same payload namespace.
         body["joins_with"] = model_joins_with
 
-    return TmlDocument(kind="model", body=body, guid=None)
+    # `guid` is never restored -- it is raw cluster identity. `obj_id` is, and
+    # the difference is the point: it is the handle ThoughtSpot uses to
+    # recognise this as the SAME object on re-import, including in another
+    # environment, so keeping it is what makes the round trip an update
+    # rather than a duplicate.
+    return TmlDocument(
+        kind="model", body=body, guid=None,
+        obj_id=model_payload.get(MODEL_STASH_OBJ_ID),
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -27,6 +27,13 @@ from .constants import STASH_VERSION, VENDOR_KEY
 from .errors import ConversionError
 
 #: Instance-local identity never travels in a portable document.
+#:
+#: `obj_id` is in this scan but is NOT wholly forbidden: the scan stops it
+#: riding along unnoticed inside a block copied wholesale from source TML, while
+#: `constants.STASH_OBJ_ID` preserves it DELIBERATELY, under its own payload key.
+#: The three are not equivalent -- `guid` is a raw cluster UUID and `fqn` a
+#: reference to one, but `obj_id` is the handle ThoughtSpot introduced so objects
+#: can be referenced ACROSS environments, and unlike an `fqn` it survives import.
 _FORBIDDEN_KEYS = frozenset({"guid", "obj_id", "fqn"})
 
 

@@ -128,6 +128,7 @@ from .constants import (
     RELATIONSHIP_STASH_ON_EXPRESSION_WITNESS,
     RELATIONSHIP_STASH_REFERENCING_JOIN,
     RELATIONSHIP_STASH_TYPE,
+    MODEL_STASH_OBJ_ID,
     STASH_TML_NAME,
 )
 from .errors import ConversionError
@@ -2022,6 +2023,10 @@ def convert(document_set: DocumentSet) -> OssieConversion:
             )
     semantic_model: dict = {"name": semantic_model_name, "datasets": []}
     model_stash: dict = {}
+    # ThoughtSpot's portable object handle, so a re-import updates the model
+    # it came from rather than creating a duplicate beside it.
+    if document_set.model.obj_id:
+        model_stash[MODEL_STASH_OBJ_ID] = document_set.model.obj_id
     if semantic_model_name != model_display_name:
         model_stash[STASH_TML_NAME] = model_display_name
 

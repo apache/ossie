@@ -99,6 +99,22 @@ STASH_VERSION = 1
 #: must agree on the exact spelling and nothing else enforces that.
 FIELD_STASH_DB_COLUMN_NAME = "db_column_name"
 
+#: The source TML `obj_id` -- ThoughtSpot's own PORTABLE object handle, e.g.
+#: `SampleRetail-Apparel-LH-58435d2b` (display name, then the first segment of
+#: the GUID). Stashed under a distinct payload key so the forbidden-key scan,
+#: which looks for a literal `obj_id`, does not mistake this deliberate copy for
+#: leaked identity.
+#:
+#: Why this is kept when `guid` and `fqn` are not, though all three were once
+#: grouped as "instance-local identity": they are not the same kind of thing.
+#: `guid` is a raw cluster UUID and `fqn` is a reference to one -- and a
+#: viz-level `fqn` is DROPPED on import, leaving the object with no data source.
+#: `obj_id` is the identifier ThoughtSpot introduced precisely so objects can be
+#: referenced across environments, and it survives import. Discarding it meant a
+#: converted model re-imported as a NEW object rather than updating the one it
+#: came from, which is the ordinary promote-between-environments workflow.
+MODEL_STASH_OBJ_ID = "tml_obj_id"
+
 #: The source TML `formulas[].id` of a computed field or metric, stashed
 #: verbatim. TML's `formulas[].id` and `formulas[].name` are INDEPENDENT -- a
 #: formula renamed after creation keeps its original id -- but the Ossie -> TML
@@ -456,6 +472,8 @@ STASH_KEY_CLASSIFICATION: dict[str, "StashKeyClass"] = {
     # is no live value this can diverge FROM. That is also the point of keeping
     # it -- TML's id is independent of its name, so renaming the metric in Ossie
     # must NOT change the id, or every cross-reference written against it breaks.
+    # Ossie has no object-identity concept, so nothing here can diverge from it.
+    MODEL_STASH_OBJ_ID: StashKeyClass.INFORMATION_ONLY,
     FIELD_STASH_FORMULA_ID: StashKeyClass.INFORMATION_ONLY,
     FIELD_STASH_DB_COLUMN_NAME: StashKeyClass.SHADOWS_DERIVABLE,
     FIELD_STASH_DATA_TYPE: StashKeyClass.SHADOWS_DERIVABLE,

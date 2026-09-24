@@ -93,6 +93,10 @@ class TmlDocument:
     kind: str
     body: dict
     guid: str | None
+    #: ThoughtSpot's portable object handle. Read AND written, unlike `guid`:
+    #: it is how a re-import updates the object it came from instead of
+    #: creating a duplicate, and it survives moving between environments.
+    obj_id: str | None = None
     source: str | None = None
 
 
@@ -132,7 +136,10 @@ def load_document(text: str, *, source: str | None = None) -> TmlDocument:
     body = data[kind]
     if not isinstance(body, dict):
         raise ConversionError(f"{source or '<input>'}: {kind} must be a mapping")
-    return TmlDocument(kind=kind, body=body, guid=data.get("guid"), source=source)
+    return TmlDocument(
+        kind=kind, body=body, guid=data.get("guid"),
+        obj_id=data.get("obj_id"), source=source,
+    )
 
 
 def load_document_set(texts: Sequence[tuple[str, str]]) -> DocumentSet:
@@ -171,7 +178,11 @@ def _strip_nested_guids(value: object) -> object:
 def dump_document(document: TmlDocument) -> str:
     """Serialise one document. `guid` is stripped unconditionally, at every depth of
     the body — not only at the document root."""
-    return _yaml.dump({document.kind: _strip_nested_guids(document.body)})
+    payload: dict = {}
+    if document.obj_id:
+        payload["obj_id"] = document.obj_id
+    payload[document.kind] = _strip_nested_guids(document.body)
+    return _yaml.dump(payload)
 
 
 def _safe_filename_component(name: object) -> str:

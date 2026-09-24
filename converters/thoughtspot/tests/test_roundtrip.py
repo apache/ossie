@@ -922,3 +922,38 @@ def test_every_referencing_join_carries_the_compulsory_with_field():
                 assert join.get("with"), (
                     f"{fixture_name}: joins[] entry on {entry['name']!r} has no `with`: {join}"
                 )
+
+
+def test_the_models_obj_id_survives_the_round_trip():
+    """`obj_id` is kept where `guid` and `fqn` are not, and the difference matters.
+
+    All three were once grouped as "instance-local identity". They are not the
+    same kind of thing: `guid` is a raw cluster UUID and `fqn` a reference to
+    one -- and a viz-level `fqn` is dropped on import anyway -- while `obj_id`
+    (`SampleRetail-Apparel-LH-58435d2b`: display name, then the GUID's first
+    segment) is the handle ThoughtSpot introduced so objects can be referenced
+    ACROSS environments, and it survives import.
+
+    Discarding it meant a converted model re-imported as a NEW object rather
+    than updating the one it came from -- which breaks the ordinary
+    promote-between-environments workflow the converter exists to serve.
+    """
+    table = TmlDocument(kind="table", guid=None, body={
+        "name": "t", "db": "D", "schema": "S", "db_table": "T",
+        "connection": {"name": "Conn"},
+        "columns": [{"name": "a", "db_column_name": "A",
+                     "db_column_properties": {"data_type": "DOUBLE"}}]})
+    model = TmlDocument(kind="model", guid="11111111-2222-3333-4444-555555555555",
+                        obj_id="SampleRetail-58435d2b", body={
+        "name": "M", "model_tables": [{"name": "t"}],
+        "columns": [{"name": "a", "column_id": "t::a",
+                     "properties": {"column_type": "ATTRIBUTE"}}]})
+    ossie = tml_to_ossie.convert(DocumentSet(model=model, tables=(table,)))
+    returned = ossie_to_thoughtspot.convert(ossie.model).documents.model
+    assert returned.obj_id == "SampleRetail-58435d2b"
+
+    emitted = tml.dump_document(returned)
+    assert "obj_id: SampleRetail-58435d2b" in emitted
+    # The guid must still never travel.
+    assert "11111111-2222" not in emitted
+    assert "guid:" not in emitted
