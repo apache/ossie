@@ -287,23 +287,30 @@ def _physical_identity(field: dict, log: IssueLog, *, object_ref: str) -> tuple[
                 object_ref=object_ref,
             )
             return column, column
-        # No stash to consult -- a hand-authored bracket, or a document
-        # produced before this key existed. Falling back to the display
-        # name is correct whenever the two originally agreed (the common
-        # case), but it is a genuine assumption, not a fact: a wrong guess
-        # here emits a Table column bound to a warehouse name that may not
-        # exist, so it is reported rather than made silently.
-        log.add(
-            code="TS-FIELD-DB-COLUMN-NAME-ASSUMED",
-            severity=Severity.WARNING,
-            message=(
-                f"no stashed warehouse column name was found for {column!r}; "
-                f"db_column_name is set equal to the display name, which will "
-                f"name a column the warehouse does not have if the two "
-                f"originally differed"
-            ),
-            object_ref=object_ref,
-        )
+        # No `db_column_name` stashed. For a field this converter itself
+        # produced that is a RECORDED FACT, not a guess: the forward direction
+        # stashes the key ONLY when the warehouse name differs from the display
+        # name, so its absence means they agreed. Reporting it said "assumed"
+        # about something the document actually establishes -- and it fired 593
+        # times across 30 real models, on the ordinary case, which is precisely
+        # how an issue log stops being read.
+        #
+        # It IS a genuine assumption for a field with no THOUGHTSPOT stash at
+        # all -- hand-authored Ossie, or another vendor's -- because nothing
+        # there ever recorded the relationship. That case still reports.
+        if not stash.read_stash(field):
+            log.add(
+                code="TS-FIELD-DB-COLUMN-NAME-ASSUMED",
+                severity=Severity.WARNING,
+                message=(
+                    f"field {column!r} carries no ThoughtSpot stash, so no "
+                    f"warehouse column name was ever recorded for it; "
+                    f"db_column_name is set equal to the display name, which "
+                    f"will name a column the warehouse does not have if the two "
+                    f"differ"
+                ),
+                object_ref=object_ref,
+            )
         return column, column
 
     display_name = field.get("label") or field.get("name")

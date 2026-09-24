@@ -212,12 +212,23 @@ def expression_entries(
     if bare is not None:
         target = resolve(*bare)
         if target is None:
+            # INFO, not WARNING. A formula may reference any column of a
+            # joined table, including one the model does not surface as a
+            # column of its own -- ordinary modelling, and there is then no
+            # Ossie field for a portable expression to name. Nothing is lost:
+            # the THOUGHTSPOT dialect entry carries the expression verbatim.
+            #
+            # This is the same fact `TS-EXPR-THOUGHTSPOT-ONLY` already records
+            # at INFO -- "not portable", not "something is wrong" -- so a
+            # WARNING here was inconsistent as well as noisy: it fired 346
+            # times across 30 real models.
             log.add(
                 code="TS-EXPR-UNRESOLVED",
-                severity=Severity.WARNING,
+                severity=Severity.INFO,
                 message=(
-                    f"reference {identifiers.format_column_ref(*bare)} resolves to "
-                    f"no dataset field; no portable expression is emitted"
+                    f"reference {identifiers.format_column_ref(*bare)} names no "
+                    f"field this model surfaces, so no portable ANSI_SQL sibling "
+                    f"is emitted; the THOUGHTSPOT expression carries it verbatim"
                 ),
                 object_ref=object_ref,
             )
