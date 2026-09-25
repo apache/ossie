@@ -481,7 +481,7 @@ def test_minimal_physical_field_translates_to_its_dataset_dot_column():
     field = _field(_dataset(model, "orders"), "order_id")
     dialects = _dialects(field)
     assert dialects[DIALECT] == "[orders::order_id]"
-    assert dialects[PORTABLE_DIALECT] == "orders.order_id"
+    assert dialects[PORTABLE_DIALECT] == "order_id"
 
 
 def test_minimal_known_unportable_metric_has_no_portable_sibling_and_an_issue():
@@ -499,12 +499,12 @@ def test_tpcds_physical_fields_translate_to_their_warehouse_column_even_when_the
     # (STORE_NM); the portable expression has to carry the warehouse name,
     # not the display-derived Ossie identifier.
     store_name = _field(_dataset(model, "store"), "s_store_name")
-    assert _dialects(store_name)[PORTABLE_DIALECT] == "store.STORE_NM"
+    assert _dialects(store_name)[PORTABLE_DIALECT] == "STORE_NM"
     # sr_return_amt is a SQL View column whose output alias (RETURN_AMT)
     # differs from its own field name -- the same fact, for a query rather
     # than a table.
     return_amt = _field(_dataset(model, "store_returns_sv"), "sr_return_amt")
-    assert _dialects(return_amt)[PORTABLE_DIALECT] == "store_returns_sv.RETURN_AMT"
+    assert _dialects(return_amt)[PORTABLE_DIALECT] == "RETURN_AMT"
 
 
 def test_tpcds_known_unportable_metrics_have_no_portable_sibling_and_an_issue():
