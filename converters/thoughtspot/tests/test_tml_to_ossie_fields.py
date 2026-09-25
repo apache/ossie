@@ -644,3 +644,71 @@ class TestPortableReferenceScope:
         assert field_expr != metric_expr, (
             f"field and metric both emitted {field_expr!r}; the scope distinction is gone"
         )
+
+
+class TestPortableIdentifierQuoting:
+    """A ThoughtSpot display name is not automatically a valid SQL identifier.
+
+    Columns and tables carry spaces, colons, percent signs and parentheses
+    freely. Emitted raw they do not merely look wrong, they do not parse:
+    `SUM(cargo.Custom Clearance Time (min))` and `SUM(HV: STORES.LATITUDE)` are
+    both rejected by sqlglot -- the parser Apache's own validator uses. Across
+    31 real models this was 5 documents failing validation outright and 30 SQL
+    findings; quoting takes both to zero.
+
+    Quoted only WHEN NEEDED, which matters semantically rather than
+    cosmetically: the specification notes regular identifiers are compared
+    case-insensitively while quoted ones are compared verbatim, so quoting a
+    name that does not need it changes how a consumer matches it.
+    """
+
+    @staticmethod
+    def _resolver(dataset, column):
+        return lambda _t, _c: (dataset, column)
+
+    def test_a_name_needing_quotes_is_quoted(self):
+        out = expression_entries(
+            "[T::C]", self._resolver("cargo", "Custom Clearance Time (min)"),
+            IssueLog(), object_ref="m", kind="metric",
+        )
+        portable = next(e["expression"] for e in out if e["dialect"] == "ANSI_SQL")
+        assert portable == 'cargo."Custom Clearance Time (min)"', portable
+
+    def test_a_dataset_name_needing_quotes_is_quoted_too(self):
+        out = expression_entries(
+            "[T::C]", self._resolver("HV: DIM_STORES", "LATITUDE"),
+            IssueLog(), object_ref="m", kind="metric",
+        )
+        portable = next(e["expression"] for e in out if e["dialect"] == "ANSI_SQL")
+        assert portable == '"HV: DIM_STORES".LATITUDE', portable
+
+    def test_a_regular_identifier_is_left_bare(self):
+        # Not cosmetic: quoting changes case-matching semantics, so a name that
+        # does not need quotes must not get them.
+        out = expression_entries(
+            "[T::C]", self._resolver("orders", "amount"),
+            IssueLog(), object_ref="m", kind="metric",
+        )
+        portable = next(e["expression"] for e in out if e["dialect"] == "ANSI_SQL")
+        assert portable == "orders.amount", portable
+        assert '"' not in portable
+
+    def test_an_embedded_double_quote_is_doubled(self):
+        out = expression_entries(
+            "[T::C]", self._resolver("orders", 'He said "hi"'),
+            IssueLog(), object_ref="f", kind="field",
+        )
+        portable = next(e["expression"] for e in out if e["dialect"] == "ANSI_SQL")
+        assert portable == '"He said ""hi"""', portable
+
+    def test_the_quoted_output_actually_parses_as_sql(self):
+        # The point of the exercise. Skipped rather than silently passing when
+        # sqlglot is absent -- the validator's own "not installed" path reports
+        # PASSED, which is how this defect survived unseen.
+        sqlglot = pytest.importorskip("sqlglot")
+        out = expression_entries(
+            "[T::C]", self._resolver("HV: DIM_STORES", "Custom Time (min)"),
+            IssueLog(), object_ref="m", kind="metric",
+        )
+        portable = next(e["expression"] for e in out if e["dialect"] == "ANSI_SQL")
+        sqlglot.parse_one(f"SELECT SUM({portable})")

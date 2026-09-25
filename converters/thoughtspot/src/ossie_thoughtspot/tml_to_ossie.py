@@ -139,6 +139,34 @@ from .issues import IssueLog, Severity
 from .tml import DocumentSet
 
 
+
+#: A regular ANSI SQL identifier: letter or underscore, then letters, digits or
+#: underscores. Anything else has to be double-quoted to survive a SQL parser.
+_REGULAR_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _sql_identifier(name: str) -> str:
+    """`name` as an ANSI SQL identifier, quoted only when it has to be.
+
+    ThoughtSpot column and table names are display names: they carry spaces,
+    colons, percent signs and parentheses freely. Emitted raw into a portable
+    expression they do not merely look wrong, they do not parse --
+    `SUM(cargo.Custom Clearance Time (min))` and `SUM(HV: STORES.LATITUDE)`
+    are both rejected by sqlglot, which is the parser Apache's own validator
+    uses.
+
+    The specification is explicit that identifiers follow ANSI SQL naming and
+    that the Ossie dialect's quote character is the double quote
+    (`core-spec/expression_language.md`), so a name that is not a regular
+    identifier is double-quoted, with any embedded double quote doubled.
+    A name that IS regular is left bare -- the spec notes regular identifiers
+    are case-insensitive while quoted ones are compared verbatim, so quoting
+    unnecessarily would change how a consumer matches it.
+    """
+    if _REGULAR_IDENTIFIER.match(name):
+        return name
+    return '"' + name.replace('"', '""') + '"'
+
 def expression_entries(
     expr: str,
     resolve: Callable[[str, str], tuple[str, str] | None],
@@ -251,8 +279,10 @@ def expression_entries(
         # table) nor a resolvable logical reference (no such field). 211 of 612
         # emitted references were in that state, every one of them on a field.
         dataset_name, warehouse_column = target
+        column_sql = _sql_identifier(warehouse_column)
         portable = (
-            warehouse_column if kind == "field" else f"{dataset_name}.{warehouse_column}"
+            column_sql if kind == "field"
+            else f"{_sql_identifier(dataset_name)}.{column_sql}"
         )
         entries.append({"dialect": PORTABLE_DIALECT, "expression": portable})
         return entries
