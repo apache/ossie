@@ -137,7 +137,19 @@ def convert_cube_to_ossie(files, model_name=None, view=None, strict_fanout=False
     cubes, cube_paths, views, view_paths, extra_files = _collect(files, issues)
     if not cubes:
         raise ConversionError(_no_cubes_message(views))
+    model = _build_model(cubes, cube_paths, views, view_paths, extra_files,
+                         model_name, view, issues)
+    return dump_yaml({"version": OSSIE_VERSION, **model}), issues
 
+
+def _build_model(cubes, cube_paths, views, view_paths, extra_files, model_name,
+                 view, issues):
+    """The Ossie model (a dict, without `version`) for the collected Cube model.
+
+    Split from `convert_cube_to_ossie` so view projection can run the same import over
+    the reduced cube set it builds, rather than serializing that set to YAML only to
+    parse it straight back.
+    """
     # The mapped view supplies the Ossie model's identity. Cube users are
     # view-first, and Cube's own agent reads `meta.ai_context` only from views and
     # individual members -- so the view, not any cube, is the model boundary.
@@ -235,8 +247,7 @@ def convert_cube_to_ossie(files, model_name=None, view=None, strict_fanout=False
     # Foreign-vendor extensions a previous export parked on the mapped view are
     # restored after the stash is written, so the CUBE entry stays first.
     _restore_parked_extensions(model, mapped_view.get("meta"))
-
-    return dump_yaml({"version": OSSIE_VERSION, **model}), issues
+    return model
 
 
 # --- collection -----------------------------------------------------------------
@@ -905,12 +916,21 @@ def _apply_dimension_labels(field, dim):
         field["ai_context"] = ai
 
 
-def _case_expression(cname, dname, case):
+def _case_expression(cname, dname, case, translate=None, literal=None):
     """Translate a Cube `case` dimension into an Ossie CASE expression.
 
     A string `label` becomes a SQL literal; the `{sql: ...}` form becomes that
     expression. Both are exactly what Cube itself renders, so nothing is approximated.
+
+    `translate` renders one SQL snippet and `literal` the text of one plain label; both
+    default to the Ossie forms. View projection passes Cube-space ones, to inline a
+    `case` dimension into the SQL of a member that references it.
     """
+    if translate is None:
+        def translate(sql):
+            return cube_sql_to_ossie(sql, cname)[0]
+    if literal is None:
+        literal = unescape_braces_from_cube
     if not isinstance(case, dict):
         raise ConversionError(
             f"cube '{cname}': dimension '{dname}' has a non-mapping `case`")
@@ -920,19 +940,21 @@ def _case_expression(cname, dname, case):
             raise ConversionError(
                 f"cube '{cname}': dimension '{dname}' has a `case.when` entry with "
                 f"no `sql`")
-        condition, _ = cube_sql_to_ossie(branch["sql"], cname)
-        parts.append(f"WHEN {condition} THEN {_case_label(cname, dname, branch)}")
+        condition = translate(branch["sql"])
+        label = _case_label(cname, dname, branch, translate, literal)
+        parts.append(f"WHEN {condition} THEN {label}")
     if not parts:
         raise ConversionError(
             f"cube '{cname}': dimension '{dname}' has a `case` with no `when` "
             f"branches")
     otherwise = case.get("else")
     if isinstance(otherwise, dict) and "label" in otherwise:
-        parts.append(f"ELSE {_case_label(cname, dname, otherwise)}")
+        parts.append(
+            f"ELSE {_case_label(cname, dname, otherwise, translate, literal)}")
     return "CASE " + " ".join(parts) + " END"
 
 
-def _case_label(cname, dname, holder):
+def _case_label(cname, dname, holder, translate, literal):
     """One `label`, as SQL: a plain value is a literal, `{sql: ...}` an expression."""
     label = holder.get("label")
     if isinstance(label, dict):
@@ -940,9 +962,8 @@ def _case_label(cname, dname, holder):
             raise ConversionError(
                 f"cube '{cname}': dimension '{dname}' has a `label` object with no "
                 f"`sql`")
-        translated, _ = cube_sql_to_ossie(label["sql"], cname)
-        return translated
-    text = unescape_braces_from_cube(str(label if label is not None else ""))
+        return translate(label["sql"])
+    text = literal(str(label if label is not None else ""))
     return "'" + text.replace("'", "''") + "'"
 
 
@@ -1339,7 +1360,11 @@ class _MeasureResolver:
     reject a legitimate model to guard against a hand-written pathological one.
     """
 
-    def __init__(self, cubes, pk_by_cube, issues):
+    def __init__(self, cubes, pk_by_cube, issues, qualify=True):
+        # `qualify=False` is for SQL whose columns are already qualified -- view
+        # projection's -- where the portable grammar's reading of a bare name (`day` in
+        # `DATEDIFF(day, a, b)`) is not to be trusted.
+        self._qualify = qualify
         self._pk = pk_by_cube
         self._issues = issues
         self._raw = {}
@@ -1529,7 +1554,7 @@ class _MeasureResolver:
         expression.
         """
         out, _ = cube_sql_to_ossie(
-            qualify_bare_columns(sql), cname,
+            qualify_bare_columns(sql) if self._qualify else sql, cname,
             resolve_ref=lambda body: self._resolve(body, cname, stack, inline_refs),
             self_prefix=cname, cube_names=self._cube_names)
         return out
@@ -1621,6 +1646,15 @@ def _fanout_unsafe_datasets(expr, own_cube, dataset_names):
         # An unsafe aggregate over an unqualified column reads the declaring cube.
         found.add(own_cube)
     return found
+
+
+def _report_fanout(issues, scope, dataset, cause):
+    """Record that the metric at `scope` reads `dataset`, which `cause` fans out."""
+    issues.add(
+        IssueType.FANOUT_UNSAFE_METRIC, scope,
+        f"a non-idempotent aggregate reads dataset '{dataset}', which {cause} fans "
+        f"out; Cube deduplicates on the primary key at query time but a static Ossie "
+        f"expression cannot, so a consumer joining through that join may over-count")
 
 
 def _windowing_key(measure):
@@ -1774,29 +1808,19 @@ def _field_owners_of(member_names):
     return owners
 
 
-def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, relationships,
-                      issues):
-    """Hoist every cube's measures into Ossie model-level metrics.
+def _metric_names_of(resolver, decomposed):
+    """{(cube, measure): the Ossie metric name it becomes}, for every measure that
+    produces a metric at all.
 
-    A metric name is the measure name when globally unique, else
-    `<cube>__<measure>`; the original name is stashed so export puts the measure
-    back where it came from.
+    Decided before any expression is emitted: a measure reference resolves to the
+    referenced measure's *metric name*, so the names have to exist first -- and only
+    measures that convert get one. The `inlined()` form is name-independent, which is
+    what breaks the circularity (it also warms the cache the fan-out analysis reads).
 
-    Returns (metrics, {cube: [{"index": i, "measure": ...}]}). The second value holds
-    measures with no static Ossie expression -- a multi-stage measure renders as a
-    window function over another grain -- which have no `metrics` entry and would
-    otherwise vanish. They ride on the owning dataset's stash with their positions,
-    the same protocol unconvertible joins use.
+    A name is the measure's own when unique across the model, else
+    `<cube>__<measure>`. View projection reads it too, to find the metric a published
+    measure became.
     """
-    resolver = _MeasureResolver(cubes, pk_by_cube, issues)
-    member_names = _member_names_of(cubes)
-    decomposed = _decomposed_measure_names(cubes)
-
-    # Which measures produce a metric at all, decided before any expression is
-    # emitted: a measure reference resolves to the referenced measure's *metric
-    # name*, so the names have to exist first -- and only measures that convert
-    # get one. The `inlined()` form is name-independent, which is what breaks the
-    # circularity (it also warms the cache the fan-out analysis reads).
     converts = {key: resolver.inlined(*key) is not None
                 for key in resolver.measures()}
 
@@ -1819,6 +1843,27 @@ def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, relationship
         # normalized.
         metric_names[key] = (mname if counts[normalize_identifier(mname)] == 1
                              else f"{cname}__{mname}")
+    return metric_names
+
+
+def _convert_measures(cubes, pk_by_cube, plain_by_cube, fanned_out, relationships,
+                      issues):
+    """Hoist every cube's measures into Ossie model-level metrics.
+
+    A metric name is the measure name when globally unique, else
+    `<cube>__<measure>`; the original name is stashed so export puts the measure
+    back where it came from.
+
+    Returns (metrics, {cube: [{"index": i, "measure": ...}]}). The second value holds
+    measures with no static Ossie expression -- a multi-stage measure renders as a
+    window function over another grain -- which have no `metrics` entry and would
+    otherwise vanish. They ride on the owning dataset's stash with their positions,
+    the same protocol unconvertible joins use.
+    """
+    resolver = _MeasureResolver(cubes, pk_by_cube, issues)
+    member_names = _member_names_of(cubes)
+    decomposed = _decomposed_measure_names(cubes)
+    metric_names = _metric_names_of(resolver, decomposed)
     resolver.set_metric_names(metric_names)
 
     # What the stash decisions need to know about the metric namespace: which cube
@@ -1906,12 +1951,7 @@ def _convert_measure(cname, mname, metric_name, measure, context):
                                     context.dataset_names)):
         if dataset not in context.fanned_out:
             continue
-        issues.add(
-            IssueType.FANOUT_UNSAFE_METRIC, scope,
-            f"a non-idempotent aggregate reads dataset '{dataset}', which "
-            f"{context.fanned_out[dataset]} fans out; Cube deduplicates on the "
-            f"primary key at query time but a static Ossie expression cannot, so "
-            f"a consumer joining through that join may over-count")
+        _report_fanout(issues, scope, dataset, context.fanned_out[dataset])
 
     metric = {
         "name": metric_name,

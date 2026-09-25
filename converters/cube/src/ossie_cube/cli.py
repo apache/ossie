@@ -19,6 +19,7 @@
 
     ossie-cube import -i model/ [-o model.yaml] [--name my_model] [--view sales]
     ossie-cube import -i cubes/orders.yml cubes/users.yml views/sales.yml
+    ossie-cube import -i model/ --view sales --project [--source orders]
     ossie-cube export -i model.yaml -o model/ [--dialect SNOWFLAKE] [--base-cube orders]
 
 `import` converts a Cube data model (any `.yml` holding `cubes:` / `views:`) into an
@@ -34,6 +35,11 @@ the dataset and the relationship responsible -- a hub-and-spoke converter that
 refuses a whole model over one such metric is not much use to the spoke on the
 other side. Pass `--strict-fanout` to refuse instead, mirroring Cube's own refusal
 to answer such a query.
+
+`--project` converts only the public surface of the `--view` -- the members it exposes,
+under its names, hidden dependencies inlined -- for publishing to another tool rather
+than round-tripping. It is strict about fan-out unless given `--no-strict-fanout`, and
+prints the dataset the projection is rooted at (or `--source`) to stderr.
 """
 
 import argparse
@@ -43,6 +49,7 @@ import sys
 from ._common import ConversionError
 from .cube_to_osi import convert_cube_to_ossie
 from .osi_to_cube import convert_ossie_to_cube
+from .view_projection import convert_cube_view_to_ossie
 
 
 def _build_parser():
@@ -67,9 +74,16 @@ def _build_parser():
                      help="view whose name/description/AI context map onto the "
                           "Ossie model (default: the sole view, if there is one)")
     imp.add_argument("--strict-fanout", dest="strict_fanout",
-                     action="store_true", default=False,
+                     action=argparse.BooleanOptionalAction, default=None,
                      help="refuse the conversion when a metric is fan-out-unsafe, "
-                          "instead of converting it and recording an issue")
+                          "instead of converting it and recording an issue (default: "
+                          "off, and on with --project)")
+    imp.add_argument("--project", action="store_true", default=False,
+                     help="convert only the public surface of --view, for publishing "
+                          "rather than round-tripping")
+    imp.add_argument("--source",
+                     help="with --project, the dataset the projection is rooted at "
+                          "(default: the root of the view's join paths)")
 
     exp = sub.add_parser(
         "export", help="Apache Ossie semantic model -> Cube data model directory")
@@ -154,7 +168,15 @@ def _report(issues):
 
 
 def main(argv=None):
-    args = _build_parser().parse_args(argv)
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    if args.command == "import":
+        if args.project and not args.view:
+            parser.error("--project needs --view to name the view to project")
+        if args.project and args.name:
+            parser.error("--name does not apply to --project; the view names the model")
+        if args.source and not args.project:
+            parser.error("--source only applies with --project")
     try:
         if args.command == "export":
             with open(args.input, encoding="utf-8") as fh:
@@ -171,9 +193,16 @@ def main(argv=None):
             return 0
 
         files = _read_model_input(args.input)
-        out, issues = convert_cube_to_ossie(
-            files, model_name=args.name, view=args.view,
-            strict_fanout=args.strict_fanout)
+        if args.project:
+            out, source, issues = convert_cube_view_to_ossie(
+                files, args.view, source=args.source,
+                strict_fanout=args.strict_fanout is not False)
+            print(f"Projected view '{args.view}', rooted at dataset '{source}'",
+                  file=sys.stderr)
+        else:
+            out, issues = convert_cube_to_ossie(
+                files, model_name=args.name, view=args.view,
+                strict_fanout=bool(args.strict_fanout))
         if args.output:
             with open(args.output, "w", encoding="utf-8") as fh:
                 fh.write(out)

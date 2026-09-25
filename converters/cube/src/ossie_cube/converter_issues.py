@@ -78,6 +78,12 @@ class IssueType(Enum):
     # "actually lost".
     DROPPED_NO_CUBE_EQUIVALENT = "DROPPED_NO_CUBE_EQUIVALENT"
 
+    # A Cube property of a projected view, cube or published member that a view
+    # projection does not carry -- an access policy, pre-aggregations, drill members.
+    # The lossless import would preserve it in custom_extensions; a projection carries
+    # only the view's public surface, so it is gone from the output.
+    DROPPED_FROM_PROJECTION = "DROPPED_FROM_PROJECTION"
+
     # Something *was* emitted, but it is not an exact equivalent: a value Cube
     # requires and Ossie does not carry (so the converter had to choose one), or a
     # construct rendered in the nearest form Cube has. Nothing is lost and nothing

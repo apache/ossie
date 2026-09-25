@@ -41,6 +41,10 @@ a round trip.
 - **Export** (`ossie-cube export`): Ossie -> Cube files. Ossie features with no
   Cube slot are parked under `meta.ossie` rather than dropped -- Cube has a `meta`
   field at every level -- so **Ossie -> Cube -> Ossie is lossless too**.
+- **View projection** (`ossie-cube import --view sales --project`): one Cube view's
+  public surface -> Ossie, for publishing to another tool rather than round-tripping.
+  Exactly the members the view exposes, under its names, with hidden dependencies
+  inlined; see [View projection](#view-projection).
 
 Any input that breaks a [requirement](#requirements) **raises a
 `ConversionError`** -- the converter never silently drops a field or produces an
@@ -66,6 +70,8 @@ composite metric). Python 3.11+.
 ```bash
 ossie-cube import -i model/ [-o model.yaml] [--name my_model] [--view sales]
                             [--strict-fanout]
+ossie-cube import -i model/ --view sales --project [--source orders]
+                            [--no-strict-fanout]
 ossie-cube export -i model.yaml -o model/ [--dialect SNOWFLAKE] [--base-cube orders]
 ```
 
@@ -100,12 +106,16 @@ cube files (or point `-i` at the model directory).
 ### Python API
 
 ```python
-from ossie_cube import convert_cube_to_ossie, convert_ossie_to_cube
+from ossie_cube import (convert_cube_to_ossie, convert_cube_view_to_ossie,
+                        convert_ossie_to_cube)
 
 ossie_yaml, issues = convert_cube_to_ossie(files)     # {relative filename: YAML str}
 files, issues = convert_ossie_to_cube(ossie_yaml)     # -> {relative filename: YAML str}
 for issue in issues:
     print(issue)
+
+# One view's public surface; `source` is the dataset it is rooted at.
+ossie_yaml, source, issues = convert_cube_view_to_ossie(files, "sales")
 ```
 
 ## Mapping
@@ -336,6 +346,83 @@ AVG(users.home_latitude) - MIN(orders.amt)  ->  sql: AVG({users}.lat) - MIN({CUB
 
 One documented normalization follows: after a round trip such a metric names the column the half actually reads (`users.lat`) rather than the Ossie-only field name (`users.home_latitude`). Same reference, and it is the form Cube can express.
 
+## View projection
+
+The import above is a round trip: every cube member becomes an Ossie field or metric,
+and view curation rides in `custom_extensions`. Publishing a view to a tool whose users
+should see what Cube users see needs the opposite boundary, which
+`convert_cube_view_to_ossie(files, view, source=None, strict_fanout=True)` (CLI:
+`--project`) provides. It returns `(ossie_yaml, resolved_source, IssueLog)`, where
+`resolved_source` is the root of the view's join paths -- the dataset a converter that
+needs a single fact, such as Databricks' `--source`, should start from.
+
+It resolves the view, builds a reduced cube set holding only the view's join tree,
+published dimensions and the measures they need (every dimension reference inlined as
+its SQL), runs the ordinary import over that set, and trims the result to the published
+surface. The round-trip import is unchanged.
+
+**What it publishes**
+
+- The view's `includes` (a list or `*`), `excludes`, member aliases, `prefix` (with the
+  entry's `alias`), and member `title`/`description`/`meta.ai_context`/`format`
+  overrides. The view supplies the model's name, description and AI context.
+- A wildcard skips private members (`public: false`, or the deprecated `visible`/`shown:
+  false`, with Cube's precedence) and measures a previous export generated as part of a
+  decomposed metric; naming a private member explicitly publishes it. This is stricter
+  than Cube, whose `*` includes private members too, because publishing is the point at
+  which privacy matters.
+- Hidden dependencies are inlined, never published: a measure referencing another
+  measure, a dimension referencing another dimension (a `case` dimension becomes its
+  `CASE`), a measure reading another cube's dimension or raw column, and the join a
+  selected member needs. A cube the view names no path to is joined along the unique
+  declared join path from the view's root. A bare `type: count` counts the distinct
+  values of its primary key's own SQL.
+- Every column in a metric expression is qualified by its dataset (`orders.amount`,
+  `orders.payload.amount` for a struct field), so none is mistaken for another
+  dataset's; fields stay dataset-scoped. A raw path is a struct field of the declaring
+  cube's table, and one starting with the cube's own name is that table's column, since
+  Cube aliases the table by it. Comments are dropped, so an inlined `-- note` cannot
+  swallow the rest of an expression. As in the round-trip import, an expression is
+  the data source's own SQL labelled `ANSI_SQL`: backtick- or bracket-quoted
+  identifiers are attributed correctly, but `validation/validate.py` parses the text
+  as ANSI and rejects them.
+- A dataset's `primary_key` names the columns its key members read.
+- The CUBE stash keeps only what describes the published model: a member's `format`,
+  `currency`, measure `title` and dimension `type`, a join's declared cardinality, and
+  a cube's `data_source`. Everything else Cube-only is reported as
+  `DROPPED_FROM_PROJECTION`.
+
+**What it refuses**, with a `ConversionError` naming the view and member:
+
+- a view with several join roots, a cube reached through two join paths, a join path
+  step its cube does not declare (or declares twice), a split entry, or no `cubes`
+  entries (the legacy view-level `includes` form);
+- a hidden dependency on a cube with no declared join path from the root, or several;
+- two published names that collide, case-insensitively;
+- an included or excluded member the cube does not have, an include written as a path,
+  a non-boolean `prefix`, or an empty or non-string alias;
+- a selected segment or hierarchy, a `geo`, `switch` or `sub_query` dimension, or a
+  measure generated as part of a decomposed metric;
+- a measure with an active `rolling_window`, `multi_stage`, `group_by`, `reduce_by`,
+  `add_group_by`, `time_shift` or `grain`, published or hidden (Cube's no-op defaults
+  -- `false`, `[]`, `{}` -- are allowed; a malformed one is refused);
+- a reference to an unknown cube or member, a dimension referencing a measure, a
+  reference cycle, or a referenced `geo`/`switch`/`sub_query` dimension;
+- SQL whose source columns cannot be proven statically: it does not parse, it has a
+  subquery or lambda, no grammar reads a unit or type argument (`DATEDIFF(day, a, b)`,
+  `CONVERT(VARCHAR, x)`) as anything but a column, or a raw path starts with another
+  cube's name (`accounts.balance`: that cube's table when it is joined, else a struct
+  field -- write `{CUBE}.accounts.balance` or `{accounts}.balance`);
+- a published dimension reading another cube, which a dataset-scoped field cannot join;
+- a join the projection needs that has no relationship form;
+- a published measure with no static Ossie expression, with the import's reason;
+- a `source` outside the projection, or one that would reach a published dimension
+  through a one-to-many join;
+- under `strict_fanout` (the default), a published metric -- or a hidden measure it
+  depends on -- that can over-count; see [Fan-out](#fan-out). Beyond the import's
+  per-join check, a dataset multiplied further along the tree counts too (`orders`
+  many-to-one `users`, `users` one-to-many `addresses`).
+
 ## Onward conversion
 
 Ossie is a hub, so the useful question is not only whether `Cube → Ossie → Cube`
@@ -412,8 +499,9 @@ somewhere like `compliance/`, which is a question for `dev@`.
 
 ## Conversion issues
 
-`convert_cube_to_ossie` returns `(yaml, IssueLog)`. Each issue carries a type, the
-element it concerns, and a detail string.
+`convert_cube_to_ossie` returns `(yaml, IssueLog)`, and `convert_cube_view_to_ossie`
+`(yaml, source, IssueLog)`. Each issue carries a type, the element it concerns, and a
+detail string.
 
 | Issue type | Meaning |
 |---|---|
@@ -426,6 +514,7 @@ element it concerns, and a detail string.
 | `SOURCE_NOT_FULLY_QUALIFIED` | A `sql_table` shorter than `catalog.schema.table`. Valid Cube and nothing is lost, but the Databricks, Snowflake and NVIDIA GSF converters reject such a source, so the model cannot convert onward — see [Onward conversion](#onward-conversion) |
 | `PARKED_IN_META` | Preserved in the stash or under `meta.ossie` — invisible to Cube, but intact through a round trip |
 | `DROPPED_NO_CUBE_EQUIVALENT` | **Gone from the output.** Cube has nowhere to hold it and it cannot be parked: relationship `ai_context` (a Cube join entry has no `meta`) and a `dimension.is_time` role or opt-out that Cube expresses only through `type` |
+| `DROPPED_FROM_PROJECTION` | View projection only. **Gone from the output**: a Cube-only property of the view, a projected cube or a published member -- an access policy, pre-aggregations, drill members, extra `meta` -- that the round-trip import would preserve, but a projection of the public surface does not carry |
 | `APPROXIMATED` | Emitted, but not an exact equivalent: a value Cube requires and Ossie does not carry (so the converter chose one), or a construct rendered in the nearest form Cube has |
 
 These three are kept distinct on purpose. A caller gating on issue types has to be

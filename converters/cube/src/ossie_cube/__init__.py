@@ -23,12 +23,16 @@ string}.
 
     ossie_yaml, issues = convert_cube_to_ossie(files)
     files, issues = convert_ossie_to_cube(ossie_yaml)
+
+    # One view's public surface, for publishing rather than round-tripping:
+    ossie_yaml, source, issues = convert_cube_view_to_ossie(files, "sales")
 """
 
 from ._common import ConversionError
 from .converter_issues import ConverterIssue, IssueLog, IssueType
 from .cube_to_osi import convert_cube_to_ossie
 from .osi_to_cube import convert_ossie_to_cube
+from .view_projection import convert_cube_view_to_ossie
 
 __all__ = [
     "ConversionError",
@@ -36,5 +40,6 @@ __all__ = [
     "IssueLog",
     "IssueType",
     "convert_cube_to_ossie",
+    "convert_cube_view_to_ossie",
     "convert_ossie_to_cube",
 ]

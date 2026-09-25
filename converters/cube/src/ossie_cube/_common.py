@@ -1207,21 +1207,28 @@ AGG_TO_RESULT_DATATYPE = {
 }
 
 
-def primary_key_operand(cube_name, primary_keys):
+def primary_key_operand(cube_name, primary_keys, render=None):
     """The single scalar expression standing for a cube's primary key.
 
     A composite key is concatenated the same way Cube does it (CAST + CONCAT, in
     `primaryKeyCount`); both are REQUIRED functions in the Ossie expression
     language, so the result stays portable.
+
+    `render` turns one key into the SQL that reads it, `cube.key` by default. View
+    projection passes the key member's own SQL instead, since a projected model
+    publishes no field for a hidden key to name.
     """
     if not primary_keys:
         raise ConversionError(
             f"Cube '{cube_name}': a bare `type: count` measure needs the cube's "
             f"primary key to convert safely, but no dimension declares "
             f"`primary_key: true`")
+    if render is None:
+        def render(pk):
+            return f"{cube_name}.{pk}"
     if len(primary_keys) == 1:
-        return f"{cube_name}.{primary_keys[0]}"
-    parts = ", ".join(f"CAST({cube_name}.{pk} AS VARCHAR)" for pk in primary_keys)
+        return render(primary_keys[0])
+    parts = ", ".join(f"CAST({render(pk)} AS VARCHAR)" for pk in primary_keys)
     return f"CONCAT({parts})"
 
 

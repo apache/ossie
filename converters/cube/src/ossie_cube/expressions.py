@@ -305,6 +305,29 @@ def unsafe_aggregate_datasets(expr):
     return datasets, unqualified
 
 
+def unsafe_aggregate_path_heads(expr):
+    """The first part of every column path of three or more parts that a
+    non-idempotent aggregate in `expr` reads, or None when `expr` does not parse.
+
+    sqlglot reads `orders.payload.amount` as db `orders`, table `payload`, so
+    `unsafe_aggregate_datasets` attributes it to `payload`. In a view projection every
+    column is written `dataset.path` -- a struct field keeps its dataset in front -- so
+    the head is the dataset, and this is what lets projection check the one it read.
+    """
+    tree = parse(expr)
+    if tree is None:
+        return None
+    heads = set()
+    for scope in _outermost_aggregate_scopes(tree):
+        if is_idempotent_aggregate(scope):
+            continue
+        for column in scope.find_all(exp.Column):
+            parts = column.parts
+            if len(parts) >= 3 and isinstance(parts[0], exp.Identifier):
+                heads.add(parts[0].name)
+    return heads
+
+
 def unsplittable_aggregate_datasets(expr):
     """Datasets read by an aggregate that decomposition has to leave where it is.
 
@@ -449,6 +472,136 @@ def qualify_bare_columns(cube_sql):
         return text
     return replace_bare_identifiers(
         text, {name: "{CUBE}." + name for name in names})
+
+
+# The portable reading first, then grammars that quote identifiers with backticks
+# (Databricks, BigQuery, MySQL) or brackets (T-SQL) and read unit arguments the way
+# those warehouses do -- `DATEDIFF(day, a, b)`, `CONVERT(VARCHAR, x)`.
+_READINGS = (None, "databricks", "tsql")
+
+# Words a function takes as a date part or type name rather than a column. sqlglot's
+# portable grammar reads `DATEDIFF(day, a, b)` with `day` as a column and `b` as the
+# unit, and a qualification built on that reading would be wrong.
+_UNIT_WORDS = frozenset({
+    "YEAR", "YEARS", "QUARTER", "MONTH", "MONTHS", "WEEK", "WEEKS", "WEEKDAY",
+    "ISOWEEK", "ISOYEAR", "DAY", "DAYS", "DAYOFWEEK", "DAYOFYEAR", "DOW", "DOY", "HOUR",
+    "HOURS", "MINUTE", "MINUTES", "SECOND", "SECONDS", "MILLISECOND", "MILLISECONDS",
+    "MICROSECOND", "MICROSECONDS", "NANOSECOND", "NANOSECONDS", "EPOCH", "DECADE",
+    "CENTURY", "MILLENNIUM", "TIMEZONE", "TIMEZONE_HOUR", "TIMEZONE_MINUTE", "YYYY",
+    "YY", "MM", "DD", "HH", "MI", "SS", "MS",
+})
+_TYPE_WORDS = frozenset({
+    "VARCHAR", "NVARCHAR", "CHAR", "NCHAR", "INT", "INTEGER", "BIGINT", "SMALLINT",
+    "TINYINT", "DECIMAL", "NUMERIC", "FLOAT", "REAL", "DOUBLE", "DATETIME", "DATETIME2",
+    "TIMESTAMP", "BOOLEAN",
+})
+
+
+class UnattributableSQL(ValueError):
+    """Cube SQL whose columns cannot be attributed to a dataset statically."""
+
+
+def _parse_as(text, dialect):
+    """`text` parsed as `dialect`, or None when it does not parse as that."""
+    try:
+        return sqlglot.parse_one(text, read=dialect)
+    except (sqlglot.errors.SqlglotError, ValueError, RecursionError):
+        return None
+
+
+def _misread(tree):
+    """True when a reading takes a unit or type argument for a column, or a column for
+    a unit -- what the portable grammar does to `DATEDIFF(day, a, b)`."""
+    if any(var.name.upper() not in _UNIT_WORDS for var in tree.find_all(exp.Var)):
+        return True
+    return any(not column.table and isinstance(column.parent, exp.Func)
+               and column.name.upper() in _UNIT_WORDS | _TYPE_WORDS
+               for column in tree.find_all(exp.Column))
+
+
+def strip_sql_comments(sql):
+    """`sql` with its `--` and `/* */` comments replaced by a space.
+
+    A trailing `-- note` is harmless in a member's own SQL, but inlined into another
+    expression it comments out everything after it.
+    """
+    text = str(sql)
+    mask = quoted_char_mask(text)
+    out, i = [], 0
+    while i < len(text):
+        if not mask[i] and text.startswith("--", i):
+            end = text.find("\n", i)
+            i = len(text) if end < 0 else end
+            out.append(" ")
+        elif not mask[i] and text.startswith("/*", i):
+            end = text.find("*/", i + 2)
+            i = len(text) if end < 0 else end + 2
+            out.append(" ")
+        else:
+            out.append(text[i])
+            i += 1
+    return "".join(out)
+
+
+def qualify_column_paths(cube_sql, own_cube=None, cube_names=()):
+    """Qualify every physical column path in Cube SQL as `{CUBE}.path`.
+
+    `qualify_bare_columns` leaves a dotted path as written, which suits the lossless
+    import: the text is carried across, not reasoned about. View projection has to say
+    which dataset every column belongs to, and a path in a cube's own SQL is that
+    cube's: `payload.amount` is a struct field of the cube's table, so the whole path is
+    qualified. A path rooted at a `{...}` reference is left alone. Cube aliases each
+    cube's table by the cube's name, so a path starting with `own_cube` reads the own
+    table (`orders.amount` becomes `{CUBE}.amount`), and one starting with another of
+    `cube_names` could be that cube's table or a struct field, and is refused.
+
+    Cube SQL is the data source's own, so other grammars are tried when the portable one
+    fails or misreads a unit argument. Only positions are read and the text is never
+    regenerated, so which grammar reads it does not matter. Comments are dropped.
+
+    Raises UnattributableSQL saying why when the columns cannot be attributed statically.
+    """
+    masked, saved = _mask_references(strip_sql_comments(cube_sql))
+    # The positions sqlglot reports are into the text it parsed, so it gets no other.
+    masked = masked.strip()
+    readings = [t for t in (_parse_as(masked, d) for d in _READINGS) if t is not None]
+    if not readings:
+        raise UnattributableSQL("it does not parse")
+    tree = next((t for t in readings if not _misread(t)), None)
+    if tree is None:
+        raise UnattributableSQL(
+            "a unit or type argument reads as a column (or a column as a unit); write "
+            "a column that shares a unit's name as {CUBE}.name")
+    if tree.find(exp.Select, exp.Lambda) is not None:
+        raise UnattributableSQL("it binds names of its own (a subquery or a lambda)")
+    others = {name.casefold() for name in cube_names if name != own_cube}
+    edits = []
+    for column in tree.find_all(exp.Column):
+        head = column.parts[0] if column.parts else None
+        if not isinstance(head, exp.Identifier):
+            raise UnattributableSQL(f"'{column.sql()}' is not a column path")
+        start = head.meta.get("start")
+        if _SENTINEL_RE.match(head.name):
+            continue
+        if not isinstance(start, int):
+            raise UnattributableSQL(f"sqlglot gives '{column.sql()}' no source position")
+        folded = head.name if head.args.get("quoted") else head.name.casefold()
+        if len(column.parts) > 1 and own_cube and folded in (own_cube, own_cube.casefold()):
+            edits.append((start, head.meta["end"] + 1, "{CUBE}"))
+        elif len(column.parts) > 1 and folded.casefold() in others:
+            path = column.sql()
+            rest = path.split(".", 1)[1]
+            raise UnattributableSQL(
+                f"'{path}' starts with the name of cube '{head.name}', which Cube reads "
+                f"as that cube's table when it is joined; write '{{CUBE}}.{path}' for a "
+                f"field of this cube's table, or '{{{head.name}}}.{rest}' for the "
+                f"joined cube's column")
+        else:
+            edits.append((start, start, "{CUBE}."))
+    for start, end, text in sorted(edits, reverse=True):
+        masked = masked[:start] + text + masked[end:]
+    return re.sub(_REF_SENTINEL.format(r"(\d+)"),
+                  lambda m: saved[int(m.group(1))], masked)
 
 
 def has_top_level_operator(expr):
