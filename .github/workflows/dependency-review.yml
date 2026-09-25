@@ -17,6 +17,8 @@
 
 name: Dependency Review
 
+# Note: For fork-originated PRs, the GITHUB_TOKEN is read-only.
+# The dependency scan still runs but the PR summary comment will be skipped.
 on: [pull_request]
 
 permissions:
@@ -31,5 +33,5 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/dependency-review-action@v4
         with:
-          deny-licenses: GPL-2.0-only, GPL-2.0-or-later, GPL-3.0-only, GPL-3.0-or-later, LGPL-2.1-only, LGPL-2.1-or-later, LGPL-3.0-only, LGPL-3.0-or-later, AGPL-3.0-only, AGPL-3.0-or-later, SSPL-1.0, EUPL-1.1, EUPL-1.2
+          deny-licenses: GPL-1.0-only, GPL-1.0-or-later, GPL-2.0-only, GPL-2.0-or-later, GPL-3.0-only, GPL-3.0-or-later, LGPL-2.0-only, LGPL-2.0-or-later, LGPL-2.1-only, LGPL-2.1-or-later, LGPL-3.0-only, LGPL-3.0-or-later, AGPL-1.0-only, AGPL-1.0-or-later, AGPL-3.0-only, AGPL-3.0-or-later, SSPL-1.0, EUPL-1.1, EUPL-1.2
           comment-summary-in-pr: always

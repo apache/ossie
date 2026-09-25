@@ -36,41 +36,27 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
           days-before-issue-stale: 90
-          days-before-issue-close: 14
+          days-before-issue-close: -1
           stale-issue-label: 'stale'
           only-issue-labels: 'awaiting-response'
           stale-issue-message: >
             This issue has been automatically marked as stale because it has been
-            waiting for a response for 90 days. It will be closed in 14 days if
-            no further activity occurs.
+            waiting for a response for 90 days.
 
             If this is still relevant, please provide the requested information or
             comment to keep it open. You can also reach out on the dev@ossie.apache.org
             mailing list.
-          close-issue-message: >
-            This issue has been automatically closed due to inactivity.
-
-            If this is still relevant, please feel free to:
-            - Reopen this issue with the requested information
-            - Create a new issue with complete details
-            - Discuss on the dev@ossie.apache.org mailing list
 
           days-before-pr-stale: 60
-          days-before-pr-close: 14
+          days-before-pr-close: -1
           stale-pr-label: 'stale'
           only-pr-labels: 'awaiting-response'
           stale-pr-message: >
             This pull request has been marked as stale because the requested
-            changes or feedback have not been addressed for 60 days. It will be
-            closed in 14 days if no activity occurs.
+            changes or feedback have not been addressed for 60 days.
 
             To keep this PR active, please address the review comments or respond
             to questions from reviewers.
-          close-pr-message: >
-            This pull request has been automatically closed due to inactivity.
-
-            If you would like to continue this work, please reopen the PR and
-            address the outstanding feedback. We appreciate your contribution!
 
           exempt-issue-labels: 'priority:critical,security,good-first-issue,in-progress,needs-review,needs-triage'
           exempt-pr-labels: 'priority:critical,security,in-progress,needs-review'
