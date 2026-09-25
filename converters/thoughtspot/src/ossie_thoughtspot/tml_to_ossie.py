@@ -141,7 +141,7 @@ from .tml import DocumentSet
 
 def expression_entries(
     expr: str,
-    resolve: Callable[[str, str], str | None],
+    resolve: Callable[[str, str], tuple[str, str] | None],
     log: IssueLog,
     *,
     object_ref: str,
@@ -233,7 +233,28 @@ def expression_entries(
                 object_ref=object_ref,
             )
             return entries
-        entries.append({"dialect": PORTABLE_DIALECT, "expression": target})
+        # A FIELD's expression is the bare warehouse column; a METRIC's keeps the
+        # dataset qualifier. The asymmetry is scope, and every sibling converter
+        # shows it: a field belongs to exactly one dataset, so its own `source`
+        # already says which warehouse table the column sits in and a qualifier
+        # adds nothing (databricks emits `l_linenumber` for a field named
+        # `line_number`, nvidia emits `name` for `customer_name`). A metric is
+        # model-scoped and may reference any dataset, so `SUM(amount)` would be
+        # ambiguous the moment two datasets both have an `amount`; nvidia
+        # qualifies for exactly this reason (`SUM(orders.subtotal)`).
+        #
+        # Qualifying a FIELD was not merely redundant, it was unresolvable. The
+        # qualifier is the OSSIE DATASET name -- ThoughtSpot's Table-object name,
+        # which need not be the warehouse table (44 of 164 datasets across 31
+        # real models differ) -- while the column half is the warehouse column.
+        # `Dim_Customer.Customer_Name` is therefore neither runnable SQL (no such
+        # table) nor a resolvable logical reference (no such field). 211 of 612
+        # emitted references were in that state, every one of them on a field.
+        dataset_name, warehouse_column = target
+        portable = (
+            warehouse_column if kind == "field" else f"{dataset_name}.{warehouse_column}"
+        )
+        entries.append({"dialect": PORTABLE_DIALECT, "expression": portable})
         return entries
 
     # Anything else is a function call or a multi-reference expression. Producing a
@@ -254,7 +275,7 @@ def expression_entries(
 
 def attribute_dataset(
     expr: str,
-    resolve: Callable[[str, str], str | None],
+    resolve: Callable[[str, str], tuple[str, str] | None],
     log: IssueLog,
     *,
     object_ref: str,
@@ -294,7 +315,7 @@ def attribute_dataset(
         if target is None:
             unresolved.append(identifiers.format_column_ref(table, column))
             continue
-        dataset = target.split(".", 1)[0]
+        dataset = target[0]
         if dataset not in datasets:
             datasets.append(dataset)
 
@@ -577,7 +598,7 @@ def convert_field(
     column: dict,
     formulas: dict[str, dict],
     table_lookup: Callable[[str], dict | None],
-    resolve: Callable[[str, str], str | None],
+    resolve: Callable[[str, str], tuple[str, str] | None],
     log: IssueLog,
     allocator: identifiers.Allocator | None = None,
 ) -> dict | None:
@@ -833,7 +854,7 @@ def _contains_aggregate_call(expr: str) -> bool:
 def _compose_aggregate_entries(
     inner_expr: str,
     aggregation_raw: str,
-    resolve: Callable[[str, str], str | None],
+    resolve: Callable[[str, str], tuple[str, str] | None],
     log: IssueLog,
     *,
     object_ref: str,
@@ -907,7 +928,7 @@ def convert_metric(
     column: dict,
     formulas: dict[str, dict],
     table_lookup: Callable[[str], dict | None],
-    resolve: Callable[[str, str], str | None],
+    resolve: Callable[[str, str], tuple[str, str] | None],
     log: IssueLog,
     allocator: identifiers.Allocator | None = None,
 ) -> dict | None:
@@ -1487,7 +1508,8 @@ def _write_stash_safely(obj: dict, payload: dict, log: IssueLog, object_ref: str
 
 
 def _field_owner_dataset(
-    column: dict, formulas: dict[str, dict], resolve: Callable[[str, str], str | None]
+    column: dict, formulas: dict[str, dict],
+    resolve: Callable[[str, str], tuple[str, str] | None],
 ) -> str | None:
     """Which dataset a *successfully built* field belongs in.
 
@@ -2152,18 +2174,25 @@ def convert(document_set: DocumentSet) -> OssieConversion:
     model_columns = model_body.get("columns") or []
     attribute_index = _index_attribute_columns(model_columns, log)
 
-    def resolve(table: str, column: str) -> str | None:
-        # The mapping document is explicit for a bare-identifier field: "the
-        # identifier is the *physical* column; the display name comes from
-        # label/name." So the ANSI_SQL sibling this feeds -- built to be
-        # directly executable against the warehouse -- has to carry the
-        # actual warehouse column reference (db_column_name, or a SQL
-        # View's sql_output_column), never the Ossie field's own
-        # display-derived identifier, which is not a column that exists on
-        # the underlying table at all. `attribute_index` still gates
-        # whether this reference is one the model actually surfaces as a
-        # field -- that scope is unchanged -- only the value returned once
-        # it passes that gate changes.
+    def resolve(table: str, column: str) -> tuple[str, str] | None:
+        """`(dataset name, warehouse column)` for a `[TABLE::Column]` reference.
+
+        Two callers want two different halves, which is why this returns the
+        pair rather than a joined string: `expression_entries` emits the
+        warehouse column as the portable expression, and `attribute_dataset`
+        uses the dataset name to decide which dataset a formula belongs to.
+        Returning `"dataset.column"` meant the second caller re-parsed a string
+        the first one then emitted whole -- and emitting it whole was the
+        defect, because the two halves come from different namespaces.
+
+        The mapping document is explicit for a bare-identifier field: "the
+        identifier is the *physical* column; the display name comes from
+        label/name." So the portable sibling carries the actual warehouse
+        column (db_column_name, or a SQL View's sql_output_column), never the
+        Ossie field's display-derived identifier, which is not a column on the
+        underlying table at all. `attribute_index` still gates whether the
+        reference is one the model surfaces as a field.
+        """
         if table not in dataset_bodies:
             return None
         if (table, column) not in attribute_index:
@@ -2177,7 +2206,7 @@ def convert(document_set: DocumentSet) -> OssieConversion:
         warehouse_reference = physical.get("db_column_name")
         if warehouse_reference is None:
             return None
-        return f"{table}.{warehouse_reference}"
+        return table, warehouse_reference
 
     # -- Phase 3: fields and metrics ------------------------------------------
     formulas: dict[str, dict] = {

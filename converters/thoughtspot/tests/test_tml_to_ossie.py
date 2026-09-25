@@ -1273,7 +1273,7 @@ class TestPhysicalColumnReferences:
         result = convert(_document_set(model, orders))
         field = result.model["datasets"][0]["fields"][0]
         dialects = {d["dialect"]: d["expression"] for d in field["expression"]["dialects"]}
-        assert dialects["ANSI_SQL"] == "ORDERS.AMT_RAW"
+        assert dialects["ANSI_SQL"] == "AMT_RAW"
 
     def test_an_equal_db_column_name_still_resolves(self):
         orders = _table("ORDERS", columns=[_column("Amount", "Amount", "DOUBLE")])
@@ -1281,7 +1281,7 @@ class TestPhysicalColumnReferences:
         result = convert(_document_set(model, orders))
         field = result.model["datasets"][0]["fields"][0]
         dialects = {d["dialect"]: d["expression"] for d in field["expression"]["dialects"]}
-        assert dialects["ANSI_SQL"] == "ORDERS.Amount"
+        assert dialects["ANSI_SQL"] == "Amount"
 
     def test_a_sql_view_reference_uses_sql_output_column_not_db_column_name(self):
         vw = _sql_view("VW", columns=[_sql_view_column("CID", "c_id", "INT64")])
@@ -1289,7 +1289,7 @@ class TestPhysicalColumnReferences:
         result = convert(_document_set(model, vw))
         field = result.model["datasets"][0]["fields"][0]
         dialects = {d["dialect"]: d["expression"] for d in field["expression"]["dialects"]}
-        assert dialects["ANSI_SQL"] == "VW.c_id"
+        assert dialects["ANSI_SQL"] == "c_id"
 
     def test_a_computed_field_referencing_a_renamed_column_still_resolves(self):
         orders = _table("ORDERS", columns=[_column("Amount", "AMT_RAW", "DOUBLE")])
@@ -1305,7 +1305,7 @@ class TestPhysicalColumnReferences:
         result = convert(_document_set(model, orders))
         fields = {f["name"]: f for f in result.model["datasets"][0]["fields"]}
         doubled_dialects = {d["dialect"]: d["expression"] for d in fields["doubled"]["expression"]["dialects"]}
-        assert doubled_dialects["ANSI_SQL"] == "ORDERS.AMT_RAW"
+        assert doubled_dialects["ANSI_SQL"] == "AMT_RAW"
         assert result.issues.as_dicts() == []
 
 
