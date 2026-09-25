@@ -62,6 +62,8 @@ instead of restoring a stale reference under the wrong name (see
 """
 from __future__ import annotations
 
+import json
+
 from pathlib import Path
 
 import pytest
@@ -1086,3 +1088,69 @@ class TestAFormulaNoColumnSurfaces:
 
     def test_the_conversion_reports_no_error(self):
         assert not self._round_trip().issues.has_errors()
+
+
+def test_an_explicit_aggregation_none_survives_a_round_trip():
+    """`aggregation: NONE` is not the same as no `aggregation` key.
+
+    Ossie has one way to say "does not aggregate"; TML has two, and
+    `_AGGREGATION["NONE"]` is `None` -- the same value
+    `properties.get("aggregation", "NONE")` yields for an absent key. Both
+    collapsed identically on the way in, so an explicit NONE came back ABSENT,
+    and ThoughtSpot applies its own default to an absent key. A per-row ratio
+    the author declared un-aggregated was returned as a column ThoughtSpot
+    rolls up: the sum of ratios instead of the ratio.
+
+    Only where the aggregation is LOAD-BEARING. On a formula that already
+    aggregates the property is a documented no-op, so NONE and absent do mean
+    the same thing there, and stashing it would put a payload on a document
+    that needs none -- see the companion test below.
+    """
+    table = tml.TmlDocument(kind="table", guid=None, body={
+        "name": "orders", "db": "D", "schema": "S", "db_table": "ORDERS",
+        "connection": {"name": "C"},
+        "columns": [
+            {"name": "amount", "db_column_name": "amount",
+             "db_column_properties": {"data_type": "INT64"}},
+            {"name": "qty", "db_column_name": "qty",
+             "db_column_properties": {"data_type": "INT64"}},
+        ],
+    })
+    model = tml.TmlDocument(kind="model", guid=None, body={
+        "name": "m", "model_tables": [{"name": "orders"}],
+        "formulas": [{"id": "f1", "name": "Ratio", "expr": "[orders::amount] / [orders::qty]"}],
+        "columns": [{"name": "Ratio", "formula_id": "f1",
+                     "properties": {"column_type": "MEASURE", "aggregation": "NONE"}}],
+    })
+    ossie = tml_to_ossie.convert(tml.DocumentSet(model=model, tables=(table,)))
+    back = ossie_to_thoughtspot.convert(ossie.model)
+    emitted = next(c for c in back.documents.model.body["columns"] if c["name"] == "Ratio")
+    assert emitted["properties"].get("aggregation") == "NONE", (
+        f"an explicit NONE was dropped; ThoughtSpot would apply its own default: {emitted}"
+    )
+
+
+def test_an_inert_aggregation_none_is_not_stashed():
+    """The other direction: on a formula that already aggregates, NONE is a
+    no-op, so recording it would dirty a document that needs no payload."""
+    table = tml.TmlDocument(kind="table", guid=None, body={
+        "name": "orders", "db": "D", "schema": "S", "db_table": "ORDERS",
+        "connection": {"name": "C"},
+        "columns": [{"name": "amount", "db_column_name": "amount",
+                     "db_column_properties": {"data_type": "INT64"}}],
+    })
+    model = tml.TmlDocument(kind="model", guid=None, body={
+        "name": "m", "model_tables": [{"name": "orders"}],
+        "formulas": [{"id": "f1", "name": "Total", "expr": "sum ( [orders::amount] )"}],
+        "columns": [{"name": "Total", "formula_id": "f1",
+                     "properties": {"column_type": "MEASURE", "aggregation": "NONE"}}],
+    })
+    ossie = tml_to_ossie.convert(tml.DocumentSet(model=model, tables=(table,)))
+    metric = next(m for m in ossie.model["metrics"] if m["name"] == "total")
+    payload = {}
+    for ext in metric.get("custom_extensions") or []:
+        if ext.get("vendor_name") == "THOUGHTSPOT":
+            payload = json.loads(ext["data"])
+    assert "aggregation_explicit_none" not in payload, (
+        f"an inert NONE was stashed: {payload}"
+    )

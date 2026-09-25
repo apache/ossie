@@ -105,6 +105,7 @@ from .constants import (
     FIELD_STASH_DB_COLUMN_NAME,
     FIELD_STASH_FORMULA_ID,
     FIELD_STASH_DB_COLUMN_NAME_WITNESS,
+    METRIC_STASH_AGGREGATION_NONE,
     METRIC_STASH_COLUMN_AGGREGATION,
     METRIC_SHAPE_COLUMN_AGGREGATION,
     METRIC_SHAPE_FORMULA,
@@ -1040,8 +1041,21 @@ def convert_metric(
         aggregation_raw = "NONE"
     aggregation = _AGGREGATION[aggregation_raw]
     load_bearing_aggregation: str | None = None
+    #: The key was PRESENT and said NONE, as opposed to being absent. Read from
+    #: `properties` directly because `aggregation_raw` cannot tell the two apart
+    #: -- `.get("aggregation", "NONE")` yields "NONE" for both, which is the
+    #: collapse that lost this value in the first place.
+    explicit_none = properties.get("aggregation") == "NONE"
+    #: ...and worth recording only where the aggregation would otherwise DO
+    #: something: a raw column, or a scalar formula. Where the expression
+    #: already aggregates, the column property is a documented no-op, so NONE
+    #: and absent genuinely mean the same thing and stashing it would put a
+    #: payload on a document that needs none.
+    explicit_none_is_load_bearing = False
 
     if "column_id" in column:
+        # A raw column aggregates by its property alone, so NONE is load-bearing.
+        explicit_none_is_load_bearing = explicit_none
         metric_shape = METRIC_SHAPE_COLUMN_AGGREGATION
         table_name, column_name = identifiers.split_column_ref(f"[{column['column_id']}]")
         metric_name = _field_or_metric_identifier(
@@ -1097,6 +1111,13 @@ def convert_metric(
         metric: dict = {"name": metric_name}
         if aggregation is None:
             # Nothing to compose: the verbatim expr, untouched, is the whole metric.
+            # An EXPLICIT NONE reaches here too, because `_AGGREGATION["NONE"]`
+            # is `None` -- so this is where it has to be recognised, not in the
+            # scalar branch below, which it never reaches. It is load-bearing
+            # exactly when the expression does not already aggregate.
+            explicit_none_is_load_bearing = explicit_none and not (
+                _outer_call_is_aggregate(expr) or _contains_aggregate_call(expr)
+            )
             metric_shape = METRIC_SHAPE_FORMULA
             dialects = expression_entries(
                 expr, resolve, log, object_ref=object_ref, kind="metric"
@@ -1181,6 +1202,9 @@ def convert_metric(
         stash_payload[METRIC_STASH_SHAPE] = metric_shape
     if load_bearing_aggregation is not None:
         stash_payload[METRIC_STASH_COLUMN_AGGREGATION] = load_bearing_aggregation
+    if explicit_none_is_load_bearing:
+        # Recorded because Ossie cannot: see METRIC_STASH_AGGREGATION_NONE.
+        stash_payload[METRIC_STASH_AGGREGATION_NONE] = True
     metric = _write_stash_safely(metric, stash_payload, log, object_ref)
 
     description = column.get("description")
