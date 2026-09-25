@@ -1,0 +1,1282 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+version: 0.2.0.dev0
+name: snow_tpch
+description: TPC-H ontology with customers, orders, line items, parts, suppliers, nations, and regions, mapped to the KSE.TPCH_SF1 Snowflake schema.
+ontology:
+- concept: Customer
+  type: EntityType
+  description: The customers table contains details about individual customers, including their unique customer identifier, name, address, account balance, and market segment.  It is used to analyze customer demographics, purchasing behavior, and segmentation.   Join this table with orders and lineitem tables to track sales performance and customer order history.
+  identify_by:
+  - customer_key
+  relationships:
+  - name: customer_key
+    roles:
+    - concept: Integer
+    verbalizes:
+    - '{Customer} is identified by {Integer}'
+    multiplicity: OneToOne
+  - name: customer_address
+    description: Customer address
+    roles:
+    - concept: String
+      name: customer_address
+    verbalizes:
+    - '{Customer} has {String:customer_address}'
+    multiplicity: ManyToOne
+  - name: customer_phone
+    description: Customer phone number
+    roles:
+    - concept: String
+      name: customer_phone
+    verbalizes:
+    - '{Customer} has {String:customer_phone}'
+    multiplicity: ManyToOne
+  - name: customer_account_balance
+    description: Customer account balance
+    roles:
+    - concept: Decimal
+      name: customer_account_balance
+    verbalizes:
+    - '{Customer} has {Decimal:customer_account_balance}'
+    multiplicity: ManyToOne
+  - name: customer_comment
+    description: Free-form customer comment
+    roles:
+    - concept: String
+      name: customer_comment
+    verbalizes:
+    - '{Customer} has {String:customer_comment}'
+    multiplicity: ManyToOne
+  - name: nation_key
+    description: Foreign key from the nations table
+    roles:
+    - concept: Integer
+      name: nation_key
+    verbalizes:
+    - '{Customer} has {Integer:nation_key}'
+    multiplicity: ManyToOne
+  - name: customer_name
+    description: Name of the customer.
+    roles:
+    - concept: String
+      name: customer_name
+    verbalizes:
+    - '{Customer} has {String:customer_name}'
+    multiplicity: ManyToOne
+  - name: customer_market_segment
+    description: The market segment for this customer
+    roles:
+    - concept: String
+      name: customer_market_segment
+    verbalizes:
+    - '{Customer} has {String:customer_market_segment}'
+    multiplicity: ManyToOne
+  - name: automobile_market_segment
+    description: A filter to retrieve customers in the AUTOMOBILE market segment.
+    verbalizes:
+    - '{Customer} has automobile_market_segment filter'
+  - name: top_10_customers_by_higest_account_balance
+    description: A filter to retrieve the top 10 customers with the highest account balance.
+    verbalizes:
+    - '{Customer} has top_10_customers_by_higest_account_balance filter'
+  - name: customers_to_nations
+    description: A relationship that maps instances of Customer to instances of Nation
+    roles:
+    - concept: Nation
+    verbalizes:
+    - '{Customer} maps to {Nation}'
+    multiplicity: ManyToOne
+    derived_by:
+    - Customer.nation_key == Nation.nation_key
+- concept: OrderLineitem
+  type: EntityType
+  description: The lineitems table contains details of individual items within orders, including part numbers, quantities, and discounts.
+  identify_by:
+  - order_key
+  - order_lineitem_number
+  relationships:
+  - name: order_key
+    roles:
+    - concept: Integer
+    verbalizes:
+    - '{OrderLineitem} is identified by order {Integer}'
+    multiplicity: ManyToOne
+  - name: order_lineitem_number
+    roles:
+    - concept: Integer
+    verbalizes:
+    - '{OrderLineitem} is identified by line {Integer}'
+    multiplicity: ManyToOne
+  - name: lineitem_quantity
+    description: Quantity ordered
+    roles:
+    - concept: Decimal
+      name: lineitem_quantity
+    verbalizes:
+    - '{OrderLineitem} has {Decimal:lineitem_quantity}'
+    multiplicity: ManyToOne
+  - name: lineitem_extended_price
+    description: Extended price for the line item
+    roles:
+    - concept: Decimal
+      name: lineitem_extended_price
+    verbalizes:
+    - '{OrderLineitem} has {Decimal:lineitem_extended_price}'
+    multiplicity: ManyToOne
+  - name: lineitem_discount
+    description: Discount factor applied to the line
+    roles:
+    - concept: Decimal
+      name: lineitem_discount
+    verbalizes:
+    - '{OrderLineitem} has {Decimal:lineitem_discount}'
+    multiplicity: ManyToOne
+  - name: lineitem_tax
+    description: Tax factor applied to the line
+    roles:
+    - concept: Decimal
+      name: lineitem_tax
+    verbalizes:
+    - '{OrderLineitem} has {Decimal:lineitem_tax}'
+    multiplicity: ManyToOne
+  - name: lineitem_comment
+    description: Free-form comment for the line
+    roles:
+    - concept: String
+      name: lineitem_comment
+    verbalizes:
+    - '{OrderLineitem} has {String:lineitem_comment}'
+    multiplicity: ManyToOne
+  - name: net_revenue
+    description: The net extended price of the order line after discount, but before tax.
+    roles:
+    - concept: Decimal
+      name: net_revenue
+    verbalizes:
+    - '{OrderLineitem} has {Decimal:net_revenue}'
+    multiplicity: ManyToOne
+  - name: gross_revenue
+    description: The net extended price of the order line after discount, but before tax.
+    roles:
+    - concept: Decimal
+      name: gross_revenue
+    verbalizes:
+    - '{OrderLineitem} has {Decimal:gross_revenue}'
+    multiplicity: ManyToOne
+  - name: part_key
+    description: Part Key
+    roles:
+    - concept: Integer
+      name: part_key
+    verbalizes:
+    - '{OrderLineitem} has {Integer:part_key}'
+    multiplicity: ManyToOne
+  - name: supplier_key
+    description: Supplier Key
+    roles:
+    - concept: Integer
+      name: supplier_key
+    verbalizes:
+    - '{OrderLineitem} has {Integer:supplier_key}'
+    multiplicity: ManyToOne
+  - name: lineitem_return_flag
+    description: Return Flag for Line Item
+    roles:
+    - concept: String
+      name: lineitem_return_flag
+    verbalizes:
+    - '{OrderLineitem} has {String:lineitem_return_flag}'
+    multiplicity: ManyToOne
+  - name: lineitem_status
+    description: Order Line Item Fulfillment Status
+    roles:
+    - concept: String
+      name: lineitem_status
+    verbalizes:
+    - '{OrderLineitem} has {String:lineitem_status}'
+    multiplicity: ManyToOne
+  - name: lineitem_shipping_instructions
+    description: Shipping Instructions
+    roles:
+    - concept: String
+      name: lineitem_shipping_instructions
+    verbalizes:
+    - '{OrderLineitem} has {String:lineitem_shipping_instructions}'
+    multiplicity: ManyToOne
+  - name: lineitem_shipping_mode
+    description: Order Lineitem Shipping Mode
+    roles:
+    - concept: String
+      name: lineitem_shipping_mode
+    verbalizes:
+    - '{OrderLineitem} has {String:lineitem_shipping_mode}'
+    multiplicity: ManyToOne
+  - name: lineitem_ship_date
+    description: Order line item Date of shipment
+    roles:
+    - concept: Date
+      name: lineitem_ship_date
+    verbalizes:
+    - '{OrderLineitem} has {Date:lineitem_ship_date}'
+    multiplicity: ManyToOne
+  - name: lineitem_commit_date
+    description: Order lineitem Date of Commitment
+    roles:
+    - concept: Date
+      name: lineitem_commit_date
+    verbalizes:
+    - '{OrderLineitem} has {Date:lineitem_commit_date}'
+    multiplicity: ManyToOne
+  - name: lineitem_receipt_date
+    description: Date of receipt for each order line item
+    roles:
+    - concept: Date
+      name: lineitem_receipt_date
+    verbalizes:
+    - '{OrderLineitem} has {Date:lineitem_receipt_date}'
+    multiplicity: ManyToOne
+  - name: lineitems_to_orders
+    description: A relationship that maps instances of OrderLineitem to instances of CustOrder
+    roles:
+    - concept: CustOrder
+    verbalizes:
+    - '{OrderLineitem} maps to {CustOrder}'
+    multiplicity: ManyToOne
+    derived_by:
+    - OrderLineitem.order_key == CustOrder.order_key
+  - name: order_lineitems_to_part_suppliers
+    description: A relationship that maps instances of OrderLineitem to instances of PartSupplier
+    roles:
+    - concept: PartSupplier
+    verbalizes:
+    - '{OrderLineitem} maps to {PartSupplier}'
+    multiplicity: ManyToOne
+    derived_by:
+    - OrderLineitem.part_key == PartSupplier.part_key AND OrderLineitem.supplier_key == PartSupplier.supplier_key
+- concept: CustOrder
+  type: EntityType
+  description: The orders table contains information about customer orders, including the order date, priority, and status.
+  identify_by:
+  - order_key
+  relationships:
+  - name: order_key
+    roles:
+    - concept: Integer
+    verbalizes:
+    - '{CustOrder} is identified by {Integer}'
+    multiplicity: OneToOne
+  - name: order_gross_total
+    description: Order total price
+    roles:
+    - concept: Decimal
+      name: order_gross_total
+    verbalizes:
+    - '{CustOrder} has {Decimal:order_gross_total}'
+    multiplicity: ManyToOne
+  - name: order_clerk
+    description: Clerk handling the order
+    roles:
+    - concept: String
+      name: order_clerk
+    verbalizes:
+    - '{CustOrder} has {String:order_clerk}'
+    multiplicity: ManyToOne
+  - name: order_ship_priority
+    description: Shipping priority for the order
+    roles:
+    - concept: Decimal
+      name: order_ship_priority
+    verbalizes:
+    - '{CustOrder} has {Decimal:order_ship_priority}'
+    multiplicity: ManyToOne
+  - name: order_comment
+    description: Free-form order comment
+    roles:
+    - concept: String
+      name: order_comment
+    verbalizes:
+    - '{CustOrder} has {String:order_comment}'
+    multiplicity: ManyToOne
+  - name: customer_key
+    description: Foreign key from Customer Table
+    roles:
+    - concept: Integer
+      name: customer_key
+    verbalizes:
+    - '{CustOrder} has {Integer:customer_key}'
+    multiplicity: ManyToOne
+  - name: order_status
+    description: Order Status
+    roles:
+    - concept: String
+      name: order_status
+    verbalizes:
+    - '{CustOrder} has {String:order_status}'
+    multiplicity: ManyToOne
+  - name: order_priority
+    description: Priority level assigned to an order
+    roles:
+    - concept: String
+      name: order_priority
+    verbalizes:
+    - '{CustOrder} has {String:order_priority}'
+    multiplicity: ManyToOne
+  - name: order_date
+    description: Date of Order
+    roles:
+    - concept: Date
+      name: order_date
+    verbalizes:
+    - '{CustOrder} has {Date:order_date}'
+    multiplicity: ManyToOne
+  - name: Yesterday
+    description: A filter to restrict data to only yesterday.
+    verbalizes:
+    - '{CustOrder} has Yesterday filter'
+  - name: YTD
+    description: A filter to restrict data to only current fiscal year.
+    verbalizes:
+    - '{CustOrder} has YTD filter'
+  - name: orders_to_customers
+    description: A relationship that maps instances of CustOrder to instances of Customer
+    roles:
+    - concept: Customer
+    verbalizes:
+    - '{CustOrder} maps to {Customer}'
+    multiplicity: ManyToOne
+    derived_by:
+    - CustOrder.customer_key == Customer.customer_key
+- concept: PartSupplier
+  type: EntityType
+  description: The partsupp table contains information linking parts to suppliers, including part keys, supplier keys, and supply costs.
+  identify_by:
+  - part_key
+  - supplier_key
+  relationships:
+  - name: part_key
+    roles:
+    - concept: Integer
+    verbalizes:
+    - '{PartSupplier} is identified by part {Integer}'
+    multiplicity: ManyToOne
+  - name: supplier_key
+    roles:
+    - concept: Integer
+    verbalizes:
+    - '{PartSupplier} is identified by supplier {Integer}'
+    multiplicity: ManyToOne
+  - name: available_quantity
+    description: Available quantity for this part-supplier pair
+    roles:
+    - concept: Decimal
+      name: available_quantity
+    verbalizes:
+    - '{PartSupplier} has {Decimal:available_quantity}'
+    multiplicity: ManyToOne
+  - name: part_supplier_supply_cost
+    description: Supply cost for this part-supplier pair
+    roles:
+    - concept: Decimal
+      name: part_supplier_supply_cost
+    verbalizes:
+    - '{PartSupplier} has {Decimal:part_supplier_supply_cost}'
+    multiplicity: ManyToOne
+  - name: part_supplier_comment
+    description: Free-form comment on the part-supplier record
+    roles:
+    - concept: String
+      name: part_supplier_comment
+    verbalizes:
+    - '{PartSupplier} has {String:part_supplier_comment}'
+    multiplicity: ManyToOne
+  - name: part_suppliers_to_part
+    description: A relationship that maps instances of PartSupplier to instances of Part
+    roles:
+    - concept: Part
+    verbalizes:
+    - '{PartSupplier} maps to {Part}'
+    multiplicity: ManyToOne
+    derived_by:
+    - PartSupplier.part_key == Part.part_key
+  - name: part_suppliers_to_supplier
+    description: A relationship that maps instances of PartSupplier to instances of Supplier
+    roles:
+    - concept: Supplier
+    verbalizes:
+    - '{PartSupplier} maps to {Supplier}'
+    multiplicity: ManyToOne
+    derived_by:
+    - PartSupplier.supplier_key == Supplier.supplier_key
+- concept: Part
+  type: EntityType
+  description: The parts table contains details about parts that suppliers offer, including unique part keys, names, and types. A part could be supplied from multple suppliers.
+  identify_by:
+  - part_key
+  relationships:
+  - name: part_key
+    roles:
+    - concept: Integer
+    verbalizes:
+    - '{Part} is identified by {Integer}'
+    multiplicity: OneToOne
+  - name: part_retail_price
+    description: Part retail price
+    roles:
+    - concept: Decimal
+      name: part_retail_price
+    verbalizes:
+    - '{Part} has {Decimal:part_retail_price}'
+    multiplicity: ManyToOne
+  - name: part_comment
+    description: Free-form part comment
+    roles:
+    - concept: String
+      name: part_comment
+    verbalizes:
+    - '{Part} has {String:part_comment}'
+    multiplicity: ManyToOne
+  - name: part_name
+    description: name of the parts
+    roles:
+    - concept: String
+      name: part_name
+    verbalizes:
+    - '{Part} has {String:part_name}'
+    multiplicity: ManyToOne
+  - name: part_manufacturer_name
+    description: Manufacture name of this part
+    roles:
+    - concept: String
+      name: part_manufacturer_name
+    verbalizes:
+    - '{Part} has {String:part_manufacturer_name}'
+    multiplicity: ManyToOne
+  - name: part_brand
+    description: Brand Names of the part
+    roles:
+    - concept: String
+      name: part_brand
+    verbalizes:
+    - '{Part} has {String:part_brand}'
+    multiplicity: ManyToOne
+  - name: part_type
+    description: type of the part
+    roles:
+    - concept: String
+      name: part_type
+    verbalizes:
+    - '{Part} has {String:part_type}'
+    multiplicity: ManyToOne
+  - name: part_container
+    description: Container Types for each part
+    roles:
+    - concept: String
+      name: part_container
+    verbalizes:
+    - '{Part} has {String:part_container}'
+    multiplicity: ManyToOne
+  - name: part_size
+    description: Size of the part
+    roles:
+    - concept: Integer
+      name: part_size
+    verbalizes:
+    - '{Part} has {Integer:part_size}'
+    multiplicity: ManyToOne
+- concept: Supplier
+  type: EntityType
+  description: The suppliers table contains details about suppliers, including unique supplier keys, supplier names, addresses, and associated nations.
+  identify_by:
+  - supplier_key
+  relationships:
+  - name: supplier_key
+    roles:
+    - concept: Integer
+    verbalizes:
+    - '{Supplier} is identified by {Integer}'
+    multiplicity: OneToOne
+  - name: supplier_address
+    description: Supplier address
+    roles:
+    - concept: String
+      name: supplier_address
+    verbalizes:
+    - '{Supplier} has {String:supplier_address}'
+    multiplicity: ManyToOne
+  - name: supplier_phone
+    description: Supplier phone number
+    roles:
+    - concept: String
+      name: supplier_phone
+    verbalizes:
+    - '{Supplier} has {String:supplier_phone}'
+    multiplicity: ManyToOne
+  - name: supplier_account_balance
+    description: Supplier account balance
+    roles:
+    - concept: Decimal
+      name: supplier_account_balance
+    verbalizes:
+    - '{Supplier} has {Decimal:supplier_account_balance}'
+    multiplicity: ManyToOne
+  - name: supplier_comment
+    description: Free-form supplier comment
+    roles:
+    - concept: String
+      name: supplier_comment
+    verbalizes:
+    - '{Supplier} has {String:supplier_comment}'
+    multiplicity: ManyToOne
+  - name: supplier_name
+    description: Name of the supplier
+    roles:
+    - concept: String
+      name: supplier_name
+    verbalizes:
+    - '{Supplier} has {String:supplier_name}'
+    multiplicity: ManyToOne
+  - name: nation_key
+    description: Foreign key from the nations table
+    roles:
+    - concept: Integer
+      name: nation_key
+    verbalizes:
+    - '{Supplier} has {Integer:nation_key}'
+    multiplicity: ManyToOne
+  - name: suppliers_to_nations
+    description: A relationship that maps instances of Supplier to instances of Nation
+    roles:
+    - concept: Nation
+    verbalizes:
+    - '{Supplier} maps to {Nation}'
+    multiplicity: ManyToOne
+    derived_by:
+    - Supplier.nation_key == Nation.nation_key
+- concept: Nation
+  type: EntityType
+  description: The nations table contains details about various countries, including a unique identifier for each nation, its name, and a reference to the region it belongs to.  Each nation is uniquely identified by N_NATIONKEY.
+  identify_by:
+  - nation_key
+  relationships:
+  - name: nation_key
+    roles:
+    - concept: Integer
+    verbalizes:
+    - '{Nation} is identified by {Integer}'
+    multiplicity: OneToOne
+  - name: nation_comment
+    description: Free-form nation comment
+    roles:
+    - concept: String
+      name: nation_comment
+    verbalizes:
+    - '{Nation} has {String:nation_comment}'
+    multiplicity: ManyToOne
+  - name: region_key
+    description: Foreign key from the regions table
+    roles:
+    - concept: Integer
+      name: region_key
+    verbalizes:
+    - '{Nation} has {Integer:region_key}'
+    multiplicity: ManyToOne
+  - name: nation_name
+    description: List of nations/countries
+    roles:
+    - concept: String
+      name: nation_name
+    verbalizes:
+    - '{Nation} has {String:nation_name}'
+    multiplicity: ManyToOne
+  - name: North_America
+    description: A filter to restrict data to only North American Continent
+    verbalizes:
+    - '{Nation} has North America filter'
+  - name: nations_to_regions
+    description: A relationship that maps instances of Nation to instances of Region
+    roles:
+    - concept: Region
+    verbalizes:
+    - '{Nation} maps to {Region}'
+    multiplicity: ManyToOne
+    derived_by:
+    - Nation.region_key == Region.region_key
+- concept: Region
+  type: EntityType
+  description: The regions table contains details about various geographic regions, each uniquely identified by a region key.  Each region can have multiple nations associated with it. There are a total of 5 regions.
+  identify_by:
+  - region_key
+  relationships:
+  - name: region_key
+    roles:
+    - concept: Integer
+    verbalizes:
+    - '{Region} is identified by {Integer}'
+    multiplicity: OneToOne
+  - name: region_comment
+    description: Free-form region comment
+    roles:
+    - concept: String
+      name: region_comment
+    verbalizes:
+    - '{Region} has {String:region_comment}'
+    multiplicity: ManyToOne
+  - name: region_name
+    description: Geographic region of the world. Name of the region.
+    roles:
+    - concept: String
+      name: region_name
+    verbalizes:
+    - '{Region} has {String:region_name}'
+    multiplicity: ManyToOne
+ontology_mappings:
+- name: snow_tpch_mapping
+  semantic_model:
+    name: TPC-H Snowflake semantic model
+    datasets:
+    - name: KSE_TPCH_SF1_CUSTOMER
+      source: KSE.TPCH_SF1.CUSTOMER
+      fields:
+      - name: C_CUSTKEY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: C_CUSTKEY
+      - name: C_NAME
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: C_NAME
+      - name: C_ADDRESS
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: C_ADDRESS
+      - name: C_NATIONKEY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: C_NATIONKEY
+      - name: C_PHONE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: C_PHONE
+      - name: C_ACCTBAL
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: C_ACCTBAL
+      - name: C_MKTSEGMENT
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: C_MKTSEGMENT
+      - name: C_COMMENT
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: C_COMMENT
+    - name: KSE_TPCH_SF1_ORDERS
+      source: KSE.TPCH_SF1.ORDERS
+      fields:
+      - name: O_ORDERKEY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: O_ORDERKEY
+      - name: O_CUSTKEY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: O_CUSTKEY
+      - name: O_ORDERSTATUS
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: O_ORDERSTATUS
+      - name: O_TOTALPRICE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: O_TOTALPRICE
+      - name: O_ORDERDATE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: O_ORDERDATE
+      - name: O_ORDERPRIORITY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: O_ORDERPRIORITY
+      - name: O_CLERK
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: O_CLERK
+      - name: O_SHIPPRIORITY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: O_SHIPPRIORITY
+      - name: O_COMMENT
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: O_COMMENT
+    - name: KSE_TPCH_SF1_LINEITEM
+      source: KSE.TPCH_SF1.LINEITEM
+      fields:
+      - name: L_ORDERKEY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: L_ORDERKEY
+      - name: L_PARTKEY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: L_PARTKEY
+      - name: L_SUPPKEY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: L_SUPPKEY
+      - name: L_LINENUMBER
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: L_LINENUMBER
+      - name: L_QUANTITY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: L_QUANTITY
+      - name: L_EXTENDEDPRICE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: L_EXTENDEDPRICE
+      - name: L_DISCOUNT
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: L_DISCOUNT
+      - name: L_TAX
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: L_TAX
+      - name: L_RETURNFLAG
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: L_RETURNFLAG
+      - name: L_LINESTATUS
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: L_LINESTATUS
+      - name: L_SHIPDATE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: L_SHIPDATE
+      - name: L_COMMITDATE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: L_COMMITDATE
+      - name: L_RECEIPTDATE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: L_RECEIPTDATE
+      - name: L_SHIPINSTRUCT
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: L_SHIPINSTRUCT
+      - name: L_SHIPMODE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: L_SHIPMODE
+      - name: L_COMMENT
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: L_COMMENT
+    - name: KSE_TPCH_SF1_PARTSUPP
+      source: KSE.TPCH_SF1.PARTSUPP
+      fields:
+      - name: PS_PARTKEY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: PS_PARTKEY
+      - name: PS_SUPPKEY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: PS_SUPPKEY
+      - name: PS_AVAILQTY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: PS_AVAILQTY
+      - name: PS_SUPPLYCOST
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: PS_SUPPLYCOST
+      - name: PS_COMMENT
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: PS_COMMENT
+    - name: KSE_TPCH_SF1_PART
+      source: KSE.TPCH_SF1.PART
+      fields:
+      - name: P_PARTKEY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: P_PARTKEY
+      - name: P_NAME
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: P_NAME
+      - name: P_MFGR
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: P_MFGR
+      - name: P_BRAND
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: P_BRAND
+      - name: P_TYPE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: P_TYPE
+      - name: P_SIZE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: P_SIZE
+      - name: P_CONTAINER
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: P_CONTAINER
+      - name: P_RETAILPRICE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: P_RETAILPRICE
+      - name: P_COMMENT
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: P_COMMENT
+    - name: KSE_TPCH_SF1_SUPPLIER
+      source: KSE.TPCH_SF1.SUPPLIER
+      fields:
+      - name: S_SUPPKEY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: S_SUPPKEY
+      - name: S_NAME
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: S_NAME
+      - name: S_ADDRESS
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: S_ADDRESS
+      - name: S_NATIONKEY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: S_NATIONKEY
+      - name: S_PHONE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: S_PHONE
+      - name: S_ACCTBAL
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: S_ACCTBAL
+      - name: S_COMMENT
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: S_COMMENT
+    - name: KSE_TPCH_SF1_NATION
+      source: KSE.TPCH_SF1.NATION
+      fields:
+      - name: N_NATIONKEY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: N_NATIONKEY
+      - name: N_NAME
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: N_NAME
+      - name: N_REGIONKEY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: N_REGIONKEY
+      - name: N_COMMENT
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: N_COMMENT
+    - name: KSE_TPCH_SF1_REGION
+      source: KSE.TPCH_SF1.REGION
+      fields:
+      - name: R_REGIONKEY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: R_REGIONKEY
+      - name: R_NAME
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: R_NAME
+      - name: R_COMMENT
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: R_COMMENT
+  concept_mappings:
+  - concept: Region
+    object_mappings:
+    - referent_mappings:
+      - relationship: region_key
+        expression: KSE_TPCH_SF1_REGION.R_REGIONKEY
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: region_key
+          expression: KSE_TPCH_SF1_REGION.R_REGIONKEY
+      children:
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_REGION.R_NAME
+        relationship: region_name
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_REGION.R_COMMENT
+        relationship: region_comment
+  - concept: Nation
+    object_mappings:
+    - referent_mappings:
+      - relationship: nation_key
+        expression: KSE_TPCH_SF1_NATION.N_NATIONKEY
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: nation_key
+          expression: KSE_TPCH_SF1_NATION.N_NATIONKEY
+      children:
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_NATION.N_NAME
+        relationship: nation_name
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_NATION.N_COMMENT
+        relationship: nation_comment
+      - object_mapping:
+          concept: Integer
+          expression: KSE_TPCH_SF1_NATION.N_REGIONKEY
+        relationship: region_key
+  - concept: Supplier
+    object_mappings:
+    - referent_mappings:
+      - relationship: supplier_key
+        expression: KSE_TPCH_SF1_SUPPLIER.S_SUPPKEY
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: supplier_key
+          expression: KSE_TPCH_SF1_SUPPLIER.S_SUPPKEY
+      children:
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_SUPPLIER.S_NAME
+        relationship: supplier_name
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_SUPPLIER.S_ADDRESS
+        relationship: supplier_address
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_SUPPLIER.S_PHONE
+        relationship: supplier_phone
+      - object_mapping:
+          concept: Decimal
+          expression: KSE_TPCH_SF1_SUPPLIER.S_ACCTBAL
+        relationship: supplier_account_balance
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_SUPPLIER.S_COMMENT
+        relationship: supplier_comment
+      - object_mapping:
+          concept: Integer
+          expression: KSE_TPCH_SF1_SUPPLIER.S_NATIONKEY
+        relationship: nation_key
+  - concept: Part
+    object_mappings:
+    - referent_mappings:
+      - relationship: part_key
+        expression: KSE_TPCH_SF1_PART.P_PARTKEY
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: part_key
+          expression: KSE_TPCH_SF1_PART.P_PARTKEY
+      children:
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_PART.P_NAME
+        relationship: part_name
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_PART.P_MFGR
+        relationship: part_manufacturer_name
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_PART.P_BRAND
+        relationship: part_brand
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_PART.P_TYPE
+        relationship: part_type
+      - object_mapping:
+          concept: Integer
+          expression: KSE_TPCH_SF1_PART.P_SIZE
+        relationship: part_size
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_PART.P_CONTAINER
+        relationship: part_container
+      - object_mapping:
+          concept: Decimal
+          expression: KSE_TPCH_SF1_PART.P_RETAILPRICE
+        relationship: part_retail_price
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_PART.P_COMMENT
+        relationship: part_comment
+  - concept: PartSupplier
+    object_mappings:
+    - referent_mappings:
+      - relationship: part_key
+        expression: KSE_TPCH_SF1_PARTSUPP.PS_PARTKEY
+      - relationship: supplier_key
+        expression: KSE_TPCH_SF1_PARTSUPP.PS_SUPPKEY
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: part_key
+          expression: KSE_TPCH_SF1_PARTSUPP.PS_PARTKEY
+        - relationship: supplier_key
+          expression: KSE_TPCH_SF1_PARTSUPP.PS_SUPPKEY
+      children:
+      - object_mapping:
+          concept: Decimal
+          expression: KSE_TPCH_SF1_PARTSUPP.PS_AVAILQTY
+        relationship: available_quantity
+      - object_mapping:
+          concept: Decimal
+          expression: KSE_TPCH_SF1_PARTSUPP.PS_SUPPLYCOST
+        relationship: part_supplier_supply_cost
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_PARTSUPP.PS_COMMENT
+        relationship: part_supplier_comment
+  - concept: CustOrder
+    object_mappings:
+    - referent_mappings:
+      - relationship: order_key
+        expression: KSE_TPCH_SF1_ORDERS.O_ORDERKEY
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: order_key
+          expression: KSE_TPCH_SF1_ORDERS.O_ORDERKEY
+      children:
+      - object_mapping:
+          concept: Decimal
+          expression: KSE_TPCH_SF1_ORDERS.O_TOTALPRICE
+        relationship: order_gross_total
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_ORDERS.O_CLERK
+        relationship: order_clerk
+      - object_mapping:
+          concept: Decimal
+          expression: KSE_TPCH_SF1_ORDERS.O_SHIPPRIORITY
+        relationship: order_ship_priority
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_ORDERS.O_COMMENT
+        relationship: order_comment
+      - object_mapping:
+          concept: Integer
+          expression: KSE_TPCH_SF1_ORDERS.O_CUSTKEY
+        relationship: customer_key
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_ORDERS.O_ORDERSTATUS
+        relationship: order_status
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_ORDERS.O_ORDERPRIORITY
+        relationship: order_priority
+      - object_mapping:
+          concept: Date
+          expression: KSE_TPCH_SF1_ORDERS.O_ORDERDATE
+        relationship: order_date
+  - concept: OrderLineitem
+    object_mappings:
+    - referent_mappings:
+      - relationship: order_key
+        expression: KSE_TPCH_SF1_LINEITEM.L_ORDERKEY
+      - relationship: order_lineitem_number
+        expression: KSE_TPCH_SF1_LINEITEM.L_LINENUMBER
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: order_key
+          expression: KSE_TPCH_SF1_LINEITEM.L_ORDERKEY
+        - relationship: order_lineitem_number
+          expression: KSE_TPCH_SF1_LINEITEM.L_LINENUMBER
+      children:
+      - object_mapping:
+          concept: Decimal
+          expression: KSE_TPCH_SF1_LINEITEM.L_QUANTITY
+        relationship: lineitem_quantity
+      - object_mapping:
+          concept: Decimal
+          expression: KSE_TPCH_SF1_LINEITEM.L_EXTENDEDPRICE
+        relationship: lineitem_extended_price
+      - object_mapping:
+          concept: Decimal
+          expression: KSE_TPCH_SF1_LINEITEM.L_DISCOUNT
+        relationship: lineitem_discount
+      - object_mapping:
+          concept: Decimal
+          expression: KSE_TPCH_SF1_LINEITEM.L_TAX
+        relationship: lineitem_tax
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_LINEITEM.L_COMMENT
+        relationship: lineitem_comment
+      - object_mapping:
+          concept: Integer
+          expression: KSE_TPCH_SF1_LINEITEM.L_PARTKEY
+        relationship: part_key
+      - object_mapping:
+          concept: Integer
+          expression: KSE_TPCH_SF1_LINEITEM.L_SUPPKEY
+        relationship: supplier_key
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_LINEITEM.L_RETURNFLAG
+        relationship: lineitem_return_flag
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_LINEITEM.L_LINESTATUS
+        relationship: lineitem_status
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_LINEITEM.L_SHIPINSTRUCT
+        relationship: lineitem_shipping_instructions
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_LINEITEM.L_SHIPMODE
+        relationship: lineitem_shipping_mode
+      - object_mapping:
+          concept: Date
+          expression: KSE_TPCH_SF1_LINEITEM.L_SHIPDATE
+        relationship: lineitem_ship_date
+      - object_mapping:
+          concept: Date
+          expression: KSE_TPCH_SF1_LINEITEM.L_COMMITDATE
+        relationship: lineitem_commit_date
+      - object_mapping:
+          concept: Date
+          expression: KSE_TPCH_SF1_LINEITEM.L_RECEIPTDATE
+        relationship: lineitem_receipt_date
+  - concept: Customer
+    object_mappings:
+    - referent_mappings:
+      - relationship: customer_key
+        expression: KSE_TPCH_SF1_CUSTOMER.C_CUSTKEY
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - relationship: customer_key
+          expression: KSE_TPCH_SF1_CUSTOMER.C_CUSTKEY
+      children:
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_CUSTOMER.C_NAME
+        relationship: customer_name
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_CUSTOMER.C_ADDRESS
+        relationship: customer_address
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_CUSTOMER.C_PHONE
+        relationship: customer_phone
+      - object_mapping:
+          concept: Decimal
+          expression: KSE_TPCH_SF1_CUSTOMER.C_ACCTBAL
+        relationship: customer_account_balance
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_CUSTOMER.C_MKTSEGMENT
+        relationship: customer_market_segment
+      - object_mapping:
+          concept: String
+          expression: KSE_TPCH_SF1_CUSTOMER.C_COMMENT
+        relationship: customer_comment
+      - object_mapping:
+          concept: Integer
+          expression: KSE_TPCH_SF1_CUSTOMER.C_NATIONKEY
+        relationship: nation_key

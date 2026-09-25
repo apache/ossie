@@ -19,13 +19,108 @@
 
 # Ossie Ontology Converters
 
-Converters between Ossie, Palantir, and Spec ontology formats.
+Converters between Ossie, Palantir, Spec, and RelationalAI ontology formats.
 
-| Converter           | Direction |
-|---------------------|-----------|
-| `palantir_to_ossie` | Palantir ontology → Ossie model |
-| `ossie_to_spec`     | Ossie model → Spec YAML |
-| `spec_to_ossie`     | Spec YAML → Ossie model |
+| Converter               | Direction |
+|-------------------------|-----------|
+| `palantir_to_ossie`     | Palantir ontology → Ossie model |
+| `ossie_to_spec`         | Ossie model → Spec YAML |
+| `spec_to_ossie`         | Spec YAML → Ossie model |
+| `ossie_to_relationalai` | Ossie model → RelationalAI (PyRel) |
+
+### The `relationalai` extra
+
+> **`relationalai` is proprietary and declares no license.** Its PyPI
+> distribution carries no `License` field, no license classifier and no
+> `LICENSE` file, and the [project page](https://pypi.org/project/relationalai/)
+> lists none either — so it grants no use or redistribution rights by default.
+> Get the applicable terms from RelationalAI (`support@relational.ai`) before
+> installing it. Ossie is Apache-2.0 and neither bundles nor depends on it.
+>
+> Installing the package is also not enough to *run* what this converter emits.
+> That needs a Snowflake account with the RelationalAI Native App installed from
+> the [Marketplace](https://app.snowflake.com/marketplace/listing/GZTYZOOIX8H/relationalai-relationalai),
+> and access enabled by RelationalAI on request — see the
+> [setup guide](https://docs.relational.ai/manage/get-started/install/). Ossie
+> never executes the generated source: it converts and compiles in-process,
+> offline, against no engine.
+
+`ossie_to_relationalai` is the only converter that needs a vendor SDK. Because
+that SDK is non-free, it is kept out of the base install entirely and gated
+behind an opt-in extra, so nobody acquires it without asking for it:
+
+```bash
+pip install "apache-ossie-ontology[relationalai]"    # opt in, having read the above
+pip install apache-ossie-ontology                    # everything else, no vendor SDK
+```
+
+Nothing reachable from `ossie_ontology/__init__.py` imports `relationalai`, so
+everything else — parsing Ossie, converting Palantir, reading and writing the
+spec — installs and runs without it. `tests/test_optional_extra.py` asserts that
+boundary in a subprocess with the SDK masked, so the base install cannot start
+depending on it by accident. The converter's own tests skip themselves when it
+is absent.
+
+The PyRel-side model it targets — `OntologyModel` and its bindings, roles and
+CSV plumbing — lives under `ossie_ontology/vendor/relationalai/`,
+next to `ossie_ontology/vendor/palantir/`. The converter package itself holds
+only the translation. The one piece that sits elsewhere is the formula emitter,
+`ossie_ontology/expr/formula/visitor/converter.py`, which stays with the other
+formula visitors it is a variant of.
+
+It converts an `OssieOntology` into an in-memory `OntologyModel`, which can then
+be serialized to PyRel source:
+
+```python
+from pathlib import Path
+
+from relationalai.semantics.metamodel.pyrel_codegen import to_pyrel
+
+from ossie_ontology.parser import OssieParser
+from ossie_ontology.converter.ossie_to_relationalai import OssieToRelationalAIConverter
+
+ontology = OssieParser().parse(Path("model.yaml"))
+
+model = OssieToRelationalAIConverter.convert(ontology)
+Path("model_pyrel.py").write_text(to_pyrel(model.base_model().to_metamodel()))
+```
+
+`OssieParser` parses and validates `derived_by` and `requires` expressions into
+an AST by default, which is what the conversion needs — an unparsed formula is
+skipped and never reaches PyRel. To keep formulas as raw text instead, pass the
+plain `FormulaFactory` and `MappingFormulaFactory` from `ossie_ontology.model`.
+`SpecToOssieConverter` and `PalantirToOssieConverter` take the same argument and
+default the same way.
+
+Two things about the environment this needs. Constructing a model makes
+`relationalai` resolve its configuration, so a `raiconfig.yaml` must be present.
+And each dataset's `source` is read from the configured connection to get its
+column types, so the call above needs one that can reach those tables.
+
+To convert without a warehouse, pass a different `table_provider`. The default,
+`warehouse_table`, resolves each dataset's `source` against the connection —
+which is what gets the column identifiers right, since Snowflake folds an
+unquoted name to upper case. The alternative, `declared_table`, declares the
+columns from the Ossie spec instead and reads nothing:
+
+```python
+from ossie_ontology.converter.ossie_to_relationalai import declared_table
+
+model = OssieToRelationalAIConverter.convert(ontology, table_provider=declared_table)
+```
+
+Nothing leaves the process, so the tables the generated source names need not
+exist. The tradeoff is the one `warehouse_table` avoids: the declared
+identifiers have to match how the table was actually created.
+
+That is how the test suite runs — see `tests/conftest.py` for the offline config
+it pins and the network guard it installs, and `tests/relationalai/test_converter.py`
+for the rest of the offline setup.
+
+`table_provider` is also the extension point for reading rows from somewhere
+else entirely — from inline CSV, for example, so a test corpus needs no
+warehouse. This package ships no such provider and has no CSV handling at all,
+because reading rows is not part of converting an ontology.
 
 ## Prerequisites
 

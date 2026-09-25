@@ -164,11 +164,15 @@ class Concept:
 
     @property
     def is_primitive(self) -> bool:
-        if self.is_builtin:
-            return True
-        if self._extends and len(self._extends) == 1:
-            return self._extends[0].is_primitive
-        return False
+        concept = self
+        seen: set[Concept] = set()
+        while True:
+            if concept.is_builtin:
+                return True
+            if len(concept._extends) != 1 or concept in seen:
+                return False
+            seen.add(concept)
+            concept = concept._extends[0]
 
     @property
     def is_derived(self) -> bool:
