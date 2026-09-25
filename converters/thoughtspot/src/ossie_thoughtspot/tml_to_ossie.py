@@ -1026,7 +1026,24 @@ def convert_metric(
     display_name = column["name"]
     object_ref = f"metric:{display_name}"
 
-    aggregation_raw = properties.get("aggregation", "NONE")
+    # ThoughtSpot's default for a MEASURE column with no `aggregation` key is
+    # SUM, not "no aggregation" (confirmed by ThoughtSpot). Reading absent as
+    # NONE emitted a metric with no aggregate at all, so a column the product
+    # sums came across as a raw per-row value: a different number, silently.
+    #
+    # But the default may only be APPLIED where this converter can see that
+    # nothing already aggregates. It cannot see through a formula
+    # cross-reference: `[formula_total_profit] / [formula_total_sales]` is a
+    # ratio of two aggregates and looks scalar, so composing the default around
+    # it yields `sum ( [formula_a] / [formula_b] )` -- double aggregation, which
+    # is the silent-wrong-number class this converter exists to avoid. Where the
+    # default cannot be applied safely it is left off and an issue says so,
+    # which is a loud loss rather than a quiet wrong answer.
+    #
+    # `explicit_none` below still distinguishes a key that SAYS NONE, which is a
+    # real instruction rather than an absence, and which must round-trip.
+    aggregation_is_default = "aggregation" not in properties
+    aggregation_raw = properties.get("aggregation", "SUM")
     if aggregation_raw not in _AGGREGATION:
         log.add(
             code="TS-METRIC-AGGREGATION-UNKNOWN",
@@ -1145,7 +1162,13 @@ def convert_metric(
             # Ossie's metric expression has nowhere to put it, so it is
             # preserved verbatim in the stash rather than discarded or folded
             # into the expression, which would change what the formula means.
-            if _is_bare_group_aggregate(expr):
+            if _is_bare_group_aggregate(expr) and not aggregation_is_default:
+                # Only an EXPLICIT value is preserved. A defaulted one is not
+                # information the source document carried, and re-emitting it
+                # would add an `aggregation` key where the author wrote none --
+                # a byte the round trip should not invent. Absent still means
+                # SUM to ThoughtSpot on the way back, so nothing is lost by
+                # leaving it absent, and fidelity is kept.
                 load_bearing_aggregation = aggregation_raw
             metric_shape = METRIC_SHAPE_FORMULA
             dialects = expression_entries(
@@ -1163,8 +1186,36 @@ def convert_metric(
                 severity=Severity.WARNING,
                 message=(
                     f"column {display_name!r}'s expression already contains an "
-                    f"aggregate; the column-level aggregation {aggregation_raw!r} "
-                    f"was ignored to avoid double-aggregating"
+                    f"aggregate; "
+                    + (
+                        f"ThoughtSpot's default aggregation is not applied"
+                        if aggregation_is_default
+                        else f"the column-level aggregation {aggregation_raw!r} was ignored"
+                    )
+                    + " to avoid double-aggregating"
+                ),
+                object_ref=object_ref,
+            )
+            metric_shape = METRIC_SHAPE_FORMULA
+            dialects = expression_entries(
+                expr, resolve, log, object_ref=object_ref, kind="metric"
+            )
+        elif aggregation_is_default and formula.find_formula_refs(expr):
+            # Scalar-looking, but it references other formulas whose own
+            # expressions may aggregate. ThoughtSpot's default would resolve
+            # against the real definitions; this converter cannot, so it
+            # declines rather than guessing a wrapper around them.
+            log.add(
+                code="TS-METRIC-AGGREGATION-DEFAULT-UNRESOLVED",
+                severity=Severity.WARNING,
+                message=(
+                    f"column {display_name!r} has no explicit aggregation, and its "
+                    f"expression references the formula(s) "
+                    f"{', '.join(formula.find_formula_refs(expr))}, whose own "
+                    f"aggregation this converter cannot resolve; ThoughtSpot's "
+                    f"default aggregation is not applied, because composing one "
+                    f"around an expression that already aggregates would "
+                    f"double-aggregate"
                 ),
                 object_ref=object_ref,
             )

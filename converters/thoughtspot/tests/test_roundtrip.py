@@ -1154,3 +1154,68 @@ def test_an_inert_aggregation_none_is_not_stashed():
     assert "aggregation_explicit_none" not in payload, (
         f"an inert NONE was stashed: {payload}"
     )
+
+
+class TestAnAbsentAggregationDefaultsToSum:
+    """ThoughtSpot's default for a MEASURE column with no `aggregation` key is
+    SUM. Reading absent as NONE emitted a metric with no aggregate at all, so a
+    column the product sums came across as a raw per-row value.
+
+    The default may only be APPLIED where nothing already aggregates. It must
+    NOT be composed around an expression that reaches its aggregate through a
+    formula cross-reference -- the converter cannot resolve those, and wrapping
+    them produces `sum ( [formula_a] / [formula_b] )`, which is the silent
+    double-aggregation this converter exists to avoid.
+    """
+
+    @staticmethod
+    def _convert(expr=None, column_id=None, formulas=None):
+        table = tml.TmlDocument(kind="table", guid=None, body={
+            "name": "orders", "db": "D", "schema": "S", "db_table": "ORDERS",
+            "connection": {"name": "C"},
+            "columns": [{"name": "amount", "db_column_name": "amount",
+                         "db_column_properties": {"data_type": "INT64"}},
+                        {"name": "qty", "db_column_name": "qty",
+                         "db_column_properties": {"data_type": "INT64"}}],
+        })
+        column = {"name": "M", "properties": {"column_type": "MEASURE"}}  # no aggregation
+        body = {"name": "m", "model_tables": [{"name": "orders"}], "columns": [column]}
+        if column_id:
+            column["column_id"] = column_id
+        else:
+            column["formula_id"] = "f1"
+            body["formulas"] = (formulas or []) + [{"id": "f1", "name": "M", "expr": expr}]
+        model = tml.TmlDocument(kind="model", guid=None, body=body)
+        return tml_to_ossie.convert(tml.DocumentSet(model=model, tables=(table,)))
+
+    @staticmethod
+    def _ts(result):
+        metric = next(m for m in result.model["metrics"])
+        return next(d["expression"] for d in metric["expression"]["dialects"]
+                    if d["dialect"] == "THOUGHTSPOT")
+
+    def test_a_raw_column_gains_the_default(self):
+        assert self._ts(self._convert(column_id="orders::amount")) == "sum ( [orders::amount] )"
+
+    def test_a_scalar_formula_gains_the_default(self):
+        assert self._ts(self._convert(expr="[orders::amount] / [orders::qty]")) == (
+            "sum ( [orders::amount] / [orders::qty] )"
+        )
+
+    def test_an_already_aggregating_formula_does_not(self):
+        assert self._ts(self._convert(expr="sum ( [orders::amount] )")) == (
+            "sum ( [orders::amount] )"
+        )
+
+    def test_a_cross_referencing_formula_is_left_alone_and_reported(self):
+        # THE case a blanket default gets wrong. `[a] / [b]` looks scalar and is
+        # a ratio of two aggregates; composing around it double-aggregates.
+        result = self._convert(
+            expr="[formula_a] / [formula_b]",
+            formulas=[{"id": "formula_a", "name": "A", "expr": "sum ( [orders::amount] )"},
+                      {"id": "formula_b", "name": "B", "expr": "sum ( [orders::qty] )"}],
+        )
+        assert self._ts(result) == "[formula_a] / [formula_b]", "the default was composed around aggregates"
+        assert "TS-METRIC-AGGREGATION-DEFAULT-UNRESOLVED" in [
+            i["code"] for i in result.issues.as_dicts()
+        ], "declining to apply the default must be reported, not silent"
