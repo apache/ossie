@@ -36,9 +36,10 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const yaml = require('js-yaml');
             const content = fs.readFileSync('.github/labeler.yml', 'utf8');
-            const labels = Object.keys(yaml.load(content));
+            const labels = content.split('\n')
+              .filter(line => /^\S.*:/.test(line) && !line.startsWith('#'))
+              .map(line => line.split(':')[0].trim());
             for (const name of labels) {
               try {
                 await github.rest.issues.getLabel({

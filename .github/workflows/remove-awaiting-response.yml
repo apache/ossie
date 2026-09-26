@@ -63,6 +63,6 @@ jobs:
                   repo: context.repo.repo,
                   issue_number: issue.number,
                   labels: ['needs-review']
-                });
+                }).catch(() => {});
               }
             }
