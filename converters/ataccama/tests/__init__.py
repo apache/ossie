@@ -14,29 +14,3 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
-**/__pycache__/
-**/.venv/
-*.egg-info/
-
-# Local secrets / credentials — never commit
-.env
-.env.local
-*.env
-.secrets*
-.ataccama.env
-
-**/.pytest_cache/
-**/.ruff_cache/
-**/.coverage
-**/coverage.xml
-**/htmlcov/
-**/dist/
-**/target/
-**/.tom/
-*.py[cod]
-
-# Go CLI
-cli/dist/
-cli/ossie
-cli/.tool-versions

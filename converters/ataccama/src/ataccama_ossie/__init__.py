@@ -15,28 +15,17 @@
 # specific language governing permissions and limitations
 # under the License.
 
-**/__pycache__/
-**/.venv/
-*.egg-info/
+"""Ataccama ONE -> Ossie semantic model importer."""
 
-# Local secrets / credentials — never commit
-.env
-.env.local
-*.env
-.secrets*
-.ataccama.env
+from ataccama_ossie.ataccama_to_ossie import ataccama_to_ossie
+from ataccama_ossie.client import AtaccamaClient
+from ataccama_ossie.models import CatalogAttribute, CatalogItem, CatalogItemBundle, Term
 
-**/.pytest_cache/
-**/.ruff_cache/
-**/.coverage
-**/coverage.xml
-**/htmlcov/
-**/dist/
-**/target/
-**/.tom/
-*.py[cod]
-
-# Go CLI
-cli/dist/
-cli/ossie
-cli/.tool-versions
+__all__ = [
+    "AtaccamaClient",
+    "CatalogAttribute",
+    "CatalogItem",
+    "CatalogItemBundle",
+    "Term",
+    "ataccama_to_ossie",
+]
