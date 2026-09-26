@@ -15,23 +15,5 @@
 # specific language governing permissions and limitations
 # under the License.
 
-**/__pycache__/
-**/.venv/
-
-**/.pytest_cache/
-**/.ruff_cache/
-**/.coverage
-**/coverage.xml
-**/htmlcov/
-**/dist/
-**/target/
-**/.tom/
-*.py[cod]
-
-# Go CLI
-cli/dist/
-cli/ossie
-cli/.tool-versions
-
-# Apache RAT (downloaded by dev/check-license)
-dev/lib/
+# Shell scripts must use LF line endings to run on Linux CI runners
+dev/check-license    eol=lf

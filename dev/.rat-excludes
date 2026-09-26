@@ -1,0 +1,67 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Files excluded from Apache RAT license header checks.
+# Keep this list minimal — only exclude files where a license header
+# is impossible or inappropriate (binary, generated, third-party).
+
+# Binary and generated files
+**/*.png
+**/*.jpg
+**/*.ico
+**/*.woff
+**/*.woff2
+
+# Lock files and dependency manifests
+**/*.lock
+**/go.sum
+
+# Data/config files that cannot contain comments
+**/*.json
+**/*.csv
+
+# Microsoft BI fixture formats (TOM/BIM/TMDL treat leading lines as object descriptions)
+**/*.bim
+**/*.ipynb
+converters/microsoft/tests/fixtures/sales_model.tmdl
+
+# Snapshot/fixture test files
+**/snapshots/**
+**/__snapshots__/**
+
+# Git and IDE
+.git/**
+.idea/**
+.vscode/**
+**/.gitignore
+
+# Build output
+**/build/**
+**/dist/**
+**/*.egg-info/**
+**/__pycache__/**
+**/node_modules/**
+**/.venv/**
+**/target/**
+
+# Files that are themselves license/notice
+**/LICENSE
+**/NOTICE
+
+# Specific project files
+.editorconfig
+.python-version
