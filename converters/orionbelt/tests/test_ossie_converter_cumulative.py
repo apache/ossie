@@ -295,6 +295,9 @@ class TestCumulativeEdgeCases:
                     },
                 },
             },
+            "dimensions": {
+                "Date": {"dataObject": "Orders", "column": "Date", "resultType": "date"},
+            },
             "measures": {
                 "Rev": {
                     "columns": [{"dataObject": "Orders", "column": "Amount"}],

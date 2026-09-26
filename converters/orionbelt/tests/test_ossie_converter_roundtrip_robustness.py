@@ -61,10 +61,12 @@ class TestMetricRoundTripCodeVsName:
         },
     }
 
-    def test_emitter_uses_physical_code(self) -> None:
+    def test_emitter_references_dataset_name(self) -> None:
+        # Ossie resolves ``<dataset>.<field>``: the dataset is named after the
+        # OBML data object, not its physical table code.
         ossie = conv.OBMLtoOssie(self._OBML).convert()
         sql = ossie["metrics"][0]["expression"]["dialects"][0]["expression"]
-        assert "fact_orders" in sql  # confirms the emit side uses the code
+        assert sql == 'SUM("Orders"."amount")'
 
     def test_measure_survives_round_trip(self) -> None:
         ossie = conv.OBMLtoOssie(self._OBML).convert()
@@ -75,7 +77,7 @@ class TestMetricRoundTripCodeVsName:
         assert "Revenue" in obml.get("measures", {}), obml.get("measures")
         rev = obml["measures"]["Revenue"]
         assert rev["aggregation"] == "sum"
-        assert rev["columns"] == [{"dataObject": "Orders", "column": "amount"}]
+        assert rev["columns"] == [{"dataObject": "Orders", "column": "Amount"}]
 
         # Nothing about Revenue should have leaked into an unconverted-metric stash.
         stashed = json.dumps(obml.get("customExtensions", []))

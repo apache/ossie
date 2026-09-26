@@ -17,16 +17,17 @@
 
 """Tests for Ossie ↔ OBML period-over-period metric conversion.
 
-Validates that PoP metrics survive the OBML → Ossie → OBML roundtrip
-via custom_extensions preservation.
+A PoP metric compares against a period shifted on a date spine, which no single
+Ossie expression reproduces when periods are missing. The export leaves it out of
+the Ossie metrics and keeps it whole in the model-level extension; the reverse
+conversion restores it. Documents written before that carry the configuration in
+per-metric ``obml_pop_*`` keys, which still import.
 """
 
 from __future__ import annotations
 
 import json
 from typing import Any
-
-import pytest
 
 import ossie_orionbelt.converter as conv
 
@@ -144,97 +145,49 @@ _OBML_WITH_POP: dict[str, Any] = {
 
 
 class TestOBMLtoOssiePoP:
-    """OBML → Ossie: PoP metrics are serialized into custom_extensions."""
+    """OBML → Ossie: PoP metrics are left out and kept in the model extension."""
+
+    _POP_NAMES = (
+        "Revenue YoY Growth",
+        "Revenue MoM Diff",
+        "Revenue Prev Year",
+        "Revenue YoY Ratio",
+    )
 
     def _convert(self) -> tuple[dict, list[str]]:
         converter = conv.OBMLtoOssie(_OBML_WITH_POP)
         result = converter.convert()
         return result, converter.warnings
 
-    def _find_metric(self, ossie: dict, name: str) -> dict | None:
-        for m in ossie.get("metrics", []):
-            if m["name"] == name:
-                return m
-        return None
+    @staticmethod
+    def _unexported(ossie: dict) -> dict:
+        for ext in ossie["custom_extensions"]:
+            if ext["vendor_name"] == "ORIONBELT":
+                return json.loads(ext["data"]).get("obml_unexported", {})
+        return {}
 
-    def test_yoy_growth_exported(self) -> None:
+    def test_pop_metrics_are_not_ossie_metrics(self) -> None:
         ossie, _ = self._convert()
-        m = self._find_metric(ossie, "Revenue YoY Growth")
-        assert m is not None
+        names = {m["name"] for m in ossie.get("metrics", [])}
+        assert names.isdisjoint(self._POP_NAMES)
 
-        # Has an approximate SQL expression
-        expr = m["expression"]["dialects"][0]["expression"]
-        assert "NULLIF" in expr
-        assert "- 1" in expr  # percentChange: x / NULLIF(prev, 0) - 1
-
-        # Has custom_extensions with PoP config
-        ext = self._get_pop_ext(m)
-        assert ext["obml_metric_type"] == "period_over_period"
-        assert ext["obml_pop_expression"] == "{[Revenue]}"
-        assert ext["obml_pop_time_dimension"] == "Order Date"
-        assert ext["obml_pop_grain"] == "month"
-        assert ext["obml_pop_offset_grain"] == "year"
-        assert ext["obml_pop_comparison"] == "percentChange"
-
-    def test_mom_diff_exported(self) -> None:
+    def test_pop_definitions_kept_in_model_extension(self) -> None:
         ossie, _ = self._convert()
-        m = self._find_metric(ossie, "Revenue MoM Diff")
-        assert m is not None
+        kept = self._unexported(ossie)["metrics"]
+        for name in self._POP_NAMES:
+            assert kept[name] == _OBML_WITH_POP["metrics"][name]
 
-        expr = m["expression"]["dialects"][0]["expression"]
-        assert "- prev.value" in expr  # difference
-
-        ext = self._get_pop_ext(m)
-        assert ext["obml_pop_offset"] == -1
-        assert ext["obml_pop_offset_grain"] == "month"
-        assert ext["obml_pop_comparison"] == "difference"
-
-    def test_prev_year_exported(self) -> None:
-        ossie, _ = self._convert()
-        m = self._find_metric(ossie, "Revenue Prev Year")
-        assert m is not None
-
-        expr = m["expression"]["dialects"][0]["expression"]
-        assert "prev.value" in expr  # previousValue
-
-        ext = self._get_pop_ext(m)
-        assert ext["obml_pop_comparison"] == "previousValue"
-        assert ext["obml_format"] == "$#,##0.00"
-
-    def test_ratio_exported(self) -> None:
-        ossie, _ = self._convert()
-        m = self._find_metric(ossie, "Revenue YoY Ratio")
-        assert m is not None
-
-        expr = m["expression"]["dialects"][0]["expression"]
-        assert "NULLIF" in expr
-        assert "- 1" not in expr  # ratio, not percentChange
-
-        ext = self._get_pop_ext(m)
-        assert ext["obml_pop_grain"] == "quarter"
-        assert ext["obml_pop_comparison"] == "ratio"
+    def test_each_left_out_metric_is_warned(self) -> None:
+        _, warnings = self._convert()
+        for name in self._POP_NAMES:
+            assert any(name in w and "not exported" in w for w in warnings)
 
     def test_derived_metric_still_exported(self) -> None:
         """Derived metrics are not affected by PoP handling."""
         ossie, _ = self._convert()
-        m = self._find_metric(ossie, "Derived Metric")
-        assert m is not None
+        m = next(m for m in ossie["metrics"] if m["name"] == "Derived Metric")
         expr = m["expression"]["dialects"][0]["expression"]
         assert "{[" not in expr
-
-    def test_description_preserved(self) -> None:
-        ossie, _ = self._convert()
-        m = self._find_metric(ossie, "Revenue Prev Year")
-        assert m["description"] == "Last year's revenue for the same month"
-
-    @staticmethod
-    def _get_pop_ext(metric: dict) -> dict:
-        for ext in metric.get("custom_extensions", []):
-            if ext.get("vendor_name") == "ORIONBELT":
-                data = json.loads(ext["data"])
-                if data.get("obml_metric_type") == "period_over_period":
-                    return data
-        pytest.fail("No period_over_period custom_extension found")
 
 
 # ---------------------------------------------------------------------------
@@ -254,27 +207,44 @@ class TestOssietoOBMLPoP:
 
     def test_yoy_growth_reconstructed(self) -> None:
         obml = self._roundtrip_ossie()
-        m = obml["metrics"]["Revenue YoY Growth"]
-        assert m["type"] == "period_over_period"
-        assert m["expression"] == "{[Revenue]}"
-        pop = m["periodOverPeriod"]
-        assert pop["timeDimension"] == "Order Date"
-        assert pop["grain"] == "month"
-        assert pop["offsetGrain"] == "year"
-        # Default offset -1 is omitted
-        assert "offset" not in pop
-        # Default comparison percentChange is omitted
-        assert "comparison" not in pop
+        name = "Revenue YoY Growth"
+        assert obml["metrics"][name] == _OBML_WITH_POP["metrics"][name]
 
     def test_mom_diff_reconstructed(self) -> None:
         obml = self._roundtrip_ossie()
-        m = obml["metrics"]["Revenue MoM Diff"]
+        name = "Revenue MoM Diff"
+        assert obml["metrics"][name] == _OBML_WITH_POP["metrics"][name]
+
+    def test_legacy_per_metric_extension_still_imports(self) -> None:
+        """Documents written before PoP metrics were left out still convert."""
+        legacy = {
+            "obml_metric_type": "period_over_period",
+            "obml_pop_expression": "{[Revenue]}",
+            "obml_pop_time_dimension": "Order Date",
+            "obml_pop_grain": "month",
+            "obml_pop_offset": -1,
+            "obml_pop_offset_grain": "year",
+            "obml_pop_comparison": "percentChange",
+        }
+        ossie = conv.OBMLtoOssie(_OBML_WITH_POP).convert()
+        ossie["metrics"].append(
+            {
+                "name": "Legacy YoY",
+                "expression": {
+                    "dialects": [
+                        {"dialect": "ANSI_SQL", "expression": "SUM(Orders.AMOUNT) - prev.value"}
+                    ]
+                },
+                "custom_extensions": [{"vendor_name": "ORIONBELT", "data": json.dumps(legacy)}],
+            }
+        )
+        m = conv.OssietoOBML(ossie).convert()["metrics"]["Legacy YoY"]
         assert m["type"] == "period_over_period"
         pop = m["periodOverPeriod"]
-        assert pop["offsetGrain"] == "month"
-        assert pop["comparison"] == "difference"
-        # offset -1 is default, should be omitted
+        assert pop["offsetGrain"] == "year"
+        # Defaults are omitted on the legacy path
         assert "offset" not in pop
+        assert "comparison" not in pop
 
     def test_prev_year_reconstructed(self) -> None:
         obml = self._roundtrip_ossie()
@@ -413,11 +383,8 @@ class TestPoPEdgeCases:
         converter1 = conv.OBMLtoOssie(obml)
         ossie = converter1.convert()
 
-        # Check synonyms in Ossie ai_context
-        ossie_metric = next(
-            m for m in ossie["metrics"] if m["name"] == "YoY Growth"
-        )
-        assert "year-over-year" in ossie_metric.get("ai_context", {}).get("synonyms", [])
+        # Left out of the Ossie metrics, so no ai_context to check
+        assert all(m["name"] != "YoY Growth" for m in ossie["metrics"])
 
         # Roundtrip back
         converter2 = conv.OssietoOBML(ossie)
@@ -432,10 +399,9 @@ class TestPoPEdgeCases:
         ossie = converter.convert()
         metric_names = [m["name"] for m in ossie["metrics"]]
 
-        # Revenue (measure → Ossie metric) plus all 4 PoP metrics + derived
+        # Revenue (measure → Ossie metric) plus the derived metric; PoP is left out
         assert "Revenue" in metric_names
-        assert "Revenue YoY Growth" in metric_names
-        assert "Revenue MoM Diff" in metric_names
-        assert "Revenue Prev Year" in metric_names
-        assert "Revenue YoY Ratio" in metric_names
         assert "Derived Metric" in metric_names
+        assert "Revenue YoY Growth" not in metric_names
+        roundtrip = conv.OssietoOBML(ossie).convert()
+        assert roundtrip["metrics"] == _OBML_WITH_POP["metrics"]
