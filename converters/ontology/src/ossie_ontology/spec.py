@@ -134,6 +134,7 @@ class DatasetField(OssieObject):
     dimension: Dimension | None = None
     label: str | None = None
     description: str | None = None
+    datatype: str | None = None
     ai_context: AiContext | None = None
     custom_extensions: list[CustomExtension] = Field(default_factory=list)
 
@@ -170,6 +171,7 @@ class Metric(OssieObject):
     name: str
     expression: Expression
     description: str | None = None
+    datatype: str | None = None
     ai_context: AiContext | None = None
     custom_extensions: list[CustomExtension] = Field(default_factory=list)
 
