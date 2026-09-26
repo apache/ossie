@@ -38,6 +38,15 @@ def _snowflake(expression):
     return OssieExpression(dialects=[OssieDialectExpression(dialect=OssieDialect.SNOWFLAKE, expression=expression)])
 
 
+def _expr(*dialect_expressions):
+    return OssieExpression(
+        dialects=[
+            OssieDialectExpression(dialect=dialect, expression=expression)
+            for dialect, expression in dialect_expressions
+        ]
+    )
+
+
 @pytest.fixture(scope="module")
 def ossie_document():
     export = json.loads(FIXTURE.read_text())
@@ -209,5 +218,117 @@ def test_unresolved_metric_attaches_to_first_dataset():
     export = result.output
     assert [measure["name"] for measure in _table(export, "a")["measures"]] == ["row_count"]
     assert [issue.element_name for issue in _issues_of(result, ConverterIssueType.METRIC_TABLE_UNRESOLVED)] == [
+        "row_count"
+    ]
+
+
+def test_field_only_ossie_sql_2026_is_exported_without_missing_issue():
+    """A field expressed only in OSSIE_SQL_2026 is exported, with no spurious
+    MISSING_DIALECT_EXPRESSION issue (#442)."""
+    document = OssieDocument(
+        name="m",
+        datasets=[
+            OssieDataset(
+                name="orders",
+                source="analytics.sales.orders",
+                fields=[OssieField(name="region", expression=_expr((OssieDialect.OSSIE_SQL_2026, "o_region")))],
+            )
+        ],
+    )
+    result = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
+    formulas = {formula["name"]: formula["expression"] for formula in _table(result.output, "orders").get("formulas", [])}
+    assert formulas == {"region": "o_region"}
+    assert _issues_of(result, ConverterIssueType.MISSING_DIALECT_EXPRESSION) == []
+
+
+def test_metric_only_ossie_sql_2026_is_exported_without_missing_issue():
+    """A metric expressed only in OSSIE_SQL_2026 is exported as a measure, with no
+    spurious MISSING_DIALECT_EXPRESSION issue (#442)."""
+    from ossie import OssieMetric
+
+    document = OssieDocument(
+        name="m",
+        datasets=[OssieDataset(name="orders", source="analytics.sales.orders")],
+        metrics=[
+            OssieMetric(name="total_amount", expression=_expr((OssieDialect.OSSIE_SQL_2026, "SUM(orders.amount)")))
+        ],
+    )
+    result = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
+    measures = {measure["name"]: measure["expression"] for measure in _table(result.output, "orders").get("measures", [])}
+    assert measures == {"total_amount": "SUM(orders.amount)"}
+    assert _issues_of(result, ConverterIssueType.MISSING_DIALECT_EXPRESSION) == []
+
+
+def test_ansi_sql_preferred_over_ossie_sql_2026():
+    """ANSI_SQL wins over OSSIE_SQL_2026 when both are present."""
+    document = OssieDocument(
+        name="m",
+        datasets=[
+            OssieDataset(
+                name="orders",
+                source="analytics.sales.orders",
+                fields=[
+                    OssieField(
+                        name="region",
+                        expression=_expr(
+                            (OssieDialect.OSSIE_SQL_2026, "portable_region"),
+                            (OssieDialect.ANSI_SQL, "ansi_region"),
+                        ),
+                    )
+                ],
+            )
+        ],
+    )
+    result = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
+    formulas = {formula["name"]: formula["expression"] for formula in _table(result.output, "orders").get("formulas", [])}
+    assert formulas == {"region": "ansi_region"}
+
+
+def test_native_dialect_preferred_over_ossie_sql_2026():
+    """A native dialect (SNOWFLAKE) wins over OSSIE_SQL_2026 when both are present."""
+    document = OssieDocument(
+        name="m",
+        datasets=[
+            OssieDataset(
+                name="orders",
+                source="analytics.sales.orders",
+                fields=[
+                    OssieField(
+                        name="region",
+                        expression=_expr(
+                            (OssieDialect.OSSIE_SQL_2026, "portable_region"),
+                            (OssieDialect.SNOWFLAKE, "snow_region"),
+                        ),
+                    )
+                ],
+            )
+        ],
+    )
+    result = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
+    formulas = {formula["name"]: formula["expression"] for formula in _table(result.output, "orders").get("formulas", [])}
+    assert formulas == {"region": "snow_region"}
+
+
+def test_unusable_dialect_still_reports_missing_expression():
+    """A metric whose only dialect matches neither the dataset dialect, ANSI_SQL, nor
+    OSSIE_SQL_2026 still reports MISSING_DIALECT_EXPRESSION and falls back to the first
+    listed expression. Guards the fallback chain against silently accepting any dialect (#442)."""
+    from ossie import OssieMetric
+
+    document = OssieDocument(
+        name="m",
+        datasets=[
+            OssieDataset(
+                name="orders",
+                source="analytics.sales.orders",
+                fields=[OssieField(name="id", expression=_snowflake("id"))],
+            )
+        ],
+        metrics=[OssieMetric(name="row_count", expression=_expr((OssieDialect.BIGQUERY, "COUNT(orders.id)")))],
+    )
+    result = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
+    measures = {measure["name"]: measure["expression"] for measure in _table(result.output, "orders").get("measures", [])}
+    assert measures == {"row_count": "COUNT(orders.id)"}
+    assert [issue.element_name for issue in _issues_of(result, ConverterIssueType.MISSING_DIALECT_EXPRESSION)] == [
         "row_count"
     ]

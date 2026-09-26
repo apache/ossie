@@ -284,6 +284,9 @@ class OssieToWisdomConverter:
             return by_dialect[dialect]
         if OssieDialect.ANSI_SQL in by_dialect:
             return by_dialect[OssieDialect.ANSI_SQL]
+        # OSSIE_SQL_2026 is ANSI-SQL-compatible; treat it as an ANSI_SQL-equivalent fallback.
+        if OssieDialect.OSSIE_SQL_2026 in by_dialect:
+            return by_dialect[OssieDialect.OSSIE_SQL_2026]
         issues.append(
             ConverterIssue(issue_type=ConverterIssueType.MISSING_DIALECT_EXPRESSION, element_name=element_name)
         )
