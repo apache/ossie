@@ -42,6 +42,7 @@ from ._common import (
     IDENTIFIER_RE,
     OSSIE_TO_TMSL_DATATYPE,
     OSSIE_VERSION,
+    RELATIONSHIP_ENDPOINT_METADATA,
     TEMPORAL_DATATYPES,
     TMSL_TO_OSSIE_DATATYPE,
     TMSL_UNSUPPORTED_COLUMN,
@@ -94,8 +95,6 @@ _RELATIONSHIP_CONSUMED = frozenset(
         "isActive",
     }
 )
-
-
 def convert_semantic_model_to_ossie(semantic_model: dict | str) -> str:
     """Convert a Power BI semantic model into an Apache Ossie semantic model.
 
@@ -332,7 +331,7 @@ def _convert_column(column, table_scope):
     if column.get("type") == "calculated":
         # A calculated column is DAX. It is carried across as DAX rather than rewritten
         # into SQL, so no expression semantics are invented.
-        expression = make_expression(text(column.get("expression", "")).strip(), DIALECT_DAX)
+        expression = make_expression(text(column.get("expression", "")), DIALECT_DAX)
     else:
         expression = make_expression(column.get("sourceColumn") or name, DIALECT_ANSI)
 
@@ -346,6 +345,9 @@ def _convert_column(column, table_scope):
     ai_context, stash = _split_ai_context(column, _COLUMN_CONSUMED)
     if ai_context is not None:
         field["ai_context"] = ai_context
+    for key in ("isKey", "isUnique"):
+        if column.get(key) is False:
+            stash[key] = False
     if datatype in TEMPORAL_DATATYPES or column.get("dataCategory") == "Time":
         field["dimension"] = {"is_time": True}
 
@@ -420,11 +422,11 @@ def _convert_metrics(tables):
             warn_unsupported(scope, measure, TMSL_UNSUPPORTED_MEASURE, "Apache Ossie", _PRESERVED)
             original_expression = measure.get("expression")
             expression = (
-                text(original_expression).strip()
+                text(original_expression)
                 if original_expression is not None
                 else ""
             )
-            if not expression:
+            if not expression.strip():
                 warn(
                     scope,
                     "measure has no expression; excluded from the Apache Ossie model "
@@ -544,13 +546,17 @@ def _convert_relationships(relationships, exported_names):
         for key in ("fromCardinality", "toCardinality"):
             if key in relationship:
                 stash[key] = relationship[key]
+        if "isActive" in relationship:
+            # Inactive relationships are excluded above. Preserve an explicitly active
+            # value so an otherwise lossless Power BI round trip does not omit it.
+            stash["isActive"] = relationship["isActive"]
         if flipped:
             # Recorded so an export restores the original one-to-many orientation
             # instead of silently rewriting the model shape.
             stash["flipped"] = True
-        if flipped or any(key in relationship for key in ("fromCardinality", "toCardinality")):
-            # Cardinality and orientation only describe these normalized endpoints.
-            # Remember them so later Ossie edits cannot make that metadata stale.
+        if flipped or any(key in relationship for key in RELATIONSHIP_ENDPOINT_METADATA):
+            # These properties describe this specific relationship. Remember its
+            # normalized endpoints so later Ossie edits cannot replay stale metadata.
             stash["normalizedEndpoints"] = [
                 from_table,
                 from_column,
