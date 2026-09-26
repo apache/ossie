@@ -190,7 +190,7 @@ def test_one_to_one_note_restores_relationship_type():
                 to_columns=["id"],
                 ai_context="one-to-one relationship",
             )
-        ]
+        ],
     )
     export = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00").output
     edges = export["domain"]["zsheet_json"]["relationshipGraph"]["relationships"]
@@ -203,7 +203,7 @@ def test_unresolved_metric_attaches_to_first_dataset():
     document = OssieDocument(
         name="m",
         datasets=[OssieDataset(name="a", source="db.s.a"), OssieDataset(name="b", source="db.s.b")],
-        metrics=[OssieMetric(name="row_count", expression=_snowflake("COUNT(*)"))]
+        metrics=[OssieMetric(name="row_count", expression=_snowflake("COUNT(*)"))],
     )
     result = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
     export = result.output

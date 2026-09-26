@@ -75,7 +75,7 @@ def _field_expr(result: OssieDocument, field_idx: int = 0) -> str:
 
 
 def _ossie_metrics(result: OssieDocument) -> list:
-    """Return Ossie metrics for the first semantic model, asserting they exist."""
+    """Return the document's Ossie metrics, asserting they exist."""
     metrics = result.metrics
     assert metrics is not None
     return metrics
