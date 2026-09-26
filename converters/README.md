@@ -86,6 +86,7 @@ The Ossie specification currently defines extensions for the following vendors:
 | `OMNI` | Omni semantic model |
 | `WISDOM` | WisdomAI domain |
 | `NVIDIA_GSF` | NVIDIA Generative Semantic Fabric standalone YAML |
+| `HOLOGRES` | Alibaba Cloud Hologres Semantic View |
 | `SIGMA` | Sigma Computing data model |
 | `THOUGHTSPOT` | ThoughtSpot TML (Model + Table/SQL View) |
 | `CUBE` | Cube data model |

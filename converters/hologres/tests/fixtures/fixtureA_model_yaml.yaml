@@ -1,0 +1,24 @@
+name: svacc_order_sv
+description: Single-table order analysis
+tables:
+- name: o
+  base_table:
+    database: retail
+    schema: public
+    table: svacc_orders
+  primary_key:
+    columns:
+    - order_id
+  dimensions:
+  - name: region_dim
+    expr: o.region
+  - name: status_dim
+    expr: o.status
+    description: "The order's current status"
+  metrics:
+  - name: total_revenue
+    expr: sum(o.amount)
+    description: Total revenue
+  - name: order_count
+    expr: "count(*)"
+
