@@ -204,7 +204,7 @@ class TestTpcdsFixtureCoversItsRequiredConstructs:
         store = next(d for d in dataset["datasets"] if d["name"] == "store")
         field = next(f for f in store["fields"] if f["name"] == "s_store_name")
         dialects = {d["dialect"]: d["expression"] for d in field["expression"]["dialects"]}
-        assert dialects[PORTABLE_DIALECT] == "store.STORE_NM"
+        assert dialects[PORTABLE_DIALECT] == "STORE_NM"
 
     def test_the_on_column_survives_as_a_string_not_a_boolean(self, dataset):
         store = next(d for d in dataset["datasets"] if d["name"] == "store")
@@ -236,7 +236,7 @@ class TestTpcdsFixtureCoversItsRequiredConstructs:
         sv = next(d for d in dataset["datasets"] if d["name"] == "store_returns_sv")
         field = next(f for f in sv["fields"] if f["name"] == "sr_return_amt")
         dialects = {d["dialect"]: d["expression"] for d in field["expression"]["dialects"]}
-        assert dialects[PORTABLE_DIALECT] == "store_returns_sv.RETURN_AMT"
+        assert dialects[PORTABLE_DIALECT] == "RETURN_AMT"
 
     def test_a_physical_column_the_model_does_not_surface_is_stashed(self, dataset):
         store_sales = next(d for d in dataset["datasets"] if d["name"] == "store_sales")

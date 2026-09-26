@@ -91,6 +91,7 @@ from .constants import (
     FIELD_STASH_DATA_TYPE_WITNESS,
     FIELD_STASH_DB_COLUMN_NAME,
     FIELD_STASH_DB_COLUMN_NAME_WITNESS,
+    METRIC_STASH_AGGREGATION_NONE,
     METRIC_STASH_COLUMN_AGGREGATION,
     METRIC_SHAPE_COLUMN_AGGREGATION,
     METRIC_SHAPE_FORMULA,
@@ -1584,6 +1585,13 @@ def _build_metric(
     preserved_aggregation = payload.get(METRIC_STASH_COLUMN_AGGREGATION)
     if preserved_aggregation and "aggregation" not in properties:
         properties["aggregation"] = preserved_aggregation
+
+    # An EXPLICIT `aggregation: NONE`, restored before the conventional path.
+    # Dropping it is not a cosmetic loss: ThoughtSpot applies its own default to
+    # an absent key, so a metric the author declared un-aggregated came back as
+    # one ThoughtSpot rolls up -- a per-row ratio returned as a sum of ratios.
+    if payload.get(METRIC_STASH_AGGREGATION_NONE) and "aggregation" not in properties:
+        properties["aggregation"] = "NONE"
 
     if "aggregation" not in properties:
         conventional = _outer_aggregation_of(ts_expr)

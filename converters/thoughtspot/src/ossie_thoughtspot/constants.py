@@ -130,6 +130,22 @@ MODEL_STASH_UNSURFACED_FORMULAS = "unsurfaced_formulas"
 #: changes the number.
 METRIC_STASH_COLUMN_AGGREGATION = "column_aggregation_value"
 
+#: The surfacing column carried `aggregation: NONE` EXPLICITLY.
+#:
+#: Ossie has one way to say "this metric does not aggregate" -- no aggregate in
+#: the expression -- and TML has two: the key absent, or the key present with
+#: the value NONE. `_AGGREGATION["NONE"]` is `None`, the same thing
+#: `properties.get("aggregation", "NONE")` yields for an absent key, so both
+#: collapsed identically on the way in and the write side could not tell them
+#: apart. An explicit NONE therefore came back ABSENT, and ThoughtSpot applies
+#: its own default to an absent key -- so a per-row ratio declared NONE was
+#: returned as a column ThoughtSpot rolls up, changing the number.
+#:
+#: This records only that the key was there. What an ABSENT key means is a
+#: separate question this converter does not answer either way (see #467): it
+#: still reads absent as NONE, which is what it has always done.
+METRIC_STASH_AGGREGATION_NONE = "aggregation_explicit_none"
+
 #: The source TML `obj_id` -- ThoughtSpot's own PORTABLE object handle, e.g.
 #: `SampleRetail-Apparel-LH-58435d2b` (display name, then the first segment of
 #: the GUID). Stashed under a distinct payload key so the forbidden-key scan,
@@ -508,6 +524,10 @@ STASH_KEY_CLASSIFICATION: dict[str, "StashKeyClass"] = {
     # Ossie has no object-identity concept, so nothing here can diverge from it.
     # No Ossie counterpart: the metric's expression cannot carry it.
     METRIC_STASH_COLUMN_AGGREGATION: StashKeyClass.INFORMATION_ONLY,
+    # INFORMATION_ONLY: Ossie cannot express "explicitly not aggregated" as
+    # distinct from "not aggregated", so there is no live value this can
+    # diverge from and nothing to check it against.
+    METRIC_STASH_AGGREGATION_NONE: StashKeyClass.INFORMATION_ONLY,
     MODEL_STASH_OBJ_ID: StashKeyClass.INFORMATION_ONLY,
     FIELD_STASH_FORMULA_ID: StashKeyClass.INFORMATION_ONLY,
     FIELD_STASH_DB_COLUMN_NAME: StashKeyClass.SHADOWS_DERIVABLE,

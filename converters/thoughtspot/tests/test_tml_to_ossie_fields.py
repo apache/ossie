@@ -21,9 +21,9 @@ from ossie_thoughtspot.tml_to_ossie import attribute_dataset, convert_field, exp
 
 
 def _resolve(table, column):
-    """Every reference lands in the dataset named after its table, lower-cased,
-    unless the table is named "MISSING" — then it resolves to nothing at all."""
-    return None if table == "MISSING" else f"{table.lower()}.{column.lower()}"
+    """`(dataset, warehouse column)` -- the dataset is the table lower-cased,
+    unless the table is named "MISSING", which resolves to nothing at all."""
+    return None if table == "MISSING" else (table.lower(), column.lower())
 
 
 class TestExpressionEntries:
@@ -32,7 +32,7 @@ class TestExpressionEntries:
         out = expression_entries("[ORDERS::Amount]", _resolve, log, object_ref="f")
         assert out == [
             {"dialect": "THOUGHTSPOT", "expression": "[ORDERS::Amount]"},
-            {"dialect": "ANSI_SQL", "expression": "orders.amount"},
+            {"dialect": "ANSI_SQL", "expression": "amount"},
         ]
         assert log.as_dicts() == []
 
@@ -202,7 +202,7 @@ class TestAttributeDataset:
         log = IssueLog()
 
         def resolve(table, column):
-            return f"other.{column.lower()}" if table == "OTHER" else f"orders.{column.lower()}"
+            return ("other", column.lower()) if table == "OTHER" else ("orders", column.lower())
 
         result = attribute_dataset(
             "[ORDERS::Amount] + [OTHER::Fee]", resolve, log, object_ref="f"
@@ -226,7 +226,7 @@ class TestAttributeDataset:
         log = IssueLog()
 
         def resolve(table, column):
-            return f"orders.{column.lower()}"  # ORDERS and ORDERS_ALIAS both land here
+            return "orders", column.lower()  # ORDERS and ORDERS_ALIAS both land here
 
         result = attribute_dataset(
             "[ORDERS::Amount] + [ORDERS_ALIAS::Tax]", resolve, log, object_ref="f"
@@ -422,7 +422,7 @@ class TestConvertField:
         log = IssueLog()
 
         def resolve(table, column):
-            return f"other.{column.lower()}" if table == "OTHER" else f"orders.{column.lower()}"
+            return ("other", column.lower()) if table == "OTHER" else ("orders", column.lower())
 
         formulas = {"formula_Combined": {"id": "formula_Combined",
                                           "expr": "[ORDERS::Amount] + [OTHER::Fee]"}}
@@ -592,3 +592,123 @@ class TestPhysicalDatatypeLoss:
         issues = log.as_dicts()
         assert len(issues) == 1
         assert "GEOGRAPHY" in issues[0]["message"]
+
+
+class TestPortableReferenceScope:
+    """A field's portable expression is bare; a metric's keeps its dataset.
+
+    The asymmetry is scope, and it is what every sibling converter does. A
+    field belongs to one dataset, whose `source` already names the warehouse
+    table, so `l_linenumber` (databricks) or `name` (nvidia) is unambiguous on
+    its own. A metric is model-scoped and may reference any dataset, so
+    `SUM(amount)` stops being unambiguous the moment two datasets have an
+    `amount`; nvidia qualifies for that reason (`SUM(orders.subtotal)`).
+
+    Qualifying a FIELD was not just redundant, it was unresolvable: the
+    qualifier is the Ossie dataset name (ThoughtSpot's Table-object name, which
+    need not be the warehouse table) while the column half is the warehouse
+    column, so `Dim_Customer.Customer_Name` was neither runnable SQL nor a
+    resolvable logical reference. 211 of 612 references across 31 real models
+    were in that state, every one of them on a field.
+    """
+
+    def test_a_field_reference_carries_the_bare_warehouse_column(self):
+        out = expression_entries(
+            "[ORDERS::Amount]", _resolve, IssueLog(), object_ref="f", kind="field"
+        )
+        portable = next(e for e in out if e["dialect"] == "ANSI_SQL")
+        assert portable["expression"] == "amount", (
+            "a field's portable expression must not carry a dataset qualifier"
+        )
+
+    def test_a_metric_reference_keeps_its_dataset_qualifier(self):
+        out = expression_entries(
+            "[ORDERS::Amount]", _resolve, IssueLog(), object_ref="m", kind="metric"
+        )
+        portable = next(e for e in out if e["dialect"] == "ANSI_SQL")
+        assert portable["expression"] == "orders.amount", (
+            "a metric is model-scoped, so its reference must stay qualified"
+        )
+
+    def test_the_two_kinds_genuinely_differ(self):
+        # Guards the asymmetry itself: making both branches emit the same thing
+        # would satisfy either test above on its own.
+        as_field = expression_entries(
+            "[ORDERS::Amount]", _resolve, IssueLog(), object_ref="f", kind="field"
+        )
+        as_metric = expression_entries(
+            "[ORDERS::Amount]", _resolve, IssueLog(), object_ref="m", kind="metric"
+        )
+        field_expr = next(e["expression"] for e in as_field if e["dialect"] == "ANSI_SQL")
+        metric_expr = next(e["expression"] for e in as_metric if e["dialect"] == "ANSI_SQL")
+        assert field_expr != metric_expr, (
+            f"field and metric both emitted {field_expr!r}; the scope distinction is gone"
+        )
+
+
+class TestPortableIdentifierQuoting:
+    """A ThoughtSpot display name is not automatically a valid SQL identifier.
+
+    Columns and tables carry spaces, colons, percent signs and parentheses
+    freely. Emitted raw they do not merely look wrong, they do not parse:
+    `SUM(cargo.Custom Clearance Time (min))` and `SUM(HV: STORES.LATITUDE)` are
+    both rejected by sqlglot -- the parser Apache's own validator uses. Across
+    31 real models this was 5 documents failing validation outright and 30 SQL
+    findings; quoting takes both to zero.
+
+    Quoted only WHEN NEEDED, which matters semantically rather than
+    cosmetically: the specification notes regular identifiers are compared
+    case-insensitively while quoted ones are compared verbatim, so quoting a
+    name that does not need it changes how a consumer matches it.
+    """
+
+    @staticmethod
+    def _resolver(dataset, column):
+        return lambda _t, _c: (dataset, column)
+
+    def test_a_name_needing_quotes_is_quoted(self):
+        out = expression_entries(
+            "[T::C]", self._resolver("cargo", "Custom Clearance Time (min)"),
+            IssueLog(), object_ref="m", kind="metric",
+        )
+        portable = next(e["expression"] for e in out if e["dialect"] == "ANSI_SQL")
+        assert portable == 'cargo."Custom Clearance Time (min)"', portable
+
+    def test_a_dataset_name_needing_quotes_is_quoted_too(self):
+        out = expression_entries(
+            "[T::C]", self._resolver("HV: DIM_STORES", "LATITUDE"),
+            IssueLog(), object_ref="m", kind="metric",
+        )
+        portable = next(e["expression"] for e in out if e["dialect"] == "ANSI_SQL")
+        assert portable == '"HV: DIM_STORES".LATITUDE', portable
+
+    def test_a_regular_identifier_is_left_bare(self):
+        # Not cosmetic: quoting changes case-matching semantics, so a name that
+        # does not need quotes must not get them.
+        out = expression_entries(
+            "[T::C]", self._resolver("orders", "amount"),
+            IssueLog(), object_ref="m", kind="metric",
+        )
+        portable = next(e["expression"] for e in out if e["dialect"] == "ANSI_SQL")
+        assert portable == "orders.amount", portable
+        assert '"' not in portable
+
+    def test_an_embedded_double_quote_is_doubled(self):
+        out = expression_entries(
+            "[T::C]", self._resolver("orders", 'He said "hi"'),
+            IssueLog(), object_ref="f", kind="field",
+        )
+        portable = next(e["expression"] for e in out if e["dialect"] == "ANSI_SQL")
+        assert portable == '"He said ""hi"""', portable
+
+    def test_the_quoted_output_actually_parses_as_sql(self):
+        # The point of the exercise. Skipped rather than silently passing when
+        # sqlglot is absent -- the validator's own "not installed" path reports
+        # PASSED, which is how this defect survived unseen.
+        sqlglot = pytest.importorskip("sqlglot")
+        out = expression_entries(
+            "[T::C]", self._resolver("HV: DIM_STORES", "Custom Time (min)"),
+            IssueLog(), object_ref="m", kind="metric",
+        )
+        portable = next(e["expression"] for e in out if e["dialect"] == "ANSI_SQL")
+        sqlglot.parse_one(f"SELECT SUM({portable})")
