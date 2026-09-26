@@ -16,6 +16,7 @@ name = "apache-ossie-ontology"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "neverblink-linkml" },
     { name = "pydantic" },
     { name = "pyyaml" },
 ]
@@ -28,6 +29,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "neverblink-linkml" },
     { name = "pydantic" },
     { name = "pyyaml" },
 ]
@@ -54,6 +56,22 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/72/34/14ca021ce8e5dfedc35312d08ba8bf51fdd999c576889fc2c24cb97f4f10/iniconfig-2.3.0.tar.gz", hash = "sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730", size = 20503, upload-time = "2025-10-18T21:55:43.219Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl", hash = "sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12", size = 7484, upload-time = "2025-10-18T21:55:41.639Z" },
+]
+
+[[package]]
+name = "neverblink-linkml"
+version = "0.16.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c5/22/5f5220bce0e4dc530277b2c66b51d3396d3c85efcde9057d71647730be6d/neverblink_linkml-0.16.0.tar.gz", hash = "sha256:c51cc288e088d1870d1e6ab32b1637c4e17a14dcf754bed75aa8dc26a8839072", size = 62147511, upload-time = "2026-09-11T11:04:44.349Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/94/33/b0baadeea8de2e9d551ed3a2b66f07664c30c45847b2478822d5d5eaeb24/neverblink_linkml-0.16.0-py3-none-macosx_14_0_arm64.whl", hash = "sha256:5114fbcf34ab46802029ad4f3d9d57dd273498048a668426242320c583f047d9", size = 2560800, upload-time = "2026-09-11T11:04:29.892Z" },
+    { url = "https://files.pythonhosted.org/packages/01/2c/d964360ecfedece7e8692cf1d1340e186b18504eff802ec2165182125a17/neverblink_linkml-0.16.0-py3-none-macosx_14_0_x86_64.whl", hash = "sha256:62da1c3347154a5aea9667b8e7d78fb46a71598e2d67cc86320d07f9a1decdbc", size = 2645851, upload-time = "2026-09-11T11:04:32.118Z" },
+    { url = "https://files.pythonhosted.org/packages/14/02/9a2d2f5818dd3295512665d93480d6f55b62effa9fd092b77f9857ec4ddf/neverblink_linkml-0.16.0-py3-none-manylinux_2_17_aarch64.whl", hash = "sha256:a91aa7ac2824f1c28a287b594ae73e2bbe1a1246585b056dffdfe42a9368fdef", size = 3165269, upload-time = "2026-09-11T11:04:33.829Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/c3/29df72d2cf9c44ad3eaca034bbf8198ba1b20f1c098969fa28a69bc6caaf/neverblink_linkml-0.16.0-py3-none-manylinux_2_17_x86_64.whl", hash = "sha256:877036202e5675aa10c7426b18ecce16539b7f0336912ff54569fc209819c8ce", size = 3408002, upload-time = "2026-09-11T11:04:35.368Z" },
+    { url = "https://files.pythonhosted.org/packages/63/c4/df1abffa4fa41d8c3c84a3585b56b239478b4745e3e36ac06b87a893fa81/neverblink_linkml-0.16.0-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:5bd9b7dd27b9e1e4047ed541403f35e75fd3a1f408d4c393532bdd6b5375721a", size = 3261571, upload-time = "2026-09-11T11:04:37.144Z" },
+    { url = "https://files.pythonhosted.org/packages/fc/11/6bbe7d00c38711cc469457afcd2c97d1ca7ffa1ce51a7bd18d70a2dedbe5/neverblink_linkml-0.16.0-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:6d288e8968a5c4ba243ef944687b71686c4ec47fa9558cd2aeacfb9fb3bb217e", size = 3391456, upload-time = "2026-09-11T11:04:38.67Z" },
+    { url = "https://files.pythonhosted.org/packages/c8/5f/70034c23e8513de8b97af040d367e54bbbe9cb2fd75c61a148d334ffa4b8/neverblink_linkml-0.16.0-py3-none-win_amd64.whl", hash = "sha256:f322b796ac47ddf6c08269849f4e79a632adc046b658e9178cdd684066acd0d3", size = 2576404, upload-time = "2026-09-11T11:04:40.393Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/06/ede20e9b07322faea21efff92de1b595af364269eeaeb308f83edd8301ae/neverblink_linkml-0.16.0-py3-none-win_arm64.whl", hash = "sha256:f69c17850e3f2ed498d6addad7ce2b4d20715c5c8b4a07490aca8aabeda464c3", size = 2174930, upload-time = "2026-09-11T11:04:41.849Z" },
 ]
 
 [[package]]
