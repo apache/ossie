@@ -385,6 +385,22 @@ Ontology mappings declare how to map the values of fields at the logical level t
 in the ontology. Just as ontologies are partitioned by concept, ontology maps partition into concept
 mappings that group by some concept.
 
+Each mapping's `semantic_model` is a complete
+[core document](../core-spec/spec.md#semantic-model), with its own `version`,
+`name`, and at least one dataset. For example:
+
+```yaml
+ontology_mappings:
+  - name: sales_mapping
+    semantic_model:
+      version: 0.2.0.dev0
+      name: sales_analytics
+      datasets:
+        - name: orders
+          source: sales.public.orders
+    concept_mappings: []
+```
+
 ### Concept mappings
 
 Each concept mapping declares how to populate a concept with objects and how to populate the relationships
@@ -588,6 +604,7 @@ though `Store` plays a role in three of the relationships.
 ## Version History
 
 - **0.2.0.dev0** (2026-05-29): Basic support for ontologies and logical schema mappings
+  - Breaking: each ontology map's `semantic_model` now requires its own `version`.
   - Core ontology structure: Concepts, relationships, and business rules (requires and derived_by)
   - Schema mappings from one or more logical models into an ontology
 

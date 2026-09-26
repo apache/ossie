@@ -226,6 +226,7 @@ class SpecToOssieConverter:
 
     def _convert_semantic_model(self, lm_spec: SpecSemanticModel) -> SemanticModel:
         semantic_model = SemanticModel(
+            version=lm_spec.version,
             name=lm_spec.name,
             description=lm_spec.description,
             ai_context=lm_spec.ai_context,

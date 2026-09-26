@@ -26,6 +26,8 @@ on:
       - "validation/**"
       - "python/**"
       - "core-spec/**"
+      - "ontology/**"
+      - "examples/flights.yaml"
       - "examples/tpcds_semantic_model.yaml"
       - ".github/workflows/validation-ci.yml"
   pull_request:
@@ -34,6 +36,8 @@ on:
       - "validation/**"
       - "python/**"
       - "core-spec/**"
+      - "ontology/**"
+      - "examples/flights.yaml"
       - "examples/tpcds_semantic_model.yaml"
       - ".github/workflows/validation-ci.yml"
 
