@@ -30,6 +30,7 @@ on:
       - "examples/flights.yaml"
       - "examples/tpcds_semantic_model.yaml"
       - ".github/workflows/validation-ci.yml"
+      - "scripts/generate-spec-types.py"
   pull_request:
     branches: ["main"]
     paths:
@@ -40,6 +41,7 @@ on:
       - "examples/flights.yaml"
       - "examples/tpcds_semantic_model.yaml"
       - ".github/workflows/validation-ci.yml"
+      - "scripts/generate-spec-types.py"
 
 jobs:
   test:
@@ -70,6 +72,9 @@ jobs:
 
       - name: Run shared Python model tests
         run: uv run --with pytest --with jsonschema --with ./python -m pytest python/tests/
+
+      - name: Check spec.yaml enums are in sync with ossie-schema.json
+        run: uv run scripts/generate-spec-types.py --check
 
       - name: Validate canonical example
         run: uv run validation/validate.py examples/tpcds_semantic_model.yaml
