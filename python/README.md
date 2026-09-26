@@ -25,7 +25,8 @@ Each `OssieDocument` is one semantic model: `name`, `datasets`, `relationships`,
 and `metrics` sit at the root alongside `version`.
 Construct documents with `OssieDocument(name="sales", datasets=[...])` and access
 their datasets as `document.datasets`. JSON and YAML serialization use the same
-flat shape. The former `semantic_model` wrapper is rejected. Unwrap old
+flat shape, with `version` serialized first when included. The former
+`semantic_model` wrapper is rejected. Unwrap old
 single-model documents and split multi-model documents into separate files,
 preserving model contents and setting `version` in each file before loading them.
 

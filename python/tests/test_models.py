@@ -153,6 +153,56 @@ def test_document_serialization_preserves_flat_model_and_metadata() -> None:
 
 
 @pytest.mark.parametrize(
+    "serialize", ["model_dump", "model_dump_json", "to_ossie_yaml", "to_ossie_json"]
+)
+def test_document_serialization_puts_version_first(serialize: str) -> None:
+    data = _document()
+    document = OssieDocument.model_validate(data)
+
+    serialized = getattr(document, serialize)()
+    if isinstance(serialized, str):
+        serialized = yaml.safe_load(serialized)
+
+    assert next(iter(serialized)) == "version"
+    assert serialized["version"] == data["version"]
+
+
+@pytest.mark.parametrize(
+    "serialize", ["model_dump", "model_dump_json", "to_ossie_yaml", "to_ossie_json"]
+)
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"exclude": {"version"}},
+        {"include": {"name", "datasets"}},
+        {"exclude_defaults": True},
+        {"exclude_unset": True},
+    ],
+)
+def test_document_serialization_can_omit_version(serialize: str, options: dict) -> None:
+    data = _document()
+    del data["version"]
+    document = OssieDocument.model_validate(data)
+
+    serialized = getattr(document, serialize)(**options)
+    if isinstance(serialized, str):
+        serialized = yaml.safe_load(serialized)
+
+    assert "version" not in serialized
+    assert serialized["name"] == data["name"]
+
+
+def test_document_serialization_schema_preserves_model_fields() -> None:
+    schema = OssieDocument.model_json_schema(mode="serialization")
+
+    assert schema["properties"]["version"]["type"] == "string"
+    assert schema["properties"]["datasets"]["type"] == "array"
+    # Early Pydantic 2.x versions also require defaulted fields in serialization schemas.
+    assert {"name", "datasets"} <= set(schema["required"])
+    assert schema["additionalProperties"] is False
+
+
+@pytest.mark.parametrize(
     "legacy_value",
     [
         None,
