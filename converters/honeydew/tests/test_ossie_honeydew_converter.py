@@ -599,9 +599,9 @@ def test_ossie_to_honeydew_invalid_version_raises():
         convert_ossie_to_honeydew("version: '9.9.9'\nname: m\n")
 
 
-def test_ossie_to_honeydew_missing_model_name_raises():
-    with pytest.raises(HoneydewConversionError):
-        convert_ossie_to_honeydew(f"version: '{OSSIE_VERSION}'\n")
+def test_ossie_to_honeydew_missing_name_raises():
+    with pytest.raises(HoneydewConversionError, match="Missing 'name'"):
+        convert_ossie_to_honeydew(f"version: '{OSSIE_VERSION}'\ndatasets: []\n")
 
 
 @pytest.mark.parametrize(

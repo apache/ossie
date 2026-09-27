@@ -112,7 +112,7 @@ def convert_ossie_to_honeydew(ossie_yaml_str: str) -> dict[str, str]:
 def _model_to_files(sm: dict[str, Any]) -> dict[str, str]:
     name = sm.get("name")
     if not name:
-        raise HoneydewConversionError("Missing 'name' in semantic model")
+        raise HoneydewConversionError("Missing 'name' in Ossie document")
 
     files: dict[str, str] = {}
 
