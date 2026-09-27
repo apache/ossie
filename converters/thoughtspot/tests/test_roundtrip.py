@@ -906,6 +906,34 @@ def test_an_unattributed_formula_does_not_duplicate_another_formulas_id():
     assert len(ids) == len(set(ids)), f"duplicate formula ids on a plain round trip: {ids}"
 
 
+def test_an_unattributed_formulas_surfacing_column_keeps_its_own_name():
+    """An ATTRIBUTE column surfacing a cross-dataset formula whose own TML
+    `name` differs from the column's `name` must come back under the
+    column's name, not the formula's: `MODEL_STASH_UNATTRIBUTED_FORMULAS`
+    is the only record of that name once the column is gone.
+    """
+    def table(name, columns):
+        return TmlDocument(kind="table", guid=None, body={
+            "name": name, "db": "D", "schema": "S", "db_table": name,
+            "connection": {"name": "Conn"},
+            "columns": [{"name": c, "db_column_name": c.upper(),
+                         "db_column_properties": {"data_type": "DOUBLE"}} for c in columns]})
+    model = TmlDocument(kind="model", guid=None, body={
+        "name": "M", "model_tables": [{"name": "A"}, {"name": "B"}],
+        "formulas": [
+            {"id": "formula_internal", "name": "InternalCalc_v1", "expr": "[A::x] + [B::y]"},
+        ],
+        "columns": [
+            {"name": "Date2", "formula_id": "formula_internal",
+             "properties": {"column_type": "ATTRIBUTE"}},
+        ]})
+    ossie = tml_to_ossie.convert(DocumentSet(model=model, tables=(table("A", ["x"]), table("B", ["y"]))))
+    rebuilt = ossie_to_thoughtspot.convert(ossie.model).documents.model.body
+    column_names = [c["name"] for c in rebuilt["columns"]]
+    assert "Date2" in column_names
+    assert "InternalCalc_v1" not in column_names
+
+
 def test_every_referencing_join_carries_the_compulsory_with_field():
     """`with` is mandatory on every `model_tables[].joins[]` entry.
 

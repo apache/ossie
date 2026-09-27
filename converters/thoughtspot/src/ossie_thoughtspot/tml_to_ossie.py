@@ -2337,8 +2337,11 @@ def convert(document_set: DocumentSet) -> OssieConversion:
         if column_type == "ATTRIBUTE" and "formula_id" in column:
             formula_entry = formulas.get(column["formula_id"])
             if formula_entry is not None and "expr" in formula_entry:
+                # Restored under this name on the return leg, so it must be
+                # the column's display_name, not the formula's own name:
+                # the two can differ, and the column's is user visible.
                 unattributed: dict = {
-                    "name": formula_entry.get("name") or display_name,
+                    "name": display_name,
                     "expr": formula_entry["expr"],
                 }
                 if properties:

@@ -521,6 +521,28 @@ class TestUnattributedFormulas:
 
         assert any(i["code"] == "TS-FIELD-UNATTRIBUTED" for i in result.issues.as_dicts())
 
+    def test_the_column_display_name_is_stashed_not_the_formulas_own_name(self):
+        orders = _table("ORDERS", columns=[_column("Amount", "AMOUNT", "DOUBLE")])
+        customers = _table("CUSTOMERS", columns=[_column("Discount", "DISCOUNT", "DOUBLE")])
+        expr = "[ORDERS::Amount] - [CUSTOMERS::Discount]"
+        model = _model(
+            model_tables=[{"name": "ORDERS"}, {"name": "CUSTOMERS"}],
+            columns=[
+                _attribute("Amount", "ORDERS::Amount"),
+                _attribute("Discount", "CUSTOMERS::Discount"),
+                {"name": "Date2", "formula_id": "formula_internal",
+                 "properties": {"column_type": "ATTRIBUTE"}},
+            ],
+            formulas=[{"id": "formula_internal", "name": "InternalCalc_v1", "expr": expr}],
+        )
+
+        result = convert(_document_set(model, orders, customers))
+
+        model_stash = _own_stash(result.model)
+        unattributed = model_stash[MODEL_STASH_UNATTRIBUTED_FORMULAS]
+        assert len(unattributed) == 1
+        assert unattributed[0]["name"] == "Date2"
+
 
 class TestStashProtocol:
     def test_other_vendors_custom_extensions_pass_through_untouched(self):
