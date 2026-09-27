@@ -101,13 +101,17 @@ class TestOntologyStructure:
         omap = doc["ontology_mappings"][0]
         assert omap["name"] == "sales_map"
         assert "semantic_model" in omap
-        assert not {"version", "dialects", "vendors"} & set(omap["semantic_model"])
+        assert omap["semantic_model"]["version"] == "0.2.0.dev0"
+        assert not {"dialects", "vendors"} & set(omap["semantic_model"])
         assert omap["semantic_model"]["name"] == "sales"
         assert {d["name"] for d in omap["semantic_model"]["datasets"]} == {
             "Customers",
             "Products",
             "Orders",
         }
+        result = conv.validate_ossie(omap["semantic_model"])
+        assert result.valid, result.schema_errors + result.semantic_errors
+        assert not result.semantic_warnings
 
     def test_concept_mappings_bind_keys_and_fks(self) -> None:
         doc = conv.OBMLtoOssieOntology(_OBML, model_name="sales").convert()

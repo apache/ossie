@@ -149,7 +149,7 @@ These OBML features have no direct Ossie equivalent. Where possible, metadata is
 
 - **`primary_key`** — natively represented: Ossie's dataset-level `primary_key` array maps to per-column `primaryKey: true` on OBML columns (`DataObjectColumn.primaryKey`), and back to the dataset array on export.
 - **`unique_keys`** — no native OBML equivalent; round-trips via an `Ossie`-vendor `customExtension` (`obml_unique_keys`).
-- **Multi-dialect expressions** — on import the converter reads the first available SQL dialect in the order `ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`; non-SQL dialects (`MDX`, `TABLEAU`, `MAQL`) are not parsed. A metric with no SQL-parseable dialect, or an expression OBML cannot decompose, is preserved verbatim (`obml_unconverted_metrics`) with a `LOSSY:` warning rather than dropped. On export, OBML measures/metrics emit `ANSI_SQL`.
+- **Multi-dialect expressions** — on import the converter reads the first available SQL dialect in the order `ANSI_SQL`, `OSSIE_SQL_2026`, `SNOWFLAKE`, `DATABRICKS`; non-SQL dialects (`MDX`, `TABLEAU`, `MAQL`, `SIGMA`, `THOUGHTSPOT`, `DAX`) are not parsed. A metric with no SQL-parseable dialect, or an expression OBML cannot decompose, is preserved verbatim (`obml_unconverted_metrics`) with a `LOSSY:` warning rather than dropped. On export, OBML measures/metrics emit `ANSI_SQL`.
 - **`ai_context`** — preserved losslessly via `customExtensions` (see Section 2.4).
 - **`custom_extensions`** — mapped to OBML `customExtensions`.
 

@@ -1,0 +1,85 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+cubes:
+- name: customer
+  sql_table: tpcds.public.customer
+  description: Customer dimension with demographic information
+  meta:
+    ai_context: 'Also known as: customers, shoppers, buyers.'
+    ossie:
+      unique_keys:
+      - - c_customer_sk
+      ai_context:
+        synonyms:
+        - customers
+        - shoppers
+        - buyers
+  dimensions:
+  - name: c_customer_sk
+    sql: c_customer_sk
+    type: number
+    primary_key: true
+    description: Surrogate key for customer
+  - name: c_customer_id
+    sql: c_customer_id
+    type: string
+    description: Business key for customer
+    meta:
+      ai_context: 'Also known as: customer ID, customer number.'
+      ossie:
+        ai_context:
+          synonyms:
+          - customer ID
+          - customer number
+  - name: c_first_name
+    sql: c_first_name
+    type: string
+    description: Customer first name
+  - name: c_last_name
+    sql: c_last_name
+    type: string
+    description: Customer last name
+  - name: customer_full_name
+    sql: "{CUBE}.c_first_name || ' ' || {CUBE}.c_last_name"
+    type: string
+    description: Customer full name (computed field)
+    meta:
+      ai_context: 'Also known as: full name, customer name.'
+      ossie:
+        ai_context:
+          synonyms:
+          - full name
+          - customer name
+  - name: c_email_address
+    sql: c_email_address
+    type: string
+    description: Customer email address
+    meta:
+      ai_context: 'Also known as: email, contact.'
+      ossie:
+        ai_context:
+          synonyms:
+          - email
+          - contact
+  measures:
+  - name: customer_lifetime_value_part_2
+    type: count
+    meta:
+      ossie:
+        part_of: customer_lifetime_value
+    public: false

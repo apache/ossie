@@ -150,10 +150,8 @@ model array cannot produce a valid model document. Preserve model contents and
 custom extensions; never silently select only the first model or overwrite a file
 when splitting a document.
 
-The reusable `$defs/SemanticModel` schema still describes model contents without
-standalone document metadata. In particular, an ontology map continues to embed
-those contents under its `semantic_model` property. This standalone document
-change does not rename or flatten that ontology property.
+For [ontology maps](../ontology/ontology.md#ontology-mappings), each embedded
+model must be a complete core document.
 
 ---
 
@@ -490,6 +488,7 @@ The following are well-known examples:
 | `WISDOM` | WisdomAI-specific attributes |
 | `POWER_BI` | Microsoft Power BI-specific attributes |
 | `SIGMA` | Sigma Computing-specific attributes |
+| `THOUGHTSPOT` | ThoughtSpot-specific attributes |
 
 ### Examples
 

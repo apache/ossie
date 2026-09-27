@@ -290,6 +290,31 @@ class TestExtractExpression:
         }
         assert _extract_expression(expr, "f") == "ansi_expr"
 
+    def test_ossie_sql_2026_fallback(self):
+        """OSSIE_SQL_2026 is used when it is the only dialect present (#442)."""
+        expr = {
+            "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "ossie_expr"}]
+        }
+        assert _extract_expression(expr, "f") == "ossie_expr"
+
+    def test_snowflake_preferred_over_ossie_sql_2026(self):
+        expr = {
+            "dialects": [
+                {"dialect": "OSSIE_SQL_2026", "expression": "ossie_expr"},
+                {"dialect": "SNOWFLAKE", "expression": "snow_expr"},
+            ]
+        }
+        assert _extract_expression(expr, "f") == "snow_expr"
+
+    def test_ansi_preferred_over_ossie_sql_2026(self):
+        expr = {
+            "dialects": [
+                {"dialect": "OSSIE_SQL_2026", "expression": "ossie_expr"},
+                {"dialect": "ANSI_SQL", "expression": "ansi_expr"},
+            ]
+        }
+        assert _extract_expression(expr, "f") == "ansi_expr"
+
     def test_unsupported_dialect_returns_none_with_warning(self):
         expr = {
             "dialects": [{"dialect": "BIGQUERY", "expression": "bq_expr"}]
@@ -717,6 +742,53 @@ class TestConvertOssieToSnowflake:
         }
         result = yaml.safe_load(convert_ossie_to_snowflake(_wrap_ossie(model)))
         assert "definition" in result["tables"][0]["base_table"]
+
+    def test_field_in_ossie_sql_2026_only_is_exported(self):
+        """A dimension expressed only in OSSIE_SQL_2026 is exported, not dropped (#442)."""
+        model = {
+            "name": "m",
+            "datasets": [
+                {
+                    "name": "t",
+                    "source": "db.s.t",
+                    "fields": [
+                        {
+                            "name": "region",
+                            "expression": {
+                                "dialects": [
+                                    {"dialect": "OSSIE_SQL_2026", "expression": "o_region"}
+                                ]
+                            },
+                            "dimension": {"is_time": False},
+                        }
+                    ],
+                }
+            ],
+        }
+        result = yaml.safe_load(convert_ossie_to_snowflake(_wrap_ossie(model)))
+        dims = result["tables"][0]["dimensions"]
+        assert len(dims) == 1
+        assert dims[0]["name"] == "region"
+        assert dims[0]["expr"] == "o_region"
+
+    def test_metric_in_ossie_sql_2026_only_is_exported(self):
+        """A metric expressed only in OSSIE_SQL_2026 is exported, not dropped (#442)."""
+        model = _minimal_model(
+            metrics=[
+                {
+                    "name": "rev",
+                    "expression": {
+                        "dialects": [
+                            {"dialect": "OSSIE_SQL_2026", "expression": "SUM(amount)"}
+                        ]
+                    },
+                }
+            ]
+        )
+        result = yaml.safe_load(convert_ossie_to_snowflake(_wrap_ossie(model)))
+        assert len(result["metrics"]) == 1
+        assert result["metrics"][0]["name"] == "rev"
+        assert result["metrics"][0]["expr"] == "SUM(amount)"
 
 
 # ---------------------------------------------------------------------------

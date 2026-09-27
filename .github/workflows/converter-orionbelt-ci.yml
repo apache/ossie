@@ -25,6 +25,7 @@ on:
     paths:
       - 'converters/orionbelt/**'
       - 'core-spec/**'
+      - 'ontology/**'
       - 'examples/**'
       - '.github/workflows/converter-orionbelt-ci.yml'    
   pull_request:
@@ -32,6 +33,7 @@ on:
     paths:
       - 'converters/orionbelt/**'
       - 'core-spec/**'
+      - 'ontology/**'
       - 'examples/**'
       - '.github/workflows/converter-orionbelt-ci.yml'    
 

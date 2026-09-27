@@ -297,7 +297,7 @@
           "description": "Human-readable description of this ontology map"
         },
         "semantic_model": {
-          "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json#/$defs/SemanticModel"
+          "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json"
         },
         "concept_mappings": {
           "type": "array",
