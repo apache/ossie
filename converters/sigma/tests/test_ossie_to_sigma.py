@@ -146,24 +146,20 @@ def test_relationship_column_arity_mismatch_is_recorded_not_silently_truncated()
     is legal input. zip() truncates to the shorter array; that must be a recorded
     issue, not a silent drop of the extra key column(s)."""
     document = OssieDocument(
-        semantic_model=[
-            OssieSemanticModel(
-                name="m",
-                datasets=[
-                    OssieDataset(name="orders", source="db.public.orders"),
-                    OssieDataset(name="regions", source="db.public.regions"),
-                ],
-                relationships=[
-                    OssieRelationship(
-                        name="OrderRegion",
-                        **{"from": "orders"},
-                        to="regions",
-                        from_columns=["region_id", "sub_id"],
-                        to_columns=["region_id"],
-                    ),
-                ],
-            )
-        ]
+        name="m",
+        datasets=[
+            OssieDataset(name="orders", source="db.public.orders"),
+            OssieDataset(name="regions", source="db.public.regions"),
+        ],
+        relationships=[
+            OssieRelationship(
+                name="OrderRegion",
+                **{"from": "orders"},
+                to="regions",
+                from_columns=["region_id", "sub_id"],
+                to_columns=["region_id"],
+            ),
+        ],
     )
 
     result = OssieToSigmaConverter().convert(document)
@@ -185,33 +181,29 @@ def test_relationship_arity_mismatch_element_names_are_scoped_by_owning_dataset(
     element_name must be scoped the same way, or two unrelated relationships sharing a
     name on different table pairs become indistinguishable in the issue list."""
     document = OssieDocument(
-        semantic_model=[
-            OssieSemanticModel(
-                name="m",
-                datasets=[
-                    OssieDataset(name="orders", source="db.public.orders"),
-                    OssieDataset(name="customers", source="db.public.customers"),
-                    OssieDataset(name="shipments", source="db.public.shipments"),
-                    OssieDataset(name="carriers", source="db.public.carriers"),
-                ],
-                relationships=[
-                    OssieRelationship(
-                        name="Parent",
-                        **{"from": "orders"},
-                        to="customers",
-                        from_columns=["region_id", "sub_id"],
-                        to_columns=["region_id"],
-                    ),
-                    OssieRelationship(
-                        name="Parent",
-                        **{"from": "shipments"},
-                        to="carriers",
-                        from_columns=["region_id", "sub_id"],
-                        to_columns=["region_id"],
-                    ),
-                ],
-            )
-        ]
+        name="m",
+        datasets=[
+            OssieDataset(name="orders", source="db.public.orders"),
+            OssieDataset(name="customers", source="db.public.customers"),
+            OssieDataset(name="shipments", source="db.public.shipments"),
+            OssieDataset(name="carriers", source="db.public.carriers"),
+        ],
+        relationships=[
+            OssieRelationship(
+                name="Parent",
+                **{"from": "orders"},
+                to="customers",
+                from_columns=["region_id", "sub_id"],
+                to_columns=["region_id"],
+            ),
+            OssieRelationship(
+                name="Parent",
+                **{"from": "shipments"},
+                to="carriers",
+                from_columns=["region_id", "sub_id"],
+                to_columns=["region_id"],
+            ),
+        ],
     )
 
     result = OssieToSigmaConverter().convert(document)
