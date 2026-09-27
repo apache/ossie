@@ -26,6 +26,7 @@ on:
       - 'converters/wisdom/**'
       - 'core-spec/**'
       - 'examples/**'
+      - 'python/**'
       - '.github/workflows/converter-wisdom-ci.yml'
   pull_request:
     branches: [ "main" ]
@@ -33,6 +34,7 @@ on:
       - 'converters/wisdom/**'
       - 'core-spec/**'
       - 'examples/**'
+      - 'python/**'
       - '.github/workflows/converter-wisdom-ci.yml'
 
 permissions:

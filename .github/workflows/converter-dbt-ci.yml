@@ -26,14 +26,16 @@ on:
       - 'converters/dbt/**'
       - 'core-spec/**'
       - 'examples/**'
-      - '.github/workflows/converter-dbt-ci.yml'    
+      - 'python/**'
+      - '.github/workflows/converter-dbt-ci.yml'
   pull_request:
     branches: [ "main" ]
     paths:
       - 'converters/dbt/**'
       - 'core-spec/**'
       - 'examples/**'
-      - '.github/workflows/converter-dbt-ci.yml'    
+      - 'python/**'
+      - '.github/workflows/converter-dbt-ci.yml'
 
 jobs:
   build:
