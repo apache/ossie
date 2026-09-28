@@ -24,11 +24,17 @@ on:
     branches: [ "main" ]
     paths:
       - 'converters/solid/**'
+      - 'core-spec/**'
+      - 'examples/**'
+      - 'python/**'
       - '.github/workflows/converter-solid-ci.yml'
   pull_request:
     branches: [ "main" ]
     paths:
       - 'converters/solid/**'
+      - 'core-spec/**'
+      - 'examples/**'
+      - 'python/**'
       - '.github/workflows/converter-solid-ci.yml'
 
 jobs:

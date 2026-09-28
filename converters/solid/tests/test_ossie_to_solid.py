@@ -127,7 +127,7 @@ def test_without_dimension_metadata_the_split_falls_back_to_solids_type_rule():
     # An Apache Ossie model whose fields carry no `dimension` block: numeric fields
     # become facts and the rest dimensions, which is how Solid itself splits them.
     ossie = yaml.safe_load(example("tpcds_semantic_model.yaml"))
-    for dataset in ossie["semantic_model"][0]["datasets"]:
+    for dataset in ossie["datasets"]:
         for field in dataset["fields"]:
             field.pop("dimension", None)
     solid, _ = convert_quietly(convert_ossie_to_solid, yaml.safe_dump(ossie))
@@ -174,7 +174,7 @@ def test_a_computed_dimension_drops_its_expression_with_a_warning():
 
 def test_a_field_label_is_dropped_with_a_warning():
     ossie = yaml.safe_load(fixture("tpcds_ossie.yaml"))
-    ossie["semantic_model"][0]["datasets"][0]["fields"][0]["label"] = "filter"
+    ossie["datasets"][0]["fields"][0]["label"] = "filter"
     _, warnings_ = convert_quietly(convert_ossie_to_solid, yaml.safe_dump(ossie))
     assert any("label 'filter'" in w for w in warnings_)
 
@@ -225,7 +225,7 @@ def test_relationship_order_is_preserved(from_fixture):
 
 def test_a_relationship_naming_an_undeclared_dataset_is_rejected():
     ossie = yaml.safe_load(fixture("tpcds_ossie.yaml"))
-    ossie["semantic_model"][0]["relationships"][0]["to"] = "nope"
+    ossie["relationships"][0]["to"] = "nope"
     with pytest.raises(ConversionError, match="not declared in 'datasets'"):
         convert_ossie_to_solid(yaml.safe_dump(ossie))
 
@@ -248,7 +248,9 @@ def test_an_explicit_dialect_overrides_the_stash():
 
 def test_forcing_a_dialect_the_model_does_not_carry_is_an_error():
     # The TPC-DS fixture is SNOWFLAKE-only, with no ANSI_SQL fallback to read.
-    with pytest.raises(ConversionError, match="no DATABRICKS or ANSI_SQL expression"):
+    with pytest.raises(
+        ConversionError, match="no DATABRICKS, ANSI_SQL or OSSIE_SQL_2026 expression"
+    ):
         convert_ossie_to_solid(fixture("tpcds_ossie.yaml"), dialect="DATABRICKS")
 
 
@@ -259,7 +261,7 @@ def test_an_unsupported_dialect_is_rejected():
 
 def test_a_missing_dialect_expression_falls_back_to_ansi_with_a_warning():
     ossie = yaml.safe_load(fixture("tpcds_ossie.yaml"))
-    field = ossie["semantic_model"][0]["datasets"][0]["fields"][0]
+    field = ossie["datasets"][0]["fields"][0]
     field["expression"]["dialects"] = [
         {"dialect": "ANSI_SQL", "expression": "ss_sold_date_sk"}
     ]
@@ -282,14 +284,48 @@ def test_a_solid_document_is_rejected():
         convert_ossie_to_solid(fixture("tpcds_solid.yaml"))
 
 
-def test_extra_semantic_models_are_dropped_with_a_warning():
-    ossie = yaml.safe_load(fixture("tpcds_ossie.yaml"))
-    second = dict(ossie["semantic_model"][0])
+def _wrapped(document, extra_models=()):
+    """`document` in the legacy layout: its model inside a `semantic_model` list."""
+    model = {k: v for k, v in document.items() if k != "version"}
+    return {"version": document["version"],
+            "semantic_model": [model, *extra_models]}
+
+
+def test_a_legacy_wrapped_document_is_read_with_a_warning():
+    flat = yaml.safe_load(fixture("tpcds_ossie.yaml"))
+    solid, warnings_ = convert_quietly(
+        convert_ossie_to_solid, yaml.safe_dump(_wrapped(flat))
+    )
+    assert any("legacy wrapped 'semantic_model' format" in w for w in warnings_)
+    expected, _ = convert_quietly(convert_ossie_to_solid, fixture("tpcds_ossie.yaml"))
+    assert solid == expected
+
+
+def test_extra_models_in_a_legacy_wrapper_are_dropped_with_a_warning():
+    flat = yaml.safe_load(fixture("tpcds_ossie.yaml"))
+    second = {k: v for k, v in flat.items() if k != "version"}
     second["name"] = "second_model"
-    ossie["semantic_model"].append(second)
+    ossie = _wrapped(flat, extra_models=[second])
     solid, warnings_ = convert_quietly(convert_ossie_to_solid, yaml.safe_dump(ossie))
     assert any("holds 2 semantic models" in w for w in warnings_)
     assert solid_model_of(solid)["name"] == "tpcds_retail_model"
+
+
+@pytest.mark.parametrize(
+    "wrapper", [[], {"name": "m"}, "m"], ids=["empty", "mapping", "string"]
+)
+def test_a_legacy_wrapper_that_is_not_a_non_empty_list_is_rejected(wrapper):
+    ossie = {"version": "0.2.0.dev0", "semantic_model": wrapper}
+    with pytest.raises(ConversionError, match="not a non-empty list"):
+        convert_ossie_to_solid(yaml.safe_dump(ossie))
+
+
+def test_a_legacy_wrapper_entry_that_is_not_a_mapping_is_rejected():
+    ossie = {"version": "0.2.0.dev0", "semantic_model": ["m"]}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with pytest.raises(ConversionError, match="must be a mapping"):
+            convert_ossie_to_solid(yaml.safe_dump(ossie))
 
 
 # --- constructs Solid's format cannot hold -----------------------------------------
@@ -298,7 +334,7 @@ def test_extra_semantic_models_are_dropped_with_a_warning():
 def test_a_metric_datatype_is_dropped_with_a_warning():
     """Solid types a metric by evaluating its formula, so a declared type has no slot."""
     ossie = yaml.safe_load(fixture("tpcds_ossie.yaml"))
-    ossie["semantic_model"][0]["metrics"][0]["datatype"] = "Decimal"
+    ossie["metrics"][0]["datatype"] = "Decimal"
     solid, warnings_ = convert_quietly(convert_ossie_to_solid, yaml.safe_dump(ossie))
     assert any("datatype 'Decimal' has no Solid equivalent" in w for w in warnings_)
     assert "datatype" not in solid_model_of(solid)["metrics"][0]
@@ -307,7 +343,7 @@ def test_a_metric_datatype_is_dropped_with_a_warning():
 def test_a_relationship_annotation_is_dropped_with_a_warning():
     """A Solid relationship carries only its tables and join keys."""
     ossie = yaml.safe_load(fixture("tpcds_ossie.yaml"))
-    ossie["semantic_model"][0]["relationships"][0]["ai_context"] = {
+    ossie["relationships"][0]["ai_context"] = {
         "instructions": "join only on settled sales",
         "synonyms": ["sold on"],
     }
@@ -333,13 +369,98 @@ def test_the_one_to_one_note_import_writes_is_not_reported_as_a_loss():
 
     ossie, _ = convert_quietly(convert_solid_to_ossie, yaml.safe_dump(solid))
     annotated = [
-        r for r in yaml.safe_load(ossie)["semantic_model"][0]["relationships"]
+        r for r in yaml.safe_load(ossie)["relationships"]
         if (r.get("ai_context") or {}).get("instructions")
     ]
     assert annotated, "expected import to annotate the one-to-one"
 
     _, warnings_ = convert_quietly(convert_ossie_to_solid, ossie)
     assert not [w for w in warnings_ if "ai_context.instructions" in w], warnings_
+
+
+# --- OSSIE_SQL_2026 ----------------------------------------------------------------
+
+
+def _one_field_model(dialects, metric_dialects=None):
+    """A minimal Apache Ossie document: one dataset `a` holding one Decimal field `amt`
+    whose expression carries `dialects`, plus a metric `total` when `metric_dialects`
+    is given."""
+    model = {
+        "version": "0.2.0.dev0",
+        "name": "m",
+        "datasets": [{
+            "name": "a",
+            "source": "db.s.a",
+            "fields": [{
+                "name": "amt",
+                "datatype": "Decimal",
+                "expression": {"dialects": dialects},
+            }],
+        }],
+    }
+    if metric_dialects is not None:
+        model["metrics"] = [
+            {"name": "total", "expression": {"dialects": metric_dialects}}
+        ]
+    return model
+
+
+def test_an_ossie_sql_2026_only_model_is_read_as_portable_sql():
+    """OSSIE_SQL_2026 is the spec's portable dialect, so it is read like ANSI_SQL:
+    silently, and without being reported as a dialect this converter cannot read."""
+    ossie = _one_field_model(
+        [{"dialect": "OSSIE_SQL_2026", "expression": "amt"}],
+        metric_dialects=[{"dialect": "OSSIE_SQL_2026", "expression": "SUM(a.amt)"}],
+    )
+    solid, warnings_ = convert_quietly(convert_ossie_to_solid, yaml.safe_dump(ossie))
+    assert warnings_ == []
+    model = solid_model_of(solid)
+    assert model["tables"][0]["facts"][0]["name"] == "amt"
+    assert model["metrics"][0]["expression"] == "SUM(amt)"
+    assert model["metrics"][0]["tables"] == ["db.s.a"]
+
+
+def test_ansi_sql_is_preferred_over_ossie_sql_2026():
+    ossie = _one_field_model([], metric_dialects=[
+        {"dialect": "OSSIE_SQL_2026", "expression": "SUM(a.amt)"},
+        {"dialect": "ANSI_SQL", "expression": "MAX(a.amt)"},
+    ])
+    ossie["datasets"][0]["fields"][0]["expression"]["dialects"] = [
+        {"dialect": "ANSI_SQL", "expression": "amt"}
+    ]
+    solid, _ = convert_quietly(convert_ossie_to_solid, yaml.safe_dump(ossie))
+    assert solid_model_of(solid)["metrics"][0]["expression"] == "MAX(amt)"
+
+
+def test_a_vendor_dialect_falling_back_to_ossie_sql_2026_names_it():
+    """The fallback warning names the dialect actually read, not ANSI_SQL."""
+    ossie = _one_field_model(
+        [{"dialect": "OSSIE_SQL_2026", "expression": "amt"}],
+        metric_dialects=[{"dialect": "OSSIE_SQL_2026", "expression": "SUM(a.amt)"}],
+    )
+    _, warnings_ = convert_quietly(
+        convert_ossie_to_solid, yaml.safe_dump(ossie), dialect="SNOWFLAKE"
+    )
+    assert any(
+        "'a.amt' has no SNOWFLAKE expression; the OSSIE_SQL_2026 one was used" in w
+        for w in warnings_
+    )
+    assert any(
+        "'total' has no SNOWFLAKE expression; the OSSIE_SQL_2026 one was used" in w
+        for w in warnings_
+    )
+
+
+def test_a_vendor_dialect_beside_ossie_sql_2026_is_still_resolved():
+    """OSSIE_SQL_2026 does not vote, so a model's one vendor dialect still wins."""
+    ossie = _one_field_model([
+        {"dialect": "OSSIE_SQL_2026", "expression": "amt"},
+        {"dialect": "SNOWFLAKE", "expression": "amt"},
+    ])
+    solid, warnings_ = convert_quietly(convert_ossie_to_solid, yaml.safe_dump(ossie))
+    assert warnings_ == []
+    # The Decimal column is typed in Snowflake's vocabulary, not ANSI's `DECIMAL`.
+    assert solid_model_of(solid)["tables"][0]["facts"][0]["type"] == "NUMBER"
 
 
 # --- non-SQL dialects --------------------------------------------------------------
@@ -351,24 +472,10 @@ def test_a_non_sql_dialect_never_becomes_the_resolved_dialect():
     Resolving to one would hand a non-SQL formula to the expression rewriter, and to
     Solid, as though it were SQL. The ANSI_SQL form is read instead.
     """
-    ossie = {
-        "version": "0.2.0.dev0",
-        "semantic_model": [{
-            "name": "m",
-            "datasets": [{
-                "name": "a",
-                "source": "db.s.a",
-                "fields": [{
-                    "name": "amt",
-                    "datatype": "Decimal",
-                    "expression": {"dialects": [
-                        {"dialect": "TABLEAU", "expression": "[Amount]"},
-                        {"dialect": "ANSI_SQL", "expression": "amt"},
-                    ]},
-                }],
-            }],
-        }],
-    }
+    ossie = _one_field_model([
+        {"dialect": "TABLEAU", "expression": "[Amount]"},
+        {"dialect": "ANSI_SQL", "expression": "amt"},
+    ])
     solid, warnings_ = convert_quietly(convert_ossie_to_solid, yaml.safe_dump(ossie))
     assert any("not SQL this converter can read" in w for w in warnings_)
     column = solid_model_of(solid)["tables"][0]["facts"][0]
@@ -380,32 +487,20 @@ def test_a_non_sql_dialect_never_becomes_the_resolved_dialect():
 
 def test_a_non_sql_dialect_with_no_ansi_form_is_an_error():
     """Better a clear failure than a Tableau formula in a SQL field."""
-    ossie = {
-        "version": "0.2.0.dev0",
-        "semantic_model": [{
-            "name": "m",
-            "datasets": [{
-                "name": "a",
-                "source": "db.s.a",
-                "fields": [{
-                    "name": "amt",
-                    "expression": {"dialects": [
-                        {"dialect": "MDX", "expression": "[Measures].[Amt]"},
-                    ]},
-                }],
-            }],
-        }],
-    }
+    ossie = _one_field_model([
+        {"dialect": "MDX", "expression": "[Measures].[Amt]"},
+    ])
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        with pytest.raises(ConversionError, match="no ANSI_SQL expression"):
+        with pytest.raises(
+            ConversionError, match="no ANSI_SQL or OSSIE_SQL_2026 expression"
+        ):
             convert_ossie_to_solid(yaml.safe_dump(ossie))
 
 
 def test_a_hand_edited_stash_dialect_is_rejected():
     ossie = yaml.safe_load(fixture("tpcds_ossie.yaml"))
-    model = ossie["semantic_model"][0]
-    for ext in model["custom_extensions"]:
+    for ext in ossie["custom_extensions"]:
         if ext["vendor_name"] == "SOLID":
             ext["data"] = ext["data"].replace("SNOWFLAKE", "MAQL")
     with pytest.raises(ConversionError, match="Unsupported dialect"):
@@ -418,11 +513,12 @@ def test_a_hand_edited_stash_dialect_is_rejected():
 def test_the_released_0_1_1_spec_is_read_with_a_warning():
     """0.1.1 is the only released spec version, so models in the wild declare it.
 
-    A 0.1.1 document is a 0.2.0.dev0 document minus additive fields, so it is read
-    rather than rejected -- but the version gap is reported, since the missing
-    `datatype` is what leaves a column's Solid `type` empty.
+    A 0.1.1 document wraps its model in a `semantic_model` list and otherwise differs
+    from 0.2.0.dev0 only by additive fields, so it is read rather than rejected -- but
+    the version gap is reported, since the missing `datatype` is what leaves a
+    column's Solid `type` empty.
     """
-    ossie = yaml.safe_load(fixture("tpcds_ossie.yaml"))
+    ossie = _wrapped(yaml.safe_load(fixture("tpcds_ossie.yaml")))
     ossie["version"] = "0.1.1"
     solid, warnings_ = convert_quietly(convert_ossie_to_solid, yaml.safe_dump(ossie))
     assert any("declares Apache Ossie v0.1.1" in w for w in warnings_)

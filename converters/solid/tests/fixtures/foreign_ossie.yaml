@@ -41,109 +41,108 @@
 #   - `store_sales_to_date`: a relationship annotation
 #   - foreign `custom_extensions` at the model, dataset, field and metric levels
 version: "0.2.0.dev0"
-semantic_model:
-  - name: foreign_retail_model
-    description: Retail sales, as another vendor's converter would emit it.
-    ai_context:
-      instructions: Prefer net sales over gross for revenue questions.
-      examples:
-        - What were total sales last quarter?
+name: foreign_retail_model
+description: Retail sales, as another vendor's converter would emit it.
+ai_context:
+  instructions: Prefer net sales over gross for revenue questions.
+  examples:
+    - What were total sales last quarter?
+custom_extensions:
+  - vendor_name: DBT
+    data: '{"package": "jaffle_shop"}'
+datasets:
+  - name: store_sales
+    source: tpcds.public.store_sales
+    description: One row per line item on a sales ticket.
+    primary_key:
+      - ss_item_sk
+      - ss_ticket_number
+    unique_keys:
+      - - ss_ticket_number
     custom_extensions:
-      - vendor_name: DBT
-        data: '{"package": "jaffle_shop"}'
-    datasets:
-      - name: store_sales
-        source: tpcds.public.store_sales
-        description: One row per line item on a sales ticket.
-        primary_key:
-          - ss_item_sk
-          - ss_ticket_number
-        unique_keys:
-          - - ss_ticket_number
+      - vendor_name: DATABRICKS
+        data: '{"table_type": "MANAGED"}'
+    fields:
+      - name: ss_item_sk
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: ss_item_sk
+      - name: ss_ticket_number
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: ss_ticket_number
+      - name: ss_sold_date_sk
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: ss_sold_date_sk
+      # Renamed: the Solid column that comes out of this is named for the alias,
+      # not for the column that actually exists in the warehouse.
+      - name: ticket_number
+        description: Ticket number, exposed under a friendlier name.
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: ss_ticket_number
         custom_extensions:
           - vendor_name: DATABRICKS
-            data: '{"table_type": "MANAGED"}'
-        fields:
-          - name: ss_item_sk
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: ss_item_sk
-          - name: ss_ticket_number
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: ss_ticket_number
-          - name: ss_sold_date_sk
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: ss_sold_date_sk
-          # Renamed: the Solid column that comes out of this is named for the alias,
-          # not for the column that actually exists in the warehouse.
-          - name: ticket_number
-            description: Ticket number, exposed under a friendlier name.
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: ss_ticket_number
-            custom_extensions:
-              - vendor_name: DATABRICKS
-                data: '{"comment": "renamed for readability"}'
-          - name: ss_net_paid
-            datatype: Decimal
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: ss_net_paid
-      - name: date_dim
-        source: tpcds.public.date_dim
-        primary_key:
-          - d_date_sk
-        fields:
-          - name: d_date_sk
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: d_date_sk
-          - name: d_year
-            label: Year
-            datatype: Integer
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: d_year
-            ai_context:
-              synonyms:
-                - year
-    relationships:
-      - name: store_sales_to_date
-        from: store_sales
-        to: date_dim
-        from_columns:
-          - ss_sold_date_sk
-        to_columns:
-          - d_date_sk
-        ai_context:
-          instructions: Sales are dated by the sold date, not the ship date.
-          synonyms:
-            - sold on
-    metrics:
-      # Bare column names: the owning table is not recoverable from a qualifier.
-      - name: revenue
-        description: Net sales revenue.
+            data: '{"comment": "renamed for readability"}'
+      - name: ss_net_paid
         datatype: Decimal
         expression:
           dialects:
             - dialect: ANSI_SQL
-              expression: SUM(ss_net_paid)
-        custom_extensions:
-          - vendor_name: DBT
-            data: '{"agg": "sum"}'
-      # References no column at all.
-      - name: order_count
-        description: Number of tickets.
+              expression: ss_net_paid
+  - name: date_dim
+    source: tpcds.public.date_dim
+    primary_key:
+      - d_date_sk
+    fields:
+      - name: d_date_sk
         expression:
           dialects:
             - dialect: ANSI_SQL
-              expression: COUNT(*)
+              expression: d_date_sk
+      - name: d_year
+        label: Year
+        datatype: Integer
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: d_year
+        ai_context:
+          synonyms:
+            - year
+relationships:
+  - name: store_sales_to_date
+    from: store_sales
+    to: date_dim
+    from_columns:
+      - ss_sold_date_sk
+    to_columns:
+      - d_date_sk
+    ai_context:
+      instructions: Sales are dated by the sold date, not the ship date.
+      synonyms:
+        - sold on
+metrics:
+  # Bare column names: the owning table is not recoverable from a qualifier.
+  - name: revenue
+    description: Net sales revenue.
+    datatype: Decimal
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(ss_net_paid)
+    custom_extensions:
+      - vendor_name: DBT
+        data: '{"agg": "sum"}'
+  # References no column at all.
+  - name: order_count
+    description: Number of tickets.
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: COUNT(*)
