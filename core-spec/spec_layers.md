@@ -30,7 +30,7 @@ Ossie is organized into four specification layers, each addressing a distinct co
 
 | Layer | Name | Role |
 |-------|------|------|
-| 1 | Expression Language | Model definition: the expression language used inside Ossie model definitions |
+| 1 | Model Definition | Model definition: the Ossie model format and the expression language used within it |
 | 2 | Relational Query Interface | Query interface: SQL-native, grain-safe measure evaluation, full SQL invariants |
 | 3 | Wide Table Query Interface | Query interface: declarative flat-object queries, heuristic join resolution |
 | 4 | Ontology | Ontology workstream: higher-order semantic and knowledge-graph concepts |
@@ -50,19 +50,23 @@ document (linked below).
 
 ## The Layers
 
-### Layer 1 — Expression Language
+### Layer 1 — Model Definition
 
-Layer 1 defines the shared expression language used inside Ossie model definitions. Measure
-definitions, calculated fields, and filter predicates in an Ossie model file are written in this
-portable SQL expression subset. Layer 1 establishes the guarantee: **expressions in an Ossie
-model evaluate identically on any conforming engine.** A model authored once can be deployed
-anywhere without rewriting its expressions.
+Layer 1 defines what an Ossie model *is*. It covers two related specifications:
 
-Layer 1 is a model *definition* concern, not a query concern. It does not prescribe the query
-language a consumer uses when querying a deployed model—that is a per-layer decision for
-Layers 2 and 3.
+**Model format** ([`spec.md`](spec.md)): the structure of an Ossie model file—datasets,
+relationships, fields, and metrics. This is the interchange format: the common schema that
+allows semantic model definitions to be moved between tools.
 
-**Specification:** [`expression_language.md`](expression_language.md)
+**Expression language** ([`expression_language.md`](expression_language.md)): the portable SQL
+expression subset used to write measure definitions, calculated fields, and filter predicates
+within a model file. Layer 1 establishes the guarantee: **expressions in an Ossie model
+evaluate identically on any conforming engine.** A model authored once can be deployed anywhere
+without rewriting its expressions.
+
+Together these define the authoring layer of Ossie. Layer 1 is a model *definition* concern,
+not a query concern. It does not prescribe the query language a consumer uses against a deployed
+model—that is a per-layer decision for Layers 2 and 3.
 
 ### Layer 2 — Relational Query Interface
 
