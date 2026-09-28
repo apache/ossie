@@ -331,6 +331,11 @@ def test_grain_from_primary_key(ossie_tpcds_dict: dict):
 
 
 @pytest.mark.parametrize(
+    "primary_key",
+    [["customer_id"], ["customer_id", "customer_id"]],
+    ids=["single-key", "repeated-key"],
+)
+@pytest.mark.parametrize(
     "field",
     [
         {
@@ -350,7 +355,7 @@ def test_grain_from_primary_key(ossie_tpcds_dict: dict):
     ],
     ids=["dimension", "maql-attribute"],
 )
-def test_grain_uses_source_column_for_aliased_attribute(field: dict):
+def test_grain_uses_source_column_for_aliased_attribute(field: dict, primary_key: list[str]):
     """Verify physical primary keys select aliased GoodData grain attributes."""
     model = {
         "name": "m",
@@ -358,7 +363,7 @@ def test_grain_uses_source_column_for_aliased_attribute(field: dict):
             {
                 "name": "customers",
                 "source": "db.s.customers",
-                "primary_key": ["customer_id"],
+                "primary_key": primary_key,
                 "fields": [field],
             }
         ],

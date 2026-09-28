@@ -182,7 +182,7 @@ def _convert_ossie_dataset(
     attribute_ids_by_column = {attr.source_column: attr.id for attr in attributes}
     grain = [
         GdGrain(id=attribute_ids_by_column[column], type="attribute")
-        for column in ds.get("primary_key", [])
+        for column in dict.fromkeys(ds.get("primary_key", []))
         if column in attribute_ids_by_column
     ]
 
