@@ -31,8 +31,8 @@ jobs:
     if: github.repository_owner == 'apache'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/github-script@v7
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
@@ -58,7 +58,7 @@ jobs:
                 }
               }
             }
-      - uses: actions/labeler@v5
+      - uses: actions/labeler@v7
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           sync-labels: true
