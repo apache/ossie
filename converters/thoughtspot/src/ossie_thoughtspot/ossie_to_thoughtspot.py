@@ -2174,7 +2174,15 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
         if formula_name_raw.strip().casefold() == raw_name.strip().casefold():
             formula_name = column_name
         else:
-            formula_name = allocator.allocate(formula_name_raw, log, object_ref=object_ref)
+            # object_ref names the FORMULA this allocation is for, not the
+            # column: `raw_name` is the column's display name by this
+            # point (jbonofre's review on PR #475), and a
+            # TS-MODEL-DISPLAY-NAME-COLLISION logged against it would point
+            # a maintainer at the wrong object when `formula_name_raw`
+            # collides with something the column's own name does not.
+            formula_name = allocator.allocate(
+                formula_name_raw, log, object_ref=f"formula:{formula_name_raw}"
+            )
         expr = entry.get("expr", "")
         formula_id = _formula_id_from(formula_name)
         # Raw, unwrapped `expr` -- see the matching comment in _build_field.
@@ -2189,7 +2197,17 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
             dict(stashed_properties), log, object_ref=object_ref
         )
         properties.setdefault("column_type", "ATTRIBUTE")
-        columns.append({"name": column_name, "formula_id": formula_id, "properties": properties})
+        # unattributed_entry["id"], not the pre-allocation `formula_id` local:
+        # `_allocate_formula_id` just above mutates `unattributed_entry["id"]`
+        # in place on a collision, and was called with `columns_entry=None`
+        # because this columns[] entry does not exist yet to hand it, so its
+        # own `formula_id in sync` half never ran. Reading the stale local
+        # here (jbonofre's review on PR #475) pointed the surfacing column at
+        # whichever OTHER formula's id it collided with, instead of at its own
+        # renamed one.
+        columns.append(
+            {"name": column_name, "formula_id": unattributed_entry["id"], "properties": properties}
+        )
 
     # Every formula's final id is only fully known once every field, metric
     # and unattributed formula above has been assigned one -- a formula
