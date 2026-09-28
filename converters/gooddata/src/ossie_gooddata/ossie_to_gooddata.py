@@ -99,10 +99,12 @@ def _build_target_info(sm: dict[str, Any]) -> dict[str, dict[str, Any]]:
         col_to_attr: dict[str, str] = {}
         if not is_date:
             for f in ds.get("fields", []):
+                if f.get("dimension") is None and _detect_type_from_maql(f) != "attribute":
+                    continue
                 src = _get_source_column(f)
                 if src in col_to_attr:
                     raise ValueError(
-                        f"Dataset '{ds_name}': source column '{src}' maps to multiple fields."
+                        f"Dataset '{ds_name}': source column '{src}' maps to multiple attributes."
                     )
                 col_to_attr[src] = f"attr.{ds_name}.{f['name']}"
         info[ds_name] = {"is_date": is_date, "col_to_attr": col_to_attr}

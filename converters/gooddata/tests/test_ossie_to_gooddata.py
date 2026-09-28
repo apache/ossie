@@ -353,19 +353,15 @@ def test_grain_from_primary_key(ossie_tpcds_dict: dict):
 def test_grain_uses_source_column_for_aliased_attribute(field: dict):
     """Verify physical primary keys select aliased GoodData grain attributes."""
     model = {
-        "semantic_model": [
+        "name": "m",
+        "datasets": [
             {
-                "name": "m",
-                "datasets": [
-                    {
-                        "name": "customers",
-                        "source": "db.s.customers",
-                        "primary_key": ["customer_id"],
-                        "fields": [field],
-                    }
-                ],
+                "name": "customers",
+                "source": "db.s.customers",
+                "primary_key": ["customer_id"],
+                "fields": [field],
             }
-        ]
+        ],
     }
 
     customer = ossie_to_gooddata(model).ldm.datasets[0]
@@ -377,49 +373,82 @@ def test_grain_uses_source_column_for_aliased_attribute(field: dict):
 def test_duplicate_source_columns_are_rejected():
     """Verify ambiguous grain and relationship targets fail instead of being misassigned."""
     model = {
-        "semantic_model": [
+        "name": "m",
+        "datasets": [
             {
-                "name": "m",
-                "datasets": [
+                "name": "customers",
+                "primary_key": ["customer_id"],
+                "fields": [
+                    _direct_field("customer_id", dimension={}),
                     {
-                        "name": "customers",
-                        "primary_key": ["customer_id"],
-                        "fields": [
-                            _direct_field("customer_id", dimension={}),
-                            {
-                                "name": "customer_key",
-                                "expression": {
-                                    "dialects": [
-                                        {"dialect": "ANSI_SQL", "expression": "customer_id"}
-                                    ]
-                                },
-                                "dimension": {},
-                            },
-                        ],
-                    },
-                    {
-                        "name": "orders",
-                        "fields": [_direct_field("customer_id", dimension={})],
+                        "name": "customer_key",
+                        "expression": {
+                            "dialects": [{"dialect": "ANSI_SQL", "expression": "customer_id"}]
+                        },
+                        "dimension": {},
                     },
                 ],
-                "relationships": [
-                    {
-                        "name": "orders_customer",
-                        "from": "orders",
-                        "to": "customers",
-                        "from_columns": ["customer_id"],
-                        "to_columns": ["customer_id"],
-                    }
-                ],
+            },
+            {
+                "name": "orders",
+                "fields": [_direct_field("customer_id", dimension={})],
+            },
+        ],
+        "relationships": [
+            {
+                "name": "orders_customer",
+                "from": "orders",
+                "to": "customers",
+                "from_columns": ["customer_id"],
+                "to_columns": ["customer_id"],
             }
-        ]
+        ],
     }
 
     with pytest.raises(
         ValueError,
-        match="Dataset 'customers': source column 'customer_id' maps to multiple fields",
+        match="Dataset 'customers': source column 'customer_id' maps to multiple attributes",
     ):
         ossie_to_gooddata(model)
+
+
+def test_attribute_and_facts_sharing_source_column_are_permitted():
+    """Facts sharing a source column do not make grain or reference targets ambiguous."""
+    fact = _direct_field("customer_id")
+    model = {
+        "name": "m",
+        "datasets": [
+            {
+                "name": "customers",
+                "primary_key": ["customer_id"],
+                "fields": [
+                    _direct_field("customer_id", dimension={}),
+                    {**fact, "name": "customer_count"},
+                    {**fact, "name": "customer_total"},
+                ],
+            },
+            {
+                "name": "orders",
+                "fields": [_direct_field("customer_id", dimension={})],
+            },
+        ],
+        "relationships": [
+            {
+                "name": "orders_customer",
+                "from": "orders",
+                "to": "customers",
+                "from_columns": ["customer_id"],
+                "to_columns": ["customer_id"],
+            }
+        ],
+    }
+
+    customers, orders = ossie_to_gooddata(model).ldm.datasets
+
+    assert len(customers.attributes) == 1
+    assert len(customers.facts) == 2
+    assert [grain.id for grain in customers.grain] == ["attr.customers.customer_id"]
+    assert orders.references[0].sources[0].target.id == "attr.customers.customer_id"
 
 
 def test_relationships_become_references(ossie_tpcds_dict: dict):
