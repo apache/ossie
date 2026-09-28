@@ -484,6 +484,41 @@ class TestConvertMetric:
         assert "field" in issues[0]["message"]
 
 
+class TestConvertMetricMalformedName:
+    """The metric-scope half of the same fix as
+    `TestConvertFieldMalformedName` in test_tml_to_ossie_fields.py: a
+    `columns[]` entry with no `name`, or a non-string `name`, used to raise a
+    bare `KeyError`/`TypeError` out of `convert_metric` instead of degrading
+    with an issue. See https://github.com/apache/ossie/issues/469.
+    """
+
+    def _table(self, name):
+        return {"ORDERS": {"name": "ORDERS", "columns": [
+            {"name": "AMOUNT", "db_column_name": "AMOUNT",
+             "db_column_properties": {"data_type": "DOUBLE"}},
+        ]}}.get(name)
+
+    def test_a_column_with_no_name_logs_and_returns_none(self):
+        log = IssueLog()
+        metric = convert_metric(
+            {"column_id": "ORDERS::AMOUNT", "properties": {"column_type": "MEASURE"}},
+            {}, self._table, _resolve, log,
+        )
+        assert metric is None
+        assert [i["code"] for i in log.as_dicts()] == ["TS-METRIC-NO-NAME"]
+
+    @pytest.mark.parametrize("bad_name", [42, None, True, False, 3.5])
+    def test_a_non_string_name_logs_and_returns_none(self, bad_name):
+        log = IssueLog()
+        metric = convert_metric(
+            {"name": bad_name, "column_id": "ORDERS::AMOUNT",
+             "properties": {"column_type": "MEASURE"}},
+            {}, self._table, _resolve, log,
+        )
+        assert metric is None
+        assert [i["code"] for i in log.as_dicts()] == ["TS-METRIC-NAME-INVALID"]
+
+
 class TestContainsAggregateCall:
     """Layer (a) + (b) at the unit level: the broadened set, checked at any depth."""
 

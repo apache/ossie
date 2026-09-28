@@ -1104,6 +1104,46 @@ class TestUnnormalisableNamesAreCaughtNotFatal:
         assert fields[0]["label"] == "名前"
 
 
+class TestModelNameMalformed:
+    """The model-scope sibling of `TestConvertFieldMalformedName` /
+    `TestConvertMetricMalformedName`: a model `name` that is present but not
+    a string (an int, a bool) used to raise a bare `TypeError` out of
+    `identifiers.normalise` inside `convert()` itself, rather than degrading
+    the way an unfoldable (but string) name already does via
+    `TS-MODEL-NAME-UNNORMALISABLE`. See https://github.com/apache/ossie/issues/469.
+    """
+
+    @pytest.mark.parametrize("bad_name", [42, True])
+    def test_a_non_string_model_name_falls_back_and_is_reported(self, bad_name):
+        orders = _table("ORDERS", columns=[_column("Amount", "AMOUNT", "DOUBLE")])
+        model = _model(
+            name=bad_name,
+            model_tables=[{"name": "ORDERS"}],
+            columns=[_attribute("Amount", "ORDERS::Amount")],
+        )
+        result = convert(_document_set(model, orders))
+        assert result.model["name"] == "model"
+        assert any(i["code"] == "TS-MODEL-NAME-INVALID" for i in result.issues.as_dicts())
+        # The rest of the model still converts: a malformed model name does
+        # not take the whole document down.
+        assert result.model["datasets"][0]["fields"][0]["name"] == "amount"
+
+    def test_a_falsy_non_string_model_name_falls_back_silently(self):
+        # 0 is falsy, so it takes the pre-existing "no name at all" path
+        # (`model_body.get("name") or ""`) rather than the new type check:
+        # same silent fallback an empty string already gets, not a new
+        # TS-MODEL-NAME-INVALID report.
+        orders = _table("ORDERS", columns=[_column("Amount", "AMOUNT", "DOUBLE")])
+        model = _model(
+            name=0,
+            model_tables=[{"name": "ORDERS"}],
+            columns=[_attribute("Amount", "ORDERS::Amount")],
+        )
+        result = convert(_document_set(model, orders))
+        assert result.model["name"] == "model"
+        assert not any(i["code"] == "TS-MODEL-NAME-INVALID" for i in result.issues.as_dicts())
+
+
 class TestKeyDerivationEdgeCasesCommitted:
     """Edge cases attacked and confirmed by hand during development, now
     committed so the check runs on every future change instead of living

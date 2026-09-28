@@ -554,6 +554,66 @@ class TestConvertField:
         assert "formula_Bad" in issues[0]["message"]
 
 
+class TestConvertFieldMalformedName:
+    """A `columns[]` entry with no `name` key, or a `name` that is present but
+    not a string (an int, `null`, or a bool), used to raise a bare `KeyError`
+    or `TypeError` out of `convert_field` instead of the documented
+    `ConversionError`-or-issue contract. Both must degrade the same way every
+    other malformed-column shape in this class already does: an issue and
+    `None`, not a crash. See https://github.com/apache/ossie/issues/469.
+    """
+
+    def _table(self, name):
+        return {"ORDERS": {"name": "ORDERS", "columns": [
+            {"name": "AMOUNT", "db_column_name": "AMOUNT",
+             "db_column_properties": {"data_type": "DOUBLE"}},
+        ]}}.get(name)
+
+    def test_a_column_with_no_name_logs_and_returns_none(self):
+        log = IssueLog()
+        field = convert_field(
+            {"column_id": "ORDERS::AMOUNT", "properties": {"column_type": "ATTRIBUTE"}},
+            {}, self._table, _resolve, log,
+        )
+        assert field is None
+        assert [i["code"] for i in log.as_dicts()] == ["TS-FIELD-NO-NAME"]
+
+    @pytest.mark.parametrize("bad_name", [42, None, True, False, 3.5, ["Amount"]])
+    def test_a_non_string_name_logs_and_returns_none(self, bad_name):
+        log = IssueLog()
+        field = convert_field(
+            {"name": bad_name, "column_id": "ORDERS::AMOUNT",
+             "properties": {"column_type": "ATTRIBUTE"}},
+            {}, self._table, _resolve, log,
+        )
+        assert field is None
+        assert [i["code"] for i in log.as_dicts()] == ["TS-FIELD-NAME-INVALID"]
+
+    def test_a_malformed_name_does_not_reach_identifiers_normalise(self):
+        # The bug was not just an uncaught exception, it was that the raw,
+        # wrongly-typed value reached identifiers.normalise() at all. Confirm
+        # the fix rejects it before that call, not merely after a broader
+        # try/except was added around it.
+        log = IssueLog()
+        field = convert_field(
+            {"name": 0, "column_id": "ORDERS::AMOUNT", "properties": {"column_type": "ATTRIBUTE"}},
+            {}, self._table, _resolve, log,
+        )
+        assert field is None
+        assert log.as_dicts()[0]["code"] == "TS-FIELD-NAME-INVALID"
+
+    def test_a_well_formed_string_name_is_unaffected(self):
+        log = IssueLog()
+        field = convert_field(
+            {"name": "Amount", "column_id": "ORDERS::AMOUNT",
+             "properties": {"column_type": "ATTRIBUTE"}},
+            {}, self._table, _resolve, log,
+        )
+        assert field["name"] == "amount"
+        assert field["label"] == "Amount"
+        assert log.as_dicts() == []
+
+
 class TestPhysicalDatatypeLoss:
     """`_physical_datatype`'s two `None` outcomes are not the same kind of
     outcome, and only one of them is a loss worth logging — exercised through
