@@ -104,6 +104,7 @@ from .constants import (
     FIELD_STASH_DATA_TYPE_WITNESS,
     FIELD_STASH_DB_COLUMN_NAME,
     FIELD_STASH_FORMULA_ID,
+    FIELD_STASH_FORMULA_NAME,
     FIELD_STASH_DB_COLUMN_NAME_WITNESS,
     METRIC_STASH_COLUMN_AGGREGATION,
     METRIC_SHAPE_COLUMN_AGGREGATION,
@@ -2337,11 +2338,19 @@ def convert(document_set: DocumentSet) -> OssieConversion:
         if column_type == "ATTRIBUTE" and "formula_id" in column:
             formula_entry = formulas.get(column["formula_id"])
             if formula_entry is not None and "expr" in formula_entry:
-                # Restored under this name on the return leg, so it must be
-                # the column's display_name, not the formula's own name:
-                # the two can differ, and the column's is user visible.
+                # Two names, stashed for two different consumers on the
+                # return leg. `name` is the column's display_name: what a
+                # user sees, and what the surfacing columns[] entry must
+                # come back under; the two can differ. `formula_name` is the
+                # formula's own TML name: what a SIBLING formula's
+                # `[formula_X]` cross-reference resolves against by the
+                # name-fallback path, independent of the column that
+                # happens to surface it. Stashing only `name` fixed the
+                # column but silently broke that cross-reference (see
+                # kayemkim's review on PR #475).
                 unattributed: dict = {
                     "name": display_name,
+                    FIELD_STASH_FORMULA_NAME: formula_entry.get("name") or display_name,
                     "expr": formula_entry["expr"],
                 }
                 if properties:

@@ -72,6 +72,7 @@ from typing import Callable, Sequence
 from . import datatypes, formula, identifiers, stash
 from .constants import (
     FIELD_STASH_FORMULA_ID,
+    FIELD_STASH_FORMULA_NAME,
     MODEL_STASH_OBJ_ID,
     DATASET_STASH_ALIAS,
     DATASET_STASH_CONNECTION_NAME,
@@ -2150,11 +2151,34 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
         # once the formula is surfaced.
         raw_name = entry.get("name") or "<unnamed>"
         object_ref = f"formula:{raw_name}"
-        allocated_name = allocator.allocate(raw_name, log, object_ref=object_ref)
+        column_name = allocator.allocate(raw_name, log, object_ref=object_ref)
+        # The formula's OWN name, independent of the column's display name
+        # (see FIELD_STASH_FORMULA_NAME): what a SIBLING formula's
+        # `[formula_X]` cross-reference is matched against on the
+        # name-fallback path in `_rewrite_formula_references`. Minting the
+        # id from `column_name` instead (as an earlier revision did) fixed
+        # the column's own display but silently broke that reference: this
+        # formula stopped being findable under the name any other formula
+        # in the source document actually referenced it by.
+        #
+        # Allocated separately from `column_name` only when the two texts
+        # differ. When they agree (the common case, and every stash
+        # payload written before FIELD_STASH_FORMULA_NAME existed, where
+        # this falls back to `raw_name` itself), the first allocation
+        # already reserved that text in `_DisplayNameAllocator`'s one pool
+        # shared by columns[] and formulas[] combined; allocating it a
+        # second time would read as a self-collision against itself and
+        # rename it with a spurious suffix and a spurious
+        # TS-MODEL-DISPLAY-NAME-COLLISION issue.
+        formula_name_raw = entry.get(FIELD_STASH_FORMULA_NAME) or raw_name
+        if formula_name_raw.strip().casefold() == raw_name.strip().casefold():
+            formula_name = column_name
+        else:
+            formula_name = allocator.allocate(formula_name_raw, log, object_ref=object_ref)
         expr = entry.get("expr", "")
-        formula_id = _formula_id_from(allocated_name)
+        formula_id = _formula_id_from(formula_name)
         # Raw, unwrapped `expr` -- see the matching comment in _build_field.
-        unattributed_entry = {"id": formula_id, "name": allocated_name, "expr": expr}
+        unattributed_entry = {"id": formula_id, "name": formula_name, "expr": expr}
         # The THIRD source of ids. It minted and appended directly, so a pure
         # round trip of a valid document could still emit duplicates -- the
         # unattributed stash keeps only name and expr, dropping the original id.
@@ -2165,7 +2189,7 @@ def build_model(semantic_model: dict, tables: Sequence[TmlDocument], log: IssueL
             dict(stashed_properties), log, object_ref=object_ref
         )
         properties.setdefault("column_type", "ATTRIBUTE")
-        columns.append({"name": allocated_name, "formula_id": formula_id, "properties": properties})
+        columns.append({"name": column_name, "formula_id": formula_id, "properties": properties})
 
     # Every formula's final id is only fully known once every field, metric
     # and unattributed formula above has been assigned one -- a formula

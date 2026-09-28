@@ -38,38 +38,39 @@ Every `custom_extensions` entry this converter writes uses `vendor_name` `THOUGH
 | Key | Scope | Classification | Treatment on the return trip |
 |---|---|---|---|
 | `tml_name` | Shared | shadows_derivable | Restored only if reconstructing it from the live document still agrees with the stashed value (self-verifying — no separate witness key); disagreement re-derives instead. |
-| `column_aggregation_value` | Metric | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
-| `tml_obj_id` | Model | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
-| `formula_id` | Field | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
+| `column_aggregation_value` | Metric | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
+| `tml_obj_id` | Model | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
+| `formula_id` | Field | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
+| `formula_name` | Field | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
 | `db_column_name` | Field | shadows_derivable | Restored only if its witness companion key still matches the live document's current value; a mismatch means the document changed since the stash was written, so the value is re-derived instead. |
 | `data_type` | Field | shadows_derivable | Restored only if its witness companion key still matches the live document's current value; a mismatch means the document changed since the stash was written, so the value is re-derived instead. |
-| `column_properties` | Field | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
-| `shape` | Metric | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
+| `column_properties` | Field | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
+| `shape` | Metric | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
 | `tml_object` | Dataset | shadows_derivable | Restored only if its witness companion key still matches the live document's current value; a mismatch means the document changed since the stash was written, so the value is re-derived instead. |
 | `source_parts` | Dataset | shadows_derivable | Restored only if reconstructing it from the live document still agrees with the stashed value (self-verifying — no separate witness key); disagreement re-derives instead. |
-| `connection_name` | Dataset | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
-| `table_name` | Dataset | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
+| `connection_name` | Dataset | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
+| `table_name` | Dataset | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
 | `alias` | Dataset | shadows_derivable | Restored only if reconstructing it from the live document still agrees with the stashed value (self-verifying — no separate witness key); disagreement re-derives instead. |
-| `table_properties` | Dataset | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
-| `unsurfaced_columns` | Dataset | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. Each list entry is additionally checked against live coverage before being restored: an entry now covered by a live field is dropped rather than duplicated. |
-| `sql_output_columns` | Dataset | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
+| `table_properties` | Dataset | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
+| `unsurfaced_columns` | Dataset | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. Each list entry is additionally checked against live coverage before being restored: an entry now covered by a live field is dropped rather than duplicated. |
+| `sql_output_columns` | Dataset | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
 | `on_expression` | Relationship | shadows_derivable | Restored only if its witness companion key still matches the live document's current value; a mismatch means the document changed since the stash was written, so the value is re-derived instead. |
-| `type` | Relationship | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
-| `cardinality` | Relationship | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
+| `type` | Relationship | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
+| `cardinality` | Relationship | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
 | `endpoints_swapped` | Relationship | shadows_derivable | Restored only if its witness companion key still matches the live document's current value; a mismatch means the document changed since the stash was written, so the value is re-derived instead. |
 | `referencing_join` | Relationship | shadows_derivable | Restored only if reconstructing it from the live document still agrees with the stashed value (self-verifying — no separate witness key); disagreement re-derives instead. |
-| `join_shape` | Relationship | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
-| `unsurfaced_formulas` | Model | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
-| `unattributed_formulas` | Model | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
-| `unrepresentable_joins` | Model | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
-| `model_properties` | Model | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
-| `parameters` | Model | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
-| `filters` | Model | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
-| `column_groups` | Model | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
-| `lesson_plans` | Model | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
-| `action_object_associations` | Model | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
-| `constraints` | Model | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
-| `model_joins_with` | Model | information_only | Restored as-is whenever present — nothing on the Ossie side could have diverged from it. |
+| `join_shape` | Relationship | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
+| `unsurfaced_formulas` | Model | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
+| `unattributed_formulas` | Model | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
+| `unrepresentable_joins` | Model | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
+| `model_properties` | Model | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
+| `parameters` | Model | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
+| `filters` | Model | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
+| `column_groups` | Model | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
+| `lesson_plans` | Model | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
+| `action_object_associations` | Model | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
+| `constraints` | Model | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
+| `model_joins_with` | Model | information_only | Restored as-is whenever present: nothing on the Ossie side could have diverged from it. |
 
 ## Witness companion keys
 

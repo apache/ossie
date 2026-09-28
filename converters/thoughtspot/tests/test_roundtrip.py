@@ -934,6 +934,52 @@ def test_an_unattributed_formulas_surfacing_column_keeps_its_own_name():
     assert "InternalCalc_v1" not in column_names
 
 
+def test_an_unattributed_formulas_sibling_reference_still_resolves():
+    """kayemkim's review on PR #475: restoring the surfacing column under
+    its own display name (see the sibling test above) must not come at the
+    cost of a SECOND formula that references the unattributed one by its
+    original name. A formula's own name and the name of the column that
+    surfaces it are independent: the column comes back under its display
+    name ("Date2"), but a sibling's `[formula_internalcalc_v1]` reference
+    is written against the FORMULA's own name ("InternalCalc_v1") and must
+    keep resolving to it, not dangle silently.
+    """
+    def table(name, columns):
+        return TmlDocument(kind="table", guid=None, body={
+            "name": name, "db": "D", "schema": "S", "db_table": name,
+            "connection": {"name": "Conn"},
+            "columns": [{"name": c, "db_column_name": c.upper(),
+                         "db_column_properties": {"data_type": "DOUBLE"}} for c in columns]})
+    model = TmlDocument(kind="model", guid=None, body={
+        "name": "M", "model_tables": [{"name": "A"}, {"name": "B"}],
+        "formulas": [
+            {"id": "formula_internal", "name": "InternalCalc_v1", "expr": "[A::x] + [B::y]"},
+            {"id": "formula_doubled", "name": "Doubled", "expr": "[formula_internalcalc_v1] * 2"},
+        ],
+        "columns": [
+            {"name": "Date2", "formula_id": "formula_internal",
+             "properties": {"column_type": "ATTRIBUTE"}},
+            {"name": "Doubled", "formula_id": "formula_doubled",
+             "properties": {"column_type": "MEASURE"}},
+        ]})
+    ossie = tml_to_ossie.convert(DocumentSet(model=model, tables=(table("A", ["x"]), table("B", ["y"]))))
+    result = ossie_to_thoughtspot.convert(ossie.model)
+    rebuilt = result.documents.model.body
+
+    column_names = [c["name"] for c in rebuilt["columns"]]
+    assert "Date2" in column_names, "the #468 fix regressed: column not restored under its display name"
+
+    formulas_by_id = {f["id"]: f for f in rebuilt["formulas"]}
+    doubled = next(f for f in rebuilt["formulas"] if f["name"] == "Doubled")
+    referenced = re.search(r"\[(formula_[A-Za-z0-9_]+)\]", doubled["expr"])
+    assert referenced is not None, f"Doubled's reference was stripped entirely: {doubled['expr']!r}"
+    target = formulas_by_id.get(referenced.group(1))
+    assert target is not None and target["expr"] == "[A::x] + [B::y]", (
+        f"Doubled's reference no longer resolves to InternalCalc_v1's formula: {doubled['expr']!r}"
+    )
+    assert not any(i["code"] == "TS-MODEL-FORMULA-REFERENCE-UNRESOLVED" for i in result.issues.as_dicts())
+
+
 def test_every_referencing_join_carries_the_compulsory_with_field():
     """`with` is mandatory on every `model_tables[].joins[]` entry.
 

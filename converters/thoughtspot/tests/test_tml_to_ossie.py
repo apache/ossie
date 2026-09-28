@@ -39,6 +39,7 @@ from ossie_thoughtspot.constants import (
     FIELD_STASH_COLUMN_PROPERTIES,
     FIELD_STASH_DATA_TYPE,
     FIELD_STASH_DB_COLUMN_NAME,
+    FIELD_STASH_FORMULA_NAME,
     MODEL_STASH_ACTION_OBJECT_ASSOCIATIONS,
     MODEL_STASH_COLUMN_GROUPS,
     MODEL_STASH_CONSTRAINTS,
@@ -542,6 +543,12 @@ class TestUnattributedFormulas:
         unattributed = model_stash[MODEL_STASH_UNATTRIBUTED_FORMULAS]
         assert len(unattributed) == 1
         assert unattributed[0]["name"] == "Date2"
+        # The formula's own name is stashed too (kayemkim's review on PR
+        # #475): the column's display name alone is not enough for the
+        # return leg to keep a sibling formula's cross-reference to this
+        # formula resolvable: that reference is written against the
+        # formula's own name, not the column's.
+        assert unattributed[0][FIELD_STASH_FORMULA_NAME] == "InternalCalc_v1"
 
 
 class TestStashProtocol:

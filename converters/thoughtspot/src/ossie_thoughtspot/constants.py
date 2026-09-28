@@ -201,8 +201,25 @@ STASH_TML_NAME = "tml_name"
 
 #: Formula-backed ATTRIBUTE columns whose references span two or more
 #: datasets, so no single Ossie dataset can own the field. Preserved verbatim
-#: (each entry carries at least `name` and `expr`) alongside an issue.
+#: (each entry carries at least `name`, `formula_name` and `expr`) alongside
+#: an issue.
 MODEL_STASH_UNATTRIBUTED_FORMULAS = "unattributed_formulas"
+
+#: The formula's OWN TML `name`, stashed on a MODEL_STASH_UNATTRIBUTED_FORMULAS
+#: entry alongside the surfacing column's display name (that entry's plain
+#: `name` key). The two are independent in TML: a formula's `name` and the
+#: `name` of the column that surfaces it can differ, and the return leg
+#: needs BOTH for different reasons: the column's display name is what a user
+#: sees and must come back under, while the formula's own name is what a
+#: SIBLING formula's `[formula_X]` cross-reference is normalised against on
+#: import (`_rewrite_formula_references`'s name-fallback path). Restoring
+#: only the column's display name (as the column's #468 fix does) fixes the
+#: column but re-registers the formula's cross-reference identity under the
+#: wrong text, so a second formula referencing the first by its original
+#: name silently stops resolving. No Ossie counterpart: Ossie has no
+#: standalone "formula's own name" concept independent of the field/column
+#: that surfaces it, so nothing on that side can diverge from this value.
+FIELD_STASH_FORMULA_NAME = "formula_name"
 
 #: Joins with no equality pair at all (a pure range or pure constant
 #: condition), which cannot become a Relationship because Ossie's
@@ -510,6 +527,10 @@ STASH_KEY_CLASSIFICATION: dict[str, "StashKeyClass"] = {
     METRIC_STASH_COLUMN_AGGREGATION: StashKeyClass.INFORMATION_ONLY,
     MODEL_STASH_OBJ_ID: StashKeyClass.INFORMATION_ONLY,
     FIELD_STASH_FORMULA_ID: StashKeyClass.INFORMATION_ONLY,
+    # No Ossie counterpart: Ossie has no standalone "formula's own name"
+    # concept independent of the surfacing column, so nothing on that side
+    # can diverge from it.
+    FIELD_STASH_FORMULA_NAME: StashKeyClass.INFORMATION_ONLY,
     FIELD_STASH_DB_COLUMN_NAME: StashKeyClass.SHADOWS_DERIVABLE,
     FIELD_STASH_DATA_TYPE: StashKeyClass.SHADOWS_DERIVABLE,
     FIELD_STASH_COLUMN_PROPERTIES: StashKeyClass.INFORMATION_ONLY,

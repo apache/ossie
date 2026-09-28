@@ -417,7 +417,7 @@ def _stash_key_constant_names() -> list[str]:
 def _treatment_text(key: str, cls: "constants.StashKeyClass", has_witness: bool) -> str:
     if cls is constants.StashKeyClass.INFORMATION_ONLY:
         text = (
-            "Restored as-is whenever present — nothing on the Ossie side could "
+            "Restored as-is whenever present: nothing on the Ossie side could "
             "have diverged from it."
         )
         if key in constants.STASH_KEYS_WITH_DERIVABLE_MEMBERSHIP:
