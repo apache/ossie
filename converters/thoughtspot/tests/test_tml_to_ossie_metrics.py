@@ -27,9 +27,9 @@ from ossie_thoughtspot.tml_to_ossie import (
 
 
 def _resolve(table, column):
-    """Every reference lands in the dataset named after its table, lower-cased,
-    unless the table is named "MISSING" — then it resolves to nothing at all."""
-    return None if table == "MISSING" else f"{table.lower()}.{column.lower()}"
+    """`(dataset, warehouse column)` -- the dataset is the table lower-cased,
+    unless the table is named "MISSING", which resolves to nothing at all."""
+    return None if table == "MISSING" else (table.lower(), column.lower())
 
 
 class TestConvertMetric:
