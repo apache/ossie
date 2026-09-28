@@ -59,8 +59,11 @@ def convert_quietly(func, *args, **kwargs):
 
 
 def model_of(ossie_yaml):
-    """The first semantic model in an Apache Ossie document."""
-    return yaml.safe_load(ossie_yaml)["semantic_model"][0]
+    """The semantic model in an Apache Ossie document."""
+    doc = yaml.safe_load(ossie_yaml)
+    if "semantic_model" in doc and isinstance(doc["semantic_model"], list):
+        return doc["semantic_model"][0]
+    return {k: v for k, v in doc.items() if k != "version"}
 
 
 def solid_model_of(solid_yaml):

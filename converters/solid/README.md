@@ -101,16 +101,20 @@ The resolved dialect is recorded in `custom_extensions[SOLID]`, so an export rea
 expressions back in the dialect they were written in without being told again.
 
 On export, `--dialect` selects which expression dialect to *read*; without it the
-converter uses the dialect recorded at import, then the single non-`ANSI_SQL` dialect the
-model's expressions use. A field with neither the chosen dialect nor `ANSI_SQL` raises.
+converter uses the dialect recorded at import, then the single vendor dialect the model's
+expressions use. When the chosen dialect is missing from an expression, its portable form
+is read instead — `ANSI_SQL`, else `OSSIE_SQL_2026`, the spec's portable dialect built on
+ANSI SQL:2003 Core — with a warning naming which one was used. A model written only in
+`ANSI_SQL` and/or `OSSIE_SQL_2026` resolves to `ANSI_SQL` and reads either form silently.
+A field with neither the chosen dialect nor a portable form raises.
 
 **Only SQL dialects are read.** Apache Ossie's dialect enum also covers expression
 languages that are not SQL — `MDX`, `TABLEAU`, `MAQL` — which this converter cannot
 parse, qualify or unqualify. One of those never becomes the resolved dialect: the model
-is reported, and each expression's `ANSI_SQL` form is read instead. An expression
-offering only a non-SQL dialect raises rather than passing a formula Solid cannot
-execute into a SQL field. (This is what lets GoodData's `MAQL`-and-`ANSI_SQL` models
-convert on their SQL side.)
+is reported, and each expression's portable (`ANSI_SQL` or `OSSIE_SQL_2026`) form is
+read instead. An expression offering only a non-SQL dialect raises rather than passing a
+formula Solid cannot execute into a SQL field. (This is what lets GoodData's
+`MAQL`-and-`ANSI_SQL` models convert on their SQL side.)
 
 ## Mapping
 
@@ -121,7 +125,7 @@ Each row maps in both directions; the **Notes** flag where a behavior is specifi
 
 | Apache Ossie | Solid | Notes |
 |---|---|---|
-| `semantic_model[0].name` | `semantic_model.name` | Solid holds one model per file; export warns if the document has more. |
+| `name` (at the document root) | `semantic_model.name` | Both formats hold one model per document. Export also reads the legacy layout that wraps models in a `semantic_model` list (Apache Ossie `0.1.1`), with a warning, and warns if that list holds more than one model. |
 | `description` | `model_llm_description` | |
 | `ai_context.instructions` | `business_context.custom_instructions` | Import resolves Solid's `@<assetlink …>` markup to the display names it carries and keeps the tagged original in the stash, so an export restores the live catalog references. |
 | `ai_context.examples` | `business_context.business_questions` | |
@@ -260,7 +264,10 @@ when an input breaks one of these:
 - a relationship's `from_columns`/`to_columns` differ in length, or name a dataset that
   is not declared;
 - `--dialect` names a dialect outside `ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`, `BIGQUERY`;
-- a field or metric has neither the selected dialect nor `ANSI_SQL` (export);
+- an Apache Ossie document has a `semantic_model` key that is not a non-empty list of
+  mappings (export);
+- a field or metric has neither the selected dialect nor `ANSI_SQL`/`OSSIE_SQL_2026`
+  (export);
 - the recorded `custom_extensions[SOLID]` dialect is not one of the four above — which
   only a hand-edited stash can produce (export).
 
@@ -270,13 +277,15 @@ Output is always written as **`0.2.0.dev0`**, the current draft. On export, a do
 declaring either `0.2.0.dev0` or **`0.1.1`** is read; anything else raises.
 
 `0.1.1` is accepted because it is the only *released* spec version, so it is what models
-in the wild — and several of this repository's own converter fixtures — declare. As a
-document, a `0.1.1` model is a `0.2.0.dev0` model minus three purely additive changes:
-`datatype` on `Field` and `Metric`, `BIGQUERY` in the dialect enum, and a free-form
-rather than enumerated `vendor_name`. Nothing in a `0.1.1` document is therefore invalid
-under `0.2.0.dev0`, and no separate read path is needed. Only the absence of `datatype`
-is visible to this converter, and a `0.2.0.dev0` model that simply omits it — as most do
-— is already handled the same way. Reading a `0.1.1` document warns, naming that gap.
+in the wild declare. It differs from `0.2.0.dev0` in one structural way: a `0.1.1`
+document wraps its model in a `semantic_model` list, where a `0.2.0.dev0` document puts
+one model's properties directly at the root beside `version`. Export reads both layouts,
+warning when it meets the wrapper (early `0.2.0.dev0` snapshots used it too). The other
+differences are additive — `datatype` on `Field` and `Metric`, `BIGQUERY` and
+`OSSIE_SQL_2026` in the dialect enum, and a free-form `vendor_name` — and only the
+absence of `datatype` is visible to this converter; a `0.2.0.dev0` model that simply
+omits it — as most do — is handled the same way. Reading a `0.1.1` document warns,
+naming that gap.
 
 ## Known differences
 

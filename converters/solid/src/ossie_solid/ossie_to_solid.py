@@ -36,6 +36,7 @@ from ._common import (
     OSSIE_VERSION,
     OSSIE_VERSION_NOTES,
     PK_SEPARATOR,
+    PORTABLE_DIALECTS,
     READABLE_OSSIE_VERSIONS,
     SUPPORTED_DIALECTS,
     ConversionError,
@@ -78,20 +79,36 @@ def convert_ossie_to_solid(ossie_yaml_str, dialect=None, model_name=None):
                       f"v{OSSIE_VERSION}"
                       + (f"; {note}" if note else ""))
 
-    models = document.get("semantic_model")
+    return dump_yaml({"semantic_model": _convert_model(
+        _document_model(document), dialect, model_name)})
+
+
+def _document_model(document):
+    """The one semantic model an Apache Ossie document holds.
+
+    A 0.2.0.dev0 document is the model: its properties sit at the root beside `version`.
+    Apache Ossie 0.1.1 (and early 0.2.0.dev0 snapshots) wrapped models in a
+    `semantic_model` list instead; that shape is still read, with a warning.
+    """
+    if "semantic_model" not in document:
+        return {k: v for k, v in document.items() if k != "version"}
+
+    models = document["semantic_model"]
     if not isinstance(models, list) or not models:
         raise ConversionError(
-            "Apache Ossie document is missing a non-empty 'semantic_model' list")
+            "Apache Ossie document has a 'semantic_model' key that is not a non-empty "
+            "list; a current document puts the model's properties at the root")
+    warn("model", "the document uses the legacy wrapped 'semantic_model' format; the "
+                  "current format puts the model's properties at the document root")
+    if not all(isinstance(m, dict) for m in models):
+        raise ConversionError("Each entry of 'semantic_model' must be a mapping")
     if len(models) > 1:
         warn("model", f"the document holds {len(models)} semantic models but Solid's "
                       f"format holds one; only '{models[0].get('name')}' was converted")
-
-    return dump_yaml({"semantic_model": _convert_model(models[0], dialect, model_name)})
+    return models[0]
 
 
 def _convert_model(ossie, explicit_dialect, model_name):
-    if not isinstance(ossie, dict):
-        raise ConversionError("Each entry of 'semantic_model' must be a mapping")
     datasets = ossie.get("datasets")
     if not isinstance(datasets, list) or not datasets:
         raise ConversionError("Apache Ossie model has no 'datasets'")
@@ -128,7 +145,7 @@ def _convert_model(ossie, explicit_dialect, model_name):
     if custom_instructions:
         business_context["custom_instructions"] = custom_instructions
 
-    solid = {"name": model_name or require_str(ossie, "name", "semantic_model")}
+    solid = {"name": model_name or require_str(ossie, "name", "Apache Ossie model")}
     solid["business_context"] = business_context
     llm_description = clean_text(stash.get("model_llm_description"))
     if llm_description is None and "model_description" not in stash:
@@ -159,8 +176,9 @@ def _resolve_dialect(explicit, stash, ossie):
     """Pick which Apache Ossie expression dialect to read expressions from.
 
     An explicit choice wins, then the dialect the SOLID stash recorded at import time,
-    then the single non-ANSI dialect the model's expressions use. A model written purely
-    in ANSI_SQL resolves to ANSI_SQL.
+    then the single non-portable dialect the model's expressions use. A model written
+    purely in ANSI_SQL or OSSIE_SQL_2026 resolves to ANSI_SQL, which also reads
+    OSSIE_SQL_2026 (see pick_expression).
     """
     if explicit:
         return datatypes.normalize_dialect(explicit)
@@ -179,13 +197,14 @@ def _resolve_dialect(explicit, stash, ossie):
     for expression in _all_expressions(ossie):
         for entry in (expression or {}).get("dialects") or []:
             dialect = entry.get("dialect")
-            if not dialect or dialect == DIALECT_ANSI:
+            if not dialect or dialect in PORTABLE_DIALECTS:
                 continue
             (found if dialect in SUPPORTED_DIALECTS else unreadable).add(dialect)
     if unreadable:
         warn("model", f"the model carries {', '.join(sorted(unreadable))} expressions, "
                       f"which are not SQL this converter can read; only the "
-                      f"{DIALECT_ANSI} form of each expression will be used")
+                      f"{' or '.join(PORTABLE_DIALECTS)} form of each expression will "
+                      f"be used")
     if len(found) == 1:
         return found.pop()
     if len(found) > 1:
@@ -269,14 +288,14 @@ def _convert_field(field, dialect, dataset_name, has_dimension_metadata):
     stash = read_stash(field)
     _warn_foreign_extensions(field, "field", f"{dataset_name}.{name}")
 
-    expression, matched = pick_expression(field.get("expression"), dialect)
+    expression, fallback = pick_expression(field.get("expression"), dialect)
     if expression is None:
         raise ConversionError(
             f"Field '{dataset_name}.{name}' has no "
             f"{readable_dialects(dialect)} expression")
-    if not matched and dialect != DIALECT_ANSI:
+    if fallback and dialect != DIALECT_ANSI:
         warn("field", f"'{dataset_name}.{name}' has no {dialect} expression; the "
-                      f"{DIALECT_ANSI} one was used")
+                      f"{fallback} one was used")
 
     raw_type = clean_text(stash.get("type")) or datatypes.to_raw_type(
         field.get("datatype"), dialect)
@@ -421,12 +440,12 @@ def _convert_metrics(metrics, by_name, dialect):
             warn("metric", f"'{name}': datatype '{metric['datatype']}' has no Solid "
                            f"equivalent and was dropped")
 
-        expression, matched = pick_expression(metric.get("expression"), dialect)
+        expression, fallback = pick_expression(metric.get("expression"), dialect)
         if expression is None:
             raise ConversionError(
                 f"Metric '{name}' has no {readable_dialects(dialect)} expression")
-        if not matched and dialect != DIALECT_ANSI:
-            warn("metric", f"'{name}' has no {dialect} expression; the {DIALECT_ANSI} "
+        if fallback and dialect != DIALECT_ANSI:
+            warn("metric", f"'{name}' has no {dialect} expression; the {fallback} "
                            f"one was used")
 
         # Solid stores formulas against bare columns and records the owning tables

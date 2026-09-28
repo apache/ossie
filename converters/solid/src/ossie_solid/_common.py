@@ -38,14 +38,15 @@ OSSIE_VERSION = "0.2.0.dev0"
 # Spec versions an Apache Ossie document may declare and still be read (see
 # convert_ossie_to_solid). Output is always written as OSSIE_VERSION.
 #
-# 0.1.1 is the only *released* spec version, so it is what models in the wild and
-# several of the repository's own converter fixtures declare. As a document, a 0.1.1
-# model is a 0.2.0.dev0 model minus three additions: `datatype` on Field and Metric,
-# `BIGQUERY` in the dialect enum, and a free-form (rather than enumerated)
-# `vendor_name`. Every one of those is additive, so nothing in a 0.1.1 document is
-# invalid under 0.2.0.dev0 and no separate read path is needed -- only the absence of
-# `datatype` is visible to this converter, and that is already handled the same way a
-# 0.2.0.dev0 model that simply omits it is handled.
+# 0.1.1 is the only *released* spec version, so it is what models in the wild declare.
+# It differs from 0.2.0.dev0 in one structural way and a few additive ones. The
+# structural one is the document shape: 0.1.1 (and early 0.2.0.dev0 snapshots) wrap the
+# model in a `semantic_model` list, where 0.2.0.dev0 puts one model's properties at the
+# document root. convert_ossie_to_solid reads both shapes. The additive ones are
+# `datatype` on Field and Metric, `BIGQUERY` and `OSSIE_SQL_2026` in the dialect enum,
+# and a free-form `vendor_name`; of those only the absence of `datatype` is visible to
+# this converter, and it is handled the same way a 0.2.0.dev0 model that simply omits
+# it is handled.
 READABLE_OSSIE_VERSIONS = ("0.2.0.dev0", "0.1.1")
 
 # Read-only spec versions whose omissions are worth naming when one is encountered.
@@ -83,10 +84,19 @@ SUPPORTED_DIALECTS = (
     DIALECT_BIGQUERY,
 )
 
-# Apache Ossie dialect -> sqlglot dialect name. ANSI_SQL maps to sqlglot's default
-# ("" / None) parser rather than a vendor grammar.
+# The spec's portable dialect, defined on ANSI SQL:2003 Core. It is read as an
+# ANSI_SQL-equivalent fallback, never resolved to or written.
+DIALECT_OSSIE_SQL = "OSSIE_SQL_2026"
+
+# The dialect-neutral forms an expression may carry, in the order they are preferred
+# when the requested dialect is absent.
+PORTABLE_DIALECTS = (DIALECT_ANSI, DIALECT_OSSIE_SQL)
+
+# Apache Ossie dialect -> sqlglot dialect name. The portable dialects map to sqlglot's
+# default ("" / None) parser rather than a vendor grammar.
 SQLGLOT_DIALECTS = {
     DIALECT_ANSI: None,
+    DIALECT_OSSIE_SQL: None,
     DIALECT_SNOWFLAKE: "snowflake",
     DIALECT_DATABRICKS: "databricks",
     DIALECT_BIGQUERY: "bigquery",
@@ -216,36 +226,37 @@ def foreign_vendor_extensions(obj):
 
 
 def pick_expression(ossie_expression, dialect):
-    """Choose the SQL string for an Apache Ossie expression: `dialect`, else ANSI_SQL.
+    """Choose the SQL string for an Apache Ossie expression: `dialect`, else ANSI_SQL,
+    else OSSIE_SQL_2026.
 
-    Returns (expression, matched) where `matched` is False when the value came from the
-    ANSI_SQL fallback rather than the requested dialect, so the caller can warn. Returns
-    (None, False) when neither dialect is present.
+    Returns (expression, fallback) where `fallback` is None when the requested dialect
+    was found and otherwise names the portable dialect the value came from, so the
+    caller can warn. Returns (None, None) when none of them is present.
     """
     dialects = {
         d.get("dialect"): d.get("expression")
         for d in (ossie_expression or {}).get("dialects") or []
     }
-    for candidate, matched in ((dialect, True), (DIALECT_ANSI, False)):
+    candidates = (dialect,) + tuple(d for d in PORTABLE_DIALECTS if d != dialect)
+    for candidate in candidates:
         expr = dialects.get(candidate)
         if expr is None:
             continue
         if not isinstance(expr, str):
             raise ConversionError(
                 f"expression must be a string, got {type(expr).__name__}")
-        return expr, matched
-    return None, False
+        return expr, None if candidate == dialect else candidate
+    return None, None
 
 
 def readable_dialects(dialect):
     """Name the dialects `pick_expression` will accept, for an error message.
 
-    Reads as "SNOWFLAKE or ANSI_SQL", and as plain "ANSI_SQL" when the selected dialect
-    *is* ANSI_SQL rather than the tautological "ANSI_SQL or ANSI_SQL".
+    Reads as "SNOWFLAKE, ANSI_SQL or OSSIE_SQL_2026", and as "ANSI_SQL or
+    OSSIE_SQL_2026" when the selected dialect *is* ANSI_SQL.
     """
-    if dialect == DIALECT_ANSI:
-        return DIALECT_ANSI
-    return f"{dialect} or {DIALECT_ANSI}"
+    names = [dialect] + [d for d in PORTABLE_DIALECTS if d != dialect]
+    return f"{', '.join(names[:-1])} or {names[-1]}"
 
 
 def resolve_asset_links(text):

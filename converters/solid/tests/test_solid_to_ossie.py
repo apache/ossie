@@ -54,7 +54,15 @@ def test_document_declares_the_spec_version():
     ossie, _ = convert_quietly(convert_solid_to_ossie, fixture("tpcds_solid.yaml"))
     document = yaml.safe_load(ossie)
     assert document["version"] == "0.2.0.dev0"
-    assert len(document["semantic_model"]) == 1
+
+
+def test_the_model_sits_at_the_document_root():
+    """One model per document, its properties beside `version` -- no wrapper."""
+    ossie, _ = convert_quietly(convert_solid_to_ossie, fixture("tpcds_solid.yaml"))
+    document = yaml.safe_load(ossie)
+    assert "semantic_model" not in document
+    assert list(document)[:3] == ["version", "name", "description"]
+    assert document["name"] == "tpcds_retail_model"
 
 
 # --- datasets ---------------------------------------------------------------------
@@ -330,6 +338,13 @@ def test_the_model_name_can_be_overridden():
 def test_an_ossie_document_is_rejected_with_a_pointed_message():
     with pytest.raises(ConversionError, match="ossie-solid export"):
         convert_solid_to_ossie(fixture("tpcds_ossie.yaml"))
+
+
+def test_a_legacy_wrapped_ossie_document_is_rejected_with_a_pointed_message():
+    flat = yaml.safe_load(fixture("tpcds_ossie.yaml"))
+    wrapped = {"version": flat.pop("version"), "semantic_model": [flat]}
+    with pytest.raises(ConversionError, match="ossie-solid export"):
+        convert_solid_to_ossie(yaml.safe_dump(wrapped))
 
 
 def test_a_model_without_tables_is_rejected():

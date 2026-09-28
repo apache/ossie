@@ -32,9 +32,7 @@ def test_import_writes_an_ossie_model_to_a_file(tmp_path):
 
 def test_import_writes_to_stdout_without_an_output_path(capsys):
     assert main(["import", "-i", str(FIXTURES / "databricks_solid.yaml")]) == 0
-    assert yaml.safe_load(capsys.readouterr().out)["semantic_model"][0]["name"] == (
-        "orders_analytics"
-    )
+    assert yaml.safe_load(capsys.readouterr().out)["name"] == "orders_analytics"
 
 
 def test_export_writes_a_solid_model_to_a_file(tmp_path):
@@ -82,7 +80,7 @@ def test_the_dialect_flag_is_honoured(tmp_path):
         "-o", str(out),
         "--dialect", "ANSI_SQL",
     ])
-    model = yaml.safe_load(out.read_text())["semantic_model"][0]
+    model = yaml.safe_load(out.read_text())
     assert model["datasets"][0]["fields"][0]["expression"]["dialects"][0]["dialect"] == (
         "ANSI_SQL"
     )
@@ -101,9 +99,7 @@ def test_the_name_flag_renames_the_model(tmp_path):
         "-o", str(out),
         "--name", "renamed_model",
     ])
-    assert yaml.safe_load(out.read_text())["semantic_model"][0]["name"] == (
-        "renamed_model"
-    )
+    assert yaml.safe_load(out.read_text())["name"] == "renamed_model"
 
 
 def test_a_missing_subcommand_is_rejected():

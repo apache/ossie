@@ -66,21 +66,24 @@ def convert_solid_to_ossie(solid_yaml_str, dialect=None, model_name=None):
         raise ConversionError(
             "Invalid Solid semantic model: expected a mapping at the root")
     solid = document.get("semantic_model")
+    # An Apache Ossie document puts `version` and `datasets` at its root (or, in the
+    # legacy layout, keys `semantic_model` to a list). Naming the confusion is more
+    # useful than a generic missing-key or type error.
+    if isinstance(solid, list) or (
+        solid is None and ("version" in document or "datasets" in document)
+    ):
+        raise ConversionError(
+            "This looks like an Apache Ossie document, not a Solid semantic model. "
+            "Did you mean `ossie-solid export`?"
+        )
     if solid is None:
         raise ConversionError("Solid semantic model is missing the top-level "
                               "'semantic_model' key")
-    if isinstance(solid, list):
-        # An Apache Ossie document also has a `semantic_model` key, but holding a list.
-        # Naming the confusion is more useful than a generic type error.
-        raise ConversionError(
-            "'semantic_model' is a list; that is the Apache Ossie layout, not Solid's. "
-            "Did you mean `ossie-solid export`?"
-        )
     if not isinstance(solid, dict):
         raise ConversionError("'semantic_model' must be a mapping")
 
     model = _convert_model(solid, dialect, model_name)
-    return dump_yaml({"version": OSSIE_VERSION, "semantic_model": [model]})
+    return dump_yaml({"version": OSSIE_VERSION, **model})
 
 
 def _convert_model(solid, explicit_dialect, model_name):

@@ -53,6 +53,7 @@ updates:
       - "/converters/orionbelt"
       - "/converters/sigma"
       - "/converters/snowflake"
+      - "/converters/solid"
       - "/converters/thoughtspot"
       - "/converters/wisdom"
     schedule:

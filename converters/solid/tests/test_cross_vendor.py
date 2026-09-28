@@ -50,6 +50,7 @@ from conftest import (
 )
 
 from ossie_solid import convert_ossie_to_solid, convert_solid_to_ossie
+from ossie_solid._common import READABLE_OSSIE_VERSIONS
 
 
 def _foreign_ossie_fixtures():
@@ -66,10 +67,13 @@ def _foreign_ossie_fixtures():
             document = yaml.safe_load(path.read_text())
         except yaml.YAMLError:
             continue
-        # An Apache Ossie document keys `semantic_model` to a list; Solid's and every
-        # other vendor's native format does not.
-        if isinstance(document, dict) and isinstance(
-            document.get("semantic_model"), list
+        # An Apache Ossie document declares a spec version and carries its model's
+        # `datasets` at the root; Solid's and every other vendor's native format does
+        # not.
+        if (
+            isinstance(document, dict)
+            and document.get("version") in READABLE_OSSIE_VERSIONS
+            and "datasets" in document
         ):
             found.append(path)
     return found
