@@ -17,7 +17,7 @@
   under the License.
 -->
 
-# Layered Query Interface for Ossie Models
+# Ossie Specification Layers
 
 **Status:** Draft for the Ossie Semantics Working Group.
 **Contributors:** Justin Talbot, Will Pugh, Chris Eubank.
@@ -26,43 +26,50 @@
 
 ## Overview
 
-Ossie consumers (humans, BI tools, and agents) need a query *interface*: a way to evaluate queries 
-against an Ossie model with correctness guarantees.
+Ossie is organized into four specification layers, each addressing a distinct concern:
 
-A single interface cannot serve all integration styles equally well. An AI agent may want the
-flexibility to generate low-level SQL queries directly from an Ossie model. A SQL-native BI tool
-may want full control over query semantics while querying a shared model in a database. A data
-analyst may prefer a simple declarative interface with no SQL at all. A higher-order ontology or
-knowledge-graph layer may require concepts that SQL does not naturally express.
+| Layer | Name | Role |
+|-------|------|------|
+| 1 | Expression Language | Model definition: the expression language used inside Ossie model definitions |
+| 2 | Relational Query Interface | Query interface: SQL-native, grain-safe measure evaluation, full SQL invariants |
+| 3 | Wide Table Query Interface | Query interface: declarative flat-object queries, heuristic join resolution |
+| 4 | Ontology | Ontology workstream: higher-order semantic and knowledge-graph concepts |
 
-Ossie therefore adopts a **layered query interface**—four layers that each address a distinct
-correctness or expressiveness concern. Consumers choose the layer that best matches their
-integration use case. Higher layers inherit correctness from lower ones, and each layer can be
-adopted independently.
+Layer 1 defines what an Ossie model *is*—the model format and the expression language authors
+use to write it. Layers 2 and 3 are query interfaces that sit on top of a deployed model;
+they differ in how much SQL knowledge they require from the consumer. Layer 4 is a separate
+workstream covering ontological concepts that SQL does not naturally express.
 
-This document describes the four layers at a high level. Each layer is specified in full detail in
-its own document (linked below).
+Each layer can be adopted independently. Layers 2 and 3 compose: a wide-table query (Layer 3)
+can be rewritten as a SQL measures query (Layer 2), so correctness guarantees flow through.
+
+This document describes each layer at a high level. Each is specified in full in its own
+document (linked below).
 
 ---
 
-## The Four Layers
+## The Layers
 
-### Layer 1 — Common Expression Language
+### Layer 1 — Expression Language
 
 Layer 1 defines the shared expression language used inside Ossie model definitions. Measure
 definitions, calculated fields, and filter predicates in an Ossie model file are written in this
-portable SQL expression subset. Layer 1 establishes the guarantee: **expressions in an Ossie model
-evaluate identically on any conforming engine.** A model authored once can be deployed anywhere
-without rewriting its expressions.
+portable SQL expression subset. Layer 1 establishes the guarantee: **expressions in an Ossie
+model evaluate identically on any conforming engine.** A model authored once can be deployed
+anywhere without rewriting its expressions.
+
+Layer 1 is a model *definition* concern, not a query concern. It does not prescribe the query
+language a consumer uses when querying a deployed model—that is a per-layer decision for
+Layers 2 and 3.
 
 **Specification:** [`expression_language.md`](expression_language.md)
 
-### Layer 2 — Relational Interface (SQL Measures)
+### Layer 2 — Relational Query Interface
 
-Layer 2 is the relational query interface for Ossie models. Its query language is the Layer 1
+Layer 2 is the SQL-native query interface for Ossie models. Its query language is the Layer 1
 expression language extended with the relational constructs of SQL: joins, group-by, filters,
-CTEs, ordering, etc.—everything outside of scalar and aggregate expressions. To
-this it adds one extension, `MEASURE()`, which evaluates a named measure at its declared grain.
+CTEs, ordering, etc. To this it adds one extension, `MEASURE()`, which evaluates a named
+measure at its declared grain.
 
 Layer 2 establishes the guarantee: **measures are evaluated without duplication regardless of
 how they are queried.** Fan-out and chasm-trap errors cannot occur when measures are queried
@@ -74,24 +81,26 @@ build on the relational algebra can use Layer 2 without giving up any SQL guaran
 
 **Specification:** *(open PR: [apache/ossie#354](https://github.com/apache/ossie/pull/354))*
 
-### Layer 3 — Wide Table Interface (Dimensional)
+### Layer 3 — Wide Table Query Interface
 
-Layer 3 exposes a multi-table Ossie model as a single flat object. The consumer specifies
-dimensions, measures, and filters declaratively; the layer resolves which source tables to join,
-in what order, and with what join type. No SQL generation is required from the consumer.
+Layer 3 is the declarative query interface for Ossie models. It exposes a multi-table model as
+a single flat object. The consumer specifies dimensions, measures, and filters; the layer
+resolves which source tables to join, in what order, and with what join type. No SQL generation
+is required from the consumer.
 
-This interface trades explicit query control for simplicity, making it accessible to ad-hoc users,
-AI agents, and BI tools without their own data model. Measure correctness is inherited from
-Layer 2: a wide-table query is rewritten into a SQL measures query (with heuristic join and filter
-choices), so the same grain-safe evaluation guarantee holds.
+This interface trades explicit query control for simplicity, making it accessible to ad-hoc
+users, AI agents, and BI tools without their own data model. Measure correctness is inherited
+from Layer 2: a wide-table query is rewritten into a SQL measures query (with heuristic join
+and filter choices), so the same grain-safe evaluation guarantee holds.
 
 **Specification:** *(open PR: [apache/ossie#246](https://github.com/apache/ossie/pull/246))*
 
 ### Layer 4 — Ontology
 
-Layer 4 sits above the other layers and covers higher-order semantic concepts—entities,
-relationships, and knowledge-graph constructs that SQL does not naturally represent. It is defined
-by the Ossie Ontology working group (`#ossie-ontology-wg`).
+Layer 4 covers higher-order semantic concepts—entities, relationships, and knowledge-graph
+constructs that SQL does not naturally represent. It is defined by the Ossie Ontology working
+group (`#ossie-ontology-wg`) and is a separate workstream from the query interfaces in Layers
+2 and 3.
 
 **Specification:** [`../ontology/ontology.md`](../ontology/ontology.md)
 
@@ -99,16 +108,14 @@ by the Ossie Ontology working group (`#ossie-ontology-wg`).
 
 ## Composition
 
-The four layers compose. Layer 3 can be implemented on top of Layer 2: a wide-table query is
-rewritten into a SQL measures query. Layer 2 queries can be rewritten into Layer 1 queries by
-correcting for duplication. Layer 1 queries are highly portable across engines. A deployment that
-supports Layers 1–3 can expose both a SQL interface for SQL-native tools and a declarative
-wide-table interface for tools or users who prefer it—with the same expression semantics and
-correctness guarantees underlying both.
+Layers 2 and 3 compose: a wide-table (Layer 3) query is rewritten into a SQL measures
+(Layer 2) query with heuristic join and filter choices. This means correctness guarantees
+flow from Layer 2 through Layer 3—a consumer using the declarative interface gets the same
+grain-safe measure evaluation as one writing SQL directly.
 
-Providers may support one layer or several, and at varying compliance levels. The layered model
-makes partial adoption coherent: a tool that only needs SQL measures picks up Layer 2 without
-taking a dependency on the wide-table semantics of Layer 3.
+Providers may support one query interface layer or both, at varying compliance levels. The
+layered model makes partial adoption coherent: a tool that only needs SQL measures adopts
+Layer 2 without taking on the wide-table join semantics of Layer 3.
 
 ---
 
