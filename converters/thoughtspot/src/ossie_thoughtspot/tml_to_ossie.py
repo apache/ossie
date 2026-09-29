@@ -1764,6 +1764,40 @@ def _unrepresentable_entry(
     return entry
 
 
+def _resolved_join_column(
+    table: str,
+    column: str,
+    table_lookup: Callable[[str], dict | None],
+    log: IssueLog,
+    object_ref: str,
+) -> str:
+    """The warehouse `db_column_name` a join-condition column reference
+    names, or the raw TML text (logged) when it cannot be resolved.
+
+    A join condition's `[TABLE::Column]` operands carry the same kind of
+    reference `convert_field`/`convert_metric` resolve via
+    `_physical_db_column_name`. Reusing it here is what keeps
+    `from_columns`/`to_columns` (and, downstream, `derive_keys`'s
+    `primary_key`/`unique_keys`) naming an actual warehouse column instead
+    of the ThoughtSpot display name embedded in the condition text.
+    """
+    resolved = _physical_db_column_name(table, column, table_lookup)
+    if resolved is not None:
+        return resolved
+    log.add(
+        code="TS-JOIN-COLUMN-UNRESOLVED",
+        severity=Severity.WARNING,
+        message=(
+            f"join condition references {table}::{column!r}, which matches no "
+            f"physical column on {table!r}; the ThoughtSpot display name is used "
+            f"verbatim in the emitted relationship instead of a resolved warehouse "
+            f"column name"
+        ),
+        object_ref=object_ref,
+    )
+    return column
+
+
 def _relationship_from_join(
     *,
     name: str,
@@ -1774,6 +1808,7 @@ def _relationship_from_join(
     cardinality: str | None,
     join_shape: str,
     referencing_join: str | None,
+    table_lookup: Callable[[str], dict | None],
     log: IssueLog,
 ) -> tuple[dict | None, dict | None, bool]:
     """One join -> `(relationship, unrepresentable_entry, has_residual_predicates)`.
@@ -1844,12 +1879,28 @@ def _relationship_from_join(
         )
         return None, entry, False
 
+    resolved_from_columns = [
+        _resolved_join_column(from_prefix, pair[0], table_lookup, log, object_ref)
+        for pair in equality_pairs
+    ]
+    resolved_to_columns = [
+        _resolved_join_column(to_prefix, pair[1], table_lookup, log, object_ref)
+        for pair in equality_pairs
+    ]
+    # Whether resolution changed anything: if so, the original on_expression
+    # must be stashed too (alongside the residual-predicate case below) so
+    # the reverse direction can still recover byte-identical TML.
+    columns_were_resolved = (
+        resolved_from_columns != [pair[0] for pair in equality_pairs]
+        or resolved_to_columns != [pair[1] for pair in equality_pairs]
+    )
+
     relationship: dict = {
         "name": name,
         "from": from_prefix,
         "to": to_prefix,
-        "from_columns": [pair[0] for pair in equality_pairs],
-        "to_columns": [pair[1] for pair in equality_pairs],
+        "from_columns": resolved_from_columns,
+        "to_columns": resolved_to_columns,
     }
 
     # core-spec/spec.yaml requires a Relationship's `from` to name the many
@@ -1895,7 +1946,7 @@ def _relationship_from_join(
             relationship["from_columns"], relationship["to_columns"],
         ]
     has_residuals = bool(residuals)
-    if has_residuals:
+    if has_residuals or columns_were_resolved:
         # The residual predicates themselves are not stashed separately: they
         # are already fully contained in the verbatim on_expression stashed
         # below, and nothing reads them back on the way to TML.
@@ -1907,6 +1958,7 @@ def _relationship_from_join(
         rel_stash[RELATIONSHIP_STASH_ON_EXPRESSION_WITNESS] = [
             relationship["from_columns"], relationship["to_columns"],
         ]
+    if has_residuals:
         log.add(
             code="TS-JOIN-RESIDUAL-PREDICATES",
             severity=Severity.WARNING,
@@ -1923,7 +1975,7 @@ def _relationship_from_join(
 
 def _convert_join(
     from_prefix: str, join: dict, from_table_body: dict, known_datasets: frozenset[str],
-    log: IssueLog,
+    table_lookup: Callable[[str], dict | None], log: IssueLog,
 ) -> tuple[dict | None, dict | None, keys.Relationship | None]:
     """One `model_tables[].joins[]` entry -> `(relationship,
     unrepresentable_entry, key_candidate)`.
@@ -2031,6 +2083,7 @@ def _convert_join(
         cardinality=cardinality,
         join_shape=join_shape,
         referencing_join=referencing_join,
+        table_lookup=table_lookup,
         log=log,
     )
 
@@ -2509,7 +2562,8 @@ def convert(document_set: DocumentSet) -> OssieConversion:
             continue  # the dataset itself failed to build; already logged
         for join in entry.get("joins") or []:
             relationship, unrepresentable, candidate = _convert_join(
-                from_prefix, join, table_docs.get(from_prefix) or {}, known_datasets, log
+                from_prefix, join, table_docs.get(from_prefix) or {}, known_datasets,
+                table_lookup, log,
             )
             if relationship is not None:
                 # `Relationship.name` is unique across the model's flat

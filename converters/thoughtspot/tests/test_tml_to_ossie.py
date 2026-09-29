@@ -262,19 +262,22 @@ class TestKeyDerivation:
         semantic_model = result.model
         customers_ds = next(d for d in semantic_model["datasets"] if d["name"] == "CUSTOMERS")
 
-        assert customers_ds["primary_key"] == ["Id"]
-        assert customers_ds["unique_keys"] == [["Id"]]
+        assert customers_ds["primary_key"] == ["ID"]
+        assert customers_ds["unique_keys"] == [["ID"]]
 
         rel = semantic_model["relationships"][0]
         assert rel["from"] == "ORDERS"
         assert rel["to"] == "CUSTOMERS"
-        assert rel["from_columns"] == ["Customer Id"]
-        assert rel["to_columns"] == ["Id"]
+        assert rel["from_columns"] == ["CUSTOMER_ID"]
+        assert rel["to_columns"] == ["ID"]
         rel_stash = _own_stash(rel)
         assert rel_stash[RELATIONSHIP_STASH_TYPE] == "INNER"
         assert rel_stash[RELATIONSHIP_STASH_CARDINALITY] == "MANY_TO_ONE"
         assert rel_stash[RELATIONSHIP_STASH_JOIN_SHAPE] == "inline"
-        assert RELATIONSHIP_STASH_ON_EXPRESSION not in rel_stash
+        # Display name differs from resolved warehouse name, so the verbatim
+        # condition is stashed too: otherwise the reverse direction could
+        # only reassemble it from warehouse names, not what TML originally said.
+        assert rel_stash[RELATIONSHIP_STASH_ON_EXPRESSION] == "[ORDERS::Customer Id] = [CUSTOMERS::Id]"
 
     def test_a_non_equality_join_derives_no_key_and_stashes_the_condition(self):
         # A residual-predicate (as-of) join is to-one only
@@ -330,10 +333,80 @@ class TestKeyDerivation:
         semantic_model = result.model
         customers_ds = next(d for d in semantic_model["datasets"] if d["name"] == "CUSTOMERS")
 
-        assert customers_ds["primary_key"] == ["Region", "Id"]
+        assert customers_ds["primary_key"] == ["Region", "ID"]
         rel = semantic_model["relationships"][0]
-        assert rel["from_columns"] == ["Region", "Customer Id"]
-        assert rel["to_columns"] == ["Region", "Id"]
+        assert rel["from_columns"] == ["Region", "CUSTOMER_ID"]
+        assert rel["to_columns"] == ["Region", "ID"]
+
+
+class TestRelationshipColumnsResolveToWarehouseNames:
+    """from_columns/to_columns (and, through derive_keys, primary_key/
+    unique_keys) must name the warehouse db_column_name a consumer can
+    actually select, never the ThoughtSpot display name embedded in the
+    join condition's `[TABLE::Column]` text, the same resolution
+    convert_field/convert_metric already apply to a field's own expression.
+    """
+
+    def test_relationship_columns_use_the_warehouse_name_not_the_display_name(self):
+        # The ThoughtSpot column name ("Customer Id"/"Id") differs from its
+        # warehouse db_column_name ("cust_id_fk"/"cust_pk"): emitting the raw
+        # join text verbatim would reference a column that does not exist there.
+        customers = _table("CUSTOMERS", columns=[_column("Id", "cust_pk")])
+        orders = _table("ORDERS", columns=[_column("Customer Id", "cust_id_fk")])
+        model = _model(
+            model_tables=[
+                {"name": "ORDERS", "joins": [{
+                    "with": "CUSTOMERS",
+                    "on": "[ORDERS::Customer Id] = [CUSTOMERS::Id]",
+                    "type": "INNER",
+                    "cardinality": "MANY_TO_ONE",
+                }]},
+                {"name": "CUSTOMERS"},
+            ],
+        )
+
+        result = convert(_document_set(model, orders, customers))
+        semantic_model = result.model
+        customers_ds = next(d for d in semantic_model["datasets"] if d["name"] == "CUSTOMERS")
+
+        rel = semantic_model["relationships"][0]
+        assert rel["from_columns"] == ["cust_id_fk"]
+        assert rel["to_columns"] == ["cust_pk"]
+
+        # derive_keys reads straight off to_columns, so the fix reaches
+        # primary_key/unique_keys with no separate resolution step of its own.
+        assert customers_ds["primary_key"] == ["cust_pk"]
+        assert customers_ds["unique_keys"] == [["cust_pk"]]
+
+        assert not any(i["code"] == "TS-JOIN-COLUMN-UNRESOLVED" for i in result.issues.as_dicts())
+
+    def test_an_unresolvable_join_column_falls_back_to_the_display_name_and_is_logged(self):
+        # The join condition names a column no physical column on the table
+        # declares. The raw TML text is kept (nothing vanishes) rather than
+        # dropping the relationship, and the loss is logged.
+        customers = _table("CUSTOMERS", columns=[_column("Id", "ID")])
+        orders = _table("ORDERS", columns=[])  # "Customer Id" is not declared here
+        model = _model(
+            model_tables=[
+                {"name": "ORDERS", "joins": [{
+                    "with": "CUSTOMERS",
+                    "on": "[ORDERS::Customer Id] = [CUSTOMERS::Id]",
+                    "type": "INNER",
+                    "cardinality": "MANY_TO_ONE",
+                }]},
+                {"name": "CUSTOMERS"},
+            ],
+        )
+
+        result = convert(_document_set(model, orders, customers))
+        rel = result.model["relationships"][0]
+
+        assert rel["from_columns"] == ["Customer Id"]
+        assert rel["to_columns"] == ["ID"]
+        assert any(
+            i["code"] == "TS-JOIN-COLUMN-UNRESOLVED" and "Customer Id" in i["message"]
+            for i in result.issues.as_dicts()
+        )
 
 
 class TestOneToManyEndpointSwap:
@@ -374,8 +447,8 @@ class TestOneToManyEndpointSwap:
         # (CUSTOMERS) is `to` -- the reverse of how the join is declared.
         assert rel["from"] == "ORDERS"
         assert rel["to"] == "CUSTOMERS"
-        assert rel["from_columns"] == ["Customer Id"]
-        assert rel["to_columns"] == ["Id"]
+        assert rel["from_columns"] == ["CUSTOMER_ID"]
+        assert rel["to_columns"] == ["ID"]
         # The inline join's synthesized name reflects the emitted (swapped)
         # from/to, not the TML declaration order.
         assert rel["name"] == "ORDERS_to_CUSTOMERS"
@@ -384,14 +457,14 @@ class TestOneToManyEndpointSwap:
         assert rel_stash[RELATIONSHIP_STASH_CARDINALITY] == "ONE_TO_MANY"
         assert rel_stash[RELATIONSHIP_STASH_ENDPOINTS_SWAPPED] is True
         assert rel_stash[RELATIONSHIP_STASH_ENDPOINTS_SWAPPED_WITNESS] == [
-            "ORDERS", "CUSTOMERS", ["Customer Id"], ["Id"],
+            "ORDERS", "CUSTOMERS", ["CUSTOMER_ID"], ["ID"],
         ]
 
         # Key derivation follows the swap: the key belongs to the one side
         # (CUSTOMERS), which is now `to`.
         customers_ds = next(d for d in semantic_model["datasets"] if d["name"] == "CUSTOMERS")
-        assert customers_ds["primary_key"] == ["Id"]
-        assert customers_ds["unique_keys"] == [["Id"]]
+        assert customers_ds["primary_key"] == ["ID"]
+        assert customers_ds["unique_keys"] == [["ID"]]
         orders_ds = next(d for d in semantic_model["datasets"] if d["name"] == "ORDERS")
         assert "primary_key" not in orders_ds
 
@@ -415,8 +488,8 @@ class TestOneToManyEndpointSwap:
 
         assert rel["from"] == "ORDERS"
         assert rel["to"] == "CUSTOMERS"
-        assert rel["from_columns"] == ["Customer Id"]
-        assert rel["to_columns"] == ["Id"]
+        assert rel["from_columns"] == ["CUSTOMER_ID"]
+        assert rel["to_columns"] == ["ID"]
         assert rel["name"] == "ORDERS_to_CUSTOMERS"
 
         rel_stash = _own_stash(rel)
@@ -444,8 +517,8 @@ class TestOneToManyEndpointSwap:
 
         assert rel["from"] == "PROFILES"
         assert rel["to"] == "PEOPLE"
-        assert rel["from_columns"] == ["Person Id"]
-        assert rel["to_columns"] == ["Id"]
+        assert rel["from_columns"] == ["PERSON_ID"]
+        assert rel["to_columns"] == ["ID"]
 
         rel_stash = _own_stash(rel)
         assert rel_stash[RELATIONSHIP_STASH_CARDINALITY] == "ONE_TO_ONE"
@@ -482,8 +555,8 @@ class TestOneToManyEndpointSwap:
         assert rel["name"] == "customers_to_orders"
         assert rel["from"] == "ORDERS"
         assert rel["to"] == "CUSTOMERS"
-        assert rel["from_columns"] == ["Customer Id"]
-        assert rel["to_columns"] == ["Id"]
+        assert rel["from_columns"] == ["CUSTOMER_ID"]
+        assert rel["to_columns"] == ["ID"]
 
         rel_stash = _own_stash(rel)
         assert rel_stash[RELATIONSHIP_STASH_CARDINALITY] == "ONE_TO_MANY"
@@ -679,8 +752,8 @@ class TestOwnChoice:
         assert rel["name"] == "orders_to_customers"
         assert rel["from"] == "ORDERS"
         assert rel["to"] == "CUSTOMERS"
-        assert rel["from_columns"] == ["Customer Id"]
-        assert rel["to_columns"] == ["Id"]
+        assert rel["from_columns"] == ["CUSTOMER_ID"]
+        assert rel["to_columns"] == ["ID"]
         rel_stash = _own_stash(rel)
         assert rel_stash[RELATIONSHIP_STASH_JOIN_SHAPE] == "referencing"
         assert rel_stash[RELATIONSHIP_STASH_REFERENCING_JOIN] == "orders_to_customers"
@@ -688,7 +761,7 @@ class TestOwnChoice:
         assert rel_stash[RELATIONSHIP_STASH_CARDINALITY] == "MANY_TO_ONE"
 
         customers_ds = next(d for d in semantic_model["datasets"] if d["name"] == "CUSTOMERS")
-        assert customers_ds["primary_key"] == ["Id"]
+        assert customers_ds["primary_key"] == ["ID"]
 
     def test_a_malformed_join_condition_is_caught_and_the_conversion_continues(self):
         # Lesson carried into this task: a malformed reference must not abort
@@ -1188,8 +1261,8 @@ class TestKeyDerivationEdgeCasesCommitted:
         assert "unique_keys" not in customers_ds
 
         rel = semantic_model["relationships"][0]
-        assert rel["from_columns"] == ["Customer Id"]
-        assert rel["to_columns"] == ["Id"]
+        assert rel["from_columns"] == ["CUSTOMER_ID"]
+        assert rel["to_columns"] == ["ID"]
         rel_stash = _own_stash(rel)
         assert rel_stash[RELATIONSHIP_STASH_ON_EXPRESSION] == on_expr
         assert any(i["code"] == "TS-JOIN-RESIDUAL-PREDICATES" for i in result.issues.as_dicts())
@@ -1220,7 +1293,7 @@ class TestKeyDerivationEdgeCasesCommitted:
 
         assert set(datasets) == {"Emp", "Mgr"}
         assert datasets["Emp"]["source"] == datasets["Mgr"]["source"] == "SALES.PUBLIC.EMPLOYEES"
-        assert datasets["Mgr"]["primary_key"] == ["Id"]
+        assert datasets["Mgr"]["primary_key"] == ["ID"]
         rel = semantic_model["relationships"][0]
         assert rel["from"] == "Emp"
         assert rel["to"] == "Mgr"
