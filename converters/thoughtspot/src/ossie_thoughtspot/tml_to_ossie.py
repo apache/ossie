@@ -2086,22 +2086,27 @@ def convert(document_set: DocumentSet) -> OssieConversion:
     log = IssueLog()
     model_body = document_set.model.body
 
-    model_display_name = model_body.get("name") or ""
-    if model_display_name and not isinstance(model_display_name, str):
+    model_name_raw = model_body.get("name")
+    if "name" in model_body and not isinstance(model_name_raw, str):
         # Same malformed-type hazard as a column `name` (see
         # `_column_display_name`): the model has no field to skip, so it
         # falls back the same way an empty name already does, just with a
-        # WARNING naming what was dropped.
+        # WARNING naming what was dropped. Checked before the `or ""`
+        # coercion below so a falsy-but-present value (`0`, `False`, `None`)
+        # is reported the same as a truthy one (`42`, `True`): both are an
+        # explicit non-string value, not a missing key.
         log.add(
             code="TS-MODEL-NAME-INVALID",
             severity=Severity.WARNING,
             message=(
-                f"model name {model_display_name!r} is not a string; the "
+                f"model name {model_name_raw!r} is not a string; the "
                 f"semantic model is named 'model' instead"
             ),
-            object_ref=f"model:{model_display_name!r}",
+            object_ref=f"model:{model_name_raw!r}",
         )
         model_display_name = ""
+    else:
+        model_display_name = model_name_raw or ""
     if not model_display_name:
         semantic_model_name = "model"
     else:
