@@ -37,7 +37,8 @@
 4. [Relationships](#relationships)
 5. [Fields](#fields)
 6. [Metrics](#metrics)
-7. [Examples](#examples)
+7. [Name Resolution](#name-resolution)
+8. [Examples](#examples)
 
 ---
 
@@ -165,8 +166,8 @@ Logical datasets represent business entities or concepts (fact and dimension tab
 |-------|------|----------|-------------|
 | `name` | string | Yes | Unique identifier for the dataset |
 | `source` | string | Yes | Reference to underlying physical table/view (e.g., `database.schema.table`) or query |
-| `primary_key` | array | No | Primary key columns that uniquely identify rows (single or composite) |
-| `unique_keys` | array of arrays | No | Array of unique key definitions (each can be single or composite) |
+| `primary_key` | array | No | Dataset fields that uniquely identify rows |
+| `unique_keys` | array of arrays | No | Array of unique key definitions, each a list of dataset fields |
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms, common terms) |
 | `fields` | array | No | Row-level attributes for grouping, filtering, and metric expressions |
@@ -206,7 +207,17 @@ datasets:
       synonyms:
         - "purchases"
         - "sales"
-    fields: []
+    fields:
+      - name: order_id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: order_id
+      - name: order_number
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: order_number
     custom_extensions:
       - vendor_name: DBT
         data: '{"materialized": "table"}'
@@ -225,17 +236,18 @@ Relationships define how logical datasets are connected through foreign key cons
 | `name` | string | Yes | Unique identifier for the relationship |
 | `from` | string | Yes | The logical dataset on the many side of the relationship |
 | `to` | string | Yes | The logical dataset on the one side of the relationship |
-| `from_columns` | array | Yes | Array of column names in the "from" dataset (foreign key columns) |
-| `to_columns` | array | Yes | Array of column names in the "to" dataset (primary or unique key columns) |
+| `from_columns` | array | Yes | Array of field names in the "from" dataset (foreign key fields) |
+| `to_columns` | array | Yes | Array of field names in the "to" dataset (primary or unique key fields) |
 | `ai_context` | string/object | No | Additional context for AI tools |
 | `custom_extensions` | array | No | Vendor-specific attributes |
 
 ### Important Notes
 
-- The order of columns in `from_columns` must correspond to the order in `to_columns`
-- Both arrays must have the same number of columns
-- For simple relationships, use a single column: `[column1]`
-- For composite relationships, use multiple columns: `[column1, column2]`
+- Despite their names, `from_columns` and `to_columns` contain names of fields declared in the `from` and `to` datasets, not columns of those datasets' sources. See [Name Resolution](#name-resolution).
+- The order of fields in `from_columns` must correspond to the order in `to_columns`
+- Both arrays must have the same number of fields
+- For simple relationships, use a single field: `[field1]`
+- For composite relationships, use multiple fields: `[field1, field2]`
 
 ### Examples
 
@@ -296,6 +308,7 @@ expression:
 
 - Use scalar SQL expressions (no aggregations)
 - Can be simple column references (e.g., `customer_id`) or computed expressions (e.g., `first_name || ' ' || last_name`)
+- Identifiers refer to columns of the dataset's `source`, not to other fields. See [Name Resolution](#name-resolution).
 - Multiple dialect versions can be provided for the same field
 
 ### Dimension Object
@@ -398,7 +411,9 @@ Common combinations:
 
 ## Metrics
 
-Quantitative measures defined on business data, representing key calculations like sums, averages, ratios, etc. Metrics are defined at the semantic model level and can  span multiple datasets.
+Quantitative measures defined on business data, representing key calculations like sums, averages, ratios, etc. Metrics are defined at the semantic model level and can span multiple datasets.
+
+Model-scoped metric expressions refer to dataset fields by qualified name, `dataset.field`. They cannot refer to columns of a dataset's `source` or to other metrics. See [Name Resolution](#name-resolution).
 
 ### Schema
 
@@ -537,6 +552,103 @@ The following are well-known examples:
     "default_schema": "gold"
   }'
 ```
+
+---
+
+## Name Resolution
+
+An Ossie model has three levels of names:
+
+1. **Source columns.** The columns of the table, view, or query named by a
+   dataset's `source`. The Ossie document does not declare them.
+2. **Dataset fields.** The fields declared in a dataset's `fields`. Each field
+   is defined in terms of that dataset's source columns, just as a view's
+   `SELECT` list can only reference columns from its `FROM` clause. A dataset's
+   fields are its public interface.
+3. **Model-scoped metrics.** The metrics declared at the model level, defined
+   in terms of dataset fields.
+
+Model-level constructs (metrics and relationships) do not reach through a
+dataset to its source columns, so a dataset that declares no fields exposes
+nothing to them.
+
+| Where the name appears | What it refers to |
+|------------------------|-------------------|
+| Field `expression` | A column of the same dataset's `source` |
+| `datasets[].primary_key`, `datasets[].unique_keys` | A field of the same dataset |
+| `relationships[].from_columns` | A field of the `from` dataset |
+| `relationships[].to_columns` | A field of the `to` dataset |
+| Metric `expression` | A field of the named dataset, qualified as `dataset.field` |
+
+For example, a dataset can expose the source column `o_totalprice` as the
+field `total_amount`, and derive `total_usd` from `total_cents`:
+
+```yaml
+datasets:
+  - name: orders
+    source: sales.public.orders   # columns: o_orderkey, o_custkey, o_totalprice, total_cents
+    primary_key: [order_id]       # field name, not o_orderkey
+    fields:
+      - name: order_id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: o_orderkey      # source column
+      - name: customer_id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: o_custkey
+      - name: total_amount
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: o_totalprice
+      - name: total_usd
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: total_cents / 100.0
+
+relationships:
+  - name: orders_to_customers
+    from: orders
+    to: customers
+    from_columns: [customer_id]   # field of orders, not o_custkey
+    to_columns: [id]              # field of customers (dataset not shown)
+
+metrics:
+  - name: total_revenue
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(orders.total_usd)   # field, not a source column
+```
+
+In this model, these references are invalid:
+
+- `SUM(orders.o_totalprice)` and `from_columns: [o_custkey]`, because
+  `o_totalprice` and `o_custkey` are source columns, not fields of `orders`.
+- `SUM(total_usd)`, because metric expressions must qualify field names with
+  the dataset name, even when only one dataset has a field with that name.
+
+If a field and a source column share a name (as in a field `amount` defined as
+`amount`), the name refers to the source column inside that dataset's field
+expressions and to the field everywhere else.
+
+Consumers that generate SQL against the source tables, rather than against a
+layer that exposes the fields, must replace each field reference with the
+field's expression. For example, `SUM(orders.total_amount)` compiles to
+`SUM(o_totalprice)` over `sales.public.orders`.
+
+This version of the specification does not support:
+
+- a field expression that refers to another field, in the same or another
+  dataset;
+- a metric expression that refers to another metric;
+- a dataset that uses another dataset as its `source`.
+
+Future versions may add these.
 
 ---
 
@@ -682,6 +794,7 @@ ai_context:
 
 - **0.2.0.dev0** (Unreleased): In-development next minor release. Schema is mutable; do not depend on this version in production.
   - Breaking: each standalone document contains one model directly at the root; the `semantic_model` array is removed.
+  - Breaking: metric expressions, `primary_key`, `unique_keys`, and relationship `from_columns`/`to_columns` refer to dataset fields, not columns of the dataset's `source`. Metric expressions must use qualified `dataset.field` references. Earlier versions did not specify this, and some converters read these names as source columns; those converters must now resolve them as fields. See [Name Resolution](#name-resolution).
 - **0.1.1** (2025-12-11): Initial release
   - Core semantic model structure
   - Support for datasets, relationships, fields, and metrics

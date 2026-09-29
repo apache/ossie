@@ -114,27 +114,29 @@ datasets:
     source: string
 
     # Optional: Primary key definition that uniquely identifies rows in this dataset
-    # Can be a single column or a composite of multiple columns
+    # Lists names of fields in this dataset (not columns of the source)
+    # Can be a single field or a composite of multiple fields
     # This is the preferred unique identifier for this dataset and is used in relationships to determine many-to-one or one-to-one.
     # Examples:
     # primary_key: [customer_id]            # Simple primary key
     #
     # primary_key: [order_id, line_number]  # Composite primary key
-    primary_key: []  # Array of column names (single or composite)
+    primary_key: []  # Array of field names (single or composite)
 
     # Optional: Array of unique key definitions that uniquely identify rows in this dataset
-    # Each unique key can be a single column or a composite of multiple columns
+    # Each unique key lists names of fields in this dataset (not columns of the source)
+    # Each unique key can be a single field or a composite of multiple fields
     # Used for determining relationship type of either many-to-one or one-to-one
     # Examples:
     # unique_keys:
-    #   - [column1]
-    #   - [column2, column3]
+    #   - [field1]
+    #   - [field2, field3]
     #
     # unique_keys:
-    #   - [column1, column2]
-    #   - [column3, column4]
+    #   - [field1, field2]
+    #   - [field3, field4]
     unique_keys:
-      - []  # Array of column names (single or composite)
+      - []  # Array of field names (single or composite)
 
     # Optional: Human-readable description of the logical dataset
     description: string
@@ -168,21 +170,23 @@ relationships:
     # References a logical dataset name
     to: string
 
-    # Required: Array of column names in the "from" dataset (foreign key columns)
-    # For simple relationships, use a single column: [column1]
-    # For composite relationships, use multiple columns: [column1, column2]
-    # The order of columns must correspond to the order in to_columns
+    # Required: Array of field names in the "from" dataset (foreign key fields)
+    # These are fields declared in the dataset, not columns of its source
+    # For simple relationships, use a single field: [field1]
+    # For composite relationships, use multiple fields: [field1, field2]
+    # The order of fields must correspond to the order in to_columns
     # Examples:
     #   - [customer_id]              # Simple foreign key
     #   - [order_id, line_number]    # Composite foreign key
-    from_columns: []  # Array of column names
+    from_columns: []  # Array of field names
 
-    # Required: Array of column names in the "to" dataset (primary or unique key columns)
-    # Must have the same number of columns as from_columns in corresponding order
+    # Required: Array of field names in the "to" dataset (primary or unique key fields)
+    # These are fields declared in the dataset, not columns of its source
+    # Must have the same number of fields as from_columns in corresponding order
     # Examples:
     #   - [id]                       # Simple key
     #   - [order_id, line_number]    # Composite key
-    to_columns: []  # Array of column names
+    to_columns: []  # Array of field names
 
     # Optional: Additional context for AI tools (e.g., synonyms, business context)
     # Helps LLMs understand when and why the datasets should be joined
@@ -204,6 +208,7 @@ fields:
     # Supports multiple SQL dialects for cross-platform compatibility
     # Each field can have expressions in different dialects for portability
     # Can be a simple column reference or a complex scalar expression
+    # Identifiers refer to columns of the dataset's source, not to other fields
     expression:
       dialects:
         - dialect: string  # Must be one of the values from 'dialects' enum above, Default: "ANSI_SQL"
@@ -259,6 +264,8 @@ metrics:
     # Required: Expression definition with dialect support
     # Supports multiple SQL dialects for cross-platform compatibility
     # Each metric can have expressions in different dialects for portability
+    # References must be qualified as dataset.field and refer to fields declared in
+    # the dataset, not columns of its source or other metrics
     expression:
       dialects:
         - dialect: string  # Must be one of the values from 'dialects' enum above, Default: "ANSI_SQL"

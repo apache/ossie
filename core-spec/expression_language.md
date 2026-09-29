@@ -94,8 +94,15 @@ Sometimes, we may refer to a **normalized identifier**.  This is a form the iden
 
 #### Name Spaces
 
-Namespaces define how an identifier is looked up in an expression.  They are covered in the semantics document.  Identifiers
+Namespaces define how an identifier is looked up in an expression.  Identifiers
 will be able to be multi-part and the parts will be separated by the '.' characters,  E.g. `dataset.field`  This matches SQL conventions.
+
+What an identifier refers to depends on where the expression appears:
+
+* In a **field expression**, identifiers refer to columns of the dataset's `source`.  A field expression cannot refer to other fields.
+* In a **metric expression**, identifiers must be qualified as `dataset.field` and refer to a field declared in that dataset.  They cannot refer to columns of the dataset's `source` or to other metrics.  If a field and a source column share a name, `dataset.name` refers to the field.
+
+This is the same rule SQL applies to views: a query over a view can use the view's output columns but not the columns of the tables the view reads.  Consumers that compile metrics to SQL over the source tables must replace each field reference with the field's expression.  See [Name Resolution](spec.md#name-resolution) in the core specification.
 
 ## SQL Language Subset
 
@@ -105,7 +112,7 @@ Ossie expressions support the following SQL constructs within any expression:
 
 | Construct | Notes                                                                                                                                                                                                                                                                                 |
 | :---- |:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Column and Metric references | Varies based on whether in Ontology or Semantic models. See namespaceing in [Ossie Discussion Point: Core Analytic Abstractions](https://docs.google.com/document/d/1si8DqU4arG18ZgX4HnRG5D_zS2X7V1s-vgNY35rvxhM/edit?tab=t.0#heading=h.le505t8uoyfy) And future Ontology documentation |
+| Column and Metric references | Varies based on whether in Ontology or Semantic models. For semantic models, see [Name Resolution](spec.md#name-resolution). See also namespacing in [Ossie Discussion Point: Core Analytic Abstractions](https://docs.google.com/document/d/1si8DqU4arG18ZgX4HnRG5D_zS2X7V1s-vgNY35rvxhM/edit?tab=t.0#heading=h.le505t8uoyfy) And future Ontology documentation |
 | Arithmetic operators | `+`, `-`, `*`, `/`, `%` (modulo)                                                                                                                                                                                                                                                      |
 | Comparison operators | `=`, `<>`, `!=`, `<`, `>`, `<=`, `>=`                                                                                                                                                                                                                                                 |
 | Logical operators | `AND`, `OR`, `NOT`                                                                                                                                                                                                                                                                    |
