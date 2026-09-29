@@ -1,0 +1,95 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements. See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership. The ASF licenses this file to you under the
+# Apache License, Version 2.0 (the "License"); you may not use this file except
+# in compliance with the License. You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+name: Cross-converter Interop Matrix
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'interop/**'
+      - 'converters/**'
+      - 'examples/**'
+      - 'core-spec/**'
+      - 'python/**'
+      - 'validation/**'
+      - '.github/workflows/interop-matrix-ci.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'interop/**'
+      - 'converters/**'
+      - 'examples/**'
+      - 'core-spec/**'
+      - 'python/**'
+      - 'validation/**'
+      - '.github/workflows/interop-matrix-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+
+      - name: Lint interop harness
+        working-directory: interop
+        run: |
+          uv sync --frozen
+          uv run ruff check runner.py adapters tests
+
+      - name: Test interop harness
+        working-directory: interop
+        run: |
+          uv sync --frozen
+          uv run pytest
+
+      - name: Generate report-only interoperability matrix
+        run: |
+          uv run --project interop python interop/runner.py \
+            --report interop-report.md \
+            --report-only
+          cat interop-report.md >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload interoperability report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cross-converter-interop-report
+          path: interop-report.md
+          if-no-files-found: error

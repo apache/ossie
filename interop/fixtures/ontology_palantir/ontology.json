@@ -1,0 +1,14 @@
+{
+  "objectTypes": [
+    {
+      "rid": "ri.ot.1",
+      "id": "widget",
+      "displayName": "Widget",
+      "properties": [
+        {"rid": "ri.p.1", "id": "widget_id", "baseType": {"type": "STRING"}}
+      ],
+      "primaryKeys": ["widget_id"]
+    }
+  ],
+  "relations": []
+}
