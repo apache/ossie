@@ -207,7 +207,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Names of this dataset's fields that form the primary key (single or composite)"
+          "description": "Dataset fields that uniquely identify rows"
         },
         "unique_keys": {
           "type": "array",
@@ -217,7 +217,7 @@
               "type": "string"
             }
           },
-          "description": "Array of unique key definitions, each a list of this dataset's field names (single or composite)"
+          "description": "Array of unique key definitions, each a list of dataset fields"
         },
         "description": {
           "type": "string",
@@ -267,7 +267,7 @@
             "type": "string"
           },
           "minItems": 1,
-          "description": "Names of the foreign key fields in the 'from' dataset"
+          "description": "Array of field names in the 'from' dataset (foreign key fields)"
         },
         "to_columns": {
           "type": "array",
@@ -275,7 +275,7 @@
             "type": "string"
           },
           "minItems": 1,
-          "description": "Names of the primary/unique key fields in the 'to' dataset"
+          "description": "Array of field names in the 'to' dataset (primary or unique key fields)"
         },
         "ai_context": {
           "$ref": "#/$defs/AIContext"

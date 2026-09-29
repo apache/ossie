@@ -113,18 +113,18 @@ datasets:
     # Format should be either database_name.schema_name.table_name or query
     source: string
 
-    # Optional: Primary key definition that uniquely identifies rows in this dataset
-    # Lists names of fields in this dataset (not columns of the source)
+    # Optional: Dataset fields that uniquely identify rows
+    # These are fields declared in the dataset, not columns of its source
     # Can be a single field or a composite of multiple fields
     # This is the preferred unique identifier for this dataset and is used in relationships to determine many-to-one or one-to-one.
     # Examples:
     # primary_key: [customer_id]            # Simple primary key
     #
     # primary_key: [order_id, line_number]  # Composite primary key
-    primary_key: []  # Array of field names (single or composite)
+    primary_key: []  # Array of field names
 
-    # Optional: Array of unique key definitions that uniquely identify rows in this dataset
-    # Each unique key lists names of fields in this dataset (not columns of the source)
+    # Optional: Array of unique key definitions, each a list of dataset fields
+    # These are fields declared in the dataset, not columns of its source
     # Each unique key can be a single field or a composite of multiple fields
     # Used for determining relationship type of either many-to-one or one-to-one
     # Examples:
@@ -136,7 +136,7 @@ datasets:
     #   - [field1, field2]
     #   - [field3, field4]
     unique_keys:
-      - []  # Array of field names (single or composite)
+      - []  # Array of field names
 
     # Optional: Human-readable description of the logical dataset
     description: string
@@ -264,8 +264,9 @@ metrics:
     # Required: Expression definition with dialect support
     # Supports multiple SQL dialects for cross-platform compatibility
     # Each metric can have expressions in different dialects for portability
-    # References must be qualified as dataset.field and refer to fields declared in
-    # the dataset, not columns of its source or other metrics
+    # References are dataset fields, qualified as dataset.field, not columns of
+    # the dataset's source
+    # Metrics cannot reference other metrics
     expression:
       dialects:
         - dialect: string  # Must be one of the values from 'dialects' enum above, Default: "ANSI_SQL"
