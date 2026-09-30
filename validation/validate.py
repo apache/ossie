@@ -36,6 +36,10 @@ Validates Ossie YAML or JSON documents containing one semantic model against:
 4. Relationship column arity (from_columns and to_columns lengths match)
 5. SQL syntax (using sqlglot)
 
+Ontology documents (--schema ontology/ontology.json) are checked for unique
+concept and relationship names, and for extends, identify_by, roles and QName
+prefixes that resolve to something declared.
+
 Usage:
     python validation/validate.py <yaml_file>
     python validation/validate.py <yaml_file> --schema ontology/ontology.json
@@ -84,6 +88,9 @@ DIALECT_MAP = {
 
 # Dialects that sqlglot cannot parse
 SKIP_SQL_VALIDATION = {"MDX", "TABLEAU", "MAQL", "SIGMA", "THOUGHTSPOT", "DAX"}
+
+# Concepts every ontology includes implicitly (ontology.md, "Built-in concepts")
+BUILT_IN_CONCEPTS = {"Any", "Boolean", "Date", "DateTime", "Decimal", "Float", "Integer", "String"}
 
 
 class ValidationWarning(str):
@@ -414,6 +421,137 @@ def validate_sql(data: dict) -> list[str]:
     return errors
 
 
+def as_list(value: object) -> list:
+    """The items of a list, or nothing for shapes that already failed the schema."""
+    return value if isinstance(value, list) else []
+
+
+def undeclared_qname_prefix(iri: object, prefixes: dict) -> str | None:
+    """Return the prefix of a QName iri that prefixes does not declare."""
+    if not isinstance(iri, str) or ":" not in iri:
+        return None
+    prefix, local = iri.split(":", 1)
+    # ontology.md allows a full IRI or a prefix:local QName. A scheme followed
+    # by "//" (http://...) or a second colon (urn:isbn:...) marks a full IRI;
+    # anything else is read as a QName.
+    if local.startswith("//") or ":" in local:
+        return None
+    return None if prefix in prefixes else prefix
+
+
+def find_extends_cycles(supertypes: dict[str, list[str]]) -> list[list[str]]:
+    """Find cycles in the extends graph, each reported once as a path."""
+    cycles = []
+    state = {}  # concept -> "active" while on the current path, "done" after
+
+    def visit(concept: str, path: list[str]) -> None:
+        state[concept] = "active"
+        path.append(concept)
+        for supertype in supertypes.get(concept, []):
+            if state.get(supertype) == "active":
+                cycles.append(path[path.index(supertype):] + [supertype])
+            elif supertype not in state:
+                visit(supertype, path)
+        path.pop()
+        state[concept] = "done"
+
+    for concept in supertypes:
+        if concept not in state:
+            visit(concept, [])
+    return cycles
+
+
+def validate_ontology(data: dict) -> list[str]:
+    """Validate the concepts and relationships of an ontology document.
+
+    The same kind of checks the core side gets from validate_unique_names and
+    validate_references: concept names are unique within the ontology,
+    relationship names are unique within their concept, and extends,
+    identify_by, roles and QName prefixes resolve to something declared.
+    ontology_mappings are left to schema validation.
+    """
+    if not isinstance(data, dict) or not isinstance(data.get("ontology"), list):
+        return []
+
+    errors = []
+
+    ontology_name = data.get("name", "<unnamed>")
+    components = [c for c in data["ontology"] if isinstance(c, dict)]
+    prefixes = data.get("prefixes") if isinstance(data.get("prefixes"), dict) else {}
+
+    concept_names = [c.get("concept") for c in components if c.get("concept")]
+    for dup in find_duplicates(concept_names):
+        errors.append(f"[Unique] Duplicate concept '{dup}' in ontology '{ontology_name}'")
+
+    declared = set(concept_names) | BUILT_IN_CONCEPTS
+    supertypes = {}
+    relationships = {}
+    for component in components:
+        concept = component.get("concept", "<unnamed>")
+        rel_names = [
+            r.get("name") for r in as_list(component.get("relationships"))
+            if isinstance(r, dict) and r.get("name")
+        ]
+        for dup in find_duplicates(rel_names):
+            errors.append(f"[Unique] Duplicate relationship '{dup}' in concept '{concept}'")
+        # Merged across duplicate components, so a duplicate concept is reported
+        # once rather than again as every reference to the first declaration
+        # failing. Reference checks below read each component directly.
+        supertypes.setdefault(concept, []).extend(
+            s for s in as_list(component.get("extends")) if isinstance(s, str)
+        )
+        relationships.setdefault(concept, set()).update(rel_names)
+
+    def inherited_relationships(concept: str) -> set[str]:
+        # A concept can identify itself by a relationship declared on a supertype,
+        # which is how the reference parser resolves identify_by as well.
+        names, pending, seen = set(), [concept], set()
+        while pending:
+            current = pending.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            names |= relationships.get(current, set())
+            pending.extend(supertypes.get(current, []))
+        return names
+
+    for component in components:
+        concept = component.get("concept", "<unnamed>")
+
+        for supertype in as_list(component.get("extends")):
+            if isinstance(supertype, str) and supertype not in declared:
+                errors.append(f"[Reference] Concept '{concept}' extends unknown concept '{supertype}'")
+
+        for identifier in as_list(component.get("identify_by")):
+            if isinstance(identifier, str) and identifier not in inherited_relationships(concept):
+                errors.append(
+                    f"[Reference] Concept '{concept}' identify_by references unknown relationship '{identifier}'"
+                )
+
+        prefix = undeclared_qname_prefix(component.get("iri"), prefixes)
+        if prefix:
+            errors.append(f"[Reference] Concept '{concept}' iri uses undeclared prefix '{prefix}'")
+
+        for relationship in as_list(component.get("relationships")):
+            if not isinstance(relationship, dict):
+                continue
+            rel_name = f"{concept}.{relationship.get('name', '<unnamed>')}"
+            for role in as_list(relationship.get("roles")):
+                role_concept = role.get("concept") if isinstance(role, dict) else None
+                if role_concept and role_concept not in declared:
+                    errors.append(
+                        f"[Reference] Relationship '{rel_name}' has a role played by unknown concept '{role_concept}'"
+                    )
+            prefix = undeclared_qname_prefix(relationship.get("iri"), prefixes)
+            if prefix:
+                errors.append(f"[Reference] Relationship '{rel_name}' iri uses undeclared prefix '{prefix}'")
+
+    for cycle in find_extends_cycles(supertypes):
+        errors.append(f"[Reference] Concept '{cycle[0]}' extends itself: {' -> '.join(cycle)}")
+
+    return errors
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -464,6 +602,8 @@ def main():
         errors.extend(validate_references(data))
         errors.extend(validate_relationship_column_arity(data))
         errors.extend(validate_sql(data))
+    if not errors and isinstance(data, dict) and "ontology" in data:
+        errors.extend(validate_ontology(data))
 
     # Report results
     if errors:
