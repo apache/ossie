@@ -34,6 +34,7 @@ def ctx() -> ExportContext:
     ("ossie_dialect", "hex_dialect_name"),
     [
         (OssieDialect.ANSI_SQL, "duckdb"),
+        (OssieDialect.OSSIE_SQL_2026, "duckdb"),
         (OssieDialect.BIGQUERY, "bigquery"),
         (OssieDialect.DATABRICKS, "databricks"),
         (OssieDialect.SNOWFLAKE, "snowflake"),
@@ -51,7 +52,14 @@ def test_maps_sql_dialect(
 
 @pytest.mark.parametrize(
     "ossie_dialect",
-    [OssieDialect.MAQL, OssieDialect.MDX, OssieDialect.TABLEAU],
+    [
+        OssieDialect.MAQL,
+        OssieDialect.MDX,
+        OssieDialect.TABLEAU,
+        OssieDialect.SIGMA,
+        OssieDialect.THOUGHTSPOT,
+        OssieDialect.DAX,
+    ],
 )
 def test_falls_back_to_duckdb_for_expression_language(
     ctx: ExportContext, ossie_dialect: OssieDialect

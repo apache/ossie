@@ -102,10 +102,12 @@ def _to_sqlglot_dialect(ossie_dialect: OssieDialect) -> SQLGlotDialect | None:
         read = SQLGlotDialect.TABLEAU
     elif ossie_dialect in (
         OssieDialect.ANSI_SQL,
+        OssieDialect.OSSIE_SQL_2026,
         OssieDialect.MDX,
         OssieDialect.MAQL,
         OssieDialect.THOUGHTSPOT,
         OssieDialect.SIGMA,
+        OssieDialect.DAX,
     ):
         # There's no parallel for these
         read = None

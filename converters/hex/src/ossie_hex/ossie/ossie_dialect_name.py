@@ -27,4 +27,6 @@ OssieDialectName = Literal[
     "BIGQUERY",
     "THOUGHTSPOT",
     "SIGMA",
+    "DAX",
+    "OSSIE_SQL_2026",
 ]
