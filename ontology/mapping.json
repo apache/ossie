@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/apache/ossie/ontology/mapping.json",
+  "title": "Apache Ossie Mapping Specification",
+  "description": "JSON Schema for validating a standalone Apache Ossie mapping document: the constructs of one semantic model mapped onto one ontology, as its own document rather than embedded inside the ontology's ontology_mappings.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "0.2.0.dev0",
+      "description": "Mapping specification version"
+    },
+    "name": {
+      "type": "string",
+      "description": "Unique identifier for this mapping"
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of this mapping"
+    },
+    "ontology": {
+      "$ref": "#/$defs/DocumentReference",
+      "description": "Reference to the ontology document this mapping targets"
+    },
+    "semantic_model": {
+      "$ref": "#/$defs/DocumentReference",
+      "description": "Reference to the semantic model document this mapping draws from"
+    },
+    "concept_mappings": {
+      "type": "array",
+      "items": {
+        "$ref": "https://raw.githubusercontent.com/apache/ossie/main/ontology/ontology.json#/$defs/ConceptMapping"
+      },
+      "description": "Maps logical model constructs to some concept and its relationships in the referenced ontology"
+    },
+    "custom_extensions": {
+      "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json#/$defs/SemanticModel/properties/custom_extensions"
+    }
+  },
+  "required": ["version", "name", "ontology", "semantic_model", "concept_mappings"],
+  "additionalProperties": false,
+  "$defs": {
+    "DocumentReference": {
+      "type": "object",
+      "description": "Reference to another Ossie document by its logical name, with an iri saying where to resolve it from",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Must equal the referenced document's own 'name'; carries this reference's checkable identity regardless of location"
+        },
+        "iri": {
+          "type": "string",
+          "description": "Where to resolve the referenced document from: a relative reference (e.g. a path alongside this document) or an absolute IRI once a catalog resolves names to locations"
+        }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    }
+  }
+}
