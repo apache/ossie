@@ -36,24 +36,23 @@ def load_ossie_semantic_model(
 
     Returns an Ossie semantic model with only valid members.
     """
-    with ctx.problem_scope(semantic_model.name):
-        datasets = _load_ossie_datasets(semantic_model.datasets, ctx=ctx)
+    datasets = _load_ossie_datasets(semantic_model.datasets, ctx=ctx)
 
-        relationships: list[OssieRelationship] | None = None
-        if semantic_model.relationships:
-            dataset_names = set[str](d.name for d in datasets)
-            relationships = _load_ossie_relationships(
-                semantic_model.relationships, dataset_names=dataset_names, ctx=ctx
-            )
+    relationships: list[OssieRelationship] | None = None
+    if semantic_model.relationships:
+        dataset_names = set[str](d.name for d in datasets)
+        relationships = _load_ossie_relationships(
+            semantic_model.relationships, dataset_names=dataset_names, ctx=ctx
+        )
 
-        metrics: list[OssieMetric] | None = None
-        if semantic_model.metrics:
-            field_names = list[tuple[str, str]](
-                (d.name, f.name) for d in datasets for f in (d.fields or [])
-            )
-            metrics = _load_ossie_metrics(
-                semantic_model.metrics, field_names=field_names, ctx=ctx
-            )
+    metrics: list[OssieMetric] | None = None
+    if semantic_model.metrics:
+        field_names = list[tuple[str, str]](
+            (d.name, f.name) for d in datasets for f in (d.fields or [])
+        )
+        metrics = _load_ossie_metrics(
+            semantic_model.metrics, field_names=field_names, ctx=ctx
+        )
 
     semantic_model = semantic_model.model_copy(
         update={

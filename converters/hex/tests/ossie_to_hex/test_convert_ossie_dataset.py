@@ -15,8 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from collections.abc import Iterator
-
 import pytest
 from inline_snapshot import snapshot
 from ossie import OssieAIContextObject, OssieCustomExtension
@@ -28,13 +26,12 @@ from tests.utils import problems_snapshot
 
 
 @pytest.fixture
-def ctx() -> Iterator[ExportContext]:
+def ctx() -> ExportContext:
     ctx = ExportContext()
     ctx._set_dialects("ANSI_SQL", "duckdb")
-    with ctx.semantic_model_scope("model"):
-        ctx.hex_ids.set_for_dataset("foo", "foo")
-        ctx.hex_ids.set_for_field("foo", "id", "id")
-        yield ctx
+    ctx.hex_ids.set_for_dataset("foo", "foo")
+    ctx.hex_ids.set_for_field("foo", "id", "id")
+    return ctx
 
 
 def test_preserve_name(ctx: ExportContext) -> None:

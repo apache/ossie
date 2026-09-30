@@ -222,152 +222,152 @@ resources:
 """)
     assert problems_snapshot(problems, include_causes=True) == snapshot("""\
 [WARNING] Missing. Hex requires a datatype. Using default 'String'.
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'date_dim', 'fields', 'd_quarter_name', 'datatype']
+Cause: ['datasets', 'date_dim', 'fields', 'd_quarter_name', 'datatype']
 
 [WARNING] Missing. Hex requires a datatype. Using default 'String'.
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'date_dim', 'fields', 'd_month_name', 'datatype']
+Cause: ['datasets', 'date_dim', 'fields', 'd_month_name', 'datatype']
 
 [INFO] No Ossie dialect specified; using ANSI_SQL
 Cause: []
 
 [WARNING] Composite primary key is not supported: ['ss_item_sk', 'ss_ticket_number']
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'store_sales', 'primary_key']
+Cause: ['datasets', 'store_sales', 'primary_key']
 
 [WARNING] Composite unique key is not supported: ['ss_item_sk', 'ss_ticket_number']
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'store_sales', 'unique_keys']
+Cause: ['datasets', 'store_sales', 'unique_keys']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'store_sales', 'fields', 'ss_sold_date_sk', 'ai_context']
+Cause: ['datasets', 'store_sales', 'fields', 'ss_sold_date_sk', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'store_sales', 'fields', 'ss_item_sk', 'ai_context']
+Cause: ['datasets', 'store_sales', 'fields', 'ss_item_sk', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'store_sales', 'fields', 'ss_customer_sk', 'ai_context']
+Cause: ['datasets', 'store_sales', 'fields', 'ss_customer_sk', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'store_sales', 'fields', 'ss_store_sk', 'ai_context']
+Cause: ['datasets', 'store_sales', 'fields', 'ss_store_sk', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'store_sales', 'fields', 'ss_quantity', 'ai_context']
+Cause: ['datasets', 'store_sales', 'fields', 'ss_quantity', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'store_sales', 'fields', 'ss_sales_price', 'ai_context']
+Cause: ['datasets', 'store_sales', 'fields', 'ss_sales_price', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'store_sales', 'fields', 'ss_ext_sales_price', 'ai_context']
+Cause: ['datasets', 'store_sales', 'fields', 'ss_ext_sales_price', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'store_sales', 'fields', 'ss_net_profit', 'ai_context']
+Cause: ['datasets', 'store_sales', 'fields', 'ss_net_profit', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'store_sales', 'ai_context']
+Cause: ['datasets', 'store_sales', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'date_dim', 'fields', 'd_date', 'ai_context']
+Cause: ['datasets', 'date_dim', 'fields', 'd_date', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'date_dim', 'fields', 'd_year', 'dimension', 'is_time']
+Cause: ['datasets', 'date_dim', 'fields', 'd_year', 'dimension', 'is_time']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'date_dim', 'fields', 'd_year', 'ai_context']
+Cause: ['datasets', 'date_dim', 'fields', 'd_year', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'date_dim', 'fields', 'd_quarter_name', 'dimension', 'is_time']
+Cause: ['datasets', 'date_dim', 'fields', 'd_quarter_name', 'dimension', 'is_time']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'date_dim', 'fields', 'd_quarter_name', 'ai_context']
+Cause: ['datasets', 'date_dim', 'fields', 'd_quarter_name', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'date_dim', 'fields', 'd_month_name', 'dimension', 'is_time']
+Cause: ['datasets', 'date_dim', 'fields', 'd_month_name', 'dimension', 'is_time']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'date_dim', 'fields', 'd_month_name', 'ai_context']
+Cause: ['datasets', 'date_dim', 'fields', 'd_month_name', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'date_dim', 'ai_context']
+Cause: ['datasets', 'date_dim', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'customer', 'fields', 'c_customer_id', 'ai_context']
+Cause: ['datasets', 'customer', 'fields', 'c_customer_id', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'customer', 'fields', 'customer_full_name', 'ai_context']
+Cause: ['datasets', 'customer', 'fields', 'customer_full_name', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'customer', 'fields', 'c_email_address', 'ai_context']
+Cause: ['datasets', 'customer', 'fields', 'c_email_address', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'customer', 'ai_context']
+Cause: ['datasets', 'customer', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'item', 'fields', 'i_item_id', 'ai_context']
+Cause: ['datasets', 'item', 'fields', 'i_item_id', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'item', 'fields', 'i_item_desc', 'ai_context']
+Cause: ['datasets', 'item', 'fields', 'i_item_desc', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'item', 'fields', 'i_brand', 'ai_context']
+Cause: ['datasets', 'item', 'fields', 'i_brand', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'item', 'fields', 'i_category', 'ai_context']
+Cause: ['datasets', 'item', 'fields', 'i_category', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'item', 'fields', 'i_current_price', 'ai_context']
+Cause: ['datasets', 'item', 'fields', 'i_current_price', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'item', 'ai_context']
+Cause: ['datasets', 'item', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'store', 'fields', 's_store_id', 'ai_context']
+Cause: ['datasets', 'store', 'fields', 's_store_id', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'store', 'fields', 's_store_name', 'ai_context']
+Cause: ['datasets', 'store', 'fields', 's_store_name', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'store', 'fields', 's_city', 'ai_context']
+Cause: ['datasets', 'store', 'fields', 's_city', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'store', 'fields', 's_state', 'ai_context']
+Cause: ['datasets', 'store', 'fields', 's_state', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'store', 'fields', 's_number_employees', 'ai_context']
+Cause: ['datasets', 'store', 'fields', 's_number_employees', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'datasets', 'store', 'ai_context']
+Cause: ['datasets', 'store', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'relationships', 'store_sales_to_date', 'ai_context']
+Cause: ['relationships', 'store_sales_to_date', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'relationships', 'store_sales_to_customer', 'ai_context']
+Cause: ['relationships', 'store_sales_to_customer', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'relationships', 'store_sales_to_item', 'ai_context']
+Cause: ['relationships', 'store_sales_to_item', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'relationships', 'store_sales_to_store', 'ai_context']
+Cause: ['relationships', 'store_sales_to_store', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'metrics', 'total_sales', 'ai_context']
+Cause: ['metrics', 'total_sales', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'metrics', 'total_profit', 'ai_context']
+Cause: ['metrics', 'total_profit', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'metrics', 'customer_lifetime_value', 'ai_context']
+Cause: ['metrics', 'customer_lifetime_value', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'metrics', 'sales_by_brand', 'ai_context']
+Cause: ['metrics', 'sales_by_brand', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'metrics', 'store_productivity', 'ai_context']
+Cause: ['metrics', 'store_productivity', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'description']
+Cause: ['description']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'ai_context']
+Cause: ['ai_context']
 
 [WARNING] Not supported
-Cause: ['semantic_model', 'tpcds_retail_model', 'custom_extensions']\
+Cause: ['custom_extensions']\
 """)
