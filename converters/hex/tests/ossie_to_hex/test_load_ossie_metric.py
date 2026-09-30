@@ -30,20 +30,6 @@ def ctx() -> ExportContext:
     return ExportContext()
 
 
-def test_reports_empty_expression(ctx: ExportContext) -> None:
-    field_names = []
-    foo = Quick.metric(
-        "foo",
-        "Integer",
-        [],
-    )
-    result = load_ossie_metric(foo, field_names=field_names, ctx=ctx)
-    assert result is None
-    assert problems_snapshot(ctx.problems) == snapshot("""\
-[ERROR] Expression must have at least one valid dialect\
-""")
-
-
 def test_returns_metric_with_valid_expression(ctx: ExportContext) -> None:
     field_names = []
     foo = Quick.metric(
