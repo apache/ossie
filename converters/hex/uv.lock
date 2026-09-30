@@ -26,6 +26,9 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
 ]
 
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.0" }]
+
 [[package]]
 name = "asttokens"
 version = "3.0.2"
