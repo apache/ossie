@@ -106,7 +106,7 @@ def test_default_dialect(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> 
     assert message == snapshot("""\
 Success!
 Converted INPUT -> OUTPUT/tpcds_retail_model/.
-Encountered 49 problems: 49 warnings.
+Encountered 52 problems: 52 warnings.
   (Run with -v to see a grouped summary.)
 """)
 
@@ -127,10 +127,10 @@ def test_verbose_problem_summary(
     assert message == snapshot("""\
 Success!
 Converted INPUT -> OUTPUT/tpcds_retail_model/.
-Encountered 49 problems: 49 warnings.
+Encountered 52 problems: 52 warnings.
 
-Warnings (49)
-  40× `ai_context` — AI context is not preserved in Hex and was dropped.
+Warnings (52)
+  43× `ai_context` — AI context is not preserved in Hex and was dropped.
    3× `Field.is_time` — Temporal role markers are not supported in Hex and were dropped.
    2× `Field.datatype` — A datatype is required in Hex; a default was used.
    1× `Dataset.primary_key` — Composite primary keys are not supported in Hex and were dropped.

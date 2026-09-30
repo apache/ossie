@@ -89,6 +89,20 @@ resources:
     description: Sales per employee across stores
     func_sql: SUM(${ss_ext_sales_price}) / NULLIF(SUM(${store_sales_to_store.s_number_employees}),
       0)
+  - id: cumulative_sales
+    description: Running total of sales revenue by date (requires grouping by date_dim.d_date)
+    func_sql: SUM(SUM(${ss_ext_sales_price})) OVER (ORDER BY ${store_sales_to_date.d_date}
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+  - id: brand_rank_in_store
+    description: Rank of each brand by sales within a store, 1 = highest (requires
+      grouping by store.s_store_sk and item.i_brand)
+    func_sql: RANK() OVER (PARTITION BY ${store_sales_to_store.s_store_sk} ORDER BY
+      SUM(${ss_ext_sales_price}) DESC)
+  - id: monthly_sales_change
+    description: Sales revenue change versus the previous month (requires grouping
+      by date_dim.d_year and date_dim.d_moy)
+    func_sql: SUM(${ss_ext_sales_price}) - LAG(SUM(${ss_ext_sales_price}), 1) OVER
+      (ORDER BY ${store_sales_to_date.d_year}, ${store_sales_to_date.d_moy})
   relations:
   - id: store_sales_to_date
     target: date_dim
@@ -127,10 +141,10 @@ resources:
     description: Quarter name (e.g., 2024Q1)
     type: string
     expr_sql: d_quarter_name
-  - id: d_month_name
-    description: Month name
+  - id: d_moy
+    description: Month of year (1-12)
     type: string
-    expr_sql: d_month_name
+    expr_sql: d_moy
 - id: customer
   description: Customer dimension with demographic information
   base_sql_table: tpcds.public.customer
@@ -225,7 +239,7 @@ resources:
 Cause: ['datasets', 'date_dim', 'fields', 'd_quarter_name', 'datatype']
 
 [WARNING] Missing. Hex requires a datatype. Using default 'String'.
-Cause: ['datasets', 'date_dim', 'fields', 'd_month_name', 'datatype']
+Cause: ['datasets', 'date_dim', 'fields', 'd_moy', 'datatype']
 
 [INFO] No Ossie dialect specified; using ANSI_SQL
 Cause: []
@@ -279,10 +293,10 @@ Cause: ['datasets', 'date_dim', 'fields', 'd_quarter_name', 'dimension', 'is_tim
 Cause: ['datasets', 'date_dim', 'fields', 'd_quarter_name', 'ai_context']
 
 [WARNING] Not supported
-Cause: ['datasets', 'date_dim', 'fields', 'd_month_name', 'dimension', 'is_time']
+Cause: ['datasets', 'date_dim', 'fields', 'd_moy', 'dimension', 'is_time']
 
 [WARNING] Not supported
-Cause: ['datasets', 'date_dim', 'fields', 'd_month_name', 'ai_context']
+Cause: ['datasets', 'date_dim', 'fields', 'd_moy', 'ai_context']
 
 [WARNING] Not supported
 Cause: ['datasets', 'date_dim', 'ai_context']
@@ -361,6 +375,15 @@ Cause: ['metrics', 'sales_by_brand', 'ai_context']
 
 [WARNING] Not supported
 Cause: ['metrics', 'store_productivity', 'ai_context']
+
+[WARNING] Not supported
+Cause: ['metrics', 'cumulative_sales', 'ai_context']
+
+[WARNING] Not supported
+Cause: ['metrics', 'brand_rank_in_store', 'ai_context']
+
+[WARNING] Not supported
+Cause: ['metrics', 'monthly_sales_change', 'ai_context']
 
 [WARNING] Not supported
 Cause: ['description']
