@@ -15,8 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from collections.abc import Iterator
-
 import pytest
 from inline_snapshot import snapshot
 from ossie import OssieAIContextObject, OssieCustomExtension
@@ -35,16 +33,15 @@ from tests.utils import problems_snapshot
 
 
 @pytest.fixture
-def ctx() -> Iterator[ExportContext]:
+def ctx() -> ExportContext:
     ctx = ExportContext()
     ctx._set_dialects("ANSI_SQL", "duckdb")
-    with ctx.semantic_model_scope("model"):
-        ctx.hex_ids.set_for_dataset("bar", "bar")
-        ctx.hex_ids.set_for_dataset("baz", "baz")
-        ctx.hex_ids.set_for_relationship("foo", "foo")
-        assignment = RelationshipAssignment("foo", "from_to", "bar", "baz")
-        ctx.assignment.set_for_relationship(assignment)
-        yield ctx
+    ctx.hex_ids.set_for_dataset("bar", "bar")
+    ctx.hex_ids.set_for_dataset("baz", "baz")
+    ctx.hex_ids.set_for_relationship("foo", "foo")
+    assignment = RelationshipAssignment("foo", "from_to", "bar", "baz")
+    ctx.assignment.set_for_relationship(assignment)
+    return ctx
 
 
 def test_warns_about_ai_context(ctx: ExportContext) -> None:
@@ -157,18 +154,17 @@ def test_reports_missing_source_model() -> None:
 
     ctx = ExportContext()
     ctx._set_dialects("ANSI_SQL", "duckdb")
-    with ctx.semantic_model_scope("model"):
-        ctx.hex_ids.set_for_dataset("bar", "bar")
-        ctx.hex_ids.set_for_relationship("foo", "foo")
-        assignment = RelationshipAssignment("foo", "to_from", "baz", "bar")
-        ctx.assignment.set_for_relationship(assignment)
+    ctx.hex_ids.set_for_dataset("bar", "bar")
+    ctx.hex_ids.set_for_relationship("foo", "foo")
+    assignment = RelationshipAssignment("foo", "to_from", "baz", "bar")
+    ctx.assignment.set_for_relationship(assignment)
 
-        result = convert_ossie_relationship(foo, ctx=ctx)
+    result = convert_ossie_relationship(foo, ctx=ctx)
 
-        assert result is not None
-        assert problems_snapshot(ctx.problems) == snapshot(
-            "[ERROR] Source model not available: baz"
-        )
+    assert result is not None
+    assert problems_snapshot(ctx.problems) == snapshot(
+        "[ERROR] Source model not available: baz"
+    )
 
 
 def test_reports_missing_target_model() -> None:
@@ -176,15 +172,14 @@ def test_reports_missing_target_model() -> None:
 
     ctx = ExportContext()
     ctx._set_dialects("ANSI_SQL", "duckdb")
-    with ctx.semantic_model_scope("model"):
-        ctx.hex_ids.set_for_dataset("bar", "bar")
-        ctx.hex_ids.set_for_relationship("foo", "foo")
-        assignment = RelationshipAssignment("foo", "from_to", "bar", "baz")
-        ctx.assignment.set_for_relationship(assignment)
+    ctx.hex_ids.set_for_dataset("bar", "bar")
+    ctx.hex_ids.set_for_relationship("foo", "foo")
+    assignment = RelationshipAssignment("foo", "from_to", "bar", "baz")
+    ctx.assignment.set_for_relationship(assignment)
 
-        result = convert_ossie_relationship(foo, ctx=ctx)
+    result = convert_ossie_relationship(foo, ctx=ctx)
 
-        assert result is not None
-        assert problems_snapshot(ctx.problems) == snapshot(
-            "[ERROR] Target model not available: baz"
-        )
+    assert result is not None
+    assert problems_snapshot(ctx.problems) == snapshot(
+        "[ERROR] Target model not available: baz"
+    )

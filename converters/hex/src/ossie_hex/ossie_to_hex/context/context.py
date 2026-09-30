@@ -41,11 +41,11 @@ class ExportContext(Context[ExportProblemCode]):
     ossie_dialect: OssieDialect
     hex_dialect: HexDialect
 
-    # semantic model scope
-    _hex_ids: ExportHexIds | None
-    _analysis: ExportAnalysis | None
-    _assignment: ExportAssignment | None
-    _hex_models: dict[HexEntityId, HexModel] | None
+    # conversion state
+    _hex_ids: ExportHexIds
+    _analysis: ExportAnalysis
+    _assignment: ExportAssignment
+    _hex_models: dict[HexEntityId, HexModel]
 
     # fields scope
     _unique_field_names: set[str] | None
@@ -53,6 +53,10 @@ class ExportContext(Context[ExportProblemCode]):
 
     def __init__(self) -> None:
         super().__init__(logger=logger)
+        self._hex_ids = ExportHexIds()
+        self._analysis = ExportAnalysis()
+        self._assignment = ExportAssignment()
+        self._hex_models = {}
 
     def set_dialects(
         self, ossie_dialect: OssieDialect, hex_dialect: HexDialect
@@ -67,55 +71,27 @@ class ExportContext(Context[ExportProblemCode]):
         self.ossie_dialect = OssieDialect(ossie_dialect)
         self.hex_dialect = HexDialect(hex_dialect)
 
-    @contextmanager
-    def semantic_model_scope(self, semantic_model_name: str) -> Iterator[None]:
-        """Use isolated identifiers and assignments for one semantic model."""
-        self._hex_ids = ExportHexIds()
-        self._analysis = ExportAnalysis()
-        self._assignment = ExportAssignment()
-        self._hex_models = {}
-        try:
-            with self.problem_scope(semantic_model_name):
-                yield
-        finally:
-            self._hex_ids = None
-            self._analysis = None
-            self._assignment = None
-            self._hex_models = None
-
     @property
     def hex_ids(self) -> ExportHexIds:
-        if self._hex_ids is None:
-            raise _ExportSemanticModelScopeNotSetError
         return self._hex_ids
 
     @property
     def analysis(self) -> ExportAnalysis:
-        if self._analysis is None:
-            raise _ExportSemanticModelScopeNotSetError
         return self._analysis
 
     @property
     def assignment(self) -> ExportAssignment:
-        if self._assignment is None:
-            raise _ExportSemanticModelScopeNotSetError
         return self._assignment
 
     def add_hex_model(self, value: HexModel | None) -> None:
         if value is None:
             return
-        if self._hex_models is None:
-            raise _ExportSemanticModelScopeNotSetError
         self._hex_models[value.id] = value
 
     def hex_models(self) -> list[HexModel]:
-        if self._hex_models is None:
-            raise _ExportSemanticModelScopeNotSetError
         return list(self._hex_models.values())
 
     def hex_model_by_id(self, id: HexEntityId) -> HexModel | None:
-        if self._hex_models is None:
-            raise _ExportSemanticModelScopeNotSetError
         return self._hex_models.get(id)
 
     @contextmanager
@@ -148,7 +124,3 @@ class ExportContext(Context[ExportProblemCode]):
 
 class _ExportFieldsScopeNotSetError(ValueError):
     """Internal logic error. Fields scope not set."""
-
-
-class _ExportSemanticModelScopeNotSetError(ValueError):
-    """Internal logic error. Semantic model scope not set."""

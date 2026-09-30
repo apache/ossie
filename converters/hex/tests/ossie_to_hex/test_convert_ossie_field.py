@@ -36,16 +36,15 @@ from tests.utils import problems_snapshot
 def ctx() -> Iterator[ExportContext]:
     ctx = ExportContext()
     ctx._set_dialects("ANSI_SQL", "duckdb")
-    with ctx.semantic_model_scope("model"):
-        ctx.hex_ids.set_for_dataset("dataset", "dataset")
-        ctx.hex_ids.set_for_field("dataset", "foo", "foo")
-        unique_field_names = set()
-        dataset_name = "dataset"
-        with ctx.fields_scope(
-            unique_field_names=unique_field_names,
-            dataset_name=dataset_name,
-        ):
-            yield ctx
+    ctx.hex_ids.set_for_dataset("dataset", "dataset")
+    ctx.hex_ids.set_for_field("dataset", "foo", "foo")
+    unique_field_names = set()
+    dataset_name = "dataset"
+    with ctx.fields_scope(
+        unique_field_names=unique_field_names,
+        dataset_name=dataset_name,
+    ):
+        yield ctx
 
 
 def test_preserve_name(ctx: ExportContext) -> None:

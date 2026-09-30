@@ -15,8 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from collections.abc import Iterator
-
 import pytest
 from inline_snapshot import snapshot
 from ossie import OssieAIContextObject, OssieCustomExtension
@@ -37,18 +35,17 @@ from tests.utils import problems_snapshot
 
 
 @pytest.fixture
-def ctx() -> Iterator[ExportContext]:
+def ctx() -> ExportContext:
     ctx = ExportContext()
     ctx._set_dialects("ANSI_SQL", "duckdb")
-    with ctx.semantic_model_scope("model"):
-        ctx.hex_ids.set_for_dataset("bar", "bar")
-        ctx.hex_ids.set_for_field("bar", "baz", "baz")
-        ctx.hex_ids.set_for_metric("foo", "foo")
-        analysis = MetricAnalysis("foo", parse_one("bar.baz"), None, ("bar",))
-        ctx.analysis.set_for_metric(analysis)
-        assignment = MetricAssignment("foo", "bar", None)
-        ctx.assignment.set_for_metric(assignment)
-        yield ctx
+    ctx.hex_ids.set_for_dataset("bar", "bar")
+    ctx.hex_ids.set_for_field("bar", "baz", "baz")
+    ctx.hex_ids.set_for_metric("foo", "foo")
+    analysis = MetricAnalysis("foo", parse_one("bar.baz"), None, ("bar",))
+    ctx.analysis.set_for_metric(analysis)
+    assignment = MetricAssignment("foo", "bar", None)
+    ctx.assignment.set_for_metric(assignment)
+    return ctx
 
 
 def test_preserve_name(ctx: ExportContext) -> None:
@@ -221,16 +218,15 @@ def test_reports_missing_source_model() -> None:
 
     ctx = ExportContext()
     ctx._set_dialects("ANSI_SQL", "duckdb")
-    with ctx.semantic_model_scope("model"):
-        ctx.hex_ids.set_for_metric("foo", "foo")
-        analysis = MetricAnalysis("foo", parse_one("bar.baz"), None, ("bar",))
-        ctx.analysis.set_for_metric(analysis)
-        assignment = MetricAssignment("foo", "bar", None)
-        ctx.assignment.set_for_metric(assignment)
+    ctx.hex_ids.set_for_metric("foo", "foo")
+    analysis = MetricAnalysis("foo", parse_one("bar.baz"), None, ("bar",))
+    ctx.analysis.set_for_metric(analysis)
+    assignment = MetricAssignment("foo", "bar", None)
+    ctx.assignment.set_for_metric(assignment)
 
-        result = convert_ossie_metric(foo, ctx=ctx)
+    result = convert_ossie_metric(foo, ctx=ctx)
 
-        assert result is None
-        assert problems_snapshot(ctx.problems) == snapshot(
-            "[ERROR] Source model not available: bar"
-        )
+    assert result is None
+    assert problems_snapshot(ctx.problems) == snapshot(
+        "[ERROR] Source model not available: bar"
+    )

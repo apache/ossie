@@ -151,8 +151,7 @@ def test_double_verbose_includes_phase_and_cause(
     message = capsys.readouterr().err
     assert "[load] `Field.datatype`" in message
     assert (
-        "Cause: semantic_model > tpcds_retail_model > datasets > date_dim > "
-        "fields > d_quarter_name > datatype"
+        "Cause: datasets > date_dim > fields > d_quarter_name > datatype"
     ) in message
     assert "[convert] `ai_context`" in message
 

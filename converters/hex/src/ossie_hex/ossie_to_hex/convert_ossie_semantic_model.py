@@ -61,57 +61,56 @@ def convert_ossie_semantic_model(
 
     Returns the converted Hex project.
     """
-    with ctx.semantic_model_scope(ossie_semantic_model.name):
-        _store_converted_names(ossie_semantic_model, ctx=ctx)
+    _store_converted_names(ossie_semantic_model, ctx=ctx)
 
-        with ctx.problem_scope("datasets"):
-            for ossie_dataset in ossie_semantic_model.datasets:
-                hex_model = convert_ossie_dataset(ossie_dataset, ctx=ctx)
-                ctx.add_hex_model(hex_model)
+    with ctx.problem_scope("datasets"):
+        for ossie_dataset in ossie_semantic_model.datasets:
+            hex_model = convert_ossie_dataset(ossie_dataset, ctx=ctx)
+            ctx.add_hex_model(hex_model)
 
-        with ctx.problem_scope("relationships"):
-            for ossie_relationship in ossie_semantic_model.relationships or []:
-                analysis = analyze_ossie_relationship(ossie_relationship, ctx=ctx)
-                ctx.analysis.set_for_relationship(analysis)
+    with ctx.problem_scope("relationships"):
+        for ossie_relationship in ossie_semantic_model.relationships or []:
+            analysis = analyze_ossie_relationship(ossie_relationship, ctx=ctx)
+            ctx.analysis.set_for_relationship(analysis)
 
-        with ctx.problem_scope("metrics"):
-            for ossie_metric in ossie_semantic_model.metrics or []:
-                analysis = analyze_ossie_metric(ossie_metric, ctx=ctx)
-                ctx.analysis.set_for_metric(analysis)
+    with ctx.problem_scope("metrics"):
+        for ossie_metric in ossie_semantic_model.metrics or []:
+            analysis = analyze_ossie_metric(ossie_metric, ctx=ctx)
+            ctx.analysis.set_for_metric(analysis)
 
-        build_assignments(ctx=ctx)
+    build_assignments(ctx=ctx)
 
-        with ctx.problem_scope("relationships"):
-            for ossie_relationship in ossie_semantic_model.relationships or []:
-                conversion = convert_ossie_relationship(ossie_relationship, ctx=ctx)
-                assign_ossie_relationship(ossie_relationship, conversion, ctx=ctx)
+    with ctx.problem_scope("relationships"):
+        for ossie_relationship in ossie_semantic_model.relationships or []:
+            conversion = convert_ossie_relationship(ossie_relationship, ctx=ctx)
+            assign_ossie_relationship(ossie_relationship, conversion, ctx=ctx)
 
-        with ctx.problem_scope("metrics"):
-            for ossie_metric in ossie_semantic_model.metrics or []:
-                conversion = convert_ossie_metric(ossie_metric, ctx=ctx)
-                assign_ossie_metric(ossie_metric, conversion, ctx=ctx)
+    with ctx.problem_scope("metrics"):
+        for ossie_metric in ossie_semantic_model.metrics or []:
+            conversion = convert_ossie_metric(ossie_metric, ctx=ctx)
+            assign_ossie_metric(ossie_metric, conversion, ctx=ctx)
 
-        with ctx.problem_scope("description"):
-            if ossie_semantic_model.description is not None:
-                ctx.warn("Not supported", code="project-description")
+    with ctx.problem_scope("description"):
+        if ossie_semantic_model.description is not None:
+            ctx.warn("Not supported", code="project-description")
 
-        with ctx.problem_scope("ai_context"):
-            if ossie_semantic_model.ai_context is not None:
-                ctx.warn("Not supported", code="ai-context")
+    with ctx.problem_scope("ai_context"):
+        if ossie_semantic_model.ai_context is not None:
+            ctx.warn("Not supported", code="ai-context")
 
-        with ctx.problem_scope("custom_extensions"):
-            if ossie_semantic_model.custom_extensions is not None:
-                ctx.warn("Not supported", code="custom-extensions")
+    with ctx.problem_scope("custom_extensions"):
+        if ossie_semantic_model.custom_extensions is not None:
+            ctx.warn("Not supported", code="custom-extensions")
 
-        hex_models = ctx.hex_models()
-        hex_resources: list[HexResource] = []
-        hex_resources.extend(hex_models)
+    hex_models = ctx.hex_models()
+    hex_resources: list[HexResource] = []
+    hex_resources.extend(hex_models)
 
-        hex_project = HexProject(
-            name=ossie_semantic_model.name,
-            dialect=ctx.hex_dialect,
-            resources=hex_resources,
-        )
+    hex_project = HexProject(
+        name=ossie_semantic_model.name,
+        dialect=ctx.hex_dialect,
+        resources=hex_resources,
+    )
 
     return hex_project
 
