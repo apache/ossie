@@ -36,6 +36,7 @@ class OssieDialect(str, Enum):
     THOUGHTSPOT = "THOUGHTSPOT"
     DAX = "DAX"
     OSSIE_SQL_2026 = "OSSIE_SQL_2026"
+    DUCKDB = "DUCKDB"
 
 
 class OssieDataType(str, Enum):
@@ -75,6 +76,7 @@ class OssieVendor(str, Enum):
     SEMANTIDO = "SEMANTIDO"
     WISDOM = "WISDOM"
     SIGMA = "SIGMA"
+    DUCKDB = "DUCKDB"
 
 
 class OssieAIContextObject(BaseModel):

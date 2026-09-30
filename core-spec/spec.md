@@ -62,6 +62,7 @@ Supported SQL and expression language dialects for metrics and field definitions
 | `THOUGHTSPOT` | ThoughtSpot formula language |
 | `DAX` | Data Analysis Expressions (Power BI / Analysis Services) |
 | `OSSIE_SQL_2026` | Ossie's portable SQL expression language, defined in `expression_language.md` |
+| `DUCKDB` | DuckDB SQL (including MotherDuck) |
 
 ### Data types
 
