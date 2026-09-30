@@ -99,9 +99,9 @@ def ctx() -> ExportContext:
     return ctx
 
 
-def test_preserves_name(ctx: ExportContext) -> None:
+def test_preserves_name(ctx: ExportContext, orders: OssieDataset) -> None:
     name = "sales"
-    semantic_model = OssieSemanticModel(name=name, datasets=[])
+    semantic_model = OssieSemanticModel(name=name, datasets=[orders])
 
     result = convert_ossie_semantic_model(semantic_model, ctx=ctx)
 
@@ -109,10 +109,10 @@ def test_preserves_name(ctx: ExportContext) -> None:
     assert problems_snapshot(ctx.problems) == snapshot("")
 
 
-def test_warns_about_description(ctx: ExportContext) -> None:
+def test_warns_about_description(ctx: ExportContext, orders: OssieDataset) -> None:
     description = "Sales are important."
     semantic_model = OssieSemanticModel(
-        name="sales", datasets=[], description=description
+        name="sales", datasets=[orders], description=description
     )
 
     convert_ossie_semantic_model(semantic_model, ctx=ctx)
@@ -120,10 +120,10 @@ def test_warns_about_description(ctx: ExportContext) -> None:
     assert problems_snapshot(ctx.problems) == snapshot("[WARNING] Not supported")
 
 
-def test_warns_about_ai_context(ctx: ExportContext) -> None:
+def test_warns_about_ai_context(ctx: ExportContext, orders: OssieDataset) -> None:
     ai_context = OssieAIContextObject(synonyms=("bar", "baz"))
     semantic_model = OssieSemanticModel(
-        name="sales", datasets=[], ai_context=ai_context
+        name="sales", datasets=[orders], ai_context=ai_context
     )
 
     convert_ossie_semantic_model(semantic_model, ctx=ctx)
@@ -131,10 +131,12 @@ def test_warns_about_ai_context(ctx: ExportContext) -> None:
     assert problems_snapshot(ctx.problems) == snapshot("[WARNING] Not supported")
 
 
-def test_warns_about_custom_extensions(ctx: ExportContext) -> None:
+def test_warns_about_custom_extensions(
+    ctx: ExportContext, orders: OssieDataset
+) -> None:
     custom_extension = OssieCustomExtension(vendor_name="foo", data="bar")
     semantic_model = OssieSemanticModel(
-        name="sales", datasets=[], custom_extensions=[custom_extension]
+        name="sales", datasets=[orders], custom_extensions=[custom_extension]
     )
 
     convert_ossie_semantic_model(semantic_model, ctx=ctx)
