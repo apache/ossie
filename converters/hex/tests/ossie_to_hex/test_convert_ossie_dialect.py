@@ -34,7 +34,7 @@ def ctx() -> ExportContext:
     ("ossie_dialect", "hex_dialect_name"),
     [
         (OssieDialect.ANSI_SQL, "duckdb"),
-        (OssieDialect.OSSIE_SQL_2026, "duckdb"),
+        (OssieDialect.OSSIE_SQL_2026, "snowflake"),
         (OssieDialect.BIGQUERY, "bigquery"),
         (OssieDialect.DATABRICKS, "databricks"),
         (OssieDialect.SNOWFLAKE, "snowflake"),
