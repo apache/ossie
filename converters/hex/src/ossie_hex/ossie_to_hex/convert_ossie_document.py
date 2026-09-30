@@ -26,21 +26,16 @@ def convert_ossie_document(
     ossie_document: OssieDocument | None,
     *,
     ctx: ExportContext,
-) -> list[HexProject]:
-    """Convert an Ossie document to Hex semantic projects.
+) -> HexProject | None:
+    """Convert an Ossie document to a Hex semantic project.
 
-    A Hex semantic project is created for each Ossie semantic model
-    defined in the document.
-
-    Returns a list of Hex semantic projects.
+    Returns a Hex semantic project.
     """
-    hex_projects: list[HexProject] = []
+    hex_project: HexProject | None = None
     if ossie_document is not None:
-        for ossie_semantic_model in ossie_document.semantic_model:
-            with ctx.problem_scope("semantic_model"):
-                hex_project = convert_ossie_semantic_model(
-                    ossie_semantic_model, ctx=ctx
-                )
-                hex_projects.append(hex_project)
+        # the "document" class is a simple extension of the "semantic model" class
+        # rename here for clarity
+        ossie_semantic_model = ossie_document
+        hex_project = convert_ossie_semantic_model(ossie_semantic_model, ctx=ctx)
 
-    return hex_projects
+    return hex_project

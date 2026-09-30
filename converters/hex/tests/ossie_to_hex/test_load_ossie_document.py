@@ -39,19 +39,18 @@ def test_loads_valid_document(ctx: ExportContext, tmp_path: Path) -> None:
     path = tmp_path / "foo.yml"
     data = dedent(
         """\
-        semantic_model:
-          - name: foo
-            datasets:
-              - name: bar
-                source: public.bar
+        name: foo
+        datasets:
+          - name: bar
+            source: public.bar
         """
     )
     path.write_text(data, encoding="utf-8")
     result = load_ossie_document(document_path=str(path), ctx=ctx)
     assert result is not None
-    assert result.semantic_model[0].name == "foo"
-    assert result.semantic_model[0].datasets[0].name == "bar"
-    assert result.semantic_model[0].datasets[0].source == "public.bar"
+    assert result.name == "foo"
+    assert result.datasets[0].name == "bar"
+    assert result.datasets[0].source == "public.bar"
     assert not ctx.problems
 
 
@@ -119,3 +118,91 @@ semantic_model
     For further information visit https://errors.pydantic.dev/2.13/v/missing\
 """
     )
+
+
+def test_omits_invalid_members(ctx: ExportContext, tmp_path: Path) -> None:
+    path = tmp_path / "sales.yaml"
+    data = dedent("""\
+        version: 0.2.0.dev0
+        name: sales
+        datasets:
+          - name: orders
+            source: public.orders
+            fields:
+              - name: amount
+                datatype: Integer
+                expression:
+                  dialects:
+                    - dialect: ANSI_SQL
+                      expression: amount
+              - name: broken
+                datatype: Integer
+                expression:
+                  dialects:
+                    - dialect: ANSI_SQL
+                      expression: SELECT FROM
+        metrics:
+          - name: total
+            datatype: Integer
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: SUM(orders.amount)
+          - name: broken_total
+            datatype: Integer
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: SUM(orders.missing)
+        relationships:
+          - name: broken_relation
+            from: orders
+            to: missing
+            from_columns: [amount]
+            to_columns: [id]
+        """)
+    path.write_text(data, encoding="utf-8")
+
+    document = load_ossie_document(document_path=path, ctx=ctx)
+
+    assert document is not None
+    assert document.to_ossie_yaml() == snapshot("""\
+name: sales
+datasets:
+- name: orders
+  source: public.orders
+  unique_keys: []
+  fields:
+  - name: amount
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: amount
+    datatype: Integer
+relationships: []
+metrics:
+- name: total
+  expression:
+    dialects:
+    - dialect: ANSI_SQL
+      expression: SUM(orders.amount)
+  datatype: Integer
+version: 0.2.0.dev0
+""")
+    assert problems_snapshot(ctx.problems, include_causes=True) == snapshot("""\
+[ERROR] Unable to parse: Expected table name but got None. Line 1, Col: 11.
+  SELECT \x1b[4mFROM\x1b[0m
+Cause: ['datasets', 'orders', 'fields', 'broken', 'expression', 'dialects', 'ANSI_SQL', 'expression']
+
+[ERROR] Expression must have at least one valid dialect
+Cause: ['datasets', 'orders', 'fields', 'broken', 'expression', 'dialects']
+
+[ERROR] Could not resolve dataset name: 'missing'.
+Cause: ['relationships', 'broken_relation', 'to']
+
+[ERROR] Field expression references field not in semantic model: orders.missing
+Cause: ['metrics', 'broken_total', 'expression', 'dialects', 'ANSI_SQL']
+
+[ERROR] Expression must have at least one valid dialect
+Cause: ['metrics', 'broken_total', 'expression', 'dialects']\
+""")

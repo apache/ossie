@@ -20,7 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from ossie import OssieDocument, OssieSemanticModel
+from ossie import OssieDocument
 from pydantic import ValidationError
 
 from ..util.yaml import load_yaml
@@ -46,8 +46,14 @@ def load_ossie_document(
 
     # additional validation
     if document:
-        semantic_model = _load_ossie_semantic_models(document.semantic_model, ctx=ctx)
-        document = document.model_copy(update={"semantic_model": semantic_model})
+        semantic_model = load_ossie_semantic_model(document, ctx=ctx)
+        document = document.model_copy(
+            update={
+                "datasets": semantic_model.datasets,
+                "relationships": semantic_model.relationships,
+                "metrics": semantic_model.metrics,
+            }
+        )
 
     return document
 
@@ -126,16 +132,3 @@ def _validate_document_yaml(
         ctx.fatal(f"Invalid Ossie document: {e}")
         return None
     return document
-
-
-def _load_ossie_semantic_models(
-    semantic_models: list[OssieSemanticModel],
-    *,
-    ctx: ExportContext,
-) -> list[OssieSemanticModel]:
-    with ctx.problem_scope("semantic_model"):  # field name is singular in the spec
-        result = list[OssieSemanticModel]()
-        for semantic_model in semantic_models:
-            if semantic_model := load_ossie_semantic_model(semantic_model, ctx=ctx):
-                result.append(semantic_model)
-    return result
