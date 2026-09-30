@@ -24,7 +24,8 @@ from .context import ExportContext
 
 _DIALECT_NAME_MAP: Mapping[OssieDialect, HexDialectName | None] = {
     OssieDialect.ANSI_SQL: "duckdb",
-    OssieDialect.OSSIE_SQL_2026: "duckdb",
+    # Match the Snowflake approximation used to parse portable Ossie SQL.
+    OssieDialect.OSSIE_SQL_2026: "snowflake",
     OssieDialect.BIGQUERY: "bigquery",
     OssieDialect.DATABRICKS: "databricks",
     OssieDialect.SNOWFLAKE: "snowflake",
