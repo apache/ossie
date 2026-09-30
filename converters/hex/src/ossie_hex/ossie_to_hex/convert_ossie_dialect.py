@@ -24,6 +24,7 @@ from .context import ExportContext
 
 _DIALECT_NAME_MAP: Mapping[OssieDialect, HexDialectName | None] = {
     OssieDialect.ANSI_SQL: "duckdb",
+    OssieDialect.OSSIE_SQL_2026: "duckdb",
     OssieDialect.BIGQUERY: "bigquery",
     OssieDialect.DATABRICKS: "databricks",
     OssieDialect.SNOWFLAKE: "snowflake",
@@ -31,6 +32,9 @@ _DIALECT_NAME_MAP: Mapping[OssieDialect, HexDialectName | None] = {
     OssieDialect.MAQL: None,
     OssieDialect.MDX: None,
     OssieDialect.TABLEAU: None,
+    OssieDialect.SIGMA: None,
+    OssieDialect.THOUGHTSPOT: None,
+    OssieDialect.DAX: None,
 }
 
 
