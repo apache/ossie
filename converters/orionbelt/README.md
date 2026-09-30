@@ -92,6 +92,25 @@ assert result.valid
 obml_again = OssietoOBML(ossie).convert()
 ```
 
+## Metric expressions
+
+Other Ossie consumers read a metric's SQL, not the `ORIONBELT` extension, so the
+OBML to Ossie export writes SQL that computes what OrionBelt computes:
+
+- columns are referenced as `"<dataset>"."<field>"`, always double-quoted;
+- measure filters become `AGG(CASE WHEN <condition> THEN <arg> END)`, totals the
+  grand-total window `SUM(SUM(x)) OVER ()`, and `defaultValue` a `COALESCE`;
+- synthesized counts and metric-on-metric `{[Name]}` references are inlined;
+- cumulative and window metrics order and partition by each dimension at its
+  `timeGrain`, as the query groups it.
+
+A measure or metric with no faithful single expression (period-over-period,
+`grain`, `filterContext`, `anchor`, nested windows, reference cycles) is left out
+of the Ossie metrics with a warning and kept whole in the model-level extension
+(`obml_unexported`). Every exported measure and metric also carries its OBML
+definition, and every field its OBML column name, so Ossie to OBML restores the
+original model instead of re-parsing the SQL.
+
 ## Vendor extensions
 
 Ossie `custom_extensions` carry vendor-tagged payloads. This converter:
@@ -129,7 +148,7 @@ OBML, but are not interpreted by other Ossie consumers:
   (`obml_unconverted_metrics`) and re-emitted on OBML to Ossie, so the Ossie to OBML
   to Ossie roundtrip stays lossless. A `LOSSY:` warning is raised for each such
   metric because it is **not queryable through OBML**. SQL expressions in the
-  `ANSI_SQL`, `SNOWFLAKE`, and `DATABRICKS` dialects are all read on import.
+  `ANSI_SQL`, `OSSIE_SQL_2026`, `SNOWFLAKE`, and `DATABRICKS` dialects are all read on import.
 
 Ossie v0.1.x inputs are accepted on read via a legacy normalization shim; output
 targets Ossie **v0.2.0.dev0**.

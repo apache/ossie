@@ -39,6 +39,7 @@
 ### Converters
 - [ ] Converter logic in `converters/` is updated to reflect spec or ontology changes
 - [ ] New converters include tests under the converter's test directory
+- [ ] If adding a new converter, `.github/labeler.yml` is updated with the new path
 
 ### Validation
 - [ ] Validation rules in `validation/` are updated if the spec changed
@@ -59,3 +60,4 @@
 ### Compliance
 - [ ] ASF license headers are present on all new source files
 - [ ] No third-party dependencies are added without PMC/IPMC approval
+- [ ] If third-party source code is vendored/copied (not just declared as a dependency), `NOTICE` and/or `LICENSE` have been updated per [ASF policy](https://infra.apache.org/licensing-howto.html)

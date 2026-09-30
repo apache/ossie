@@ -72,6 +72,14 @@ class _RelationshipDirection:
     to_col: str
 
 
+class AmbiguousDerivedReferenceError(Exception):
+    """A DERIVED metric's expression reference does not resolve to a single expression.
+
+    Raised by the expression resolver and handled in :meth:`MSIToOssieConverter.convert`,
+    which drops the metric and records a ConverterIssue rather than failing the run.
+    """
+
+
 class MSIToOssieConverter:
     """Converts an MSI SemanticManifest into an Ossie Document."""
 
@@ -85,6 +93,10 @@ class MSIToOssieConverter:
         issues: List[ConverterIssue] = []
 
         datasets = [self._convert_semantic_model(sm) for sm in manifest.semantic_models]
+        if not datasets:
+            raise ValueError(
+                "Manifest contains no semantic models; an Ossie semantic model requires at least one dataset."
+            )
 
         entity_index, entity_issues = self._build_entity_index(manifest.semantic_models)
         issues.extend(entity_issues)
@@ -109,7 +121,18 @@ class MSIToOssieConverter:
                 issues.append(
                     ConverterIssue(issue_type=ConverterIssueType.CUMULATIVE_SEMANTICS_LOSS, element_name=metric.name)
                 )
-            expr = self._resolve_metric_expression(metric, metric_index, expression_cache)
+            try:
+                expr = self._resolve_metric_expression(metric, metric_index, expression_cache)
+            except AmbiguousDerivedReferenceError:
+                # Every other unsupported shape drops one metric and records an issue;
+                # an ambiguous reference is no reason to fail the whole conversion.
+                issues.append(
+                    ConverterIssue(
+                        issue_type=ConverterIssueType.AMBIGUOUS_REFERENCE_METRIC_DROPPED,
+                        element_name=metric.name,
+                    )
+                )
+                continue
             ossie_metrics.append(
                 OssieMetric(
                     name=metric.name,
@@ -332,8 +355,26 @@ class MSIToOssieConverter:
         """Resolve a DERIVED metric by substituting each input metric's expression into the expr string.
 
         Compound sub-expressions (DERIVED/RATIO) are wrapped in parentheses to preserve operator precedence.
+
+        All references are substituted in a single pass. Substituting them one at a
+        time would re-scan text inserted by an earlier reference, so a metric named
+        after a column appearing in an already-inlined expression would be expanded
+        twice. The replacement is a callback rather than a string so that backslashes
+        in the resolved SQL (e.g. from a `LIKE 'a\\b'` filter) are inserted verbatim
+        instead of being interpreted as `re.sub` template escapes.
+
+        Listing the same input metric twice under one reference raises
+        :class:`AmbiguousDerivedReferenceError` when the expression uses that reference
+        and the two occurrences resolve differently (e.g. distinct per-input filters and
+        no aliases): the expression has a single token for them, so either resolution
+        would be an arbitrary choice. MetricFlow does not reject this shape upstream —
+        `DerivedMetricRule._validate_alias_collision` only compares entries that set an
+        alias. Occurrences that resolve identically are redundant rather than ambiguous,
+        and a duplicated reference the expression never substitutes cannot affect the
+        result; both are accepted.
         """
         expr = metric.type_params.expr or ""
+        resolutions: Dict[str, List[str]] = {}
         for input_metric in metric.type_params.metrics or []:
             ref = input_metric.alias if input_metric.alias else input_metric.name
             dep_metric = self._lookup_metric(metric_index, input_metric.name, f"DERIVED metric '{metric.name}'")
@@ -341,8 +382,31 @@ class MSIToOssieConverter:
             resolved = self._resolve_metric_expression(dep_metric, metric_index, cache, input_filter)
             if dep_metric.type in (MetricType.DERIVED, MetricType.RATIO):
                 resolved = f"({resolved})"
-            expr = re.sub(rf"\b{re.escape(ref)}\b", resolved, expr)
-        return expr
+            distinct = resolutions.setdefault(ref, [])
+            if resolved not in distinct:
+                distinct.append(resolved)
+
+        if not resolutions:
+            return expr
+
+        # The `\b` anchors already stop a short reference from matching inside a
+        # longer identifier; sorting by length (then name) keeps the alternation order stable
+        # and independent of the order metrics happen to be declared in.
+        pattern = re.compile(
+            r"\b(" + "|".join(re.escape(ref) for ref in sorted(resolutions, key=lambda ref: (-len(ref), ref))) + r")\b"
+        )
+
+        # Only a reference the expression actually uses can be ambiguous; one that is
+        # listed but never substituted has no bearing on the result.
+        for ref in sorted(set(pattern.findall(expr))):
+            if len(resolutions[ref]) > 1:
+                raise AmbiguousDerivedReferenceError(
+                    "DERIVED metric references an input metric that is listed more than once with "
+                    "differing resolutions, making the reference ambiguous; give each occurrence a "
+                    f"distinct alias: metric_name={metric.name!r}, reference={ref!r}"
+                )
+
+        return pattern.sub(lambda match: resolutions[match.group(0)][0], expr)
 
     @staticmethod
     def _build_entity_index(

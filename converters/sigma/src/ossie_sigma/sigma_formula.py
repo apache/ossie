@@ -690,6 +690,11 @@ def _render_sql_node(node: exp.Expression, dataset_alias: Optional[str]) -> str:
         return f"({_render_sql_node(node.this, dataset_alias)} AND {_render_sql_node(node.expression, dataset_alias)})"
     if isinstance(node, exp.Or):
         return f"({_render_sql_node(node.this, dataset_alias)} OR {_render_sql_node(node.expression, dataset_alias)})"
+    if isinstance(node, exp.Neg):
+        inner = _render_sql_node(node.this, dataset_alias)
+        if isinstance(node.this, (exp.Column, exp.Literal)):
+            return f"-{inner}"
+        return f"-({inner})"
     if isinstance(node, exp.Not):
         return f"NOT ({_render_sql_node(node.this, dataset_alias)})"
 

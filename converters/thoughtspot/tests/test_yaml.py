@@ -1,0 +1,93 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+import pytest
+import yaml
+
+from ossie_thoughtspot import _yaml
+from ossie_thoughtspot.errors import ConversionError
+
+YAML11_BOOL_TOKENS = ["y", "Y", "n", "N", "yes", "Yes", "YES", "no", "No", "NO",
+                      "on", "On", "ON", "off", "Off", "OFF"]
+
+
+@pytest.mark.parametrize("token", YAML11_BOOL_TOKENS)
+def test_yaml11_bool_tokens_load_as_strings(token):
+    # PyYAML implements YAML 1.1 and would return True/False for these.
+    assert _yaml.load(f"value: {token}") == {"value": token}
+
+
+@pytest.mark.parametrize("literal,expected", [("true", True), ("True", True), ("false", False)])
+def test_real_booleans_still_load_as_booleans(literal, expected):
+    assert _yaml.load(f"value: {literal}") == {"value": expected}
+
+
+@pytest.mark.parametrize("token", YAML11_BOOL_TOKENS)
+def test_yaml11_bool_tokens_are_quoted_on_dump(token):
+    # Unquoted, a YAML 1.1 reader downstream would resolve these back to booleans.
+    assert _yaml.load(_yaml.dump({"value": token})) == {"value": token}
+    assert f"'{token}'" in _yaml.dump({"value": token})
+
+
+def test_ordinary_strings_are_not_gratuitously_quoted():
+    assert _yaml.dump({"value": "Region"}).strip() == "value: Region"
+
+
+def test_round_trip_preserves_key_order():
+    src = {"z": 1, "a": 2, "m": 3}
+    assert list(_yaml.load(_yaml.dump(src))) == ["z", "a", "m"]
+
+
+PLAIN_PYYAML_MISREADS = ["yes", "Yes", "YES", "no", "No", "NO",
+                         "on", "On", "ON", "off", "Off", "OFF"]
+
+
+@pytest.mark.parametrize("token", PLAIN_PYYAML_MISREADS)
+def test_loader_fixes_what_plain_pyyaml_gets_wrong(token):
+    """The loader is load-bearing exactly here: plain PyYAML returns a bool."""
+    assert isinstance(yaml.safe_load(f"value: {token}")["value"], bool)
+    assert _yaml.load(f"value: {token}") == {"value": token}
+
+
+PLAIN_PYYAML_LEAVES_BARE = ["y", "Y", "n", "N"]
+
+
+@pytest.mark.parametrize("token", PLAIN_PYYAML_LEAVES_BARE)
+def test_dumper_quotes_what_plain_pyyaml_leaves_bare(token):
+    """YAML 1.1 booleans PyYAML's own resolver omits, so plain SafeDumper emits them
+    bare. Another 1.1 reader would resolve them as booleans, which is why we quote."""
+    assert f"'{token}'" in _yaml.dump({"value": token})
+    assert f"'{token}'" not in yaml.dump({"value": token}, Dumper=yaml.SafeDumper, sort_keys=False)
+
+
+def test_load_wraps_a_parser_error_in_conversion_error():
+    # Never let a bare yaml.YAMLError escape — same never-a-bare-traceback
+    # contract stash.py holds for malformed custom_extensions JSON.
+    with pytest.raises(ConversionError, match="malformed YAML"):
+        _yaml.load("a: [1, 2\nb: 3")
+
+
+def test_load_does_not_wrap_a_clean_document():
+    assert _yaml.load("a: 1") == {"a": 1}
+
+
+def test_dump_allow_unicode_round_trips_and_does_not_escape():
+    # Without allow_unicode=True, PyYAML escapes non-ASCII as \xE9 etc.
+    text = _yaml.dump({"label": "Café"})
+    assert "Café" in text
+    assert "\\x" not in text and "\\u" not in text
+    assert _yaml.load(text) == {"label": "Café"}

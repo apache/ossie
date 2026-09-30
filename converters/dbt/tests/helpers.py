@@ -218,7 +218,7 @@ def _ossie_doc(
 ) -> OssieDocument:
     return OssieDocument(
         name=model_name,
-        datasets=datasets or [],
+        datasets=datasets if datasets is not None else [_ossie_dataset("default")],
         metrics=metrics if metrics else None,
         relationships=relationships if relationships else None,
     )

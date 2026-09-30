@@ -129,11 +129,19 @@ def test_is_plain_column_ref():
         ("SUM(ss_ext_sales_price)", "store_sales", "Sum([ss_ext_sales_price])"),
         ("COUNT(DISTINCT customer_id)", "customer", "CountDistinct([customer_id])"),
         ("CASE WHEN status = 'won' THEN 1 ELSE 0 END", "deals", 'If((["status"] = "won"), 1, 0)'.replace('["status"]', "[status]")),
+        ('-"X"', None, "-[X]"),
+        ('-"T"."X"', "T", "-[X]"),
+        ("-1", None, "-1"),
+        ('-(NOT "A")', "T", "-(NOT ([A]))"),
+        ('-(- "A")', "T", "-(-[A])"),
+        ('-("A" || "B")', "T", "-([A] & [B])"),
+        ('-("A" + "B")', "T", "-(([A] + [B]))"),
     ],
 )
 def test_reverse_translation_basic(sql, dataset_alias, expected):
     result = sql_to_sigma_formula(sql, dataset_alias=dataset_alias)
     assert result == expected
+    assert parse_formula(result) is not None
 
 
 def test_reverse_translation_gives_up_on_count_star():

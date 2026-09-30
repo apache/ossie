@@ -25,6 +25,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from ossie_ontology.converter.ossie_to_spec.converter import (
     OssieToSpecConverter,
@@ -47,6 +48,62 @@ def test_parse_returns_model_with_metadata(flights_model):
     assert flights_model.name == "Flights"
     assert flights_model.version == "0.2.0.dev0"
     assert flights_model.description == "Ontology of flights into and out of airports."
+
+
+def test_embedded_core_document_version_survives_roundtrip(flights_model, tmp_path):
+    assert all(
+        mapping.semantic_model.version == "0.2.0.dev0"
+        for mapping in flights_model.ontology_mappings
+    )
+
+    exported = OssieToSpecConverter.convert(flights_model).dump_yaml()
+    document = yaml.safe_load(exported)
+    assert all(
+        mapping["semantic_model"]["version"] == "0.2.0.dev0"
+        for mapping in document["ontology_mappings"]
+    )
+
+    path = tmp_path / "roundtrip.yaml"
+    path.write_text(exported)
+    reparsed = OssieParser().parse(path)
+    assert all(
+        mapping.semantic_model.version == "0.2.0.dev0"
+        for mapping in reparsed.ontology_mappings
+    )
+
+
+@pytest.mark.parametrize("version", ["missing", "0.1.0", "0.2.0", None, 2])
+def test_parse_rejects_invalid_embedded_version(flights_path, tmp_path, version):
+    document = yaml.safe_load(flights_path.read_text())
+    model = document["ontology_mappings"][0]["semantic_model"]
+    if version == "missing":
+        del model["version"]
+    else:
+        model["version"] = version
+    path = tmp_path / "invalid.yaml"
+    path.write_text(yaml.safe_dump(document))
+
+    with pytest.raises(ValidationError) as exc:
+        OssieParser().parse(path)
+
+    assert exc.value.errors()[0]["loc"] == ("ontology_mappings", 0, "semantic_model", "version")
+
+
+@pytest.mark.parametrize("missing", [True, False], ids=["missing", "empty"])
+def test_parse_rejects_missing_or_empty_datasets(flights_path, tmp_path, missing):
+    document = yaml.safe_load(flights_path.read_text())
+    model = document["ontology_mappings"][0]["semantic_model"]
+    if missing:
+        del model["datasets"]
+    else:
+        model["datasets"] = []
+    path = tmp_path / "invalid.yaml"
+    path.write_text(yaml.safe_dump(document))
+
+    with pytest.raises(ValidationError) as exc:
+        OssieParser().parse(path)
+
+    assert exc.value.errors()[0]["loc"] == ("ontology_mappings", 0, "semantic_model", "datasets")
 
 
 def test_parse_returns_populated_ontology(flights_model):
@@ -299,3 +356,68 @@ def test_relationships_are_grouped_under_their_own_container():
         "Alpha": ["a1", "a2"],
         "Beta": ["b1", "b2"],
     }
+
+
+# ----- Global identifiers -----------------------------------------------
+
+_IRI_SPEC = {
+    "version": "0.2.0.dev0",
+    "name": "Demo",
+    "prefixes": {"foaf": "http://xmlns.com/foaf/0.1/"},
+    "ontology": [
+        {
+            "concept": "Person",
+            "type": "EntityType",
+            "iri": "foaf:Person",
+            "identify_by": ["person_name"],
+            "relationships": [
+                {
+                    "name": "person_name",
+                    "iri": "foaf:name",
+                    "roles": [{"concept": "String"}],
+                    "verbalizes": ["{Person} is identified by {String}"],
+                    "multiplicity": "OneToOne",
+                }
+            ],
+        }
+    ],
+}
+
+
+def test_iri_and_prefixes_survive_a_round_trip(tmp_path: Path):
+    """A document that pins its concepts to an external vocabulary must come
+    back out carrying the same pins.
+
+    `iri` and `prefixes` are what tie an Ossie ontology to RDF/OWL vocabularies,
+    so dropping them silently turns a mapped ontology into an unmapped one.
+    """
+    path = tmp_path / "spec.yaml"
+    path.write_text(yaml.safe_dump(_IRI_SPEC))
+
+    model = OssieParser().parse(path)
+
+    assert model.prefixes == {"foaf": "http://xmlns.com/foaf/0.1/"}
+    person = model.ontology.lookup_concept("Person")
+    assert person is not None
+    assert person.iri == "foaf:Person"
+    assert model.ontology.lookup_concept_relationship(person, "person_name").iri == "foaf:name"
+
+    roundtrip_path = tmp_path / "roundtrip.yaml"
+    roundtrip_path.write_text(OssieToSpecConverter.convert(model).dump_yaml())
+    reparsed = OssieParser().parse(roundtrip_path)
+
+    assert reparsed.prefixes == model.prefixes
+    reparsed_person = reparsed.ontology.lookup_concept("Person")
+    assert reparsed_person.iri == "foaf:Person"
+    assert reparsed.ontology.lookup_concept_relationship(reparsed_person, "person_name").iri == "foaf:name"
+
+
+def test_a_document_without_iris_dumps_neither_field(tmp_path: Path):
+    """Both fields are optional, so a document that declares neither must dump
+    exactly as it did before they existed."""
+    path = _write_spec(tmp_path, [_concept("Gadget")])
+
+    dumped = OssieToSpecConverter.convert(OssieParser().parse(path)).dump_yaml()
+
+    assert "iri:" not in dumped
+    assert "prefixes:" not in dumped

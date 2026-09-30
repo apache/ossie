@@ -79,6 +79,7 @@ class OssieToSpecConverter:
             requires=[f.raw_expr for f in ont.requires],
             ontology=_convert_ontology_concepts(ont),
             ontology_mappings=ontology_mappings,
+            prefixes=model.prefixes,
         )
 
 
@@ -117,6 +118,7 @@ def _convert_concept(concept: Concept, rels: list[Relationship]) -> ConceptCompo
         derived_by=[f.raw_expr for f in concept.derived_by],
         requires=[f.raw_expr for f in concept.requires],
         relationships=[_convert_relationship(rel) for rel in rels],
+        iri=concept.iri,
     )
 
 
@@ -135,6 +137,7 @@ def _convert_relationship(rel: Relationship) -> SpecRelationship:
         multiplicity=multiplicity,  # type: ignore[arg-type]
         derived_by=[f.raw_expr for f in rel.derived_by],
         requires=[f.raw_expr for f in rel.requires],
+        iri=rel.iri,
     )
 
 
@@ -144,6 +147,7 @@ def _convert_relationship(rel: Relationship) -> SpecRelationship:
 
 def _convert_semantic_model(semantic_model: SemanticModel) -> SpecSemanticModel:
     return SpecSemanticModel(
+        version=semantic_model.version,
         name=semantic_model.name,
         description=semantic_model.description,
         ai_context=semantic_model.ai_context,

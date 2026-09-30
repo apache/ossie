@@ -374,8 +374,8 @@ class OssieToMSIConverter:
     # Helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
     def _find_dataset_for_col(
+        self,
         raw_expr_str: str,
         bare_col: str,
         datasets: List[OssieDataset],
@@ -398,17 +398,36 @@ class OssieToMSIConverter:
             for field in dataset.fields or []:
                 if field.name == bare_col:
                     return dataset.name
-                field_expr = field.expression.dialects[0].expression if field.expression.dialects else ""
+                field_expr = self._get_expression(field.expression)
                 if _strip_qualifier(field_expr) == bare_col:
                     return dataset.name
 
         return datasets[0].name if datasets else ""
 
     def _get_expression(self, ossie_expr: OssieExpression) -> str:
-        """Return the expression string for the preferred dialect (fallback: first available)."""
+        """Return the expression string for the preferred dialect.
+
+        Preference order: the converter's dialect, then OSSIE_SQL_2026, then the
+        first entry available. OSSIE_SQL_2026 is Ossie's portable expression
+        language, based on ANSI SQL:2003 Core, so it is treated as an ANSI_SQL
+        equivalent rather than left to the positional fallback.
+
+        `dialects` has no `uniqueItems` constraint, so one dialect may appear
+        more than once. The first entry wins in that case, as it already does
+        for the converter's own dialect. The scan is not cut short on an
+        OSSIE_SQL_2026 match because the converter's dialect outranks it and
+        may still appear further down the list.
+        """
+        ossie_sql_expr: Optional[str] = None
+
         for dialect_expr in ossie_expr.dialects:
             if dialect_expr.dialect is self._dialect:
                 return dialect_expr.expression
+            if dialect_expr.dialect is OssieDialect.OSSIE_SQL_2026 and ossie_sql_expr is None:
+                ossie_sql_expr = dialect_expr.expression
+
+        if ossie_sql_expr is not None:
+            return ossie_sql_expr
         return ossie_expr.dialects[0].expression if ossie_expr.dialects else ""
 
     @staticmethod

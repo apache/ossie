@@ -35,6 +35,9 @@ on:
       - 'examples/**'
       - '.github/workflows/converter-polaris-ci.yml'
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest

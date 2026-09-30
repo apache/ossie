@@ -207,6 +207,9 @@ class SigmaToOssieConverter:
             if _require_id(e, "table element", e.get("name") or "<unnamed>", issues) is not None:
                 table_elements.append((p, e))
 
+        if not table_elements:
+            raise ValueError("Spec contains no table elements; an Ossie semantic model requires at least one dataset.")
+
         element_by_id = {e["id"]: e for _, e in table_elements}
         index_by_id = {e["id"]: _ElementIndex(e) for _, e in table_elements}
 
@@ -403,11 +406,15 @@ class SigmaToOssieConverter:
                 from_columns: list[str] = []
                 to_columns: list[str] = []
                 for key in rel.get("keys") or []:
-                    from_col, from_resolved = from_index.resolve(key["sourceColumnId"])
+                    source_col_id = key.get("sourceColumnId")
+                    target_col_id = key.get("targetColumnId")
+                    if not source_col_id or not target_col_id:
+                        continue
+                    from_col, from_resolved = from_index.resolve(source_col_id)
                     if to_index is not None:
-                        to_col, to_resolved = to_index.resolve(key["targetColumnId"])
+                        to_col, to_resolved = to_index.resolve(target_col_id)
                     else:
-                        to_col, to_resolved = key["targetColumnId"], False
+                        to_col, to_resolved = target_col_id, False
                     from_columns.append(from_col)
                     to_columns.append(to_col)
                     if not (from_resolved and to_resolved):
@@ -420,6 +427,17 @@ class SigmaToOssieConverter:
                                 "custom_extensions for exact round-trip reconstruction.",
                             )
                         )
+
+                if not from_columns or not to_columns:
+                    issues.append(
+                        ConverterIssue(
+                            ConverterIssueType.RELATIONSHIP_DROPPED,
+                            rel.get("name") or rel_id,
+                            "Relationship has no join keys and was dropped; Ossie relationships "
+                            "require at least one pair of join columns.",
+                        )
+                    )
+                    continue
 
                 rel_ext: dict[str, Any] = {
                     "id": rel_id,

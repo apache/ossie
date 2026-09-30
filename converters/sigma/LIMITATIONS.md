@@ -1,3 +1,22 @@
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+-->
+
 # Limitations and design tradeoffs
 
 What `converters/sigma` does not map onto a portable Ossie concept, and why. Every
@@ -26,6 +45,10 @@ element with another `kind` is preserved verbatim at the model level under
 `non_table_elements` with an `UNSUPPORTED_ELEMENT_KIND` issue. This is a defensive
 path, not an expected one.
 
+An Ossie semantic model requires at least one dataset. A Sigma spec with no `table`
+elements (or where every table element lacks an id) cannot produce a valid Ossie
+document and is rejected with a `ValueError`.
+
 ## Non-warehouse-table sources have no `OssieDataset.source`
 
 `source.kind` may be `warehouse-table`, `sql`, `table`, `data-model`, `join`, or
@@ -43,6 +66,9 @@ Sigma addresses a relationship key either by the element's own column id or by a
 the modeled column list. The converter resolves both to a modeled field name where it
 can, records `RELATIONSHIP_COLUMN_UNRESOLVED` where it cannot, and **always** keeps the
 raw `keys` in `custom_extensions`, so Sigma → Ossie → Sigma is exact either way.
+A relationship with no join keys (`keys: []` or missing keys) cannot be represented as
+an Ossie relationship (which requires at least one join column on each side) and is
+dropped with a `RELATIONSHIP_DROPPED` issue.
 
 Unsolved: a document authored by another tool has no raw keys to fall back on, so
 export must synthesize key ids from field names. That works when every joined field is

@@ -48,10 +48,10 @@
     },
     "prefixes": {
       "type": "object",
-      "description": "Maps namespace prefixes to the URIs they abbreviate, enabling QName expansion (e.g., 'foaf' -> 'http://xmlns.com/foaf/0.1/').",
+      "description": "Maps namespace prefixes to the IRIs they abbreviate, enabling QName expansion (e.g., 'foaf' -> 'http://xmlns.com/foaf/0.1/').",
       "additionalProperties": {
         "type": "string",
-        "format": "uri"
+        "format": "iri"
       }
     }
   },
@@ -116,9 +116,9 @@
         "custom_properties": {
           "$ref": "#/$defs/CustomProperties"
         },
-        "uri": {
+        "iri": {
           "type": "string",
-          "description": "Optional global identifier for this concept, expressed as a full URI or as a QName (prefix:local) resolved against the ontology-level 'prefixes' map."
+          "description": "Optional global identifier for this concept, expressed as a full IRI or as a QName (prefix:local) resolved against the ontology-level 'prefixes' map."
         }
       },
       "required": ["concept", "type"],
@@ -174,9 +174,9 @@
         "custom_properties": {
           "$ref": "#/$defs/CustomProperties"
         },
-        "uri": {
+        "iri": {
           "type": "string",
-          "description": "Optional global identifier for this relationship, expressed as a full URI or as a QName (prefix:local) resolved against the ontology-level 'prefixes' map."
+          "description": "Optional global identifier for this relationship, expressed as a full IRI or as a QName (prefix:local) resolved against the ontology-level 'prefixes' map."
         }
       },
       "required": ["name", "verbalizes"],
@@ -314,7 +314,7 @@
           "description": "Human-readable description of this ontology map"
         },
         "semantic_model": {
-          "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json#/$defs/SemanticModel"
+          "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json"
         },
         "concept_mappings": {
           "type": "array",

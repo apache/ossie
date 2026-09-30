@@ -385,7 +385,7 @@ def _convert_field(field, dname, expr, fscope):
         if is_time_explicit is not None:
             is_time = bool(is_time_explicit)
         else:
-            is_time = field.get("datatype") in ("Date", "Time", "DateTime", "DateTimez")
+            is_time = field.get("datatype") in ("Date", "Time", "DateTime", "DateTimeTz")
     if is_time:
         # The stashed list wins even when empty (`timeframes: []` is a real
         # Omni value); the default list is only for hand-authored Ossie.

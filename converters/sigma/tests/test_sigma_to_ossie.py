@@ -324,3 +324,36 @@ def test_case_insensitive_physical_column_collision_is_treated_as_unresolved():
     dataset = next(d for d in model.datasets if d.name == element["name"])
     assert dataset.primary_key is None
     assert any(i.issue_type is ConverterIssueType.UNIQUE_KEY_COLUMN_UNRESOLVED for i in result.issues)
+
+
+def test_spec_without_table_elements_is_rejected():
+    with pytest.raises(ValueError, match="no table elements"):
+        SigmaToOssieConverter().convert({"pages": []})
+
+    with pytest.raises(ValueError, match="no table elements"):
+        SigmaToOssieConverter().convert({"pages": [{"elements": [{"id": "el1", "kind": "pivot-table"}]}]})
+
+
+def test_relationship_without_keys_is_dropped():
+    spec = load_fixture("fixtureA_sigma.json")
+    element = next(
+        e for p in spec["pages"] for e in p["elements"] if e.get("kind") == "table" and e.get("relationships")
+    )
+    element["relationships"][0]["keys"] = []
+
+    result = SigmaToOssieConverter().convert(spec)
+    assert not (result.output.relationships or [])
+    assert any(i.issue_type is ConverterIssueType.RELATIONSHIP_DROPPED for i in result.issues)
+
+
+def test_relationship_with_missing_keys_is_dropped():
+    spec = load_fixture("fixtureA_sigma.json")
+    element = next(
+        e for p in spec["pages"] for e in p["elements"] if e.get("kind") == "table" and e.get("relationships")
+    )
+    del element["relationships"][0]["keys"]
+
+    result = SigmaToOssieConverter().convert(spec)
+    assert not (result.output.relationships or [])
+    assert any(i.issue_type is ConverterIssueType.RELATIONSHIP_DROPPED for i in result.issues)
+

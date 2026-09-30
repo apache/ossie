@@ -98,6 +98,16 @@ java -jar target/ossie-salesforce-converter-0.1.0-SNAPSHOT.jar toSF \
 # Output: src/test/resources/examples/Customer_Orders_Model.json
 ```
 
+#### Exit Codes
+
+| Code | Meaning |
+| ---- | ------- |
+| 0 | Success |
+| 1 | Usage error (missing arguments) |
+| 2 | Invalid input (unknown direction, or input file not found) |
+| 3 | Conversion error |
+| 4 | Schema validation error |
+
 ### Programmatic API
 
 #### String Conversion
@@ -236,14 +246,14 @@ dimensions.
 ## Architecture
 
 ```
-                    ┌───────────────────────┐
-                    │ OssieSalesforceConverter│
-                    │      (CLI App)        │
-                    └───────────┬───────────┘
+                ┌──────────────────────────┐
+                │ OssieSalesforceConverter │
+                │      (CLI App)           │
+                └───────────┬──────────────┘
                             │
-                    ┌───────┴────────┐
+                    ┌───────┴─────────┐
                     │ ConverterFactory│
-                    └───────┬────────┘
+                    └───────┬─────────┘
                             │
               ┌─────────────┴─────────────┐
               │      ConverterImpl        │

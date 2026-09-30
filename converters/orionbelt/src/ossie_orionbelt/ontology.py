@@ -106,7 +106,6 @@ class OBMLtoOssieOntology:
             ai_instructions=self.ai_instructions,
         )
         sem_model = core_conv.convert()
-        sem_model.pop("version", None)
         self.warnings.extend(core_conv.warnings)
 
         data_objects = self.obml.get("dataObjects", {}) or {}

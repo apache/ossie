@@ -93,6 +93,18 @@ class TestDialectCatching:
         assert "Net" in obml.get("measures", {})
         assert not any(w.startswith("LOSSY:") for w in converter.warnings)
 
+    def test_ossie_sql_2026_only_agg_becomes_measure(self) -> None:
+        # OSSIE_SQL_2026 is the spec's portable ANSI-compatible language; a
+        # metric expressed only in it must convert, not be preserved as lossy.
+        ossie = _ossie_model([_metric("Total Amount", "OSSIE_SQL_2026", "SUM(Orders.amount)")])
+        converter = conv.OssietoOBML(ossie)
+        obml = converter.convert()
+
+        measure = obml["measures"]["Total Amount"]
+        assert measure["aggregation"] == "sum"
+        assert measure["columns"][0] == {"dataObject": "Orders", "column": "amount"}
+        assert not any(w.startswith("LOSSY:") for w in converter.warnings)
+
     def test_snowflake_uppercased_identifiers_resolve_to_canonical(self) -> None:
         # Snowflake commonly upper-cases identifiers. They must resolve back to
         # the real Ossie dataset/field names, not produce refs to ORDERS.AMOUNT.
@@ -171,6 +183,23 @@ class TestDialectCatching:
         )
         obml = conv.OssietoOBML(ossie).convert()
         # ANSI_SQL wins regardless of ordering -> column is `id`, not `amount`.
+        assert obml["measures"]["Total Amount"]["columns"][0]["column"] == "id"
+
+    def test_ossie_sql_2026_preferred_over_vendor_dialects(self) -> None:
+        ossie = _ossie_model(
+            [
+                {
+                    "name": "Total Amount",
+                    "expression": {
+                        "dialects": [
+                            {"dialect": "SNOWFLAKE", "expression": "SUM(Orders.amount)"},
+                            {"dialect": "OSSIE_SQL_2026", "expression": "SUM(Orders.id)"},
+                        ]
+                    },
+                }
+            ]
+        )
+        obml = conv.OssietoOBML(ossie).convert()
         assert obml["measures"]["Total Amount"]["columns"][0]["column"] == "id"
 
 

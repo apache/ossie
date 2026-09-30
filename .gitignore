@@ -32,3 +32,6 @@
 cli/dist/
 cli/ossie
 cli/.tool-versions
+
+# Apache RAT (downloaded by dev/check-license)
+dev/lib/

@@ -37,7 +37,7 @@
   "$defs": {
     "Dialect": {
       "type": "string",
-      "enum": ["ANSI_SQL", "SNOWFLAKE", "MDX", "TABLEAU", "DATABRICKS", "MAQL", "BIGQUERY", "SIGMA", "THOUGHTSPOT", "DAX"],
+      "enum": ["ANSI_SQL", "SNOWFLAKE", "MDX", "TABLEAU", "DATABRICKS", "MAQL", "BIGQUERY", "SIGMA", "THOUGHTSPOT", "DAX", "OSSIE_SQL_2026"],
       "description": "Supported SQL and expression language dialects"
     },
     "Vendor": {
@@ -155,6 +155,7 @@
       "properties": {
         "name": {
           "type": "string",
+          "minLength": 1,
           "description": "Unique identifier for the field within the dataset"
         },
         "expression": {
@@ -193,10 +194,12 @@
       "properties": {
         "name": {
           "type": "string",
+          "minLength": 1,
           "description": "Unique identifier for the dataset"
         },
         "source": {
           "type": "string",
+          "minLength": 1,
           "description": "Reference to underlying physical table/view (database.schema.table) or query"
         },
         "primary_key": {
@@ -245,14 +248,17 @@
       "properties": {
         "name": {
           "type": "string",
+          "minLength": 1,
           "description": "Unique identifier for the relationship"
         },
         "from": {
           "type": "string",
+          "minLength": 1,
           "description": "Dataset on the many side of the relationship"
         },
         "to": {
           "type": "string",
+          "minLength": 1,
           "description": "Dataset on the one side of the relationship"
         },
         "from_columns": {
@@ -290,6 +296,7 @@
       "properties": {
         "name": {
           "type": "string",
+          "minLength": 1,
           "description": "Unique identifier for the metric"
         },
         "expression": {
@@ -321,6 +328,7 @@
       "properties": {
         "name": {
           "type": "string",
+          "minLength": 1,
           "description": "Unique identifier for the semantic model"
         },
         "description": {
