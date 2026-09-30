@@ -47,8 +47,9 @@ def load_ossie_field_expression(
                 valid = validate_ossie_field_dialect_expression(entry, ctx=ctx)
                 if valid:
                     dialects.append(entry)
-        result = OssieExpression(dialects=dialects)
-        if not result.dialects:
+        if dialects:
+            result = OssieExpression(dialects=dialects)
+        else:
             ctx.error("Expression must have at least one valid dialect")
             result = None
     return result
@@ -79,8 +80,9 @@ def load_ossie_metric_expression(
                 )
                 if valid:
                     dialects.append(entry)
-        result = OssieExpression(dialects=dialects)
-        if not result.dialects:
+        if dialects:
+            result = OssieExpression(dialects=dialects)
+        else:
             ctx.error("Expression must have at least one valid dialect")
             result = None
     return result
