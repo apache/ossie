@@ -148,20 +148,28 @@ class UniqueKeyLoader(yaml.SafeLoader):
                 self._check_unique_keys(child, visited)
 
 
+# Local schemas that other schemas reference, keyed by their path in this repo.
+# Cross-file references use the raw GitHub URL, so each schema is registered
+# under both that URL and its canonical $id.
+_LOCAL_SCHEMAS = ("core-spec/ossie-schema.json", "ontology/ontology.json")
+_RAW_BASE = "https://raw.githubusercontent.com/apache/ossie/main/"
+
+
+def _schema_registry() -> Registry:
+    """Build a registry that resolves Ossie schema references from local files."""
+    repo = Path(__file__).parent.parent
+    resources = []
+    for relative_path in _LOCAL_SCHEMAS:
+        contents = json.loads((repo / relative_path).read_text())
+        resource = Resource.from_contents(contents)
+        resources.append((contents["$id"], resource))
+        resources.append((_RAW_BASE + relative_path, resource))
+    return Registry().with_resources(resources)
+
+
 def validate_schema(data: dict, schema: dict) -> list[str]:
-    """Validate against JSON Schema, resolving core references locally."""
-    core_path = Path(__file__).parent.parent / "core-spec" / "ossie-schema.json"
-    core = json.loads(core_path.read_text())
-    resource = Resource.from_contents(core)
-    # Ontology references use the raw URL; also register the canonical schema ID.
-    registry = Registry().with_resources([
-        (core["$id"], resource),
-        (
-            "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json",
-            resource,
-        ),
-    ])
-    validator = Draft202012Validator(schema, registry=registry)
+    """Validate against JSON Schema, resolving Ossie schema references locally."""
+    validator = Draft202012Validator(schema, registry=_schema_registry())
     errors = []
     try:
         for error in validator.iter_errors(data):

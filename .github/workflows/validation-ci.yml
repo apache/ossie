@@ -27,7 +27,7 @@ on:
       - "python/**"
       - "core-spec/**"
       - "ontology/**"
-      - "examples/flights.yaml"
+      - "examples/flights*.yaml"
       - "examples/tpcds_semantic_model.yaml"
       - ".github/workflows/validation-ci.yml"
   pull_request:
@@ -37,7 +37,7 @@ on:
       - "python/**"
       - "core-spec/**"
       - "ontology/**"
-      - "examples/flights.yaml"
+      - "examples/flights*.yaml"
       - "examples/tpcds_semantic_model.yaml"
       - ".github/workflows/validation-ci.yml"
 
@@ -77,3 +77,10 @@ jobs:
 
       - name: Validate canonical example
         run: uv run validation/validate.py examples/tpcds_semantic_model.yaml
+
+      - name: Validate flights examples
+        run: |
+          uv run validation/validate.py examples/flights.yaml --schema ontology/ontology.json
+          uv run validation/validate.py examples/flights.ontology.yaml --schema ontology/ontology.json
+          uv run validation/validate.py examples/flights.semantic_model.yaml
+          uv run validation/validate.py examples/flights.mapping.yaml --schema ontology/mapping.json
