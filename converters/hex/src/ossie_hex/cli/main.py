@@ -19,7 +19,7 @@
 
     ossie-hex export -i model.yaml [-o hex_project/] [--dialect DIALECT] [-v]
 
-``export`` converts Apache Ossie semantic model(s) to a Hex project directory(s).
+``export`` converts one Apache Ossie semantic model document to a Hex project directory.
 If ``-o`` is omitted, files are written to the current working directory.
 """
 
@@ -116,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
         parser = _build_parser()
         args = parser.parse_args(argv)
         if args.command == "export":
-            hex_projects, problems = convert_ossie_to_hex(
+            hex_project, problems = convert_ossie_to_hex(
                 input=args.input,
                 output=args.output,
                 dialect=args.dialect,
@@ -124,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
             report = format_export_report(
                 input=args.input,
                 output=args.output,
-                projects=hex_projects,
+                project=hex_project,
                 problems=problems,
                 verbosity=args.verbose,
             )

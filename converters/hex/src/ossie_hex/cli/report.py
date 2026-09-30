@@ -35,7 +35,6 @@ _OWNER_MARKERS = {
     "datasets": "Dataset",
     "metrics": "Metric",
     "relationships": "Relationship",
-    "semantic_model": "SemanticModel",
 }
 
 
@@ -43,26 +42,16 @@ def format_export_report(
     *,
     input: str,
     output: str,
-    projects: list[HexProject],
+    project: HexProject | None,
     problems: list[Problem],
     verbosity: int,
 ) -> str:
     """Format the human-readable report printed after an export."""
     lines = [_headline(problems)]
 
-    if projects:
-        destination = Path(output)
-        if len(projects) == 1:
-            destination /= projects[0].name
-        file_count = 0
-        for project in projects:
-            file_count += len(project.resources)
-        project_count_value = len(projects)
-        project_count = _count(project_count_value, "project")
-        file_count_text = _count(file_count, "file")
-        conversion = (
-            f"Converted {input} -> {destination}/ ({project_count}, {file_count_text})."
-        )
+    if project is not None:
+        destination = Path(output) / project.name
+        conversion = f"Converted {input} -> {destination}/."
         lines.append(conversion)
     else:
         lines.append(f"Could not convert {input}.")
@@ -201,8 +190,6 @@ def _derive_subject(problems: list[Problem]) -> str | None:
     owners = {_cause_owner(problem) for problem in problems}
     if len(owners) == 1 and None not in owners:
         return f"{owners.pop()}.{leaf}"
-    if "_" not in leaf:
-        return leaf.capitalize()
     return leaf
 
 

@@ -33,7 +33,7 @@ def test_error_report_is_failed() -> None:
     report = format_export_report(
         input="INPUT",
         output="OUTPUT",
-        projects=[],
+        project=None,
         problems=[problem],
         verbosity=0,
     )
@@ -105,7 +105,7 @@ def test_default_dialect(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> 
     )
     assert message == snapshot("""\
 Success!
-Converted INPUT -> OUTPUT/tpcds_retail_model/ (1 project, 5 files).
+Converted INPUT -> OUTPUT/tpcds_retail_model/.
 Encountered 49 problems: 49 warnings.
   (Run with -v to see a grouped summary.)
 """)
@@ -126,7 +126,7 @@ def test_verbose_problem_summary(
     )
     assert message == snapshot("""\
 Success!
-Converted INPUT -> OUTPUT/tpcds_retail_model/ (1 project, 5 files).
+Converted INPUT -> OUTPUT/tpcds_retail_model/.
 Encountered 49 problems: 49 warnings.
 
 Warnings (49)
@@ -135,8 +135,8 @@ Warnings (49)
    2× `Field.datatype` — A datatype is required in Hex; a default was used.
    1× `Dataset.primary_key` — Composite primary keys are not supported in Hex and were dropped.
    1× `Dataset.unique_keys` — Composite unique keys are not supported in Hex and were dropped.
-   1× `SemanticModel.description` — Project descriptions are not supported in Hex and were dropped.
-   1× `SemanticModel.custom_extensions` — Custom extensions are not preserved in Hex and were dropped.
+   1× `description` — Project descriptions are not supported in Hex and were dropped.
+   1× `custom_extensions` — Custom extensions are not preserved in Hex and were dropped.
 """)
 
 

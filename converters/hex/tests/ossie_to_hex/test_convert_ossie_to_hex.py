@@ -26,13 +26,13 @@ TPCDS = Path(__file__).resolve().parents[4] / "examples" / "tpcds_semantic_model
 
 
 def test_convert_tpcds() -> None:
-    hex_projects, problems = convert_ossie_to_hex(
+    hex_project, problems = convert_ossie_to_hex(
         TPCDS,
         None,
         dialect=None,
     )
-    assert len(hex_projects) == 1
-    assert hex_project_snapshot(hex_projects[0]) == snapshot("""\
+    assert hex_project is not None
+    assert hex_project_snapshot(hex_project) == snapshot("""\
 name: tpcds_retail_model
 dialect: duckdb
 resources:

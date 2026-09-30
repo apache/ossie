@@ -46,7 +46,7 @@ Requires Python 3.11 or newer.
 
 #### `export`
 
-Convert an Ossie semantic model(s) into a Hex semantic project(s).
+Convert one Ossie semantic model document into one Hex semantic project.
 
 ```bash
 ossie-hex export -i <file> -o <directory> \
@@ -73,12 +73,12 @@ ossie-hex export -i ossie.yaml -o hex/ --dialect snowflake
 
 #### `convert_ossie_to_hex`
 
-Convert an Ossie semantic model(s) into a Hex semantic project(s).
+Convert one Ossie semantic model document into one Hex semantic project.
 
 ```python
 from ossie_hex import convert_ossie_to_hex
 
-hex_projects, problems = convert_ossie_to_hex(
+hex_project, problems = convert_ossie_to_hex(
     input="ossie.yaml",
     output="hex/",
     dialect="snowflake",
@@ -89,14 +89,14 @@ Options:
 
 - `input` — Required. Ossie YAML file to export.
 - `output` — Optional. Directory where Hex YAML files are written. If omitted,
-  the current working directory is used.
+  no files are written.
 - `dialect` — Optional. Ossie dialect to pick from Ossie expressions. If
-  omitted, the first dialect an expression declares is used, falling back to
-  `ANSI_SQL`.
+  omitted, `ANSI_SQL` is preferred, falling back to the first available variant.
 
 Returns: a tuple of
 
-- `hex_projects`: A list of Hex semantic project(s).
+- `hex_project`: A Hex semantic project, or `None` if conversion could not
+  produce a project.
 - `problems`: A list of problems encountered.
 
 ## Conversion

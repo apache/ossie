@@ -36,7 +36,7 @@ def convert_ossie_to_hex(
     output: Path | str | None = None,
     *,
     dialect: OssieDialect | str | None = None,
-) -> tuple[list[HexProject], list[Problem]]:
+) -> tuple[HexProject | None, list[Problem]]:
     """Convert an Ossie document to a Hex semantic project.
 
     Args:
@@ -48,7 +48,7 @@ def convert_ossie_to_hex(
           dialect will be used when available. Otherwise, the first dialect expression is used.
 
     Returns: a tuple of:
-        - `hex_projects`: A list of Hex semantic project(s).
+        - `hex_project`: A Hex semantic project.
         - `problems`: A list of problems encountered.
     """
     ctx = ExportContext()
@@ -60,7 +60,7 @@ def convert_ossie_to_hex(
     with ctx.phase_scope("convert"):
         hex_dialect = convert_ossie_dialect(ossie_dialect, ctx=ctx)
         ctx.set_dialects(ossie_dialect, hex_dialect)
-        hex_projects = convert_ossie_document(
+        hex_project = convert_ossie_document(
             ossie_document,
             ctx=ctx,
         )
@@ -69,7 +69,7 @@ def convert_ossie_to_hex(
         if output is not None:
             output = Path(output).resolve()
             output.mkdir(parents=True, exist_ok=True)
-            for hex_project in hex_projects:
+            if hex_project is not None:
                 dump_hex_project(hex_project, dir=output, ctx=ctx)
 
-    return hex_projects, ctx.problems
+    return hex_project, ctx.problems
