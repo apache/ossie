@@ -149,8 +149,10 @@ def test_document_serialization_preserves_flat_model_and_metadata(
 @pytest.mark.parametrize(
     "serialize", ["model_dump", "model_dump_json", "to_ossie_yaml", "to_ossie_json"]
 )
-def test_document_serialization_puts_version_first(serialize: str) -> None:
-    data = _document()
+def test_document_serialization_puts_version_first(
+    serialize: str, document_data: dict
+) -> None:
+    data = document_data
     document = OssieDocument.model_validate(data)
 
     serialized = getattr(document, serialize)()
@@ -173,8 +175,10 @@ def test_document_serialization_puts_version_first(serialize: str) -> None:
         {"exclude_unset": True},
     ],
 )
-def test_document_serialization_can_omit_version(serialize: str, options: dict) -> None:
-    data = _document()
+def test_document_serialization_can_omit_version(
+    serialize: str, options: dict, document_data: dict
+) -> None:
+    data = document_data
     del data["version"]
     document = OssieDocument.model_validate(data)
 
