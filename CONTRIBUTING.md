@@ -124,8 +124,9 @@ examples) follow standard GitHub pull request review:
 ### Converter Contributions
 
 The main Ossie repository does not accept new converters. Develop new semantic
-model and ontology converters in separate repositories, and discuss any proposed
-Apache Ossie hosting on `dev@ossie.apache.org`.
+model and ontology converters in separate repositories. For Apache Ossie hosting,
+use the [ossie-converters repository](https://github.com/apache/ossie-converters)
+and coordinate contributions on `dev@ossie.apache.org`.
 
 ### Specification Changes
 
