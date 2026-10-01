@@ -43,14 +43,8 @@ def _ossie_field(name: str, **extra: Any) -> dict[str, Any]:
 def _ossie_model(fields: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "version": "0.2.0.dev0",
-        "semantic_model": [
-            {
-                "name": "sales",
-                "datasets": [
-                    {"name": "Orders", "source": "ANALYTICS.PUBLIC.ORDERS", "fields": fields}
-                ],
-            }
-        ],
+        "name": "sales",
+        "datasets": [{"name": "Orders", "source": "ANALYTICS.PUBLIC.ORDERS", "fields": fields}],
     }
 
 
@@ -61,7 +55,7 @@ def _obml_columns(obml: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 def _ossie_fields(ossie: dict[str, Any]) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
-    for ds in ossie["semantic_model"][0]["datasets"]:
+    for ds in ossie["datasets"]:
         for f in ds.get("fields", []):
             out[f["name"]] = f
     return out
@@ -169,27 +163,17 @@ class TestRoundtripLossless:
 def _ossie_model_with_metric(datatype: str) -> dict[str, Any]:
     return {
         "version": "0.2.0.dev0",
-        "semantic_model": [
+        "name": "sales",
+        "datasets": [
+            {"name": "Orders", "source": "A.P.ORDERS", "fields": [_ossie_field("amount")]}
+        ],
+        "metrics": [
             {
-                "name": "sales",
-                "datasets": [
-                    {
-                        "name": "Orders",
-                        "source": "A.P.ORDERS",
-                        "fields": [_ossie_field("amount")],
-                    }
-                ],
-                "metrics": [
-                    {
-                        "name": "Total",
-                        "expression": {
-                            "dialects": [
-                                {"dialect": "ANSI_SQL", "expression": "SUM(Orders.amount)"}
-                            ]
-                        },
-                        "datatype": datatype,
-                    }
-                ],
+                "name": "Total",
+                "expression": {
+                    "dialects": [{"dialect": "ANSI_SQL", "expression": "SUM(Orders.amount)"}]
+                },
+                "datatype": datatype,
             }
         ],
     }
@@ -213,7 +197,7 @@ class TestMetricDatatype:
         for ossie_dt in ["Decimal", "Integer", "Float"]:
             ossie = _ossie_model_with_metric(ossie_dt)
             back = conv.OBMLtoOssie(conv.OssietoOBML(ossie).convert(), model_name="sales").convert()
-            metric = back["semantic_model"][0]["metrics"][0]
+            metric = back["metrics"][0]
             assert metric.get("datatype") == ossie_dt
 
     def test_plain_measure_emits_no_datatype(self) -> None:
@@ -235,7 +219,7 @@ class TestMetricDatatype:
             },
         }
         ossie = conv.OBMLtoOssie(obml, model_name="s").convert()
-        metric = ossie["semantic_model"][0]["metrics"][0]
+        metric = ossie["metrics"][0]
         assert "datatype" not in metric
 
 
@@ -259,7 +243,7 @@ def _obml_with_measure(**measure: Any) -> dict[str, Any]:
 
 
 def _only_metric(ossie: dict[str, Any]) -> dict[str, Any]:
-    (metric,) = ossie["semantic_model"][0]["metrics"]
+    (metric,) = ossie["metrics"]
     return metric
 
 
@@ -275,7 +259,7 @@ class TestMalformedDatatype:
     def test_non_string_ossie_datatype_is_ignored(self) -> None:
         # `price` is a heuristic float keyword, so the field falls back to it.
         ossie = _ossie_model_with_metric("Decimal")
-        model = ossie["semantic_model"][0]
+        model = ossie
         model["datasets"][0]["fields"] = [_ossie_field("price", datatype=["Integer"])]
         model["metrics"][0]["datatype"] = 7
         model["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(Orders.price)"
