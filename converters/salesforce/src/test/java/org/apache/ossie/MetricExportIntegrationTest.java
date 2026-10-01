@@ -127,9 +127,8 @@ class MetricExportIntegrationTest {
     }
 
     @Test
-    void missingFieldFailsWithMetricNameAndDoesNotWriteAnyModelFiles() throws Exception {
+    void missingFieldFailsWithMetricNameAndDoesNotWriteAnyModelFile() throws Exception {
         String input = document(List.of(
-                model("valid", List.of(metric("revenue", "ANSI_SQL", "SUM(orders.revenue)"))),
                 model("invalid", List.of(metric("broken_margin", "SNOWFLAKE", "SUM(orders.missing)")))));
         Path source = temporaryDirectory.resolve("input.yaml");
         Path outputDirectory = Files.createDirectory(temporaryDirectory.resolve("output"));
@@ -146,7 +145,7 @@ class MetricExportIntegrationTest {
         assertEquals("preserve this file", Files.readString(existing));
         try (var files = Files.list(outputDirectory)) {
             assertEquals(List.of("existing.json"), files.map(path -> path.getFileName().toString()).toList(),
-                    "A failure in a later model must not leave an earlier model's output behind");
+                    "A failed conversion must not leave partial output behind");
         }
     }
 
@@ -209,13 +208,13 @@ class MetricExportIntegrationTest {
         items(items(second, "datasets").get(0), "fields").get(0).put("datatype", "String");
         items(items(second, "datasets").get(0), "fields").get(0).put("dimension", Map.of("is_time", false));
 
-        List<String> outputs = converter.convert(document(List.of(first, second)));
+        Map<String, Object> firstOutput = convertOne(first);
+        Map<String, Object> secondOutput = convertOne(second);
 
-        assertEquals(2, outputs.size());
-        assertEquals("SUM([orders].[profit])", measurements(parse(outputs.get(0))).get(0).get("expression"));
-        assertEquals("COUNT([orders].[profit])", measurements(parse(outputs.get(1))).get(0).get("expression"));
-        assertEquals("first", parse(outputs.get(0)).get("apiName"));
-        assertEquals("second", parse(outputs.get(1)).get("apiName"));
+        assertEquals("SUM([orders].[profit])", measurements(firstOutput).get(0).get("expression"));
+        assertEquals("COUNT([orders].[profit])", measurements(secondOutput).get(0).get("expression"));
+        assertEquals("first", firstOutput.get("apiName"));
+        assertEquals("second", secondOutput.get("apiName"));
     }
 
     @Test
@@ -225,7 +224,8 @@ class MetricExportIntegrationTest {
         Map<String, Object> second = model("second", List.of(
                 metric("must_not_leak", "ANSI_SQL", "SUM(orders.profit)")));
         items(second, "datasets").get(0).put("fields", List.of(field("revenue", "Decimal")));
-        String input = document(List.of(first, second));
+        assertDoesNotThrow(() -> convertOne(first));
+        String input = document(second);
 
         ConversionException error = assertThrows(ConversionException.class, () -> converter.convert(input));
 
@@ -354,7 +354,15 @@ class MetricExportIntegrationTest {
     }
 
     private static String document(List<Map<String, Object>> models) throws IOException {
-        return YAML.writeValueAsString(Map.of("version", "0.2.0.dev0", "semantic_model", models));
+        assertEquals(1, models.size(), "An Ossie document contains exactly one model");
+        return document(models.get(0));
+    }
+
+    private static String document(Map<String, Object> model) throws IOException {
+        Map<String, Object> root = new LinkedHashMap<>();
+        root.put("version", "0.2.0.dev0");
+        root.putAll(model);
+        return YAML.writeValueAsString(root);
     }
 
     private static Map<String, Object> parse(String json) throws IOException {

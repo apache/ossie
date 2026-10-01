@@ -320,24 +320,24 @@ class OssieToSalesforceConverterTest {
         // Normalize line endings first: the fixture file may check out with CRLF depending on
         // the platform's autocrlf setting, but the substitution below is written with LF.
         String yamlWithTableauMetric = ossieYaml.replace("\r\n", "\n").replace(
-                "    metrics:\n"
-                        + "    - description: Sum of all order amounts\n"
-                        + "      name: total_revenue\n"
-                        + "      datatype: Decimal\n"
-                        + "      expression:\n"
-                        + "        dialects:\n"
-                        + "        - dialect: ANSI_SQL\n"
-                        + "          expression: SUM([Orders].[amount])\n",
-                "    metrics:\n"
-                        + "    - description: Sum of all order amounts\n"
-                        + "      name: total_revenue\n"
-                        + "      datatype: Decimal\n"
-                        + "      expression:\n"
-                        + "        dialects:\n"
-                        + "        - dialect: ANSI_SQL\n"
-                        + "          expression: SUM([Orders].[amount])\n"
-                        + "        - dialect: TABLEAU\n"
-                        + "          expression: MAX([Orders].[amount])\n");
+                "metrics:\n"
+                        + "- description: Sum of all order amounts\n"
+                        + "  name: total_revenue\n"
+                        + "  datatype: Decimal\n"
+                        + "  expression:\n"
+                        + "    dialects:\n"
+                        + "    - dialect: ANSI_SQL\n"
+                        + "      expression: SUM([Orders].[amount])\n",
+                "metrics:\n"
+                        + "- description: Sum of all order amounts\n"
+                        + "  name: total_revenue\n"
+                        + "  datatype: Decimal\n"
+                        + "  expression:\n"
+                        + "    dialects:\n"
+                        + "    - dialect: ANSI_SQL\n"
+                        + "      expression: SUM([Orders].[amount])\n"
+                        + "    - dialect: TABLEAU\n"
+                        + "      expression: MAX([Orders].[amount])\n");
         assertTrue(yamlWithTableauMetric.contains("dialect: TABLEAU"), "fixture text substitution did not match");
 
         List<String> results = converter.convert(yamlWithTableauMetric);
@@ -361,10 +361,10 @@ class OssieToSalesforceConverterTest {
         // to its own enum, so this uses BIGQUERY (a valid dialect, but neither TABLEAU nor
         // ANSI_SQL) rather than omitting the expression or inventing an unrecognized dialect.
         String yamlWithUnconvertibleDialect = ossieYaml.replace("\r\n", "\n").replace(
-                "        - dialect: ANSI_SQL\n"
-                        + "          expression: SUM([Orders].[amount])\n",
-                "        - dialect: BIGQUERY\n"
-                        + "          expression: SUM(Orders.amount)\n");
+                "    - dialect: ANSI_SQL\n"
+                        + "      expression: SUM([Orders].[amount])\n",
+                "    - dialect: BIGQUERY\n"
+                        + "      expression: SUM(Orders.amount)\n");
         assertTrue(yamlWithUnconvertibleDialect.contains("dialect: BIGQUERY"),
                 "fixture text substitution did not match");
 
