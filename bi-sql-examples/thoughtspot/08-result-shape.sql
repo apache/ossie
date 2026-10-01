@@ -26,15 +26,14 @@
 -- Almost none of it. The two table Answers compile to the same shape, differing
 -- only in the order of the SELECT list. The KPI differs by more - its search
 -- names neither the dimension nor one of the two measures, so it projects a
--- single scalar aggregate and drops the GROUP BY with the dimension. No LIMIT appears anywhere, so no display row cap leaks into the SQL either.
+-- single scalar aggregate and drops the GROUP BY with the dimension. No LIMIT
+-- appears anywhere, so no display row cap leaks into the SQL either.
 --
--- One caveat on the scope of that claim. None of these three Answers has pivot
 -- One caveat on the scope of that claim. The pivot Answer has no totals
 -- configured - its saved chart state carries a totals-summary block whose
 -- row and column grand-total and sub-total flags are all false - so nothing
 -- here shows what a totals row would compile to, or whether it would reach
--- the SQL at all. These captures speak to projection and grouping, not totals.
--- SQL at all. These captures speak to projection and grouping, not to totals.
+-- the SQL at all. These captures speak to projection and grouping, not to totals.
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -68,11 +67,12 @@ FROM `agent_skills`.`dunder_mifflin`.`dunder_mifflin_sales_mv` AS `ta_1`;
 -- Query 2: a straight table, one dimension and two measures.
 --
 -- Adding a dimension to the search adds a GROUP BY; this search also added
--- FROM clause and the absence of WHERE, ORDER BY and LIMIT are as in Query 1.
--- The MEASURE() calls are not: this search names two measures where Query 1's
--- named one, so the KPI differs by a measure as well as by the dimension.
--- its projection and in the GROUP BY that the projected dimension requires,
--- and in nothing else.
+-- a second measure. The FROM clause and the absence of WHERE, ORDER BY and
+-- LIMIT are as in Query 1. The MEASURE() calls are not: this search names two
+-- measures where Query 1's named one, so the KPI differs from this table by a
+-- measure as well as by the dimension. Beyond that, the two statements differ
+-- in their projection and in the GROUP BY that the projected dimension
+-- requires, and in nothing else.
 --
 -- Two details of the shape are worth naming.
 --
