@@ -270,6 +270,17 @@ def test_flags_an_invalid_ossie_sql_2026_expression() -> None:
     assert error.startswith("[SQL] ctx:")
 
 
+def test_iceberg_dialect_is_skipped_from_sql_validation() -> None:
+    # ICEBERG expressions use Iceberg's function-call expression API, not SQL
+    # text, so they must never be handed to the SQL parser.
+    assert "ICEBERG" in _VALIDATE.DIALECT_MAP
+    assert "ICEBERG" in _VALIDATE.SKIP_SQL_VALIDATION
+
+    error = _VALIDATE.validate_sql_expression("month(order_date)", "ICEBERG", "ctx")
+
+    assert error is None
+
+
 def _relationship(to_columns: list[str], to: str = "customers") -> dict:
     return {
         "name": "orders_to_customers",

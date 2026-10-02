@@ -676,6 +676,56 @@ expression:
 Vendors may expose their own feature through extensions, however the default for Ossie should be to pass unknown values through.:  
 ---
 
+### The ICEBERG Dialect
+
+Apache Iceberg does not use SQL text for its expressions. Instead, Iceberg's public
+[Expressions API](https://iceberg.apache.org/javadoc/latest/org/apache/iceberg/expressions/Expressions.html)
+represents predicates and partition transforms as structured function calls over column
+references and literals. The `ICEBERG` dialect lets an Ossie expression carry this native
+form (e.g. for partition specs, row filters, or predicate pushdown) alongside a portable
+`ANSI_SQL` / `OSSIE_SQL_2026` equivalent, without asking implementations to translate SQL
+text into Iceberg's expression tree at read time.
+
+Because `ICEBERG` expressions are not SQL, implementations MUST NOT attempt to parse them
+with a SQL parser; they are opaque strings using Iceberg's function-call syntax, skipped
+from SQL validation the same way `MDX`, `TABLEAU`, `MAQL`, `SIGMA`, `THOUGHTSPOT`, and `DAX`
+are.
+
+**Partition transforms** (used in partition specs):
+
+| Transform | Description |
+| :---- | :---- |
+| `identity(col)` | Partition by the column's raw value |
+| `bucket(N, col)` | Hash into `N` buckets |
+| `truncate(W, col)` | Truncate strings/numbers to width `W` |
+| `year(col)` / `month(col)` / `day(col)` / `hour(col)` | Partition by a date/time granularity |
+| `void(col)` | Drop the column from the partition spec |
+
+**Predicate filters** (used in row filters / predicate pushdown):
+
+| Predicate | Description |
+| :---- | :---- |
+| `equal(col, v)` / `notEqual(col, v)` | Equality / inequality |
+| `lessThan(col, v)` / `lessThanOrEqual(col, v)` | Less-than comparisons |
+| `greaterThan(col, v)` / `greaterThanOrEqual(col, v)` | Greater-than comparisons |
+| `isNull(col)` / `notNull(col)` | Null checks |
+| `in(col, v1, v2, ...)` / `notIn(col, v1, v2, ...)` | Set membership |
+| `startsWith(col, prefix)` | String prefix match |
+| `and(p1, p2)` / `or(p1, p2)` / `not(p)` | Boolean composition of predicates |
+
+Example declaring both a portable expression and its Iceberg partition-transform form:
+
+```
+expression:
+  dialects:
+    - dialect: ANSI_SQL
+      expression: DATE_TRUNC('month', order_date)
+    - dialect: ICEBERG
+      expression: month(order_date)
+```
+
+---
+
 ## Cross-Reference: Tool Mappings
 
 This section maps Ossie standard functions to their equivalents in popular BI tools.

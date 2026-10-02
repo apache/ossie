@@ -63,6 +63,14 @@ def test_dialect_accepts_string_and_enum_input(dialect: str | OssieDialect) -> N
     assert expression.dialects[0].dialect is OssieDialect.ANSI_SQL
 
 
+def test_iceberg_dialect_accepts_string_and_enum_input() -> None:
+    expression = OssieExpression.model_validate(
+        {"dialects": [{"dialect": "ICEBERG", "expression": "month(order_date)"}]}
+    )
+
+    assert expression.dialects[0].dialect is OssieDialect.ICEBERG
+
+
 def test_dialect_rejects_unknown_string() -> None:
     with pytest.raises(ValidationError):
         OssieExpression.model_validate(

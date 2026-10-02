@@ -67,6 +67,7 @@ SECTIONS = [
             "THOUGHTSPOT": "ThoughtSpot formula language (not SQL)",
             "DAX": "Data Analysis Expressions (Power BI / Analysis Services)",
             "OSSIE_SQL_2026": "Ossie portable SQL expression language (see expression_language.md)",
+            "ICEBERG": "Apache Iceberg expression language (partition transforms and predicates)",
         },
     },
     {
