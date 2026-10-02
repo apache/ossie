@@ -694,7 +694,7 @@ This section maps Ossie standard functions to their equivalents in popular BI to
 | `STDDEV_POP(x)` | `STDEVP(x)` | `STDDEV(X)` | `STDEV.P(x)` | N/A |
 | `VARIANCE(x)` | `VAR(x)` | `VARIANCE(X)` | `VAR.S(x)` | `Variance(x)` |
 | `MEDIAN(x)` | `MEDIAN(x)` | `MEDIAN(X)` | `MEDIAN(x)` | `Median(x)` |
-| `PERCENTILE_CONT(x, 0.75)` | `PERCENTILE(x, 0.75)` | `PERCENTILE(X, 75)` | `PERCENTILE.INC(x, 0.75)` | `Percentile(x, 0.75)` |
+| `PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY x)` | `PERCENTILE(x, 0.75)` | `PERCENTILE(X, 75)` | `PERCENTILE.INC(x, 0.75)` | `Percentile(x, 0.75)` |
 
 Two of the DAX mappings are not the same-named function, because DAX treats BLANK
 differently from SQL's NULL:
