@@ -24,7 +24,7 @@ import pytest
 
 # validate.py exits at import time when its dependencies are missing, which
 # would abort the whole pytest session during collection — skip instead.
-pytest.importorskip("yaml")
+yaml = pytest.importorskip("yaml")
 pytest.importorskip("jsonschema")
 
 _VALIDATE_PATH = Path(__file__).parents[1] / "validate.py"
@@ -605,3 +605,175 @@ def test_arity_skips_non_list_columns() -> None:
     rel["to_columns"] = "id"
 
     assert validate_relationship_column_arity(_document([_ORDERS, _CUSTOMERS], [rel])) == []
+
+
+validate_ontology = _VALIDATE.validate_ontology
+
+_ONTOLOGY_SCHEMA = Path(__file__).parents[2] / "ontology/ontology.json"
+
+
+def _ontology(components: list[dict], **extra) -> dict:
+    return {"version": "0.2.0.dev0", "name": "o", "ontology": components, **extra}
+
+
+def _concept(name: str, **fields) -> dict:
+    return {"concept": name, "type": "EntityType", **fields}
+
+
+def _ontology_relationship(name: str, role: str, **fields) -> dict:
+    return {
+        "name": name,
+        "roles": [{"concept": role}],
+        "verbalizes": [f"{{x}} {name} {{{role}}}"],
+        **fields,
+    }
+
+
+def test_ontology_checks_accept_the_flights_example() -> None:
+    flights = yaml.safe_load((Path(__file__).parents[2] / "examples/flights.yaml").read_text())
+
+    assert validate_ontology(flights) == []
+
+
+@pytest.mark.parametrize("data", [None, [], {}, {"datasets": []}, {"ontology": {"concept": "A"}}])
+def test_ontology_checks_skip_non_ontology_payloads(data: object) -> None:
+    assert validate_ontology(data) == []
+
+
+def test_duplicate_concepts_are_reported_once_per_repeat() -> None:
+    errors = validate_ontology(_ontology([_concept("Order"), _concept("Order"), _concept("Item")]))
+
+    assert errors == ["[Unique] Duplicate concept 'Order' in ontology 'o'"]
+
+
+def test_a_duplicate_concept_does_not_repeat_its_reference_errors() -> None:
+    first = _concept("Order", extends=["Ghost"], relationships=[_ontology_relationship("nr", "Integer")])
+    second = _concept("Order", identify_by=["nr"])
+
+    errors = validate_ontology(_ontology([first, second]))
+
+    assert errors == [
+        "[Unique] Duplicate concept 'Order' in ontology 'o'",
+        "[Reference] Concept 'Order' extends unknown concept 'Ghost'",
+    ]
+
+
+def test_duplicate_relationship_names_are_scoped_to_their_concept() -> None:
+    order = _concept("Order", relationships=[_ontology_relationship("nr", "Integer"), _ontology_relationship("nr", "String")])
+    item = _concept("Item", relationships=[_ontology_relationship("nr", "Integer")])
+
+    errors = validate_ontology(_ontology([order, item]))
+
+    assert errors == ["[Unique] Duplicate relationship 'nr' in concept 'Order'"]
+
+
+@pytest.mark.parametrize(
+    ("component", "expected"),
+    [
+        (
+            _concept("Order", extends=["Ghost"]),
+            "[Reference] Concept 'Order' extends unknown concept 'Ghost'",
+        ),
+        (
+            _concept("Order", identify_by=["nr"]),
+            "[Reference] Concept 'Order' identify_by references unknown relationship 'nr'",
+        ),
+        (
+            _concept("Order", relationships=[_ontology_relationship("placed_by", "Nobody")]),
+            "[Reference] Relationship 'Order.placed_by' has a role played by unknown concept 'Nobody'",
+        ),
+        (
+            _concept("Order", iri="ex:Order"),
+            "[Reference] Concept 'Order' iri uses undeclared prefix 'ex'",
+        ),
+        (
+            _concept("Order", relationships=[_ontology_relationship("nr", "Integer", iri="ex:nr")]),
+            "[Reference] Relationship 'Order.nr' iri uses undeclared prefix 'ex'",
+        ),
+    ],
+)
+def test_dangling_ontology_references_are_reported(component: dict, expected: str) -> None:
+    assert validate_ontology(_ontology([component])) == [expected]
+
+
+def test_built_in_concepts_resolve_without_being_declared() -> None:
+    amount = {"concept": "Amount", "type": "ValueType", "extends": ["Decimal"]}
+    order = _concept(
+        "Order",
+        extends=["Any"],
+        relationships=[_ontology_relationship("total", "Amount"), _ontology_relationship("placed_on", "DateTime")],
+    )
+
+    assert validate_ontology(_ontology([amount, order])) == []
+
+
+def test_identify_by_resolves_relationships_declared_on_a_supertype() -> None:
+    party = _concept("Party", relationships=[_ontology_relationship("nr", "Integer")])
+    person = _concept("Person", extends=["Party"], identify_by=["nr"])
+
+    assert validate_ontology(_ontology([party, person])) == []
+
+
+@pytest.mark.parametrize(
+    ("components", "expected"),
+    [
+        (
+            [_concept("A", extends=["B"]), _concept("B", extends=["A"])],
+            ["[Reference] Concept 'A' extends itself: A -> B -> A"],
+        ),
+        (
+            [_concept("A", extends=["A"])],
+            ["[Reference] Concept 'A' extends itself: A -> A"],
+        ),
+        (
+            [_concept("A", extends=["B"]), _concept("B", extends=["C"]), _concept("C", extends=["Any"])],
+            [],
+        ),
+    ],
+)
+def test_extends_cycles_are_reported_once(components: list[dict], expected: list[str]) -> None:
+    assert validate_ontology(_ontology(components)) == expected
+
+
+@pytest.mark.parametrize(
+    "iri",
+    [
+        "ex:Order",
+        "http://example.com/Order",
+        "urn:isbn:0451450523",
+        "https://example.com/ns#Order",
+    ],
+)
+def test_declared_prefixes_and_full_iris_are_accepted(iri: str) -> None:
+    document = _ontology([_concept("Order", iri=iri)], prefixes={"ex": "http://example.com/"})
+
+    assert validate_ontology(document) == []
+
+
+def test_ontology_checks_tolerate_malformed_shapes() -> None:
+    # Schema validation owns shape errors; the semantic pass must not crash on them.
+    document = _ontology(
+        ["not a component", _concept("Order", extends="Any", identify_by="nr", relationships=[None, {}])],
+        prefixes="foaf",
+    )
+
+    assert validate_ontology(document) == []
+
+
+def test_ontology_cli_reports_dangling_references(run_validator, offline) -> None:
+    document = _ontology([_concept("Order", extends=["Ghost"])])
+
+    exit_code, output = run_validator(document, _ONTOLOGY_SCHEMA)
+
+    assert exit_code == 1
+    assert "[Reference] Concept 'Order' extends unknown concept 'Ghost'" in output
+
+
+def test_ontology_cli_skips_semantic_checks_when_the_schema_fails(run_validator, offline) -> None:
+    document = _ontology([{"concept": "Order", "extends": ["Ghost"]}])  # missing required type
+
+    exit_code, output = run_validator(document, _ONTOLOGY_SCHEMA)
+
+    assert exit_code == 1
+    assert "[Schema]" in output
+    assert "[Reference]" not in output

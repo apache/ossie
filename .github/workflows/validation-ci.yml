@@ -82,3 +82,6 @@ jobs:
 
       - name: Validate canonical example
         run: uv run validation/validate.py examples/tpcds_semantic_model.yaml
+
+      - name: Validate canonical ontology example
+        run: uv run validation/validate.py examples/flights.yaml --schema ontology/ontology.json
