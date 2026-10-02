@@ -218,6 +218,33 @@ def test_one_to_one_note_restores_relationship_type():
     assert edges[0]["properties"]["relationshipType"] == "ONE_TO_ONE"
 
 
+def test_free_text_relationship_note_is_not_read_as_a_type_marker():
+    document = OssieDocument(
+        name="m",
+        datasets=[
+            OssieDataset(name="orders", source="db.s.orders"),
+            OssieDataset(name="customers", source="db.s.customers"),
+        ],
+        relationships=[
+            OssieRelationship(
+                name="orders_to_customers",
+                from_dataset="orders",
+                to="customers",
+                from_columns=["customer_id"],
+                to_columns=["id"],
+                ai_context="one-to-many, orders to customers",
+            )
+        ],
+    )
+    result = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
+    edge = result.output["domain"]["zsheet_json"]["relationshipGraph"]["relationships"][0]
+    assert edge["properties"]["relationshipType"] == "MANY_TO_ONE"
+    assert edge["leftDataSource"]["zsheet"]["name"] == "orders"
+    assert [issue.element_name for issue in _issues_of(result, ConverterIssueType.AI_CONTEXT_DROPPED)] == [
+        "orders_to_customers"
+    ]
+
+
 def test_one_to_many_note_restores_relationship_type_and_direction():
     document = OssieDocument(
         name="m",

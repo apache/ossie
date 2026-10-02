@@ -42,6 +42,9 @@ from ossie import (
     OssieSemanticModel,
 )
 from ossie_wisdom.converter_issues import ConverterIssue, ConverterIssueType, ConverterResult
+from ossie_wisdom.wisdom_to_ossie import RELATIONSHIP_TYPE_NOTES
+
+_NOTE_RELATIONSHIP_TYPES = {note: relationship_type for relationship_type, note in RELATIONSHIP_TYPE_NOTES.items()}
 
 _WISDOM_DIALECT = {
     OssieDialect.SNOWFLAKE: "snowflake",
@@ -350,15 +353,13 @@ class OssieToWisdomConverter:
             relationship_type = "MANY_TO_ONE"
             left_columns, right_columns = relationship.from_columns, relationship.to_columns
             if isinstance(relationship.ai_context, str):
-                if relationship.ai_context.startswith("one-to-one"):
-                    relationship_type = "ONE_TO_ONE"
-                elif relationship.ai_context.startswith("one-to-many"):
-                    # The forward path swapped sides to put the many side in `from`; swap back.
-                    relationship_type = "ONE_TO_MANY"
-                    left, right = right, left
-                    left_columns, right_columns = right_columns, left_columns
-                elif relationship.ai_context.startswith("many-to-many"):
-                    relationship_type = "MANY_TO_MANY"
+                if relationship.ai_context in _NOTE_RELATIONSHIP_TYPES:
+                    relationship_type = _NOTE_RELATIONSHIP_TYPES[relationship.ai_context]
+                    if relationship_type == "ONE_TO_MANY":
+                        # The forward path swapped sides to put the many side in `from`; swap back.
+                        # left_ref, right_ref and the join conditions below must be built after this.
+                        left, right = right, left
+                        left_columns, right_columns = right_columns, left_columns
                 else:
                     issues.append(
                         ConverterIssue(
