@@ -37,18 +37,24 @@ updates:
         patterns:
           - "*"
 
-  # Python projects (PEP 621 / hatchling)
-  - package-ecosystem: "pip"
+  # Python projects (PEP 621 / hatchling). They pin in uv.lock, which the
+  # "pip" ecosystem does not read, so they are updated as "uv" projects.
+  - package-ecosystem: "uv"
     directories:
       - "/python"
+      - "/converters/cube"
+      - "/converters/databricks/python"
       - "/converters/dbt"
-      - "/converters/databricks"
       - "/converters/gooddata"
       - "/converters/honeydew"
+      - "/converters/microsoft"
+      - "/converters/nvidia"
       - "/converters/omni"
+      - "/converters/ontology"
       - "/converters/orionbelt"
+      - "/converters/sigma"
       - "/converters/snowflake"
-      - "/converters/wisdom"
+      - "/converters/thoughtspot"
     schedule:
       interval: "weekly"
     groups:
@@ -59,6 +65,7 @@ updates:
   # Maven / Java converters
   - package-ecosystem: "maven"
     directories:
+      - "/converters/databricks/java"
       - "/converters/polaris"
       - "/converters/salesforce"
     schedule:
