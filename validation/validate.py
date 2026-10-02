@@ -41,12 +41,18 @@ concept and relationship names, and for extends, identify_by, roles and QName
 prefixes that resolve to something declared.
 
 Usage:
-    python validation/validate.py <yaml_file>
-    python validation/validate.py <yaml_file> --schema ontology/ontology.json
+    python validation/validate.py <file> [<file> ...] [--schema <schema_file>]
+    python validation/validate.py <file> --schema ontology/ontology.json
     python validation/validate.py examples/tpcds_semantic_model.yaml
+
+Every file is validated and reported; the exit status is non-zero if any of
+them failed. The schema defaults to core-spec/ossie-schema.json in this
+repository's layout; when the script is vendored elsewhere, point OSSIE_SCHEMA
+or --schema at a copy of the schema.
 """
 
 import json
+import os
 import sys
 from collections import Counter
 from collections.abc import Hashable
@@ -583,51 +589,42 @@ def validate_ontology(data: dict) -> list[str]:
     return errors
 
 
-def read_text_or_exit(path: Path, description: str) -> str:
-    """Read path as UTF-8 text, or report why it could not be read and exit 1."""
+USAGE = "Usage: python validation/validate.py <file> [<file> ...] [--schema <schema_file>]"
+
+
+def read_text_or_report(path: Path, description: str) -> str | None:
+    """Read path as UTF-8 text, or report why it could not be read and return None."""
     try:
         return path.read_text(encoding="utf-8")
     except OSError as e:
         print(f"Error: Could not read {description}: {e}")
-        sys.exit(1)
+        return None
     except UnicodeDecodeError as e:
         print(f"Error: {description} is not valid UTF-8 text: {e}")
-        sys.exit(1)
+        return None
 
 
-def main():
-    if len(sys.argv) < 2:
-        print(__doc__)
-        sys.exit(1)
+def default_schema_path() -> Path:
+    """OSSIE_SCHEMA if set, else the schema in this repository's layout."""
+    env = os.environ.get("OSSIE_SCHEMA")
+    if env:
+        return Path(env)
+    return Path(__file__).parent.parent / "core-spec" / "ossie-schema.json"
 
-    args = sys.argv[1:]
-    yaml_path = Path(args[0])
 
-    schema_path = Path(__file__).parent.parent / "core-spec" / "ossie-schema.json"
-    if len(args) > 1:
-        if len(args) == 3 and args[1] == "--schema":
-            schema_path = Path(args[2])
-        else:
-            print("Usage: python validation/validate.py <yaml_file> [--schema <schema_file>]")
-            sys.exit(1)
-
-    if not yaml_path.exists():
-        print(f"Error: File not found: {yaml_path}")
-        sys.exit(1)
-
-    if not schema_path.exists():
-        print(f"Error: Schema not found: {schema_path}")
-        sys.exit(1)
-
-    # Read first, then parse. The exists() checks above pass for a path that cannot be
-    # read as text — a directory, one without read permission, or a binary file — so
-    # reading is guarded to report like every other bad input rather than raise.
-    schema_text = read_text_or_exit(schema_path, f"schema {schema_path}")
+def load_schema_or_report(schema_path: Path) -> dict | None:
+    """Read and metaschema-check a schema file, or report what is wrong and return None."""
+    # Read first, then parse. exists() passes for a path that cannot be read as text — a
+    # directory, one without read permission, or a binary file — so reading is guarded
+    # to report like every other bad input rather than raise.
+    schema_text = read_text_or_report(schema_path, f"schema {schema_path}")
+    if schema_text is None:
+        return None
     try:
         schema = json.loads(schema_text)
     except json.JSONDecodeError as e:
         print(f"Error: Invalid JSON in schema {schema_path}: {e}")
-        sys.exit(1)
+        return None
 
     # json.loads accepts any JSON value, but a schema has to be an object or a
     # boolean. Handing the validator anything else raises AttributeError from inside
@@ -640,20 +637,12 @@ def main():
     except SchemaError as e:
         location = " -> ".join(str(part) for part in e.absolute_path) if e.absolute_path else "(root)"
         print(f"Error: Invalid schema {schema_path}: {location}: {e.message}")
-        sys.exit(1)
+        return None
+    return schema
 
-    model_text = read_text_or_exit(yaml_path, str(yaml_path))
-    try:
-        data = load_yaml_named(model_text, str(yaml_path))
-    except yaml.YAMLError as e:
-        print(f"Error: Invalid YAML: {e}")
-        sys.exit(1)
-    except RecursionError:
-        # Deeply nested input surfaces as RecursionError, not YAMLError.
-        print("Error: Invalid YAML: input is too deeply nested to parse")
-        sys.exit(1)
 
-    # Run validations
+def validate_document(data, schema: dict) -> list[str]:
+    """Run every check on a parsed document and return the diagnostics."""
     errors = []
     errors.extend(validate_schema(data, schema))
 
@@ -667,26 +656,92 @@ def main():
     if not errors and isinstance(data, dict) and "ontology" in data:
         errors.extend(validate_ontology(data))
 
-    # Report results
-    if errors:
-        # Severity must not depend on user-controlled text in a diagnostic.
-        warnings = [e for e in errors if isinstance(e, ValidationWarning)]
-        actual_errors = [e for e in errors if not isinstance(e, ValidationWarning)]
+    return errors
 
-        for warning in warnings:
-            print(f"  {warning}")
 
-        if actual_errors:
-            print(f"\nValidation FAILED with {len(actual_errors)} error(s):\n")
-            for error in actual_errors:
-                print(f"  {error}")
+def validate_file(yaml_path: Path, schema: dict) -> bool:
+    """Validate one document, print its report and return True if it passed."""
+    if not yaml_path.exists():
+        print(f"Error: File not found: {yaml_path}")
+        return False
+
+    model_text = read_text_or_report(yaml_path, str(yaml_path))
+    if model_text is None:
+        return False
+    try:
+        data = load_yaml_named(model_text, str(yaml_path))
+    except yaml.YAMLError as e:
+        print(f"Error: Invalid YAML: {e}")
+        return False
+    except RecursionError:
+        # Deeply nested input surfaces as RecursionError, not YAMLError.
+        print("Error: Invalid YAML: input is too deeply nested to parse")
+        return False
+
+    errors = validate_document(data, schema)
+
+    # Severity must not depend on user-controlled text in a diagnostic.
+    warnings = [e for e in errors if isinstance(e, ValidationWarning)]
+    actual_errors = [e for e in errors if not isinstance(e, ValidationWarning)]
+
+    for warning in warnings:
+        print(f"  {warning}")
+
+    if actual_errors:
+        print(f"\nValidation FAILED with {len(actual_errors)} error(s):\n")
+        for error in actual_errors:
+            print(f"  {error}")
+        return False
+
+    print(f"Validation PASSED: {yaml_path.name}")
+    return True
+
+
+def main():
+    if len(sys.argv) < 2:
+        print(__doc__)
+        sys.exit(1)
+
+    paths: list[Path] = []
+    schema_arg: str | None = None
+    args = sys.argv[1:]
+    while args:
+        arg = args.pop(0)
+        if arg == "--schema":
+            if not args or schema_arg is not None:
+                print(USAGE)
+                sys.exit(1)
+            schema_arg = args.pop(0)
+        elif arg.startswith("-"):
+            print(USAGE)
             sys.exit(1)
         else:
-            print(f"Validation PASSED: {yaml_path.name}")
-            sys.exit(0)
-    else:
-        print(f"Validation PASSED: {yaml_path.name}")
-        sys.exit(0)
+            paths.append(Path(arg))
+    if not paths:
+        print(USAGE)
+        sys.exit(1)
+
+    schema_path = Path(schema_arg) if schema_arg else default_schema_path()
+    if not schema_path.exists():
+        print(f"Error: Schema not found: {schema_path}")
+        if schema_arg is None:
+            print("Pass --schema <schema_file> or set OSSIE_SCHEMA to point at ossie-schema.json.")
+        sys.exit(1)
+
+    schema = load_schema_or_report(schema_path)
+    if schema is None:
+        sys.exit(1)
+
+    failed = 0
+    for yaml_path in paths:
+        if len(paths) > 1:
+            print(f"== {yaml_path}")
+        if not validate_file(yaml_path, schema):
+            failed += 1
+
+    if len(paths) > 1:
+        print(f"\n{len(paths) - failed} of {len(paths)} file(s) passed")
+    sys.exit(1 if failed else 0)
 
 
 if __name__ == "__main__":
