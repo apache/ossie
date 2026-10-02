@@ -85,7 +85,7 @@ The Ossie specification currently defines extensions for the following vendors:
 | `DATABRICKS` | Databricks semantic layer |
 | `OMNI` | Omni semantic model |
 | `WISDOM` | WisdomAI domain |
-| `NVIDIA_GSF` | NVIDIA Generative Semantic Fabric standalone YAML |
+| `NVIDIA_AUTO_ONTOLOGY` | NVIDIA Auto Ontology model document YAML (formerly `NVIDIA_GSF`) |
 | `SIGMA` | Sigma Computing data model |
 | `THOUGHTSPOT` | ThoughtSpot TML (Model + Table/SQL View) |
 | `CUBE` | Cube data model |

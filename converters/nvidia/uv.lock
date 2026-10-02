@@ -3,7 +3,7 @@ revision = 3
 requires-python = ">=3.11"
 
 [[package]]
-name = "apache-ossie-nvidia-gsf"
+name = "apache-ossie-nvidia-auto-ontology"
 version = "0.1.0.dev0"
 source = { editable = "." }
 dependencies = [

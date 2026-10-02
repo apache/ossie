@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Apache Ossie ↔ native NVIDIA GSF model-document conversion."""
+"""Apache Ossie ↔ native NVIDIA Auto Ontology model-document conversion."""
 
 from __future__ import annotations
 
@@ -39,8 +39,10 @@ OSSIE_VERSION = "0.2.0.dev0"
 # still on a .dev line, so pinning the exact string would reject every real
 # model as soon as the patch or dev suffix moves.
 OSSIE_SERIES = tuple(int(part) for part in OSSIE_VERSION.split(".")[:2])
-NVIDIA_GSF_VENDOR = "NVIDIA_GSF"
-GSF_VENDOR_ALIASES = {NVIDIA_GSF_VENDOR, "GSF"}
+NVIDIA_AUTO_ONTOLOGY_VENDOR = "NVIDIA_AUTO_ONTOLOGY"
+# Ossie files exported before the product was renamed from GSF carry these.
+LEGACY_VENDOR_NAMES = {"NVIDIA_GSF", "GSF"}
+AUTO_ONTOLOGY_VENDOR_ALIASES = {NVIDIA_AUTO_ONTOLOGY_VENDOR, *LEGACY_VENDOR_NAMES}
 _ID_NAMESPACE = UUID("03d14261-6432-50fe-b099-77e8061af4f9")
 _SQL_GROUPS = ("manual", "table", "sql", "bridge_table")
 _SIMPLE_COLUMN = re.compile(
@@ -48,7 +50,7 @@ _SIMPLE_COLUMN = re.compile(
     r"(?P<column>[A-Za-z_][A-Za-z0-9_]*)$"
 )
 # sqlglot's default parser first, since it is closest to ANSI, then the
-# dialects GSF connections commonly report.
+# dialects Auto Ontology connections commonly report.
 _SQL_DIALECTS = (
     "",
     "snowflake",
@@ -153,14 +155,15 @@ _UNIT_IN_THIS_FUNCTIONS = tuple(
     if isinstance(node, type)
 )
 # Ossie names only a few dialects; everything else has no equivalent.
-_GSF_TO_OSSIE_DIALECT = {
+_AUTO_ONTOLOGY_TO_OSSIE_DIALECT = {
     "snowflake": "SNOWFLAKE",
     "databricks": "DATABRICKS",
     "bigquery": "BIGQUERY",
 }
-# A GSF column carries the physical type its connection reports. Ossie names ten
-# logical types, so the mapping is deliberately coarse in that direction and
-# canonical in the other, which is what lets a datatype survive a full cycle.
+# An Auto Ontology column carries the physical type its connection reports.
+# Ossie names ten logical types, so the mapping is deliberately coarse in that
+# direction and canonical in the other, which is what lets a datatype survive a
+# full cycle.
 _OSSIE_DATATYPE_BY_SQL_TYPE = {
     "VARCHAR": "String",
     "VARCHAR2": "String",
@@ -229,20 +232,20 @@ _SQL_TYPE_BY_OSSIE_DATATYPE = {
 }
 
 
-class GSFConversionError(Exception):
+class AutoOntologyConversionError(Exception):
     """Raised when a document cannot be converted safely."""
 
 
-def convert_ossie_to_gsf(
+def convert_ossie_to_auto_ontology(
     ossie_yaml: str,
     *,
     database_name: str | None = None,
 ) -> str:
-    """Convert one Apache Ossie model to a native ``GsfModelDocument``."""
+    """Convert one Apache Ossie model to a native ``AutoOntologyModelDocument``."""
     model = _parse_ossie(ossie_yaml)
     source_datasets = model.get("datasets") or []
     if not isinstance(source_datasets, list) or not source_datasets:
-        raise GSFConversionError(
+        raise AutoOntologyConversionError(
             "The Ossie semantic model must contain at least one dataset"
         )
 
@@ -251,15 +254,15 @@ def convert_ossie_to_gsf(
     datasets: dict[str, dict[str, Any]] = {}
     for item in source_datasets:
         if not isinstance(item, dict) or not item.get("name"):
-            raise GSFConversionError(
+            raise AutoOntologyConversionError(
                 "Every Ossie dataset must be a mapping with a name"
             )
         name = str(item["name"])
         if name in datasets:
-            raise GSFConversionError(f"Duplicate dataset name {name!r}")
+            raise AutoOntologyConversionError(f"Duplicate dataset name {name!r}")
         source = _parse_source(item.get("source"), database_name)
         if not source["database"] or not source["schema"]:
-            raise GSFConversionError(
+            raise AutoOntologyConversionError(
                 f"Dataset {name!r} source must resolve to database.schema.table"
             )
         datasets[name] = {
@@ -295,12 +298,12 @@ def convert_ossie_to_gsf(
         field_names: set[str] = set()
         for field in dataset.get("fields") or []:
             if not isinstance(field, dict) or not field.get("name"):
-                raise GSFConversionError(
+                raise AutoOntologyConversionError(
                     f"Every field in dataset {name!r} needs a name"
                 )
             field_name = str(field["name"])
             if field_name in field_names:
-                raise GSFConversionError(
+                raise AutoOntologyConversionError(
                     f"Duplicate field name {field_name!r} in dataset {name!r}"
                 )
             field_names.add(field_name)
@@ -321,10 +324,12 @@ def convert_ossie_to_gsf(
     metric_names: set[str] = set()
     for metric in model.get("metrics") or []:
         if not isinstance(metric, dict) or not metric.get("name"):
-            raise GSFConversionError("Every Ossie metric must be a mapping with a name")
+            raise AutoOntologyConversionError(
+                "Every Ossie metric must be a mapping with a name"
+            )
         name = str(metric["name"])
         if name in metric_names:
-            raise GSFConversionError(f"Duplicate metric name {name!r}")
+            raise AutoOntologyConversionError(f"Duplicate metric name {name!r}")
         metric_names.add(name)
         expressions = _normalize_expressions(metric.get("expression"), name)
         selected = _pick_expression(expressions, name)
@@ -424,7 +429,7 @@ def convert_ossie_to_gsf(
     for name, context in datasets.items():
         for field, _, selected, refs in context["computed_fields"]:
             field_name = str(field["name"])
-            extension = _gsf_extension_data(field)
+            extension = _auto_ontology_extension_data(field)
             preserved_attr = preserved["sql_attributes"].get((name, field_name), {})
             expression_unchanged = _expression_matches(
                 selected, extension.get("ossie_expression")
@@ -475,7 +480,7 @@ def convert_ossie_to_gsf(
     custom_analyses: list[dict[str, Any]] = []
     for metric, _, selected, refs in metrics:
         name = str(metric["name"])
-        extension = _gsf_extension_data(metric)
+        extension = _auto_ontology_extension_data(metric)
         preserved_analysis = preserved["custom_analyses"].get(name, {})
         expression_unchanged = _expression_matches(
             selected, extension.get("ossie_expression")
@@ -500,7 +505,7 @@ def convert_ossie_to_gsf(
                 refs, datasets, column_ids
             )
         if not referenced_column_ids:
-            raise GSFConversionError(
+            raise AutoOntologyConversionError(
                 f"Metric {name!r} has no resolvable catalog column for "
                 "custom-analysis SQL validation"
             )
@@ -544,21 +549,21 @@ def convert_ossie_to_gsf(
     return _dump_yaml(output)
 
 
-def convert_gsf_to_ossie(
-    gsf_yaml: str,
+def convert_auto_ontology_to_ossie(
+    auto_ontology_yaml: str,
     *,
     model_name: str | None = None,
 ) -> str:
-    """Convert a native ``GsfModelDocument`` to one Apache Ossie model."""
-    root = _parse_gsf(gsf_yaml)
+    """Convert a native ``AutoOntologyModelDocument`` to one Apache Ossie model."""
+    root = _parse_auto_ontology(auto_ontology_yaml)
     catalog = _read_catalog(root)
     dialects = _dialects_by_database(root)
     semantic = root["semantic_layer"]
     terms = semantic["terms"]
     if not terms:
-        raise GSFConversionError(
-            "GSF document has no representable terms; Ossie requires at least "
-            "one dataset"
+        raise AutoOntologyConversionError(
+            "Auto Ontology document has no representable terms; Ossie requires "
+            "at least one dataset"
         )
 
     term_by_id: dict[str, dict[str, Any]] = {}
@@ -571,26 +576,33 @@ def convert_gsf_to_ossie(
     attr_owner: dict[str, tuple[str, dict[str, Any]]] = {}
 
     for term in terms:
-        term_id = _required_id(term, "GSF term")
+        term_id = _required_id(term, "Auto Ontology term")
         if term_id in term_by_id:
-            raise GSFConversionError(f"Duplicate GSF term id {term_id!r}")
+            raise AutoOntologyConversionError(
+                f"Duplicate Auto Ontology term id {term_id!r}"
+            )
         represents = term.get("represents") or []
         if len(represents) != 1:
-            raise GSFConversionError(
-                f"Converter supports only GSF terms that represent exactly one "
-                f"table; term {term.get('name')!r} represents {len(represents)}"
+            raise AutoOntologyConversionError(
+                f"Converter supports only Auto Ontology terms that represent exactly "
+                f"one table; term {term.get('name')!r} represents {len(represents)}"
             )
         table_id = str(represents[0])
         table = catalog["tables"].get(table_id)
         if table is None:
-            raise GSFConversionError(
-                f"GSF term {term.get('name')!r} represents unknown table {table_id!r}"
+            raise AutoOntologyConversionError(
+                f"Auto Ontology term {term.get('name')!r} represents unknown "
+                f"table {table_id!r}"
             )
         name = str(term.get("name") or "")
         if not name:
-            raise GSFConversionError("Every GSF term needs a non-empty name")
+            raise AutoOntologyConversionError(
+                "Every Auto Ontology term needs a non-empty name"
+            )
         if name in term_id_by_name:
-            raise GSFConversionError(f"Duplicate GSF term name {name!r}")
+            raise AutoOntologyConversionError(
+                f"Duplicate Auto Ontology term name {name!r}"
+            )
         term_id_by_name[name] = term_id
         datasets_by_table[table_id].append(name)
         term_by_id[term_id] = term
@@ -612,20 +624,21 @@ def convert_gsf_to_ossie(
 
         for attribute in term.get("columns_attributes") or []:
             if not isinstance(attribute, dict) or not attribute.get("id"):
-                raise GSFConversionError(
+                raise AutoOntologyConversionError(
                     f"Term {name!r} contains a column attribute without an id"
                 )
             column_id = str(attribute.get("column_id") or "")
             column = catalog["columns"].get(column_id)
             if column is None:
-                raise GSFConversionError(
+                raise AutoOntologyConversionError(
                     f"Column attribute {attribute.get('name')!r} references "
                     f"unknown column {column_id!r}"
                 )
             field_name = str(attribute.get("name") or column["name"])
             if field_name in field_names_by_term[term_id]:
-                raise GSFConversionError(
-                    f"Duplicate field name {field_name!r} in GSF term {name!r}"
+                raise AutoOntologyConversionError(
+                    f"Duplicate field name {field_name!r} in Auto Ontology "
+                    f"term {name!r}"
                 )
             field_names_by_term[term_id].add(field_name)
             term_columns[name].add(str(column["name"]))
@@ -645,27 +658,27 @@ def convert_gsf_to_ossie(
 
     for source_group in _SQL_GROUPS:
         for attribute in semantic["sql_attributes"][source_group]:
-            attribute_id = _required_id(attribute, "GSF SQL attribute")
+            attribute_id = _required_id(attribute, "Auto Ontology SQL attribute")
             term_id = str(attribute.get("term_id") or "")
             if term_id not in term_by_id:
-                raise GSFConversionError(
+                raise AutoOntologyConversionError(
                     f"SQL attribute {attribute.get('name')!r} references "
                     f"unknown term {term_id!r}"
                 )
             sql = str(attribute.get("sql") or "")
             name = str(attribute.get("name") or "")
             if not name or not sql:
-                raise GSFConversionError(
-                    "Every GSF SQL attribute requires non-empty name and sql"
+                raise AutoOntologyConversionError(
+                    "Every Auto Ontology SQL attribute requires non-empty name and sql"
                 )
             term_name = str(term_by_id[term_id].get("name") or "")
             if name in field_names_by_term[term_id]:
-                raise GSFConversionError(
-                    f"Duplicate field name {name!r} in GSF term {term_name!r}"
+                raise AutoOntologyConversionError(
+                    f"Duplicate field name {name!r} in Auto Ontology term {term_name!r}"
                 )
             field_names_by_term[term_id].add(name)
             represented_table_id = str(term_by_id[term_id]["represents"][0])
-            sql_databases = _validate_gsf_sql_databases(
+            sql_databases = _validate_auto_ontology_sql_databases(
                 f"SQL attribute {name!r}",
                 sql,
                 attribute.get("sql_column_is") or [],
@@ -680,7 +693,7 @@ def convert_gsf_to_ossie(
                     _ossie_dialect(dialects, sql_databases),
                 ),
                 "custom_extensions": [
-                    _gsf_extension(
+                    _auto_ontology_extension(
                         {
                             "entity": "sql_attribute",
                             "id": attribute_id,
@@ -704,14 +717,14 @@ def convert_gsf_to_ossie(
 
     metrics: list[dict[str, Any]] = []
     for analysis in semantic.get("custom_analyses") or []:
-        analysis_id = _required_id(analysis, "GSF custom analysis")
+        analysis_id = _required_id(analysis, "Auto Ontology custom analysis")
         sql = str(analysis.get("sql") or "")
         name = str(analysis.get("name") or "")
         if not name or not sql:
-            raise GSFConversionError(
-                "Every GSF custom analysis requires non-empty name and sql"
+            raise AutoOntologyConversionError(
+                "Every Auto Ontology custom analysis requires non-empty name and sql"
             )
-        sql_databases = _validate_gsf_sql_databases(
+        sql_databases = _validate_auto_ontology_sql_databases(
             f"Custom analysis {name!r}",
             sql,
             analysis.get("sql_column_is") or [],
@@ -725,7 +738,7 @@ def convert_gsf_to_ossie(
                 _ossie_dialect(dialects, sql_databases),
             ),
             "custom_extensions": [
-                _gsf_extension(
+                _auto_ontology_extension(
                     {
                         "entity": "custom_analysis",
                         "id": analysis_id,
@@ -740,7 +753,7 @@ def convert_gsf_to_ossie(
             metric["description"] = str(analysis["description"])
         metrics.append(metric)
 
-    relationships = _relationships_from_gsf(
+    relationships = _relationships_from_auto_ontology(
         root,
         catalog,
         datasets_by_table,
@@ -755,13 +768,13 @@ def convert_gsf_to_ossie(
     inferred_name = (
         model_name
         or (next(iter(database_names)) if len(database_names) == 1 else None)
-        or "gsf_model"
+        or "auto_ontology_model"
     )
     semantic_model: dict[str, Any] = {
         "name": inferred_name,
         "datasets": datasets,
         "custom_extensions": [
-            _gsf_extension(
+            _auto_ontology_extension(
                 {
                     "model_name": inferred_name,
                     "native_document": root,
@@ -840,7 +853,7 @@ def _build_catalog(
         declared_types: dict[str, str] = {}
         for _, context in contexts:
             for field, column_name in context["simple_fields"]:
-                sql_type = _gsf_column_type(field.get("datatype"))
+                sql_type = _auto_ontology_column_type(field.get("datatype"))
                 if sql_type:
                     declared_types.setdefault(column_name, sql_type)
 
@@ -1050,9 +1063,10 @@ def _read_native_catalog(root: dict[str, Any]) -> dict[str, Any]:
     """
     try:
         return _read_catalog(root)
-    except GSFConversionError as exc:
-        raise GSFConversionError(
-            f"Malformed {NVIDIA_GSF_VENDOR} 'native_document' extension: {exc}"
+    except AutoOntologyConversionError as exc:
+        raise AutoOntologyConversionError(
+            f"Malformed {NVIDIA_AUTO_ONTOLOGY_VENDOR} 'native_document' "
+            f"extension: {exc}"
         ) from exc
 
 
@@ -1062,26 +1076,31 @@ def _read_catalog(root: dict[str, Any]) -> dict[str, Any]:
     database_ids: set[str] = set()
     schema_ids: set[str] = set()
     for database in root["data_layer"]["databases"]:
-        database_id = _required_id(database, "GSF database")
+        database_id = _required_id(database, "Auto Ontology database")
         if database_id in database_ids:
-            raise GSFConversionError(f"Duplicate GSF database id {database_id!r}")
+            raise AutoOntologyConversionError(
+                f"Duplicate Auto Ontology database id {database_id!r}"
+            )
         database_ids.add(database_id)
         for schema in database.get("schemas") or []:
-            schema_id = _required_id(schema, "GSF schema")
+            schema_id = _required_id(schema, "Auto Ontology schema")
             if schema_id in schema_ids:
-                raise GSFConversionError(f"Duplicate GSF schema id {schema_id!r}")
+                raise AutoOntologyConversionError(
+                    f"Duplicate Auto Ontology schema id {schema_id!r}"
+                )
             schema_ids.add(schema_id)
             database_name = str(schema.get("database_name") or "")
             schema_name = str(schema.get("name") or "")
             if not database_name:
-                raise GSFConversionError(
-                    f"GSF schema {schema_name!r} requires database_name"
+                raise AutoOntologyConversionError(
+                    f"Auto Ontology schema {schema_name!r} requires database_name"
                 )
             for table in schema.get("tables") or []:
                 table_id = str(table.get("id") or "")
                 if not table_id or table_id in tables:
-                    raise GSFConversionError(
-                        f"Every GSF table needs a globally unique id; got {table_id!r}"
+                    raise AutoOntologyConversionError(
+                        "Every Auto Ontology table needs a globally unique id; "
+                        f"got {table_id!r}"
                     )
                 table_name = str(table.get("name") or "")
                 tables[table_id] = {
@@ -1091,8 +1110,8 @@ def _read_catalog(root: dict[str, Any]) -> dict[str, Any]:
                 for column in table.get("columns") or []:
                     column_id = str(column.get("id") or "")
                     if not column_id or column_id in columns:
-                        raise GSFConversionError(
-                            "Every GSF column needs a globally unique id; "
+                        raise AutoOntologyConversionError(
+                            "Every Auto Ontology column needs a globally unique id; "
                             f"got {column_id!r}"
                         )
                     columns[column_id] = {
@@ -1103,7 +1122,7 @@ def _read_catalog(root: dict[str, Any]) -> dict[str, Any]:
     return {"tables": tables, "columns": columns}
 
 
-def _validate_gsf_sql_databases(
+def _validate_auto_ontology_sql_databases(
     context: str,
     sql: str,
     sql_column_ids: Iterable[Any],
@@ -1136,14 +1155,14 @@ def _validate_gsf_sql_databases(
         ]
         databases.update(str(table["source"][0]) for table in matches)
     if len(databases) > 1:
-        raise GSFConversionError(
+        raise AutoOntologyConversionError(
             f"{context} spans multiple databases ({', '.join(sorted(databases))}); "
-            "the GSF importer validates each SQL object against one database"
+            "the Auto Ontology importer validates each SQL object against one database"
         )
     return databases
 
 
-def _relationships_from_gsf(
+def _relationships_from_auto_ontology(
     root: dict[str, Any],
     catalog: Mapping[str, Any],
     datasets_by_table: Mapping[str, list[str]],
@@ -1279,7 +1298,7 @@ def _relationship_dataset(
     ]
     if len(matching) == 1:
         return matching[0]
-    raise GSFConversionError(
+    raise AutoOntologyConversionError(
         f"Cannot map relationship on table {table_id!r} and columns "
         f"{', '.join(columns)} to exactly one represented term; candidates: "
         f"{', '.join(candidates) or 'none'}"
@@ -1323,45 +1342,53 @@ def _join_column_name(
 
 def _required_id(item: Any, context: str) -> str:
     if not isinstance(item, dict) or not item.get("id"):
-        raise GSFConversionError(f"{context} requires a non-empty id")
+        raise AutoOntologyConversionError(f"{context} requires a non-empty id")
     return str(item["id"])
 
 
-def _parse_gsf(value: str) -> dict[str, Any]:
-    root = _load_yaml(value, "GSF")
+def _parse_auto_ontology(value: str) -> dict[str, Any]:
+    root = _load_yaml(value, "Auto Ontology")
     expected = {"data_layer", "semantic_layer", "zones"}
     unknown = sorted(set(root) - expected)
     if unknown:
-        raise GSFConversionError(
-            "Unsupported GSF root properties: " + ", ".join(unknown)
+        raise AutoOntologyConversionError(
+            "Unsupported Auto Ontology root properties: " + ", ".join(unknown)
         )
     root.setdefault("data_layer", {})
     root.setdefault("semantic_layer", {})
     root.setdefault("zones", [])
     for key in ("data_layer", "semantic_layer"):
         if not isinstance(root[key], dict):
-            raise GSFConversionError(f"GSF {key!r} must be a mapping")
+            raise AutoOntologyConversionError(
+                f"Auto Ontology {key!r} must be a mapping"
+            )
     if not isinstance(root["zones"], list):
-        raise GSFConversionError("GSF 'zones' must be a list")
+        raise AutoOntologyConversionError("Auto Ontology 'zones' must be a list")
     data_layer = root["data_layer"]
     semantic_layer = root["semantic_layer"]
     for key in ("databases", "foreign_keys", "joins"):
         data_layer.setdefault(key, [])
         if not isinstance(data_layer.get(key), list):
-            raise GSFConversionError(f"GSF data_layer.{key} must be a list")
+            raise AutoOntologyConversionError(
+                f"Auto Ontology data_layer.{key} must be a list"
+            )
     for key in ("terms", "semantic_fks", "custom_analyses"):
         semantic_layer.setdefault(key, [])
         if not isinstance(semantic_layer.get(key), list):
-            raise GSFConversionError(f"GSF semantic_layer.{key} must be a list")
+            raise AutoOntologyConversionError(
+                f"Auto Ontology semantic_layer.{key} must be a list"
+            )
     semantic_layer.setdefault("sql_attributes", {})
     sql_attributes = semantic_layer["sql_attributes"]
     if not isinstance(sql_attributes, dict):
-        raise GSFConversionError("GSF semantic_layer.sql_attributes must be a mapping")
+        raise AutoOntologyConversionError(
+            "Auto Ontology semantic_layer.sql_attributes must be a mapping"
+        )
     for key in _SQL_GROUPS:
         sql_attributes.setdefault(key, [])
         if not isinstance(sql_attributes.get(key), list):
-            raise GSFConversionError(
-                f"GSF semantic_layer.sql_attributes.{key} must be a list"
+            raise AutoOntologyConversionError(
+                f"Auto Ontology semantic_layer.sql_attributes.{key} must be a list"
             )
     return root
 
@@ -1369,7 +1396,7 @@ def _parse_gsf(value: str) -> dict[str, Any]:
 def _parse_ossie(value: str) -> dict[str, Any]:
     root = _load_yaml(value, "Ossie")
     if "semantic_model" in root:
-        raise GSFConversionError(
+        raise AutoOntologyConversionError(
             "Ossie model properties must be at the root; semantic_model wrappers are not supported"
         )
     unknown = sorted(set(root) - {
@@ -1377,12 +1404,12 @@ def _parse_ossie(value: str) -> dict[str, Any]:
         "datasets", "relationships", "metrics", "custom_extensions",
     })
     if unknown:
-        raise GSFConversionError(
+        raise AutoOntologyConversionError(
             "Unsupported Ossie root properties: " + ", ".join(unknown)
         )
     _check_ossie_version(root.get("version"))
     if not isinstance(root.get("name"), str) or not root["name"]:
-        raise GSFConversionError("Ossie semantic model requires a name")
+        raise AutoOntologyConversionError("Ossie semantic model requires a name")
     return root
 
 
@@ -1391,7 +1418,7 @@ def _check_ossie_version(value: Any) -> None:
     series = re.match(r"^\s*(\d+)\.(\d+)", str(value or ""))
     if not series or (int(series.group(1)), int(series.group(2))) != OSSIE_SERIES:
         expected = ".".join(str(part) for part in OSSIE_SERIES)
-        raise GSFConversionError(
+        raise AutoOntologyConversionError(
             f"Unsupported Ossie version {value!r}; expected {expected}.x"
         )
 
@@ -1400,9 +1427,11 @@ def _load_yaml(value: str, label: str) -> dict[str, Any]:
     try:
         root = yaml.safe_load(value)
     except yaml.YAMLError as exc:
-        raise GSFConversionError(f"Invalid {label} YAML: {exc}") from exc
+        raise AutoOntologyConversionError(f"Invalid {label} YAML: {exc}") from exc
     if not isinstance(root, dict):
-        raise GSFConversionError(f"Invalid {label} YAML: expected a root mapping")
+        raise AutoOntologyConversionError(
+            f"Invalid {label} YAML: expected a root mapping"
+        )
     return root
 
 
@@ -1411,17 +1440,17 @@ def _validate_relationship(
     datasets: Mapping[str, Any],
 ) -> dict[str, Any]:
     if not isinstance(relationship, dict) or not relationship.get("name"):
-        raise GSFConversionError("Every Ossie relationship needs a name")
+        raise AutoOntologyConversionError("Every Ossie relationship needs a name")
     from_name = relationship.get("from")
     to_name = relationship.get("to")
     if from_name not in datasets or to_name not in datasets:
-        raise GSFConversionError(
+        raise AutoOntologyConversionError(
             f"Relationship {relationship['name']!r} references an unknown dataset"
         )
     from_columns = relationship.get("from_columns") or []
     to_columns = relationship.get("to_columns") or []
     if not from_columns or len(from_columns) != len(to_columns):
-        raise GSFConversionError(
+        raise AutoOntologyConversionError(
             f"Relationship {relationship['name']!r} must have equal, "
             "non-empty column lists"
         )
@@ -1430,10 +1459,12 @@ def _validate_relationship(
 
 def _normalize_expressions(value: Any, name: str) -> list[dict[str, str]]:
     if not isinstance(value, dict):
-        raise GSFConversionError(f"{name!r} has no valid expression")
+        raise AutoOntologyConversionError(f"{name!r} has no valid expression")
     dialects = value.get("dialects")
     if not isinstance(dialects, list) or not dialects:
-        raise GSFConversionError(f"{name!r} requires at least one expression dialect")
+        raise AutoOntologyConversionError(
+            f"{name!r} requires at least one expression dialect"
+        )
     result = [
         {
             "dialect": str(item["dialect"]),
@@ -1445,7 +1476,7 @@ def _normalize_expressions(value: Any, name: str) -> list[dict[str, str]]:
         and item.get("expression") is not None
     ]
     if not result:
-        raise GSFConversionError(f"{name!r} has no usable expression dialect")
+        raise AutoOntologyConversionError(f"{name!r} has no usable expression dialect")
     return result
 
 
@@ -1455,7 +1486,7 @@ def _pick_expression(expressions: list[dict[str, str]], name: str) -> str:
             return expression["expression"]
     if expressions:
         return expressions[0]["expression"]
-    raise GSFConversionError(f"{name!r} has no usable expression")
+    raise AutoOntologyConversionError(f"{name!r} has no usable expression")
 
 
 def _simple_source_column(
@@ -1478,7 +1509,7 @@ def _field_table_refs(
     owner: str,
     datasets: Mapping[str, Any],
 ) -> list[str]:
-    extension = _gsf_extension_data(field)
+    extension = _auto_ontology_extension_data(field)
     extension_refs = extension.get("table_refs")
     expression_unchanged = _expression_matches(
         expression, extension.get("ossie_expression")
@@ -1515,7 +1546,7 @@ def _metric_table_refs(
     expression: str,
     datasets: Mapping[str, Any],
 ) -> list[str]:
-    extension = _gsf_extension_data(metric)
+    extension = _auto_ontology_extension_data(metric)
     extension_refs = extension.get("table_refs")
     expression_unchanged = _expression_matches(
         expression, extension.get("ossie_expression")
@@ -1563,9 +1594,9 @@ def _metric_table_refs(
             sql=reference_sql,
         )
         return refs
-    raise GSFConversionError(
+    raise AutoOntologyConversionError(
         f"Metric {metric.get('name')!r} does not identify a source dataset; "
-        "qualify a referenced column or add NVIDIA_GSF table_refs"
+        "qualify a referenced column or add NVIDIA_AUTO_ONTOLOGY table_refs"
     )
 
 
@@ -1576,8 +1607,9 @@ def _validate_refs(
 ) -> None:
     unknown = [ref for ref in refs if ref not in datasets]
     if unknown:
-        raise GSFConversionError(
-            f"{name!r} has unknown NVIDIA_GSF table_refs: {', '.join(unknown)}"
+        raise AutoOntologyConversionError(
+            f"{name!r} has unknown NVIDIA_AUTO_ONTOLOGY table_refs: "
+            f"{', '.join(unknown)}"
         )
 
 
@@ -1593,9 +1625,9 @@ def _validate_single_database_refs(
     }
     databases.update(table.catalog for table in _sql_tables(sql) if table.catalog)
     if len(databases) > 1:
-        raise GSFConversionError(
+        raise AutoOntologyConversionError(
             f"{context} spans multiple databases ({', '.join(sorted(databases))}); "
-            "the GSF importer validates each SQL object against one database"
+            "the Auto Ontology importer validates each SQL object against one database"
         )
 
 
@@ -1650,8 +1682,9 @@ def _collect_expression_columns(
         source_key = _source_key(context["source"])
         known_table = source_key in preserved["tables"]
         if known_table and (*source_key, column.name) not in preserved["columns"]:
-            # A GSF-sourced catalog is authoritative: an identifier that is not
-            # already a column of the table is SQL syntax, not physical data.
+            # A catalog sourced from Auto Ontology is authoritative: an identifier
+            # that is not already a column of the table is SQL syntax, not physical
+            # data.
             continue
         _add_catalog_column(context, column.name)
 
@@ -1739,7 +1772,7 @@ def _argument_count(func: exp.Expression) -> int:
 def _parse_sql(sql: str) -> exp.Expression | None:
     """Parse *sql*, trying each candidate dialect, or return ``None``.
 
-    Preserved GSF SQL carries whatever dialect its connection reported, so a
+    Preserved Auto Ontology SQL carries whatever dialect its connection reported, so a
     single parser is not enough. SQL that no candidate can parse is treated as
     opaque: it is still carried through verbatim, and only the parse-derived
     enrichment (column and table discovery) is skipped.
@@ -1776,7 +1809,9 @@ def _wrap_expression(
     if stripped.upper().startswith(("SELECT ", "SELECT\n", "WITH ", "WITH\n")):
         return stripped
     if not refs:
-        raise GSFConversionError(f"Cannot determine a source table for {name!r}")
+        raise AutoOntologyConversionError(
+            f"Cannot determine a source table for {name!r}"
+        )
     anchor_name = refs[0]
     from_sql = (
         f"{_qualified_table(datasets[anchor_name]['source'])} "
@@ -1815,7 +1850,7 @@ def _wrap_expression(
             break
         if not matched:
             missing = min(remaining)
-            raise GSFConversionError(
+            raise AutoOntologyConversionError(
                 f"{name!r} references disconnected dataset {missing!r}; "
                 "declare a relationship connecting all referenced datasets"
             )
@@ -1858,7 +1893,7 @@ def _ossie_expression(expression: str, dialect: str = "ANSI_SQL") -> dict[str, A
 
 
 def _ossie_datatype(sql_type: Any) -> str | None:
-    """Map a GSF column's physical type onto Ossie's logical vocabulary.
+    """Map an Auto Ontology column's physical type onto Ossie's logical vocabulary.
 
     A type Ossie cannot name becomes ``Opaque``, as the spec prescribes for a
     known type outside the portable vocabulary. An absent type stays unset
@@ -1890,7 +1925,7 @@ def _split_sql_type(sql_type: Any) -> tuple[str, int | None]:
     return " ".join(re.sub(r"\([^)]*\)", " ", text).split()), scale
 
 
-def _gsf_column_type(datatype: Any) -> str:
+def _auto_ontology_column_type(datatype: Any) -> str:
     """Map an Ossie logical datatype onto a physical type for a new column."""
     return _SQL_TYPE_BY_OSSIE_DATATYPE.get(str(datatype or ""), "")
 
@@ -1909,14 +1944,16 @@ def _dialects_by_database(root: Mapping[str, Any]) -> dict[str, str]:
 
 
 def _ossie_dialect(dialects: Mapping[str, str], databases: Iterable[str]) -> str:
-    """Map a GSF connection dialect onto the Ossie dialect enum.
+    """Map an Auto Ontology connection dialect onto the Ossie dialect enum.
 
     Ossie names only a few dialects, so anything else stays ANSI_SQL rather
     than being labelled inaccurately.
     """
     names = {str(dialects.get(database, "")).lower() for database in databases}
     labels = {
-        _GSF_TO_OSSIE_DIALECT[name] for name in names if name in _GSF_TO_OSSIE_DIALECT
+        _AUTO_ONTOLOGY_TO_OSSIE_DIALECT[name]
+        for name in names
+        if name in _AUTO_ONTOLOGY_TO_OSSIE_DIALECT
     }
     return labels.pop() if len(labels) == 1 else "ANSI_SQL"
 
@@ -1930,7 +1967,7 @@ def _parse_source(
         schema = source.get("schema")
         table = source.get("table")
         if not table:
-            raise GSFConversionError("Source mapping requires 'table'")
+            raise AutoOntologyConversionError("Source mapping requires 'table'")
         return {
             "database": str(database) if database else None,
             "schema": str(schema) if schema else None,
@@ -1938,9 +1975,11 @@ def _parse_source(
         }
     value = str(source or "").strip()
     if not value:
-        raise GSFConversionError("Every dataset needs a source")
+        raise AutoOntologyConversionError("Every dataset needs a source")
     if value.upper().startswith(("SELECT ", "SELECT\n", "WITH ", "WITH\n")):
-        raise GSFConversionError("GSF terms must identify physical tables")
+        raise AutoOntologyConversionError(
+            "Auto Ontology terms must identify physical tables"
+        )
     parts = _split_identifier(value)
     if len(parts) == 3:
         database, schema, table = parts
@@ -1949,7 +1988,7 @@ def _parse_source(
     elif len(parts) == 1:
         database, schema, table = default_database, None, parts[0]
     else:
-        raise GSFConversionError(
+        raise AutoOntologyConversionError(
             f"Source {value!r} must be table, schema.table, or database.schema.table"
         )
     return {"database": database, "schema": schema, "table": table}
@@ -2083,11 +2122,11 @@ def _stable_id(kind: str, *parts: str) -> str:
     return str(uuid5(_ID_NAMESPACE, "/".join((kind, *map(str, parts)))))
 
 
-def _gsf_extension_data(item: Mapping[str, Any]) -> dict[str, Any]:
+def _auto_ontology_extension_data(item: Mapping[str, Any]) -> dict[str, Any]:
     for extension in item.get("custom_extensions") or []:
         if not isinstance(extension, dict):
             continue
-        if extension.get("vendor_name") not in GSF_VENDOR_ALIASES:
+        if extension.get("vendor_name") not in AUTO_ONTOLOGY_VENDOR_ALIASES:
             continue
         try:
             data = json.loads(str(extension.get("data") or "{}"))
@@ -2099,13 +2138,13 @@ def _gsf_extension_data(item: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _native_snapshot(model: Mapping[str, Any]) -> dict[str, Any] | None:
-    snapshot = _gsf_extension_data(model).get("native_document")
+    snapshot = _auto_ontology_extension_data(model).get("native_document")
     return snapshot if isinstance(snapshot, dict) else None
 
 
-def _gsf_extension(data: Mapping[str, Any]) -> dict[str, str]:
+def _auto_ontology_extension(data: Mapping[str, Any]) -> dict[str, str]:
     return {
-        "vendor_name": NVIDIA_GSF_VENDOR,
+        "vendor_name": NVIDIA_AUTO_ONTOLOGY_VENDOR,
         "data": json.dumps(data, separators=(",", ":"), sort_keys=True),
     }
 
@@ -2121,12 +2160,14 @@ def _dump_yaml(value: dict[str, Any]) -> str:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Convert Apache Ossie YAML and native NVIDIA GSF model YAML"
+        description=(
+            "Convert Apache Ossie YAML and native NVIDIA Auto Ontology model YAML"
+        )
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     export_parser = subparsers.add_parser(
         "export",
-        help="Convert Ossie YAML to a native GSF model document",
+        help="Convert Ossie YAML to a native Auto Ontology model document",
     )
     export_parser.add_argument("-i", "--input", type=Path, required=True)
     export_parser.add_argument("-o", "--output", type=Path)
@@ -2136,7 +2177,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     import_parser = subparsers.add_parser(
         "import",
-        help="Convert a native GSF model document to Ossie YAML",
+        help="Convert a native Auto Ontology model document to Ossie YAML",
     )
     import_parser.add_argument("-i", "--input", type=Path, required=True)
     import_parser.add_argument("-o", "--output", type=Path)
@@ -2152,17 +2193,17 @@ def main(argv: list[str] | None = None) -> None:
     try:
         source = args.input.read_text(encoding="utf-8")
         if args.command == "export":
-            output = convert_ossie_to_gsf(
+            output = convert_ossie_to_auto_ontology(
                 source,
                 database_name=args.database_name,
             )
         else:
-            output = convert_gsf_to_ossie(source, model_name=args.name)
+            output = convert_auto_ontology_to_ossie(source, model_name=args.name)
         if args.output is None:
             print(output, end="")
         else:
             args.output.write_text(output, encoding="utf-8")
-    except (GSFConversionError, OSError, UnicodeError) as exc:
+    except (AutoOntologyConversionError, OSError, UnicodeError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 

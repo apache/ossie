@@ -17,7 +17,7 @@
 # under the License.
 #
 
-name: Converters NVIDIA GSF CI
+name: Converters NVIDIA Auto Ontology CI
 
 on:
   push:

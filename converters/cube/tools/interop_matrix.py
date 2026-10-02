@@ -67,8 +67,8 @@ SPOKES = [
     ("databricks", ["ossie-databricks", "export"], False),
     ("dbt", ["ossie-dbt", "osi-to-msi"], False),
     ("gooddata", None, False),  # API-only; see _run_gooddata
-    ("gsf", ["ossie-gsf", "export"], False),
     ("honeydew", ["honeydew-osi", "osi-to-honeydew"], True),
+    ("nvidia", ["ossie-nvidia-auto-ontology", "export"], False),
     ("omni", ["osi-omni", "export"], True),
     ("orionbelt", ["ossie-orionbelt", "osi-to-obml"], False),
     ("snowflake", ["ossie-snowflake"], False),
