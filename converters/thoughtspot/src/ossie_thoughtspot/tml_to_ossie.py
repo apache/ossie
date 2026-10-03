@@ -378,6 +378,21 @@ def _physical_datatype(
     data_type = (physical.get("db_column_properties") or {}).get("data_type")
     if data_type is None:
         return None
+    if not isinstance(data_type, str):
+        # A non-string data_type (e.g. a list in a hand-edited document) has no
+        # Ossie equivalent and would crash datatypes.to_ossie on an unhashable
+        # value; report it like an unmapped type and emit no datatype.
+        log.add(
+            code=f"{code_prefix}-DATATYPE-UNMAPPED",
+            severity=Severity.WARNING,
+            message=(
+                f"physical column {column_name!r} on table {table_name!r} has "
+                f"non-string data_type {data_type!r}, which has no Ossie "
+                f"equivalent; no datatype is emitted for this {kind}"
+            ),
+            object_ref=object_ref,
+        )
+        return None
     ossie_type = datatypes.to_ossie(data_type)
     if ossie_type is None:
         log.add(
@@ -432,7 +447,13 @@ def _physical_db_column_name(
     )
     if physical is None:
         return None
-    return physical.get("db_column_name")
+    db_column_name = physical.get("db_column_name")
+    # A non-string db_column_name (wrong type in a hand-edited document) is
+    # unusable as an identifier basis and would crash identifiers.normalise in
+    # the caller; treat it as absent, the same as a missing db_column_name.
+    if not isinstance(db_column_name, str):
+        return None
+    return db_column_name
 
 
 def _resolve_name_collision(
@@ -686,6 +707,18 @@ def convert_field(
                 message=(
                     f"column {display_name!r} has formula_id {formula_id!r}, whose "
                     f"formulas[] entry has no expr; no field can be built"
+                ),
+                object_ref=object_ref,
+            )
+            return None
+        if not isinstance(formula_entry["expr"], str):
+            log.add(
+                code="TS-FIELD-FORMULA-INVALID",
+                severity=Severity.WARNING,
+                message=(
+                    f"column {display_name!r} has formula_id {formula_id!r}, whose "
+                    f"formulas[] entry has a non-string expr "
+                    f"{formula_entry['expr']!r}; no field can be built"
                 ),
                 object_ref=object_ref,
             )
@@ -1015,7 +1048,11 @@ def convert_metric(
     object_ref = f"metric:{display_name}"
 
     aggregation_raw = properties.get("aggregation", "NONE")
-    if aggregation_raw not in _AGGREGATION:
+    # A non-string aggregation (a list or dict in a hand-edited document) would
+    # make the `not in _AGGREGATION` membership test raise on an unhashable
+    # value; treat it as unrecognised and fall back to NONE like any other
+    # unknown aggregation rather than letting a bare TypeError escape.
+    if not isinstance(aggregation_raw, str) or aggregation_raw not in _AGGREGATION:
         log.add(
             code="TS-METRIC-AGGREGATION-UNKNOWN",
             severity=Severity.WARNING,
@@ -1075,6 +1112,18 @@ def convert_metric(
                 message=(
                     f"column {display_name!r} has formula_id {formula_id!r}, whose "
                     f"formulas[] entry has no expr; no metric can be built"
+                ),
+                object_ref=object_ref,
+            )
+            return None
+        if not isinstance(formula_entry["expr"], str):
+            log.add(
+                code="TS-METRIC-FORMULA-INVALID",
+                severity=Severity.WARNING,
+                message=(
+                    f"column {display_name!r} has formula_id {formula_id!r}, whose "
+                    f"formulas[] entry has a non-string expr "
+                    f"{formula_entry['expr']!r}; no metric can be built"
                 ),
                 object_ref=object_ref,
             )
@@ -1830,6 +1879,21 @@ def _relationship_from_join(
     apply to, so `from`/`to` there stay exactly TML's own, unswapped.
     """
     object_ref = f"relationship:{name}"
+    if on_expression is not None and not isinstance(on_expression, str):
+        # A non-string `on` (a list or int in a hand-edited document) would raise
+        # a bare AttributeError on the .strip() below; report it as a malformed
+        # condition instead, the same degrade-and-skip the parse failure gets.
+        log.add(
+            code="TS-JOIN-MALFORMED",
+            severity=Severity.WARNING,
+            message=(
+                f"join {name!r} from {from_prefix!r} to {to_prefix!r} has a "
+                f"non-string condition {on_expression!r}; it cannot be represented "
+                f"as a relationship"
+            ),
+            object_ref=object_ref,
+        )
+        return None, None, False
     if not on_expression or not on_expression.strip():
         log.add(
             code="TS-JOIN-NO-CONDITION",
