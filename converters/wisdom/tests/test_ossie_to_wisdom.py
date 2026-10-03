@@ -218,6 +218,31 @@ def test_one_to_one_note_restores_relationship_type():
     assert edges[0]["properties"]["relationshipType"] == "ONE_TO_ONE"
 
 
+def test_relationship_note_with_surrounding_whitespace_still_matches():
+    # A YAML block scalar (`ai_context: |`) loads with a trailing newline.
+    document = OssieDocument(
+        name="m",
+        datasets=[
+            OssieDataset(name="a", source="db.s.a"),
+            OssieDataset(name="b", source="db.s.b"),
+        ],
+        relationships=[
+            OssieRelationship(
+                name="a_to_b",
+                from_dataset="a",
+                to="b",
+                from_columns=["id"],
+                to_columns=["id"],
+                ai_context="one-to-one relationship\n",
+            )
+        ],
+    )
+    result = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
+    edge = result.output["domain"]["zsheet_json"]["relationshipGraph"]["relationships"][0]
+    assert edge["properties"]["relationshipType"] == "ONE_TO_ONE"
+    assert _issues_of(result, ConverterIssueType.AI_CONTEXT_DROPPED) == []
+
+
 def test_free_text_relationship_note_is_not_read_as_a_type_marker():
     document = OssieDocument(
         name="m",

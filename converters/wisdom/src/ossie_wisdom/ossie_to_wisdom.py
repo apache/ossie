@@ -353,8 +353,9 @@ class OssieToWisdomConverter:
             relationship_type = "MANY_TO_ONE"
             left_columns, right_columns = relationship.from_columns, relationship.to_columns
             if isinstance(relationship.ai_context, str):
-                if relationship.ai_context in _NOTE_RELATIONSHIP_TYPES:
-                    relationship_type = _NOTE_RELATIONSHIP_TYPES[relationship.ai_context]
+                marked_type = _NOTE_RELATIONSHIP_TYPES.get(relationship.ai_context.strip())
+                if marked_type is not None:
+                    relationship_type = marked_type
                     if relationship_type == "ONE_TO_MANY":
                         # The forward path swapped sides to put the many side in `from`; swap back.
                         # left_ref, right_ref and the join conditions below must be built after this.

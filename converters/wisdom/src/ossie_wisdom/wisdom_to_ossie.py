@@ -279,7 +279,7 @@ class WisdomToOssieConverter:
                 continue
 
             relationship_type = properties.get("relationshipType", "")
-            ai_context = RELATIONSHIP_TYPE_NOTES.get(relationship_type)
+            ai_context = RELATIONSHIP_TYPE_NOTES.get(relationship_type) if isinstance(relationship_type, str) else None
             # Ossie encodes cardinality by direction: `from` is the many side, `to` the one side.
             if relationship_type == "ONE_TO_MANY":
                 from_dataset, to_dataset = right, left

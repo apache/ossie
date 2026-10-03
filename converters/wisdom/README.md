@@ -72,7 +72,8 @@ Ossie encodes cardinality by direction (`from` = many side, `to` = one side), so
 | `MANY_TO_MANY` | `from` = left, plus the note `many-to-many relationship; cardinality is not representable in Ossie` and a `CARDINALITY_LOSS` warning |
 
 The notes are written to the relationship's `ai_context` so the export direction can
-restore the original type. They are matched exactly, so editing a note changes the
+restore the original type. They are matched exactly (ignoring leading and trailing
+whitespace), so editing a note changes the
 exported cardinality (see below).
 
 Compound join conditions that are an `AND` of equality conditions are flattened into

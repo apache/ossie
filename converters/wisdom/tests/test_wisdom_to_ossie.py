@@ -118,6 +118,16 @@ def test_relationship_directions(model):
     assert (flipped.from_dataset, flipped.to) == ("orders", "customers")
 
 
+def test_non_string_relationship_type_is_kept_as_many_to_one():
+    export = json.loads(FIXTURE.read_text())
+    edge = export["domain"]["zsheet_json"]["relationshipGraph"]["relationships"][0]
+    edge["properties"]["relationshipType"] = {"unexpected": "shape"}
+    model = WisdomToOssieConverter().convert(export).output
+    relationship = model.relationships[0]
+    assert (relationship.from_dataset, relationship.to) == ("orders", "customers")
+    assert relationship.ai_context is None
+
+
 def test_many_to_many_is_kept_with_cardinality_loss(result, model):
     relationships = {relationship.name: relationship for relationship in model.relationships}
     many_to_many = relationships["orders_to_tags"]
