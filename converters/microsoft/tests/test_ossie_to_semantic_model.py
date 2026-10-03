@@ -21,6 +21,7 @@ import json
 import warnings
 from pathlib import Path
 
+import jsonschema
 import pytest
 import yaml
 
@@ -339,6 +340,49 @@ def test_a_sql_concatenation_becomes_a_table_qualified_calculated_column():
         _annotation(column, "OssieExpression")
         == "customer_name || ' ' || customer_last_name"
     )
+
+
+def test_an_ossie_sql_concatenation_becomes_a_calculated_column():
+    semantic_model = _minimal()
+    semantic_model["datasets"][0]["fields"] = [
+        {
+            "name": "FirstName",
+            "datatype": "String",
+            "expression": make_expression("customer_name", "OSSIE_SQL_2026"),
+        },
+        {
+            "name": "LastName",
+            "datatype": "String",
+            "expression": make_expression("customer_last_name", "OSSIE_SQL_2026"),
+        },
+        {
+            "name": "FullName",
+            "datatype": "String",
+            "expression": make_expression(
+                "customer_name || ' ' || customer_last_name", "OSSIE_SQL_2026"
+            ),
+        },
+    ]
+
+    column = _column(_table(_convert(semantic_model), "T"), "FullName")
+    assert column["expression"] == "'T'[FirstName] & \" \" & 'T'[LastName]"
+    assert _annotation(column, "OssieExpressionDialect") == "OSSIE_SQL_2026"
+
+
+def test_an_ossie_sql_calculated_column_wins_over_a_vendor_expression():
+    semantic_model = _minimal()
+    field = {"name": "Label", "datatype": "String"}
+    field["expression"] = {
+        "dialects": [
+            {"dialect": "BIGQUERY", "expression": "UNSUPPORTED(c)"},
+            {"dialect": "OSSIE_SQL_2026", "expression": "c || ' suffix'"},
+        ]
+    }
+    semantic_model["datasets"][0]["fields"].append(field)
+
+    column = _column(_table(_convert(semantic_model), "T"), "Label")
+    assert column["expression"] == "'T'[C] & \" suffix\""
+    assert _annotation(column, "OssieExpressionDialect") == "OSSIE_SQL_2026"
 
 
 def _customer_name_model(expression):
@@ -750,15 +794,146 @@ def test_a_supported_sql_aggregate_is_translated_to_dax(sql, dax):
     assert _metric_dax(sql) == dax
 
 
-def test_all_tpcds_example_metrics_translate_to_dax():
-    repo_root = Path(__file__).resolve().parents[3]
-    ossie = (repo_root / "examples" / "tpcds_semantic_model.yaml").read_text(
-        encoding="utf-8"
+def test_an_ossie_sql_metric_is_translated_to_dax():
+    assert _metric_dax("SUM(c)", "OSSIE_SQL_2026") == "SUM('T'[C])"
+
+
+@pytest.mark.parametrize(
+    ("dialects", "expected_dax", "expected_dialect"),
+    [
+        (
+            [
+                {"dialect": "BIGQUERY", "expression": "SUM(c + c)"},
+                {"dialect": "OSSIE_SQL_2026", "expression": "SUM(c)"},
+            ],
+            "SUM('T'[C])",
+            "OSSIE_SQL_2026",
+        ),
+        (
+            [
+                {"dialect": "OSSIE_SQL_2026", "expression": "SUM(c)"},
+                {"dialect": "ANSI_SQL", "expression": "COUNT(c)"},
+            ],
+            "COUNTA('T'[C])",
+            "ANSI_SQL",
+        ),
+        (
+            [
+                {"dialect": "MAQL", "expression": "Count(C)"},
+                {"dialect": "BIGQUERY", "expression": "SUM(c)"},
+            ],
+            "SUM('T'[C])",
+            "BIGQUERY",
+        ),
+    ],
+)
+def test_the_best_readable_metric_dialect_is_selected(
+    dialects, expected_dax, expected_dialect
+):
+    semantic_model = _minimal(
+        metrics=[{"name": "M", "expression": {"dialects": dialects}}]
     )
+    with pytest.warns(UserWarning, match="no home table recorded"):
+        bim = _convert(semantic_model)
+    measure = _table(bim, "T")["measures"][0]
+    assert measure["expression"] == expected_dax
+    assert _annotation(measure, "OssieExpressionDialect") == expected_dialect
+    assert _annotation(measure, "OssieExpression") == next(
+        entry["expression"] for entry in dialects if entry["dialect"] == expected_dialect
+    )
+
+
+def test_an_untranslatable_preferred_expression_is_not_replaced_without_warning():
+    semantic_model = _minimal(
+        metrics=[
+            {
+                "name": "M",
+                "expression": {
+                    "dialects": [
+                        {"dialect": "ANSI_SQL", "expression": "SUM(c + c)"},
+                        {"dialect": "OSSIE_SQL_2026", "expression": "SUM(c)"},
+                    ]
+                },
+            }
+        ]
+    )
+    with pytest.warns(UserWarning, match="a 'ANSI_SQL' expression could not be translated"):
+        bim = _convert(semantic_model)
+    measure = _table(bim, "T")["measures"][0]
+    assert measure["expression"] == "BLANK()"
+    assert _annotation(measure, "OssieExpressionDialect") == "ANSI_SQL"
+    assert _annotation(measure, "OssieExpression") == "SUM(c + c)"
+
+
+def test_an_unsupported_ossie_sql_metric_is_reported_and_preserved():
+    semantic_model = _minimal(
+        metrics=[
+            {"name": "M", "expression": make_expression("SUM(c + c)", "OSSIE_SQL_2026")}
+        ]
+    )
+    with pytest.warns(
+        UserWarning, match="a 'OSSIE_SQL_2026' expression could not be translated"
+    ):
+        bim = _convert(semantic_model)
+    measure = _table(bim, "T")["measures"][0]
+    assert measure["expression"] == "BLANK()"
+    assert _annotation(measure, "OssieExpressionDialect") == "OSSIE_SQL_2026"
+    assert _annotation(measure, "OssieExpression") == "SUM(c + c)"
+
+
+def test_dax_is_preferred_over_ossie_sql():
+    semantic_model = _minimal(
+        metrics=[
+            {
+                "name": "M",
+                "expression": {
+                    "dialects": [
+                        {"dialect": "OSSIE_SQL_2026", "expression": "SUM(c)"},
+                        {"dialect": "DAX", "expression": "COUNTROWS(T)"},
+                    ]
+                },
+            }
+        ]
+    )
+
+    with pytest.warns(UserWarning, match="no home table recorded"):
+        bim = _convert(semantic_model)
+    measure = _table(bim, "T")["measures"][0]
+    assert measure["expression"] == "COUNTROWS(T)"
+    assert "annotations" not in measure
+
+
+@pytest.mark.parametrize("dialect", ["ANSI_SQL", "OSSIE_SQL_2026"])
+def test_all_tpcds_example_metrics_translate_to_dax(dialect):
+    repo_root = Path(__file__).resolve().parents[3]
+    ossie = yaml.safe_load(
+        (repo_root / "examples" / "tpcds_semantic_model.yaml").read_text(encoding="utf-8")
+    )
+    if dialect == "OSSIE_SQL_2026":
+        for dataset in ossie["datasets"]:
+            for field in dataset["fields"]:
+                for entry in field["expression"]["dialects"]:
+                    if entry["dialect"] == "ANSI_SQL":
+                        entry["dialect"] = dialect
+        for metric in ossie["metrics"]:
+            for entry in metric["expression"]["dialects"]:
+                if entry["dialect"] == "ANSI_SQL":
+                    entry["dialect"] = dialect
+
+    schema = json.loads(
+        (repo_root / "core-spec" / "ossie-schema.json").read_text(encoding="utf-8")
+    )
+    jsonschema.validate(ossie, schema)
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         bim = convert_ossie_to_semantic_model(ossie)
+
+    column = _column(_table(bim, "customer"), "customer_full_name")
+    assert column["expression"] == (
+        "'customer'[c_first_name] & \" \" & 'customer'[c_last_name]"
+    )
+    assert _annotation(column, "OssieExpressionDialect") == dialect
 
     measures = {
         measure["name"]: measure
@@ -782,6 +957,7 @@ def test_all_tpcds_example_metrics_translate_to_dax():
         "DIVIDE(SUM('store_sales'[ss_ext_sales_price]), "
         "SUM('store'[s_number_employees]))"
     )
+    assert _annotation(measures["total_sales"], "OssieExpressionDialect") == dialect
     # cumulative_sales, brand_rank_in_store, and monthly_sales_change each wrap an
     # aggregate in a window (OVER/PARTITION BY/RANK/LAG), which this translator
     # refuses rather than guesses at -- BLANK() is the correct, documented outcome.

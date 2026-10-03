@@ -47,7 +47,9 @@ from . import _sql_to_dax as sql_to_dax
 from ._common import (
     DATE_ONLY_FORMAT,
     DEFAULT_COMPATIBILITY_LEVEL,
+    DIALECT_ANSI,
     DIALECT_DAX,
+    DIALECT_OSSIE_SQL,
     IDENTIFIER_RE,
     OSSIE_TO_TMSL_DATATYPE,
     OSSIE_UNSUPPORTED,
@@ -651,7 +653,15 @@ def _source_column(expressions, name, stash):
 
 
 def _preferred_expression(expressions):
-    dialect = DIALECT_DAX if DIALECT_DAX in expressions else sorted(expressions)[0]
+    for dialect in (DIALECT_DAX, DIALECT_ANSI, DIALECT_OSSIE_SQL):
+        if dialect in expressions:
+            return dialect, expressions[dialect].strip()
+    dialect = next(
+        (name for name in sorted(expressions) if name in sql_to_dax.READABLE_DIALECTS),
+        None,
+    )
+    if dialect is None:
+        dialect = sorted(expressions)[0]
     return dialect, expressions[dialect].strip()
 
 
