@@ -195,27 +195,27 @@ logging.getLogger("ossie_microsoft").addHandler(logging.StreamHandler())
 
 Power BI evaluates DAX. Apache Ossie field expressions are usually SQL. The two languages
 do not share an evaluation model — DAX aggregates resolve against a filter context that
-has no SQL equivalent — so this converter carries expressions across in the dialect they
-were authored in and **never machine-translates one into the other**.
+has no SQL equivalent — so this converter only translates a narrow set of unambiguous
+expressions and retains their original dialect and text in annotations.
 
 Concretely:
 
 - A Power BI measure becomes a metric with a `DAX` dialect expression, not a SQL one.
-- On export, a metric becomes a measure only if it carries a `DAX` expression. A metric
-  with only a SQL expression is reported and skipped.
+- On export, a metric becomes a measure from `DAX` or a supported SQL-to-DAX
+  translation. Untranslatable SQL gets a warning and an annotated `BLANK()` measure.
 - A field expression becomes a TMSL `sourceColumn` only when it is a plain column
-  reference, which is exactly what `sourceColumn` means. A computed SQL expression is
-  reported and skipped. (A `sourceColumn` the source query spells with spaces, a hyphen
-  or a leading digit is preserved and replayed verbatim, so it is not mistaken for a
-  computed expression.)
+  reference, which is exactly what `sourceColumn` means. SQL concatenation can become
+  a calculated column; other computed SQL is reported and emitted as an annotated
+  `BLANK()` column. (A `sourceColumn` the source query spells with spaces, a hyphen
+  or a leading digit is preserved and replayed verbatim.)
 
 The reason is that a partial rewrite fails silently. An unrecognized function passed
 through unchanged, a `CAST` quietly dropped, or an aggregate distributed across a join
-all produce a model that loads and returns a number — just the wrong number. A missing
-measure is a bug a modeler notices; a plausible wrong one is not.
+all produce a model that loads and returns a number — just the wrong number. Unsupported
+translations therefore produce warnings and `BLANK()` placeholders, not guessed formulas.
 
-If you need SQL-to-DAX translation, do it deliberately as a separate step and author the
-result into the `DAX` dialect before exporting.
+For expressions outside the supported subset, author the intended result into the `DAX`
+dialect before exporting.
 
 ## Losslessness
 
@@ -359,8 +359,13 @@ where DAX returns BLANK -- coercing to 0 would defeat Power BI's convention of h
 empty rows in a visual. And the DAX deviation and variance functions raise an error
 when fewer than two non-blank rows remain, where SQL yields NULL or 0.
 
-`ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS` and `BIGQUERY` expressions are parsed; `MDX`,
-`TABLEAU` and `MAQL` are not SQL and are not attempted.
+`ANSI_SQL`, `OSSIE_SQL_2026`, `SNOWFLAKE`, `DATABRICKS` and `BIGQUERY` expressions are
+parsed; `MDX`, `TABLEAU` and `MAQL` are not SQL and are not attempted.
+For multi-dialect expressions, export prefers `DAX`, then `ANSI_SQL`, then
+`OSSIE_SQL_2026`, then another readable SQL dialect. It does not try another
+dialect after a selected expression fails translation: the failure is reported
+and the original expression is retained in annotations rather than assuming
+independently authored alternatives are equivalent.
 
 Note that DAX has no bare column reference, so a translation is only possible when the
 column resolves to exactly one field in exactly one dataset. A name that appears in two
@@ -368,23 +373,15 @@ datasets is treated as untranslatable rather than guessed at.
 
 ### What is not translated
 
-Everything outside that set is **reported and skipped** rather than approximated --
-arithmetic between aggregates (`SUM(a) / COUNT(*)`), aggregates over expressions
-(`SUM(a + b)`), `CASE`, window and filtered aggregates, qualified column references,
-and percentiles (whose DAX spelling depends on the interpolation the SQL does not
-state).
+Everything outside the supported translator shapes is **reported and emitted as
+`BLANK()`**, not approximated: for example, `SUM(a + b)`, `CASE`, and window and
+filtered aggregates. Division of supported aggregates and qualified references to
+modelled fields can translate when their source columns resolve unambiguously.
 
- A calculated *field* whose expression is not already DAX is not generally translated. The
- export will only attempt a narrow, unambiguous translation for string concatenations;
- otherwise it emits the column as `BLANK()` and preserves the original dialect/expression
- as annotations so the column remains present but does not silently compute a wrong value.
-
-The reason is that the alternative is worse. A stand-in expression such as `BLANK()`,
-or a plausible-looking but wrong translation, produces a model that deploys and
-refreshes without error and then answers every query with an incorrect number. A
-missing measure is something a modeller notices immediately. The authored expression is
-untouched in the Apache Ossie source, so re-running the conversion after adding a `DAX`
-expression picks it up.
+A calculated *field* whose expression is not already DAX is only translated for
+unambiguous string concatenation. Other expressions become annotated `BLANK()`
+columns. These placeholders are **not correct computed values**: review converter
+warnings and supply a DAX expression before using the exported model for analysis.
 
 ## Testing
 

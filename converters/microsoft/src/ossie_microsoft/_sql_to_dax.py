@@ -24,8 +24,8 @@ refuses everything else.
 
 The governing rule is the one stated in `_common`: never emit a plausible-looking
 expression that was not authored for the target engine. A metric this module declines
-is reported and skipped, which a modeller notices; a metric it mistranslates would
-deploy cleanly and quietly return a wrong number.
+is reported and emitted as an annotated BLANK() placeholder; a metric it mistranslates
+would deploy cleanly and quietly return a wrong number.
 
 What is translated
 ------------------
@@ -72,12 +72,13 @@ from __future__ import annotations
 import sqlglot
 from sqlglot import exp
 
-from ._common import DIALECT_ANSI
+from ._common import DIALECT_ANSI, DIALECT_OSSIE_SQL
 
 #: Apache Ossie dialects this module can parse, mapped to their sqlglot reader.
 #: Dialects absent from this map (`MDX`, `TABLEAU`, `MAQL`) are not SQL and are refused.
 READABLE_DIALECTS = {
     DIALECT_ANSI: None,  # sqlglot's dialect-neutral reader
+    DIALECT_OSSIE_SQL: None,
     "SNOWFLAKE": "snowflake",
     "DATABRICKS": "databricks",
     "BIGQUERY": "bigquery",
