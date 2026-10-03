@@ -454,24 +454,25 @@ either:
 | `version` | string | Yes | Mapping specification version |
 | `name` | string | Yes | Unique identifier for this mapping |
 | `description` | string | No | Human-readable description of this mapping |
-| `ontology` | object | Yes | Reference to the ontology document this mapping targets (see below) |
-| `semantic_model` | object | Yes | Reference to the semantic model document this mapping draws from (see below) |
+| `ontology_ref` | object | Yes | Reference to the ontology document this mapping targets (see below) |
+| `semantic_model_ref` | object | Yes | Reference to the semantic model document this mapping draws from (see below) |
 | `concept_mappings` | list | Yes | Maps logical model constructs to concepts and relationships in the referenced ontology |
 | `custom_extensions` | list | No | Vendor-specific attributes for extensibility, matching the core specification's mechanism |
 
-Both `ontology` and `semantic_model` are references with the following schema, mirroring
+Both `ontology_ref` and `semantic_model_ref` are references with the following schema, mirroring
 `DocumentReference` in `mapping.json`:
 
 | Field | Type | Required | Description |
 |---------------|---------|-----|-------|
 | `name` | string | Yes | Must equal the referenced document's own `name`; this is the reference's identity |
-| `iri` | string | No | Where to resolve the referenced document from: a relative reference such as `./flights.ontology.yaml` when the documents sit alongside each other, or an absolute IRI. May be omitted where a catalog resolves documents by `name` |
+| `iri` | string | No | Where to resolve the referenced document from. A relative reference such as `./flights.ontology.yaml` is resolved against the mapping document's own location or base IRI; an absolute IRI identifies the location directly. May be omitted where a catalog resolves documents by `name` |
 
 A mapping document references exactly one ontology and exactly one semantic model. When more than
 one semantic model maps to an ontology, each mapping is its own document.
 
-A mapping document is recognized by having `concept_mappings`, a field no ontology or semantic
-model document has; there is no separate field declaring a document's kind.
+A mapping document is recognized by the combination of `concept_mappings`, `ontology_ref`, and
+`semantic_model_ref`. These reference keys do not overlap with the root keys of ontology or
+semantic model documents; there is no separate field declaring a document's kind.
 
 See `examples/flights.ontology.yaml`, `examples/flights.semantic_model.yaml`, and
 `examples/flights.mapping.yaml` for a complete example.
@@ -481,7 +482,9 @@ list (`OntologyMap` in `ontology.json`), each carrying a complete
 [core document](../core-spec/spec.md#semantic-model), with its own `version`, `name`, and at
 least one dataset, as its `semantic_model`. That list is still accepted so existing documents
 continue to validate, but it is deprecated and will be removed in a future version. New mappings
-must be written as mapping documents.
+should be written as mapping documents. Parser and converter support for standalone mapping
+documents is not yet available and will be added separately; until then, use embedded mappings
+when a tool requires them.
 
 ### Concept mappings
 

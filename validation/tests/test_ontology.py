@@ -166,8 +166,11 @@ def _mapping_document() -> dict:
     return {
         "version": "0.2.0.dev0",
         "name": "sales_mapping",
-        "ontology": {"name": "sales", "iri": "./sales.ontology.yaml"},
-        "semantic_model": {"name": "sales_model", "iri": "./sales.semantic_model.yaml"},
+        "ontology_ref": {"name": "sales", "iri": "./sales.ontology.yaml"},
+        "semantic_model_ref": {
+            "name": "sales_model",
+            "iri": "./sales.semantic_model.yaml",
+        },
         "concept_mappings": [
             {
                 "concept": "Order",
@@ -186,6 +189,45 @@ def test_ontology_schema_references_resolve_offline(offline, uri):
     assert _VALIDATE.validate_schema(
         concept_mapping, {"$ref": uri + "#/$defs/ConceptMapping"}
     ) == []
+
+
+def test_plain_semantic_model_does_not_load_ontology_schema(offline, monkeypatch):
+    core_schema = _schema("core-spec/ossie-schema.json")
+    ontology_path = (_REPO / "ontology/ontology.json").resolve()
+    original_read_text = Path.read_text
+    _VALIDATE._retrieve_local_schema.cache_clear()
+
+    def reject_ontology_read(path, *args, **kwargs):
+        if path.resolve() == ontology_path:
+            pytest.fail("Plain semantic model validation must not load ontology.json")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", reject_ontology_read)
+
+    assert _VALIDATE.validate_schema(_semantic_model(), core_schema) == []
+
+
+@pytest.mark.parametrize("failure", ["missing", "malformed"])
+def test_unavailable_referenced_ontology_is_validation_error(
+    offline, mapping_schema, monkeypatch, failure
+):
+    ontology_path = (_REPO / "ontology/ontology.json").resolve()
+    original_read_text = Path.read_text
+    _VALIDATE._retrieve_local_schema.cache_clear()
+
+    def fail_ontology_read(path, *args, **kwargs):
+        if path.resolve() == ontology_path:
+            if failure == "missing":
+                raise FileNotFoundError(path)
+            return "{"
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fail_ontology_read)
+
+    errors = _VALIDATE.validate_schema(_mapping_document(), mapping_schema)
+    expected_ref = f"{_ONTOLOGY_RAW_URL}#/$defs/ConceptMapping"
+
+    assert errors == [f"[Schema] Cannot resolve schema reference: {expected_ref}"]
 
 
 @pytest.mark.parametrize(
@@ -212,8 +254,8 @@ def test_split_flights_examples_match_embedded_example():
     assert ontology == flights
     assert model == embedded["semantic_model"]
     assert mapping["concept_mappings"] == embedded["concept_mappings"]
-    assert mapping["ontology"]["name"] == ontology["name"]
-    assert mapping["semantic_model"]["name"] == model["name"]
+    assert mapping["ontology_ref"]["name"] == ontology["name"]
+    assert mapping["semantic_model_ref"]["name"] == model["name"]
 
 
 def test_mapping_document_accepts_references(offline, mapping_schema):
@@ -222,14 +264,15 @@ def test_mapping_document_accepts_references(offline, mapping_schema):
 
 def test_mapping_document_reference_iri_is_optional(offline, mapping_schema):
     document = _mapping_document()
-    del document["ontology"]["iri"]
-    del document["semantic_model"]["iri"]
+    del document["ontology_ref"]["iri"]
+    del document["semantic_model_ref"]["iri"]
 
     assert _VALIDATE.validate_schema(document, mapping_schema) == []
 
 
 @pytest.mark.parametrize(
-    "required_property", ["version", "name", "ontology", "semantic_model", "concept_mappings"]
+    "required_property",
+    ["version", "name", "ontology_ref", "semantic_model_ref", "concept_mappings"],
 )
 def test_mapping_document_requires_property(offline, mapping_schema, required_property):
     document = _mapping_document()
@@ -240,7 +283,7 @@ def test_mapping_document_requires_property(offline, mapping_schema, required_pr
     assert errors == [f"[Schema] (root): '{required_property}' is a required property"]
 
 
-@pytest.mark.parametrize("reference", ["ontology", "semantic_model"])
+@pytest.mark.parametrize("reference", ["ontology_ref", "semantic_model_ref"])
 def test_mapping_document_reference_requires_name(offline, mapping_schema, reference):
     document = _mapping_document()
     del document[reference]["name"]
@@ -249,16 +292,38 @@ def test_mapping_document_reference_requires_name(offline, mapping_schema, refer
 
 
 @pytest.mark.parametrize(
+    "container, field",
+    [
+        (None, "name"),
+        ("ontology_ref", "name"),
+        ("ontology_ref", "iri"),
+        ("semantic_model_ref", "name"),
+        ("semantic_model_ref", "iri"),
+    ],
+)
+def test_mapping_document_rejects_empty_identifiers(
+    offline, mapping_schema, container, field
+):
+    document = _mapping_document()
+    target = document if container is None else document[container]
+    target[field] = ""
+
+    assert _VALIDATE.validate_schema(document, mapping_schema)
+
+
+@pytest.mark.parametrize(
     "mutate",
     [
         # Embedding a complete semantic model instead of referencing one.
-        lambda d: d.update(semantic_model=_semantic_model()),
+        lambda d: d.update(semantic_model_ref=_semantic_model()),
         # More than one semantic model or ontology per mapping document.
-        lambda d: d.update(semantic_model=[d["semantic_model"], d["semantic_model"]]),
-        lambda d: d.update(ontology=[d["ontology"], d["ontology"]]),
+        lambda d: d.update(
+            semantic_model_ref=[d["semantic_model_ref"], d["semantic_model_ref"]]
+        ),
+        lambda d: d.update(ontology_ref=[d["ontology_ref"], d["ontology_ref"]]),
         # Unknown fields, including a document-kind discriminator.
         lambda d: d.update(kind="mapping"),
-        lambda d: d["ontology"].update(version="1.0"),
+        lambda d: d["ontology_ref"].update(version="1.0"),
         # Wrong specification version.
         lambda d: d.update(version="0.1.0"),
     ],

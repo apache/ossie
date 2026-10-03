@@ -50,8 +50,9 @@ from pathlib import Path
 try:
     import yaml
     from jsonschema import Draft202012Validator
-    from referencing import Registry, Resource
-    from referencing.exceptions import Unresolvable
+    from referencing import Registry
+    from referencing.exceptions import NoSuchResource, Unresolvable
+    from referencing.retrieval import to_cached_resource
     from yaml.constructor import ConstructorError
 except ImportError:
     print("Missing dependencies. Install with:")
@@ -148,28 +149,34 @@ class UniqueKeyLoader(yaml.SafeLoader):
                 self._check_unique_keys(child, visited)
 
 
-# Local schemas that other schemas reference, keyed by their path in this repo.
-# Cross-file references use the raw GitHub URL, so each schema is registered
-# under both that URL and its canonical $id.
-_LOCAL_SCHEMAS = ("core-spec/ossie-schema.json", "ontology/ontology.json")
-_RAW_BASE = "https://raw.githubusercontent.com/apache/ossie/main/"
+# Ossie schemas reference one another by raw GitHub URL or canonical $id.
+# Resolve those URLs onto files in this checkout only when a reference needs
+# them. The decorator parses and caches each retrieved schema across calls.
+_REPO_ROOT = Path(__file__).parent.parent.resolve()
+_SCHEMA_BASES = (
+    "https://raw.githubusercontent.com/apache/ossie/main/",
+    "https://github.com/apache/ossie/",
+)
 
 
-def _schema_registry() -> Registry:
-    """Build a registry that resolves Ossie schema references from local files."""
-    repo = Path(__file__).parent.parent
-    resources = []
-    for relative_path in _LOCAL_SCHEMAS:
-        contents = json.loads((repo / relative_path).read_text())
-        resource = Resource.from_contents(contents)
-        resources.append((contents["$id"], resource))
-        resources.append((_RAW_BASE + relative_path, resource))
-    return Registry().with_resources(resources)
+@to_cached_resource()
+def _retrieve_local_schema(uri: str) -> str:
+    """Read a referenced Ossie schema from this checkout."""
+    for base in _SCHEMA_BASES:
+        if uri.startswith(base):
+            path = (_REPO_ROOT / uri[len(base):]).resolve()
+            if path.is_relative_to(_REPO_ROOT):
+                return path.read_text(encoding="utf-8")
+            break
+    raise NoSuchResource(ref=uri)
+
+
+_SCHEMA_REGISTRY = Registry(retrieve=_retrieve_local_schema)
 
 
 def validate_schema(data: dict, schema: dict) -> list[str]:
     """Validate against JSON Schema, resolving Ossie schema references locally."""
-    validator = Draft202012Validator(schema, registry=_schema_registry())
+    validator = Draft202012Validator(schema, registry=_SCHEMA_REGISTRY)
     errors = []
     try:
         for error in validator.iter_errors(data):

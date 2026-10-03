@@ -18,10 +18,10 @@
 version: 0.2.0.dev0
 name: flights_mapping
 description: Maps the Flights ontology onto the Flights semantic model
-ontology:
+ontology_ref:
   name: Flights
   iri: ./flights.ontology.yaml
-semantic_model:
+semantic_model_ref:
   name: Flights semantic model
   iri: ./flights.semantic_model.yaml
 concept_mappings:

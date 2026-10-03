@@ -12,17 +12,18 @@
     },
     "name": {
       "type": "string",
+      "minLength": 1,
       "description": "Unique identifier for this mapping"
     },
     "description": {
       "type": "string",
       "description": "Human-readable description of this mapping"
     },
-    "ontology": {
+    "ontology_ref": {
       "$ref": "#/$defs/DocumentReference",
       "description": "Reference to the ontology document this mapping targets"
     },
-    "semantic_model": {
+    "semantic_model_ref": {
       "$ref": "#/$defs/DocumentReference",
       "description": "Reference to the semantic model document this mapping draws from"
     },
@@ -37,7 +38,7 @@
       "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json#/$defs/SemanticModel/properties/custom_extensions"
     }
   },
-  "required": ["version", "name", "ontology", "semantic_model", "concept_mappings"],
+  "required": ["version", "name", "ontology_ref", "semantic_model_ref", "concept_mappings"],
   "additionalProperties": false,
   "$defs": {
     "DocumentReference": {
@@ -46,11 +47,13 @@
       "properties": {
         "name": {
           "type": "string",
+          "minLength": 1,
           "description": "Must equal the referenced document's own 'name'; carries this reference's checkable identity regardless of location"
         },
         "iri": {
           "type": "string",
-          "description": "Where to resolve the referenced document from: a relative reference (e.g. a path alongside this document) or an absolute IRI once a catalog resolves names to locations"
+          "minLength": 1,
+          "description": "Where to resolve the referenced document from: a relative reference resolved against the mapping document's own location or base IRI, or an absolute IRI"
         }
       },
       "required": ["name"],
