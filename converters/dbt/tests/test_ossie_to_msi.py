@@ -984,7 +984,7 @@ class TestOssieToMSIRoundTrip:
         msi = OssieToMSIConverter().convert(original).output
         ossie_doc = MSIToOssieConverter().convert(msi).output
 
-        metrics = ossie_doc.semantic_model[0].metrics or []
+        metrics = ossie_doc.metrics or []
         expressions = {m.name: m.expression.dialects[0].expression for m in metrics}
         # msi_to_ossie._qualify_col re-qualifies only bare identifiers,
         # so the exported argument comes back unqualified.
