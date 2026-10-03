@@ -52,7 +52,7 @@
         <json-schema-validator.version>1.5.9</json-schema-validator.version>
         <maven-shade-plugin.version>3.6.2</maven-shade-plugin.version>
         <maven-resources-plugin.version>3.5.0</maven-resources-plugin.version>
-        <jsqlparser.version>5.3</jsqlparser.version>
+        <jsqlparser.version>5.4</jsqlparser.version>
     </properties>
 
     <dependencies>
