@@ -55,6 +55,7 @@ updates:
       - "/converters/sigma"
       - "/converters/snowflake"
       - "/converters/thoughtspot"
+      - "/converters/wisdom"
     schedule:
       interval: "weekly"
     groups:
