@@ -217,7 +217,7 @@ APPROX_PERCENTILE(response_time, 0.95)
 ### Conditional Aggregations (REQUIRED)
 
 SUM / COUNT aggregation functions support `DISTINCT.`   
-All aggregations should support filtered aggregation:
+All aggregations must support filtered aggregation, expressed either with a `CASE` argument or with a postfix `FILTER (WHERE ...)` modifier:
 
 ```sql
 -- DISTINCT modifier
@@ -225,9 +225,37 @@ SUM(DISTINCT amount)
 COUNT(DISTINCT customer_id)
 
 -- Filtered aggregation via CASE
-SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END)
+SUM(CASE WHEN status = 'completed' THEN amount END)
 COUNT(CASE WHEN status = 'completed' THEN 1 END)
+
+-- Filtered aggregation via FILTER (WHERE ...)
+SUM(amount) FILTER (WHERE status = 'completed')
+COUNT(*) FILTER (WHERE status = 'completed')
 ```
+
+#### `FILTER (WHERE ...)` (REQUIRED)
+
+Every aggregate function must support a postfix `FILTER (WHERE <predicate>)` modifier:
+
+```
+<aggregate_function>(<args>) FILTER (WHERE <predicate>)
+```
+
+The clause has the semantics of the SQL:2003 `<filter clause>` (optional feature T612): the aggregate considers only the rows for which `<predicate>` succeeds. `FILTER` is applied to the aggregate's input, not as a query `WHERE`, so it never removes output groups. A converter or engine MUST NOT rewrite an intrinsic `FILTER` predicate into a query-level `WHERE` clause when doing so would change group membership.
+
+`FILTER (WHERE ...)` is a modifier on an aggregate expression. It is not the standalone `WHERE` clause listed under [Not Supported in Expressions](#not-supported-in-expressions). The `<predicate>` must reference only fields of the same dataset as the aggregate's arguments.
+
+Engines without native `FILTER (WHERE ...)` support MAY lower it to the equivalent `CASE` form:
+
+```sql
+-- value aggregate: filter the argument
+SUM(amount) FILTER (WHERE status = 'completed')  --> SUM(CASE WHEN status = 'completed' THEN amount END)
+
+-- COUNT(*): filter a constant
+COUNT(*) FILTER (WHERE status = 'completed')      --> COUNT(CASE WHEN status = 'completed' THEN 1 END)
+```
+
+The `CASE` form has no `ELSE`, so non-matching rows contribute an implicit `NULL` (never `0`): value aggregates such as `SUM`, `AVG`, `MIN`, and `MAX` ignore the `NULL`, and `COUNT(*)` becomes `COUNT(CASE WHEN <predicate> THEN 1 END)`. An `ELSE 0` sentinel would be counted as a real row and would corrupt `AVG`, `MIN`, `MAX`, and `COUNT`.
 
 ### Decomposability Reference
 
