@@ -90,6 +90,8 @@ The Ossie specification currently defines extensions for the following vendors:
 | `THOUGHTSPOT` | ThoughtSpot TML (Model + Table/SQL View) |
 | `CUBE` | Cube data model |
 
+[`wisdom-semantic-view`](wisdom-semantic-view/README.md) is a separate, fixture-scoped spoke. It reads one Snowflake semantic view, writes one Ossie document, writes a Wisdom domain-export JSON (format `1.0`), and reverses that path. It keeps metric synonyms and `module_custom_instructions.sql_generation`. It does not call `converters/snowflake` (Cortex Analyst export only) or `converters/wisdom` (that spoke drops synonyms and field or metric `ai_context`).
+
 Each vendor may define custom extensions (via the `custom_extensions` field in the Ossie spec) to carry vendor-specific metadata that does not have an equivalent in the core specification.
 
 ## Mapping Core Constructs
