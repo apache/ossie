@@ -89,6 +89,7 @@ hierarchically, grouping each relationship under the concept that plays its firs
 | `ai_context` | string/object | No | Additional context for AI tools |
 | `ontology` | list | Yes | Concepts and relationships they group that form this ontology |
 | `prefixes` | object | No | Namespace prefixes used to abbreviate [IRIs](#global-identifiers) |
+| `ontology_mappings` | list | No | Deprecated; accepted only so existing documents continue to validate. Write mappings as [mapping documents](#mapping-documents) instead |
 
 Each component of an ontology declares a concept and lists the relationships where that
 concept plays the first role. The concept's name is the value of the `concept` field, and
@@ -442,21 +443,48 @@ Ontology mappings declare how to map the values of fields at the logical level t
 in the ontology. Just as ontologies are partitioned by concept, ontology maps partition into concept
 mappings that group by some concept.
 
-Each mapping's `semantic_model` is a complete
-[core document](../core-spec/spec.md#semantic-model), with its own `version`,
-`name`, and at least one dataset. For example:
+### Mapping documents
 
-```yaml
-ontology_mappings:
-  - name: sales_mapping
-    semantic_model:
-      version: 0.2.0.dev0
-      name: sales_analytics
-      datasets:
-        - name: orders
-          source: sales.public.orders
-    concept_mappings: []
-```
+A mapping is written as its own document, validated against `ontology/mapping.json`. It maps the
+constructs of one semantic model onto one ontology, and references both rather than embedding
+either:
+
+| Field | Type | Required | Description |
+|---------------|---------|-----|-------|
+| `version` | string | Yes | Mapping specification version |
+| `name` | string | Yes | Unique identifier for this mapping |
+| `description` | string | No | Human-readable description of this mapping |
+| `ontology_ref` | object | Yes | Reference to the ontology document this mapping targets (see below) |
+| `semantic_model_ref` | object | Yes | Reference to the semantic model document this mapping draws from (see below) |
+| `concept_mappings` | list | Yes | Maps logical model constructs to concepts and relationships in the referenced ontology |
+| `custom_extensions` | list | No | Vendor-specific attributes for extensibility, matching the core specification's mechanism |
+
+Both `ontology_ref` and `semantic_model_ref` are references with the following schema, mirroring
+`DocumentReference` in `mapping.json`:
+
+| Field | Type | Required | Description |
+|---------------|---------|-----|-------|
+| `name` | string | Yes | Must equal the referenced document's own `name`; this is the reference's identity |
+| `iri` | string | No | Where to resolve the referenced document from. A relative reference such as `./flights.ontology.yaml` is resolved against the mapping document's own location or base IRI; an absolute IRI identifies the location directly. May be omitted where a catalog resolves documents by `name` |
+
+A mapping document references exactly one ontology and exactly one semantic model. When more than
+one semantic model maps to an ontology, each mapping is its own document.
+
+A mapping document is recognized by the combination of `concept_mappings`, `ontology_ref`, and
+`semantic_model_ref`. These reference keys do not overlap with the root keys of ontology or
+semantic model documents; there is no separate field declaring a document's kind.
+
+See `examples/flights.ontology.yaml`, `examples/flights.semantic_model.yaml`, and
+`examples/flights.mapping.yaml` for a complete example.
+
+**Deprecated:** mappings were originally embedded in the ontology document's `ontology_mappings`
+list (`OntologyMap` in `ontology.json`), each carrying a complete
+[core document](../core-spec/spec.md#semantic-model), with its own `version`, `name`, and at
+least one dataset, as its `semantic_model`. That list is still accepted so existing documents
+continue to validate, but it is deprecated and will be removed in a future version. New mappings
+should be written as mapping documents. Parser and converter support for standalone mapping
+documents is not yet available and will be added separately; until then, use embedded mappings
+when a tool requires them.
 
 ### Concept mappings
 
@@ -665,6 +693,8 @@ though `Store` plays a role in three of the relationships.
   - Core ontology structure: Concepts, relationships, and business rules (requires and derived_by)
   - Schema mappings from one or more logical models into an ontology
   - Optional IRIs on concepts and relationships, with namespace prefixes declared at the top level
+  - Mapping documents (`ontology/mapping.json`) that reference one ontology and one semantic
+    model; embedded `ontology_mappings` is deprecated
 
 ---
 

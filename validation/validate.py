@@ -50,8 +50,9 @@ from pathlib import Path
 try:
     import yaml
     from jsonschema import Draft202012Validator
-    from referencing import Registry, Resource
-    from referencing.exceptions import Unresolvable
+    from referencing import Registry
+    from referencing.exceptions import NoSuchResource, Unresolvable
+    from referencing.retrieval import to_cached_resource
     from yaml.constructor import ConstructorError
 except ImportError:
     print("Missing dependencies. Install with:")
@@ -148,20 +149,34 @@ class UniqueKeyLoader(yaml.SafeLoader):
                 self._check_unique_keys(child, visited)
 
 
+# Ossie schemas reference one another by raw GitHub URL or canonical $id.
+# Resolve those URLs onto files in this checkout only when a reference needs
+# them. The decorator parses and caches each retrieved schema across calls.
+_REPO_ROOT = Path(__file__).parent.parent.resolve()
+_SCHEMA_BASES = (
+    "https://raw.githubusercontent.com/apache/ossie/main/",
+    "https://github.com/apache/ossie/",
+)
+
+
+@to_cached_resource()
+def _retrieve_local_schema(uri: str) -> str:
+    """Read a referenced Ossie schema from this checkout."""
+    for base in _SCHEMA_BASES:
+        if uri.startswith(base):
+            path = (_REPO_ROOT / uri[len(base):]).resolve()
+            if path.is_relative_to(_REPO_ROOT):
+                return path.read_text(encoding="utf-8")
+            break
+    raise NoSuchResource(ref=uri)
+
+
+_SCHEMA_REGISTRY = Registry(retrieve=_retrieve_local_schema)
+
+
 def validate_schema(data: dict, schema: dict) -> list[str]:
-    """Validate against JSON Schema, resolving core references locally."""
-    core_path = Path(__file__).parent.parent / "core-spec" / "ossie-schema.json"
-    core = json.loads(core_path.read_text())
-    resource = Resource.from_contents(core)
-    # Ontology references use the raw URL; also register the canonical schema ID.
-    registry = Registry().with_resources([
-        (core["$id"], resource),
-        (
-            "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json",
-            resource,
-        ),
-    ])
-    validator = Draft202012Validator(schema, registry=registry)
+    """Validate against JSON Schema, resolving Ossie schema references locally."""
+    validator = Draft202012Validator(schema, registry=_SCHEMA_REGISTRY)
     errors = []
     try:
         for error in validator.iter_errors(data):
