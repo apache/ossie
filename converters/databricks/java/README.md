@@ -35,7 +35,8 @@ The directions are named from the Apache Ossie model's point of view, matching t
 
 On **export** (Apache Ossie -> Metric View), Apache Ossie features with no Metric View slot --
 relationship `ai_context`, the non-`synonyms` members of a field/metric `ai_context` object,
-`dimension.is_time`, foreign-vendor `custom_extensions` -- are **dropped with a notice**. An
+a field/metric `datatype`, `dimension.is_time`, foreign-vendor `custom_extensions` -- are
+**dropped with a notice**. An
 expression prefers the `DATABRICKS` dialect, then `ANSI_SQL`, then `OSSIE_SQL_2026` (Apache
 Ossie's portable, ANSI-SQL-compatible dialect); the other dialect alternatives are ignored (no
 notice) when a supported one is present, while a field or metric with no supported dialect is
@@ -108,7 +109,7 @@ Each row maps in both directions; the **Notes** flag where a behavior is specifi
 
 | Apache Ossie | Metric View (v1.1) | Notes |
 |---|---|---|
-| `semantic_model.description` | `comment` | Model-level description only. |
+| model `description` | `comment` | Model-level description only. |
 | root dataset | `source` | The fact/grain. |
 | other `datasets` | nested `joins[]` | Export: the relationship graph is reassembled into the join tree; a dataset reached by two paths (a diamond) fans out into one aliased join per path. |
 | `relationship` `from_columns`/`to_columns` | join `on` (differing names) / `using` (shared names) | Decomposed into columns on import; rebuilt into `on`/`using` on export. A join `on` that is non-equi, function-wrapped, or carries an extra filter has no equi-join relationship form, so it is rejected on import (matching the Python converter) rather than emitting a relationship with empty column lists. |
@@ -134,7 +135,7 @@ an input breaks one of these:
 - an Apache Ossie -> Metric View conversion has more than 200 distinct datasets or expands to more
   than 200 join nodes, or a Metric View -> Apache Ossie conversion produces more than 200 datasets
   (the same bound applies both ways, so anything that converts one way can convert back);
-- on the first semantic model, a consumed `custom_extensions` value is not a list of mappings, or
+- a consumed `custom_extensions` value is not a list of mappings, or
   has non-empty `DATABRICKS` `data` that is not a string
   containing one strict JSON object. Duplicate keys, trailing tokens, YAML syntax, and non-object
   JSON roots are rejected; missing, null, or empty `data` is treated as an empty object.
