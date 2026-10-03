@@ -89,6 +89,7 @@ The Ossie specification currently defines extensions for the following vendors:
 | `SIGMA` | Sigma Computing data model |
 | `THOUGHTSPOT` | ThoughtSpot TML (Model + Table/SQL View) |
 | `CUBE` | Cube data model |
+| `SOLID` | Solid semantic model |
 
 Each vendor may define custom extensions (via the `custom_extensions` field in the Ossie spec) to carry vendor-specific metadata that does not have an equivalent in the core specification.
 

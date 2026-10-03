@@ -1,0 +1,78 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# A small Solid export whose type vocabulary is BigQuery's: INT64, FLOAT64, BOOL.
+# The project id carries a hyphen, which a dataset name must not, and the metric uses
+# COUNTIF -- a BigQuery-only function that has to survive qualification untouched.
+semantic_model:
+  name: 'web_sessions'
+
+  business_context:
+    model_description: |
+      Session-level web analytics.
+
+  model_llm_description: |
+    Web session analytics: traffic, engagement, and signup conversion.
+
+  tables:
+    - name: 'analytics-prod.web.sessions'
+      description: |
+        One row per web session.
+      synonyms:
+        - 'visits'
+      primary_key: 'session_id'
+      quality_rank: 'high'
+      dimensions:
+        - name: 'session_id'
+          type: 'STRING'
+          description: Session identifier.
+        - name: 'channel'
+          type: 'STRING'
+          description: Acquisition channel.
+          sample_values:
+            - 'organic'
+            - 'paid'
+        - name: 'is_logged_in'
+          type: 'BOOL'
+          description: Whether the visitor was authenticated.
+        - name: 'started_on'
+          type: 'DATE'
+          description: Session start date.
+        - name: 'started_at'
+          type: 'DATETIME'
+          description: Session start, with no timezone.
+      facts:
+        - name: 'page_views'
+          type: 'INT64'
+          description: Pages viewed during the session.
+        - name: 'engagement_seconds'
+          type: 'FLOAT64'
+          description: Seconds of active engagement.
+
+  metrics:
+    - name: 'LOGGED_IN_SESSIONS'
+      description: |
+        Sessions where the visitor was authenticated.
+      expression: 'COUNTIF(is_logged_in = TRUE)'
+      tables:
+        - 'analytics-prod.web.sessions'
+    - name: 'AVG_ENGAGEMENT'
+      description: |
+        Mean active engagement per session.
+      expression: 'AVG(engagement_seconds)'
+      tables:
+        - 'analytics-prod.web.sessions'
