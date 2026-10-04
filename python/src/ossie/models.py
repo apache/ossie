@@ -129,7 +129,7 @@ class OssieField(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    name: str
+    name: str = Field(..., min_length=1)
     expression: OssieExpression
     dimension: Optional[OssieDimension] = None
     label: Optional[str] = None
@@ -157,8 +157,8 @@ class OssieDataset(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    name: str
-    source: str
+    name: str = Field(..., min_length=1)
+    source: str = Field(..., min_length=1)
     primary_key: Optional[list[str]] = None
     unique_keys: Optional[list[list[str]]] = None
     description: Optional[str] = None
@@ -172,9 +172,9 @@ class OssieRelationship(BaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    name: str
-    from_dataset: str = Field(..., alias="from")
-    to: str
+    name: str = Field(..., min_length=1)
+    from_dataset: str = Field(..., alias="from", min_length=1)
+    to: str = Field(..., min_length=1)
     from_columns: list[str] = Field(..., min_length=1)
     to_columns: list[str] = Field(..., min_length=1)
     ai_context: Optional[OssieAIContext] = None
@@ -186,7 +186,7 @@ class OssieMetric(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    name: str
+    name: str = Field(..., min_length=1)
     expression: OssieExpression
     description: Optional[str] = None
     datatype: Optional[OssieDataType] = None
@@ -199,7 +199,7 @@ class OssieSemanticModel(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    name: str
+    name: str = Field(..., min_length=1)
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
     datasets: list[OssieDataset] = Field(..., min_length=1)
