@@ -268,6 +268,30 @@ def test_document_defaults_version_when_omitted(document_data: dict) -> None:
     assert json.loads(document.to_ossie_json())["version"] == "0.2.0.dev0"
 
 
+def test_version_matches_the_core_schema_const() -> None:
+    """The schema pins `version` with `const`, so the model must accept only that value.
+
+    Read from the schema rather than restated, so bumping the spec version there fails
+    here instead of letting the package serialize a version the schema rejects.
+    """
+    schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    schema = json.loads(schema_path.read_text())
+    const = schema["properties"]["version"]["const"]
+
+    assert OssieDocument.model_fields["version"].default == const
+
+    dataset = {"name": "orders", "source": "db.s.orders"}
+    assert OssieDocument.model_validate(
+        {"version": const, "name": "m", "datasets": [dataset]}
+    ).version == const
+
+    with pytest.raises(ValidationError) as error:
+        OssieDocument.model_validate(
+            {"version": "9.9.9", "name": "m", "datasets": [dataset]}
+        )
+    assert any(item["loc"] == ("version",) for item in error.value.errors())
+
+
 def test_document_is_a_semantic_model(document_data: dict) -> None:
     document = OssieDocument.model_validate(document_data)
 
