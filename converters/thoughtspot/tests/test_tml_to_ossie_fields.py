@@ -772,3 +772,60 @@ class TestPortableIdentifierQuoting:
         )
         portable = next(e["expression"] for e in out if e["dialect"] == "ANSI_SQL")
         sqlglot.parse_one(f"SELECT SUM({portable})")
+
+    @pytest.mark.parametrize("word", ["on", "where", "ORDER", "Select", "qualify"])
+    def test_a_reserved_word_column_is_quoted_and_parses(self, word):
+        """A reserved word is a regular identifier by *shape*, so the regex
+        alone left it bare. `on` is not hypothetical -- TPC-DS `store` has a
+        column of that name, and it emitted `expression: on`, which the
+        project's own `validation/validate.py` rejects.
+
+        Case-mixed spellings are included because reserved words are matched
+        case-insensitively: `Select` must be quoted exactly as `select` is.
+        """
+        sqlglot = pytest.importorskip("sqlglot")
+        out = expression_entries(
+            "[T::C]", self._resolver("orders", word),
+            IssueLog(), object_ref="f", kind="field",
+        )
+        portable = next(e["expression"] for e in out if e["dialect"] == "ANSI_SQL")
+        assert portable == f'"{word}"', portable
+        sqlglot.parse_one(f"SELECT {portable}")
+
+    def test_an_ordinary_word_that_merely_looks_keyword_ish_stays_bare(self):
+        # The guard against over-correcting. These are reserved in ANSI:2016
+        # and are ordinary ThoughtSpot column names; quoting them would stop
+        # them matching a warehouse column stored as `YEAR`, because a quoted
+        # identifier is compared verbatim where a regular one is not.
+        for word in ("year", "month", "value", "amount", "name"):
+            out = expression_entries(
+                "[T::C]", self._resolver("orders", word),
+                IssueLog(), object_ref="f", kind="field",
+            )
+            portable = next(e["expression"] for e in out if e["dialect"] == "ANSI_SQL")
+            assert portable == word, portable
+
+    def test_the_reserved_set_still_covers_every_word_sqlglot_rejects(self):
+        """`_SQL_RESERVED` is a literal, so it can go stale when sqlglot moves.
+        This re-derives the oracle from the installed sqlglot and fails if a
+        word it now rejects would still be emitted bare -- loudly, at test
+        time, rather than as an expression the validator turns away.
+        """
+        sqlglot = pytest.importorskip("sqlglot")
+        from sqlglot.tokens import Tokenizer
+
+        from ossie_thoughtspot.tml_to_ossie import _sql_identifier
+
+        missed = []
+        for word in Tokenizer.KEYWORDS:
+            if not word.replace("_", "").isalpha():
+                continue
+            try:
+                sqlglot.parse_one(f"SELECT {word}")
+            except Exception:
+                if _sql_identifier(word) == word:
+                    missed.append(word)
+        assert not missed, (
+            f"sqlglot rejects these as a bare column reference but "
+            f"_SQL_RESERVED does not cover them: {sorted(missed)}"
+        )

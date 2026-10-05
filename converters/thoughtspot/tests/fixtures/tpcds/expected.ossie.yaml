@@ -387,7 +387,7 @@ datasets:
       - dialect: THOUGHTSPOT
         expression: '[store::on]'
       - dialect: ANSI_SQL
-        expression: 'on'
+        expression: '"on"'
     datatype: Boolean
     description: Whether the store is currently active and open for business.
     custom_extensions:

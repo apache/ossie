@@ -146,6 +146,46 @@ from .tml import DocumentSet
 #: underscores. Anything else has to be double-quoted to survive a SQL parser.
 _REGULAR_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
+#: Words a bare column reference cannot be, however regular its spelling.
+#:
+#: Two sources, because each covers the other's blind spot and neither alone
+#: is enough:
+#:
+#: * The words **sqlglot rejects** as a bare column reference. That is the
+#:   parser `validation/validate.py` runs, so one of these left unquoted does
+#:   not merely read oddly -- it fails the project's own validator. `ON` is
+#:   real: TPC-DS `store` has a column of that name and it emitted
+#:   `expression: on`, which makes `SELECT on`. These are the 16 words no
+#:   standards list would have caught, among them `ALTER`, `GRANT`, `LATERAL`,
+#:   `QUALIFY` and `RETURNING`.
+#: * The **ANSI SQL reserved words sqlglot happens to tolerate**. `SELECT order`
+#:   parses under sqlglot and is rejected by Snowflake and PostgreSQL alike, so
+#:   the validator passing says nothing about whether a warehouse will run it.
+#:   These are the 25 the parser alone would have missed, among them `ORDER`,
+#:   `GROUP`, `TABLE`, `USER` and `NULL`.
+#:
+#: `tests/test_tml_to_ossie_fields.py` re-derives the first source from the
+#: installed sqlglot and asserts this set still covers it, so a sqlglot upgrade
+#: that reserves a new word fails loudly rather than quietly emitting an
+#: expression the validator rejects.
+#:
+#: Deliberately NOT the whole ANSI:2016 reserved list (~450 words). That would
+#: quote `YEAR`, `MONTH` and `VALUE` -- ordinary ThoughtSpot column names --
+#: and quoting is not free: the spec makes a quoted identifier match verbatim
+#: where a regular one is case-insensitive, so a needlessly quoted `"Amount"`
+#: stops matching a warehouse column stored as `AMOUNT`.
+_SQL_RESERVED = frozenset({
+    "ALL", "ALTER", "AND", "ANY", "AS", "ASC", "BETWEEN", "BY", "CASE", "CHECK",
+    "CREATE", "CROSS", "DEFAULT", "DESC", "DISTINCT", "DROP", "ELSE", "END",
+    "EXCEPT", "EXISTS", "FALSE", "FOR", "FROM", "FULL", "GLOB", "GRANT",
+    "GROUP", "HAVING", "ILIKE", "IN", "INNER", "INSERT", "INTERSECT", "INTO",
+    "IS", "JOIN", "LATERAL", "LEFT", "LIKE", "LIMIT", "NOT", "NOTNULL", "NULL",
+    "OFFSET", "ON", "OR", "ORDER", "OUTER", "PARTITIONED_BY", "PRIMARY",
+    "QUALIFY", "REGEXP", "RETURNING", "REVOKE", "RIGHT", "RLIKE", "ROLLBACK",
+    "SELECT", "SOME", "STRAIGHT_JOIN", "TABLE", "THEN", "TRUE", "UNCACHE",
+    "UNION", "UNIQUE", "USER", "USING", "WHEN", "WHERE", "WITH", "XOR",
+})
+
 
 def _sql_identifier(name: str) -> str:
     """`name` as an ANSI SQL identifier, quoted only when it has to be.
@@ -164,8 +204,13 @@ def _sql_identifier(name: str) -> str:
     A name that IS regular is left bare -- the spec notes regular identifiers
     are case-insensitive while quoted ones are compared verbatim, so quoting
     unnecessarily would change how a consumer matches it.
+
+    Regular *spelling* is not sufficient on its own: a reserved word is a
+    regular identifier by shape and still cannot stand bare where a column is
+    expected (`SELECT on`). `_SQL_RESERVED` carries that second test, and the
+    comparison is case-insensitive because reserved words are.
     """
-    if _REGULAR_IDENTIFIER.match(name):
+    if _REGULAR_IDENTIFIER.match(name) and name.upper() not in _SQL_RESERVED:
         return name
     return '"' + name.replace('"', '""') + '"'
 
