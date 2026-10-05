@@ -44,6 +44,7 @@ Usage:
 
 import json
 import sys
+from collections import Counter
 from collections.abc import Hashable
 from pathlib import Path
 
@@ -194,10 +195,7 @@ def find_duplicates(items: list[str]) -> list[str]:
     occurrence would emit the same message twice and inflate the error count.
     Order follows first appearance, so a document's diagnostics are stable.
     """
-    counts: dict[str, int] = {}
-    for item in items:
-        counts[item] = counts.get(item, 0) + 1
-    return [item for item, count in counts.items() if count > 1]
+    return [item for item, count in Counter(items).items() if count > 1]
 
 
 def validate_unique_names(data: dict) -> list[str]:

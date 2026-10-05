@@ -213,11 +213,63 @@ def test_find_duplicates_reports_each_name_once(items: list[str], expected: list
     assert _VALIDATE.find_duplicates(items) == expected
 
 
-def test_a_name_repeated_three_times_is_one_error() -> None:
-    """Three copies of a name are one problem, not two identical messages."""
-    errors = _VALIDATE.validate_unique_names(_document([_ORDERS, _ORDERS, _ORDERS], []))
+def _expression(expr: str = "x") -> dict:
+    return {"dialects": [{"dialect": "ANSI_SQL", "expression": expr}]}
 
-    assert errors == ["[Unique] Duplicate dataset name 'orders' in model 'm'"]
+
+def _with_duplicate_fields(name: str) -> dict:
+    dataset = {
+        "name": "orders",
+        "source": "db.s.orders",
+        "fields": [
+            {"name": name, "expression": _expression()},
+            {"name": name, "expression": _expression()},
+            {"name": name, "expression": _expression()},
+        ],
+    }
+    return _document([dataset], [])
+
+
+def _with_duplicate_metrics(name: str) -> dict:
+    document = _document([_ORDERS], [])
+    document["metrics"] = [
+        {"name": name, "expression": _expression("SUM(orders.amount)")},
+        {"name": name, "expression": _expression("SUM(orders.amount)")},
+        {"name": name, "expression": _expression("SUM(orders.amount)")},
+    ]
+    return document
+
+
+def _with_duplicate_relationships(name: str) -> dict:
+    rel = dict(_relationship(to_columns=["id"]), name=name)
+    return _document([_ORDERS, _CUSTOMERS], [dict(rel), dict(rel), dict(rel)])
+
+
+@pytest.mark.parametrize(
+    ("build", "expected"),
+    [
+        (
+            lambda: _document([_ORDERS, _ORDERS, _ORDERS], []),
+            "[Unique] Duplicate dataset name 'orders' in model 'm'",
+        ),
+        (
+            lambda: _with_duplicate_fields("amount"),
+            "[Unique] Duplicate field name 'amount' in dataset 'orders'",
+        ),
+        (
+            lambda: _with_duplicate_metrics("revenue"),
+            "[Unique] Duplicate metric name 'revenue' in model 'm'",
+        ),
+        (
+            lambda: _with_duplicate_relationships("orders_to_customers"),
+            "[Unique] Duplicate relationship name 'orders_to_customers' in model 'm'",
+        ),
+    ],
+    ids=["dataset", "field", "metric", "relationship"],
+)
+def test_a_name_repeated_three_times_is_one_error(build, expected: str) -> None:
+    """Three copies of a name are one problem, for every kind of name checked."""
+    assert _VALIDATE.validate_unique_names(build()) == [expected]
 
 
 def test_unique_names_are_checked_in_the_root_model() -> None:
