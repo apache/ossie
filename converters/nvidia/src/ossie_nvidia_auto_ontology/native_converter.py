@@ -23,7 +23,7 @@ import argparse
 import json
 import re
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Set
 from copy import deepcopy
 from pathlib import Path
@@ -1186,7 +1186,23 @@ def _relationships_from_auto_ontology(
     attr_owner: Mapping[str, tuple[str, dict[str, Any]]],
     term_by_id: Mapping[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    pairs: dict[tuple[str, str], list[tuple[str, str]]] = defaultdict(list)
+    # One entry per Ossie relationship. Every column pair of an Ossie
+    # relationship must match at once, so only pairs that genuinely form one
+    # key may share an entry; independent links between the same two datasets
+    # become separate relationships.
+    groups: list[tuple[str, str, list[tuple[str, str]]]] = []
+    seen_pairs: set[tuple[str, str, str, str]] = set()
+
+    def add_group(from_name: str, to_name: str, columns: list[tuple[str, str]]) -> None:
+        fresh = [
+            pair
+            for pair in dict.fromkeys(columns)
+            if (from_name, to_name, *pair) not in seen_pairs
+        ]
+        if fresh:
+            seen_pairs.update((from_name, to_name, *pair) for pair in fresh)
+            groups.append((from_name, to_name, fresh))
+
     covered_fk_pairs: set[tuple[str, str]] = set()
     for join in root["data_layer"].get("joins") or []:
         source_table_id = str(join.get("source_table_id") or "")
@@ -1213,7 +1229,7 @@ def _relationships_from_auto_ontology(
                 root, source_table_id, target_table_id, catalog
             )
         if source_columns:
-            key = (
+            add_group(
                 _relationship_dataset(
                     source_table_id,
                     [source for source, _ in source_columns],
@@ -1226,8 +1242,8 @@ def _relationships_from_auto_ontology(
                     datasets_by_table,
                     term_columns,
                 ),
+                source_columns,
             )
-            pairs[key].extend(source_columns)
             covered_fk_pairs.add((source_table_id, target_table_id))
 
     fk_groups: dict[tuple[str, str], list[tuple[str, str]]] = defaultdict(list)
@@ -1241,20 +1257,27 @@ def _relationships_from_auto_ontology(
             continue
         if table_pair[0] in datasets_by_table and table_pair[1] in datasets_by_table:
             fk_groups[table_pair].append((source["name"], target["name"]))
-    for table_pair, columns in fk_groups.items():
-        source_name = _relationship_dataset(
-            table_pair[0],
-            [source for source, _ in columns],
-            datasets_by_table,
-            term_columns,
-        )
-        target_name = _relationship_dataset(
-            table_pair[1],
-            [target for _, target in columns],
-            datasets_by_table,
-            term_columns,
-        )
-        pairs[(source_name, target_name)].extend(columns)
+    for table_pair, table_columns in fk_groups.items():
+        target_pk = [
+            str(column)
+            for column in catalog["tables"][table_pair[1]]["item"].get("pk") or []
+        ]
+        for columns in _split_foreign_keys(table_columns, target_pk):
+            add_group(
+                _relationship_dataset(
+                    table_pair[0],
+                    [source for source, _ in columns],
+                    datasets_by_table,
+                    term_columns,
+                ),
+                _relationship_dataset(
+                    table_pair[1],
+                    [target for _, target in columns],
+                    datasets_by_table,
+                    term_columns,
+                ),
+                columns,
+            )
 
     for semantic_fk in root["semantic_layer"].get("semantic_fks") or []:
         source = catalog["columns"].get(str(semantic_fk.get("column_id") or ""))
@@ -1277,27 +1300,52 @@ def _relationships_from_auto_ontology(
         to_name = str(target_term.get("name") or "")
         if not to_name:
             continue
-        pair = (source["name"], target_column["name"])
-        if pair not in pairs[(from_name, to_name)]:
-            pairs[(from_name, to_name)].append(pair)
+        add_group(from_name, to_name, [(source["name"], target_column["name"])])
 
+    groups_per_datasets = Counter(
+        (from_name, to_name) for from_name, to_name, _ in groups
+    )
     relationships: list[dict[str, Any]] = []
-    used_names: dict[str, int] = defaultdict(int)
-    for (from_name, to_name), columns in pairs.items():
-        unique_columns = list(dict.fromkeys(columns))
-        base_name = f"{from_name}_to_{to_name}"
-        used_names[base_name] += 1
-        suffix = "" if used_names[base_name] == 1 else f"_{used_names[base_name]}"
+    used_names: set[str] = set()
+    for from_name, to_name, columns in groups:
+        if groups_per_datasets[(from_name, to_name)] > 1 and len(columns) == 1:
+            base_name = f"{from_name}_{columns[0][0]}_to_{to_name}"
+        else:
+            base_name = f"{from_name}_to_{to_name}"
+        name, count = base_name, 1
+        while name in used_names:
+            count += 1
+            name = f"{base_name}_{count}"
+        used_names.add(name)
         relationships.append(
             {
-                "name": base_name + suffix,
+                "name": name,
                 "from": from_name,
                 "to": to_name,
-                "from_columns": [source for source, _ in unique_columns],
-                "to_columns": [target for _, target in unique_columns],
+                "from_columns": [source for source, _ in columns],
+                "to_columns": [target for _, target in columns],
             }
         )
     return relationships
+
+
+def _split_foreign_keys(
+    columns: list[tuple[str, str]], target_pk: list[str]
+) -> list[list[tuple[str, str]]]:
+    """Group a table pair's physical foreign keys into Ossie relationships.
+
+    Auto Ontology stores a foreign key one column pair at a time, without the
+    constraint it belongs to. Pairs that cover the target's composite primary
+    key exactly once are one key; any other pair is an independent link.
+    """
+    columns = list(dict.fromkeys(columns))
+    if len(target_pk) > 1:
+        composite = [pair for pair in columns if pair[1] in target_pk]
+        if sorted(target for _, target in composite) == sorted(target_pk):
+            composite.sort(key=lambda pair: target_pk.index(pair[1]))
+            rest = [pair for pair in columns if pair not in composite]
+            return [composite, *([pair] for pair in rest)]
+    return [[pair] for pair in columns]
 
 
 def _relationship_dataset(
