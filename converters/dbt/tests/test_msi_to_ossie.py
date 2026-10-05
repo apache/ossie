@@ -22,10 +22,11 @@ import jinja2
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
-from ossie_dbt.converter_issues import ConverterIssueType
+from ossie_dbt.converter_issues import ConverterIssue, ConverterIssueType
 from ossie_dbt.filter_utils import _render_filter_template
 from ossie import OssieDialect, OssieDocument
 from ossie_dbt.msi_to_ossie import MSIToOssieConverter
+from metricflow_semantics.model.dbt_manifest_parser import parse_manifest_from_dbt_generated_manifest
 from metricflow_semantic_interfaces.implementations.metric import (
     PydanticConversionTypeParams,
     PydanticCumulativeTypeParams,
@@ -64,7 +65,7 @@ from tests.helpers import (
 
 def _fields(result: OssieDocument, dataset_idx: int = 0) -> list:
     """Return fields for a dataset, asserting they exist."""
-    fields = result.semantic_model[0].datasets[dataset_idx].fields
+    fields = result.datasets[dataset_idx].fields
     assert fields is not None
     return fields
 
@@ -75,10 +76,38 @@ def _field_expr(result: OssieDocument, field_idx: int = 0) -> str:
 
 
 def _ossie_metrics(result: OssieDocument) -> list:
-    """Return Ossie metrics for the first semantic model, asserting they exist."""
-    metrics = result.semantic_model[0].metrics
+    """Return the document's Ossie metrics, asserting they exist."""
+    metrics = result.metrics
     assert metrics is not None
     return metrics
+
+
+def _metric_with_agg(
+    name: str,
+    agg: AggregationType,
+    expr: str,
+    semantic_model: str,
+    filter_sql: Optional[str] = None,
+) -> PydanticMetric:
+    """A SIMPLE metric that carries its aggregation in metric_aggregation_params."""
+    return PydanticMetric(
+        name=name,
+        description=None,
+        type=MetricType.SIMPLE,
+        type_params=PydanticMetricTypeParams(
+            expr=expr,
+            metric_aggregation_params=PydanticMetricAggregationParams(
+                semantic_model=semantic_model,
+                agg=agg,
+                agg_params=None,
+                agg_time_dimension=None,
+                non_additive_dimension=None,
+            ),
+        ),
+        filter=_filter(filter_sql) if filter_sql else None,
+        metadata=default_meta(),
+        config=None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -87,15 +116,9 @@ def _ossie_metrics(result: OssieDocument) -> list:
 
 
 class TestBasicConversion:
-    def test_empty_manifest_produces_empty_datasets(self) -> None:
-        result = MSIToOssieConverter().convert(_manifest(), ossie_model_name="test").output
-
-        assert result.version == "0.2.0.dev0"
-        assert len(result.semantic_model) == 1
-        assert result.semantic_model[0].name == "test"
-        assert result.semantic_model[0].datasets == []
-        assert result.semantic_model[0].metrics is None
-        assert result.semantic_model[0].relationships is None
+    def test_empty_manifest_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="no semantic models"):
+            MSIToOssieConverter().convert(_manifest(), ossie_model_name="test")
 
     def test_semantic_model_becomes_dataset(self) -> None:
         sm = semantic_model_with_guaranteed_meta(
@@ -105,7 +128,7 @@ class TestBasicConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
 
-        dataset = result.semantic_model[0].datasets[0]
+        dataset = result.datasets[0]
         assert dataset.name == "orders"
         assert dataset.source == "analytics.orders_table"
         assert dataset.description == "Order data"
@@ -117,14 +140,14 @@ class TestBasicConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
 
-        assert result.semantic_model[0].datasets[0].source == "prod.analytics.orders_table"
+        assert result.datasets[0].source == "prod.analytics.orders_table"
 
     def test_multiple_semantic_models_become_multiple_datasets(self) -> None:
         sm_a = semantic_model_with_guaranteed_meta(name="orders")
         sm_b = semantic_model_with_guaranteed_meta(name="users")
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm_a, sm_b])).output
 
-        names = [ds.name for ds in result.semantic_model[0].datasets]
+        names = [ds.name for ds in result.datasets]
         assert names == ["orders", "users"]
 
 
@@ -274,7 +297,7 @@ class TestEntityKeyExtraction:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
 
-        dataset = result.semantic_model[0].datasets[0]
+        dataset = result.datasets[0]
         assert dataset.primary_key == expected_pk
         assert dataset.unique_keys == expected_uk
 
@@ -303,7 +326,7 @@ class TestDialectConfiguration:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
 
-        assert result.dialects == [OssieDialect.ANSI_SQL]
+        assert "dialects" not in json.loads(result.to_ossie_json())
         assert _fields(result)[0].expression.dialects[0].dialect == OssieDialect.ANSI_SQL
 
     def test_configurable_dialect(self) -> None:
@@ -313,7 +336,7 @@ class TestDialectConfiguration:
         )
         result = MSIToOssieConverter(dialect=OssieDialect.SNOWFLAKE).convert(_manifest(semantic_models=[sm])).output
 
-        assert result.dialects == [OssieDialect.SNOWFLAKE]
+        assert "dialects" not in json.loads(result.to_ossie_json())
         assert _fields(result)[0].expression.dialects[0].dialect == OssieDialect.SNOWFLAKE
 
 
@@ -329,7 +352,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[listings, bookings])).output
 
-        rels = result.semantic_model[0].relationships
+        rels = result.relationships
         assert rels is not None
         assert len(rels) == 1
         rel = rels[0]
@@ -349,7 +372,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[users_a, users_b])).output
 
-        rels = result.semantic_model[0].relationships
+        rels = result.relationships
         assert rels is not None
         assert len(rels) == 1
         assert rels[0].from_columns == ["user_id"]
@@ -362,7 +385,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[bookings])).output
 
-        assert result.semantic_model[0].relationships is None
+        assert result.relationships is None
 
     def test_same_dataset_entities_excluded(self) -> None:
         orders = semantic_model_with_guaranteed_meta(
@@ -374,7 +397,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[orders])).output
 
-        assert result.semantic_model[0].relationships is None
+        assert result.relationships is None
 
     def test_three_datasets_produce_all_pairs(self, snapshot: SnapshotAssertion) -> None:
         users_a = semantic_model_with_guaranteed_meta(
@@ -391,7 +414,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[users_a, users_b, orders])).output
 
-        rels = result.semantic_model[0].relationships
+        rels = result.relationships
         assert rels is not None
         assert len(rels) == 3
         pairs = {(r.from_dataset, r.to) for r in rels}
@@ -409,7 +432,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[listings, bookings])).output
 
-        rels = result.semantic_model[0].relationships
+        rels = result.relationships
         assert rels is not None
         rel = rels[0]
         assert rel.from_columns == ["fk_lid"]
@@ -426,7 +449,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[listings, bookings])).output
 
-        rels = result.semantic_model[0].relationships
+        rels = result.relationships
         assert rels is not None
         assert rels[0].from_columns == ["listing"]
         assert rels[0].to_columns == ["listing"]
@@ -446,7 +469,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[bookings, orders])).output
 
-        assert result.semantic_model[0].relationships is None
+        assert result.relationships is None
 
     def test_relationship_name_format(self) -> None:
         listings = semantic_model_with_guaranteed_meta(
@@ -459,7 +482,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[listings, bookings])).output
 
-        rels = result.semantic_model[0].relationships
+        rels = result.relationships
         assert rels is not None
         assert rels[0].name == "bookings__listings__listing"
 
@@ -474,7 +497,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[users, orders])).output
 
-        assert result.semantic_model[0].relationships is None
+        assert result.relationships is None
 
     def test_direction_based_on_entity_type_not_manifest_order(self) -> None:
         beta = semantic_model_with_guaranteed_meta(
@@ -487,7 +510,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[beta, alpha])).output
 
-        rels = result.semantic_model[0].relationships
+        rels = result.relationships
         assert rels is not None
         assert rels[0].from_dataset == "alpha"
         assert rels[0].to == "beta"
@@ -514,7 +537,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[customers, orders, reviews])).output
 
-        rels = result.semantic_model[0].relationships
+        rels = result.relationships
         assert rels is not None
         pairs = {(r.from_dataset, r.to) for r in rels}
         # orders and reviews each join to customers; orders-reviews (both FOREIGN on `customer`) is excluded.
@@ -532,7 +555,7 @@ class TestRelationshipConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[orders, reviews])).output
 
-        assert result.semantic_model[0].relationships is None
+        assert result.relationships is None
 
 
 class TestMetricConversion:
@@ -584,6 +607,100 @@ class TestMetricConversion:
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[metric])).output
 
         assert _ossie_metrics(result)[0].expression.dialects[0].expression == "AVG(orders.price)"
+
+    @pytest.mark.parametrize("agg", [AggregationType.COUNT, AggregationType.SUM])
+    def test_a_row_count_always_comes_back_as_portable_sum_1(self, agg: AggregationType) -> None:
+        """A COUNT/expr=1 metric comes back as SUM(1), like a SUM/expr=1 one.
+
+        MetricFlow's own transform has already turned the count into a sum by the time this converter
+        sees it. SUM(1) matches COUNT(*) on any non-empty input; over zero rows it is NULL, not 0.
+
+        Emitting ``COUNT(<dataset>.*)`` to keep the dataset through a round trip was tried and reverted:
+        it is not in the Ossie expression spec, several engines reject or misinterpret it, and the
+        sibling converters do not recognize it as a row count either. ``SUM(1)`` is what every engine
+        and converter agrees on, even though the dataset cannot be recovered on this leg of a round trip.
+        """
+        customers = semantic_model_with_guaranteed_meta(name="customers")
+        orders = semantic_model_with_guaranteed_meta(name="orders")
+        metric = _metric_with_agg("order_count", agg, "1", "orders")
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[customers, orders], metrics=[metric])).output
+
+        assert _ossie_metrics(result)[0].expression.dialects[0].expression == "SUM(1)"
+
+    def test_constant_metric_records_the_lost_semantic_model_on_the_cli_path(self) -> None:
+        """Routed through the real dbt loader, as the CLI does: the count is already SUM(1) by then."""
+        customers = semantic_model_with_guaranteed_meta(name="customers")
+        orders = semantic_model_with_guaranteed_meta(name="orders")
+        metric = _metric_with_agg("order_count", AggregationType.COUNT, "1", "orders")
+        manifest_json = _manifest(semantic_models=[customers, orders], metrics=[metric]).json(
+            by_alias=True, exclude_none=True
+        )
+        result = MSIToOssieConverter().convert(parse_manifest_from_dbt_generated_manifest(manifest_json))
+
+        assert _ossie_metrics(result.output)[0].expression.dialects[0].expression == "SUM(1)"
+        assert result.issues == [
+            ConverterIssue(ConverterIssueType.CONSTANT_METRIC_SEMANTIC_MODEL_LOSS, "order_count")
+        ]
+
+    def test_constant_metric_with_a_single_semantic_model_loses_nothing(self) -> None:
+        orders = semantic_model_with_guaranteed_meta(name="orders")
+        metric = _metric_with_agg("order_count", AggregationType.COUNT, "1", "orders")
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[orders], metrics=[metric]))
+
+        assert result.issues == []
+
+    @pytest.mark.parametrize("agg", [AggregationType.MAX, AggregationType.AVERAGE])
+    def test_non_sum_constant_metric_is_not_flagged(self, agg: AggregationType) -> None:
+        """Only SUM of a constant is refused on the way back, so only SUM gets the loss warning."""
+        customers = semantic_model_with_guaranteed_meta(name="customers")
+        orders = semantic_model_with_guaranteed_meta(name="orders")
+        metric = _metric_with_agg("m", agg, "1", "orders")
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[customers, orders], metrics=[metric]))
+
+        assert result.issues == []
+
+    def test_unparseable_expr_does_not_abort_the_conversion(self) -> None:
+        """An unterminated quote is a sqlglot TokenError, not a ParseError; it must not crash the run."""
+        customers = semantic_model_with_guaranteed_meta(name="customers")
+        orders = semantic_model_with_guaranteed_meta(name="orders")
+        metric = _metric_with_agg("m", AggregationType.SUM, "CASE WHEN status = 'paid THEN amount END", "orders")
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[customers, orders], metrics=[metric]))
+
+        assert [m.name for m in _ossie_metrics(result.output)] == ["m"]
+        assert result.issues == []
+
+    def test_column_metric_with_several_semantic_models_loses_nothing(self) -> None:
+        customers = semantic_model_with_guaranteed_meta(name="customers")
+        orders = semantic_model_with_guaranteed_meta(name="orders")
+        metric = _metric_with_agg("revenue", AggregationType.SUM, "amount", "orders")
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[customers, orders], metrics=[metric]))
+
+        assert result.issues == []
+
+    def test_legacy_measure_based_count_also_converts(self) -> None:
+        """A SIMPLE metric over a legacy Measure(agg=count, expr=1) is a row count too, not just the
+
+        newer metric_aggregation_params shape. It converts correctly with no special-casing, because
+        MetricFlow's own transform normalizes both shapes to the same agg=SUM, expr='1' before this
+        converter ever sees the metric.
+        """
+        orders = semantic_model_with_guaranteed_meta(
+            name="orders",
+            measures=[_measure("order_count_measure", agg=AggregationType.COUNT, expr="1")],
+        )
+        metric = _simple_metric("order_count", measure_name="order_count_measure")
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[orders], metrics=[metric])).output
+
+        assert _ossie_metrics(result)[0].expression.dialects[0].expression == "SUM(1)"
+
+    def test_filtered_count_of_all_rows_keeps_the_filter(self) -> None:
+        orders = semantic_model_with_guaranteed_meta(name="orders")
+        metric = _metric_with_agg("paid_orders", AggregationType.COUNT, "1", "orders", filter_sql="status = 'paid'")
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[orders], metrics=[metric])).output
+
+        assert (
+            _ossie_metrics(result)[0].expression.dialects[0].expression == "SUM(CASE WHEN status = 'paid' THEN 1 END)"
+        )
 
     # --- RATIO ---
 
@@ -686,6 +803,214 @@ class TestMetricConversion:
 
         profit_ossie = next(m for m in _ossie_metrics(result) if m.name == "profit")
         assert profit_ossie.expression.dialects[0].expression == "SUM(orders.amount) - SUM(orders.cost_amount)"
+
+    def test_derived_metric_does_not_re_expand_an_inlined_reference(self) -> None:
+        """A reference is substituted once, even when its name appears in already-inlined text.
+
+        `gross` inlines to `SUM(orders.net)`, which contains the name of the second
+        input metric. Substituting references one at a time would expand `net` inside
+        that text as well.
+        """
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            measures=[
+                _measure("gross", agg=AggregationType.SUM, expr="net"),
+                _measure("net", agg=AggregationType.SUM, expr="net_amount"),
+            ],
+        )
+        gross_m = _simple_metric("gross", "gross")
+        net_m = _simple_metric("net", "net")
+        margin = PydanticMetric(
+            name="margin",
+            description=None,
+            type=MetricType.DERIVED,
+            type_params=PydanticMetricTypeParams(
+                expr="gross - net",
+                metrics=[
+                    PydanticMetricInput(name="gross"),
+                    PydanticMetricInput(name="net"),
+                ],
+            ),
+            filter=None,
+            metadata=default_meta(),
+            config=None,
+        )
+        result = (
+            MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[gross_m, net_m, margin])).output
+        )
+
+        margin_ossie = next(m for m in _ossie_metrics(result) if m.name == "margin")
+        assert margin_ossie.expression.dialects[0].expression == "SUM(orders.net) - SUM(orders.net_amount)"
+
+    def test_derived_metric_preserves_backslashes_from_a_filter(self) -> None:
+        """Backslashes in an inlined expression survive substitution verbatim.
+
+        A resolved expression is inserted as a literal, not as a `re.sub` replacement
+        template, so an escape sequence such as `\\b` in a filter's SQL is not
+        reinterpreted (`\\b` would otherwise become a backspace character).
+        """
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            measures=[_measure("revenue", agg=AggregationType.SUM, expr="amount")],
+        )
+        revenue_m = _simple_metric("revenue", "revenue")
+        revenue_m.filter = _filter(r"{{ Dimension('order__path') }} LIKE 'a\b'")
+        scaled = PydanticMetric(
+            name="scaled",
+            description=None,
+            type=MetricType.DERIVED,
+            type_params=PydanticMetricTypeParams(
+                expr="revenue * 2",
+                metrics=[PydanticMetricInput(name="revenue")],
+            ),
+            filter=None,
+            metadata=default_meta(),
+            config=None,
+        )
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[revenue_m, scaled])).output
+
+        revenue_ossie = next(m for m in _ossie_metrics(result) if m.name == "revenue")
+        scaled_ossie = next(m for m in _ossie_metrics(result) if m.name == "scaled")
+        assert revenue_ossie.expression.dialects[0].expression == (
+            r"SUM(CASE WHEN order__path LIKE 'a\b' THEN orders.amount END)"
+        )
+        assert scaled_ossie.expression.dialects[0].expression == (
+            r"SUM(CASE WHEN order__path LIKE 'a\b' THEN orders.amount END) * 2"
+        )
+
+    def test_derived_metric_drops_a_used_reference_listed_twice_with_differing_filters(self) -> None:
+        """An input metric listed twice under one used reference, resolving differently, is ambiguous.
+
+        MetricFlow accepts this shape — `DerivedMetricRule._validate_alias_collision`
+        only compares entries that set an alias — so the converter has to handle it. It
+        drops the metric and records an issue, as it does for every other unsupported
+        shape, rather than failing the whole conversion.
+        """
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            measures=[_measure("revenue", agg=AggregationType.SUM, expr="amount")],
+        )
+        revenue_m = _simple_metric("revenue", "revenue")
+        both = PydanticMetric(
+            name="both",
+            description=None,
+            type=MetricType.DERIVED,
+            type_params=PydanticMetricTypeParams(
+                expr="revenue",
+                metrics=[
+                    PydanticMetricInput(name="revenue", filter=_filter("{{ Dimension('order__region') }} = 'EU'")),
+                    PydanticMetricInput(name="revenue", filter=_filter("{{ Dimension('order__region') }} = 'US'")),
+                ],
+            ),
+            filter=None,
+            metadata=default_meta(),
+            config=None,
+        )
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[revenue_m, both]))
+
+        assert [m.name for m in _ossie_metrics(result.output)] == ["revenue"]
+        assert len(result.issues) == 1
+        assert result.issues[0].issue_type == ConverterIssueType.AMBIGUOUS_REFERENCE_METRIC_DROPPED
+        assert result.issues[0].element_name == "both"
+
+    def test_derived_metric_accepts_a_duplicate_reference_the_expression_never_uses(self) -> None:
+        """A reference that is never substituted cannot be ambiguous, however it resolves."""
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            measures=[_measure("revenue", agg=AggregationType.SUM, expr="amount")],
+        )
+        revenue_m = _simple_metric("revenue", "revenue")
+        constant = PydanticMetric(
+            name="constant",
+            description=None,
+            type=MetricType.DERIVED,
+            type_params=PydanticMetricTypeParams(
+                expr="1 + 1",
+                metrics=[
+                    PydanticMetricInput(name="revenue", filter=_filter("{{ Dimension('order__region') }} = 'EU'")),
+                    PydanticMetricInput(name="revenue", filter=_filter("{{ Dimension('order__region') }} = 'US'")),
+                ],
+            ),
+            filter=None,
+            metadata=default_meta(),
+            config=None,
+        )
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[revenue_m, constant]))
+
+        assert next(m for m in _ossie_metrics(result.output) if m.name == "constant").expression.dialects[
+            0
+        ].expression == "1 + 1"
+        assert result.issues == []
+
+    def test_derived_metric_accepts_a_duplicate_that_restates_the_enclosing_filter(self) -> None:
+        """Restating a filter the enclosing metric already applies is redundant, not ambiguous.
+
+        AND is idempotent, so the bare occurrence and the one repeating the parent's own
+        filter describe the same set of rows and must not be treated as two resolutions.
+        """
+        region_eu = "{{ Dimension('order__region') }} = 'EU'"
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            measures=[_measure("revenue", agg=AggregationType.SUM, expr="amount")],
+        )
+        revenue_m = _simple_metric("revenue", "revenue")
+        scaled = PydanticMetric(
+            name="scaled",
+            description=None,
+            type=MetricType.DERIVED,
+            type_params=PydanticMetricTypeParams(
+                expr="revenue * 2",
+                metrics=[
+                    PydanticMetricInput(name="revenue"),
+                    PydanticMetricInput(name="revenue", filter=_filter(region_eu)),
+                ],
+            ),
+            filter=_filter(region_eu),
+            metadata=default_meta(),
+            config=None,
+        )
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[revenue_m, scaled]))
+
+        scaled_ossie = next(m for m in _ossie_metrics(result.output) if m.name == "scaled")
+        assert scaled_ossie.expression.dialects[0].expression == (
+            "SUM(CASE WHEN order__region = 'EU' THEN orders.amount END) * 2"
+        )
+        assert result.issues == []
+
+    def test_derived_metric_accepts_a_reference_listed_twice_resolving_identically(self) -> None:
+        """A redundant duplicate is not ambiguous: both occurrences resolve to the same SQL."""
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            measures=[_measure("revenue", agg=AggregationType.SUM, expr="amount")],
+        )
+        revenue_m = _simple_metric("revenue", "revenue")
+        doubled = PydanticMetric(
+            name="doubled",
+            description=None,
+            type=MetricType.DERIVED,
+            type_params=PydanticMetricTypeParams(
+                expr="revenue + revenue",
+                metrics=[
+                    PydanticMetricInput(name="revenue"),
+                    PydanticMetricInput(name="revenue"),
+                ],
+            ),
+            filter=None,
+            metadata=default_meta(),
+            config=None,
+        )
+        result = (
+            MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[revenue_m, doubled])).output
+        )
+
+        doubled_ossie = next(m for m in _ossie_metrics(result) if m.name == "doubled")
+        assert doubled_ossie.expression.dialects[0].expression == "SUM(orders.amount) + SUM(orders.amount)"
+
+    def test_every_issue_type_has_a_cli_reason(self) -> None:
+        """The CLI looks each issue type up by key, so an unmapped one would crash the run."""
+        from ossie_dbt.cli import _ISSUE_REASON
+
+        assert set(_ISSUE_REASON) == set(ConverterIssueType)
 
     def test_derived_metric_nested(self, snapshot: SnapshotAssertion) -> None:
         sm = semantic_model_with_guaranteed_meta(
@@ -848,7 +1173,7 @@ class TestMetricConversion:
         sm = semantic_model_with_guaranteed_meta(name="orders")
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
 
-        assert result.semantic_model[0].metrics is None
+        assert result.metrics is None
 
     def test_multiple_metrics_all_converted(self) -> None:
         sm = semantic_model_with_guaranteed_meta(
@@ -901,7 +1226,7 @@ class TestMetricConversion:
         )
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[conversion])).output
 
-        assert result.semantic_model[0].metrics is None
+        assert result.metrics is None
 
 
 class TestConverterIssues:
@@ -1210,15 +1535,16 @@ class TestOssieJsonSerialization:
         parsed = json.loads(result.to_ossie_json())
 
         assert parsed["version"] == "0.2.0.dev0"
-        assert len(parsed["semantic_model"]) == 1
-        assert parsed["semantic_model"][0]["name"] == "my_project"
+        assert next(iter(parsed)) == "version"
+        assert "semantic_model" not in parsed
+        assert parsed["name"] == "my_project"
 
     def test_to_ossie_json_excludes_none_fields(self) -> None:
         sm = semantic_model_with_guaranteed_meta(name="orders")
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
         parsed = json.loads(result.to_ossie_json())
 
-        dataset = parsed["semantic_model"][0]["datasets"][0]
+        dataset = parsed["datasets"][0]
         assert "primary_key" not in dataset
         assert "unique_keys" not in dataset
         assert "fields" not in dataset

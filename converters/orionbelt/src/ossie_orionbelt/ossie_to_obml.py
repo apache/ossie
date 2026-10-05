@@ -34,7 +34,13 @@ from ossie_orionbelt._common import (
     _OSSIE_VERSION,
     _SQL_PARSEABLE_DIALECTS,
     _VENDOR_OSSIE,
+    OBML_ABSTRACT_TO_OSSIE_DATATYPE,
+    OBML_DECIMAL_DEFAULT,
+    OSSIE_DATATYPE_TO_OBML_ABSTRACT,
     OSSIE_TO_OBML_TYPE,
+    obml_datatype_to_ossie,
+    obml_decimal_default,
+    ossie_metric_datatype_to_obml,
 )
 
 # A dataset/column identifier in a resolved metric expression: either a bare SQL
@@ -58,6 +64,13 @@ class OssietoOBML:
         # or an expression our parser cannot decompose). Preserved verbatim
         # rather than dropped — see ``_preserve_unconverted_metric``.
         self._unconverted_metrics: list[dict] = []
+        # Measures/metrics restored whole from an OBML definition stash; their
+        # column references already use OBML column names.
+        self._restored_names: set[str] = set()
+        # What an Ossie ``Decimal`` metric becomes: the model's own
+        # ``settings.defaultNumericDataType`` when it carries one, set per model
+        # in ``convert``.
+        self._decimal_default = OBML_DECIMAL_DEFAULT
 
     def _normalize_legacy_v01(self) -> None:
         """Promote Ossie v0.1.x payloads to the v0.2 shape, in place.
@@ -76,27 +89,23 @@ class OssietoOBML:
         if version and not version.startswith(("0.1", "0.0")):
             return  # already v0.2+ (or future) — nothing to do
 
-        models = self.ossie.get("semantic_model", [])
-        if not isinstance(models, list):
-            return
-
-        for model in models:
-            for ds in model.get("datasets", []) or []:
-                # Promote legacy primary_key / unique_keys from OBSL extras
-                # only if the dataset doesn't already declare them.
-                legacy = self._extract_obml_extras(ds)
-                if not legacy:
-                    continue
-                if "primary_key" not in ds and legacy.get("obml_primary_key"):
-                    pk = legacy["obml_primary_key"]
-                    if isinstance(pk, list) and all(isinstance(c, str) for c in pk):
-                        ds["primary_key"] = list(pk)
-                if "unique_keys" not in ds and legacy.get("obml_unique_keys"):
-                    uk = legacy["obml_unique_keys"]
-                    if isinstance(uk, list) and all(
-                        isinstance(g, list) and all(isinstance(c, str) for c in g) for g in uk
-                    ):
-                        ds["unique_keys"] = [list(g) for g in uk]
+        model = self.ossie
+        for ds in model.get("datasets", []) or []:
+            # Promote legacy primary_key / unique_keys from OBSL extras
+            # only if the dataset doesn't already declare them.
+            legacy = self._extract_obml_extras(ds)
+            if not legacy:
+                continue
+            if "primary_key" not in ds and legacy.get("obml_primary_key"):
+                pk = legacy["obml_primary_key"]
+                if isinstance(pk, list) and all(isinstance(c, str) for c in pk):
+                    ds["primary_key"] = list(pk)
+            if "unique_keys" not in ds and legacy.get("obml_unique_keys"):
+                uk = legacy["obml_unique_keys"]
+                if isinstance(uk, list) and all(
+                    isinstance(g, list) and all(isinstance(c, str) for c in g) for g in uk
+                ):
+                    ds["unique_keys"] = [list(g) for g in uk]
 
         if version.startswith(("0.0", "0.1")):
             self.warnings.append(
@@ -110,22 +119,24 @@ class OssietoOBML:
         # metrics). Both are populated as a side effect of conversion below.
         self.warnings = []
         self._unconverted_metrics = []
+        self._restored_names = set()
 
-        # v0.1.x inputs need the legacy shim to promote pre-v0.2
-        # custom_extensions into v0.2 first-class fields before we parse.
-        self._normalize_legacy_v01()
-
-        models = self.ossie.get("semantic_model", [])
-        if not models:
-            raise ValueError("No semantic_model found in Ossie input")
-
-        # Take the first semantic model (OBML is a single-model format)
-        model = models[0]
-        if len(models) > 1:
-            self.warnings.append(
-                f"Ossie contains {len(models)} semantic models; "
-                f"only the first ('{model.get('name')}') is converted."
+        if not isinstance(self.ossie, dict):
+            raise ValueError("Ossie input must be a mapping")
+        if "semantic_model" in self.ossie:
+            raise ValueError(
+                "Legacy 'semantic_model' wrappers are not supported; "
+                "place the model properties directly at the document root"
             )
+
+        if "dialects" in self.ossie or "vendors" in self.ossie:
+            raise ValueError("Root dialects and vendors are not supported by the Ossie spec")
+
+        # Retain legacy key metadata normalization for already flattened inputs.
+        self._normalize_legacy_v01()
+        model = self.ossie
+        if not model.get("name"):
+            raise ValueError("Ossie model requires a name at the document root")
 
         obml: dict[str, Any] = {"version": 1.0}
 
@@ -168,6 +179,7 @@ class OssietoOBML:
 
         # ── Measures & Metrics ──────────────────────────────────────
         ossie_metrics = model.get("metrics", [])
+        self._decimal_default = obml_decimal_default(self._stashed_obml_settings(model))
         measures, metrics = self._convert_metrics(ossie_metrics, ds_map)
         if measures:
             obml["measures"] = measures
@@ -202,6 +214,7 @@ class OssietoOBML:
                         obml["exposeCounts"] = ext_data["obml_expose_counts"]
                     if ext_data.get("obml_count_label_pattern") is not None:
                         obml["countLabelPattern"] = ext_data["obml_count_label_pattern"]
+                    self._restore_unexported(ext_data.get("obml_unexported"), obml)
                 except (json.JSONDecodeError, TypeError):
                     pass
                 break
@@ -209,7 +222,81 @@ class OssietoOBML:
         # Preserve third-party vendor extensions verbatim
         self._carry_foreign_extensions(model.get("custom_extensions"), obml)
 
+        self._restore_column_names(obml, datasets)
         return obml
+
+    def _restore_unexported(self, unexported: object, obml: dict[str, Any]) -> None:
+        """Restore measures and metrics the export left out for lack of a portable form."""
+        if not isinstance(unexported, dict):
+            return
+        for kind in ("measures", "metrics"):
+            entries = unexported.get(kind)
+            if not isinstance(entries, dict):
+                continue
+            target = obml.setdefault(kind, {})
+            for name, definition in entries.items():
+                if isinstance(definition, dict) and name not in target:
+                    target[name] = definition
+                    self._restored_names.add(name)
+
+    def _restore_column_names(self, obml: dict[str, Any], datasets: list) -> None:
+        """Rename columns from their Ossie field name back to the OBML column name.
+
+        The export names each field by its physical code and keeps the OBML
+        column name in ``obml_column_name``. Measure filters and model filters
+        refer to columns by that name, so every column key and every reference
+        the import built from field names is renamed to match.
+        """
+        renames: dict[str, dict[str, str]] = {}
+        for ds in datasets:
+            for field in ds.get("fields", []) or []:
+                original = self._extract_obml_extras(field).get("obml_column_name")
+                if isinstance(original, str) and original != field.get("name"):
+                    renames.setdefault(ds["name"], {})[field["name"]] = original
+        if not renames:
+            return
+
+        def rename(data_object: str, column: str) -> str:
+            return renames.get(data_object, {}).get(column, column)
+
+        for do_name, do_obj in obml.get("dataObjects", {}).items():
+            do_obj["columns"] = {
+                rename(do_name, col): spec for col, spec in do_obj.get("columns", {}).items()
+            }
+            for join in do_obj.get("joins", []) or []:
+                join["columnsFrom"] = [rename(do_name, c) for c in join.get("columnsFrom", [])]
+                join["columnsTo"] = [
+                    rename(join.get("joinTo", ""), c) for c in join.get("columnsTo", [])
+                ]
+        for dim in obml.get("dimensions", {}).values():
+            dim["column"] = rename(dim.get("dataObject", ""), dim.get("column", ""))
+        for name, measure in obml.get("measures", {}).items():
+            if name in self._restored_names:
+                continue
+            for ref in measure.get("columns", []) or []:
+                ref["column"] = rename(ref.get("dataObject", ""), ref.get("column", ""))
+            if measure.get("expression"):
+                measure["expression"] = re.sub(
+                    r"\{\[([^\]]+)\]\.\[([^\]]+)\]\}",
+                    lambda m: "{[" + m.group(1) + "].[" + rename(m.group(1), m.group(2)) + "]}",
+                    measure["expression"],
+                )
+
+    @staticmethod
+    def _stashed_obml_settings(model: dict) -> object:
+        """The OBML ``settings`` an OBML-origin model stashed on export, if any.
+
+        Read ahead of the metrics, which need the numeric default; the model
+        properties themselves are restored after them, as before.
+        """
+        for ext in model.get("custom_extensions", []):
+            if ext.get("vendor_name") in _OBML_VENDOR_READ:
+                try:
+                    data = json.loads(ext.get("data", "{}"))
+                except (json.JSONDecodeError, TypeError):
+                    return None
+                return data.get("obml_settings") if isinstance(data, dict) else None
+        return None
 
     @staticmethod
     def _carry_foreign_extensions(ossie_exts: list[dict] | None, obml_target: dict[str, Any]) -> None:
@@ -374,10 +461,22 @@ class OssietoOBML:
             elif code == name and dialects:
                 code = dialects[0].get("expression", name)
 
-        # Determine abstract type: prefer explicit data_type, fall back to heuristic
-        ossie_type = field.get("data_type", "")
-        if ossie_type and ossie_type in OSSIE_TO_OBML_TYPE:
-            abstract_type = OSSIE_TO_OBML_TYPE[ossie_type]
+        # Determine abstract type. Precedence: the spec `datatype` (capitalised
+        # `DataType` enum) > legacy lowercase `data_type` > name heuristic. An
+        # OBML-origin field additionally restores its exact `abstractType` from
+        # the stashed extension below, keeping OBML -> Ossie -> OBML lossless,
+        # unless the `datatype` was edited since. A non-string value (a
+        # hand-authored document) counts as absent rather than crashing.
+        ossie_datatype = field.get("datatype")
+        if not isinstance(ossie_datatype, str):
+            ossie_datatype = ""
+        legacy_type = field.get("data_type")
+        if not isinstance(legacy_type, str):
+            legacy_type = ""
+        if ossie_datatype in OSSIE_DATATYPE_TO_OBML_ABSTRACT:
+            abstract_type = OSSIE_DATATYPE_TO_OBML_ABSTRACT[ossie_datatype]
+        elif legacy_type and legacy_type in OSSIE_TO_OBML_TYPE:
+            abstract_type = OSSIE_TO_OBML_TYPE[legacy_type]
         else:
             abstract_type = self._infer_obml_type(field)
 
@@ -411,6 +510,21 @@ class OssietoOBML:
             if ext.get("vendor_name") in _OBML_VENDOR_READ:
                 try:
                     ext_data = json.loads(ext.get("data", "{}"))
+                    # Restore the exact OBML abstractType stashed on export, so a
+                    # narrowing datatype map (e.g. time_tz -> Time) never
+                    # degrades an OBML-origin round trip. The stash yields to a
+                    # `datatype` that no longer agrees with it: that is an edit
+                    # made in Ossie after the export, and it is the newer fact.
+                    stashed = ext_data.get("obml_abstract_type")
+                    if isinstance(stashed, str) and stashed:
+                        stashed_ossie = OBML_ABSTRACT_TO_OSSIE_DATATYPE.get(stashed)
+                        edited = (
+                            ossie_datatype in OSSIE_DATATYPE_TO_OBML_ABSTRACT
+                            and stashed_ossie is not None
+                            and stashed_ossie != ossie_datatype
+                        )
+                        if not edited:
+                            col["abstractType"] = stashed
                     if ext_data.get("obml_sql_type"):
                         col["sqlType"] = ext_data["obml_sql_type"]
                     if ext_data.get("obml_sql_precision") is not None:
@@ -683,6 +797,17 @@ class OssietoOBML:
             # Restore OBML-only properties from custom_extensions
             obml_extras = self._extract_obml_extras(m)
 
+            # An OBML-origin measure or metric carries its whole definition.
+            # Restore it rather than re-deriving it from the portable SQL, which
+            # spells out filters and totals that the definition holds as
+            # structure (re-parsing would apply them twice).
+            definition = obml_extras.get("obml_definition")
+            if isinstance(definition, dict):
+                kind = obml_extras.get("obml_definition_kind")
+                (metrics if kind == "metric" else measures)[name] = dict(definition)
+                self._restored_names.add(name)
+                continue
+
             # Check for cumulative metric stored in custom_extensions
             if obml_extras.get("obml_metric_type") == "cumulative":
                 cum_metric = self._reconstruct_cumulative_metric(
@@ -727,14 +852,17 @@ class OssietoOBML:
                 measures[name] = delegated
                 continue
 
-            # Prefer ANSI_SQL, but also read SNOWFLAKE / DATABRICKS expressions
-            # (SQL engines OrionBelt targets) — their aggregations are
-            # syntactically ANSI-compatible. Non-SQL dialects (MDX/TABLEAU/MAQL)
-            # are not parsed as SQL.
+            # Prefer ANSI_SQL, but also read OSSIE_SQL_2026 and SNOWFLAKE /
+            # DATABRICKS expressions - their aggregations are syntactically
+            # ANSI-compatible. Non-SQL dialects (MDX/TABLEAU/MAQL/...) are not
+            # parsed as SQL.
             expr_text, _expr_dialect = self._select_sql_expression(m.get("expression", {}))
             if not expr_text:
                 self._preserve_unconverted_metric(
-                    m, "no SQL-parseable dialect (ANSI_SQL / SNOWFLAKE / DATABRICKS) expression"
+                    m,
+                    "no SQL-parseable dialect ("
+                    + " / ".join(_SQL_PARSEABLE_DIALECTS)
+                    + ") expression",
                 )
                 continue
 
@@ -829,6 +957,21 @@ class OssietoOBML:
             target = metrics.get(m["name"]) or measures.get(m["name"])
             if target is not None:
                 self._carry_foreign_extensions(m.get("custom_extensions"), target)
+                # Ossie metric `datatype` -> OBML exact `dataType` (its natural
+                # home; `Decimal` -> the model's decimal(p, s)). Opaque, unknown
+                # and non-string values have no mapping and change nothing.
+                ossie_dt = m.get("datatype")
+                obml_dt = ossie_metric_datatype_to_obml(ossie_dt, self._decimal_default)
+                if obml_dt is None:
+                    continue
+                # A dataType restored from the OBML-origin stash is more exact
+                # than the map (`decimal(20, 6)`, `bigint`) and is kept while it
+                # still agrees with `datatype`. When it names a different type,
+                # `datatype` was edited in Ossie after the export, and the edit
+                # wins over the stale stash.
+                stashed_ossie = obml_datatype_to_ossie(target.get("dataType"))
+                if stashed_ossie is None or stashed_ossie != ossie_dt:
+                    target["dataType"] = obml_dt
 
         return measures, metrics
 
@@ -999,8 +1142,8 @@ class OssietoOBML:
         """Pick a SQL-parseable expression from an Ossie ``expression`` object.
 
         Returns ``(expression, dialect)`` for the most preferred SQL dialect
-        present (ANSI_SQL > SNOWFLAKE > DATABRICKS), or ``("", "")`` when the
-        metric only carries non-SQL dialects (MDX / TABLEAU / MAQL) or no usable
+        present (ANSI_SQL > OSSIE_SQL_2026 > SNOWFLAKE > DATABRICKS), or
+        ``("", "")`` when the metric only carries non-SQL dialects or no usable
         expression. Catching SNOWFLAKE / DATABRICKS lets third-party models
         whose authors omitted ANSI_SQL still convert, since their aggregation
         syntax is ANSI-compatible.

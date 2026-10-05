@@ -78,7 +78,13 @@ def _report_validation(label: str, result: dict[str, Any], validate_fn: Any) -> 
     for line in vr.summary_lines():
         print(line, file=sys.stderr)
     if vr.valid:
-        print(f"{label} is valid", file=sys.stderr)
+        if vr.schema_validation_performed:
+            print(f"{label} is valid", file=sys.stderr)
+        else:
+            print(
+                f"{label} passed available checks (JSON Schema validation skipped)",
+                file=sys.stderr,
+            )
         return False
     print(f"{label} has validation errors", file=sys.stderr)
     return True
@@ -136,7 +142,9 @@ def main(argv: list[str] | None = None) -> int:
         "-o", "--output", required=True, metavar="FILE", help="Path for output Ossie YAML"
     )
     o2s.add_argument(
-        "--ontology", action="store_true", help="Emit an Ossie ontology document instead of core-spec"
+        "--ontology",
+        action="store_true",
+        help="Emit an Ossie ontology document instead of core-spec",
     )
     o2s.add_argument(
         "--model-name", default="semantic_model", metavar="NAME", help="Ossie semantic model name"

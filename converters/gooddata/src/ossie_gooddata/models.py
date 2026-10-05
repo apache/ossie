@@ -36,7 +36,7 @@ GoodData LDM structure (from declarative API):
             └── granularitiesFormatting {titleBase, titlePattern}
 
 Ossie semantic model structure:
-  version, semantic_model[]
+  version, name, datasets[], relationships[], metrics[]
     ├── name, description, ai_context, custom_extensions[]
     ├── datasets[] {name, source, primary_key[], fields[], custom_extensions[]}
     ├── relationships[] {name, from, to, from_columns[], to_columns[]}

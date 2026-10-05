@@ -39,7 +39,7 @@ def minimal(**model_overrides):
                       "fields": [_field("amount")]}],
     }
     model.update(model_overrides)
-    return dump_yaml({"version": "0.2.0.dev0", "semantic_model": [model]})
+    return dump_yaml({"version": "0.2.0.dev0", **model})
 
 
 def _field(name, expr=None, dialect="ANSI_SQL", **extra):
@@ -118,6 +118,39 @@ def test_is_time_maps_to_default_timeframes():
     dims = parse(files["views/orders.view.yaml"])["dimensions"]
     assert dims["created_at"]["timeframes"] == [
         "raw", "date", "week", "month", "quarter", "year"]
+
+
+@pytest.mark.parametrize("datatype", ["Date", "Time", "DateTime", "DateTimeTz"])
+def test_temporal_datatype_auto_detected_as_time_dimension(datatype):
+    # With no explicit dimension.is_time, a temporal datatype defaults to a
+    # time dimension and receives the default timeframes.
+    files = export(minimal(datasets=[
+        {"name": "orders", "source": "db.sch.orders",
+         "fields": [_field("event_time", datatype=datatype,
+                           dimension={"is_time": None})]}]))
+    dims = parse(files["views/orders.view.yaml"])["dimensions"]
+    assert dims["event_time"]["timeframes"] == [
+        "raw", "date", "week", "month", "quarter", "year"]
+
+
+def test_non_temporal_datatype_is_not_a_time_dimension():
+    files = export(minimal(datasets=[
+        {"name": "orders", "source": "db.sch.orders",
+         "fields": [_field("amount", datatype="Integer",
+                           dimension={"is_time": None})]}]))
+    assert "timeframes" not in parse(
+        files["views/orders.view.yaml"])["dimensions"]["amount"]
+
+
+def test_explicit_is_time_false_overrides_temporal_datatype():
+    # An explicit is_time: false opts a temporal-typed column out of
+    # time-dimension treatment regardless of datatype.
+    files = export(minimal(datasets=[
+        {"name": "orders", "source": "db.sch.orders",
+         "fields": [_field("audit_ts", datatype="DateTimeTz",
+                           dimension={"is_time": False})]}]))
+    assert "timeframes" not in parse(
+        files["views/orders.view.yaml"])["dimensions"]["audit_ts"]
 
 
 def test_single_primary_key_marks_dimension():
@@ -251,10 +284,9 @@ def test_dialect_preference():
 
 
 def test_names_are_sanitized():
-    files = export(dump_yaml({"version": "0.2.0.dev0", "semantic_model": [{
-        "name": "My Model",
+    files = export(dump_yaml({"version": "0.2.0.dev0", "name": "My Model",
         "datasets": [{"name": "Order Items", "source": "db.sch.t",
-                      "fields": [_field("Total Price", "p")]}]}]}))
+                      "fields": [_field("Total Price", "p")]}]}))
     assert "views/order_items.view.yaml" in files
     assert "topics/my_model.topic.yaml" in files
     dims = parse(files["views/order_items.view.yaml"])["dimensions"]
@@ -293,7 +325,7 @@ def test_unknown_relationship_dataset_rejected():
 
 def test_unsupported_version_rejected():
     with pytest.raises(ConversionError, match="Unsupported Ossie version"):
-        export(dump_yaml({"version": "9.9.9", "semantic_model": [{"name": "m"}]}))
+        export(dump_yaml({"version": "9.9.9", "name": "m"}))
 
 
 # --- warnings ---------------------------------------------------------------
@@ -343,9 +375,31 @@ def test_foreign_vendor_extensions_warn():
     assert any("foreign-vendor" in m for m in msgs)
 
 
-def test_multiple_models_warn_and_first_converts():
-    ossie = parse(minimal())
-    ossie["semantic_model"].append({"name": "second", "datasets": [
-        {"name": "x", "source": "db.s.x"}]})
-    msgs = _warnings_of(dump_yaml(ossie))
-    assert any("multiple semantic models" in m for m in msgs)
+@pytest.mark.parametrize(
+    "wrapper",
+    [[], [{"name": "first"}], [{"name": "first"}, {"name": "second"}], {"name": "first"}, None],
+)
+def test_legacy_model_wrappers_are_rejected(wrapper):
+    document = {"version": "0.2.0.dev0", "semantic_model": wrapper}
+    with pytest.raises(ConversionError, match="Legacy 'semantic_model'"):
+        export(dump_yaml(document))
+
+
+@pytest.mark.parametrize("property_name", ["dialects", "vendors"])
+@pytest.mark.parametrize("value", [None, [], ["legacy"]])
+def test_removed_root_metadata_is_rejected(property_name, value):
+    with pytest.raises(ConversionError, match="Root dialects and vendors"):
+        export(minimal(**{property_name: value}))
+
+
+@pytest.mark.parametrize(
+    "name_properties",
+    [{}, {"name": None}, {"name": 123}, {"name": True}, {"name": []}, {"name": {}}],
+    ids=["missing", "null", "number", "boolean", "list", "object"],
+)
+def test_root_name_must_be_a_string(name_properties):
+    document = parse(minimal())
+    del document["name"]
+    document.update(name_properties)
+    with pytest.raises(ConversionError, match="string 'name' at the document root"):
+        export(dump_yaml(document))

@@ -103,6 +103,7 @@ class SpecToOssieConverter:
             description=spec.description,
             ai_context=spec.ai_context,
             version=spec.version,
+            prefixes=spec.prefixes,
         )
 
         self._populate_ontology(ontology, spec)
@@ -135,6 +136,7 @@ class SpecToOssieConverter:
                     type=ConceptType.from_value(concept_spec.type),
                     description=concept_spec.description,
                     extends=extends,
+                    iri=concept_spec.iri,
                 )
             )
 
@@ -223,6 +225,7 @@ class SpecToOssieConverter:
             description=rel_spec.description,
             verbalizes=list(rel_spec.verbalizes) if rel_spec.verbalizes else None,
             multiplicity=multiplicity,
+            iri=rel_spec.iri,
         )
         ontology.add_relationship(relationship)
 
@@ -230,6 +233,7 @@ class SpecToOssieConverter:
 
     def _convert_semantic_model(self, lm_spec: SpecSemanticModel) -> SemanticModel:
         semantic_model = SemanticModel(
+            version=lm_spec.version,
             name=lm_spec.name,
             description=lm_spec.description,
             ai_context=lm_spec.ai_context,

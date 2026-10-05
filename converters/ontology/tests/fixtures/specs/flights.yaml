@@ -540,6 +540,7 @@ ontology:
 ontology_mappings:
 - name: flights_mapping
   semantic_model:
+    version: 0.2.0.dev0
     name: Flights semantic model
     datasets:
     - name: RUNWAY

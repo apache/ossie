@@ -95,6 +95,7 @@ ontology:
 ontology_mappings:
 - name: ref_scheme_mapping
   semantic_model:
+    version: 0.2.0.dev0
     name: Ref scheme semantic model
     datasets:
     - name: STORES

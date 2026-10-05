@@ -24,7 +24,6 @@ docstring and the shared constants in :mod:`ossie_orionbelt._common`.
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 from ossie_orionbelt._common import (
@@ -32,8 +31,11 @@ from ossie_orionbelt._common import (
     _OSSIE_VENDOR_READ,
     _OSSIE_VERSION,
     _VENDOR_OBML,
+    OBML_ABSTRACT_TO_OSSIE_DATATYPE,
     OBML_TO_OSSIE_TYPE,
+    obml_datatype_to_ossie,
 )
+from ossie_orionbelt._portable import NotPortableError, PortableRenderer
 
 
 class OBMLtoOssie:
@@ -51,11 +53,15 @@ class OBMLtoOssie:
         self.model_description = model_description
         self.ai_instructions = ai_instructions
         self.warnings: list[str] = []
+        # Measures and metrics with no faithful Ossie expression, by kind
+        # ("measures" / "metrics"); they ride in the model-level extension.
+        self.unexported: dict[str, dict[str, Any]] = {}
 
     def convert(self) -> dict:
-        # Reset warnings so a second convert() call on the same instance does
-        # not duplicate them.
+        # Reset per-conversion state so a second convert() call on the same
+        # instance does not duplicate warnings or left-out entities.
         self.warnings = []
+        self.unexported = {}
 
         ossie: dict[str, Any] = {"version": _OSSIE_VERSION}
 
@@ -74,7 +80,7 @@ class OBMLtoOssie:
             all_relationships.extend(rels)
 
         # ── Metrics (OBML measures + metrics → Ossie metrics) ────────
-        ossie_metrics = self._convert_measures_and_metrics(obml_measures, obml_metrics, data_objects)
+        ossie_metrics = self._convert_measures_and_metrics(obml_measures, obml_metrics)
 
         # Re-emit Ossie metrics that OBML could not represent and that the import
         # path preserved verbatim (vendor Ossie, ``obml_unconverted_metrics``).
@@ -129,6 +135,8 @@ class OBMLtoOssie:
         count_label_pattern = self.obml.get("countLabelPattern")
         if count_label_pattern is not None:
             roundtrip_data["obml_count_label_pattern"] = count_label_pattern
+        if self.unexported:
+            roundtrip_data["obml_unexported"] = self.unexported
         sem_model["custom_extensions"] = [
             {
                 "vendor_name": _VENDOR_OBML,
@@ -140,15 +148,10 @@ class OBMLtoOssie:
             self.obml.get("customExtensions"), sem_model["custom_extensions"]
         )
 
-        ossie["semantic_model"] = [sem_model]
+        ossie.update(sem_model)
 
-        # The published Ossie core schema forbids root-level ``dialects`` /
-        # ``vendors`` (root is additionalProperties:false, only ``version`` +
-        # ``semantic_model``). Dialects live per-expression in
-        # ``expression.dialects[]`` and vendors per-entity in
-        # ``custom_extensions[].vendor_name`` — the schema-valid homes — so the
-        # document stays fully conformant without root advertisement arrays.
-        # See Ossie PR #148 (and the single-document-dialect direction in #52).
+        # Dialects and vendors are represented on the expressions and extensions
+        # that use them; root-level advertisement arrays are not supported.
         return ossie
 
     def _emit_foreign_extensions(self, obml_exts: list[dict] | None, ossie_exts: list[dict]) -> None:
@@ -385,13 +388,22 @@ class OBMLtoOssie:
         if ai_ctx:
             field["ai_context"] = ai_ctx
 
-        # Preserve OBML type info in custom_extensions for roundtrip fidelity
+        # Emit the spec `datatype` from the OBML abstractType so exported fields
+        # carry a portable logical type...
         abstract_type = col_obj.get("abstractType", "string")
+        field["datatype"] = OBML_ABSTRACT_TO_OSSIE_DATATYPE.get(abstract_type, "String")
+        # ...and stash the exact abstractType in custom_extensions so the return
+        # trip restores it verbatim, lossless through the narrowing map.
         ossie_type = OBML_TO_OSSIE_TYPE.get(abstract_type, "string")
         ext_data: dict[str, Any] = {
             "data_type": ossie_type,
             "obml_abstract_type": abstract_type,
         }
+        # The Ossie field name is the physical code; keep the OBML column name
+        # so the reverse trip restores it (measure filters and model filters
+        # refer to columns by that name).
+        if col_name != code:
+            ext_data["obml_column_name"] = col_name
         # Preserve OBML-only column properties
         if col_obj.get("sqlType"):
             ext_data["obml_sql_type"] = col_obj["sqlType"]
@@ -538,42 +550,75 @@ class OBMLtoOssie:
             existing.add(name)
             ossie_metrics.append(restored)
 
-    def _convert_measures_and_metrics(
-        self, obml_measures: dict, obml_metrics: dict, data_objects: dict
-    ) -> list:
-        """Convert OBML measures and metrics to Ossie metrics."""
+    def _convert_measures_and_metrics(self, obml_measures: dict, obml_metrics: dict) -> list:
+        """Convert OBML measures and metrics to Ossie metrics.
+
+        The expression is what other Ossie consumers read, so it comes from
+        :class:`PortableRenderer` and computes what OrionBelt computes. A measure
+        or metric with no faithful expression is left out of the document and
+        kept whole in ``self.unexported`` for the model-level extension; the
+        reverse conversion restores it from there.
+        """
+        renderer = PortableRenderer(self.obml)
         ossie_metrics = []
 
-        # Convert each OBML measure to an Ossie metric
-        for measure_name, measure_obj in obml_measures.items():
-            ossie_metric = self._convert_measure(measure_name, measure_obj, data_objects)
-            if ossie_metric:
-                self._carry_foreign_to_ossie_metric(measure_obj, ossie_metric)
-                ossie_metrics.append(ossie_metric)
-
-        # Convert OBML metrics (which reference measures) to Ossie metrics
-        for metric_name, metric_obj in obml_metrics.items():
-            if metric_obj.get("type") == "cumulative":
-                ossie_metric = self._convert_obml_cumulative_metric(
-                    metric_name, metric_obj, obml_measures, data_objects
-                )
-            elif metric_obj.get("type") == "period_over_period":
-                ossie_metric = self._convert_obml_pop_metric(
-                    metric_name, metric_obj, obml_measures, data_objects
-                )
-            elif metric_obj.get("type") == "window":
-                ossie_metric = self._convert_obml_window_metric(
-                    metric_name, metric_obj, obml_measures, data_objects
-                )
+        for name, measure in obml_measures.items():
+            if str(measure.get("aggregation", "")).lower() == "measure":
+                ossie_metric = self._convert_delegated_measure(name, measure)
             else:
-                ossie_metric = self._convert_obml_metric(
-                    metric_name, metric_obj, obml_measures, data_objects
-                )
-            if ossie_metric:
-                self._carry_foreign_to_ossie_metric(metric_obj, ossie_metric)
-                ossie_metrics.append(ossie_metric)
+                try:
+                    sql = renderer.measure(name)
+                except NotPortableError as exc:
+                    self._leave_out("measures", name, measure, str(exc))
+                    continue
+                ossie_metric = self._convert_measure(name, measure, sql)
+            self._finish_ossie_metric("measure", measure, ossie_metric)
+            ossie_metrics.append(ossie_metric)
+
+        for name, metric in obml_metrics.items():
+            try:
+                sql = renderer.metric(name)
+            except NotPortableError as exc:
+                self._leave_out("metrics", name, metric, str(exc))
+                continue
+            ossie_metric = self._convert_metric(name, metric, sql)
+            self._finish_ossie_metric("metric", metric, ossie_metric)
+            ossie_metrics.append(ossie_metric)
 
         return ossie_metrics
+
+    def _leave_out(self, kind: str, name: str, definition: dict, reason: str) -> None:
+        """Keep a non-portable measure or metric for the model-level extension."""
+        self.unexported.setdefault(kind, {})[name] = definition
+        self.warnings.append(
+            f"{kind[:-1].capitalize()} '{name}' is not exported as an Ossie metric "
+            f"because {reason}. It is kept in the {_VENDOR_OBML} extension for the reverse "
+            f"conversion."
+        )
+
+    def _finish_ossie_metric(self, kind: str, obml_obj: dict, ossie_metric: dict) -> None:
+        """Attach what every exported measure or metric carries besides its SQL."""
+        definition = {k: v for k, v in obml_obj.items() if k != "customExtensions"}
+        self._merge_obml_extension(ossie_metric, "obml_definition", definition)
+        self._merge_obml_extension(ossie_metric, "obml_definition_kind", kind)
+        self._carry_foreign_to_ossie_metric(obml_obj, ossie_metric)
+        self._emit_ossie_metric_datatype(obml_obj, ossie_metric)
+
+    @staticmethod
+    def _merge_obml_extension(ossie_metric: dict, key: str, value: Any) -> None:
+        """Set *key* in the metric's single OBML-vendor extension, creating it if absent.
+
+        The reverse direction reads only the first OBML-vendor extension it
+        finds, so every value goes into that one payload.
+        """
+        exts = ossie_metric.setdefault("custom_extensions", [])
+        for ext in exts:
+            if ext.get("vendor_name") == _VENDOR_OBML:
+                data = json.loads(ext.get("data") or "{}")
+                data[key] = value
+                ext["data"] = json.dumps(data)
+                return
+        exts.append({"vendor_name": _VENDOR_OBML, "data": json.dumps({key: value})})
 
     def _carry_foreign_to_ossie_metric(self, obml_obj: dict, ossie_metric: dict) -> None:
         """Re-emit third-party vendor extensions on an OBML measure/metric to
@@ -584,107 +629,46 @@ class OBMLtoOssie:
         if not ossie_metric["custom_extensions"]:
             del ossie_metric["custom_extensions"]
 
-    def _convert_measure(self, name: str, measure: dict, data_objects: dict) -> dict | None:
-        """Convert an OBML measure to an Ossie metric."""
+    def _emit_ossie_metric_datatype(self, obml_obj: dict, ossie_metric: dict) -> None:
+        """Emit the spec `datatype` from an explicit OBML measure/metric `dataType`.
 
-        columns = measure.get("columns", [])
-        agg = measure.get("aggregation", "sum").upper()
-        distinct = measure.get("distinct", False)
-        obml_synonyms = measure.get("synonyms", [])
+        Only fires when the OBML object declares an exact `dataType`, so plain
+        measures (whose type is only the defaulted `resultType`) stay untouched
+        and round trips stay idempotent. The exact `dataType` also round-trips via
+        `obml_data_type` in `custom_extensions`; this adds the portable field.
+        """
+        ossie_dt = obml_datatype_to_ossie(obml_obj.get("dataType"))
+        if ossie_dt:
+            ossie_metric["datatype"] = ossie_dt
 
-        # Build ai_context with synonyms (name + native OBML synonyms)
-        ai_synonyms = [name] + [s for s in obml_synonyms if s != name]
-        ai_ctx: dict[str, Any] = {"synonyms": ai_synonyms} if ai_synonyms else {}
-
-        # ``aggregation: measure`` delegates resolution to the engine
-        # (Databricks Metric View) — there is no source column to read
-        # and no ANSI_SQL expression to emit. Ossie has no first-class
-        # concept for engine-delegated aggregation, so we serialize the
-        # measure as an Ossie metric whose expression is the literal
-        # ``MEASURE("<label>")`` call and merge the OBML signal into
-        # the standard extras-blob so the reverse direction restores
-        # ``aggregation: measure`` in a single round-trip.
-        if agg == "MEASURE":
-            expr = f'MEASURE("{name}")'
-            measure_metric: dict[str, Any] = {
-                "name": name,
-                "expression": {
-                    "dialects": [
-                        {
-                            "dialect": "ANSI_SQL",
-                            "expression": expr,
-                        }
-                    ]
-                },
-                "description": measure.get("description", name),
-            }
-            if ai_ctx:
-                measure_metric["ai_context"] = ai_ctx
-            self._add_obml_measure_extras(
-                measure_metric, {**measure, "_extra_obml_aggregation": "measure"}
-            )
-            return measure_metric
-
-        if not columns:
-            obml_expr = measure.get("expression", "")
-            if obml_expr:
-                # Expression-based measure: convert {[DO].[Col]} refs to SQL
-                sql_inner = self._obml_refs_to_sql(obml_expr, data_objects)
-                distinct_kw = "DISTINCT " if distinct else ""
-                expr = f"{agg}({distinct_kw}{sql_inner})"
-                result: dict[str, Any] = {
-                    "name": name,
-                    "expression": {
-                        "dialects": [
-                            {
-                                "dialect": "ANSI_SQL",
-                                "expression": expr,
-                            }
-                        ]
-                    },
-                    "description": measure.get("description", name),
-                }
-                if ai_ctx:
-                    result["ai_context"] = ai_ctx
-                self._add_obml_measure_extras(result, measure)
-                return result
-            self.warnings.append(f"Measure '{name}' has no columns; skipped.")
-            return None
-
-        # Build SQL expression from one-or-more column references.
-        # Multi-column aggregations (CORR, COVAR_*, REGR_*) emit
-        # ``AGG(col_a, col_b)`` with arguments in declaration order.
-        def _col_to_sql(col_ref: dict) -> str:
-            do_name_local = col_ref.get("dataObject", "")
-            col_name_local = col_ref.get("column", "")
-            do_obj_local = data_objects.get(do_name_local, {})
-            col_code_local = (
-                do_obj_local.get("columns", {})
-                .get(col_name_local, {})
-                .get("code", col_name_local.lower().replace(" ", "_"))
-            )
-            do_code_local = do_obj_local.get("code", do_name_local.lower().replace(" ", "_"))
-            return f"{do_code_local}.{col_code_local}"
-
-        distinct_kw = "DISTINCT " if distinct else ""
-        col_sql = ", ".join(_col_to_sql(c) for c in columns)
-        expr = f"{agg}({distinct_kw}{col_sql})"
-
-        result = {
+    @staticmethod
+    def _ossie_metric(name: str, obml_obj: dict, sql: str, dialect: str = "ANSI_SQL") -> dict:
+        """The Ossie metric shell shared by every measure and metric."""
+        return {
             "name": name,
-            "expression": {
-                "dialects": [
-                    {
-                        "dialect": "ANSI_SQL",
-                        "expression": expr,
-                    }
-                ]
-            },
-            "description": measure.get("description", name),
+            "expression": {"dialects": [{"dialect": dialect, "expression": sql}]},
+            "description": obml_obj.get("description", name),
         }
-        if ai_ctx:
-            result["ai_context"] = ai_ctx
+
+    def _convert_measure(self, name: str, measure: dict, sql: str) -> dict:
+        """Convert an OBML measure to an Ossie metric with its portable *sql*."""
+        result = self._ossie_metric(name, measure, sql)
+        synonyms = [name] + [s for s in measure.get("synonyms", []) if s != name]
+        result["ai_context"] = {"synonyms": synonyms}
         self._add_obml_measure_extras(result, measure)
+        return result
+
+    def _convert_delegated_measure(self, name: str, measure: dict) -> dict:
+        """Convert an ``aggregation: measure`` measure, resolved by a Databricks Metric View.
+
+        The expression is the Databricks ``MEASURE("<label>")`` call, so it is
+        tagged with the ``DATABRICKS`` dialect; the extras carry the OBML
+        signal back.
+        """
+        result = self._ossie_metric(name, measure, f'MEASURE("{name}")', dialect="DATABRICKS")
+        synonyms = [name] + [s for s in measure.get("synonyms", []) if s != name]
+        result["ai_context"] = {"synonyms": synonyms}
+        self._add_obml_measure_extras(result, {**measure, "_extra_obml_aggregation": "measure"})
         return result
 
     @staticmethod
@@ -725,417 +709,57 @@ class OBMLtoOssie:
                 }
             )
 
-    def _obml_refs_to_sql(self, obml_expr: str, data_objects: dict) -> str:
-        """Convert OBML {[DataObject].[Column]} references to SQL dataset.column."""
-        import re
+    def _convert_metric(self, name: str, metric: dict, sql: str) -> dict:
+        """Convert an OBML metric to an Ossie metric with its portable *sql*.
 
-        def replace_ref(match: re.Match) -> str:
-            do_name = match.group(1)
-            col_name = match.group(2)
-            do_obj = data_objects.get(do_name, {})
-            do_code = do_obj.get("code", do_name.lower().replace(" ", "_"))
-            col_code = (
-                do_obj.get("columns", {})
-                .get(col_name, {})
-                .get("code", col_name.lower().replace(" ", "_"))
-            )
-            return f"{do_code}.{col_code}"
-
-        return re.sub(r"\{\[([^\]]+)\]\.\[([^\]]+)\]\}", replace_ref, obml_expr)
-
-    def _convert_obml_metric(
-        self, name: str, metric: dict, obml_measures: dict, data_objects: dict
-    ) -> dict | None:
+        Cumulative and window metrics also keep their configuration under the
+        ``obml_*`` keys, which older readers reconstruct them from.
         """
-        Convert an OBML metric (expression referencing measures) to Ossie metric.
-        OBML metric expression: "{[Total Sales]} / {[Sales Count]}"
-        → needs to be expanded to SQL using the measure definitions.
-        """
+        result = self._ossie_metric(name, metric, sql)
+        synonyms = [s for s in metric.get("synonyms", []) if s != name]
+        if synonyms:
+            result["ai_context"] = {"synonyms": synonyms}
 
-        expr_template = metric.get("expression", "")
-        if not expr_template:
-            return None
-
-        sql_expr = expr_template
-
-        # Replace {[Measure Name]} references with SQL expressions
-        pattern = r"\{\[([^\]]+)\]\}"
-        for match in re.finditer(pattern, expr_template):
-            measure_name = match.group(1)
-            measure_def = obml_measures.get(measure_name, {})
-
-            if not measure_def:
-                self.warnings.append(
-                    f"Metric '{name}' references unknown measure '{measure_name}'."
-                )
-                continue
-
-            sql_part = self._measure_to_sql(measure_def, data_objects)
-            if sql_part:
-                sql_expr = sql_expr.replace(match.group(0), sql_part)
-            else:
-                self.warnings.append(
-                    f"Metric '{name}': could not convert measure '{measure_name}' to SQL."
-                )
-
-        result: dict[str, Any] = {
-            "name": name,
-            "expression": {
-                "dialects": [
-                    {
-                        "dialect": "ANSI_SQL",
-                        "expression": sql_expr,
-                    }
-                ]
-            },
-            "description": metric.get("description", name),
-        }
-        # Include OBML synonyms in ai_context
-        obml_synonyms = metric.get("synonyms", [])
-        ai_synonyms = [s for s in obml_synonyms if s != name]
-        if ai_synonyms:
-            result["ai_context"] = {"synonyms": ai_synonyms}
-        # Preserve OBML-only metric properties in custom_extensions
-        metric_extras: dict[str, Any] = {}
-        if metric.get("format"):
-            metric_extras["obml_format"] = metric["format"]
-        if metric.get("dataType"):
-            metric_extras["obml_data_type"] = metric["dataType"]
-        if metric.get("owner"):
-            metric_extras["obml_owner"] = metric["owner"]
-        if metric_extras:
-            exts = result.setdefault("custom_extensions", [])
-            exts.append(
-                {
-                    "vendor_name": _VENDOR_OBML,
-                    "data": json.dumps(metric_extras),
-                }
-            )
-        return result
-
-    def _convert_obml_cumulative_metric(
-        self,
-        name: str,
-        metric: dict,
-        obml_measures: dict,
-        data_objects: dict,
-    ) -> dict | None:
-        """Convert an OBML cumulative metric to an Ossie metric.
-
-        Cumulative metrics have no direct Ossie equivalent.  We generate an
-        approximate SQL expression for readability and store the full OBML
-        cumulative configuration in ``custom_extensions`` (vendor ``COMMON``)
-        so the Ossie → OBML direction can reconstruct it losslessly.
-        """
-        measure_name = metric.get("measure", "")
-        time_dim = metric.get("timeDimension", "")
-        cum_type = metric.get("cumulativeType", "sum").upper()
-        window_size = metric.get("window")
-        grain = metric.get("grainToDate")
-
-        if not measure_name:
-            self.warnings.append(f"Cumulative metric '{name}' has no measure reference; skipped.")
-            return None
-
-        # Build an approximate SQL expression for the Ossie metric
-        measure_def = obml_measures.get(measure_name, {})
-        inner_sql = self._measure_to_sql(measure_def, data_objects) or measure_name
-
-        if window_size is not None:
-            frame = (
-                f' OVER (ORDER BY "{time_dim}" '
-                f"ROWS BETWEEN {window_size - 1} PRECEDING AND CURRENT ROW)"
-            )
-        elif grain:
-            frame = (
-                f' OVER (PARTITION BY DATE_TRUNC(\'{grain}\', "{time_dim}") ORDER BY "{time_dim}")'
-            )
-        else:
-            # Running total (unbounded)
-            frame = f' OVER (ORDER BY "{time_dim}" ROWS UNBOUNDED PRECEDING)'
-
-        sql_expr = f"{cum_type}({inner_sql}){frame}"
-
-        result: dict[str, Any] = {
-            "name": name,
-            "expression": {
-                "dialects": [
-                    {
-                        "dialect": "ANSI_SQL",
-                        "expression": sql_expr,
-                    }
-                ]
-            },
-            "description": metric.get("description", name),
-        }
-
-        obml_synonyms = metric.get("synonyms", [])
-        ai_synonyms = [s for s in obml_synonyms if s != name]
-        if ai_synonyms:
-            result["ai_context"] = {"synonyms": ai_synonyms}
-
-        # Store full cumulative config in custom_extensions for roundtrip
-        ext_data: dict[str, Any] = {
-            "obml_metric_type": "cumulative",
-            "obml_cumulative_measure": measure_name,
-            "obml_cumulative_time_dimension": time_dim,
-            "obml_cumulative_type": metric.get("cumulativeType", "sum"),
-        }
-        if window_size is not None:
-            ext_data["obml_cumulative_window"] = window_size
-        if grain:
-            ext_data["obml_cumulative_grain_to_date"] = grain
-        if metric.get("partitionBy"):
+        kind = metric.get("type")
+        ext_data: dict[str, Any] = {}
+        if kind == "cumulative":
+            ext_data = {
+                "obml_metric_type": "cumulative",
+                "obml_cumulative_measure": metric.get("measure", ""),
+                "obml_cumulative_time_dimension": metric.get("timeDimension", ""),
+                "obml_cumulative_type": metric.get("cumulativeType", "sum"),
+            }
+            if metric.get("window") is not None:
+                ext_data["obml_cumulative_window"] = metric["window"]
+            if metric.get("grainToDate"):
+                ext_data["obml_cumulative_grain_to_date"] = metric["grainToDate"]
+        elif kind == "window":
+            ext_data = {
+                "obml_metric_type": "window",
+                "obml_window_function": str(metric.get("windowFunction", "")).lower(),
+                "obml_order_direction": metric.get("orderDirection", "desc"),
+            }
+            optional = {
+                "measure": "obml_window_measure",
+                "timeDimension": "obml_window_time_dimension",
+                "offset": "obml_window_offset",
+                "buckets": "obml_window_buckets",
+                "defaultValue": "obml_window_default_value",
+            }
+            for obml_key, ext_key in optional.items():
+                if metric.get(obml_key) is not None:
+                    ext_data[ext_key] = metric[obml_key]
+        if kind in ("cumulative", "window") and metric.get("partitionBy"):
             ext_data["obml_partition_by"] = list(metric["partitionBy"])
-        if metric.get("format"):
-            ext_data["obml_format"] = metric["format"]
-        if metric.get("dataType"):
-            ext_data["obml_data_type"] = metric["dataType"]
-        if metric.get("owner"):
-            ext_data["obml_owner"] = metric["owner"]
-
-        result["custom_extensions"] = [
-            {
-                "vendor_name": _VENDOR_OBML,
-                "data": json.dumps(ext_data),
-            }
-        ]
-
+        for obml_key, ext_key in (
+            ("format", "obml_format"),
+            ("dataType", "obml_data_type"),
+            ("owner", "obml_owner"),
+        ):
+            if metric.get(obml_key):
+                ext_data[ext_key] = metric[obml_key]
+        if ext_data:
+            result["custom_extensions"] = [
+                {"vendor_name": _VENDOR_OBML, "data": json.dumps(ext_data)}
+            ]
         return result
-
-    def _convert_obml_pop_metric(
-        self,
-        name: str,
-        metric: dict,
-        obml_measures: dict,
-        data_objects: dict,
-    ) -> dict | None:
-        """Convert an OBML period-over-period metric to an Ossie metric.
-
-        PoP metrics have no direct Ossie equivalent.  We generate an
-        approximate SQL expression for readability and store the full OBML
-        PoP configuration in ``custom_extensions`` (vendor ``COMMON``)
-        so the Ossie → OBML direction can reconstruct it losslessly.
-        """
-        pop_config = metric.get("periodOverPeriod", {})
-        expr_template = metric.get("expression", "")
-        if not pop_config or not expr_template:
-            self.warnings.append(
-                f"Period-over-period metric '{name}' missing configuration; skipped."
-            )
-            return None
-
-        time_dim = pop_config.get("timeDimension", "")
-        grain = pop_config.get("grain", "month")
-        offset = pop_config.get("offset", -1)
-        offset_grain = pop_config.get("offsetGrain", "year")
-        comparison = pop_config.get("comparison", "percentChange")
-
-        # Resolve the base measure SQL for an approximate expression
-        pattern = r"\{\[([^\]]+)\]\}"
-        measure_names = re.findall(pattern, expr_template)
-        base_measure = measure_names[0] if measure_names else "measure"
-        measure_def = obml_measures.get(base_measure, {})
-        inner_sql = self._measure_to_sql(measure_def, data_objects) or base_measure
-
-        # Build approximate SQL comment-style expression
-        comparison_map = {
-            "percentChange": f"({inner_sql} / NULLIF(prev.value, 0)) - 1",
-            "ratio": f"{inner_sql} / NULLIF(prev.value, 0)",
-            "difference": f"{inner_sql} - prev.value",
-            "previousValue": "prev.value",
-        }
-        sql_expr = comparison_map.get(comparison, f"{inner_sql} -- PoP({comparison})")
-
-        result: dict[str, Any] = {
-            "name": name,
-            "expression": {
-                "dialects": [
-                    {
-                        "dialect": "ANSI_SQL",
-                        "expression": sql_expr,
-                    }
-                ]
-            },
-            "description": metric.get("description", name),
-        }
-
-        obml_synonyms = metric.get("synonyms", [])
-        ai_synonyms = [s for s in obml_synonyms if s != name]
-        if ai_synonyms:
-            result["ai_context"] = {"synonyms": ai_synonyms}
-
-        # Store full PoP config in custom_extensions for roundtrip
-        ext_data: dict[str, Any] = {
-            "obml_metric_type": "period_over_period",
-            "obml_pop_expression": expr_template,
-            "obml_pop_time_dimension": time_dim,
-            "obml_pop_grain": grain,
-            "obml_pop_offset": offset,
-            "obml_pop_offset_grain": offset_grain,
-            "obml_pop_comparison": comparison,
-        }
-        if metric.get("format"):
-            ext_data["obml_format"] = metric["format"]
-        if metric.get("dataType"):
-            ext_data["obml_data_type"] = metric["dataType"]
-        if metric.get("owner"):
-            ext_data["obml_owner"] = metric["owner"]
-
-        result["custom_extensions"] = [
-            {
-                "vendor_name": _VENDOR_OBML,
-                "data": json.dumps(ext_data),
-            }
-        ]
-
-        return result
-
-    def _convert_obml_window_metric(
-        self,
-        name: str,
-        metric: dict,
-        obml_measures: dict,
-        data_objects: dict,
-    ) -> dict | None:
-        """Convert an OBML window metric (rank/lag/lead/ntile/...) to an Ossie metric.
-
-        Window metrics have no direct Ossie equivalent. We generate an
-        approximate ANSI SQL expression for readability and persist the
-        full OBML window configuration in ``custom_extensions`` (vendor
-        ``COMMON``) for lossless Ossie → OBML reconstruction.
-        """
-        window_fn = (metric.get("windowFunction") or "").upper()
-        if not window_fn:
-            self.warnings.append(f"Window metric '{name}' has no windowFunction; skipped.")
-            return None
-
-        measure_name = metric.get("measure")
-        time_dim = metric.get("timeDimension")
-        order_dir = metric.get("orderDirection", "desc").upper()
-        offset = metric.get("offset")
-        buckets = metric.get("buckets")
-        default_value = metric.get("defaultValue")
-        partition_by = metric.get("partitionBy", []) or []
-
-        measure_def = obml_measures.get(measure_name, {}) if measure_name else {}
-        inner_sql = (
-            self._measure_to_sql(measure_def, data_objects) if measure_def else (measure_name or "")
-        )
-
-        # Build approximate ANSI SQL expression
-        args: list[str] = []
-        order_expr: str | None = None
-        if window_fn in {"LAG", "LEAD"} and inner_sql:
-            args.append(inner_sql)
-            if offset is not None:
-                args.append(str(offset))
-            if default_value is not None:
-                args.append(
-                    f"'{default_value}'" if isinstance(default_value, str) else str(default_value)
-                )
-        elif window_fn == "NTILE" and buckets is not None:
-            args.append(str(buckets))
-        elif window_fn in {"FIRST_VALUE", "LAST_VALUE"} and inner_sql:
-            args.append(inner_sql)
-        # RANK / DENSE_RANK / ROW_NUMBER take no positional args
-
-        if window_fn in {"RANK", "DENSE_RANK", "ROW_NUMBER", "NTILE"} and inner_sql:
-            order_expr = f"{inner_sql} {order_dir}"
-        elif window_fn in {"LAG", "LEAD"} and time_dim:
-            order_expr = f'"{time_dim}"'
-        elif window_fn in {"FIRST_VALUE", "LAST_VALUE"} and time_dim:
-            order_expr = f'"{time_dim}" {order_dir}'
-
-        partition_sql = (
-            "PARTITION BY " + ", ".join(f'"{p}"' for p in partition_by) if partition_by else ""
-        )
-        order_sql = f"ORDER BY {order_expr}" if order_expr else ""
-        over_inner = " ".join(p for p in (partition_sql, order_sql) if p)
-        sql_expr = f"{window_fn}({', '.join(args)}) OVER ({over_inner})"
-
-        result: dict[str, Any] = {
-            "name": name,
-            "expression": {
-                "dialects": [
-                    {
-                        "dialect": "ANSI_SQL",
-                        "expression": sql_expr,
-                    }
-                ]
-            },
-            "description": metric.get("description", name),
-        }
-
-        obml_synonyms = metric.get("synonyms", [])
-        ai_synonyms = [s for s in obml_synonyms if s != name]
-        if ai_synonyms:
-            result["ai_context"] = {"synonyms": ai_synonyms}
-
-        ext_data: dict[str, Any] = {
-            "obml_metric_type": "window",
-            "obml_window_function": window_fn.lower(),
-            "obml_order_direction": metric.get("orderDirection", "desc"),
-        }
-        if measure_name:
-            ext_data["obml_window_measure"] = measure_name
-        if time_dim:
-            ext_data["obml_window_time_dimension"] = time_dim
-        if offset is not None:
-            ext_data["obml_window_offset"] = offset
-        if buckets is not None:
-            ext_data["obml_window_buckets"] = buckets
-        if default_value is not None:
-            ext_data["obml_window_default_value"] = default_value
-        if partition_by:
-            ext_data["obml_partition_by"] = list(partition_by)
-        if metric.get("format"):
-            ext_data["obml_format"] = metric["format"]
-        if metric.get("dataType"):
-            ext_data["obml_data_type"] = metric["dataType"]
-        if metric.get("owner"):
-            ext_data["obml_owner"] = metric["owner"]
-
-        result["custom_extensions"] = [
-            {
-                "vendor_name": _VENDOR_OBML,
-                "data": json.dumps(ext_data),
-            }
-        ]
-
-        return result
-
-    def _measure_to_sql(self, measure: dict, data_objects: dict) -> str | None:
-        """Convert an OBML measure definition to a SQL expression string.
-
-        Multi-column measures (two-column statistical aggregates like
-        ``corr(a, b)``, or count-distinct over a composite key) emit
-        every column as a comma-separated argument list. Single-column
-        aggregates collapse to the same shape with one argument.
-        """
-        agg = measure.get("aggregation", "sum").upper()
-        distinct = measure.get("distinct", False)
-        distinct_kw = "DISTINCT " if distinct else ""
-
-        columns = measure.get("columns", [])
-        if columns:
-            args: list[str] = []
-            for col_ref in columns:
-                do_name = col_ref.get("dataObject", "")
-                col_name = col_ref.get("column", "")
-                do_obj = data_objects.get(do_name, {})
-                col_code = (
-                    do_obj.get("columns", {})
-                    .get(col_name, {})
-                    .get("code", col_name.lower().replace(" ", "_"))
-                )
-                do_code = do_obj.get("code", do_name.lower().replace(" ", "_"))
-                args.append(f"{do_code}.{col_code}")
-            return f"{agg}({distinct_kw}{', '.join(args)})"
-
-        obml_expr = measure.get("expression", "")
-        if obml_expr:
-            sql_inner = self._obml_refs_to_sql(obml_expr, data_objects)
-            return f"{agg}({distinct_kw}{sql_inner})"
-
-        return None

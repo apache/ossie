@@ -21,12 +21,17 @@
 **/.pytest_cache/
 **/.ruff_cache/
 **/.coverage
+**/coverage.xml
 **/htmlcov/
 **/dist/
 **/target/
+**/.tom/
 *.py[cod]
 
 # Go CLI
 cli/dist/
 cli/ossie
 cli/.tool-versions
+
+# Apache RAT (downloaded by dev/check-license)
+dev/lib/

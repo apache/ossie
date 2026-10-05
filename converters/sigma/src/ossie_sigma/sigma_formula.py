@@ -1,9 +1,26 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 """A parser and SQL renderer for Sigma's spreadsheet-style formula language.
 
 Sigma data model column and metric formulas look like ``Sum([Orders/Amount])`` or
 ``If([Status] = "closed", 1, 0)``. Sigma's formula language is not SQL, so — unlike
-converters whose native expressions are already SQL (e.g. NVIDIA GSF, which parses
-straight into sqlglot) — a real tokenizer and recursive-descent parser is needed to
+converters whose native expressions are already SQL (e.g. NVIDIA Auto Ontology, which
+parses straight into sqlglot) — a real tokenizer and recursive-descent parser is needed to
 get from formula text to a tree (:class:`FormulaNode`).
 
 From there, though, this module does what the other converters do: it translates into
@@ -673,6 +690,11 @@ def _render_sql_node(node: exp.Expression, dataset_alias: Optional[str]) -> str:
         return f"({_render_sql_node(node.this, dataset_alias)} AND {_render_sql_node(node.expression, dataset_alias)})"
     if isinstance(node, exp.Or):
         return f"({_render_sql_node(node.this, dataset_alias)} OR {_render_sql_node(node.expression, dataset_alias)})"
+    if isinstance(node, exp.Neg):
+        inner = _render_sql_node(node.this, dataset_alias)
+        if isinstance(node.this, (exp.Column, exp.Literal)):
+            return f"-{inner}"
+        return f"-({inner})"
     if isinstance(node, exp.Not):
         return f"NOT ({_render_sql_node(node.this, dataset_alias)})"
 

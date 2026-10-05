@@ -577,6 +577,7 @@ ontology:
 ontology_mappings:
 - name: snow_tpch_mapping
   semantic_model:
+    version: 0.2.0.dev0
     name: TPC-H Snowflake semantic model
     datasets:
     - name: KSE_TPCH_SF1_CUSTOMER

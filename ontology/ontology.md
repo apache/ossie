@@ -88,6 +88,8 @@ hierarchically, grouping each relationship under the concept that plays its firs
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools |
 | `ontology` | list | Yes | Concepts and relationships they group that form this ontology |
+| `prefixes` | object | No | Namespace prefixes used to abbreviate [IRIs](#global-identifiers) |
+| `ontology_mappings` | list | No | Deprecated; accepted only so existing documents continue to validate. Write mappings as [mapping documents](#mapping-documents) instead |
 
 Each component of an ontology declares a concept and lists the relationships where that
 concept plays the first role. The concept's name is the value of the `concept` field, and
@@ -111,6 +113,7 @@ Concepts have the following schema:
 | `identify_by` | list | No | Names of relationships that uniquely reference objects of this concept |
 | `requires` | list | No | Expressions that constrain this concept's population |
 | `relationships` | list | No | Relationships where this concept plays the first role |
+| `iri` | string | No | Optional [global identifier](#global-identifiers) of this concept |
 
 Each concept is either an entity type or a value type.
 
@@ -155,6 +158,7 @@ Each relationship that is declared under a concept conforms to the following sch
 | `derived_by` | list | No | Expressions that derive links of this relationship |
 | `requires` | list | No | Expressions that constrain this relationship's population |
 | `verbalizes` | list | Yes | Patterns describing how to verbalize links |
+| `iri` | string | No | Optional [global identifier](#global-identifiers) of this relationship |
 
 Each relationship is uniquely identified by prepending its declared name with that of the containing
 concept. For instance, in:
@@ -379,11 +383,108 @@ ontology:
 the first expression requires any value that plays the `Amount` role to be positive while the second
 requires any item that has sales in some store to be offered in that store.
 
+### Global identifiers
+
+Concept and relationship names are local to the ontology that declares them. To relate a concept
+or relationship to a definition outside the ontology, for instance a class or property in an
+existing RDF or OWL vocabulary, it can carry an optional `iri` field that holds a globally unique
+identifier. An IRI (Internationalized Resource Identifier, [RFC 3987](https://www.rfc-editor.org/info/rfc3987/))
+is a generalization of a URI that permits characters beyond ASCII. Any URI is also a valid IRI.
+
+The `iri` field accepts two forms:
+
+- A full IRI, e.g. `http://xmlns.com/foaf/0.1/Agent`.
+- A QName of the form `prefix:local`, e.g. `foaf:Agent`, where `prefix` is declared in the
+  ontology-level `prefixes` map. The QName expands to the prefix's IRI followed by the local
+  part, so `foaf:Agent` expands to `http://xmlns.com/foaf/0.1/Agent`.
+
+The `prefixes` map is declared at the top level of the specification. Each key is a prefix and each
+value is the IRI that the prefix abbreviates:
+
+```yaml
+name: OrganizationOntology
+prefixes:
+  foaf: http://xmlns.com/foaf/0.1/
+  org: http://www.w3.org/ns/org#
+ontology:
+  - concept: Agent
+    type: EntityType
+    iri: foaf:Agent
+    description: "A generic agent (person, organization, etc.)"
+    relationships:
+      - name: has_homepage
+        iri: foaf:homepage
+        roles:
+          - concept: Homepage
+        multiplicity: ManyToOne
+        verbalizes: [ "{Agent} has {Homepage}" ]
+  - concept: Homepage
+    type: ValueType
+    extends: [String]
+  - concept: Organization
+    type: EntityType
+    extends: [Agent]
+    iri: http://www.w3.org/ns/org#Organization
+```
+
+Here `Agent` and `Agent.has_homepage` are identified by QNames that resolve against the `foaf`
+prefix, while `Organization` is identified by a full IRI. Both forms denote the same kind of
+identifier; the QName is merely shorthand. A QName whose prefix is not declared in `prefixes`
+is invalid.
+
+An IRI does not change how a concept or relationship is referenced within its own ontology.
+Expressions, roles, and mappings continue to use local names. The IRI serves tools that translate
+between this specification and IRI-based languages and lets multiple ontologies state that they
+refer to the same externally defined concept or relationship.
+
 ## Ontology mappings
 
 Ontology mappings declare how to map the values of fields at the logical level to objects and links
 in the ontology. Just as ontologies are partitioned by concept, ontology maps partition into concept
 mappings that group by some concept.
+
+### Mapping documents
+
+A mapping is written as its own document, validated against `ontology/mapping.json`. It maps the
+constructs of one semantic model onto one ontology, and references both rather than embedding
+either:
+
+| Field | Type | Required | Description |
+|---------------|---------|-----|-------|
+| `version` | string | Yes | Mapping specification version |
+| `name` | string | Yes | Unique identifier for this mapping |
+| `description` | string | No | Human-readable description of this mapping |
+| `ontology_ref` | object | Yes | Reference to the ontology document this mapping targets (see below) |
+| `semantic_model_ref` | object | Yes | Reference to the semantic model document this mapping draws from (see below) |
+| `concept_mappings` | list | Yes | Maps logical model constructs to concepts and relationships in the referenced ontology |
+| `custom_extensions` | list | No | Vendor-specific attributes for extensibility, matching the core specification's mechanism |
+
+Both `ontology_ref` and `semantic_model_ref` are references with the following schema, mirroring
+`DocumentReference` in `mapping.json`:
+
+| Field | Type | Required | Description |
+|---------------|---------|-----|-------|
+| `name` | string | Yes | Must equal the referenced document's own `name`; this is the reference's identity |
+| `iri` | string | No | Where to resolve the referenced document from. A relative reference such as `./flights.ontology.yaml` is resolved against the mapping document's own location or base IRI; an absolute IRI identifies the location directly. May be omitted where a catalog resolves documents by `name` |
+
+A mapping document references exactly one ontology and exactly one semantic model. When more than
+one semantic model maps to an ontology, each mapping is its own document.
+
+A mapping document is recognized by the combination of `concept_mappings`, `ontology_ref`, and
+`semantic_model_ref`. These reference keys do not overlap with the root keys of ontology or
+semantic model documents; there is no separate field declaring a document's kind.
+
+See `examples/flights.ontology.yaml`, `examples/flights.semantic_model.yaml`, and
+`examples/flights.mapping.yaml` for a complete example.
+
+**Deprecated:** mappings were originally embedded in the ontology document's `ontology_mappings`
+list (`OntologyMap` in `ontology.json`), each carrying a complete
+[core document](../core-spec/spec.md#semantic-model), with its own `version`, `name`, and at
+least one dataset, as its `semantic_model`. That list is still accepted so existing documents
+continue to validate, but it is deprecated and will be removed in a future version. New mappings
+should be written as mapping documents. Parser and converter support for standalone mapping
+documents is not yet available and will be added separately; until then, use embedded mappings
+when a tool requires them.
 
 ### Concept mappings
 
@@ -588,8 +689,12 @@ though `Store` plays a role in three of the relationships.
 ## Version History
 
 - **0.2.0.dev0** (2026-05-29): Basic support for ontologies and logical schema mappings
+  - Breaking: each ontology map's `semantic_model` now requires its own `version`.
   - Core ontology structure: Concepts, relationships, and business rules (requires and derived_by)
   - Schema mappings from one or more logical models into an ontology
+  - Optional IRIs on concepts and relationships, with namespace prefixes declared at the top level
+  - Mapping documents (`ontology/mapping.json`) that reference one ontology and one semantic
+    model; embedded `ontology_mappings` is deprecated
 
 ---
 

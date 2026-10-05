@@ -62,21 +62,30 @@ def ossie_to_gooddata(
     datasets: list[GdDataset] = []
     date_instances: list[GdDateInstance] = []
 
-    for sm in ossie_model.get("semantic_model", []):
-        relationship_map = _build_relationship_map(sm)
-        # Pre-pass: for each Ossie dataset, record whether it is a date instance
-        # and map its physical source columns to the attribute ids that will
-        # be generated. Reference target columns resolve via this map.
-        target_info = _build_target_info(sm)
+    if not isinstance(ossie_model, dict):
+        raise ValueError("Ossie input must be a mapping")
+    if "semantic_model" in ossie_model:
+        raise ValueError("Ossie model properties must be at the root; semantic_model wrappers are not supported")
+    if "dialects" in ossie_model or "vendors" in ossie_model:
+        raise ValueError("Root dialects and vendors are not supported by the Ossie spec")
+    if not isinstance(ossie_model.get("name"), str) or not isinstance(ossie_model.get("datasets"), list):
+        raise ValueError("Ossie input requires name and datasets at the root")
 
-        for ds in sm.get("datasets", []):
-            gd_ds, date_inst = _convert_ossie_dataset(
-                ds, relationship_map, target_info, data_source_id,
-            )
-            if date_inst:
-                date_instances.append(date_inst)
-            else:
-                datasets.append(gd_ds)
+    sm = ossie_model
+    relationship_map = _build_relationship_map(sm)
+    # Pre-pass: for each Ossie dataset, record whether it is a date instance
+    # and map its physical source columns to the attribute ids that will
+    # be generated. Reference target columns resolve via this map.
+    target_info = _build_target_info(sm)
+
+    for ds in sm.get("datasets", []):
+        gd_ds, date_inst = _convert_ossie_dataset(
+            ds, relationship_map, target_info, data_source_id,
+        )
+        if date_inst:
+            date_instances.append(date_inst)
+        else:
+            datasets.append(gd_ds)
 
     return GdDeclarativeModel(ldm=GdLdm(datasets=datasets, date_instances=date_instances))
 
@@ -90,7 +99,13 @@ def _build_target_info(sm: dict[str, Any]) -> dict[str, dict[str, Any]]:
         col_to_attr: dict[str, str] = {}
         if not is_date:
             for f in ds.get("fields", []):
+                if f.get("dimension") is None and _detect_type_from_maql(f) != "attribute":
+                    continue
                 src = _get_source_column(f)
+                if src in col_to_attr:
+                    raise ValueError(
+                        f"Dataset '{ds_name}': source column '{src}' maps to multiple attributes."
+                    )
                 col_to_attr[src] = f"attr.{ds_name}.{f['name']}"
         info[ds_name] = {"is_date": is_date, "col_to_attr": col_to_attr}
     return info
@@ -148,31 +163,28 @@ def _convert_ossie_dataset(
     # Regular dataset
     attributes: list[GdAttribute] = []
     facts: list[GdFact] = []
-    grain_ids: list[str] = []
-
-    pk_columns = set(ds.get("primary_key", []))
 
     for field_def in fields:
-        field_name = field_def["name"]
         is_dimension = field_def.get("dimension") is not None
 
         if is_dimension:
             attr = _convert_to_attribute(field_def, ds_name)
             attributes.append(attr)
-            if field_name in pk_columns:
-                grain_ids.append(attr.id)
         else:
             # Check MAQL expression to determine if fact or attribute
             maql_type = _detect_type_from_maql(field_def)
             if maql_type == "attribute":
                 attr = _convert_to_attribute(field_def, ds_name)
                 attributes.append(attr)
-                if field_name in pk_columns:
-                    grain_ids.append(attr.id)
             else:
                 facts.append(_convert_to_fact(field_def, ds_name))
 
-    grain = [GdGrain(id=gid, type="attribute") for gid in grain_ids]
+    attribute_ids_by_column = {attr.source_column: attr.id for attr in attributes}
+    grain = [
+        GdGrain(id=attribute_ids_by_column[column], type="attribute")
+        for column in dict.fromkeys(ds.get("primary_key", []))
+        if column in attribute_ids_by_column
+    ]
 
     # Convert relationships from this dataset to GoodData references
     references = []

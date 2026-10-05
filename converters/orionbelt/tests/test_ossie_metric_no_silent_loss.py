@@ -44,22 +44,18 @@ def _ossie_model(metrics: list[dict[str, Any]]) -> dict[str, Any]:
     """Minimal single-dataset Ossie v0.2 model carrying the given metrics."""
     return {
         "version": "0.2.0.dev0",
-        "semantic_model": [
+        "name": "sales",
+        "datasets": [
             {
-                "name": "sales",
-                "datasets": [
-                    {
-                        "name": "Orders",
-                        "source": "ANALYTICS.PUBLIC.ORDERS",
-                        "fields": [
-                            {"name": "amount", "data_type": "number"},
-                            {"name": "id", "data_type": "integer"},
-                        ],
-                    }
+                "name": "Orders",
+                "source": "ANALYTICS.PUBLIC.ORDERS",
+                "fields": [
+                    {"name": "amount", "data_type": "number"},
+                    {"name": "id", "data_type": "integer"},
                 ],
-                "metrics": metrics,
             }
         ],
+        "metrics": metrics,
     }
 
 
@@ -95,6 +91,18 @@ class TestDialectCatching:
         obml = converter.convert()
 
         assert "Net" in obml.get("measures", {})
+        assert not any(w.startswith("LOSSY:") for w in converter.warnings)
+
+    def test_ossie_sql_2026_only_agg_becomes_measure(self) -> None:
+        # OSSIE_SQL_2026 is the spec's portable ANSI-compatible language; a
+        # metric expressed only in it must convert, not be preserved as lossy.
+        ossie = _ossie_model([_metric("Total Amount", "OSSIE_SQL_2026", "SUM(Orders.amount)")])
+        converter = conv.OssietoOBML(ossie)
+        obml = converter.convert()
+
+        measure = obml["measures"]["Total Amount"]
+        assert measure["aggregation"] == "sum"
+        assert measure["columns"][0] == {"dataObject": "Orders", "column": "amount"}
         assert not any(w.startswith("LOSSY:") for w in converter.warnings)
 
     def test_snowflake_uppercased_identifiers_resolve_to_canonical(self) -> None:
@@ -177,6 +185,23 @@ class TestDialectCatching:
         # ANSI_SQL wins regardless of ordering -> column is `id`, not `amount`.
         assert obml["measures"]["Total Amount"]["columns"][0]["column"] == "id"
 
+    def test_ossie_sql_2026_preferred_over_vendor_dialects(self) -> None:
+        ossie = _ossie_model(
+            [
+                {
+                    "name": "Total Amount",
+                    "expression": {
+                        "dialects": [
+                            {"dialect": "SNOWFLAKE", "expression": "SUM(Orders.amount)"},
+                            {"dialect": "OSSIE_SQL_2026", "expression": "SUM(Orders.id)"},
+                        ]
+                    },
+                }
+            ]
+        )
+        obml = conv.OssietoOBML(ossie).convert()
+        assert obml["measures"]["Total Amount"]["columns"][0]["column"] == "id"
+
 
 class TestNoSilentLoss:
     """Non-convertible metrics are preserved + warned, never dropped."""
@@ -230,7 +255,7 @@ class TestNoSilentLoss:
         obml = conv.OssietoOBML(ossie).convert()
         ossie_again = conv.OBMLtoOssie(obml, "sales").convert()
 
-        metrics = ossie_again["semantic_model"][0].get("metrics", [])
+        metrics = ossie_again.get("metrics", [])
         restored = next((m for m in metrics if m["name"] == "Mdx Thing"), None)
         assert restored is not None
         # Verbatim: expression dialect + description survive the round trip.
@@ -269,7 +294,7 @@ class TestRestoredMetricMetadata:
         ossie_again = conv.OBMLtoOssie(obml, "sales").convert()
 
         restored = next(
-            m for m in ossie_again["semantic_model"][0]["metrics"] if m["name"] == "Cube Metric"
+            m for m in ossie_again["metrics"] if m["name"] == "Cube Metric"
         )
         assert [d["dialect"] for d in restored["expression"]["dialects"]] == ["MDX"]
         assert any(e["vendor_name"] == "GOODDATA" for e in restored["custom_extensions"])
@@ -310,7 +335,7 @@ class TestStaleStashNameCollision:
         converter = conv.OBMLtoOssie(obml, "sales")
         ossie_again = converter.convert()
 
-        metrics = ossie_again["semantic_model"][0].get("metrics", [])
+        metrics = ossie_again.get("metrics", [])
         revenue = [m for m in metrics if m["name"] == "Revenue"]
         # Exactly one "Revenue" — no duplicate that would fail validation.
         assert len(revenue) == 1
@@ -365,7 +390,7 @@ class TestIdempotency:
         warnings_after_first = list(converter.warnings)
         ossie_again = converter.convert()
 
-        metrics = ossie_again["semantic_model"][0].get("metrics", [])
+        metrics = ossie_again.get("metrics", [])
         assert [m["name"] for m in metrics].count("Mdx Thing") == 1
         assert converter.warnings == warnings_after_first
 
@@ -380,3 +405,15 @@ def _unconverted_stash(obml: dict[str, Any]) -> list[dict[str, Any]]:
             if "obml_unconverted_metrics" in data:
                 return data["obml_unconverted_metrics"]
     return []
+
+
+def test_explicit_datatype_roundtrips() -> None:
+    """A field's spec `datatype` survives both directions (apache/ossie#409)."""
+    _, col = conv.OssietoOBML(ossie={})._convert_field(
+        {"name": "total_amount", "datatype": "String"}
+    )
+    assert col["abstractType"] == "string"
+    field = conv.OBMLtoOssie(obml={})._convert_column(
+        "total_amount", {"code": "total_amount", "abstractType": "string"}, "Orders", {}
+    )
+    assert field.get("datatype") == "String"

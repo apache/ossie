@@ -34,8 +34,8 @@ public interface Converter {
     /**
      * Converts the input file and writes results to the specified output directory.
      *
-     * <p>Each semantic model is written to a separate file named after its apiName.
-     * Example: "Sales_Model.json", "Marketing_Model.json"
+     * <p>The semantic model is written to a file named after its apiName or name.
+     * Example: "Sales_Model.json" or "Sales_Model.yaml"
      *
      * @param inputPath the path to the input file
      * @param outputDir the directory where output files will be written
@@ -45,11 +45,11 @@ public interface Converter {
     /**
      * Converts string content from the source format to the target format.
      *
-     * <p>For Ossie to Salesforce: returns one Salesforce model per Ossie semantic_model entry.
-     * <p>For Salesforce to Ossie: returns one Ossie document with one semantic_model entry.
+     * <p>For Ossie to Salesforce: returns one Salesforce model for the Ossie document.
+     * <p>For Salesforce to Ossie: returns one Ossie document with model fields at the root.
      *
      * @param content the content to convert
-     * @return list of converted content strings (one per semantic model)
+     * @return a singleton list containing the converted document
      */
     List<String> convert(String content);
 }

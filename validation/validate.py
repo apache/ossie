@@ -29,11 +29,12 @@
 """
 Ossie Semantic Model Validator
 
-Validates Ossie YAML files against:
+Validates Ossie YAML or JSON documents containing one semantic model against:
 1. JSON Schema (structure, types, enums)
 2. Unique names (datasets, fields, metrics, relationships)
 3. Valid relationship references
-4. SQL syntax (using sqlglot)
+4. Relationship column arity (from_columns and to_columns lengths match)
+5. SQL syntax (using sqlglot)
 
 Usage:
     python validation/validate.py <yaml_file>
@@ -49,6 +50,9 @@ from pathlib import Path
 try:
     import yaml
     from jsonschema import Draft202012Validator
+    from referencing import Registry
+    from referencing.exceptions import NoSuchResource, Unresolvable
+    from referencing.retrieval import to_cached_resource
     from yaml.constructor import ConstructorError
 except ImportError:
     print("Missing dependencies. Install with:")
@@ -65,6 +69,7 @@ except ImportError:
 # Map Ossie dialects to sqlglot dialects
 DIALECT_MAP = {
     "ANSI_SQL": None,  # sqlglot default
+    "OSSIE_SQL_2026": None,  # ANSI-SQL-compatible; parse with the sqlglot default
     "SNOWFLAKE": "snowflake",
     "DATABRICKS": "databricks",
     "BIGQUERY": "bigquery",
@@ -73,10 +78,15 @@ DIALECT_MAP = {
     "MAQL": None,  # Not supported by sqlglot, skip validation
     "SIGMA": None,  # Sigma's spreadsheet-style formula language, not SQL; skip validation
     "THOUGHTSPOT": None,  # Not supported by sqlglot, skip validation
+    "DAX": None,  # Not supported by sqlglot, skip validation
 }
 
 # Dialects that sqlglot cannot parse
-SKIP_SQL_VALIDATION = {"MDX", "TABLEAU", "MAQL", "SIGMA", "THOUGHTSPOT"}
+SKIP_SQL_VALIDATION = {"MDX", "TABLEAU", "MAQL", "SIGMA", "THOUGHTSPOT", "DAX"}
+
+
+class ValidationWarning(str):
+    """An explicitly nonfatal diagnostic, compatible with existing string callers."""
 
 
 class UniqueKeyLoader(yaml.SafeLoader):
@@ -139,13 +149,41 @@ class UniqueKeyLoader(yaml.SafeLoader):
                 self._check_unique_keys(child, visited)
 
 
+# Ossie schemas reference one another by raw GitHub URL or canonical $id.
+# Resolve those URLs onto files in this checkout only when a reference needs
+# them. The decorator parses and caches each retrieved schema across calls.
+_REPO_ROOT = Path(__file__).parent.parent.resolve()
+_SCHEMA_BASES = (
+    "https://raw.githubusercontent.com/apache/ossie/main/",
+    "https://github.com/apache/ossie/",
+)
+
+
+@to_cached_resource()
+def _retrieve_local_schema(uri: str) -> str:
+    """Read a referenced Ossie schema from this checkout."""
+    for base in _SCHEMA_BASES:
+        if uri.startswith(base):
+            path = (_REPO_ROOT / uri[len(base):]).resolve()
+            if path.is_relative_to(_REPO_ROOT):
+                return path.read_text(encoding="utf-8")
+            break
+    raise NoSuchResource(ref=uri)
+
+
+_SCHEMA_REGISTRY = Registry(retrieve=_retrieve_local_schema)
+
+
 def validate_schema(data: dict, schema: dict) -> list[str]:
-    """Validate against JSON Schema."""
-    validator = Draft202012Validator(schema)
+    """Validate against JSON Schema, resolving Ossie schema references locally."""
+    validator = Draft202012Validator(schema, registry=_SCHEMA_REGISTRY)
     errors = []
-    for error in validator.iter_errors(data):
-        path = " -> ".join(str(p) for p in error.absolute_path) if error.absolute_path else "(root)"
-        errors.append(f"[Schema] {path}: {error.message}")
+    try:
+        for error in validator.iter_errors(data):
+            path = " -> ".join(str(p) for p in error.absolute_path) if error.absolute_path else "(root)"
+            errors.append(f"[Schema] {path}: {error.message}")
+    except Unresolvable as error:
+        errors.append(f"[Schema] Cannot resolve schema reference: {error.ref}")
     return errors
 
 
@@ -162,32 +200,35 @@ def find_duplicates(items: list[str]) -> list[str]:
 
 def validate_unique_names(data: dict) -> list[str]:
     """Validate unique names for datasets, fields, metrics, relationships."""
+    if not isinstance(data, dict) or "datasets" not in data:
+        return []
+
+    model = data
     errors = []
 
-    for model in data.get("semantic_model", []):
-        model_name = model.get("name", "<unnamed>")
+    model_name = model.get("name", "<unnamed>")
 
-        # Check unique dataset names
-        dataset_names = [d.get("name") for d in model.get("datasets", []) if d.get("name")]
-        for dup in find_duplicates(dataset_names):
-            errors.append(f"[Unique] Duplicate dataset name '{dup}' in model '{model_name}'")
+    # Check unique dataset names
+    dataset_names = [d.get("name") for d in model.get("datasets", []) if d.get("name")]
+    for dup in find_duplicates(dataset_names):
+        errors.append(f"[Unique] Duplicate dataset name '{dup}' in model '{model_name}'")
 
-        # Check unique field names within each dataset
-        for dataset in model.get("datasets", []):
-            dataset_name = dataset.get("name", "<unnamed>")
-            field_names = [f.get("name") for f in dataset.get("fields", []) if f.get("name")]
-            for dup in find_duplicates(field_names):
-                errors.append(f"[Unique] Duplicate field name '{dup}' in dataset '{dataset_name}'")
+    # Check unique field names within each dataset
+    for dataset in model.get("datasets", []):
+        dataset_name = dataset.get("name", "<unnamed>")
+        field_names = [f.get("name") for f in dataset.get("fields", []) if f.get("name")]
+        for dup in find_duplicates(field_names):
+            errors.append(f"[Unique] Duplicate field name '{dup}' in dataset '{dataset_name}'")
 
-        # Check unique metric names
-        metric_names = [m.get("name") for m in model.get("metrics", []) if m.get("name")]
-        for dup in find_duplicates(metric_names):
-            errors.append(f"[Unique] Duplicate metric name '{dup}' in model '{model_name}'")
+    # Check unique metric names
+    metric_names = [m.get("name") for m in model.get("metrics", []) if m.get("name")]
+    for dup in find_duplicates(metric_names):
+        errors.append(f"[Unique] Duplicate metric name '{dup}' in model '{model_name}'")
 
-        # Check unique relationship names
-        rel_names = [r.get("name") for r in model.get("relationships", []) if r.get("name")]
-        for dup in find_duplicates(rel_names):
-            errors.append(f"[Unique] Duplicate relationship name '{dup}' in model '{model_name}'")
+    # Check unique relationship names
+    rel_names = [r.get("name") for r in model.get("relationships", []) if r.get("name")]
+    for dup in find_duplicates(rel_names):
+        errors.append(f"[Unique] Duplicate relationship name '{dup}' in model '{model_name}'")
 
     return errors
 
@@ -195,38 +236,76 @@ def validate_unique_names(data: dict) -> list[str]:
 def validate_references(data: dict) -> list[str]:
     """Validate that relationships reference existing datasets and that
     to_columns covers a declared key of the 'to' dataset."""
+    if not isinstance(data, dict) or "datasets" not in data:
+        return []
+
+    model = data
     errors = []
 
-    for model in data.get("semantic_model", []):
-        model_name = model.get("name", "<unnamed>")
-        datasets = {d.get("name"): d for d in model.get("datasets", []) if d.get("name")}
+    model_name = model.get("name", "<unnamed>")
+    datasets = {d.get("name"): d for d in model.get("datasets", []) if d.get("name")}
 
-        for rel in model.get("relationships", []):
-            rel_name = rel.get("name", "<unnamed>")
-            from_ds = rel.get("from")
-            to_ds = rel.get("to")
+    for rel in model.get("relationships", []):
+        rel_name = rel.get("name", "<unnamed>")
+        from_ds = rel.get("from")
+        to_ds = rel.get("to")
 
-            if from_ds and from_ds not in datasets:
-                errors.append(f"[Reference] Relationship '{rel_name}' in model '{model_name}' references unknown dataset '{from_ds}'")
-            if to_ds and to_ds not in datasets:
-                errors.append(f"[Reference] Relationship '{rel_name}' in model '{model_name}' references unknown dataset '{to_ds}'")
+        if from_ds and from_ds not in datasets:
+            errors.append(f"[Reference] Relationship '{rel_name}' in model '{model_name}' references unknown dataset '{from_ds}'")
+        if to_ds and to_ds not in datasets:
+            errors.append(f"[Reference] Relationship '{rel_name}' in model '{model_name}' references unknown dataset '{to_ds}'")
 
-            # The spec defines to_columns as "Primary/unique key columns in the
-            # 'to' dataset". Coverage (superset of a key) still guarantees the
-            # many-to-one join, and declared keys may be incomplete since
-            # primary_key and unique_keys are optional — so accept any
-            # to_columns that covers a declared key, report a warning rather
-            # than an error, and skip datasets that declare no keys.
-            # Shape guards keep semantic checks from crashing on documents
-            # that already fail schema validation.
-            dataset = datasets.get(to_ds)
-            to_columns = rel.get("to_columns")
-            if dataset and isinstance(to_columns, list) and to_columns:
-                candidate_keys = [dataset.get("primary_key")] + list(dataset.get("unique_keys") or [])
-                declared_keys = [k for k in candidate_keys if isinstance(k, list) and k]
-                to_column_set = set(to_columns)
-                if declared_keys and not any(set(key) <= to_column_set for key in declared_keys):
-                    errors.append(f"[Reference] Warning: Relationship '{rel_name}' in model '{model_name}': to_columns {to_columns} does not cover the primary key or a unique key of dataset '{to_ds}'")
+        # The spec defines to_columns as "Primary/unique key columns in the
+        # 'to' dataset". Coverage (superset of a key) still guarantees the
+        # many-to-one join, and declared keys may be incomplete since
+        # primary_key and unique_keys are optional — so accept any
+        # to_columns that covers a declared key, report a warning rather
+        # than an error, and skip datasets that declare no keys.
+        # Shape guards keep semantic checks from crashing on documents
+        # that already fail schema validation.
+        dataset = datasets.get(to_ds)
+        to_columns = rel.get("to_columns")
+        if dataset and isinstance(to_columns, list) and to_columns:
+            candidate_keys = [dataset.get("primary_key")] + list(dataset.get("unique_keys") or [])
+            declared_keys = [k for k in candidate_keys if isinstance(k, list) and k]
+            to_column_set = set(to_columns)
+            if declared_keys and not any(set(key) <= to_column_set for key in declared_keys):
+                errors.append(ValidationWarning(
+                    f"[Reference] Warning: Relationship '{rel_name}' in model '{model_name}': to_columns {to_columns} does not cover the primary key or a unique key of dataset '{to_ds}'"
+                ))
+
+    return errors
+
+
+def validate_relationship_column_arity(data: dict) -> list[str]:
+    """Validate that from_columns and to_columns have the same length.
+
+    The spec requires the two arrays to correspond positionally, so their
+    lengths must match. JSON Schema cannot express this, so it is checked here.
+    """
+    if not isinstance(data, dict) or "datasets" not in data:
+        return []
+
+    model = data
+    errors = []
+
+    model_name = model.get("name", "<unnamed>")
+
+    for rel in model.get("relationships", []):
+        rel_name = rel.get("name", "<unnamed>")
+        from_columns = rel.get("from_columns")
+        to_columns = rel.get("to_columns")
+
+        # Skip anything that already failed schema validation.
+        if not isinstance(from_columns, list) or not isinstance(to_columns, list):
+            continue
+
+        if len(from_columns) != len(to_columns):
+            errors.append(
+                f"[Arity] Relationship '{rel_name}' in model '{model_name}': "
+                f"from_columns ({len(from_columns)}) and "
+                f"to_columns ({len(to_columns)}) must have the same number of columns"
+            )
 
     return errors
 
@@ -245,7 +324,11 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
         # Try parsing as expression first (for field expressions like "column_name")
         sqlglot.parse_one(expr, dialect=sqlglot_dialect)
         return None
-    except (ParseError, TokenError):
+    except (ParseError, TokenError, RecursionError):
+        # A bare column reference fails to parse alone; retry it wrapped in
+        # SELECT below. RecursionError (deeply nested input) is included so the
+        # retry reports it instead of crashing, while genuine errors such as a
+        # non-string expr raising TypeError still surface.
         pass
 
     try:
@@ -254,49 +337,55 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
         return None
     except (ParseError, TokenError) as e:
         return f"[SQL] {context}: {str(e).split(chr(10))[0]}"
+    except RecursionError:
+        # Deeply nested input exhausts the recursion limit rather than raising a
+        # parser error; report it instead of letting it abort validation.
+        return f"[SQL] {context}: expression is too deeply nested to parse"
 
 
 def validate_sql(data: dict) -> list[str]:
     """Validate SQL expressions in fields and metrics."""
-    # Only semantic model files contain SQL expressions to validate.
-    if not data.get("semantic_model"):
+    # Only core semantic model documents contain a root datasets property.
+    if not isinstance(data, dict) or "datasets" not in data:
         return []
 
     if not SQLGLOT_AVAILABLE:
-        return ["[SQL] Warning: sqlglot not installed, skipping SQL validation. Install with: pip install sqlglot"]
+        return [ValidationWarning(
+            "[SQL] Warning: sqlglot not installed, skipping SQL validation. Install with: pip install sqlglot"
+        )]
 
+    model = data
     errors = []
 
-    for model in data.get("semantic_model", []):
-        model_name = model.get("name", "<unnamed>")
+    model_name = model.get("name", "<unnamed>")
 
-        # Validate field expressions
-        for dataset in model.get("datasets", []):
-            dataset_name = dataset.get("name", "<unnamed>")
-            for field in dataset.get("fields", []):
-                field_name = field.get("name", "<unnamed>")
-                expression = field.get("expression", {})
-                for dialect_expr in expression.get("dialects", []):
-                    dialect = dialect_expr.get("dialect", "ANSI_SQL")
-                    expr = dialect_expr.get("expression", "")
-                    if expr:
-                        context = f"Field '{dataset_name}.{field_name}' in model '{model_name}' ({dialect})"
-                        error = validate_sql_expression(expr, dialect, context)
-                        if error:
-                            errors.append(error)
-
-        # Validate metric expressions
-        for metric in model.get("metrics", []):
-            metric_name = metric.get("name", "<unnamed>")
-            expression = metric.get("expression", {})
+    # Validate field expressions
+    for dataset in model.get("datasets", []):
+        dataset_name = dataset.get("name", "<unnamed>")
+        for field in dataset.get("fields", []):
+            field_name = field.get("name", "<unnamed>")
+            expression = field.get("expression", {})
             for dialect_expr in expression.get("dialects", []):
                 dialect = dialect_expr.get("dialect", "ANSI_SQL")
                 expr = dialect_expr.get("expression", "")
                 if expr:
-                    context = f"Metric '{metric_name}' in model '{model_name}' ({dialect})"
+                    context = f"Field '{dataset_name}.{field_name}' in model '{model_name}' ({dialect})"
                     error = validate_sql_expression(expr, dialect, context)
                     if error:
                         errors.append(error)
+
+    # Validate metric expressions
+    for metric in model.get("metrics", []):
+        metric_name = metric.get("name", "<unnamed>")
+        expression = metric.get("expression", {})
+        for dialect_expr in expression.get("dialects", []):
+            dialect = dialect_expr.get("dialect", "ANSI_SQL")
+            expr = dialect_expr.get("expression", "")
+            if expr:
+                context = f"Metric '{metric_name}' in model '{model_name}' ({dialect})"
+                error = validate_sql_expression(expr, dialect, context)
+                if error:
+                    errors.append(error)
 
     return errors
 
@@ -335,22 +424,28 @@ def main():
         except yaml.YAMLError as e:
             print(f"Error: Invalid YAML: {e}")
             sys.exit(1)
+        except RecursionError:
+            # Deeply nested input surfaces as RecursionError, not YAMLError.
+            print("Error: Invalid YAML: input is too deeply nested to parse")
+            sys.exit(1)
 
     # Run validations
     errors = []
     errors.extend(validate_schema(data, schema))
 
-    # Run semantic-model-specific checks only for semantic model payloads.
-    if data.get("semantic_model"):
+    # Semantic checks rely on valid structure; let schema validation report
+    # malformed inputs (including legacy arrays) without traversing them.
+    if not errors and isinstance(data, dict) and "datasets" in data:
         errors.extend(validate_unique_names(data))
         errors.extend(validate_references(data))
+        errors.extend(validate_relationship_column_arity(data))
         errors.extend(validate_sql(data))
 
     # Report results
     if errors:
-        # Separate warnings from errors
-        warnings = [e for e in errors if "Warning:" in e]
-        actual_errors = [e for e in errors if "Warning:" not in e]
+        # Severity must not depend on user-controlled text in a diagnostic.
+        warnings = [e for e in errors if isinstance(e, ValidationWarning)]
+        actual_errors = [e for e in errors if not isinstance(e, ValidationWarning)]
 
         for warning in warnings:
             print(f"  {warning}")

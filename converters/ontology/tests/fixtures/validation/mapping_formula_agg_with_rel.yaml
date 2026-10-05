@@ -49,6 +49,7 @@ ontology:
 ontology_mappings:
   - name: mapping
     semantic_model:
+      version: 0.2.0.dev0
       name: sales_model
       datasets:
         - name: SALES

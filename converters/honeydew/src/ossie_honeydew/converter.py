@@ -43,9 +43,28 @@ HONEYDEW_VENDOR = "HONEYDEW"
 _OSSIE_METADATA_SECTION = "ossie"
 # Workspaces written before the Ossie rebrand named the section "osi". Still
 # read it, so exporting such a workspace does not silently drop the fields it
-# preserves (ai_context, label, unique_keys, custom_extensions, vendors).
+# preserves (ai_context, label, unique_keys, custom_extensions).
 _LEGACY_OSSIE_METADATA_SECTION = "osi"
 _HD_ATTR_KEYS = ("display_name", "hidden", "folder", "format_string", "timegrain")
+
+# Ossie's portable datatype vocabulary (core-spec 'datatypes' enum) mapped onto
+# Honeydew's (bool, date, float, number, string, time, timestamp). Honeydew's
+# "number" is integral and "float" is approximate, so Decimal — exact base-10,
+# but not integral — maps to "float" as the closest available type. Honeydew has
+# no timezone-aware type, so DateTimeTz also lands on "timestamp". "Opaque" is
+# left out on purpose: it carries no portable meaning, so those fields keep
+# falling back to the dimension-shape heuristic.
+_OSSIE_TO_HONEYDEW_DATATYPE = {
+    "String": "string",
+    "Integer": "number",
+    "Decimal": "float",
+    "Float": "float",
+    "Boolean": "bool",
+    "Date": "date",
+    "Time": "time",
+    "DateTime": "timestamp",
+    "DateTimeTz": "timestamp",
+}
 
 
 class HoneydewConversionError(Exception):
@@ -98,24 +117,21 @@ def convert_ossie_to_honeydew(ossie_yaml_str: str) -> dict[str, str]:
             f"Unsupported Ossie version '{version_str}'. Supported: {SUPPORTED_OSSIE_VERSION}"
         )
 
-    semantic_models = root.get("semantic_model")
-    if not isinstance(semantic_models, list) or not semantic_models:
-        raise HoneydewConversionError("'semantic_model' must be a non-empty list")
-
-    if len(semantic_models) > 1:
-        warnings.warn(
-            f"Ossie YAML contains {len(semantic_models)} semantic models; "
-            "only the first will be converted"
+    if "semantic_model" in root:
+        raise HoneydewConversionError(
+            "Legacy 'semantic_model' wrappers are not supported; "
+            "place the model properties directly at the document root"
         )
 
-    vendors = [v for v in (root.get("vendors") or []) if v != HONEYDEW_VENDOR]
-    return _model_to_files(semantic_models[0], extra_vendors=vendors)
+    if "dialects" in root or "vendors" in root:
+        raise HoneydewConversionError("Root dialects and vendors are not supported by the Ossie spec")
+    return _model_to_files(root)
 
 
-def _model_to_files(sm: dict[str, Any], *, extra_vendors: list[str] | None = None) -> dict[str, str]:
+def _model_to_files(sm: dict[str, Any]) -> dict[str, str]:
     name = sm.get("name")
     if not name:
-        raise HoneydewConversionError("Missing 'name' in semantic model")
+        raise HoneydewConversionError("Missing 'name' in Ossie document")
 
     files: dict[str, str] = {}
 
@@ -123,13 +139,12 @@ def _model_to_files(sm: dict[str, Any], *, extra_vendors: list[str] | None = Non
     if sm.get("description"):
         workspace["description"] = sm["description"]
 
-    # Preserve model-level ai_context, non-HONEYDEW custom_extensions, and extra vendors
+    # Preserve model-level ai_context and non-HONEYDEW custom_extensions.
     model_ai_ctx = sm.get("ai_context")
     model_ext = [e for e in (sm.get("custom_extensions") or []) if e.get("vendor_name") != HONEYDEW_VENDOR]
     ws_meta = _build_ossie_metadata(
         ai_context=model_ai_ctx,
         custom_extensions=model_ext or None,
-        extra_vendors=extra_vendors or None,
     )
     if ws_meta:
         workspace["metadata"] = [ws_meta]
@@ -442,9 +457,19 @@ def _pick_ansi_expression(expression: Any, field_name: str) -> str | None:
 
 
 def _ossie_field_to_honeydew_datatype(field: dict[str, Any]) -> str:
+    """Pick the Honeydew datatype for an Ossie field.
+
+    A Honeydew datatype round-tripped through a ``HONEYDEW`` custom extension
+    wins, then the field's declared ``datatype``. Fields that declare none (or
+    declare ``Opaque``) fall back to inferring the type from the shape of
+    ``dimension``.
+    """
     hd_ext = _get_honeydew_extension(field)
     if hd_ext.get("datatype"):
         return hd_ext["datatype"]
+    declared = field.get("datatype")
+    if isinstance(declared, str) and declared in _OSSIE_TO_HONEYDEW_DATATYPE:
+        return _OSSIE_TO_HONEYDEW_DATATYPE[declared]
     dimension = field.get("dimension")
     if isinstance(dimension, dict) and dimension.get("is_time"):
         return "timestamp"
@@ -606,12 +631,9 @@ def convert_honeydew_to_ossie(workspace_dir: str) -> str:
     if ossie_metrics:
         sm["metrics"] = ossie_metrics
 
-    extra_vendors = ws_ossie_meta.get("vendors") or []
-    vendors = [HONEYDEW_VENDOR] + [v for v in extra_vendors if v != HONEYDEW_VENDOR]
     root: dict[str, Any] = {
         "version": SUPPORTED_OSSIE_VERSION,
-        "vendors": vendors,
-        "semantic_model": [sm],
+        **sm,
     }
     return _dump(root)
 
@@ -934,7 +956,6 @@ def _build_ossie_metadata(
     label: str | None = None,
     unique_keys: Any = None,
     custom_extensions: list | None = None,
-    extra_vendors: list[str] | None = None,
 ) -> dict[str, Any] | None:
     """Build a Honeydew metadata entry that stores Ossie-only fields for round-tripping."""
     items: list[dict[str, Any]] = []
@@ -948,8 +969,6 @@ def _build_ossie_metadata(
         items.append({"name": "unique_keys", "value": json.dumps(unique_keys)})
     if custom_extensions:
         items.append({"name": "custom_extensions", "value": json.dumps(custom_extensions)})
-    if extra_vendors:
-        items.append({"name": "vendors", "value": json.dumps(extra_vendors)})
 
     if not items:
         return None
@@ -975,7 +994,7 @@ def _read_ossie_metadata(obj: dict[str, Any]) -> dict[str, Any]:
                     result[key] = raw
             elif key == "label":
                 result[key] = raw
-            elif key in ("unique_keys", "custom_extensions", "vendors"):
+            elif key in ("unique_keys", "custom_extensions"):
                 try:
                     result[key] = json.loads(raw)
                 except (json.JSONDecodeError, TypeError):

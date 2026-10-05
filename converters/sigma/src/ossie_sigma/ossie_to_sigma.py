@@ -1,3 +1,20 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 """Apache Ossie (OssieDocument) -> Sigma data model spec (JSON)."""
 
 from __future__ import annotations
@@ -13,17 +30,16 @@ from ossie import (
     OssieField,
     OssieMetric,
     OssieRelationship,
-    OssieSemanticModel,
     OssieVendor,
 )
 
-from ossie_sigma.converter_issues import ConverterError, ConverterIssue, ConverterIssueType, ConverterResult
+from ossie_sigma.converter_issues import ConverterIssue, ConverterIssueType, ConverterResult
 from ossie_sigma.expression_utils import ansi_sql_text, infer_single_dataset_qualifier, sigma_dialect_text
 from ossie_sigma.sigma_formula import sql_to_sigma_formula
 from ossie_sigma.spec_keys import MODEL_LEVEL_SPEC_KEYS
 
 # Objects a `SIGMA` custom_extensions vendor entry can be attached to.
-_SigmaExtensionHost = Union[OssieDataset, OssieField, OssieMetric, OssieRelationship, OssieSemanticModel]
+_SigmaExtensionHost = Union[OssieDataset, OssieField, OssieMetric, OssieRelationship, OssieDocument]
 
 _ID_NAMESPACE = uuid5(NAMESPACE_URL, "ossie.apache.org/converters/sigma")
 
@@ -126,22 +142,7 @@ class OssieToSigmaConverter:
     def convert(self, document: OssieDocument) -> ConverterResult[dict[str, Any]]:
         issues: list[ConverterIssue] = []
 
-        if not document.semantic_model:
-            raise ConverterError(
-                "OssieDocument.semantic_model is empty; there is no semantic model to convert "
-                "into a Sigma data model spec."
-            )
-
-        if len(document.semantic_model) > 1:
-            issues.append(
-                ConverterIssue(
-                    ConverterIssueType.EXTRA_MODEL_DROPPED,
-                    "document",
-                    "Sigma data models are single semantic models; only semantic_model[0] "
-                    f"was converted, {len(document.semantic_model) - 1} additional model(s) were dropped.",
-                )
-            )
-        model = document.semantic_model[0]
+        model = document
         model_ext = _sigma_ext(model) or {}
 
         spec: dict[str, Any] = {"kind": "data-model", "name": model.name}
@@ -279,7 +280,7 @@ class OssieToSigmaConverter:
         relationships = relationships_by_element.get(element_id, [])
         if relationships:
             element["relationships"] = [
-                self._build_relationship(r, dataset.name, dataset_element_id, field_ids) for r in relationships
+                self._build_relationship(r, dataset.name, dataset_element_id, field_ids, issues) for r in relationships
             ]
 
         return element
@@ -346,6 +347,7 @@ class OssieToSigmaConverter:
         dataset_name: str,
         dataset_element_id: dict[str, str],
         field_ids: dict[str, str],
+        issues: list[ConverterIssue],
     ) -> dict[str, Any]:
         ext = _sigma_ext(rel) or {}
         target_element_id = dataset_element_id.get(rel.to, rel.to)
@@ -365,6 +367,18 @@ class OssieToSigmaConverter:
         if raw_keys is not None:
             result["keys"] = raw_keys
         else:
+            if len(rel.from_columns) != len(rel.to_columns):
+                # zip() below stops at the shorter array; record what it drops.
+                issues.append(
+                    ConverterIssue(
+                        ConverterIssueType.RELATIONSHIP_COLUMN_ARITY_MISMATCH,
+                        f"{dataset_name}.{rel.name}",
+                        f"from_columns ({len(rel.from_columns)}) and to_columns "
+                        f"({len(rel.to_columns)}) have different lengths; the "
+                        f"{abs(len(rel.from_columns) - len(rel.to_columns))} extra "
+                        "key column(s) were dropped from the Sigma relationship.",
+                    )
+                )
             result["keys"] = [
                 {
                     "sourceColumnId": field_ids.get(from_col, from_col),

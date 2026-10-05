@@ -35,8 +35,7 @@ def result():
 
 @pytest.fixture(scope="module")
 def model(result):
-    assert len(result.output.semantic_model) == 1
-    return result.output.semantic_model[0]
+    return result.output
 
 
 def _issues_of(result, issue_type):
@@ -119,6 +118,16 @@ def test_relationship_directions(model):
     assert (flipped.from_dataset, flipped.to) == ("orders", "customers")
 
 
+def test_non_string_relationship_type_is_kept_as_many_to_one():
+    export = json.loads(FIXTURE.read_text())
+    edge = export["domain"]["zsheet_json"]["relationshipGraph"]["relationships"][0]
+    edge["properties"]["relationshipType"] = {"unexpected": "shape"}
+    model = WisdomToOssieConverter().convert(export).output
+    relationship = model.relationships[0]
+    assert (relationship.from_dataset, relationship.to) == ("orders", "customers")
+    assert relationship.ai_context is None
+
+
 def test_many_to_many_is_kept_with_cardinality_loss(result, model):
     relationships = {relationship.name: relationship for relationship in model.relationships}
     many_to_many = relationships["orders_to_tags"]
@@ -158,7 +167,11 @@ def test_stale_measure_is_kept_with_warning(result, model):
 
 
 def test_output_round_trips_through_ossie_yaml(result):
-    document = OssieDocument.model_validate(yaml.safe_load(result.output.to_ossie_yaml()))
+    serialized = yaml.safe_load(result.output.to_ossie_yaml())
+    assert next(iter(serialized)) == "version"
+    assert serialized["name"] == "Sample Sales"
+    assert "semantic_model" not in serialized
+    document = OssieDocument.model_validate(serialized)
     assert document == result.output
 
 

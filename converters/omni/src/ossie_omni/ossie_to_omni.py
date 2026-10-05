@@ -103,13 +103,18 @@ def convert_ossie_to_omni(ossie_yaml_str, base_view=None, dialect=None):
             f"Unsupported Ossie version '{version}'. Supported: {OSSIE_VERSION}"
         )
 
-    models = root.get("semantic_model")
-    if not isinstance(models, list) or not models:
-        raise ConversionError("'semantic_model' must be a non-empty list")
-    if len(models) > 1:
-        _warn("model", "multiple semantic models found; converting only the first")
+    if "semantic_model" in root:
+        raise ConversionError(
+            "Legacy 'semantic_model' wrappers are not supported; "
+            "place the model properties directly at the document root"
+        )
 
-    return _convert_model(models[0], base_view, dialect)
+    if "dialects" in root or "vendors" in root:
+        raise ConversionError("Root dialects and vendors are not supported by the Ossie spec")
+    if not isinstance(root.get("name"), str):
+        raise ConversionError("Ossie model requires a string 'name' at the document root")
+
+    return _convert_model(root, base_view, dialect)
 
 
 def _convert_model(model, explicit_base_view, dialect):
@@ -380,7 +385,7 @@ def _convert_field(field, dname, expr, fscope):
         if is_time_explicit is not None:
             is_time = bool(is_time_explicit)
         else:
-            is_time = field.get("datatype") in ("Date", "Time", "DateTime", "DateTimez")
+            is_time = field.get("datatype") in ("Date", "Time", "DateTime", "DateTimeTz")
     if is_time:
         # The stashed list wins even when empty (`timeframes: []` is a real
         # Omni value); the default list is only for hand-authored Ossie.

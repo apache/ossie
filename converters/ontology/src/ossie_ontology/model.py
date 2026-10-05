@@ -98,6 +98,7 @@ class Concept:
     _derived_by: list[Formula]
     _requires: list[Formula]
     _is_component: bool
+    _iri: str | None
 
     def __init__(
         self,
@@ -109,7 +110,8 @@ class Concept:
         identify_by: dict[str, Relationship] | None = None,
         derived_by: list[Formula] | None = None,
         requires: list[Formula] | None = None,
-        is_component: bool = True
+        is_component: bool = True,
+        iri: str | None = None,
     ):
         self._name = name
         self._type = type
@@ -120,6 +122,7 @@ class Concept:
         self._derived_by = derived_by if derived_by else []
         self._requires = requires if requires else []
         self._is_component = is_component
+        self._iri = iri
 
     def add_require(self, require: Formula) -> None:
         self._requires.append(require)
@@ -144,6 +147,10 @@ class Concept:
     @property
     def description(self) -> str | None:
         return self._description
+
+    @property
+    def iri(self) -> str | None:
+        return self._iri
 
     @property
     def is_builtin(self) -> bool:
@@ -211,6 +218,7 @@ class Relationship:
     _multiplicity: RelationshipMultiplicity | None
     _derived_by: list[Formula]
     _requires: list[Formula]
+    _iri: str | None
 
     def __init__(
         self,
@@ -220,6 +228,7 @@ class Relationship:
         description: str | None = None,
         verbalizes: list[str] | None = None,
         multiplicity: RelationshipMultiplicity | None = None,
+        iri: str | None = None,
     ):
         self._name = name
         self._container = container
@@ -232,6 +241,7 @@ class Relationship:
         self._verbalizations = parse_verbalizations(self, verbalizes)
         self._derived_by = []
         self._requires = []
+        self._iri = iri
 
     @property
     def name(self) -> str:
@@ -248,6 +258,10 @@ class Relationship:
     @property
     def description(self) -> str | None:
         return self._description
+
+    @property
+    def iri(self) -> str | None:
+        return self._iri
 
     @property
     def signature(self) -> list[Concept]:
@@ -689,8 +703,8 @@ class Metric:
 
 
 class SemanticModel:
-    """Bundle of datasets, join paths and metrics. One or more SemanticModels
-    can feed a single OntologyMapping (see spec)."""
+    """Versioned core semantic model embedded in a single OntologyMapping."""
+    _version: str
     _name: str
     _description: str | None
     _ai_context: AiContext | None
@@ -708,7 +722,13 @@ class SemanticModel:
         description: str | None = None,
         ai_context: AiContext | None = None,
         custom_extensions: list[CustomExtension] | None = None,
+        version: str = "0.2.0.dev0",
     ):
+        if version != "0.2.0.dev0":
+            raise ValueError(
+                f"Unsupported semantic model version {version!r}; expected '0.2.0.dev0'"
+            )
+        self._version = version
         self._name = name
         self._description = description
         self._ai_context = ai_context
@@ -719,6 +739,10 @@ class SemanticModel:
         self._dataset_name_map = {}
         self._join_path_name_map = {}
         self._metric_name_map = {}
+
+    @property
+    def version(self) -> str:
+        return self._version
 
     @property
     def name(self) -> str:
@@ -1010,6 +1034,7 @@ class OssieOntology:
     _ontology: OntologyComponent
     _ontology_mappings: list[OntologyMapping]
     _ontology_mapping_index: dict[str, OntologyMapping]
+    _prefixes: dict[str, str]
 
     def __init__(
         self,
@@ -1018,6 +1043,7 @@ class OssieOntology:
         description: str | None = None,
         ai_context: AiContext | None = None,
         version: str | None = None,
+        prefixes: dict[str, str] | None = None,
     ):
         self._name = name
         self._description = description
@@ -1026,6 +1052,7 @@ class OssieOntology:
         self._ontology = ontology
         self._ontology_mappings = []
         self._ontology_mapping_index = {}
+        self._prefixes = dict(prefixes) if prefixes else {}
 
     @property
     def name(self) -> str:
@@ -1056,6 +1083,11 @@ class OssieOntology:
     @property
     def ontology_mappings(self) -> list[OntologyMapping]:
         return list(self._ontology_mappings)
+
+    @property
+    def prefixes(self) -> dict[str, str]:
+        """Namespace prefixes the document's QName `iri` values resolve against."""
+        return dict(self._prefixes)
 
 
 # ---------------------------------------------------------------------------
@@ -1112,6 +1144,11 @@ def _parse_verbalization(relationship: Relationship, verbalization: str) -> Rela
     """
         Parse a verbalization string into an ordered list of :class:`VerbalizationRole` objects.
 
+        Tokens are matched to the relationship's roles by concept name (and role name
+        when given), so a reading may list the roles in any order; the returned roles
+        follow the reading order. Each role must appear exactly once. When a concept
+        plays several unnamed roles, its tokens take those roles in declared order.
+
         Format example:
 
             'every chain- super {Store} reports returns of {Item} big -box for average- {Amount:amt}'
@@ -1138,18 +1175,43 @@ def _parse_verbalization(relationship: Relationship, verbalization: str) -> Rela
         )
     segments: list[str] = []
     roles: list[VerbalizationRole] = []
+    used: set[int] = set()
     prev_end = 0
-    for idx, m in enumerate(tokens):
-        role = relationship.role(idx)
+    for m in tokens:
         segments.append(verbalization[prev_end:m.start()].strip())
         verb_concept_name = m.group(1).strip()
-        rel_role_name = role.explicit_name
         verb_role_name = m.group(2).strip() if m.group(2) else None
-        if rel_role_name != verb_role_name or role.player.name != verb_concept_name:
-            raise ValueError(
-                f"Role {idx}: '{role.player.name}:{role.name}' "
-                f"does not match verbalization role '{verb_concept_name}:{verb_role_name}'"
+        matches = [
+            role for role in relationship.roles
+            if role.player.name == verb_concept_name and role.explicit_name == verb_role_name
+        ]
+        if not matches:
+            declared = ", ".join(
+                VerbalizationRole(concept=r.player, name=r.explicit_name).verbalization_name()
+                for r in relationship.roles
             )
+            raise ValueError(
+                f"No role of relationship {relationship.full_name} ({declared}) "
+                f"matches verbalization role '{m.group(0)}' in '{verbalization}'"
+            )
+        # Match by concept (and role name) so readings may list roles in any order.
+        # When several roles still match (e.g. a ring without role names), take the
+        # first unused one, which keeps them in declared order.
+        role = next((r for r in matches if r.idx not in used), None)
+        if role is None:
+            # If the same concept still has an unused role under another name, the
+            # token most likely just lacks that role name, so point the author to it.
+            unused = [
+                VerbalizationRole(concept=r.player, name=r.explicit_name).verbalization_name()
+                for r in relationship.roles
+                if r.player.name == verb_concept_name and r.idx not in used
+            ]
+            hint = f"; did you mean {' or '.join(repr(u) for u in unused)}?" if unused else ""
+            raise ValueError(
+                f"Verbalization '{verbalization}' uses role '{m.group(0)}' more than once "
+                f"for relationship {relationship.full_name}{hint}"
+            )
+        used.add(role.idx)
         roles.append(VerbalizationRole(concept=role.player, name=verb_role_name))
         prev_end = m.end()
     segments.append(verbalization[prev_end:].strip())

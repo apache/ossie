@@ -25,10 +25,14 @@ Usage:
 """
 
 import argparse
+import re
 import sys
 import warnings
 
 import yaml
+from sqlglot import tokenize
+from sqlglot.errors import TokenError
+from sqlglot.tokens import TokenType
 
 
 SUPPORTED_VERSION = "0.2.0.dev0"
@@ -81,11 +85,11 @@ def convert_ossie_to_snowflake(ossie_yaml_str):
     """Top-level entry point. Parses Ossie YAML, validates, converts, returns
     Snowflake YAML string.
 
-    Expects the standard Ossie wrapped format::
+    Expects the standard Ossie document format::
 
         version: "0.2.0.dev0"
-        semantic_model:
-          - name: ...
+        name: ...
+        datasets: [...]
 
     Args:
         ossie_yaml_str: Ossie YAML as a string.
@@ -107,25 +111,21 @@ def convert_ossie_to_snowflake(ossie_yaml_str):
             f"Supported: {SUPPORTED_VERSION}"
         )
 
-    semantic_model = root.get("semantic_model")
-    if not isinstance(semantic_model, list) or len(semantic_model) == 0:
+    if "semantic_model" in root:
         raise OssieConversionError(
-            "Invalid Ossie YAML: 'semantic_model' must be a non-empty list"
+            "Legacy 'semantic_model' wrappers are not supported; "
+            "place the model properties directly at the document root"
         )
 
-    if len(semantic_model) > 1:
-        warnings.warn(
-            f"Ossie YAML contains {len(semantic_model)} semantic models; "
-            f"only the first will be converted"
-        )
+    if "dialects" in root or "vendors" in root:
+        raise OssieConversionError("Root dialects and vendors are not supported by the Ossie spec")
 
-    ossie = semantic_model[0]
-    if not isinstance(ossie, dict):
-        raise OssieConversionError(
-            "Invalid Ossie YAML: 'semantic_model' entries must be mappings"
-        )
-
-    snowflake_model = _convert_model(ossie)
+    # Document metadata is consumed here; it is not a dropped model property.
+    model = {
+        key: value for key, value in root.items()
+        if key != "version"
+    }
+    snowflake_model = _convert_model(model)
 
     return yaml.dump(
         snowflake_model,
@@ -376,9 +376,10 @@ def _convert_relationship(rel):
 def _extract_expression(expression, field_name):
     """Selects the best dialect expression for Snowflake.
 
-    Returns the expression string, or None if only unsupported dialects are
-    present (the field should be skipped). Raises OssieConversionError if the
-    expression or dialects list is missing entirely.
+    Preference order: SNOWFLAKE, then ANSI_SQL, then OSSIE_SQL_2026 (the last two
+    are ANSI-SQL-compatible fallbacks). Returns the expression string, or None if
+    only unsupported dialects are present (the field should be skipped). Raises
+    OssieConversionError if the expression or dialects list is missing entirely.
     """
     if expression is None or not isinstance(expression, dict):
         raise OssieConversionError(
@@ -393,6 +394,8 @@ def _extract_expression(expression, field_name):
 
     snowflake_expr = None
     ansi_expr = None
+    # OSSIE_SQL_2026 is ANSI-SQL-compatible; treated as an ANSI_SQL-equivalent fallback.
+    ossie_sql_expr = None
 
     for d in dialects:
         dialect_name = (d.get("dialect") or "").upper()
@@ -400,16 +403,21 @@ def _extract_expression(expression, field_name):
             snowflake_expr = d.get("expression")
         elif dialect_name == "ANSI_SQL":
             ansi_expr = d.get("expression")
+        elif dialect_name == "OSSIE_SQL_2026":
+            ossie_sql_expr = d.get("expression")
 
     if snowflake_expr is not None:
         return snowflake_expr
     if ansi_expr is not None:
         return ansi_expr
+    if ossie_sql_expr is not None:
+        return ossie_sql_expr
 
     dialect_names = [d.get("dialect", "") for d in dialects]
     warnings.warn(
         f"Skipping field/metric '{field_name}': no Snowflake-compatible expression "
-        f"(has dialects: {', '.join(dialect_names)}; requires SNOWFLAKE or ANSI_SQL)"
+        f"(has dialects: {', '.join(dialect_names)}; requires SNOWFLAKE, ANSI_SQL, "
+        f"or OSSIE_SQL_2026)"
     )
     return None
 
@@ -420,6 +428,30 @@ def _normalize_identifier(identifier):
     if stripped.startswith('"') and stripped.endswith('"'):
         return stripped
     return stripped.upper()
+
+_UNQUOTED_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
+_QUOTED_IDENTIFIER = re.compile(r'^"(?:[^"]|"")+"$')
+
+
+def _is_query_source(source_stripped):
+    """Recognize SELECT/WITH sources without requiring a full SQL parse."""
+    # Use Snowflake's comment and identifier rules, including `$` in names.
+    # Full parsing could reject newer Snowflake syntax that should pass through.
+    try:
+        tokens = tokenize(source_stripped, read="snowflake")
+    except TokenError:
+        return False
+
+    for token in tokens:
+        if token.token_type != TokenType.L_PAREN:
+            return token.token_type in (TokenType.SELECT, TokenType.WITH)
+    return False
+
+
+def _is_identifier(part):
+    """True if `part` is a valid quoted or unquoted Snowflake identifier."""
+    return bool(_UNQUOTED_IDENTIFIER.match(part) or _QUOTED_IDENTIFIER.match(part))
+
 
 def _split_identifiers(source_str):
     """Split a dot-separated identifier string while respecting double quotes."""
@@ -438,6 +470,20 @@ def _split_identifiers(source_str):
     parts.append("".join(current).strip())
     return parts
 
+
+def _try_parse_source_relation(source_stripped):
+    """Return a three-part relation, or None if its identifiers are invalid."""
+    parts = _split_identifiers(source_stripped)
+    if len(parts) == 3 and all(_is_identifier(part) for part in parts):
+        # Only uppercase unquoted identifiers; preserve quoted ones as-is.
+        return {
+            "database": _normalize_identifier(parts[0]),
+            "schema": _normalize_identifier(parts[1]),
+            "table": _normalize_identifier(parts[2]),
+        }
+    return None
+
+
 def _parse_source(source):
     """Parses an Ossie dataset source string into a Snowflake base_table dict.
 
@@ -451,24 +497,17 @@ def _parse_source(source):
     if not source_stripped:
         return None
 
-    # Detect subqueries — require whitespace after the keyword to avoid false
-    # positives on table names like WITH_TABLE or SELECT_RESULTS.
-    upper = source_stripped.upper()
-    if upper.startswith(("SELECT ", "SELECT\n", "SELECT\t",
-                          "WITH ", "WITH\n", "WITH\t")):
+    # Preserve query text, including comments, after trimming outer whitespace.
+    if _is_query_source(source_stripped):
         return {"definition": source_stripped}
 
-    parts = _split_identifiers(source_stripped)
-    if len(parts) == 3:
-        # Only uppercase unquoted identifiers; preserve quoted ones as-is.
-        return {
-            "database": _normalize_identifier(parts[0]),
-            "schema": _normalize_identifier(parts[1]),
-            "table": _normalize_identifier(parts[2]),
-        }
+    relation = _try_parse_source_relation(source_stripped)
+    if relation is not None:
+        return relation
 
     raise OssieConversionError(
-        f"Source '{source}' must be a fully qualified db.schema.table or a subquery"
+        f"Source '{source}' must be a fully qualified db.schema.table "
+        "(quoted or unquoted identifiers) or a SELECT/WITH query"
     )
 
 

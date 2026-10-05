@@ -1,0 +1,108 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "jsonschema>=4.0",
+    "ruff>=0.11.5",
+    # Used by tests/test_packaging.py to inspect the built wheel.
+    "build>=1.2",
+    "hatchling",
+    "tomli>=2.0; python_version < '3.11'",
+]
+
+[project]
+name = "apache-ossie-microsoft"
+version = "0.2.0.dev0"
+description = "Converter between Microsoft Power BI / Fabric semantic models (TMSL) and Apache Ossie semantic models"
+authors = [{ name = "Apache Software Foundation", email = "dev@ossie.apache.org" }]
+maintainers = [
+    { name = "Michael Kovalsky", email = "mikova@microsoft.com" },
+    { name = "Markus Cozowicz", email = "marcozo@microsoft.com" },
+]
+requires-python = ">=3.10"
+readme = "README.md"
+license = "Apache-2.0"
+keywords = [
+    "Apache Ossie",
+    "Ossie",
+    "Power BI",
+    "Fabric",
+    "TMSL",
+]
+dependencies = [
+    "PyYAML>=6.0",
+    "sqlglot>=30.12.0",
+]
+
+[project.optional-dependencies]
+tom = [
+    "clr-loader==0.3.1",
+    "pythonnet==3.1.0",
+]
+
+[project.scripts]
+ossie-microsoft = "ossie_microsoft.cli:main"
+
+[project.urls]
+homepage = "https://ossie.apache.org/"
+repository = "https://github.com/apache/ossie/"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ossie_microsoft"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "W", "B", "A", "C4", "PIE", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+# Most tests convert deliberately lossy models, so the report is expected noise here.
+# The guarantee that a *lossless* conversion is silent is not weakened by this: the
+# tests that assert it turn warnings into errors themselves, locally and explicitly.
+filterwarnings = ["ignore::UserWarning"]
+
+[tool.coverage.run]
+branch = true
+source = ["ossie_microsoft"]
+
+[tool.coverage.report]
+# The converter's contract is that every lossy branch reports itself. An
+# unexercised branch is an unproven warning, so the bar is high deliberately.
+fail_under = 95
+show_missing = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    'if __name__ == "__main__":',
+]
+
+[tool.uv]
+required-version = ">=0.9.0"
+default-groups = [
+    "dev"
+]

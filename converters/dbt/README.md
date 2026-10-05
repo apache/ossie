@@ -66,6 +66,12 @@ By default the Ossie semantic model is named `semantic_model`. Override it with 
 ossie-dbt msi-to-ossie -i target/semantic_manifest.json -o semantic_model.yaml --model-name my_project
 ```
 
+The Ossie output contains one model at the document root (`name`, `datasets`,
+`relationships`, and `metrics`, alongside document metadata). Each dbt semantic
+model becomes an Ossie dataset; dbt manifests can still contain multiple
+`semantic_models`. Ossie input must use the flat root format without a
+`semantic_model` wrapper.
+
 Conversion issues (e.g. dropped CONVERSION or PRIVATE metrics) are printed as warnings to stderr. The output file is still written.
 
 ### Apache Ossie → dbt
@@ -118,11 +124,16 @@ manifest_json = result.output.model_dump_json(by_alias=True, exclude_none=True, 
 | `PRIVATE_METRIC_DROPPED` | Ossie has no visibility modifiers |
 | `NATURAL_ENTITY_DROPPED` | Ossie has no natural-key entity type |
 | `CUMULATIVE_SEMANTICS_LOSS` | Window/grain semantics cannot be expressed in an Ossie expression string; the base aggregation is preserved |
+| `AMBIGUOUS_REFERENCE_METRIC_DROPPED` | An input metric is listed more than once under one reference with differing filters, so the expression reference is ambiguous; give each occurrence a distinct alias |
+| `CONSTANT_METRIC_SEMANTIC_MODEL_LOSS` | A metric over a constant, such as a row count (`SUM(1)`), has no column to carry its semantic model; recorded when the manifest has more than one, since converting it back will refuse it |
 
 **Ossie → MSI** reconstructs a best-effort MSI manifest from Ossie's simpler schema. Nothing is dropped for supported inputs, but Ossie carries less structural information than MSI, so the converter makes the following choices:
 
 - Composite primary and unique keys are rejected because MSI entities cannot preserve grouped key semantics
 - Single aggregations (`SUM(col)`, `COUNT(DISTINCT col)`, etc.) → SIMPLE metric with `metric_aggregation_params`
+- `COUNT(*)` / `COUNT(<dataset>.*)` → `count` SIMPLE metric with `expr: '1'`, because MetricFlow cannot render a bare `*` inside a count. The counted dataset comes from the qualifier, so with more than one dataset write `COUNT(orders.*)`; a bare `COUNT(*)`, or a qualifier that matches no dataset, is skipped with a `ROW_COUNT_METRIC_DROPPED` warning
+- `SUM(<constant>)` (e.g. `SUM(1)`) keeps its constant, but has no column to place it in a dataset: with more than one dataset it is skipped with `ROW_COUNT_METRIC_DROPPED`
+- `COUNT(DISTINCT *)`, `COUNT(DISTINCT 1)` and the like, anywhere in an expression, are skipped with `ROW_COUNT_METRIC_DROPPED`: they count whether any row exists, not how many
 - `(expr_a) / (expr_b)` → RATIO metric with auto-generated sub-metrics
 - Anything else → SIMPLE metric with the raw expression stored verbatim
 - Time dimensions always receive `TimeGranularity.DAY` (Ossie carries no granularity field)

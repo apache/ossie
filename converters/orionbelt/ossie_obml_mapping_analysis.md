@@ -25,7 +25,7 @@
 
 | Aspect | Ossie v0.2.0.dev0 | OBML v1.0 |
 |---|---|---|
-| **Top-level** | `semantic_model[]` (array of models) | Single model with `dataObjects`, `dimensions`, `measures`, `metrics` sections |
+| **Top-level** | Single model at the root (`version`, `name`, `datasets`, ...) | Single model with `dataObjects`, `dimensions`, `measures`, `metrics` sections |
 | **Tables / Entities** | `datasets[]` (flat array) | `dataObjects{}` (named dictionary) |
 | **Column identifiers** | `fields[].name` (snake_case code) | `columns{}.code` (with display name as dict key) |
 | **Expressions** | `expression.dialects[]` per field (multi-dialect) | Single SQL expression via `code` (single dialect) |
@@ -46,7 +46,7 @@
 - **Ossie** uses snake_case codes everywhere (`name: "store_sales"`)
 - **OBML** supports dual naming — a display name as the dictionary key and a `code` for the physical SQL reference
 
-During Ossie → OBML conversion, field names are used directly as both the display name and code. During OBML → Ossie conversion, the `code` value becomes the Ossie field `name`.
+During Ossie → OBML conversion, field names are used directly as both the display name and code. During OBML → Ossie conversion, the `code` value becomes the Ossie field `name`, and the OBML column name rides in the field's `custom_extensions` (`obml_column_name`) so the reverse trip restores it. Metric expressions reference columns as `"<dataset>"."<field>"`: the OBML data object name and the column code, always double-quoted so reserved words parse and names match exactly. Cumulative and window metrics order and partition by each dimension exactly as the query groups it: truncated to its `timeGrain` (`DATE_TRUNC`) and cast back to a temporal `resultType`. A reference cycle among metrics is left out with a warning.
 
 ### 2.2 Relationship Placement
 
@@ -136,20 +136,22 @@ These OBML features have no direct Ossie equivalent. Where possible, metadata is
 - Dynamic date filters (`dynamicDate`, `dynamicDateRange`) — not yet preserved
 - `timeGrain` on dimensions — preserved in field `custom_extensions` (`obml_time_grain`)
 - Dimension `format` — preserved in field `custom_extensions` (`obml_dimension_format`)
-- Measure filters — preserved in metric `custom_extensions` (`obml_filters`)
-- Measure `total` — preserved in metric `custom_extensions` (`obml_total`)
+- Measure filters — written into the expression as `AGG(CASE WHEN <condition> THEN <arg> END)`, and preserved in metric `custom_extensions` (`obml_filters`)
+- Measure `total` — written into the expression as the grand-total window OrionBelt computes (`SUM(SUM(x)) OVER ()`; exact `SUM/COUNT` ratio for `AVG`), and preserved in metric `custom_extensions` (`obml_total`)
+- Measure `grain`, `filterContext` and `anchor`, period-over-period metrics, and cumulative or window metrics over a window (a `total` measure or another cumulative or window metric; window calls cannot nest): these depend on the query, so they have no faithful single expression. They are left out of the Ossie metrics with a warning and kept whole in the model-level `custom_extensions` (`obml_unexported`); the reverse trip restores them
 - Measure `format` — preserved in metric `custom_extensions` (`obml_format`)
 - Measure `delimiter` — preserved in metric `custom_extensions` (`obml_delimiter`)
 - Measure `withinGroup` — preserved in metric `custom_extensions` (`obml_within_group`)
 - Metric `format` — preserved in metric `custom_extensions` (`obml_format`)
 - Locale settings — not yet preserved
-- `abstractType` (OBML type system) — preserved in field `custom_extensions` (`obml_abstract_type`)
+- `abstractType` (OBML type system): emitted as the spec field `datatype` (`json` → `Opaque`, `time_tz` → `Time`) and preserved exactly in field `custom_extensions` (`obml_abstract_type`)
+- Measure/metric `dataType`: emitted as metric `datatype` when declared (`decimal(p, s)` → `Decimal`), exact value preserved via `obml_data_type`
 
 ### 2.6 Ossie-Specific Features and How They Map to OBML
 
 - **`primary_key`** — natively represented: Ossie's dataset-level `primary_key` array maps to per-column `primaryKey: true` on OBML columns (`DataObjectColumn.primaryKey`), and back to the dataset array on export.
 - **`unique_keys`** — no native OBML equivalent; round-trips via an `Ossie`-vendor `customExtension` (`obml_unique_keys`).
-- **Multi-dialect expressions** — on import the converter reads the first available SQL dialect in the order `ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`; non-SQL dialects (`MDX`, `TABLEAU`, `MAQL`) are not parsed. A metric with no SQL-parseable dialect, or an expression OBML cannot decompose, is preserved verbatim (`obml_unconverted_metrics`) with a `LOSSY:` warning rather than dropped. On export, OBML measures/metrics emit `ANSI_SQL`.
+- **Multi-dialect expressions** — on import the converter reads the first available SQL dialect in the order `ANSI_SQL`, `OSSIE_SQL_2026`, `SNOWFLAKE`, `DATABRICKS`; non-SQL dialects (`MDX`, `TABLEAU`, `MAQL`, `SIGMA`, `THOUGHTSPOT`, `DAX`) are not parsed. A metric with no SQL-parseable dialect, or an expression OBML cannot decompose, is preserved verbatim (`obml_unconverted_metrics`) with a `LOSSY:` warning rather than dropped. On export, OBML measures/metrics emit `ANSI_SQL`, except `aggregation: measure`, whose `MEASURE("<name>")` call is tagged `DATABRICKS`.
 - **`ai_context`** — preserved losslessly via `customExtensions` (see Section 2.4).
 - **`custom_extensions`** — mapped to OBML `customExtensions`.
 
@@ -158,7 +160,7 @@ These OBML features have no direct Ossie equivalent. Where possible, metadata is
 ### 3.1 Ossie → OBML
 
 1. Parse `source` string to extract `database`, `schema`, and `table`
-2. Convert fields to columns with type inference (heuristic-based `abstractType`)
+2. Convert fields to columns; `abstractType` comes from the spec `datatype` (`Decimal` narrows to `float`), then legacy `data_type`, then a name heuristic (also used for `Opaque`); metric `datatype` sets the exact measure/metric `dataType` (`Decimal` → the model's `settings.defaultNumericDataType`, else `decimal(18, 2)`). A stashed `obml_abstract_type` or `obml_data_type` is restored while it agrees with `datatype`; an edited `datatype` wins over it
 3. Restructure global relationships into inline joins on data objects
 4. Decompose metric SQL expressions into OBML measures + metrics
 5. Extract dimension-flagged fields into the top-level `dimensions` section (excluding FK/PK join keys)
@@ -169,11 +171,12 @@ These OBML features have no direct Ossie equivalent. Where possible, metadata is
 1. Combine `database.schema.code` into the Ossie `source` string
 2. Convert columns to fields with `ANSI_SQL` dialect expressions
 3. Extract inline joins into global relationships with generated names
-4. Convert measures to Ossie metrics with SQL expressions
-5. Expand metric templates by substituting measure SQL into `{[Name]}` references
-6. Map OBML dimension metadata into `field.dimension.is_time` flags
-7. Preserve secondary join info in relationship `ai_context`
-8. Store OBML-specific type info in `custom_extensions` with `vendor_name: "COMMON"`
+4. Convert measures to Ossie metrics with SQL expressions that compute what OrionBelt computes (filters, totals, defaults spelled out)
+5. Expand metric templates by substituting measure, synthesized-count and metric SQL into `{[Name]}` references
+6. Leave out what has no faithful expression, with a warning; each exported measure or metric also carries its full OBML definition (`obml_definition`), which the reverse trip restores instead of re-parsing the SQL
+7. Map OBML dimension metadata into `field.dimension.is_time` flags
+8. Preserve secondary join info in relationship `ai_context`
+9. Store OBML-specific type info in `custom_extensions` with `vendor_name: "COMMON"`
 
 ## 4. Validation
 

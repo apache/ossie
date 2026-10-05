@@ -31,6 +31,10 @@ developed in the
 repository (under `packages/ossie-orionbelt`) and published to PyPI from there;
 file issues and contributions upstream.
 
+Ossie documents contain one model directly at the root, with `version`, `name`,
+`datasets`, and optional model properties. Legacy `semantic_model` wrappers
+(arrays or objects) are rejected.
+
 ## Requirements
 
 - Python 3.12+
@@ -83,10 +87,43 @@ from ossie_orionbelt import OBMLtoOssie, OssietoOBML, validate_ossie
 obml = yaml.safe_load(open("model.obml.yaml"))
 ossie = OBMLtoOssie(obml, "sales", "Sales model").convert()
 result = validate_ossie(ossie)
-assert result.valid
+assert result.schema_validation_performed and result.valid
 
 obml_again = OssietoOBML(ossie).convert()
 ```
+
+## Metric expressions
+
+Other Ossie consumers read a metric's SQL, not the `ORIONBELT` extension, so the
+OBML to Ossie export writes SQL that computes what OrionBelt computes:
+
+- columns are referenced as `"<dataset>"."<field>"`, always double-quoted;
+- measure filters become `AGG(CASE WHEN <condition> THEN <arg> END)`, totals the
+  grand-total window `SUM(SUM(x)) OVER ()`, and `defaultValue` a `COALESCE`;
+- synthesized counts and metric-on-metric `{[Name]}` references are inlined;
+- cumulative and window metrics order and partition by each dimension at its
+  `timeGrain`, as the query groups it.
+
+A measure or metric with no faithful single expression (period-over-period,
+`grain`, `filterContext`, `anchor`, nested windows, reference cycles) is left out
+of the Ossie metrics with a warning and kept whole in the model-level extension
+(`obml_unexported`). Every exported measure and metric also carries its OBML
+definition, and every field its OBML column name, so Ossie to OBML restores the
+original model instead of re-parsing the SQL.
+
+`validate_ossie` checks JSON Schema conformance, unique names, and relationship
+references. If the schema file or `jsonschema` package is unavailable, it emits
+a warning and reports `JSON Schema: skipped`. The result's
+`schema_validation_performed` flag is `False` in that case.
+
+This fallback provides partial validation: it rejects non-object roots and
+legacy `semantic_model` wrappers, and checks unique names and references in
+entries it can traverse. Required fields and field types are not checked, so
+documents missing `name` or `datasets`, with malformed `datasets`, or with a
+dataset missing `source` can still return `valid=True`. That value means only
+that the checks performed found no errors. Require both
+`schema_validation_performed` and `valid`, as above, when structural validity
+is required.
 
 ## Vendor extensions
 
@@ -125,7 +162,7 @@ OBML, but are not interpreted by other Ossie consumers:
   (`obml_unconverted_metrics`) and re-emitted on OBML to Ossie, so the Ossie to OBML
   to Ossie roundtrip stays lossless. A `LOSSY:` warning is raised for each such
   metric because it is **not queryable through OBML**. SQL expressions in the
-  `ANSI_SQL`, `SNOWFLAKE`, and `DATABRICKS` dialects are all read on import.
+  `ANSI_SQL`, `OSSIE_SQL_2026`, `SNOWFLAKE`, and `DATABRICKS` dialects are all read on import.
 
 Ossie v0.1.x inputs are accepted on read via a legacy normalization shim; output
 targets Ossie **v0.2.0.dev0**.

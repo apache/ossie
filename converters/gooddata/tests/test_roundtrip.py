@@ -70,7 +70,7 @@ def test_roundtrip_preserves_native_source_types(source_type: str):
 def test_roundtrip_preserves_unknown_source_type_through_opaque():
     """Verify an unknown GoodData type round-trips through Opaque extension data."""
     ossie = gooddata_to_ossie(_model_with_attribute("CUSTOM_TYPE"))
-    field = ossie["semantic_model"][0]["datasets"][0]["fields"][0]
+    field = ossie["datasets"][0]["fields"][0]
 
     assert field["datatype"] == "Opaque"
     assert json.loads(field["custom_extensions"][0]["data"])["source_column_data_type"] == "CUSTOM_TYPE"
@@ -84,7 +84,7 @@ def test_roundtrip_keeps_missing_source_type_unasserted():
     model = _model_with_attribute(None)
 
     ossie = gooddata_to_ossie(model)
-    field = ossie["semantic_model"][0]["datasets"][0]["fields"][0]
+    field = ossie["datasets"][0]["fields"][0]
     result = gd_model_to_dict(ossie_to_gooddata(ossie))
     attribute = result["ldm"]["datasets"][0]["attributes"][0]
 

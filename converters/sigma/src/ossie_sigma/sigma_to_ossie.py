@@ -1,3 +1,20 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 """Sigma data model spec (JSON) -> Apache Ossie (OssieDocument)."""
 
 from __future__ import annotations
@@ -15,7 +32,6 @@ from ossie import (
     OssieField,
     OssieMetric,
     OssieRelationship,
-    OssieSemanticModel,
     OssieVendor,
 )
 
@@ -190,6 +206,9 @@ class SigmaToOssieConverter:
         for p, e in all_table_elements:
             if _require_id(e, "table element", e.get("name") or "<unnamed>", issues) is not None:
                 table_elements.append((p, e))
+
+        if not table_elements:
+            raise ValueError("Spec contains no table elements; an Ossie semantic model requires at least one dataset.")
 
         element_by_id = {e["id"]: e for _, e in table_elements}
         index_by_id = {e["id"]: _ElementIndex(e) for _, e in table_elements}
@@ -387,11 +406,15 @@ class SigmaToOssieConverter:
                 from_columns: list[str] = []
                 to_columns: list[str] = []
                 for key in rel.get("keys") or []:
-                    from_col, from_resolved = from_index.resolve(key["sourceColumnId"])
+                    source_col_id = key.get("sourceColumnId")
+                    target_col_id = key.get("targetColumnId")
+                    if not source_col_id or not target_col_id:
+                        continue
+                    from_col, from_resolved = from_index.resolve(source_col_id)
                     if to_index is not None:
-                        to_col, to_resolved = to_index.resolve(key["targetColumnId"])
+                        to_col, to_resolved = to_index.resolve(target_col_id)
                     else:
-                        to_col, to_resolved = key["targetColumnId"], False
+                        to_col, to_resolved = target_col_id, False
                     from_columns.append(from_col)
                     to_columns.append(to_col)
                     if not (from_resolved and to_resolved):
@@ -404,6 +427,17 @@ class SigmaToOssieConverter:
                                 "custom_extensions for exact round-trip reconstruction.",
                             )
                         )
+
+                if not from_columns or not to_columns:
+                    issues.append(
+                        ConverterIssue(
+                            ConverterIssueType.RELATIONSHIP_DROPPED,
+                            rel.get("name") or rel_id,
+                            "Relationship has no join keys and was dropped; Ossie relationships "
+                            "require at least one pair of join columns.",
+                        )
+                    )
+                    continue
 
                 rel_ext: dict[str, Any] = {
                     "id": rel_id,
@@ -449,7 +483,7 @@ class SigmaToOssieConverter:
                     )
                 )
 
-        semantic_model = OssieSemanticModel(
+        document = OssieDocument(
             name=spec.get("name", "sigma_data_model"),
             description=spec.get("description"),
             datasets=datasets,
@@ -458,5 +492,4 @@ class SigmaToOssieConverter:
             custom_extensions=[_vendor_ext(model_ext)] if model_ext else None,
         )
 
-        document = OssieDocument(semantic_model=[semantic_model])
         return ConverterResult(output=document, issues=issues)

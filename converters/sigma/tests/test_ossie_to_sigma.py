@@ -1,5 +1,23 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 from pathlib import Path
 
+import pytest
 import yaml
 from ossie import (
     OssieDataset,
@@ -9,13 +27,12 @@ from ossie import (
     OssieExpression,
     OssieField,
     OssieMetric,
-    OssieSemanticModel,
 )
 
-import pytest
 from ossie import OssieRelationship
+from pydantic import ValidationError
 
-from ossie_sigma.converter_issues import ConverterError, ConverterIssueType
+from ossie_sigma.converter_issues import ConverterIssueType
 from ossie_sigma.ossie_to_sigma import OssieToSigmaConverter, _stable_id
 from ossie_sigma.sigma_to_ossie import SigmaToOssieConverter
 
@@ -90,25 +107,21 @@ def test_relationship_ids_are_scoped_by_owning_dataset():
     """Two unrelated relationships sharing a name, on different table pairs, must not
     collide onto the same synthesized Sigma relationship id."""
     document = OssieDocument(
-        semantic_model=[
-            OssieSemanticModel(
-                name="m",
-                datasets=[
-                    OssieDataset(name="orders", source="db.public.orders"),
-                    OssieDataset(name="shipments", source="db.public.shipments"),
-                    OssieDataset(name="customers", source="db.public.customers"),
-                    OssieDataset(name="carriers", source="db.public.carriers"),
-                ],
-                relationships=[
-                    OssieRelationship(
-                        name="Parent", **{"from": "orders"}, to="customers", from_columns=["x"], to_columns=["y"]
-                    ),
-                    OssieRelationship(
-                        name="Parent", **{"from": "shipments"}, to="carriers", from_columns=["x"], to_columns=["y"]
-                    ),
-                ],
-            )
-        ]
+        name="m",
+        datasets=[
+            OssieDataset(name="orders", source="db.public.orders"),
+            OssieDataset(name="shipments", source="db.public.shipments"),
+            OssieDataset(name="customers", source="db.public.customers"),
+            OssieDataset(name="carriers", source="db.public.carriers"),
+        ],
+        relationships=[
+            OssieRelationship(
+                name="Parent", **{"from": "orders"}, to="customers", from_columns=["x"], to_columns=["y"]
+            ),
+            OssieRelationship(
+                name="Parent", **{"from": "shipments"}, to="carriers", from_columns=["x"], to_columns=["y"]
+            ),
+        ],
     )
 
     spec = OssieToSigmaConverter().convert(document).output
@@ -122,10 +135,85 @@ def test_relationship_ids_are_scoped_by_owning_dataset():
     assert len(set(rel_ids)) == 2, "relationships with the same name on different dataset pairs must not collide"
 
 
-def test_empty_semantic_model_raises_a_clear_error():
-    document = OssieDocument(semantic_model=[])
-    with pytest.raises(ConverterError):
-        OssieToSigmaConverter().convert(document)
+def test_legacy_semantic_model_wrapper_is_rejected():
+    with pytest.raises(ValidationError, match="semantic_model"):
+        OssieDocument(semantic_model=[])
+
+
+def test_relationship_column_arity_mismatch_is_recorded_not_silently_truncated():
+    """from_columns/to_columns are independently constrained in the OSI schema (each
+    only needs to be non-empty), so a compound-key relationship with unequal lengths
+    is legal input. zip() truncates to the shorter array; that must be a recorded
+    issue, not a silent drop of the extra key column(s)."""
+    document = OssieDocument(
+        name="m",
+        datasets=[
+            OssieDataset(name="orders", source="db.public.orders"),
+            OssieDataset(name="regions", source="db.public.regions"),
+        ],
+        relationships=[
+            OssieRelationship(
+                name="OrderRegion",
+                **{"from": "orders"},
+                to="regions",
+                from_columns=["region_id", "sub_id"],
+                to_columns=["region_id"],
+            ),
+        ],
+    )
+
+    result = OssieToSigmaConverter().convert(document)
+
+    issue_types = {i.issue_type for i in result.issues}
+    assert ConverterIssueType.RELATIONSHIP_COLUMN_ARITY_MISMATCH in issue_types
+
+    rel = next(
+        r for p in result.output["pages"] for e in p["elements"] for r in e.get("relationships", [])
+    )
+    # The mismatch is still recorded rather than crashing the conversion, but only
+    # one key pair can be formed from a 2-vs-1 mismatch.
+    assert len(rel["keys"]) == 1
+
+
+def test_relationship_arity_mismatch_element_names_are_scoped_by_owning_dataset():
+    """Relationship identity is already scoped by (dataset_name, rel.name) (see
+    test_relationship_ids_are_scoped_by_owning_dataset); an arity-mismatch issue's
+    element_name must be scoped the same way, or two unrelated relationships sharing a
+    name on different table pairs become indistinguishable in the issue list."""
+    document = OssieDocument(
+        name="m",
+        datasets=[
+            OssieDataset(name="orders", source="db.public.orders"),
+            OssieDataset(name="customers", source="db.public.customers"),
+            OssieDataset(name="shipments", source="db.public.shipments"),
+            OssieDataset(name="carriers", source="db.public.carriers"),
+        ],
+        relationships=[
+            OssieRelationship(
+                name="Parent",
+                **{"from": "orders"},
+                to="customers",
+                from_columns=["region_id", "sub_id"],
+                to_columns=["region_id"],
+            ),
+            OssieRelationship(
+                name="Parent",
+                **{"from": "shipments"},
+                to="carriers",
+                from_columns=["region_id", "sub_id"],
+                to_columns=["region_id"],
+            ),
+        ],
+    )
+
+    result = OssieToSigmaConverter().convert(document)
+
+    arity_issues = [
+        i for i in result.issues if i.issue_type == ConverterIssueType.RELATIONSHIP_COLUMN_ARITY_MISMATCH
+    ]
+    assert len(arity_issues) == 2
+    element_names = {i.element_name for i in arity_issues}
+    assert len(element_names) == 2, "arity-mismatch issues for same-named relationships must not collide"
 
 
 def test_model_level_metadata_round_trips_through_ossie_and_back():
@@ -149,55 +237,51 @@ def test_untranslatable_expression_omits_the_column_instead_of_faking_a_formula(
     whole document before applying any of it, so a placeholder would fail the entire
     upload rather than degrade one column."""
     document = OssieDocument(
-        semantic_model=[
-            OssieSemanticModel(
-                name="m",
-                datasets=[
-                    OssieDataset(
-                        name="orders",
-                        source="db.public.orders",
-                        fields=[
-                            OssieField(
-                                name="ok",
-                                expression=OssieExpression(
-                                    dialects=[OssieDialectExpression(dialect=OssieDialect.ANSI_SQL, expression="amount")]
-                                ),
-                            ),
-                            OssieField(
-                                name="untranslatable",
-                                expression=OssieExpression(
-                                    dialects=[
-                                        OssieDialectExpression(
-                                            dialect=OssieDialect.ANSI_SQL,
-                                            expression="SUM(amount) OVER (PARTITION BY region)",
-                                        )
-                                    ]
-                                ),
-                            ),
-                            OssieField(
-                                name="no_usable_dialect",
-                                expression=OssieExpression(
-                                    dialects=[OssieDialectExpression(dialect=OssieDialect.MDX, expression="[Measures].[X]")]
-                                ),
-                            ),
-                        ],
-                    )
-                ],
-                metrics=[
-                    OssieMetric(
-                        name="untranslatable_metric",
+        name="m",
+        datasets=[
+            OssieDataset(
+                name="orders",
+                source="db.public.orders",
+                fields=[
+                    OssieField(
+                        name="ok",
+                        expression=OssieExpression(
+                            dialects=[OssieDialectExpression(dialect=OssieDialect.ANSI_SQL, expression="amount")]
+                        ),
+                    ),
+                    OssieField(
+                        name="untranslatable",
                         expression=OssieExpression(
                             dialects=[
                                 OssieDialectExpression(
                                     dialect=OssieDialect.ANSI_SQL,
-                                    expression="SUM(orders.amount) OVER (PARTITION BY orders.region)",
+                                    expression="SUM(amount) OVER (PARTITION BY region)",
                                 )
                             ]
                         ),
-                    )
+                    ),
+                    OssieField(
+                        name="no_usable_dialect",
+                        expression=OssieExpression(
+                            dialects=[OssieDialectExpression(dialect=OssieDialect.MDX, expression="[Measures].[X]")]
+                        ),
+                    ),
                 ],
             )
-        ]
+        ],
+        metrics=[
+            OssieMetric(
+                name="untranslatable_metric",
+                expression=OssieExpression(
+                    dialects=[
+                        OssieDialectExpression(
+                            dialect=OssieDialect.ANSI_SQL,
+                            expression="SUM(orders.amount) OVER (PARTITION BY orders.region)",
+                        )
+                    ]
+                ),
+            )
+        ],
     )
 
     result = OssieToSigmaConverter().convert(document)
@@ -221,41 +305,37 @@ def test_synthesized_spec_carries_a_schema_version():
 
 def test_datatypes_only_ever_emit_the_two_documented_format_kinds():
     document = OssieDocument(
-        semantic_model=[
-            OssieSemanticModel(
-                name="m",
-                datasets=[
-                    OssieDataset(
-                        name="t",
-                        source="db.public.t",
-                        fields=[
-                            OssieField(
-                                name=datatype.lower(),
-                                datatype=datatype,
-                                expression=OssieExpression(
-                                    dialects=[
-                                        OssieDialectExpression(
-                                            dialect=OssieDialect.ANSI_SQL, expression=datatype.lower()
-                                        )
-                                    ]
-                                ),
-                            )
-                            for datatype in (
-                                "String",
-                                "Integer",
-                                "Decimal",
-                                "Float",
-                                "Boolean",
-                                "Date",
-                                "Time",
-                                "DateTime",
-                                "DateTimeTz",
-                            )
-                        ],
+        name="m",
+        datasets=[
+            OssieDataset(
+                name="t",
+                source="db.public.t",
+                fields=[
+                    OssieField(
+                        name=datatype.lower(),
+                        datatype=datatype,
+                        expression=OssieExpression(
+                            dialects=[
+                                OssieDialectExpression(
+                                    dialect=OssieDialect.ANSI_SQL, expression=datatype.lower()
+                                )
+                            ]
+                        ),
+                    )
+                    for datatype in (
+                        "String",
+                        "Integer",
+                        "Decimal",
+                        "Float",
+                        "Boolean",
+                        "Date",
+                        "Time",
+                        "DateTime",
+                        "DateTimeTz",
                     )
                 ],
             )
-        ]
+        ],
     )
 
     columns = OssieToSigmaConverter().convert(document).output["pages"][0]["elements"][0]["columns"]

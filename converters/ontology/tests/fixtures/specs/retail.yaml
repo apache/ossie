@@ -447,6 +447,7 @@ ontology:
 ontology_mappings:
 - name: retail_refactored_mapping
   semantic_model:
+    version: 0.2.0.dev0
     name: Retail refactored semantic model
     datasets:
     - name: EMPLOYEES

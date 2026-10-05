@@ -19,7 +19,7 @@ from enum import Enum
 from typing import Any, Optional, Union
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer
 
 
 class OssieDialect(str, Enum):
@@ -34,6 +34,8 @@ class OssieDialect(str, Enum):
     BIGQUERY = "BIGQUERY"
     SIGMA = "SIGMA"
     THOUGHTSPOT = "THOUGHTSPOT"
+    DAX = "DAX"
+    OSSIE_SQL_2026 = "OSSIE_SQL_2026"
 
 
 class OssieDataType(str, Enum):
@@ -111,7 +113,7 @@ class OssieExpression(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    dialects: list[OssieDialectExpression]
+    dialects: list[OssieDialectExpression] = Field(..., min_length=1)
 
 
 class OssieDimension(BaseModel):
@@ -127,7 +129,7 @@ class OssieField(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    name: str
+    name: str = Field(..., min_length=1)
     expression: OssieExpression
     dimension: Optional[OssieDimension] = None
     label: Optional[str] = None
@@ -155,8 +157,8 @@ class OssieDataset(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    name: str
-    source: str
+    name: str = Field(..., min_length=1)
+    source: str = Field(..., min_length=1)
     primary_key: Optional[list[str]] = None
     unique_keys: Optional[list[list[str]]] = None
     description: Optional[str] = None
@@ -170,11 +172,11 @@ class OssieRelationship(BaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    name: str
-    from_dataset: str = Field(..., alias="from")
-    to: str
-    from_columns: list[str]
-    to_columns: list[str]
+    name: str = Field(..., min_length=1)
+    from_dataset: str = Field(..., alias="from", min_length=1)
+    to: str = Field(..., min_length=1)
+    from_columns: list[str] = Field(..., min_length=1)
+    to_columns: list[str] = Field(..., min_length=1)
     ai_context: Optional[OssieAIContext] = None
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
@@ -184,7 +186,7 @@ class OssieMetric(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    name: str
+    name: str = Field(..., min_length=1)
     expression: OssieExpression
     description: Optional[str] = None
     datatype: Optional[OssieDataType] = None
@@ -193,28 +195,33 @@ class OssieMetric(BaseModel):
 
 
 class OssieSemanticModel(BaseModel):
-    """Top-level container representing a complete semantic model."""
+    """Semantic model: the datasets, relationships, and metrics for one business domain."""
 
     model_config = ConfigDict(frozen=True)
 
-    name: str
+    name: str = Field(..., min_length=1)
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
-    datasets: list[OssieDataset]
+    datasets: list[OssieDataset] = Field(..., min_length=1)
     relationships: Optional[list[OssieRelationship]] = None
     metrics: Optional[list[OssieMetric]] = None
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
 
-class OssieDocument(BaseModel):
-    """Root Ossie document."""
+class OssieDocument(OssieSemanticModel):
+    """A single semantic model with document metadata at the root."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     version: str = "0.2.0.dev0"
-    dialects: Optional[list[OssieDialect]] = None
-    vendors: Optional[list[OssieVendor]] = None
-    semantic_model: list[OssieSemanticModel]
+
+    @model_serializer(mode="wrap")
+    def _serialize_document(self, handler: SerializerFunctionWrapHandler):
+        # Omit a custom return type to retain Pydantic's serialization schema.
+        data = handler(self)
+        if "version" in data:
+            return {"version": data.pop("version"), **data}
+        return data
 
     def to_ossie_yaml(self, **kwargs: Any) -> str:
         """Serialize to Ossie-compliant YAML (uses field aliases and excludes None values)."""

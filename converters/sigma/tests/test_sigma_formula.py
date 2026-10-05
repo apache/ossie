@@ -1,3 +1,20 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 import pytest
 
 from ossie_sigma.sigma_formula import (
@@ -112,11 +129,19 @@ def test_is_plain_column_ref():
         ("SUM(ss_ext_sales_price)", "store_sales", "Sum([ss_ext_sales_price])"),
         ("COUNT(DISTINCT customer_id)", "customer", "CountDistinct([customer_id])"),
         ("CASE WHEN status = 'won' THEN 1 ELSE 0 END", "deals", 'If((["status"] = "won"), 1, 0)'.replace('["status"]', "[status]")),
+        ('-"X"', None, "-[X]"),
+        ('-"T"."X"', "T", "-[X]"),
+        ("-1", None, "-1"),
+        ('-(NOT "A")', "T", "-(NOT ([A]))"),
+        ('-(- "A")', "T", "-(-[A])"),
+        ('-("A" || "B")', "T", "-([A] & [B])"),
+        ('-("A" + "B")', "T", "-(([A] + [B]))"),
     ],
 )
 def test_reverse_translation_basic(sql, dataset_alias, expected):
     result = sql_to_sigma_formula(sql, dataset_alias=dataset_alias)
     assert result == expected
+    assert parse_formula(result) is not None
 
 
 def test_reverse_translation_gives_up_on_count_star():
