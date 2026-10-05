@@ -63,5 +63,5 @@ converters/microsoft/tests/fixtures/sales_model.tmdl
 **/NOTICE
 
 # Specific project files
-.editorconfig
-.python-version
+**/.editorconfig
+**/.python-version
