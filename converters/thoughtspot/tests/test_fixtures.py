@@ -93,6 +93,25 @@ def _load_expected(fixture_dir: Path) -> dict:
     return document
 
 
+def _upstream_validator():
+    """`validation/validate.py` loaded as a module.
+
+    It is a top-level script rather than an installed package, so it is loaded
+    by path. Importing the real thing rather than copying its checks is the
+    point: a local reimplementation would be a second account of the gate,
+    free to agree with this converter while the gate itself disagrees.
+    """
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[3] / "validation" / "validate.py"
+    if not path.exists():  # pragma: no cover - only outside a full checkout
+        pytest.skip(f"upstream validator not found at {path}")
+    spec = importlib.util.spec_from_file_location("_ossie_validate", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 @pytest.mark.parametrize("fixture_name", FIXTURE_SETS)
 class TestFixtureSetsLoad:
     def test_the_fixture_directory_has_tml_documents(self, fixture_name):
@@ -126,6 +145,25 @@ class TestExpectedOutputIsValid:
             schema = json.load(fh)
         expected = _load_expected(FIXTURES_ROOT / fixture_name)
         jsonschema.Draft202012Validator(schema).validate(expected)
+
+    def test_expected_output_passes_the_upstream_sql_validation(self, fixture_name):
+        """The schema check above says nothing about whether an emitted
+        expression PARSES, and that gap shipped a real defect: TPC-DS `store`
+        has a column named `on`, which emitted `expression: on` and made
+        `validation/validate.py` fail with `Invalid expression / Unexpected
+        token` while the whole suite stayed green.
+
+        This runs the project's own validator, not a local reimplementation,
+        so the test cannot drift from the gate it stands in for.
+        """
+        pytest.importorskip("sqlglot")
+        validate = _upstream_validator()
+        errors = [str(e) for e in validate.validate_sql(_load_expected(FIXTURES_ROOT / fixture_name))]
+        # `validate_sql` RETURNS a warning rather than raising when sqlglot is
+        # absent, so an unguarded assertion on emptiness would pass on the one
+        # input that proves nothing. Fail loudly instead of skipping silently.
+        assert not any("skipping SQL validation" in e for e in errors), errors
+        assert errors == []
 
 
 @pytest.mark.parametrize("fixture_name", FIXTURE_SETS)
