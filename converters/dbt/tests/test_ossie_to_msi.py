@@ -894,8 +894,13 @@ class TestOssieToMSIConfigMetaRoundTrip:
         assert result.metrics[0].config is not None
         assert result.metrics[0].config.meta == {"group_label": "Revenue"}
 
-    def test_ratio_sub_metrics_do_not_inherit_parent_config_meta(self) -> None:
-        """Numerator/denominator are synthetic metrics with no origin of their own."""
+    def test_ratio_sub_metrics_inherit_parent_config_meta(self) -> None:
+        """Synthetic numerator/denominator inherit the parent ratio's config.meta.
+
+        They have no independent origin in Ossie (the ratio is a single expression),
+        so without inheritance any access-tier (or similar) meta on the ratio would
+        leave the helpers ungated after ossie-to-msi.
+        """
         ext = [OssieCustomExtension(vendor_name=OssieVendor.DBT.value, data=json.dumps({"group_label": "ARPU"}))]
         doc = _ossie_doc(
             datasets=[_ossie_dataset("orders", fields=[_ossie_field("amount"), _ossie_field("order_id")])],
@@ -907,7 +912,8 @@ class TestOssieToMSIConfigMetaRoundTrip:
         assert ratio.config is not None
         assert ratio.config.meta == {"group_label": "ARPU"}
         sub_metrics = [m for m in result.metrics if m.type == MetricType.SIMPLE]
-        assert all(m.config is None for m in sub_metrics)
+        assert {m.name for m in sub_metrics} == {"arpu__numerator", "arpu__denominator"}
+        assert all(m.config is not None and m.config.meta == {"group_label": "ARPU"} for m in sub_metrics)
 
     def test_non_dbt_vendor_extension_does_not_become_config_meta(self) -> None:
         ext = [OssieCustomExtension(vendor_name=OssieVendor.SIGMA.value, data=json.dumps({"foo": "bar"}))]

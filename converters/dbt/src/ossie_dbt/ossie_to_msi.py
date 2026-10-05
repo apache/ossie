@@ -382,8 +382,8 @@ class OssieToMSIConverter:
             num_expr, den_expr = ratio_result
             num_name = f"{name}__numerator"
             den_name = f"{name}__denominator"
-            num_metrics = self._convert_metric(num_name, num_expr, None, datasets)
-            den_metrics = self._convert_metric(den_name, den_expr, None, datasets)
+            num_metrics = self._convert_metric(num_name, num_expr, None, datasets, config=config)
+            den_metrics = self._convert_metric(den_name, den_expr, None, datasets, config=config)
             ratio_metric = PydanticMetric(
                 name=name,
                 description=description,
