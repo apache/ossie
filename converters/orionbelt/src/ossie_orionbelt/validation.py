@@ -24,6 +24,8 @@ package under ``schemas/``.
 from __future__ import annotations
 
 import json
+from collections import Counter
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -145,6 +147,16 @@ def _validate_json_schema(
 # ── OBML Validation ──────────────────────────────────────────────────────
 
 
+def _find_duplicates(names: Iterable[str]) -> list[str]:
+    """Return the names appearing more than once, each reported once.
+
+    A name repeated three times is one problem, not two, so reporting per extra
+    copy would emit the same message twice. Order follows first appearance, so a
+    document's diagnostics are stable. Matches `validation/validate.py`.
+    """
+    return [name for name, count in Counter(names).items() if count > 1]
+
+
 def validate_obml(obml_dict: dict[str, Any], schema_path: Path | None = None) -> ValidationResult:
     """Validate an OBML dict against JSON Schema and semantic rules.
 
@@ -243,47 +255,34 @@ def validate_ossie(ossie_dict: dict[str, Any], schema_path: Path | None = None) 
     datasets = _as_dict_list(model.get("datasets", []))
 
     # Unique dataset names
-    dataset_names: list[str] = []
-    for ds in datasets:
-        name = ds.get("name", "")
-        if name in dataset_names:
-            result.semantic_errors.append(
-                f"[DUPLICATE_DATASET] Duplicate dataset name '{name}' in model '{model_name}'"
-            )
-        dataset_names.append(name)
+    for name in _find_duplicates(ds.get("name", "") for ds in datasets):
+        result.semantic_errors.append(
+            f"[DUPLICATE_DATASET] Duplicate dataset name '{name}' in model '{model_name}'"
+        )
 
     # Unique field names within each dataset
     for ds in datasets:
         ds_name = ds.get("name", "<unnamed>")
-        field_names: list[str] = []
-        for field in _as_dict_list(ds.get("fields", [])):
-            fname = field.get("name", "")
-            if fname in field_names:
-                result.semantic_errors.append(
-                    f"[DUPLICATE_FIELD] Duplicate field name '{fname}' in dataset '{ds_name}'"
-                )
-            field_names.append(fname)
+        fields = _as_dict_list(ds.get("fields", []))
+        for fname in _find_duplicates(field.get("name", "") for field in fields):
+            result.semantic_errors.append(
+                f"[DUPLICATE_FIELD] Duplicate field name '{fname}' in dataset '{ds_name}'"
+            )
 
     # Unique metric names
-    metric_names: list[str] = []
-    for m in _as_dict_list(model.get("metrics", [])):
-        mname = m.get("name", "")
-        if mname in metric_names:
-            result.semantic_errors.append(
-                f"[DUPLICATE_METRIC] Duplicate metric name '{mname}' in model '{model_name}'"
-            )
-        metric_names.append(mname)
+    metrics = _as_dict_list(model.get("metrics", []))
+    for mname in _find_duplicates(m.get("name", "") for m in metrics):
+        result.semantic_errors.append(
+            f"[DUPLICATE_METRIC] Duplicate metric name '{mname}' in model '{model_name}'"
+        )
 
     # Unique relationship names
-    rel_names: list[str] = []
-    for r in _as_dict_list(model.get("relationships", [])):
-        rname = r.get("name", "")
-        if rname in rel_names:
-            result.semantic_errors.append(
-                f"[DUPLICATE_RELATIONSHIP] Duplicate relationship name "
-                f"'{rname}' in model '{model_name}'"
-            )
-        rel_names.append(rname)
+    relationships = _as_dict_list(model.get("relationships", []))
+    for rname in _find_duplicates(r.get("name", "") for r in relationships):
+        result.semantic_errors.append(
+            f"[DUPLICATE_RELATIONSHIP] Duplicate relationship name "
+            f"'{rname}' in model '{model_name}'"
+        )
 
     # 3. Reference checks — relationships reference existing datasets
     datasets = _as_dict_list(model.get("datasets", []))
@@ -319,12 +318,12 @@ def validate_ossie_ontology(onto_dict: dict[str, Any]) -> ValidationResult:
     result = ValidationResult("Ossie-ONTOLOGY")
 
     # 1. Unique concept names + collect the defined set.
-    defined: set[str] = set()
-    for comp in onto_dict.get("ontology", []):
-        name = comp.get("concept", {}).get("name", "")
-        if name in defined:
-            result.semantic_errors.append(f"[DUPLICATE_CONCEPT] Duplicate concept name '{name}'")
-        defined.add(name)
+    concept_names = [
+        comp.get("concept", {}).get("name", "") for comp in onto_dict.get("ontology", [])
+    ]
+    for name in _find_duplicates(concept_names):
+        result.semantic_errors.append(f"[DUPLICATE_CONCEPT] Duplicate concept name '{name}'")
+    defined: set[str] = set(concept_names)
 
     # 2. Reference integrity — roles reference defined concepts.
     for comp in onto_dict.get("ontology", []):

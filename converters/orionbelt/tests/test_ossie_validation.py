@@ -20,7 +20,12 @@ import sys
 import pytest
 
 from ossie_orionbelt.cli import _report_validation
-from ossie_orionbelt.validation import _OSSIE_SCHEMA_PATH, validate_ossie
+from ossie_orionbelt.validation import (
+    _OSSIE_SCHEMA_PATH,
+    _find_duplicates,
+    validate_ossie,
+    validate_ossie_ontology,
+)
 
 
 @pytest.fixture(params=["available", "missing_file", "missing_package"])
@@ -130,6 +135,101 @@ def test_semantic_checks_still_run_without_schema(schema_path, error_code):
 
     assert not result.valid
     assert any(f"[{error_code}]" in error for error in result.semantic_errors)
+
+
+@pytest.mark.parametrize(
+    ("names", "expected"),
+    [
+        (["a", "a"], ["a"]),
+        (["a", "a", "a"], ["a"]),
+        (["a", "b", "b", "a"], ["a", "b"]),
+        (["a", "b", "c"], []),
+        ([], []),
+    ],
+    ids=["twice", "three-times", "repeats-in-reverse-order", "all-unique", "empty"],
+)
+def test_find_duplicates_reports_each_name_once_in_first_appearance_order(names, expected):
+    """Mirrors the sibling test in validation/tests/test_validate.py."""
+    assert _find_duplicates(names) == expected
+
+
+def _triplicate_document(kind: str) -> dict:
+    """A flat document whose *kind* names collide three times over."""
+    expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": "x"}]}
+    document: dict = {
+        "version": "0.2.0.dev0",
+        "name": "m",
+        "datasets": [{"name": "orders", "source": "a.b.orders"}],
+    }
+    if kind == "dataset":
+        document["datasets"] *= 3
+    elif kind == "field":
+        document["datasets"][0]["fields"] = [
+            {"name": "amount", "expression": expression} for _ in range(3)
+        ]
+    elif kind == "metric":
+        document["metrics"] = [
+            {"name": "revenue", "expression": expression} for _ in range(3)
+        ]
+    elif kind == "relationship":
+        document["datasets"].append({"name": "customers", "source": "a.b.customers"})
+        document["relationships"] = [
+            {
+                "name": "orders_to_customers",
+                "from": "orders",
+                "to": "customers",
+                "from_columns": ["customer_id"],
+                "to_columns": ["id"],
+            }
+            for _ in range(3)
+        ]
+    return document
+
+
+@pytest.mark.parametrize(
+    ("kind", "code"),
+    [
+        ("dataset", "DUPLICATE_DATASET"),
+        ("field", "DUPLICATE_FIELD"),
+        ("metric", "DUPLICATE_METRIC"),
+        ("relationship", "DUPLICATE_RELATIONSHIP"),
+    ],
+)
+def test_a_name_repeated_three_times_is_reported_once(schema_path, kind, code):
+    """Three copies of a name are one problem, matching validation/validate.py."""
+    result = validate_ossie(_triplicate_document(kind), schema_path=schema_path)
+
+    reported = [error for error in result.semantic_errors if f"[{code}]" in error]
+    assert len(reported) == 1
+
+
+def test_a_concept_repeated_three_times_is_reported_once():
+    ontology = {"ontology": [{"concept": {"name": "Party"}} for _ in range(3)]}
+
+    result = validate_ossie_ontology(ontology)
+
+    reported = [e for e in result.semantic_errors if "[DUPLICATE_CONCEPT]" in e]
+    assert len(reported) == 1
+
+
+def test_duplicate_concepts_still_resolve_as_defined_references():
+    """Collecting concept names up front must not change reference integrity."""
+    ontology = {
+        "ontology": [
+            {"concept": {"name": "Party"}},
+            {"concept": {"name": "Party"}},
+            {
+                "concept": {"name": "Order"},
+                "relationships": [
+                    {"name": "placed_by", "roles": [{"concept": "Party"}]}
+                ],
+            },
+        ]
+    }
+
+    result = validate_ossie_ontology(ontology)
+
+    assert not any("UNKNOWN" in error for error in result.semantic_errors)
 
 
 @pytest.mark.parametrize("has_name", [True, False])
