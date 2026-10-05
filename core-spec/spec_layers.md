@@ -19,12 +19,16 @@
 
 # Ossie Specification Layers
 
-**Status:** Draft for the Ossie Semantics Working Group.
+**Status:** Informational / Architecture Overview (Draft).
 **Contributors:** Justin Talbot, Will Pugh, Chris Eubank.
 
 ---
 
 ## Overview
+
+This document is an informational architecture overview. It describes how the Ossie
+specifications fit together and links to the specification for each layer. It does not
+define normative requirements itself; those are in each layer's specification.
 
 Ossie is organized into four specification layers, each addressing a distinct concern:
 
@@ -40,11 +44,9 @@ use to write it. Layers 2 and 3 are query interfaces that sit on top of a deploy
 they differ in how much SQL knowledge they require from the consumer. Layer 4 is a separate
 workstream covering ontological concepts that SQL does not naturally express.
 
-Each layer can be adopted independently. Layers 2 and 3 compose: a wide-table query (Layer 3)
-can be rewritten as a SQL measures query (Layer 2), so correctness guarantees flow through.
-
-This document describes each layer at a high level. Each is specified in full in its own
-document (linked below).
+Each layer can be adopted independently. Layers 2 and 3 compose: the meaning of a wide-table
+query (Layer 3) is defined by an equivalent SQL measures query (Layer 2), so correctness
+guarantees flow through.
 
 ---
 
@@ -94,8 +96,8 @@ is required from the consumer.
 
 This interface trades explicit query control for simplicity, making it accessible to ad-hoc
 users, AI agents, and BI tools without their own data model. Measure correctness is inherited
-from Layer 2: a wide-table query is rewritten into a SQL measures query (with heuristic join
-and filter choices), so the same grain-safe evaluation guarantee holds.
+from Layer 2: a wide-table query is defined as equivalent to a SQL measures query (with
+heuristic join and filter choices), so the same grain-safe evaluation guarantee holds.
 
 **Specification:** *(open PR: [apache/ossie#246](https://github.com/apache/ossie/pull/246))*
 
@@ -112,10 +114,14 @@ group (`#ossie-ontology-wg`) and is a separate workstream from the query interfa
 
 ## Composition
 
-Layers 2 and 3 compose: a wide-table (Layer 3) query is rewritten into a SQL measures
-(Layer 2) query with heuristic join and filter choices. This means correctness guarantees
-flow from Layer 2 through Layer 3—a consumer using the declarative interface gets the same
-grain-safe measure evaluation as one writing SQL directly.
+Layers 2 and 3 compose: the meaning of a wide-table (Layer 3) query is defined by an
+equivalent SQL measures (Layer 2) query, with heuristic join and filter choices. This means
+correctness guarantees flow from Layer 2 through Layer 3—a consumer using the declarative
+interface gets the same grain-safe measure evaluation as one writing SQL directly.
+
+Layer 2 is the semantic target for Layer 3, not a required execution path. An implementation
+does not have to translate Layer 3 queries into Layer 2 SQL text; it only has to return the
+same results as the equivalent Layer 2 query.
 
 Providers may support one query interface layer or both, at varying compliance levels. The
 layered model makes partial adoption coherent: a tool that only needs SQL measures adopts
