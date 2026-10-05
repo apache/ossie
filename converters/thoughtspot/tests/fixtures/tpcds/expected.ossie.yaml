@@ -19,14 +19,12 @@
 # directory, then reviewed by hand against the construct mapping this
 # converter implements. See test_fixtures.py.
 #
-# store's unique_keys derives to [s_store_sk], not [s_store_id]: TML has no
-# native key-declaration syntax, so every key here comes from the join
-# graph, and every relationship that targets store (store_sales_to_store,
-# and store_returns_sv_to_store -- a ONE_TO_MANY join declared from store's
-# own side, whose emitted endpoints are swapped so store lands on `to`)
-# joins on s_store_sk. That is a correct, expected divergence from a source
-# format (such as one with its own native key declarations) that could
-# declare s_store_id as a key independently of any join.
+# store's unique_keys derives to [s_store_sk]: TML has no native
+# key-declaration syntax, so every key here comes from the join graph, and
+# every relationship that targets store (store_sales_to_store, and
+# store_returns_sv_to_store -- a ONE_TO_MANY join declared from store's own
+# side, whose emitted endpoints are swapped so store lands on `to`) joins on
+# s_store_sk.
 version: 0.2.0.dev0
 name: tpcds_retail_model
 datasets:

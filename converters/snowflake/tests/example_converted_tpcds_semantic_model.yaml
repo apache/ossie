@@ -258,7 +258,7 @@ tables:
     - s_store_sk
   unique_keys:
   - columns:
-    - s_store_id
+    - s_store_sk
   description: Store dimension with location and store attributes
   synonyms:
   - stores
