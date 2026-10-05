@@ -449,26 +449,36 @@ attach their own metadata, or to preserve information when importing an ontology
 format so that it can be round-tripped.
 
 Keys are free-form, and values may be any JSON. The spec does not interpret or constrain the structure of
-`custom_properties`; tools that do not understand a given property should preserve it as-is. For example,
-a metrics tool might annotate a value type with how it is computed and displayed:
+`custom_properties`; tools that do not understand a given property should preserve it as-is.
+
+Use `custom_properties` only for data that the spec cannot express. Data that has a home in the spec,
+such as a description, a supertype (`extends`), a derivation (`derived_by`), a constraint (`requires`),
+or a verbalization (`verbalizes`), belongs in that field.
+
+For example, an importer from the OWL version of the [FOAF](http://xmlns.com/foaf/0.1/) vocabulary
+writes `rdfs:comment` to `description` and keeps the RDF data that has no home in the spec, keyed by
+the source predicate's qualified name:
 
 ```yaml
+prefixes:
+  foaf: "http://xmlns.com/foaf/0.1/"
+  rdfs: "http://www.w3.org/2000/01/rdf-schema#"
+  owl: "http://www.w3.org/2002/07/owl#"
+  vs: "http://www.w3.org/2003/06/sw-vocab-status/ns#"
 ontology:
-  - concept: ContributionMargin
-    type: ValueType
-    extends: [Decimal]
-    description: Revenue remaining after variable costs
+  - concept: Person
+    type: EntityType
+    description: A person.
+    iri: foaf:Person
     custom_properties:
-      abbreviation: CM
-      formula: revenue - variable_costs
-      unit: EUR
-      better_when: higher
-      owner: finance-analytics
+      rdfs:label: Person
+      owl:equivalentClass: http://schema.org/Person
+      vs:term_status: stable
 ```
 
-An importer from a semantic-web format might instead use the source vocabulary's qualified names as keys,
-as in the [FOAF example](../examples/foaf_owl_import.yaml). Both are valid; the choice of keys belongs to
-the tool that writes them.
+The full document is in [`examples/foaf_owl_import.yaml`](../examples/foaf_owl_import.yaml). Keying
+properties by qualified name is this importer's convention. The choice of keys belongs to the tool that
+writes them.
 
 ## Ontology mappings
 

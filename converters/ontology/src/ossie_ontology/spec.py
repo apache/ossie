@@ -40,6 +40,10 @@ class OssieObject(BaseModel):
 # like `instructions`, `synonyms`, `examples` (per core.md).
 AiContext = str | dict[str, Any]
 
+# Open set of properties the spec does not model (e.g. OWL/RDF annotations kept
+# for round-tripping). Keys are free-form and values may be any JSON.
+CustomProperties = dict[str, Any]
+
 
 class CustomExtension(OssieObject):
     """Vendor-specific metadata attached to any logical-model element (core.md).
@@ -59,6 +63,7 @@ class Role(OssieObject):
     concept plays multiple roles in the same relationship."""
     concept: str
     name: str | None = None
+    custom_properties: CustomProperties = Field(default_factory=dict)
 
 
 class Relationship(OssieObject):
@@ -78,6 +83,7 @@ class Relationship(OssieObject):
     multiplicity: Literal["OneToOne", "ManyToOne"] | None = None
     derived_by: list[str] = Field(default_factory=list)
     requires: list[str] = Field(default_factory=list)
+    custom_properties: CustomProperties = Field(default_factory=dict)
 
 
 class ConceptComponent(OssieObject):
@@ -106,6 +112,7 @@ class ConceptComponent(OssieObject):
     identify_by: list[str] = Field(default_factory=list)
     derived_by: list[str] = Field(default_factory=list)
     requires: list[str] = Field(default_factory=list)
+    custom_properties: CustomProperties = Field(default_factory=dict)
     relationships: list[Relationship] = Field(default_factory=list)
 
 
@@ -248,6 +255,7 @@ class OssieSpec(OssieObject):
     name: str
     description: str | None = None
     prefixes: dict[str, str] = Field(default_factory=dict)
+    custom_properties: CustomProperties = Field(default_factory=dict)
     requires: list[str] = Field(default_factory=list)
     ai_context: AiContext | None = None
     ontology: list[ConceptComponent] = Field(default_factory=list)

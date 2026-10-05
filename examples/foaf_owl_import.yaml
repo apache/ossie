@@ -18,26 +18,32 @@
 version: 0.2.0.dev0
 name: foaf
 description: >
-  Small ontology imported from the FOAF (Friend of a Friend) OWL vocabulary,
-  demonstrating how custom_properties preserves OWL/RDF data (labels, comments,
-  and axioms) that the core Ossie spec does not model, so the source can be
-  round-tripped. This importer keys custom properties by the source predicate's
-  qualified name; that is the importer's convention, not a requirement of the spec.
+  Small ontology imported from the FOAF (Friend of a Friend) OWL vocabulary.
+  The importer writes RDF data that has a home in the spec to that field
+  (rdfs:comment becomes description) and preserves the rest (labels, axioms,
+  term status) in custom_properties, so the source can be round-tripped. This
+  importer keys custom properties by the source predicate's qualified name;
+  that is the importer's convention, not a requirement of the spec.
 prefixes:
   foaf: "http://xmlns.com/foaf/0.1/"
   rdfs: "http://www.w3.org/2000/01/rdf-schema#"
   owl: "http://www.w3.org/2002/07/owl#"
   dc: "http://purl.org/dc/elements/1.1/"
+  vs: "http://www.w3.org/2003/06/sw-vocab-status/ns#"
+custom_properties:
+  dc:title: "Friend of a Friend (FOAF) vocabulary"
 ontology:
   - concept: Person
     type: EntityType
+    description: "A person."
     iri: foaf:Person
     custom_properties:
       rdfs:label: "Person"
-      rdfs:comment: "A person."
-      owl:equivalentClass: "https://schema.org/Person"
+      owl:equivalentClass: "http://schema.org/Person"
+      vs:term_status: "stable"
     relationships:
       - name: name
+        description: "A name for some thing."
         iri: foaf:name
         roles:
           - concept: String
@@ -45,7 +51,10 @@ ontology:
         multiplicity: ManyToOne
         custom_properties:
           rdfs:label: "name"
+          rdfs:subPropertyOf: "rdfs:label"
+          vs:term_status: "testing"
       - name: knows
+        description: "A person known by this person (indicating some level of reciprocated interaction between the parties)."
         iri: foaf:knows
         roles:
           - concept: Person
@@ -53,6 +62,4 @@ ontology:
         verbalizes: [ "{Person} knows {Person:acquaintance}" ]
         custom_properties:
           rdfs:label: "knows"
-          owl:inverseOf: foaf:knows
-custom_properties:
-  dc:title: "Friend of a Friend (FOAF) vocabulary"
+          vs:term_status: "stable"
