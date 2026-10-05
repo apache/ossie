@@ -105,6 +105,24 @@ their Auto Ontology source group. Custom analyses remain global by becoming
 model-level Ossie metrics. Relationships are recovered from joins, then
 physical foreign keys, then semantic foreign keys.
 
+Every column pair of an Ossie relationship must match at once, so only pairs
+that form one key share a relationship. A join keeps its own columns together,
+and each semantic foreign key is its own relationship. Auto Ontology stores a
+physical foreign key one column pair at a time, without the constraint it
+belongs to, so the pairs between two tables are grouped as follows:
+
+- pairs covering the target's composite primary key exactly once are that key;
+- pairs that reference the same target column are independent links, because
+  one key never references a column twice, so each becomes its own
+  relationship;
+- otherwise the pairs stay together as one key, since nothing shows they are
+  independent.
+
+This cannot tell every case apart. Two independent links to different target
+columns of the same table are kept as one relationship, and when links that
+share a target column are mixed with other pairs, all of them are split, as
+which pairs would belong together is unknown.
+
 ## Importing the model into Auto Ontology
 
 Start Auto Ontology, then send the native document to its REST API:
@@ -169,11 +187,13 @@ The Auto Ontology contract has no semantic-model envelope, `ai_context`,
 dimensions, synonyms, Ossie custom-extension storage, or expression-dialect
 variants. Those values cannot be represented in a native Auto Ontology document
 and are unavoidably lost on Ossie → Auto Ontology. Auto Ontology joins also
-have no relationship name, so Auto Ontology → Ossie synthesizes a stable
-`<from>_to_<to>` name. The converter never adds fictional fields to the
-Auto Ontology schema. Auto Ontology records uniqueness per column, so Ossie
-composite unique keys cannot be reconstructed after Auto Ontology → Ossie; only
-single-column unique keys survive.
+have no relationship name, so Auto Ontology → Ossie synthesizes one from the
+relationship's own columns, `<from>_<from_columns>_to_<to>`, such as
+`orders_customer_id_to_customers`. It does not depend on other relationships,
+so adding a link never renames an existing one. The converter never adds
+fictional fields to the Auto Ontology schema. Auto Ontology records uniqueness
+per column, so Ossie composite unique keys cannot be reconstructed after
+Auto Ontology → Ossie; only single-column unique keys survive.
 
 Ossie's `datatype` maps to and from the physical type on an Auto Ontology
 catalog column, for fields backed by a single column. Auto Ontology → Ossie

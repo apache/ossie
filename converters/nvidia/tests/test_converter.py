@@ -161,7 +161,7 @@ def test_round_trip_preserves_ossie_semantics_and_global_metrics() -> None:
     assert [metric["name"] for metric in model["metrics"]] == ["revenue_per_customer"]
     assert _native_extension(model)["native_document"]["zones"] == []
     assert model["relationships"][0] == {
-        "name": "orders_to_customers",
+        "name": "orders_customer_id_to_customers",
         "from": "orders",
         "to": "customers",
         "from_columns": ["customer_id"],
@@ -455,7 +455,7 @@ def test_foreign_keys_covering_a_composite_primary_key_stay_one_relationship() -
     ossie = yaml.safe_load(convert_auto_ontology_to_ossie(yaml.safe_dump(native)))
 
     assert _relationship_columns(ossie) == {
-        "orders_to_customers": [
+        "orders_customer_id_region_to_customers": [
             ("customer_id", "customer_id"),
             ("region", "region"),
         ],
@@ -477,12 +477,68 @@ def test_a_composite_key_and_an_independent_link_are_kept_apart() -> None:
     ossie = yaml.safe_load(convert_auto_ontology_to_ossie(yaml.safe_dump(native)))
 
     assert _relationship_columns(ossie) == {
-        "orders_to_customers": [
+        "orders_customer_id_region_to_customers": [
             ("customer_id", "customer_id"),
             ("region", "region"),
         ],
         "orders_referrer_code_to_customers": [("referrer_code", "referral_code")],
     }
+
+
+@pytest.mark.parametrize(
+    "customers_pk",
+    [
+        pytest.param([], id="no-primary-key-recorded"),
+        pytest.param(["customer_number"], id="references-a-non-primary-key"),
+        pytest.param(["customer_id"], id="only-one-column-in-the-primary-key"),
+    ],
+)
+def test_foreign_keys_with_distinct_targets_stay_one_relationship(
+    customers_pk: list[str],
+) -> None:
+    """Nothing shows these pairs are independent, so they stay one key."""
+    native = _physical_fk_native(
+        ["region"],
+        ["region", "customer_number"],
+        [("region", "region"), ("customer_id", "customer_id")],
+        customers_pk=customers_pk,
+    )
+
+    ossie = convert_auto_ontology_to_ossie(yaml.safe_dump(native))
+
+    assert _relationship_columns(yaml.safe_load(ossie)) == {
+        "orders_customer_id_region_to_customers": [
+            ("customer_id", "customer_id"),
+            ("region", "region"),
+        ],
+    }
+    restored = yaml.safe_load(convert_ossie_to_auto_ontology(ossie))
+    assert restored["data_layer"]["joins"] == []
+    assert (
+        restored["data_layer"]["foreign_keys"] == native["data_layer"]["foreign_keys"]
+    )
+
+
+def test_adding_a_link_does_not_rename_existing_relationships() -> None:
+    single = _physical_fk_native([], [], [("customer_id", "customer_id")])
+    with_second_link = _physical_fk_native(
+        ["referrer_id"],
+        [],
+        [("customer_id", "customer_id"), ("referrer_id", "customer_id")],
+    )
+
+    before = _relationship_columns(
+        yaml.safe_load(convert_auto_ontology_to_ossie(yaml.safe_dump(single)))
+    )
+    after = _relationship_columns(
+        yaml.safe_load(convert_auto_ontology_to_ossie(yaml.safe_dump(with_second_link)))
+    )
+
+    assert before == {
+        "orders_customer_id_to_customers": [("customer_id", "customer_id")]
+    }
+    assert after["orders_customer_id_to_customers"] == [("customer_id", "customer_id")]
+    assert len(after) == 2
 
 
 def test_links_that_cover_a_composite_key_ambiguously_are_all_kept_apart() -> None:

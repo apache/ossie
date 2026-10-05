@@ -23,7 +23,7 @@ import argparse
 import json
 import re
 import sys
-from collections import Counter, defaultdict
+from collections import defaultdict
 from collections.abc import Iterable, Mapping, Set
 from copy import deepcopy
 from pathlib import Path
@@ -1258,11 +1258,13 @@ def _relationships_from_auto_ontology(
         if table_pair[0] in datasets_by_table and table_pair[1] in datasets_by_table:
             fk_groups[table_pair].append((source["name"], target["name"]))
     for table_pair, table_columns in fk_groups.items():
-        target_pk = [
-            str(column)
-            for column in catalog["tables"][table_pair[1]]["item"].get("pk") or []
+        target_table = catalog["tables"][table_pair[1]]["item"]
+        target_pk = [str(column) for column in target_table.get("pk") or []]
+        target_order = [
+            str(column.get("name") or "")
+            for column in target_table.get("columns") or []
         ]
-        for columns in _split_foreign_keys(table_columns, target_pk):
+        for columns in _split_foreign_keys(table_columns, target_pk, target_order):
             add_group(
                 _relationship_dataset(
                     table_pair[0],
@@ -1302,16 +1304,13 @@ def _relationships_from_auto_ontology(
             continue
         add_group(from_name, to_name, [(source["name"], target_column["name"])])
 
-    groups_per_datasets = Counter(
-        (from_name, to_name) for from_name, to_name, _ in groups
-    )
     relationships: list[dict[str, Any]] = []
     used_names: set[str] = set()
     for from_name, to_name, columns in groups:
-        if groups_per_datasets[(from_name, to_name)] > 1 and len(columns) == 1:
-            base_name = f"{from_name}_{columns[0][0]}_to_{to_name}"
-        else:
-            base_name = f"{from_name}_to_{to_name}"
+        # Named from its own columns only, so adding another link between the
+        # same datasets never renames this one.
+        source_columns = "_".join(source for source, _ in columns)
+        base_name = f"{from_name}_{source_columns}_to_{to_name}"
         name, count = base_name, 1
         while name in used_names:
             count += 1
@@ -1330,22 +1329,39 @@ def _relationships_from_auto_ontology(
 
 
 def _split_foreign_keys(
-    columns: list[tuple[str, str]], target_pk: list[str]
+    columns: list[tuple[str, str]],
+    target_pk: list[str],
+    target_order: list[str],
 ) -> list[list[tuple[str, str]]]:
     """Group a table pair's physical foreign keys into Ossie relationships.
 
     Auto Ontology stores a foreign key one column pair at a time, without the
-    constraint it belongs to. Pairs that cover the target's composite primary
-    key exactly once are one key; any other pair is an independent link.
+    constraint it belongs to, and may not know the target's keys at all. So
+    pairs stay together, as one multi-column key, unless something shows they
+    are independent:
+
+    * pairs covering the target's composite primary key exactly once are that
+      key, and any other pair is a separate link;
+    * one key never references a target column twice, so pairs that share a
+      target column are independent links. Which of the remaining pairs would
+      belong with which of them cannot be told, so all of them are split.
     """
     columns = list(dict.fromkeys(columns))
+    groups: list[list[tuple[str, str]]] = []
     if len(target_pk) > 1:
         composite = [pair for pair in columns if pair[1] in target_pk]
         if sorted(target for _, target in composite) == sorted(target_pk):
             composite.sort(key=lambda pair: target_pk.index(pair[1]))
-            rest = [pair for pair in columns if pair not in composite]
-            return [composite, *([pair] for pair in rest)]
-    return [[pair] for pair in columns]
+            groups.append(composite)
+            columns = [pair for pair in columns if pair not in composite]
+    if not columns:
+        return groups
+    targets = [target for _, target in columns]
+    if len(set(targets)) < len(targets):
+        return [*groups, *([pair] for pair in columns)]
+    position = {name: index for index, name in enumerate(target_order)}
+    columns.sort(key=lambda pair: position.get(pair[1], len(position)))
+    return [*groups, columns]
 
 
 def _relationship_dataset(
