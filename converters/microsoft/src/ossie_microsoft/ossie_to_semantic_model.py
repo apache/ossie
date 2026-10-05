@@ -54,6 +54,7 @@ from ._common import (
     OSSIE_TO_TMSL_DATATYPE,
     OSSIE_UNSUPPORTED,
     OSSIE_VERSION,
+    RELATIONSHIP_CARDINALITY_METADATA,
     RELATIONSHIP_ENDPOINT_METADATA,
     TMSL_TO_OSSIE_DATATYPE,
     ConversionError,
@@ -604,10 +605,11 @@ def _dataset_column_index(dataset):
         aliases = {field["name"]}
         expressions = dialect_expressions(field.get("expression"))
         if expressions:
-            _, expression = _preferred_expression(expressions)
-            candidate = expression.strip().strip('"').strip("`").strip("[]")
-            if IDENTIFIER_RE.match(candidate):
-                aliases.add(candidate)
+            dialect, expression = _preferred_expression(expressions)
+            if dialect != DIALECT_DAX:
+                candidate = expression.strip().strip('"').strip("`").strip("[]")
+                if IDENTIFIER_RE.match(candidate):
+                    aliases.add(candidate)
         for alias in aliases:
             for key in (alias, f"{table}.{alias}"):
                 seen.setdefault(key.casefold(), set()).add(target)
@@ -870,9 +872,14 @@ def _convert_relationships(relationships, table_columns):
             "toTable": to_table,
             "toColumn": to_column,
         }
+        guarded_metadata = (
+            RELATIONSHIP_ENDPOINT_METADATA
+            if "normalizedEndpoints" in stash
+            else RELATIONSHIP_CARDINALITY_METADATA
+        )
         for key, value in stash.items():
             if key not in _RELATIONSHIP_CONTROL_KEYS and (
-                metadata_is_current or key not in RELATIONSHIP_ENDPOINT_METADATA
+                metadata_is_current or key not in guarded_metadata
             ):
                 tmsl.setdefault(key, value)
         _apply_ai_context(tmsl, relationship.get("ai_context"))
@@ -952,12 +959,9 @@ def _tmsl_text(value):
     whenever the value spans multiple lines. Matching that keeps generated files
     diffable against ones written by Power BI itself.
     """
-    if "\n" not in value and "\r" not in value:
+    if "\n" not in value:
         return value
-    lines = value.splitlines()
-    if value.endswith(("\r", "\n")):
-        lines.append("")
-    return lines
+    return value.replace("\r\n", "\n").split("\n")
 
 
 def _warn_foreign_extensions(scope, obj):

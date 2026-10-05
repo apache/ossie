@@ -329,6 +329,35 @@ def test_single_line_dax_whitespace_survives_a_round_trip():
     assert table["measures"][0]["expression"] == "  COUNTROWS('T')  "
 
 
+@pytest.mark.parametrize(
+    "separator",
+    ["\r", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"],
+)
+def test_non_newline_dax_separators_remain_scalar(separator):
+    expression = f'"left"{separator}"right"'
+    bim = {
+        "name": "dax_separator",
+        "model": {
+            "tables": [
+                {
+                    "name": "T",
+                    "columns": [
+                        {
+                            "name": "C",
+                            "type": "calculated",
+                            "dataType": "string",
+                            "expression": expression,
+                        }
+                    ],
+                }
+            ]
+        },
+    }
+
+    round_tripped = convert_ossie_to_semantic_model(build_ossie_document(bim))
+    assert round_tripped["model"]["tables"][0]["columns"][0]["expression"] == expression
+
+
 def test_calculated_column_uses_dax_dialect(model):
     field = _field(_dataset(model, "Sales"), "AmountWithTax")
     assert _expression(field, "DAX") == "Sales[Amount] * 1.2"
