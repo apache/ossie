@@ -131,7 +131,17 @@ from .tml import DocumentSet, TmlDocument, block_scalar
 #: stripped. This is what a hand-authored field's own physical-column
 #: expression looks like: no dataset qualifier (a field's expression runs
 #: against its own dataset's source), no operators, no function calls.
-_BARE_IDENTIFIER_RE = re.compile(r'^(?:[A-Za-z_][A-Za-z0-9_]{0,127}|"[^"]{1,128}")$')
+#:
+#: The quoted alternative admits a **doubled** double quote, because that is
+#: how a literal one is spelled inside a quoted identifier and it is what the
+#: forward direction writes: `_sql_identifier` in `tml_to_ossie` emits a
+#: ThoughtSpot column displayed as `Size (")` as `"Size ("")"`. Matching only
+#: `[^"]` here rejected exactly the strings this converter itself produces, so
+#: such a field was not recognised as physical at all on the way back and was
+#: dropped as untranslatable.
+_BARE_IDENTIFIER_RE = re.compile(
+    r'^(?:[A-Za-z_][A-Za-z0-9_]{0,127}|"(?:[^"]|""){1,128}")$'
+)
 
 #: Any source string containing whitespace outside of a quoted identifier
 #: reads as a query rather than a `db.schema.table` reference — a real
@@ -194,7 +204,10 @@ def _bare_sql_identifier(expression: str) -> str | None:
     if _BARE_IDENTIFIER_RE.match(text) is None:
         return None
     if text.startswith('"') and text.endswith('"'):
-        return text[1:-1]
+        # Undouble: `""` inside a quoted identifier is one literal `"`, so the
+        # column ThoughtSpot displays as `Size (")` arrives as `"Size ("")"`.
+        # Stripping the outer quotes alone would name a column no warehouse has.
+        return text[1:-1].replace('""', '"')
     return text
 
 
