@@ -297,3 +297,279 @@ def test_bare_expression_mappings_resolve_the_ref_scheme(behaviours_dir: Path):
     assert any("LargeSale.new(nr=" in rule for rule in defined), (
         f"expected LargeSale to be created with its identifier, got: {defined}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Mapping formulas over bare dataset columns
+# ---------------------------------------------------------------------------
+
+def test_a_bare_column_mapping_formula_converts(validation_dir: Path):
+    """A column named without its dataset resolves to that dataset's table.
+
+    Spec documents must qualify columns (`PAYMENTS.cashReceived`), but
+    `FormulaParser.parse_formula` takes a `mapping_dataset` that lets an
+    expression name them bare. Those come out as `DatasetFieldHandle`s, which
+    `MappingFormulaConverter.visit_datasetfieldhandle` resolves by dataset name.
+    It called `Dataset.name` — a property — as a method, so every such formula
+    raised `TypeError` there; the qualified form goes through
+    `visit_dotjoinhandle` and never touched that line.
+    """
+    from collections import OrderedDict
+
+    from ossie_ontology.expr.factory import Formula, FormulaCollector
+    from ossie_ontology.expr.formula.parser import FormulaParser
+    from ossie_ontology.expr.formula.visitor.converter import MappingFormulaConverter
+    from ossie_ontology.vendor.relationalai.mappings import ValueMapping
+
+    pyrel.Model.all_models.clear()
+    ontology = OssieParser().parse(validation_dir / "mapping_formula_valid.yaml")
+    om = OssieToRelationalAIConverter.convert(ontology, table_provider=declared_table)
+
+    mapping, = ontology.ontology_mappings
+    payments = mapping.semantic_model.lookup_dataset("PAYMENTS")
+    raw = "cashReceived - change"
+    expr = FormulaParser(ontology.ontology, mapping.semantic_model).parse_formula(
+        raw, mapping_dataset=payments
+    )
+    collector = FormulaCollector({})
+    expr.accept(collector)
+    formula = Formula([expr], collector.expression_info(), OrderedDict(), raw, None)
+
+    result = MappingFormulaConverter(om, formula).result
+
+    assert isinstance(result, ValueMapping)
+    assert result.expr() is not None
+
+
+# ---------------------------------------------------------------------------
+# Relationship bindings keyed by identifier
+# ---------------------------------------------------------------------------
+
+def test_binding_by_identifier_alone_looks_up_the_last_role(behaviours_dir: Path):
+    """`bind(r, **identifier)` with no `expr` keys the relationship's last role.
+
+    Without an `expr`, `GRBinding` builds an `EntityMapping` for the concept
+    playing `r`'s last role from the identifier keywords. It asked the model for
+    that player without saying which relationship it meant, so the call raised
+    `TypeError` before it could pick one — and every caller passed `expr`, so
+    nothing noticed.
+    """
+    from ossie_ontology.vendor.relationalai.mappings import EntityMapping
+
+    pyrel.Model.all_models.clear()
+    ontology = OssieParser().parse(behaviours_dir / "ref_scheme.yaml")
+    om = OssieToRelationalAIConverter.convert(ontology, table_provider=declared_table)
+    sale = om.lookup_concept("Sale")
+    sales = om.lookup_table("SALES")
+    assert sale is not None and sales is not None
+    before = define_rules(to_pyrel(om.base_model().to_metamodel()))
+
+    om.RelationshipBinding(EntityMapping(sale, nr=sales.saleNr)).bind(
+        sale.soldAt, nr=sales.storeNr
+    )
+
+    added = [
+        rule for rule in define_rules(to_pyrel(om.base_model().to_metamodel()))
+        if rule not in before
+    ]
+    assert len(added) == 1, f"expected one soldAt rule, got: {added}"
+    # The player is Store — soldAt's last role — looked up by the keyword given.
+    assert f"store := Store.lookup(nr={SALES_TABLE}.STORENR)" in added[0], added[0]
+    assert "define(sale.soldAt(store))" in added[0], added[0]
+
+
+# ---------------------------------------------------------------------------
+# Relationships skipped for clashing with PyRel reserved names
+# ---------------------------------------------------------------------------
+
+def _dataset_field(name: str) -> dict:
+    return {"name": name, "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": name}]}}
+
+
+# Gadget's `ref` is an ordinary property mapped by a link; Gizmo's `ref` is its
+# identifier. `ref` is a method on every PyRel Concept, so both are skipped.
+_RESERVED_NAME_SPEC = {
+    "version": "0.2.0.dev0",
+    "name": "Reserved",
+    "ontology": [
+        {"concept": "GadgetId", "type": "ValueType", "extends": ["Integer"]},
+        {"concept": "Label", "type": "ValueType", "extends": ["String"]},
+        {"concept": "GizmoId", "type": "ValueType", "extends": ["Integer"]},
+        {
+            "concept": "Gadget",
+            "type": "EntityType",
+            "identify_by": ["id"],
+            "relationships": [
+                {"name": "id", "roles": [{"concept": "GadgetId"}], "multiplicity": "OneToOne"},
+                {"name": "ref", "roles": [{"concept": "Label"}], "multiplicity": "ManyToOne"},
+                {"name": "label", "roles": [{"concept": "Label"}], "multiplicity": "ManyToOne"},
+            ],
+        },
+        {
+            "concept": "Gizmo",
+            "type": "EntityType",
+            "identify_by": ["ref"],
+            "relationships": [
+                {"name": "ref", "roles": [{"concept": "GizmoId"}], "multiplicity": "OneToOne"},
+            ],
+        },
+    ],
+    "ontology_mappings": [
+        {
+            "name": "reserved_mapping",
+            "semantic_model": {
+                "version": "0.2.0.dev0",
+                "name": "Reserved semantic model",
+                "datasets": [
+                    {
+                        "name": "GADGETS",
+                        "source": "DB.SCHEMA.GADGETS",
+                        "fields": [_dataset_field(f) for f in ("id", "ref", "label")],
+                    },
+                ],
+            },
+            "concept_mappings": [
+                {
+                    "concept": "Gadget",
+                    "link_mappings": [
+                        {
+                            "object_mapping": {
+                                "referent_mappings": [
+                                    {"relationship": "id", "expression": "GADGETS.id"}
+                                ]
+                            },
+                            "children": [
+                                {
+                                    "relationship": "ref",
+                                    "object_mapping": {"concept": "Label", "expression": "GADGETS.ref"},
+                                },
+                                {
+                                    "relationship": "label",
+                                    "object_mapping": {"concept": "Label", "expression": "GADGETS.label"},
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    ],
+}
+
+
+def test_mappings_over_a_reserved_relationship_are_skipped_with_a_warning(tmp_path: Path):
+    """A relationship skipped for its reserved name takes its uses down with it.
+
+    `_convert_relationships` warns and skips a relationship whose name clashes
+    with a PyRel `Concept` method, so it never reaches `properties_index`. The
+    identifier and link-mapping lookups indexed that dict directly, so the skip
+    the warning promised ended in a KeyError instead.
+    """
+    import yaml
+
+    path = tmp_path / "reserved.yaml"
+    path.write_text(yaml.safe_dump(_RESERVED_NAME_SPEC))
+    ontology = OssieParser().parse(path)
+
+    pyrel.Model.all_models.clear()
+    with pytest.warns(UserWarning) as caught:
+        om = OssieToRelationalAIConverter.convert(ontology, table_provider=declared_table)
+    messages = [str(w.message) for w in caught]
+
+    assert any("Skipping identify_by on 'Gizmo'" in m for m in messages), messages
+    assert any("Skipping link mapping" in m and "'Gadget.ref'" in m for m in messages), messages
+
+    # The rest of the mapping still converts.
+    defined = define_rules(to_pyrel(om.base_model().to_metamodel()))
+    assert any(".label(" in rule for rule in defined), defined
+    assert not any(".ref(" in rule for rule in defined), defined
+
+
+# ---------------------------------------------------------------------------
+# Entity bindings keyed through nested referents
+# ---------------------------------------------------------------------------
+
+# A Desk is identified by the Employee it belongs to, and an Employee by its
+# number. DESKS names two employees per row, so Desk is mapped twice: once per
+# column. Both mappings use `owner` at the top level and differ only in the
+# nested referent below it.
+_NESTED_REFERENTS_SPEC = {
+    "version": "0.2.0.dev0",
+    "name": "Nested",
+    "ontology": [
+        {"concept": "EmpNr", "type": "ValueType", "extends": ["Integer"]},
+        {
+            "concept": "Employee",
+            "type": "EntityType",
+            "identify_by": ["nr"],
+            "relationships": [
+                {"name": "nr", "roles": [{"concept": "EmpNr"}], "multiplicity": "OneToOne"},
+            ],
+        },
+        {
+            "concept": "Desk",
+            "type": "EntityType",
+            "identify_by": ["owner"],
+            "relationships": [
+                {"name": "owner", "roles": [{"concept": "Employee"}], "multiplicity": "OneToOne"},
+            ],
+        },
+    ],
+    "ontology_mappings": [
+        {
+            "name": "nested_mapping",
+            "semantic_model": {
+                "version": "0.2.0.dev0",
+                "name": "Nested semantic model",
+                "datasets": [
+                    {
+                        "name": "DESKS",
+                        "source": "DB.SCHEMA.DESKS",
+                        "fields": [_dataset_field(f) for f in ("primaryNr", "backupNr")],
+                    },
+                ],
+            },
+            "concept_mappings": [
+                {
+                    "concept": "Desk",
+                    "object_mappings": [
+                        {
+                            "referent_mappings": [{
+                                "relationship": "owner",
+                                "referent_mappings": [
+                                    {"relationship": "nr", "expression": f"DESKS.{column}"}
+                                ],
+                            }]
+                        }
+                        for column in ("primaryNr", "backupNr")
+                    ],
+                }
+            ],
+        }
+    ],
+}
+
+
+def test_object_mappings_differing_only_in_nested_referents_both_create(tmp_path: Path):
+    """Each nested referent creates its own entities.
+
+    Bindings are cached by `_object_mapping_key` so one concept mapped twice the
+    same way gets one creation rule. A referent with nested `referent_mappings`
+    has no `expression` of its own, and the key stopped at the top level — so
+    these two mappings keyed the same, the second reused the first's binding,
+    and the Desks of the backup column were silently never created.
+    """
+    import yaml
+
+    path = tmp_path / "nested.yaml"
+    path.write_text(yaml.safe_dump(_NESTED_REFERENTS_SPEC))
+    ontology = OssieParser().parse(path)
+
+    pyrel.Model.all_models.clear()
+    om = OssieToRelationalAIConverter.convert(ontology, table_provider=declared_table)
+    created = [rule for rule in define_rules(to_pyrel(om.base_model().to_metamodel()))
+               if "Desk.new(" in rule]
+
+    assert len(created) == 2, f"expected a Desk creation rule per column, got: {created}"
+    assert any("PRIMARYNR" in rule for rule in created), created
+    assert any("BACKUPNR" in rule for rule in created), created

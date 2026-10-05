@@ -158,7 +158,7 @@ class FormulaParser:
             handle = self._to_identifier_ref(p[1])
             if isinstance(handle, VarHandle):
                 raise ValueError(
-                    f"'{p[1]}' is not a field in dataset '{mapping_dataset.name()}' "
+                    f"'{p[1]}' is not a field in dataset '{mapping_dataset.name}' "
                     f"and is not a known concept, relationship, or dataset"
                 )
             p[0] = handle

@@ -356,7 +356,7 @@ class GRBinding:
         self._validate_role_count(r, len(keys) + (1 if has_extra else 0))
 
         if has_extra:
-            extra_key, extra_constraints = self._resolve_extra_key(expr, identifier)
+            extra_key, extra_constraints = self._resolve_extra_key(r, expr, identifier)
             keys.append(extra_key)
             where_clauses += extra_constraints
 
@@ -370,14 +370,14 @@ class GRBinding:
                 f"Relationship {r} has {len(r._fields)} roles but used in a "
                 f"GRBinding context that expects {expected}")
 
-    def _resolve_extra_key(self, expr, identifier):
+    def _resolve_extra_key(self, r, expr, identifier):
         """Resolve the trailing key/constraints pair from either an explicit
         expr (EntityMapping / ValueMapping / raw PyRel expression) or
         **identifier kwargs that synthesize an EntityMapping for the
-        relationship's last role.
+        relationship `r`'s last role.
         """
         if expr is None:
-            expr = EntityMapping(self._model._last_role_player(), **identifier)
+            expr = EntityMapping(self._model._last_role_player(r), **identifier)
         if isinstance(expr, EntityMapping):
             return expr.ref(), expr.constraints()
         if isinstance(expr, ValueMapping):

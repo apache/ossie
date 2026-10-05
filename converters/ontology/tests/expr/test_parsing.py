@@ -192,6 +192,28 @@ def test_mapping_formula_reaches_the_object_mapping_as_a_formula(validation_dir:
     assert object_mapping.expression.raw_expr == "PAYMENTS.cashReceived - PAYMENTS.change"
 
 
+def test_unknown_bare_column_names_the_dataset(validation_dir: Path):
+    """A misspelt bare column is reported against the dataset it was looked up in.
+
+    With a `mapping_dataset`, a bare identifier that is not one of its columns
+    falls through to the ontology; when that finds nothing either, the error
+    names the dataset. It used to call `Dataset.name` — a property — as a
+    method, so the typo surfaced as an opaque `TypeError` instead.
+    """
+    from ossie_ontology.expr.formula.parser import FormulaParser
+
+    model = parse(validation_dir, "mapping_formula_valid.yaml")
+    mapping, = model.ontology_mappings
+    payments = mapping.semantic_model.lookup_dataset("PAYMENTS")
+    parser = FormulaParser(model.ontology, mapping.semantic_model)
+
+    with pytest.raises(ValueError, match=re.escape(
+        "'cashRecieved' is not a field in dataset 'PAYMENTS' "
+        "and is not a known concept, relationship, or dataset"
+    )):
+        parser.parse_formula("cashRecieved - change", mapping_dataset=payments)
+
+
 # ---------------------------------------------------------------------------
 # The default wiring
 # ---------------------------------------------------------------------------

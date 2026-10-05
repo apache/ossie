@@ -314,8 +314,8 @@ class MappingFormulaConverter(GenericFormulaConverter):
         field = node._field
         dataset = getattr(field, 'dataset', None)
         if dataset is not None:
-            table = self._ontology.lookup_table(dataset.name())
-            assert table is not None, f"Table '{dataset.name()}' not found in ontology"
+            table = self._ontology.lookup_table(dataset.name)
+            assert table is not None, f"Table '{dataset.name}' not found in ontology"
             return table.__getattr__(field.name)
         raise ValueError(f"Cannot resolve table for field '{field.name}' — dataset back-reference is missing")
 

@@ -221,6 +221,23 @@ class OssieToRelationalAIConverter:
                 c = ontology.lookup_concept(container.name)
                 c.__setattr__(rel.name, pyrel_rel)
 
+    @staticmethod
+    def _lookup_property(properties_index: dict, rel_full_name: str, usage: str):
+        """The converted relationship, or None with a warning if it was skipped.
+
+        `_convert_relationships` skips relationships whose name is reserved by
+        PyRel, so they never reach `properties_index`. A mapping or identifier
+        that uses one is skipped too, rather than failing with a KeyError.
+        """
+        pyrel_rel = properties_index.get(rel_full_name)
+        if pyrel_rel is None:
+            warnings.warn(
+                f"Skipping {usage}: relationship '{rel_full_name}' was not converted",
+                UserWarning,
+                stacklevel=3,
+            )
+        return pyrel_rel
+
     # ------------------------------------------------------------------
     # Identifiers
     # ------------------------------------------------------------------
@@ -230,8 +247,18 @@ class OssieToRelationalAIConverter:
         for concept in oc.concepts(exclude_builtin=True):
             identify_by = concept.identify_by
             if identify_by:
+                looked_up = [
+                    OssieToRelationalAIConverter._lookup_property(
+                        properties_index, key, f"identify_by on '{concept.name}'"
+                    )
+                    for key in identify_by
+                ]
+                props = [prop for prop in looked_up if prop is not None]
+                # A partial identifier would silently change what makes the
+                # entity unique, so a missing part drops the whole declaration.
+                if len(props) != len(looked_up):
+                    continue
                 pyrel_concept = OssieToRelationalAIConverter._concept(ontology, concept.name)
-                props = [properties_index[key] for key in identify_by]
                 pyrel_concept.identify_by(*props)
 
     # ------------------------------------------------------------------
@@ -258,27 +285,36 @@ class OssieToRelationalAIConverter:
         return ("other", str(expression))
 
     @staticmethod
+    def _referents_key(referent_mappings: list[ReferentMapping]) -> tuple:
+        """Identity of a list of referent mappings, nested ones included.
+
+        A referent that identifies an entity by its own `referent_mappings` has
+        no `expression`, so relationship and expression alone would key every
+        such referent the same however it is nested. Recursing keeps apart what
+        `_build_entity_kwargs` (which also recurses) would build differently.
+        """
+        return tuple(sorted(
+            (str(getattr(rm.relationship, "name", rm.relationship)),
+             OssieToRelationalAIConverter._expression_key(rm.expression),
+             OssieToRelationalAIConverter._referents_key(rm.referent_mappings or []))
+            for rm in referent_mappings
+        ))
+
+    @staticmethod
     def _object_mapping_key(osi_concept: Concept, om: ObjectMapping) -> tuple:
         """Identity of the entity binding an ObjectMapping would produce.
 
         Two object mappings that agree on concept *and* on how the identifier
         is sourced describe the same set of entities, so they only need one
         creation rule between them. Everything the identifier is derived from
-        goes into the key: the referent mappings (relationship + expression),
-        or — for the bare-expression form — the expression and the concept it
+        goes into the key: the referent mappings (relationship + expression,
+        recursing into nested referents), or — for the bare-expression form — the expression and the concept it
         casts to. `_build_entity_binding` also reads ``om.concept`` (the
         supertype that supplies the ref scheme), so that is part of the key too.
         """
         supertype = om.concept.name if om.concept is not None else None
         if om.referent_mappings:
-            identifier = (
-                "referents",
-                tuple(sorted(
-                    (str(getattr(rm.relationship, "name", rm.relationship)),
-                     OssieToRelationalAIConverter._expression_key(rm.expression))
-                    for rm in om.referent_mappings
-                )),
-            )
+            identifier = ("referents", OssieToRelationalAIConverter._referents_key(om.referent_mappings))
         elif om.expression is not None:
             identifier = ("expression", OssieToRelationalAIConverter._expression_key(om.expression))
         else:
@@ -389,8 +425,11 @@ class OssieToRelationalAIConverter:
         if root_lm.relationship is not None:
             # Unary relationship: the object_mapping identifies the entity and
             # the relationship is asserted on it with no additional role.
-            pyrel_rel = properties_index[root_lm.relationship.full_name]
-            entity_binding.binds_to(pyrel_rel)
+            pyrel_rel = OssieToRelationalAIConverter._lookup_property(
+                properties_index, root_lm.relationship.full_name, "link mapping"
+            )
+            if pyrel_rel is not None:
+                entity_binding.binds_to(pyrel_rel)
         for child_lm in (root_lm.children or []):
             OssieToRelationalAIConverter._apply_link_binding(child_lm, entity_binding, ontology, properties_index, reasoner)
 
@@ -411,7 +450,11 @@ class OssieToRelationalAIConverter:
                 )
             return
 
-        pyrel_rel = properties_index[lm.relationship.full_name]
+        pyrel_rel = OssieToRelationalAIConverter._lookup_property(
+            properties_index, lm.relationship.full_name, "link mapping and its children"
+        )
+        if pyrel_rel is None:
+            return
 
         if intermediate_roles:
             # Ternary (or higher): emit a single binding with all accumulated roles + this role.
