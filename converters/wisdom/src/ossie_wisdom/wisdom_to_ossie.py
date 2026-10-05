@@ -52,6 +52,14 @@ _TIME_DATA_TYPES = {"DATE", "DATETIME", "TIMESTAMP"}
 
 _SIMPLE_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
+# Relationship `ai_context` notes for the Wisdom types Ossie direction can't express.
+# ossie_to_wisdom matches these exactly, so a free-text note is never read as a marker.
+RELATIONSHIP_TYPE_NOTES = {
+    "ONE_TO_MANY": "one-to-many relationship",
+    "ONE_TO_ONE": "one-to-one relationship",
+    "MANY_TO_MANY": "many-to-many relationship; cardinality is not representable in Ossie",
+}
+
 
 class WisdomToOssieConverter:
     """Converts a wisdom domain export dict into an Ossie Document."""
@@ -271,7 +279,7 @@ class WisdomToOssieConverter:
                 continue
 
             relationship_type = properties.get("relationshipType", "")
-            ai_context: Optional[str] = None
+            ai_context = RELATIONSHIP_TYPE_NOTES.get(relationship_type) if isinstance(relationship_type, str) else None
             # Ossie encodes cardinality by direction: `from` is the many side, `to` the one side.
             if relationship_type == "ONE_TO_MANY":
                 from_dataset, to_dataset = right, left
@@ -281,10 +289,7 @@ class WisdomToOssieConverter:
                 from_dataset, to_dataset = left, right
                 from_columns = [pair[0] for pair in column_pairs]
                 to_columns = [pair[1] for pair in column_pairs]
-                if relationship_type == "ONE_TO_ONE":
-                    ai_context = "one-to-one relationship"
-                elif relationship_type == "MANY_TO_MANY":
-                    ai_context = "many-to-many relationship; cardinality is not representable in Ossie"
+                if relationship_type == "MANY_TO_MANY":
                     issues.append(
                         ConverterIssue(
                             issue_type=ConverterIssueType.CARDINALITY_LOSS, element_name=f"{left} <-> {right}"

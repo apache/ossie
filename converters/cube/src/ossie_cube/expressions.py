@@ -32,7 +32,7 @@ improvement for cross-dataset metrics, not a formatting choice.
 Locating the aggregate calls is done with sqlglot rather than a regex, since an
 expression can nest them (`SUM(x) / NULLIF(SUM(y), 0)`) and string matching cannot
 tell a top-level call from one inside another argument. sqlglot is already a runtime
-dependency of the dbt and NVIDIA GSF converters for the same purpose.
+dependency of the dbt and NVIDIA Auto Ontology converters for the same purpose.
 """
 
 import re

@@ -499,6 +499,70 @@ public class OssieConverterSuite {
   }
 
   @Test
+  public void datatypeDroppedWithNotice() {
+    // `datatype` (a logical type on a field or metric) has no Metric View slot, where a column's
+    // type is inferred from its expression, so it is dropped with a notice on both.
+    String osi =
+        "version: 0.2.0.dev0\n"
+        + "name: m\n"
+        + "datasets:\n"
+        + "- name: f\n"
+        + "  source: c.s.f\n"
+        + "  fields:\n"
+        + "  - {name: d, datatype: String, expression: "
+        + "{dialects: [{dialect: DATABRICKS, expression: d}]}}\n"
+        + "metrics:\n"
+        + "- {name: n, datatype: Integer, expression: "
+        + "{dialects: [{dialect: DATABRICKS, expression: COUNT(*)}]}}\n";
+    OssieConverter.Result r = OssieConverter.convertOssieToMetricView(osi, null);
+    assertTrue(r.notices.contains("[field 'd'] datatype has no Metric View counterpart; dropped"),
+        r.notices.toString());
+    assertTrue(r.notices.contains("[metric 'n'] datatype has no Metric View counterpart; dropped"),
+        r.notices.toString());
+  }
+
+  @Test
+  public void relationshipForeignVendorExtensionDroppedWithNotice() {
+    // A foreign-vendor custom_extensions on a relationship has no Metric View slot, so it is
+    // dropped with a notice, matching the model/dataset/field levels.
+    String osi =
+        "version: 0.2.0.dev0\n"
+        + "name: m\n"
+        + "datasets:\n"
+        + "- name: o\n"
+        + "  source: c.s.o\n"
+        + "  fields:\n"
+        + "  - {name: a, expression: {dialects: [{dialect: DATABRICKS, expression: a}]}}\n"
+        + "- {name: c, source: c.s.c, primary_key: [k]}\n"
+        + "relationships:\n"
+        + "- {name: oc, from: o, to: c, from_columns: [k], to_columns: [k], "
+        + "custom_extensions: [{vendor_name: SNOWFLAKE, data: '{}'}]}\n"
+        + "metrics:\n"
+        + "- {name: n, expression: {dialects: [{dialect: DATABRICKS, expression: COUNT(*)}]}}\n";
+    OssieConverter.Result r = OssieConverter.convertOssieToMetricView(osi, null);
+    assertTrue(r.notices.contains("[relationship 'oc'] foreign-vendor custom_extensions dropped"),
+        r.notices.toString());
+  }
+
+  @Test
+  public void scalarJoinColumnsRejectedAsMustBeLists() {
+    // from_columns/to_columns given as a scalar (not a list) raise a clear "must be lists" error
+    // rather than the misleading "are required" (empty-list) or a character-count length error.
+    String osi =
+        "version: 0.2.0.dev0\n"
+        + "name: m\n"
+        + "datasets:\n"
+        + "- {name: a, source: c.s.a, fields: "
+        + "[{name: x, expression: {dialects: [{dialect: DATABRICKS, expression: x}]}}]}\n"
+        + "- {name: b, source: c.s.b}\n"
+        + "relationships:\n"
+        + "- {name: ab, from: a, to: b, from_columns: cid, to_columns: id}\n";
+    OssieConverter.ConversionException e = assertThrows(OssieConverter.ConversionException.class,
+        () -> OssieConverter.convertOssieToMetricView(osi, null));
+    assertTrue(e.getMessage().contains("must be lists"), e.getMessage());
+  }
+
+  @Test
   public void emptyExplicitSourceFallsBackLikeAbsent() {
     // An empty --source (e.g. an unset shell variable) must be treated as absent and fall back to
     // the fact heuristic, not taken as a real override (which would fail as "requested source ''
@@ -1243,6 +1307,96 @@ public class OssieConverterSuite {
   }
 
   @Test
+  @SuppressWarnings("unchecked")
+  public void cascadeDropKeepsAFunctionCallNamedLikeADroppedField() {
+    // A dropped field whose name collides with a SQL function token in a surviving expression must
+    // not cascade-drop it: COUNT_IF(YEAR(order_date) = 2026) calls the YEAR function, it is not a
+    // reference to a dropped `year` field. The reference match excludes a NAME(...) function call.
+    String osi =
+        "version: \"0.2.0.dev0\"\n"
+        + "name: m\n"
+        + "datasets:\n"
+        + "  - name: d\n"
+        + "    source: cat.sch.t\n"
+        + "    fields:\n"
+        + "      - name: order_date\n"
+        + "        expression:\n"
+        + "          dialects: [{dialect: DATABRICKS, expression: order_date}]\n"
+        + "      - name: year\n"
+        + "        expression:\n"
+        + "          dialects: [{dialect: T_SQL, expression: year}]\n"
+        + "metrics:\n"
+        + "  - name: orders_2026\n"
+        + "    expression:\n"
+        + "      dialects: [{dialect: DATABRICKS, expression: COUNT_IF(YEAR(order_date) = 2026)}]\n";
+    OssieConverter.Result result = OssieConverter.convertOssieToMetricView(osi, null);
+    Map<String, Object> view = (Map<String, Object>) OssieConverter.parseYaml(result.yaml);
+    List<Object> measures = (List<Object>) view.get("measures");
+    // YEAR(...) is a function call, not a reference to the dropped `year`, so the measure survives.
+    assertEquals(1, measures.size(), result.yaml);
+    assertEquals("orders_2026", ((Map<String, Object>) measures.get(0)).get("name"));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void cascadeDropKeepsASurvivorDifferingFromADroppedFieldOnlyInCase() {
+    // A dropped field and a surviving dimension whose names differ only in case can coexist. The
+    // survivor's bare self-reference (`region`) is its own name, not a reference to the dropped
+    // `REGION`, so the self-guard is case-folded and the survivor is kept.
+    String osi =
+        "version: \"0.2.0.dev0\"\n"
+        + "name: m\n"
+        + "datasets:\n"
+        + "  - name: d\n"
+        + "    source: cat.sch.t\n"
+        + "    fields:\n"
+        + "      - name: REGION\n"
+        + "        expression:\n"
+        + "          dialects: [{dialect: T_SQL, expression: REGION}]\n"
+        + "      - name: region\n"
+        + "        expression:\n"
+        + "          dialects: [{dialect: DATABRICKS, expression: region}]\n";
+    OssieConverter.Result result = OssieConverter.convertOssieToMetricView(osi, null);
+    Map<String, Object> view = (Map<String, Object>) OssieConverter.parseYaml(result.yaml);
+    List<Object> dims = (List<Object>) view.get("dimensions");
+    assertEquals(1, dims.size(), result.yaml);
+    assertEquals("region", ((Map<String, Object>) dims.get(0)).get("name"));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void cascadeDropDropsAMeasureNamedLikeADroppedDimension() {
+    // A measure that shares a dropped dimension's name -- same name, SAME case -- is not a
+    // self-reference: the guard is scoped to the column's own kind, so the measure's reference to
+    // the dropped dimension is detected and the measure is cascade-dropped rather than emitted
+    // dangling. The same-case clash is what pins the kind-scoping: a case-only difference already
+    // cascade-drops without it (the pre-fix guard was case-sensitive), so this must match case.
+    String osi =
+        "version: \"0.2.0.dev0\"\n"
+        + "name: m\n"
+        + "datasets:\n"
+        + "  - name: d\n"
+        + "    source: cat.sch.t\n"
+        + "    fields:\n"
+        + "      - name: id\n"
+        + "        expression:\n"
+        + "          dialects: [{dialect: DATABRICKS, expression: id}]\n"
+        + "      - name: region\n"
+        + "        expression:\n"
+        + "          dialects: [{dialect: T_SQL, expression: region}]\n"
+        + "metrics:\n"
+        + "  - name: region\n"
+        + "    expression:\n"
+        + "      dialects: [{dialect: DATABRICKS, expression: SUM(region)}]\n";
+    OssieConverter.Result result = OssieConverter.convertOssieToMetricView(osi, null);
+    Map<String, Object> view = (Map<String, Object>) OssieConverter.parseYaml(result.yaml);
+    assertFalse(view.containsKey("measures"),
+        "measure 'region' must cascade-drop, got: " + view.get("measures"));
+    assertTrue(result.notices.contains(cascadeNotice("measure", "region", "region")),
+        result.notices.toString());
+  }
+
+  @Test
   public void stashPreservesABackslashBeforeAUnicodeEscape() {
     // The stash lowercases the hex of Jackson's \\uXXXX escapes. That rewrite must re-emit any
     // escaped-backslash run in front of the escape verbatim; it used to halve it, so a value
@@ -1319,6 +1473,165 @@ public class OssieConverterSuite {
         () -> OssieConverter.convertMetricViewToOssie(mv, null));
     assertTrue(e.getMessage().contains("3-part"),
         "expected the same source-shape error the export raises, got: " + e.getMessage());
+  }
+
+  // -- import direction: coverage ported from the Python converter suite -----
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void importAcceptsFieldsAsAliasForDimensions() {
+    // `fields:` is a v1.1 alias for `dimensions:` (the form the Databricks docs use); the fact
+    // dataset's fields come from `fields` when `dimensions` is absent.
+    String mv =
+        "version: '1.1'\n"
+        + "source: c.s.orders\n"
+        + "fields:\n"
+        + "- {name: region, expr: region}\n";
+    Map<String, Object> model = (Map<String, Object>) importMv(mv);
+    List<Object> fields = (List<Object>) ((Map<String, Object>)
+        ((List<Object>) model.get("datasets")).get(0)).get("fields");
+    assertEquals(1, fields.size());
+    assertEquals("region", ((Map<String, Object>) fields.get(0)).get("name"));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void importWarnsAndUsesDimensionsWhenBothDimensionsAndFieldsSet() {
+    // `fields` is a v1.1 alias for `dimensions`; if a malformed view sets both, `dimensions` wins
+    // and the `fields` list is ignored with a notice.
+    String mv =
+        "version: '1.1'\n"
+        + "source: c.s.orders\n"
+        + "dimensions:\n"
+        + "- {name: kept, expr: kept}\n"
+        + "fields:\n"
+        + "- {name: ignored, expr: ignored}\n";
+    OssieConverter.Result r = OssieConverter.convertMetricViewToOssie(mv, null);
+    assertTrue(r.notices.stream().anyMatch(n -> n.contains("both 'dimensions' and 'fields' are set")),
+        r.notices.toString());
+    Map<String, Object> model = (Map<String, Object>) OssieConverter.parseYaml(r.yaml);
+    List<Object> fields = (List<Object>) ((Map<String, Object>)
+        ((List<Object>) model.get("datasets")).get(0)).get("fields");
+    assertEquals(1, fields.size());
+    assertEquals("kept", ((Map<String, Object>) fields.get(0)).get("name"));
+  }
+
+  @Test
+  public void importRejectsMalformedSource() {
+    // The top-level `source` must be a 3-part catalog.schema.table or a SELECT/WITH subquery: a
+    // 2-part name, an empty part, or a whitespace-laden part is rejected (the same rule the export
+    // applies to a join source; see importValidatesAJoinSourceTheWayTheExportDoes).
+    for (String src : new String[] {"a.b", ".s.t", "c..t", "c.s.", "cat . sch . tbl"}) {
+      String mv = "version: '1.1'\nsource: " + src + "\n";
+      OssieConverter.ConversionException e = assertThrows(OssieConverter.ConversionException.class,
+          () -> OssieConverter.convertMetricViewToOssie(mv, null), "should reject source: " + src);
+      assertTrue(e.getMessage().contains("must be a 3-part"), src + " -> " + e.getMessage());
+    }
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void importAcceptsAWithSubquerySource() {
+    // A `WITH(...)` subquery with no space after the keyword is still recognized as SQL (not
+    // mistaken for a dotted identifier) and passes through as the fact source.
+    String mv =
+        "version: '1.1'\n"
+        + "source: WITH(t AS (SELECT 1 AS a)) SELECT a FROM t\n";
+    Map<String, Object> model = (Map<String, Object>) importMv(mv);
+    String source = (String) ((Map<String, Object>)
+        ((List<Object>) model.get("datasets")).get(0)).get("source");
+    assertTrue(source.startsWith("WITH("), source);
+  }
+
+  @Test
+  public void importRejectsAJoinNamedSource() {
+    // `source` is reserved for the fact; a join named `source` (case-insensitively) is rejected
+    // rather than colliding with the fact alias.
+    for (String name : new String[] {"source", "SOURCE", "Source"}) {
+      String mv = "version: '1.1'\nsource: c.s.fact\n"
+          + "joins:\n- {name: " + name + ", source: c.s.dim, using: [id]}\n";
+      OssieConverter.ConversionException e = assertThrows(OssieConverter.ConversionException.class,
+          () -> OssieConverter.convertMetricViewToOssie(mv, null), "should reject join named " + name);
+      assertTrue(e.getMessage().contains("reserved"), name + " -> " + e.getMessage());
+    }
+  }
+
+  @Test
+  public void importRejectsADuplicateJoinName() {
+    // Join names and the source must be distinct case-insensitively; a join named like the fact
+    // (derived from the source's last part) collides and is rejected.
+    String mv = "version: '1.1'\nsource: c.s.fact\n"
+        + "joins:\n- {name: fact, source: c.s.other, using: [id]}\n";
+    OssieConverter.ConversionException e = assertThrows(OssieConverter.ConversionException.class,
+        () -> OssieConverter.convertMetricViewToOssie(mv, null));
+    assertTrue(e.getMessage().contains("Duplicate dataset/join name"), e.getMessage());
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void importFlipsOneToManyJoinAndStashesTheGrain() {
+    // A one_to_many MV join becomes an Apache Ossie relationship with the MANY side as `from` (the
+    // joined table) and the source/grain on `to`. The cardinality rides the DATABRICKS stash and
+    // the grain is recorded at model level, so a round trip restores one_to_many.
+    String mv = "version: '1.1'\n"
+        + "source: c.s.orders\n"
+        + "joins:\n"
+        + "- {name: line_items, source: c.s.line_items, "
+        + "on: 'source.order_id = line_items.l_order_id', cardinality: one_to_many}\n"
+        + "measures:\n- {name: order_count, expr: COUNT(*)}\n";
+    String ossieYaml = OssieConverter.convertMetricViewToOssie(mv, null).yaml;
+    Map<String, Object> model = (Map<String, Object>) OssieConverter.parseYaml(ossieYaml);
+    Map<String, Object> rel =
+        (Map<String, Object>) ((List<Object>) model.get("relationships")).get(0);
+    assertEquals("line_items", rel.get("from"));
+    assertEquals("orders", rel.get("to"));
+    assertEquals("l_order_id", ((List<Object>) rel.get("from_columns")).get(0));
+    assertEquals("order_id", ((List<Object>) rel.get("to_columns")).get(0));
+    // The stashed cardinality and grain restore one_to_many on the way back to a Metric View.
+    Map<String, Object> back = (Map<String, Object>) OssieConverter.parseYaml(
+        OssieConverter.convertOssieToMetricView(ossieYaml, null).yaml);
+    Map<String, Object> rtJoin = (Map<String, Object>) ((List<Object>) back.get("joins")).get(0);
+    assertEquals("one_to_many", rtJoin.get("cardinality"));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void importRecoversUniqueKeyFromAtMostOneMatch() {
+    // A many_to_one join whose `rely.at_most_one_match` is set records the join key as a
+    // unique_keys entry on the target dataset (the inverse of how export sets at_most_one_match).
+    String mv = "version: '1.1'\n"
+        + "source: c.s.orders\n"
+        + "joins:\n"
+        + "- {name: customer, source: c.s.customer, on: 'source.cid = customer.id', "
+        + "rely: {at_most_one_match: true}}\n"
+        + "dimensions:\n- {name: cn, expr: customer.name}\n";
+    Map<String, Object> model = (Map<String, Object>) importMv(mv);
+    Map<String, Object> customer = null;
+    for (Object d : (List<Object>) model.get("datasets")) {
+      Map<String, Object> ds = (Map<String, Object>) d;
+      if ("customer".equals(ds.get("name"))) {
+        customer = ds;
+      }
+    }
+    assertFalse(customer == null, model.toString());
+    List<Object> uniqueKeys = (List<Object>) customer.get("unique_keys");
+    assertEquals("id", ((List<Object>) uniqueKeys.get(0)).get(0));
+  }
+
+  @Test
+  public void importRejectsNonStringScalarsWhereStringsRequired() {
+    // A non-string scalar where a string is required (a join name, a measure expr) raises a clean
+    // ConversionException naming the field, not a raw cast failure.
+    String badJoinName = "version: '1.1'\nsource: c.s.f\n"
+        + "joins:\n- {name: 5, source: c.s.d, using: [id]}\n";
+    OssieConverter.ConversionException e1 = assertThrows(OssieConverter.ConversionException.class,
+        () -> OssieConverter.convertMetricViewToOssie(badJoinName, null));
+    assertTrue(e1.getMessage().contains("must be a string"), e1.getMessage());
+    String badMeasureExpr = "version: '1.1'\nsource: c.s.o\n"
+        + "measures:\n- {name: rev, expr: 5}\n";
+    OssieConverter.ConversionException e2 = assertThrows(OssieConverter.ConversionException.class,
+        () -> OssieConverter.convertMetricViewToOssie(badMeasureExpr, null));
+    assertTrue(e2.getMessage().contains("must be a string"), e2.getMessage());
   }
 
   // -- hardening: strict schema/stash parsing and structured failures -------

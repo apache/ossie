@@ -15,19 +15,19 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Public API and CLI for native NVIDIA GSF model conversion."""
+"""Public API and CLI for native NVIDIA Auto Ontology model conversion."""
 
 from .native_converter import (
-    GSFConversionError,
-    convert_gsf_to_ossie,
-    convert_ossie_to_gsf,
+    AutoOntologyConversionError,
+    convert_auto_ontology_to_ossie,
+    convert_ossie_to_auto_ontology,
     main,
 )
 
 __all__ = [
-    "GSFConversionError",
-    "convert_gsf_to_ossie",
-    "convert_ossie_to_gsf",
+    "AutoOntologyConversionError",
+    "convert_auto_ontology_to_ossie",
+    "convert_ossie_to_auto_ontology",
     "main",
 ]
 

@@ -177,14 +177,14 @@ def test_builtin_integer_concept_resolves():
 def test_wrong_concept_name_in_token_raises():
     """Verbalization says {Item} but the relationship role plays Store."""
     verbalization = "{Item}"
-    with pytest.raises(ValueError, match="does not match verbalization role"):
+    with pytest.raises(ValueError, match="No role of relationship"):
         _rel("r", Concept("Store"), [], verbalization)
 
 
 def test_wrong_role_name_in_token_raises():
     """Verbalization says {Store:wrong} but the relationship role name is unset."""
     verbalization = "{Store:wrong}"
-    with pytest.raises(ValueError, match="does not match verbalization role"):
+    with pytest.raises(ValueError, match="No role of relationship"):
         _rel("r", Concept("Store"), [], verbalization)
 
 
@@ -199,3 +199,70 @@ def test_same_concept_different_roles_valid():
     assert roles[0].name is None
     assert roles[1].name == "parent"
     assert roles[0].concept is roles[1].concept
+
+
+def test_reverse_reading_accepted():
+    """A reading may list the roles in a different order from the declaration."""
+    person = Concept("Person")
+    company = Concept("Company")
+    rel = Relationship(
+        "works for",
+        person,
+        [(company, None)],
+        verbalizes=["{Person} works for {Company}", "big- {Company} employs {Person} full -time"],
+    )
+    forward, reverse = rel.verbalizations
+    assert [r.concept for r in forward.roles] == [person, company]
+    assert [r.concept for r in reverse.roles] == [company, person]
+    assert reverse.roles[0].prefix == "big"
+    assert reverse.roles[0].following_text == "employs"
+    assert reverse.roles[1].postfix == "full time"
+    assert [r.player for r in rel.roles] == [person, company]
+
+
+def test_reverse_reading_ternary():
+    verbalization = "{Warehouse} receives {Item} from {Supplier}"
+    supplier, item, warehouse = Concept("Supplier"), Concept("Item"), Concept("Warehouse")
+    rel = _rel("delivers", supplier, [(item, None), (warehouse, None)], verbalization)
+    roles = parse_verbalization(rel, verbalization).roles
+    assert [r.concept for r in roles] == [warehouse, item, supplier]
+    assert roles[0].following_text == "receives"
+    assert roles[1].following_text == "from"
+
+
+def test_reading_with_repeated_role_raises():
+    """Using one role twice leaves another out, which is rejected."""
+    verbalization = "{Person} works with {Person}"
+    with pytest.raises(ValueError, match="more than once"):
+        _rel("works for", Concept("Person"), [(Concept("Company"), None)], verbalization)
+
+
+def test_ring_reading_missing_role_name_points_to_unused_role():
+    """A ring token that lacks a role name names the unused role in the error."""
+    person = Concept("Person")
+    with pytest.raises(ValueError, match=re.escape("did you mean '{Person:parent}'?")):
+        _rel("parenthood", person, [(person, "parent")], "{Person} has parent {Person}")
+
+
+def test_ring_reading_without_role_names_is_positional():
+    """When a concept plays two unnamed roles, tokens take them in declared order."""
+    person = Concept("Person")
+    verbalization = "{Person} manages {Person}"
+    rel = _rel("manages", person, [(person, None)], verbalization)
+    roles = parse_verbalization(rel, verbalization).roles
+    assert [r.name for r in roles] == [None, None]
+    assert roles[0].following_text == "manages"
+
+
+def test_ring_reverse_reading_with_role_names():
+    """Role names disambiguate a ring, so its reverse reading is accepted."""
+    person = Concept("Person")
+    rel = Relationship(
+        "parenthood",
+        person,
+        [(person, "parent")],
+        verbalizes=["{Person} has parent {Person:parent}", "{Person:parent} is parent of {Person}"],
+    )
+    reverse = rel.verbalizations[1]
+    assert [r.name for r in reverse.roles] == ["parent", None]
+    assert reverse.roles[0].following_text == "is parent of"

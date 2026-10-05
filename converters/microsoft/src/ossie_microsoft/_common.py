@@ -57,6 +57,7 @@ VENDOR = "POWER_BI"
 # Expression dialects this converter understands.
 DIALECT_DAX = "DAX"
 DIALECT_ANSI = "ANSI_SQL"
+DIALECT_OSSIE_SQL = "OSSIE_SQL_2026"
 
 # Bump when the shape of a stashed `data` blob changes.
 STASH_VERSION = 2

@@ -24,6 +24,7 @@ import static org.apache.ossie.util.DataStructureUtils.*;
 
 import org.apache.ossie.converter.ConverterConstants.Level;
 import org.apache.ossie.converter.pipeline.PipelineStep;
+import org.apache.ossie.exception.ConversionException;
 import java.util.*;
 
 import org.apache.ossie.util.MappingUtils;
@@ -76,11 +77,46 @@ public class MetricMappingHandler implements PipelineStep {
             return;
         }
 
+        Set<String> names = new HashSet<>();
+        for (Object metric : ossieMetrics) {
+            String name = getString(asMap(metric), NAME);
+            if (!names.add(name)) {
+                throw new ConversionException("Metric '" + name + "': duplicate metric name");
+            }
+        }
+
         // Filter mappings to get only metric-related entries
         Map<String, String> metricMappings = MappingUtils.filterMappingsByPrefix(mappings, METRICS);
+
+        Map<String, Object> mappedData = GenericMappingEngine.applyMappings(sourceData, metricMappings);
         metricMappings.keySet().forEach(mappings::remove);
 
-        logger.debug("Metrics are not mapped in Ossie to Salesforce direction");
+        outputData.putAll(mappedData);
+
+        customExtensionHandler.restoreCustomExtensionsAtLevel(outputData, sourceData, Level.METRICS);
+
+        List<Object> sfMetrics = getList(outputData, SEMANTIC_CALCULATED_MEASUREMENTS);
+        if (sfMetrics != null) {
+            unwrapExpressions(ossieMetrics, sfMetrics, sourceData, outputData);
+            applyDefaults(sfMetrics);
+        } else if (!ossieMetrics.isEmpty()) {
+            throw new ConversionException("Metric '" + getString(asMap(ossieMetrics.get(0)), NAME)
+                    + "': metric mappings produced no calculated measurements");
+        }
+    }
+
+    /**
+     * Ossie metrics have no label field; Salesforce requires one. Default it to apiName,
+     * matching DatasetMappingHandler/SemanticModelMappingHandler, unless custom_extensions
+     * already restored an exact Salesforce label.
+     */
+    private void applyDefaults(List<Object> sfMetrics) {
+        for (Object sfMetricObj : sfMetrics) {
+            Map<String, Object> sfMetric = asMap(sfMetricObj);
+            if (!sfMetric.containsKey(LABEL) && sfMetric.containsKey(API_NAME)) {
+                sfMetric.put(LABEL, getString(sfMetric, API_NAME));
+            }
+        }
     }
 
     /**
@@ -117,6 +153,31 @@ public class MetricMappingHandler implements PipelineStep {
         sourceData.remove(SEMANTIC_CALCULATED_MEASUREMENTS);
     }
 
+
+    /**
+     * Compiles each metric to Tua after fields have been mapped. Binding checks both
+     * the OSI declarations and the actual emitted fields, including their types.
+     */
+    private void unwrapExpressions(List<Object> ossieMetrics, List<Object> sfMetrics,
+                                   Map<String, Object> sourceData, Map<String, Object> outputData) {
+        if (ossieMetrics.size() != sfMetrics.size()) {
+            throw new ConversionException("Metric export count differs from declared metrics: "
+                    + streamMaps(ossieMetrics).map(metric -> getString(metric, NAME)).toList());
+        }
+        MetricFieldResolver resolver = new MetricFieldResolver(sourceData, outputData);
+        for (int i = 0; i < ossieMetrics.size(); i++) {
+            Map<String, Object> ossieMetric = asMap(ossieMetrics.get(i));
+            Map<String, Object> sfMetric = asMap(sfMetrics.get(i));
+            MetricExpressionTranslator.Result translated =
+                    MetricExpressionTranslator.translate(ossieMetric, resolver);
+            sfMetric.put(EXPRESSION, translated.expression());
+            // Exact Salesforce dataType restored from custom_extensions (e.g. "Currency")
+            // wins over the Tua compiler's derived type.
+            sfMetric.putIfAbsent(DATA_TYPE, translated.dataType());
+            sfMetric.put("syntax", "Tua");
+            sfMetric.put("aggregationType", "UserAgg");
+        }
+    }
 
     /**
      * Wraps expressions for SF→Ossie conversion.

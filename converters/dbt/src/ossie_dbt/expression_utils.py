@@ -22,43 +22,117 @@ import sqlglot.expressions as exp
 
 from metricflow_semantic_interfaces.type_enums import AggregationType
 
+# expr for "count all rows": MetricFlow wraps a count's expr in CASE WHEN, where a bare * is invalid
+ROW_COUNT_EXPR = "1"
+
 
 def _strip_qualifier(col: str) -> str:
     """Strip a leading dataset qualifier, e.g. 'orders.amount' → 'amount'."""
     return col.rsplit(".", 1)[-1] if "." in col else col
 
 
+def _unqualify_column(node: exp.Expression) -> exp.Expression:
+    """Drop the table/schema/database parts of a column reference; other nodes pass through."""
+    return exp.Column(this=node.this) if isinstance(node, exp.Column) else node
+
+
 def _col_name(node: exp.Expression) -> str:
-    """Return the bare (unqualified) column name from a sqlglot expression node."""
+    """Return an aggregate argument with the dataset qualifier stripped from every column reference.
+
+    MSI evaluates a metric's ``expr`` inside its own semantic model, so column
+    references must be unqualified: ``orders.amount`` → ``amount`` and
+    ``orders.gross - orders.tax`` → ``gross - tax``.
+    """
     if isinstance(node, exp.Column):
         return node.name
-    rendered = node.sql()
-    return _strip_qualifier(rendered)
+    return node.transform(_unqualify_column).sql()
+
+
+def _is_row_count_argument(node: exp.Expression) -> bool:
+    """Return True for ``*`` (bare or qualified) and for any non-null constant.
+
+    None of these can ever be NULL, so ``COUNT()`` of one counts every row. A string literal is left
+    alone, since ``COUNT('x')`` is not a row-count idiom anyone writes on purpose.
+    """
+    if isinstance(node, exp.Star) or (isinstance(node, exp.Column) and isinstance(node.this, exp.Star)):
+        return True
+    if isinstance(node, exp.Boolean):
+        return True
+    if isinstance(node, exp.Literal) and not node.is_string:
+        return True
+    return False
+
+
+def _is_constant_expr(expr: str) -> bool:
+    """Return True when ``expr`` is a non-null constant such as ``1``, ``2`` or ``TRUE``, not a column."""
+    try:
+        node = sqlglot.parse_one(expr)
+    except sqlglot.errors.SqlglotError:
+        return False
+    return isinstance(node, exp.Boolean) or (isinstance(node, exp.Literal) and not node.is_string)
+
+
+def _contains_distinct_row_count(expression: str) -> bool:
+    """Return True if ``expression`` contains ``COUNT(DISTINCT <row-count argument>)`` anywhere in its tree.
+
+    ``COUNT(DISTINCT *)`` / ``COUNT(DISTINCT 1)`` and friends parse and run as SQL, but counting distinct
+    values of ``*`` or a constant is not a sensible aggregation for a semantic layer: it answers whether
+    any row exists (0 or 1), not a meaningful total. The caller should drop the metric with an issue
+    rather than fall back to a raw expression, which would wrap this inside another aggregate
+    (``SUM(COUNT(DISTINCT ...))``, not valid for MetricFlow to run) and guess a dataset the way a row
+    count must not.
+
+    Searches the whole tree, not just the top node, so a wrapped or combined form such as
+    ``(COUNT(DISTINCT *))``, ``COUNT(DISTINCT *) * 100`` or ``COALESCE(COUNT(DISTINCT 1), 0)`` is still
+    caught, not only a bare ``COUNT(DISTINCT *)`` as the entire expression. The DISTINCT operand is
+    unnested before the check, so ``COUNT(DISTINCT (*))`` is caught the same way as ``COUNT(DISTINCT *)``.
+    """
+    try:
+        tree = sqlglot.parse_one(expression.strip())
+    except sqlglot.errors.SqlglotError:
+        return False
+    for count in tree.find_all(exp.Count):
+        argument = count.this
+        if count.args.get("expressions") or not isinstance(argument, exp.Distinct):
+            continue
+        operands = argument.expressions
+        if len(operands) == 1 and _is_row_count_argument(operands[0].unnest()):
+            return True
+    return False
 
 
 def _extract_agg_info(expression: str) -> Optional[Tuple[AggregationType, str, Optional[float], bool]]:
     """Parse a SQL aggregation expression using sqlglot.
 
-    Returns ``(agg_type, bare_col, percentile, use_discrete_percentile)`` for recognised patterns,
+    Returns ``(agg_type, expr, percentile, use_discrete_percentile)`` for recognised patterns,
     ``None`` otherwise. ``percentile`` is only set for ``PERCENTILE`` aggregations; it is ``None``
     for all others. ``use_discrete_percentile`` is ``True`` only for ``PERCENTILE_DISC``.
-    The returned column name has any dataset qualifier stripped.
+    ``expr`` is the aggregate argument with the dataset qualifier stripped from every column
+    reference (a bare column name in the common case). ``COUNT`` of ``*`` or of any non-null constant
+    (``COUNT(1)``, ``COUNT(TRUE)``, ...) returns ``ROW_COUNT_EXPR`` instead of a column name;
+    ``SUM`` of a constant returns the constant itself (``SUM(2)`` → ``'2'``). ``COUNT(DISTINCT ...)`` of a
+    row-count argument, and multi-argument ``COUNT``, return ``None``.
     """
     try:
         tree = sqlglot.parse_one(expression.strip())
-    except sqlglot.errors.ParseError:
+    except sqlglot.errors.SqlglotError:
         return None
 
-    # COUNT(DISTINCT col)
-    if isinstance(tree, exp.Count) and isinstance(tree.this, exp.Distinct):
-        cols = tree.this.expressions
-        if len(cols) == 1:
-            return AggregationType.COUNT_DISTINCT, _col_name(cols[0]), None, False
-        return None
-
-    # COUNT(col)
     if isinstance(tree, exp.Count):
-        return AggregationType.COUNT, _col_name(tree.this), None, False
+        # COUNT(a, b) has no single-column equivalent
+        if tree.args.get("expressions"):
+            return None
+        argument, distinct = tree.this, False
+        if isinstance(argument, exp.Distinct):
+            operands = argument.expressions
+            if len(operands) != 1:
+                return None
+            argument, distinct = operands[0], True
+        if _is_row_count_argument(argument.unnest()):
+            # COUNT(*), COUNT(1), COUNT(TRUE), ... → count all rows; COUNT(DISTINCT ...) of one is not valid SQL.
+            # Unnested so a redundant paren, e.g. COUNT(DISTINCT (*)), is still recognised.
+            return None if distinct else (AggregationType.COUNT, ROW_COUNT_EXPR, None, False)
+        return (AggregationType.COUNT_DISTINCT if distinct else AggregationType.COUNT), _col_name(argument), None, False
 
     # SUM(CASE WHEN col THEN 1 ELSE 0 END) → SUM_BOOLEAN
     if isinstance(tree, exp.Sum) and isinstance(tree.this, exp.Case):
@@ -75,8 +149,13 @@ def _extract_agg_info(expression: str) -> Optional[Tuple[AggregationType, str, O
             return AggregationType.SUM_BOOLEAN, ifs[0].this.sql(), None, False
         return None
 
-    # SUM(col)
+    # SUM(col), or SUM(<constant>). A constant keeps its own value (SUM(2) is twice the row count,
+    # not SUM(1)); the caller uses _is_constant_expr to send it through the same dataset check as
+    # COUNT(*), since a constant has no column to place it in a dataset.
     if isinstance(tree, exp.Sum):
+        argument = tree.this.unnest()
+        if _is_constant_expr(argument.sql()):
+            return AggregationType.SUM, argument.sql(), None, False
         return AggregationType.SUM, _col_name(tree.this), None, False
 
     if isinstance(tree, exp.Avg):
@@ -116,7 +195,7 @@ def _try_parse_ratio(expr_str: str) -> Optional[Tuple[str, str]]:
     """Try to parse ``(expr_a) / (expr_b)`` using sqlglot, returning ``(num_expr, den_expr)`` or None."""
     try:
         tree = sqlglot.parse_one(expr_str.strip())
-    except sqlglot.errors.ParseError:
+    except sqlglot.errors.SqlglotError:
         return None
 
     if not isinstance(tree, exp.Div):
@@ -138,7 +217,7 @@ def _get_dataset_qualifier(expression: str) -> Optional[str]:
     """Return the sole dataset qualifier referenced by an expression, if present."""
     try:
         tree = sqlglot.parse_one(expression.strip())
-    except sqlglot.errors.ParseError:
+    except sqlglot.errors.SqlglotError:
         return None
 
     qualifiers = {

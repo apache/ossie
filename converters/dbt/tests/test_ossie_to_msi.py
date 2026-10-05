@@ -21,6 +21,8 @@ import pytest
 from pydantic import ValidationError
 from syrupy.assertion import SnapshotAssertion
 
+from ossie import OssieDataType, OssieDimension
+from ossie_dbt.converter_issues import ConverterIssue, ConverterIssueType
 from ossie import (
     OssieDataType,
     OssieDialect,
@@ -327,6 +329,197 @@ class TestOssieToMSIMetricConversion:
         sm = result.semantic_models[0]
         assert len(sm.measures) == 0
 
+    @pytest.mark.parametrize("expression", ["COUNT(*)", "COUNT(orders.*)", "COUNT(2)", "COUNT(TRUE)", "COUNT(0)"])
+    def test_count_of_a_constant_normalizes_to_row_count_expr(self, expression: str) -> None:
+        doc = _ossie_doc(
+            datasets=[_ossie_dataset("orders", fields=[_ossie_field("order_id")])],
+            metrics=[_ossie_metric("order_count", expression)],
+        )
+        result = OssieToMSIConverter().convert(doc).output
+
+        m = result.metrics[0]
+        assert m.type_params.metric_aggregation_params is not None
+        assert m.type_params.metric_aggregation_params.agg == AggregationType.COUNT
+        assert m.type_params.expr == "1"
+
+    @pytest.mark.parametrize(("expression", "expr"), [("SUM(1)", "1"), ("SUM(2)", "2"), ("SUM(TRUE)", "TRUE")])
+    def test_sum_of_a_constant_keeps_its_value(self, expression: str, expr: str) -> None:
+        """SUM adds the constant up, so SUM(2) is twice the row count and must not become SUM(1)."""
+        doc = _ossie_doc(
+            datasets=[_ossie_dataset("orders", fields=[_ossie_field("order_id")])],
+            metrics=[_ossie_metric("total", expression)],
+        )
+        result = OssieToMSIConverter().convert(doc).output
+
+        m = result.metrics[0]
+        assert m.type_params.metric_aggregation_params is not None
+        assert m.type_params.metric_aggregation_params.agg == AggregationType.SUM
+        assert m.type_params.metric_aggregation_params.semantic_model == "orders"
+        assert m.type_params.expr == expr
+
+    @pytest.mark.parametrize("expression", ["SUM(1)", "SUM(2)", "SUM(0)"])
+    def test_sum_of_a_constant_with_multiple_datasets_is_dropped_with_a_warning(self, expression: str) -> None:
+        """A constant has no column to place it in a dataset, so with several it is refused, not guessed."""
+        doc = _ossie_doc(datasets=self._customers_and_orders(), metrics=[_ossie_metric("total", expression)])
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.output.metrics == []
+        assert [i.element_name for i in result.issues] == ["total"]
+
+    def test_unparseable_expression_does_not_abort_the_conversion(self) -> None:
+        """An unterminated quote is a sqlglot TokenError, not a ParseError; it falls back, it doesn't crash."""
+        expression = "SUM(CASE WHEN status = 'paid THEN amount END)"
+        doc = _ossie_doc(
+            datasets=[_ossie_dataset("orders", fields=[_ossie_field("amount")])],
+            metrics=[_ossie_metric("paid", expression)],
+        )
+        result = OssieToMSIConverter().convert(doc).output
+
+        assert result.metrics[0].type_params.expr == expression
+
+    def test_qualified_count_star_uses_dataset_qualifier(self) -> None:
+        doc = _ossie_doc(
+            datasets=[
+                _ossie_dataset("customers", fields=[_ossie_field("customer_id")]),
+                _ossie_dataset("orders", fields=[_ossie_field("order_id")]),
+            ],
+            metrics=[_ossie_metric("order_count", "COUNT(orders.*)")],
+        )
+        result = OssieToMSIConverter().convert(doc).output
+
+        m = result.metrics[0]
+        assert m.type_params.expr == "1"
+        assert m.type_params.metric_aggregation_params is not None
+        assert m.type_params.metric_aggregation_params.semantic_model == "orders"
+
+    @staticmethod
+    def _customers_and_orders() -> list:
+        return [
+            _ossie_dataset("customers", fields=[_ossie_field("customer_id")]),
+            _ossie_dataset("orders", fields=[_ossie_field("order_id"), _ossie_field("amount")]),
+        ]
+
+    @pytest.mark.parametrize("expression", ["COUNT(*)", "COUNT(1)", "COUNT(2)", "COUNT(0)", "COUNT(TRUE)"])
+    def test_bare_row_count_with_multiple_datasets_is_dropped_with_a_warning(self, expression: str) -> None:
+        doc = _ossie_doc(datasets=self._customers_and_orders(), metrics=[_ossie_metric("order_count", expression)])
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.output.metrics == []
+        assert result.issues == [ConverterIssue(ConverterIssueType.ROW_COUNT_METRIC_DROPPED, "order_count")]
+
+    def test_ratio_with_a_bare_count_star_is_dropped_as_a_whole(self) -> None:
+        doc = _ossie_doc(
+            datasets=self._customers_and_orders(),
+            metrics=[
+                _ossie_metric("revenue", "SUM(orders.amount)"),
+                _ossie_metric("avg_order_value", "(SUM(orders.amount)) / (COUNT(*))"),
+            ],
+        )
+        result = OssieToMSIConverter().convert(doc)
+
+        assert [m.name for m in result.output.metrics] == ["revenue"]
+        assert result.issues == [ConverterIssue(ConverterIssueType.ROW_COUNT_METRIC_DROPPED, "avg_order_value")]
+
+    def test_ratio_with_a_distinct_row_count_is_dropped_as_a_whole(self) -> None:
+        doc = _ossie_doc(
+            datasets=self._customers_and_orders(),
+            metrics=[
+                _ossie_metric("revenue", "SUM(orders.amount)"),
+                _ossie_metric("avg_order_value", "(SUM(orders.amount)) / (COUNT(DISTINCT *))"),
+            ],
+        )
+        result = OssieToMSIConverter().convert(doc)
+
+        assert [m.name for m in result.output.metrics] == ["revenue"]
+        assert result.issues == [ConverterIssue(ConverterIssueType.ROW_COUNT_METRIC_DROPPED, "avg_order_value")]
+
+    def test_qualified_count_star_in_ratio_binds_both_sides_to_the_same_dataset(self) -> None:
+        doc = _ossie_doc(
+            datasets=self._customers_and_orders(),
+            metrics=[_ossie_metric("avg_order_value", "(SUM(orders.amount)) / (COUNT(orders.*))")],
+        )
+        result = OssieToMSIConverter().convert(doc).output
+
+        by_name = {m.name: m for m in result.metrics}
+        for sub_metric in ("avg_order_value__numerator", "avg_order_value__denominator"):
+            params = by_name[sub_metric].type_params.metric_aggregation_params
+            assert params is not None
+            assert params.semantic_model == "orders"
+
+    def test_schema_qualified_count_star_matches_dataset_by_last_segment(self) -> None:
+        doc = _ossie_doc(
+            datasets=self._customers_and_orders(),
+            metrics=[_ossie_metric("order_count", "COUNT(db.orders.*)")],
+        )
+        result = OssieToMSIConverter().convert(doc).output
+
+        params = result.metrics[0].type_params.metric_aggregation_params
+        assert params is not None
+        assert params.semantic_model == "orders"
+
+    def test_count_star_of_unknown_dataset_is_dropped_with_a_warning(self) -> None:
+        doc = _ossie_doc(
+            datasets=self._customers_and_orders(),
+            metrics=[_ossie_metric("order_count", "COUNT(nope.*)")],
+        )
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.output.metrics == []
+        assert [i.element_name for i in result.issues] == ["order_count"]
+
+    def test_count_star_matching_several_datasets_by_last_segment_is_dropped_with_a_warning(self) -> None:
+        doc = _ossie_doc(
+            datasets=[
+                _ossie_dataset("a.orders", fields=[_ossie_field("order_id")]),
+                _ossie_dataset("b.orders", fields=[_ossie_field("order_id")]),
+            ],
+            metrics=[_ossie_metric("order_count", "COUNT(orders.*)")],
+        )
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.output.metrics == []
+        assert [i.element_name for i in result.issues] == ["order_count"]
+
+    @pytest.mark.parametrize("expression", ["COUNT(orders.*, amount)", "COUNT(db.orders, *)"])
+    def test_unsupported_count_star_forms_fall_back_to_the_raw_expression(self, expression: str) -> None:
+        doc = _ossie_doc(
+            datasets=[_ossie_dataset("orders", fields=[_ossie_field("order_id"), _ossie_field("amount")])],
+            metrics=[_ossie_metric("odd_count", expression)],
+        )
+        result = OssieToMSIConverter().convert(doc).output
+
+        assert result.metrics[0].type_params.expr == expression
+
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            "COUNT(DISTINCT *)",
+            "COUNT(DISTINCT 1)",
+            "COUNT(DISTINCT orders.*)",
+            "COUNT(DISTINCT (*))",
+            "COUNT(DISTINCT (1))",
+            "(COUNT(DISTINCT *))",
+            "COUNT(DISTINCT *) * 100",
+            "COALESCE(COUNT(DISTINCT 1), 0)",
+            "CAST(COUNT(DISTINCT *) AS INT)",
+        ],
+    )
+    def test_distinct_of_a_row_count_is_dropped_with_a_warning(self, expression: str) -> None:
+        """COUNT(DISTINCT *) and friends are valid SQL but answer 'does any row exist' (0 or 1), not a
+
+        meaningful total. Falling back to a raw SUM of it would be a nested aggregate MetricFlow cannot
+        run, bound to a guessed dataset; dropped instead, the same as an unresolvable COUNT(*). Caught
+        whether it is the whole expression, redundantly parenthesized, or wrapped in another function.
+        """
+        doc = _ossie_doc(
+            datasets=[_ossie_dataset("orders", fields=[_ossie_field("order_id"), _ossie_field("amount")])],
+            metrics=[_ossie_metric("odd_count", expression)],
+        )
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.output.metrics == []
+        assert [i.element_name for i in result.issues] == ["odd_count"]
+
     def test_ratio_expression_produces_ratio_metric(self) -> None:
         doc = _ossie_doc(
             datasets=[
@@ -435,6 +628,54 @@ class TestOssieToMSIMetricConversion:
         metric = result.metrics[0]
         assert metric.type_params.metric_aggregation_params is not None
         assert metric.type_params.metric_aggregation_params.semantic_model == "analytics.orders"
+
+    @pytest.mark.parametrize(
+        ("expression", "expected_agg", "expected_expr"),
+        [
+            ("SUM(orders.gross - orders.tax)", AggregationType.SUM, "gross - tax"),
+            ("SUM(COALESCE(orders.tax, 0))", AggregationType.SUM, "COALESCE(tax, 0)"),
+            ("MAX(orders.gross - orders.tax)", AggregationType.MAX, "gross - tax"),
+            ("SUM(amount * 0.5)", AggregationType.SUM, "amount * 0.5"),
+            ("AVG(CAST(orders.tax AS DOUBLE))", AggregationType.AVERAGE, "CAST(tax AS DOUBLE)"),
+            (
+                "COUNT(DISTINCT orders.status || orders.region)",
+                AggregationType.COUNT_DISTINCT,
+                "status || region",
+            ),
+            (
+                "PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY orders.gross - orders.tax)",
+                AggregationType.PERCENTILE,
+                "gross - tax",
+            ),
+        ],
+    )
+    def test_compound_aggregate_argument_is_unqualified_as_a_whole(
+        self, expression: str, expected_agg: AggregationType, expected_expr: str
+    ) -> None:
+        """Every column reference inside the aggregate argument loses its dataset qualifier;
+        the surrounding expression is kept intact rather than sliced at the last dot."""
+        doc = _ossie_doc(
+            datasets=[
+                _ossie_dataset(
+                    "orders",
+                    fields=[
+                        _ossie_field("amount"),
+                        _ossie_field("gross"),
+                        _ossie_field("tax"),
+                        _ossie_field("status"),
+                        _ossie_field("region"),
+                    ],
+                )
+            ],
+            metrics=[_ossie_metric("m", expression)],
+        )
+        result = OssieToMSIConverter().convert(doc).output
+
+        m = result.metrics[0]
+        assert m.type_params.metric_aggregation_params is not None
+        assert m.type_params.metric_aggregation_params.agg == expected_agg
+        assert m.type_params.metric_aggregation_params.semantic_model == "orders"
+        assert m.type_params.expr == expected_expr
 
     def test_percentile_cont_0_5_produces_median(self) -> None:
         doc = _ossie_doc(
@@ -640,6 +881,53 @@ class TestOssieToMSIRoundTrip:
         assert metrics[0].expression.dialects[0].expression == "SUM(orders.amount)"
         assert ossie_doc.to_ossie_yaml() == snapshot
 
+    def test_count_star_round_trips_to_a_portable_sum_one(self) -> None:
+        """COUNT(orders.*) survives one round trip as the portable SUM(1), not the original invalid expr '*'.
+
+        The dataset is not recovered on this leg: MSI has already collapsed the metric to agg=SUM, expr='1'
+        by the time it reaches MSIToOssieConverter (MetricFlow's own transform runs first), and SUM(1) has
+        no qualifier to recover a dataset from. Emitting COUNT(<dataset>.*) instead, to carry the dataset
+        through, was tried and reverted: it is outside the Ossie expression spec, several engines reject or
+        misinterpret it, and no sibling converter recognizes it as a row count. SUM(1) is what every engine
+        agrees on.
+
+        Converting SUM(1) forward again, with more than one dataset, now refuses rather than silently
+        picking the first dataset: SUM of a constant has no column to place it in a dataset, so it goes
+        through the same ambiguity check as COUNT(*) and is dropped with ROW_COUNT_METRIC_DROPPED instead of
+        a plausible but wrong semantic_model. The dataset is genuinely lost by this point, not recoverable; refusing is
+        the honest outcome, not a bug to fix on the next leg.
+        """
+        original = _ossie_doc(
+            datasets=[
+                _ossie_dataset("customers", fields=[_ossie_field("customer_id")]),
+                _ossie_dataset("orders", fields=[_ossie_field("order_id"), _ossie_field("amount")]),
+            ],
+            metrics=[
+                _ossie_metric("order_count", "COUNT(orders.*)"),
+                _ossie_metric("avg_order_value", "(SUM(orders.amount)) / (COUNT(orders.*))"),
+            ],
+        )
+
+        msi = OssieToMSIConverter().convert(original).output
+        ossie_doc = MSIToOssieConverter().convert(msi).output
+
+        expressions = {m.name: m.expression.dialects[0].expression for m in ossie_doc.metrics or []}
+        assert expressions["order_count"] == "SUM(1)"
+        assert "SUM(1)" in expressions["avg_order_value"]
+
+        # The first round trip already flattened the ratio into independent metrics (numerator,
+        # denominator, and the ratio's own expression string). Only the ones that are still row
+        # counts drop here: the denominator (SUM(1), ambiguous) and the ratio itself, which depends
+        # on it. The numerator (SUM(orders.amount), not a row count) is a valid metric on its own
+        # and survives, same as it would have before any of this.
+        again = OssieToMSIConverter().convert(ossie_doc)
+        assert [m.name for m in again.output.metrics] == ["avg_order_value__numerator"]
+        assert {i.element_name for i in again.issues} == {
+            "order_count",
+            "avg_order_value",
+            "avg_order_value__denominator",
+        }
+
     def test_discrete_percentile_survives_round_trip(self) -> None:
         """A PERCENTILE_DISC metric keeps use_discrete_percentile through MSI -> Ossie -> MSI."""
         orders = semantic_model_with_guaranteed_meta(
@@ -682,3 +970,25 @@ class TestOssieToMSIRoundTrip:
         assert m.type_params.metric_aggregation_params.agg == AggregationType.PERCENTILE
         assert m.type_params.metric_aggregation_params.agg_params is not None
         assert m.type_params.metric_aggregation_params.agg_params.use_discrete_percentile is True
+
+    def test_compound_aggregate_argument_survives_round_trip(self) -> None:
+        """Ossie → MSI → Ossie keeps a compound aggregate argument intact."""
+        original = _ossie_doc(
+            datasets=[_ossie_dataset("orders", fields=[_ossie_field("gross"), _ossie_field("tax")])],
+            metrics=[
+                _ossie_metric("net_sales", "SUM(orders.gross - orders.tax)"),
+                _ossie_metric("tax_or_zero", "SUM(COALESCE(orders.tax, 0))"),
+            ],
+        )
+
+        msi = OssieToMSIConverter().convert(original).output
+        ossie_doc = MSIToOssieConverter().convert(msi).output
+
+        metrics = ossie_doc.metrics or []
+        expressions = {m.name: m.expression.dialects[0].expression for m in metrics}
+        # msi_to_ossie._qualify_col re-qualifies only bare identifiers,
+        # so the exported argument comes back unqualified.
+        assert expressions == {
+            "net_sales": "SUM(gross - tax)",
+            "tax_or_zero": "SUM(COALESCE(tax, 0))",
+        }

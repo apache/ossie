@@ -19,8 +19,8 @@
 
 Sigma data model column and metric formulas look like ``Sum([Orders/Amount])`` or
 ``If([Status] = "closed", 1, 0)``. Sigma's formula language is not SQL, so — unlike
-converters whose native expressions are already SQL (e.g. NVIDIA GSF, which parses
-straight into sqlglot) — a real tokenizer and recursive-descent parser is needed to
+converters whose native expressions are already SQL (e.g. NVIDIA Auto Ontology, which
+parses straight into sqlglot) — a real tokenizer and recursive-descent parser is needed to
 get from formula text to a tree (:class:`FormulaNode`).
 
 From there, though, this module does what the other converters do: it translates into

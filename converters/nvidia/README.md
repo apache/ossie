@@ -17,11 +17,15 @@
   under the License.
 -->
 
-# Apache Ossie ↔ NVIDIA GSF Converter
+# Apache Ossie ↔ NVIDIA Auto Ontology Converter
 
-Offline conversion between Apache Ossie YAML and NVIDIA GSF's native
-`GsfModelDocument` YAML contract. Conversion itself does not require GSF,
-Neo4j, a database, or network access.
+Offline conversion between Apache Ossie YAML and NVIDIA Auto Ontology's native
+`AutoOntologyModelDocument` YAML contract. Conversion itself does not require
+Auto Ontology, a database, or network access.
+
+Auto Ontology was previously named Generative Semantic Fabric (GSF). Ossie
+files written under the old name carry an `NVIDIA_GSF` custom extension; the
+converter still reads it, and writes `NVIDIA_AUTO_ONTOLOGY` from now on.
 
 Ossie input and output use one model per document, with `name`, `datasets`,
 `relationships`, and `metrics` directly at the root beside `version`. Migrate
@@ -30,7 +34,7 @@ legacy `semantic_model` wrappers before conversion; see the
 
 ## Mapping
 
-| Apache Ossie | Native GSF model document |
+| Apache Ossie | Native Auto Ontology model document |
 |---|---|
 | Dataset source | `data_layer.databases[].schemas[].tables[]` |
 | Dataset field backed by one column | `semantic_layer.terms[].columns_attributes[]` |
@@ -55,12 +59,12 @@ cd converters/nvidia
 uv sync
 ```
 
-## Ossie → GSF
+## Ossie → Auto Ontology
 
 ```bash
-uv run ossie-nvidia-gsf export \
+uv run ossie-nvidia-auto-ontology export \
   --input ../../examples/tpcds_semantic_model.yaml \
-  --output tpcds.gsf.yaml \
+  --output tpcds.auto_ontology.yaml \
   --database-name tpcds
 ```
 
@@ -69,118 +73,123 @@ qualified `database.schema.table` sources do not require it. One document may
 contain multiple databases.
 
 ```python
-from ossie_nvidia_gsf import convert_ossie_to_gsf
+from ossie_nvidia_auto_ontology import convert_ossie_to_auto_ontology
 
-gsf_yaml = convert_ossie_to_gsf(ossie_yaml, database_name="tpcds")
+auto_ontology_yaml = convert_ossie_to_auto_ontology(ossie_yaml, database_name="tpcds")
 ```
 
-## GSF → Ossie
+## Auto Ontology → Ossie
 
 ```bash
-uv run ossie-nvidia-gsf import \
-  --input tpcds.gsf.yaml \
+uv run ossie-nvidia-auto-ontology import \
+  --input tpcds.auto_ontology.yaml \
   --output semantic_model.yaml \
   --name tpcds
 ```
 
 `--name` overrides the Ossie model name. Without it, the converter uses the
-single catalog database name when there is one, otherwise `gsf_model`.
+single catalog database name when there is one, otherwise
+`auto_ontology_model`.
 
 ```python
-from ossie_nvidia_gsf import convert_gsf_to_ossie
+from ossie_nvidia_auto_ontology import convert_auto_ontology_to_ossie
 
-ossie_yaml = convert_gsf_to_ossie(gsf_yaml, model_name="tpcds")
+ossie_yaml = convert_auto_ontology_to_ossie(auto_ontology_yaml, model_name="tpcds")
 ```
 
-This converter subset currently accepts only GSF terms that represent exactly
-one table, because one Ossie dataset cannot represent several physical tables.
-Several terms may represent the same table and become distinct Ossie datasets
-sharing one source. SQL attributes become Ossie fields regardless of their GSF
-source group. Custom analyses remain global by becoming model-level Ossie
-metrics. Relationships are recovered from joins, then physical foreign keys,
-then semantic foreign keys.
+This converter subset currently accepts only Auto Ontology terms that represent
+exactly one table, because one Ossie dataset cannot represent several physical
+tables. Several terms may represent the same table and become distinct Ossie
+datasets sharing one source. SQL attributes become Ossie fields regardless of
+their Auto Ontology source group. Custom analyses remain global by becoming
+model-level Ossie metrics. Relationships are recovered from joins, then
+physical foreign keys, then semantic foreign keys.
 
-## Importing the model into GSF
+## Importing the model into Auto Ontology
 
-Start GSF, then send the native document to its REST API:
+Start Auto Ontology, then send the native document to its REST API:
 
 ```bash
 curl --fail-with-body \
   -X POST \
   'http://127.0.0.1:3001/api/model/import?replace=true&embed=true' \
   -H 'Content-Type: application/x-yaml' \
-  --data-binary @tpcds.gsf.yaml
+  --data-binary @tpcds.auto_ontology.yaml
 ```
 
 The endpoint also accepts a multipart upload in a `file` field.
 
-The target GSF instance must already have a connection configured for each
-database named in the document. GSF validates every imported SQL attribute
-against that connection's dialect, so importing into an instance with no
-matching connection fails. A database's `dialect` is likewise derived from the
-live connection rather than stored on import, so it is exported for information
-only and does not survive a GSF → GSF cycle.
+The target Auto Ontology instance must already have a connection configured for
+each database named in the document. Auto Ontology validates every imported SQL
+attribute against that connection's dialect, so importing into an instance with
+no matching connection fails. A database's `dialect` is likewise derived from
+the live connection rather than stored on import, so it is exported for
+information only and does not survive an Auto Ontology → Auto Ontology cycle.
 
 ## Fidelity and unavoidable losses
 
-When converting GSF to Ossie, the converter records the native document in an
-`NVIDIA_GSF` custom extension. A direct GSF → Ossie → GSF cycle can therefore
-reuse live identifiers and preserve catalog properties, SQL source groups,
-SQL text, `sql_column_is`, relationships, and zones. Ossie-origin entities use
+When converting Auto Ontology to Ossie, the converter records the native
+document in an `NVIDIA_AUTO_ONTOLOGY` custom extension. A direct
+Auto Ontology → Ossie → Auto Ontology cycle can therefore reuse live
+identifiers and preserve catalog properties, SQL source groups, SQL text,
+`sql_column_is`, relationships, and zones. Ossie-origin entities use
 deterministic IDs when no preserved native ID is available. Current Ossie
 expressions and relationships remain authoritative: preserved SQL and native
 relationship records are reused only when they still correspond to the Ossie
 entities or are outside the represented Ossie catalog scope.
 
 That extension holds the whole native document, so an Ossie file produced from
-GSF carries a full copy of the GSF catalog alongside the model derived from it.
-This is a deliberate trade of size for round-trip fidelity: it is what lets a
-GSF → Ossie → GSF cycle keep live identifiers, and it means the Ossie output of
-a large catalog is bulky and not meant to be reviewed by hand. Converting
-Ossie → GSF from a hand-written Ossie file, which has no such extension, is
-unaffected.
+Auto Ontology carries a full copy of the Auto Ontology catalog alongside the
+model derived from it. This is a deliberate trade of size for round-trip
+fidelity: it is what lets an Auto Ontology → Ossie → Auto Ontology cycle keep
+live identifiers, and it means the Ossie output of a large catalog is bulky and
+not meant to be reviewed by hand. Converting Ossie → Auto Ontology from a
+hand-written Ossie file, which has no such extension, is unaffected.
 
 SQL is parsed with sqlglot across a list of candidate dialects rather than a
-single one, because preserved GSF SQL carries whatever dialect its connection
-reported. SQL that no candidate can parse is treated as opaque: it is still
-carried through verbatim, and only the parse-derived enrichment (discovering
-which tables and columns an expression touches) is skipped, so a model that
-imported cleanly can always be exported again. On GSF → Ossie, expressions are
-labelled with the source connection's dialect when Ossie names it
-(`SNOWFLAKE`, `DATABRICKS`, `BIGQUERY`) and `ANSI_SQL` otherwise.
+single one, because preserved Auto Ontology SQL carries whatever dialect its
+connection reported. SQL that no candidate can parse is treated as opaque: it
+is still carried through verbatim, and only the parse-derived enrichment
+(discovering which tables and columns an expression touches) is skipped, so a
+model that imported cleanly can always be exported again. On
+Auto Ontology → Ossie, expressions are labelled with the source connection's
+dialect when Ossie names it (`SNOWFLAKE`, `DATABRICKS`, `BIGQUERY`) and
+`ANSI_SQL` otherwise.
 
-For an Ossie-origin model there is no GSF catalog to check against, so physical
-columns are synthesized from the identifiers in each expression. Date-part
-keywords are excluded, but only in the unit argument of a recognized date
-function, so a column genuinely named `day` or `month` is kept everywhere else.
-A unit passed to a date function the converter does not recognize is still
-synthesized as a column; this is inherent to deriving a catalog from SQL text
-and does not apply once a GSF catalog is present, since a GSF-sourced catalog
-is authoritative and never widened.
+For an Ossie-origin model there is no Auto Ontology catalog to check against,
+so physical columns are synthesized from the identifiers in each expression.
+Date-part keywords are excluded, but only in the unit argument of a recognized
+date function, so a column genuinely named `day` or `month` is kept everywhere
+else. A unit passed to a date function the converter does not recognize is
+still synthesized as a column; this is inherent to deriving a catalog from SQL
+text and does not apply once an Auto Ontology catalog is present, since a
+catalog sourced from Auto Ontology is authoritative and never widened.
 
-The GSF contract has no semantic-model envelope, `ai_context`, dimensions,
-synonyms, Ossie custom-extension storage, or expression-dialect variants.
-Those values cannot be represented in a native GSF document and are
-unavoidably lost on Ossie → GSF. GSF joins also have no relationship name, so
-GSF → Ossie synthesizes a stable `<from>_to_<to>` name. The converter never
-adds fictional fields to the GSF schema. GSF records uniqueness per column, so
-Ossie composite unique keys cannot be reconstructed after GSF → Ossie; only
+The Auto Ontology contract has no semantic-model envelope, `ai_context`,
+dimensions, synonyms, Ossie custom-extension storage, or expression-dialect
+variants. Those values cannot be represented in a native Auto Ontology document
+and are unavoidably lost on Ossie → Auto Ontology. Auto Ontology joins also
+have no relationship name, so Auto Ontology → Ossie synthesizes a stable
+`<from>_to_<to>` name. The converter never adds fictional fields to the
+Auto Ontology schema. Auto Ontology records uniqueness per column, so Ossie
+composite unique keys cannot be reconstructed after Auto Ontology → Ossie; only
 single-column unique keys survive.
 
-Ossie's `datatype` maps to and from the physical type on a GSF catalog column,
-for fields backed by a single column. GSF → Ossie reduces the physical type to
-Ossie's logical vocabulary, so `NUMBER(38,0)` becomes `Integer`, `NUMBER(12,2)`
-becomes `Decimal`, and a type Ossie cannot name, such as Snowflake's `VARIANT`,
-becomes `Opaque` as the spec prescribes. Ossie → GSF writes a canonical physical
-type for a column the Ossie model introduces, and never overrides a type
-preserved from a real GSF catalog, since GSF reports what the connection
-actually holds. The two mappings are inverses, so a declared `datatype` survives
-a full cycle.
+Ossie's `datatype` maps to and from the physical type on an Auto Ontology
+catalog column, for fields backed by a single column. Auto Ontology → Ossie
+reduces the physical type to Ossie's logical vocabulary, so `NUMBER(38,0)`
+becomes `Integer`, `NUMBER(12,2)` becomes `Decimal`, and a type Ossie cannot
+name, such as Snowflake's `VARIANT`, becomes `Opaque` as the spec prescribes.
+Ossie → Auto Ontology writes a canonical physical type for a column the Ossie
+model introduces, and never overrides a type preserved from a real
+Auto Ontology catalog, since Auto Ontology reports what the connection actually
+holds. The two mappings are inverses, so a declared `datatype` survives a full
+cycle.
 
-A computed field or a metric has no single column behind it and GSF stores no
-type for either, so their `datatype` is not carried. `Opaque` is not written
-back, because it names a type outside the vocabulary and there is no physical
-type worth inventing from it.
+A computed field or a metric has no single column behind it and Auto Ontology
+stores no type for either, so their `datatype` is not carried. `Opaque` is not
+written back, because it names a type outside the vocabulary and there is no
+physical type worth inventing from it.
 
 ## Tests
 

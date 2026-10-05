@@ -21,7 +21,7 @@ The output mirrors the JSON produced by wisdom's ``exportDomain`` RPC so it
 can be fed to ``importDomain``. Inverse of :mod:`ossie_wisdom.wisdom_to_ossie`:
 model ``ai_context`` splits back into system instructions and knowledge items,
 fields split back into columns and formulas, relationship direction is read as
-many-to-one (with the ai_context notes restoring one-to-one/many-to-many), and
+many-to-one (with the ai_context notes restoring the other cardinalities), and
 metrics attach to the table their expression references.
 
 IDs are derived deterministically from element names, and connections are
@@ -42,6 +42,9 @@ from ossie import (
     OssieSemanticModel,
 )
 from ossie_wisdom.converter_issues import ConverterIssue, ConverterIssueType, ConverterResult
+from ossie_wisdom.wisdom_to_ossie import RELATIONSHIP_TYPE_NOTES
+
+_NOTE_RELATIONSHIP_TYPES = {note: relationship_type for relationship_type, note in RELATIONSHIP_TYPE_NOTES.items()}
 
 _WISDOM_DIALECT = {
     OssieDialect.SNOWFLAKE: "snowflake",
@@ -284,6 +287,9 @@ class OssieToWisdomConverter:
             return by_dialect[dialect]
         if OssieDialect.ANSI_SQL in by_dialect:
             return by_dialect[OssieDialect.ANSI_SQL]
+        # OSSIE_SQL_2026 is ANSI-SQL-compatible; treat it as an ANSI_SQL-equivalent fallback.
+        if OssieDialect.OSSIE_SQL_2026 in by_dialect:
+            return by_dialect[OssieDialect.OSSIE_SQL_2026]
         issues.append(
             ConverterIssue(issue_type=ConverterIssueType.MISSING_DIALECT_EXPRESSION, element_name=element_name)
         )
@@ -348,11 +354,16 @@ class OssieToWisdomConverter:
                 )
                 continue
             relationship_type = "MANY_TO_ONE"
+            left_columns, right_columns = relationship.from_columns, relationship.to_columns
             if isinstance(relationship.ai_context, str):
-                if relationship.ai_context.startswith("one-to-one"):
-                    relationship_type = "ONE_TO_ONE"
-                elif relationship.ai_context.startswith("many-to-many"):
-                    relationship_type = "MANY_TO_MANY"
+                marked_type = _NOTE_RELATIONSHIP_TYPES.get(relationship.ai_context.strip())
+                if marked_type is not None:
+                    relationship_type = marked_type
+                    if relationship_type == "ONE_TO_MANY":
+                        # The forward path swapped sides to put the many side in `from`; swap back.
+                        # left_ref, right_ref and the join conditions below must be built after this.
+                        left, right = right, left
+                        left_columns, right_columns = right_columns, left_columns
                 else:
                     issues.append(
                         ConverterIssue(
@@ -368,10 +379,10 @@ class OssieToWisdomConverter:
             right_ref = {"uuid": zsheet_refs[right]["uuid"], "name": right}
             conditions = [
                 {
-                    "leftColumn": {"name": from_column, "zsheetRef": left_ref},
-                    "rightColumn": {"name": to_column, "zsheetRef": right_ref},
+                    "leftColumn": {"name": left_column, "zsheetRef": left_ref},
+                    "rightColumn": {"name": right_column, "zsheetRef": right_ref},
                 }
-                for from_column, to_column in zip(relationship.from_columns, relationship.to_columns)
+                for left_column, right_column in zip(left_columns, right_columns)
             ]
             properties: dict = {"relationshipType": relationship_type}
             if len(conditions) == 1:

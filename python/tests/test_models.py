@@ -21,16 +21,19 @@ from pathlib import Path
 
 import pytest
 import yaml
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from ossie import (
     OssieAIContextObject,
+    OssieDataset,
     OssieDataType,
     OssieDialect,
+    OssieDialectExpression,
     OssieDimension,
     OssieDocument,
     OssieExpression,
     OssieField,
+    OssieMetric,
     OssieRelationship,
     OssieSemanticModel,
 )
@@ -144,6 +147,60 @@ def test_document_serialization_preserves_flat_model_and_metadata(
         assert serialized == data
         assert "semantic_model" not in serialized
         assert OssieDocument.model_validate(serialized) == document
+
+
+@pytest.mark.parametrize(
+    "serialize", ["model_dump", "model_dump_json", "to_ossie_yaml", "to_ossie_json"]
+)
+def test_document_serialization_puts_version_first(
+    serialize: str, document_data: dict
+) -> None:
+    data = document_data
+    document = OssieDocument.model_validate(data)
+
+    serialized = getattr(document, serialize)()
+    if isinstance(serialized, str):
+        serialized = yaml.safe_load(serialized)
+
+    assert next(iter(serialized)) == "version"
+    assert serialized["version"] == data["version"]
+
+
+@pytest.mark.parametrize(
+    "serialize", ["model_dump", "model_dump_json", "to_ossie_yaml", "to_ossie_json"]
+)
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"exclude": {"version"}},
+        {"include": {"name", "datasets"}},
+        {"exclude_defaults": True},
+        {"exclude_unset": True},
+    ],
+)
+def test_document_serialization_can_omit_version(
+    serialize: str, options: dict, document_data: dict
+) -> None:
+    data = document_data
+    del data["version"]
+    document = OssieDocument.model_validate(data)
+
+    serialized = getattr(document, serialize)(**options)
+    if isinstance(serialized, str):
+        serialized = yaml.safe_load(serialized)
+
+    assert "version" not in serialized
+    assert serialized["name"] == data["name"]
+
+
+def test_document_serialization_schema_preserves_model_fields() -> None:
+    schema = OssieDocument.model_json_schema(mode="serialization")
+
+    assert schema["properties"]["version"]["type"] == "string"
+    assert schema["properties"]["datasets"]["type"] == "array"
+    # Early Pydantic 2.x versions also require defaulted fields in serialization schemas.
+    assert {"name", "datasets"} <= set(schema["required"])
+    assert schema["additionalProperties"] is False
 
 
 @pytest.mark.parametrize(
@@ -268,6 +325,100 @@ def test_effective_time_dimension_role(
     )
 
     assert field.is_time_dimension() is expected
+
+
+# ---------------------------------------------------------------------------
+# Identifier constraints
+# ---------------------------------------------------------------------------
+
+
+# Every schema node whose properties the models mirror, so a `minLength` added to
+# the schema without a matching model constraint fails the parity test below.
+_CONSTRAINED_NODES = {
+    "SemanticModel": OssieSemanticModel,
+    "Dataset": OssieDataset,
+    "Field": OssieField,
+    "Metric": OssieMetric,
+    "Relationship": OssieRelationship,
+}
+
+
+def _model_min_length(model: type[BaseModel], prop: str) -> int | None:
+    """Return the `min_length` the model enforces for the field exposed as *prop*."""
+    field = next(
+        (f for name, f in model.model_fields.items() if (f.alias or name) == prop),
+        None,
+    )
+    assert field is not None, f"{model.__name__} has no field exposed as {prop!r}"
+    for meta in field.metadata:
+        if getattr(meta, "min_length", None) is not None:
+            return meta.min_length
+    return None
+
+
+def test_identifier_min_length_matches_core_schema() -> None:
+    """The models must not accept identifiers the schema rejects as empty.
+
+    `to_ossie_yaml()` output is validated against this schema, so a model that
+    permits an empty name serializes a document the schema refuses.
+    """
+    schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    schema = json.loads(schema_path.read_text())
+
+    checked = 0
+    for node, model in _CONSTRAINED_NODES.items():
+        for prop, prop_schema in schema["$defs"][node]["properties"].items():
+            expected = prop_schema.get("minLength")
+            if expected is None:
+                continue
+            assert _model_min_length(model, prop) == expected, (
+                f"{node}.{prop} requires minLength {expected} in the schema"
+            )
+            checked += 1
+
+    # Guards against the loop silently checking nothing if the schema moves.
+    assert checked == 8
+
+
+@pytest.mark.parametrize(
+    ("build", "label"),
+    [
+        (lambda: OssieSemanticModel(name="", datasets=[_dataset()]), "semantic_model.name"),
+        (lambda: OssieDataset(name="", source="db.s.t"), "dataset.name"),
+        (lambda: OssieDataset(name="orders", source=""), "dataset.source"),
+        (lambda: OssieField(name="", expression=_expression()), "field.name"),
+        (lambda: OssieMetric(name="", expression=_expression()), "metric.name"),
+        (lambda: _relationship(name=""), "relationship.name"),
+        (lambda: _relationship(**{"from": ""}), "relationship.from"),
+        (lambda: _relationship(to=""), "relationship.to"),
+    ],
+    ids=lambda value: value if isinstance(value, str) else "",
+)
+def test_empty_identifiers_are_rejected(build, label: str) -> None:
+    with pytest.raises(ValidationError):
+        build()
+
+
+def _expression() -> OssieExpression:
+    return OssieExpression(
+        dialects=[OssieDialectExpression(dialect=OssieDialect.ANSI_SQL, expression="x")]
+    )
+
+
+def _dataset() -> OssieDataset:
+    return OssieDataset(name="orders", source="db.s.orders")
+
+
+def _relationship(**overrides) -> OssieRelationship:
+    kwargs = {
+        "name": "orders_to_customers",
+        "from": "orders",
+        "to": "customers",
+        "from_columns": ["customer_id"],
+        "to_columns": ["id"],
+    }
+    kwargs.update(overrides)
+    return OssieRelationship.model_validate(kwargs)
 
 
 # ---------------------------------------------------------------------------

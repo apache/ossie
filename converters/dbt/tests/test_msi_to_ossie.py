@@ -22,10 +22,11 @@ import jinja2
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
-from ossie_dbt.converter_issues import ConverterIssueType
+from ossie_dbt.converter_issues import ConverterIssue, ConverterIssueType
 from ossie_dbt.filter_utils import _render_filter_template
 from ossie import OssieDialect, OssieDocument
 from ossie_dbt.msi_to_ossie import MSIToOssieConverter
+from metricflow_semantics.model.dbt_manifest_parser import parse_manifest_from_dbt_generated_manifest
 from metricflow_semantic_interfaces.implementations.metric import (
     PydanticConversionTypeParams,
     PydanticCumulativeTypeParams,
@@ -75,10 +76,38 @@ def _field_expr(result: OssieDocument, field_idx: int = 0) -> str:
 
 
 def _ossie_metrics(result: OssieDocument) -> list:
-    """Return Ossie metrics for the first semantic model, asserting they exist."""
+    """Return the document's Ossie metrics, asserting they exist."""
     metrics = result.metrics
     assert metrics is not None
     return metrics
+
+
+def _metric_with_agg(
+    name: str,
+    agg: AggregationType,
+    expr: str,
+    semantic_model: str,
+    filter_sql: Optional[str] = None,
+) -> PydanticMetric:
+    """A SIMPLE metric that carries its aggregation in metric_aggregation_params."""
+    return PydanticMetric(
+        name=name,
+        description=None,
+        type=MetricType.SIMPLE,
+        type_params=PydanticMetricTypeParams(
+            expr=expr,
+            metric_aggregation_params=PydanticMetricAggregationParams(
+                semantic_model=semantic_model,
+                agg=agg,
+                agg_params=None,
+                agg_time_dimension=None,
+                non_additive_dimension=None,
+            ),
+        ),
+        filter=_filter(filter_sql) if filter_sql else None,
+        metadata=default_meta(),
+        config=None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -578,6 +607,100 @@ class TestMetricConversion:
         result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm], metrics=[metric])).output
 
         assert _ossie_metrics(result)[0].expression.dialects[0].expression == "AVG(orders.price)"
+
+    @pytest.mark.parametrize("agg", [AggregationType.COUNT, AggregationType.SUM])
+    def test_a_row_count_always_comes_back_as_portable_sum_1(self, agg: AggregationType) -> None:
+        """A COUNT/expr=1 metric comes back as SUM(1), like a SUM/expr=1 one.
+
+        MetricFlow's own transform has already turned the count into a sum by the time this converter
+        sees it. SUM(1) matches COUNT(*) on any non-empty input; over zero rows it is NULL, not 0.
+
+        Emitting ``COUNT(<dataset>.*)`` to keep the dataset through a round trip was tried and reverted:
+        it is not in the Ossie expression spec, several engines reject or misinterpret it, and the
+        sibling converters do not recognize it as a row count either. ``SUM(1)`` is what every engine
+        and converter agrees on, even though the dataset cannot be recovered on this leg of a round trip.
+        """
+        customers = semantic_model_with_guaranteed_meta(name="customers")
+        orders = semantic_model_with_guaranteed_meta(name="orders")
+        metric = _metric_with_agg("order_count", agg, "1", "orders")
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[customers, orders], metrics=[metric])).output
+
+        assert _ossie_metrics(result)[0].expression.dialects[0].expression == "SUM(1)"
+
+    def test_constant_metric_records_the_lost_semantic_model_on_the_cli_path(self) -> None:
+        """Routed through the real dbt loader, as the CLI does: the count is already SUM(1) by then."""
+        customers = semantic_model_with_guaranteed_meta(name="customers")
+        orders = semantic_model_with_guaranteed_meta(name="orders")
+        metric = _metric_with_agg("order_count", AggregationType.COUNT, "1", "orders")
+        manifest_json = _manifest(semantic_models=[customers, orders], metrics=[metric]).json(
+            by_alias=True, exclude_none=True
+        )
+        result = MSIToOssieConverter().convert(parse_manifest_from_dbt_generated_manifest(manifest_json))
+
+        assert _ossie_metrics(result.output)[0].expression.dialects[0].expression == "SUM(1)"
+        assert result.issues == [
+            ConverterIssue(ConverterIssueType.CONSTANT_METRIC_SEMANTIC_MODEL_LOSS, "order_count")
+        ]
+
+    def test_constant_metric_with_a_single_semantic_model_loses_nothing(self) -> None:
+        orders = semantic_model_with_guaranteed_meta(name="orders")
+        metric = _metric_with_agg("order_count", AggregationType.COUNT, "1", "orders")
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[orders], metrics=[metric]))
+
+        assert result.issues == []
+
+    @pytest.mark.parametrize("agg", [AggregationType.MAX, AggregationType.AVERAGE])
+    def test_non_sum_constant_metric_is_not_flagged(self, agg: AggregationType) -> None:
+        """Only SUM of a constant is refused on the way back, so only SUM gets the loss warning."""
+        customers = semantic_model_with_guaranteed_meta(name="customers")
+        orders = semantic_model_with_guaranteed_meta(name="orders")
+        metric = _metric_with_agg("m", agg, "1", "orders")
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[customers, orders], metrics=[metric]))
+
+        assert result.issues == []
+
+    def test_unparseable_expr_does_not_abort_the_conversion(self) -> None:
+        """An unterminated quote is a sqlglot TokenError, not a ParseError; it must not crash the run."""
+        customers = semantic_model_with_guaranteed_meta(name="customers")
+        orders = semantic_model_with_guaranteed_meta(name="orders")
+        metric = _metric_with_agg("m", AggregationType.SUM, "CASE WHEN status = 'paid THEN amount END", "orders")
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[customers, orders], metrics=[metric]))
+
+        assert [m.name for m in _ossie_metrics(result.output)] == ["m"]
+        assert result.issues == []
+
+    def test_column_metric_with_several_semantic_models_loses_nothing(self) -> None:
+        customers = semantic_model_with_guaranteed_meta(name="customers")
+        orders = semantic_model_with_guaranteed_meta(name="orders")
+        metric = _metric_with_agg("revenue", AggregationType.SUM, "amount", "orders")
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[customers, orders], metrics=[metric]))
+
+        assert result.issues == []
+
+    def test_legacy_measure_based_count_also_converts(self) -> None:
+        """A SIMPLE metric over a legacy Measure(agg=count, expr=1) is a row count too, not just the
+
+        newer metric_aggregation_params shape. It converts correctly with no special-casing, because
+        MetricFlow's own transform normalizes both shapes to the same agg=SUM, expr='1' before this
+        converter ever sees the metric.
+        """
+        orders = semantic_model_with_guaranteed_meta(
+            name="orders",
+            measures=[_measure("order_count_measure", agg=AggregationType.COUNT, expr="1")],
+        )
+        metric = _simple_metric("order_count", measure_name="order_count_measure")
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[orders], metrics=[metric])).output
+
+        assert _ossie_metrics(result)[0].expression.dialects[0].expression == "SUM(1)"
+
+    def test_filtered_count_of_all_rows_keeps_the_filter(self) -> None:
+        orders = semantic_model_with_guaranteed_meta(name="orders")
+        metric = _metric_with_agg("paid_orders", AggregationType.COUNT, "1", "orders", filter_sql="status = 'paid'")
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[orders], metrics=[metric])).output
+
+        assert (
+            _ossie_metrics(result)[0].expression.dialects[0].expression == "SUM(CASE WHEN status = 'paid' THEN 1 END)"
+        )
 
     # --- RATIO ---
 
@@ -1412,6 +1535,7 @@ class TestOssieJsonSerialization:
         parsed = json.loads(result.to_ossie_json())
 
         assert parsed["version"] == "0.2.0.dev0"
+        assert next(iter(parsed)) == "version"
         assert "semantic_model" not in parsed
         assert parsed["name"] == "my_project"
 

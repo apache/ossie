@@ -70,12 +70,14 @@ class ValidationResult:
 
     def __init__(self, format_name: str = "OBML") -> None:
         self.format_name = format_name
+        self.schema_validation_performed = False
         self.schema_errors: list[str] = []
         self.semantic_errors: list[str] = []
         self.semantic_warnings: list[str] = []
 
     @property
     def valid(self) -> bool:
+        """Whether the checks that ran found no errors; skipped checks may leave gaps."""
         return not self.schema_errors and not self.semantic_errors
 
     def summary_lines(self) -> list[str]:
@@ -84,8 +86,10 @@ class ValidationResult:
             lines.append(f"  JSON Schema: {len(self.schema_errors)} error(s)")
             for e in self.schema_errors:
                 lines.append(f"    - {e}")
-        else:
+        elif self.schema_validation_performed:
             lines.append("  JSON Schema: ✓ valid")
+        else:
+            lines.append("  JSON Schema: skipped")
         if self.semantic_errors:
             lines.append(f"  Semantic:    {len(self.semantic_errors)} error(s)")
             for e in self.semantic_errors:
@@ -135,6 +139,7 @@ def _validate_json_schema(
     for error in sorted(validator.iter_errors(data), key=lambda e: list(e.absolute_path)):
         path = ".".join(str(p) for p in error.absolute_path) or "(root)"
         result.schema_errors.append(f"[{path}] {error.message}")
+    result.schema_validation_performed = True
 
 
 # ── OBML Validation ──────────────────────────────────────────────────────
@@ -200,6 +205,16 @@ def validate_ossie(ossie_dict: dict[str, Any], schema_path: Path | None = None) 
        (Draft 2020-12)
     2. **Unique names** — datasets, fields, metrics, relationships
     3. **References** — relationship from/to reference existing datasets
+
+    If the schema file or ``jsonschema`` package is unavailable, schema validation
+    is skipped with a warning and ``schema_validation_performed`` is False.
+    This fallback has reduced coverage: it rejects non-object roots and legacy
+    ``semantic_model`` wrappers, and checks names and references in the entries
+    it can traverse. It does not check required fields or field types; missing
+    ``name`` or ``datasets``, malformed ``datasets``, and missing dataset ``source``
+    can pass. ``valid=True`` only means the checks that ran found no errors.
+    Require both ``schema_validation_performed`` and ``valid`` to establish
+    structural validity as well as passing the semantic checks.
     """
     result = ValidationResult("Ossie")
 
@@ -207,13 +222,19 @@ def validate_ossie(ossie_dict: dict[str, Any], schema_path: Path | None = None) 
     _validate_json_schema(ossie_dict, schema_path or _OSSIE_SCHEMA_PATH, result, draft="draft2020")
 
     # The semantic checks below assume a well-formed structure (lists of dicts).
-    # JSON Schema validation above already reports structural errors, so guard
-    # every level here rather than raising on malformed input.
+    # Guard every level rather than raising on malformed input, even when
+    # JSON Schema validation is unavailable.
     def _as_dict_list(value: Any) -> list[dict[str, Any]]:
         return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
 
-    # Legacy wrappers are schema errors, not model contents to traverse.
-    if not isinstance(ossie_dict, dict) or "semantic_model" in ossie_dict:
+    if not isinstance(ossie_dict, dict):
+        result.semantic_errors.append("[INVALID_DOCUMENT] Ossie document must be an object")
+        return result
+    if "semantic_model" in ossie_dict:
+        result.semantic_errors.append(
+            "[LEGACY_WRAPPER] Legacy 'semantic_model' wrappers are not supported; "
+            "place model properties at the document root"
+        )
         return result
     model = ossie_dict
 

@@ -59,3 +59,24 @@ def test_ossie_to_msi_writes_valid_manifest_json(tmp_path: Path, monkeypatch: py
     manifest = json.loads(output_path.read_text())
     assert "semantic_models" in manifest
     assert "metrics" in manifest
+
+
+def test_ossie_to_msi_warns_about_a_dropped_metric(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A bare COUNT(*) over several datasets is skipped, and the CLI says so on stderr."""
+    document = _ossie_doc(
+        datasets=[
+            _ossie_dataset("customers", fields=[_ossie_field("customer_id")]),
+            _ossie_dataset("orders", fields=[_ossie_field("order_id")]),
+        ],
+        metrics=[_ossie_metric("order_count", "COUNT(*)")],
+    )
+    input_path = tmp_path / "model.yaml"
+    output_path = tmp_path / "semantic_manifest.json"
+    input_path.write_text(document.to_ossie_yaml())
+
+    _run_cli(["ossie-to-msi", "-i", str(input_path), "-o", str(output_path)], monkeypatch)
+
+    assert "ROW_COUNT_METRIC_DROPPED: order_count was dropped" in capsys.readouterr().err
+    assert json.loads(output_path.read_text())["metrics"] == []

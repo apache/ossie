@@ -60,8 +60,8 @@ pip install -e .
 ```
 
 Runtime dependencies are `PyYAML` and `sqlglot` (already a runtime dependency of
-the dbt and NVIDIA GSF converters, used here to locate the aggregate calls inside a
-composite metric). Python 3.11+.
+the dbt and NVIDIA Auto Ontology converters, used here to locate the aggregate
+calls inside a composite metric). Python 3.11+.
 
 ## Usage
 
@@ -441,8 +441,8 @@ metric belongs on) is derived rather than recorded. On the TPC-DS model that is 
 stash entries rather than 41, and 2 Databricks warnings rather than 32.
 
 **Qualify your `sql_table`.** Cube accepts `orders` or `public.orders`, but the
-Databricks, Snowflake and NVIDIA GSF converters all require a three-part
-`catalog.schema.table` and reject anything shorter:
+Databricks, Snowflake and NVIDIA Auto Ontology converters all require a
+three-part `catalog.schema.table` and reject anything shorter:
 
 ```
 Error: Dataset 'orders': source 'public.orders' must be a 3-part catalog.schema.table
@@ -478,8 +478,8 @@ spoke        result  warns  foreign   note
 databricks   OK         22        2
 dbt          FAIL        0        0   AttributeError: 'PydanticSemanticManifes
 gooddata     OK          0        0
-gsf          OK          0        0
 honeydew     OK          0        0
+nvidia       OK          0        0
 omni         OK         15        7
 orionbelt    OK          2        0
 snowflake    OK          7        7
@@ -513,7 +513,7 @@ detail string.
 | `GEO_DIMENSION_SPLIT` | A `type: geo` dimension became two Ossie fields |
 | `TEMPLATED_FILE_SKIPPED` | Jinja templating anywhere in a file, or a `.js`/`.ts` model file. Detected per file, as Cube's own tooling does, so the file is preserved whole rather than half-converted |
 | `NO_USABLE_DIALECT` | Export: no `ANSI_SQL` or preferred-dialect expression |
-| `SOURCE_NOT_FULLY_QUALIFIED` | A `sql_table` shorter than `catalog.schema.table`. Valid Cube and nothing is lost, but the Databricks, Snowflake and NVIDIA GSF converters reject such a source, so the model cannot convert onward — see [Onward conversion](#onward-conversion) |
+| `SOURCE_NOT_FULLY_QUALIFIED` | A `sql_table` shorter than `catalog.schema.table`. Valid Cube and nothing is lost, but the Databricks, Snowflake and NVIDIA Auto Ontology converters reject such a source, so the model cannot convert onward — see [Onward conversion](#onward-conversion) |
 | `PARKED_IN_META` | Preserved in the stash or under `meta.ossie` — invisible to Cube, but intact through a round trip |
 | `DROPPED_NO_CUBE_EQUIVALENT` | **Gone from the output.** Cube has nowhere to hold it and it cannot be parked: relationship `ai_context` (a Cube join entry has no `meta`) and a `dimension.is_time` role or opt-out that Cube expresses only through `type` |
 | `DROPPED_FROM_PROJECTION` | View projection only. **Gone from the output**: a Cube-only property of the view, a projected cube or a published member -- an access policy, pre-aggregations, drill members, extra `meta` -- that the round-trip import would preserve, but a projection of the public surface does not carry |

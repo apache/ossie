@@ -105,21 +105,22 @@ def _generate_block(section: dict, values: list[str]) -> str:
     descs = section["descriptions"]
     ref = ".".join(section["schema_path"])
 
+    missing = [v for v in values if not descs.get(v)]
+    if missing:
+        for v in missing:
+            print(f"Error: no description for '{key}' value '{v}'", file=sys.stderr)
+        print("Update the descriptions map in SECTIONS.", file=sys.stderr)
+        sys.exit(1)
+
     lines = [
         section["header"],
         "# Auto-generated from ossie-schema.json ({}).".format(ref),
         "{}:".format(key),
     ]
     for v in values:
-        desc = descs.get(v)
-        if desc is None:
-            print(f"Warning: no description for '{key}' value '{v}'", file=sys.stderr)
         entry = '  - "{}"'.format(v)
-        if desc:
-            pad = max(1, comment_col - len(entry))
-            lines.append('{}{}# {}'.format(entry, " " * pad, desc))
-        else:
-            lines.append(entry)
+        pad = max(1, comment_col - len(entry))
+        lines.append('{}{}# {}'.format(entry, " " * pad, descs[v]))
 
     return "\n".join(lines) + "\n\n"
 

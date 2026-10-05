@@ -680,15 +680,15 @@ def _convert_cube(cname, cube, plain, extra_joins, extra_measures, issues):
     parts = source_part_count(ds["source"])
     if parts is not None and parts < 3:
         # Cube accepts a one- or two-part `sql_table`, but the Ossie spec describes
-        # `source` as `database.schema.table` and the Databricks, Snowflake and NVIDIA
-        # GSF converters all reject anything shorter -- so a model that converts
-        # cleanly here still cannot reach them. Better to say so at the point the
-        # Ossie document is produced than to have it fail three hops later.
+        # `source` as `database.schema.table` and the Databricks, Snowflake and
+        # NVIDIA Auto Ontology converters all reject anything shorter -- so a model
+        # that converts cleanly here still cannot reach them. Better to say so at the
+        # point the Ossie document is produced than to have it fail three hops later.
         issues.add(IssueType.SOURCE_NOT_FULLY_QUALIFIED, scope,
                    f"source '{ds['source']}' has {parts} part(s); several Ossie "
-                   f"converters (Databricks, Snowflake, NVIDIA GSF) require a "
-                   f"3-part catalog.schema.table, so qualify the cube's `sql_table` "
-                   f"if the model needs to convert onward")
+                   f"converters (Databricks, Snowflake, NVIDIA Auto Ontology) "
+                   f"require a 3-part catalog.schema.table, so qualify the cube's "
+                   f"`sql_table` if the model needs to convert onward")
     if cube.get("description"):
         ds["description"] = unescape_braces_from_cube(cube["description"])
 

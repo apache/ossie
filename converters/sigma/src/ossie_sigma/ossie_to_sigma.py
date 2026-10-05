@@ -30,7 +30,6 @@ from ossie import (
     OssieField,
     OssieMetric,
     OssieRelationship,
-    OssieSemanticModel,
     OssieVendor,
 )
 
@@ -40,7 +39,7 @@ from ossie_sigma.sigma_formula import sql_to_sigma_formula
 from ossie_sigma.spec_keys import MODEL_LEVEL_SPEC_KEYS
 
 # Objects a `SIGMA` custom_extensions vendor entry can be attached to.
-_SigmaExtensionHost = Union[OssieDataset, OssieField, OssieMetric, OssieRelationship, OssieSemanticModel]
+_SigmaExtensionHost = Union[OssieDataset, OssieField, OssieMetric, OssieRelationship, OssieDocument]
 
 _ID_NAMESPACE = uuid5(NAMESPACE_URL, "ossie.apache.org/converters/sigma")
 

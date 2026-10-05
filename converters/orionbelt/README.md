@@ -87,7 +87,7 @@ from ossie_orionbelt import OBMLtoOssie, OssietoOBML, validate_ossie
 obml = yaml.safe_load(open("model.obml.yaml"))
 ossie = OBMLtoOssie(obml, "sales", "Sales model").convert()
 result = validate_ossie(ossie)
-assert result.valid
+assert result.schema_validation_performed and result.valid
 
 obml_again = OssietoOBML(ossie).convert()
 ```
@@ -110,6 +110,20 @@ of the Ossie metrics with a warning and kept whole in the model-level extension
 (`obml_unexported`). Every exported measure and metric also carries its OBML
 definition, and every field its OBML column name, so Ossie to OBML restores the
 original model instead of re-parsing the SQL.
+
+`validate_ossie` checks JSON Schema conformance, unique names, and relationship
+references. If the schema file or `jsonschema` package is unavailable, it emits
+a warning and reports `JSON Schema: skipped`. The result's
+`schema_validation_performed` flag is `False` in that case.
+
+This fallback provides partial validation: it rejects non-object roots and
+legacy `semantic_model` wrappers, and checks unique names and references in
+entries it can traverse. Required fields and field types are not checked, so
+documents missing `name` or `datasets`, with malformed `datasets`, or with a
+dataset missing `source` can still return `valid=True`. That value means only
+that the checks performed found no errors. Require both
+`schema_validation_performed` and `valid`, as above, when structural validity
+is required.
 
 ## Vendor extensions
 

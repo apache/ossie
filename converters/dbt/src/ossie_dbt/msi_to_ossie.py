@@ -33,6 +33,7 @@ from ossie import (
     OssieRelationship,
 )
 from ossie_dbt.converter_issues import ConverterIssue, ConverterIssueType, ConverterResult
+from ossie_dbt.expression_utils import _is_constant_expr
 from ossie_dbt.filter_utils import _collect_filter_sql, _merge_filter_sqls
 
 from metricflow_semantic_interfaces.enum_extension import assert_values_exhausted
@@ -81,7 +82,11 @@ class AmbiguousDerivedReferenceError(Exception):
 
 
 class MSIToOssieConverter:
-    """Converts an MSI SemanticManifest into an Ossie Document."""
+    """Converts an MSI SemanticManifest into an Ossie Document.
+
+    Holds no per-call state on the instance, so one instance may be reused, including concurrently
+    from multiple threads, across any number of ``convert()`` calls.
+    """
 
     def __init__(self, dialect: OssieDialect = OssieDialect.ANSI_SQL) -> None:
         self._dialect = dialect
@@ -140,6 +145,16 @@ class MSIToOssieConverter:
                     description=metric.description,
                 )
             )
+            if len(manifest.semantic_models) > 1 and self._aggregates_a_constant(metric):
+                # SUM(1) and the like carry no column, so the semantic model the metric belonged to
+                # cannot be written into the Ossie expression. Converting it back refuses rather than
+                # guesses (ROW_COUNT_METRIC_DROPPED); record the loss here so it is not silent.
+                issues.append(
+                    ConverterIssue(
+                        issue_type=ConverterIssueType.CONSTANT_METRIC_SEMANTIC_MODEL_LOSS,
+                        element_name=metric.name,
+                    )
+                )
 
         return ConverterResult(
             output=OssieDocument(
@@ -268,7 +283,14 @@ class MSIToOssieConverter:
         metric: Metric,
         filter_sql: Optional[str] = None,
     ) -> str:
-        """Resolve a SIMPLE metric using metric_aggregation_params (always set after transformation)."""
+        """Resolve a SIMPLE metric using metric_aggregation_params (always set after transformation).
+
+        No special case for a row count: ``SUM`` with ``expr == '1'`` already renders as ``SUM(1)``
+        through the generic path below. That matches ``COUNT(*)`` on any non-empty input (over zero
+        rows ``SUM(1)`` is NULL where ``COUNT(*)`` is 0, as with MetricFlow's own COUNT → SUM rewrite)
+        and is portable across engines, unlike ``COUNT(<dataset>.*)``, which several engines reject or
+        interpret differently.
+        """
         agg_params_obj = metric.type_params.metric_aggregation_params
         if agg_params_obj is None:
             raise ValueError(
@@ -277,6 +299,19 @@ class MSIToOssieConverter:
         col = metric.type_params.expr if metric.type_params.expr is not None else metric.name
         col = self._qualify_col(col, agg_params_obj.semantic_model)
         return self._build_agg_expression(agg_params_obj.agg, col, agg_params_obj.agg_params, filter_sql)
+
+    @staticmethod
+    def _aggregates_a_constant(metric: Metric) -> bool:
+        """Return True for a SIMPLE SUM over a constant expr, e.g. a row count rewritten to SUM(1).
+
+        Only SUM: it is the one aggregation the Ossie → MSI side resolves as a constant (and refuses on
+        ambiguous datasets). MAX(1), AVG(1) and the like go through the ordinary column lookup there.
+        """
+        params = metric.type_params.metric_aggregation_params
+        expr = metric.type_params.expr
+        if metric.type is not MetricType.SIMPLE or params is None or expr is None:
+            return False
+        return params.agg is AggregationType.SUM and _is_constant_expr(expr)
 
     @staticmethod
     def _qualify_col(col: str, semantic_model: str) -> str:

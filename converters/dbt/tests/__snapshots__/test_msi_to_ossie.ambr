@@ -17,6 +17,7 @@
 # under the License.
 # name: TestMetricConversion.test_derived_metric_nested
   '''
+  version: 0.2.0.dev0
   name: semantic_model
   datasets:
   - name: orders
@@ -63,12 +64,12 @@
       dialects:
       - dialect: ANSI_SQL
         expression: (SUM(orders.amount) - SUM(orders.cost_amount)) - SUM(orders.expense_amount)
-  version: 0.2.0.dev0
   
   '''
 # ---
 # name: TestMetricConversion.test_ratio_metric_inlines_sub_expressions
   '''
+  version: 0.2.0.dev0
   name: semantic_model
   datasets:
   - name: orders
@@ -101,12 +102,12 @@
       - dialect: ANSI_SQL
         expression: (SUM(orders.amount)) / (SUM(CASE WHEN orders.order_id IS NOT NULL
           THEN 1 ELSE 0 END))
-  version: 0.2.0.dev0
   
   '''
 # ---
 # name: TestMetricFilterFlattening.test_metric_and_measure_filters_combined_with_and
   '''
+  version: 0.2.0.dev0
   name: semantic_model
   datasets:
   - name: orders
@@ -124,12 +125,12 @@
       - dialect: ANSI_SQL
         expression: SUM(CASE WHEN (status = 'paid') AND (region = 'intl') THEN orders.amount
           END)
-  version: 0.2.0.dev0
   
   '''
 # ---
 # name: TestRelationshipConversion.test_three_datasets_produce_all_pairs
   '''
+  version: 0.2.0.dev0
   name: semantic_model
   datasets:
   - name: users_a
@@ -182,7 +183,6 @@
     - user_id
     to_columns:
     - user_id
-  version: 0.2.0.dev0
   
   '''
 # ---

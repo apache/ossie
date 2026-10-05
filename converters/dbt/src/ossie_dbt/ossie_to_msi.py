@@ -16,7 +16,7 @@
 # under the License.
 
 from dataclasses import dataclass
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Tuple
 
 from ossie import (
     OssieDataset,
@@ -26,10 +26,13 @@ from ossie import (
     OssieField,
     OssieSemanticModel,
 )
-from ossie_dbt.converter_issues import ConverterResult
+from ossie_dbt.converter_issues import ConverterIssue, ConverterIssueType, ConverterResult
 from ossie_dbt.expression_utils import (
+    ROW_COUNT_EXPR,
     _extract_agg_info,
+    _contains_distinct_row_count,
     _get_dataset_qualifier,
+    _is_constant_expr,
     _strip_qualifier,
     _try_parse_ratio,
 )
@@ -74,6 +77,15 @@ class _KeySets:
     foreign: Set[str]
 
 
+class _UnresolvedRowCountDataset(Exception):
+    """A row-count expression that cannot be safely converted into a metric.
+
+    Either it does not identify exactly one dataset to count the rows of (a bare ``COUNT(*)`` with
+    more than one dataset, or a qualifier matching none or several), or it is a form with no sensible
+    translation at all, such as ``COUNT(DISTINCT *)``.
+    """
+
+
 class OssieToMSIConverter:
     """Converts an Ossie Document into a PydanticSemanticManifest.
 
@@ -99,11 +111,10 @@ class OssieToMSIConverter:
 
     def convert(self, document: OssieDocument) -> ConverterResult[PydanticSemanticManifest]:
         semantic_models: List[PydanticSemanticModel] = []
-        metrics: List[PydanticMetric] = []
 
         for dataset in document.datasets:
             semantic_models.append(self._convert_dataset(dataset, document))
-        metrics.extend(self._convert_metrics(document))
+        metrics, issues = self._convert_metrics(document)
 
         return ConverterResult(
             output=PydanticSemanticManifest(
@@ -111,7 +122,7 @@ class OssieToMSIConverter:
                 metrics=metrics,
                 project_configuration=PydanticProjectConfiguration(),
             ),
-            issues=[],
+            issues=issues,
         )
 
     # ------------------------------------------------------------------
@@ -267,12 +278,19 @@ class OssieToMSIConverter:
     # Metric conversion
     # ------------------------------------------------------------------
 
-    def _convert_metrics(self, ossie_sm: OssieSemanticModel) -> List[PydanticMetric]:
+    def _convert_metrics(self, ossie_sm: OssieSemanticModel) -> Tuple[List[PydanticMetric], List[ConverterIssue]]:
         metrics: List[PydanticMetric] = []
+        issues: List[ConverterIssue] = []
         for metric in ossie_sm.metrics or []:
             expr_str = self._get_expression(metric.expression)
-            metrics.extend(self._convert_metric(metric.name, expr_str, metric.description, ossie_sm.datasets))
-        return metrics
+            try:
+                metrics.extend(self._convert_metric(metric.name, expr_str, metric.description, ossie_sm.datasets))
+            except _UnresolvedRowCountDataset:
+                # Also drops a ratio and its sub-metrics as a whole, so nothing references a missing metric.
+                issues.append(
+                    ConverterIssue(issue_type=ConverterIssueType.ROW_COUNT_METRIC_DROPPED, element_name=metric.name)
+                )
+        return metrics, issues
 
     def _convert_metric(
         self,
@@ -293,7 +311,12 @@ class OssieToMSIConverter:
         agg_result = _extract_agg_info(expr_str)
         if agg_result is not None:
             agg, col, percentile, use_discrete = agg_result
-            semantic_model_name = self._find_dataset_for_col(expr_str, col, datasets)
+            is_row_count = agg is AggregationType.COUNT and col == ROW_COUNT_EXPR
+            if is_row_count or (agg is AggregationType.SUM and _is_constant_expr(col)):
+                # A constant, not a column: it must not go through the column → dataset lookup.
+                semantic_model_name = self._find_dataset_for_row_count(expr_str, datasets)
+            else:
+                semantic_model_name = self._find_dataset_for_col(expr_str, col, datasets)
             agg_params = (
                 PydanticMeasureAggregationParameters(
                     percentile=percentile,
@@ -344,6 +367,13 @@ class OssieToMSIConverter:
                 config=None,
             )
             return [*num_metrics, *den_metrics, ratio_metric]
+
+        # COUNT(DISTINCT *) / COUNT(DISTINCT 1) / ..., anywhere in the expression (bare, wrapped in
+        # parens, or combined with other operations): not a column count and not a row count either
+        # (it answers whether any row exists, 0 or 1). Drop rather than fall back to a raw SUM of it,
+        # which MetricFlow cannot run and which would guess a dataset the way a row count must not.
+        if _contains_distinct_row_count(expr_str):
+            raise _UnresolvedRowCountDataset(f"{expr_str!r} has no sensible SIMPLE or RATIO translation")
 
         # --- Fallback: complex expression that can't be decomposed ---
         # Store the raw expression in `expr` with a best-guess aggregation type.
@@ -403,6 +433,33 @@ class OssieToMSIConverter:
                     return dataset.name
 
         return datasets[0].name if datasets else ""
+
+    @staticmethod
+    def _find_dataset_for_row_count(raw_expr_str: str, datasets: List[OssieDataset]) -> str:
+        """Determine which dataset a ``COUNT(*)`` counts the rows of.
+
+        Only the qualifier decides: ``COUNT(orders.*)`` names ``orders`` (a schema prefix such as
+        ``db.orders.*`` is matched on its last segment). A bare ``COUNT(*)`` is only unambiguous when the
+        document has a single dataset; otherwise guessing would count the rows of an unrelated table.
+        Raises ``_UnresolvedRowCountDataset`` when no single dataset can be determined.
+        """
+        dataset_names = [dataset.name for dataset in datasets]
+        qualifier = _get_dataset_qualifier(raw_expr_str)
+        if qualifier is None:
+            if len(dataset_names) == 1:
+                return dataset_names[0]
+            raise _UnresolvedRowCountDataset(
+                f"'COUNT(*)' is ambiguous with {len(dataset_names)} datasets ({', '.join(dataset_names)})"
+            )
+
+        if qualifier in dataset_names:
+            return qualifier
+        by_last_segment = [name for name in dataset_names if _strip_qualifier(name) == _strip_qualifier(qualifier)]
+        if len(by_last_segment) == 1:
+            return by_last_segment[0]
+        raise _UnresolvedRowCountDataset(
+            f"'COUNT({qualifier}.*)' does not match exactly one dataset ({', '.join(dataset_names)})"
+        )
 
     def _get_expression(self, ossie_expr: OssieExpression) -> str:
         """Return the expression string for the preferred dialect.

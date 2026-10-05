@@ -503,8 +503,8 @@ def test_field_and_metric_foreign_extensions_survive_the_round_trip():
 ])
 def test_a_source_that_other_converters_reject_is_reported(sql_table, parts, warns):
     """Cube is happy with a one- or two-part `sql_table`, but the Databricks,
-    Snowflake and NVIDIA GSF converters all reject a source shorter than
-    `catalog.schema.table` -- so a model that converts cleanly here still cannot
+    Snowflake and NVIDIA Auto Ontology converters all reject a source shorter
+    than `catalog.schema.table` -- so a model that converts cleanly here still cannot
     travel. Reported at the point the Ossie document is produced, rather than being
     discovered three hops later."""
     files = _files(orders=(
