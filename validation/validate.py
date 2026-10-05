@@ -188,14 +188,16 @@ def validate_schema(data: dict, schema: dict) -> list[str]:
 
 
 def find_duplicates(items: list[str]) -> list[str]:
-    """Find duplicate items in a list."""
-    seen = set()
-    duplicates = []
+    """Return the items that appear more than once, each reported once.
+
+    A name repeated three times is one problem, not two: appending per extra
+    occurrence would emit the same message twice and inflate the error count.
+    Order follows first appearance, so a document's diagnostics are stable.
+    """
+    counts: dict[str, int] = {}
     for item in items:
-        if item in seen:
-            duplicates.append(item)
-        seen.add(item)
-    return duplicates
+        counts[item] = counts.get(item, 0) + 1
+    return [item for item, count in counts.items() if count > 1]
 
 
 def validate_unique_names(data: dict) -> list[str]:

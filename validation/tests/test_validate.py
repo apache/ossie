@@ -190,6 +190,36 @@ def test_semantic_checks_skip_non_model_payloads(data: object) -> None:
     assert _VALIDATE.validate_sql(data) == []
 
 
+@pytest.mark.parametrize(
+    ("items", "expected"),
+    [
+        (["a", "a"], ["a"]),
+        (["a", "a", "a"], ["a"]),
+        (["a", "b", "a", "b", "a"], ["a", "b"]),
+        (["a", "b", "b", "a"], ["a", "b"]),
+        (["a", "b", "c"], []),
+        ([], []),
+    ],
+    ids=[
+        "twice",
+        "three-times",
+        "two-names-interleaved",
+        "repeats-in-reverse-order",
+        "all-unique",
+        "empty",
+    ],
+)
+def test_find_duplicates_reports_each_name_once(items: list[str], expected: list[str]) -> None:
+    assert _VALIDATE.find_duplicates(items) == expected
+
+
+def test_a_name_repeated_three_times_is_one_error() -> None:
+    """Three copies of a name are one problem, not two identical messages."""
+    errors = _VALIDATE.validate_unique_names(_document([_ORDERS, _ORDERS, _ORDERS], []))
+
+    assert errors == ["[Unique] Duplicate dataset name 'orders' in model 'm'"]
+
+
 def test_unique_names_are_checked_in_the_root_model() -> None:
     errors = _VALIDATE.validate_unique_names(_document([_ORDERS, _ORDERS], []))
 
