@@ -173,6 +173,7 @@ def test_omits_invalid_members(ctx: ExportContext, tmp_path: Path) -> None:
 
     assert document is not None
     assert document.to_ossie_yaml() == snapshot("""\
+version: 0.2.0.dev0
 name: sales
 datasets:
 - name: orders
@@ -193,7 +194,6 @@ metrics:
     - dialect: ANSI_SQL
       expression: SUM(orders.amount)
   datatype: Integer
-version: 0.2.0.dev0
 """)
     assert problems_snapshot(ctx.problems, include_causes=True) == snapshot("""\
 [ERROR] Unable to parse: Expected table name but got None. Line 1, Col: 11.
