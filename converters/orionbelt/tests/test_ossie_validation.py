@@ -153,6 +153,85 @@ def test_find_duplicates_reports_each_name_once_in_first_appearance_order(names,
     assert _find_duplicates(names) == expected
 
 
+@pytest.mark.parametrize(
+    ("names", "expected"),
+    [
+        ([["a"], ["a"], ["b"]], [["a"]]),
+        ([{"k": 1}, {"k": 1}], [{"k": 1}]),
+        ([["a"], "a"], []),
+        ([["a"], "['a']"], []),
+        ([{"a": 1, "b": 2}, {"b": 2, "a": 1}], [{"a": 1, "b": 2}]),
+        ([("a",), ("a",)], [("a",)]),
+    ],
+    ids=[
+        "lists",
+        "dicts",
+        "list-and-string-do-not-collide",
+        "list-and-its-own-repr-do-not-collide",
+        "equal-dicts-in-different-key-order",
+        "tuple-name",
+    ],
+)
+def test_find_duplicates_tolerates_unhashable_names(names, expected):
+    """A malformed document can carry a list or dict where a name belongs."""
+    assert _find_duplicates(names) == expected
+
+
+def test_a_non_string_name_is_reported_not_raised(schema_path):
+    """validate_ossie reports on malformed input; it must not raise.
+
+    The semantic checks run even when the schema layer is unavailable or has
+    already reported errors, so a caller owed diagnostics must not get a
+    TypeError instead.
+    """
+    document = {
+        "version": "0.2.0.dev0",
+        "name": "m",
+        "datasets": [
+            {"name": ["a"], "source": "a.b.c"},
+            {"name": ["a"], "source": "a.b.d"},
+        ],
+    }
+
+    result = validate_ossie(document, schema_path=schema_path)
+
+    assert not result.valid
+    assert any("DUPLICATE_DATASET" in error for error in result.semantic_errors)
+
+
+def test_a_non_string_name_does_not_hide_a_dataset_reference(schema_path):
+    """One malformed name must not disturb reference checks for the valid ones."""
+    document = {
+        "version": "0.2.0.dev0",
+        "name": "m",
+        "datasets": [
+            {"name": "orders", "source": "a.b.orders"},
+            {"name": ["weird"], "source": "a.b.weird"},
+        ],
+        "relationships": [
+            {
+                "name": "r",
+                "from": "orders",
+                "to": "orders",
+                "from_columns": ["id"],
+                "to_columns": ["id"],
+            }
+        ],
+    }
+
+    result = validate_ossie(document, schema_path=schema_path)
+
+    assert not any("UNKNOWN_DATASET_REF" in error for error in result.semantic_errors)
+
+
+def test_a_non_string_concept_name_is_reported_not_raised():
+    ontology = {"ontology": [{"concept": {"name": ["Party"]}} for _ in range(2)]}
+
+    result = validate_ossie_ontology(ontology)
+
+    assert any("DUPLICATE_CONCEPT" in error for error in result.semantic_errors)
+
+
 def _triplicate_document(kind: str) -> dict:
     """A flat document whose *kind* names collide three times over."""
     expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": "x"}]}

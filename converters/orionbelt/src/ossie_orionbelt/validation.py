@@ -24,7 +24,6 @@ package under ``schemas/``.
 from __future__ import annotations
 
 import json
-from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -147,15 +146,37 @@ def _validate_json_schema(
 # ── OBML Validation ──────────────────────────────────────────────────────
 
 
-def _find_duplicates(names: Iterable[str]) -> list[str]:
+def _find_duplicates(names: Iterable[Any]) -> list[Any]:
     """Return the names appearing more than once, each reported once.
 
     A name repeated three times is one problem, not two, so reporting per extra
     copy would emit the same message twice. Order follows first appearance, so a
     document's diagnostics are stable. Matches `validation/validate.py`.
-    """
-    return [name for name, count in Counter(names).items() if count > 1]
 
+    A malformed document may carry a list or dict where a name belongs. Those are
+    compared by equality rather than hashed, so this neither raises on unhashable
+    input nor splits two equal names — two equal dicts written in a different key
+    order are one duplicate. The validators are documented to report rather than
+    raise, and the semantic checks still run when the schema layer is unavailable.
+    """
+    entries: list[list[Any]] = []  # [name, count], in first-appearance order
+    positions: dict[Any, int] = {}  # fast path for the hashable names
+    for name in names:
+        try:
+            hash(name)
+        except TypeError:
+            position = next(
+                (i for i, entry in enumerate(entries) if entry[0] == name), None
+            )
+        else:
+            position = positions.get(name)
+            if position is None:
+                positions[name] = len(entries)
+        if position is None:
+            entries.append([name, 1])
+        else:
+            entries[position][1] += 1
+    return [name for name, count in entries if count > 1]
 
 def validate_obml(obml_dict: dict[str, Any], schema_path: Path | None = None) -> ValidationResult:
     """Validate an OBML dict against JSON Schema and semantic rules.
@@ -286,7 +307,11 @@ def validate_ossie(ossie_dict: dict[str, Any], schema_path: Path | None = None) 
 
     # 3. Reference checks — relationships reference existing datasets
     datasets = _as_dict_list(model.get("datasets", []))
-    ds_name_set = {ds.get("name") for ds in datasets if ds.get("name")}
+    # Restricted to strings: a relationship's `from`/`to` is a string, so a
+    # non-string name can never be referenced, and hashing one would raise.
+    ds_name_set = {
+        ds.get("name") for ds in datasets if isinstance(ds.get("name"), str) and ds.get("name")
+    }
     for rel in _as_dict_list(model.get("relationships", [])):
         rel_name = rel.get("name", "<unnamed>")
         from_ds = rel.get("from")
@@ -323,7 +348,7 @@ def validate_ossie_ontology(onto_dict: dict[str, Any]) -> ValidationResult:
     ]
     for name in _find_duplicates(concept_names):
         result.semantic_errors.append(f"[DUPLICATE_CONCEPT] Duplicate concept name '{name}'")
-    defined: set[str] = set(concept_names)
+    defined: set[str] = {name for name in concept_names if isinstance(name, str)}
 
     # 2. Reference integrity — roles reference defined concepts.
     for comp in onto_dict.get("ontology", []):
