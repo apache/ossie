@@ -27,6 +27,12 @@ setup: setup-uv
 setup-uv:
     uv sync --locked --all-extras --dev
 
+# refresh dependencies (after change)
+lock: lock-uv
+
+lock-uv:
+    uv lock
+
 # ---
 # Build
 

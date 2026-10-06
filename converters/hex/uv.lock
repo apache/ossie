@@ -154,7 +154,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "apache-ossie", editable = "../../python" },
-    { name = "hex-sl-utils", specifier = ">=0.2.0.dev0" },
+    { name = "hex-sl-utils", specifier = ">=0.2.0" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "pydantic-core", specifier = ">=2.46.4" },
     { name = "pyyaml", specifier = ">=6.0" },

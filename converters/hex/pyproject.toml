@@ -44,7 +44,7 @@ keywords = [
 ]
 dependencies = [
     "apache-ossie>=0.2.0.dev0",
-    "hex-sl-utils>=0.2.0.dev0",
+    "hex-sl-utils>=0.2.0",
     "pydantic>=2.13.4",
     "pydantic-core>=2.46.4",
     "PyYAML>=6.0",
