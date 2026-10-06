@@ -320,27 +320,51 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
 
     sqlglot_dialect = DIALECT_MAP.get(dialect)
 
+    def statement_count_error(sql: str) -> str | None:
+        """Reject a parseable string that holds more than one statement.
+
+        `parse_one` accepts a statement list and returns one `Block` spanning it,
+        so `amount; DROP TABLE t` parses and would otherwise validate as an
+        expression. A semicolon inside a string literal or comment does not
+        split, so this only rejects a real statement list. Stray semicolons parse
+        as empty statements and are not counted, so `amount;` and `amount;;` are
+        both a single expression. Parse failures return None; the checks below
+        report those.
+        """
+        try:
+            statements = sqlglot.parse(sql, dialect=sqlglot_dialect)
+        except (ParseError, TokenError, RecursionError):
+            return None
+        count = len([statement for statement in statements if statement is not None])
+        if count > 1:
+            return (
+                f"[SQL] {context}: expected a single expression but found "
+                f"{count} statements"
+            )
+        return None
+
     try:
         # Try parsing as expression first (for field expressions like "column_name")
         sqlglot.parse_one(expr, dialect=sqlglot_dialect)
-        return None
     except (ParseError, TokenError, RecursionError):
         # A bare column reference fails to parse alone; retry it wrapped in
         # SELECT below. RecursionError (deeply nested input) is included so the
         # retry reports it instead of crashing, while genuine errors such as a
         # non-string expr raising TypeError still surface.
         pass
+    else:
+        return statement_count_error(expr)
 
     try:
         # Try wrapping in SELECT for simple column references
         sqlglot.parse_one(f"SELECT {expr}", dialect=sqlglot_dialect)
-        return None
     except (ParseError, TokenError) as e:
         return f"[SQL] {context}: {str(e).split(chr(10))[0]}"
     except RecursionError:
         # Deeply nested input exhausts the recursion limit rather than raising a
         # parser error; report it instead of letting it abort validation.
         return f"[SQL] {context}: expression is too deeply nested to parse"
+    return statement_count_error(f"SELECT {expr}")
 
 
 def validate_sql(data: dict) -> list[str]:
