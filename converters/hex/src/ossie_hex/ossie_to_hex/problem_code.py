@@ -22,6 +22,9 @@ ExportProblemCode = Literal[
     "composite-primary-key",
     "composite-unique-key",
     "custom-extensions",
+    "duplicate-name",
+    "identifier-allocation-failed",
+    "identifier-collision",
     "is-time",
     "missing-dialect",
     "missing-datatype",
@@ -40,6 +43,13 @@ EXPORT_PROBLEM_SUMMARIES: dict[ExportProblemCode, str] = {
     "custom-extensions": (
         "Custom extensions are not preserved in Hex and were dropped."
     ),
+    "identifier-collision": (
+        "Names normalize to the same Hex ID; a unique ID was assigned."
+    ),
+    "identifier-allocation-failed": (
+        "A unique Hex ID could not be assigned; the definition was omitted."
+    ),
+    "duplicate-name": ("Duplicate Ossie names are ambiguous; conversion continued."),
     "is-time": "Temporal role markers are not supported in Hex and were dropped.",
     "missing-dialect": "No dialect was specified; ANSI SQL was used.",
     "missing-datatype": "A datatype is required in Hex; a default was used.",

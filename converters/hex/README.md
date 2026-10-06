@@ -126,9 +126,8 @@ Conversion reports problems encountered. The severity of a problem is one of:
 
 - `fatal`: The problem causes invalidation that cannot be recovered from, or
   an unexpected internal error.
-- `error`: The problem invalidates a definition which must be omitted from
-  the result. The associated definition(s) have been omitted
-  from the result.
+- `error`: The problem makes a definition invalid or ambiguous. The definition
+  may be omitted and affect later conversions.
 - `warning`: The problem is a potential issue that probably should be addressed,
   but is not critical. The associated definitions may behave unexpectedly,
   but are included in the result.
