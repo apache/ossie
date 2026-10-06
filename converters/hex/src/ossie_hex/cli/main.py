@@ -129,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
                 verbosity=args.verbose,
             )
             print(report, file=sys.stderr)
-            if any(problem.severity == "fatal" for problem in problems):
+            if any(problem.severity in ("fatal", "error") for problem in problems):
                 return 1
             return 0
         else:
