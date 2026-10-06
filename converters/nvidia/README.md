@@ -106,10 +106,10 @@ model-level Ossie metrics. Relationships are recovered from joins, then
 physical foreign keys, then semantic foreign keys.
 
 Every column pair of an Ossie relationship must match at once, so only pairs
-that form one key share a relationship. A join keeps its own columns together,
-and each semantic foreign key is its own relationship. Auto Ontology stores a
-physical foreign key one column pair at a time, without the constraint it
-belongs to, so the pairs between two tables are grouped as follows:
+that form one key share a relationship. A join keeps its own columns together.
+Auto Ontology stores a foreign key, physical or semantic, one column pair at a
+time, without the constraint it belongs to, so the foreign keys between two
+tables, and those of a join that names no columns, are grouped as follows:
 
 - pairs covering the target's composite primary key exactly once are that key;
 - pairs that reference the same target column are independent links, because
@@ -117,6 +117,11 @@ belongs to, so the pairs between two tables are grouped as follows:
   relationship;
 - otherwise the pairs stay together as one key, since nothing shows they are
   independent.
+
+A semantic foreign key that repeats a pair an earlier relationship between the
+same datasets already has adds nothing. A relationship that only partly
+overlaps an earlier one is kept whole rather than trimmed, since dropping its
+shared pairs would loosen its join.
 
 This cannot tell every case apart. Two independent links to different target
 columns of the same table are kept as one relationship, and when links that

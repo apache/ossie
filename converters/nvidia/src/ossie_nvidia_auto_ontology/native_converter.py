@@ -1194,14 +1194,47 @@ def _relationships_from_auto_ontology(
     seen_pairs: set[tuple[str, str, str, str]] = set()
 
     def add_group(from_name: str, to_name: str, columns: list[tuple[str, str]]) -> None:
-        fresh = [
-            pair
-            for pair in dict.fromkeys(columns)
-            if (from_name, to_name, *pair) not in seen_pairs
+        # A group is one join condition, so it is kept whole or not at all:
+        # dropping only its already-seen pairs would loosen it.
+        columns = list(dict.fromkeys(columns))
+        keys = {(from_name, to_name, *pair) for pair in columns}
+        if columns and not keys <= seen_pairs:
+            seen_pairs.update(keys)
+            groups.append((from_name, to_name, columns))
+
+    def dataset(table_id: str, columns: list[str]) -> str:
+        return _relationship_dataset(table_id, columns, datasets_by_table, term_columns)
+
+    def add_links(
+        source_table_id: str,
+        target_table_id: str,
+        links: list[tuple[str, str]],
+        from_name: str | None = None,
+        to_name: str | None = None,
+    ) -> None:
+        """Split the column links between two tables into relationships.
+
+        Datasets not given are resolved once from every link, before
+        splitting, so a table represented by several terms is told apart with
+        all of them.
+        """
+        if from_name is None:
+            from_name = dataset(source_table_id, [source for source, _ in links])
+        if to_name is None:
+            to_name = dataset(target_table_id, [target for _, target in links])
+        links = [
+            pair for pair in links if (from_name, to_name, *pair) not in seen_pairs
         ]
-        if fresh:
-            seen_pairs.update((from_name, to_name, *pair) for pair in fresh)
-            groups.append((from_name, to_name, fresh))
+        target_table = catalog["tables"][target_table_id]["item"]
+        for columns in _split_links(
+            links,
+            [str(column) for column in target_table.get("pk") or []],
+            [
+                str(column.get("name") or "")
+                for column in target_table.get("columns") or []
+            ],
+        ):
+            add_group(from_name, to_name, columns)
 
     covered_fk_pairs: set[tuple[str, str]] = set()
     for join in root["data_layer"].get("joins") or []:
@@ -1224,29 +1257,24 @@ def _relationships_from_auto_ontology(
             )
             if source_name and target_name:
                 source_columns.append((source_name, target_name))
-        if not source_columns:
-            source_columns = _fk_columns_for_tables(
-                root, source_table_id, target_table_id, catalog
-            )
         if source_columns:
             add_group(
-                _relationship_dataset(
-                    source_table_id,
-                    [source for source, _ in source_columns],
-                    datasets_by_table,
-                    term_columns,
-                ),
-                _relationship_dataset(
-                    target_table_id,
-                    [target for _, target in source_columns],
-                    datasets_by_table,
-                    term_columns,
-                ),
+                dataset(source_table_id, [source for source, _ in source_columns]),
+                dataset(target_table_id, [target for _, target in source_columns]),
                 source_columns,
             )
-            covered_fk_pairs.add((source_table_id, target_table_id))
+        else:
+            # Without usable columns the join says only that the tables are
+            # linked; the foreign keys between them say how.
+            fallback = _fk_columns_for_tables(
+                root, source_table_id, target_table_id, catalog
+            )
+            if not fallback:
+                continue
+            add_links(source_table_id, target_table_id, fallback)
+        covered_fk_pairs.add((source_table_id, target_table_id))
 
-    fk_groups: dict[tuple[str, str], list[tuple[str, str]]] = defaultdict(list)
+    fk_links: dict[tuple[str, str], list[tuple[str, str]]] = defaultdict(list)
     for foreign_key in root["data_layer"].get("foreign_keys") or []:
         source = catalog["columns"].get(str(foreign_key.get("source_column_id") or ""))
         target = catalog["columns"].get(str(foreign_key.get("target_column_id") or ""))
@@ -1256,31 +1284,13 @@ def _relationships_from_auto_ontology(
         if table_pair in covered_fk_pairs:
             continue
         if table_pair[0] in datasets_by_table and table_pair[1] in datasets_by_table:
-            fk_groups[table_pair].append((source["name"], target["name"]))
-    for table_pair, table_columns in fk_groups.items():
-        target_table = catalog["tables"][table_pair[1]]["item"]
-        target_pk = [str(column) for column in target_table.get("pk") or []]
-        target_order = [
-            str(column.get("name") or "")
-            for column in target_table.get("columns") or []
-        ]
-        for columns in _split_foreign_keys(table_columns, target_pk, target_order):
-            add_group(
-                _relationship_dataset(
-                    table_pair[0],
-                    [source for source, _ in columns],
-                    datasets_by_table,
-                    term_columns,
-                ),
-                _relationship_dataset(
-                    table_pair[1],
-                    [target for _, target in columns],
-                    datasets_by_table,
-                    term_columns,
-                ),
-                columns,
-            )
+            fk_links[table_pair].append((source["name"], target["name"]))
+    for (source_table_id, target_table_id), links in fk_links.items():
+        add_links(source_table_id, target_table_id, links)
 
+    semantic_links: dict[tuple[str, str, str, str], list[tuple[str, str]]] = (
+        defaultdict(list)
+    )
     for semantic_fk in root["semantic_layer"].get("semantic_fks") or []:
         source = catalog["columns"].get(str(semantic_fk.get("column_id") or ""))
         owner = attr_owner.get(str(semantic_fk.get("column_attribute_id") or ""))
@@ -1293,16 +1303,27 @@ def _relationships_from_auto_ontology(
             continue
         if source["table_id"] not in datasets_by_table:
             continue
-        from_name = _relationship_dataset(
-            source["table_id"],
-            [source["name"]],
-            datasets_by_table,
-            term_columns,
-        )
         to_name = str(target_term.get("name") or "")
         if not to_name:
             continue
-        add_group(from_name, to_name, [(source["name"], target_column["name"])])
+        # A semantic foreign key names its source column, which is enough to
+        # pick the source dataset on its own.
+        from_name = dataset(source["table_id"], [source["name"]])
+        key = (source["table_id"], target_column["table_id"], from_name, to_name)
+        semantic_links[key].append((source["name"], target_column["name"]))
+    for (
+        source_table_id,
+        target_table_id,
+        from_name,
+        to_name,
+    ), links in semantic_links.items():
+        add_links(
+            source_table_id,
+            target_table_id,
+            links,
+            from_name=from_name,
+            to_name=to_name,
+        )
 
     relationships: list[dict[str, Any]] = []
     used_names: set[str] = set()
@@ -1328,40 +1349,40 @@ def _relationships_from_auto_ontology(
     return relationships
 
 
-def _split_foreign_keys(
-    columns: list[tuple[str, str]],
+def _split_links(
+    links: list[tuple[str, str]],
     target_pk: list[str],
     target_order: list[str],
 ) -> list[list[tuple[str, str]]]:
-    """Group a table pair's physical foreign keys into Ossie relationships.
+    """Group the column links between two tables into Ossie relationships.
 
-    Auto Ontology stores a foreign key one column pair at a time, without the
-    constraint it belongs to, and may not know the target's keys at all. So
-    pairs stay together, as one multi-column key, unless something shows they
-    are independent:
+    Auto Ontology stores a foreign key, physical or semantic, one column pair
+    at a time, without the constraint it belongs to, and may not know the
+    target's keys at all. So links stay together, as one multi-column key,
+    unless something shows they are independent:
 
-    * pairs covering the target's composite primary key exactly once are that
-      key, and any other pair is a separate link;
-    * one key never references a target column twice, so pairs that share a
-      target column are independent links. Which of the remaining pairs would
+    * links covering the target's composite primary key exactly once are that
+      key, and any other link is separate;
+    * one key never references a target column twice, so links that share a
+      target column are independent. Which of the remaining links would
       belong with which of them cannot be told, so all of them are split.
     """
-    columns = list(dict.fromkeys(columns))
+    links = list(dict.fromkeys(links))
     groups: list[list[tuple[str, str]]] = []
     if len(target_pk) > 1:
-        composite = [pair for pair in columns if pair[1] in target_pk]
+        composite = [pair for pair in links if pair[1] in target_pk]
         if sorted(target for _, target in composite) == sorted(target_pk):
             composite.sort(key=lambda pair: target_pk.index(pair[1]))
             groups.append(composite)
-            columns = [pair for pair in columns if pair not in composite]
-    if not columns:
+            links = [pair for pair in links if pair not in composite]
+    if not links:
         return groups
-    targets = [target for _, target in columns]
+    targets = [target for _, target in links]
     if len(set(targets)) < len(targets):
-        return [*groups, *([pair] for pair in columns)]
+        return [*groups, *([pair] for pair in links)]
     position = {name: index for index, name in enumerate(target_order)}
-    columns.sort(key=lambda pair: position.get(pair[1], len(position)))
-    return [*groups, columns]
+    links.sort(key=lambda pair: position.get(pair[1], len(position)))
+    return [*groups, links]
 
 
 def _relationship_dataset(
