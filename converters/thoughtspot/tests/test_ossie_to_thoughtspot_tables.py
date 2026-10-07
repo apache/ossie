@@ -121,6 +121,53 @@ class TestDbColumnName:
         column = table.body["columns"][0]
         assert column["name"] == column["db_column_name"] == "status"
 
+    def test_a_quoted_warehouse_column_is_unquoted_into_db_column_name(self):
+        # A reserved word reaches the document quoted (`"on"`), because bare it
+        # would not parse. `db_column_name` must carry the warehouse's own
+        # spelling, so the quotes come back off -- left on, it would name a
+        # column called `"on"`, quotes included, which no warehouse has.
+        dataset = _dataset(
+            "store", "TPCDS.PUBLIC.STORE", fields=[_physical("is_open", '"on"')]
+        )
+        table = build_table(dataset, IssueLog())
+        assert table.body["columns"][0]["db_column_name"] == "on"
+
+    def test_a_doubled_quote_inside_a_quoted_column_is_undoubled(self):
+        # The forward direction writes a column displayed as `Size (")` as
+        # `"Size ("")"`. Matching only non-quote characters rejected exactly
+        # the strings this converter itself produces, so the field was not
+        # recognised as physical at all and was dropped as untranslatable.
+        dataset = _dataset(
+            "parts", "SALES.PUBLIC.PARTS", fields=[_physical("size_in", '"Size ("")"')]
+        )
+        table = build_table(dataset, IssueLog())
+        assert table.body["columns"][0]["db_column_name"] == 'Size (")'
+
+    def test_a_foreign_vendor_dialect_still_supplies_db_column_name(self):
+        """An Ossie document from another converter carries neither a
+        THOUGHTSPOT dialect nor a ThoughtSpot stash, so the physical column can
+        only come from the field's own `expression` -- which is exactly what
+        core-spec PR #486 settles it to mean.
+
+        `DATABRICKS` is the real case: `metric_view_to_ossie` emits its
+        dimensions in that dialect, so this is the shape a
+        TML -> Ossie -> Metric View -> Ossie -> TML trip hands back. Every
+        other test on this path uses ANSI_SQL, which left the dialect-agnostic
+        branch correct by construction and unproven.
+        """
+        field = _field(
+            "total_amount",
+            [{"dialect": "DATABRICKS", "expression": "o_totalprice"}],
+            label="Total Amount",
+        )
+        dataset = _dataset("orders", "SALES.PUBLIC.ORDERS", fields=[field])
+        log = IssueLog()
+        table = build_table(dataset, log)
+        column = table.body["columns"][0]
+        assert column["name"] == "Total Amount"
+        assert column["db_column_name"] == "o_totalprice"
+        assert not log.has_errors(), log.as_dicts()
+
     def test_a_round_tripped_bracket_reference_supplies_db_column_name(self):
         # A prior TML -> Ossie trip leaves the table's own physical column
         # *display* name inside the verbatim THOUGHTSPOT bracket, not in

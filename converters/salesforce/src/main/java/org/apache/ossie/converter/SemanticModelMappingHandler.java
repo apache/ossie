@@ -32,6 +32,8 @@ import java.util.Set;
 import static org.apache.ossie.converter.ConverterConstants.AI_CONTEXT;
 import static org.apache.ossie.converter.ConverterConstants.API_NAME;
 import static org.apache.ossie.converter.ConverterConstants.BUSINESS_PREFERENCES;
+import static org.apache.ossie.converter.ConverterConstants.DATASPACE;
+import static org.apache.ossie.converter.ConverterConstants.DEFAULT_DATASPACE;
 import static org.apache.ossie.converter.ConverterConstants.LABEL;
 
 /**
@@ -155,5 +157,6 @@ public class SemanticModelMappingHandler implements PipelineStep {
             String apiName = (String) outputData.get(API_NAME);
             outputData.put(LABEL, apiName);
         }
+        outputData.putIfAbsent(DATASPACE, DEFAULT_DATASPACE);
     }
 }

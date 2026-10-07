@@ -56,7 +56,7 @@ Supported SQL and expression language dialects for metrics and field definitions
 | `MDX` | Multi-Dimensional Expressions |
 | `TABLEAU` | Tableau calculations |
 | `DATABRICKS` | Databricks SQL |
-| `MAQL` | GoodData MAQL (Metric Analysis and Query Language) |
+| `MAQL` | GoodData MAQL (Multi-Dimensional Analytical Query Language) |
 | `BIGQUERY` | Google BigQuery (GoogleSQL) |
 | `SIGMA` | Sigma Computing's spreadsheet-style formula language |
 | `THOUGHTSPOT` | ThoughtSpot formula language |

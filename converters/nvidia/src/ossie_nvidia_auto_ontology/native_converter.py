@@ -24,7 +24,7 @@ import json
 import re
 import sys
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Set
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -386,30 +386,45 @@ def convert_ossie_to_auto_ontology(
     joins: list[dict[str, Any]] = []
     foreign_keys: list[dict[str, str]] = []
     semantic_fks: list[dict[str, str]] = []
+    native_relationships = _NativeRelationships(native) if native else None
+    emitted_attribute_ids = {
+        str(attribute["id"])
+        for term in terms
+        for attribute in term["columns_attributes"]
+    }
     for relationship in relationships:
         from_name = str(relationship["from"])
         to_name = str(relationship["to"])
+        column_pairs = [
+            (str(source), str(target))
+            for source, target in zip(
+                relationship["from_columns"],
+                relationship["to_columns"],
+                strict=True,
+            )
+        ]
+        if native_relationships:
+            covered = native_relationships.reuse(
+                table_ids[from_name],
+                table_ids[to_name],
+                term_ids[to_name],
+                column_pairs,
+                emitted_attribute_ids,
+            )
+            column_pairs = [pair for pair in column_pairs if pair not in covered]
+        if not column_pairs:
+            continue
         joins.append(
             {
                 "source_table_id": table_ids[from_name],
                 "target_table_id": table_ids[to_name],
                 "join_columns": [
-                    {"source": str(source), "target": str(target)}
-                    for source, target in zip(
-                        relationship["from_columns"],
-                        relationship["to_columns"],
-                        strict=True,
-                    )
+                    {"source": source, "target": target}
+                    for source, target in column_pairs
                 ],
             }
         )
-        for source, target in zip(
-            relationship["from_columns"],
-            relationship["to_columns"],
-            strict=True,
-        ):
-            source_name = str(source)
-            target_name = str(target)
+        for source_name, target_name in column_pairs:
             foreign_keys.append(
                 {
                     "source_column_id": column_ids[(from_name, source_name)],
@@ -530,6 +545,7 @@ def convert_ossie_to_auto_ontology(
             foreign_keys=foreign_keys,
             joins=joins,
             semantic_fks=semantic_fks,
+            reused=native_relationships.reused if native_relationships else set(),
         )
 
     output = {
@@ -2046,6 +2062,126 @@ def _all_resolvable_ids(
     )
 
 
+def _record_marker(kind: str, item: Mapping[str, Any]) -> str:
+    return kind + json.dumps(item, sort_keys=True)
+
+
+class _NativeRelationships:
+    """The joins, foreign keys and semantic foreign keys of a native snapshot.
+
+    An Ossie relationship collapses all three kinds of native record into one.
+    Regenerating every kind for every relationship would turn a semantic
+    foreign key into a physical constraint the database does not have, so a
+    relationship that still matches the records it came from reuses exactly
+    those records, and only the column pairs nothing backs are regenerated.
+    """
+
+    def __init__(self, native: dict[str, Any]) -> None:
+        self._catalog = _read_native_catalog(native)
+        self._native = native
+        self._joins = [
+            item
+            for item in native.get("data_layer", {}).get("joins") or []
+            if isinstance(item, dict)
+        ]
+        self._foreign_keys = [
+            item
+            for item in native.get("data_layer", {}).get("foreign_keys") or []
+            if isinstance(item, dict)
+        ]
+        self._semantic_fks = [
+            item
+            for item in native.get("semantic_layer", {}).get("semantic_fks") or []
+            if isinstance(item, dict)
+        ]
+        self._attributes: dict[str, tuple[str, str]] = {}
+        for term in native.get("semantic_layer", {}).get("terms") or []:
+            for attribute in term.get("columns_attributes") or []:
+                if attribute.get("id"):
+                    self._attributes[str(attribute["id"])] = (
+                        str(term.get("id") or ""),
+                        str(attribute.get("column_id") or ""),
+                    )
+        self.reused: set[str] = set()
+
+    def reuse(
+        self,
+        source_table_id: str,
+        target_table_id: str,
+        target_term_id: str,
+        column_pairs: list[tuple[str, str]],
+        emitted_attribute_ids: set[str],
+    ) -> set[tuple[str, str]]:
+        """Mark the native records backing *column_pairs*; return the pairs covered."""
+        wanted = set(column_pairs)
+        covered: set[tuple[str, str]] = set()
+        for join in self._joins:
+            if (
+                str(join.get("source_table_id") or "") != source_table_id
+                or str(join.get("target_table_id") or "") != target_table_id
+            ):
+                continue
+            join_pairs = self._join_pairs(join, source_table_id, target_table_id)
+            if join_pairs and join_pairs <= wanted:
+                self.reused.add(_record_marker("join", join))
+                covered |= join_pairs
+        for foreign_key in self._foreign_keys:
+            source = self._column(foreign_key.get("source_column_id"))
+            target = self._column(foreign_key.get("target_column_id"))
+            if (
+                source
+                and target
+                and source["table_id"] == source_table_id
+                and target["table_id"] == target_table_id
+                and (source["name"], target["name"]) in wanted
+            ):
+                self.reused.add(_record_marker("foreign_key", foreign_key))
+                covered.add((source["name"], target["name"]))
+        for semantic_fk in self._semantic_fks:
+            attribute_id = str(semantic_fk.get("column_attribute_id") or "")
+            term_id, target_column_id = self._attributes.get(attribute_id, ("", ""))
+            source = self._column(semantic_fk.get("column_id"))
+            target = self._column(target_column_id)
+            if (
+                source
+                and target
+                and term_id == target_term_id
+                and attribute_id in emitted_attribute_ids
+                and source["table_id"] == source_table_id
+                and target["table_id"] == target_table_id
+                and (source["name"], target["name"]) in wanted
+            ):
+                self.reused.add(_record_marker("semantic_fk", semantic_fk))
+                covered.add((source["name"], target["name"]))
+        return covered
+
+    def _column(self, column_id: Any) -> dict[str, Any] | None:
+        return self._catalog["columns"].get(str(column_id or ""))
+
+    def _join_pairs(
+        self, join: Mapping[str, Any], source_table_id: str, target_table_id: str
+    ) -> set[tuple[str, str]]:
+        pairs: set[tuple[str, str]] = set()
+        for item in join.get("join_columns") or []:
+            if not isinstance(item, dict):
+                continue
+            source = _join_column_name(
+                item.get("source"), source_table_id, self._catalog
+            )
+            target = _join_column_name(
+                item.get("target"), target_table_id, self._catalog
+            )
+            if source and target:
+                pairs.add((source, target))
+        if pairs:
+            return pairs
+        return set(
+            _fk_columns_for_tables(
+                self._native, source_table_id, target_table_id, self._catalog
+            )
+        )
+
+
 def _reconcile_native_relationships(
     native: dict[str, Any],
     *,
@@ -2053,12 +2189,14 @@ def _reconcile_native_relationships(
     foreign_keys: list[dict[str, str]],
     joins: list[dict[str, Any]],
     semantic_fks: list[dict[str, str]],
+    reused: Set[str] = frozenset(),
 ) -> tuple[list[dict[str, str]], list[dict[str, Any]], list[dict[str, str]]]:
     catalog = _read_native_catalog(native)
     native_joins = [
         item
         for item in native.get("data_layer", {}).get("joins") or []
-        if not (
+        if _record_marker("join", item) in reused
+        or not (
             str(item.get("source_table_id") or "") in represented_table_ids
             and str(item.get("target_table_id") or "") in represented_table_ids
         )
@@ -2068,7 +2206,8 @@ def _reconcile_native_relationships(
         source = catalog["columns"].get(str(item.get("source_column_id") or ""))
         target = catalog["columns"].get(str(item.get("target_column_id") or ""))
         if (
-            source
+            _record_marker("foreign_key", item) not in reused
+            and source
             and target
             and source["table_id"] in represented_table_ids
             and target["table_id"] in represented_table_ids
@@ -2091,7 +2230,8 @@ def _reconcile_native_relationships(
             str(item.get("column_attribute_id") or "")
         )
         if (
-            source
+            _record_marker("semantic_fk", item) not in reused
+            and source
             and source["table_id"] in represented_table_ids
             and target_table_id in represented_table_ids
         ):

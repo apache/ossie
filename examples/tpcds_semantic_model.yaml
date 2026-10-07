@@ -412,7 +412,7 @@ datasets:
     source: tpcds.public.store
     primary_key: [s_store_sk]  # Simple primary key
     unique_keys:
-      - [s_store_id]  # Simple key: single column
+      - [s_store_sk]  # Simple key: single column
     description: Store dimension with location and store attributes
     ai_context:
       synonyms:

@@ -32,7 +32,9 @@ import org.apache.ossie.exception.ConversionException;
 
 /** Compiles the documented metric subset: parse, bind/check, then emit bounded Tua text. */
 final class MetricExpressionTranslator {
-    private static final List<String> DIALECTS = List.of("TABLEAU", "SNOWFLAKE", "ANSI_SQL");
+    /** Preference order. OSSIE_SQL_2026 is the spec's portable ANSI-SQL-based dialect, so it parses as SQL. */
+    private static final List<String> DIALECTS = List.of("TABLEAU", "SNOWFLAKE", "ANSI_SQL", "OSSIE_SQL_2026");
+    private static final String SUPPORTED = String.join(", ", DIALECTS);
     private static final Set<String> AGGREGATES = Set.of("SUM", "AVG", "MIN", "MAX", "COUNT", "COUNTD");
     record Result(String expression, String dataType) {}
     private MetricExpressionTranslator() {}
@@ -48,7 +50,7 @@ final class MetricExpressionTranslator {
             Map<String, Object> expression = getMap(metric, "expression");
             List<Object> dialects = expression == null ? null : getList(expression, "dialects");
             if (dialects == null) {
-                throw new IllegalArgumentException("missing expression.dialects; provide TABLEAU, SNOWFLAKE or ANSI_SQL");
+                throw new IllegalArgumentException("missing expression.dialects; provide one of " + SUPPORTED);
             }
             Map<String, String> candidates = new java.util.LinkedHashMap<>();
             for (Object entry : dialects) {
@@ -63,7 +65,7 @@ final class MetricExpressionTranslator {
             }
             String dialect = DIALECTS.stream().filter(candidates::containsKey).findFirst()
                     .orElseThrow(() -> new IllegalArgumentException(
-                            "no supported dialect; provide TABLEAU, SNOWFLAKE or ANSI_SQL"));
+                            "no supported dialect; provide one of " + SUPPORTED));
             String text = candidates.get(dialect);
             if (text == null || text.isBlank()) {
                 throw new IllegalArgumentException(dialect + " expression is empty");

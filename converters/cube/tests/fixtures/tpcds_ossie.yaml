@@ -411,7 +411,7 @@ datasets:
     - retail locations
     - branches
   unique_keys:
-  - - s_store_id
+  - - s_store_sk
   fields:
   - name: s_store_sk
     expression:

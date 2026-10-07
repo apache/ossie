@@ -190,6 +190,88 @@ def test_semantic_checks_skip_non_model_payloads(data: object) -> None:
     assert _VALIDATE.validate_sql(data) == []
 
 
+@pytest.mark.parametrize(
+    ("items", "expected"),
+    [
+        (["a", "a"], ["a"]),
+        (["a", "a", "a"], ["a"]),
+        (["a", "b", "a", "b", "a"], ["a", "b"]),
+        (["a", "b", "b", "a"], ["a", "b"]),
+        (["a", "b", "c"], []),
+        ([], []),
+    ],
+    ids=[
+        "twice",
+        "three-times",
+        "two-names-interleaved",
+        "repeats-in-reverse-order",
+        "all-unique",
+        "empty",
+    ],
+)
+def test_find_duplicates_reports_each_name_once(items: list[str], expected: list[str]) -> None:
+    assert _VALIDATE.find_duplicates(items) == expected
+
+
+def _expression(expr: str = "x") -> dict:
+    return {"dialects": [{"dialect": "ANSI_SQL", "expression": expr}]}
+
+
+def _with_duplicate_fields(name: str) -> dict:
+    dataset = {
+        "name": "orders",
+        "source": "db.s.orders",
+        "fields": [
+            {"name": name, "expression": _expression()},
+            {"name": name, "expression": _expression()},
+            {"name": name, "expression": _expression()},
+        ],
+    }
+    return _document([dataset], [])
+
+
+def _with_duplicate_metrics(name: str) -> dict:
+    document = _document([_ORDERS], [])
+    document["metrics"] = [
+        {"name": name, "expression": _expression("SUM(orders.amount)")},
+        {"name": name, "expression": _expression("SUM(orders.amount)")},
+        {"name": name, "expression": _expression("SUM(orders.amount)")},
+    ]
+    return document
+
+
+def _with_duplicate_relationships(name: str) -> dict:
+    rel = dict(_relationship(to_columns=["id"]), name=name)
+    return _document([_ORDERS, _CUSTOMERS], [dict(rel), dict(rel), dict(rel)])
+
+
+@pytest.mark.parametrize(
+    ("build", "expected"),
+    [
+        (
+            lambda: _document([_ORDERS, _ORDERS, _ORDERS], []),
+            "[Unique] Duplicate dataset name 'orders' in model 'm'",
+        ),
+        (
+            lambda: _with_duplicate_fields("amount"),
+            "[Unique] Duplicate field name 'amount' in dataset 'orders'",
+        ),
+        (
+            lambda: _with_duplicate_metrics("revenue"),
+            "[Unique] Duplicate metric name 'revenue' in model 'm'",
+        ),
+        (
+            lambda: _with_duplicate_relationships("orders_to_customers"),
+            "[Unique] Duplicate relationship name 'orders_to_customers' in model 'm'",
+        ),
+    ],
+    ids=["dataset", "field", "metric", "relationship"],
+)
+def test_a_name_repeated_three_times_is_one_error(build, expected: str) -> None:
+    """Three copies of a name are one problem, for every kind of name checked."""
+    assert _VALIDATE.validate_unique_names(build()) == [expected]
+
+
 def test_unique_names_are_checked_in_the_root_model() -> None:
     errors = _VALIDATE.validate_unique_names(_document([_ORDERS, _ORDERS], []))
 
@@ -268,6 +350,50 @@ def test_flags_an_invalid_ossie_sql_2026_expression() -> None:
 
     assert error is not None
     assert error.startswith("[SQL] ctx:")
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "amount; DROP TABLE customers",
+        "SUM(amount); SELECT 1",
+        "SELECT amount; DROP TABLE customers",
+    ],
+    ids=["column-then-statement", "aggregate-then-select", "select-then-statement"],
+)
+def test_rejects_an_expression_holding_more_than_one_statement(expression: str) -> None:
+    """A field or metric holds one expression; `parse_one` returns a Block for a list."""
+    error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert error == "[SQL] ctx: expected a single expression but found 2 statements"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "amount",
+        "amount;",
+        "amount;;",
+        "SUM(amount)",
+        "a /* ; */ + b",
+        "'a;b'",
+        "CONCAT(a, ';', b)",
+    ],
+    ids=[
+        "column",
+        "trailing-semicolon",
+        "repeated-trailing-semicolons",
+        "aggregate",
+        "in-comment",
+        "in-literal",
+        "in-argument",
+    ],
+)
+def test_accepts_a_single_expression_containing_a_semicolon(expression: str) -> None:
+    """A semicolon in a literal or comment does not make a statement list."""
+    assert _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx") is None
 
 
 def _relationship(to_columns: list[str], to: str = "customers") -> dict:
@@ -605,3 +731,22 @@ def test_arity_skips_non_list_columns() -> None:
     rel["to_columns"] = "id"
 
     assert validate_relationship_column_arity(_document([_ORDERS, _CUSTOMERS], [rel])) == []
+
+
+def test_a_multi_statement_expression_fails_validation(run_validator):
+    document = _document([_ORDERS], [])
+    document["datasets"][0]["fields"] = [
+        {
+            "name": "amount",
+            "expression": {
+                "dialects": [
+                    {"dialect": "ANSI_SQL", "expression": "amount; DROP TABLE customers"}
+                ]
+            },
+        }
+    ]
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "expected a single expression but found 2 statements" in output

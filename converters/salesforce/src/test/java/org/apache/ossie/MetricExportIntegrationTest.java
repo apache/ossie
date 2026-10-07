@@ -76,7 +76,7 @@ class MetricExportIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"SNOWFLAKE", "ANSI_SQL"})
+    @ValueSource(strings = {"SNOWFLAKE", "ANSI_SQL", "OSSIE_SQL_2026"})
     void translatesComposedMetricsThroughStringApi(String dialect) throws Exception {
         Map<String, Object> output = convertOne(model("sales", List.of(
                 metric("margin", dialect, "SUM(orders.profit) / NULLIF(SUM(orders.revenue), 0)"),
@@ -253,6 +253,21 @@ class MetricExportIntegrationTest {
     }
 
     @Test
+    void metricCanReferenceAFieldWhoseColumnNameIsASqlKeyword() throws Exception {
+        Map<String, Object> source = model("sales", List.of(metric("total", "ANSI_SQL", "SUM(orders.profit)")));
+        Map<String, Object> keywordColumn = field("profit", "Decimal");
+        keywordColumn.put("expression", Map.of("dialects", List.of(dialect("ANSI_SQL", "COUNT"))));
+        items(source, "datasets").get(0).put("fields", List.of(keywordColumn));
+
+        Map<String, Object> output = convertOne(source);
+
+        assertEquals(List.of("COUNT"), items(items(output, "semanticDataObjects").get(0),
+                "semanticMeasurements").stream().map(item -> item.get("dataObjectFieldName")).toList());
+        assertEquals("SUM([orders].[profit])",
+                items(output, "semanticCalculatedMeasurements").get(0).get("expression"));
+    }
+
+    @Test
     void duplicateMetricNamesAreRejectedBeforeExport() throws Exception {
         String input = document(List.of(model("sales", List.of(
                 metric("duplicated", "ANSI_SQL", "SUM(orders.profit)"),
@@ -295,12 +310,16 @@ class MetricExportIntegrationTest {
         Map<String, Object> output = convertOne(model("sales", List.of(
                 metric("margin", "SNOWFLAKE", "SUM(orders.profit) / NULLIF(SUM(orders.revenue), 0)"),
                 metric("customers", "ANSI_SQL", "COUNT(DISTINCT orders.customer_id)"),
-                metric("rounding", "ANSI_SQL", "ROUND(AVG(ABS(orders.profit)), 2) + CEIL(1.2) - FLOOR(1.2)"))));
+                metric("rounding", "ANSI_SQL", "ROUND(AVG(ABS(orders.profit)), 2) + CEIL(1.2) - FLOOR(1.2)"),
+                metric("portable", "OSSIE_SQL_2026",
+                        "SUM(\"ORDERS\".\"PROFIT\") / NULLIF(SUM(\"ORDERS\".\"REVENUE\"), 0)"))));
         SchemaValidator validator = new SchemaValidator(JSON, SchemaValidator.SALESFORCE_SCHEMA_PATH);
 
         for (Map<String, Object> metric : measurements(output)) {
             assertMeasurementMetadata(metric);
         }
+        assertEquals("(SUM([orders].[profit]) / (IF (SUM([orders].[revenue]) = 0) THEN NULL "
+                + "ELSE SUM([orders].[revenue]) END))", measurements(output).get(3).get("expression"));
         assertDoesNotThrow(() -> validator.validate(output));
 
         // OSI expression objects cannot be emitted where Salesforce requires a scalar formula.
