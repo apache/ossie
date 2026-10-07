@@ -157,6 +157,29 @@ class UniqueKeyLoader(yaml.SafeLoader):
                 self._check_unique_keys(child, visited)
 
 
+def load_yaml_named(text: str, name: str):
+    """Parse text with UniqueKeyLoader, naming the source in any parser mark.
+
+    yaml.load() names a str source "<unicode string>", which drops the path from
+    malformed-YAML and duplicate-key diagnostics. Naming the loader restores it
+    and keeps the offending line, which PyYAML only records for a str source:
+    Reader.get_mark() passes its buffer to the Mark only when the input was not
+    a stream, so a named StringIO would name the file but lose the snippet.
+    """
+    try:
+        loader = UniqueKeyLoader(text)
+    except yaml.reader.ReaderError as e:
+        # Reader.__init__ rejects an unprintable character (a NUL decodes as
+        # valid UTF-8 and gets this far) before the name below can be set.
+        e.name = name
+        raise
+    loader.name = name
+    try:
+        return loader.get_single_data()
+    finally:
+        loader.dispose()
+
+
 # Ossie schemas reference one another by raw GitHub URL or canonical $id.
 # Resolve those URLs onto files in this checkout only when a reference needs
 # them. The decorator parses and caches each retrieved schema across calls.
@@ -559,6 +582,18 @@ def validate_ontology(data: dict) -> list[str]:
     return errors
 
 
+def read_text_or_exit(path: Path, description: str) -> str:
+    """Read path as UTF-8 text, or report why it could not be read and exit 1."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as e:
+        print(f"Error: Could not read {description}: {e}")
+        sys.exit(1)
+    except UnicodeDecodeError as e:
+        print(f"Error: {description} is not valid UTF-8 text: {e}")
+        sys.exit(1)
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -583,20 +618,26 @@ def main():
         print(f"Error: Schema not found: {schema_path}")
         sys.exit(1)
 
-    # Load files
-    with open(schema_path) as f:
-        schema = json.load(f)
+    # Read first, then parse. The exists() checks above pass for a path that cannot be
+    # read as text — a directory, one without read permission, or a binary file — so
+    # reading is guarded to report like every other bad input rather than raise.
+    schema_text = read_text_or_exit(schema_path, f"schema {schema_path}")
+    try:
+        schema = json.loads(schema_text)
+    except json.JSONDecodeError as e:
+        print(f"Error: Invalid JSON in schema {schema_path}: {e}")
+        sys.exit(1)
 
-    with open(yaml_path) as f:
-        try:
-            data = yaml.load(f, Loader=UniqueKeyLoader)
-        except yaml.YAMLError as e:
-            print(f"Error: Invalid YAML: {e}")
-            sys.exit(1)
-        except RecursionError:
-            # Deeply nested input surfaces as RecursionError, not YAMLError.
-            print("Error: Invalid YAML: input is too deeply nested to parse")
-            sys.exit(1)
+    model_text = read_text_or_exit(yaml_path, str(yaml_path))
+    try:
+        data = load_yaml_named(model_text, str(yaml_path))
+    except yaml.YAMLError as e:
+        print(f"Error: Invalid YAML: {e}")
+        sys.exit(1)
+    except RecursionError:
+        # Deeply nested input surfaces as RecursionError, not YAMLError.
+        print("Error: Invalid YAML: input is too deeply nested to parse")
+        sys.exit(1)
 
     # Run validations
     errors = []
