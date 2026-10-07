@@ -190,8 +190,10 @@ def test_invalid_dialect(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> 
         main(["export", "-i", i, "-o", o, "--dialect", dialect])
 
     assert exc.value.code == 2
-    message = capsys.readouterr().err
+    # argparse's quoting of choices varies across Python versions.
+    message, separator, choices = capsys.readouterr().err.partition("(choose from ")
+    message = message + separator + choices.replace("'", "")
     assert message == snapshot("""\
 usage: ossie-hex export [-h] -i INPUT [-o OUTPUT] [-d DIALECT] [-v]
-ossie-hex export: error: argument -d/--dialect: invalid choice: 'invalid' (choose from 'ansi_sql', 'snowflake', 'mdx', 'maql', 'tableau', 'databricks', 'bigquery', 'sigma', 'thoughtspot', 'dax', 'ossie_sql_2026')
+ossie-hex export: error: argument -d/--dialect: invalid choice: 'invalid' (choose from ansi_sql, snowflake, mdx, maql, tableau, databricks, bigquery, sigma, thoughtspot, dax, ossie_sql_2026)
 """)

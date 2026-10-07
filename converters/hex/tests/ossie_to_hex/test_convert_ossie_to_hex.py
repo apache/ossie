@@ -216,7 +216,6 @@ resources:
     description: Business key for store
     type: string
     expr_sql: s_store_id
-    unique: true
   - id: s_store_name
     description: Store name
     type: string
