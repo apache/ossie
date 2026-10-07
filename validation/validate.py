@@ -426,15 +426,22 @@ def as_list(value: object) -> list:
     return value if isinstance(value, list) else []
 
 
+# URI schemes whose IRIs have no "//" and may have a single colon (mailto:a@b.org,
+# tel:+1555..., urn:x). Without this list they look like prefix:local QNames.
+URI_SCHEMES = frozenset(
+    {"http", "https", "urn", "mailto", "tel", "file", "ftp", "data", "did", "doi", "geo", "ldap", "news", "sms", "tag"}
+)
+
+
 def undeclared_qname_prefix(iri: object, prefixes: dict) -> str | None:
     """Return the prefix of a QName iri that prefixes does not declare."""
     if not isinstance(iri, str) or ":" not in iri:
         return None
     prefix, local = iri.split(":", 1)
     # ontology.md allows a full IRI or a prefix:local QName. A scheme followed
-    # by "//" (http://...) or a second colon (urn:isbn:...) marks a full IRI;
-    # anything else is read as a QName.
-    if local.startswith("//") or ":" in local:
+    # by "//" (http://...), a second colon (urn:isbn:...) or a known URI scheme
+    # marks a full IRI; anything else is read as a QName.
+    if local.startswith("//") or ":" in local or prefix.lower() in URI_SCHEMES:
         return None
     return None if prefix in prefixes else prefix
 

@@ -886,13 +886,23 @@ def test_extends_cycles_are_reported_once(components: list[dict], expected: list
         "ex:Order",
         "http://example.com/Order",
         "urn:isbn:0451450523",
+        "urn:x",
         "https://example.com/ns#Order",
+        "mailto:orders@example.com",
+        "tel:+15551234567",
+        "MAILTO:orders@example.com",
     ],
 )
 def test_declared_prefixes_and_full_iris_are_accepted(iri: str) -> None:
     document = _ontology([_concept("Order", iri=iri)], prefixes={"ex": "http://example.com/"})
 
     assert validate_ontology(document) == []
+
+
+def test_undeclared_prefix_is_reported_even_when_prefixes_are_declared() -> None:
+    document = _ontology([_concept("Order", iri="foaf:Order")], prefixes={"ex": "http://example.com/"})
+
+    assert validate_ontology(document) == ["[Reference] Concept 'Order' iri uses undeclared prefix 'foaf'"]
 
 
 def test_ontology_checks_tolerate_malformed_shapes() -> None:
