@@ -1,0 +1,85 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+- code: HOLISTICS_METRIC_RENDERED_AS_AQL
+  severity: WARNING
+  message: >-
+    the metric sits on the dataset, where AML accepts only an AQL body. The ANSI_SQL expression was
+    rendered as AQL: 'SUM(store_sales.ss_ext_sales_price) / COUNT(DISTINCT customer.c_customer_sk)'
+    became 'sum(store_sales.ss_ext_sales_price) / count_distinct(customer.c_customer_sk)'
+  object_ref: customer_lifetime_value
+  remedy: check the AQL against the Ossie SQL it came from
+- code: HOLISTICS_METRIC_RENDERED_AS_AQL
+  severity: WARNING
+  message: >-
+    the metric sits on the dataset, where AML accepts only an AQL body. The ANSI_SQL expression was
+    rendered as AQL: 'SUM(store_sales.ss_ext_sales_price) / NULLIF(SUM(store.s_number_employees),
+    0)' became 'sum(store_sales.ss_ext_sales_price) / nullif(sum(store.s_number_employees), 0)'
+  object_ref: store_productivity
+  remedy: check the AQL against the Ossie SQL it came from
+- code: HOLISTICS_METRIC_SQL_NOT_TRANSLATED_TO_AQL
+  severity: ERROR
+  message: >-
+    the metric sits on the dataset, where AML accepts only an AQL body. The converter did not translate
+    this ANSI_SQL body, and the metric is dropped. It is a window function. Even though AQL has window
+    functions, this converter cannot output one. Ossie SQL carries the partition and the ordering
+    in the OVER clause, while AQL takes both from the grain of the query being run. Translating one
+    into the other means deciding which query grain this OVER clause corresponds to, and the Ossie
+    specification defines no semantics for how a window function behaves when queried, so nothing
+    says which grain that is. See https://docs.holistics.io/reference/aql/functions for AQL's window
+    functions and https://docs.holistics.io/reference/aql/rank for one in full, then write the AQL
+    by hand.
+  object_ref: cumulative_sales
+  remedy: rewrite the metric in AQL, or scope it to a single dataset
+- code: HOLISTICS_METRIC_SQL_NOT_TRANSLATED_TO_AQL
+  severity: ERROR
+  message: >-
+    the metric sits on the dataset, where AML accepts only an AQL body. The converter did not translate
+    this ANSI_SQL body, and the metric is dropped. It is a window function. Even though AQL has window
+    functions, this converter cannot output one. Ossie SQL carries the partition and the ordering
+    in the OVER clause, while AQL takes both from the grain of the query being run. Translating one
+    into the other means deciding which query grain this OVER clause corresponds to, and the Ossie
+    specification defines no semantics for how a window function behaves when queried, so nothing
+    says which grain that is. See https://docs.holistics.io/reference/aql/functions for AQL's window
+    functions and https://docs.holistics.io/reference/aql/rank for one in full, then write the AQL
+    by hand.
+  object_ref: brand_rank_in_store
+  remedy: rewrite the metric in AQL, or scope it to a single dataset
+- code: HOLISTICS_METRIC_SQL_NOT_TRANSLATED_TO_AQL
+  severity: ERROR
+  message: >-
+    the metric sits on the dataset, where AML accepts only an AQL body. The converter did not translate
+    this ANSI_SQL body, and the metric is dropped. It is a window function. Even though AQL has window
+    functions, this converter cannot output one. Ossie SQL carries the partition and the ordering
+    in the OVER clause, while AQL takes both from the grain of the query being run. Translating one
+    into the other means deciding which query grain this OVER clause corresponds to, and the Ossie
+    specification defines no semantics for how a window function behaves when queried, so nothing
+    says which grain that is. See https://docs.holistics.io/reference/aql/functions for AQL's window
+    functions and https://docs.holistics.io/reference/aql/rank for one in full, then write the AQL
+    by hand.
+  object_ref: monthly_sales_change
+  remedy: rewrite the metric in AQL, or scope it to a single dataset
+- code: HOLISTICS_ASSUMED_TYPE
+  severity: WARNING
+  message: AML requires a type and the Ossie datatype is None, so 'text' is written
+  object_ref: date_dim.d_quarter_name
+  remedy: set a datatype on the field, or edit the AML type after conversion
+- code: HOLISTICS_ASSUMED_TYPE
+  severity: WARNING
+  message: AML requires a type and the Ossie datatype is None, so 'text' is written
+  object_ref: date_dim.d_moy
+  remedy: set a datatype on the field, or edit the AML type after conversion

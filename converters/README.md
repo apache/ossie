@@ -90,6 +90,7 @@ The Ossie specification currently defines extensions for the following vendors:
 | `THOUGHTSPOT` | ThoughtSpot TML (Model + Table/SQL View) |
 | `CUBE` | Cube data model |
 | `HEX` | Hex semantic project |
+| `HOLISTICS` | Holistics AML dataset |
 
 Each vendor may define custom extensions (via the `custom_extensions` field in the Ossie spec) to carry vendor-specific metadata that does not have an equivalent in the core specification.
 
