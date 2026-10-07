@@ -926,6 +926,8 @@ def test_synonyms_reach_cube_as_prose_and_are_parked_structurally():
     ("cube_files", "/etc/outside.yml"),
     ("view_files", "../escaped.yml"),
     ("extra_files", "../../notes.txt"),
+    ("cube_files", "cubes/C:evil.yml"),
+    ("cube_files", "a\x00b.yml"),
 ])
 def test_a_stashed_path_may_not_escape_the_output_directory(key, path):
     """The stash is part of the input document, so a path in it is untrusted. Export
@@ -1398,3 +1400,14 @@ def test_ansi_sql_is_preferred_over_ossie_sql():
         {"dialect": "ANSI_SQL", "expression": "b"}]}
     assert pick_expression(expression) == ("b", "ANSI_SQL")
     assert pick_expression(expression, "OSSIE_SQL_2026") == ("a", "OSSIE_SQL_2026")
+
+
+def test_a_non_string_stashed_path_is_rejected():
+    import json
+    stash = {"_v": 1, "views": {}, "cube_files": {"orders": ["a", "b"]}}
+    ossie = _ossie(_ORDERS) + (
+        "custom_extensions:\n"
+        "- vendor_name: CUBE\n"
+        f"  data: '{json.dumps(stash)}'\n")
+    with pytest.raises(ConversionError, match="must be a string"):
+        convert_ossie_to_cube(ossie)
