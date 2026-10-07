@@ -337,6 +337,26 @@ def test_ossie_sql_2026_maps_to_the_ansi_default_explicitly() -> None:
     assert "OSSIE_SQL_2026" not in _VALIDATE.SKIP_SQL_VALIDATION
 
 
+def test_holistics_aql_is_skipped_rather_than_parsed_as_sql() -> None:
+    # AQL is relationship-aware and is not SQL, so sqlglot cannot parse it.
+    # Skipping it is what lets a Holistics field carry its body at all, the way
+    # MDX, MAQL, THOUGHTSPOT and DAX already do.
+    assert "HOLISTICS_AQL" in _VALIDATE.DIALECT_MAP
+    assert _VALIDATE.DIALECT_MAP["HOLISTICS_AQL"] is None
+    assert "HOLISTICS_AQL" in _VALIDATE.SKIP_SQL_VALIDATION
+
+
+def test_a_holistics_aql_expression_is_not_reported_as_invalid_sql() -> None:
+    # `|` is AQL's pipe operator. Parsed as SQL it is a bitwise OR over two
+    # names, which sqlglot accepts, so the skip is asserted through a body that
+    # SQL cannot read at all.
+    body = "count(orders.id) | where(orders.status == 'delivered')"
+    expression = {"dialects": [{"dialect": "HOLISTICS_AQL", "expression": body}]}
+    dataset = {**_ORDERS, "fields": [{"name": "delivered", "expression": expression}]}
+
+    assert _VALIDATE.validate_sql(_document([dataset], [])) == []
+
+
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 def test_validates_a_valid_ossie_sql_2026_expression() -> None:
     error = _VALIDATE.validate_sql_expression("SUM(amount)", "OSSIE_SQL_2026", "ctx")

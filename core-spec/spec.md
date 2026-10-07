@@ -61,6 +61,7 @@ Dialects in which metric and field expressions can be declared.
 | `SIGMA` | Sigma Computing's spreadsheet-style formula language |
 | `THOUGHTSPOT` | ThoughtSpot formula language |
 | `DAX` | Data Analysis Expressions (Power BI / Analysis Services) |
+| `HOLISTICS_AQL` | Holistics AQL (Analytical Query Language) |
 | `OSSIE_SQL_2026` | Ossie's portable SQL expression language, defined in `expression_language.md` |
 
 `OSSIE_SQL_2026` is the only dialect whose semantics this specification defines. The other values
