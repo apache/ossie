@@ -948,7 +948,7 @@ def test_a_stashed_path_may_not_escape_the_output_directory(key, path):
         "custom_extensions:\n"
         "- vendor_name: CUBE\n"
         f"  data: '{json.dumps(stash)}'\n")
-    with pytest.raises(ConversionError, match="absolute|escapes the output"):
+    with pytest.raises(ConversionError, match="absolute|escapes the output|NUL byte"):
         convert_ossie_to_cube(ossie)
 
 
