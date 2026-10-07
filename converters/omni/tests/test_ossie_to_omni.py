@@ -412,7 +412,8 @@ def _stash_ext(data):
     return [{"vendor_name": "OMNI", "data": json.dumps({"_v": 1, **data})}]
 
 
-@pytest.mark.parametrize("bad", ["../../pwned.txt", "/etc/pwned", "a/../../b", "C:/x", "\\\\srv\\x", " "])
+@pytest.mark.parametrize("bad", ["../../pwned.txt", "/etc/pwned", "a/../../b", "C:/x", "\\\\srv\\x", " ",
+                                 "views/C:evil.yaml", "a\x00b"])
 @pytest.mark.parametrize("where", ["extra_files", "topic_files", "dataset_file"])
 def test_stashed_paths_cannot_escape_output_dir(where, bad):
     if where == "extra_files":
@@ -432,3 +433,10 @@ def test_stashed_relative_path_is_normalized():
     files = export(minimal(custom_extensions=_stash_ext(
         {"extra_files": {"./sub//q.view": "x"}})))
     assert "sub/q.view" in files
+
+
+def test_stashed_non_string_path_is_rejected():
+    document = parse(minimal())
+    document["datasets"][0]["custom_extensions"] = _stash_ext({"file": ["a", "b"]})
+    with pytest.raises(ConversionError, match="must be a string"):
+        export(dump_yaml(document))

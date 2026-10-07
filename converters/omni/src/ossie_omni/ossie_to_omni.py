@@ -156,11 +156,11 @@ def _convert_model(model, explicit_base_view, dialect):
     view_paths = {}
     for ds_name, ds in datasets.items():
         vname = view_names[ds_name]
-        view, dim_names = _convert_dataset(ds, vname, view_names, dialect)
         stashed_file = read_stash(ds).get("file")
         view_paths[vname] = (
             safe_relative_path(stashed_file, f"dataset '{ds_name}' file")
             if stashed_file else view_file(vname))
+        view, dim_names = _convert_dataset(ds, vname, view_names, dialect)
         files[view_paths[vname]] = dump_yaml(view)
         dims_by_view[vname] = dim_names
 
