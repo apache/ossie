@@ -17,19 +17,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
 
-from .analysis import (
-    ExportAnalysis,
-    MetricAnalysis,
-    RelationshipAnalysis,
-    RelationshipDirection,
-)
+from .analysis import RelationshipDirection
 
 
 class ExportAssignment:
-    """Assign Ossie entities with ambiguous scope to Hex entities."""
+    """Store placements chosen by the assignment planner."""
 
     def __init__(self) -> None:
         self._metric_assignments: dict[str, MetricAssignment] = {}
@@ -48,95 +42,6 @@ class ExportAssignment:
 
     def set_for_metric(self, assignment: MetricAssignment) -> None:
         self._metric_assignments[assignment.name] = assignment
-
-    def decide_all(self, analysis: ExportAnalysis) -> None:
-        """Choose metric parents and every relationship direction to emit."""
-
-        relationship_analyses = analysis.for_relationships()
-        for metric_analysis in analysis.for_metrics():
-            assignment = self._assign_metric(metric_analysis, relationship_analyses)
-            if assignment is None:
-                continue
-            metric_assignment, relationship_assignment = assignment
-            self.set_for_metric(metric_assignment)
-            self.set_for_relationship(relationship_assignment)
-
-        for relationship_analysis in analysis.for_relationships():
-            assignments = self._relationship_assignments.get(
-                relationship_analysis.name, []
-            )
-            if assignments:
-                continue
-            # An unused relationship can live on either endpoint.
-            # Arbitrarily choose the first edge.
-            edge = relationship_analysis.edges[0]
-            relationship_assignment = RelationshipAssignment(
-                name=relationship_analysis.name,
-                source=edge.source,
-                target=edge.target,
-                direction=edge.direction,
-            )
-            assignments.append(relationship_assignment)
-            self._relationship_assignments[relationship_analysis.name] = assignments
-
-    def _assign_metric(
-        self,
-        analysis: MetricAnalysis,
-        relationship_analyses: Iterable[RelationshipAnalysis],
-    ) -> tuple[MetricAssignment, RelationshipAssignment | None] | None:
-        if len(analysis.dataset_names) == 0:
-            return None
-        elif len(analysis.dataset_names) == 1:
-            relationship_assignment = None
-            metric_assignment = MetricAssignment(
-                name=analysis.name,
-                source=analysis.dataset_names[0],
-                relationship=relationship_assignment,
-            )
-            return metric_assignment, relationship_assignment
-        elif len(analysis.dataset_names) == 2:
-            eligible_relationship_assignments: list[RelationshipAssignment] = []
-            for dataset_name in analysis.dataset_names:
-                # for each referenced dataset, treat it as the parent dataset,
-                # and find an eligible relationship assignment
-                source = dataset_name
-                target = next(name for name in analysis.dataset_names if name != source)
-                for relationship_analysis in relationship_analyses:
-                    for edge in relationship_analysis.edges:
-                        if edge.source != source or edge.target != target:
-                            continue
-                        relationship_assignment = RelationshipAssignment(
-                            name=relationship_analysis.name,
-                            source=edge.source,
-                            target=edge.target,
-                            direction=edge.direction,
-                        )
-                        eligible_relationship_assignments.append(
-                            relationship_assignment
-                        )
-                        break
-                if len(eligible_relationship_assignments) == 0:
-                    return None
-
-            if len(eligible_relationship_assignments) == 0:
-                # TODO: missing relationship
-                return None
-            elif len(eligible_relationship_assignments) == 1:
-                relationship_assignment = eligible_relationship_assignments[0]
-            else:
-                # TODO: ambiguous relationship
-                relationship_assignment = eligible_relationship_assignments[0]
-
-            metric_assignment = MetricAssignment(
-                name=analysis.name,
-                source=relationship_assignment.source,
-                relationship=relationship_assignment,
-            )
-            return metric_assignment, relationship_assignment
-        elif len(analysis.dataset_names) > 2:
-            return None
-
-        return None
 
 
 @dataclass(frozen=True)

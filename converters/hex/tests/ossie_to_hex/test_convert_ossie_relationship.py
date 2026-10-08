@@ -20,6 +20,7 @@ from inline_snapshot import snapshot
 from ossie import OssieAIContextObject, OssieCustomExtension
 
 from ossie_hex.hex import HexRelationType
+from ossie_hex.ossie_to_hex.build_assignments import build_assignments
 from ossie_hex.ossie_to_hex.context import (
     ExportContext,
     RelationshipAssignment,
@@ -99,11 +100,22 @@ def test_analysis(ctx: ExportContext) -> None:
     assert not ctx.problems
 
 
-def test_converts_unused_relationship_once(ctx: ExportContext) -> None:
+def test_converts_unused_relationship_once() -> None:
+    ctx = ExportContext()
+    ctx._set_dialects("ANSI_SQL", "duckdb")
+    ctx.hex_ids.set_for_dataset("bar", "bar")
+    ctx.hex_ids.set_for_dataset("baz", "baz")
+    ctx.hex_ids.set_for_relationship("foo", "foo")
     foo = Quick.relationship("foo", "bar", "baz", ["qux"], ["qoz"])
     analysis = analyze_ossie_relationship(foo, ctx=ctx)
     ctx.analysis.set_for_relationship(analysis)
-    ctx.assignment.decide_all(ctx.analysis)
+    assert ctx.assignment.for_relationship("foo") == []
+
+    build_assignments(ctx=ctx)
+
+    assert ctx.assignment.for_relationship("foo") == [
+        RelationshipAssignment("foo", "from_to", "bar", "baz")
+    ]
 
     result = convert_ossie_relationship(foo, ctx=ctx)
 
