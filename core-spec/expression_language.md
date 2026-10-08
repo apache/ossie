@@ -42,6 +42,15 @@ This document defines the SQL expression language subset that Ossie-compliant im
 
 We expect there will be extensions to this language to cover concepts such as sub-queries, grain calculations, etc.  However, these will each have their own proposal.
 
+### Model Declaration vs. Querying
+
+This expression language is scoped to *declaring* a model — authoring the logical layer's metrics, fields, and filters. It does not define a query interface. The two are distinct:
+
+* **Declaration** uses expressions to define what a model is. This document governs declaration.
+* **Querying** evaluates a question against a declared model and returns rows. Query interfaces will be defined in separate documents.
+
+Consequently, the expressions defined here only declare a model: adding a dialect here does not mean Ossie supports querying with that dialect.
+
 ### Design Principles
 
 1. **Portability**: Core functions work identically across all implementations  
@@ -76,7 +85,7 @@ All identifiers MUST be valid names and follow ANSI SQL naming, with the size li
 
 Regular identifiers (unquoted) should be case insensitive.    For example, an identifier id is regular, so it would match with Id or iD.  Comparing quoted and non-quoted identifiers is DB specific, so for best portability it is best to use simple identifiers.
 
-The quote character for the Ossie dialect will follow ANSI SQL and support the double quote character (“).  This means that if an expression is in a field expression or as an identifier in the YAML, this will be the expected quoting.  However, there are some databases that use other escape characters.  Working with these have the option of either creating expressions using their dialect or having the Ossie document written in the Ossie dialect, but then having the SQL Interface queried in the local dialect.  The SQL Interface will be defined in a different document. 
+The quote character for the Ossie dialect will follow ANSI SQL and support the double quote character (“).  This means that if an expression is in a field expression or as an identifier in the YAML, this will be the expected quoting.  However, there are some databases that use other escape characters.  Working with these have the option of either creating expressions using their dialect or having the Ossie document written in the Ossie dialect, but then having the SQL Interface queried in the local dialect. 
 
 #### Comparison Table
 
