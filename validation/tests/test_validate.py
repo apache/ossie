@@ -352,6 +352,17 @@ def test_flags_an_invalid_ossie_sql_2026_expression() -> None:
     assert error.startswith("[SQL] ctx:")
 
 
+def test_iceberg_dialect_is_skipped_from_sql_validation() -> None:
+    # ICEBERG expressions are PyIceberg predicate strings: SQL-like, but with
+    # forms such as IS NAN that a SQL parser rejects, so they are never parsed.
+    assert "ICEBERG" in _VALIDATE.DIALECT_MAP
+    assert "ICEBERG" in _VALIDATE.SKIP_SQL_VALIDATION
+
+    error = _VALIDATE.validate_sql_expression("ratio IS NOT NAN AND region = 'EMEA'", "ICEBERG", "ctx")
+
+    assert error is None
+
+
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 @pytest.mark.parametrize(
     "expression",

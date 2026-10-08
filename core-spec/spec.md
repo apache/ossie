@@ -62,6 +62,7 @@ Dialects in which metric and field expressions can be declared.
 | `THOUGHTSPOT` | ThoughtSpot formula language |
 | `DAX` | Data Analysis Expressions (Power BI / Analysis Services) |
 | `OSSIE_SQL_2026` | Ossie's portable SQL expression language, defined in `expression_language.md` |
+| `ICEBERG` | Apache Iceberg predicate strings, in the form accepted by PyIceberg's expression parser |
 
 `OSSIE_SQL_2026` is the only dialect whose semantics this specification defines. The other values
 identify vendor or third-party expression languages. Ossie treats expressions in those dialects as

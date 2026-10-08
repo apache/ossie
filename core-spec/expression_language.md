@@ -685,6 +685,81 @@ expression:
 Vendors may expose their own feature through extensions, however the default for Ossie should be to pass unknown values through.:  
 ---
 
+### The ICEBERG Dialect
+
+Expressions in the `ICEBERG` dialect are boolean predicate strings in the form accepted by
+PyIceberg's expression parser
+([`pyiceberg.expressions.parser.parse`](https://github.com/apache/iceberg-python/blob/main/pyiceberg/expressions/parser.py)).
+That parser is the reference reader for this dialect: a string is a valid `ICEBERG`
+expression if and only if it parses there. The dialect lets an Ossie expression carry an
+Iceberg row filter (e.g. for scan planning or predicate pushdown) alongside a portable
+`ANSI_SQL` / `OSSIE_SQL_2026` equivalent.
+
+The syntax is SQL-like but is not SQL: it is a small predicate grammar with forms such as
+`IS NAN` that SQL parsers do not accept. Implementations MUST NOT validate `ICEBERG`
+expressions with a SQL parser; they are skipped from SQL validation the same way `MDX`,
+`TABLEAU`, `MAQL`, `SIGMA`, `THOUGHTSPOT`, and `DAX` are.
+
+**Supported predicates.** Keywords are case-insensitive.
+
+| Predicate | Syntax |
+| :---- | :---- |
+| Comparison | `col = v`, `col != v`, `col < v`, `col <= v`, `col > v`, `col >= v` (`==` and `<>` are accepted as aliases of `=` and `!=`) |
+| Range | `col BETWEEN low AND high` (inclusive on both ends) |
+| Null check | `col IS NULL`, `col IS NOT NULL` |
+| NaN check | `col IS NAN`, `col IS NOT NAN` |
+| Set membership | `col IN (v1, v2, ...)`, `col NOT IN (v1, v2, ...)` |
+| Prefix match | `col LIKE 'prefix%'`, `col NOT LIKE 'prefix%'` |
+| Constant | `true`, `false` |
+| Boolean composition | `NOT p`, `p AND q`, `p OR q`, with parentheses for grouping; `NOT` binds tightest, then `AND`, then `OR` |
+
+**Operands.**
+
+- A comparison is between one column and one literal. The literal may be written on either
+  side (`5 < amount` is the same as `amount > 5`); column-to-column comparisons such as
+  `a = b` are not supported.
+- Columns are unquoted identifiers (letters, digits, `_`, and `$`, not starting with a digit
+  or `$`) or double-quoted identifiers, with `.` separating the parts of a nested field
+  (`customer.address.city`).
+- Literals are single-quoted strings (a quote is escaped by doubling it, `'O''Brien'`),
+  integers, decimals, and `true` / `false`. There are no typed literals such as
+  `DATE '2026-01-01'`; dates and timestamps are written as strings and converted when the
+  predicate is bound to the column's type.
+- The values of an `IN` list must be non-empty and all of the same literal kind.
+- `LIKE` supports a single `%` wildcard at the end of the pattern only (starts-with). A
+  pattern with no wildcard is an equality test, and `\%` matches a literal `%`.
+
+**Not supported.**
+
+- Function calls of any kind. In particular, partition transforms such as `month(col)`,
+  `bucket(16, col)`, or `truncate(4, col)` cannot be written in this dialect; they belong to
+  an Iceberg table's partition spec, not to its expression strings.
+- Arithmetic, casts, and any other expression that computes a value. `ICEBERG` expressions
+  are predicates only, so the dialect applies only where a boolean expression is expected.
+- `NOT BETWEEN`, comparisons against `NULL` (use `IS NULL` / `IS NOT NULL`), and `LIKE`
+  patterns with a leading or embedded wildcard.
+
+Examples:
+
+```
+order_date >= '2026-01-01' AND region = 'EMEA'
+customer_id IS NOT NULL AND (status = 'open' OR status = 'pending')
+amount BETWEEN 10 AND 100 AND sku LIKE 'AB%'
+```
+
+Declaring both a portable expression and its Iceberg form:
+
+```
+expression:
+  dialects:
+    - dialect: ANSI_SQL
+      expression: order_date >= DATE '2026-01-01' AND region = 'EMEA'
+    - dialect: ICEBERG
+      expression: order_date >= '2026-01-01' AND region = 'EMEA'
+```
+
+---
+
 ## Cross-Reference: Tool Mappings
 
 This section maps Ossie standard functions to their equivalents in popular BI tools.
