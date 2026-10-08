@@ -15,14 +15,78 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import re
 from pathlib import Path
 
+import pytest
 from inline_snapshot import snapshot
 
 from ossie_hex.ossie_to_hex.convert_ossie_to_hex import convert_ossie_to_hex
 from tests.utils import hex_project_snapshot, problems_snapshot
 
 TPCDS = Path(__file__).resolve().parents[4] / "examples" / "tpcds_semantic_model.yaml"
+
+
+def test_output_file_reports_dump_error(
+    tmp_path: Path, minimal_ossie_input: Path
+) -> None:
+    output = tmp_path / "out"
+    output.write_text("existing file", encoding="utf-8")
+
+    hex_project, problems = convert_ossie_to_hex(
+        minimal_ossie_input, output, dialect="ANSI_SQL"
+    )
+
+    assert hex_project is not None
+    assert hex_project.resources
+    message = problems_snapshot(problems, include_causes=True)
+    # OS error text and paths vary across platforms.
+    message = re.sub(
+        r"(Failed to create project directory: )[^\n]*", r"\1OS_ERROR", message
+    )
+    assert message == snapshot("""\
+[ERROR] Failed to create project directory: OS_ERROR
+Cause: ['foo']""")
+    assert output.read_text(encoding="utf-8") == "existing file"
+
+
+def test_output_permission_failure_reports_dump_error(
+    tmp_path: Path, minimal_ossie_input: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "nested" / "out"
+
+    def deny_mkdir(
+        self: Path, *, parents: bool = False, exist_ok: bool = False
+    ) -> None:
+        raise PermissionError("Permission denied")
+
+    monkeypatch.setattr(Path, "mkdir", deny_mkdir)
+
+    hex_project, problems = convert_ossie_to_hex(
+        minimal_ossie_input, output, dialect="ANSI_SQL"
+    )
+
+    assert hex_project is not None
+    assert hex_project.resources
+    assert problems_snapshot(problems, include_causes=True) == snapshot("""\
+[ERROR] Failed to create project directory: Permission denied
+Cause: ['foo']""")
+    assert not output.exists()
+
+
+def test_missing_input_does_not_create_output(tmp_path: Path) -> None:
+    output = tmp_path / "nested" / "out"
+    missing = tmp_path / "missing.yml"
+
+    hex_project, problems = convert_ossie_to_hex(missing, output, dialect="ANSI_SQL")
+
+    assert hex_project is None
+    message = problems_snapshot(problems, include_causes=True)
+    message = message.replace(str(missing.resolve()), "INPUT")
+    assert message == snapshot("""\
+[FATAL] File does not exist: `INPUT`
+Cause: []""")
+    assert not output.parent.exists()
 
 
 def test_convert_tpcds() -> None:

@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import re
 from pathlib import Path
 
 import pytest
@@ -163,6 +164,7 @@ def test_missing_input_file(capsys: pytest.CaptureFixture[str], tmp_path: Path) 
     code = main(["export", "-i", str(missing), "-o", str(output_dir)])
 
     assert code == 1
+    assert not output_dir.exists()
     message = (
         capsys.readouterr()
         .err.replace(str(output_dir.resolve()), "OUTPUT")
@@ -176,6 +178,34 @@ Encountered 1 problem: 1 fatal.
 Fatal errors (1)
   [load] File does not exist: `INPUT`
 """)
+
+
+def test_output_file_reports_error(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path, minimal_ossie_input: Path
+) -> None:
+    output = tmp_path / "out"
+    output.write_text("existing file", encoding="utf-8")
+
+    code = main(["export", "-v", "-i", str(minimal_ossie_input), "-o", str(output)])
+
+    assert code == 1
+    message = capsys.readouterr().err
+    destination = output / "foo"
+    message = message.replace(str(destination), "OUTPUT/foo")
+    message = message.replace(str(minimal_ossie_input), "INPUT")
+    # OS error text and paths vary across platforms.
+    message = re.sub(
+        r"(Failed to create project directory: )[^\n]*", r"\1OS_ERROR", message
+    )
+    assert message == snapshot("""\
+Failed.
+Converted INPUT -> OUTPUT/foo/.
+Encountered 1 problem: 1 error.
+
+Errors (1)
+  1× Failed to create project directory: OS_ERROR
+""")
+    assert output.read_text(encoding="utf-8") == "existing file"
 
 
 def test_invalid_dialect(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:

@@ -66,10 +66,8 @@ def convert_ossie_to_hex(
         )
 
     with ctx.phase_scope("dump"):
-        if output is not None:
-            output = Path(output).resolve()
-            output.mkdir(parents=True, exist_ok=True)
-            if hex_project is not None:
-                dump_hex_project(hex_project, dir=output, ctx=ctx)
+        if output is not None and hex_project is not None:
+            output = Path(output)
+            dump_hex_project(hex_project, dir=output, ctx=ctx)
 
     return hex_project, ctx.problems
