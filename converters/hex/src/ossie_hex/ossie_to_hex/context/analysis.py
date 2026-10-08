@@ -27,8 +27,8 @@ from ...util.parse_sql import SQLGlotDialect, exp
 class ExportAnalysis:
     """Analyze expressions of Ossie entities."""
 
-    _metric_analyses: dict[str, MetricAnalysis]
-    """A mapping of Ossie metric names to their analyses."""
+    _metric_analyses: dict[str, MetricAnalysis | None]
+    """Metric analysis results; None records a failed analysis."""
 
     _relationship_analyses: dict[str, RelationshipAnalysis]
     """A mapping of Ossie relationship names to their analyses."""
@@ -39,20 +39,23 @@ class ExportAnalysis:
 
     def set_for_metric(
         self,
+        name: str,
         analysis: MetricAnalysis | None,
     ) -> None:
-        """Set the analysis for an Ossie metric."""
-        if analysis is None:
-            return
-        self._metric_analyses[analysis.name] = analysis
+        """Record an Ossie metric's analysis result, including failure."""
+        self._metric_analyses[name] = analysis
 
     def for_metric(self, name: str) -> MetricAnalysis | None:
-        """Get the analysis for an Ossie metric."""
-        return self._metric_analyses.get(name)
+        """Get a metric's result; raise KeyError if no analysis was recorded."""
+        return self._metric_analyses[name]
 
     def for_metrics(self) -> Iterator[MetricAnalysis]:
-        """Get all analyses for Ossie metrics."""
-        return iter(self._metric_analyses.values())
+        """Get all successful analyses for Ossie metrics."""
+        return (
+            analysis
+            for analysis in self._metric_analyses.values()
+            if analysis is not None
+        )
 
     def set_for_relationship(self, analysis: RelationshipAnalysis | None) -> None:
         """Set the analysis for an Ossie relationship."""

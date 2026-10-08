@@ -95,18 +95,15 @@ def convert_ossie_metric(
                 HexDataType.NUMBER,
             )
 
-        analysis = ctx.analysis.for_metric(ossie_metric.name)
+        analysis = _get_metric_analysis(ossie_metric, ctx=ctx)
         assignment = ctx.assignment.for_metric(ossie_metric.name)
-        if analysis is None:
-            ctx.fatal("Unexpected error.", internal_message="Should have been analyzed")
-            return None
-
         if analysis is not None and assignment is not None:
             source_dataset_name = assignment.source
             source_model_id = ctx.hex_ids.for_dataset(source_dataset_name)
             if source_model_id is None:
                 ctx.error(f"Source model not available: {source_dataset_name}")
                 return None
+
         with ctx.problem_scope("expression"):
             spec["func_sql"] = _convert_metric_expression(
                 analysis,
@@ -220,3 +217,23 @@ def _references_have_hex_ids(
         and ctx.hex_ids.for_field(column.table, column.name) is not None
         for column in expr.find_all(exp.Column)
     )
+
+
+def _get_metric_analysis(
+    ossie_metric: OssieMetric,
+    *,
+    ctx: ExportContext,
+) -> MetricAnalysis | None:
+    """
+    Safely retrieve the analysis for an Ossie metric.
+
+    Returns:
+        MetricAnalysis | None: The analysis object for the given Ossie metric, or None if the
+        metric was not successfully analyzed (an error will have already been reported).
+    """
+    try:
+        return ctx.analysis.for_metric(ossie_metric.name)
+    except KeyError:
+        # indicates a programming error by us; nothing the user can do about it
+        ctx.fatal("Unexpected error.", internal_message="Should have been analyzed")
+        return None

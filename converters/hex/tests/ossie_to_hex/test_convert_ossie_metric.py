@@ -42,7 +42,7 @@ def ctx() -> ExportContext:
     ctx.hex_ids.set_for_field("bar", "baz", "baz")
     ctx.hex_ids.set_for_metric("foo", "foo")
     analysis = MetricAnalysis("foo", parse_one("bar.baz"), None, ("bar",))
-    ctx.analysis.set_for_metric(analysis)
+    ctx.analysis.set_for_metric(analysis.name, analysis)
     assignment = MetricAssignment("foo", "bar", None)
     ctx.assignment.set_for_metric(assignment)
     return ctx
@@ -202,7 +202,7 @@ def test_preserves_expression_dialect(ctx: ExportContext) -> None:
     analysis = MetricAnalysis(
         "foo", parse_one("COUNTIF(bar.baz)"), SQLGlotDialect.BIGQUERY, ("bar",)
     )
-    ctx.analysis.set_for_metric(analysis)
+    ctx.analysis.set_for_metric(analysis.name, analysis)
 
     result = convert_ossie_metric(foo, ctx=ctx)
 
@@ -220,7 +220,7 @@ def test_reports_missing_source_model() -> None:
     ctx._set_dialects("ANSI_SQL", "duckdb")
     ctx.hex_ids.set_for_metric("foo", "foo")
     analysis = MetricAnalysis("foo", parse_one("bar.baz"), None, ("bar",))
-    ctx.analysis.set_for_metric(analysis)
+    ctx.analysis.set_for_metric(analysis.name, analysis)
     assignment = MetricAssignment("foo", "bar", None)
     ctx.assignment.set_for_metric(assignment)
 
@@ -230,3 +230,27 @@ def test_reports_missing_source_model() -> None:
     assert problems_snapshot(ctx.problems) == snapshot(
         "[ERROR] Source model not available: bar"
     )
+
+
+def test_analysis_failure_reports_problem(ctx: ExportContext) -> None:
+    metric = Quick.metric("invalid", "Integer", [("ANSI_SQL", "SUM(bar.missing)")])
+
+    analysis = analyze_ossie_metric(metric, ctx=ctx)
+
+    assert analysis is None
+    assert problems_snapshot(ctx.problems, include_causes=True) == snapshot("""\
+[ERROR] Unable to resolve all references to Hex IDs
+Cause: ['invalid', 'expression']""")
+
+
+def test_analysis_failure_does_not_add_duplicate_problem(ctx: ExportContext) -> None:
+    metric = Quick.metric("invalid", "Integer", [("ANSI_SQL", "SUM(bar.missing)")])
+
+    analysis = analyze_ossie_metric(metric, ctx=ctx)
+    initial_problems = ctx.problems
+    ctx.analysis.set_for_metric(metric.name, analysis)
+
+    result = convert_ossie_metric(metric, ctx=ctx)
+
+    assert result is None
+    assert ctx.problems == initial_problems

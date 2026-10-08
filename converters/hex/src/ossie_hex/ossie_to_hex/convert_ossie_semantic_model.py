@@ -74,7 +74,7 @@ def convert_ossie_semantic_model(
     with ctx.problem_scope("metrics"):
         for ossie_metric in ossie_semantic_model.metrics or []:
             analysis = analyze_ossie_metric(ossie_metric, ctx=ctx)
-            ctx.analysis.set_for_metric(analysis)
+            ctx.analysis.set_for_metric(ossie_metric.name, analysis)
 
     build_assignments(ctx=ctx)
 
