@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import net.sf.jsqlparser.expression.*;
+import net.sf.jsqlparser.expression.operators.relational.InExpression;
 import net.sf.jsqlparser.expression.operators.relational.IsNullExpression;
 import net.sf.jsqlparser.expression.operators.relational.ParenthesedExpressionList;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
@@ -152,6 +153,7 @@ final class SqlMetricExpressionParser {
             Node result = new Unary("ISNULL", adapt(test.getLeftExpression()));
             return test.isNot() ? new Unary("NOT", result) : result;
         }
+        if (expression instanceof InExpression membership) return membership(membership);
         if (expression instanceof BinaryExpression binary) {
             if (binary instanceof net.sf.jsqlparser.expression.operators.relational.SupportsOldOracleJoinSyntax oracle
                     && (oracle.getOldOracleJoinSyntax() != 0 || oracle.getOraclePriorPosition() != 0)) {
@@ -181,6 +183,39 @@ final class SqlMetricExpressionParser {
             throw new IllegalArgumentException("COUNT(*) is unsupported; name a declared field to count");
         }
         throw unsupported(expression);
+    }
+
+    private Node membership(InExpression expression) {
+        if (expression.isGlobal() || expression.getOldOracleJoinSyntax() != 0
+                || expression.getOraclePriorPosition() != 0
+                || !(expression.getRightExpression() instanceof ParenthesedExpressionList<?> values)
+                || values.isEmpty()) {
+            throw unsupported(expression);
+        }
+        Node field = adapt(expression.getLeftExpression());
+        if (!(field instanceof Field)) {
+            throw new IllegalArgumentException("IN requires a direct field on the left");
+        }
+        List<Node> comparisons = new ArrayList<>();
+        for (Expression value : values) {
+            Node literal = adapt(value);
+            if (!(literal instanceof Literal)
+                    && !(literal instanceof Unary unary && Set.of("+", "-").contains(unary.operator())
+                    && unary.operand() instanceof Literal number && number.value() instanceof Number)) {
+                throw new IllegalArgumentException("IN requires scalar literals in its list");
+            }
+            comparisons.add(new Binary("=", field, literal));
+        }
+        // Keep NULL comparisons: a non-match with a NULL list item is UNKNOWN, even for NOT IN.
+        Node result = disjunction(comparisons, 0, comparisons.size());
+        return expression.isNot() ? new Unary("NOT", result) : result;
+    }
+
+    private static Node disjunction(List<Node> nodes, int start, int end) {
+        if (end - start == 1) return nodes.get(start);
+        // Balance the tree so list length does not consume the expression nesting budget.
+        int middle = start + (end - start) / 2;
+        return new Binary("OR", disjunction(nodes, start, middle), disjunction(nodes, middle, end));
     }
 
     private Node function(Function function) {

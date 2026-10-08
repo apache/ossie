@@ -298,10 +298,20 @@ and [aggregation rules](https://developer.salesforce.com/docs/data/semantic-laye
 | `+`, `-`, `*`, `/`, parentheses, numeric constants | Explicitly grouped arithmetic |
 | Searched `CASE WHEN` | `IF … THEN … ELSEIF … ELSE … END` |
 | Comparisons, `AND`, `OR`, `NOT` | Equivalent grouped operators |
+| Field `IN (...)`, `NOT IN (...)` with scalar literals | Grouped equality comparisons joined by `OR`, optionally wrapped in `NOT` |
 | `COALESCE(a, b, …)` | Nested `IFNULL` |
 | `NULLIF(a, b)` | `IF a = b THEN NULL ELSE a END` |
 | `IS NULL`, `IS NOT NULL` | `ISNULL`, `NOT ISNULL` |
 | `ABS`, `ROUND`, `CEIL`, `FLOOR` | `ABS`, `ROUND`, `CEILING`, `FLOOR` |
+
+Membership lists must be nonempty and contain only scalar literals (including NULL
+and signed numbers), with a direct field on the left. Types must be compatible;
+subqueries, tuples and computed operands are unsupported. NULL membership follows
+SQL three-valued logic, including for `NOT IN`.
+When combining membership with `AND` or `OR`, parenthesize each membership
+predicate, for example `(orders.status IN ('paid', 'pending')) AND orders.active`.
+The current SQL parser can misgroup unparenthesized membership before a Boolean
+operator; those forms are rejected rather than translated.
 
 These constructs compose. For example, with declared numeric fields `profit` and
 `revenue` in dataset `orders`:

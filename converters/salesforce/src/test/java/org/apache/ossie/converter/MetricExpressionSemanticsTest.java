@@ -30,6 +30,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -129,6 +130,26 @@ class MetricExpressionSemanticsTest {
                 "SUM(CASE WHEN orders.flag IS NULL THEN "
                         + "CASE WHEN orders.amount IS NULL THEN 3 ELSE 2 END ELSE 0 END)",
                 ORDERS, 5.0);
+        assertValue(dialect, "SUM(CASE WHEN orders.flag IN (TRUE, FALSE) THEN 1 ELSE 0 END)",
+                ORDERS, 2.0);
+        assertValue(dialect, "SUM(CASE WHEN NOT (orders.amount IN (10)) OR orders.flag "
+                + "AND (orders.amount NOT IN (-4)) THEN 1 ELSE 0 END)", ORDERS, 2.0);
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', nullValues = "null", value = {
+            "10 | IN     | 10, 10.0, -4 | 1", "-4 | NOT IN | -4, +10 | 0",
+            "10 | IN     | 10          | 1", "-4 | IN     | 10      | 0",
+            "-4 | NOT IN | 10          | 1", "null | IN   | 10      | -1",
+            "null | NOT IN | 10        | -1", "10 | IN     | NULL, 10 | 1",
+            "10 | NOT IN | NULL, 10    | 0", "-4 | IN     | 10, NULL | -1",
+            "-4 | NOT IN | 10, NULL    | -1", "10 | IN     | NULL     | -1"})
+    void membershipPreservesTrueFalseAndUnknown(Double amount, String operator, String values, double expected) {
+        String predicate = "orders.amount " + operator + " (" + values + ")";
+        for (String dialect : List.of("SNOWFLAKE", "ANSI_SQL", "OSSIE_SQL_2026")) {
+            assertValue(dialect, "SUM(CASE WHEN " + predicate + " THEN 1 WHEN NOT (" + predicate
+                    + ") THEN 0 ELSE -1 END)", List.of(row(amount, null, null)), expected);
+        }
     }
 
     @ParameterizedTest
@@ -165,6 +186,12 @@ class MetricExpressionSemanticsTest {
         assertValue(dialect,
                 "SUM(CASE WHEN orders.status = 'O''Brien' THEN orders.amount ELSE 0 END)",
                 orders, 2.0);
+        assertValue(dialect,
+                "SUM(CASE WHEN orders.status IN ('paid', 'pending', 'O''Brien', 'other') THEN orders.amount ELSE 0 END)",
+                orders, 23.0);
+        assertValue(dialect,
+                "SUM(CASE WHEN orders.status NOT IN ('paid', 'O''Brien') THEN orders.amount ELSE 0 END)",
+                orders, 4.0);
         assertValue(dialect, "COUNT(DISTINCT orders.status)", List.of(), 0.0);
         assertValue(dialect, "COUNT(DISTINCT orders.status)", List.of(row(null, null, null, null)), 0.0);
     }
