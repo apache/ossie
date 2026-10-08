@@ -66,8 +66,8 @@ For the full specification, see [core-spec/spec.md](../core-spec/spec.md). For v
 ### Execution Contract Proposal
 
 The [execute_query MCP working draft](proposals/execute-query-mcp.md) proposes an
-optional engine/catalog execution profile: native queries, embedded CSV,
-extensible diagnostics, locale-neutral encoding and long-running MCP Tasks.
+optional engine/catalog execution profile: model-resolved Layer 3 query objects,
+embedded CSV, semantic diagnostics, locale-neutral encoding and MCP Tasks.
 It is not an adopted specification or an Ossie server implementation.
 
 ### Participating Organizations

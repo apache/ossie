@@ -19,16 +19,17 @@
 
 # Proposal: `execute_query` MCP profile
 
-**Status:** Proposed, `0.3-draft`. An optional execution contract for engines and
+**Status:** Proposed, `0.4-draft`. An optional execution contract for engines and
 catalogs, not an Ossie server implementation or a condition of model conformance.
 MUST, SHOULD and MAY describe requirements of this proposed profile.
 
 ## Scope
 
-Execute an agent-authored, read-only native query against an authorized source;
-return embedded data, optional previews and actionable diagnostics. The server
-owns source binding and authorization; the calling agent owns query construction
-and correction. Query generation, writes, batches, federation, model
+Execute an agent-authored, read-only **Layer 3 query object resolved against an
+Ossie model**; return embedded data, optional previews and actionable diagnostics.
+The engine owns model resolution, safe planning and authorization; the calling
+agent owns analytical intent and correction. Native SQL/DAX/KQL execution,
+Layer 2 queries, query generation, writes, batches, federation, model
 authoring/conversion and client-input round trips are outside this profile.
 Adoption does not change the core model schema, converters, or API/CLI access.
 
@@ -37,22 +38,29 @@ This complements model management/discovery rather than prescribing it:
 [execution-contract proposal on dev@](https://lists.apache.org/thread/olc629g9zmqgx66bo2hdl9hg0on6jtlg),
 [specification versus implementation](https://lists.apache.org/thread/wpj5nnpodysds1vqd2s1vxhzw0vkcndy),
 and the [REST proposal](https://lists.apache.org/thread/hf71m6g1g1bnhqj5v0f4kc0rf4h8g4kg).
-Relational/declarative query semantics remain separate proposals
-([#452](https://github.com/apache/ossie/pull/452),
-[#354](https://github.com/apache/ossie/pull/354),
-[#246](https://github.com/apache/ossie/pull/246)); native execution does not
-imply portable query compilation or community approval of those proposals.
+Query semantics are those of the [Layer 3 Foundation draft][layer3], pinned to
+`cc0d0709` from [#246](https://github.com/apache/ossie/pull/246). This profile
+defines its JSON/MCP binding, not new join, grain or filter semantics.
+The dependency remains proposed, not an adopted standard. Layer 2's relational
+interface ([#354](https://github.com/apache/ossie/pull/354)) is separate.
+The [declarative-scope discussion](https://lists.apache.org/thread/9007r91vf33y04grtk8yn58nqc4oyco)
+motivates model-resolved input and direct semantic error codes.
 
 ## Binding and request
 
 A catalog, REST API, MCP resource/tool or deployment configuration MUST expose
-the source's opaque `data_source_id`, supported dialects, profile revision,
-output formats, diagnostic capabilities and execution/materialization ceilings.
-Model identity/revision SHOULD be supplied when available. No mandatory
-discovery endpoint or core model connection property is introduced.
+the source's opaque `data_source_id`, bound **model identity and revision**,
+profile and Foundation revisions, supported query shapes/capabilities, output
+formats, diagnostic capabilities and execution/materialization ceilings.
+Each call MUST resolve against one fixed authorized model revision; successful
+results identify it. No mandatory discovery endpoint or core model connection
+property is introduced.
 The server MUST resolve and authorize the binding for the caller; model names
 and dataset sources are not credentials or globally unique execution IDs.
-Stale revisions SHOULD be rejected rather than silently rebound.
+An execution binding ID MUST NOT be reassigned to a different model or revision;
+updating the model publishes a new binding, and retired IDs return
+`SOURCE_UNAVAILABLE`. This prevents an agent's discovered model from being
+silently replaced between discovery and execution.
 
 Tool name: `execute_query`. `inputSchema`:
 
@@ -64,26 +72,95 @@ Tool name: `execute_query`. `inputSchema`:
   "required": ["data_source_id", "query"],
   "properties": {
     "data_source_id": { "type": "string", "minLength": 1, "pattern": "\\S" },
-    "query": { "type": "string", "minLength": 1, "pattern": "\\S" },
-    "language": { "type": "string", "minLength": 1, "pattern": "\\S" }
+    "query": { "$ref": "#/$defs/query" }
+  },
+  "$defs": {
+    "expression": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "projection": { "type": "array", "items": { "$ref": "#/$defs/expression" } },
+    "predicate": {
+      "oneOf": [
+        { "$ref": "#/$defs/expression" },
+        { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/expression" } }
+      ]
+    },
+    "query": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "dimensions": { "$ref": "#/$defs/projection" },
+        "measures": { "$ref": "#/$defs/projection" },
+        "fields": { "allOf": [{ "$ref": "#/$defs/projection" }], "minItems": 1 },
+        "where": { "$ref": "#/$defs/predicate" },
+        "having": { "$ref": "#/$defs/predicate" },
+        "order_by": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["field"],
+            "properties": {
+              "field": { "$ref": "#/$defs/expression" },
+              "direction": { "enum": ["ASC", "DESC"] },
+              "nulls": { "enum": ["FIRST", "LAST"] }
+            }
+          }
+        },
+        "limit": { "type": "integer", "minimum": 0 }
+      },
+      "oneOf": [
+        {
+          "not": { "required": ["fields"] },
+          "anyOf": [
+            { "required": ["dimensions"], "properties": { "dimensions": { "minItems": 1 } } },
+            { "required": ["measures"], "properties": { "measures": { "minItems": 1 } } }
+          ]
+        },
+        {
+          "required": ["fields"],
+          "not": { "anyOf": [{ "required": ["dimensions"] }, { "required": ["measures"] }, { "required": ["having"] }] }
+        }
+      ]
+    }
   }
 }
 ```
 
-The binding determines the dialect. `language` MAY be omitted for a
-single-dialect source; for multiple dialects it MUST select an advertised token.
-Missing or incompatible selections return actionable `INVALID_ARGUMENT` or
-`UNSUPPORTED_QUERY` errors. This conditional requirement is validated against
-binding metadata. Execution-language tokens are distinct from the core
-model-expression `Dialect` enum; the server MUST NOT guess, translate or ignore
-an incompatible token.
+### Layer 3 surface and interpretation
 
-Each call executes one native query and returns one table. Analytical limits
-and ordering are expressed in query syntax (`TOP`, `TOPN`, `LIMIT`, `take`);
-server ceilings apply independently. The server MUST NOT rewrite, regenerate
-or silently retry the query, broaden filters, select another source, or discard
-additional result tables. No connection, impersonation, limits or diagnostic
-arguments are accepted. Suggested annotations are `readOnlyHint: true`,
+This schema serializes Foundation section 5, not a native query inside JSON.
+Property names are lowercase; `query` contains the clauses directly,
+without another `query` wrapper. All expression strings use the portable
+`OSSIE_SQL_2026` expression language and resolve only against the bound model.
+Statement text, native dialects, connection properties, query parameters, joins,
+grain overrides and undeclared clauses are outside the surface.
+
+| Clause / shape | Contract |
+| --- | --- |
+| Aggregation | `dimensions` and/or `measures`, at least one nonempty. Omitted arrays mean empty. No `fields`; empty dimensions request totals. |
+| Scalar | Nonempty `fields`; no `dimensions`, `measures` or `having`, even if empty. Foundation table-grain and fan-out rules apply. |
+| Projections | Dimensions/fields/metrics, ad-hoc expressions and aliases follow Foundation section 5 and its expression subset. Schema validity alone does not establish name, type, grain or expression validity. |
+| `where` / `having` | One predicate string or a nonempty list interpreted as AND. Row-level versus aggregate/window predicates follow Foundation sections 6.3/6.10; OR is inside an expression. |
+| `order_by` | Objects containing `field` (in-scope name or projection-valid expression), optional `direction` (default `ASC`) and `nulls`. `nulls: FIRST/LAST` explicitly serializes section 5's NULL placement; defaults are ASC/LAST, DESC/FIRST. Positional ordinals are not allowed. |
+| `limit` | Nonnegative integer bounding final query rows, including zero; absent means no query-authored cap. Accepted without ordering, but no stable row selection is implied. Server ceilings are independent and any resulting truncation is disclosed. |
+
+The engine resolves names, relationships, join paths and grain-safe aggregation
+according to the pinned Foundation, not backend-native semantics. Implementation
+may compile to SQL/DAX or another engine representation internally; that does
+not change the accepted interface or its meaning. Model expressions without a
+supported semantics-preserving evaluation MUST be refused, not interpreted as
+native text or silently dropped.
+
+Bindings MUST advertise supported shapes and capability restrictions (such as
+M:N traversal, windows, multi-fact queries or path length). Partial implementations
+MUST refuse unsupported cases explicitly; exposing this MCP profile does not
+claim full Foundation conformance. Reuse an applicable Foundation refusal code
+where defined; otherwise return `UNSUPPORTED_QUERY` with the missing capability.
+Unsettled Foundation semantics are resolved there, not by inventing backend
+defaults here; implementations unable to guarantee the declared semantics MUST
+refuse the case. Shape-only tests do not establish equivalent answers.
+
+Each call returns one table. Semantics-preserving compilation is expected;
+semantic query mutation, automatic repair/retry, broadened filters, source
+fallback and discarded result tables are prohibited. No `language`, connection,
+impersonation, external limits or diagnostic arguments are accepted.
+Suggested annotations are `readOnlyHint: true`,
 `destructiveHint: false` and an `openWorldHint` reflecting the actual deployment;
 annotations are not enforcement or an idempotence guarantee.
 
@@ -101,6 +178,8 @@ compatibility MAY omit both. `outputSchema` constrains that object, not content
 blocks or Task handles. Text, structured fields and embedded resources MUST
 agree. MCP's recommended serialized-JSON text fallback SHOULD be provided
 where needed, without duplicating the full dataset in prose.
+Every successful result MUST identify the evaluated model and revision;
+Markdown-only results carry that identity in text or resource metadata.
 
 ### Data and previews
 
@@ -139,7 +218,7 @@ does not change execution. `preview.row_count` equals displayed rows;
 `preview.has_more` equals `result.row_count > preview.row_count`.
 Independently, `result.completeness` is `complete` only with evidence of query
 exhaustion, `truncated` with evidence of omitted rows, otherwise `unknown`.
-Query-authored TOP/LIMIT is query semantics, not export truncation. Capped or
+Query-authored `limit` is query semantics, not export truncation. Capped or
 sampled materializations MUST NOT be described as complete.
 
 ### Diagnostics
@@ -151,8 +230,10 @@ authorization, RLS/OLS and aggregate budgets. Partial/unavailable enrichment
 requires an explanation, not an implied exhaustive search or a changed primary
 query outcome. Zero rows remain success.
 
-Suggestions are advice: `replacement_query` is a complete candidate, never
-automatically executed. Static examples are not verified query results.
+Suggestions are advice: `replacement_query` is a complete **Layer 3 object
+matching the same query schema**, not native text, a JSON-encoded string or a
+patch. It remains scoped to the same source/model and is never automatically
+executed. Static examples are not verified query results.
 Alternatives identify candidates for the original authorized filter field;
 cross-field hints belong in suggestions. Their `complete` flag concerns
 candidate search, not query completeness. Unauthorized names/values, connection
@@ -166,6 +247,18 @@ Common codes: `INVALID_ARGUMENT`, `SOURCE_UNAVAILABLE`, `UNSUPPORTED_QUERY`,
 `RESOURCE_LIMIT`, `BACKEND_ERROR`. `SOURCE_UNAVAILABLE` may conceal inaccessible
 bindings; error source IDs echo supplied values, not privileged resolved IDs.
 Guidance kinds include `name`, `query`, `filter`, `limit`, `diagnostic`.
+
+Foundation semantic refusals MUST appear unchanged in **`error.code`**, not
+only in `extensions` or flattened to `QUERY_INVALID`. For example,
+`E_NAME_NOT_FOUND`, `E_NO_PATH`, `E_AMBIGUOUS_PATH` and
+`E3013_NO_STITCHING_DIMENSION` retain their defined triggers.
+Mixed/empty query shapes use `E_MIXED_QUERY_SHAPE`,
+`E_EMPTY_AGGREGATION_QUERY` or `E_EMPTY_SCALAR_QUERY` when applicable.
+Expression parsing failures without a Foundation code use `QUERY_INVALID`;
+malformed clause values use `INVALID_ARGUMENT`; valid but unsupported evaluation
+uses `UNSUPPORTED_QUERY` unless Foundation defines a capability code.
+Do not assign a semantic-invalid code merely because an engine lacks a planner
+feature. Provider diagnostics MAY extend the error without overriding its code.
 
 ## Encoding and presentation
 
@@ -203,10 +296,16 @@ outside JSON Schema include preview/resource consistency and encoding rules abov
   "additionalProperties": false,
   "required": ["contract_version", "status", "diagnostics", "suggestions", "filter_value_alternatives"],
   "properties": {
-    "contract_version": { "const": "0.3-draft" },
+    "contract_version": { "const": "0.4-draft" },
     "status": { "enum": ["success", "error"] },
     "data_source_id": { "type": "string", "minLength": 1 },
-    "language": { "type": "string", "minLength": 1 },
+    "model": {
+      "type": "object", "additionalProperties": false, "required": ["id", "revision"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "revision": { "type": "string", "minLength": 1 }
+      }
+    },
     "preview": {
       "type": "object", "additionalProperties": false,
       "required": ["columns", "rows", "row_count", "has_more"],
@@ -266,7 +365,7 @@ outside JSON Schema include preview/resource consistency and encoding rules abov
         "properties": {
           "kind": { "type": "string", "minLength": 1 },
           "message": { "type": "string", "minLength": 1 },
-          "replacement_query": { "type": "string", "minLength": 1 },
+          "replacement_query": { "$ref": "#/$defs/query" },
           "extensions": { "$ref": "#/$defs/extensions" }
         }
       }
@@ -289,6 +388,49 @@ outside JSON Schema include preview/resource consistency and encoding rules abov
     "extensions": { "$ref": "#/$defs/extensions" }
   },
   "$defs": {
+    "expression": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "projection": { "type": "array", "items": { "$ref": "#/$defs/expression" } },
+    "predicate": {
+      "oneOf": [
+        { "$ref": "#/$defs/expression" },
+        { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/expression" } }
+      ]
+    },
+    "query": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "dimensions": { "$ref": "#/$defs/projection" },
+        "measures": { "$ref": "#/$defs/projection" },
+        "fields": { "allOf": [{ "$ref": "#/$defs/projection" }], "minItems": 1 },
+        "where": { "$ref": "#/$defs/predicate" },
+        "having": { "$ref": "#/$defs/predicate" },
+        "order_by": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["field"],
+            "properties": {
+              "field": { "$ref": "#/$defs/expression" },
+              "direction": { "enum": ["ASC", "DESC"] },
+              "nulls": { "enum": ["FIRST", "LAST"] }
+            }
+          }
+        },
+        "limit": { "type": "integer", "minimum": 0 }
+      },
+      "oneOf": [
+        {
+          "not": { "required": ["fields"] },
+          "anyOf": [
+            { "required": ["dimensions"], "properties": { "dimensions": { "minItems": 1 } } },
+            { "required": ["measures"], "properties": { "measures": { "minItems": 1 } } }
+          ]
+        },
+        {
+          "required": ["fields"],
+          "not": { "anyOf": [{ "required": ["dimensions"] }, { "required": ["measures"] }, { "required": ["having"] }] }
+        }
+      ]
+    },
     "extensions": { "type": "object", "additionalProperties": { "type": "object" } },
     "resource": {
       "type": "object", "additionalProperties": false,
@@ -310,7 +452,7 @@ outside JSON Schema include preview/resource consistency and encoding rules abov
     }
   },
   "oneOf": [
-    { "properties": { "status": { "const": "success" } }, "required": ["data_source_id", "language", "result"], "not": { "required": ["error"] } },
+    { "properties": { "status": { "const": "success" } }, "required": ["data_source_id", "model", "result"], "not": { "required": ["error"] } },
     { "properties": { "status": { "const": "error" } }, "required": ["error"], "not": { "anyOf": [{ "required": ["preview"] }, { "required": ["result"] }] } }
   ]
 }
@@ -331,10 +473,12 @@ selected MCP version; the application schema does not replace protocol schemas.
 | Notifications/recovery | Optional Task subscriptions supplement polling, not repeated execution. Task cancellation is cooperative. Initial response loss gives no exactly-once guarantee; once a Task ID is known, resume polling it. Cache freshness, retention TTL and runtime deadlines are independent. |
 | Compatibility | 2025-11-25 deployments use their own initialization, experimental task capability/request fields and `tasks/result`; do not mix them into the modern protocol. Latest/draft core schemas were identical at the pinned review commit. |
 
-Server policy MUST bound request validation, concurrency, execution,
-materialization and probes; Tasks do not relax ceilings. Authorize each source,
-resource and Task for the effective caller, preserving RLS/OLS. Enforce
-read-only through engine permissions/language-aware controls, not annotation or
+Server policy MUST bound request validation, planning, execution,
+materialization and probes; Tasks do not relax ceilings. Authorize model
+elements, sources, resources and Tasks for the effective caller, preserving
+RLS/OLS. Parse/resolve expression fragments before safe compilation; do not
+concatenate unchecked text into native statements. Enforce
+read-only through engine permissions/compiler controls, not annotation or
 string-prefix tests. Protected remote endpoints follow MCP authorization;
 upstream credentials have separate audiences, with no arbitrary token
 passthrough. Prefer bounded self-contained schemas/local `$defs`, not automatic
@@ -348,12 +492,33 @@ are separate concerns, not execution requirements.
 
 ## Examples
 
-Single-dialect tool arguments:
+Aggregation query against the bound model:
 
 ```json
 {
   "data_source_id": "sales-model",
-  "query": "EVALUATE ROW(\"Revenue\", [Revenue])"
+  "query": {
+    "dimensions": ["customers.region"],
+    "measures": ["total_revenue"],
+    "where": "orders.status = 'completed'",
+    "order_by": [{ "field": "total_revenue", "direction": "DESC", "nulls": "LAST" }],
+    "limit": 20
+  }
+}
+```
+
+Scalar query; predicate lists are AND-conjoined and omitted ordering options
+use the profile defaults:
+
+```json
+{
+  "data_source_id": "sales-model",
+  "query": {
+    "fields": ["orders.order_id", "orders.amount", "customers.region"],
+    "where": ["orders.status = 'completed'", "orders.amount > 0"],
+    "order_by": [{ "field": "orders.order_id" }],
+    "limit": 100
+  }
 }
 ```
 
@@ -366,7 +531,13 @@ Modern request; Task support is declared, not demanded:
     "name": "execute_query",
     "arguments": {
       "data_source_id": "sales-model",
-      "query": "EVALUATE ROW(\"Revenue\", [Revenue])"
+      "query": {
+        "dimensions": ["customers.region"],
+        "measures": ["total_revenue"],
+        "where": "orders.status = 'completed'",
+        "order_by": [{ "field": "total_revenue", "direction": "DESC", "nulls": "LAST" }],
+        "limit": 20
+      }
     },
     "_meta": {
       "io.modelcontextprotocol/protocolVersion": "2026-07-28",
@@ -389,10 +560,13 @@ Successful `CallToolResult` body; preview and CSV metadata correlate:
       "type": "resource",
       "resource": {
         "uri": "file:///sales.csv", "mimeType": "text/csv",
-        "text": "[Revenue]\r\n12345.67\r\n",
+        "text": "region,total_revenue\r\nWest,12345.67\r\n",
         "_meta": {
           "org.apache.ossie/execute_query": {
-            "columns": [{ "name": "[Revenue]", "datatype": "Decimal" }],
+            "columns": [
+              { "name": "region", "datatype": "String" },
+              { "name": "total_revenue", "datatype": "Decimal" }
+            ],
             "row_count": 1, "completeness": "complete",
             "csv_null_value": "\\N", "csv_escape_prefix": "\\"
           }
@@ -402,11 +576,15 @@ Successful `CallToolResult` body; preview and CSV metadata correlate:
     }
   ],
   "structuredContent": {
-    "contract_version": "0.3-draft", "status": "success",
-    "data_source_id": "sales-model", "language": "DAX",
+    "contract_version": "0.4-draft", "status": "success",
+    "data_source_id": "sales-model",
+    "model": { "id": "sales", "revision": "r1" },
     "preview": {
-      "columns": [{ "name": "[Revenue]", "datatype": "Decimal" }],
-      "rows": [["12345.67"]], "row_count": 1, "has_more": false
+      "columns": [
+        { "name": "region", "datatype": "String" },
+        { "name": "total_revenue", "datatype": "Decimal" }
+      ],
+      "rows": [["West", "12345.67"]], "row_count": 1, "has_more": false
     },
     "result": {
       "row_count": 1, "completeness": "complete",
@@ -429,21 +607,28 @@ Tool error with extensible, advisory repair guidance:
   "resultType": "complete", "isError": true,
   "content": [{
     "type": "text",
-    "text": "Unknown measure `Reveneu`; use `Revenue`. No replacement query executed."
+    "text": "Unknown metric `total_reveneu`; use `total_revenue`. No replacement query executed."
   }],
   "structuredContent": {
-    "contract_version": "0.3-draft", "status": "error",
-    "data_source_id": "sales-model", "language": "DAX",
+    "contract_version": "0.4-draft", "status": "error",
+    "data_source_id": "sales-model",
+    "model": { "id": "sales", "revision": "r1" },
     "error": {
-      "code": "QUERY_INVALID",
-      "message": "Unknown measure 'Reveneu'; did you mean 'Revenue'?",
+      "code": "E_NAME_NOT_FOUND",
+      "message": "Unknown metric 'total_reveneu'; did you mean 'total_revenue'?",
       "retryable": false,
       "extensions": { "example.org/parser": { "line": 1 } }
     },
     "diagnostics": { "state": "completed" },
     "suggestions": [{
-      "kind": "query", "message": "Use the known Revenue measure.",
-      "replacement_query": "EVALUATE ROW(\"Revenue\", [Revenue])"
+      "kind": "query", "message": "Use the known total_revenue metric.",
+      "replacement_query": {
+        "dimensions": ["customers.region"],
+        "measures": ["total_revenue"],
+        "where": "orders.status = 'completed'",
+        "order_by": [{ "field": "total_revenue", "direction": "DESC", "nulls": "LAST" }],
+        "limit": 20
+      }
     }],
     "filter_value_alternatives": []
   }
@@ -466,15 +651,21 @@ and is not validated by the application `outputSchema`.
 
 ## Conformance
 
-Adapters MUST reconcile binding/dialect, typed pre-formatting results,
-nulls/precision, completeness and embedded bytes rather than reverse-parse lossy
-previews or claim conformance by tool name. Relevant cases include missing or
-incompatible dialects; zero rows; absent/first-row/sample previews; row-arity and
+Adapters MUST resolve the bound model and Layer 3 semantics and preserve typed
+pre-formatting results, nulls/precision, completeness and embedded bytes rather
+than reverse-parse lossy
+previews or claim conformance by tool name. Relevant cases include aggregation,
+scalar, mixed/empty shapes; name/path/grain/filter validation; valid but
+unsupported capabilities; two-fact queries and Having; zero rows;
+absent/first-row/sample previews; row-arity and
 duplicate-name fidelity; CSV escapes, locale and exact numerics; partial
 materialization/enrichment; resource budgets; permission refusals; extensible
 tool errors; cancellation/reconnect; and Task tool-error versus protocol-fault
-states. No reference engine or adapter implementation is included.
+states. No reference engine or adapter implementation is included. `0.4-draft`
+replaces native strings/language selection with Layer 3 objects and uses the
+same object for repairs; it is not wire-compatible with `0.3-draft`.
 
+[layer3]: https://github.com/apache/ossie/blob/cc0d07099a3ef31e85af1fd93458a52186fae2c6/core-spec/foundational_semantics.md
 [mcp-tools]: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/0a11bf68c7ec4473526ec15589f592afcd12d1e8/docs/specification/2026-07-28/server/tools.mdx
 [mcp-resources]: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/0a11bf68c7ec4473526ec15589f592afcd12d1e8/docs/specification/2026-07-28/server/resources.mdx
 [mcp-tasks]: https://github.com/modelcontextprotocol/ext-tasks/blob/93a4915aadf714f87ece5cd40c317bce24779cf5/specification/2026-07-28/tasks.md
