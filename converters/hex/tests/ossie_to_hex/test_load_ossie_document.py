@@ -20,6 +20,7 @@ from textwrap import dedent
 
 import pytest
 from inline_snapshot import snapshot
+from ossie import OssieDialect
 
 from ossie_hex.ossie_to_hex.context import ExportContext
 from ossie_hex.ossie_to_hex.load_ossie_document import load_ossie_document
@@ -28,7 +29,9 @@ from tests.utils import problems_snapshot
 
 @pytest.fixture
 def ctx() -> ExportContext:
-    return ExportContext()
+    ctx = ExportContext()
+    ctx.set_ossie_dialect(OssieDialect.ANSI_SQL)
+    return ctx
 
 
 def _problems(ctx: ExportContext, path: Path) -> str:
@@ -126,7 +129,7 @@ foo
     )
 
 
-def test_omits_invalid_members(ctx: ExportContext, tmp_path: Path) -> None:
+def test_invalid_members(ctx: ExportContext, tmp_path: Path) -> None:
     path = tmp_path / "sales.yaml"
     data = dedent("""\
         version: 0.2.0.dev0
@@ -186,6 +189,12 @@ datasets:
       - dialect: ANSI_SQL
         expression: amount
     datatype: Integer
+  - name: broken
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: SELECT FROM
+    datatype: Integer
 relationships: []
 metrics:
 - name: total
@@ -194,21 +203,21 @@ metrics:
     - dialect: ANSI_SQL
       expression: SUM(orders.amount)
   datatype: Integer
+- name: broken_total
+  expression:
+    dialects:
+    - dialect: ANSI_SQL
+      expression: SUM(orders.missing)
+  datatype: Integer
 """)
     assert problems_snapshot(ctx.problems, include_causes=True) == snapshot("""\
 [ERROR] Unable to parse: Expected table name but got None. Line 1, Col: 11.
   SELECT \x1b[4mFROM\x1b[0m
 Cause: ['datasets', 'orders', 'fields', 'broken', 'expression', 'dialects', 'ANSI_SQL', 'expression']
 
-[ERROR] Expression must have at least one valid dialect
-Cause: ['datasets', 'orders', 'fields', 'broken', 'expression', 'dialects']
-
 [ERROR] Could not resolve dataset name: 'missing'.
 Cause: ['relationships', 'broken_relation', 'to']
 
 [ERROR] Field expression references field not in semantic model: orders.missing
-Cause: ['metrics', 'broken_total', 'expression', 'dialects', 'ANSI_SQL']
-
-[ERROR] Expression must have at least one valid dialect
-Cause: ['metrics', 'broken_total', 'expression', 'dialects']\
+Cause: ['metrics', 'broken_total', 'expression', 'dialects', 'ANSI_SQL']\
 """)

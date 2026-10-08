@@ -16,7 +16,7 @@
 # under the License.
 
 import pytest
-from ossie import OssieDataset
+from ossie import OssieDataset, OssieDialect
 
 from ossie_hex.ossie_to_hex.context import ExportContext
 from ossie_hex.ossie_to_hex.load_ossie_dataset import load_ossie_dataset
@@ -25,7 +25,9 @@ from tests.ossie_to_hex.utils import Quick
 
 @pytest.fixture
 def ctx() -> ExportContext:
-    return ExportContext()
+    ctx = ExportContext()
+    ctx.set_ossie_dialect(OssieDialect.ANSI_SQL)
+    return ctx
 
 
 @pytest.fixture
@@ -51,7 +53,7 @@ def test_keeps_valid_fields(ctx: ExportContext) -> None:
     assert not ctx.problems
 
 
-def test_removes_invalid_fields(ctx: ExportContext) -> None:
+def test_preserves_fields_with_invalid_expressions(ctx: ExportContext) -> None:
 
     foo = Quick.dataset(
         name="foo",
@@ -63,6 +65,5 @@ def test_removes_invalid_fields(ctx: ExportContext) -> None:
     )
     result = load_ossie_dataset(foo, ctx=ctx)
     assert result.fields is not None
-    assert len(result.fields) == 1
-    assert result.fields[0].name == "good"
+    assert result.fields == foo.fields
     assert ctx.problems

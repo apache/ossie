@@ -30,9 +30,8 @@ def load_ossie_dataset(
 ) -> OssieDataset:
     """Load an Ossie dataset.
 
-    Removes invalid fields.
-
-    Returns an Ossie dataset with only valid fields.
+    Validates field expressions and supplies missing datatypes while preserving
+    fields. Removes empty unique keys.
     """
     with ctx.problem_scope(dataset.name):
         fields = list[OssieField]()

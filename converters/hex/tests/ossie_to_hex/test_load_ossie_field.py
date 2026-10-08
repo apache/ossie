@@ -17,7 +17,7 @@
 
 import pytest
 from inline_snapshot import snapshot
-from ossie import OssieDataType
+from ossie import OssieDataType, OssieDialect
 
 from ossie_hex.ossie_to_hex.context import ExportContext
 from ossie_hex.ossie_to_hex.load_ossie_field import load_ossie_field
@@ -27,7 +27,9 @@ from tests.utils import problems_snapshot
 
 @pytest.fixture
 def ctx() -> ExportContext:
-    return ExportContext()
+    ctx = ExportContext()
+    ctx.set_ossie_dialect(OssieDialect.ANSI_SQL)
+    return ctx
 
 
 def test_returns_field_with_valid_expression(ctx: ExportContext) -> None:
@@ -43,14 +45,14 @@ def test_returns_field_with_valid_expression(ctx: ExportContext) -> None:
     assert not ctx.problems
 
 
-def test_returns_none_for_invalid_expression(ctx: ExportContext) -> None:
+def test_preserves_field_with_invalid_expression(ctx: ExportContext) -> None:
     foo = Quick.field(
         "foo",
         "String",
         [("ANSI_SQL", "SELECT FROM")],
     )
     result = load_ossie_field(foo, ctx=ctx)
-    assert result is None
+    assert result == foo
     assert ctx.problems
 
 

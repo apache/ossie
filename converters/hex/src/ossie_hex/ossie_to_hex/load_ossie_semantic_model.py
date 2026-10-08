@@ -32,9 +32,8 @@ def load_ossie_semantic_model(
 ) -> OssieSemanticModel:
     """Load an Ossie semantic model
 
-    Removes invalid dataset fields, metrics, and relationships.
-
-    Returns an Ossie semantic model with only valid members.
+    Validates dataset fields and metrics while preserving their expressions.
+    Removes invalid relationships.
     """
     datasets = _load_ossie_datasets(semantic_model.datasets, ctx=ctx)
 

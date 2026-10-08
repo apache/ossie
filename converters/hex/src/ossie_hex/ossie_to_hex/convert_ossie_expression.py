@@ -16,7 +16,7 @@
 # under the License.
 
 
-from ossie import OssieDialect, OssieDialectExpression, OssieExpression
+from ossie import OssieExpression
 
 from ..hex import HexSql
 from .context import ExportContext
@@ -24,6 +24,7 @@ from .convert_ossie_dialect_expression import (
     OssieRefResolver,
     convert_ossie_dialect_expression,
 )
+from .pick_ossie_dialect_expression import pick_ossie_dialect_expression
 
 
 def convert_ossie_expression(
@@ -38,39 +39,12 @@ def convert_ossie_expression(
     If a resolver is provided, it is used to resolve Ossie expression syntax
     to Hex semantic reference syntax.
     """
-    ossie_dialect_expression = pick_ossie_expression(ossie_expression, ctx=ctx)
+    ossie_dialect_expression = pick_ossie_dialect_expression(
+        ossie_expression.dialects, ctx=ctx
+    )
     hex_sql = convert_ossie_dialect_expression(
         ossie_dialect_expression,
         resolve=resolve,
         ctx=ctx,
     )
     return hex_sql
-
-
-def pick_ossie_expression(
-    ossie_expression: OssieExpression,
-    *,
-    ctx: ExportContext,
-) -> OssieDialectExpression | None:
-    """Pick an Ossie dialect expression from an Ossie expression.
-
-    Prefers to pick the current dialect, then falls back to ANSI SQL, then the first in the list.
-
-    Returns a dialect expression or None if no fallback is found.
-    """
-    fallback: OssieDialectExpression | None = None
-    for entry in ossie_expression.dialects:
-        if entry.dialect == ctx.ossie_dialect:
-            return entry
-        # fallback preference: (1) ansi sql, (2) first in the list
-        elif entry.dialect == OssieDialect.ANSI_SQL or fallback is None:
-            fallback = entry
-    if fallback is not None:
-        ctx.warn(
-            f"Preferred dialect {ctx.ossie_dialect} not found for expression; using fallback dialect {fallback.dialect}"
-        )
-    else:
-        ctx.error(
-            f"Preferred dialect {ctx.ossie_dialect} not found for expression and no fallback dialect found"
-        )
-    return fallback

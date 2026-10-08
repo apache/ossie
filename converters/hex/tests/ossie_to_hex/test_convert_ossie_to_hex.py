@@ -21,7 +21,10 @@ from pathlib import Path
 import pytest
 from inline_snapshot import snapshot
 
+from ossie_hex.hex import HexModel
 from ossie_hex.ossie_to_hex.convert_ossie_to_hex import convert_ossie_to_hex
+from ossie_hex.util.yaml import dump_yaml
+from tests.ossie_to_hex.utils import Quick
 from tests.utils import hex_project_snapshot, problems_snapshot
 
 TPCDS = Path(__file__).resolve().parents[4] / "examples" / "tpcds_semantic_model.yaml"
@@ -87,6 +90,68 @@ def test_missing_input_does_not_create_output(tmp_path: Path) -> None:
 [FATAL] File does not exist: `INPUT`
 Cause: []""")
     assert not output.parent.exists()
+
+
+@pytest.mark.parametrize("dialect", [None, "ANSI_SQL", "SNOWFLAKE"])
+def test_selected_dialect_is_used_when_loading_and_converting(
+    tmp_path: Path, dialect: str | None
+) -> None:
+    dataset = Quick.dataset(
+        "bar",
+        "public.bar",
+        [
+            (
+                "amount",
+                "Integer",
+                [
+                    ("DAX", "IF(bar[amount] > 0, bar[amount], 0)"),
+                    ("ANSI_SQL", "CASE WHEN amount > 0 THEN amount ELSE 0 END"),
+                    ("SNOWFLAKE", "IFF(amount > 0, amount, 0)"),
+                ],
+            )
+        ],
+    )
+    metric = Quick.metric(
+        "total",
+        "Integer",
+        [
+            ("DAX", "SUMX(bar, IF(bar[amount] > 0, bar[amount], 0))"),
+            (
+                "ANSI_SQL",
+                "SUM(CASE WHEN bar.amount > 0 THEN bar.amount ELSE 0 END)",
+            ),
+            ("SNOWFLAKE", "SUM(IFF(bar.amount > 0, bar.amount, 0))"),
+        ],
+    )
+    semantic_model = Quick.semantic_model("foo", [dataset], [metric], [])
+    data = semantic_model.model_dump(mode="json", exclude_none=True)
+    yaml = dump_yaml(data)
+    source = tmp_path / "model.yml"
+    source.write_text(yaml, encoding="utf-8")
+
+    project, problems = convert_ossie_to_hex(source, dialect=dialect)
+
+    assert project is not None
+    model = project.resources[0]
+    assert isinstance(model, HexModel)
+    expressions = (model.dimensions[0].expr_sql, model.measures[0].func_sql)
+    if dialect == "SNOWFLAKE":
+        assert expressions == snapshot(
+            ("IFF(amount > 0, amount, 0)", "SUM(IFF(${amount} > 0, ${amount}, 0))")
+        )
+    else:
+        assert expressions == snapshot(
+            (
+                "CASE WHEN amount > 0 THEN amount ELSE 0 END",
+                "SUM(CASE WHEN ${amount} > 0 THEN ${amount} ELSE 0 END)",
+            )
+        )
+    if dialect is None:
+        assert problems_snapshot(problems) == snapshot(
+            "[INFO] No Ossie dialect specified; using ANSI_SQL"
+        )
+    else:
+        assert problems_snapshot(problems) == snapshot("")
 
 
 def test_convert_tpcds() -> None:
@@ -298,14 +363,14 @@ resources:
     expr_sql: s_number_employees
 """)
     assert problems_snapshot(problems, include_causes=True) == snapshot("""\
+[INFO] No Ossie dialect specified; using ANSI_SQL
+Cause: []
+
 [WARNING] Missing. Hex requires a datatype. Using default 'String'.
 Cause: ['datasets', 'date_dim', 'fields', 'd_quarter_name', 'datatype']
 
 [WARNING] Missing. Hex requires a datatype. Using default 'String'.
 Cause: ['datasets', 'date_dim', 'fields', 'd_moy', 'datatype']
-
-[INFO] No Ossie dialect specified; using ANSI_SQL
-Cause: []
 
 [WARNING] Composite primary key is not supported: ['ss_item_sk', 'ss_ticket_number']
 Cause: ['datasets', 'store_sales', 'primary_key']

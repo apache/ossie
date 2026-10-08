@@ -58,10 +58,10 @@ class ExportContext(Context[ExportProblemCode]):
         self._assignment = ExportAssignment()
         self._hex_models = {}
 
-    def set_dialects(
-        self, ossie_dialect: OssieDialect, hex_dialect: HexDialect
-    ) -> None:
+    def set_ossie_dialect(self, ossie_dialect: OssieDialect) -> None:
         self.ossie_dialect = ossie_dialect
+
+    def set_hex_dialect(self, hex_dialect: HexDialect) -> None:
         self.hex_dialect = hex_dialect
 
     def _set_dialects(

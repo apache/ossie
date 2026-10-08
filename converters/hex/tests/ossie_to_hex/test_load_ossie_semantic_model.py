@@ -17,6 +17,7 @@
 
 import pytest
 from inline_snapshot import snapshot
+from ossie import OssieDialect
 
 from ossie_hex.ossie_to_hex.context import ExportContext
 from ossie_hex.ossie_to_hex.load_ossie_semantic_model import load_ossie_semantic_model
@@ -26,7 +27,9 @@ from tests.utils import problems_snapshot
 
 @pytest.fixture
 def ctx() -> ExportContext:
-    return ExportContext()
+    ctx = ExportContext()
+    ctx.set_ossie_dialect(OssieDialect.ANSI_SQL)
+    return ctx
 
 
 orders = Quick.dataset(
@@ -79,12 +82,15 @@ def test_removes_invalid_relationship(ctx: ExportContext) -> None:
     assert result.relationships is not None
     assert len(result.relationships) == 1
     assert result.relationships[0].name == "orders_to_customers"
-    assert problems_snapshot(ctx.problems) == snapshot(
-        "[ERROR] Could not resolve dataset name: 'missing'."
+    assert problems_snapshot(ctx.problems, include_causes=True) == snapshot(
+        """\
+[ERROR] Could not resolve dataset name: 'missing'.
+Cause: ['relationships', 'bad', 'to']\
+"""
     )
 
 
-def test_removes_invalid_metric(ctx: ExportContext) -> None:
+def test_invalid_metric_expression(ctx: ExportContext) -> None:
     datasets = [orders, customers]
     metrics = [total_amount]
     relationships = []
@@ -96,10 +102,10 @@ def test_removes_invalid_metric(ctx: ExportContext) -> None:
     foo = Quick.semantic_model("foo", datasets, [bad, *metrics], relationships)
     result = load_ossie_semantic_model(foo, ctx=ctx)
     assert result.metrics is not None
-    assert len(result.metrics) == 1
-    assert result.metrics[0].name == "total_amount"
-    assert problems_snapshot(ctx.problems) == snapshot("""\
+    assert result.metrics == [bad, total_amount]
+    assert problems_snapshot(ctx.problems, include_causes=True) == snapshot(
+        """\
 [ERROR] Field expression references field not in semantic model: orders.missing
-
-[ERROR] Expression must have at least one valid dialect\
-""")
+Cause: ['metrics', 'bad', 'expression', 'dialects', 'ANSI_SQL']\
+"""
+    )

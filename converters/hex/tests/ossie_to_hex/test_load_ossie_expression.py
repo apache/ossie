@@ -17,6 +17,7 @@
 
 import pytest
 from inline_snapshot import snapshot
+from ossie import OssieDialect
 
 from ossie_hex.ossie_to_hex.context import ExportContext
 from ossie_hex.ossie_to_hex.load_ossie_expression import (
@@ -29,69 +30,73 @@ from tests.utils import problems_snapshot
 
 @pytest.fixture
 def ctx() -> ExportContext:
-    return ExportContext()
+    ctx = ExportContext()
+    ctx.set_ossie_dialect(OssieDialect.ANSI_SQL)
+    return ctx
 
 
-def test_valid_field_expression(ctx: ExportContext) -> None:
-    expr = Quick.expression([("ANSI_SQL", "id")])
-    result = load_ossie_field_expression(expr, ctx=ctx)
-    assert result is not None
-    assert len(result.dialects) == 1
-    assert not ctx.problems
-
-
-def test_keeps_valid_dialects_when_mixed(ctx: ExportContext) -> None:
-    expr = Quick.expression(
+def test_only_validates_preferred_field_variant(ctx: ExportContext) -> None:
+    expression = Quick.expression(
         [
-            ("ANSI_SQL", "SELECT FROM"),
-            ("SNOWFLAKE", "id"),
+            ("DAX", "SELECT FROM"),  # Invalid, unused.
+            ("ANSI_SQL", "id"),  # Valid, preferred.
         ]
     )
-    result = load_ossie_field_expression(expr, ctx=ctx)
-    assert result is not None
-    assert len(result.dialects) == 1
-    assert result.dialects[0].dialect == "SNOWFLAKE"
-    assert result.dialects[0].expression == "id"
-    assert problems_snapshot(ctx.problems) == snapshot(
-        """\
-[ERROR] Unable to parse: Expected table name but got None. Line 1, Col: 11.
-  SELECT \x1b[4mFROM\x1b[0m\
-"""
-    )
 
-
-def test_rejects_expression_with_no_valid_dialects(ctx: ExportContext) -> None:
-    expression = Quick.expression([("ANSI_SQL", "SELECT FROM")])
     result = load_ossie_field_expression(expression, ctx=ctx)
-    assert result is None
-    assert problems_snapshot(ctx.problems) == snapshot(
-        """\
-[ERROR] Unable to parse: Expected table name but got None. Line 1, Col: 11.
-  SELECT \x1b[4mFROM\x1b[0m
 
-[ERROR] Expression must have at least one valid dialect\
-"""
-    )
-
-
-def test_valid_metric_expression(ctx: ExportContext) -> None:
-    field_names = [("foo", "bar")]
-    expression = Quick.expression([("ANSI_SQL", "foo.bar")])
-    result = load_ossie_metric_expression(expression, field_names=field_names, ctx=ctx)
-    assert result is not None
-    assert len(result.dialects) == 1
+    assert result is expression
     assert not ctx.problems
 
 
-def test_rejects_metric_expression_with_unknown_field(ctx: ExportContext) -> None:
-    field_names = [("other", "bar")]
-    expression = Quick.expression([("ANSI_SQL", "foo.bar")])
-    result = load_ossie_metric_expression(expression, field_names=field_names, ctx=ctx)
-    assert result is None
-    assert problems_snapshot(ctx.problems) == snapshot(
-        """\
-[ERROR] Field expression references field not in semantic model: foo.bar
-
-[ERROR] Expression must have at least one valid dialect\
-"""
+def test_reports_invalid_preferred_variant(ctx: ExportContext) -> None:
+    expression = Quick.expression(
+        [
+            ("DAX", "SELECT FROM"),  # Invalid, unused.
+            ("ANSI_SQL", "SELECT FROM"),  # Invalid, preferred.
+            ("SNOWFLAKE", "id"),  # Valid, unused.
+        ]
     )
+
+    result = load_ossie_field_expression(expression, ctx=ctx)
+
+    assert result is expression
+    assert problems_snapshot(ctx.problems, include_causes=True) == snapshot("""\
+[ERROR] Unable to parse: Expected table name but got None. Line 1, Col: 11.
+  SELECT \x1b[4mFROM\x1b[0m
+Cause: ['dialects', 'ANSI_SQL', 'expression']\
+""")
+
+
+def test_only_validates_preferred_dialect(ctx: ExportContext) -> None:
+    field_names = [("foo", "bar")]
+    expression = Quick.expression(
+        [
+            ("DAX", "SUM(foo[missing])"),  # Invalid reference, unused.
+            ("ANSI_SQL", "SUM(foo.bar)"),  # Valid, preferred.
+        ]
+    )
+
+    result = load_ossie_metric_expression(expression, field_names=field_names, ctx=ctx)
+
+    assert result is expression
+    assert not ctx.problems
+
+
+def test_reports_metric_expression_with_invalid_reference(ctx: ExportContext) -> None:
+    field_names = [("foo", "bar")]
+    expression = Quick.expression(
+        [
+            ("DAX", "SELECT FROM"),  # Invalid syntax, unused.
+            ("ANSI_SQL", "SUM(foo.missing)"),  # Invalid reference, preferred.
+            ("SNOWFLAKE", "SUM(foo.bar)"),  # Valid, unused.
+        ]
+    )
+
+    result = load_ossie_metric_expression(expression, field_names=field_names, ctx=ctx)
+
+    assert result is expression
+    assert problems_snapshot(ctx.problems, include_causes=True) == snapshot("""\
+[ERROR] Field expression references field not in semantic model: foo.missing
+Cause: ['dialects', 'ANSI_SQL']\
+""")
