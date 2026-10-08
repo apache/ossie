@@ -55,7 +55,7 @@ dependencies = [
 # works without the SDK.
 [project.optional-dependencies]
 relationalai = [
-    "relationalai==1.27.1",
+    "relationalai==1.35.1",
 ]
 
 [project.urls]
