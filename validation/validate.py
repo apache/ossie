@@ -55,6 +55,7 @@ from pathlib import Path
 try:
     import yaml
     from jsonschema import Draft202012Validator
+    from jsonschema.exceptions import SchemaError
     from referencing import Registry
     from referencing.exceptions import NoSuchResource, Unresolvable
     from referencing.retrieval import to_cached_resource
@@ -626,6 +627,19 @@ def main():
         schema = json.loads(schema_text)
     except json.JSONDecodeError as e:
         print(f"Error: Invalid JSON in schema {schema_path}: {e}")
+        sys.exit(1)
+
+    # json.loads accepts any JSON value, but a schema has to be an object or a
+    # boolean. Handing the validator anything else raises AttributeError from inside
+    # referencing, which names neither the schema nor the file it came from. Checking
+    # against the metaschema also catches an object whose keywords are the wrong
+    # shape, such as a string "required", which otherwise validates the model against
+    # nonsense without complaint.
+    try:
+        Draft202012Validator.check_schema(schema)
+    except SchemaError as e:
+        location = " -> ".join(str(part) for part in e.absolute_path) if e.absolute_path else "(root)"
+        print(f"Error: Invalid schema {schema_path}: {location}: {e.message}")
         sys.exit(1)
 
     model_text = read_text_or_exit(yaml_path, str(yaml_path))

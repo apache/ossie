@@ -598,6 +598,52 @@ class ValidatorIntegrationTest(unittest.TestCase):
                 if has_snippet:
                     self.assertIn("^", result.stdout)
 
+    def test_schema_that_is_not_an_object_is_reported(self):
+        """A schema may be an object or a boolean; any other JSON value is rejected."""
+        for schema_text in ("[]", '"a string"', "3", "null", "[{}]"):
+            with self.subTest(schema=schema_text):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    model_path = Path(temp_dir) / "model.yaml"
+                    model_path.write_text(_MINIMAL_MODEL)
+                    schema_path = Path(temp_dir) / "schema.json"
+                    schema_path.write_text(schema_text)
+                    result = self.run_validator_args(model_path, "--schema", schema_path)
+
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("Error: Invalid schema", result.stdout)
+                self.assertIn("is not of type 'object', 'boolean'", result.stdout)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_schema_with_a_malformed_keyword_is_reported(self):
+        """`required` taking a string used to make the validator demand its characters."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_path = Path(temp_dir) / "model.yaml"
+            model_path.write_text(_MINIMAL_MODEL)
+            schema_path = Path(temp_dir) / "schema.json"
+            schema_path.write_text('{"type": "object", "required": "name"}')
+            result = self.run_validator_args(model_path, "--schema", schema_path)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Error: Invalid schema", result.stdout)
+        self.assertIn("required", result.stdout)
+        self.assertNotIn("'a' is a required property", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_boolean_schemas_are_still_accepted(self):
+        """`true` and `false` are legal schemas, so the new check must let them through."""
+        for schema_text, expected_code in (("true", 0), ("false", 1)):
+            with self.subTest(schema=schema_text):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    model_path = Path(temp_dir) / "model.yaml"
+                    model_path.write_text(_MINIMAL_MODEL)
+                    schema_path = Path(temp_dir) / "schema.json"
+                    schema_path.write_text(schema_text)
+                    result = self.run_validator_args(model_path, "--schema", schema_path)
+
+                self.assertEqual(result.returncode, expected_code)
+                self.assertNotIn("Error: Invalid schema", result.stdout)
+                self.assertNotIn("Traceback", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
