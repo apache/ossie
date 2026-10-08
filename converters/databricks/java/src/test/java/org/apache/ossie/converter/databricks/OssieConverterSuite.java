@@ -676,8 +676,7 @@ public class OssieConverterSuite {
   @Test
   public void nonEquiOnRejected() {
     // A non-equi `on` has no Apache Ossie relationship form (from/to columns are required), so it is
-    // rejected on import rather than emitting a relationship with empty column lists. Matches the
-    // Python converter (test_non_equi_on_rejected).
+    // rejected on import rather than emitting a relationship with empty column lists.
     String mv =
         "version: '1.1'\n"
         + "source: c.s.orders\n"
@@ -694,7 +693,7 @@ public class OssieConverterSuite {
   public void complexEquiOnRejected() {
     // An equi `on` whose operand is a SQL fragment (OR-joined, or computed) cannot be decomposed
     // into from/to columns, so it is rejected rather than producing a relationship with empty
-    // column lists. Matches the Python converter (test_complex_equi_on_rejected).
+    // column lists.
     for (String cond : new String[] {
         "source.a = dim.b OR source.c = dim.d", "source.a = dim.b + 1"}) {
       String mv =

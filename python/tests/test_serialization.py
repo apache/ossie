@@ -119,3 +119,49 @@ def test_to_ossie_json_roundtrip(document_data: dict) -> None:
     parsed = json.loads(json_str)
     document2 = OssieDocument(**parsed)
     assert document2.to_ossie_json() == json_str
+
+
+def test_to_ossie_yaml_accepts_by_alias_override(document_data: dict) -> None:
+    document_data["relationships"] = [
+        {
+            "name": "order_customer",
+            "from": "orders",
+            "to": "customers",
+            "from_columns": ["customer_id"],
+            "to_columns": ["id"],
+        }
+    ]
+    document = OssieDocument.model_validate(document_data)
+    parsed = yaml.safe_load(document.to_ossie_yaml(by_alias=False))
+    assert parsed["relationships"][0]["from_dataset"] == "orders"
+    assert "from" not in parsed["relationships"][0]
+
+
+def test_to_ossie_json_accepts_by_alias_override(document_data: dict) -> None:
+    document_data["relationships"] = [
+        {
+            "name": "order_customer",
+            "from": "orders",
+            "to": "customers",
+            "from_columns": ["customer_id"],
+            "to_columns": ["id"],
+        }
+    ]
+    document = OssieDocument.model_validate(document_data)
+    parsed = json.loads(document.to_ossie_json(by_alias=False))
+    assert parsed["relationships"][0]["from_dataset"] == "orders"
+    assert "from" not in parsed["relationships"][0]
+
+
+def test_to_ossie_yaml_accepts_exclude_none_override(document_data: dict) -> None:
+    document = OssieDocument.model_validate(document_data)
+    parsed = yaml.safe_load(document.to_ossie_yaml(exclude_none=False))
+    assert parsed["description"] is None
+    assert parsed["relationships"] is None
+
+
+def test_to_ossie_json_accepts_exclude_none_override(document_data: dict) -> None:
+    document = OssieDocument.model_validate(document_data)
+    parsed = json.loads(document.to_ossie_json(exclude_none=False))
+    assert parsed["description"] is None
+    assert parsed["relationships"] is None

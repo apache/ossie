@@ -317,7 +317,7 @@ final class MetricViewToOssie {
       // The `on` is not an equi-join of simple `alias.column` pairs (it has a non-equi operator, a
       // SQL-function-wrapped key, or an extra filter predicate), so an Apache Ossie relationship
       // cannot represent it (from/to columns are required). Reject rather than emit an invalid
-      // relationship, matching the Python converter (test_non_equi_on_rejected).
+      // relationship.
       throw new ConversionException("Join '" + child + "' uses a non-equi or unsupported join "
           + "condition ('on: " + rawOn + "') that an Apache Ossie relationship cannot represent. "
           + "Apache Ossie joins are equi-joins of simple `alias.column` pairs (the fact side may "

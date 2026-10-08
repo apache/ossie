@@ -33,7 +33,7 @@ import java.util.List;
  * }</pre>
  *
  * <p>The directions are named from the Apache Ossie model's point of view, matching
- * {@link OssieConverter} and the Python converter: {@code export} converts an Apache Ossie semantic
+ * {@link OssieConverter}: {@code export} converts an Apache Ossie semantic
  * model to a Metric View; {@code import} converts a Metric View to an Apache Ossie model. Output
  * goes to the {@code -o} file, or to stdout when omitted. Conversion notices (features dropped on
  * export) are written to stderr. A broken input raises
