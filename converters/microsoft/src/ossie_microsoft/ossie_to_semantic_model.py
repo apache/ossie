@@ -54,6 +54,8 @@ from ._common import (
     OSSIE_TO_TMSL_DATATYPE,
     OSSIE_UNSUPPORTED,
     OSSIE_VERSION,
+    RELATIONSHIP_CARDINALITY_METADATA,
+    RELATIONSHIP_ENDPOINT_METADATA,
     TMSL_TO_OSSIE_DATATYPE,
     ConversionError,
     dialect_expressions,
@@ -80,7 +82,6 @@ _STASH_CONTROL_KEYS = frozenset(
 )
 _TABLE_CONTROL_KEYS = frozenset({"excludedColumns"})
 _RELATIONSHIP_CONTROL_KEYS = frozenset({"flipped", "name", "normalizedEndpoints"})
-_RELATIONSHIP_CARDINALITY_KEYS = frozenset({"fromCardinality", "toCardinality"})
 _MEASURE_CONTROL_KEYS = frozenset({"table", "name"})
 _COLUMN_CONTROL_KEYS = frozenset({"dataType", "sourceColumn"})
 
@@ -604,10 +605,11 @@ def _dataset_column_index(dataset):
         aliases = {field["name"]}
         expressions = dialect_expressions(field.get("expression"))
         if expressions:
-            _, expression = _preferred_expression(expressions)
-            candidate = expression.strip('"').strip("`").strip("[]")
-            if IDENTIFIER_RE.match(candidate):
-                aliases.add(candidate)
+            dialect, expression = _preferred_expression(expressions)
+            if dialect != DIALECT_DAX:
+                candidate = expression.strip().strip('"').strip("`").strip("[]")
+                if IDENTIFIER_RE.match(candidate):
+                    aliases.add(candidate)
         for alias in aliases:
             for key in (alias, f"{table}.{alias}"):
                 seen.setdefault(key.casefold(), set()).add(target)
@@ -640,13 +642,15 @@ def _source_column(expressions, name, stash):
         # No expression at all: the field name is the column name by definition.
         return name
 
-    _, expression = _preferred_expression(expressions)
+    dialect, expression = _preferred_expression(expressions)
+    if dialect == DIALECT_DAX:
+        return None
     if stash.get("sourceColumn") == expression:
         # A preserved source column the source query exposes under a name that is not a
         # bare SQL identifier, still unedited. Replay it rather than reparse it.
         return expression
 
-    candidate = expression.strip('"').strip("`").strip("[]")
+    candidate = expression.strip().strip('"').strip("`").strip("[]")
     if IDENTIFIER_RE.match(candidate):
         return candidate
     return None
@@ -655,14 +659,14 @@ def _source_column(expressions, name, stash):
 def _preferred_expression(expressions):
     for dialect in (DIALECT_DAX, DIALECT_ANSI, DIALECT_OSSIE_SQL):
         if dialect in expressions:
-            return dialect, expressions[dialect].strip()
+            return dialect, expressions[dialect]
     dialect = next(
         (name for name in sorted(expressions) if name in sql_to_dax.READABLE_DIALECTS),
         None,
     )
     if dialect is None:
         dialect = sorted(expressions)[0]
-    return dialect, expressions[dialect].strip()
+    return dialect, expressions[dialect]
 
 
 def _map_datatype(datatype, scope):
@@ -862,20 +866,32 @@ def _convert_relationships(relationships, table_columns):
             from_column, to_column = to_column, from_column
 
         tmsl = {
-            "name": stash.get("name", relationship.get("name")),
+            "name": _relationship_name(relationship, stash, endpoints),
             "fromTable": from_table,
             "fromColumn": from_column,
             "toTable": to_table,
             "toColumn": to_column,
         }
+        guarded_metadata = (
+            RELATIONSHIP_ENDPOINT_METADATA
+            if "normalizedEndpoints" in stash
+            else RELATIONSHIP_CARDINALITY_METADATA
+        )
         for key, value in stash.items():
             if key not in _RELATIONSHIP_CONTROL_KEYS and (
-                metadata_is_current or key not in _RELATIONSHIP_CARDINALITY_KEYS
+                metadata_is_current or key not in guarded_metadata
             ):
                 tmsl.setdefault(key, value)
         _apply_ai_context(tmsl, relationship.get("ai_context"))
         converted.append(prune(tmsl))
     return converted
+
+
+def _relationship_name(relationship, stash, endpoints):
+    name = relationship.get("name")
+    if name is None or name == _generated_relationship_name(endpoints):
+        return stash.get("name", name)
+    return name
 
 
 def _relationship_metadata_is_current(relationship, stash, endpoints):
@@ -885,10 +901,11 @@ def _relationship_metadata_is_current(relationship, stash, endpoints):
     # Stashes written before normalizedEndpoints was introduced can still be checked
     # against the generated Ossie relationship name. This preserves their unchanged
     # round trip while avoiding stale metadata after the common endpoint-only edit.
-    generated_name = (
-        f"{endpoints[0]}_{endpoints[1]}_to_{endpoints[2]}_{endpoints[3]}"
-    )
-    return relationship.get("name") == generated_name
+    return relationship.get("name") == _generated_relationship_name(endpoints)
+
+
+def _generated_relationship_name(endpoints):
+    return f"{endpoints[0]}_{endpoints[1]}_to_{endpoints[2]}_{endpoints[3]}"
 
 
 def _endpoints_exist(scope, table_columns, from_table, from_column, to_table, to_column):
@@ -942,7 +959,9 @@ def _tmsl_text(value):
     whenever the value spans multiple lines. Matching that keeps generated files
     diffable against ones written by Power BI itself.
     """
-    return value.splitlines() if "\n" in value else value
+    if "\n" not in value:
+        return value
+    return value.replace("\r\n", "\n").split("\n")
 
 
 def _warn_foreign_extensions(scope, obj):

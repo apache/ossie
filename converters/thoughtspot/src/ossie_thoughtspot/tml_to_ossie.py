@@ -106,6 +106,7 @@ from .constants import (
     FIELD_STASH_FORMULA_ID,
     FIELD_STASH_FORMULA_NAME,
     FIELD_STASH_DB_COLUMN_NAME_WITNESS,
+    METRIC_STASH_AGGREGATION_NONE,
     METRIC_STASH_COLUMN_AGGREGATION,
     METRIC_SHAPE_COLUMN_AGGREGATION,
     METRIC_SHAPE_FORMULA,
@@ -140,9 +141,82 @@ from .issues import IssueLog, Severity
 from .tml import DocumentSet
 
 
+
+#: A regular ANSI SQL identifier: letter or underscore, then letters, digits or
+#: underscores. Anything else has to be double-quoted to survive a SQL parser.
+_REGULAR_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+#: Words a bare column reference cannot be, however regular its spelling.
+#:
+#: Two sources, because each covers the other's blind spot and neither alone
+#: is enough:
+#:
+#: * The words **sqlglot rejects** as a bare column reference. That is the
+#:   parser `validation/validate.py` runs, so one of these left unquoted does
+#:   not merely read oddly -- it fails the project's own validator. `ON` is
+#:   real: TPC-DS `store` has a column of that name and it emitted
+#:   `expression: on`, which makes `SELECT on`. These are the 16 words no
+#:   standards list would have caught, among them `ALTER`, `GRANT`, `LATERAL`,
+#:   `QUALIFY` and `RETURNING`.
+#: * The **ANSI SQL reserved words sqlglot happens to tolerate**. `SELECT order`
+#:   parses under sqlglot and is rejected by Snowflake and PostgreSQL alike, so
+#:   the validator passing says nothing about whether a warehouse will run it.
+#:   These are the 25 the parser alone would have missed, among them `ORDER`,
+#:   `GROUP`, `TABLE`, `USER` and `NULL`.
+#:
+#: `tests/test_tml_to_ossie_fields.py` re-derives the first source from the
+#: installed sqlglot and asserts this set still covers it, so a sqlglot upgrade
+#: that reserves a new word fails loudly rather than quietly emitting an
+#: expression the validator rejects.
+#:
+#: Deliberately NOT the whole ANSI:2016 reserved list (~450 words). That would
+#: quote `YEAR`, `MONTH` and `VALUE` -- ordinary ThoughtSpot column names --
+#: and quoting is not free: the spec makes a quoted identifier match verbatim
+#: where a regular one is case-insensitive, so a needlessly quoted `"Amount"`
+#: stops matching a warehouse column stored as `AMOUNT`.
+_SQL_RESERVED = frozenset({
+    "ALL", "ALTER", "AND", "ANY", "AS", "ASC", "BETWEEN", "BY", "CASE", "CHECK",
+    "CREATE", "CROSS", "DEFAULT", "DESC", "DISTINCT", "DROP", "ELSE", "END",
+    "EXCEPT", "EXISTS", "FALSE", "FOR", "FROM", "FULL", "GLOB", "GRANT",
+    "GROUP", "HAVING", "ILIKE", "IN", "INNER", "INSERT", "INTERSECT", "INTO",
+    "IS", "JOIN", "LATERAL", "LEFT", "LIKE", "LIMIT", "NOT", "NOTNULL", "NULL",
+    "OFFSET", "ON", "OR", "ORDER", "OUTER", "PARTITIONED_BY", "PRIMARY",
+    "QUALIFY", "REGEXP", "RETURNING", "REVOKE", "RIGHT", "RLIKE", "ROLLBACK",
+    "SELECT", "SOME", "STRAIGHT_JOIN", "TABLE", "THEN", "TRUE", "UNCACHE",
+    "UNION", "UNIQUE", "USER", "USING", "WHEN", "WHERE", "WITH", "XOR",
+})
+
+
+def _sql_identifier(name: str) -> str:
+    """`name` as an ANSI SQL identifier, quoted only when it has to be.
+
+    ThoughtSpot column and table names are display names: they carry spaces,
+    colons, percent signs and parentheses freely. Emitted raw into a portable
+    expression they do not merely look wrong, they do not parse --
+    `SUM(cargo.Custom Clearance Time (min))` and `SUM(HV: STORES.LATITUDE)`
+    are both rejected by sqlglot, which is the parser Apache's own validator
+    uses.
+
+    The specification is explicit that identifiers follow ANSI SQL naming and
+    that the Ossie dialect's quote character is the double quote
+    (`core-spec/expression_language.md`), so a name that is not a regular
+    identifier is double-quoted, with any embedded double quote doubled.
+    A name that IS regular is left bare -- the spec notes regular identifiers
+    are case-insensitive while quoted ones are compared verbatim, so quoting
+    unnecessarily would change how a consumer matches it.
+
+    Regular *spelling* is not sufficient on its own: a reserved word is a
+    regular identifier by shape and still cannot stand bare where a column is
+    expected (`SELECT on`). `_SQL_RESERVED` carries that second test, and the
+    comparison is case-insensitive because reserved words are.
+    """
+    if _REGULAR_IDENTIFIER.match(name) and name.upper() not in _SQL_RESERVED:
+        return name
+    return '"' + name.replace('"', '""') + '"'
+
 def expression_entries(
     expr: str,
-    resolve: Callable[[str, str], str | None],
+    resolve: Callable[[str, str], tuple[str, str] | None],
     log: IssueLog,
     *,
     object_ref: str,
@@ -234,7 +308,30 @@ def expression_entries(
                 object_ref=object_ref,
             )
             return entries
-        entries.append({"dialect": PORTABLE_DIALECT, "expression": target})
+        # A FIELD's expression is the bare warehouse column; a METRIC's keeps the
+        # dataset qualifier. The asymmetry is scope, and every sibling converter
+        # shows it: a field belongs to exactly one dataset, so its own `source`
+        # already says which warehouse table the column sits in and a qualifier
+        # adds nothing (databricks emits `l_linenumber` for a field named
+        # `line_number`, nvidia emits `name` for `customer_name`). A metric is
+        # model-scoped and may reference any dataset, so `SUM(amount)` would be
+        # ambiguous the moment two datasets both have an `amount`; nvidia
+        # qualifies for exactly this reason (`SUM(orders.subtotal)`).
+        #
+        # Qualifying a FIELD was not merely redundant, it was unresolvable. The
+        # qualifier is the OSSIE DATASET name -- ThoughtSpot's Table-object name,
+        # which need not be the warehouse table (44 of 164 datasets across 31
+        # real models differ) -- while the column half is the warehouse column.
+        # `Dim_Customer.Customer_Name` is therefore neither runnable SQL (no such
+        # table) nor a resolvable logical reference (no such field). 211 of 612
+        # emitted references were in that state, every one of them on a field.
+        dataset_name, warehouse_column = target
+        column_sql = _sql_identifier(warehouse_column)
+        portable = (
+            column_sql if kind == "field"
+            else f"{_sql_identifier(dataset_name)}.{column_sql}"
+        )
+        entries.append({"dialect": PORTABLE_DIALECT, "expression": portable})
         return entries
 
     # Anything else is a function call or a multi-reference expression. Producing a
@@ -255,7 +352,7 @@ def expression_entries(
 
 def attribute_dataset(
     expr: str,
-    resolve: Callable[[str, str], str | None],
+    resolve: Callable[[str, str], tuple[str, str] | None],
     log: IssueLog,
     *,
     object_ref: str,
@@ -295,7 +392,7 @@ def attribute_dataset(
         if target is None:
             unresolved.append(identifiers.format_column_ref(table, column))
             continue
-        dataset = target.split(".", 1)[0]
+        dataset = target[0]
         if dataset not in datasets:
             datasets.append(dataset)
 
@@ -628,7 +725,7 @@ def convert_field(
     column: dict,
     formulas: dict[str, dict],
     table_lookup: Callable[[str], dict | None],
-    resolve: Callable[[str, str], str | None],
+    resolve: Callable[[str, str], tuple[str, str] | None],
     log: IssueLog,
     allocator: identifiers.Allocator | None = None,
 ) -> dict | None:
@@ -886,7 +983,7 @@ def _contains_aggregate_call(expr: str) -> bool:
 def _compose_aggregate_entries(
     inner_expr: str,
     aggregation_raw: str,
-    resolve: Callable[[str, str], str | None],
+    resolve: Callable[[str, str], tuple[str, str] | None],
     log: IssueLog,
     *,
     object_ref: str,
@@ -960,7 +1057,7 @@ def convert_metric(
     column: dict,
     formulas: dict[str, dict],
     table_lookup: Callable[[str], dict | None],
-    resolve: Callable[[str, str], str | None],
+    resolve: Callable[[str, str], tuple[str, str] | None],
     log: IssueLog,
     allocator: identifiers.Allocator | None = None,
 ) -> dict | None:
@@ -1029,7 +1126,24 @@ def convert_metric(
         return None
     object_ref = f"metric:{display_name}"
 
-    aggregation_raw = properties.get("aggregation", "NONE")
+    # ThoughtSpot's default for a MEASURE column with no `aggregation` key is
+    # SUM, not "no aggregation" (confirmed by ThoughtSpot). Reading absent as
+    # NONE emitted a metric with no aggregate at all, so a column the product
+    # sums came across as a raw per-row value: a different number, silently.
+    #
+    # But the default may only be APPLIED where this converter can see that
+    # nothing already aggregates. It cannot see through a formula
+    # cross-reference: `[formula_total_profit] / [formula_total_sales]` is a
+    # ratio of two aggregates and looks scalar, so composing the default around
+    # it yields `sum ( [formula_a] / [formula_b] )` -- double aggregation, which
+    # is the silent-wrong-number class this converter exists to avoid. Where the
+    # default cannot be applied safely it is left off and an issue says so,
+    # which is a loud loss rather than a quiet wrong answer.
+    #
+    # `explicit_none` below still distinguishes a key that SAYS NONE, which is a
+    # real instruction rather than an absence, and which must round-trip.
+    aggregation_is_default = "aggregation" not in properties
+    aggregation_raw = properties.get("aggregation", "SUM")
     # A non-string aggregation (a list or dict in a hand-edited document) would
     # make the `not in _AGGREGATION` membership test raise on an unhashable
     # value; treat it as unrecognised and fall back to NONE like any other
@@ -1048,8 +1162,21 @@ def convert_metric(
         aggregation_raw = "NONE"
     aggregation = _AGGREGATION[aggregation_raw]
     load_bearing_aggregation: str | None = None
+    #: The key was PRESENT and said NONE, as opposed to being absent. Read from
+    #: `properties` directly because `aggregation_raw` cannot tell the two apart
+    #: -- `.get("aggregation", "NONE")` yields "NONE" for both, which is the
+    #: collapse that lost this value in the first place.
+    explicit_none = properties.get("aggregation") == "NONE"
+    #: ...and worth recording only where the aggregation would otherwise DO
+    #: something: a raw column, or a scalar formula. Where the expression
+    #: already aggregates, the column property is a documented no-op, so NONE
+    #: and absent genuinely mean the same thing and stashing it would put a
+    #: payload on a document that needs none.
+    explicit_none_is_load_bearing = False
 
     if "column_id" in column:
+        # A raw column aggregates by its property alone, so NONE is load-bearing.
+        explicit_none_is_load_bearing = explicit_none
         metric_shape = METRIC_SHAPE_COLUMN_AGGREGATION
         table_name, column_name = identifiers.split_column_ref(f"[{column['column_id']}]")
         metric_name = _field_or_metric_identifier(
@@ -1105,6 +1232,13 @@ def convert_metric(
         metric: dict = {"name": metric_name}
         if aggregation is None:
             # Nothing to compose: the verbatim expr, untouched, is the whole metric.
+            # An EXPLICIT NONE reaches here too, because `_AGGREGATION["NONE"]`
+            # is `None` -- so this is where it has to be recognised, not in the
+            # scalar branch below, which it never reaches. It is load-bearing
+            # exactly when the expression does not already aggregate.
+            explicit_none_is_load_bearing = explicit_none and not (
+                _outer_call_is_aggregate(expr) or _contains_aggregate_call(expr)
+            )
             metric_shape = METRIC_SHAPE_FORMULA
             dialects = expression_entries(
                 expr, resolve, log, object_ref=object_ref, kind="metric"
@@ -1132,7 +1266,13 @@ def convert_metric(
             # Ossie's metric expression has nowhere to put it, so it is
             # preserved verbatim in the stash rather than discarded or folded
             # into the expression, which would change what the formula means.
-            if _is_bare_group_aggregate(expr):
+            if _is_bare_group_aggregate(expr) and not aggregation_is_default:
+                # Only an EXPLICIT value is preserved. A defaulted one is not
+                # information the source document carried, and re-emitting it
+                # would add an `aggregation` key where the author wrote none --
+                # a byte the round trip should not invent. Absent still means
+                # SUM to ThoughtSpot on the way back, so nothing is lost by
+                # leaving it absent, and fidelity is kept.
                 load_bearing_aggregation = aggregation_raw
             metric_shape = METRIC_SHAPE_FORMULA
             dialects = expression_entries(
@@ -1150,8 +1290,36 @@ def convert_metric(
                 severity=Severity.WARNING,
                 message=(
                     f"column {display_name!r}'s expression already contains an "
-                    f"aggregate; the column-level aggregation {aggregation_raw!r} "
-                    f"was ignored to avoid double-aggregating"
+                    f"aggregate; "
+                    + (
+                        f"ThoughtSpot's default aggregation is not applied"
+                        if aggregation_is_default
+                        else f"the column-level aggregation {aggregation_raw!r} was ignored"
+                    )
+                    + " to avoid double-aggregating"
+                ),
+                object_ref=object_ref,
+            )
+            metric_shape = METRIC_SHAPE_FORMULA
+            dialects = expression_entries(
+                expr, resolve, log, object_ref=object_ref, kind="metric"
+            )
+        elif aggregation_is_default and formula.find_formula_refs(expr):
+            # Scalar-looking, but it references other formulas whose own
+            # expressions may aggregate. ThoughtSpot's default would resolve
+            # against the real definitions; this converter cannot, so it
+            # declines rather than guessing a wrapper around them.
+            log.add(
+                code="TS-METRIC-AGGREGATION-DEFAULT-UNRESOLVED",
+                severity=Severity.WARNING,
+                message=(
+                    f"column {display_name!r} has no explicit aggregation, and its "
+                    f"expression references the formula(s) "
+                    f"{', '.join(formula.find_formula_refs(expr))}, whose own "
+                    f"aggregation this converter cannot resolve; ThoughtSpot's "
+                    f"default aggregation is not applied, because composing one "
+                    f"around an expression that already aggregates would "
+                    f"double-aggregate"
                 ),
                 object_ref=object_ref,
             )
@@ -1189,6 +1357,9 @@ def convert_metric(
         stash_payload[METRIC_STASH_SHAPE] = metric_shape
     if load_bearing_aggregation is not None:
         stash_payload[METRIC_STASH_COLUMN_AGGREGATION] = load_bearing_aggregation
+    if explicit_none_is_load_bearing:
+        # Recorded because Ossie cannot: see METRIC_STASH_AGGREGATION_NONE.
+        stash_payload[METRIC_STASH_AGGREGATION_NONE] = True
     metric = _write_stash_safely(metric, stash_payload, log, object_ref)
 
     description = column.get("description")
@@ -1579,7 +1750,8 @@ def _write_stash_safely(obj: dict, payload: dict, log: IssueLog, object_ref: str
 
 
 def _field_owner_dataset(
-    column: dict, formulas: dict[str, dict], resolve: Callable[[str, str], str | None]
+    column: dict, formulas: dict[str, dict],
+    resolve: Callable[[str, str], tuple[str, str] | None],
 ) -> str | None:
     """Which dataset a *successfully built* field belongs in.
 
@@ -2338,18 +2510,25 @@ def convert(document_set: DocumentSet) -> OssieConversion:
     model_columns = model_body.get("columns") or []
     attribute_index = _index_attribute_columns(model_columns, log)
 
-    def resolve(table: str, column: str) -> str | None:
-        # The mapping document is explicit for a bare-identifier field: "the
-        # identifier is the *physical* column; the display name comes from
-        # label/name." So the ANSI_SQL sibling this feeds -- built to be
-        # directly executable against the warehouse -- has to carry the
-        # actual warehouse column reference (db_column_name, or a SQL
-        # View's sql_output_column), never the Ossie field's own
-        # display-derived identifier, which is not a column that exists on
-        # the underlying table at all. `attribute_index` still gates
-        # whether this reference is one the model actually surfaces as a
-        # field -- that scope is unchanged -- only the value returned once
-        # it passes that gate changes.
+    def resolve(table: str, column: str) -> tuple[str, str] | None:
+        """`(dataset name, warehouse column)` for a `[TABLE::Column]` reference.
+
+        Two callers want two different halves, which is why this returns the
+        pair rather than a joined string: `expression_entries` emits the
+        warehouse column as the portable expression, and `attribute_dataset`
+        uses the dataset name to decide which dataset a formula belongs to.
+        Returning `"dataset.column"` meant the second caller re-parsed a string
+        the first one then emitted whole -- and emitting it whole was the
+        defect, because the two halves come from different namespaces.
+
+        The mapping document is explicit for a bare-identifier field: "the
+        identifier is the *physical* column; the display name comes from
+        label/name." So the portable sibling carries the actual warehouse
+        column (db_column_name, or a SQL View's sql_output_column), never the
+        Ossie field's display-derived identifier, which is not a column on the
+        underlying table at all. `attribute_index` still gates whether the
+        reference is one the model surfaces as a field.
+        """
         if table not in dataset_bodies:
             return None
         if (table, column) not in attribute_index:
@@ -2363,7 +2542,7 @@ def convert(document_set: DocumentSet) -> OssieConversion:
         warehouse_reference = physical.get("db_column_name")
         if warehouse_reference is None:
             return None
-        return f"{table}.{warehouse_reference}"
+        return table, warehouse_reference
 
     # -- Phase 3: fields and metrics ------------------------------------------
     # A non-string formula expr (an int, a list, or a YAML-parsed date in a

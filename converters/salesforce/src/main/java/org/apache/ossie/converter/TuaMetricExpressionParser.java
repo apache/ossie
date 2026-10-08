@@ -28,6 +28,8 @@ import java.util.Set;
 
 /** Native Tua frontend for the bounded supported grammar; produces the same AST as SQL. */
 final class TuaMetricExpressionParser {
+    /** Bracketed identifiers are Tua's own notation; ANSI_SQL keeps them as a documented compatibility case. */
+    private static final Set<String> BRACKET_DIALECTS = Set.of("TABLEAU", "ANSI_SQL");
     private final List<Token> tokens;
     private int position;
     private int depth;
@@ -156,7 +158,7 @@ final class TuaMetricExpressionParser {
             if (Character.isWhitespace(c)) { i++; continue; }
             int start = i;
             if (c == '\'' || c == '"' || c == '[') {
-                if (c == '[' && dialect.equals("SNOWFLAKE")) throw lexical(dialect, i, "use double-quoted SQL identifiers");
+                if (c == '[' && !BRACKET_DIALECTS.contains(dialect)) throw lexical(dialect, i, "use double-quoted SQL identifiers");
                 boolean string = c == '\'' || (c == '"' && dialect.equals("TABLEAU"));
                 char end = c == '[' ? ']' : c;
                 StringBuilder value = new StringBuilder();

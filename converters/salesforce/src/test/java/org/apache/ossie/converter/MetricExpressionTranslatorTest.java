@@ -35,6 +35,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class MetricExpressionTranslatorTest {
+    /** The dialects that share the SQL frontend; OSSIE_SQL_2026 is ANSI SQL by specification. */
+    private static final List<String> SQL_DIALECTS = List.of("SNOWFLAKE", "ANSI_SQL", "OSSIE_SQL_2026");
     private static final Map<String, String> TYPES = Map.of(
             "amount", "Decimal", "profit", "Decimal", "revenue", "Decimal", "discount", "Decimal",
             "quantity", "Integer", "status", "String", "active", "Boolean", "ordered", "Date");
@@ -107,9 +109,10 @@ class MetricExpressionTranslatorTest {
 
     @ParameterizedTest
     @MethodSource("supported")
-    void compilesComposedSqlInBothDialects(String expression, String expected) {
-        assertEquals(expected, translate("SNOWFLAKE", expression));
-        assertEquals(expected, translate("ANSI_SQL", expression));
+    void compilesComposedSqlInEverySqlDialect(String expression, String expected) {
+        for (String dialect : SQL_DIALECTS) {
+            assertEquals(expected, translate(dialect, expression), dialect);
+        }
         // Every generated expression can be read through the bounded TABLEAU path.
         assertEquals(expected, translate("TABLEAU", expected));
     }
@@ -217,6 +220,32 @@ class MetricExpressionTranslatorTest {
     }
 
     @Test
+    void portableOssieSqlCompilesWhenItIsTheOnlyDialect() {
+        assertEquals("SUM([orders].[amount])", translate("OSSIE_SQL_2026", "SUM(orders.amount)"));
+    }
+
+    @Test
+    void vendorDialectsArePreferredOverPortableOssieSql() {
+        Map<String, Object> metric = metric("OSSIE_SQL_2026", "SUM(orders.amount)");
+        for (String preferred : List.of("TABLEAU", "SNOWFLAKE", "ANSI_SQL")) {
+            metric.put("expression", Map.of("dialects", List.of(
+                    Map.of("dialect", "OSSIE_SQL_2026", "expression", "SUM(orders.amount)"),
+                    Map.of("dialect", preferred, "expression", preferred.equals("TABLEAU")
+                            ? "SUM([orders].[profit])" : "SUM(orders.profit)"))));
+            assertEquals("SUM([orders].[profit])",
+                    MetricExpressionTranslator.translate(metric, source(), target()).expression(), preferred);
+        }
+    }
+
+    @Test
+    void portableOssieSqlQuotesIdentifiersTheAnsiWay() {
+        assertEquals("SUM([orders].[amount])", translate("OSSIE_SQL_2026", "SUM(\"ORDERS\".\"AMOUNT\")"));
+        assertTrue(assertThrows(ConversionException.class,
+                        () -> translate("OSSIE_SQL_2026", "SUM([orders].[amount])"))
+                .getMessage().contains("use double-quoted SQL identifiers"));
+    }
+
+    @Test
     void selectedDialectFailureNeverFallsBack() {
         Map<String, Object> metric = metric("TABLEAU", "SUM([orders].[missing])");
         metric.put("expression", Map.of("dialects", List.of(
@@ -271,7 +300,7 @@ class MetricExpressionTranslatorTest {
     @Test
     void redundantParenthesesStayWithinTheBoundedFastParsingPath() {
         assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
-            for (String dialect : List.of("SNOWFLAKE", "ANSI_SQL")) {
+            for (String dialect : SQL_DIALECTS) {
                 for (int depth : List.of(20, 60, 126)) {
                     String grouped = "(".repeat(depth) + "orders.amount" + ")".repeat(depth);
                     assertEquals("SUM([orders].[amount])", translate(dialect, "SUM(" + grouped + ")"));
@@ -287,7 +316,7 @@ class MetricExpressionTranslatorTest {
 
     @Test
     void normalizationRetainsOriginalLimitsAndOperandTypes() {
-        for (String dialect : List.of("SNOWFLAKE", "ANSI_SQL")) {
+        for (String dialect : SQL_DIALECTS) {
             for (String expression : List.of("SUM(" + "- ".repeat(129) + "orders.amount)",
                     "SUM(CASE WHEN " + "NOT ".repeat(129) + "orders.active THEN 1 ELSE 0 END)",
                     "SUM(" + "(".repeat(128) + "orders.amount" + ")".repeat(128) + ")",
@@ -305,7 +334,7 @@ class MetricExpressionTranslatorTest {
 
     @Test
     void redundantGroupingCannotTurnTuplesIntoFunctionArguments() {
-        for (String dialect : List.of("SNOWFLAKE", "ANSI_SQL")) {
+        for (String dialect : SQL_DIALECTS) {
             for (String function : List.of("COALESCE", "ROUND")) {
                 for (int depth : List.of(1, 20)) {
                     String tuple = "(".repeat(depth) + "SUM(orders.amount), 2" + ")".repeat(depth);
@@ -366,7 +395,7 @@ class MetricExpressionTranslatorTest {
         Map<String, Object> target = Map.of("semanticDataObjects", List.of(Map.of("apiName", "ORDER.ITEMS",
                 "semanticMeasurements", List.of(Map.of("apiName", "NET REVENUE", "dataType", "Number",
                         "dataObjectFieldName", "net__c")))));
-        for (String dialect : List.of("SNOWFLAKE", "ANSI_SQL")) {
+        for (String dialect : SQL_DIALECTS) {
             assertEquals("SUM([ORDER.ITEMS].[NET REVENUE])", MetricExpressionTranslator.translate(
                     metric(dialect, "SUM(\"ORDER.ITEMS\".\"NET REVENUE\")"), source, target).expression());
             var field = (MetricExpression.Field) SqlMetricExpressionParser.parse("\"a\"\"b.c\".\"d\"\"e\"", dialect);

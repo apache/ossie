@@ -120,6 +120,16 @@ public final class ConverterConstants {
     public static final String DEFAULT_CARDINALITY = "ManyToMany";
     public static final String DEFAULT_JOIN_TYPE = "Auto";
 
+    // Properties the semantic model API requires on every payload it accepts
+    public static final String DATASPACE = "dataspace";
+    public static final String DEFAULT_DATASPACE = "default";
+    public static final String DATA_OBJECT_NAME = "dataObjectName";
+    public static final String DATA_OBJECT_TYPE = "dataObjectType";
+    public static final String DLO_DATA_OBJECT_TYPE = "Dlo";
+    public static final String DMO_DATA_OBJECT_TYPE = "Dmo";
+    // Suffix Data Cloud gives a data model object's name; a data lake object uses "__dll"
+    public static final String DMO_SUFFIX = "__dlm";
+
     // Format names
     public static final String JSON = "json";
     public static final String YAML = "yaml";

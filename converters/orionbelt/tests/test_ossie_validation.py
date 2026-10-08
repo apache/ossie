@@ -20,7 +20,12 @@ import sys
 import pytest
 
 from ossie_orionbelt.cli import _report_validation
-from ossie_orionbelt.validation import _OSSIE_SCHEMA_PATH, validate_ossie
+from ossie_orionbelt.validation import (
+    _OSSIE_SCHEMA_PATH,
+    _find_duplicates,
+    validate_ossie,
+    validate_ossie_ontology,
+)
 
 
 @pytest.fixture(params=["available", "missing_file", "missing_package"])
@@ -130,6 +135,180 @@ def test_semantic_checks_still_run_without_schema(schema_path, error_code):
 
     assert not result.valid
     assert any(f"[{error_code}]" in error for error in result.semantic_errors)
+
+
+@pytest.mark.parametrize(
+    ("names", "expected"),
+    [
+        (["a", "a"], ["a"]),
+        (["a", "a", "a"], ["a"]),
+        (["a", "b", "b", "a"], ["a", "b"]),
+        (["a", "b", "c"], []),
+        ([], []),
+    ],
+    ids=["twice", "three-times", "repeats-in-reverse-order", "all-unique", "empty"],
+)
+def test_find_duplicates_reports_each_name_once_in_first_appearance_order(names, expected):
+    """Mirrors the sibling test in validation/tests/test_validate.py."""
+    assert _find_duplicates(names) == expected
+
+
+@pytest.mark.parametrize(
+    ("names", "expected"),
+    [
+        ([["a"], ["a"], ["b"]], [["a"]]),
+        ([{"k": 1}, {"k": 1}], [{"k": 1}]),
+        ([["a"], "a"], []),
+        ([["a"], "['a']"], []),
+        ([{"a": 1, "b": 2}, {"b": 2, "a": 1}], [{"a": 1, "b": 2}]),
+        ([("a",), ("a",)], [("a",)]),
+    ],
+    ids=[
+        "lists",
+        "dicts",
+        "list-and-string-do-not-collide",
+        "list-and-its-own-repr-do-not-collide",
+        "equal-dicts-in-different-key-order",
+        "tuple-name",
+    ],
+)
+def test_find_duplicates_tolerates_unhashable_names(names, expected):
+    """A malformed document can carry a list or dict where a name belongs."""
+    assert _find_duplicates(names) == expected
+
+
+def test_a_non_string_name_is_reported_not_raised(schema_path):
+    """validate_ossie reports on malformed input; it must not raise.
+
+    The semantic checks run even when the schema layer is unavailable or has
+    already reported errors, so a caller owed diagnostics must not get a
+    TypeError instead.
+    """
+    document = {
+        "version": "0.2.0.dev0",
+        "name": "m",
+        "datasets": [
+            {"name": ["a"], "source": "a.b.c"},
+            {"name": ["a"], "source": "a.b.d"},
+        ],
+    }
+
+    result = validate_ossie(document, schema_path=schema_path)
+
+    assert not result.valid
+    assert any("DUPLICATE_DATASET" in error for error in result.semantic_errors)
+
+
+def test_a_non_string_name_does_not_hide_a_dataset_reference(schema_path):
+    """One malformed name must not disturb reference checks for the valid ones."""
+    document = {
+        "version": "0.2.0.dev0",
+        "name": "m",
+        "datasets": [
+            {"name": "orders", "source": "a.b.orders"},
+            {"name": ["weird"], "source": "a.b.weird"},
+        ],
+        "relationships": [
+            {
+                "name": "r",
+                "from": "orders",
+                "to": "orders",
+                "from_columns": ["id"],
+                "to_columns": ["id"],
+            }
+        ],
+    }
+
+    result = validate_ossie(document, schema_path=schema_path)
+
+    assert not any("UNKNOWN_DATASET_REF" in error for error in result.semantic_errors)
+
+
+def test_a_non_string_concept_name_is_reported_not_raised():
+    ontology = {"ontology": [{"concept": {"name": ["Party"]}} for _ in range(2)]}
+
+    result = validate_ossie_ontology(ontology)
+
+    assert any("DUPLICATE_CONCEPT" in error for error in result.semantic_errors)
+
+
+def _triplicate_document(kind: str) -> dict:
+    """A flat document whose *kind* names collide three times over."""
+    expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": "x"}]}
+    document: dict = {
+        "version": "0.2.0.dev0",
+        "name": "m",
+        "datasets": [{"name": "orders", "source": "a.b.orders"}],
+    }
+    if kind == "dataset":
+        document["datasets"] *= 3
+    elif kind == "field":
+        document["datasets"][0]["fields"] = [
+            {"name": "amount", "expression": expression} for _ in range(3)
+        ]
+    elif kind == "metric":
+        document["metrics"] = [
+            {"name": "revenue", "expression": expression} for _ in range(3)
+        ]
+    elif kind == "relationship":
+        document["datasets"].append({"name": "customers", "source": "a.b.customers"})
+        document["relationships"] = [
+            {
+                "name": "orders_to_customers",
+                "from": "orders",
+                "to": "customers",
+                "from_columns": ["customer_id"],
+                "to_columns": ["id"],
+            }
+            for _ in range(3)
+        ]
+    return document
+
+
+@pytest.mark.parametrize(
+    ("kind", "code"),
+    [
+        ("dataset", "DUPLICATE_DATASET"),
+        ("field", "DUPLICATE_FIELD"),
+        ("metric", "DUPLICATE_METRIC"),
+        ("relationship", "DUPLICATE_RELATIONSHIP"),
+    ],
+)
+def test_a_name_repeated_three_times_is_reported_once(schema_path, kind, code):
+    """Three copies of a name are one problem, matching validation/validate.py."""
+    result = validate_ossie(_triplicate_document(kind), schema_path=schema_path)
+
+    reported = [error for error in result.semantic_errors if f"[{code}]" in error]
+    assert len(reported) == 1
+
+
+def test_a_concept_repeated_three_times_is_reported_once():
+    ontology = {"ontology": [{"concept": {"name": "Party"}} for _ in range(3)]}
+
+    result = validate_ossie_ontology(ontology)
+
+    reported = [e for e in result.semantic_errors if "[DUPLICATE_CONCEPT]" in e]
+    assert len(reported) == 1
+
+
+def test_duplicate_concepts_still_resolve_as_defined_references():
+    """Collecting concept names up front must not change reference integrity."""
+    ontology = {
+        "ontology": [
+            {"concept": {"name": "Party"}},
+            {"concept": {"name": "Party"}},
+            {
+                "concept": {"name": "Order"},
+                "relationships": [
+                    {"name": "placed_by", "roles": [{"concept": "Party"}]}
+                ],
+            },
+        ]
+    }
+
+    result = validate_ossie_ontology(ontology)
+
+    assert not any("UNKNOWN" in error for error in result.semantic_errors)
 
 
 @pytest.mark.parametrize("has_name", [True, False])

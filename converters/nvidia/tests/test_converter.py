@@ -290,6 +290,84 @@ def test_relationship_deletion_removes_preserved_native_records() -> None:
     assert regenerated["semantic_layer"]["semantic_fks"] == []
 
 
+def test_a_semantic_only_relationship_does_not_become_a_physical_constraint() -> None:
+    native = yaml.safe_load(_auto_ontology_yaml())
+    native["data_layer"]["joins"] = []
+    native["data_layer"]["foreign_keys"] = []
+
+    ossie = convert_auto_ontology_to_ossie(yaml.safe_dump(native))
+    assert yaml.safe_load(ossie)["relationships"]
+    restored = yaml.safe_load(convert_ossie_to_auto_ontology(ossie))
+
+    assert restored["data_layer"]["joins"] == []
+    assert restored["data_layer"]["foreign_keys"] == []
+    assert (
+        restored["semantic_layer"]["semantic_fks"]
+        == native["semantic_layer"]["semantic_fks"]
+    )
+
+
+def test_a_physical_only_relationship_gains_no_join_or_semantic_fk() -> None:
+    native = yaml.safe_load(_auto_ontology_yaml())
+    native["data_layer"]["joins"] = []
+    native["semantic_layer"]["semantic_fks"] = []
+
+    restored = yaml.safe_load(
+        convert_ossie_to_auto_ontology(
+            convert_auto_ontology_to_ossie(yaml.safe_dump(native))
+        )
+    )
+
+    assert restored["data_layer"]["joins"] == []
+    assert restored["semantic_layer"]["semantic_fks"] == []
+    assert (
+        restored["data_layer"]["foreign_keys"] == native["data_layer"]["foreign_keys"]
+    )
+
+
+def test_relationship_records_survive_a_native_cycle_unchanged() -> None:
+    native = yaml.safe_load(_auto_ontology_yaml())
+
+    restored = yaml.safe_load(
+        convert_ossie_to_auto_ontology(
+            convert_auto_ontology_to_ossie(_auto_ontology_yaml())
+        )
+    )
+
+    assert restored["data_layer"]["joins"] == native["data_layer"]["joins"]
+    assert (
+        restored["data_layer"]["foreign_keys"] == native["data_layer"]["foreign_keys"]
+    )
+    assert (
+        restored["semantic_layer"]["semantic_fks"]
+        == native["semantic_layer"]["semantic_fks"]
+    )
+
+
+def test_only_column_pairs_added_in_ossie_are_generated() -> None:
+    native = yaml.safe_load(_auto_ontology_yaml())
+    native["data_layer"]["joins"] = []
+    native["data_layer"]["foreign_keys"] = []
+    ossie = yaml.safe_load(convert_auto_ontology_to_ossie(yaml.safe_dump(native)))
+    relationship = ossie["relationships"][0]
+    relationship["from_columns"].append("order_id")
+    relationship["to_columns"].append("customer_id")
+
+    restored = yaml.safe_load(
+        convert_ossie_to_auto_ontology(yaml.safe_dump(ossie, sort_keys=False))
+    )
+
+    assert [join["join_columns"] for join in restored["data_layer"]["joins"]] == [
+        [{"source": "order_id", "target": "customer_id"}]
+    ]
+    assert len(restored["data_layer"]["foreign_keys"]) == 1
+    assert (
+        restored["semantic_layer"]["semantic_fks"][0]
+        == native["semantic_layer"]["semantic_fks"][0]
+    )
+    assert len(restored["semantic_layer"]["semantic_fks"]) == 2
+
+
 def test_relationship_reconciliation_preserves_catalog_only_records() -> None:
     native = yaml.safe_load(_auto_ontology_yaml())
     schema = native["data_layer"]["databases"][0]["schemas"][0]
