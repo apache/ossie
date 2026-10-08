@@ -734,8 +734,7 @@ def test_arity_skips_non_list_columns() -> None:
 
 
 def test_a_multi_statement_expression_fails_validation(run_validator):
-    document = _document([_ORDERS], [])
-    document["datasets"][0]["fields"] = [
+    dataset = {**_ORDERS, "fields": [
         {
             "name": "amount",
             "expression": {
@@ -744,9 +743,9 @@ def test_a_multi_statement_expression_fails_validation(run_validator):
                 ]
             },
         }
-    ]
+    ]}
 
-    exit_code, output = run_validator(document)
+    exit_code, output = run_validator(_document([dataset], []))
 
     assert exit_code == 1
     assert "expected a single expression but found 2 statements" in output
