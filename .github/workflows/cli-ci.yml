@@ -21,10 +21,12 @@ name: CLI CI
 
 on:
   push:
+    branches: [ "main" ]
     paths:
       - 'cli/**'
       - '.github/workflows/cli-ci.yml'
   pull_request:
+    branches: [ "main" ]
     paths:
       - 'cli/**'
       - '.github/workflows/cli-ci.yml'
