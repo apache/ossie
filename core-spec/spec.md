@@ -47,7 +47,7 @@ Standard enumeration values used throughout the specification.
 
 ### Dialects
 
-Supported SQL and expression language dialects for metrics and field definitions.
+Dialects in which metric and field expressions can be declared.
 
 | Dialect | Description |
 |---------|-------------|
@@ -62,6 +62,13 @@ Supported SQL and expression language dialects for metrics and field definitions
 | `THOUGHTSPOT` | ThoughtSpot formula language |
 | `DAX` | Data Analysis Expressions (Power BI / Analysis Services) |
 | `OSSIE_SQL_2026` | Ossie's portable SQL expression language, defined in `expression_language.md` |
+
+`OSSIE_SQL_2026` is the only dialect whose semantics this specification defines. The other values
+identify vendor or third-party expression languages. Ossie treats expressions in those dialects as
+opaque, and implementations MAY ignore them (see
+[Dialect Extensions](expression_language.md#dialect-extensions)). Registering a dialect makes it
+valid for declaring a model; it does not mean Ossie supports querying in that dialect (see
+[Model Declaration vs. Querying](expression_language.md#model-declaration-vs-querying)).
 
 ### Data types
 
