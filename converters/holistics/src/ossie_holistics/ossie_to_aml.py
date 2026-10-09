@@ -931,8 +931,15 @@ class _Reverse:
                 f"relationship {payload.get('name')!r} names dataset {missing!r}, "
                 f"which is not in this document"
             )
+        name = payload.get("name")
         from_columns = payload.get("from_columns") or []
         to_columns = payload.get("to_columns") or []
+        if not from_columns or len(from_columns) != len(to_columns):
+            raise ConversionError(
+                f"relationship {name!r} has {len(from_columns)} from_columns and "
+                f"{len(to_columns)} to_columns. AML joins a column to a column, so the "
+                f"two lists must be the same length and must not be empty"
+            )
 
         if len(from_columns) == 1 and kind in ("many_to_one", "one_to_one"):
             operator = ">" if kind == "many_to_one" else "-"
