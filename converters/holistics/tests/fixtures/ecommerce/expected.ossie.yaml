@@ -651,4 +651,12 @@ metrics:
 custom_extensions:
 - vendor_name: HOLISTICS
   data: '{"_v": 1, "aml_type": "Dataset", "data_source_name": "bigquery_demo", "label":
-    "Ecommerce", "owner": "dev@ossie.apache.org"}'
+    "Ecommerce", "match_relationships": [{"__type__": "RelationshipConfig", "active":
+    true, "direction": "two_way", "nullable": true, "rel": {"__doc__": "", "__fqn__":
+    "orders_in_year", "__type__": "ManyToManyRelationship", "from": {"__doc__": "",
+    "__refFqn__": "ecommerce_orders", "__type__": "FieldRef", "field": "id", "model":
+    "ecommerce_orders"}, "match": {"__doc__": "", "__type__": "Heredoc", "content":
+    "ecommerce_orders.created_date == reporting.calendar.date ", "name": "aql"}, "name":
+    "orders_in_year", "to": {"__doc__": "", "__type__": "FieldRef", "field": "date",
+    "model": "reporting.calendar"}, "type": "many_to_many"}, "rlp_propagation": "inherit"}],
+    "owner": "dev@ossie.apache.org"}'

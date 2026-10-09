@@ -25,7 +25,7 @@ structured issue at conversion time, listed under [Issue codes](#issue-codes).
 | Warehouse SQL portability | Emitted under `--sql-dialect`, never rewritten | A document converted for one warehouse does not run on another |
 | Dashboards, reports and canvases | Out of scope. Ossie models semantics, not presentation | No loss to the semantic model |
 | A query body using Holistics template syntax | Detected and carried unresolved, never resolved. **ERROR severity** | The dataset's `source` is not runnable SQL. A consumer must resolve it through Holistics or drop the dataset |
-| `RangeRelationship` and `ManyToManyRelationship` | Neither has an Ossie form. **ERROR severity**, one issue per relationship | A range or many-to-many join is dropped, so a consumer sees the two datasets as unrelated. Both carry an AQL `match` rather than column pairs, which is why no column mapping exists |
+| `RangeRelationship` and `ManyToManyRelationship` | Neither has an Ossie form. **WARNING severity**, one issue per relationship | Both carry an AQL `match` rather than column pairs, which is why no column mapping exists. The payload is stashed on the document and the reverse path rebuilds it, so a consumer reading Ossie sees the two datasets as unrelated while the round trip keeps the join |
 | A relationship `where` filter | A `RelationshipFilter` restricts the join condition. No Ossie equivalent | The join widens to every matching row, so a consumer counts rows Holistics excludes. **WARNING severity** |
 | A `QueryModel` becoming a query in `source` | `source` is one string, so a consumer reads the text to tell a query from a table reference. **WARNING severity** | Whether a given target reads it as a query depends on that target. See below |
 
@@ -61,9 +61,9 @@ reasoning behind the ones that need it.
 | `HOLISTICS_PARAM_DROPPED` | WARNING | A model declares params, stashed rather than carried |
 | `HOLISTICS_QUERY_SOURCE` | WARNING | A `QueryModel` becomes a query in `source` |
 | `HOLISTICS_RELATIONSHIP_FILTER` | WARNING | A relationship carries a `where` filter |
+| `HOLISTICS_UNSUPPORTED_RELATIONSHIP` | WARNING | A range or many-to-many relationship, stashed on the document |
 | `HOLISTICS_UNKNOWN_DATATYPE` | WARNING | An AML type outside the data type table |
 | `HOLISTICS_UNRESOLVED_QUERY_TEMPLATE` | ERROR | A query body uses Holistics template syntax |
-| `HOLISTICS_UNSUPPORTED_RELATIONSHIP` | ERROR | A range or many-to-many relationship |
 | `HOLISTICS_UNKNOWN_AGGREGATION` | ERROR | An `aggregation_type` outside the aggregation table |
 | `HOLISTICS_UNRESOLVED_REFERENCE` | ERROR | An interpolation naming nothing in the dataset |
 

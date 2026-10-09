@@ -136,6 +136,9 @@ class Relationship:
     rlp_propagation: str | None
     where: Any | None
     aml_type: str
+    #: The payload as the compiler wrote it. A kind with no Ossie form is
+    #: carried in the stash verbatim, so the reverse path can rebuild it.
+    raw: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -284,6 +287,7 @@ def _relationship(payload: dict[str, Any], index: int) -> Relationship:
         rlp_propagation=payload.get("rlp_propagation"),
         where=rel.get("where"),
         aml_type=rel.get("__type__", ""),
+        raw=payload,
     )
 
 

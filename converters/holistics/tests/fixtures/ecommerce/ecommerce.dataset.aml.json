@@ -1448,6 +1448,39 @@
       },
       "active": false,
       "__type__": "RelationshipConfig"
+    },
+    {
+      "direction": "two_way",
+      "rlp_propagation": "inherit",
+      "nullable": true,
+      "rel": {
+        "__fqn__": "orders_in_year",
+        "name": "orders_in_year",
+        "__doc__": "",
+        "type": "many_to_many",
+        "from": {
+          "__doc__": "",
+          "model": "ecommerce_orders",
+          "field": "id",
+          "__refFqn__": "ecommerce_orders",
+          "__type__": "FieldRef"
+        },
+        "to": {
+          "__doc__": "",
+          "model": "reporting.calendar",
+          "field": "date",
+          "__type__": "FieldRef"
+        },
+        "match": {
+          "__doc__": "",
+          "__type__": "Heredoc",
+          "name": "aql",
+          "content": "ecommerce_orders.created_date == reporting.calendar.date "
+        },
+        "__type__": "ManyToManyRelationship"
+      },
+      "active": true,
+      "__type__": "RelationshipConfig"
     }
   ],
   "__doc__": "",

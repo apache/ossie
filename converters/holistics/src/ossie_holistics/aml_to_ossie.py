@@ -83,6 +83,9 @@ class _Converter:
         self.sql_dialect = sql_dialect
         self.issues = IssueLog()
 
+        #: Relationships whose condition is a `match` predicate. Ossie encodes a
+        #: relationship as column pairs, so these travel in the document stash.
+        self.match_relationships: list[dict[str, Any]] = []
         self.models_by_fqn = dataset.model_by_fqn()
         self.dataset_name: dict[str, str] = {}
         claimed_by: dict[str, str] = {}
@@ -473,14 +476,17 @@ class _Converter:
         if relationship.kind not in aml.EQUALITY_KINDS:
             self.issues.add(
                 code=ISSUE_UNSUPPORTED_RELATIONSHIP,
-                severity=Severity.ERROR,
+                severity=Severity.WARNING,
                 message=(
                     f"a {relationship.kind.value} relationship carries an AQL match condition "
-                    f"rather than column pairs, so it has no Ossie form and is dropped"
+                    f"rather than column pairs, so it has no `relationships[]` entry and is "
+                    f"stashed on the document instead. A consumer reading Ossie sees the two "
+                    f"datasets as unrelated"
                 ),
                 object_ref=scope,
                 remedy="model the join as an equality relationship in AML",
             )
+            self.match_relationships.append(relationship.raw)
             return None
 
         from_fqn = self.resolve_model(relationship.pairs[0][0].model)
@@ -579,6 +585,8 @@ class _Converter:
             model["metrics"] = metrics
 
         data: dict[str, Any] = {"aml_type": "Dataset"}
+        if self.match_relationships:
+            data["match_relationships"] = self.match_relationships
         if self.dataset.fqn != self.dataset.name:
             data["fqn"] = self.dataset.fqn
         if self.dataset.label:

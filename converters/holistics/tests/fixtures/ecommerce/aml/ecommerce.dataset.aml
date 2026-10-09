@@ -28,6 +28,15 @@ Relationship delivered_to_users {
   }
 }
 
+// A many-to-many join. Its whole condition is a `match` expression rather than
+// column pairs, so Ossie has no form for it and the converter stashes it.
+ManyToManyRelationship orders_in_year {
+  type: 'many_to_many'
+  from: ref('ecommerce_orders', 'id')
+  to: ref('reporting.calendar', 'date')
+  match: @aql ecommerce_orders.created_date == reporting.calendar.date ;;
+}
+
 Dataset ecommerce {
   label: 'Ecommerce'
   description: 'A marketplace model: orders, line items, products, merchants and cities.'
@@ -81,6 +90,7 @@ Dataset ecommerce {
     // Inactive, and its target sits in a module. Holistics does not join across
     // this edge by default, and the compiled endpoint carries no __refFqn__.
     relationship(ecommerce_orders.created_date > reporting.calendar.date, false),
+    RelationshipConfig { rel: orders_in_year, active: true },
   ]
 
   // A dataset-level dimension names the model it attaches to. The body spans

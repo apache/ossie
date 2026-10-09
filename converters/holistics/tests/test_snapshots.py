@@ -112,6 +112,7 @@ def test_the_forward_direction_reports_the_losses_it_declares():
         aml_to_ossie.ISSUE_QUERY_SOURCE,
         aml_to_ossie.ISSUE_UNRESOLVED_QUERY,
         aml_to_ossie.ISSUE_RELATIONSHIP_FILTER,
+        aml_to_ossie.ISSUE_UNSUPPORTED_RELATIONSHIP,
     }
 
 
@@ -666,21 +667,23 @@ MATCH_RELATIONSHIPS = {
 
 
 @pytest.mark.parametrize("kind,aml_type", MATCH_RELATIONSHIPS.items(), ids=list(MATCH_RELATIONSHIPS))
-def test_a_match_relationship_is_dropped_with_an_error(kind, aml_type):
-    """A range or many-to-many join carries `match`, not column pairs.
+def test_a_match_relationship_is_stashed_and_written_back(kind, aml_type):
+    """A range or many-to-many join states its condition as one AQL predicate.
 
-    Ossie encodes a relationship as `from_columns` and `to_columns`, and an AQL
-    predicate spanning both models has no form there, so the edge is dropped
-    and the two datasets read as unrelated.
+    Ossie encodes a relationship as `from_columns` and `to_columns`, which
+    cannot hold that, so the payload travels in the document stash and the
+    reverse path rebuilds the declaration from it. The ecommerce fixture covers
+    many-to-many end to end; this reaches `range` as well.
     """
     payload = json.loads(snapshots.ECOMMERCE_COMPILED.read_text(encoding="utf-8"))
-    before = len(payload["relationships"])
-    payload["relationships"].append(
+    payload["relationships"] = [
         {
             "__type__": "RelationshipConfig",
             "active": True,
             "rel": {
                 "__type__": aml_type,
+                "__fqn__": "items_near_products",
+                "name": "items_near_products",
                 "type": kind,
                 "from": {"__type__": "FieldRef", "model": "order_items", "field": "id"},
                 "to": {"__type__": "FieldRef", "model": "products", "field": "id"},
@@ -691,15 +694,20 @@ def test_a_match_relationship_is_dropped_with_an_error(kind, aml_type):
                 },
             },
         }
-    )
-    result = aml_to_ossie.convert(payload, sql_dialect=snapshots.SQL_DIALECT)
+    ]
+    forward = aml_to_ossie.convert(payload, sql_dialect=snapshots.SQL_DIALECT)
 
     raised = [
-        i
-        for i in result.issues.issues
-        if i.code == aml_to_ossie.ISSUE_UNSUPPORTED_RELATIONSHIP
+        i for i in forward.issues.issues if i.code == aml_to_ossie.ISSUE_UNSUPPORTED_RELATIONSHIP
     ]
     assert len(raised) == 1
     assert kind in raised[0].message
-    assert raised[0].severity is Severity.ERROR
-    assert len(result.model["relationships"]) == before
+    assert raised[0].severity is Severity.WARNING
+    assert not forward.model.get("relationships")
+
+    reverse = ossie_to_aml.convert(forward.model, snapshots.SQL_DIALECT)
+    text = next(t for name, t in reverse.files if name.endswith(".dataset.aml"))
+    assert f"{aml_type} items_near_products {{" in text
+    assert f"type: '{kind}'" in text
+    assert "match: @aql order_items.id >= products.id;;" in text
+    assert "rel: items_near_products" in text

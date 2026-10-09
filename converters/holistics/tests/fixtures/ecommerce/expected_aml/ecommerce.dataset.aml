@@ -24,6 +24,12 @@ Relationship delivered_orders_to_ecommerce_users {
     to: @aql ecommerce_users.age > 18 ;;
   }
 }
+ManyToManyRelationship orders_in_year {
+  type: 'many_to_many'
+  from: ref('ecommerce_orders', 'id')
+  to: ref('reporting.calendar', 'date')
+  match: @aql ecommerce_orders.created_date == reporting.calendar.date ;;
+}
 
 Dataset ecommerce {
   label: 'Ecommerce'
@@ -74,6 +80,10 @@ Dataset ecommerce {
     },
     relationship(merchants.admin_id - ecommerce_users.id, true),
     relationship(ecommerce_orders.created_date > reporting.calendar.date, false),
+    RelationshipConfig {
+      rel: orders_in_year
+      active: true
+    },
   ]
 
   dimension item_value {

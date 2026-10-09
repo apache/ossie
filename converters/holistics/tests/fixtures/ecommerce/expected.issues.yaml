@@ -113,3 +113,11 @@
     it where Holistics leaves it out by default
   object_ref: ecommerce_orders_to_reporting__calendar
   remedy: drop the relationship, or activate it in AML
+- code: HOLISTICS_UNSUPPORTED_RELATIONSHIP
+  severity: WARNING
+  message: >-
+    a many_to_many relationship carries an AQL match condition rather than column pairs, so it has
+    no `relationships[]` entry and is stashed on the document instead. A consumer reading Ossie sees
+    the two datasets as unrelated
+  object_ref: relationship 8
+  remedy: model the join as an equality relationship in AML

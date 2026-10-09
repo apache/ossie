@@ -1059,6 +1059,53 @@ class _Reverse:
                 f"predicate, so it narrows nothing"
             )
 
+    def match_relationship(self, payload: dict[str, Any]) -> str:
+        """A stashed `match` relationship, as its declaration and config entry.
+
+        A range or many-to-many join states its whole condition as one AQL
+        predicate over both models, which Ossie's column pairs cannot hold, so
+        the forward path carries the compiler's payload verbatim. Rebuilding it
+        needs no interpretation: the predicate, the endpoints and the kind all
+        travel as written.
+        """
+        rel = payload.get("rel")
+        if not isinstance(rel, dict):
+            raise ConversionError(
+                "a stashed match relationship has no `rel` object to rebuild from"
+            )
+        name = rel.get("name") or rel.get("__fqn__")
+        if not name:
+            raise ConversionError(
+                "a stashed match relationship has no name, and AML can only carry a "
+                "`match` predicate on a named relationship"
+            )
+        scope = f"relationship {name}"
+        aml_name = self.name_in_aml(str(name), scope)
+        declaration = Block(f"{rel.get('__type__') or 'Relationship'} {aml_name}")
+        declaration.property("type", quote(rel.get("type") or "many_to_many"))
+        for side in ("from", "to"):
+            endpoint = rel.get(side)
+            if not isinstance(endpoint, dict) or "model" not in endpoint:
+                raise ConversionError(f"{scope}: the stashed `{side}` is not a field reference")
+            declaration.property(side, _field_ref(endpoint["model"], endpoint.get("field", "")))
+        match = rel.get("match")
+        if not isinstance(match, dict) or "content" not in match:
+            raise ConversionError(
+                f"{scope}: the stashed `match` is not a heredoc, so there is no predicate "
+                f"to write and the join has no condition"
+            )
+        declaration.heredoc("match", match.get("name") or "aql", match["content"])
+        self.relationship_declarations.append(
+            amlgen.document(declaration, license_header=False)
+        )
+
+        config = Block("RelationshipConfig")
+        config.property("rel", aml_name)
+        config.property("active", "true" if payload.get("active", True) else "false")
+        for key, value in self._relationship_properties(payload, name):
+            config.property(key, value)
+        return config.render(2).lstrip()
+
     def _relationship_properties(self, data: dict[str, Any], name: Any) -> list[tuple[str, str]]:
         """The stashed `RelationshipConfig` properties worth writing back.
 
@@ -1085,12 +1132,9 @@ class _Reverse:
         block.blank()
         block.property("models", amlgen.array([m.reference for m in self.models]))
         block.blank()
-        block.property(
-            "relationships",
-            amlgen.array(
-                [self.relationship(r) for r in self.document.get("relationships") or []]
-            ),
-        )
+        entries = [self.relationship(r) for r in self.document.get("relationships") or []]
+        entries.extend(self.match_relationship(r) for r in self.root_stash.get("match_relationships") or [])
+        block.property("relationships", amlgen.array(entries))
 
         for model in self.models:
             for field in model.payload.get("fields") or []:
