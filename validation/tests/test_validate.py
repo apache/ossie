@@ -24,7 +24,7 @@ import pytest
 
 # validate.py exits at import time when its dependencies are missing, which
 # would abort the whole pytest session during collection — skip instead.
-pytest.importorskip("yaml")
+yaml = pytest.importorskip("yaml")
 pytest.importorskip("jsonschema")
 
 _VALIDATE_PATH = Path(__file__).parents[1] / "validate.py"
@@ -213,11 +213,63 @@ def test_find_duplicates_reports_each_name_once(items: list[str], expected: list
     assert _VALIDATE.find_duplicates(items) == expected
 
 
-def test_a_name_repeated_three_times_is_one_error() -> None:
-    """Three copies of a name are one problem, not two identical messages."""
-    errors = _VALIDATE.validate_unique_names(_document([_ORDERS, _ORDERS, _ORDERS], []))
+def _expression(expr: str = "x") -> dict:
+    return {"dialects": [{"dialect": "ANSI_SQL", "expression": expr}]}
 
-    assert errors == ["[Unique] Duplicate dataset name 'orders' in model 'm'"]
+
+def _with_duplicate_fields(name: str) -> dict:
+    dataset = {
+        "name": "orders",
+        "source": "db.s.orders",
+        "fields": [
+            {"name": name, "expression": _expression()},
+            {"name": name, "expression": _expression()},
+            {"name": name, "expression": _expression()},
+        ],
+    }
+    return _document([dataset], [])
+
+
+def _with_duplicate_metrics(name: str) -> dict:
+    document = _document([_ORDERS], [])
+    document["metrics"] = [
+        {"name": name, "expression": _expression("SUM(orders.amount)")},
+        {"name": name, "expression": _expression("SUM(orders.amount)")},
+        {"name": name, "expression": _expression("SUM(orders.amount)")},
+    ]
+    return document
+
+
+def _with_duplicate_relationships(name: str) -> dict:
+    rel = dict(_relationship(to_columns=["id"]), name=name)
+    return _document([_ORDERS, _CUSTOMERS], [dict(rel), dict(rel), dict(rel)])
+
+
+@pytest.mark.parametrize(
+    ("build", "expected"),
+    [
+        (
+            lambda: _document([_ORDERS, _ORDERS, _ORDERS], []),
+            "[Unique] Duplicate dataset name 'orders' in model 'm'",
+        ),
+        (
+            lambda: _with_duplicate_fields("amount"),
+            "[Unique] Duplicate field name 'amount' in dataset 'orders'",
+        ),
+        (
+            lambda: _with_duplicate_metrics("revenue"),
+            "[Unique] Duplicate metric name 'revenue' in model 'm'",
+        ),
+        (
+            lambda: _with_duplicate_relationships("orders_to_customers"),
+            "[Unique] Duplicate relationship name 'orders_to_customers' in model 'm'",
+        ),
+    ],
+    ids=["dataset", "field", "metric", "relationship"],
+)
+def test_a_name_repeated_three_times_is_one_error(build, expected: str) -> None:
+    """Three copies of a name are one problem, for every kind of name checked."""
+    assert _VALIDATE.validate_unique_names(build()) == [expected]
 
 
 def test_unique_names_are_checked_in_the_root_model() -> None:
@@ -285,6 +337,26 @@ def test_ossie_sql_2026_maps_to_the_ansi_default_explicitly() -> None:
     assert "OSSIE_SQL_2026" not in _VALIDATE.SKIP_SQL_VALIDATION
 
 
+def test_holistics_aql_is_skipped_rather_than_parsed_as_sql() -> None:
+    # AQL is relationship-aware and is not SQL, so sqlglot cannot parse it.
+    # Skipping it is what lets a Holistics field carry its body at all, the way
+    # MDX, MAQL, THOUGHTSPOT and DAX already do.
+    assert "HOLISTICS_AQL" in _VALIDATE.DIALECT_MAP
+    assert _VALIDATE.DIALECT_MAP["HOLISTICS_AQL"] is None
+    assert "HOLISTICS_AQL" in _VALIDATE.SKIP_SQL_VALIDATION
+
+
+def test_a_holistics_aql_expression_is_not_reported_as_invalid_sql() -> None:
+    # `|` is AQL's pipe operator. Parsed as SQL it is a bitwise OR over two
+    # names, which sqlglot accepts, so the skip is asserted through a body that
+    # SQL cannot read at all.
+    body = "count(orders.id) | where(orders.status == 'delivered')"
+    expression = {"dialects": [{"dialect": "HOLISTICS_AQL", "expression": body}]}
+    dataset = {**_ORDERS, "fields": [{"name": "delivered", "expression": expression}]}
+
+    assert _VALIDATE.validate_sql(_document([dataset], [])) == []
+
+
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 def test_validates_a_valid_ossie_sql_2026_expression() -> None:
     error = _VALIDATE.validate_sql_expression("SUM(amount)", "OSSIE_SQL_2026", "ctx")
@@ -298,6 +370,50 @@ def test_flags_an_invalid_ossie_sql_2026_expression() -> None:
 
     assert error is not None
     assert error.startswith("[SQL] ctx:")
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "amount; DROP TABLE customers",
+        "SUM(amount); SELECT 1",
+        "SELECT amount; DROP TABLE customers",
+    ],
+    ids=["column-then-statement", "aggregate-then-select", "select-then-statement"],
+)
+def test_rejects_an_expression_holding_more_than_one_statement(expression: str) -> None:
+    """A field or metric holds one expression; `parse_one` returns a Block for a list."""
+    error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert error == "[SQL] ctx: expected a single expression but found 2 statements"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "amount",
+        "amount;",
+        "amount;;",
+        "SUM(amount)",
+        "a /* ; */ + b",
+        "'a;b'",
+        "CONCAT(a, ';', b)",
+    ],
+    ids=[
+        "column",
+        "trailing-semicolon",
+        "repeated-trailing-semicolons",
+        "aggregate",
+        "in-comment",
+        "in-literal",
+        "in-argument",
+    ],
+)
+def test_accepts_a_single_expression_containing_a_semicolon(expression: str) -> None:
+    """A semicolon in a literal or comment does not make a statement list."""
+    assert _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx") is None
 
 
 def _relationship(to_columns: list[str], to: str = "customers") -> dict:
@@ -635,3 +751,203 @@ def test_arity_skips_non_list_columns() -> None:
     rel["to_columns"] = "id"
 
     assert validate_relationship_column_arity(_document([_ORDERS, _CUSTOMERS], [rel])) == []
+
+
+def test_a_multi_statement_expression_fails_validation(run_validator):
+    dataset = {**_ORDERS, "fields": [
+        {
+            "name": "amount",
+            "expression": {
+                "dialects": [
+                    {"dialect": "ANSI_SQL", "expression": "amount; DROP TABLE customers"}
+                ]
+            },
+        }
+    ]}
+
+    exit_code, output = run_validator(_document([dataset], []))
+
+    assert exit_code == 1
+    assert "expected a single expression but found 2 statements" in output
+
+
+validate_ontology = _VALIDATE.validate_ontology
+
+_ONTOLOGY_SCHEMA = Path(__file__).parents[2] / "ontology/ontology.json"
+
+
+def _ontology(components: list[dict], **extra) -> dict:
+    return {"version": "0.2.0.dev0", "name": "o", "ontology": components, **extra}
+
+
+def _concept(name: str, **fields) -> dict:
+    return {"concept": name, "type": "EntityType", **fields}
+
+
+def _ontology_relationship(name: str, role: str, **fields) -> dict:
+    return {
+        "name": name,
+        "roles": [{"concept": role}],
+        "verbalizes": [f"{{x}} {name} {{{role}}}"],
+        **fields,
+    }
+
+
+def test_ontology_checks_accept_the_flights_example() -> None:
+    flights = yaml.safe_load((Path(__file__).parents[2] / "examples/flights.yaml").read_text())
+
+    assert validate_ontology(flights) == []
+
+
+@pytest.mark.parametrize("data", [None, [], {}, {"datasets": []}, {"ontology": {"concept": "A"}}])
+def test_ontology_checks_skip_non_ontology_payloads(data: object) -> None:
+    assert validate_ontology(data) == []
+
+
+def test_duplicate_concepts_are_reported_once_per_repeat() -> None:
+    errors = validate_ontology(_ontology([_concept("Order"), _concept("Order"), _concept("Item")]))
+
+    assert errors == ["[Unique] Duplicate concept 'Order' in ontology 'o'"]
+
+
+def test_a_duplicate_concept_does_not_repeat_its_reference_errors() -> None:
+    first = _concept("Order", extends=["Ghost"], relationships=[_ontology_relationship("nr", "Integer")])
+    second = _concept("Order", identify_by=["nr"])
+
+    errors = validate_ontology(_ontology([first, second]))
+
+    assert errors == [
+        "[Unique] Duplicate concept 'Order' in ontology 'o'",
+        "[Reference] Concept 'Order' extends unknown concept 'Ghost'",
+    ]
+
+
+def test_duplicate_relationship_names_are_scoped_to_their_concept() -> None:
+    order = _concept("Order", relationships=[_ontology_relationship("nr", "Integer"), _ontology_relationship("nr", "String")])
+    item = _concept("Item", relationships=[_ontology_relationship("nr", "Integer")])
+
+    errors = validate_ontology(_ontology([order, item]))
+
+    assert errors == ["[Unique] Duplicate relationship 'nr' in concept 'Order'"]
+
+
+@pytest.mark.parametrize(
+    ("component", "expected"),
+    [
+        (
+            _concept("Order", extends=["Ghost"]),
+            "[Reference] Concept 'Order' extends unknown concept 'Ghost'",
+        ),
+        (
+            _concept("Order", identify_by=["nr"]),
+            "[Reference] Concept 'Order' identify_by references unknown relationship 'nr'",
+        ),
+        (
+            _concept("Order", relationships=[_ontology_relationship("placed_by", "Nobody")]),
+            "[Reference] Relationship 'Order.placed_by' has a role played by unknown concept 'Nobody'",
+        ),
+        (
+            _concept("Order", iri="ex:Order"),
+            "[Reference] Concept 'Order' iri uses undeclared prefix 'ex'",
+        ),
+        (
+            _concept("Order", relationships=[_ontology_relationship("nr", "Integer", iri="ex:nr")]),
+            "[Reference] Relationship 'Order.nr' iri uses undeclared prefix 'ex'",
+        ),
+    ],
+)
+def test_dangling_ontology_references_are_reported(component: dict, expected: str) -> None:
+    assert validate_ontology(_ontology([component])) == [expected]
+
+
+def test_built_in_concepts_resolve_without_being_declared() -> None:
+    amount = {"concept": "Amount", "type": "ValueType", "extends": ["Decimal"]}
+    order = _concept(
+        "Order",
+        extends=["Any"],
+        relationships=[_ontology_relationship("total", "Amount"), _ontology_relationship("placed_on", "DateTime")],
+    )
+
+    assert validate_ontology(_ontology([amount, order])) == []
+
+
+def test_identify_by_resolves_relationships_declared_on_a_supertype() -> None:
+    party = _concept("Party", relationships=[_ontology_relationship("nr", "Integer")])
+    person = _concept("Person", extends=["Party"], identify_by=["nr"])
+
+    assert validate_ontology(_ontology([party, person])) == []
+
+
+@pytest.mark.parametrize(
+    ("components", "expected"),
+    [
+        (
+            [_concept("A", extends=["B"]), _concept("B", extends=["A"])],
+            ["[Reference] Concept 'A' extends itself: A -> B -> A"],
+        ),
+        (
+            [_concept("A", extends=["A"])],
+            ["[Reference] Concept 'A' extends itself: A -> A"],
+        ),
+        (
+            [_concept("A", extends=["B"]), _concept("B", extends=["C"]), _concept("C", extends=["Any"])],
+            [],
+        ),
+    ],
+)
+def test_extends_cycles_are_reported_once(components: list[dict], expected: list[str]) -> None:
+    assert validate_ontology(_ontology(components)) == expected
+
+
+@pytest.mark.parametrize(
+    "iri",
+    [
+        "ex:Order",
+        "http://example.com/Order",
+        "urn:isbn:0451450523",
+        "urn:x",
+        "https://example.com/ns#Order",
+        "mailto:orders@example.com",
+        "tel:+15551234567",
+        "MAILTO:orders@example.com",
+    ],
+)
+def test_declared_prefixes_and_full_iris_are_accepted(iri: str) -> None:
+    document = _ontology([_concept("Order", iri=iri)], prefixes={"ex": "http://example.com/"})
+
+    assert validate_ontology(document) == []
+
+
+def test_undeclared_prefix_is_reported_even_when_prefixes_are_declared() -> None:
+    document = _ontology([_concept("Order", iri="foaf:Order")], prefixes={"ex": "http://example.com/"})
+
+    assert validate_ontology(document) == ["[Reference] Concept 'Order' iri uses undeclared prefix 'foaf'"]
+
+
+def test_ontology_checks_tolerate_malformed_shapes() -> None:
+    # Schema validation owns shape errors; the semantic pass must not crash on them.
+    document = _ontology(
+        ["not a component", _concept("Order", extends="Any", identify_by="nr", relationships=[None, {}])],
+        prefixes="foaf",
+    )
+
+    assert validate_ontology(document) == []
+
+
+def test_ontology_cli_reports_dangling_references(run_validator, offline) -> None:
+    document = _ontology([_concept("Order", extends=["Ghost"])])
+
+    exit_code, output = run_validator(document, _ONTOLOGY_SCHEMA)
+
+    assert exit_code == 1
+    assert "[Reference] Concept 'Order' extends unknown concept 'Ghost'" in output
+
+
+def test_ontology_cli_skips_semantic_checks_when_the_schema_fails(run_validator, offline) -> None:
+    document = _ontology([{"concept": "Order", "extends": ["Ghost"]}])  # missing required type
+
+    exit_code, output = run_validator(document, _ONTOLOGY_SCHEMA)
+
+    assert exit_code == 1
+    assert "[Schema]" in output
+    assert "[Reference]" not in output

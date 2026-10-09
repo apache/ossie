@@ -35,6 +35,7 @@ class OssieDialect(str, Enum):
     SIGMA = "SIGMA"
     THOUGHTSPOT = "THOUGHTSPOT"
     DAX = "DAX"
+    HOLISTICS_AQL = "HOLISTICS_AQL"
     OSSIE_SQL_2026 = "OSSIE_SQL_2026"
 
 
@@ -75,6 +76,7 @@ class OssieVendor(str, Enum):
     SEMANTIDO = "SEMANTIDO"
     WISDOM = "WISDOM"
     SIGMA = "SIGMA"
+    HEX = "HEX"
 
 
 class OssieAIContextObject(BaseModel):
@@ -224,10 +226,21 @@ class OssieDocument(OssieSemanticModel):
         return data
 
     def to_ossie_yaml(self, **kwargs: Any) -> str:
-        """Serialize to Ossie-compliant YAML (uses field aliases and excludes None values)."""
-        data = self.model_dump(by_alias=True, exclude_none=True, mode="json", **kwargs)
+        """Serialize to Ossie-compliant YAML (uses field aliases and excludes None values).
+
+        Both defaults can be overridden through kwargs. ``mode`` cannot: YAML output
+        needs the plain scalars only the JSON mode produces.
+        """
+        kwargs.setdefault("by_alias", True)
+        kwargs.setdefault("exclude_none", True)
+        data = self.model_dump(mode="json", **kwargs)
         return yaml.dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
     def to_ossie_json(self, **kwargs: Any) -> str:
-        """Serialize to Ossie-compliant JSON (uses field aliases and excludes None values)."""
-        return self.model_dump_json(by_alias=True, exclude_none=True, **kwargs)
+        """Serialize to Ossie-compliant JSON (uses field aliases and excludes None values).
+
+        Both defaults can be overridden through kwargs.
+        """
+        kwargs.setdefault("by_alias", True)
+        kwargs.setdefault("exclude_none", True)
+        return self.model_dump_json(**kwargs)

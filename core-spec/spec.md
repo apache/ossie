@@ -47,7 +47,7 @@ Standard enumeration values used throughout the specification.
 
 ### Dialects
 
-Supported SQL and expression language dialects for metrics and field definitions.
+Dialects in which metric and field expressions can be declared.
 
 | Dialect | Description |
 |---------|-------------|
@@ -56,12 +56,20 @@ Supported SQL and expression language dialects for metrics and field definitions
 | `MDX` | Multi-Dimensional Expressions |
 | `TABLEAU` | Tableau calculations |
 | `DATABRICKS` | Databricks SQL |
-| `MAQL` | GoodData MAQL (Metric Analysis and Query Language) |
+| `MAQL` | GoodData MAQL (Multi-Dimensional Analytical Query Language) |
 | `BIGQUERY` | Google BigQuery (GoogleSQL) |
 | `SIGMA` | Sigma Computing's spreadsheet-style formula language |
 | `THOUGHTSPOT` | ThoughtSpot formula language |
 | `DAX` | Data Analysis Expressions (Power BI / Analysis Services) |
+| `HOLISTICS_AQL` | Holistics AQL (Analytical Query Language) |
 | `OSSIE_SQL_2026` | Ossie's portable SQL expression language, defined in `expression_language.md` |
+
+`OSSIE_SQL_2026` is the only dialect whose semantics this specification defines. The other values
+identify vendor or third-party expression languages. Ossie treats expressions in those dialects as
+opaque, and implementations MAY ignore them (see
+[Dialect Extensions](expression_language.md#dialect-extensions)). Registering a dialect makes it
+valid for declaring a model; it does not mean Ossie supports querying in that dialect (see
+[Model Declaration vs. Querying](expression_language.md#model-declaration-vs-querying)).
 
 ### Data types
 
@@ -489,6 +497,7 @@ The following are well-known examples:
 | `POWER_BI` | Microsoft Power BI-specific attributes |
 | `SIGMA` | Sigma Computing-specific attributes |
 | `THOUGHTSPOT` | ThoughtSpot-specific attributes |
+| `HEX` | Hex-specific attributes |
 
 ### Examples
 

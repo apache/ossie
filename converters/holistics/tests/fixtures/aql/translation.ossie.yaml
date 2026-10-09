@@ -1,0 +1,137 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# An Ossie document written to exercise `to-aml`'s SQL to AQL translation.
+#
+# Every metric here spans two datasets, which is what forces AML to take an
+# `@aql` body and so forces the translation. Each one covers a different path,
+# named in its description. The ecommerce tables are the ones the Holistics
+# BigQuery demo connection carries, so the generated AML compiles against a real
+# schema rather than an invented one.
+
+version: "0.2.0.dev0"
+name: aql_translation
+description: Metrics that exercise each path through the SQL to AQL translation
+
+datasets:
+  - name: orders
+    source: "`ecommerce`.`orders`"
+    primary_key: [id]
+    fields:
+      - name: id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: id}]}
+        datatype: Decimal
+      - name: user_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: user_id}]}
+        datatype: Decimal
+      - name: status
+        expression: {dialects: [{dialect: ANSI_SQL, expression: status}]}
+        datatype: String
+
+  - name: items
+    source: "`ecommerce`.`order_items`"
+    fields:
+      - name: order_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: order_id}]}
+        datatype: Decimal
+      - name: quantity
+        expression: {dialects: [{dialect: ANSI_SQL, expression: quantity}]}
+        datatype: Decimal
+      # No datatype. A metric sums it, which is the only evidence that it is a
+      # number, and `text` would make AQL refuse the aggregate.
+      - name: product_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: product_id}]}
+
+  - name: users
+    source: "`ecommerce`.`users`"
+    primary_key: [id]
+    fields:
+      - name: id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: id}]}
+        datatype: Decimal
+      - name: full_name
+        expression: {dialects: [{dialect: ANSI_SQL, expression: full_name}]}
+        datatype: String
+
+relationships:
+  - name: items_to_orders
+    from: items
+    to: orders
+    from_columns: [order_id]
+    to_columns: [id]
+  - name: orders_to_users
+    from: orders
+    to: users
+    from_columns: [user_id]
+    to_columns: [id]
+
+metrics:
+  - name: quantity_per_customer
+    description: The plain path. SUM and COUNT DISTINCT both have AQL names
+    datatype: Decimal
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(items.quantity) / COUNT(DISTINCT users.id)
+
+  - name: rounded_ratio
+    description: Functions AQL has. ROUND, SAFE_DIVIDE and ABS are written natively
+    datatype: Decimal
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: ROUND(SAFE_DIVIDE(SUM(items.quantity), ABS(COUNT(users.id))), 2)
+
+  - name: untyped_total
+    description: A field with no datatype, summed, so the metric is what types it
+    datatype: Decimal
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(items.product_id) + COUNT(users.id)
+
+  - name: borrowed_column_total
+    description: A column no dataset declares as a field, so one is added for it
+    datatype: Decimal
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(items.sale_price) + COUNT(users.id)
+
+  - name: passthrough_call
+    description: A function sqlglot does not model, carried by AQL's raw-SQL call
+    datatype: Decimal
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(items.quantity) + MY_WAREHOUSE_UDF(COUNT(users.id), 3)
+
+  - name: windowed_rank
+    description: A window function, which the converter does not translate
+    datatype: Decimal
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: RANK() OVER (PARTITION BY users.id ORDER BY SUM(items.quantity) DESC)
+
+  - name: unmapped_function
+    description: A function sqlglot models but the AQL table omits
+    datatype: Decimal
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(items.quantity) + LOG10(COUNT(users.id))
