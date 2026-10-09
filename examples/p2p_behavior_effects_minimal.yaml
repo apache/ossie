@@ -132,4 +132,3 @@ behavior:
         rule: "If suppliers.status == 'Blocked' then deny procurement transactions."
       message: "Supplier is blocked. Procurement transactions are not allowed."
       remediation: "Run suppliers/unblock or contact an administrator to unblock the supplier."
-
