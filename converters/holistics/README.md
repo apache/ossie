@@ -151,8 +151,6 @@ These run the Holistics CLI:
 - the committed compiled JSON against what `holistics aml compile` produces from the committed AML source
 - a round trip: compile the generated AML, convert that back to Ossie, and compare it with the document
   `to-aml` started from. For `ecommerce` the two are byte-identical.
-- `to-aml` over every other Ossie document in this repository, each one compiled. See
-  `tests/test_cross_vendor.py`, which found two crashes the two fixtures missed.
 
 These need nothing beyond the package:
 

@@ -194,10 +194,9 @@ The generated AML is checkable without a Holistics account:
 holistics aml validate <out-dir>/<name>.dataset.aml -r <out-dir>
 ```
 
-That parses every generated file and type-checks the AQL. `tests/test_snapshots.py` runs it over both
-fixtures and asserts a clean exit, and `tests/test_cross_vendor.py` runs it over every other Ossie document in
-this repository. "The output is valid AML" is measured rather than asserted. CI installs the CLI, so those
-tests run there too.
+That parses every generated file and type-checks the AQL. `tests/test_snapshots.py` runs it over every
+fixture and asserts a clean exit, so "the output is valid AML" is measured rather than asserted. CI installs
+the CLI, so those tests run there too.
 
 Compiling goes further than validating. `test_the_round_trip_returns_the_same_ossie_document` runs
 `holistics aml compile` over the generated AML and converts the result back to Ossie, then compares it with

@@ -124,3 +124,59 @@ def test_relationship_columns_must_pair_up(from_columns, to_columns):
         ossie_to_aml.convert(
             joined(from_columns, to_columns), "ANSI_SQL", data_source_name="probe"
         )
+
+
+def test_a_dataset_sharing_the_model_name_is_moved_aside():
+    """Ossie keeps the two in separate namespaces and AML has one.
+
+    A document naming both the semantic model and a dataset `orders` would
+    emit `Dataset orders` beside `Model orders`, which AML rejects as a
+    duplicate. The dataset is the safe side to move, since nothing references
+    it by name.
+    """
+    payload = document(
+        name="orders",
+        datasets=[{"name": "orders", "source": "db.orders", "fields": [
+            {"name": "id", "expression": EXPRESSION}
+        ]}],
+    )
+    result = ossie_to_aml.convert(payload, "ANSI_SQL", data_source_name="probe")
+
+    raised = [i for i in result.issues.issues if i.code == ossie_to_aml.ISSUE_DATASET_RENAMED]
+    assert len(raised) == 1
+    text = next(t for name, t in result.files if name.endswith(".dataset.aml"))
+    assert "Dataset orders_dataset {" in text
+    assert "Model orders {" in next(t for name, t in result.files if name.endswith("orders.model.aml"))
+
+
+def test_an_aggregation_that_does_not_wrap_the_whole_expression_is_kept_whole():
+    """`SUM(a) + SUM(b)` starts with `SUM(` and ends with `)` and is not a sum.
+
+    Stripping the wrapper would leave `a) + SUM(b` and re-aggregating it would
+    double the aggregate, so the expression is carried whole under `custom`.
+    """
+    payload = document(
+        datasets=[{"name": "orders", "source": "db.orders", "fields": [
+            {"name": "a", "expression": EXPRESSION},
+            {"name": "b", "expression": EXPRESSION},
+        ]}],
+        metrics=[{
+            "name": "total",
+            "expression": {"dialects": [
+                {"dialect": "ANSI_SQL", "expression": "SUM(orders.a) + SUM(orders.b)"}
+            ]},
+            "custom_extensions": [{
+                "vendor_name": "HOLISTICS",
+                "data": '{"_v": 1, "model": "orders", "aml_name": "total", "aggregation_type": "sum"}',
+            }],
+        }],
+    )
+    result = ossie_to_aml.convert(payload, "ANSI_SQL", data_source_name="probe")
+
+    raised = [
+        i for i in result.issues.issues if i.code == ossie_to_aml.ISSUE_AGGREGATION_NOT_STRIPPED
+    ]
+    assert len(raised) == 1
+    text = next(t for name, t in result.files if name.endswith("orders.model.aml"))
+    assert "aggregation_type: 'custom'" in text
+    assert "SUM({{ a }}) + SUM({{ b }})" in text
