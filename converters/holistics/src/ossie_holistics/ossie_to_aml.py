@@ -888,7 +888,7 @@ class _Reverse:
         persistence = data.get("persistence")
         if persistence:
             block.blank()
-            _write_persistence(block, persistence)
+            _write_persistence(block, persistence, scope)
 
         primary_key = set(payload.get("primary_key") or [])
         for field in payload.get("fields") or []:
@@ -1003,18 +1003,54 @@ def _field_ref(model_name: str, column: str) -> str:
     return f"FieldRef {{ model: {quote(model_name)}, field: {quote(column)} }}"
 
 
-def _write_persistence(block: Block, persistence: dict[str, Any]) -> None:
-    """The stashed persistence object as its AML block.
+def _aml_value(value: Any, where: str) -> str:
+    """One stashed value as the AML source text that spells it.
 
-    `__type__` names the block, and every key the compiler added for its own
-    bookkeeping starts and ends with `__`, so those are skipped.
+    A type with no spelling here stops the run, because a body AML cannot parse
+    fails later and further from its cause.
     """
-    kind = persistence.get("__type__") or "FullPersistence"
-    child = block.block(f"persistence: {kind}")
-    for key, value in persistence.items():
-        if key.startswith("__"):
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return quote(value)
+    if isinstance(value, list):
+        return "[" + ", ".join(_aml_value(member, where) for member in value) + "]"
+    raise ConversionError(
+        f"{where}: the stash holds {type(value).__name__}, which this converter cannot "
+        f"write as AML. Drop the key from custom_extensions, or add a spelling for it"
+    )
+
+
+def _write_stashed_object(block: Block, key: str, payload: dict[str, Any], where: str) -> None:
+    """One stashed object as `key: <Type> { ... }`.
+
+    `__type__` names the AML type, and every key the compiler added for its own
+    bookkeeping starts and ends with `__`, so those are skipped. A nested object
+    carries its own `__type__` and becomes a nested block under its own key.
+    """
+    kind = payload.get("__type__")
+    if not kind:
+        raise ConversionError(
+            f"{where}: {key} is an object with no __type__, so there is no AML type "
+            f"name to write it under"
+        )
+    child = block.block(f"{key}: {kind}")
+    for name, value in payload.items():
+        if name.startswith("__"):
             continue
-        child.property(key, quote(value) if isinstance(value, str) else str(value).lower())
+        if isinstance(value, dict):
+            _write_stashed_object(child, name, value, f"{where}.{name}")
+            continue
+        child.property(name, _aml_value(value, f"{where}.{name}"))
+
+
+def _write_persistence(block: Block, persistence: dict[str, Any], where: str) -> None:
+    """The stashed persistence object as its AML block."""
+    payload = dict(persistence)
+    payload.setdefault("__type__", "FullPersistence")
+    _write_stashed_object(block, "persistence", payload, f"{where}.persistence")
 
 
 def _models_referenced(query: str) -> set[str]:

@@ -47,6 +47,7 @@ import pytest
 
 import snapshots
 from ossie_holistics import _yaml, aml_to_ossie, aql, ossie_to_aml
+from ossie_holistics.errors import ConversionError
 from ossie_holistics.issues import Severity
 
 HOLISTICS_CLI = shutil.which("holistics") or str(Path.home() / ".holistics" / "bin" / "holistics")
@@ -536,3 +537,39 @@ def test_the_round_trip_returns_the_same_ossie_document(tmp_path):
     payload = json.loads((compiled / "ecommerce.dataset.aml.json").read_text(encoding="utf-8"))
     again = aml_to_ossie.convert(payload, sql_dialect=snapshots.SQL_DIALECT)
     assert _yaml.dump(again.model) == _yaml.dump(forward_result.model)
+
+
+STASH_VALUES = {
+    "a list": (["a", "b"], "opt: ['a', 'b']"),
+    "a bool": (True, "opt: true"),
+    "a number": (3, "opt: 3"),
+    "a string": ("x", "opt: 'x'"),
+}
+
+
+def _with_persistence(value):
+    document = _two_dataset_document([])
+    document["datasets"][0]["custom_extensions"] = [
+        {
+            "vendor_name": "HOLISTICS",
+            "data": json.dumps(
+                {"_v": 1, "persistence": {"__type__": "FullPersistence", "opt": value}}
+            ),
+        }
+    ]
+    return document
+
+
+@pytest.mark.parametrize("value,expected", STASH_VALUES.values(), ids=list(STASH_VALUES))
+def test_a_stashed_persistence_value_is_written_as_aml(value, expected):
+    """Each type has its own spelling, so none arrives as Python repr text."""
+    result = ossie_to_aml.convert(_with_persistence(value), "ANSI_SQL", data_source_name="probe")
+    orders = next(text for name, text in result.files if name.endswith("orders.model.aml"))
+    assert expected in orders
+
+
+@pytest.mark.parametrize("value", [None, {"no": "type"}], ids=["none", "untyped mapping"])
+def test_a_stashed_value_with_no_aml_spelling_stops_the_run(value):
+    """Writing a body AML cannot parse would fail later and further away."""
+    with pytest.raises(ConversionError):
+        ossie_to_aml.convert(_with_persistence(value), "ANSI_SQL", data_source_name="probe")
