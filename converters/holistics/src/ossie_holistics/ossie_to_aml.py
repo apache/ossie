@@ -808,9 +808,11 @@ class _Reverse:
         if target is None:
             raise aql.Untranslatable(f"{table!r} is not a dataset in this document.")
         name = self.name_in_aml(column, scope)
+        # Compared on the AML spelling, because `name` is already sanitized.
+        # `sanitize` rather than `name_in_aml`, which logs a rename per call.
         declared = {
-            field["name"] for field in target.payload.get("fields") or []
-        } | {self.metric_aml_name[m["name"]] for m in target.measures}
+            sanitize(field["name"]) for field in target.payload.get("fields") or []
+        } | {sanitize(self.metric_aml_name[m["name"]]) for m in target.measures}
         if name not in declared and name not in target.borrowed:
             target.borrowed.append(name)
             self.issues.add(

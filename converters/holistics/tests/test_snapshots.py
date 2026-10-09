@@ -573,3 +573,28 @@ def test_a_stashed_value_with_no_aml_spelling_stops_the_run(value):
     """Writing a body AML cannot parse would fail later and further away."""
     with pytest.raises(ConversionError):
         ossie_to_aml.convert(_with_persistence(value), "ANSI_SQL", data_source_name="probe")
+
+
+def test_a_field_name_aml_cannot_spell_is_still_declared():
+    """`declared` holds the AML spelling, which is what a reference carries.
+
+    An Ossie field named `my field` is written `my_field`. Matched on the Ossie
+    name it reads as undeclared, and the metric borrows a hidden dimension of a
+    name the model already has, which Holistics rejects as a duplicate.
+    """
+    document = _two_dataset_document(
+        [_metric("spanning", 'SUM(orders."my field") + COUNT(users.id)')]
+    )
+    document["datasets"][0]["fields"].append(
+        {
+            "name": "my field",
+            "datatype": "Decimal",
+            "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "my field"}]},
+        }
+    )
+    result = ossie_to_aml.convert(document, "ANSI_SQL", data_source_name="probe")
+
+    borrowed = [i for i in result.issues.issues if i.code == ossie_to_aml.ISSUE_BORROWED_COLUMN]
+    assert borrowed == []
+    orders = next(text for name, text in result.files if name.endswith("orders.model.aml"))
+    assert orders.count("dimension my_field {") == 1
