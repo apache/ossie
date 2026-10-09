@@ -67,10 +67,16 @@ _PRESERVED = (
 
 _AI_CONTEXT_ANNOTATION = "OssieAIContext"
 
-# `Schema="dbo", Item="Sales"` navigation in a Power Query (M) partition.
+# `Schema="dbo", Item="Sales"` navigation in a SQL Server Power Query (M) partition.
 _M_ITEM_RE = re.compile(r'Item\s*=\s*"([^"]+)"')
 _M_SCHEMA_RE = re.compile(r'Schema\s*=\s*"([^"]+)"')
 _M_DATABASE_RE = re.compile(r'Sql\.Databases?\s*\(\s*"[^"]*"\s*,\s*"([^"]+)"')
+# `{[Name="base",Kind="View"]}` steps in a Google BigQuery navigator. `Kind` may
+# precede `Name`. A step with no Kind is the project.
+_M_BQ_STEP_RE = re.compile(r"\{\[([^\]]*)\]\}")
+_M_BQ_NAME_RE = re.compile(r'Name\s*=\s*"([^"]+)"')
+_M_BQ_KIND_RE = re.compile(r'Kind\s*=\s*"([^"]+)"')
+_BQ_TABLE_KINDS = frozenset({"View", "Table"})
 
 # TMSL properties consumed by the Apache Ossie mapping at each level. Everything else is
 # preserved verbatim in the stash. This is deliberately a deny-list rather than an
@@ -303,7 +309,7 @@ def _table_source(table):
     return table["name"]
 
 
-def _qualified_name_from_m(expression):
+def _qualified_name_from_sql_server_m(expression):
     item = _M_ITEM_RE.search(expression)
     if not item:
         return None
@@ -315,6 +321,55 @@ def _qualified_name_from_m(expression):
         if database:
             parts.insert(0, database.group(1))
     return ".".join(parts)
+
+
+def _qualified_name_from_bigquery_m(expression):
+    """Read project.dataset.table from a Google BigQuery navigator.
+
+    A missing outer part is left off, matching the SQL Server path: dataset and
+    view become ``dataset.view``, and a project is included only when both of
+    those are present. Without a view or table there is no physical relation.
+    """
+    if "GoogleBigQuery.Database" not in expression:
+        return None
+    project = dataset = table = None
+    for step in _M_BQ_STEP_RE.finditer(expression):
+        name_match = _M_BQ_NAME_RE.search(step.group(1))
+        if name_match is None:
+            continue
+        name = name_match.group(1)
+        kind_match = _M_BQ_KIND_RE.search(step.group(1))
+        kind = kind_match.group(1) if kind_match else None
+        if kind == "Schema":
+            dataset = name
+        elif kind in _BQ_TABLE_KINDS:
+            table = name
+        elif kind is None and project is None:
+            project = name
+    if table is None:
+        return None
+    parts = [table]
+    if dataset:
+        parts.insert(0, dataset)
+        if project:
+            parts.insert(0, project)
+    return ".".join(parts)
+
+
+# Each parser returns a qualified name, or None when the M expression is not
+# that warehouse. Another warehouse is another function in this tuple.
+_M_SOURCE_PARSERS = (
+    _qualified_name_from_sql_server_m,
+    _qualified_name_from_bigquery_m,
+)
+
+
+def _qualified_name_from_m(expression):
+    for parser in _M_SOURCE_PARSERS:
+        qualified = parser(expression)
+        if qualified:
+            return qualified
+    return None
 
 
 # ---------------------------------------------------------------------------

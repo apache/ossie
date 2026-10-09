@@ -236,6 +236,75 @@ def test_partition_sources(model, dataset_name, expected_source):
     assert _dataset(model, dataset_name)["source"] == expected_source
 
 
+def _m_table(expression):
+    return {
+        "name": "m",
+        "model": {
+            "tables": [
+                {
+                    "name": "Imported",
+                    "columns": [
+                        {"name": "id", "dataType": "int64", "sourceColumn": "id"},
+                    ],
+                    "partitions": [
+                        {
+                            "name": "Imported",
+                            "mode": "import",
+                            "source": {"type": "m", "expression": expression},
+                        }
+                    ],
+                }
+            ]
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "expression,expected_source",
+    [
+        (
+            [
+                "let",
+                "    Source = GoogleBigQuery.Database(),",
+                '    #"analytics-prod" = Source{[Name="analytics-prod"]}[Data],',
+                '    Schema = #"analytics-prod"'
+                '{[Name="sales",Kind="Schema"]}[Data],',
+                '    View = Schema{[Name="orders",Kind="View"]}[Data]',
+                "in",
+                "    View",
+            ],
+            "analytics-prod.sales.orders",
+        ),
+        (
+            "let\n"
+            "    Source = GoogleBigQuery.Database(),"
+            '    Project = Source{[Name="analytics-prod"]}[Data],'
+            '    Schema = Project{[Kind="Schema",Name="warehouse"]}[Data],'
+            '    View = Schema{[Kind="Table",Name="customers"]}[Data]\n'
+            "in\n"
+            "    View",
+            "analytics-prod.warehouse.customers",
+        ),
+        (
+            'let Source = GoogleBigQuery.Database(), '
+            'Schema = Source{[Name="sales",Kind="Schema"]}[Data], '
+            'View = Schema{[Name="orders",Kind="View"]}[Data] in View',
+            "sales.orders",
+        ),
+    ],
+)
+def test_bigquery_navigator_source_uses_the_visible_parts(expression, expected_source):
+    document = build_ossie_document(_m_table(expression))
+    assert document["datasets"][0]["source"] == expected_source
+
+
+def test_an_unrecognized_m_navigator_falls_back_to_the_table_name():
+    document = build_ossie_document(
+        _m_table('let Source = Something{[Name="not-a-warehouse-table"]}[Data] in Source')
+    )
+    assert document["datasets"][0]["source"] == "Imported"
+
+
 # --- fields ----------------------------------------------------------------
 
 

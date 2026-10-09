@@ -30,7 +30,5 @@ Layout
 | Path | Language | Role |
 |------|----------|------|
 | [`java/`](java/) | Java | The maintained implementation; also ships a command-line tool (`OssieDatabricksConverter`). |
-| [`python/`](python/) | Python | The original reference implementation. To be deprecated. |
 
-See [`java/README.md`](java/README.md) and [`python/README.md`](python/README.md) for building and
-using each implementation.
+See [`java/README.md`](java/README.md) for building and using it.

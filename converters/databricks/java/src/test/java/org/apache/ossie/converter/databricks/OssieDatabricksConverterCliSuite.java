@@ -82,7 +82,7 @@ public class OssieDatabricksConverterCliSuite {
   @Test
   public void exportConvertsAnOssieModelToAMetricView() throws IOException {
     // The directions are named from the Apache Ossie model's point of view, matching the library
-    // Javadoc and the Python CLI: `export` takes a model OUT to a Metric View.
+    // Javadoc: `export` takes a model OUT to a Metric View.
     String out = stdout("export", write("model.yaml", OSSIE_MODEL).toString());
     assertTrue(out.contains("version: \"1.1\""), "expected a Metric View, got:\n" + out);
     assertTrue(out.contains("cat.sch.orders"), "expected the source, got:\n" + out);
