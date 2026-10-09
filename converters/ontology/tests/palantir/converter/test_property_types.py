@@ -46,13 +46,13 @@ def _role_player_types(model: OssieOntology) -> dict[str, str]:
     return {r.full_name: r.signature[-1].name for r in model.ontology.relationships}
 
 def _field_types(model: OssieOntology) -> dict[str, str]:
-    """The concept each dataset field is typed by."""
+    """The datatype each dataset field declares."""
     return {
-        field.name: field.type.name
+        field.name: field.datatype.value
         for om in model.ontology_mappings
         for dataset in om.semantic_model.datasets
         for field in dataset.fields
-        if field.type is not None
+        if field.datatype is not None
     }
 
 def test_property_types_without_a_scalar_equivalent_are_not_numeric(tmp_path: Path):
@@ -106,15 +106,17 @@ def test_property_types_without_a_scalar_equivalent_are_not_numeric(tmp_path: Pa
     }
     role_types = _role_player_types(model)
     assert {name: role_types[f"Doc.{name}"] for name in expected} == expected
+    # The column is the same type, but `datatype` has no `Any`: a known type
+    # outside the portable vocabulary is `Opaque`.
     field_types = _field_types(model)
-    assert {name: field_types[name] for name in expected} == expected
+    assert {name: field_types[name] for name in expected} == expected | {"whatever": "Opaque"}
 
 def test_unrecognized_column_type_falls_back_to_string(tmp_path: Path):
     """A warehouse type the enum has no name for must not fail the conversion.
 
-    Column types drift with the export format, the field type is not serialized
-    downstream at all, and a column with no type already falls back to String —
-    so an unknown one is reported and carried, not raised. A bare ARRAY column
+    Column types drift with the export format, and a column with no type
+    already falls back to String — so an unknown one is reported and carried,
+    not raised. A bare ARRAY column
     is still dropped, as before.
     """
     object_types = [

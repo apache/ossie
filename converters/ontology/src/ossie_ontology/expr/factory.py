@@ -132,7 +132,7 @@ class MappingFormulaParserFactory(MappingFormulaFactory):
         expr = parser.parse_formula(raw_expr)
         collector = FormulaCollector({})
         expr.accept(collector)
-        MappingFormulaValidator.validate(collector.expression_info(), raw_expr)
+        MappingFormulaValidator.validate(collector.expression_info(), raw_expr, expr)
         return Formula([expr], collector.expression_info(), OrderedDict(), raw_expr, parent)
 
 

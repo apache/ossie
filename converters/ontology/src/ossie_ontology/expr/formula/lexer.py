@@ -100,14 +100,16 @@ class FormulaLexer:
         t.type = 'NOTEQUALS'
         return t
 
-    def t_INTEGER(self, t):
-        r'\d+(?!\.\d)'
-        t.value = int(t.value)
-        return t
-
+    # PLY tries function rules in definition order, so FLOAT must come before
+    # INTEGER; otherwise '31.4' would lex as INTEGER(31) DOT INTEGER(4).
     def t_FLOAT(self, t):
         r'\d+\.\d+'
         t.value = float(t.value)
+        return t
+
+    def t_INTEGER(self, t):
+        r'\d+'
+        t.value = int(t.value)
         return t
 
     def t_STRING_LITERAL(self, t):

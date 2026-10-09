@@ -128,7 +128,8 @@ class OntologyReasoner(OntologyObserver):
             return False
         return any(self.is_constructing_role(r) for r in relationship.roles)
 
-    def in_subtype_closure(self, sub: Concept, sup: Concept) -> bool:
+    @staticmethod
+    def in_subtype_closure(sub: Concept, sup: Concept) -> bool:
         """Is `sub` a strict subtype of `sup`, transitively?
 
         Walked on demand rather than indexed as concepts arrive: an index built

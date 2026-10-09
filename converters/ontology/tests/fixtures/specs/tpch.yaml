@@ -588,41 +588,49 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: C_CUSTKEY
+        datatype: Integer
       - name: C_NAME
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: C_NAME
+        datatype: String
       - name: C_ADDRESS
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: C_ADDRESS
+        datatype: String
       - name: C_NATIONKEY
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: C_NATIONKEY
+        datatype: Integer
       - name: C_PHONE
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: C_PHONE
+        datatype: String
       - name: C_ACCTBAL
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: C_ACCTBAL
+        datatype: Decimal
       - name: C_MKTSEGMENT
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: C_MKTSEGMENT
+        datatype: String
       - name: C_COMMENT
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: C_COMMENT
+        datatype: String
     - name: KSE_TPCH_SF1_ORDERS
       source: KSE.TPCH_SF1.ORDERS
       fields:
@@ -631,46 +639,55 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: O_ORDERKEY
+        datatype: Integer
       - name: O_CUSTKEY
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: O_CUSTKEY
+        datatype: Integer
       - name: O_ORDERSTATUS
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: O_ORDERSTATUS
+        datatype: String
       - name: O_TOTALPRICE
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: O_TOTALPRICE
+        datatype: Decimal
       - name: O_ORDERDATE
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: O_ORDERDATE
+        datatype: Date
       - name: O_ORDERPRIORITY
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: O_ORDERPRIORITY
+        datatype: String
       - name: O_CLERK
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: O_CLERK
+        datatype: String
       - name: O_SHIPPRIORITY
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: O_SHIPPRIORITY
+        datatype: Decimal
       - name: O_COMMENT
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: O_COMMENT
+        datatype: String
     - name: KSE_TPCH_SF1_LINEITEM
       source: KSE.TPCH_SF1.LINEITEM
       fields:
@@ -679,81 +696,97 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: L_ORDERKEY
+        datatype: Integer
       - name: L_PARTKEY
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: L_PARTKEY
+        datatype: Integer
       - name: L_SUPPKEY
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: L_SUPPKEY
+        datatype: Integer
       - name: L_LINENUMBER
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: L_LINENUMBER
+        datatype: Integer
       - name: L_QUANTITY
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: L_QUANTITY
+        datatype: Decimal
       - name: L_EXTENDEDPRICE
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: L_EXTENDEDPRICE
+        datatype: Decimal
       - name: L_DISCOUNT
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: L_DISCOUNT
+        datatype: Decimal
       - name: L_TAX
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: L_TAX
+        datatype: Decimal
       - name: L_RETURNFLAG
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: L_RETURNFLAG
+        datatype: String
       - name: L_LINESTATUS
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: L_LINESTATUS
+        datatype: String
       - name: L_SHIPDATE
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: L_SHIPDATE
+        datatype: Date
       - name: L_COMMITDATE
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: L_COMMITDATE
+        datatype: Date
       - name: L_RECEIPTDATE
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: L_RECEIPTDATE
+        datatype: Date
       - name: L_SHIPINSTRUCT
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: L_SHIPINSTRUCT
+        datatype: String
       - name: L_SHIPMODE
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: L_SHIPMODE
+        datatype: String
       - name: L_COMMENT
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: L_COMMENT
+        datatype: String
     - name: KSE_TPCH_SF1_PARTSUPP
       source: KSE.TPCH_SF1.PARTSUPP
       fields:
@@ -762,26 +795,31 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: PS_PARTKEY
+        datatype: Integer
       - name: PS_SUPPKEY
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: PS_SUPPKEY
+        datatype: Integer
       - name: PS_AVAILQTY
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: PS_AVAILQTY
+        datatype: Decimal
       - name: PS_SUPPLYCOST
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: PS_SUPPLYCOST
+        datatype: Decimal
       - name: PS_COMMENT
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: PS_COMMENT
+        datatype: String
     - name: KSE_TPCH_SF1_PART
       source: KSE.TPCH_SF1.PART
       fields:
@@ -790,46 +828,55 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: P_PARTKEY
+        datatype: Integer
       - name: P_NAME
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: P_NAME
+        datatype: String
       - name: P_MFGR
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: P_MFGR
+        datatype: String
       - name: P_BRAND
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: P_BRAND
+        datatype: String
       - name: P_TYPE
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: P_TYPE
+        datatype: String
       - name: P_SIZE
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: P_SIZE
+        datatype: Integer
       - name: P_CONTAINER
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: P_CONTAINER
+        datatype: String
       - name: P_RETAILPRICE
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: P_RETAILPRICE
+        datatype: Decimal
       - name: P_COMMENT
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: P_COMMENT
+        datatype: String
     - name: KSE_TPCH_SF1_SUPPLIER
       source: KSE.TPCH_SF1.SUPPLIER
       fields:
@@ -838,36 +885,43 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: S_SUPPKEY
+        datatype: Integer
       - name: S_NAME
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: S_NAME
+        datatype: String
       - name: S_ADDRESS
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: S_ADDRESS
+        datatype: String
       - name: S_NATIONKEY
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: S_NATIONKEY
+        datatype: Integer
       - name: S_PHONE
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: S_PHONE
+        datatype: String
       - name: S_ACCTBAL
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: S_ACCTBAL
+        datatype: Decimal
       - name: S_COMMENT
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: S_COMMENT
+        datatype: String
     - name: KSE_TPCH_SF1_NATION
       source: KSE.TPCH_SF1.NATION
       fields:
@@ -876,21 +930,25 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: N_NATIONKEY
+        datatype: Integer
       - name: N_NAME
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: N_NAME
+        datatype: String
       - name: N_REGIONKEY
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: N_REGIONKEY
+        datatype: Integer
       - name: N_COMMENT
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: N_COMMENT
+        datatype: String
     - name: KSE_TPCH_SF1_REGION
       source: KSE.TPCH_SF1.REGION
       fields:
@@ -899,16 +957,19 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: R_REGIONKEY
+        datatype: Integer
       - name: R_NAME
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: R_NAME
+        datatype: String
       - name: R_COMMENT
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: R_COMMENT
+        datatype: String
   concept_mappings:
   - concept: Region
     object_mappings:

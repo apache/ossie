@@ -19,12 +19,14 @@
 #
 # `SALES.storeNr` is read twice: once as a bare `expression` on the soldAt link
 # node, and once through a `referent_mappings` entry keying Store by `nr`. Both
-# say the column holds a store number, so both must pin the field to `StoreNr`.
+# say the column holds a store number.
 #
-# They did not agree. The referent path took the type from the relationship's
-# last role, the object-mapping path took it from `concept:` -- the entity --
-# and the two spellings of one fact collided with "Field 'storeNr' is already
-# mapped as concept 'StoreNr' but this mapping expects 'Store'".
+# Mappings used to type the field they read, and these two did not agree: the
+# referent path took the type from the relationship's last role, the
+# object-mapping path from `concept:` -- the entity -- and the two spellings of
+# one fact collided with "Field 'storeNr' is already mapped as concept
+# 'StoreNr' but this mapping expects 'Store'". A field's type now comes only
+# from its own `datatype`, which this spec leaves out.
 #
 # Otherwise identical to ref_scheme.yaml, which this was derived from:
 #

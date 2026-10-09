@@ -621,21 +621,25 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: airport_code
+        datatype: String
       - name: length
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: length
+        datatype: Decimal
       - name: shape
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: shape
+        datatype: String
       - name: designator
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: designator
+        datatype: String
     - name: AIRCRAFT
       source: DATABASE.SCHEMA.AIRCRAFT
       description: An airplane, helicopter, or other machine capable of flight
@@ -645,46 +649,55 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: serial_nr
+        datatype: String
       - name: name
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: name
+        datatype: String
       - name: nr_seats
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: nr_seats
+        datatype: Integer
       - name: tail_nr
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: tail_nr
+        datatype: String
       - name: carrier_code
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: carrier_code
+        datatype: String
       - name: manufacturer
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: manufacturer
+        datatype: String
       - name: model
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: model
+        datatype: String
       - name: year
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: year
+        datatype: String
       - name: capacity
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: capacity
+        datatype: Integer
     - name: AIRPORT
       source: DATABASE.SCHEMA.AIRPORTS
       description: An airport that is identified by an IATA code.
@@ -694,16 +707,19 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: state_code
+        datatype: String
       - name: market_nm
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: market_nm
+        datatype: String
       - name: longitude
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: longitude
+        datatype: Decimal
       - name: opened
         expression:
           dialects:
@@ -714,26 +730,31 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: state_nm
+        datatype: String
       - name: city_nm
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: city_nm
+        datatype: String
       - name: name
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: name
+        datatype: String
       - name: code
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: code
+        datatype: String
       - name: latitude
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: latitude
+        datatype: Decimal
     - name: FLIGHT
       source: DATABASE.SCHEMA.FLIGHTS
       description: A commercial passenger flight.
@@ -743,6 +764,7 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: dep_delay
+        datatype: Decimal
       - name: air_time
         expression:
           dialects:
@@ -753,11 +775,13 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: nr
+        datatype: String
       - name: carrier_code
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: carrier_code
+        datatype: String
       - name: duration
         expression:
           dialects:
@@ -768,11 +792,13 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: scheduled_departure
+        datatype: DateTime
       - name: arr_delay
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: arr_delay
+        datatype: Decimal
       - name: cancelled
         expression:
           dialects:
@@ -783,21 +809,25 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: cancel_code
+        datatype: String
       - name: distance
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: distance
+        datatype: Decimal
       - name: id
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: id
+        datatype: String
       - name: scheduled_arrival
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: scheduled_arrival
+        datatype: DateTime
       - name: wheels_on
         expression:
           dialects:
@@ -808,6 +838,7 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: date
+        datatype: Date
       - name: wheels_off
         expression:
           dialects:
@@ -823,16 +854,19 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: tail_nr
+        datatype: String
       - name: departure
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: departure
+        datatype: DateTime
       - name: route_id
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: route_id
+        datatype: String
       - name: diverted
         expression:
           dialects:
@@ -843,6 +877,7 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: arrival
+        datatype: DateTime
     - name: CARRIER
       source: DATABASE.SCHEMA.CARRIERS
       description: An airline, such as Delta, United, or American.
@@ -852,11 +887,13 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: code
+        datatype: String
       - name: name
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: name
+        datatype: String
     - name: ROUTE
       source: DATABASE.SCHEMA.ROUTES
       description: Represents the existence of one or more flights between a pair of departure arrival airports.
@@ -866,31 +903,37 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: orig_airport_code
+        datatype: String
       - name: dest_airport_code
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: dest_airport_code
+        datatype: String
       - name: distance
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: distance
+        datatype: Decimal
       - name: dist_grp
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: dist_grp
+        datatype: Integer
       - name: id
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: id
+        datatype: String
       - name: name
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: name
+        datatype: String
   concept_mappings:
   - concept: Runway
     object_mappings:

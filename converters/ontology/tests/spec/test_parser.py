@@ -34,6 +34,8 @@ from ossie_ontology.converter.ossie_to_spec.converter import (
 from ossie_ontology.model import (
     Concept,
     ConceptType,
+    DataType,
+    Formula,
     OntologyComponent,
     OssieOntology,
     Relationship,
@@ -358,45 +360,101 @@ def test_relationships_are_grouped_under_their_own_container():
     }
 
 
-# ----- dataset field types behind bare-expression mappings ---------------
+# ----- dataset field datatypes and the mappings that read them -----------
 
-def test_bare_expression_on_an_entity_pins_the_identifier_type(behaviours_dir: Path):
-    """A key column holds what identifies the entity, not the entity.
+def _keyed_entity(name: str, key_type: str, *extra: dict) -> dict:
+    return {
+        "concept": name,
+        "type": "EntityType",
+        "identify_by": ["nr"],
+        "relationships": [
+            {
+                "name": "nr",
+                "roles": [{"concept": key_type, "name": "n"}],
+                "verbalizes": [f"{{{name}}} has {{{key_type}:n}}"],
+                "multiplicity": "OneToOne",
+            },
+            *extra,
+        ],
+    }
 
-    `_convert_referent_mapping` has always read the type off
-    `rel.last_role.player`. The object-mapping path used `om_spec.concept`
-    instead, which for an entity names the entity itself — so a column of store
-    numbers was typed `Store`, or, with no `concept:` to go on, left untyped and
-    declared `String`. Both reach the generated PyRel through `_pyrel_schema`,
-    where the typer rejects them against a `StoreNr`-typed identifier.
 
-    `ref_scheme.yaml` maps Store both ways round: `STORES.storeNr` bare with no
-    concept, `SALES.storeNr` bare with `concept: Store`. Both must land on
-    `StoreNr`, the player of the relationship the reference scheme names.
-    """
+_KEY_TYPES = [
+    {"concept": "StoreNr", "type": "ValueType", "extends": ["Integer"]},
+    {"concept": "WarehouseNr", "type": "ValueType", "extends": ["Integer"]},
+]
+
+
+def _write_mapped_spec(
+    tmp_path: Path,
+    concepts: list[dict],
+    concept_mappings: list[dict],
+    datatype: str | None = None,
+    metrics: list[dict] | None = None,
+    untyped_columns: tuple[str, ...] = (),
+) -> Path:
+    """A spec whose one dataset `T` has a column `id` declared *datatype*, plus
+    *untyped_columns* that declare none."""
+    fields: list[dict] = []
+    for name, field_datatype in [("id", datatype), *((name, None) for name in untyped_columns)]:
+        field: dict = {"name": name, "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": name}]}}
+        if field_datatype is not None:
+            field["datatype"] = field_datatype
+        fields.append(field)
+    semantic_model: dict = {
+        "version": "0.2.0.dev0",
+        "name": "sm",
+        "datasets": [{"name": "T", "source": "DB.S.T", "fields": fields}],
+    }
+    if metrics is not None:
+        semantic_model["metrics"] = metrics
+    path = tmp_path / "spec.yaml"
+    path.write_text(yaml.safe_dump({
+        "version": "0.2.0.dev0",
+        "name": "Demo",
+        "ontology": concepts,
+        "ontology_mappings": [{"name": "m", "semantic_model": semantic_model, "concept_mappings": concept_mappings}],
+    }))
+    return path
+
+
+def _key(concept: str, mapping: dict | None = None) -> dict:
+    return {"concept": concept, "object_mappings": [mapping or {"expression": "T.id"}]}
+
+
+def _field(model: OssieOntology, name: str = "id"):
+    field = model.ontology_mappings[0].semantic_model.datasets[0].field(name)
+    assert field is not None
+    return field
+
+
+def test_mappings_never_type_a_field(behaviours_dir: Path):
+    """A field's type is what the spec declares for it, never what a mapping
+    reads it as. `ref_scheme.yaml` declares no datatypes and keys Store from
+    `STORES.storeNr` and `SALES.storeNr`; both stay untyped."""
     model = OssieParser().parse(behaviours_dir / "ref_scheme.yaml")
-    types = {
-        f"{dataset.name}.{field.name}": field.type.name if field.type else None
+
+    assert {
+        f"{dataset.name}.{field.name}": field.datatype
         for mapping in model.ontology_mappings
         for dataset in mapping.semantic_model.datasets
         for field in dataset.fields
+    } == {
+        "STORES.storeNr": None,
+        "STORES.region": None,
+        "SALES.saleNr": None,
+        "SALES.storeNr": None,
+        "SALES.storeRegion": None,
+        "SALES.amount": None,
     }
-
-    assert types["STORES.storeNr"] == "StoreNr"
-    assert types["SALES.storeNr"] == "StoreNr"
-    # The value-type mappings are unaffected — they always named their own type.
-    assert types["SALES.saleNr"] == "SaleNr"
-    assert types["STORES.region"] == "Region"
-    assert types["SALES.amount"] == "Amount"
 
 
 def test_one_column_can_key_an_entity_both_ways(behaviours_dir: Path):
-    """The two mapping styles agree on what a key column holds.
+    """A referent mapping and a bare expression may both read one column.
 
-    They did not: a referent mapping pinned `StoreNr` and a bare expression
-    pinned `Store`, so using both on one column failed with "already mapped as
-    concept 'StoreNr' but this mapping expects 'Store'" — a conflict between two
-    spellings of the same fact, not a real disagreement in the spec.
+    Each used to type the field — one as `StoreNr`, the other as `Store` — and
+    the second failed with "A dataset field can only be bound to one ontology
+    concept type". Mappings no longer type fields, so there is nothing to clash.
     """
     model = OssieParser().parse(behaviours_dir / "key_column_both_ways.yaml")
 
@@ -407,10 +465,253 @@ def test_one_column_can_key_an_entity_both_ways(behaviours_dir: Path):
         if dataset.name == "SALES"
     )
     store_nr = next(f for f in sales.fields if f.name == "storeNr")
-    assert store_nr.type is not None, (
-        "the column was never pinned to a concept; both mappings should pin it"
+    assert store_nr.datatype is None
+
+
+@pytest.mark.parametrize("datatype", [None, "Integer"])
+def test_one_column_can_key_two_value_types(tmp_path: Path, datatype: str | None):
+    """One column of site ids keys both Store (`StoreNr`) and Warehouse
+    (`WarehouseNr`): fine whether the column is untyped or `Integer`, the
+    builtin both key types extend."""
+    path = _write_mapped_spec(
+        tmp_path,
+        [*_KEY_TYPES, _keyed_entity("Store", "StoreNr"), _keyed_entity("Warehouse", "WarehouseNr")],
+        [_key("Store"), _key("Warehouse")],
+        datatype=datatype,
     )
-    assert store_nr.type.name == "StoreNr"
+
+    field = _field(OssieParser().parse(path))
+    assert (field.datatype.value if field.datatype else None) == datatype
+
+
+def test_datatype_survives_a_round_trip(tmp_path: Path):
+    """`datatype` on a field and on a metric is read, and written back out."""
+    metric = {
+        "name": "site_count",
+        "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "COUNT(T.id)"}]},
+        "datatype": "Integer",
+    }
+    path = _write_mapped_spec(
+        tmp_path, [*_KEY_TYPES, _keyed_entity("Store", "StoreNr")], [_key("Store")],
+        datatype="Integer", metrics=[metric],
+    )
+
+    model = OssieParser().parse(path)
+    assert _field(model).datatype is DataType.INTEGER
+    assert model.ontology_mappings[0].semantic_model.metrics[0].datatype is DataType.INTEGER
+
+    dumped = yaml.safe_load(OssieToSpecConverter.convert(model).dump_yaml())
+    semantic_model = dumped["ontology_mappings"][0]["semantic_model"]
+    assert semantic_model["datasets"][0]["fields"][0]["datatype"] == "Integer"
+    assert semantic_model["metrics"][0]["datatype"] == "Integer"
+
+
+@pytest.mark.parametrize(
+    "datatype, builtin",
+    [
+        *((t, t.value) for t in DataType if t.value in ("String", "Integer", "Decimal", "Float", "Boolean", "Date", "DateTime")),
+        (DataType.DATETIME_TZ, "DateTime"),
+        (DataType.TIME, None),
+        (DataType.OPAQUE, None),
+    ],
+)
+def test_each_datatype_names_the_builtin_it_holds(datatype: DataType, builtin: str | None):
+    """The one mapping validation, formula typing and pyrel schemas all read."""
+    assert datatype.builtin_name == builtin
+
+
+def test_an_unknown_datatype_is_rejected(tmp_path: Path):
+    path = _write_mapped_spec(tmp_path, [*_KEY_TYPES, _keyed_entity("Store", "StoreNr")], [_key("Store")],
+                              datatype="Long")
+
+    with pytest.raises(ValidationError, match="datatype"):
+        OssieParser().parse(path)
+
+
+@pytest.mark.parametrize("datatype", ["String", "Date"])
+def test_a_bare_key_must_match_the_column_datatype(tmp_path: Path, datatype: str):
+    """Store is keyed by `StoreNr`, an `Integer`; a column declared otherwise
+    cannot key it."""
+    path = _write_mapped_spec(
+        tmp_path, [*_KEY_TYPES, _keyed_entity("Store", "StoreNr")], [_key("Store")], datatype=datatype,
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        OssieParser().parse(path)
+    assert str(excinfo.value) == (
+        f"Field 'T.id' is declared '{datatype}' but this mapping reads it as 'StoreNr', which "
+        f"extends 'Integer'. A '{datatype}' column cannot hold 'Integer' values."
+    )
+
+
+@pytest.mark.parametrize("datatype", ["DateTime", "DateTimeTz"])
+def test_a_timestamp_column_can_key_a_datetime_value_type(tmp_path: Path, datatype: str):
+    """`DateTimeTz` is read as `DateTime`, as pyrel declares the column."""
+    path = _write_mapped_spec(
+        tmp_path,
+        [{"concept": "Opened", "type": "ValueType", "extends": ["DateTime"]}, _keyed_entity("Store", "Opened")],
+        [_key("Store")],
+        datatype=datatype,
+    )
+
+    OssieParser().parse(path)
+
+
+def test_a_referent_key_must_match_the_column_datatype(tmp_path: Path):
+    """A referent mapping reads its column as the identifying role's player."""
+    referent = {"referent_mappings": [{"relationship": "nr", "expression": "T.id"}]}
+    path = _write_mapped_spec(
+        tmp_path, [*_KEY_TYPES, _keyed_entity("Store", "StoreNr")], [_key("Store", referent)], datatype="String",
+    )
+
+    with pytest.raises(ValueError, match=(
+        r"^Field 'T\.id' is declared 'String' but this mapping reads it as 'StoreNr', which extends "
+        r"'Integer'\. A 'String' column cannot hold 'Integer' values\.$"
+    )):
+        OssieParser().parse(path)
+
+
+def _store_with_code(code_mapping: dict, datatype: str) -> list:
+    """Store keyed from the untyped `T.key`, its `code` (a `StoreNr`) read from
+    `T.id` declared *datatype* through *code_mapping*."""
+    code = {
+        "name": "code",
+        "roles": [{"concept": "StoreNr", "name": "c"}],
+        "verbalizes": ["{Store} has {StoreNr:c}"],
+        "multiplicity": "ManyToOne",
+    }
+    return [
+        [*_KEY_TYPES, _keyed_entity("Store", "StoreNr", code)],
+        [{
+            "concept": "Store",
+            "link_mappings": [{
+                "object_mapping": {"expression": "T.key"},
+                "children": [{"relationship": "code", "object_mapping": code_mapping}],
+            }],
+        }],
+        datatype,
+    ]
+
+
+@pytest.mark.parametrize(
+    "code_mapping, read_as",
+    [
+        ({"expression": "T.id"}, "StoreNr"),  # no concept: the role player
+        ({"concept": "StoreNr", "expression": "T.id"}, "StoreNr"),  # cast to a custom value type
+        ({"concept": "Integer", "expression": "T.id"}, "Integer"),  # a builtin, read as is
+    ],
+    ids=["no-concept", "custom-value-type", "builtin"],
+)
+def test_a_concept_does_not_exempt_the_column_from_its_datatype(tmp_path: Path, code_mapping: dict, read_as: str):
+    """Naming the type does not make a `String` column hold `Integer`s: even
+    the cast `StoreNr(T.id)` needs a column of StoreNr's base type."""
+    concepts, mappings, datatype = _store_with_code(code_mapping, "String")
+    path = _write_mapped_spec(tmp_path, concepts, mappings, datatype=datatype, untyped_columns=("key",))
+
+    with pytest.raises(ValueError, match=rf"^Field 'T\.id' is declared 'String' but this mapping reads it as '{read_as}'"):
+        OssieParser().parse(path)
+
+
+@pytest.mark.parametrize(
+    "code_mapping",
+    [{"expression": "T.id"}, {"concept": "StoreNr", "expression": "T.id"}, {"concept": "Integer", "expression": "T.id"}],
+    ids=["no-concept", "custom-value-type", "builtin"],
+)
+def test_a_concept_of_the_column_base_type_is_accepted(tmp_path: Path, code_mapping: dict):
+    concepts, mappings, datatype = _store_with_code(code_mapping, "Integer")
+    path = _write_mapped_spec(tmp_path, concepts, mappings, datatype=datatype, untyped_columns=("key",))
+
+    OssieParser().parse(path)
+
+
+def test_an_entity_concept_checks_the_column_against_its_key_type(tmp_path: Path):
+    """`concept: Store` names the entity the column identifies, so the column
+    is read as Store's key type, `StoreNr`, not as `Store`."""
+    path = _write_mapped_spec(
+        tmp_path, [*_KEY_TYPES, _keyed_entity("Store", "StoreNr")],
+        [_key("Store", {"concept": "Store", "expression": "T.id"})], datatype="String",
+    )
+
+    with pytest.raises(ValueError, match=r"^Field 'T\.id' is declared 'String' but this mapping reads it as 'StoreNr'"):
+        OssieParser().parse(path)
+
+
+@pytest.mark.parametrize("datatype", [None, "Opaque"], ids=["no-datatype", "opaque"])
+def test_a_column_without_a_portable_datatype_is_not_checked(tmp_path: Path, datatype: str | None):
+    path = _write_mapped_spec(
+        tmp_path, [*_KEY_TYPES, _keyed_entity("Store", "StoreNr")],
+        [_key("Store", {"concept": "Store", "expression": "T.id"})], datatype=datatype,
+    )
+
+    OssieParser().parse(path)
+
+
+# ----- value-type wrappers in mapping expressions ------------------------
+
+_FLAGSHIP_NR = {"concept": "FlagshipNr", "type": "ValueType", "extends": ["StoreNr"]}
+
+
+def _wrapped_key_spec(tmp_path: Path, expression: str, datatype: str | None = "Integer") -> Path:
+    return _write_mapped_spec(
+        tmp_path,
+        [*_KEY_TYPES, _FLAGSHIP_NR, _keyed_entity("Store", "StoreNr")],
+        [_key("Store", {"expression": expression})],
+        datatype=datatype,
+    )
+
+
+@pytest.mark.parametrize(
+    "expression, datatype",
+    [
+        ("StoreNr(T.id)", "Integer"),
+        ("StoreNr(T.id)", None),  # nothing declared to check against
+        ("FlagshipNr(T.id)", "Integer"),  # a subtype of the expected StoreNr
+        ("StoreNr(T.id + 1)", "Integer"),  # any mapping expression may be wrapped
+    ],
+    ids=["qualified", "untyped-column", "subtype", "arithmetic"],
+)
+def test_a_value_type_wrapper_is_accepted(tmp_path: Path, expression: str, datatype: str | None):
+    """`StoreNr(T.id)` reads the column as a `StoreNr`, so it can key Store."""
+    model = OssieParser().parse(_wrapped_key_spec(tmp_path, expression, datatype))
+
+    mapping = model.ontology_mappings[0].concept_mappings[0].object_mappings[0]
+    assert isinstance(mapping.expression, Formula)
+    assert mapping.expression.raw_expr == expression
+
+
+def test_a_wrapped_column_must_have_the_wrapper_base_type(tmp_path: Path):
+    """The wrapper is a cast, not a conversion: a `String` column wrapped in
+    `StoreNr` still cannot hold `Integer`s."""
+    with pytest.raises(ValueError, match=(
+        r"^Field 'T\.id' is declared 'String' but this mapping reads it as 'StoreNr', which extends "
+        r"'Integer'\. A 'String' column cannot hold 'Integer' values\.$"
+    )):
+        OssieParser().parse(_wrapped_key_spec(tmp_path, "StoreNr(T.id)", "String"))
+
+
+def test_a_wrapper_must_be_the_type_the_mapping_reads(tmp_path: Path):
+    """Store is keyed by `StoreNr`; a `WarehouseNr` is not one, base type or not."""
+    with pytest.raises(ValueError, match=(
+        r"^Mapping expression 'WarehouseNr\(T\.id\)' wraps its value as 'WarehouseNr', "
+        r"but this mapping reads it as 'StoreNr'\.$"
+    )):
+        OssieParser().parse(_wrapped_key_spec(tmp_path, "WarehouseNr(T.id)"))
+
+
+@pytest.mark.parametrize(
+    "expression, message",
+    [
+        ("Store(T.id)", r"Only a declared value type can wrap a mapping expression, not 'Store'"),
+        ("Integer(T.id)", r"Only a declared value type can wrap a mapping expression, not 'Integer'"),
+        ("StoreNr(T.id, T.id)", r"The value type 'StoreNr' wraps exactly one expression, got 2"),
+        ("StoreNr(T.id) + 1", r"A value-type wrapper must enclose the whole mapping expression"),
+        ("StoreNr(StoreNr(T.id))", r"A value-type wrapper must enclose the whole mapping expression"),
+    ],
+    ids=["entity", "builtin", "two-arguments", "not-whole", "nested"],
+)
+def test_a_malformed_wrapper_is_rejected(tmp_path: Path, expression: str, message: str):
+    with pytest.raises(ValueError, match=message):
+        OssieParser().parse(_wrapped_key_spec(tmp_path, expression))
 
 
 def test_is_primitive_terminates_on_a_cyclic_extends_chain():
@@ -489,7 +790,9 @@ def test_iri_and_prefixes_survive_a_round_trip(tmp_path: Path):
     person = model.ontology.lookup_concept("Person")
     assert person is not None
     assert person.iri == "foaf:Person"
-    assert model.ontology.lookup_concept_relationship(person, "person_name").iri == "foaf:name"
+    person_name = model.ontology.lookup_concept_relationship(person, "person_name")
+    assert person_name is not None
+    assert person_name.iri == "foaf:name"
 
     roundtrip_path = tmp_path / "roundtrip.yaml"
     roundtrip_path.write_text(OssieToSpecConverter.convert(model).dump_yaml())
@@ -497,8 +800,11 @@ def test_iri_and_prefixes_survive_a_round_trip(tmp_path: Path):
 
     assert reparsed.prefixes == model.prefixes
     reparsed_person = reparsed.ontology.lookup_concept("Person")
+    assert reparsed_person is not None
     assert reparsed_person.iri == "foaf:Person"
-    assert reparsed.ontology.lookup_concept_relationship(reparsed_person, "person_name").iri == "foaf:name"
+    reparsed_name = reparsed.ontology.lookup_concept_relationship(reparsed_person, "person_name")
+    assert reparsed_name is not None
+    assert reparsed_name.iri == "foaf:name"
 
 
 def test_a_document_without_iris_dumps_neither_field(tmp_path: Path):

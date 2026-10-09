@@ -458,21 +458,25 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: empNr
+        datatype: Integer
       - name: lastName
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: lastName
+        datatype: String
       - name: firstName
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: firstName
+        datatype: String
       - name: mgr
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: mgr
+        datatype: Integer
       - name: addr
         expression:
           dialects:
@@ -501,11 +505,13 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: empNr
+        datatype: Integer
       - name: hourlyRate
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: hourlyRate
+        datatype: Integer
     - name: PERMANENT_EMPLOYEES
       source: DB.SCHEMA.PERMANENT_EMPLOYEES
       fields:
@@ -514,11 +520,13 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: empNr
+        datatype: Integer
       - name: salary
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: salary
+        datatype: Integer
     - name: LOCATIONS
       source: DB.SCHEMA.LOCATIONS
       fields:
@@ -527,16 +535,19 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: storeNr
+        datatype: Integer
       - name: mgr
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: mgr
+        datatype: Integer
       - name: region
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: region
+        datatype: String
       - name: addr
         expression:
           dialects:
@@ -565,26 +576,31 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: upc
+        datatype: Integer
       - name: description
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: description
+        datatype: String
       - name: classNr
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: classNr
+        datatype: Integer
       - name: classLabel
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: classLabel
+        datatype: String
       - name: category
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: category
+        datatype: String
     - name: TRANSACTIONS
       source: DB.SCHEMA.TRANSACTIONS
       fields:
@@ -593,16 +609,19 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: txn
+        datatype: Integer
       - name: sku
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: sku
+        datatype: Integer
       - name: terminal
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: terminal
+        datatype: Integer
       - name: amt
         expression:
           dialects:
@@ -626,11 +645,13 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: id
+        datatype: Integer
       - name: store
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: store
+        datatype: Integer
       - name: svcDate
         expression:
           dialects:
@@ -649,11 +670,13 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: extendedPrice
+        datatype: Decimal
       - name: discount
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: discount
+        datatype: Decimal
       - name: tax
         expression:
           dialects:
@@ -664,11 +687,13 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: orderNr
+        datatype: Integer
       - name: lineItemNr
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: lineItemNr
+        datatype: Integer
       - name: upc
         expression:
           dialects:
@@ -702,6 +727,7 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: nr
+        datatype: Integer
       - name: store
         expression:
           dialects:
@@ -712,6 +738,7 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: ordDate
+        datatype: Date
     - name: PAYMENTS
       source: DB.SCHEMA.PAYMENTS
       fields:
@@ -720,6 +747,7 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: id
+        datatype: Integer
       - name: orderNr
         expression:
           dialects:
@@ -735,16 +763,19 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: amount
+        datatype: Decimal
       - name: type
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: type
+        datatype: String
       - name: cardNumber
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: cardNumber
+        datatype: String
       - name: cardExpiry
         expression:
           dialects:
@@ -755,11 +786,13 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: cardHolderName
+        datatype: String
       - name: cashReceived
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: cashReceived
+        datatype: Decimal
     - name: RETAIL_FACTS
       source: DB.SCHEMA.RETAIL_FACTS
       fields:
@@ -768,26 +801,31 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: item_nr
+        datatype: Integer
       - name: store_nr
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: store_nr
+        datatype: Integer
       - name: week_nr
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: week_nr
+        datatype: Integer
       - name: sls
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: sls
+        datatype: Decimal
       - name: returns
         expression:
           dialects:
           - dialect: ANSI_SQL
             expression: returns
+        datatype: Decimal
   concept_mappings:
   - concept: Employee
     object_mappings:

@@ -167,15 +167,15 @@ class OssieToRelationalAIConverter:
         """Column types for *dataset*, taken from the Ossie spec that declares it.
 
         Handed to the table provider so it can declare the columns up front,
-        which is what keeps the conversion from needing a live warehouse.
+        which is what keeps the conversion from needing a live warehouse. A
+        column is declared as the builtin its `datatype` holds (pyrel names
+        them the same); one with no datatype, or none with a builtin (`Time`,
+        `Opaque`), is declared `String`.
         """
         schema = {}
         for fl in dataset.fields:
-            if fl.type is not None:
-                concept = OssieToRelationalAIConverter._concept(ontology, fl.type.name)
-                schema[fl.name] = ontology.get_topmost_parent(concept)
-            else:
-                schema[fl.name] = ontology.lookup_concept("String")
+            name = (fl.datatype.builtin_name if fl.datatype is not None else None) or "String"
+            schema[fl.name] = OssieToRelationalAIConverter._concept(ontology, name)
         return schema
 
     # ------------------------------------------------------------------

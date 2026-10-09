@@ -41,6 +41,7 @@ reads them as Python, and nothing has to be configured to make that work.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -173,6 +174,30 @@ def test_palantir_export_converts_all_the_way_to_pyrel(snapshot, fixtures_dir: P
     Typer().infer_model(namespace["m"].to_metamodel())
 
 
+def test_a_spec_without_datatypes_declares_string_columns(snapshot, behaviours_dir: Path):
+    """No `datatype:` anywhere, so every declared column is `String`.
+
+    A column's type comes only from its own `datatype`; the mappings that read
+    it no longer type it. `ref_scheme.yaml` declares none, so `declared_table`
+    gets an all-`String` schema even for the integer keys `storeNr` and
+    `saleNr` that mappings used to pin. The generated source must still type-check.
+    """
+    pyrel.Model.all_models.clear()
+    om = OssieToRelationalAIConverter.convert(
+        OssieParser().parse(behaviours_dir / "ref_scheme.yaml"), table_provider=declared_table
+    )
+    source = to_pyrel(om.base_model().to_metamodel())
+
+    column_types = re.findall(r"'[A-Z_]+': (\w+)", source)
+    assert column_types and set(column_types) == {"String"}, column_types
+    snapshot.assert_match(source, "untyped_columns.py")
+
+    namespace: dict = {}
+    pyrel.Model.all_models.clear()
+    exec(compile(source, "generated_untyped_columns.py", "exec"), namespace)
+    Typer().infer_model(namespace["m"].to_metamodel())
+
+
 # ---------------------------------------------------------------------------
 # Derived identifiers
 # ---------------------------------------------------------------------------
@@ -297,6 +322,33 @@ def test_bare_expression_mappings_resolve_the_ref_scheme(behaviours_dir: Path):
     assert any("LargeSale.new(nr=" in rule for rule in defined), (
         f"expected LargeSale to be created with its identifier, got: {defined}"
     )
+
+
+def test_a_value_type_wrapper_casts_the_column(behaviours_dir: Path):
+    """`StoreNr(T.id)` in a mapping becomes `StoreNr(col)` in pyrel, once.
+
+    Wherever the expression lands — an entity's key through a bare expression
+    or a referent mapping, or a property value — the wrapper is emitted as the
+    cast it names. A mapping that also names `concept: Seats` already has its
+    cast in the wrapper, and must not get a second, `Seats(Seats(col))`.
+    """
+    pyrel.Model.all_models.clear()
+    ontology = OssieParser().parse(behaviours_dir / "value_type_wrapper.yaml")
+    source = to_pyrel(
+        OssieToRelationalAIConverter.convert(ontology, table_provider=declared_table).base_model().to_metamodel()
+    )
+    defined = define_rules(source)
+
+    assert "m.define(Store.new(nr=StoreNr(db_schema_t.ID)))" in defined
+    assert "m.define(Depot.new(nr=StoreNr(db_schema_t.ID)))" in defined
+    assert any(".define(store.seats(Seats(db_schema_t.CAP)))" in rule for rule in defined), defined
+    assert any(".define(store.extra(Seats(db_schema_t.RAW)))" in rule for rule in defined), defined
+    assert "Seats(Seats(" not in source
+
+    namespace: dict = {}
+    pyrel.Model.all_models.clear()
+    exec(compile(source, "generated_value_type_wrapper.py", "exec"), namespace)
+    Typer().infer_model(namespace["m"].to_metamodel())
 
 
 # ---------------------------------------------------------------------------

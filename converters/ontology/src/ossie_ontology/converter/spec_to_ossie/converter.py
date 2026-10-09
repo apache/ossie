@@ -22,12 +22,15 @@ from __future__ import annotations
 import re
 
 from ossie_ontology.common.graph import topological_sort
+from ossie_ontology.expr.factory import FormulaParserFactory, MappingFormulaParserFactory
+from ossie_ontology.expr.formula.validator import MappingFormulaValidator
 from ossie_ontology.reasoner import OntologyReasoner
 from ossie_ontology.model import (
     Concept,
     ConceptMapping,
     ConceptType,
     CustomExtension,
+    DataType,
     Dataset,
     DatasetField,
     DialectExpression,
@@ -90,8 +93,6 @@ class SpecToOssieConverter:
     def __init__(self, formula_factory: FormulaFactory | None = None,
                  mapping_formula_factory: MappingFormulaFactory | None = None):
         # See OssieParser: parsing is the default, the raw factory is the opt-out.
-        from ossie_ontology.expr.factory import FormulaParserFactory, MappingFormulaParserFactory
-
         self._formula_factory = formula_factory or FormulaParserFactory()
         self._mapping_formula_factory = mapping_formula_factory or MappingFormulaParserFactory()
 
@@ -308,10 +309,11 @@ class SpecToOssieConverter:
                 )
         expression: DatasetField | Formula | None = None
         if om_spec.expression is not None:
-            expression = self._resolve_mapping_expression(
-                om_spec.expression, semantic_model,
-                SpecToOssieConverter._expression_type(concept if concept is not None else container), ontology,
-            )
+            # A `concept:` does not exempt the column from its own `datatype`:
+            # even where it emits a cast (`StoreNr(T.code)`), a `String` column
+            # cannot become an `Integer`-based value type.
+            expected_type = SpecToOssieConverter._expression_type(concept if concept is not None else container)
+            expression = self._resolve_mapping_expression(om_spec.expression, semantic_model, expected_type, ontology)
         referent_mappings = None
         if om_spec.referent_mappings is not None:
             rm_container = concept if concept is not None else container
@@ -386,7 +388,7 @@ class SpecToOssieConverter:
         of its identifying relationship, which is what
         `_convert_referent_mapping` already reads off `rel.last_role.player`.
         A composite reference scheme cannot be keyed by one expression at all;
-        `_build_entity_binding` reports that, so pin nothing and let it.
+        `_build_entity_binding` reports that, so check nothing and let it.
         """
         scheme = OntologyReasoner.ref_scheme(target)
         if scheme is None:
@@ -418,6 +420,9 @@ class SpecToOssieConverter:
         enriched factories that parse, resolve, and validate references (e.g.
         against constructs the base semantic-model lookup cannot see). An unknown
         `DATASET.field` is therefore not treated as an error at this layer.
+
+        *expected_type* is what the mapping reads the expression as; a column
+        or value-type wrapper is checked against it (None skips the check).
         """
         qualified = _QUALIFIED_FIELD_RE.match(expression)
         if qualified:
@@ -426,7 +431,7 @@ class SpecToOssieConverter:
             if dataset is not None:
                 field = dataset.field(field_name)
                 if field is not None:
-                    _pin_field_type(field, expected_type)
+                    _check_field_datatype(field, expected_type)
                     return field
             # Deferred to the factory by design (see docstring), not an error here.
             return self._mapping_formula_factory(raw_expr=expression, ontology=ontology, semantic_model=semantic_model)
@@ -447,11 +452,13 @@ class SpecToOssieConverter:
                 )
             if matches:
                 _, field = matches[0]
-                _pin_field_type(field, expected_type)
+                _check_field_datatype(field, expected_type)
                 return field
             return self._mapping_formula_factory(raw_expr=expression, ontology=ontology, semantic_model=semantic_model)
 
-        return self._mapping_formula_factory(raw_expr=expression, ontology=ontology, semantic_model=semantic_model)
+        formula = self._mapping_formula_factory(raw_expr=expression, ontology=ontology, semantic_model=semantic_model)
+        _check_value_type_wrapper(formula, expression, expected_type)
+        return formula
 
     # ----- Structural helpers --------------------------
 
@@ -469,19 +476,51 @@ class SpecToOssieConverter:
         return topological_sort(nodes, edges)
 
 
-def _pin_field_type(field: DatasetField, expected_type: Concept | None) -> None:
-    if expected_type is None:
+def _check_field_datatype(field: DatasetField, expected_type: Concept | None) -> None:
+    """Reject a column whose declared `datatype` cannot hold *expected_type*.
+
+    Fields are never typed by the mappings that read them, so one column may
+    feed several value types. What is checked is the field's own `datatype`
+    against the builtin *expected_type* bottoms out in: an `Integer` column
+    can key a `StoreNr` that extends `Integer`, a `String` one cannot. A
+    `DateTimeTz` column counts as `DateTime`, the builtin it is read as. Nothing
+    is checked when the field declares no datatype (or `Opaque`), or when the
+    expected type does not reduce to a single builtin.
+    """
+    if expected_type is None or field.datatype is None or field.datatype is DataType.OPAQUE:
         return
-    if field.type is None:
-        field.type = expected_type
+    root = expected_type.primitive_root
+    if root is None or root.name == "Any" or root.name == field.datatype.builtin_name:
         return
-    if field.type is not expected_type:
+    owner = f"{field.dataset.name}." if field.dataset is not None else ""
+    via = f", which extends '{root.name}'" if root is not expected_type else ""
+    raise ValueError(
+        f"Field '{owner}{field.name}' is declared '{field.datatype.value}' but this mapping "
+        f"reads it as '{expected_type.name}'{via}. A '{field.datatype.value}' column cannot "
+        f"hold '{root.name}' values."
+    )
+
+
+def _check_value_type_wrapper(formula: Formula, expression: str, expected_type: Concept | None) -> None:
+    """Check a mapping expression wrapped in a value type, `StoreNr(T.id)`.
+
+    The wrapper must be the type the mapping reads or a subtype of it, and a
+    wrapped column must still hold the wrapper's base type: the wrapper is a
+    cast, not a conversion. A formula the factory did not parse has no wrapper.
+    """
+    found = MappingFormulaValidator.value_type_wrapper(formula)
+    if found is None:
+        return
+    wrapper_type, field = found
+    if expected_type is not None and not (
+        wrapper_type is expected_type or OntologyReasoner.in_subtype_closure(wrapper_type, expected_type)
+    ):
         raise ValueError(
-            f"Field '{field.name}' is already mapped as concept "
-            f"'{field.type.name}' but this mapping expects "
-            f"'{expected_type.name}'. A dataset field can only be "
-            f"bound to one ontology concept type."
+            f"Mapping expression '{expression}' wraps its value as '{wrapper_type.name}', "
+            f"but this mapping reads it as '{expected_type.name}'."
         )
+    if field is not None:
+        _check_field_datatype(field, wrapper_type)
 
 
 def _convert_custom_extension(ce: SpecCustomExtension) -> CustomExtension:
@@ -508,6 +547,7 @@ def _convert_dataset_field(fl: SpecDatasetField) -> DatasetField:
     return DatasetField(
         name=fl.name,
         expression=_convert_expression(fl.expression),
+        datatype=DataType(fl.datatype) if fl.datatype is not None else None,
         dimension=_convert_dimension(fl.dimension),
         label=fl.label,
         description=fl.description,
@@ -571,4 +611,5 @@ def _convert_metric(m: SpecMetric) -> Metric:
         description=m.description,
         ai_context=m.ai_context,
         custom_extensions=[_convert_custom_extension(ce) for ce in m.custom_extensions],
+        datatype=DataType(m.datatype) if m.datatype is not None else None,
     )

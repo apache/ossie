@@ -32,6 +32,7 @@ from ossie_ontology.expr.formula.visitor.unbound import UnboundRefFinder
 from ossie_ontology.model import (
     OntologyComponent,
     Concept,
+    DatasetField,
     Relationship
 )
 from ossie_ontology.reasoner import OntologyReasoner
@@ -72,6 +73,7 @@ class FormulaValidator:
                     )
         FormulaValidator._validate_unresolved_var_handles(body_var_handles, formula.raw_expr)
         FormulaValidator._validate_fact_refs(
+            ontology,
             reasoner,
             formula.expr_info().fact_refs,
             formula.expr_info().dot_join_handles,
@@ -180,6 +182,7 @@ class FormulaValidator:
 
     @staticmethod
     def _validate_fact_refs(
+        ontology: OntologyComponent,
         reasoner: OntologyReasoner,
         fact_refs: list[FactRef],
         dot_join_handles: list[DotJoinHandle],
@@ -226,12 +229,15 @@ class FormulaValidator:
                         t = arg._handle1._relationship.first_role.player
                     elif isinstance(arg._handle1, DatasetRefHandle) and isinstance(arg._handle2, DatasetFieldHandle):
                         field = arg._handle2._field
-                        if field.type is None:
+                        # Only a datatype with a builtin types an argument;
+                        # Time and Opaque have none.
+                        builtin = field.datatype.builtin_name if field.datatype else None
+                        t = ontology.ensure_builtin_concept(builtin) if builtin else None
+                        if t is None:
                             raise ValueError(
                                 f"Dataset field '{arg._handle1.name()}.{field.name}' has no type "
                                 f"and cannot be used as a typed argument in '{formula}'"
                             )
-                        t = field.type
                     elif isinstance(arg._handle2, RelationshipRefHandle):
                         t = arg._handle2._relationship.last_role.player
                         args_type.append(t)
@@ -274,17 +280,66 @@ class MappingFormulaValidator:
     """Validates a parsed mapping expression.
 
     Mapping expressions may only contain: dataset field references (qualified or
-    single-field), literals, and arithmetic/comparison operators. All ontology
-    constructs and unsupported expression types are rejected here so they fail
-    at spec-parse time rather than later during PyRel conversion."""
+    single-field), literals, and arithmetic/comparison operators — optionally
+    wrapped, as a whole, in a declared value type: `StoreNr(T.id)` reads the
+    column as a `StoreNr`. All other ontology constructs and unsupported
+    expression types are rejected here so they fail at spec-parse time rather
+    than later during PyRel conversion."""
 
     @staticmethod
-    def validate(expr_info: FormulaExpressionInfo, formula_str: str) -> None:
+    def validate(expr_info: FormulaExpressionInfo, formula_str: str, expr: object = None) -> None:
+        """*expr* is the parsed top-level expression, the only place a
+        value-type wrapper may appear; without it no wrapper is allowed."""
         MappingFormulaValidator._validate_no_var_handles(expr_info, formula_str)
         MappingFormulaValidator._validate_no_relationship_refs(expr_info, formula_str)
-        MappingFormulaValidator._validate_no_concept_refs(expr_info, formula_str)
+        wrapper = MappingFormulaValidator._validate_wrappers(expr_info, formula_str, expr)
+        MappingFormulaValidator._validate_no_concept_refs(expr_info, formula_str, wrapper)
         MappingFormulaValidator._validate_no_dataset_refs(expr_info, formula_str)
-        MappingFormulaValidator._validate_no_fact_refs(expr_info, formula_str)
+        MappingFormulaValidator._validate_no_fact_refs(expr_info, formula_str, wrapper)
+
+    @staticmethod
+    def value_type_wrapper(formula: object) -> tuple[Concept, DatasetField | None] | None:
+        """The value type a parsed mapping formula wraps its whole expression in,
+        and the column it wraps when that is a lone `DATASET.field`. None for a
+        formula with no wrapper, or one never parsed (the raw factory keeps
+        only the text)."""
+        if not isinstance(formula, Formula) or len(formula.expr()) != 1:
+            return None
+        expr = formula.expr()[0]
+        if not (isinstance(expr, FactRef) and isinstance(expr._handle, ConceptRefHandle)):
+            return None
+        arg = expr._args[0]
+        if isinstance(arg, DotJoinHandle):
+            arg = arg._handle2
+        return expr._handle._concept, arg._field if isinstance(arg, DatasetFieldHandle) else None
+
+    @staticmethod
+    def _validate_wrappers(expr_info: FormulaExpressionInfo, formula_str: str,
+                           expr: object) -> FactRef | None:
+        """Check every `Concept(...)` in the expression; return the one valid
+        wrapper, if there is one."""
+        wrapper: FactRef | None = None
+        for fact_ref in expr_info.fact_refs:
+            if not isinstance(fact_ref._handle, ConceptRefHandle):
+                continue
+            concept = fact_ref._handle._concept
+            if not concept.is_value_type or concept.is_builtin:
+                raise ValueError(
+                    f"Only a declared value type can wrap a mapping expression, not "
+                    f"'{concept.name}', in '{formula_str}'."
+                )
+            if len(fact_ref._args) != 1:
+                raise ValueError(
+                    f"The value type '{concept.name}' wraps exactly one expression, "
+                    f"got {len(fact_ref._args)} in '{formula_str}'."
+                )
+            if fact_ref is not expr:
+                raise ValueError(
+                    f"A value-type wrapper must enclose the whole mapping expression: "
+                    f"'{fact_ref}' in '{formula_str}'."
+                )
+            wrapper = fact_ref
+        return wrapper
 
     @staticmethod
     def _validate_no_var_handles(expr_info: FormulaExpressionInfo, formula_str: str) -> None:
@@ -303,8 +358,11 @@ class MappingFormulaValidator:
             )
 
     @staticmethod
-    def _validate_no_concept_refs(expr_info: FormulaExpressionInfo, formula_str: str) -> None:
+    def _validate_no_concept_refs(expr_info: FormulaExpressionInfo, formula_str: str,
+                                  wrapper: FactRef | None) -> None:
         for crh, _ in expr_info.concept_ref_handles:
+            if wrapper is not None and crh is wrapper._handle:
+                continue
             raise ValueError(
                 f"Concept references are not allowed in mapping expressions: "
                 f"'{crh._concept.name}' in '{formula_str}'."
@@ -323,8 +381,9 @@ class MappingFormulaValidator:
                 )
 
     @staticmethod
-    def _validate_no_fact_refs(expr_info: FormulaExpressionInfo, formula_str: str) -> None:
-        if expr_info.fact_refs:
+    def _validate_no_fact_refs(expr_info: FormulaExpressionInfo, formula_str: str,
+                               wrapper: FactRef | None) -> None:
+        if any(fact_ref is not wrapper for fact_ref in expr_info.fact_refs):
             raise ValueError(
                 f"Function/apply expressions are not allowed in mapping expressions: '{formula_str}'."
             )

@@ -306,9 +306,15 @@ class MappingFormulaConverter(GenericFormulaConverter):
             self.result = expr.accept(self, None)
         else:
             raw = expr.accept(self, None)
-            if self._concept is not None:
+            # A value-type wrapper (`StoreNr(T.id)`) already casts the value,
+            # to the type the spec checked against the mapping's own.
+            if self._concept is not None and not self._is_value_type_wrapper(expr):
                 raw = self._concept(raw)
             self.result = ValueMapping(raw)
+
+    @staticmethod
+    def _is_value_type_wrapper(node) -> bool:
+        return isinstance(node, FactRef) and isinstance(node._handle, ConceptRefHandle)
 
     def visit_datasetfieldhandle(self, node: DatasetFieldHandle, parent):
         field = node._field
@@ -364,6 +370,13 @@ class MappingFormulaConverter(GenericFormulaConverter):
         raise ValueError(f"Bare dataset references are not allowed in mapping expressions: '{node.name()}'")
 
     def visit_factref(self, node: FactRef, parent):
+        # The one apply MappingFormulaValidator lets through: a value type
+        # wrapping the whole expression, emitted as the same cast in pyrel.
+        if isinstance(node._handle, ConceptRefHandle) and len(node._args) == 1:
+            name = node._handle._concept.name
+            concept = self._ontology.lookup_concept(name)
+            assert concept is not None, f"Value type '{name}' has no concept in the converted ontology"
+            return concept(node._args[0].accept(self, node))
         raise ValueError("Function/apply expressions are not allowed in mapping expressions.")
 
     def visit_negation(self, node: Negation, parent):

@@ -46,6 +46,7 @@ from ossie_ontology.model import (
     ConceptMapping,
     ConceptType,
     Dataset,
+    DataType as OssieDataType,
     DatasetField,
     DialectExpression,
     DialectExpressionSet,
@@ -903,7 +904,7 @@ class PalantirToOssieConverter:
                             )
                         ]
                     ),
-                    type=PalantirToOssieConverter._resolve_field_type(ontology, palantir_ds, column),
+                    datatype=PalantirToOssieConverter._resolve_field_type(palantir_ds, column),
                 )
             )
 
@@ -917,9 +918,7 @@ class PalantirToOssieConverter:
         return dataset
 
     @staticmethod
-    def _resolve_field_type(
-        ontology: OntologyComponent, palantir_ds: PalantirDataSet, column: DataSetColumn
-    ) -> Concept:
+    def _resolve_field_type(palantir_ds: PalantirDataSet, column: DataSetColumn) -> OssieDataType:
         try:
             type_str = (
                 DataType.parse_datatype(column.type()).to_type() if column.type() else "String"
@@ -933,13 +932,8 @@ class PalantirToOssieConverter:
             )
             type_str = "String"
 
-        concept = ontology.ensure_builtin_concept(type_str)
-        if not concept:
-            raise ValueError(
-                f"Concept '{type_str}' is not defined in the ontology but used in the "
-                f"DatasetField '{palantir_ds.readable_id()}.{column.name()}'."
-            )
-        return concept
+        # Palantir's `any` names no portable type, which is what `Opaque` is for.
+        return OssieDataType.OPAQUE if type_str == "Any" else OssieDataType(type_str)
 
     # ------------------------------------------------------------------
     # Naming / typing helpers

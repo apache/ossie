@@ -80,6 +80,9 @@ class FormulaParser:
         ("left", "DOT"),
         ("left", "PLUS", "MINUS"),
         ("left", "TIMES", "DIVIDE"),
+        # Unary minus binds tighter than any binary arithmetic operator, so
+        # `-a + b` is `(-a) + b`, not `-(a + b)`.
+        ("right", "UMINUS"),
     )
 
     # ----------------- grammar ------------------------------------------
@@ -118,7 +121,7 @@ class FormulaParser:
         p[0] = p[1]
 
     def p_expr_minus_expr(self, p):
-        "expr : MINUS expr %prec NOT"
+        "expr : MINUS expr %prec UMINUS"
         p[0] = Expression(BinOp.MINUS, LiteralHandle(0), p[2])
 
     def p_expr_agg(self, p):
