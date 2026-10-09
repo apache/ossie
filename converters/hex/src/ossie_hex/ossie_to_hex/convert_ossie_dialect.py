@@ -36,6 +36,7 @@ _DIALECT_NAME_MAP: Mapping[OssieDialect, HexDialectName | None] = {
     OssieDialect.SIGMA: None,
     OssieDialect.THOUGHTSPOT: None,
     OssieDialect.DAX: None,
+    OssieDialect.HOLISTICS_AQL: None,
 }
 
 
