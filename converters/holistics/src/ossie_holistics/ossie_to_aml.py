@@ -147,10 +147,8 @@ def _named_objects(container: Any, where: str) -> list[dict[str, Any]]:
     """`container` as a list of named mappings, or a `ConversionError` saying why.
 
     A document this converter did not write is parsed at the boundary rather
-    than indexed into. Without this, `datasets` given as a mapping raised
-    `AttributeError: 'str' object has no attribute 'get'` and a field with no
-    `name` raised `KeyError`, neither of which the CLI catches, so a malformed
-    document produced a traceback instead of a message. apache/ossie#297 and
+    than indexed into. The CLI catches `ConversionError` alone, so any other
+    exception reaches the user as a traceback. apache/ossie#297 and
     apache/ossie#407 both asked a sibling converter for the same guard.
     """
     if container is None:
@@ -171,10 +169,34 @@ def _named_objects(container: Any, where: str) -> list[dict[str, Any]]:
 
 
 def dialects_of(expression: Any) -> dict[str, str]:
-    dialects = (expression or {}).get("dialects") or []
+    """Every `{dialect: expression}` pair, validated at the boundary.
+
+    A document this converter did not write arrives unchecked, and the CLI
+    catches `ConversionError` alone, so the shape is tested rather than assumed.
+    """
+    if expression is None:
+        raise ConversionError("expression is missing, and the specification requires one")
+    if not isinstance(expression, dict):
+        raise ConversionError(
+            f"expression is {type(expression).__name__}, and the specification defines it "
+            f"as a mapping holding a 'dialects' list"
+        )
+    dialects = expression.get("dialects") or []
     if not dialects:
         raise ConversionError("expression has no dialects")
-    return {entry.get("dialect", "ANSI_SQL"): entry.get("expression", "") for entry in dialects}
+    if not isinstance(dialects, list):
+        raise ConversionError(
+            f"expression.dialects is {type(dialects).__name__}, and must be a list"
+        )
+    available: dict[str, str] = {}
+    for index, entry in enumerate(dialects):
+        if not isinstance(entry, dict):
+            raise ConversionError(
+                f"expression.dialects[{index}] is {type(entry).__name__}, and must be a "
+                f"mapping holding 'dialect' and 'expression'"
+            )
+        available[entry.get("dialect", "ANSI_SQL")] = entry.get("expression", "")
+    return available
 
 
 class _Reverse:

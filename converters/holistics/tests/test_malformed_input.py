@@ -59,6 +59,27 @@ MALFORMED = {
     "a metric is a string": document(metrics=["nope"]),
     "the document is a list": [],
     "the document has no name": {"version": VERSION, "datasets": [{"name": "d", "source": "s"}]},
+    "an expression is a string": document(
+        datasets=[{"name": "d", "source": "s", "fields": [{"name": "x", "expression": "SUM(x)"}]}]
+    ),
+    "a dialect entry is a string": document(
+        datasets=[
+            {
+                "name": "d",
+                "source": "s",
+                "fields": [{"name": "x", "expression": {"dialects": ["ANSI_SQL"]}}],
+            }
+        ]
+    ),
+    "dialects is a string": document(
+        datasets=[
+            {
+                "name": "d",
+                "source": "s",
+                "fields": [{"name": "x", "expression": {"dialects": "ANSI_SQL"}}],
+            }
+        ]
+    ),
 }
 
 
