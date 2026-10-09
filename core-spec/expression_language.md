@@ -217,7 +217,7 @@ APPROX_PERCENTILE(response_time, 0.95)
 ### Conditional Aggregations (REQUIRED)
 
 SUM / COUNT aggregation functions support `DISTINCT.`   
-All aggregations must support filtered aggregation, expressed either with a `CASE` argument or with a postfix `FILTER (WHERE ...)` modifier:
+All aggregations must support filtered aggregation:
 
 ```sql
 -- DISTINCT modifier
@@ -245,17 +245,17 @@ The clause has the semantics of the SQL:2003 `<filter clause>` (optional feature
 
 `FILTER (WHERE ...)` is a modifier on an aggregate expression. It is not the standalone `WHERE` clause listed under [Not Supported in Expressions](#not-supported-in-expressions). The `<predicate>` must reference only fields of the same dataset as the aggregate's arguments.
 
-Engines without native `FILTER (WHERE ...)` support MAY lower it to the equivalent `CASE` form:
+An engine MAY evaluate `FILTER (WHERE ...)` by rewriting it to an equivalent expression, but the result MUST be identical to the result that the `<filter clause>` semantics define.
+
+*Note (non-normative):* For an aggregate function that ignores `NULL` inputs, `FILTER (WHERE ...)` is equivalent to a `CASE` expression with no `ELSE`:
 
 ```sql
--- value aggregate: filter the argument
-SUM(amount) FILTER (WHERE status = 'completed')  --> SUM(CASE WHEN status = 'completed' THEN amount END)
-
--- COUNT(*): filter a constant
-COUNT(*) FILTER (WHERE status = 'completed')      --> COUNT(CASE WHEN status = 'completed' THEN 1 END)
+SUM(amount) FILTER (WHERE status = 'completed')                  --> SUM(CASE WHEN status = 'completed' THEN amount END)
+COUNT(*) FILTER (WHERE status = 'completed')                     --> COUNT(CASE WHEN status = 'completed' THEN 1 END)
+COUNT(DISTINCT customer_id) FILTER (WHERE status = 'completed')  --> COUNT(DISTINCT CASE WHEN status = 'completed' THEN customer_id END)
 ```
 
-The `CASE` form has no `ELSE`, so non-matching rows contribute an implicit `NULL` (never `0`): value aggregates such as `SUM`, `AVG`, `MIN`, and `MAX` ignore the `NULL`, and `COUNT(*)` becomes `COUNT(CASE WHEN <predicate> THEN 1 END)`. An `ELSE 0` sentinel would be counted as a real row and would corrupt `AVG`, `MIN`, `MAX`, and `COUNT`.
+A non-matching row contributes `NULL`, which these functions ignore. An `ELSE 0` would count as a real row and would corrupt `AVG`, `MIN`, `MAX`, and `COUNT`. The identity does not hold for an aggregate function that does not ignore `NULL` inputs, such as `ARRAY_AGG`.
 
 ### Decomposability Reference
 
