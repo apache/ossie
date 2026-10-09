@@ -1,0 +1,180 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+"""Command-line entry point for the OBML <-> Ossie converter.
+
+A single ``ossie-orionbelt`` command with two format-named subcommands, mirroring
+the Ossie converter convention (e.g. ``ossie-dbt msi-to-ossie``):
+
+    ossie-orionbelt obml-to-ossie  -i model.obml.yaml -o model.ossie.yaml
+    ossie-orionbelt obml-to-ossie --ontology -i model.obml.yaml -o model.ontology.yaml
+    ossie-orionbelt ossie-to-obml  -i model.ossie.yaml  -o model.obml.yaml
+
+Both subcommands print conversion warnings and a validation summary to stderr,
+and exit non-zero when the produced document fails schema validation (unless
+``--no-validate``).
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from ossie_orionbelt.converter import (
+    OBMLtoOssie,
+    OBMLtoOssieOntology,
+    OssietoOBML,
+    validate_obml,
+    validate_ossie,
+    validate_ossie_ontology,
+)
+
+
+def _load(input_path: str) -> dict[str, Any]:
+    data = yaml.safe_load(Path(input_path).read_text())
+    if not isinstance(data, dict):
+        print(f"Error: {input_path} is not a YAML mapping", file=sys.stderr)
+        raise SystemExit(2)
+    return data
+
+
+def _emit(result: dict[str, Any], output: str) -> None:
+    output_yaml = yaml.dump(
+        result, default_flow_style=False, allow_unicode=True, sort_keys=False, width=120
+    )
+    Path(output).write_text(output_yaml)
+    print(f"Written to {output}", file=sys.stderr)
+
+
+def _print_warnings(warnings: list[str]) -> None:
+    if warnings:
+        print("\nConversion warnings:", file=sys.stderr)
+        for w in warnings:
+            print(f"  - {w}", file=sys.stderr)
+
+
+def _report_validation(label: str, result: dict[str, Any], validate_fn: Any) -> bool:
+    """Validate ``result`` and print a summary. Return True if there are errors."""
+    print(f"\nValidating {label}...", file=sys.stderr)
+    vr = validate_fn(result)
+    for line in vr.summary_lines():
+        print(line, file=sys.stderr)
+    if vr.valid:
+        if vr.schema_validation_performed:
+            print(f"{label} is valid", file=sys.stderr)
+        else:
+            print(
+                f"{label} passed available checks (JSON Schema validation skipped)",
+                file=sys.stderr,
+            )
+        return False
+    print(f"{label} has validation errors", file=sys.stderr)
+    return True
+
+
+def _cmd_obml_to_ossie(args: argparse.Namespace) -> int:
+    """OBML -> Ossie core-spec (or, with --ontology, Ossie ontology)."""
+    data = _load(args.input)
+
+    validate_fn: Any
+    if args.ontology:
+        converter: Any = OBMLtoOssieOntology(
+            data, args.model_name, args.description, args.ai_instructions
+        )
+        result = converter.convert()
+        validate_fn, label = validate_ossie_ontology, "Ossie ontology output"
+    else:
+        converter = OBMLtoOssie(data, args.model_name, args.description, args.ai_instructions)
+        result = converter.convert()
+        validate_fn, label = validate_ossie, "Ossie output"
+
+    _emit(result, args.output)
+    _print_warnings(converter.warnings)
+
+    if args.no_validate:
+        return 0
+    return 1 if _report_validation(label, result, validate_fn) else 0
+
+
+def _cmd_ossie_to_obml(args: argparse.Namespace) -> int:
+    """Ossie core-spec -> OBML."""
+    data = _load(args.input)
+
+    converter = OssietoOBML(data, args.database, args.schema)
+    result = converter.convert()
+
+    _emit(result, args.output)
+    _print_warnings(converter.warnings)
+
+    if args.no_validate:
+        return 0
+    return 1 if _report_validation("OBML output", result, validate_obml) else 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="ossie-orionbelt",
+        description="Convert between OrionBelt OBML and Ossie YAML.",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    o2s = subparsers.add_parser("obml-to-ossie", help="Convert OBML YAML → Ossie YAML")
+    o2s.add_argument("-i", "--input", required=True, metavar="FILE", help="Path to OBML YAML")
+    o2s.add_argument(
+        "-o", "--output", required=True, metavar="FILE", help="Path for output Ossie YAML"
+    )
+    o2s.add_argument(
+        "--ontology",
+        action="store_true",
+        help="Emit an Ossie ontology document instead of core-spec",
+    )
+    o2s.add_argument(
+        "--model-name", default="semantic_model", metavar="NAME", help="Ossie semantic model name"
+    )
+    o2s.add_argument("--description", default="", metavar="TEXT", help="Ossie model description")
+    o2s.add_argument(
+        "--ai-instructions", default="", metavar="TEXT", help="Ossie ai_context instructions"
+    )
+    o2s.add_argument("--no-validate", action="store_true", help="Skip output validation")
+
+    s2o = subparsers.add_parser("ossie-to-obml", help="Convert Ossie YAML → OBML YAML")
+    s2o.add_argument("-i", "--input", required=True, metavar="FILE", help="Path to Ossie YAML")
+    s2o.add_argument(
+        "-o", "--output", required=True, metavar="FILE", help="Path for output OBML YAML"
+    )
+    s2o.add_argument(
+        "--database", default="ANALYTICS", metavar="NAME", help="Default database for OBML output"
+    )
+    s2o.add_argument(
+        "--schema", default="PUBLIC", metavar="NAME", help="Default schema for OBML output"
+    )
+    s2o.add_argument("--no-validate", action="store_true", help="Skip output validation")
+
+    args = parser.parse_args(argv)
+    if args.command == "obml-to-ossie":
+        return _cmd_obml_to_ossie(args)
+    if args.command == "ossie-to-obml":
+        return _cmd_ossie_to_obml(args)
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

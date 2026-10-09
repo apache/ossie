@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/open-semantic-interchange/OSI/core-spec/behavior-layer.schema.json",
-  "title": "OSI Behavior Layer (First-class)",
-  "description": "Schema for semantic_model.behavior (actions/rules/effects). Supports legacy alias action_types.",
+  "$id": "https://github.com/apache/ossie/core-spec/behavior-layer.schema.json",
+  "title": "Apache Ossie Behavior Layer",
+  "description": "Canonical schema for a semantic model's optional behavior (actions/rules/effects). Supports legacy alias action_types.",
   "type": "object",
   "additionalProperties": true,
   "required": ["namespace", "behavior_layer_version", "rules"],
@@ -65,9 +65,26 @@
       "properties": {
         "entity": { "type": "string", "enum": ["dataset", "field", "metric", "relationship"] },
         "mode": { "type": "string", "enum": ["read", "write", "derive"] },
-        "impact_type": { "type": "string" },
-        "selectors": { "type": "object", "additionalProperties": true },
-        "transition": { "type": "object", "additionalProperties": true },
+        "impact_type": {
+          "type": "string",
+          "enum": ["state_transition", "master_data_mutation", "transactional_write", "derived_metric_change", "other"]
+        },
+        "selectors": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "dataset": { "type": "string" },
+            "field_names": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "transition": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "from": { "type": "string" },
+            "to": { "type": "string" }
+          }
+        },
         "set_value": { "type": "string" },
         "confidence": { "type": "string", "enum": ["guaranteed", "likely", "unknown"] },
         "notes": { "type": "string" },
@@ -94,4 +111,3 @@
     }
   }
 }
-

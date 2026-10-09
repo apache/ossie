@@ -1,0 +1,354 @@
+{
+  "apiName": "Customer_Orders_Model",
+  "label": "Customer Orders Model",
+  "description": "Example model demonstrating calculated dimensions with single and multiple data object dependencies",
+  "dataspace": "default",
+  "isQueryable": "Queryable",
+  "semanticDataObjects": [
+    {
+      "apiName": "Customers",
+      "label": "Customers",
+      "description": "Customer master data",
+      "dataObjectName": "Customers__dll",
+      "dataObjectType": "Dlo",
+      "semanticDimensions": [
+        {
+          "apiName": "customer_id",
+          "label": "Customer ID",
+          "description": "Unique customer identifier",
+          "dataObjectFieldName": "customer_id__c",
+          "dataType": "Text",
+          "displayCategory": "Discrete",
+          "isVisible": true,
+          "isPrimaryKey": true,
+          "sortOrder": "Ascending",
+          "semanticDataType": "Identifier"
+        },
+        {
+          "apiName": "email",
+          "label": "Email",
+          "description": "Customer email address",
+          "dataObjectFieldName": "email__c",
+          "dataType": "Email",
+          "displayCategory": "Discrete",
+          "isVisible": true,
+          "sortOrder": "None"
+        }
+      ],
+      "semanticMeasurements": [
+        {
+          "apiName": "total_purchases",
+          "label": "Total Purchases",
+          "description": "Lifetime purchase count",
+          "dataObjectFieldName": "total_purchases__c",
+          "dataType": "Number",
+          "aggregationType": "Sum",
+          "displayCategory": "Continuous",
+          "isVisible": true,
+          "isAggregatable": true,
+          "directionality": "Up",
+          "sentiment": "SentimentTypeUpIsGood",
+          "shouldTreatNullsAsZeros": true,
+          "decimalPlace": 0
+        },
+        {
+          "apiName": "lifetime_value",
+          "label": "Lifetime Value",
+          "description": "Total customer value",
+          "dataObjectFieldName": "lifetime_value__c",
+          "dataType": "Currency",
+          "aggregationType": "Sum",
+          "displayCategory": "Continuous",
+          "isVisible": true,
+          "isAggregatable": true,
+          "directionality": "Up",
+          "sentiment": "SentimentTypeUpIsGood",
+          "decimalPlace": 2
+        }
+      ]
+    },
+    {
+      "apiName": "Orders",
+      "label": "Orders",
+      "description": "Order transaction data",
+      "dataObjectName": "Orders__dll",
+      "dataObjectType": "Dlo",
+      "semanticDimensions": [
+        {
+          "apiName": "order_id",
+          "label": "Order ID",
+          "description": "Unique order identifier",
+          "dataObjectFieldName": "order_id__c",
+          "dataType": "Text",
+          "displayCategory": "Discrete",
+          "isVisible": true,
+          "isPrimaryKey": true,
+          "sortOrder": "Ascending"
+        },
+        {
+          "apiName": "order_date",
+          "label": "Order Date",
+          "description": "Date when order was placed",
+          "dataObjectFieldName": "order_date__c",
+          "dataType": "Date",
+          "displayCategory": "Discrete",
+          "isVisible": true,
+          "sortOrder": "Descending"
+        }
+      ],
+      "semanticMeasurements": [
+        {
+          "apiName": "amount",
+          "label": "Amount",
+          "description": "Order amount in currency",
+          "dataObjectFieldName": "amount__c",
+          "dataType": "Currency",
+          "aggregationType": "Sum",
+          "displayCategory": "Continuous",
+          "isVisible": true,
+          "isAggregatable": true,
+          "directionality": "Up",
+          "sentiment": "SentimentTypeUpIsGood",
+          "decimalPlace": 2
+        },
+        {
+          "apiName": "quantity",
+          "label": "Quantity",
+          "description": "Number of items ordered",
+          "dataObjectFieldName": "quantity__c",
+          "dataType": "Number",
+          "aggregationType": "Sum",
+          "displayCategory": "Continuous",
+          "isVisible": true,
+          "isAggregatable": true,
+          "directionality": "Up",
+          "shouldTreatNullsAsZeros": true,
+          "decimalPlace": 0
+        }
+      ]
+    },
+    {
+      "apiName": "Products",
+      "label": "Products",
+      "description": "Product catalog data",
+      "dataObjectName": "Products__dll",
+      "dataObjectType": "Dlo",
+      "semanticDimensions": [
+        {
+          "apiName": "product_id",
+          "label": "Product ID",
+          "description": "Unique product identifier",
+          "dataObjectFieldName": "product_id__c",
+          "dataType": "Text",
+          "displayCategory": "Discrete",
+          "isVisible": true,
+          "isPrimaryKey": true,
+          "sortOrder": "Ascending"
+        },
+        {
+          "apiName": "product_name",
+          "label": "Product Name",
+          "description": "Product display name",
+          "dataObjectFieldName": "product_name__c",
+          "dataType": "Text",
+          "displayCategory": "Discrete",
+          "isVisible": true,
+          "sortOrder": "Ascending"
+        }
+      ],
+      "semanticMeasurements": [
+        {
+          "apiName": "unit_price",
+          "label": "Unit Price",
+          "description": "Price per unit",
+          "dataObjectFieldName": "unit_price__c",
+          "dataType": "Currency",
+          "aggregationType": "Avg",
+          "displayCategory": "Continuous",
+          "isVisible": true,
+          "isAggregatable": true,
+          "decimalPlace": 2
+        },
+        {
+          "apiName": "stock_level",
+          "label": "Stock Level",
+          "description": "Current inventory count",
+          "dataObjectFieldName": "stock_level__c",
+          "dataType": "Number",
+          "aggregationType": "Sum",
+          "displayCategory": "Continuous",
+          "isVisible": true,
+          "isAggregatable": true,
+          "shouldTreatNullsAsZeros": false,
+          "decimalPlace": 0
+        }
+      ]
+    }
+  ],
+  "semanticRelationships": [
+    {
+      "apiName": "Customers_Orders_TableField",
+      "label": "Customers to Orders",
+      "description": "Test relationship with TableField types only",
+      "leftSemanticDefinitionApiName": "Customers",
+      "rightSemanticDefinitionApiName": "Orders",
+      "cardinality": "OneToMany",
+      "joinType": "Auto",
+      "isEnabled": true,
+      "criteria": [
+        {
+          "leftSemanticFieldApiName": "customer_id",
+          "rightSemanticFieldApiName": "order_id",
+          "joinOperator": "Equals",
+          "leftFieldType": "TableField",
+          "rightFieldType": "TableField"
+        }
+      ]
+    },
+    {
+      "apiName": "Customers_Orders_ConvertedCalcField",
+      "label": "Customers to Orders",
+      "description": "Test relationship with customer_email_domain",
+      "leftSemanticDefinitionApiName": "Customers",
+      "rightSemanticDefinitionApiName": "Orders",
+      "cardinality": "OneToMany",
+      "joinType": "Auto",
+      "isEnabled": true,
+      "criteria": [
+        {
+          "leftSemanticFieldApiName": "customer_email_domain",
+          "rightSemanticFieldApiName": "order_id",
+          "joinOperator": "Equals",
+          "leftFieldType": "SemanticField",
+          "rightFieldType": "TableField"
+        }
+      ]
+    },
+    {
+      "apiName": "Customers_Products_Formula",
+      "label": "Customers to Products - Formula Test",
+      "description": "Test relationship with Formula type",
+      "leftSemanticDefinitionApiName": "Customers",
+      "rightSemanticDefinitionApiName": "Products",
+      "cardinality": "ManyToMany",
+      "joinType": "Auto",
+      "isEnabled": true,
+      "criteria": [
+        {
+          "leftSemanticFieldApiName": "customer_id",
+          "rightSemanticFieldApiName": "product_id",
+          "joinOperator": "Equals",
+          "leftFieldType": "Formula",
+          "rightFieldType": "TableField"
+        }
+      ]
+    }
+  ],
+  "semanticCalculatedDimensions": [
+    {
+      "apiName": "customer_email_domain",
+      "label": "Customer Email Domain",
+      "description": "Extract domain from email",
+      "expression": "SUBSTRING([Customers].[email], CHARINDEX('@', [Customers].[email]) + 1, LEN([Customers].[email]))",
+      "dataType": "Text",
+      "displayCategory": "Discrete",
+      "isVisible": true,
+      "sortOrder": "Ascending",
+      "dependencies": [
+        {
+          "dependentDefinitionApiName": "Customers",
+          "dependentFieldApiName": "email"
+        }
+      ]
+    },
+    {
+      "apiName": "order_year",
+      "label": "Order Year",
+      "description": "Year extracted from order date",
+      "expression": "YEAR([Orders].[order_date])",
+      "dataType": "Number",
+      "displayCategory": "Discrete",
+      "isVisible": true,
+      "sortOrder": "Descending",
+      "dependencies": [
+        {
+          "dependentDefinitionApiName": "Orders",
+          "dependentFieldApiName": "order_date"
+        }
+      ]
+    },
+    {
+      "apiName": "customer_order_key",
+      "label": "Customer Order Key",
+      "description": "Unique key combining customer and order",
+      "expression": "CONCAT([Customers].[customer_id], '_', [Orders].[order_id])",
+      "dataType": "Text",
+      "displayCategory": "Discrete",
+      "isVisible": true,
+      "dependencies": [
+        {
+          "dependentDefinitionApiName": "Customers",
+          "dependentFieldApiName": "customer_id"
+        },
+        {
+          "dependentDefinitionApiName": "Orders",
+          "dependentFieldApiName": "order_id"
+        }
+      ]
+    },
+    {
+      "apiName": "current_timestamp",
+      "label": "Current Timestamp",
+      "description": "Current date/time",
+      "expression": "CURRENT_TIMESTAMP()",
+      "dataType": "DateTime",
+      "displayCategory": "Discrete",
+      "isVisible": true,
+      "dependencies": []
+    }
+  ],
+  "semanticCalculatedMeasurements": [
+    {
+      "apiName": "total_revenue",
+      "label": "Total Revenue",
+      "description": "Sum of all order amounts",
+      "expression": "SUM([Orders].[amount])",
+      "dataType": "Currency",
+      "aggregationType": "Sum",
+      "displayCategory": "Continuous",
+      "isVisible": true,
+      "isAggregatable": true,
+      "directionality": "Up",
+      "sentiment": "SentimentTypeUpIsGood",
+      "decimalPlace": 2,
+      "level": "AggregateFunction",
+      "dependencies": [
+        {
+          "dependentDefinitionApiName": "Orders",
+          "dependentFieldApiName": "amount"
+        }
+      ]
+    },
+    {
+      "apiName": "avg_order_value",
+      "label": "Average Order Value",
+      "description": "Average amount per order",
+      "expression": "AVG([Orders].[amount])",
+      "dataType": "Currency",
+      "aggregationType": "Avg",
+      "displayCategory": "Continuous",
+      "isVisible": true,
+      "isAggregatable": false,
+      "directionality": "Up",
+      "sentiment": "SentimentTypeUpIsGood",
+      "decimalPlace": 2,
+      "level": "AggregateFunction",
+      "dependencies": [
+        {
+          "dependentDefinitionApiName": "Orders",
+          "dependentFieldApiName": "amount"
+        }
+      ]
+    }
+  ]
+}

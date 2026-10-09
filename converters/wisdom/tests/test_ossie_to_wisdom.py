@@ -1,0 +1,438 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+import json
+from pathlib import Path
+
+import pytest
+
+from ossie import (
+    OssieDataset,
+    OssieDialect,
+    OssieDialectExpression,
+    OssieDocument,
+    OssieExpression,
+    OssieField,
+    OssieRelationship,
+)
+from ossie_wisdom import ConverterIssueType, OssieToWisdomConverter, WisdomToOssieConverter
+
+FIXTURE = Path(__file__).parent / "fixtures" / "sample_export.json"
+
+
+def _snowflake(expression):
+    return OssieExpression(dialects=[OssieDialectExpression(dialect=OssieDialect.SNOWFLAKE, expression=expression)])
+
+
+def _expr(*dialect_expressions):
+    return OssieExpression(
+        dialects=[
+            OssieDialectExpression(dialect=dialect, expression=expression)
+            for dialect, expression in dialect_expressions
+        ]
+    )
+
+
+@pytest.fixture(scope="module")
+def ossie_document():
+    export = json.loads(FIXTURE.read_text())
+    return WisdomToOssieConverter().convert(export).output
+
+
+@pytest.fixture(scope="module")
+def result(ossie_document):
+    return OssieToWisdomConverter().convert(ossie_document, exported_at="2026-07-10T00:00:00+00:00")
+
+
+@pytest.fixture(scope="module")
+def export(result):
+    return result.output
+
+
+def _issues_of(result, issue_type):
+    return [issue for issue in result.issues if issue.issue_type is issue_type]
+
+
+def _table(export, name):
+    return next(
+        table["zsheet_json"] for table in export["tables"] if table["zsheet_json"]["ref"]["name"] == name
+    )
+
+
+def test_export_envelope(export):
+    assert export["version"] == "1.0"
+    assert export["export_metadata"]["domain_name"] == "Sample Sales"
+    assert export["export_metadata"]["source_domain_id"] == export["domain"]["zsheet_json"]["ref"]["uuid"]
+    domain = export["domain"]["zsheet_json"]
+    assert domain["zsheetType"] == "DOMAIN"
+    assert domain["description"] == "Synthetic sales domain used for converter tests"
+
+
+def test_ai_context_splits_into_instructions_and_knowledge(export):
+    domain = export["domain"]["zsheet_json"]
+    assert domain["domainSystemInstructions"] == "Only answer questions about sales data."
+    assert [knowledge["content"] for knowledge in domain["knowledge"]] == [
+        "The fiscal year starts in February.",
+        "Pipeline refers to open orders expected to close this quarter.",
+    ]
+
+
+def test_tables_and_locations(export):
+    orders = _table(export, "orders")
+    assert orders["location"]["database"] == "analytics"
+    assert orders["location"]["schema"] == "sales"
+    assert orders["location"]["dbTable"] == "orders"
+    assert orders["primaryKey"] == {"columns": ["order_id"]}
+    assert _table(export, "customers")["primaryKey"] == {"columns": ["customer_id"]}
+    metadata = {entry["zsheet_uuid"]: entry for entry in export["table_metadata"]}
+    assert metadata[orders["ref"]["uuid"]]["table_name"] == "orders"
+
+
+def test_fields_split_into_columns_and_formulas(export):
+    orders = _table(export, "orders")
+    column_names = [column["name"] for column in orders["columns"]]
+    assert "order_id" in column_names
+    # A quoted bare-name expression is recognized as a plain column.
+    assert "Discount - Percent" in column_names
+    formulas = {formula["name"]: formula for formula in orders["formulas"]}
+    assert set(formulas) == {"is_large"}
+    assert formulas["is_large"]["expression"] == 'CASE WHEN "orders"."amount" > 100 THEN TRUE ELSE FALSE END'
+    assert formulas["is_large"]["properties"]["displayName"] == "Is Large"
+    status = next(column for column in orders["columns"] if column["name"] == "status")
+    assert status["description"] == "Current order status"
+    assert status["properties"]["displayName"] == "Order Status"
+
+
+def test_metrics_attach_to_referenced_tables(export):
+    orders_measures = {measure["name"] for measure in _table(export, "orders")["measures"]}
+    customers_measures = {measure["name"] for measure in _table(export, "customers")["measures"]}
+    assert orders_measures == {"total_amount"}
+    assert customers_measures == {"customers_total_amount"}
+
+
+def test_relationship_types_restored(export):
+    edges = export["domain"]["zsheet_json"]["relationshipGraph"]["relationships"]
+    types = [edge["properties"]["relationshipType"] for edge in edges]
+    assert types == ["MANY_TO_ONE", "ONE_TO_MANY", "MANY_TO_MANY", "MANY_TO_ONE"]
+    compound = edges[3]["properties"]["compoundJoinCondition"]["nestedCondition"]
+    assert compound["logicalOperator"] == "AND"
+    assert len(compound["conditions"]) == 2
+
+
+def _without_uuids(value):
+    if isinstance(value, dict):
+        return {key: _without_uuids(item) for key, item in value.items() if key != "uuid"}
+    if isinstance(value, list):
+        return [_without_uuids(item) for item in value]
+    return value
+
+
+def test_relationships_round_trip_from_wisdom(export):
+    original = json.loads(FIXTURE.read_text())["domain"]["zsheet_json"]["relationshipGraph"]["relationships"]
+    # The OR-joined edge is not representable in Ossie and is dropped (with an issue) on the way in.
+    representable = [
+        edge
+        for edge in original
+        if edge["properties"].get("compoundJoinCondition", {}).get("nestedCondition", {}).get("logicalOperator") != "OR"
+    ]
+    edges = export["domain"]["zsheet_json"]["relationshipGraph"]["relationships"]
+    # ZSheet uuids are regenerated from names, so compare everything else.
+    assert _without_uuids(edges) == _without_uuids(representable)
+
+
+def test_connections_are_per_dialect(export):
+    dialects = {connection["dialect"] for connection in export["connections"]}
+    assert dialects == {"snowflake", "ansi"}
+    assert _table(export, "orders")["location"]["connectionId"] == "et-connection-snowflake"
+    assert _table(export, "tags")["location"]["connectionId"] == "et-connection-ansi"
+
+
+def test_round_trip_preserves_ossie_document(ossie_document, export):
+    round_tripped = WisdomToOssieConverter().convert(export).output
+    assert round_tripped == ossie_document
+
+
+def test_deterministic_output(ossie_document, export):
+    again = OssieToWisdomConverter().convert(ossie_document, exported_at="2026-07-10T00:00:00+00:00").output
+    assert again == export
+
+
+def test_unrepresentable_elements_are_reported():
+    dataset = OssieDataset(
+        name="orders",
+        source="analytics.sales.orders",
+        unique_keys=[["order_id"]],
+        fields=[
+            OssieField(name="order_id", expression=_snowflake("order_id"), ai_context="the identifier"),
+        ],
+    )
+    document = OssieDocument(
+        name="first",
+        datasets=[dataset],
+        relationships=[
+            OssieRelationship(
+                name="orders_to_missing",
+                from_dataset="orders",
+                to="missing",
+                from_columns=["x"],
+                to_columns=["y"],
+            )
+        ],
+    )
+    result = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
+    assert [issue.element_name for issue in _issues_of(result, ConverterIssueType.UNIQUE_KEYS_DROPPED)] == ["orders"]
+    assert [issue.element_name for issue in _issues_of(result, ConverterIssueType.AI_CONTEXT_DROPPED)] == [
+        "orders.order_id"
+    ]
+    assert [issue.element_name for issue in _issues_of(result, ConverterIssueType.RELATIONSHIP_DROPPED)] == [
+        "orders_to_missing"
+    ]
+    assert result.output["domain"]["zsheet_json"]["relationshipGraph"]["relationships"] == []
+
+
+def test_one_to_one_note_restores_relationship_type():
+    document = OssieDocument(
+        name="m",
+        datasets=[
+            OssieDataset(name="a", source="db.s.a"),
+            OssieDataset(name="b", source="db.s.b"),
+        ],
+        relationships=[
+            OssieRelationship(
+                name="a_to_b",
+                from_dataset="a",
+                to="b",
+                from_columns=["id"],
+                to_columns=["id"],
+                ai_context="one-to-one relationship",
+            )
+        ],
+    )
+    export = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00").output
+    edges = export["domain"]["zsheet_json"]["relationshipGraph"]["relationships"]
+    assert edges[0]["properties"]["relationshipType"] == "ONE_TO_ONE"
+
+
+def test_relationship_note_with_surrounding_whitespace_still_matches():
+    # A YAML block scalar (`ai_context: |`) loads with a trailing newline.
+    document = OssieDocument(
+        name="m",
+        datasets=[
+            OssieDataset(name="a", source="db.s.a"),
+            OssieDataset(name="b", source="db.s.b"),
+        ],
+        relationships=[
+            OssieRelationship(
+                name="a_to_b",
+                from_dataset="a",
+                to="b",
+                from_columns=["id"],
+                to_columns=["id"],
+                ai_context="one-to-one relationship\n",
+            )
+        ],
+    )
+    result = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
+    edge = result.output["domain"]["zsheet_json"]["relationshipGraph"]["relationships"][0]
+    assert edge["properties"]["relationshipType"] == "ONE_TO_ONE"
+    assert _issues_of(result, ConverterIssueType.AI_CONTEXT_DROPPED) == []
+
+
+def test_free_text_relationship_note_is_not_read_as_a_type_marker():
+    document = OssieDocument(
+        name="m",
+        datasets=[
+            OssieDataset(name="orders", source="db.s.orders"),
+            OssieDataset(name="customers", source="db.s.customers"),
+        ],
+        relationships=[
+            OssieRelationship(
+                name="orders_to_customers",
+                from_dataset="orders",
+                to="customers",
+                from_columns=["customer_id"],
+                to_columns=["id"],
+                ai_context="one-to-many, orders to customers",
+            )
+        ],
+    )
+    result = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
+    edge = result.output["domain"]["zsheet_json"]["relationshipGraph"]["relationships"][0]
+    assert edge["properties"]["relationshipType"] == "MANY_TO_ONE"
+    assert edge["leftDataSource"]["zsheet"]["name"] == "orders"
+    assert [issue.element_name for issue in _issues_of(result, ConverterIssueType.AI_CONTEXT_DROPPED)] == [
+        "orders_to_customers"
+    ]
+
+
+def test_one_to_many_note_restores_relationship_type_and_direction():
+    document = OssieDocument(
+        name="m",
+        datasets=[
+            OssieDataset(name="orders", source="db.s.orders"),
+            OssieDataset(name="customers", source="db.s.customers"),
+        ],
+        relationships=[
+            OssieRelationship(
+                name="orders_to_customers",
+                from_dataset="orders",
+                to="customers",
+                from_columns=["customer_fk"],
+                to_columns=["id"],
+                ai_context="one-to-many relationship",
+            )
+        ],
+    )
+    export = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00").output
+    edge = export["domain"]["zsheet_json"]["relationshipGraph"]["relationships"][0]
+    assert edge["properties"]["relationshipType"] == "ONE_TO_MANY"
+    assert edge["leftDataSource"]["zsheet"]["name"] == "customers"
+    assert edge["rightDataSource"]["zsheet"]["name"] == "orders"
+    condition = edge["properties"]["joinCondition"]
+    assert (condition["leftColumn"]["name"], condition["leftColumn"]["zsheetRef"]["name"]) == ("id", "customers")
+    assert (condition["rightColumn"]["name"], condition["rightColumn"]["zsheetRef"]["name"]) == (
+        "customer_fk",
+        "orders",
+    )
+
+
+def test_unresolved_metric_attaches_to_first_dataset():
+    from ossie import OssieMetric
+
+    document = OssieDocument(
+        name="m",
+        datasets=[OssieDataset(name="a", source="db.s.a"), OssieDataset(name="b", source="db.s.b")],
+        metrics=[OssieMetric(name="row_count", expression=_snowflake("COUNT(*)"))],
+    )
+    result = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
+    export = result.output
+    assert [measure["name"] for measure in _table(export, "a")["measures"]] == ["row_count"]
+    assert [issue.element_name for issue in _issues_of(result, ConverterIssueType.METRIC_TABLE_UNRESOLVED)] == [
+        "row_count"
+    ]
+
+
+def test_field_only_ossie_sql_2026_is_exported_without_missing_issue():
+    """A field expressed only in OSSIE_SQL_2026 is exported, with no spurious
+    MISSING_DIALECT_EXPRESSION issue (#442)."""
+    document = OssieDocument(
+        name="m",
+        datasets=[
+            OssieDataset(
+                name="orders",
+                source="analytics.sales.orders",
+                fields=[OssieField(name="region", expression=_expr((OssieDialect.OSSIE_SQL_2026, "o_region")))],
+            )
+        ],
+    )
+    result = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
+    formulas = {formula["name"]: formula["expression"] for formula in _table(result.output, "orders").get("formulas", [])}
+    assert formulas == {"region": "o_region"}
+    assert _issues_of(result, ConverterIssueType.MISSING_DIALECT_EXPRESSION) == []
+
+
+def test_metric_only_ossie_sql_2026_is_exported_without_missing_issue():
+    """A metric expressed only in OSSIE_SQL_2026 is exported as a measure, with no
+    spurious MISSING_DIALECT_EXPRESSION issue (#442)."""
+    from ossie import OssieMetric
+
+    document = OssieDocument(
+        name="m",
+        datasets=[OssieDataset(name="orders", source="analytics.sales.orders")],
+        metrics=[
+            OssieMetric(name="total_amount", expression=_expr((OssieDialect.OSSIE_SQL_2026, "SUM(orders.amount)")))
+        ],
+    )
+    result = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
+    measures = {measure["name"]: measure["expression"] for measure in _table(result.output, "orders").get("measures", [])}
+    assert measures == {"total_amount": "SUM(orders.amount)"}
+    assert _issues_of(result, ConverterIssueType.MISSING_DIALECT_EXPRESSION) == []
+
+
+def test_ansi_sql_preferred_over_ossie_sql_2026():
+    """ANSI_SQL wins over OSSIE_SQL_2026 when both are present."""
+    document = OssieDocument(
+        name="m",
+        datasets=[
+            OssieDataset(
+                name="orders",
+                source="analytics.sales.orders",
+                fields=[
+                    OssieField(
+                        name="region",
+                        expression=_expr(
+                            (OssieDialect.OSSIE_SQL_2026, "portable_region"),
+                            (OssieDialect.ANSI_SQL, "ansi_region"),
+                        ),
+                    )
+                ],
+            )
+        ],
+    )
+    result = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
+    formulas = {formula["name"]: formula["expression"] for formula in _table(result.output, "orders").get("formulas", [])}
+    assert formulas == {"region": "ansi_region"}
+
+
+def test_native_dialect_preferred_over_ossie_sql_2026():
+    """A native dialect (SNOWFLAKE) wins over OSSIE_SQL_2026 when both are present."""
+    document = OssieDocument(
+        name="m",
+        datasets=[
+            OssieDataset(
+                name="orders",
+                source="analytics.sales.orders",
+                fields=[
+                    OssieField(
+                        name="region",
+                        expression=_expr(
+                            (OssieDialect.OSSIE_SQL_2026, "portable_region"),
+                            (OssieDialect.SNOWFLAKE, "snow_region"),
+                        ),
+                    )
+                ],
+            )
+        ],
+    )
+    result = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
+    formulas = {formula["name"]: formula["expression"] for formula in _table(result.output, "orders").get("formulas", [])}
+    assert formulas == {"region": "snow_region"}
+
+
+def test_unusable_dialect_still_reports_missing_expression():
+    """A metric whose only dialect matches neither the dataset dialect, ANSI_SQL, nor
+    OSSIE_SQL_2026 still reports MISSING_DIALECT_EXPRESSION and falls back to the first
+    listed expression. Guards the fallback chain against silently accepting any dialect (#442)."""
+    from ossie import OssieMetric
+
+    document = OssieDocument(
+        name="m",
+        datasets=[
+            OssieDataset(
+                name="orders",
+                source="analytics.sales.orders",
+                fields=[OssieField(name="id", expression=_snowflake("id"))],
+            )
+        ],
+        metrics=[OssieMetric(name="row_count", expression=_expr((OssieDialect.BIGQUERY, "COUNT(orders.id)")))],
+    )
+    result = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
+    measures = {measure["name"]: measure["expression"] for measure in _table(result.output, "orders").get("measures", [])}
+    assert measures == {"row_count": "COUNT(orders.id)"}
+    assert [issue.element_name for issue in _issues_of(result, ConverterIssueType.MISSING_DIALECT_EXPRESSION)] == [
+        "row_count"
+    ]

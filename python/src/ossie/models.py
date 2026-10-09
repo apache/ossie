@@ -1,0 +1,248 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+from enum import Enum
+from typing import Any, Optional, Union
+
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer
+
+
+class OssieDialect(str, Enum):
+    """Supported SQL and expression language dialects."""
+
+    ANSI_SQL = "ANSI_SQL"
+    SNOWFLAKE = "SNOWFLAKE"
+    MDX = "MDX"
+    MAQL = "MAQL"
+    TABLEAU = "TABLEAU"
+    DATABRICKS = "DATABRICKS"
+    BIGQUERY = "BIGQUERY"
+    SIGMA = "SIGMA"
+    THOUGHTSPOT = "THOUGHTSPOT"
+    DAX = "DAX"
+    HOLISTICS_AQL = "HOLISTICS_AQL"
+    OSSIE_SQL_2026 = "OSSIE_SQL_2026"
+
+
+class OssieDataType(str, Enum):
+    """Portable logical data types for fields and metric results."""
+
+    STRING = "String"
+    INTEGER = "Integer"
+    DECIMAL = "Decimal"
+    FLOAT = "Float"
+    BOOLEAN = "Boolean"
+    DATE = "Date"
+    TIME = "Time"
+    DATE_TIME = "DateTime"
+    DATE_TIME_TZ = "DateTimeTz"
+    OPAQUE = "Opaque"
+
+
+_TEMPORAL_DATA_TYPES = frozenset(
+    {
+        OssieDataType.DATE,
+        OssieDataType.TIME,
+        OssieDataType.DATE_TIME,
+        OssieDataType.DATE_TIME_TZ,
+    }
+)
+
+
+class OssieVendor(str, Enum):
+    """Well-known vendor names for custom extensions."""
+
+    COMMON = "COMMON"
+    SNOWFLAKE = "SNOWFLAKE"
+    SALESFORCE = "SALESFORCE"
+    DBT = "DBT"
+    DATABRICKS = "DATABRICKS"
+    GOODDATA = "GOODDATA"
+    SEMANTIDO = "SEMANTIDO"
+    WISDOM = "WISDOM"
+    SIGMA = "SIGMA"
+    HEX = "HEX"
+
+
+class OssieAIContextObject(BaseModel):
+    """Structured AI context with instructions, synonyms, and examples."""
+
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    instructions: Optional[str] = None
+    synonyms: Optional[tuple[str, ...]] = None
+    examples: Optional[tuple[str, ...]] = None
+
+
+OssieAIContext = Union[str, OssieAIContextObject]
+
+
+class OssieCustomExtension(BaseModel):
+    """Vendor-specific metadata as a serialized JSON string."""
+
+    model_config = ConfigDict(frozen=True)
+
+    vendor_name: str
+    data: str
+
+
+class OssieDialectExpression(BaseModel):
+    """Expression in a specific dialect."""
+
+    model_config = ConfigDict(frozen=True)
+
+    dialect: OssieDialect
+    expression: str
+
+
+class OssieExpression(BaseModel):
+    """Expression definition with multi-dialect support."""
+
+    model_config = ConfigDict(frozen=True)
+
+    dialects: list[OssieDialectExpression] = Field(..., min_length=1)
+
+
+class OssieDimension(BaseModel):
+    """Dimension metadata on a field."""
+
+    model_config = ConfigDict(frozen=True)
+
+    is_time: Optional[bool] = None
+
+
+class OssieField(BaseModel):
+    """Row-level attribute for grouping, filtering, and metric expressions."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str = Field(..., min_length=1)
+    expression: OssieExpression
+    dimension: Optional[OssieDimension] = None
+    label: Optional[str] = None
+    description: Optional[str] = None
+    datatype: Optional[OssieDataType] = None
+    ai_context: Optional[OssieAIContext] = None
+    custom_extensions: Optional[list[OssieCustomExtension]] = None
+
+    def is_time_dimension(self) -> bool:
+        """Return the field's effective temporal-dimension role.
+
+        A field must have dimension metadata to be a dimension. Within that
+        block, an explicit ``is_time`` value takes precedence; otherwise the
+        role defaults from a temporal ``datatype``.
+        """
+        if self.dimension is None:
+            return False
+        if self.dimension.is_time is not None:
+            return self.dimension.is_time
+        return self.datatype in _TEMPORAL_DATA_TYPES
+
+
+class OssieDataset(BaseModel):
+    """Logical dataset representing a business entity (fact or dimension table)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str = Field(..., min_length=1)
+    source: str = Field(..., min_length=1)
+    primary_key: Optional[list[str]] = None
+    unique_keys: Optional[list[list[str]]] = None
+    description: Optional[str] = None
+    ai_context: Optional[OssieAIContext] = None
+    fields: Optional[list[OssieField]] = None
+    custom_extensions: Optional[list[OssieCustomExtension]] = None
+
+
+class OssieRelationship(BaseModel):
+    """Foreign key relationship between datasets."""
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    name: str = Field(..., min_length=1)
+    from_dataset: str = Field(..., alias="from", min_length=1)
+    to: str = Field(..., min_length=1)
+    from_columns: list[str] = Field(..., min_length=1)
+    to_columns: list[str] = Field(..., min_length=1)
+    ai_context: Optional[OssieAIContext] = None
+    custom_extensions: Optional[list[OssieCustomExtension]] = None
+
+
+class OssieMetric(BaseModel):
+    """Quantitative measure defined on business data."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str = Field(..., min_length=1)
+    expression: OssieExpression
+    description: Optional[str] = None
+    datatype: Optional[OssieDataType] = None
+    ai_context: Optional[OssieAIContext] = None
+    custom_extensions: Optional[list[OssieCustomExtension]] = None
+
+
+class OssieSemanticModel(BaseModel):
+    """Semantic model: the datasets, relationships, and metrics for one business domain."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str = Field(..., min_length=1)
+    description: Optional[str] = None
+    ai_context: Optional[OssieAIContext] = None
+    datasets: list[OssieDataset] = Field(..., min_length=1)
+    relationships: Optional[list[OssieRelationship]] = None
+    metrics: Optional[list[OssieMetric]] = None
+    # Behavior field constraints are defined by the canonical JSON Schema.
+    behavior: Optional[dict[str, Any]] = None
+    custom_extensions: Optional[list[OssieCustomExtension]] = None
+
+
+class OssieDocument(OssieSemanticModel):
+    """A single semantic model with document metadata at the root."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    version: str = "0.2.0.dev0"
+
+    @model_serializer(mode="wrap")
+    def _serialize_document(self, handler: SerializerFunctionWrapHandler):
+        # Omit a custom return type to retain Pydantic's serialization schema.
+        data = handler(self)
+        if "version" in data:
+            return {"version": data.pop("version"), **data}
+        return data
+
+    def to_ossie_yaml(self, **kwargs: Any) -> str:
+        """Serialize to Ossie-compliant YAML (uses field aliases and excludes None values).
+
+        Both defaults can be overridden through kwargs. ``mode`` cannot: YAML output
+        needs the plain scalars only the JSON mode produces.
+        """
+        kwargs.setdefault("by_alias", True)
+        kwargs.setdefault("exclude_none", True)
+        data = self.model_dump(mode="json", **kwargs)
+        return yaml.dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+    def to_ossie_json(self, **kwargs: Any) -> str:
+        """Serialize to Ossie-compliant JSON (uses field aliases and excludes None values).
+
+        Both defaults can be overridden through kwargs.
+        """
+        kwargs.setdefault("by_alias", True)
+        kwargs.setdefault("exclude_none", True)
+        return self.model_dump_json(**kwargs)

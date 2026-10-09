@@ -1,0 +1,271 @@
+{
+  "ldm": {
+    "datasets": [
+      {
+        "id": "store_sales",
+        "title": "Store Sales",
+        "description": "Fact table containing all store sales transactions",
+        "grain": [
+          {"id": "attr.store_sales.ss_item_sk", "type": "attribute"},
+          {"id": "attr.store_sales.ss_ticket_number", "type": "attribute"}
+        ],
+        "attributes": [
+          {
+            "id": "attr.store_sales.ss_item_sk",
+            "title": "Item SK",
+            "sourceColumn": "ss_item_sk",
+            "labels": []
+          },
+          {
+            "id": "attr.store_sales.ss_ticket_number",
+            "title": "Ticket Number",
+            "sourceColumn": "ss_ticket_number",
+            "labels": []
+          },
+          {
+            "id": "attr.store_sales.ss_customer_sk",
+            "title": "Customer SK",
+            "sourceColumn": "ss_customer_sk",
+            "labels": []
+          },
+          {
+            "id": "attr.store_sales.ss_store_sk",
+            "title": "Store SK",
+            "sourceColumn": "ss_store_sk",
+            "labels": []
+          }
+        ],
+        "facts": [
+          {
+            "id": "fact.store_sales.ss_quantity",
+            "title": "Quantity",
+            "sourceColumn": "ss_quantity",
+            "description": "Quantity of items sold"
+          },
+          {
+            "id": "fact.store_sales.ss_sales_price",
+            "title": "Sales Price",
+            "sourceColumn": "ss_sales_price",
+            "description": "Sales price per unit"
+          },
+          {
+            "id": "fact.store_sales.ss_ext_sales_price",
+            "title": "Extended Sales Price",
+            "sourceColumn": "ss_ext_sales_price",
+            "description": "Extended sales price (quantity * price)"
+          },
+          {
+            "id": "fact.store_sales.ss_net_profit",
+            "title": "Net Profit",
+            "sourceColumn": "ss_net_profit",
+            "description": "Net profit from the sale"
+          }
+        ],
+        "references": [
+          {
+            "identifier": {"id": "date_dim", "type": "dataset"},
+            "sources": [
+              {"column": "ss_sold_date_sk", "dataType": "INT",
+               "target": {"id": "date_dim", "type": "date"}}
+            ],
+            "multivalue": false
+          },
+          {
+            "identifier": {"id": "customer", "type": "dataset"},
+            "sources": [
+              {"column": "ss_customer_sk", "dataType": "INT",
+               "target": {"id": "attr.customer.c_customer_sk", "type": "attribute"}}
+            ],
+            "multivalue": false
+          },
+          {
+            "identifier": {"id": "item", "type": "dataset"},
+            "sources": [
+              {"column": "ss_item_sk", "dataType": "INT",
+               "target": {"id": "attr.item.i_item_sk", "type": "attribute"}}
+            ],
+            "multivalue": false
+          },
+          {
+            "identifier": {"id": "store", "type": "dataset"},
+            "sources": [
+              {"column": "ss_store_sk", "dataType": "INT",
+               "target": {"id": "attr.store.s_store_sk", "type": "attribute"}}
+            ],
+            "multivalue": false
+          }
+        ],
+        "dataSourceTableId": {
+          "id": "store_sales",
+          "dataSourceId": "tpcds",
+          "type": "dataSource",
+          "path": ["public", "store_sales"]
+        }
+      },
+      {
+        "id": "customer",
+        "title": "Customer",
+        "description": "Customer dimension with demographic information",
+        "grain": [
+          {"id": "attr.customer.c_customer_sk", "type": "attribute"}
+        ],
+        "attributes": [
+          {
+            "id": "attr.customer.c_customer_sk",
+            "title": "Customer SK",
+            "sourceColumn": "c_customer_sk",
+            "labels": [
+              {
+                "id": "label.customer.c_customer_id",
+                "title": "Customer ID",
+                "sourceColumn": "c_customer_id"
+              },
+              {
+                "id": "label.customer.c_email_address",
+                "title": "Email",
+                "sourceColumn": "c_email_address",
+                "valueType": "HYPERLINK"
+              }
+            ]
+          },
+          {
+            "id": "attr.customer.c_first_name",
+            "title": "First Name",
+            "sourceColumn": "c_first_name",
+            "labels": []
+          },
+          {
+            "id": "attr.customer.c_last_name",
+            "title": "Last Name",
+            "sourceColumn": "c_last_name",
+            "labels": []
+          }
+        ],
+        "facts": [],
+        "references": [],
+        "dataSourceTableId": {
+          "id": "customer",
+          "dataSourceId": "tpcds",
+          "type": "dataSource",
+          "path": ["public", "customer"]
+        }
+      },
+      {
+        "id": "item",
+        "title": "Item",
+        "description": "Item/Product dimension",
+        "grain": [
+          {"id": "attr.item.i_item_sk", "type": "attribute"}
+        ],
+        "attributes": [
+          {
+            "id": "attr.item.i_item_sk",
+            "title": "Item SK",
+            "sourceColumn": "i_item_sk",
+            "labels": [
+              {
+                "id": "label.item.i_item_id",
+                "title": "Item ID",
+                "sourceColumn": "i_item_id"
+              }
+            ]
+          },
+          {
+            "id": "attr.item.i_brand",
+            "title": "Brand",
+            "sourceColumn": "i_brand",
+            "labels": []
+          },
+          {
+            "id": "attr.item.i_category",
+            "title": "Category",
+            "sourceColumn": "i_category",
+            "labels": []
+          }
+        ],
+        "facts": [
+          {
+            "id": "fact.item.i_current_price",
+            "title": "Current Price",
+            "sourceColumn": "i_current_price",
+            "description": "Current price of the item"
+          }
+        ],
+        "references": [],
+        "dataSourceTableId": {
+          "id": "item",
+          "dataSourceId": "tpcds",
+          "type": "dataSource",
+          "path": ["public", "item"]
+        }
+      },
+      {
+        "id": "store",
+        "title": "Store",
+        "description": "Store dimension with location attributes",
+        "grain": [
+          {"id": "attr.store.s_store_sk", "type": "attribute"}
+        ],
+        "attributes": [
+          {
+            "id": "attr.store.s_store_sk",
+            "title": "Store SK",
+            "sourceColumn": "s_store_sk",
+            "labels": [
+              {
+                "id": "label.store.s_store_id",
+                "title": "Store ID",
+                "sourceColumn": "s_store_id"
+              }
+            ]
+          },
+          {
+            "id": "attr.store.s_store_name",
+            "title": "Store Name",
+            "sourceColumn": "s_store_name",
+            "labels": []
+          },
+          {
+            "id": "attr.store.s_city",
+            "title": "City",
+            "sourceColumn": "s_city",
+            "labels": []
+          },
+          {
+            "id": "attr.store.s_state",
+            "title": "State",
+            "sourceColumn": "s_state",
+            "labels": []
+          }
+        ],
+        "facts": [
+          {
+            "id": "fact.store.s_number_employees",
+            "title": "Number of Employees",
+            "sourceColumn": "s_number_employees",
+            "description": "Number of employees at the store"
+          }
+        ],
+        "references": [],
+        "dataSourceTableId": {
+          "id": "store",
+          "dataSourceId": "tpcds",
+          "type": "dataSource",
+          "path": ["public", "store"]
+        }
+      }
+    ],
+    "dateInstances": [
+      {
+        "id": "date_dim",
+        "title": "Date",
+        "description": "Date dimension with calendar attributes",
+        "granularities": ["DAY", "WEEK", "MONTH", "QUARTER", "YEAR"],
+        "granularitiesFormatting": {
+          "titleBase": "",
+          "titlePattern": "%granularityTitle (%titleBase)"
+        }
+      }
+    ]
+  }
+}

@@ -1,6 +1,27 @@
-# OSI - Core Metadata Specification
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
 
-**Version:** 0.1.2
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+-->
+
+# Apache Ossie - Core Metadata Specification
+
+> **DRAFT version** — in development, schema may change before 0.2.0 is released.
+
+**Version:** 0.2.0.dev0
 
 ## Goals
 
@@ -27,7 +48,7 @@ Standard enumeration values used throughout the specification.
 
 ### Dialects
 
-Supported SQL and expression language dialects for metrics and field definitions.
+Dialects in which metric and field expressions can be declared.
 
 | Dialect | Description |
 |---------|-------------|
@@ -36,124 +57,158 @@ Supported SQL and expression language dialects for metrics and field definitions
 | `MDX` | Multi-Dimensional Expressions |
 | `TABLEAU` | Tableau calculations |
 | `DATABRICKS` | Databricks SQL |
+| `MAQL` | GoodData MAQL (Multi-Dimensional Analytical Query Language) |
+| `BIGQUERY` | Google BigQuery (GoogleSQL) |
+| `SIGMA` | Sigma Computing's spreadsheet-style formula language |
+| `THOUGHTSPOT` | ThoughtSpot formula language |
+| `DAX` | Data Analysis Expressions (Power BI / Analysis Services) |
+| `HOLISTICS_AQL` | Holistics AQL (Analytical Query Language) |
+| `OSSIE_SQL_2026` | Ossie's portable SQL expression language, defined in `expression_language.md` |
 
-### Vendors
+`OSSIE_SQL_2026` is the only dialect whose semantics this specification defines. The other values
+identify vendor or third-party expression languages. Ossie treats expressions in those dialects as
+opaque, and implementations MAY ignore them (see
+[Dialect Extensions](expression_language.md#dialect-extensions)). Registering a dialect makes it
+valid for declaring a model; it does not mean Ossie supports querying in that dialect (see
+[Model Declaration vs. Querying](expression_language.md#model-declaration-vs-querying)).
 
-Supported vendors for custom extensions and integrations.
+### Data types
 
-| Vendor | Description |
-|--------|-------------|
-| `COMMON` | Common/standard extensions |
-| `SNOWFLAKE` | Snowflake-specific attributes |
-| `SALESFORCE` | Salesforce/Tableau-specific attributes |
-| `DBT` | dbt-specific attributes |
-| `DATABRICKS` | Databricks-specific attributes |
+`DataType` declares the logical value type of a field or metric independently
+of its role and physical representation. The shared names align with the
+ontology specification's built-in value types; `Time`, `DateTimeTz`, and
+`Opaque` are additional core data types.
+
+| DataType | Description |
+|----------|-------------|
+| `String` | Variable-length Unicode character data; length and collation are unspecified. |
+| `Integer` | Exact integral number; width and signedness are unspecified. |
+| `Decimal` | Exact base-10 number; precision and scale are unspecified. |
+| `Float` | Approximate floating-point number. |
+| `Boolean` | Logical two-valued truth type. |
+| `Date` | Calendar date with no time-of-day component. |
+| `Time` | Time-of-day with no date or timezone. |
+| `DateTime` | Local/civil date and time with no timezone or offset. |
+| `DateTimeTz` | Date and time with sufficient offset or timezone context to identify an instant. Preservation of a named timezone identifier is not guaranteed. |
+| `Opaque` | Known type outside the portable vocabulary; use `custom_extensions` for vendor-specific refinement. Omit `datatype` when the type is unknown or unspecified. |
 
 ## Semantic Model
 
-The top-level container that represents a complete semantic model, including datasets, relationships, and  metrics.
+Each JSON or YAML document represents exactly one semantic model.
+
+A standalone document must contain `version`, `name`, and a non-empty `datasets`
+array. For bulk exchange, use separate model documents. This specification does
+not define a bundle format or cross-model references.
 
 ### Schema
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `version` | string | Yes | Apache Ossie specification version (`0.2.0.dev0`) |
 | `name` | string | Yes | Unique identifier for the semantic model |
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., custom instructions) |
 | `datasets` | array | Yes | Collection of logical datasets (fact and dimension tables) |
 | `relationships` | array | No | Defines how logical datasets are connected |
-| `metrics` | array | No | Quantifiable measures defined as aggregate expessions on fields from logical datsets |
-| `behavior` | object | No | Optional behavior layer for deterministic action planning and attribution |
+| `metrics` | array | No | Quantifiable measures defined as aggregate expressions on fields from logical datasets |
+| `behavior` | object | No | Action, rule, and effect metadata; see [Behavior](#behavior-actions--rules--effects) |
 | `custom_extensions` | array | No | Vendor-specific attributes for extensibility |
 
 ### Example
 
 ```yaml
-semantic_model:
-  - name: sales_analytics
-    description: Sales and customer analytics model
-    ai_context:
-      instructions: "Use this model for sales analysis and customer insights"
-    datasets: []
-    relationships: []
-    metrics: []
-    behavior:
-      namespace: "SALES"
-      behavior_layer_version: "0.1"
-      actions: []
-      rules: []
-    custom_extensions:
-      - vendor_name: DBT
-        data: '{"project_name": "tpcds_analytics", "models_path": "models/semantic"}'
+version: 0.2.0.dev0
+name: sales_analytics
+description: Sales and customer analytics model
+ai_context:
+  instructions: "Use this model for sales analysis and customer insights"
+datasets:
+  - name: orders
+    source: sales.public.orders
+relationships: []
+metrics: []
+custom_extensions:
+  - vendor_name: DBT
+    data: '{"project_name": "tpcds_analytics", "models_path": "models/semantic"}'
 ```
+
+The same document structure in JSON:
+
+```json
+{
+  "version": "0.2.0.dev0",
+  "name": "sales_analytics",
+  "datasets": [
+    {"name": "orders", "source": "sales.public.orders"}
+  ]
+}
+```
+
+### Migrating earlier document shapes
+
+This is a breaking change in the unreleased `0.2.0.dev0` specification. Earlier
+releases and earlier development snapshots use a `semantic_model` array. The
+current schema accepts only the flat document shape; it does not accept the array
+or an object-valued wrapper.
+
+To migrate a document containing one model, move that model's properties to the
+root and remove `semantic_model`. Use `version: 0.2.0.dev0` for the migrated
+document. Remove any root-level `dialects` and `vendors` declarations; preserve
+per-expression dialects and vendor information in `custom_extensions`. For
+multiple models, create one document per model and validate each result. An empty
+model array cannot produce a valid model document. Preserve model contents and
+custom extensions; never silently select only the first model or overwrite a file
+when splitting a document.
+
+For [ontology maps](../ontology/ontology.md#ontology-mappings), each embedded
+model must be a complete core document.
 
 ---
 
 ## Behavior (Actions / Rules / Effects)
 
-Behavior is an optional, vendor-agnostic layer for **deterministic action planning** and **attribution** (what changed/why).
+The optional root-level `behavior` property describes actions, rules, and effects
+for planning and attribution. It does not execute actions or enforce policies.
 
-This repository supports two equivalent placements:
-1) **Preferred (first-class):** `semantic_model[].behavior`
-2) **Backwards-compatible (legacy):** embed behavior-layer JSON under `custom_extensions` (e.g. `vendor_name: COMMON`)
+[behavior-layer.schema.json](behavior-layer.schema.json) is the canonical
+validation source. `ossie-schema.json` references it with `$ref`, including from
+the reusable `SemanticModel` definition. The YAML reference describes the same
+contract. See [Behavior Layer](behavior-layer.md) for all fields and legacy
+embedded-payload validation.
 
-### Schema (semantic_model.behavior)
+Behavior requires non-empty `namespace` and `behavior_layer_version` strings,
+`rules` (which may be empty), and at least one of `actions` or its legacy alias
+`action_types`. Empty action lists and both aliases remain accepted.
+Actions require `id` and `title`; effects require `entity` and `mode`; rules
+require `id`, `title`, `severity`, `when`, `constraint`, and `message`.
 
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `namespace` | string | Yes | Namespace/group for actions and rules (e.g. `SAP_P2P`) |
-| `behavior_layer_version` | string | Yes | Version for behavior schema evolution |
-| `actions` | array | No* | Preferred list of actions (`actions` or `action_types` required) |
-| `action_types` | array | No* | Legacy alias of `actions` (for backwards compatibility) |
-| `rules` | array | Yes | Declarative constraints/guards for planning and governance |
-| `metadata` | object | No | Governance metadata (owner/tags/last_updated, etc.) |
-
-### Action Schema (high-level)
-
-Actions represent executable intents (API calls, workflows, tools). This spec intentionally does **not** assume SQL.
-
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `id` | string | Yes | Action id, e.g. `suppliers/block` |
-| `title` | string | Yes | Human-friendly title |
-| `kind` | string | No | `command` or `query` |
-| `operation` | string | No | Free-form operation name (e.g. `block`, `unblock`, `analyze`) |
-| `effects` | array | No | Optional machine-readable impact annotations |
-
-### Effects (impact annotations)
-
-Effects encode how an action changes datasets/fields for:
-- plan validation (state transitions / prohibited follow-ups)
-- attribution (what changed/why for a field or dataset)
-
-Minimal effect fields:
-`entity` (dataset/field/metric/relationship), `mode` (read/write/derive), `selectors` (dataset + field_names),
-optional `impact_type`, `transition`, `set_value`.
-
-### Example
+Optional `impact_type` accepts only `state_transition`, `master_data_mutation`,
+`transactional_write`, `derived_metric_change`, or `other`. `selectors` and
+`transition` remain optional, with their known members typed by the canonical
+schema. Behavior, action, effect, and rule objects retain open extension fields.
 
 ```yaml
-semantic_model:
-  - name: sap_p2p
-    datasets: []
-    behavior:
-      namespace: "SAP_P2P"
-      behavior_layer_version: "0.1"
-      actions:
-        - id: suppliers/block
-          title: Block supplier
-          kind: command
-          operation: block
-          entity_name: suppliers
-          effects:
-            - entity: field
-              mode: write
-              impact_type: state_transition
-              selectors:
-                dataset: suppliers
-                field_names: [status]
-              set_value: Blocked
-      rules: []
+version: 0.2.0.dev0
+name: sap_p2p
+datasets:
+  - name: suppliers
+    source: sap.p2p.suppliers
+behavior:
+  namespace: SAP_P2P
+  behavior_layer_version: "0.1"
+  actions:
+    - id: suppliers/block
+      title: Block supplier
+      kind: command
+      effects:
+        - entity: field
+          mode: write
+          impact_type: state_transition
+          selectors:
+            dataset: suppliers
+            field_names: [status]
+          set_value: Blocked
+  rules: []
 ```
 
 ---
@@ -278,6 +333,7 @@ Fields represent row-level attributes that can be used for grouping, filtering, 
 | `dimension` | object | No | Dimension metadata (e.g., `is_time` flag) |
 | `label` | string | No | Label for categorization |
 | `description` | string | No | Human-readable description |
+| `datatype` | string (enum) | No | Logical data type for this field. See [Data types](#data-types). |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms) |
 | `custom_extensions` | array | No | Vendor-specific attributes |
 
@@ -304,7 +360,7 @@ expression:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `is_time` | boolean | Indicates if this is a time-based dimension for temporal filtering |
+| `is_time` | boolean | Temporal-role marker. When `true`, consumers that distinguish time dimensions (e.g. for time-series analysis or temporal filtering) should treat this field as a time dimension. This is a *role* flag, independent of the field's data type. See [DataType and `is_time`: type vs. role](#datatype-and-is_time-type-vs-role). |
 
 ### Examples
 
@@ -317,7 +373,7 @@ expression:
       - dialect: ANSI_SQL
         expression: customer_id
   description: Customer identifier
-  dimension: 
+  dimension:
     is_time: false
 ```
 
@@ -344,6 +400,7 @@ expression:
     dialects:
       - dialect: ANSI_SQL
         expression: order_date
+  datatype: Date
   dimension:
     is_time: true
   description: Date when order was placed
@@ -363,8 +420,37 @@ expression:
         expression: LOWER(email)
       - dialect: SNOWFLAKE
         expression: LOWER(email)::VARCHAR
+      - dialect: BIGQUERY
+        expression: SAFE_CAST(LOWER(email) AS STRING)
   description: Normalized email address
 ```
+
+### DataType and `is_time`: type vs. role
+
+`datatype` and `dimension.is_time` are independent properties that answer different questions:
+
+- **`datatype`** describes the *data type* of the field (e.g. `Date`, `Integer`, `String`, `DateTimeTz`): what kind of values the field holds.
+- **`dimension.is_time`** is a *temporal-role marker*: whether the field should be treated as a time dimension for time-series analysis or temporal filtering, regardless of its data type.
+
+**Default for `is_time`.** When `is_time` is not set explicitly, it defaults to `true` if `datatype` is one of `Date`, `Time`, `DateTime`, `DateTimeTz`, and `false` otherwise. Explicit `is_time` always wins. Set `is_time: false` on a temporal-typed column (e.g. an audit `created_at` you don't want on the time axis) to opt out of the default.
+
+Common combinations:
+
+| Column example | `datatype` | `is_time` | Effective role | Why |
+|---|---|---|---|---|
+| `d_date` (calendar date) | `Date` | omitted | time dimension | Temporal `datatype`; `is_time` defaults to `true`. |
+| `order_timestamp` | `DateTimeTz` | omitted | time dimension | Same. |
+| `created_at` (audit timestamp) | `DateTime` | `false` | regular dimension | Explicit opt-out of the temporal default. |
+| `d_year` (integer year grain) | `Integer` | `true` | time dimension | Non-temporal `datatype`; `is_time: true` makes the role explicit. |
+| `d_quarter_name` (e.g. `"Q1"`) | `String` | `true` | time dimension | String-valued temporal grain. |
+| `customer_id` | `Integer` | omitted | regular dimension | Non-temporal `datatype`; `is_time` defaults to `false`. |
+
+> **Precedent.** This type/role separation mirrors [Snowflake Semantic Views' YAML authoring form](https://docs.snowflake.com/en/user-guide/views-semantic/semantic-view-yaml-spec), which has a structural `time_dimensions:` collection whose entries can carry any `data_type`. The published example annotates `order_year` with `data_type: NUMBER`. LookML supports a similar split via its [`dimension_group`](https://cloud.google.com/looker/docs/reference/param-field-dimension-group), whose `datatype` enum covers `date`, `datetime`, `timestamp`, plus the integer-encoded forms `epoch` and `yyyymmdd`.
+
+**Consumer guidance.**
+
+- For *data-type* questions (casting, serialization, downstream type inference): prefer `datatype` when present. If only `is_time: true` is set, do not infer a specific scalar type from it.
+- For *role* questions (classifying time dimensions in a query UI, generating time-series output sections, choosing time-aware aggregations): treat the field as a time dimension when `is_time` resolves to `true`, whether explicitly set or defaulted from a temporal `datatype`.
 
 ---
 
@@ -379,6 +465,7 @@ Quantitative measures defined on business data, representing key calculations li
 | `name` | string | Yes | Unique identifier for the metric |
 | `expression` | object | Yes | Expression definition with dialect support |
 | `description` | string | No | Human-readable description of what the metric measures |
+| `datatype` | string (enum) | No | Logical data type for this metric. See [Data types](#data-types). |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms) |
 | `custom_extensions` | array | No | Vendor-specific attributes |
 
@@ -400,9 +487,11 @@ expression:
 ```yaml
 - name: total_revenue
   expression:
-    - dialect: ANSI_SQL
-      expression: SUM(orders.amount)
+    dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(orders.amount)
   description: Total revenue across all orders
+  datatype: Decimal
   ai_context:
     synonyms:
       - "total sales"
@@ -414,9 +503,11 @@ expression:
 ```yaml
 - name: avg_orders
   expression:
-    - dialect: ANSI_SQL
-      expression: SUM(orders.amount) / COUNT(DISTINCT customers.id)
+    dialects:
+      - dialect: ANSI_SQL
+        expression: SUM(orders.amount) / COUNT(DISTINCT customers.id)
   description: Average orders
+  datatype: Decimal
   ai_context:
     synonyms:
       - "Order Average by customer"
@@ -432,9 +523,31 @@ Custom extensions allow vendors to add platform-specific metadata without breaki
 
 ```yaml
 custom_extensions:
-  - vendor_name: string  # Must be from vendors enum
+  - vendor_name: string  # Free-form string identifying the vendor
     data: string         # JSON string containing vendor-specific data
 ```
+
+### Vendor Names
+
+The `vendor_name` field is a free-form string, allowing any vendor or organization to
+define custom extensions without requiring changes to the core specification.
+
+The following are well-known examples:
+
+| Vendor | Description |
+|--------|-------------|
+| `COMMON` | Common/standard extensions |
+| `SNOWFLAKE` | Snowflake-specific attributes |
+| `SALESFORCE` | Salesforce/Tableau-specific attributes |
+| `DBT` | dbt-specific attributes |
+| `DATABRICKS` | Databricks-specific attributes |
+| `GOODDATA` | GoodData-specific attributes |
+| `HONEYDEW` | Honeydew-specific attributes |
+| `WISDOM` | WisdomAI-specific attributes |
+| `POWER_BI` | Microsoft Power BI-specific attributes |
+| `SIGMA` | Sigma Computing-specific attributes |
+| `THOUGHTSPOT` | ThoughtSpot-specific attributes |
+| `HEX` | Hex-specific attributes |
 
 ### Examples
 
@@ -491,100 +604,101 @@ custom_extensions:
 Here's a complete semantic model example showing all components working together:
 
 ```yaml
-semantic_model:
-  - name: ecommerce_analytics
-    description: E-commerce sales and customer analytics
+version: 0.2.0.dev0
+name: ecommerce_analytics
+description: E-commerce sales and customer analytics
+ai_context:
+  instructions: "Use this model for analyzing sales trends, customer behavior, and product performance"
+
+datasets:
+  - name: orders
+    source: sales.public.orders
+    primary_key: [order_id]
+    description: Customer orders
+    fields:
+      - name: order_id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: order_id
+        description: Order identifier
+
+      - name: customer_id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: customer_id
+        description: Customer identifier
+
+      - name: order_date
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: order_date
+        datatype: Date
+        dimension:
+          is_time: true
+        description: Order date
+
+      - name: amount
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: amount
+        description: Order amount
+
+  - name: customers
+    source: sales.public.customers
+    primary_key: [id]
+    description: Customer information
+    fields:
+      - name: id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: id
+        description: Customer identifier
+
+      - name: email
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: email
+        description: Customer email
+
+relationships:
+  - name: orders_to_customers
+    from: orders
+    to: customers
+    from_columns: [customer_id]
+    to_columns: [id]
+
+metrics:
+  - name: total_revenue
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(orders.amount)
+    description: Total revenue from all orders
     ai_context:
-      instructions: "Use this model for analyzing sales trends, customer behavior, and product performance"
+      synonyms:
+        - "total sales"
+        - "revenue"
 
-    datasets:
-      - name: orders
-        source: sales.public.orders
-        primary_key: [order_id]
-        description: Customer orders
-        fields:
-          - name: order_id
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: order_id
-            description: Order identifier
-          
-          - name: customer_id
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: customer_id
-            description: Customer identifier
-          
-          - name: order_date
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: order_date
-            dimension:
-              is_time: true
-            description: Order date
-          
-          - name: amount
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: amount
-            description: Order amount
+  - name: customer_count
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: COUNT(DISTINCT customers.id)
+    description: Total number of customers
+    ai_context:
+      synonyms:
+        - "total customers"
+        - "customer base"
 
-      - name: customers
-        source: sales.public.customers
-        primary_key: [id]
-        description: Customer information
-        fields:
-          - name: id
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: id
-            description: Customer identifier
-          
-          - name: email
-            expression:
-              dialects:
-                - dialect: ANSI_SQL
-                  expression: email
-            description: Customer email
-
-    relationships:
-      - name: orders_to_customers
-        from: orders
-        to: customers
-        from_columns: [customer_id]
-        to_columns: [id]
-
-    metrics:
-      - name: total_revenue
-        expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: SUM(orders.amount)
-        description: Total revenue from all orders
-        ai_context:
-          synonyms:
-            - "total sales"
-            - "revenue"
-
-      - name: customer_count
-        expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: COUNT(DISTINCT customers.id)
-        description: Total number of customers
-        ai_context:
-          synonyms:
-            - "total customers"
-            - "customer base"
-
-    custom_extensions:
-      - vendor_name: SNOWFLAKE
-        data: '{"warehouse": "ANALYTICS_WH"}'
+custom_extensions:
+  - vendor_name: SNOWFLAKE
+    data: '{"warehouse": "ANALYTICS_WH"}'
 ```
 
 ---
@@ -625,6 +739,8 @@ ai_context:
 
 ## Version History
 
+- **0.2.0.dev0** (Unreleased): In-development next minor release. Schema is mutable; do not depend on this version in production.
+  - Breaking: each standalone document contains one model directly at the root; the `semantic_model` array is removed.
 - **0.1.1** (2025-12-11): Initial release
   - Core semantic model structure
   - Support for datasets, relationships, fields, and metrics

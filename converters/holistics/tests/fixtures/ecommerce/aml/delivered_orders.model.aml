@@ -1,0 +1,63 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+Model delivered_orders {
+  type: 'query'
+  label: 'Delivered Orders'
+  description: 'Orders that reached the customer. Derived from ecommerce_orders rather than from a table.'
+  data_source_name: 'bigquery_demo'
+
+  // The query body is not plain SQL. It names another model, and the compiler
+  // does not resolve the reference: it passes the body through and inlines the
+  // referenced model here instead. `{{ #ecommerce_orders }}` is this file's
+  // equivalent of dbt's `ref()`.
+  models: [ecommerce_orders]
+
+  query: @sql
+    select {{ #ecommerce_orders.* }}
+    from {{ #ecommerce_orders }}
+    where {% filter(min_delivery_attempts) %} delivery_attempts {% end %}
+  ;;
+
+  // A filter block expands to a predicate only when a value is supplied at
+  // query time, so no conversion-time rewrite of the body above is correct.
+  param min_delivery_attempts {
+    label: 'Minimum Delivery Attempts'
+    type: 'number'
+  }
+
+  dimension id {
+    label: 'Id'
+    type: 'number'
+    definition: @sql {{ #SOURCE.id }};;
+    primary_key: true
+  }
+
+  dimension user_id {
+    label: 'User Id'
+    type: 'number'
+    definition: @sql {{ #SOURCE.user_id }};;
+  }
+
+  dimension delivery_attempts {
+    label: 'Delivery Attempts'
+    type: 'number'
+    definition: @sql {{ #SOURCE.delivery_attempts }};;
+  }
+
+  owner: 'dev@ossie.apache.org'
+}

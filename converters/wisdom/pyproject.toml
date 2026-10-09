@@ -1,0 +1,67 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[project]
+name = "apache-ossie-wisdom"
+version = "0.2.0.dev0"
+description = "WisdomAI domain export <> Apache Ossie converter"
+authors = [{ name = "Apache Software Foundation", email = "dev@ossie.apache.org" }]
+requires-python = ">=3.11"
+readme = "README.md"
+license = "Apache-2.0"
+keywords = [
+    "Apache Ossie",
+    "Ossie",
+    "WisdomAI"
+]
+dependencies = [
+    "apache-ossie>=0.2.0.dev0",
+    "PyYAML>=6.0",
+]
+
+[project.scripts]
+ossie-wisdom = "ossie_wisdom.cli:main"
+
+[project.urls]
+homepage = "https://ossie.apache.org/"
+repository = "https://github.com/apache/ossie/"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ossie_wisdom"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.uv]
+required-version = ">=0.9.0"
+default-groups = [
+    "dev"
+]
+
+# apache-ossie is not yet published to PyPI; resolve it from the in-repo
+# package for now. Remove this block once apache-ossie published to PyPI.
+[tool.uv.sources]
+apache-ossie = { path = "../../python", editable = true}

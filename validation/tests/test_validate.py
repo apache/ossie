@@ -1,0 +1,1088 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+import json
+import urllib.request
+from copy import deepcopy
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
+
+import pytest
+
+# validate.py exits at import time when its dependencies are missing, which
+# would abort the whole pytest session during collection — skip instead.
+yaml = pytest.importorskip("yaml")
+pytest.importorskip("jsonschema")
+
+_VALIDATE_PATH = Path(__file__).parents[1] / "validate.py"
+_SPEC = spec_from_file_location("ossie_validate", _VALIDATE_PATH)
+assert _SPEC is not None and _SPEC.loader is not None
+_VALIDATE = module_from_spec(_SPEC)
+_SPEC.loader.exec_module(_VALIDATE)
+
+validate_references = _VALIDATE.validate_references
+validate_relationship_column_arity = _VALIDATE.validate_relationship_column_arity
+
+
+@pytest.fixture
+def core_schema() -> dict:
+    schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    return json.loads(schema_path.read_text())
+
+
+def _document(datasets: list[dict], relationships: list[dict]) -> dict:
+    return {
+        "version": "0.2.0.dev0",
+        "name": "m",
+        "datasets": datasets,
+        "relationships": relationships,
+    }
+
+
+_CUSTOMERS = {
+    "name": "customers",
+    "source": "db.s.customers",
+    "primary_key": ["id"],
+    "unique_keys": [["email"]],
+}
+
+_ORDERS = {"name": "orders", "source": "db.s.orders"}
+
+
+def test_accepts_a_single_root_model(core_schema: dict) -> None:
+    document = _document([_ORDERS, _CUSTOMERS], [])
+
+    assert _VALIDATE.validate_schema(document, core_schema) == []
+
+
+@pytest.fixture
+def offline(monkeypatch):
+    def reject_request(*args, **kwargs):
+        pytest.fail("Schema validation must not make HTTP requests")
+
+    monkeypatch.setattr(urllib.request, "urlopen", reject_request)
+    monkeypatch.setattr("jsonschema.validators.urlopen", reject_request, raising=False)
+
+
+@pytest.mark.parametrize("uri", [
+    "https://github.com/apache/ossie/core-spec/ossie-schema.json",
+    "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json",
+])
+@pytest.mark.parametrize("fragment, document", [
+    ("", _document([_ORDERS], [])),
+    ("#/$defs/AIContext", {"instructions": "Use for sales analysis"}),
+])
+def test_core_schema_references_resolve_offline(offline, uri, fragment, document):
+    assert _VALIDATE.validate_schema(document, {"$ref": uri + fragment}) == []
+
+
+def test_unresolvable_reference_is_a_validation_error(offline):
+    uri = "https://example.invalid/unknown-schema.json"
+
+    errors = _VALIDATE.validate_schema({}, {"$ref": uri})
+
+    assert errors == [f"[Schema] Cannot resolve schema reference: {uri}"]
+
+
+@pytest.fixture
+def behavior_document():
+    path = Path(__file__).parents[2] / "examples/p2p_behavior_effects_minimal.yaml"
+    return yaml.safe_load(path.read_text())
+
+
+@pytest.fixture
+def behavior_schema():
+    path = Path(__file__).parents[2] / "core-spec/behavior-layer.schema.json"
+    return json.loads(path.read_text())
+
+
+@pytest.mark.parametrize("alias", ["actions", "action_types", "both"])
+def test_behavior_aliases_resolve_offline(
+    offline, core_schema, behavior_schema, behavior_document, alias
+):
+    behavior = behavior_document["behavior"]
+    if alias == "action_types":
+        behavior["action_types"] = behavior.pop("actions")
+    elif alias == "both":
+        behavior["action_types"] = deepcopy(behavior["actions"])
+
+    assert _VALIDATE.validate_schema(behavior, behavior_schema) == []
+    assert _VALIDATE.validate_schema(behavior_document, core_schema) == []
+    assert _VALIDATE.validate_schema(behavior, {"$ref": behavior_schema["$id"]}) == []
+
+    model = dict(behavior_document)
+    del model["version"]
+    embedded_schema = {
+        "$id": core_schema["$id"],
+        "$ref": "#/$defs/SemanticModel",
+        "$defs": core_schema["$defs"],
+    }
+    assert _VALIDATE.validate_schema(model, embedded_schema) == []
+
+
+@pytest.mark.parametrize("impact_type", [
+    "state_transition", "master_data_mutation", "transactional_write",
+    "derived_metric_change", "other",
+])
+@pytest.mark.parametrize("alias", ["actions", "action_types"])
+def test_behavior_impact_types_match_both_entry_points(
+    offline, core_schema, behavior_schema, behavior_document, impact_type, alias
+):
+    behavior = behavior_document["behavior"]
+    behavior["actions"][0]["effects"][0]["impact_type"] = impact_type
+    if alias == "action_types":
+        behavior[alias] = behavior.pop("actions")
+    assert _VALIDATE.validate_schema(behavior, behavior_schema) == []
+    assert _VALIDATE.validate_schema(behavior_document, core_schema) == []
+
+
+@pytest.mark.parametrize("path, value, valid", [
+    (("namespace",), "", False),
+    (("behavior_layer_version",), "", False),
+    (("rules",), None, False),
+    (("actions",), [], True),
+    (("vendor_extension",), {"custom": True}, True),
+    (("actions", 0, "id"), "", False),
+    (("actions", 0, "title"), "", False),
+    (("actions", 0, "kind"), "typo", False),
+    (("actions", 0, "idempotency"), "typo", False),
+    (("actions", 0, "aggregate"), 1, False),
+    (("actions", 0, "examples"), [1], False),
+    (("actions", 0, "tool_hint"), [], False),
+    (("actions", 0, "deprecated"), "false", False),
+    (("actions", 0, "version"), 1, False),
+    (("actions", 0, "effects", 0, "entity"), "typo", False),
+    (("actions", 0, "effects", 0, "mode"), "typo", False),
+    (("actions", 0, "effects", 0, "impact_type"), "typo", False),
+    (("actions", 0, "effects", 0, "impact_type"), 1, False),
+    (("actions", 0, "effects", 0, "impact_type"), None, False),
+    (("actions", 0, "effects", 0, "confidence"), "typo", False),
+    (("actions", 0, "effects", 0, "tags"), [1], False),
+    (("actions", 0, "effects", 0, "selectors", "dataset"), 1, False),
+    (("actions", 0, "effects", 0, "selectors", "field_names"), [1], False),
+    (("actions", 0, "effects", 0, "selectors", "field_names"), "status", False),
+    (("actions", 1, "effects", 0, "transition", "from"), 1, False),
+    (("actions", 1, "effects", 0, "transition", "to"), 1, False),
+    (("rules", 0, "severity"), "typo", False),
+    (("rules", 0, "message"), "", False),
+    (("rules", 0, "references"), ["url"], False),
+])
+def test_behavior_constraints_match_both_entry_points(
+    offline, core_schema, behavior_schema, behavior_document, path, value, valid
+):
+    behavior = behavior_document["behavior"]
+    target = behavior
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = value
+
+    assert (not _VALIDATE.validate_schema(behavior, behavior_schema)) is valid
+    assert (not _VALIDATE.validate_schema(behavior_document, core_schema)) is valid
+
+
+@pytest.mark.parametrize("path", [
+    ("namespace",), ("behavior_layer_version",), ("actions",), ("rules",),
+    ("actions", 0, "id"), ("actions", 0, "title"),
+    ("actions", 0, "effects", 0, "entity"),
+    ("actions", 0, "effects", 0, "mode"),
+    ("rules", 0, "id"), ("rules", 0, "title"), ("rules", 0, "severity"),
+    ("rules", 0, "when"), ("rules", 0, "constraint"), ("rules", 0, "message"),
+])
+def test_behavior_required_fields_match_both_entry_points(
+    offline, core_schema, behavior_schema, behavior_document, path
+):
+    behavior = behavior_document["behavior"]
+    target = behavior
+    for key in path[:-1]:
+        target = target[key]
+    del target[path[-1]]
+
+    assert _VALIDATE.validate_schema(behavior, behavior_schema)
+    assert _VALIDATE.validate_schema(behavior_document, core_schema)
+
+
+def test_behavior_optional_fields_and_empty_lists(
+    offline, core_schema, behavior_schema, behavior_document
+):
+    behavior = behavior_document["behavior"]
+    effect = behavior["actions"][0]["effects"][0]
+    for field in ("impact_type", "selectors"):
+        del effect[field]
+    behavior["actions"][1]["effects"][0]["transition"] = {}
+    assert _VALIDATE.validate_schema(behavior_document, core_schema) == []
+    assert _VALIDATE.validate_schema(behavior, behavior_schema) == []
+
+    behavior.update(actions=[], rules=[])
+    assert _VALIDATE.validate_schema(behavior_document, core_schema) == []
+    del behavior_document["behavior"]
+    assert _VALIDATE.validate_schema(behavior_document, core_schema) == []
+
+
+def test_rejects_empty_root_datasets(core_schema: dict) -> None:
+    errors = _VALIDATE.validate_schema(_document([], []), core_schema)
+
+    assert errors == ["[Schema] datasets: [] should be non-empty"]
+
+
+def test_semantic_model_definition_does_not_require_document_version(core_schema: dict) -> None:
+    # The reusable contents definition remains independent of document metadata.
+    embedded_schema = {
+        "$ref": "#/$defs/SemanticModel",
+        "$defs": core_schema["$defs"],
+    }
+    model = _document([_ORDERS, _CUSTOMERS], [])
+    del model["version"]
+
+    assert _VALIDATE.validate_schema(model, embedded_schema) == []
+
+
+@pytest.mark.parametrize("unknown_property", ["dataset", "owner", "dialects", "vendors"])
+def test_rejects_unknown_root_properties(core_schema: dict, unknown_property: str) -> None:
+    document = _document([_ORDERS], [])
+    document[unknown_property] = "unexpected"
+
+    errors = _VALIDATE.validate_schema(document, core_schema)
+
+    assert any(
+        "Additional properties are not allowed" in error and unknown_property in error
+        for error in errors
+    )
+
+
+@pytest.mark.parametrize("required_property", ["version", "name", "datasets"])
+def test_requires_model_and_document_properties(core_schema: dict, required_property: str) -> None:
+    document = _document([_ORDERS], [])
+    del document[required_property]
+
+    errors = _VALIDATE.validate_schema(document, core_schema)
+
+    assert any(f"'{required_property}' is a required property" in error for error in errors)
+
+
+@pytest.mark.parametrize("property_name", ["name", "datasets"])
+def test_rejects_null_model_properties(core_schema: dict, property_name: str) -> None:
+    document = _document([_ORDERS], [])
+    document[property_name] = None
+
+    errors = _VALIDATE.validate_schema(document, core_schema)
+
+    assert any(f"[Schema] {property_name}:" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "wrapped",
+    [
+        None,
+        [],
+        {"name": "one", "datasets": []},
+        [{"name": "one", "datasets": []}],
+        [{"name": "one", "datasets": []}, {"name": "two", "datasets": []}],
+    ],
+)
+def test_rejects_legacy_or_object_wrappers(core_schema: dict, wrapped: object) -> None:
+    document = {"version": "0.2.0.dev0", "semantic_model": wrapped}
+
+    assert _VALIDATE.validate_schema(document, core_schema)
+
+    # A wrapper must also be rejected when a valid root model is present.
+    document.update(_document([_ORDERS], []))
+    errors = _VALIDATE.validate_schema(document, core_schema)
+
+    assert any(
+        "Additional properties are not allowed" in error and "semantic_model" in error
+        for error in errors
+    )
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        None,
+        [],
+        42,
+        {"version": "0.2.0.dev0"},
+        {"version": "0.2.0.dev0", "semantic_model": [{"name": "old", "datasets": []}]},
+    ],
+)
+def test_semantic_checks_skip_non_model_payloads(data: object) -> None:
+    assert _VALIDATE.validate_unique_names(data) == []
+    assert validate_references(data) == []
+    assert validate_relationship_column_arity(data) == []
+    assert _VALIDATE.validate_sql(data) == []
+
+
+@pytest.mark.parametrize(
+    ("items", "expected"),
+    [
+        (["a", "a"], ["a"]),
+        (["a", "a", "a"], ["a"]),
+        (["a", "b", "a", "b", "a"], ["a", "b"]),
+        (["a", "b", "b", "a"], ["a", "b"]),
+        (["a", "b", "c"], []),
+        ([], []),
+    ],
+    ids=[
+        "twice",
+        "three-times",
+        "two-names-interleaved",
+        "repeats-in-reverse-order",
+        "all-unique",
+        "empty",
+    ],
+)
+def test_find_duplicates_reports_each_name_once(items: list[str], expected: list[str]) -> None:
+    assert _VALIDATE.find_duplicates(items) == expected
+
+
+def _expression(expr: str = "x") -> dict:
+    return {"dialects": [{"dialect": "ANSI_SQL", "expression": expr}]}
+
+
+def _with_duplicate_fields(name: str) -> dict:
+    dataset = {
+        "name": "orders",
+        "source": "db.s.orders",
+        "fields": [
+            {"name": name, "expression": _expression()},
+            {"name": name, "expression": _expression()},
+            {"name": name, "expression": _expression()},
+        ],
+    }
+    return _document([dataset], [])
+
+
+def _with_duplicate_metrics(name: str) -> dict:
+    document = _document([_ORDERS], [])
+    document["metrics"] = [
+        {"name": name, "expression": _expression("SUM(orders.amount)")},
+        {"name": name, "expression": _expression("SUM(orders.amount)")},
+        {"name": name, "expression": _expression("SUM(orders.amount)")},
+    ]
+    return document
+
+
+def _with_duplicate_relationships(name: str) -> dict:
+    rel = dict(_relationship(to_columns=["id"]), name=name)
+    return _document([_ORDERS, _CUSTOMERS], [dict(rel), dict(rel), dict(rel)])
+
+
+@pytest.mark.parametrize(
+    ("build", "expected"),
+    [
+        (
+            lambda: _document([_ORDERS, _ORDERS, _ORDERS], []),
+            "[Unique] Duplicate dataset name 'orders' in model 'm'",
+        ),
+        (
+            lambda: _with_duplicate_fields("amount"),
+            "[Unique] Duplicate field name 'amount' in dataset 'orders'",
+        ),
+        (
+            lambda: _with_duplicate_metrics("revenue"),
+            "[Unique] Duplicate metric name 'revenue' in model 'm'",
+        ),
+        (
+            lambda: _with_duplicate_relationships("orders_to_customers"),
+            "[Unique] Duplicate relationship name 'orders_to_customers' in model 'm'",
+        ),
+    ],
+    ids=["dataset", "field", "metric", "relationship"],
+)
+def test_a_name_repeated_three_times_is_one_error(build, expected: str) -> None:
+    """Three copies of a name are one problem, for every kind of name checked."""
+    assert _VALIDATE.validate_unique_names(build()) == [expected]
+
+
+def test_unique_names_are_checked_in_the_root_model() -> None:
+    errors = _VALIDATE.validate_unique_names(_document([_ORDERS, _ORDERS], []))
+
+    assert errors == ["[Unique] Duplicate dataset name 'orders' in model 'm'"]
+
+
+@pytest.mark.parametrize(
+    ("mutate", "path"),
+    [
+        (lambda doc: doc.update(name=""), "name"),
+        (lambda doc: doc["datasets"][0].update(name=""), "datasets -> 0 -> name"),
+        (lambda doc: doc["datasets"][0].update(source=""), "datasets -> 0 -> source"),
+    ],
+)
+def test_schema_rejects_empty_identifiers(core_schema: dict, mutate, path: str) -> None:
+    # Empty identifiers are invalid data. The schema (minLength: 1) rejects them
+    # up front, so no downstream check has to special-case "" -- and a single
+    # empty name is caught even though it never trips duplicate detection.
+    document = _document([dict(_ORDERS)], [])
+    mutate(document)
+
+    assert _VALIDATE.validate_schema(document, core_schema) == [
+        f"[Schema] {path}: '' should be non-empty"
+    ]
+
+
+def test_schema_rejects_empty_relationship_endpoints(core_schema: dict) -> None:
+    document = _document([dict(_ORDERS), dict(_CUSTOMERS)], [_relationship(to_columns=["id"])])
+    document["relationships"][0]["to"] = ""
+
+    assert _VALIDATE.validate_schema(document, core_schema) == [
+        "[Schema] relationships -> 0 -> to: '' should be non-empty"
+    ]
+
+
+def test_sql_checks_traverse_root_fields_and_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = []
+
+    def record_expression(expression: str, dialect: str, context: str) -> None:
+        seen.append((expression, dialect, context))
+
+    monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", True)
+    monkeypatch.setattr(_VALIDATE, "validate_sql_expression", record_expression)
+    expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": "value"}]}
+    dataset = {**_ORDERS, "fields": [{"name": "value", "expression": expression}]}
+    document = _document([dataset], [])
+    document["metrics"] = [{"name": "total", "expression": expression}]
+
+    assert _VALIDATE.validate_sql(document) == []
+    assert seen == [
+        ("value", "ANSI_SQL", "Field 'orders.value' in model 'm' (ANSI_SQL)"),
+        ("value", "ANSI_SQL", "Metric 'total' in model 'm' (ANSI_SQL)"),
+    ]
+
+
+def test_ossie_sql_2026_maps_to_the_ansi_default_explicitly() -> None:
+    # OSSIE_SQL_2026 is ANSI-SQL-compatible, so it must resolve to the same
+    # sqlglot default (None) as ANSI_SQL. Assert it via an explicit key rather
+    # than DIALECT_MAP.get()'s default, which happened to return the same None.
+    assert "OSSIE_SQL_2026" in _VALIDATE.DIALECT_MAP
+    assert _VALIDATE.DIALECT_MAP["OSSIE_SQL_2026"] is _VALIDATE.DIALECT_MAP["ANSI_SQL"]
+    # It is parseable as ANSI SQL, so it stays validated rather than skipped.
+    assert "OSSIE_SQL_2026" not in _VALIDATE.SKIP_SQL_VALIDATION
+
+
+def test_holistics_aql_is_skipped_rather_than_parsed_as_sql() -> None:
+    # AQL is relationship-aware and is not SQL, so sqlglot cannot parse it.
+    # Skipping it is what lets a Holistics field carry its body at all, the way
+    # MDX, MAQL, THOUGHTSPOT and DAX already do.
+    assert "HOLISTICS_AQL" in _VALIDATE.DIALECT_MAP
+    assert _VALIDATE.DIALECT_MAP["HOLISTICS_AQL"] is None
+    assert "HOLISTICS_AQL" in _VALIDATE.SKIP_SQL_VALIDATION
+
+
+def test_a_holistics_aql_expression_is_not_reported_as_invalid_sql() -> None:
+    # `|` is AQL's pipe operator. Parsed as SQL it is a bitwise OR over two
+    # names, which sqlglot accepts, so the skip is asserted through a body that
+    # SQL cannot read at all.
+    body = "count(orders.id) | where(orders.status == 'delivered')"
+    expression = {"dialects": [{"dialect": "HOLISTICS_AQL", "expression": body}]}
+    dataset = {**_ORDERS, "fields": [{"name": "delivered", "expression": expression}]}
+
+    assert _VALIDATE.validate_sql(_document([dataset], [])) == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_validates_a_valid_ossie_sql_2026_expression() -> None:
+    error = _VALIDATE.validate_sql_expression("SUM(amount)", "OSSIE_SQL_2026", "ctx")
+
+    assert error is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_flags_an_invalid_ossie_sql_2026_expression() -> None:
+    error = _VALIDATE.validate_sql_expression("SUM(", "OSSIE_SQL_2026", "ctx")
+
+    assert error is not None
+    assert error.startswith("[SQL] ctx:")
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "amount; DROP TABLE customers",
+        "SUM(amount); SELECT 1",
+        "SELECT amount; DROP TABLE customers",
+    ],
+    ids=["column-then-statement", "aggregate-then-select", "select-then-statement"],
+)
+def test_rejects_an_expression_holding_more_than_one_statement(expression: str) -> None:
+    """A field or metric holds one expression; `parse_one` returns a Block for a list."""
+    error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert error == "[SQL] ctx: expected a single expression but found 2 statements"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "amount",
+        "amount;",
+        "amount;;",
+        "SUM(amount)",
+        "a /* ; */ + b",
+        "'a;b'",
+        "CONCAT(a, ';', b)",
+    ],
+    ids=[
+        "column",
+        "trailing-semicolon",
+        "repeated-trailing-semicolons",
+        "aggregate",
+        "in-comment",
+        "in-literal",
+        "in-argument",
+    ],
+)
+def test_accepts_a_single_expression_containing_a_semicolon(expression: str) -> None:
+    """A semicolon in a literal or comment does not make a statement list."""
+    assert _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx") is None
+
+
+def _relationship(to_columns: list[str], to: str = "customers") -> dict:
+    return {
+        "name": "orders_to_customers",
+        "from": "orders",
+        "to": to,
+        "from_columns": ["customer_id"],
+        "to_columns": to_columns,
+    }
+
+
+def test_warns_when_to_columns_does_not_cover_a_declared_key() -> None:
+    errors = validate_references(
+        _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["region"])])
+    )
+
+    assert errors == [
+        "[Reference] Warning: Relationship 'orders_to_customers' in model 'm': "
+        "to_columns ['region'] does not cover the primary key or a unique key of dataset 'customers'"
+    ]
+
+
+def test_accepts_to_columns_matching_the_primary_key() -> None:
+    errors = validate_references(
+        _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["id"])])
+    )
+
+    assert errors == []
+
+
+def test_accepts_to_columns_matching_a_unique_key() -> None:
+    errors = validate_references(
+        _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["email"])])
+    )
+
+    assert errors == []
+
+
+def test_accepts_to_columns_that_is_a_superset_of_a_key() -> None:
+    # e.g. tenant-sharded joins carry extra columns on top of the key;
+    # coverage still guarantees the many-to-one semantics.
+    errors = validate_references(
+        _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["tenant_id", "id"])])
+    )
+
+    assert errors == []
+
+
+def test_accepts_composite_key_regardless_of_column_order() -> None:
+    composite = {
+        "name": "order_lines",
+        "source": "db.s.order_lines",
+        "primary_key": ["order_id", "line_number"],
+    }
+    rel = _relationship(to_columns=["line_number", "order_id"], to="order_lines")
+
+    assert validate_references(_document([_ORDERS, composite], [rel])) == []
+
+
+def test_skips_datasets_that_declare_no_keys() -> None:
+    no_keys = {"name": "raw_table", "source": "db.s.raw_table"}
+    rel = _relationship(to_columns=["anything"], to="raw_table")
+
+    assert validate_references(_document([_ORDERS, no_keys], [rel])) == []
+
+
+def test_still_reports_unknown_datasets() -> None:
+    errors = validate_references(
+        _document([_ORDERS], [_relationship(to_columns=["id"], to="nope")])
+    )
+
+    assert errors == [
+        "[Reference] Relationship 'orders_to_customers' in model 'm' references unknown dataset 'nope'"
+    ]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_deeply_nested_sql_reports_a_diagnostic_instead_of_crashing() -> None:
+    # Pathologically nested SQL exhausts sqlglot's recursion limit; the
+    # validator must turn that into a diagnostic rather than propagating
+    # RecursionError and aborting the run.
+    expression = "(" * 5000 + "1" + ")" * 5000
+    result = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert result == "[SQL] ctx: expression is too deeply nested to parse"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_non_string_expression_surfaces_instead_of_being_reported_valid() -> None:
+    # Only RecursionError is caught, so a genuine bug -- a non-string expression
+    # reaching the parser -- raises loudly rather than being masked as valid SQL
+    # by the SELECT-wrapped retry.
+    with pytest.raises(TypeError):
+        _VALIDATE.validate_sql_expression(123, "ANSI_SQL", "ctx")
+
+
+def test_tolerates_null_unique_keys() -> None:
+    # `unique_keys:` present but empty parses to None; the check must not crash.
+    dataset = {"name": "customers", "source": "db.s.customers",
+               "primary_key": ["id"], "unique_keys": None}
+    errors = validate_references(
+        _document([_ORDERS, dataset], [_relationship(to_columns=["id"])])
+    )
+
+    assert errors == []
+
+
+def test_skips_non_list_to_columns() -> None:
+    # Schema validation reports the shape error; the semantic check must
+    # neither crash nor emit a misleading character-set comparison.
+    rel = _relationship(to_columns=["id"])
+    rel["to_columns"] = "id"
+
+    assert validate_references(_document([_ORDERS, _CUSTOMERS], [rel])) == []
+
+
+def test_skips_malformed_flat_unique_keys() -> None:
+    # unique_keys mistakenly written flat like primary_key: strings are not
+    # keys, so with no well-formed key declared the check does not fire.
+    dataset = {"name": "customers", "source": "db.s.customers", "unique_keys": ["email"]}
+    errors = validate_references(
+        _document([_ORDERS, dataset], [_relationship(to_columns=["email"])])
+    )
+
+    assert errors == []
+
+
+@pytest.fixture
+def run_validator(tmp_path, monkeypatch, capsys):
+    def run(document, schema_path=None):
+        model_path = tmp_path / "model.json"
+        model_path.write_text(json.dumps(document))
+        args = [str(_VALIDATE_PATH), str(model_path)]
+        if schema_path is not None:
+            args.extend(["--schema", str(schema_path)])
+        monkeypatch.setattr(_VALIDATE.sys, "argv", args)
+        with pytest.raises(SystemExit) as caught:
+            _VALIDATE.main()
+        return caught.value.code, capsys.readouterr().out
+
+    return run
+
+
+@pytest.mark.parametrize("version, expected_exit", [("0.2.0.dev0", 0), ("0.1.0", 1)])
+def test_ontology_cli_validates_embedded_documents_offline(
+    run_validator, offline, version, expected_exit
+):
+    model = _document([_ORDERS], [])
+    model["version"] = version
+    document = {
+        "version": "0.2.0.dev0",
+        "name": "sales",
+        "ai_context": {"instructions": "Use for sales analysis"},
+        "ontology": [{"concept": "Order", "type": "EntityType"}],
+        "ontology_mappings": [{"semantic_model": model, "concept_mappings": []}],
+    }
+
+    exit_code, output = run_validator(
+        document, Path(__file__).parents[2] / "ontology/ontology.json"
+    )
+
+    assert exit_code == expected_exit
+    if expected_exit == 0:
+        assert "Validation PASSED" in output
+    else:
+        assert "ontology_mappings -> 0 -> semantic_model -> version" in output
+
+
+@pytest.mark.parametrize("target", [
+    "missing_customers",
+    "Warning: missing_customers",
+    "[SQL] Warning: missing_customers",
+    "[Reference] Warning: missing_customers",
+])
+def test_unknown_dataset_is_an_error_regardless_of_its_name(run_validator, target):
+    document = _document([_ORDERS], [_relationship(to_columns=["id"], to=target)])
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "Validation FAILED with 1 error(s)" in output
+    assert f"references unknown dataset '{target}'" in output
+    assert "Validation PASSED" not in output
+
+
+def test_duplicate_dataset_with_warning_in_name_is_an_error(run_validator):
+    dataset = {"name": "Warning: orders", "source": "db.s.orders"}
+
+    exit_code, output = run_validator(_document([dataset, dataset], []))
+
+    assert exit_code == 1
+    assert "Validation FAILED with 1 error(s)" in output
+    assert "Duplicate dataset name 'Warning: orders'" in output
+
+
+def test_schema_error_containing_warning_text_is_an_error(run_validator):
+    document = _document([_ORDERS], [])
+    document["Warning: unexpected"] = True
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "Validation FAILED with 1 error(s)" in output
+    assert "[Schema]" in output
+    assert "Warning: unexpected" in output
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_sql_error_in_metric_with_warning_in_name_is_an_error(run_validator):
+    document = _document([_ORDERS], [])
+    document["metrics"] = [{
+        "name": "Warning: broken_metric",
+        "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "SUM("}]},
+    }]
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "Validation FAILED with 1 error(s)" in output
+    assert "[SQL] Metric 'Warning: broken_metric'" in output
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_field_expressed_only_in_ossie_sql_2026_validates(run_validator):
+    dataset = {**_ORDERS, "fields": [{
+        "name": "half_amount",
+        "expression": {"dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "amount * 0.5"}]},
+    }]}
+    document = _document([dataset], [])
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 0
+    assert "Validation PASSED" in output
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_metric_expressed_only_in_ossie_sql_2026_validates(run_validator):
+    document = _document([_ORDERS], [])
+    document["metrics"] = [{
+        "name": "total_amount",
+        "expression": {"dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(amount)"}]},
+    }]
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 0
+    assert "Validation PASSED" in output
+
+
+def test_key_coverage_warning_remains_nonfatal(run_validator):
+    document = _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["region"])])
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 0
+    assert "[Reference] Warning:" in output
+    assert "Validation PASSED" in output
+
+
+def test_missing_sqlglot_warning_remains_nonfatal(run_validator, monkeypatch):
+    monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", False)
+
+    exit_code, output = run_validator(_document([_ORDERS], []))
+
+    assert exit_code == 0
+    assert "[SQL] Warning: sqlglot not installed" in output
+    assert "Validation PASSED" in output
+
+
+def test_genuine_warning_does_not_hide_reference_error(run_validator):
+    document = _document([_ORDERS, _CUSTOMERS], [
+        _relationship(to_columns=["region"]),
+        {**_relationship(to_columns=["id"], to="Warning: missing"), "name": "broken"},
+    ])
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "[Reference] Warning:" in output
+    assert "references unknown dataset 'Warning: missing'" in output
+    assert "Validation FAILED with 1 error(s)" in output
+
+
+def _arity_relationship(from_columns: list[str], to_columns: list[str]) -> dict:
+    return {
+        "name": "orders_to_customers",
+        "from": "orders",
+        "to": "customers",
+        "from_columns": from_columns,
+        "to_columns": to_columns,
+    }
+
+
+@pytest.mark.parametrize(
+    ("from_columns", "to_columns"),
+    [
+        (["customer_id"], ["id"]),
+        (["product_id", "variant_id"], ["id", "variant_id"]),
+    ],
+)
+def test_arity_accepts_equal_length_columns(
+    from_columns: list[str], to_columns: list[str]
+) -> None:
+    rel = _arity_relationship(from_columns, to_columns)
+
+    assert validate_relationship_column_arity(_document([_ORDERS, _CUSTOMERS], [rel])) == []
+
+
+@pytest.mark.parametrize(
+    ("from_columns", "to_columns"),
+    [
+        (["product_id", "variant_id"], ["id"]),
+        (["customer_id"], ["id", "variant_id"]),
+    ],
+)
+def test_arity_rejects_mismatched_length_columns(
+    from_columns: list[str], to_columns: list[str]
+) -> None:
+    rel = _arity_relationship(from_columns, to_columns)
+
+    errors = validate_relationship_column_arity(_document([_ORDERS, _CUSTOMERS], [rel]))
+
+    assert errors == [
+        f"[Arity] Relationship 'orders_to_customers' in model 'm': "
+        f"from_columns ({len(from_columns)}) and to_columns ({len(to_columns)}) "
+        f"must have the same number of columns"
+    ]
+
+
+def test_arity_skips_non_list_columns() -> None:
+    # Schema validation reports the shape error; the arity check must not crash.
+    rel = _arity_relationship(["customer_id"], ["id"])
+    rel["to_columns"] = "id"
+
+    assert validate_relationship_column_arity(_document([_ORDERS, _CUSTOMERS], [rel])) == []
+
+
+def test_a_multi_statement_expression_fails_validation(run_validator):
+    dataset = {**_ORDERS, "fields": [
+        {
+            "name": "amount",
+            "expression": {
+                "dialects": [
+                    {"dialect": "ANSI_SQL", "expression": "amount; DROP TABLE customers"}
+                ]
+            },
+        }
+    ]}
+
+    exit_code, output = run_validator(_document([dataset], []))
+
+    assert exit_code == 1
+    assert "expected a single expression but found 2 statements" in output
+
+
+validate_ontology = _VALIDATE.validate_ontology
+
+_ONTOLOGY_SCHEMA = Path(__file__).parents[2] / "ontology/ontology.json"
+
+
+def _ontology(components: list[dict], **extra) -> dict:
+    return {"version": "0.2.0.dev0", "name": "o", "ontology": components, **extra}
+
+
+def _concept(name: str, **fields) -> dict:
+    return {"concept": name, "type": "EntityType", **fields}
+
+
+def _ontology_relationship(name: str, role: str, **fields) -> dict:
+    return {
+        "name": name,
+        "roles": [{"concept": role}],
+        "verbalizes": [f"{{x}} {name} {{{role}}}"],
+        **fields,
+    }
+
+
+def test_ontology_checks_accept_the_flights_example() -> None:
+    flights = yaml.safe_load((Path(__file__).parents[2] / "examples/flights.yaml").read_text())
+
+    assert validate_ontology(flights) == []
+
+
+@pytest.mark.parametrize("data", [None, [], {}, {"datasets": []}, {"ontology": {"concept": "A"}}])
+def test_ontology_checks_skip_non_ontology_payloads(data: object) -> None:
+    assert validate_ontology(data) == []
+
+
+def test_duplicate_concepts_are_reported_once_per_repeat() -> None:
+    errors = validate_ontology(_ontology([_concept("Order"), _concept("Order"), _concept("Item")]))
+
+    assert errors == ["[Unique] Duplicate concept 'Order' in ontology 'o'"]
+
+
+def test_a_duplicate_concept_does_not_repeat_its_reference_errors() -> None:
+    first = _concept("Order", extends=["Ghost"], relationships=[_ontology_relationship("nr", "Integer")])
+    second = _concept("Order", identify_by=["nr"])
+
+    errors = validate_ontology(_ontology([first, second]))
+
+    assert errors == [
+        "[Unique] Duplicate concept 'Order' in ontology 'o'",
+        "[Reference] Concept 'Order' extends unknown concept 'Ghost'",
+    ]
+
+
+def test_duplicate_relationship_names_are_scoped_to_their_concept() -> None:
+    order = _concept("Order", relationships=[_ontology_relationship("nr", "Integer"), _ontology_relationship("nr", "String")])
+    item = _concept("Item", relationships=[_ontology_relationship("nr", "Integer")])
+
+    errors = validate_ontology(_ontology([order, item]))
+
+    assert errors == ["[Unique] Duplicate relationship 'nr' in concept 'Order'"]
+
+
+@pytest.mark.parametrize(
+    ("component", "expected"),
+    [
+        (
+            _concept("Order", extends=["Ghost"]),
+            "[Reference] Concept 'Order' extends unknown concept 'Ghost'",
+        ),
+        (
+            _concept("Order", identify_by=["nr"]),
+            "[Reference] Concept 'Order' identify_by references unknown relationship 'nr'",
+        ),
+        (
+            _concept("Order", relationships=[_ontology_relationship("placed_by", "Nobody")]),
+            "[Reference] Relationship 'Order.placed_by' has a role played by unknown concept 'Nobody'",
+        ),
+        (
+            _concept("Order", iri="ex:Order"),
+            "[Reference] Concept 'Order' iri uses undeclared prefix 'ex'",
+        ),
+        (
+            _concept("Order", relationships=[_ontology_relationship("nr", "Integer", iri="ex:nr")]),
+            "[Reference] Relationship 'Order.nr' iri uses undeclared prefix 'ex'",
+        ),
+    ],
+)
+def test_dangling_ontology_references_are_reported(component: dict, expected: str) -> None:
+    assert validate_ontology(_ontology([component])) == [expected]
+
+
+def test_built_in_concepts_resolve_without_being_declared() -> None:
+    amount = {"concept": "Amount", "type": "ValueType", "extends": ["Decimal"]}
+    order = _concept(
+        "Order",
+        extends=["Any"],
+        relationships=[_ontology_relationship("total", "Amount"), _ontology_relationship("placed_on", "DateTime")],
+    )
+
+    assert validate_ontology(_ontology([amount, order])) == []
+
+
+def test_identify_by_resolves_relationships_declared_on_a_supertype() -> None:
+    party = _concept("Party", relationships=[_ontology_relationship("nr", "Integer")])
+    person = _concept("Person", extends=["Party"], identify_by=["nr"])
+
+    assert validate_ontology(_ontology([party, person])) == []
+
+
+@pytest.mark.parametrize(
+    ("components", "expected"),
+    [
+        (
+            [_concept("A", extends=["B"]), _concept("B", extends=["A"])],
+            ["[Reference] Concept 'A' extends itself: A -> B -> A"],
+        ),
+        (
+            [_concept("A", extends=["A"])],
+            ["[Reference] Concept 'A' extends itself: A -> A"],
+        ),
+        (
+            [_concept("A", extends=["B"]), _concept("B", extends=["C"]), _concept("C", extends=["Any"])],
+            [],
+        ),
+    ],
+)
+def test_extends_cycles_are_reported_once(components: list[dict], expected: list[str]) -> None:
+    assert validate_ontology(_ontology(components)) == expected
+
+
+@pytest.mark.parametrize(
+    "iri",
+    [
+        "ex:Order",
+        "http://example.com/Order",
+        "urn:isbn:0451450523",
+        "urn:x",
+        "https://example.com/ns#Order",
+        "mailto:orders@example.com",
+        "tel:+15551234567",
+        "MAILTO:orders@example.com",
+    ],
+)
+def test_declared_prefixes_and_full_iris_are_accepted(iri: str) -> None:
+    document = _ontology([_concept("Order", iri=iri)], prefixes={"ex": "http://example.com/"})
+
+    assert validate_ontology(document) == []
+
+
+def test_undeclared_prefix_is_reported_even_when_prefixes_are_declared() -> None:
+    document = _ontology([_concept("Order", iri="foaf:Order")], prefixes={"ex": "http://example.com/"})
+
+    assert validate_ontology(document) == ["[Reference] Concept 'Order' iri uses undeclared prefix 'foaf'"]
+
+
+def test_ontology_checks_tolerate_malformed_shapes() -> None:
+    # Schema validation owns shape errors; the semantic pass must not crash on them.
+    document = _ontology(
+        ["not a component", _concept("Order", extends="Any", identify_by="nr", relationships=[None, {}])],
+        prefixes="foaf",
+    )
+
+    assert validate_ontology(document) == []
+
+
+def test_ontology_cli_reports_dangling_references(run_validator, offline) -> None:
+    document = _ontology([_concept("Order", extends=["Ghost"])])
+
+    exit_code, output = run_validator(document, _ONTOLOGY_SCHEMA)
+
+    assert exit_code == 1
+    assert "[Reference] Concept 'Order' extends unknown concept 'Ghost'" in output
+
+
+def test_ontology_cli_skips_semantic_checks_when_the_schema_fails(run_validator, offline) -> None:
+    document = _ontology([{"concept": "Order", "extends": ["Ghost"]}])  # missing required type
+
+    exit_code, output = run_validator(document, _ONTOLOGY_SCHEMA)
+
+    assert exit_code == 1
+    assert "[Schema]" in output
+    assert "[Reference]" not in output
