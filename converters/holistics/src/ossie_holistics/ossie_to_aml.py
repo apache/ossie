@@ -142,6 +142,16 @@ def unflatten(name: str) -> str:
 #: Snowflake's `_extract_expression` and Cube's `pick_expression`.
 PORTABLE_DIALECTS = ("ANSI_SQL", "OSSIE_SQL_2026")
 
+#: What the compiler fills in for a relationship that declares none of them.
+#: Every compiled payload carries all three, so writing them back
+#: unconditionally would turn every short `relationship(...)` into a
+#: `RelationshipConfig` block that means exactly the same thing.
+RELATIONSHIP_DEFAULTS: dict[str, Any] = {
+    "direction": "two_way",
+    "nullable": True,
+    "rlp_propagation": "inherit",
+}
+
 
 def _named_objects(container: Any, where: str) -> list[dict[str, Any]]:
     """`container` as a list of named mappings, or a `ConversionError` saying why.
@@ -257,6 +267,9 @@ class _Reverse:
         self.metric_owner: dict[str, Model] = {}
         self.metric_aml_name: dict[str, str] = {}
         self.dataset_metrics: list[dict[str, Any]] = []
+        #: Relationships that carry a `where` filter, declared above the
+        #: Dataset block because only a named relationship can hold one.
+        self.relationship_declarations: list[str] = []
         self._metric_payloads: dict[str, dict[str, Any]] = {}
         self._metric_datasets: dict[str, Any] = {}
         self._cyclic_metrics: set[str] = set()
@@ -941,7 +954,14 @@ class _Reverse:
                 f"two lists must be the same length and must not be empty"
             )
 
-        if len(from_columns) == 1 and kind in ("many_to_one", "one_to_one"):
+        extra = self._relationship_properties(data, name)
+        where = data.get("where")
+        if where is not None:
+            return self._named_relationship(
+                payload, kind, active, from_model, to_model,
+                from_columns, to_columns, extra, where,
+            )
+        if len(from_columns) == 1 and kind in ("many_to_one", "one_to_one") and not extra:
             operator = ">" if kind == "many_to_one" else "-"
             return (
                 f"relationship({from_model.reference}.{from_columns[0]} {operator} "
@@ -952,14 +972,104 @@ class _Reverse:
         rel = config.block("EqualityRelationship")
         rel.header = "rel: EqualityRelationship"
         rel.property("type", quote(kind))
-        rel.property("from", _field_ref(from_model.aml_name, from_columns[0]))
-        rel.property("to", _field_ref(to_model.aml_name, to_columns[0]))
+        rel.property("from", _field_ref(from_model.reference, from_columns[0]))
+        rel.property("to", _field_ref(to_model.reference, to_columns[0]))
         for from_column, to_column in zip(from_columns[1:], to_columns[1:]):
             on = rel.block("on")
-            on.property("from", _field_ref(from_model.aml_name, from_column))
-            on.property("to", _field_ref(to_model.aml_name, to_column))
+            on.property("from", _field_ref(from_model.reference, from_column))
+            on.property("to", _field_ref(to_model.reference, to_column))
         config.property("active", active)
+        for key, value in extra:
+            config.property(key, value)
         return config.render(2).lstrip()
+
+    def _named_relationship(
+        self,
+        payload: dict[str, Any],
+        kind: str,
+        active: str,
+        from_model: Model,
+        to_model: Model,
+        from_columns: list[str],
+        to_columns: list[str],
+        extra: list[tuple[str, str]],
+        where: Any,
+    ) -> str:
+        """A relationship carrying a `where` filter, as a named declaration.
+
+        A `where` block belongs to the relationship, and one written inline in
+        `relationships:` has nowhere to put it. So the relationship is declared
+        above the `Dataset` block under a name, and the list holds
+        `RelationshipConfig { rel: <name>, ... }`.
+
+        `Relationship` rather than `EqualityRelationship`, because it is the
+        supertype and the compiler narrows it from `type`. The compiled payload
+        comes back tagged `EqualityRelationship` either way.
+        """
+        scope = f"relationship {payload.get('name')}"
+        rel_name = self.name_in_aml(str(payload.get("name")), scope)
+        declaration = Block(f"Relationship {rel_name}")
+        declaration.property("type", quote(kind))
+        declaration.property("from", _field_ref(from_model.reference, from_columns[0]))
+        declaration.property("to", _field_ref(to_model.reference, to_columns[0]))
+        for from_column, to_column in zip(from_columns[1:], to_columns[1:]):
+            on = declaration.block("on")
+            on.property("from", _field_ref(from_model.reference, from_column))
+            on.property("to", _field_ref(to_model.reference, to_column))
+        self._write_where(declaration, where, scope)
+        self.relationship_declarations.append(amlgen.document(declaration, license_header=False))
+
+        config = Block("RelationshipConfig")
+        config.property("rel", rel_name)
+        config.property("active", active)
+        for key, value in extra:
+            config.property(key, value)
+        return config.render(2).lstrip()
+
+    def _write_where(self, block: Block, where: Any, scope: str) -> None:
+        """The stashed `RelationshipFilter` as a `where { ... }` block.
+
+        Each side is an AQL predicate narrowing the join on that end, and
+        either may be absent. `comment_photo` in the Holistics AMQL test corpus
+        carries only `from`.
+        """
+        if not isinstance(where, dict):
+            raise ConversionError(
+                f"{scope}: the stashed `where` is {type(where).__name__}, and AML writes "
+                f"it as a block holding a `from` and a `to` predicate"
+            )
+        child = block.block("where")
+        written = False
+        for side in ("from", "to"):
+            heredoc = where.get(side)
+            if heredoc is None:
+                continue
+            if not isinstance(heredoc, dict) or "content" not in heredoc:
+                raise ConversionError(
+                    f"{scope}: the stashed `where.{side}` is not a heredoc object, so "
+                    f"there is no predicate to write"
+                )
+            child.heredoc(side, heredoc.get("name") or "aql", heredoc["content"].strip())
+            written = True
+        if not written:
+            raise ConversionError(
+                f"{scope}: the stashed `where` names neither a `from` nor a `to` "
+                f"predicate, so it narrows nothing"
+            )
+
+    def _relationship_properties(self, data: dict[str, Any], name: Any) -> list[tuple[str, str]]:
+        """The stashed `RelationshipConfig` properties worth writing back.
+
+        `direction`, `nullable` and `rlp_propagation` are all settable on a
+        `RelationshipConfig`. Each carries a compiler default on every payload,
+        so only a value that differs from it is written.
+        """
+        extra: list[tuple[str, str]] = []
+        for key, default in RELATIONSHIP_DEFAULTS.items():
+            value = data.get(key)
+            if value is not None and value != default:
+                extra.append((key, _aml_value(value, f"relationship {name}")))
+        return extra
 
     def dataset_file(self) -> tuple[str, str]:
         name = self.dataset_name
@@ -996,7 +1106,11 @@ class _Reverse:
         if owner:
             block.blank()
             block.text("owner", owner)
-        return f"{name}.dataset.aml", amlgen.document(block, license_header=True)
+        body = amlgen.document(block, license_header=True)
+        if self.relationship_declarations:
+            head, separator, rest = body.partition(f"Dataset {name} {{")
+            body = head + "".join(self.relationship_declarations) + "\n" + separator + rest
+        return f"{name}.dataset.aml", body
 
     def run(self) -> Result:
         # The dataset file is rendered first because its metrics decide which
@@ -1009,7 +1123,8 @@ class _Reverse:
 
 
 def _field_ref(model_name: str, column: str) -> str:
-    return f"FieldRef {{ model: {quote(model_name)}, field: {quote(column)} }}"
+    """`ref()` is aml-std's constructor for a FieldRef, and is how AML spells one."""
+    return f"ref({quote(model_name)}, {quote(column)})"
 
 
 def _aml_value(value: Any, where: str) -> str:

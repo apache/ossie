@@ -39,11 +39,11 @@ Dataset ecommerce {
     RelationshipConfig {
       rel: EqualityRelationship {
         type: 'many_to_one'
-        from: FieldRef { model: 'merchants', field: 'city_id' }
-        to: FieldRef { model: 'cities', field: 'id' }
+        from: ref('merchants', 'city_id')
+        to: ref('cities', 'id')
         on {
-          from: FieldRef { model: 'merchants', field: 'country_code' }
-          to: FieldRef { model: 'cities', field: 'country_code' }
+          from: ref('merchants', 'country_code')
+          to: ref('cities', 'country_code')
         }
       }
       active: true

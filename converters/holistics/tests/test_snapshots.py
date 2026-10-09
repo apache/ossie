@@ -598,3 +598,61 @@ def test_a_field_name_aml_cannot_spell_is_still_declared():
     assert borrowed == []
     orders = next(text for name, text in result.files if name.endswith("orders.model.aml"))
     assert orders.count("dimension my_field {") == 1
+
+
+def _dataset_text(document):
+    result = ossie_to_aml.convert(document, "ANSI_SQL", data_source_name="probe")
+    return next(text for name, text in result.files if name.endswith(".dataset.aml"))
+
+
+def _with_relationship_stash(**stashed):
+    document = _two_dataset_document([])
+    document["relationships"][0]["custom_extensions"] = [
+        {
+            "vendor_name": "HOLISTICS",
+            "data": json.dumps({"_v": 1, "type": "many_to_one", "active": True, **stashed}),
+        }
+    ]
+    return document
+
+
+def test_a_stashed_relationship_filter_is_written_back():
+    """A `where` filter belongs to the relationship, not to the config.
+
+    One written inline in `relationships:` has nowhere to put it, so a
+    relationship carrying a filter is declared above the `Dataset` block under
+    a name and the list holds `RelationshipConfig { rel: <name>, ... }`.
+    """
+    text = _dataset_text(
+        _with_relationship_stash(
+            where={
+                "__type__": "RelationshipFilter",
+                "from": {"__type__": "Heredoc", "name": "aql", "content": "users.id > 0"},
+            }
+        )
+    )
+    assert "Relationship users_to_orders {" in text
+    assert "from: ref('users', 'order_id')" in text
+    assert "to: ref('orders', 'id')" in text
+    assert "where {" in text
+    assert "from: @aql users.id > 0;;" in text
+    assert "rel: users_to_orders" in text
+    assert text.index("Relationship users_to_orders {") < text.index("Dataset m {")
+
+
+def test_a_non_default_relationship_property_is_written_back():
+    """Only a value that differs from the compiler's default is written.
+
+    Every compiled payload carries all three, so writing them unconditionally
+    would turn every short `relationship(...)` into a block meaning the same.
+    """
+    assert "relationship(users.order_id > orders.id, true)" in _dataset_text(
+        _two_dataset_document([])
+    )
+
+    text = _dataset_text(
+        _with_relationship_stash(direction="one_way", nullable=False, rlp_propagation="one_way")
+    )
+    assert "direction: 'one_way'" in text
+    assert "nullable: false" in text
+    assert "rlp_propagation: 'one_way'" in text
