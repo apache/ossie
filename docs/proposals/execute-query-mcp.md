@@ -665,6 +665,17 @@ states. No reference engine or adapter implementation is included. `0.4-draft`
 replaces native strings/language selection with Layer 3 objects and uses the
 same object for repairs; it is not wire-compatible with `0.3-draft`.
 
+### Implementor contract checks
+
+[Reusable schemas and an offline checker](../../validation/mcp/README.md)
+validate endpoint implementors' tool declarations and captured final results:
+arguments/repair objects, status/source/model consistency, embedded CSV,
+encoding metadata and preview fidelity. The published schemas are generated
+from this profile; no semantic planner or endpoint is introduced.
+Reports distinguish passed, failed and unverified captures and list unchecked
+obligations. Passing captured contract tests does not certify authorization,
+read-only execution, Foundation query answers or the MCP transport/Task lifecycle.
+
 [layer3]: https://github.com/apache/ossie/blob/cc0d07099a3ef31e85af1fd93458a52186fae2c6/core-spec/foundational_semantics.md
 [mcp-tools]: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/0a11bf68c7ec4473526ec15589f592afcd12d1e8/docs/specification/2026-07-28/server/tools.mdx
 [mcp-resources]: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/0a11bf68c7ec4473526ec15589f592afcd12d1e8/docs/specification/2026-07-28/server/resources.mdx
