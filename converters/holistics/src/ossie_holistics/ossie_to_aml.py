@@ -1049,7 +1049,9 @@ class _Reverse:
                     f"{scope}: the stashed `where.{side}` is not a heredoc object, so "
                     f"there is no predicate to write"
                 )
-            child.heredoc(side, heredoc.get("name") or "aql", heredoc["content"].strip())
+            # Verbatim, including trailing space: the round trip compares the
+            # compiled payload, and the compiler keeps what the heredoc held.
+            child.heredoc(side, heredoc.get("name") or "aql", heredoc["content"])
             written = True
         if not written:
             raise ConversionError(

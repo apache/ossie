@@ -486,8 +486,8 @@ relationships:
   - id
   custom_extensions:
   - vendor_name: HOLISTICS
-    data: '{"_v": 1, "active": true, "direction": "two_way", "nullable": true, "rlp_propagation":
-      "inherit", "type": "many_to_one"}'
+    data: '{"_v": 1, "active": true, "direction": "one_way", "nullable": false, "rlp_propagation":
+      "one_way", "type": "many_to_one"}'
 - name: merchants_to_cities
   from: merchants
   to: cities
@@ -511,7 +511,10 @@ relationships:
   custom_extensions:
   - vendor_name: HOLISTICS
     data: '{"_v": 1, "active": true, "direction": "two_way", "nullable": true, "rlp_propagation":
-      "inherit", "type": "many_to_one"}'
+      "inherit", "type": "many_to_one", "where": {"__doc__": "", "__type__": "RelationshipFilter",
+      "from": {"__doc__": "", "__type__": "Heredoc", "content": "delivered_orders.delivery_attempts
+      > 0 ", "name": "aql"}, "to": {"__doc__": "", "__type__": "Heredoc", "content":
+      "ecommerce_users.age > 18 ", "name": "aql"}}}'
 - name: merchants_to_ecommerce_users
   from: merchants
   to: ecommerce_users

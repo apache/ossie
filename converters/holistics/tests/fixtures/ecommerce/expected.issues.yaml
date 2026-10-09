@@ -99,6 +99,13 @@
     and round-trip it but cannot evaluate it
   object_ref: ecommerce.revenue_share_of_all_merchants
   remedy: evaluate through Holistics, or rewrite the body as Holistics SQL
+- code: HOLISTICS_RELATIONSHIP_FILTER
+  severity: WARNING
+  message: >-
+    the relationship carries a filter that narrows the join, and Ossie has no equivalent. The join
+    widens to every matching row
+  object_ref: delivered_orders_to_ecommerce_users
+  remedy: move the condition into a dimension in AML
 - code: HOLISTICS_INACTIVE_RELATIONSHIP
   severity: WARNING
   message: >-

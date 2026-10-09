@@ -15,6 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
+Relationship delivered_orders_to_ecommerce_users {
+  type: 'many_to_one'
+  from: ref('delivered_orders', 'user_id')
+  to: ref('ecommerce_users', 'id')
+  where {
+    from: @aql delivered_orders.delivery_attempts > 0 ;;
+    to: @aql ecommerce_users.age > 18 ;;
+  }
+}
+
 Dataset ecommerce {
   label: 'Ecommerce'
   description: 'A marketplace model: orders, line items, products, merchants and cities.'
@@ -35,7 +45,17 @@ Dataset ecommerce {
     relationship(order_items.order_id > ecommerce_orders.id, true),
     relationship(order_items.product_id > products.id, true),
     relationship(ecommerce_orders.user_id > ecommerce_users.id, true),
-    relationship(products.merchant_id > merchants.id, true),
+    RelationshipConfig {
+      rel: EqualityRelationship {
+        type: 'many_to_one'
+        from: ref('products', 'merchant_id')
+        to: ref('merchants', 'id')
+      }
+      active: true
+      direction: 'one_way'
+      nullable: false
+      rlp_propagation: 'one_way'
+    },
     RelationshipConfig {
       rel: EqualityRelationship {
         type: 'many_to_one'
@@ -48,7 +68,10 @@ Dataset ecommerce {
       }
       active: true
     },
-    relationship(delivered_orders.user_id > ecommerce_users.id, true),
+    RelationshipConfig {
+      rel: delivered_orders_to_ecommerce_users
+      active: true
+    },
     relationship(merchants.admin_id - ecommerce_users.id, true),
     relationship(ecommerce_orders.created_date > reporting.calendar.date, false),
   ]

@@ -1284,9 +1284,9 @@
       "__type__": "RelationshipConfig"
     },
     {
-      "direction": "two_way",
-      "rlp_propagation": "inherit",
-      "nullable": true,
+      "direction": "one_way",
+      "rlp_propagation": "one_way",
+      "nullable": false,
       "rel": {
         "__doc__": "",
         "type": "many_to_one",
@@ -1359,7 +1359,25 @@
       "rlp_propagation": "inherit",
       "nullable": true,
       "rel": {
+        "__fqn__": "delivered_to_users",
+        "name": "delivered_to_users",
         "__doc__": "",
+        "where": {
+          "__doc__": "",
+          "from": {
+            "__doc__": "",
+            "__type__": "Heredoc",
+            "name": "aql",
+            "content": "delivered_orders.delivery_attempts > 0 "
+          },
+          "to": {
+            "__doc__": "",
+            "__type__": "Heredoc",
+            "name": "aql",
+            "content": "ecommerce_users.age > 18 "
+          },
+          "__type__": "RelationshipFilter"
+        },
         "type": "many_to_one",
         "from": {
           "__doc__": "",

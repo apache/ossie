@@ -15,6 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
+// A join filter narrowing each end. `where` belongs to the relationship, so a
+// relationship carrying one is declared here and the dataset references it by
+// name. `Relationship` is the supertype; the compiler narrows it from `type`.
+Relationship delivered_to_users {
+  type: 'many_to_one'
+  from: ref('delivered_orders', 'user_id')
+  to: ref('ecommerce_users', 'id')
+  where {
+    from: @aql delivered_orders.delivery_attempts > 0 ;;
+    to: @aql ecommerce_users.age > 18 ;;
+  }
+}
+
 Dataset ecommerce {
   label: 'Ecommerce'
   description: 'A marketplace model: orders, line items, products, merchants and cities.'
@@ -35,7 +48,17 @@ Dataset ecommerce {
     relationship(order_items.order_id > ecommerce_orders.id, true),
     relationship(order_items.product_id > products.id, true),
     relationship(ecommerce_orders.user_id > ecommerce_users.id, true),
-    relationship(products.merchant_id > merchants.id, true),
+    RelationshipConfig {
+      rel: EqualityRelationship {
+        type: 'many_to_one'
+        from: ref('products', 'merchant_id')
+        to: ref('merchants', 'id')
+      }
+      active: true
+      direction: 'one_way'
+      nullable: false
+      rlp_propagation: 'one_way'
+    },
     // Composite. The `relationship(...)` shorthand carries one column pair, so a
     // second pair needs the long form with an `on` block. Blocks combine with AND.
     RelationshipConfig {
@@ -50,7 +73,7 @@ Dataset ecommerce {
       }
       active: true
     },
-    relationship(delivered_orders.user_id > ecommerce_users.id, true),
+    RelationshipConfig { rel: delivered_to_users, active: true },
 
     // One-to-one. Ossie has no marker for this, so the kind goes to the stash.
     relationship(merchants.admin_id - ecommerce_users.id, true),

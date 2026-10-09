@@ -111,6 +111,7 @@ def test_the_forward_direction_reports_the_losses_it_declares():
         aml_to_ossie.ISSUE_PARAM_DROPPED,
         aml_to_ossie.ISSUE_QUERY_SOURCE,
         aml_to_ossie.ISSUE_UNRESOLVED_QUERY,
+        aml_to_ossie.ISSUE_RELATIONSHIP_FILTER,
     }
 
 
@@ -656,3 +657,49 @@ def test_a_non_default_relationship_property_is_written_back():
     assert "direction: 'one_way'" in text
     assert "nullable: false" in text
     assert "rlp_propagation: 'one_way'" in text
+
+
+MATCH_RELATIONSHIPS = {
+    "many_to_many": "ManyToManyRelationship",
+    "range": "RangeRelationship",
+}
+
+
+@pytest.mark.parametrize("kind,aml_type", MATCH_RELATIONSHIPS.items(), ids=list(MATCH_RELATIONSHIPS))
+def test_a_match_relationship_is_dropped_with_an_error(kind, aml_type):
+    """A range or many-to-many join carries `match`, not column pairs.
+
+    Ossie encodes a relationship as `from_columns` and `to_columns`, and an AQL
+    predicate spanning both models has no form there, so the edge is dropped
+    and the two datasets read as unrelated.
+    """
+    payload = json.loads(snapshots.ECOMMERCE_COMPILED.read_text(encoding="utf-8"))
+    before = len(payload["relationships"])
+    payload["relationships"].append(
+        {
+            "__type__": "RelationshipConfig",
+            "active": True,
+            "rel": {
+                "__type__": aml_type,
+                "type": kind,
+                "from": {"__type__": "FieldRef", "model": "order_items", "field": "id"},
+                "to": {"__type__": "FieldRef", "model": "products", "field": "id"},
+                "match": {
+                    "__type__": "Heredoc",
+                    "name": "aql",
+                    "content": "order_items.id >= products.id",
+                },
+            },
+        }
+    )
+    result = aml_to_ossie.convert(payload, sql_dialect=snapshots.SQL_DIALECT)
+
+    raised = [
+        i
+        for i in result.issues.issues
+        if i.code == aml_to_ossie.ISSUE_UNSUPPORTED_RELATIONSHIP
+    ]
+    assert len(raised) == 1
+    assert kind in raised[0].message
+    assert raised[0].severity is Severity.ERROR
+    assert len(result.model["relationships"]) == before
