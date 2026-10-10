@@ -130,12 +130,22 @@ def test_semantic_model_missing_datasets() -> None:
 
 def test_custom_extension_missing_vendor_name() -> None:
     with pytest.raises(ValidationError):
-        OssieCustomExtension(data="{}")
+        OssieCustomExtension(data={})
 
 
 def test_custom_extension_missing_data() -> None:
     with pytest.raises(ValidationError):
         OssieCustomExtension(vendor_name="ASF")
+
+
+@pytest.mark.parametrize("data", ['{"id": "model-1"}', ["id"], 1, None])
+def test_custom_extension_rejects_non_object_data(data: object) -> None:
+    with pytest.raises(ValidationError):
+        OssieCustomExtension(vendor_name="ASF", data=data)
+
+
+def test_custom_extension_accepts_empty_object_data() -> None:
+    assert OssieCustomExtension(vendor_name="ASF", data={}).data == {}
 
 
 def test_dialect_expression_missing_dialect() -> None:
@@ -203,7 +213,7 @@ def test_frozen_ai_context_object() -> None:
 
 
 def test_frozen_custom_extension() -> None:
-    custom_ext = OssieCustomExtension(vendor_name="ASF", data="{}")
+    custom_ext = OssieCustomExtension(vendor_name="ASF", data={})
     with pytest.raises(ValidationError):
         custom_ext.vendor_name = "other"
 

@@ -93,12 +93,12 @@ OssieAIContext = Union[str, OssieAIContextObject]
 
 
 class OssieCustomExtension(BaseModel):
-    """Vendor-specific metadata as a serialized JSON string."""
+    """Vendor-specific metadata as a structured object with vendor-defined keys."""
 
     model_config = ConfigDict(frozen=True)
 
     vendor_name: str
-    data: str
+    data: dict[str, Any]
 
 
 class OssieDialectExpression(BaseModel):

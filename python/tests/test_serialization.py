@@ -74,13 +74,33 @@ def test_to_ossie_yaml_includes_all_dialects(document_data: dict) -> None:
 
 def test_to_ossie_yaml_includes_custom_extension_vendor(document_data: dict) -> None:
     document_data["custom_extensions"] = [
-        {"vendor_name": "DATABRICKS", "data": '{"id":"model-1"}'}
+        {"vendor_name": "DATABRICKS", "data": {"id": "model-1"}}
     ]
     document = OssieDocument.model_validate(document_data)
     parsed = yaml.safe_load(document.to_ossie_yaml())
     assert parsed["custom_extensions"] == [
-        {"vendor_name": "DATABRICKS", "data": '{"id":"model-1"}'}
+        {"vendor_name": "DATABRICKS", "data": {"id": "model-1"}}
     ]
+
+
+def test_custom_extension_data_round_trips_nested_values(document_data: dict) -> None:
+    data = {
+        "text": '{"legacy": true}',
+        "warehouse": "ANALYTICS_WH",
+        "some_unmapped_flag": True,
+        "retries": 3,
+        "unset": None,
+        "tags": ["daily", None],
+        "nested": {"enabled": True, "inner": {"value": None}},
+    }
+    document_data["custom_extensions"] = [{"vendor_name": "SNOWFLAKE", "data": data}]
+    document = OssieDocument.model_validate(document_data)
+
+    from_yaml = yaml.safe_load(document.to_ossie_yaml())
+    from_json = json.loads(document.to_ossie_json())
+
+    assert from_yaml["custom_extensions"][0]["data"] == data
+    assert from_json["custom_extensions"][0]["data"] == data
 
 
 def test_to_ossie_yaml_excludes_none(document_data: dict) -> None:

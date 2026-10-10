@@ -130,7 +130,7 @@ def test_document_serialization_preserves_flat_model_and_metadata(
     data.update(
         description="A portable model",
         ai_context="Use the event timestamp",
-        custom_extensions=[{"vendor_name": "SIGMA", "data": '{"id":"model-1"}'}],
+        custom_extensions=[{"vendor_name": "SIGMA", "data": {"id": "model-1"}}],
         relationships=[
             {
                 "name": "event_link",

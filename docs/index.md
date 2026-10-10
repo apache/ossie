@@ -245,7 +245,7 @@ Use the [validation script](../validation/validate.py) included in the repositor
 YAML is more human-readable and easier to author by hand, which is important for a specification that teams may edit directly. The Ossie JSON Schema is available for programmatic validation, and converters can work with either format.
 
 **How does Ossie handle vendor-specific features?**
-Through `custom_extensions`. Each vendor can store arbitrary JSON metadata in extension blocks tagged with their vendor name. This metadata is preserved during round-trip conversions and ignored by tools that don't understand it — ensuring that no information is lost.
+Through `custom_extensions`. Each vendor can store structured metadata (any keys and nested values it chooses) in extension blocks tagged with their vendor name. This metadata is preserved during round-trip conversions and ignored by tools that don't understand it — ensuring that no information is lost.
 
 **Can metrics reference multiple datasets?**
 Yes. Metrics are defined at the semantic model level (not within a dataset) and can reference fields from multiple datasets.
@@ -321,7 +321,7 @@ A practical guide for organizations looking to adopt Ossie.
 | **Metric** | A quantitative measure computed by aggregating data across one or more datasets (e.g., total revenue, average order value). Metrics are defined at the semantic model level. |
 | **Relationship** | A foreign key connection between two datasets, defining how they can be joined. Relationships are always many-to-one (from the referencing dataset to the referenced dataset). |
 | **Dialect** | A specific SQL or expression language variant (e.g., `ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`). Ossie supports multiple dialects so expressions can be tailored to each platform. |
-| **Custom Extension** | Vendor-specific metadata attached to any Ossie construct as a JSON string. Extensions allow platforms to carry additional information without modifying the core specification. |
+| **Custom Extension** | Vendor-specific metadata attached to any Ossie construct as a structured object with vendor-defined keys. Extensions allow platforms to carry additional information without modifying the core specification. |
 | **AI Context** | Optional annotations on any Ossie construct (model, dataset, field, relationship, metric) that provide additional context for AI tools — including natural language instructions, synonyms, and example queries. |
 | **Converter** | A tool that translates between the Ossie format and a specific vendor's semantic model format. Converters come in pairs: import (vendor → Ossie) and export (Ossie → vendor). |
 | **Hub-and-Spoke** | The architectural pattern used by Ossie, where the specification acts as the central format (hub) and vendor converters act as spokes, avoiding the need for point-to-point integrations. |

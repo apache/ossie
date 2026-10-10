@@ -100,7 +100,7 @@ metrics: []
 # Allows vendors to add custom metadata without breaking core compatibility
 custom_extensions:
   - vendor_name: string  # Free-form string identifying the vendor
-    data: string
+    data: object  # Structured vendor-specific data; keys are vendor-defined
 
 ---
 # Logical Dataset Schema
@@ -151,7 +151,7 @@ datasets:
     # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
       - vendor_name: string  # Free-form string identifying the vendor
-        data: string
+        data: object  # Structured vendor-specific data; keys are vendor-defined
 
 ---
 # Relationship Schema
@@ -192,7 +192,7 @@ relationships:
     # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
       - vendor_name: string  # Free-form string identifying the vendor
-        data: string
+        data: object  # Structured vendor-specific data; keys are vendor-defined
 
 ---
 # Fields Schema
@@ -247,7 +247,7 @@ fields:
     # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
       - vendor_name: string  # Free-form string identifying the vendor
-        data: string
+        data: object  # Structured vendor-specific data; keys are vendor-defined
 
 ---
 # Metrics Schema
@@ -284,4 +284,4 @@ metrics:
     # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
       - vendor_name: string  # Free-form string identifying the vendor
-        data: string
+        data: object  # Structured vendor-specific data; keys are vendor-defined

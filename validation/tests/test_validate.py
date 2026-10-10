@@ -307,6 +307,34 @@ def test_schema_rejects_empty_relationship_endpoints(core_schema: dict) -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    "data",
+    [
+        {},
+        {"warehouse": "ANALYTICS_WH", "some_unmapped_flag": True},
+        {"text": '{"legacy": true}', "nested": {"tags": ["a", None], "n": 1.5}},
+    ],
+)
+def test_custom_extension_data_accepts_objects(core_schema: dict, data: dict) -> None:
+    document = _document([dict(_ORDERS)], [])
+    document["custom_extensions"] = [{"vendor_name": "SNOWFLAKE", "data": data}]
+    document["datasets"][0]["custom_extensions"] = [{"vendor_name": "DBT", "data": data}]
+
+    assert _VALIDATE.validate_schema(document, core_schema) == []
+
+
+@pytest.mark.parametrize("data", ['{"warehouse": "ANALYTICS_WH"}', ["warehouse"], 1, True, None])
+def test_custom_extension_data_rejects_non_objects(core_schema: dict, data: object) -> None:
+    document = _document([dict(_ORDERS)], [])
+    document["custom_extensions"] = [{"vendor_name": "SNOWFLAKE", "data": data}]
+
+    errors = _VALIDATE.validate_schema(document, core_schema)
+
+    assert len(errors) == 1
+    assert errors[0].startswith("[Schema] custom_extensions -> 0 -> data:")
+    assert "is not of type 'object'" in errors[0]
+
+
 def test_sql_checks_traverse_root_fields_and_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
     seen = []
 
