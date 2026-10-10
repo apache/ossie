@@ -194,8 +194,17 @@ def _ossie_dataset(
     )
 
 
-def _ossie_metric(name: str, expression: str, description: str | None = None) -> OssieMetric:
-    return OssieMetric(name=name, expression=_ossie_expr(expression), description=description)
+def _ossie_metric(
+    name: str,
+    expression: str,
+    description: str | None = None,
+    dialect: OssieDialect = OssieDialect.ANSI_SQL,
+) -> OssieMetric:
+    return OssieMetric(
+        name=name,
+        expression=_ossie_expr(expression, dialect=dialect),
+        description=description,
+    )
 
 
 def _ossie_relationship(

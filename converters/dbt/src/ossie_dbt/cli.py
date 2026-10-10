@@ -54,6 +54,10 @@ _ISSUE_REASON: dict[ConverterIssueType, str] = {
         "an input metric is listed more than once under one reference with differing filters, "
         "so the expression reference is ambiguous; give each occurrence a distinct alias"
     ),
+    ConverterIssueType.UNSUPPORTED_METRIC_EXPRESSION: (
+        "MetricFlow SIMPLE metrics require one supported aggregation over a safe scalar expression "
+        "owned by exactly one semantic model"
+    ),
 }
 
 _DROPPED_ISSUE_TYPES = {
@@ -62,6 +66,7 @@ _DROPPED_ISSUE_TYPES = {
     ConverterIssueType.NATURAL_ENTITY_DROPPED,
     ConverterIssueType.ROW_COUNT_METRIC_DROPPED,
     ConverterIssueType.AMBIGUOUS_REFERENCE_METRIC_DROPPED,
+    ConverterIssueType.UNSUPPORTED_METRIC_EXPRESSION,
 }
 
 
