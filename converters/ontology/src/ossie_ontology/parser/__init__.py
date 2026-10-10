@@ -26,6 +26,7 @@ from typing import Any
 import yaml
 
 from ossie_ontology.converter.spec_to_ossie.converter import SpecToOssieConverter
+from ossie_ontology.expr.factory import FormulaParserFactory, MappingFormulaParserFactory
 from ossie_ontology.model import OssieOntology, FormulaFactory, MappingFormulaFactory
 from ossie_ontology.spec import OssieSpec
 
@@ -41,8 +42,11 @@ class OssieParser:
         self._debug = debug
         self._model = None
         self._spec = None
-        self._formula_factory = formula_factory or FormulaFactory()
-        self._mapping_formula_factory = mapping_formula_factory or MappingFormulaFactory()
+        # Parse formulas by default: an unparsed one reaches the model as raw
+        # text, is skipped by every downstream converter, and vanishes silently.
+        # Pass the plain `FormulaFactory` to opt out.
+        self._formula_factory = formula_factory or FormulaParserFactory()
+        self._mapping_formula_factory = mapping_formula_factory or MappingFormulaParserFactory()
 
     def parse(self, path: Path) -> OssieOntology:
         # Ossie always expects a single spec file.

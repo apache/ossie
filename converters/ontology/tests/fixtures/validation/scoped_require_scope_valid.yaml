@@ -1,0 +1,158 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+version: 0.2.0.dev0
+name: Sample model
+ontology:
+  - concept: Person
+    type: EntityType
+    identify_by: [ssn]
+    requires:
+      # `Company` is a second concept, but it is connected to the Person scope
+      # through the `employer` fact, so it is bound (no EXISTS needed).
+      - 'Person.employer(Company) AND Company.revenue > 0'
+      # The same join written the other way around: the fact reaches the scope
+      # even though it is not the first conjunct that mentions it.
+      - 'Company.revenue > 0 AND Person.employer(Company)'
+      # A binder nested in another binder still binds what it encloses.
+      - 'Person.ssn > 0 AND EXISTS(Company.revenue > 0 AND EXISTS(Person.employer(Company)))'
+      # Scope travels down a chain of facts, in either direction. `sub` is a
+      # var, so 'sub.staff' only resolves once inference types it from the fact
+      # — the step after the dot names a relationship, never a free variable.
+      - 'Person.employer(Company) AND Company.subsidiary(sub) AND sub.staff > 0'
+      - 'Company.subsidiary(sub) AND sub.staff > 0 AND Person.employer(Company)'
+      # A ternary binds every role it names.
+      - 'Person.employment(Company, Position) AND Position.level > 3'
+      # The same ternary applied to all but its last role, continuing the
+      # traversal from the Position that plays it.
+      - 'Person.employment(Company).level > 3'
+      # An aggregate is a binder, so what it encloses needs no join to the scope.
+      - 'Person.name AND COUNT[Product] > 0'
+    relationships:
+      - name: ssn
+        roles: [{concept: SocialSecurityNr}]
+        multiplicity: OneToOne
+      - name: monthly_income
+        roles: [{concept: Money}]
+        multiplicity: ManyToOne
+      - name: annual_income
+        roles: [{concept: Money, name: annual_income}]
+        multiplicity: ManyToOne
+        # `monthly` is a local variable: the equality defines it from the
+        # in-scope `Person`, which puts it in scope for the second conjunct.
+        derived_by:
+          - 'monthly == Person.monthly_income AND annual_income == monthly * 12'
+      - name: name
+        roles: [{concept: PersonName}]
+        multiplicity: ManyToOne
+      - name: employer
+        roles: [{concept: Company}]
+        multiplicity: ManyToOne
+        # A relationship-scoped formula may reference every role player of its
+        # parent relationship — here both `Person` and `Company`.
+        requires:
+          - 'Person.ssn > 0 AND Company.revenue > 0'
+      - name: employment
+        roles: [{concept: Company}, {concept: Position}]
+        multiplicity: ManyToOne
+  - concept: Company
+    type: EntityType
+    identify_by: [taxId]
+    relationships:
+      - name: taxId
+        roles: [{concept: TaxId}]
+        multiplicity: OneToOne
+      - name: revenue
+        roles: [{concept: Revenue}]
+        multiplicity: ManyToOne
+      - name: subsidiary
+        roles: [{concept: Subsidiary}]
+        multiplicity: ManyToOne
+  - concept: Subsidiary
+    type: EntityType
+    identify_by: [subId]
+    relationships:
+      - name: subId
+        roles: [{concept: TaxId}]
+        multiplicity: OneToOne
+      - name: staff
+        roles: [{concept: Headcount}]
+        multiplicity: ManyToOne
+  - concept: Position
+    type: EntityType
+    identify_by: [title]
+    relationships:
+      - name: title
+        roles: [{concept: PositionTitle}]
+        multiplicity: OneToOne
+      - name: level
+        roles: [{concept: Headcount}]
+        multiplicity: ManyToOne
+  - concept: Product
+    type: EntityType
+    identify_by: [sku]
+    relationships:
+      - name: sku
+        roles: [{concept: Sku}]
+        multiplicity: OneToOne
+  - concept: Payment
+    type: EntityType
+    identify_by: [paymentId]
+    relationships:
+      - name: paymentId
+        roles: [{concept: PaymentId}]
+        multiplicity: OneToOne
+      - name: type
+        roles: [{concept: PaymentType}]
+        multiplicity: ManyToOne
+  - concept: Card
+    type: EntityType
+    extends: [Payment]
+    # `Card` is defined by carving from its supertype `Payment`; `Payment` is
+    # in scope even though it is not the parent concept.
+    derived_by:
+      - "Payment.type == 'card'"
+  - concept: Money
+    type: ValueType
+    extends: [Decimal]
+  - concept: PersonName
+    type: ValueType
+    extends: [String]
+  - concept: PositionTitle
+    type: ValueType
+    extends: [String]
+  - concept: Headcount
+    type: ValueType
+    extends: [Integer]
+  - concept: Sku
+    type: ValueType
+    extends: [Integer]
+  - concept: SocialSecurityNr
+    type: ValueType
+    extends: [Integer]
+  - concept: TaxId
+    type: ValueType
+    extends: [Integer]
+  - concept: Revenue
+    type: ValueType
+    extends: [Decimal]
+  - concept: PaymentId
+    type: ValueType
+    extends: [Integer]
+  - concept: PaymentType
+    type: ValueType
+    extends: [String]

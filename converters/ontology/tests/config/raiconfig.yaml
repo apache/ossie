@@ -1,0 +1,50 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# A deliberately offline RelationalAI config for the test suite.
+#
+# `relationalai` builds its Config the moment a Model is constructed, and it
+# refuses to start without one -- even for work that never leaves the process,
+# which is all this suite does (build a model, compile it to the metamodel,
+# decompile it back to PyRel source). conftest.py pins RAI_CONFIG_FILE_PATH to
+# this file so the tests cannot pick up a contributor's real raiconfig.yaml and
+# quietly start talking to their warehouse.
+#
+# The connection below exists only because the config schema requires at least
+# one. The credentials are placeholders and are never used: a test that reaches
+# a warehouse is a test that is doing something it should not, and it will fail
+# to authenticate rather than succeed silently.
+active_profile: offline
+
+model:
+  implicit_properties: false
+
+compiler:
+  dry_run: true
+
+connections:
+  offline:
+    type: snowflake
+    account: not-a-real-account
+    user: offline
+    password: offline
+    warehouse: offline
+    role: offline
+
+profiles:
+  offline:
+    default_connection: offline

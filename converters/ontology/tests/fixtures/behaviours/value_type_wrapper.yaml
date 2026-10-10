@@ -1,0 +1,113 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+# Mapping expressions wrapped in a value type: `StoreNr(T.id)` reads the column
+# as a `StoreNr`, and the generated pyrel casts it the same way.
+#
+#   * Store is keyed by a bare wrapped expression, and Depot by a wrapped
+#     referent mapping: both reach `.new(nr=StoreNr(col))`.
+#   * Store.seats is a wrapped property value with no `concept:`.
+#   * Store.extra names `concept: Seats` *and* wraps in `Seats(...)`, which must
+#     cast once, not `Seats(Seats(col))`.
+#   * `raw` declares no datatype, so nothing is checked against the wrapper;
+#     `id` and `cap` are `Integer`, the base type of both wrappers.
+version: 0.2.0.dev0
+name: ValueTypeWrapper
+ontology:
+- concept: StoreNr
+  type: ValueType
+  extends: [Integer]
+- concept: Seats
+  type: ValueType
+  extends: [Integer]
+- concept: Store
+  type: EntityType
+  identify_by: [nr]
+  relationships:
+  - name: nr
+    roles:
+    - concept: StoreNr
+      name: n
+    verbalizes: ['{Store} has {StoreNr:n}']
+    multiplicity: OneToOne
+  - name: seats
+    roles:
+    - concept: Seats
+      name: s
+    verbalizes: ['{Store} seats {Seats:s}']
+    multiplicity: ManyToOne
+  - name: extra
+    roles:
+    - concept: Seats
+      name: s
+    verbalizes: ['{Store} has extra {Seats:s}']
+    multiplicity: ManyToOne
+- concept: Depot
+  type: EntityType
+  identify_by: [nr]
+  relationships:
+  - name: nr
+    roles:
+    - concept: StoreNr
+      name: n
+    verbalizes: ['{Depot} has {StoreNr:n}']
+    multiplicity: OneToOne
+ontology_mappings:
+- name: value_type_wrapper_mapping
+  semantic_model:
+    version: 0.2.0.dev0
+    name: Value type wrapper semantic model
+    datasets:
+    - name: T
+      source: DB.SCHEMA.T
+      fields:
+      - name: id
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: id
+        datatype: Integer
+      - name: cap
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: cap
+        datatype: Integer
+      - name: raw
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: raw
+  concept_mappings:
+  - concept: Store
+    object_mappings:
+    - expression: StoreNr(T.id)
+    link_mappings:
+    - object_mapping:
+        expression: StoreNr(T.id)
+      children:
+      - object_mapping:
+          expression: Seats(T.cap)
+        relationship: seats
+      - object_mapping:
+          concept: Seats
+          expression: Seats(T.raw)
+        relationship: extra
+  - concept: Depot
+    object_mappings:
+    - referent_mappings:
+      - relationship: nr
+        expression: StoreNr(T.id)
