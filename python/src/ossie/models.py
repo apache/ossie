@@ -95,7 +95,7 @@ OssieAIContext = Union[str, OssieAIContextObject]
 class OssieCustomExtension(BaseModel):
     """Vendor-specific metadata as a serialized JSON string."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     vendor_name: str
     data: str
@@ -104,7 +104,7 @@ class OssieCustomExtension(BaseModel):
 class OssieDialectExpression(BaseModel):
     """Expression in a specific dialect."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     dialect: OssieDialect
     expression: str
@@ -113,7 +113,7 @@ class OssieDialectExpression(BaseModel):
 class OssieExpression(BaseModel):
     """Expression definition with multi-dialect support."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     dialects: list[OssieDialectExpression] = Field(..., min_length=1)
 
@@ -121,7 +121,7 @@ class OssieExpression(BaseModel):
 class OssieDimension(BaseModel):
     """Dimension metadata on a field."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     is_time: Optional[bool] = None
 
@@ -129,7 +129,7 @@ class OssieDimension(BaseModel):
 class OssieField(BaseModel):
     """Row-level attribute for grouping, filtering, and metric expressions."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str = Field(..., min_length=1)
     expression: OssieExpression
@@ -157,7 +157,7 @@ class OssieField(BaseModel):
 class OssieDataset(BaseModel):
     """Logical dataset representing a business entity (fact or dimension table)."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str = Field(..., min_length=1)
     source: str = Field(..., min_length=1)
@@ -172,7 +172,7 @@ class OssieDataset(BaseModel):
 class OssieRelationship(BaseModel):
     """Foreign key relationship between datasets."""
 
-    model_config = ConfigDict(frozen=True, populate_by_name=True)
+    model_config = ConfigDict(frozen=True, extra="forbid", populate_by_name=True)
 
     name: str = Field(..., min_length=1)
     from_dataset: str = Field(..., alias="from", min_length=1)
@@ -186,7 +186,7 @@ class OssieRelationship(BaseModel):
 class OssieMetric(BaseModel):
     """Quantitative measure defined on business data."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str = Field(..., min_length=1)
     expression: OssieExpression
@@ -199,7 +199,7 @@ class OssieMetric(BaseModel):
 class OssieSemanticModel(BaseModel):
     """Semantic model: the datasets, relationships, and metrics for one business domain."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str = Field(..., min_length=1)
     description: Optional[str] = None
