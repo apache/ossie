@@ -5,14 +5,13 @@ def test_clickhouse_aggregates():
     mapper = ClickHouseDialectMapper()
     assert mapper.map_aggregate("count_distinct", "user_id") == "uniqExact(user_id)"
     assert mapper.map_aggregate("approx_distinct", "user_id") == "uniqCombined64(user_id)"
-    assert mapper.map_aggregate("median", "latency") == "quantileExact(0.5)(latency)"
-    assert mapper.map_aggregate("percentile", "latency", level=0.95) == "quantileExact(0.95)(latency)"
+    assert mapper.map_aggregate("median", "latency") == "quantileExactInclusive(0.5)(latency)"
+    assert mapper.map_aggregate("percentile", "latency", level=0.95) == "quantileExactInclusive(0.95)(latency)"
     assert mapper.map_aggregate("sum", "amount") == "sum(amount)"
     assert mapper.map_aggregate("avg", "amount") == "avg(amount)"
     assert mapper.map_aggregate("min", "amount") == "min(amount)"
     assert mapper.map_aggregate("max", "amount") == "max(amount)"
     assert mapper.map_aggregate("count", "id") == "count(id)"
-    # Fallback test
     assert mapper.map_aggregate("custom_agg", "col") == "custom_agg(col)"
 
 

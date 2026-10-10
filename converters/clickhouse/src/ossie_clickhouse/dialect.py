@@ -6,8 +6,8 @@ class ClickHouseDialectMapper:
         aggregates = {
             "count_distinct": f"uniqExact({column})",
             "approx_distinct": f"uniqCombined64({column})",
-            "median": f"quantileExact(0.5)({column})",
-            "percentile": f"quantileExact({level})({column})",
+            "median": f"quantileExactInclusive(0.5)({column})",
+            "percentile": f"quantileExactInclusive({level})({column})",
             "sum": f"sum({column})",
             "avg": f"avg({column})",
             "min": f"min({column})",
