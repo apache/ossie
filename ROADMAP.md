@@ -388,7 +388,7 @@ New adopters and tool authors need clearer documentation, real-world samples, an
 
 - [Core Specification (spec.md)](core-spec/spec.md) — the current Ossie spec document
 - [TPC-DS Example Model](examples/tpcds_semantic_model.yaml) — reference semantic model using the TPC-DS benchmark
-- [Converter Guide (converters/README.md)](converters/README.md) — hub-and-spoke converter architecture and authoring guide
+- [Converter Guide (apache/ossie-converters)](https://github.com/apache/ossie-converters/blob/main/README.md) — hub-and-spoke converter architecture and authoring guide
 
 ---
 
@@ -430,12 +430,12 @@ Broad ecosystem adoption depends on practical tools that let teams validate thei
 
 - [JSON Schema (ossie-schema.json)](core-spec/ossie-schema.json) — schema for structural validation
 - [Validation Script (validate.py)](validation/validate.py) — validates Ossie YAML against JSON Schema, unique names, references, and SQL syntax
-- [Snowflake Converter](converters/snowflake/) — Ossie → Snowflake Cortex Analyst YAML converter
-- [GoodData Converter](converters/gooddata/) — bidirectional Ossie ↔ GoodData LDM converter
-- [Salesforce Converter](converters/salesforce/) — Ossie ↔ Salesforce converter
-- [Apache Polaris Converter](converters/polaris/) — Ossie → Apache Polaris converter
-- [OrionBelt Converter](converters/orionbelt/) — bidirectional Ossie ↔ OrionBelt OBML converter
-- [Microsoft Converter](converters/microsoft/) — bidirectional Ossie ↔ Power BI / Fabric semantic model (TMSL) converter
+- [Snowflake Converter](https://github.com/apache/ossie-converters/tree/main/snowflake) — Ossie → Snowflake Cortex Analyst YAML converter
+- [GoodData Converter](https://github.com/apache/ossie-converters/tree/main/gooddata) — bidirectional Ossie ↔ GoodData LDM converter
+- [Salesforce Converter](https://github.com/apache/ossie-converters/tree/main/salesforce) — Ossie ↔ Salesforce converter
+- [Apache Polaris Converter](https://github.com/apache/ossie-converters/tree/main/polaris) — Ossie → Apache Polaris converter
+- [OrionBelt Converter](https://github.com/apache/ossie-converters/tree/main/orionbelt) — bidirectional Ossie ↔ OrionBelt OBML converter
+- [Microsoft Converter](https://github.com/apache/ossie-converters/tree/main/microsoft) — bidirectional Ossie ↔ Power BI / Fabric semantic model (TMSL) converter
 
 **Related Issues:**
 
