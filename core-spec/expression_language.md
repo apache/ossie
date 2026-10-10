@@ -226,7 +226,7 @@ APPROX_PERCENTILE(response_time, 0.95)
 ### Conditional Aggregations (REQUIRED)
 
 SUM / COUNT aggregation functions support `DISTINCT.`   
-All aggregations should support filtered aggregation:
+All aggregations must support filtered aggregation:
 
 ```sql
 -- DISTINCT modifier
@@ -234,9 +234,37 @@ SUM(DISTINCT amount)
 COUNT(DISTINCT customer_id)
 
 -- Filtered aggregation via CASE
-SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END)
+SUM(CASE WHEN status = 'completed' THEN amount END)
 COUNT(CASE WHEN status = 'completed' THEN 1 END)
+
+-- Filtered aggregation via FILTER (WHERE ...)
+SUM(amount) FILTER (WHERE status = 'completed')
+COUNT(*) FILTER (WHERE status = 'completed')
 ```
+
+#### `FILTER (WHERE ...)` (REQUIRED)
+
+Every aggregate function must support a postfix `FILTER (WHERE <predicate>)` modifier:
+
+```
+<aggregate_function>(<args>) FILTER (WHERE <predicate>)
+```
+
+The clause has the semantics of the SQL:2003 `<filter clause>` (optional feature T612): the aggregate considers only the rows for which `<predicate>` succeeds. `FILTER` is applied to the aggregate's input, not as a query `WHERE`, so it never removes output groups. A converter or engine MUST NOT rewrite an intrinsic `FILTER` predicate into a query-level `WHERE` clause when doing so would change group membership.
+
+`FILTER (WHERE ...)` is a modifier on an aggregate expression. It is not the standalone `WHERE` clause listed under [Not Supported in Expressions](#not-supported-in-expressions). The `<predicate>` must reference only fields of the same dataset as the aggregate's arguments.
+
+An engine MAY evaluate `FILTER (WHERE ...)` by rewriting it to an equivalent expression, but the result MUST be identical to the result that the `<filter clause>` semantics define.
+
+*Note (non-normative):* For an aggregate function that ignores `NULL` inputs, `FILTER (WHERE ...)` is equivalent to a `CASE` expression with no `ELSE`:
+
+```sql
+SUM(amount) FILTER (WHERE status = 'completed')                  --> SUM(CASE WHEN status = 'completed' THEN amount END)
+COUNT(*) FILTER (WHERE status = 'completed')                     --> COUNT(CASE WHEN status = 'completed' THEN 1 END)
+COUNT(DISTINCT customer_id) FILTER (WHERE status = 'completed')  --> COUNT(DISTINCT CASE WHEN status = 'completed' THEN customer_id END)
+```
+
+A non-matching row contributes `NULL`, which these functions ignore. An `ELSE 0` would count as a real row and would corrupt `AVG`, `MIN`, `MAX`, and `COUNT`. The identity does not hold for an aggregate function that does not ignore `NULL` inputs, such as `ARRAY_AGG`.
 
 ### Decomposability Reference
 
