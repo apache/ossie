@@ -63,6 +63,7 @@ Dialects in which metric and field expressions can be declared.
 | `DAX` | Data Analysis Expressions (Power BI / Analysis Services) |
 | `HOLISTICS_AQL` | Holistics AQL (Analytical Query Language) |
 | `OSSIE_SQL_2026` | Ossie's portable SQL expression language, defined in `expression_language.md` |
+| `CLICKHOUSE` | ClickHouse SQL |
 
 `OSSIE_SQL_2026` is the only dialect whose semantics this specification defines. The other values
 identify vendor or third-party expression languages. Ossie treats expressions in those dialects as
