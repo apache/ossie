@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:apache:ossie:execute-query:call-result:0.4-draft",
+  "$comment": "Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements. See NOTICE for copyright ownership. Licensed under the Apache License, Version 2.0, http://www.apache.org/licenses/LICENSE-2.0 . Distributed on an AS IS BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND. This is an Ossie final-result constraint, not a replacement for the full MCP protocol schema.",
+  "type": "object",
+  "required": ["resultType", "content", "isError"],
+  "properties": {
+    "_meta": {"type": "object"},
+    "resultType": {"const": "complete"},
+    "isError": {"type": "boolean"},
+    "structuredContent": {"$ref": "urn:apache:ossie:execute-query:output:0.4-draft"},
+    "content": {
+      "type": "array", "minItems": 1,
+      "contains": {"type": "object", "required": ["type", "text"], "properties": {"type": {"const": "text"}, "text": {"type": "string", "pattern": "\\S"}}},
+      "items": {
+        "oneOf": [
+          {"type": "object", "required": ["type", "text"], "properties": {"type": {"const": "text"}, "text": {"type": "string"}}},
+          {"type": "object", "required": ["type", "resource"], "properties": {"type": {"const": "resource"}, "resource": {"$ref": "#/$defs/embedded"}}},
+          {"type": "object", "required": ["type", "uri", "name"], "properties": {"type": {"const": "resource_link"}, "uri": {"type": "string", "format": "uri"}, "name": {"type": "string"}}},
+          {"type": "object", "required": ["type", "data", "mimeType"], "properties": {"type": {"enum": ["image", "audio"]}, "data": {"type": "string"}, "mimeType": {"type": "string"}}}
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "embedded": {
+      "type": "object", "required": ["uri", "mimeType"],
+      "properties": {
+        "_meta": {"type": "object"},
+        "uri": {"type": "string", "format": "uri"},
+        "mimeType": {"type": "string"},
+        "text": {"type": "string"},
+        "blob": {"type": "string"}
+      },
+      "oneOf": [
+        {"required": ["text"], "not": {"required": ["blob"]}},
+        {"required": ["blob"], "not": {"required": ["text"]}}
+      ]
+    }
+  }
+}
