@@ -25,6 +25,7 @@ from pydantic import BaseModel, ValidationError
 
 from ossie import (
     OssieAIContextObject,
+    OssieCustomExtension,
     OssieDataset,
     OssieDataType,
     OssieDialect,
@@ -272,24 +273,143 @@ def test_document_is_a_semantic_model(document_data: dict) -> None:
     document = OssieDocument.model_validate(document_data)
 
     assert isinstance(document, OssieSemanticModel)
+    # `version` is document metadata, absent from the schema's SemanticModel node,
+    # so the embedded model is built from the same data with it removed.
+    del document_data["version"]
     semantic_model = OssieSemanticModel.model_validate(document_data)
     assert document.model_dump(exclude={"version"}) == semantic_model.model_dump()
 
 
-def test_only_document_rejects_extra_fields(document_data: dict) -> None:
-    document_data["vendor_extension"] = "unknown"
+@pytest.mark.parametrize(
+    ("container_path", "unknown_key"),
+    [
+        ((), "vendor_extension"),
+        (("datasets", 0), "datasetn"),
+        (("datasets", 0, "fields", 0), "descriptionn"),
+        (("datasets", 0, "fields", 0, "expression"), "dialect"),
+        (("datasets", 0, "fields", 0, "expression", "dialects", 0), "expressions"),
+        (("datasets", 0, "fields", 0, "dimension"), "is_tile"),
+        (("metrics", 0), "expresssion"),
+    ],
+    ids=[
+        "document",
+        "dataset",
+        "field",
+        "expression",
+        "dialect_expression",
+        "dimension",
+        "metric",
+    ],
+)
+def test_every_object_rejects_unknown_fields(
+    document_data: dict, container_path: tuple, unknown_key: str
+) -> None:
+    """The SDK must reject what the schema rejects, not drop it silently.
 
-    embedded = OssieSemanticModel.model_validate(document_data)
-    assert not hasattr(embedded, "vendor_extension")
-    assert "vendor_extension" not in embedded.model_dump()
+    Every node of `ossie-schema.json` but `AIContext` sets
+    `additionalProperties: false`. A nested model left at Pydantic's default
+    `extra="ignore"` accepts a mistyped key and loses it on serialization, so a
+    document the SDK round-trips cleanly still fails `ossie validate`.
+    """
+    container = document_data
+    for part in container_path:
+        container = container[part]
+    container[unknown_key] = "typo"
 
     with pytest.raises(ValidationError) as error:
         OssieDocument.model_validate(document_data)
 
     assert any(
-        item["loc"] == ("vendor_extension",) and item["type"] == "extra_forbidden"
+        item["loc"] == (*container_path, unknown_key)
+        and item["type"] == "extra_forbidden"
+        for item in error.value.errors()
+    ), error.value.errors()
+
+
+def test_relationship_rejects_unknown_fields(document_data: dict) -> None:
+    document_data["relationships"] = [
+        {
+            "name": "orders_to_customers",
+            "from": "events",
+            "to": "orders",
+            "from_columns": ["id"],
+            "to_columns": ["id"],
+            "targeet": "typo",
+        }
+    ]
+
+    with pytest.raises(ValidationError) as error:
+        OssieDocument.model_validate(document_data)
+
+    assert any(
+        item["loc"] == ("relationships", 0, "targeet")
+        and item["type"] == "extra_forbidden"
         for item in error.value.errors()
     )
+
+
+def test_custom_extension_rejects_unknown_fields(document_data: dict) -> None:
+    document_data["custom_extensions"] = [
+        {"vendor_name": "DBT", "data": "{}", "datta": "typo"}
+    ]
+
+    with pytest.raises(ValidationError) as error:
+        OssieDocument.model_validate(document_data)
+
+    assert any(
+        item["loc"] == ("custom_extensions", 0, "datta")
+        and item["type"] == "extra_forbidden"
+        for item in error.value.errors()
+    )
+
+
+def test_ai_context_keeps_unknown_fields(document_data: dict) -> None:
+    """`AIContext` is the one open node in the schema, so extras stay allowed."""
+    document_data["datasets"][0]["ai_context"] = {"synonyms": ["events"], "glossary": "x"}
+
+    document = OssieDocument.model_validate(document_data)
+
+    assert document.datasets[0].ai_context.glossary == "x"
+    assert "glossary" in document.model_dump(by_alias=True, exclude_none=True, mode="json")[
+        "datasets"
+    ][0]["ai_context"]
+
+
+def test_unknown_field_names_match_the_schema_allowlist() -> None:
+    """Each forbidding schema node needs a forbidding model, and vice versa.
+
+    Without this, a node added to the schema later can keep Pydantic's
+    `extra="ignore"` default and reintroduce the silent drop the SDK had before.
+    """
+    schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    schema = json.loads(schema_path.read_text())
+
+    models = {
+        "CustomExtension": OssieCustomExtension,
+        "DialectExpression": OssieDialectExpression,
+        "Expression": OssieExpression,
+        "Dimension": OssieDimension,
+        "Field": OssieField,
+        "Dataset": OssieDataset,
+        "Relationship": OssieRelationship,
+        "Metric": OssieMetric,
+        "SemanticModel": OssieSemanticModel,
+    }
+
+    forbidden_in_schema = {
+        name
+        for name, node in schema["$defs"].items()
+        if node.get("additionalProperties") is False
+    }
+    assert forbidden_in_schema == set(models), (
+        "the schema gained or dropped an additionalProperties: false node; "
+        "update the model map and configs together"
+    )
+    for name, model in models.items():
+        assert model.model_config.get("extra") == "forbid", f"{model.__name__} must forbid"
+
+    assert OssieAIContextObject.model_config.get("extra") == "allow"
+    assert schema["$defs"]["AIContext"].get("additionalProperties") is not False
 
 
 def test_invalid_datatype_is_rejected(document_data: dict) -> None:
