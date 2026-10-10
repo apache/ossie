@@ -30,12 +30,25 @@ rather than just the field/metric readers. These tests therefore drive full
 documents through `convert()` (and `ossie_to_thoughtspot.convert()` for the
 stashed values) and assert on the issue log and the emitted document, not only
 on the single-helper return value.
+
+The last rows of #469 -- a value that is not a container at all where a
+container is read (`columns`, `model_tables`, `properties`, a join
+`destination`) -- are covered by the "wrongly-typed containers" section at the
+end. Those fail at the read boundary, before any per-column work can be salvaged
+from the document.
 """
 
+import pytest
+
 from ossie_thoughtspot import ossie_to_thoughtspot
+from ossie_thoughtspot.errors import ConversionError
 from ossie_thoughtspot.issues import IssueLog
 from ossie_thoughtspot.tml import DocumentSet, TmlDocument
-from ossie_thoughtspot.tml_to_ossie import _relationship_from_join, convert
+from ossie_thoughtspot.tml_to_ossie import (
+    _convert_join,
+    _relationship_from_join,
+    convert,
+)
 
 
 # -- builders (mirroring tests/test_tml_to_ossie.py) --------------------------
@@ -183,3 +196,104 @@ def test_falsy_non_string_join_condition_keeps_its_no_condition_meaning():
         assert relationship is None and unrepresentable is None
         assert "TS-JOIN-NO-CONDITION" in _codes(issues)
         assert "TS-JOIN-CONDITION-INVALID" not in _codes(issues)
+
+
+# -- wrongly-typed containers -------------------------------------------------
+
+def _expect_conversion_error(document_set, expected: str):
+    with pytest.raises(ConversionError) as caught:
+        convert(document_set)
+    assert str(caught.value) == expected
+
+
+@pytest.mark.parametrize("columns", ["oops", {"order_id": "ORDERS::order_id"}, 42])
+def test_model_columns_of_the_wrong_container_type_names_the_key_and_type(
+    columns,
+):
+    # Before, `for column in model_body.get("columns") or []` iterated a string's
+    # characters and the first `.get()` raised `AttributeError: 'str' object has
+    # no attribute 'get'` -- a traceback naming neither the document nor the key.
+    # A model with no column list can produce no field and no metric, so this is
+    # the hard-failure boundary `tml.load_document` already draws.
+    orders = _table("ORDERS", [_column("Amount", "O_TOTALPRICE", "DOUBLE")])
+    model = _model(columns=columns)
+
+    _expect_conversion_error(
+        _document_set(model, orders), "model `columns` must be a list, not "
+        + type(columns).__name__
+    )
+
+
+def test_model_columns_entry_of_the_wrong_container_type():
+    orders = _table("ORDERS", [_column("Amount", "O_TOTALPRICE", "DOUBLE")])
+    model = _model(columns=["order_id"])
+
+    _expect_conversion_error(
+        _document_set(model, orders),
+        "model `columns` entries must be mappings, not str",
+    )
+
+
+@pytest.mark.parametrize("model_tables", ["ORDERS", 42])
+def test_model_tables_of_the_wrong_container_type(model_tables):
+    orders = _table("ORDERS", [_column("Amount", "O_TOTALPRICE", "DOUBLE")])
+    model = TmlDocument(
+        kind="model",
+        body={"name": "Sales Analytics", "model_tables": model_tables,
+              "columns": []},
+        guid=None,
+    )
+
+    _expect_conversion_error(
+        _document_set(model, orders),
+        f"model `model_tables` must be a list, not {type(model_tables).__name__}",
+    )
+
+
+def test_column_properties_of_the_wrong_container_type():
+    orders = _table("ORDERS", [_column("Amount", "O_TOTALPRICE", "DOUBLE")])
+    model = _model(columns=[
+        {"name": "Amount", "column_id": "ORDERS::Amount", "properties": "ATTRIBUTE"},
+    ])
+
+    _expect_conversion_error(
+        _document_set(model, orders),
+        "model column `properties` must be a mapping, not str",
+    )
+
+
+def test_physical_columns_of_the_wrong_container_type():
+    # The Table document's own list, reached through the table_lookup the
+    # resolver and the datatype reader share.
+    orders = TmlDocument(
+        kind="table",
+        body={"name": "ORDERS", "db": "SALES", "schema": "PUBLIC",
+              "db_table": "ORDERS", "connection": {"name": "My Snowflake"},
+              "columns": "O_TOTALPRICE"},
+        guid=None,
+    )
+    model = _model(columns=[
+        {"name": "Amount", "column_id": "ORDERS::Amount",
+         "properties": {"column_type": "ATTRIBUTE"}},
+    ])
+
+    _expect_conversion_error(_document_set(model, orders),
+                             "table columns must be a list, not str")
+
+
+def test_join_destination_of_the_wrong_container_type_is_skipped_and_reported():
+    # One unlocatable target dataset costs one relationship, not the model, so
+    # this follows the existing `referencing_join`-not-found path rather than
+    # raising: `(destination or {}).get("name")` used to raise AttributeError.
+    log = IssueLog()
+    relationship, unrepresentable, candidate = _convert_join(
+        "ORDERS",
+        {"referencing_join": "orders_to_customers", "with": "CUSTOMERS"},
+        {"joins_with": [{"name": "orders_to_customers", "destination": "CUSTOMERS"}]},
+        frozenset({"ORDERS", "CUSTOMERS"}),
+        lambda name: None,
+        log,
+    )
+
+    assert (relationship, unrepresentable, candidate) == (None, None, None)
+    assert "TS-JOIN-DESTINATION-INVALID" in _codes(log.as_dicts())
