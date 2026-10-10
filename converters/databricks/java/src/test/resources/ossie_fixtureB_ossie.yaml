@@ -20,7 +20,9 @@
 # Fixture B -- expected Apache Ossie produced from fixtureB_metric_view.yaml. MV-only
 # features are stashed in custom_extensions[DATABRICKS], keyed by their exact v1.1
 # field name. Exporting this back must reproduce fixtureB_metric_view.yaml.
-# Model name is derived from the fact table (`lineitem`).
+# Model name is derived from the fact table (`lineitem`). The field carries the most portable
+# dialect it fits (OSSIE_SQL_2026); the metrics stay DATABRICKS because the view `filter`, and
+# the `partition` on `order_count`, change their values and live only in the DATABRICKS stash.
 
 version: "0.2.0.dev0"
 
@@ -33,7 +35,7 @@ datasets:
       - name: line_number
         expression:
           dialects:
-            - dialect: DATABRICKS
+            - dialect: OSSIE_SQL_2026
               expression: l_linenumber
         custom_extensions:
           - vendor_name: DATABRICKS
