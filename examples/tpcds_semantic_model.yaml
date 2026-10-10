@@ -71,6 +71,16 @@ datasets:
             - "product"
             - "item"
 
+      - name: ss_ticket_number
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: ss_ticket_number
+        description: Ticket number identifying the sales transaction
+        datatype: Integer
+        dimension:
+          is_time: false
+
       - name: ss_customer_sk
         expression:
           dialects:
