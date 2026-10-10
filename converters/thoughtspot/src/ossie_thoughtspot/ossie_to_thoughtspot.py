@@ -858,6 +858,34 @@ def _normalise_or_self(text: str) -> str:
         return text
 
 
+#: `_resolve_name_collision` appends `_2`, `_3`, ... to the later of two display
+#: names that fold to one identifier, and it does so after the exact display name
+#: has already been stashed. The witness below therefore has to accept the fold
+#: plus one such suffix, or every collided column reports its own suffix as a
+#: rename and comes back under the generated identifier.
+_COLLISION_SUFFIX_RE = re.compile(r"^(?P<base>.+)_(?P<suffix>[2-9]|[1-9][0-9]+)$")
+
+
+def _fold_matches_identifier(fold: str, live_identifier: str) -> bool:
+    """Whether `fold` is this object's identifier -- ours or the modeller's.
+
+    Equal, as the plain witness requires; or equal to the identifier with one
+    `_N` collision suffix removed, because that suffix is this converter's own
+    doing and not a rename.
+
+    What cannot be told apart is a modeller who renamed the Ossie identifier to
+    exactly `<fold>_<N>` themselves: that reads as our suffix, and the stashed
+    display name is restored. Restoring is the better error -- renaming a column
+    nobody asked to rename changes what users see and what the model's saved
+    questions reference, while a missed rename only keeps a name that was already
+    reported as a collision on the forward trip.
+    """
+    if fold == live_identifier:
+        return True
+    match = _COLLISION_SUFFIX_RE.match(live_identifier)
+    return match is not None and match.group("base") == fold
+
+
 def _restore_tml_name(
     payload: dict, live_identifier: str, log: IssueLog, *, object_ref: str
 ) -> str:
@@ -874,11 +902,16 @@ def _restore_tml_name(
     restored; if they disagree, the identifier was renamed and the stash
     describes a name that no longer belongs to this object, so it is
     dropped and the live identifier is used instead.
+
+    "Still agree" counts a `_N` collision suffix this converter added after the
+    stash was written, which `_fold_matches_identifier` spells out; without it a
+    collided column was declared stale, lost its display name, and the reported
+    reason -- that it was renamed -- was false.
     """
     stashed = payload.get(STASH_TML_NAME)
     if not isinstance(stashed, str) or not stashed:
         return live_identifier
-    if _normalise_or_self(stashed) == live_identifier:
+    if _fold_matches_identifier(_normalise_or_self(stashed), live_identifier):
         return stashed
     log.add(
         code="TS-STASH-TML-NAME-STALE",
