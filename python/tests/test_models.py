@@ -471,6 +471,32 @@ def test_effective_time_dimension_role(
     assert field.is_time_dimension() is expected
 
 
+@pytest.mark.parametrize("value", ["yes", "true", "True", "no", "off", "1", 1, 0, 1.0, 0.0])
+def test_is_time_rejects_values_the_schema_rejects(value: object) -> None:
+    """The schema types `is_time` as `boolean`, so only true and false are valid.
+
+    Without StrictBool, pydantic's lax mode accepts each of these and stores a real
+    boolean, so the serialized document passes schema validation and the invalid
+    input is lost rather than reported.
+    """
+    with pytest.raises(ValidationError) as error:
+        OssieDimension.model_validate({"is_time": value})
+    assert any(item["loc"] == ("is_time",) for item in error.value.errors())
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_is_time_accepts_the_values_the_schema_allows(value: bool) -> None:
+    assert OssieDimension.model_validate({"is_time": value}).is_time is value
+
+
+def test_is_time_may_be_omitted() -> None:
+    """Omitting the property is what the schema permits; it is not a third value.
+
+    An explicit `null` is not schema-legal, since `is_time` is typed `boolean`.
+    """
+    assert OssieDimension.model_validate({}).is_time is None
+
+
 # ---------------------------------------------------------------------------
 # Identifier constraints
 # ---------------------------------------------------------------------------

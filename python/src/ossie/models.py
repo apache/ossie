@@ -19,7 +19,7 @@ from enum import Enum
 from typing import Any, Literal, Optional, Union
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer
+from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, StrictBool, model_serializer
 
 
 class OssieDialect(str, Enum):
@@ -123,7 +123,11 @@ class OssieDimension(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    is_time: Optional[bool] = None
+    # The schema types this `boolean`, which admits only true and false. A plain
+    # `bool` would let pydantic's lax mode accept "yes", "1", 1 or 1.0 and store a
+    # real boolean, so input the schema forbids is silently rewritten into output it
+    # allows, and the mistake is never reported.
+    is_time: Optional[StrictBool] = None
 
 
 class OssieField(BaseModel):
