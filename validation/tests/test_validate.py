@@ -997,6 +997,35 @@ def test_cli_reports_an_unreadable_file_and_goes_on(tmp_path, monkeypatch, capsy
     assert "Validation PASSED: good.json" in output
 
 
+def test_cli_reports_a_check_that_raises_and_goes_on(tmp_path, monkeypatch, capsys, offline):
+    good = _write_document(tmp_path, "good.json", _document([_CUSTOMERS], []))
+    bad = _write_document(tmp_path, "bad.json", _document([_ORDERS], []))
+
+    def explode(data, schema):
+        if "orders" in json.dumps(data):
+            raise KeyError("dialect")
+        return []
+
+    monkeypatch.setattr(_VALIDATE, "validate_document", explode)
+
+    code, output = _run_cli(monkeypatch, capsys, bad, good)
+
+    assert code == 1
+    assert f"Error: KeyError while validating {bad}: 'dialect'" in output
+    assert "Validation PASSED: good.json" in output
+    assert "1 of 2 file(s) passed" in output
+
+
+def test_cli_takes_files_after_a_double_dash_literally(tmp_path, monkeypatch, capsys, offline):
+    dashed = _write_document(tmp_path, "-model.json", _document([_CUSTOMERS], []))
+    monkeypatch.chdir(tmp_path)
+
+    code, output = _run_cli(monkeypatch, capsys, "--", "-model.json")
+
+    assert code == 0
+    assert output.strip() == "Validation PASSED: -model.json"
+
+
 def test_cli_single_file_output_has_no_summary(tmp_path, monkeypatch, capsys, offline):
     only = _write_document(tmp_path, "model.json", _document([_CUSTOMERS], []))
 
@@ -1049,7 +1078,7 @@ def test_cli_missing_default_schema_names_both_overrides(tmp_path, monkeypatch, 
     assert "--schema" in output and "OSSIE_SCHEMA" in output
 
 
-@pytest.mark.parametrize("argv", [["--schema"], ["--verbose", "x.yaml"], ["--schema", "s.json"]])
+@pytest.mark.parametrize("argv", [["--schema"], ["--verbose", "x.yaml"], ["--schema", "s.json"], ["--"]])
 def test_cli_rejects_malformed_arguments(monkeypatch, capsys, argv):
     code, output = _run_cli(monkeypatch, capsys, *argv)
 

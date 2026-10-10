@@ -41,12 +41,13 @@ concept and relationship names, and for extends, identify_by, roles and QName
 prefixes that resolve to something declared.
 
 Usage:
-    python validation/validate.py <file> [<file> ...] [--schema <schema_file>]
+    python validation/validate.py [--schema <schema_file>] [--] <file> [<file> ...]
     python validation/validate.py <file> --schema ontology/ontology.json
     python validation/validate.py examples/tpcds_semantic_model.yaml
 
-Every file is validated and reported; the exit status is non-zero if any of
-them failed. The schema defaults to core-spec/ossie-schema.json in this
+Every file is validated and reported, including one whose checks fail
+unexpectedly; the exit status is non-zero if any of them failed. Put -- before
+a file name that starts with a dash. The schema defaults to core-spec/ossie-schema.json in this
 repository's layout; when the script is vendored elsewhere, point OSSIE_SCHEMA
 or --schema at a copy of the schema.
 """
@@ -54,6 +55,7 @@ or --schema at a copy of the schema.
 import json
 import os
 import sys
+import traceback
 from collections import Counter
 from collections.abc import Hashable
 from pathlib import Path
@@ -589,7 +591,7 @@ def validate_ontology(data: dict) -> list[str]:
     return errors
 
 
-USAGE = "Usage: python validation/validate.py <file> [<file> ...] [--schema <schema_file>]"
+USAGE = "Usage: python validation/validate.py [--schema <schema_file>] [--] <file> [<file> ...]"
 
 
 def read_text_or_report(path: Path, description: str) -> str | None:
@@ -678,7 +680,15 @@ def validate_file(yaml_path: Path, schema: dict) -> bool:
         print("Error: Invalid YAML: input is too deeply nested to parse")
         return False
 
-    errors = validate_document(data, schema)
+    try:
+        errors = validate_document(data, schema)
+    except Exception as e:
+        # A check that raises on this document is a bug in the validator, not in the
+        # model. Report it like any other failure so the remaining files still run,
+        # and keep the traceback on stderr for whoever fixes the check.
+        print(f"Error: {type(e).__name__} while validating {yaml_path}: {e}")
+        traceback.print_exc()
+        return False
 
     # Severity must not depend on user-controlled text in a diagnostic.
     warnings = [e for e in errors if isinstance(e, ValidationWarning)]
@@ -712,6 +722,9 @@ def main():
                 print(USAGE)
                 sys.exit(1)
             schema_arg = args.pop(0)
+        elif arg == "--":
+            paths.extend(Path(rest) for rest in args)
+            break
         elif arg.startswith("-"):
             print(USAGE)
             sys.exit(1)
