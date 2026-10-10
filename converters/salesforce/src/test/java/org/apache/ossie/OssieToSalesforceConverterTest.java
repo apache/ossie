@@ -872,6 +872,70 @@ class OssieToSalesforceConverterTest {
                 "a model with no Salesforce custom_extensions should still carry a dataspace");
     }
 
+    /**
+     * Builds a dataset that leaves export with no Salesforce type to work from. Ossie
+     * makes datatype optional and marks a field's role with nothing but the presence of
+     * {@code dimension}, so the measurement declares no datatype at all and the dimension
+     * declares only {@code regionDatatype}, which is either absent or a portable type.
+     */
+    private static String ossieModelWithUntypedFields(String regionDatatype) {
+        return "version: 0.2.0.dev0\n"
+                + "name: Imported_Model\n"
+                + "datasets:\n"
+                + "- name: Orders\n"
+                + "  source: Orders__dll\n"
+                + "  fields:\n"
+                + "  - name: region\n"
+                + (regionDatatype == null ? "" : "    datatype: " + regionDatatype + "\n")
+                + "    dimension: {}\n"
+                + "    expression:\n"
+                + "      dialects:\n"
+                + "      - dialect: ANSI_SQL\n"
+                + "        expression: region\n"
+                + "  - name: amount\n"
+                + "    expression:\n"
+                + "      dialects:\n"
+                + "      - dialect: ANSI_SQL\n"
+                + "        expression: amount\n";
+    }
+
+    @Test
+    void testFieldWithNoDatatypeFallsBackToTheSalesforceTypeForItsRole() throws Exception {
+        // The semantic model API rejects a field that carries no dataType, so a field whose
+        // Ossie datatype is absent has to fall back to the one type signal the document
+        // still carries: whether Ossie modelled it as a dimension or as a measurement.
+        List<String> results = converter.convert(ossieModelWithUntypedFields(null));
+        Map<String, Object> sfModel = jsonMapper.readValue(results.get(0), new TypeReference<Map<String, Object>>() {});
+
+        Map<String, Object> dataObject =
+                ((List<Map<String, Object>>) sfModel.get("semanticDataObjects")).get(0);
+        List<Map<String, Object>> dimensions =
+                (List<Map<String, Object>>) dataObject.get("semanticDimensions");
+        List<Map<String, Object>> measurements =
+                (List<Map<String, Object>>) dataObject.get("semanticMeasurements");
+
+        assertEquals("Text", dimensions.get(0).get("dataType"),
+                "a dimension with no Ossie datatype should still carry a dataType");
+        assertEquals("Number", measurements.get(0).get("dataType"),
+                "a measurement with no Ossie datatype should still carry a dataType");
+    }
+
+    @Test
+    void testFieldDatatypeWithNoSalesforceMappingFallsBackToTheRoleDefault() throws Exception {
+        // Time is a portable Ossie datatype with no Salesforce equivalent. Dropping the
+        // dataType would leave the API with the same field it rejects.
+        List<String> results = converter.convert(ossieModelWithUntypedFields("Time"));
+        Map<String, Object> sfModel = jsonMapper.readValue(results.get(0), new TypeReference<Map<String, Object>>() {});
+
+        Map<String, Object> dataObject =
+                ((List<Map<String, Object>>) sfModel.get("semanticDataObjects")).get(0);
+        List<Map<String, Object>> dimensions =
+                (List<Map<String, Object>>) dataObject.get("semanticDimensions");
+
+        assertEquals("Text", dimensions.get(0).get("dataType"),
+                "a datatype with no safe Salesforce mapping should fall back, not be dropped");
+    }
+
     @Test
     void testDataObjectTypeIsDerivedFromTheDataObjectNameSuffix() throws Exception {
         // Data Cloud suffixes a data object's name with the kind of object it is, so the

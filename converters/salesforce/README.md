@@ -198,14 +198,15 @@ ossieToSf.convert(Paths.get("input/model.yaml"), Paths.get("output/"));
 
 ### Required Salesforce Properties
 
-The semantic model API rejects a payload that omits the model's `dataspace` or a
-data object's `dataObjectType`. Neither has an Ossie equivalent, so export
-supplies them:
+The semantic model API rejects a payload that omits the model's `dataspace`, a
+data object's `dataObjectType`, or a field's `dataType`. None has a guaranteed
+Ossie equivalent, so export supplies them:
 
 | Salesforce | Exported value |
 |------------|----------------|
 | `dataspace` | `default`, the dataspace every Data Cloud org provisions |
 | `semanticDataObjects[].dataObjectType` | `Dmo` when `dataObjectName` ends in `__dlm`, otherwise `Dlo` |
+| field `dataType` | `Text` for a dimension and `Number` for a measurement, when `datatype` yields neither |
 
 Data Cloud suffixes a data object's name with the kind of object it is, so the
 dataset's `source` already carries the reference type: `Orders__dll` is a data
@@ -249,7 +250,7 @@ type exists:
 | `Boolean` | `Boolean` |
 | `Date` | `Date` |
 | `DateTime`, `DateTimeTz` | `DateTime` |
-| `Time`, `Opaque` | Omitted with a warning unless an exact extension type exists |
+| `Time`, `Opaque` | The role default below, with a warning, unless an exact extension type exists |
 
 Salesforce has one `DateTime` type, so exporting timezone-free Ossie `DateTime`
 loses its distinction from `DateTimeTz`; the converter logs a warning because a
@@ -258,6 +259,11 @@ subsequent Salesforce import interprets that value as `DateTimeTz`.
 An exact Salesforce extension value takes precedence over the portable mapping.
 If it conflicts with `datatype`, the converter preserves the exact Salesforce
 value and logs a warning.
+
+Ossie makes `datatype` optional, so a field may reach export carrying no type at
+all. Salesforce rejects such a field, so the converter falls back to the one type
+signal the document still carries, the field's role: a dimension exports as `Text`
+and a measurement as `Number`.
 
 ### Field Role and Time Dimensions
 

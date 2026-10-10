@@ -329,7 +329,7 @@ public class FieldMappingHandler implements PipelineStep {
 
                 applyOssieDatatype(calcDim, ossieField);
 
-                applyFieldDefaults(calcDim);
+                applyFieldDefaults(calcDim, FieldType.CALCULATED_DIMENSION);
 
                 // Add to semantic calculated dimensions array
                 List<Object> calcDimensions = getOrCreateList(outputData, SEMANTIC_CALCULATED_DIMENSIONS);
@@ -344,7 +344,7 @@ public class FieldMappingHandler implements PipelineStep {
 
                 applyOssieDatatype(sfField, ossieField);
 
-                applyFieldDefaults(sfField);
+                applyFieldDefaults(sfField, fieldType);
 
                 RoutingResult result =
                         routeFieldToArray(sfField, fieldType, sfDataObject, sfDimensions, sfMeasurements);
@@ -576,14 +576,29 @@ public class FieldMappingHandler implements PipelineStep {
      * missing, because Salesforce rejects it with the same RequiredFieldException.
      *
      * @param sfField The Salesforce field to apply defaults to
+     * @param fieldType The role Ossie gave the field, used to pick a fallback dataType
      */
-    private void applyFieldDefaults(Map<String, Object> sfField) {
+    private void applyFieldDefaults(Map<String, Object> sfField, FieldType fieldType) {
         sfField.putIfAbsent(DISPLAY_CATEGORY, DISPLAY_CATEGORY_CONTINUOUS);
+        sfField.putIfAbsent(DATA_TYPE, defaultDataType(fieldType));
         String apiName = getString(sfField, API_NAME);
         Object label = sfField.get(LABEL);
         if (apiName != null && (label == null || label.toString().isBlank())) {
             sfField.put(LABEL, apiName);
         }
+    }
+
+    /**
+     * Picks the dataType for a field that carries no usable Ossie datatype. Ossie makes
+     * {@code datatype} optional, but Salesforce rejects a semantic field without a
+     * {@code dataType}, so fall back to the only type signal the Ossie document still
+     * carries: whether the field was modelled as a dimension or as a measurement.
+     */
+    private static String defaultDataType(FieldType fieldType) {
+        return switch (fieldType) {
+            case MEASUREMENT, CALCULATED_MEASUREMENT -> DEFAULT_MEASUREMENT_DATA_TYPE;
+            case DIMENSION, CALCULATED_DIMENSION -> DEFAULT_DIMENSION_DATA_TYPE;
+        };
     }
 
     /**
@@ -626,7 +641,8 @@ public class FieldMappingHandler implements PipelineStep {
 
         if (mappedSalesforceDataType == null) {
             logger.warn(
-                    "Field '{}' has Ossie datatype '{}' with no safe Salesforce mapping; omitting dataType",
+                    "Field '{}' has Ossie datatype '{}' with no safe Salesforce mapping; "
+                            + "falling back to the default dataType for its role",
                     getString(ossieField, NAME),
                     ossieDatatype);
             return;
