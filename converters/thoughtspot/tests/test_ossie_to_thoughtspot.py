@@ -371,6 +371,44 @@ class TestDocumentShapeIsCheckedBeforeItIsRead:
 
         assert str(caught.value) == f"the Ossie document is not convertible: {expected}"
 
+    @pytest.mark.parametrize("path_to_container, expected", [
+        pytest.param(lambda d: d.__setitem__("datasets", [None]),
+                     "datasets[0] must be a mapping, not null", id="datasets"),
+        pytest.param(lambda d: d["datasets"][0].__setitem__("fields", [None]),
+                     "datasets[0].fields[0] must be a mapping, not null", id="fields"),
+        pytest.param(lambda d: d.__setitem__("metrics", [None]),
+                     "metrics[0] must be a mapping, not null", id="metrics"),
+        pytest.param(lambda d: d.__setitem__("relationships", [None]),
+                     "relationships[0] must be a mapping, not null", id="relationships"),
+        pytest.param(lambda d: d["datasets"][0]["fields"][0]["expression"].__setitem__("dialects", [None]),
+                     "datasets[0].fields[0].expression.dialects[0] must be a mapping, not null",
+                     id="dialects"),
+        pytest.param(lambda d: d["datasets"][0].__setitem__("custom_extensions", [None]),
+                     "datasets[0].custom_extensions[0] must be a mapping, not null",
+                     id="custom_extensions"),
+    ])
+    def test_a_null_element_is_a_named_rejection_not_an_attribute_error(
+        self, path_to_container, expected
+    ):
+        # A null *element* is not an absent key: the reader calls `.get()` on it
+        # next. Each container this check walks builds its element test the same
+        # way, so each needs the case.
+        document = self._document()
+        path_to_container(document)
+
+        with pytest.raises(ConversionError) as caught:
+            convert(document)
+
+        assert str(caught.value) == f"the Ossie document is not convertible: {expected}"
+
+    def test_a_null_container_stays_absent_and_is_not_rejected(self):
+        # The other half of the distinction: `metrics: null` means "no metrics",
+        # which every reader already handles, so it must not become an error here.
+        document = self._document()
+        document["metrics"] = None
+
+        assert convert(document).documents.model.kind == "model"
+
     def test_the_check_is_narrower_than_the_schema_and_admits_legal_variants(self):
         # Each of these is valid Ossie that this converter handles today; none
         # may start failing because the shape check went past what it reads.

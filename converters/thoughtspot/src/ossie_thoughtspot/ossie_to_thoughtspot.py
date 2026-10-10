@@ -2571,12 +2571,24 @@ def _deduplicate_table_documents(
     return [by_name[key] for key in order]
 
 
-def _require_shape(value, expected: type, path: str, article: str):
+def _require_shape(value, expected: type, path: str, article: str, *, present: bool = False):
     """One node of the input document, checked against how it is read below.
 
     `expected` is `dict` for a mapping, `list` for a list, or `str`.
+
+    `present` separates *absent* from *explicit null*. An absent container is the
+    reader's business -- it already has a path for a key that is not there. A
+    null **element** of a container is not absent: `datasets: [null]` yields a
+    `None` that the next line calls `.get()` on, which is the bare AttributeError
+    this check exists to remove. So every list element is checked with
+    `present=True`, and reports `not null` rather than `not NoneType`.
     """
     if value is None:
+        if present:
+            raise ConversionError(
+                f"the Ossie document is not convertible: {path} must be {article}, "
+                f"not null"
+            )
         return None
     if not isinstance(value, expected):
         raise ConversionError(
@@ -2597,7 +2609,7 @@ def _require_expression(expression, path: str) -> None:
     _require_shape(dialects, list, f"{path}.expression.dialects", "a list")
     for index, entry in enumerate(dialects):
         entry_path = f"{path}.expression.dialects[{index}]"
-        _require_shape(entry, dict, entry_path, "a mapping")
+        _require_shape(entry, dict, entry_path, "a mapping", present=True)
         _require_shape(entry.get("expression"), str, f"{entry_path}.expression", "a string")
         _require_shape(entry.get("dialect"), str, f"{entry_path}.dialect", "a string")
 
@@ -2610,7 +2622,7 @@ def _require_extensions(extensions, path: str) -> None:
     _require_shape(extensions, list, f"{path}.custom_extensions", "a list")
     for index, entry in enumerate(extensions):
         entry_path = f"{path}.custom_extensions[{index}]"
-        _require_shape(entry, dict, entry_path, "a mapping")
+        _require_shape(entry, dict, entry_path, "a mapping", present=True)
         _require_shape(entry.get("data"), str, f"{entry_path}.data", "a string")
         _require_shape(entry.get("vendor_name"), str, f"{entry_path}.vendor_name", "a string")
 
@@ -2632,14 +2644,14 @@ def _require_document_shape(semantic_model: dict) -> None:
     datasets = _require_shape(semantic_model.get("datasets"), list, "datasets", "a list")
     for index, dataset in enumerate(datasets or []):
         path = f"datasets[{index}]"
-        _require_shape(dataset, dict, path, "a mapping")
+        _require_shape(dataset, dict, path, "a mapping", present=True)
         _require_shape(dataset.get("name"), str, f"{path}.name", "a string")
         _require_shape(dataset.get("source"), str, f"{path}.source", "a string")
         _require_extensions(dataset.get("custom_extensions"), path)
         fields = _require_shape(dataset.get("fields"), list, f"{path}.fields", "a list")
         for field_index, field in enumerate(fields or []):
             field_path = f"{path}.fields[{field_index}]"
-            _require_shape(field, dict, field_path, "a mapping")
+            _require_shape(field, dict, field_path, "a mapping", present=True)
             _require_shape(field.get("name"), str, f"{field_path}.name", "a string")
             _require_shape(field.get("dimension"), dict, f"{field_path}.dimension", "a mapping")
             _require_expression(field.get("expression"), field_path)
@@ -2648,7 +2660,7 @@ def _require_document_shape(semantic_model: dict) -> None:
     metrics = _require_shape(semantic_model.get("metrics"), list, "metrics", "a list")
     for index, metric in enumerate(metrics or []):
         path = f"metrics[{index}]"
-        _require_shape(metric, dict, path, "a mapping")
+        _require_shape(metric, dict, path, "a mapping", present=True)
         _require_shape(metric.get("name"), str, f"{path}.name", "a string")
         _require_expression(metric.get("expression"), path)
         _require_extensions(metric.get("custom_extensions"), path)
@@ -2658,7 +2670,7 @@ def _require_document_shape(semantic_model: dict) -> None:
     )
     for index, relationship in enumerate(relationships or []):
         path = f"relationships[{index}]"
-        _require_shape(relationship, dict, path, "a mapping")
+        _require_shape(relationship, dict, path, "a mapping", present=True)
         _require_extensions(relationship.get("custom_extensions"), path)
 
     _require_shape(semantic_model.get("name"), str, "name", "a string")
