@@ -90,6 +90,7 @@ hierarchically, grouping each relationship under the concept that plays its firs
 | `ontology` | list | Yes | Concepts and relationships they group that form this ontology |
 | `prefixes` | object | No | Namespace prefixes used to abbreviate [IRIs](#global-identifiers) |
 | `ontology_mappings` | list | No | Deprecated; accepted only so existing documents continue to validate. Write mappings as [mapping documents](#mapping-documents) instead |
+| `custom_properties` | object | No | Open set of custom properties not covered by this spec (see [Custom properties](#custom-properties)) |
 
 Each component of an ontology declares a concept and lists the relationships where that
 concept plays the first role. The concept's name is the value of the `concept` field, and
@@ -114,6 +115,7 @@ Concepts have the following schema:
 | `requires` | list | No | Expressions that constrain this concept's population |
 | `relationships` | list | No | Relationships where this concept plays the first role |
 | `iri` | string | No | Optional [global identifier](#global-identifiers) of this concept |
+| `custom_properties` | object | No | Open set of custom properties not covered by this spec (see [Custom properties](#custom-properties)) |
 
 Each concept is either an entity type or a value type.
 
@@ -159,6 +161,7 @@ Each relationship that is declared under a concept conforms to the following sch
 | `requires` | list | No | Expressions that constrain this relationship's population |
 | `verbalizes` | list | Yes | Patterns describing how to verbalize links |
 | `iri` | string | No | Optional [global identifier](#global-identifiers) of this relationship |
+| `custom_properties` | object | No | Open set of custom properties not covered by this spec (see [Custom properties](#custom-properties)) |
 
 Each relationship is uniquely identified by prepending its declared name with that of the containing
 concept. For instance, in:
@@ -202,6 +205,7 @@ using this schema:
 |-------|------|----------|-------------|
 | `concept` | string | Yes | Name of the concept that plays this role |
 | `name` | string | No | Optional role name |
+| `custom_properties` | object | No | Open set of custom properties not covered by this spec (see [Custom properties](#custom-properties)) |
 
 For instance, in:
 
@@ -436,6 +440,45 @@ An IRI does not change how a concept or relationship is referenced within its ow
 Expressions, roles, and mappings continue to use local names. The IRI serves tools that translate
 between this specification and IRI-based languages and lets multiple ontologies state that they
 refer to the same externally defined concept or relationship.
+
+### Custom properties
+
+The ontology root, concepts, relationships, and roles may each carry a `custom_properties` object: an
+open set of key-value pairs for data that the core spec does not model. This gives tools a place to
+attach their own metadata, or to preserve information when importing an ontology from an external
+format so that it can be round-tripped.
+
+Keys are free-form, and values may be any JSON. The spec does not interpret or constrain the structure of
+`custom_properties`; tools that do not understand a given property should preserve it as-is.
+
+Use `custom_properties` only for data that the spec cannot express. Data that has a home in the spec,
+such as a description, a supertype (`extends`), a derivation (`derived_by`), a constraint (`requires`),
+or a verbalization (`verbalizes`), belongs in that field.
+
+For example, an importer from the OWL version of the [FOAF](http://xmlns.com/foaf/0.1/) vocabulary
+writes `rdfs:comment` to `description` and keeps the RDF data that has no home in the spec, keyed by
+the source predicate's qualified name:
+
+```yaml
+prefixes:
+  foaf: "http://xmlns.com/foaf/0.1/"
+  rdfs: "http://www.w3.org/2000/01/rdf-schema#"
+  owl: "http://www.w3.org/2002/07/owl#"
+  vs: "http://www.w3.org/2003/06/sw-vocab-status/ns#"
+ontology:
+  - concept: Person
+    type: EntityType
+    description: A person.
+    iri: foaf:Person
+    custom_properties:
+      rdfs:label: Person
+      owl:equivalentClass: http://schema.org/Person
+      vs:term_status: stable
+```
+
+The full document is in [`examples/foaf_owl_import.yaml`](../examples/foaf_owl_import.yaml). Keying
+properties by qualified name is this importer's convention. The choice of keys belongs to the tool that
+writes them.
 
 ## Ontology mappings
 
@@ -695,6 +738,8 @@ though `Store` plays a role in three of the relationships.
   - Optional IRIs on concepts and relationships, with namespace prefixes declared at the top level
   - Mapping documents (`ontology/mapping.json`) that reference one ontology and one semantic
     model; embedded `ontology_mappings` is deprecated
+  - `custom_properties` on the ontology root, concepts, relationships, and roles for carrying
+    data not covered by the core spec (e.g. when importing from OWL/RDF)
 
 ---
 
