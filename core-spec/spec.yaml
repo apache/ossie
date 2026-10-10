@@ -96,11 +96,78 @@ relationships: []
 # See Metrics section below for detailed structure
 metrics: []
 
+# Optional: Behavior metadata; canonical contract: behavior-layer.schema.json
+behavior: {}
+
 # Optional: Vendor-specific attributes for extensibility
 # Allows vendors to add custom metadata without breaking core compatibility
 custom_extensions:
   - vendor_name: string  # Free-form string identifying the vendor
     data: string
+
+---
+# Behavior Schema (Optional root-level behavior)
+# Canonical source: behavior-layer.schema.json. This file is a descriptive reference.
+behavior:
+  namespace: string               # Required, non-empty
+  behavior_layer_version: string  # Required, non-empty
+  metadata: {}                    # Optional open object
+  actions: []                     # Preferred; actions or action_types must be present
+  action_types: []                # Legacy alias; both and empty arrays are accepted
+  rules: []                       # Required; may be empty
+
+---
+# Action Schema (items of behavior.actions or behavior.action_types)
+actions:
+  - id: string                    # Required, non-empty
+    title: string                 # Required, non-empty
+    description: string           # Optional
+    kind: string                  # Optional enum: command, query
+    operation: string             # Optional free-form operation name
+    aggregate: string             # Optional
+    entity_name: string           # Optional dataset name or conceptual entity
+    idempotency: string           # Optional enum: idempotent, non_idempotent, unknown
+    applies_to: {}                # Optional open object
+    io_schema: {}                 # Optional input/output schema object
+    effects: []                   # Optional effect annotations
+    examples: []                  # Optional array of strings
+    tool_hint: {}                 # Optional open object
+    tags: []                      # Optional array of strings
+    synonyms: []                  # Optional array of strings
+    deprecated: boolean           # Optional
+    version: string               # Optional
+
+---
+# Effect Schema (items of action.effects)
+effects:
+  - entity: string                # Required enum: dataset, field, metric, relationship
+    mode: string                  # Required enum: read, write, derive
+    impact_type: string           # Optional; enum in behavior-layer.schema.json ($defs.effect.properties.impact_type)
+    selectors:                    # Optional open object; all known members are optional
+      dataset: string
+      field_names: []             # Array of strings
+    transition:                   # Optional open object; all known members are optional
+      from: string
+      to: string
+    set_value: string             # Optional
+    confidence: string            # Optional enum: guaranteed, likely, unknown
+    notes: string                 # Optional
+    tags: []                      # Optional array of strings
+
+---
+# Rule Schema (items of behavior.rules)
+rules:
+  - id: string                    # Required, non-empty
+    title: string                 # Required, non-empty
+    description: string           # Optional
+    severity: string              # Required enum: error, warn, info
+    when: {}                      # Required open object
+    if: {}                        # Optional open object
+    constraint: {}                # Required open object
+    message: string               # Required, non-empty
+    remediation: string           # Optional
+    references: []                # Optional array of open objects
+    tags: []                      # Optional array of strings
 
 ---
 # Logical Dataset Schema

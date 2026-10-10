@@ -28,6 +28,9 @@
     "metrics": {
       "$ref": "#/$defs/SemanticModel/properties/metrics"
     },
+    "behavior": {
+      "$ref": "#/$defs/SemanticModel/properties/behavior"
+    },
     "custom_extensions": {
       "$ref": "#/$defs/SemanticModel/properties/custom_extensions"
     }
@@ -359,6 +362,9 @@
             "$ref": "#/$defs/Metric"
           },
           "description": "Quantifiable measures spanning datasets"
+        },
+        "behavior": {
+          "$ref": "behavior-layer.schema.json"
         },
         "custom_extensions": {
           "type": "array",

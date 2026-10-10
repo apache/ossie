@@ -1,0 +1,134 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# yaml-language-server: $schema=../core-spec/ossie-schema.json
+version: 0.2.0.dev0
+
+name: sap_p2p_minimal_behavior
+description: "Minimal example: first-class behavior/actions/effects for SAP P2P"
+
+datasets:
+  - name: suppliers
+    source: sap.p2p.suppliers
+    primary_key: [supplier_id]
+    description: "Supplier master data"
+    fields:
+      - name: supplier_id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: supplier_id
+        description: "Supplier ID"
+
+      - name: supplier_name
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: supplier_name
+        description: "Supplier name"
+
+      - name: status
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: status
+        description: "Supplier lifecycle / blocking status (e.g., Active, Blocked)"
+
+behavior:
+  namespace: "SAP_P2P"
+  behavior_layer_version: "0.1"
+  metadata:
+    owner: "example"
+    tags: ["p2p", "behavior", "effects"]
+
+  actions:
+    - id: suppliers/block
+      title: Block supplier
+      description: Block a supplier and prevent downstream procurement actions.
+      kind: command
+      operation: block
+      entity_name: suppliers
+      idempotency: idempotent
+      io_schema:
+        input_schema:
+          type: object
+          required: [supplier_id]
+          properties:
+            supplier_id: { type: string }
+            reason: { type: string }
+        output_schema:
+          type: object
+          properties:
+            supplier_id: { type: string }
+            status: { type: string }
+      effects:
+        - entity: field
+          mode: write
+          impact_type: state_transition
+          selectors:
+            dataset: suppliers
+            field_names: [status]
+          set_value: Blocked
+          confidence: guaranteed
+          notes: "After blocking, procurement actions should be denied by policy."
+
+    - id: suppliers/unblock
+      title: Unblock supplier
+      description: Unblock a supplier.
+      kind: command
+      operation: unblock
+      entity_name: suppliers
+      idempotency: idempotent
+      io_schema:
+        input_schema:
+          type: object
+          required: [supplier_id]
+          properties:
+            supplier_id: { type: string }
+            comment: { type: string }
+        output_schema:
+          type: object
+          properties:
+            supplier_id: { type: string }
+            status: { type: string }
+      effects:
+        - entity: field
+          mode: write
+          impact_type: state_transition
+          selectors:
+            dataset: suppliers
+            field_names: [status]
+          transition:
+            from: Blocked
+            to: Active
+          confidence: likely
+          notes: "Exact target status may vary by ERP configuration."
+
+  rules:
+    - id: sap_p2p/rule_blocked_vendor_transaction_prevention
+      title: Blocked supplier prevents procurement transactions
+      severity: error
+      when:
+        entity: dataset
+        selectors:
+          dataset: suppliers
+          field_names: [status]
+      constraint:
+        type: state_machine
+        rule: "If suppliers.status == 'Blocked' then deny procurement transactions."
+      message: "Supplier is blocked. Procurement transactions are not allowed."
+      remediation: "Run suppliers/unblock or contact an administrator to unblock the supplier."

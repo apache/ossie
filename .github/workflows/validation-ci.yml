@@ -29,6 +29,7 @@ on:
       - "ontology/**"
       - "examples/flights*.yaml"
       - "examples/tpcds_semantic_model.yaml"
+      - "examples/p2p_behavior_effects_minimal.yaml"
       - ".github/workflows/validation-ci.yml"
       - "scripts/generate-spec-types.py"
   pull_request:
@@ -40,6 +41,7 @@ on:
       - "ontology/**"
       - "examples/flights*.yaml"
       - "examples/tpcds_semantic_model.yaml"
+      - "examples/p2p_behavior_effects_minimal.yaml"
       - ".github/workflows/validation-ci.yml"
       - "scripts/generate-spec-types.py"
 
@@ -82,6 +84,9 @@ jobs:
 
       - name: Validate canonical example
         run: uv run validation/validate.py examples/tpcds_semantic_model.yaml
+
+      - name: Validate behavior example
+        run: uv run validation/validate.py examples/p2p_behavior_effects_minimal.yaml
 
       - name: Validate flights examples
         run: |

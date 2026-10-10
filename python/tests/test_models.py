@@ -259,6 +259,23 @@ def test_embedded_semantic_model_has_no_document_metadata(document_data: dict) -
     assert embedded.model_dump(by_alias=True, exclude_none=True, mode="json") == data
 
 
+def test_behavior_survives_document_and_embedded_model_serialization() -> None:
+    path = Path(__file__).parents[2] / "examples/p2p_behavior_effects_minimal.yaml"
+    data = yaml.safe_load(path.read_text())
+    document = OssieDocument.model_validate(data)
+
+    for serialized in (
+        json.loads(document.to_ossie_json()), yaml.safe_load(document.to_ossie_yaml())
+    ):
+        assert serialized == data
+        assert OssieDocument.model_validate(serialized) == document
+
+    model_data = dict(data)
+    del model_data["version"]
+    embedded = OssieSemanticModel.model_validate(model_data)
+    assert embedded.model_dump(by_alias=True, exclude_none=True, mode="json") == model_data
+
+
 def test_document_defaults_version_when_omitted(document_data: dict) -> None:
     del document_data["version"]
 

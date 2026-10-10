@@ -37,7 +37,8 @@
 4. [Relationships](#relationships)
 5. [Fields](#fields)
 6. [Metrics](#metrics)
-7. [Examples](#examples)
+7. [Behavior (Actions / Rules / Effects)](#behavior-actions--rules--effects)
+8. [Examples](#examples)
 
 ---
 
@@ -110,6 +111,7 @@ not define a bundle format or cross-model references.
 | `datasets` | array | Yes | Collection of logical datasets (fact and dimension tables) |
 | `relationships` | array | No | Defines how logical datasets are connected |
 | `metrics` | array | No | Quantifiable measures defined as aggregate expressions on fields from logical datasets |
+| `behavior` | object | No | Action, rule, and effect metadata; see [Behavior](#behavior-actions--rules--effects) |
 | `custom_extensions` | array | No | Vendor-specific attributes for extensibility |
 
 ### Example
@@ -160,6 +162,54 @@ when splitting a document.
 
 For [ontology maps](../ontology/ontology.md#ontology-mappings), each embedded
 model must be a complete core document.
+
+---
+
+## Behavior (Actions / Rules / Effects)
+
+The optional root-level `behavior` property describes actions, rules, and effects
+for planning and attribution. It does not execute actions or enforce policies.
+
+[behavior-layer.schema.json](behavior-layer.schema.json) is the canonical
+validation source. `ossie-schema.json` references it with `$ref`, including from
+the reusable `SemanticModel` definition. The YAML reference describes the same
+contract. See [Behavior Layer](behavior-layer.md) for all fields and legacy
+embedded-payload validation.
+
+Behavior requires non-empty `namespace` and `behavior_layer_version` strings,
+`rules` (which may be empty), and at least one of `actions` or its legacy alias
+`action_types`. Empty action lists and both aliases remain accepted.
+Actions require `id` and `title`; effects require `entity` and `mode`; rules
+require `id`, `title`, `severity`, `when`, `constraint`, and `message`.
+
+Optional `impact_type` accepts only `state_transition`, `master_data_mutation`,
+`transactional_write`, `derived_metric_change`, or `other`. `selectors` and
+`transition` remain optional, with their known members typed by the canonical
+schema. Behavior, action, effect, and rule objects retain open extension fields.
+
+```yaml
+version: 0.2.0.dev0
+name: sap_p2p
+datasets:
+  - name: suppliers
+    source: sap.p2p.suppliers
+behavior:
+  namespace: SAP_P2P
+  behavior_layer_version: "0.1"
+  actions:
+    - id: suppliers/block
+      title: Block supplier
+      kind: command
+      effects:
+        - entity: field
+          mode: write
+          impact_type: state_transition
+          selectors:
+            dataset: suppliers
+            field_names: [status]
+          set_value: Blocked
+  rules: []
+```
 
 ---
 

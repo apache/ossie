@@ -207,6 +207,8 @@ class OssieSemanticModel(BaseModel):
     datasets: list[OssieDataset] = Field(..., min_length=1)
     relationships: Optional[list[OssieRelationship]] = None
     metrics: Optional[list[OssieMetric]] = None
+    # Behavior field constraints are defined by the canonical JSON Schema.
+    behavior: Optional[dict[str, Any]] = None
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
 
