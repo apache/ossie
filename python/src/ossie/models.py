@@ -16,7 +16,7 @@
 # under the License.
 
 from enum import Enum
-from typing import Any, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer
@@ -215,7 +215,10 @@ class OssieDocument(OssieSemanticModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    version: str = "0.2.0.dev0"
+    # The schema pins this with `const`, so a document may not declare any other
+    # version. Mirrored as a Literal rather than a plain str, which would let the
+    # package serialize a version the schema rejects.
+    version: Literal["0.2.0.dev0"] = "0.2.0.dev0"
 
     @model_serializer(mode="wrap")
     def _serialize_document(self, handler: SerializerFunctionWrapHandler):
