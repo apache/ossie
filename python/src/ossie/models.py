@@ -15,11 +15,93 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import json
+import math
 from enum import Enum
 from typing import Any, Literal, Optional, Union
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, StrictBool, model_serializer
+
+
+_AI_CONTEXT_FIELDS = frozenset({"instructions", "synonyms", "examples"})
+
+#: Paths listed in a diagnostic before the rest are counted instead.
+_MAX_REPORTED = 20
+
+_NULL = "set to null, which the schema does not allow; omit it instead"
+_NON_FINITE = "not a number JSON can represent, so it cannot round-trip"
+
+
+def _cyclic(path: str) -> ValueError:
+    return ValueError(
+        f"document contains a cyclic alias at {path or 'the root'}, "
+        f"which cannot be represented as an Ossie document"
+    )
+
+
+def _invalid_below(
+    node: Any,
+    path: str,
+    active: tuple[int, ...],
+    walked: set[tuple[int, bool, bool]],
+    free_form: bool,
+    ai_context: bool,
+) -> list[tuple[str, str]]:
+    """Paths below `node` holding a value an Ossie document cannot carry.
+
+    A null is one, because no property in `ossie-schema.json` is nullable. So is a
+    non-finite number: `yaml.safe_load` reads `.nan` and `.inf`, and `json.loads`
+    accepts the non-standard `NaN`, `Infinity` and `-Infinity`, none of which JSON can
+    express -- a `NaN` reaching `to_ossie_json` comes back out as `null`.
+
+    `free_form` marks the parts of `ai_context` where a null is legal: its object form
+    sets `additionalProperties: true`, so an extra key may hold any value. A non-finite
+    number is rejected there too, since it still cannot be serialized.
+
+    `active` holds the containers on the current branch, so a self-reference raises
+    while an anchor reused on a sibling branch still walks. `walked` holds containers
+    already covered: one reached again through another alias is not reported twice,
+    because an anchor is one property in the source, and because a chain of anchors
+    shaped `[*previous, *previous]` expands to 2^n copies of the anchored subtree.
+    """
+    if isinstance(node, float) and not math.isfinite(node):
+        return [(path, _NON_FINITE)]
+    if not isinstance(node, (dict, list)):
+        return []
+    if id(node) in active:
+        raise _cyclic(path)
+    seen = (id(node), free_form, ai_context)
+    if seen in walked:
+        return []
+    walked.add(seen)
+    inner = (*active, id(node))
+    found: list[tuple[str, str]] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            where = f"{path}.{key}" if path else str(key)
+            legal_null = free_form or (ai_context and key not in _AI_CONTEXT_FIELDS)
+            if value is None:
+                if not legal_null:
+                    found.append((where, _NULL))
+            else:
+                found += _invalid_below(
+                    value, where, inner, walked, legal_null, key == "ai_context"
+                )
+    else:
+        for index, item in enumerate(node):
+            found += _invalid_below(
+                item, f"{path}[{index}]", inner, walked, free_form, False
+            )
+    return found
+
+
+def _invalid_properties(node: Any) -> list[tuple[str, str]]:
+    """Return every property holding a value an Ossie document cannot carry.
+
+    Raises `ValueError` if the document holds a cyclic alias.
+    """
+    return _invalid_below(node, "", (), set(), False, False)
 
 
 class OssieDialect(str, Enum):
@@ -251,3 +333,54 @@ class OssieDocument(OssieSemanticModel):
         kwargs.setdefault("by_alias", True)
         kwargs.setdefault("exclude_none", True)
         return self.model_dump_json(**kwargs)
+
+    @classmethod
+    def from_ossie_yaml(cls, text: str) -> "OssieDocument":
+        """Parse an Ossie YAML document, checking what pydantic alone cannot.
+
+        The counterpart of :meth:`to_ossie_yaml`. ``model_validate`` stays lenient,
+        because a caller building a model in Python routinely passes a value that may
+        be ``None`` -- ``label=dim.label`` -- and means "omit it". A document is
+        different: it is the artefact the schema governs, so these rules apply to it
+        and not to the models.
+
+        Rejected here: a property set to null, a missing ``version``, a non-finite
+        number, and a cyclic alias. The field types reject the rest of the schema.
+
+        A diagnostic lists at most :data:`_MAX_REPORTED` paths and counts the rest, so
+        fixing the ones named can reveal more on the next run.
+
+        Not checked: the free-form content of ``ai_context``, whose object form sets
+        ``additionalProperties: true``. A value there outside JSON's own data model --
+        a YAML set or date, a non-string mapping key -- is passed through and
+        serialized as whatever it maps to, exactly as ``model_validate`` does today.
+        Auditing that, and bounding how far a shared alias graph expands on the way
+        out, is a property of the models rather than of parsing, and is not in scope
+        here.
+        """
+        return cls._from_document(yaml.safe_load(text))
+
+    @classmethod
+    def from_ossie_json(cls, text: str) -> "OssieDocument":
+        """Parse an Ossie JSON document, checking what pydantic alone cannot.
+
+        The counterpart of :meth:`to_ossie_json`; see :meth:`from_ossie_yaml` for what
+        is and is not checked.
+        """
+        return cls._from_document(json.loads(text))
+
+    @classmethod
+    def _from_document(cls, data: Any) -> "OssieDocument":
+        for reason in (_NULL, _NON_FINITE):
+            paths = [path for path, why in _invalid_properties(data) if why == reason]
+            if paths:
+                # A document may hold many; list enough to act on and count the rest.
+                listed = ", ".join(paths[:_MAX_REPORTED])
+                if len(paths) > _MAX_REPORTED:
+                    listed += f", and {len(paths) - _MAX_REPORTED} more"
+                raise ValueError(f"property {reason}: {listed}")
+        if isinstance(data, dict) and "version" in cls.model_fields and "version" not in data:
+            # The field carries a default so Python construction needs no version, but
+            # the schema lists it as required, so a document without one is invalid.
+            raise ValueError("document is missing the required property: version")
+        return cls.model_validate(data)
