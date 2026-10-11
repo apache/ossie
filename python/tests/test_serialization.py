@@ -646,3 +646,32 @@ def test_free_form_ai_context_content_is_passed_through() -> None:
         "numbered": {"1": "one"},
     }
 
+
+def test_the_null_diagnostic_reads_as_a_sentence(document_data: dict) -> None:
+    """Assert the whole message, not a fragment of it.
+
+    The reason and the template have to agree on who the subject is, and a substring
+    match passes either way round, so only the full text covers that.
+    """
+    document_data["description"] = None
+
+    with pytest.raises(ValueError) as error:
+        OssieDocument.from_ossie_yaml(yaml.safe_dump(document_data))
+
+    assert str(error.value) == (
+        "property set to null, which the schema does not allow; omit it instead: description"
+    )
+
+
+def test_the_non_finite_diagnostic_reads_as_a_sentence(document_data: dict) -> None:
+    """The case the subject was missing from; see the test above."""
+    document_data["datasets"][0]["ai_context"] = {"score": float("nan")}
+
+    with pytest.raises(ValueError) as error:
+        OssieDocument.from_ossie_yaml(yaml.safe_dump(document_data))
+
+    assert str(error.value) == (
+        "property holds a number JSON cannot represent, so it cannot round-trip: "
+        "datasets[0].ai_context.score"
+    )
+
