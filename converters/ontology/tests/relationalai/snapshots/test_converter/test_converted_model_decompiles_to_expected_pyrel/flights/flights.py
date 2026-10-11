@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from relationalai.semantics import Date, DateTime, Decimal, Integer, Model, String, avg
+from relationalai.semantics import Boolean, Date, DateTime, Decimal, Integer, Model, String, avg
 
 m = Model("model")
 
@@ -66,7 +66,7 @@ Route = m.Concept("Route")
 database_schema_runways = m.Table("DATABASE.SCHEMA.RUNWAYS", schema={'AIRPORT_CODE': String, 'LENGTH': Decimal, 'SHAPE': String, 'DESIGNATOR': String})
 database_schema_aircraft = m.Table("DATABASE.SCHEMA.AIRCRAFT", schema={'SERIAL_NR': String, 'NAME': String, 'NR_SEATS': Integer, 'TAIL_NR': String, 'CARRIER_CODE': String, 'MANUFACTURER': String, 'MODEL': String, 'YEAR': String, 'CAPACITY': Integer})
 database_schema_airports = m.Table("DATABASE.SCHEMA.AIRPORTS", schema={'STATE_CODE': String, 'MARKET_NM': String, 'LONGITUDE': Decimal, 'OPENED': String, 'STATE_NM': String, 'CITY_NM': String, 'NAME': String, 'CODE': String, 'LATITUDE': Decimal})
-database_schema_flights = m.Table("DATABASE.SCHEMA.FLIGHTS", schema={'DEP_DELAY': Decimal, 'AIR_TIME': String, 'NR': String, 'CARRIER_CODE': String, 'DURATION': String, 'SCHEDULED_DEPARTURE': DateTime, 'ARR_DELAY': Decimal, 'CANCELLED': String, 'CANCEL_CODE': String, 'DISTANCE': Decimal, 'ID': String, 'SCHEDULED_ARRIVAL': DateTime, 'WHEELS_ON': String, 'DATE': Date, 'WHEELS_OFF': String, 'SCHEDULED_DURATION': String, 'TAIL_NR': String, 'DEPARTURE': DateTime, 'ROUTE_ID': String, 'DIVERTED': String, 'ARRIVAL': DateTime})
+database_schema_flights = m.Table("DATABASE.SCHEMA.FLIGHTS", schema={'DEP_DELAY': Decimal, 'AIR_TIME': String, 'NR': String, 'CARRIER_CODE': String, 'DURATION': String, 'SCHEDULED_DEPARTURE': DateTime, 'ARR_DELAY': Decimal, 'CANCELLED': Boolean, 'CANCEL_CODE': String, 'DISTANCE': Decimal, 'ID': String, 'SCHEDULED_ARRIVAL': DateTime, 'WHEELS_ON': String, 'DATE': Date, 'WHEELS_OFF': String, 'SCHEDULED_DURATION': String, 'TAIL_NR': String, 'DEPARTURE': DateTime, 'ROUTE_ID': String, 'DIVERTED': Boolean, 'ARRIVAL': DateTime})
 database_schema_carriers = m.Table("DATABASE.SCHEMA.CARRIERS", schema={'CODE': String, 'NAME': String})
 database_schema_routes = m.Table("DATABASE.SCHEMA.ROUTES", schema={'ORIG_AIRPORT_CODE': String, 'DEST_AIRPORT_CODE': String, 'DISTANCE': Decimal, 'DIST_GRP': Integer, 'ID': String, 'NAME': String})
 

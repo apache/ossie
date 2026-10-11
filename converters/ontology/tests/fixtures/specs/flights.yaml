@@ -734,6 +734,7 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: cancelled
+        datatype: Boolean
       - name: cancel_code
         expression:
           dialects:
@@ -802,6 +803,7 @@ ontology_mappings:
           dialects:
           - dialect: ANSI_SQL
             expression: diverted
+        datatype: Boolean
       - name: arrival
         expression:
           dialects:
