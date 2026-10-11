@@ -257,3 +257,32 @@ def test_raw_factories_remain_available_as_an_opt_out(validation_dir: Path):
     # The fixture's formula is a relationship `derived_by`, not a concept rule.
     formulas = [f for r in model.ontology.relationships for f in (*r.derived_by, *r.requires)]
     assert formulas and all(type(f) is Formula for f in formulas)
+
+
+def test_factory_caches_are_keyed_on_the_ontology_not_its_id(flights_path: Path):
+    """A factory outlives the conversions it serves, so its caches must not be
+    keyed on `id()`: an id is reused once its object is collected, and the next
+    ontology would inherit a parser and reasoner bound to the dead one.
+    """
+    import gc
+
+    from ossie_ontology.expr.factory import FormulaParserFactory, MappingFormulaParserFactory
+
+    formula_factory = FormulaParserFactory()
+    mapping_factory = MappingFormulaParserFactory()
+    parser = OssieParser(formula_factory=formula_factory, mapping_formula_factory=mapping_factory)
+
+    first = parser.parse(flights_path)
+    gc.collect()
+    second = parser.parse(flights_path)
+
+    ontologies = [first.ontology, second.ontology]
+    assert list(formula_factory._parsers) == ontologies
+    assert list(formula_factory._reasoners) == ontologies
+    for ontology, cached in formula_factory._parsers.items():
+        assert cached._ontology is ontology
+
+    assert [ontology for ontology, _ in mapping_factory._parsers] == ontologies
+    for (ontology, semantic_model), cached in mapping_factory._parsers.items():
+        assert cached._ontology is ontology
+        assert cached._semantic_model is semantic_model

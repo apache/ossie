@@ -251,6 +251,47 @@ def test_the_reasoner_sees_declared_identifiers(behaviours_dir: Path):
     assert {rel.name for rel in identifiers} == {"sku", "legacyCode"}
 
 
+def _derived_identifier_with_body(behaviours_dir: Path, tmp_path: Path, body: str) -> Path:
+    """`derived_identifier.yaml` with the `derived_by` body of `Product.sku` replaced."""
+    original = "derived_by: ['Legacy.legacyCode(c)']"
+    text = (behaviours_dir / "derived_identifier.yaml").read_text()
+    assert original in text
+    path = tmp_path / "derived_identifier.yaml"
+    path.write_text(text.replace(original, f"derived_by: ['{body}']"))
+    return path
+
+
+def test_a_named_role_the_body_never_mentions_falls_back_to_its_player(behaviours_dir: Path, tmp_path: Path):
+    """An explicit role name names a variable, not a concept.
+
+    `sku`'s role is named `c`. When the body never binds `c`, the converter
+    falls back to the role's concept; looking that up by the role name asked for
+    a concept called `c` and aborted the conversion. Identifier relationships
+    are exempt from needing head vars in the body, so validation lets this
+    through.
+    """
+    path = _derived_identifier_with_body(behaviours_dir, tmp_path, "Legacy.legacyCode(x)")
+    pyrel.Model.all_models.clear()
+    om = OssieToRelationalAIConverter.convert(OssieParser().parse(path), table_provider=declared_table)
+
+    rules = define_rules(to_pyrel(om.base_model().to_metamodel()))
+    assert rules == ["m.where(Legacy, Legacy.legacyCode).define(Product.new(sku=Code))"]
+
+
+def test_exists_in_a_rule_body_is_rejected_rather_than_dropped(behaviours_dir: Path, tmp_path: Path):
+    """EXISTS has no PyRel translation yet. It must fail loudly: converting it to
+    nothing silently removed the condition from the generated rule.
+    """
+    path = _derived_identifier_with_body(
+        behaviours_dir, tmp_path, "Legacy.legacyCode(c) AND EXISTS(Legacy.legacyCode(c))"
+    )
+    ontology = OssieParser().parse(path)
+    pyrel.Model.all_models.clear()
+
+    with pytest.raises(NotImplementedError, match="EXISTS in formula body is not yet supported"):
+        OssieToRelationalAIConverter.convert(ontology, table_provider=declared_table)
+
+
 # ---------------------------------------------------------------------------
 # Reference schemes behind bare-expression mappings
 # ---------------------------------------------------------------------------

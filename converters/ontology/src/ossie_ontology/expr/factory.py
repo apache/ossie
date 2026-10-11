@@ -65,16 +65,21 @@ class FormulaParserFactory(FormulaFactory):
     """FormulaFactory that parses raw expressions into enriched model.Formula
     instances carrying a full AST, expression info, and head variables.
 
-    Parsers are cached by ontology identity since FormulaParser construction
-    is expensive (yacc compilation). Safe to reuse across multiple convert() calls.
+    Parsers are cached per ontology since FormulaParser construction is
+    expensive (yacc compilation). Safe to reuse across multiple convert() calls.
+    The cache is keyed on the ontology object itself, not its `id()`: an `id` can
+    be reused once its object is collected, and the cached parser and reasoner
+    would then be handed to an unrelated ontology. Holding the key also keeps
+    each ontology alive as long as the factory, which the cached parser's own
+    reference to it already does.
 
     When parent is None (mapping expression context) falls back to a plain Formula.
     """
 
     def __init__(self, var_extract_fn: Callable[[FormulaScope], OrderedDict[Var, Concept]] | None = None):
         self._var_extract_fn = var_extract_fn
-        self._parsers: dict[int, FormulaParser] = {}
-        self._reasoners: dict[int, OntologyReasoner] = {}
+        self._parsers: dict[OntologyComponent, FormulaParser] = {}
+        self._reasoners: dict[OntologyComponent, OntologyReasoner] = {}
 
     def __call__(
         self,
@@ -92,14 +97,15 @@ class FormulaParserFactory(FormulaFactory):
         # (e.g. "COUNT[Airport] > 0") are not scoped to any concept/relationship.
         # They have no head vars, but are still parsed and validated against the ontology.
         var_extract_fn = self._var_extract_fn or extract_head_vars
-        key = id(ontology)
-        if key not in self._parsers:
-            self._parsers[key] = FormulaParser(ontology)
-        if key not in self._reasoners:
+        if ontology not in self._parsers:
+            self._parsers[ontology] = FormulaParser(ontology)
+        if ontology not in self._reasoners:
             reasoner = OntologyReasoner()
             ontology.register(reasoner)
-            self._reasoners[key] = reasoner
-        return parse_raw_formula(ontology, self._reasoners[key], raw_expr, parent, self._parsers[key], var_extract_fn)
+            self._reasoners[ontology] = reasoner
+        return parse_raw_formula(
+            ontology, self._reasoners[ontology], raw_expr, parent, self._parsers[ontology], var_extract_fn
+        )
 
 
 class MappingFormulaParserFactory(MappingFormulaFactory):
@@ -108,11 +114,12 @@ class MappingFormulaParserFactory(MappingFormulaFactory):
 
     Both ontology and semantic_model are mandatory — field references in mapping
     expressions must be resolved against the semantic model at parse time.
-    Parsers are cached per (ontology, semantic_model) pair.
+    Parsers are cached per (ontology, semantic_model) pair, keyed on the objects
+    themselves for the reason given on `FormulaParserFactory`.
     """
 
     def __init__(self):
-        self._parsers: dict[tuple[int, int], FormulaParser] = {}
+        self._parsers: dict[tuple[OntologyComponent, SemanticModel], FormulaParser] = {}
 
     def __call__(
         self,
@@ -125,7 +132,7 @@ class MappingFormulaParserFactory(MappingFormulaFactory):
             raise ValueError("MappingFormulaParserFactory requires an ontology.")
         if semantic_model is None:
             raise ValueError("MappingFormulaParserFactory requires a semantic_model.")
-        key = (id(ontology), id(semantic_model))
+        key = (ontology, semantic_model)
         if key not in self._parsers:
             self._parsers[key] = FormulaParser(ontology, semantic_model)
         parser = self._parsers[key]

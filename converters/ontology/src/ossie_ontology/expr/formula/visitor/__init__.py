@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 from typing import Optional, TypeVar, Generic
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 
 from ossie_ontology.expr.formula.model import AggExpr, AggregationMethod, Negation, VarHandle, LiteralHandle, \
     DotJoinHandle, FactRef, RelationshipRefHandle, ConceptRefHandle, DatasetRefHandle, DatasetFieldHandle, \
@@ -33,7 +33,7 @@ from ossie_ontology.expr import Node
 Result = TypeVar('Result')
 
 
-class GenericVisitor(Generic[Result]):
+class GenericVisitor(ABC, Generic[Result]):
 
     """
     Abstract visitor with handlers for each node type.

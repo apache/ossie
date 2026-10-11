@@ -43,6 +43,7 @@ from ossie_ontology.expr.formula.model import (
     AggregationMethod,
     Conjunction,
     Disjunction,
+    Exists,
     WhereExpr,
     DatasetFieldHandle,
     DatasetRefHandle,
@@ -238,6 +239,9 @@ class FormulaConverter(GenericFormulaConverter):
     def visit_disjunction(self, node: Disjunction, parent: Optional[Node]):
         raise NotImplementedError("Disjunction (OR) in formula body is not yet supported")
 
+    def visit_exists(self, node: Exists, parent: Optional[Node]):
+        raise NotImplementedError("EXISTS in formula body is not yet supported")
+
     def visit_whereexpr(self, node: WhereExpr, parent: Optional[Node]):
         raise NotImplementedError("WHERE expression is not yet supported")
 
@@ -264,12 +268,14 @@ class FormulaConverter(GenericFormulaConverter):
         return [result] if result is not None else []
 
     def _role_var(self, role: Role) -> RAIConcept | Ref:
-        role_name = role.name 
-        var_key = self._var_name(role_name)
+        var_key = self._var_name(role.name)
         if var_key in self._var_refs:
             return self._var_refs[var_key]
-        pyrel_c = self._ontology.lookup_concept(role_name)
-        assert pyrel_c is not None, f"Concept '{role_name}' not found in ontology"
+        # `role.name` is the explicit role name when there is one (e.g. `seller`),
+        # which names a variable, not a concept; fall back to the role's player.
+        player_name = role.player.name
+        pyrel_c = self._ontology.lookup_concept(player_name)
+        assert pyrel_c is not None, f"Concept '{player_name}' not found in ontology"
         return pyrel_c
 
     def _var_name(self, var: str | VarHandle) -> str:
@@ -387,6 +393,9 @@ class MappingFormulaConverter(GenericFormulaConverter):
 
     def visit_disjunction(self, node: Disjunction, parent):
         raise ValueError("Disjunction (OR) is not allowed in mapping expressions.")
+
+    def visit_exists(self, node: Exists, parent):
+        raise ValueError("EXISTS is not allowed in mapping expressions.")
 
     def visit_whereexpr(self, node: WhereExpr, parent):
         left = node.expr().accept(self, node)
