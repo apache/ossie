@@ -1,0 +1,85 @@
+{
+  "$version": "2.0",
+  "meta": { "creator": "CDS Compiler v5.0.0" },
+  "namespace": "sap.capire.bookshop",
+  "definitions": {
+    "sap.capire.bookshop": { "kind": "context" },
+    "sap.capire.bookshop.Amount": { "kind": "type", "type": "cds.Decimal", "precision": 11, "scale": 2 },
+    "sap.capire.bookshop.Authors": {
+      "kind": "entity",
+      "doc": "People who wrote books.",
+      "@EndUserText.label": "Authors",
+      "elements": {
+        "ID": { "type": "cds.Integer", "key": true },
+        "name": { "type": "cds.String", "length": 111, "@EndUserText.label": "Author name" },
+        "dateOfBirth": { "type": "cds.Date" },
+        "books": {
+          "type": "cds.Association",
+          "cardinality": { "max": "*" },
+          "target": "sap.capire.bookshop.Books",
+          "on": [ { "ref": [ "books", "author" ] }, "=", { "ref": [ "$self" ] } ]
+        }
+      }
+    },
+    "sap.capire.bookshop.Books": {
+      "kind": "entity",
+      "@Analytics.dataCategory": { "#": "CUBE" },
+      "@assert.unique.isbn": [ { "=": "isbn" } ],
+      "elements": {
+        "ID": { "type": "cds.Integer", "key": true },
+        "title": { "type": "cds.String", "length": 111, "@EndUserText.label": "Title", "@EndUserText.quickInfo": "Title as printed on the cover" },
+        "isbn": { "type": "cds.String", "length": 13 },
+        "author": { "type": "cds.Association", "target": "sap.capire.bookshop.Authors", "keys": [ { "ref": [ "ID" ] } ] },
+        "published": { "type": "cds.Date" },
+        "stock": { "type": "cds.Integer", "@Aggregation.default": { "#": "SUM" } },
+        "price": { "type": "sap.capire.bookshop.Amount", "@Aggregation.default": { "#": "AVG" }, "@Semantics.amount.currencyCode": "currency_code" },
+        "currency_code": { "type": "cds.String", "length": 3 },
+        "priceWithTax": { "type": "cds.Decimal", "value": { "xpr": [ { "ref": [ "price" ] }, "*", { "val": 1.19 } ] } },
+        "authorName": { "type": "cds.String", "value": { "ref": [ "author", "name" ] } },
+        "cover": { "type": "cds.LargeBinary" },
+        "descr": { "type": "cds.LargeString", "localized": true }
+      }
+    },
+    "sap.capire.bookshop.Orders": {
+      "kind": "entity",
+      "elements": {
+        "ID": { "type": "cds.UUID", "key": true },
+        "book_ID": { "type": "cds.Integer" },
+        "book": {
+          "type": "cds.Association",
+          "target": "sap.capire.bookshop.Books",
+          "on": [ { "ref": [ "book", "ID" ] }, "=", { "ref": [ "book_ID" ] } ]
+        },
+        "orderedAt": { "type": "cds.Timestamp" },
+        "quantity": { "type": "cds.Integer" },
+        "amount": {
+          "type": "cds.Decimal",
+          "precision": 11,
+          "scale": 2,
+          "@Aggregation.default": { "#": "SUM" },
+          "@Ossie.metric": true,
+          "value": { "xpr": [ { "ref": [ "quantity" ] }, "*", { "ref": [ "book", "price" ] } ] }
+        },
+        "customers": { "type": "cds.Composition", "target": "sap.capire.bookshop.Orders.Items" },
+        "tags": { "items": { "type": "cds.String" } }
+      }
+    },
+    "sap.capire.bookshop.Orders.Items": {
+      "kind": "entity",
+      "elements": {
+        "ID": { "type": "cds.UUID", "key": true },
+        "note": { "type": "cds.String" }
+      }
+    },
+    "sap.capire.bookshop.ListOfBooks": {
+      "kind": "entity",
+      "projection": { "from": { "ref": [ "sap.capire.bookshop.Books" ] } },
+      "elements": {
+        "ID": { "type": "cds.Integer", "key": true },
+        "title": { "type": "cds.String", "length": 111 }
+      }
+    },
+    "CatalogService": { "kind": "service" },
+    "sap.capire.bookshop.submitOrder": { "kind": "action", "params": { "book": { "type": "cds.Integer" } } }
+  }
+}

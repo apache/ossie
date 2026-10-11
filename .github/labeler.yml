@@ -61,6 +61,10 @@ converter/wisdom:
   - changed-files:
       - any-glob-to-any-file: 'converters/wisdom/**'
 
+converter/sap-csn:
+  - changed-files:
+      - any-glob-to-any-file: 'converters/sap-csn/**'
+
 converter/sigma:
   - changed-files:
       - any-glob-to-any-file: 'converters/sigma/**'
