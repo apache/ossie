@@ -118,11 +118,11 @@ class FormulaLexer:
         return t
 
     def t_ID(self, t):
-        r'[a-zA-Z_0-9]+'
+        r'\w+'
         t.type = self.reserved.get(t.value, 'ID')
         return t
 
     # every string that doesn't match one of the previous tokens is considered an error
     def t_error(self, t):
         r'.'
-        raise SyntaxError(f"Illegal character {t.value!r} at position {t.lexpos}")
+        raise SyntaxError(f"Illegal character {t.value[0]!r} at position {t.lexpos}")

@@ -16,7 +16,7 @@
 # under the License.
 
 
-"""Token-level coverage for `FormulaLexer` numeric literals."""
+"""Token-level coverage for `FormulaLexer`."""
 
 from __future__ import annotations
 
@@ -45,3 +45,16 @@ def tokens(text: str) -> list[tuple[str, object]]:
 )
 def test_numeric_literals(text: str, expected: list[tuple[str, object]]):
     assert tokens(text) == expected
+
+
+def test_non_ascii_identifier():
+    assert tokens("CancelationCodé == 'A'") == [
+        ("ID", "CancelationCodé"),
+        ("EQUALS", "=="),
+        ("STRING_LITERAL", "A"),
+    ]
+
+
+def test_illegal_character_reports_only_that_character():
+    with pytest.raises(SyntaxError, match=r"^Illegal character '\$' at position 2$"):
+        tokens("a $ b")
