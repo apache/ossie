@@ -63,6 +63,15 @@ The specification supports multiple SQL dialects (`ANSI_SQL`, `SNOWFLAKE`, `DATA
 
 For the full specification, see [core-spec/spec.md](../core-spec/spec.md). For validation tooling, see [validation/validate.py](../validation/validate.py). For a complete example, see the [TPC-DS semantic model](../examples/tpcds_semantic_model.yaml).
 
+### Proposed Query Execution Profile
+
+The optional [HTTP/Arrow execution proposal](proposals/execute-query-http.md)
+defines a browser-first binding for model-resolved Layer 3 queries, execution
+status and typed results. Its [experimental TypeScript client](../typescript/execution/README.md)
+implements the proposed wire contract; it is not a query engine, a native vendor
+adapter, or proof of equivalent answers across engines. The profile and its
+Foundation/MCP dependencies remain proposals and do not change core model conformance.
+
 ### Participating Organizations
 
 Ossie is supported by a broad coalition of 50+ organizations across the data ecosystem, including:
