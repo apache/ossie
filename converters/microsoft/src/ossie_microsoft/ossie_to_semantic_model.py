@@ -189,6 +189,9 @@ def convert_ossie_to_semantic_model(
     warn_unsupported("model", semantic_model, OSSIE_UNSUPPORTED, "Power BI", _DROPPED)
 
     tables, table_columns, generated_partitions = _convert_datasets(datasets)
+    # Restore excluded hosts before placing model-level metrics so a metric whose
+    # home table was a calculated table retains its original table placement.
+    tables.extend(stash.get("excludedTables") or [])
     _apply_measures(tables, semantic_model.get("metrics") or [])
     _restore_excluded_measures(tables, stash.get("excludedMeasures") or [])
 
@@ -196,10 +199,6 @@ def convert_ossie_to_semantic_model(
         semantic_model.get("relationships") or [], table_columns
     )
     relationships.extend(stash.get("excludedRelationships") or [])
-
-    # Tables the import excluded (private, calculation group, auto date table) are
-    # restored verbatim so a round trip reproduces the original model.
-    tables.extend(stash.get("excludedTables") or [])
 
     model = {"tables": tables}
     if generated_partitions:
