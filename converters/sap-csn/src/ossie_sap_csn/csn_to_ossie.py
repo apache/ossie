@@ -54,7 +54,7 @@ from ossie_sap_csn.converter_issues import (
     ConverterIssueType,
     ConverterResult,
 )
-from ossie_sap_csn.cxn import UnsupportedExpression, cxn_to_sql, parse_sql
+from ossie_sap_csn.cxn import UnsupportedExpression, cxn_to_sql, parse_sql, quote_identifier
 from ossie_sap_csn.datatypes import ASSOCIATION_TYPES, builtin_type, ossie_datatype
 
 # Entity keys that map to Ossie properties; every other key travels verbatim.
@@ -88,7 +88,7 @@ def _qualify(sql: str, table: str) -> str:
     tree = parse_sql(sql)
     for column in tree.find_all(exp.Column):
         if not column.table:
-            column.set("table", exp.to_identifier(table))
+            column.set("table", exp.to_identifier(table, quoted=quote_identifier(table) != table))
     return tree.sql()
 
 
@@ -99,9 +99,16 @@ class _Entities:
         self.csn_names = [n for n, d in definitions.items() if isinstance(d, dict) and d.get("kind") == "entity"]
         shorts = [n.rsplit(".", 1)[-1] for n in self.csn_names]
         unique = len(set(shorts)) == len(shorts)
-        self.dataset_name = {
-            n: (s if unique else n.replace(".", "_")) for n, s in zip(self.csn_names, shorts)
-        }
+        self.dataset_name: dict[str, str] = {}
+        used: set[str] = set()
+        for n, s in zip(self.csn_names, shorts):
+            base = s if unique else n.replace(".", "_")
+            candidate, suffix = base, 1
+            while candidate in used:  # flattening can collide too (`foo.bar` and `foo_bar`)
+                suffix += 1
+                candidate = f"{base}_{suffix}"
+            used.add(candidate)
+            self.dataset_name[n] = candidate
 
     def __contains__(self, csn_name: object) -> bool:
         return csn_name in self.dataset_name
@@ -258,7 +265,7 @@ class CsnToOssieConverter:
             head = elements.get(path[0])
             target = head.get("target") if isinstance(head, dict) else None
             if len(path) == 2 and target in entities:
-                return f"{entities.dataset_name[target]}.{path[1]}"
+                return f"{quote_identifier(entities.dataset_name[target])}.{quote_identifier(path[1])}"
             raise UnsupportedExpression(f"path expression {'.'.join(path)!r} cannot be resolved")
 
         fields: list[OssieField] = []
@@ -317,7 +324,7 @@ class CsnToOssieConverter:
                     continue
                 dialect = OssieDialect.ANSI_SQL
             else:
-                expression_sql = el_name
+                expression_sql = quote_identifier(el_name)
                 dialect = OssieDialect.ANSI_SQL
 
             datatype = ossie_datatype(builtin)
@@ -556,7 +563,7 @@ class CsnToOssieConverter:
                 OssieField(
                     name=fk,
                     expression=OssieExpression(
-                        dialects=[OssieDialectExpression(dialect=OssieDialect.ANSI_SQL, expression=fk)]
+                        dialects=[OssieDialectExpression(dialect=OssieDialect.ANSI_SQL, expression=quote_identifier(fk))]
                     ),
                     dimension=OssieDimension(is_time=False),
                     datatype=datatype,
@@ -608,9 +615,9 @@ class CsnToOssieConverter:
                 try:
                     target = _qualify(m["expression"], m["dataset"])
                 except UnsupportedExpression:
-                    target = f"{m['dataset']}.{m['element']}"
+                    target = f"{quote_identifier(m['dataset'])}.{quote_identifier(m['element'])}"
             else:
-                target = f"{m['dataset']}.{m['element']}"
+                target = f"{quote_identifier(m['dataset'])}.{quote_identifier(m['element'])}"
             sql = f"COUNT(DISTINCT {target})" if agg == "COUNT_DISTINCT" else f"{agg}({target})"
 
             if agg in ("COUNT", "COUNT_DISTINCT"):

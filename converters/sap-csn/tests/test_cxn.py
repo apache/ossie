@@ -104,3 +104,26 @@ def test_untranslatable_sql_is_refused_not_guessed(sql):
 def test_untranslatable_cxn_is_refused_not_guessed(cxn):
     with pytest.raises(UnsupportedExpression):
         cxn_to_sql(cxn)
+
+
+@pytest.mark.parametrize("name, rendered", [("from", '"from"'), ("plus", "plus"), ("my col", '"my col"'), ('a"b', '"a""b"')])
+def test_identifiers_that_are_not_plain_words_are_quoted(name, rendered):
+    assert cxn_to_sql({"ref": [name]}) == rendered
+
+
+def test_quoted_identifier_round_trips_through_sql():
+    sql = cxn_to_sql({"xpr": [{"ref": ["select"]}, "+", {"val": 1}]})
+    assert sql == '"select" + 1'
+    assert sql_to_cxn(sql, _bare) == {"xpr": [{"ref": ["select"]}, "+", {"val": 1}]}
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_literals_are_refused(value):
+    with pytest.raises(UnsupportedExpression):
+        cxn_to_sql({"val": value})
+
+
+def test_parse_error_text_carries_no_ansi_escapes():
+    with pytest.raises(UnsupportedExpression) as info:
+        sql_to_cxn("this is not sql !!!", _bare)
+    assert "\x1b" not in str(info.value)

@@ -52,6 +52,7 @@ from ossie_sap_csn.converter_issues import (
 from ossie_sap_csn.cxn import UnsupportedExpression, parse_sql, sql_to_cxn
 from ossie_sap_csn.datatypes import builtin_type, cds_type, ossie_datatype
 
+_PERSISTENCE_NAME = "@cds.persistence.name"
 _IDENTIFIER_UNSAFE = re.compile(r"[^A-Za-z0-9_]")
 
 _AGG_NODES: dict[type, str] = {exp.Sum: "SUM", exp.Min: "MIN", exp.Max: "MAX", exp.Avg: "AVG", exp.Count: "COUNT"}
@@ -224,7 +225,13 @@ class OssieToCsnConverter:
         derived: dict[str, list[tuple[OssieMetric, _Metric]]] = {n: [] for n in datasets}
         in_meta: list[OssieMetric] = []
         element_names = {n: {f.name for f in (d.fields or [])} for n, d in datasets.items()}
-        reachable = {n: {p["rel"].to for p in plans[n]} for n in datasets}
+        # An association is an element too, so a measure may not take its name.
+        taken_names = {n: element_names[n] | {p["name"] for p in plans[n]} for n in datasets}
+        # A dataset reached by two associations has no single path to it from here.
+        reachable = {
+            n: {t for t in (p["rel"].to for p in plans[n]) if sum(q["rel"].to == t for q in plans[n]) == 1}
+            for n in datasets
+        }
 
         for metric in document.metrics or []:
             sql, other = _select_sql(metric.expression)
@@ -257,7 +264,7 @@ class OssieToCsnConverter:
             plain = isinstance(inner, exp.Column) and not inner.table and inner.name == metric.name and inner.name in element_names[ds_name]
             if plain and (ds_name, metric.name) not in annotate:
                 annotate[(ds_name, metric.name)] = (metric, parsed.aggregation)
-            elif metric.name in element_names[ds_name] or any(
+            elif metric.name in taken_names[ds_name] or any(
                 m.name == metric.name for lst in derived.values() for m, _ in lst
             ):
                 in_meta.append(metric)
@@ -314,7 +321,11 @@ class OssieToCsnConverter:
         if dataset.description:
             entity[desc_key] = dataset.description
         for key, value in (ext.get("annotations") or {}).items():
-            entity[key] = value
+            if key != _PERSISTENCE_NAME:  # decided by dataset.source below
+                entity[key] = value
+        # `source` is the table the entity persists to; CDS defaults to the entity's own name.
+        if dataset.source != entity_name[dataset.name]:
+            entity[_PERSISTENCE_NAME] = dataset.source
         entity.update(_carry(dataset.ai_context, dataset.custom_extensions))
 
         modeled = {f.name for f in dataset.fields or []} | {p["name"] for p in plans}
@@ -335,13 +346,20 @@ class OssieToCsnConverter:
             )
 
         # A path through an association (`customer.name`) is how CXN reaches another entity.
-        assoc_to_dataset = {p["rel"].to: p["name"] for p in reversed(plans)}
+        assoc_to_dataset: dict[str, list[str]] = {}
+        for p in plans:
+            assoc_to_dataset.setdefault(p["rel"].to, []).append(p["name"])
 
         def resolve_column(table: Optional[str], column: str) -> list[str]:
             if table is None or table == dataset.name:
                 return [column]
+            if len(assoc_to_dataset.get(table, [])) > 1:
+                raise UnsupportedExpression(
+                    f"column {table}.{column} is reached through several associations "
+                    f"({', '.join(assoc_to_dataset[table])}), so the path is ambiguous"
+                )
             if table in assoc_to_dataset:
-                return [assoc_to_dataset[table], column]
+                return [assoc_to_dataset[table][0], column]
             raise UnsupportedExpression(f"column {table}.{column} reaches a dataset with no association from here")
 
         primary_key = set(dataset.primary_key or [])
@@ -368,7 +386,7 @@ class OssieToCsnConverter:
             )
 
         for plan in plans:
-            elements[plan["name"]] = self._association(plan)
+            elements[plan["name"]] = self._association(plan, primary_key)
 
         measures = metric_homes["derived"][dataset.name]
         for metric, parsed in measures:
@@ -482,12 +500,15 @@ class OssieToCsnConverter:
             element[key] = value
         return element
 
-    def _association(self, plan: dict[str, Any]) -> dict[str, Any]:
+    def _association(self, plan: dict[str, Any], primary_key: set[str]) -> dict[str, Any]:
         ext = plan["ext"]
         element: dict[str, Any] = {"type": ext.get("type") or "cds.Association", "target": plan["target"]}
         name = plan["name"]
         if plan["managed"]:
             element["keys"] = [{"ref": [col]} for col in plan["to_columns"]]
+            # The generated foreign-key columns are not elements, so `key` can only live here.
+            if plan["from_columns"] and all(col in primary_key for col in plan["from_columns"]):
+                element["key"] = True
         else:
             condition: list[Any] = []
             for from_col, to_col in zip(plan["from_columns"], plan["to_columns"]):

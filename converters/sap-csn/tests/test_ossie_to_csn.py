@@ -26,7 +26,7 @@ from ossie_sap_csn.converter_issues import ConverterError, ConverterIssueType
 from .helpers import load_tpcds
 
 
-def document(**overrides) -> OssieDocument:
+def raw_document(**overrides) -> dict:
     def field(name, datatype="Integer", sql=None, **extra):
         return {
             "name": name,
@@ -54,7 +54,11 @@ def document(**overrides) -> OssieDocument:
         "metrics": [],
     }
     raw.update(overrides)
-    return OssieDocument.model_validate(raw)
+    return raw
+
+
+def document(**overrides) -> OssieDocument:
+    return OssieDocument.model_validate(raw_document(**overrides))
 
 
 def metric(name, sql, **extra):
@@ -306,3 +310,84 @@ def test_data_category_is_added_only_to_entities_authored_in_ossie():
     csn, _ = convert(document(metrics=[metric("qty", "SUM(orders.qty)")]))
     assert csn["definitions"]["orders"]["@Analytics.dataCategory"] == {"#": "CUBE"}
     assert "@Analytics.dataCategory" not in csn["definitions"]["cust"]
+
+
+def test_two_associations_to_one_target_make_a_path_through_it_ambiguous():
+    raw = raw_document(
+        relationships=[
+            {"name": "bill", "from": "orders", "to": "cust", "from_columns": ["cust_id"], "to_columns": ["id"]},
+            {"name": "ship", "from": "orders", "to": "cust", "from_columns": ["qty"], "to_columns": ["id"]},
+        ],
+    )
+    raw["datasets"][1]["fields"].append(
+        {
+            "name": "next_id",
+            "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "cust.id + 1"}]},
+            "datatype": "Integer",
+        }
+    )
+    csn, issues = convert(OssieDocument.model_validate(raw))
+    assert "value" not in csn["definitions"]["orders"]["elements"]["next_id"]
+    assert [i.issue_type for i in issues] == [ConverterIssueType.EXPRESSION_NOT_TRANSLATABLE]
+    assert "ambiguous" in issues[0].detail
+
+
+def test_metric_through_an_ambiguous_association_goes_to_meta():
+    doc = document(
+        relationships=[
+            {"name": "bill", "from": "orders", "to": "cust", "from_columns": ["cust_id"], "to_columns": ["id"]},
+            {"name": "ship", "from": "orders", "to": "cust", "from_columns": ["qty"], "to_columns": ["id"]},
+        ],
+        metrics=[metric("total", "SUM(orders.qty * cust.id)")],
+    )
+    csn, issues = convert(doc)
+    assert [m["name"] for m in csn["meta"]["ossie"]["metrics"]] == ["total"]
+    assert [i.issue_type for i in issues] == [ConverterIssueType.METRIC_NOT_MODELED]
+
+
+def test_unreadable_expression_message_carries_no_ansi_escapes():
+    raw = raw_document()
+    raw["datasets"][0]["fields"][1]["expression"]["dialects"][0]["expression"] = "this is not sql !!!"
+    _, issues = convert(OssieDocument.model_validate(raw))
+    assert issues and all("\x1b" not in i.detail for i in issues)
+
+
+def test_measure_named_like_an_association_goes_to_meta():
+    doc = document(metrics=[metric("orders_cust", "SUM(orders.cust_id)")])
+    csn, issues = convert(doc)
+    assert csn["definitions"]["orders"]["elements"]["orders_cust"]["type"] == "cds.Association"
+    assert [m["name"] for m in csn["meta"]["ossie"]["metrics"]] == ["orders_cust"]
+    assert [i.issue_type for i in issues] == [ConverterIssueType.METRIC_NOT_MODELED]
+
+
+def test_key_managed_association_keeps_key_true():
+    raw = raw_document()
+    orders = raw["datasets"][1]
+    orders["primary_key"] = ["id", "orders_cust_id"]
+    orders["fields"][1].update(
+        name="orders_cust_id",
+        expression={"dialects": [{"dialect": "ANSI_SQL", "expression": "orders_cust_id"}]},
+        custom_extensions=[
+            {"vendor_name": "SAP_CSN", "data": json.dumps({"generated_foreign_key": True, "association": "orders_cust"})}
+        ],
+    )
+    raw["relationships"][0]["from_columns"] = ["orders_cust_id"]
+    csn, _ = convert(OssieDocument.model_validate(raw))
+    elements = csn["definitions"]["orders"]["elements"]
+    assert "orders_cust_id" not in elements
+    assert elements["orders_cust"]["key"] is True
+    assert elements["orders_cust"]["keys"] == [{"ref": ["id"]}]
+
+
+def test_source_is_exported_as_the_persistence_name():
+    csn, _ = convert(document())
+    assert csn["definitions"]["cust"]["@cds.persistence.name"] == "db.cust"
+
+
+def test_edited_source_replaces_a_stale_persistence_name():
+    raw = raw_document()
+    raw["datasets"][0]["custom_extensions"] = [
+        {"vendor_name": "SAP_CSN", "data": json.dumps({"annotations": {"@cds.persistence.name": "old.name"}})}
+    ]
+    csn, _ = convert(OssieDocument.model_validate(raw))
+    assert csn["definitions"]["cust"]["@cds.persistence.name"] == "db.cust"

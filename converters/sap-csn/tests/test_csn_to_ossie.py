@@ -19,7 +19,7 @@ import copy
 
 import pytest
 
-from ossie_sap_csn import CsnToOssieConverter
+from ossie_sap_csn import CsnToOssieConverter, OssieToCsnConverter
 from ossie_sap_csn.converter_issues import ConverterError, ConverterIssueType
 
 from .helpers import BOOKS, ORDERS, by_name, load_fixture, sap_ext, sql_of, validate_against_schema
@@ -259,3 +259,30 @@ def test_input_is_not_mutated():
 def test_input_that_is_not_a_csn_model_is_an_error(bad):
     with pytest.raises(ConverterError):
         CsnToOssieConverter().convert(bad)
+
+
+def test_flattened_names_that_still_collide_are_made_unique():
+    entity = {"kind": "entity", "elements": {"ID": {"type": "cds.Integer", "key": True}}}
+    csn = {"definitions": {"a.Item": entity, "b.Item": entity, "foo.bar": entity, "foo_bar": entity}}
+    result = CsnToOssieConverter().convert(csn)
+    names = [d.name for d in result.output.datasets]
+    assert len(set(names)) == len(names) == 4
+    # Export must accept the document import produced.
+    assert set(OssieToCsnConverter().convert(result.output).output["definitions"]) == set(csn["definitions"])
+
+
+def test_element_named_like_a_sql_keyword_yields_valid_expressions():
+    csn = {
+        "definitions": {
+            "Orders": {
+                "kind": "entity",
+                "elements": {
+                    "from": {"type": "cds.Integer"},
+                    "plus": {"type": "cds.Integer", "value": {"xpr": [{"ref": ["from"]}, "+", {"val": 1}]}},
+                },
+            }
+        }
+    }
+    fields = by_name(CsnToOssieConverter().convert(csn).output.datasets[0].fields)
+    assert sql_of(fields["from"]) == '"from"'
+    assert sql_of(fields["plus"]) == '"from" + 1'

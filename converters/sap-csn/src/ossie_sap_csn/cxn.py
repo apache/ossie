@@ -25,11 +25,14 @@ handled; anything else raises :class:`UnsupportedExpression` so the caller can
 report it instead of guessing.
 """
 
+import math
+import re
 from typing import Any, Callable, Optional
 
 import sqlglot
 from sqlglot import exp
 from sqlglot.errors import SqlglotError
+from sqlglot.tokens import TokenType
 
 from ossie_sap_csn.datatypes import CDS_TO_SQL_TYPE
 
@@ -51,11 +54,29 @@ def _no_paths(path: list[str]) -> str:
 # --------------------------------------------------------------------------------------
 
 
+_PLAIN_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def quote_identifier(name: str) -> str:
+    """``name`` as an SQL identifier, double-quoted unless it is a plain non-keyword word."""
+    if _PLAIN_IDENTIFIER.fullmatch(name):
+        try:
+            tokens = sqlglot.tokenize(name)
+        except SqlglotError:
+            tokens = []
+        if len(tokens) == 1 and tokens[0].token_type == TokenType.VAR:
+            return name
+    return '"' + name.replace('"', '""') + '"'
+
+
 def _literal(value: Any) -> str:
     if value is None:
         return "NULL"
     if isinstance(value, bool):
         return "TRUE" if value else "FALSE"
+    if isinstance(value, float) and not math.isfinite(value):
+        raise UnsupportedExpression(f"literal {value!r} has no SQL rendering")
     if isinstance(value, (int, float)):
         return repr(value)
     if isinstance(value, str):
@@ -74,7 +95,7 @@ def _ref_to_sql(ref: list[Any], resolve_path: PathResolver) -> str:
     if ref[0].startswith("$"):
         raise UnsupportedExpression(f"{ref[0]!r} has no SQL rendering")
     if len(ref) == 1:
-        return ref[0]
+        return quote_identifier(ref[0])
     return resolve_path(list(ref))
 
 
@@ -168,7 +189,8 @@ def parse_sql(sql: str) -> exp.Expression:
     try:
         return sqlglot.parse_one(sql)
     except SqlglotError as exc:
-        raise UnsupportedExpression(f"not parseable as SQL: {exc}") from exc
+        # sqlglot underlines the error position with ANSI escapes; keep them out of issue text.
+        raise UnsupportedExpression(f"not parseable as SQL: {_ANSI_ESCAPE.sub('', str(exc))}") from exc
 
 
 # Resolves a SQL column `table.col` to a CXN `ref` list.
