@@ -16,10 +16,10 @@
 # under the License.
 
 from enum import Enum
-from typing import Any, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer
+from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, StrictBool, model_serializer
 
 
 class OssieDialect(str, Enum):
@@ -35,6 +35,7 @@ class OssieDialect(str, Enum):
     SIGMA = "SIGMA"
     THOUGHTSPOT = "THOUGHTSPOT"
     DAX = "DAX"
+    HOLISTICS_AQL = "HOLISTICS_AQL"
     OSSIE_SQL_2026 = "OSSIE_SQL_2026"
 
 
@@ -75,6 +76,7 @@ class OssieVendor(str, Enum):
     SEMANTIDO = "SEMANTIDO"
     WISDOM = "WISDOM"
     SIGMA = "SIGMA"
+    HEX = "HEX"
 
 
 class OssieAIContextObject(BaseModel):
@@ -93,7 +95,7 @@ OssieAIContext = Union[str, OssieAIContextObject]
 class OssieCustomExtension(BaseModel):
     """Vendor-specific metadata as a serialized JSON string."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     vendor_name: str
     data: str
@@ -102,7 +104,7 @@ class OssieCustomExtension(BaseModel):
 class OssieDialectExpression(BaseModel):
     """Expression in a specific dialect."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     dialect: OssieDialect
     expression: str
@@ -111,7 +113,7 @@ class OssieDialectExpression(BaseModel):
 class OssieExpression(BaseModel):
     """Expression definition with multi-dialect support."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     dialects: list[OssieDialectExpression] = Field(..., min_length=1)
 
@@ -119,15 +121,19 @@ class OssieExpression(BaseModel):
 class OssieDimension(BaseModel):
     """Dimension metadata on a field."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-    is_time: Optional[bool] = None
+    # The schema types this `boolean`, which admits only true and false. A plain
+    # `bool` would let pydantic's lax mode accept "yes", "1", 1 or 1.0 and store a
+    # real boolean, so input the schema forbids is silently rewritten into output it
+    # allows, and the mistake is never reported.
+    is_time: Optional[StrictBool] = None
 
 
 class OssieField(BaseModel):
     """Row-level attribute for grouping, filtering, and metric expressions."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str = Field(..., min_length=1)
     expression: OssieExpression
@@ -155,7 +161,7 @@ class OssieField(BaseModel):
 class OssieDataset(BaseModel):
     """Logical dataset representing a business entity (fact or dimension table)."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str = Field(..., min_length=1)
     source: str = Field(..., min_length=1)
@@ -170,7 +176,7 @@ class OssieDataset(BaseModel):
 class OssieRelationship(BaseModel):
     """Foreign key relationship between datasets."""
 
-    model_config = ConfigDict(frozen=True, populate_by_name=True)
+    model_config = ConfigDict(frozen=True, extra="forbid", populate_by_name=True)
 
     name: str = Field(..., min_length=1)
     from_dataset: str = Field(..., alias="from", min_length=1)
@@ -184,7 +190,7 @@ class OssieRelationship(BaseModel):
 class OssieMetric(BaseModel):
     """Quantitative measure defined on business data."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str = Field(..., min_length=1)
     expression: OssieExpression
@@ -197,7 +203,7 @@ class OssieMetric(BaseModel):
 class OssieSemanticModel(BaseModel):
     """Semantic model: the datasets, relationships, and metrics for one business domain."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str = Field(..., min_length=1)
     description: Optional[str] = None
@@ -213,7 +219,10 @@ class OssieDocument(OssieSemanticModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    version: str = "0.2.0.dev0"
+    # The schema pins this with `const`, so a document may not declare any other
+    # version. Mirrored as a Literal rather than a plain str, which would let the
+    # package serialize a version the schema rejects.
+    version: Literal["0.2.0.dev0"] = "0.2.0.dev0"
 
     @model_serializer(mode="wrap")
     def _serialize_document(self, handler: SerializerFunctionWrapHandler):

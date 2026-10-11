@@ -77,6 +77,10 @@ class MetricExpressionTranslatorTest {
                         "(SUM([orders].[profit]) / (IF (SUM([orders].[revenue]) = 0) THEN NULL ELSE SUM([orders].[revenue]) END))"),
                 Arguments.of("SUM(CASE WHEN orders.status = 'paid' THEN orders.amount ELSE 0 END)",
                         "SUM((IF ([orders].[status] = 'paid') THEN [orders].[amount] ELSE 0 END))"),
+                Arguments.of("SUM(CASE WHEN orders.status IN ('paid', 'pending') THEN orders.amount ELSE 0 END)",
+                        "SUM((IF (([orders].[status] = 'paid') OR ([orders].[status] = 'pending')) THEN [orders].[amount] ELSE 0 END))"),
+                Arguments.of("SUM(CASE WHEN orders.amount NOT IN (-1, +2) THEN 1 ELSE 0 END)",
+                        "SUM((IF (NOT (([orders].[amount] = (-1)) OR ([orders].[amount] = 2))) THEN 1 ELSE 0 END))"),
                 Arguments.of("COALESCE(SUM(orders.amount), AVG(orders.revenue), 0)",
                         "IFNULL(SUM([orders].[amount]), IFNULL(AVG([orders].[revenue]), 0))"),
                 Arguments.of("SUM(CASE WHEN orders.amount IS NOT NULL THEN orders.amount END)",
@@ -363,10 +367,33 @@ class MetricExpressionTranslatorTest {
             "SUM(orders.amount).attribute", "private_schema.SUM(orders.amount)", "\"SUM\"(orders.amount)",
             "SUM(CASE orders.amount WHEN 1 THEN 2 ELSE 0 END)", "N'prefixed'",
             "orders.status ISNULL", "orders.status NOTNULL", "PRIOR orders.amount = orders.quantity",
-            "!orders.active", "(SELECT amount FROM orders)", "orders.amount IN (1, 2)",
+            "!orders.active", "(SELECT amount FROM orders)",
             "SUM(orders.amount) AS alias", "orders.amount(+) = orders.quantity"})
     void parserAcceptanceNeverDiscardsUnsupportedSqlModifiers(String expression) {
         assertThrows(ConversionException.class, () -> translate("SNOWFLAKE", expression), expression);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"orders.amount IN ()", "orders.amount IN (SELECT amount FROM orders)",
+            "(orders.amount, orders.quantity) IN ((1, 2))", "orders.amount IN ((1, 2))",
+            "orders.amount + 1 IN (1, 2)", "orders.amount IN (orders.quantity)",
+            "orders.amount IN (1 + 2)", "orders.amount IN (+NULL)", "orders.active IN (NOT TRUE)",
+            "orders.amount GLOBAL IN (1)", "orders.amount(+) IN (1)", "PRIOR orders.amount IN (1)",
+            "orders.amount IN ('1')", "orders.missing IN (1)",
+            "orders.amount IN (1) OR orders.active", "NOT orders.amount IN (1) AND orders.active"})
+    void rejectsUnsupportedMembershipOperandsAndModifiers(String predicate) {
+        for (String dialect : SQL_DIALECTS) {
+            assertThrows(ConversionException.class, () -> translate(dialect,
+                    "SUM(CASE WHEN " + predicate + " THEN 1 ELSE 0 END)"), predicate);
+        }
+    }
+
+    @Test
+    void membershipListsDoNotIntroduceLinearNesting() {
+        String values = String.join(", ", java.util.Collections.nCopies(512, "1"));
+        String result = translate("SNOWFLAKE",
+                "SUM(CASE WHEN orders.amount IN (" + values + ") THEN 1 ELSE 0 END)");
+        assertEquals(result, translate("TABLEAU", result));
     }
 
     @ParameterizedTest

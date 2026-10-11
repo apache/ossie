@@ -77,6 +77,10 @@ converter/ontology:
   - changed-files:
       - any-glob-to-any-file: 'converters/ontology/**'
 
+converter/holistics:
+  - changed-files:
+      - any-glob-to-any-file: 'converters/holistics/**'
+
 # Other areas
 cli:
   - changed-files:

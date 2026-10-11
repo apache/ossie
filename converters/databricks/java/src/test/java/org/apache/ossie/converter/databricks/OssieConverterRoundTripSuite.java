@@ -510,10 +510,15 @@ public class OssieConverterRoundTripSuite {
     assertEquals(e1, e2, "join nesting" + ctx);
   }
 
+  // Import labels each expression with the most portable dialect it fits, so a DATABRICKS
+  // expression can come back as OSSIE_SQL_2026 or ANSI_SQL; the round trip preserves its text.
+  private static final Set<String> CONVERTER_DIALECTS =
+      Set.of("DATABRICKS", "ANSI_SQL", "OSSIE_SQL_2026");
+
   private static String exprOf(Map<String, Object> obj) {
     for (Object dObj : asList(asMap(obj.get("expression")).get("dialects"))) {
       Map<String, Object> d = asMap(dObj);
-      if ("DATABRICKS".equals(d.get("dialect"))) {
+      if (CONVERTER_DIALECTS.contains(d.get("dialect"))) {
         return (String) d.get("expression");
       }
     }

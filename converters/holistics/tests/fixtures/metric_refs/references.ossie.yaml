@@ -1,0 +1,128 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# An Ossie document written to exercise a metric that names another metric.
+#
+# AML gives a metric two homes, and the two take different bodies. A model-level
+# `measure` takes `@sql`, which resolves inside one model. A dataset-level
+# `metric` takes `@aql`, which spans models. A reference across that line only
+# works one way: AQL names a measure, and a `@sql` body has no spelling for a
+# dataset-level metric.
+#
+# So the referenced metric decides where the referencing one can go, and these
+# metrics cover each way that lands. The ecommerce tables are the ones the
+# Holistics BigQuery demo connection carries, so the generated AML compiles
+# against a real schema rather than an invented one.
+
+version: "0.2.0.dev0"
+name: metric_references
+description: Metrics that name other metrics, across both AML metric homes
+
+datasets:
+  - name: orders
+    source: "`ecommerce`.`orders`"
+    primary_key: [id]
+    fields:
+      - name: id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: id}]}
+        datatype: Decimal
+      - name: user_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: user_id}]}
+        datatype: Decimal
+
+  - name: items
+    source: "`ecommerce`.`order_items`"
+    primary_key: [id]
+    fields:
+      - name: id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: id}]}
+        datatype: Decimal
+      - name: order_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: order_id}]}
+        datatype: Decimal
+      - name: quantity
+        expression: {dialects: [{dialect: ANSI_SQL, expression: quantity}]}
+        datatype: Decimal
+
+  - name: users
+    source: "`ecommerce`.`users`"
+    primary_key: [id]
+    fields:
+      - name: id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: id}]}
+        datatype: Decimal
+
+relationships:
+  - name: items_to_orders
+    from: items
+    to: orders
+    from_columns: [order_id]
+    to_columns: [id]
+  - name: orders_to_users
+    from: orders
+    to: users
+    from_columns: [user_id]
+    to_columns: [id]
+
+metrics:
+  - name: items_quantity
+    description: A plain measure on one model, which the metrics below reference
+    datatype: Decimal
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(items.quantity)
+
+  - name: quantity_plus_one
+    description: A body naming only another metric, so placement follows the reference
+    datatype: Decimal
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: items_quantity + 1
+
+  - name: quantity_per_customer
+    description: A body spanning two datasets, so AML takes it only as AQL
+    datatype: Decimal
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(items.quantity) / COUNT(users.id)
+
+  - name: half_quantity_per_customer
+    description: An AQL metric naming another AQL metric, which AQL takes by bare name
+    datatype: Decimal
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: quantity_per_customer / 2
+
+  - name: quantity_and_customers
+    description: An AQL metric naming a measure, which AQL takes qualified by its model
+    datatype: Decimal
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: items_quantity + COUNT(users.id)
+
+  - name: scaled_quantity_per_customer
+    description: A SQL body naming an AQL metric, so the body becomes AQL as well
+    datatype: Decimal
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(items.quantity) * quantity_per_customer

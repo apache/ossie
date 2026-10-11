@@ -174,7 +174,7 @@ public class MetricMappingHandler implements PipelineStep {
             // Exact Salesforce dataType restored from custom_extensions (e.g. "Currency")
             // wins over the Tua compiler's derived type.
             sfMetric.putIfAbsent(DATA_TYPE, translated.dataType());
-            sfMetric.put("syntax", "Tua");
+            sfMetric.put(SYNTAX, SYNTAX_TUA);
             sfMetric.put("aggregationType", "UserAgg");
         }
     }

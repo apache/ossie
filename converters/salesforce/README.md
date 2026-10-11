@@ -190,6 +190,7 @@ ossieToSf.convert(Paths.get("input/model.yaml"), Paths.get("output/"));
 | Calculated Tableau fields | `semanticCalculatedDimensions[]` through the existing expression-analysis path |
 | `expression.dialects[].expression` | `dataObjectFieldName` |
 | Field `datatype` | Field `dataType` when a safe mapping exists |
+| `datasets[].primary_key` | A `semanticDimensions[]` entry for each key column no field declares |
 | `relationships[]` | `semanticRelationships[]` |
 | `from_columns` + `to_columns` | `criteria[]` |
 | `metrics[]` | Validated Tua expressions in `semanticCalculatedMeasurements[]` |
@@ -198,14 +199,15 @@ ossieToSf.convert(Paths.get("input/model.yaml"), Paths.get("output/"));
 
 ### Required Salesforce Properties
 
-The semantic model API rejects a payload that omits the model's `dataspace` or a
-data object's `dataObjectType`. Neither has an Ossie equivalent, so export
-supplies them:
+The semantic model API rejects a payload that omits the model's `dataspace`, a
+data object's `dataObjectType`, or a field's `dataType`. None has a guaranteed
+Ossie equivalent, so export supplies them:
 
 | Salesforce | Exported value |
 |------------|----------------|
 | `dataspace` | `default`, the dataspace every Data Cloud org provisions |
 | `semanticDataObjects[].dataObjectType` | `Dmo` when `dataObjectName` ends in `__dlm`, otherwise `Dlo` |
+| field `dataType` | `Text` for a dimension and `Number` for a measurement, when `datatype` yields neither |
 
 Data Cloud suffixes a data object's name with the kind of object it is, so the
 dataset's `source` already carries the reference type: `Orders__dll` is a data
@@ -249,7 +251,7 @@ type exists:
 | `Boolean` | `Boolean` |
 | `Date` | `Date` |
 | `DateTime`, `DateTimeTz` | `DateTime` |
-| `Time`, `Opaque` | Omitted with a warning unless an exact extension type exists |
+| `Time`, `Opaque` | The role default below, with a warning, unless an exact extension type exists |
 
 Salesforce has one `DateTime` type, so exporting timezone-free Ossie `DateTime`
 loses its distinction from `DateTimeTz`; the converter logs a warning because a
@@ -258,6 +260,11 @@ subsequent Salesforce import interprets that value as `DateTimeTz`.
 An exact Salesforce extension value takes precedence over the portable mapping.
 If it conflicts with `datatype`, the converter preserves the exact Salesforce
 value and logs a warning.
+
+Ossie makes `datatype` optional, so a field may reach export carrying no type at
+all. Salesforce rejects such a field, so the converter falls back to the one type
+signal the document still carries, the field's role: a dimension exports as `Text`
+and a measurement as `Number`.
 
 ### Field Role and Time Dimensions
 
@@ -275,6 +282,12 @@ dimensions.
 ### Relationship Handling
 
 **Unsupported relationships** (containing Formula or SemanticField types) are stored in `custom_extensions` at the model level rather than being converted to Ossie relationships.
+
+**Primary key columns** are exported as dimensions. Salesforce resolves a join
+criterion against the declared semantic fields rather than against the table's
+columns, and a dataset is free to name a key column in `primary_key` and nowhere
+else, so a key column no field declares would otherwise take every relationship
+joining on it down with it.
 
 ### Metric expressions
 
@@ -298,10 +311,20 @@ and [aggregation rules](https://developer.salesforce.com/docs/data/semantic-laye
 | `+`, `-`, `*`, `/`, parentheses, numeric constants | Explicitly grouped arithmetic |
 | Searched `CASE WHEN` | `IF … THEN … ELSEIF … ELSE … END` |
 | Comparisons, `AND`, `OR`, `NOT` | Equivalent grouped operators |
+| Field `IN (...)`, `NOT IN (...)` with scalar literals | Grouped equality comparisons joined by `OR`, optionally wrapped in `NOT` |
 | `COALESCE(a, b, …)` | Nested `IFNULL` |
 | `NULLIF(a, b)` | `IF a = b THEN NULL ELSE a END` |
 | `IS NULL`, `IS NOT NULL` | `ISNULL`, `NOT ISNULL` |
 | `ABS`, `ROUND`, `CEIL`, `FLOOR` | `ABS`, `ROUND`, `CEILING`, `FLOOR` |
+
+Membership lists must be nonempty and contain only scalar literals (including NULL
+and signed numbers), with a direct field on the left. Types must be compatible;
+subqueries, tuples and computed operands are unsupported. NULL membership follows
+SQL three-valued logic, including for `NOT IN`.
+When combining membership with `AND` or `OR`, parenthesize each membership
+predicate, for example `(orders.status IN ('paid', 'pending')) AND orders.active`.
+The current SQL parser can misgroup unparenthesized membership before a Boolean
+operator; those forms are rejected rather than translated.
 
 These constructs compose. For example, with declared numeric fields `profit` and
 `revenue` in dataset `orders`:
