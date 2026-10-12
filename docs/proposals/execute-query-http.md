@@ -26,6 +26,9 @@ prototype, not a server, semantic engine, or vendor adapter.
 This proposal binds structured Ossie query submission and status to HTTP/JSON,
 and completed tabular results to Apache Arrow IPC streams. It targets browser
 applications without requiring gRPC. It does not define a new query language.
+It is a complementary access binding, not a replacement for Flight SQL or
+ADBC. Engines may retain those interfaces behind an HTTP adapter; Layer 3
+interpretation remains a separate semantic responsibility.
 
 ## 1. Normative basis and scope
 
@@ -517,35 +520,13 @@ aggregate totals. Batches yielded before complete-result validation are
 consumer has not obtained a verified complete result; applications MUST discard
 or explicitly label previously consumed partial data.
 
-The package's `readBatches` exposes that provisional iteration boundary and
-traverses all pages in manifest order. `execute` materializes and returns only
-after validating the entire result. Both enforce aggregate limits across all
-pages, defaulting to 64 MiB decoded IPC bytes and 1,000,000 rows.
-`readPage(execution: SuccessfulExecution, pageIndex, options)` returns a
-`Promise<Table>` for just one fully validated page, with `allowTruncated` and
-`signal` options. It applies the configured row/byte limits to that page, so it
-can browse a page even when the whole result exceeds those limits; it does not
-assert that unrequested pages were downloaded or validated. For unpaged
-delivery, index `0` reads the single stream and every other index is rejected.
-Limits are configurable; they are client admission limits, not a request to
-silently truncate. The package
-rejects declared truncation unless the caller explicitly opts in; opting in
-does not waive framing, identity, count, or resource-limit validation.
-Arrow decoding and application allocations can exceed the IPC byte size; the
-byte limit is not a heap-size guarantee.
-The prototype additionally caps a control-plane JSON response and each IPC
-metadata message at 1 MiB; these are client resource limits, not semantic rules.
-The client checks FlatBuffer bounds and flat-schema vector counts before
-decoding, and limits expanded metadata per message to `maxResultBytes`,
-including repeated references. This is an explicit admission policy, not a
-claim that decoded Arrow memory usage equals wire size.
-Cross-call lifecycle history is bounded to the 64 most-recently observed
-executions and may be released locally with `forgetExecution`. Active waits
-retain their own identity/transition baseline across history eviction.
-Overlapping requests may return stale pending observations; those cannot
-overwrite newer observations, while identity and terminal immutability checks
-remain mandatory. Forgetting history does not cancel execution or delete
-server results, and the client cannot compare history it no longer retains.
+Clients MAY impose local admission limits and MUST fail explicitly rather than
+silently truncate when those limits are exceeded. A client accepting a declared
+truncated result MUST still enforce identity, schema, count, and framing rules.
+Selected-page consumption MUST NOT be represented as whole-result validation.
+Prototype-specific defaults, memory policies, and public library methods are
+documented in the non-normative implementation notes below; they are not
+requirements to implement this HTTP binding.
 
 ## 5. Authorization and browser deployment
 
@@ -599,14 +580,65 @@ cross-vendor semantic equivalence. A focused, endpoint-specific comparison is
 in the [package README](../../typescript/execution/README.md#feature-comparison).
 
 [Arrow Flight][flight] is an Arrow-oriented RPC transport; Flight SQL adds a
-SQL service protocol. [ADBC][adbc] is a database driver API, not a replacement
-HTTP wire format. A later Flight mapping would need its own authentication,
-capability negotiation, identity, and completion rules. This draft and package
-implement neither Flight nor ADBC.
+database service protocol. [ADBC][adbc] is a database driver API, not an HTTP
+wire format. The [backend mapping](execution-http/backend-mapping.md) describes
+corresponding operations and obligations that cannot be delegated automatically.
+In particular, existing Flight SQL and ADBC endpoints do not gain Ossie query
+semantics merely by receiving a new request envelope.
+
+A separate [ADBC materialization example](../../examples/execution-adbc/README.md)
+demonstrates reusing a real ADBC SQLite result reader behind the existing
+materialized-result contract. It is not an HTTP service, general Layer 3
+compiler, Flight implementation, or adapter certification for other drivers.
+The TypeScript client itself implements neither Flight nor an ADBC driver.
 
 Local fixtures and JSON Schema validation establish only exercised transport
 behavior. They do not establish expression-language conformance, correct
 joins/aggregation, production authorization, or native vendor interoperability.
+
+## 7. Experimental status and implementation evidence (non-normative)
+
+The proposed progression criterion is two independently implemented backends
+demonstrating the same declared Layer 3 subset through a common client. Evidence
+should cover expected answers for grain-sensitive queries, unsupported-query
+refusals, caller/model isolation, cancellation races, paging, and partial or
+failed result delivery. The scope and capability differences must be explicit;
+passing a finite corpus is not proof of general semantic equivalence.
+
+The local TypeScript fixtures and the single ADBC SQLite example do not satisfy
+that criterion. There are no confirmed independent engine commitments recorded
+by this proposal. Keeping the PR experimental avoids treating a prototype as
+community adoption; adoption remains subject to the project's normal process.
+
+A future streaming-partition mode, different metadata attachment rules, or
+renewable access references should be motivated by adapter evidence and reviewed
+as protocol changes. They are not implicit relaxations of this draft's exact
+counts, immutable manifests, page identity, or expiry requirements.
+
+## 8. Prototype implementation notes (non-normative)
+
+The TypeScript package's `readBatches` yields provisional batches in page order;
+`execute` returns a fully validated table; `readPage` validates only a selected
+page (index zero for unpaged delivery). Whole-result operations use aggregate
+limits, while `readPage` uses selected-page limits. Defaults are 64 MiB decoded
+IPC bytes and 1,000,000 rows. Declared truncation requires explicit caller
+acceptance. These are configurable admission policies, not protocol defaults.
+Arrow decoding and application allocations may exceed IPC byte size.
+
+The client limits control JSON and each IPC metadata message to 1 MiB. Its
+predecode FlatBuffer guard checks bounds and schema-vector counts, with repeated
+metadata references charged against `maxResultBytes`. That is prototype
+hardening, not a new Arrow format or a prescribed verifier implementation.
+Replacing generic binary verification with maintained upstream/library support
+is preferable if equivalent pre-allocation safety and resource limits can be
+preserved; Ossie identity/count/type checks would still be needed.
+
+Cross-call history retains 64 recently observed executions and can be released
+with `forgetExecution`, without changing server state. Active waits preserve
+their own identity baseline. Reordered concurrent pending responses cannot
+replace newer observations; terminal and identity checks still apply.
+The client cannot compare forgotten history. Full implementation details and
+security limitations are in the [client README](../../typescript/execution/README.md).
 
 [query-schema]: https://raw.githubusercontent.com/apache/ossie/b5418ee3aa19f117a1c464733de21f5a0dc0326b/validation/mcp/execute-query-query.schema.json
 [foundation-semantics]: https://github.com/apache/ossie/blob/cc0d07099a3ef31e85af1fd93458a52186fae2c6/core-spec/foundational_semantics.md

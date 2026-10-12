@@ -24,6 +24,7 @@ on:
     branches: ["main"]
     paths:
       - "typescript/execution/**"
+      - "examples/execution-adbc/**"
       - "docs/proposals/execute-query-http.md"
       - "docs/proposals/execution-http/**"
       - ".github/workflows/execution-client-ci.yml"
@@ -31,6 +32,7 @@ on:
     branches: ["main"]
     paths:
       - "typescript/execution/**"
+      - "examples/execution-adbc/**"
       - "docs/proposals/execute-query-http.md"
       - "docs/proposals/execution-http/**"
       - ".github/workflows/execution-client-ci.yml"
@@ -69,3 +71,20 @@ jobs:
           export OSSIE_BROWSER_BINARY="$(command -v google-chrome)"
           test -n "$OSSIE_BROWSER_BINARY"
           npm run test:browser
+      - name: Set up Python for ADBC example
+        if: matrix.node-version == '24'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install uv
+        if: matrix.node-version == '24'
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.19"
+      - name: Exercise ADBC-to-TypeScript materialization
+        if: matrix.node-version == '24'
+        working-directory: .
+        run: |
+          uv run --frozen --project examples/execution-adbc pytest examples/execution-adbc
+          uv run --frozen --project examples/execution-adbc python examples/execution-adbc/demo.py --output "$RUNNER_TEMP/ossie-adbc-capture"
+          node examples/execution-adbc/verify-client.mjs "$RUNNER_TEMP/ossie-adbc-capture"

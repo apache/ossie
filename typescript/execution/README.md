@@ -29,6 +29,10 @@ The package does not implement an execution server, semantic evaluator,
 authentication system, Flight transport, or vendor adapters. Local tests
 exercise the protocol against fixtures; they do not prove production vendor
 interoperability, Foundation expression semantics, or row-level security.
+The companion [ADBC SQLite example](../../examples/execution-adbc/README.md)
+exercises a real backend reader and produces payloads for this client. It is
+separate from the npm package and supplies neither a generic Layer 3 compiler
+nor a live HTTP service.
 
 ## HTTP versions
 
@@ -54,6 +58,8 @@ with Flight have not been demonstrated.
 - [OpenAPI 3.1](../../docs/proposals/execution-http/openapi.json), referencing
   those same definitions.
 - [Public TypeScript types](src/types.ts).
+- [Flight SQL / ADBC backend mapping](../../docs/proposals/execution-http/backend-mapping.md)
+  and [materialization example](../../examples/execution-adbc/README.md).
 
 The draft pins the still-open [MCP #529][mcp] at
 `b5418ee3aa19f117a1c464733de21f5a0dc0326b` (query profile `0.4-draft`) and
@@ -392,14 +398,17 @@ uses Arrow, or that two systems implement the same query semantics.
 | [Power BI REST Execute Queries][powerbi-rest] | DAX request against a semantic model | JSON; limits include 100,000 rows or 1,000,000 values, 15 MB; some limited-data/error responses are HTTP `200` | No Arrow result in this REST contract. Applications must inspect the body, not just status. |
 | [Power BI/Analysis Services XMLA with ADOMD][xmla] | A separate Analysis Services client/protocol surface | XMLA text or binary XML, with transport compression options | Binary XML is not evidence of Arrow. Arrow on this path has not been verified. |
 | [Cube REST API][cube] | Cube JSON semantic query, including `/v1/load` | JSON data plus annotations such as title, short title, and type | Prior art for semantic result descriptors; its JSON “columnar” layout is not Arrow IPC. |
-| [Arrow Flight / Flight SQL][flight] | Arrow-oriented RPC; Flight SQL adds a SQL service protocol | Arrow record batches with tickets/endpoints | A distinct transport, not implemented by this browser HTTP client. A future mapping requires separate design. |
-| [ADBC][adbc] | Database driver API with statements and driver-dependent capabilities | Arrow-oriented result consumption | An API abstraction, not an HTTP wire protocol or implemented adapter here. |
+| [Arrow Flight / Flight SQL][flight] | Arrow-oriented RPC; Flight SQL adds a SQL service protocol | Arrow record batches with tickets/endpoints | The backend mapping documents reuse and gaps; no live Flight adapter is included. |
+| [ADBC][adbc] | Database driver API with statements and driver-dependent capabilities | Arrow-oriented result consumption | A separate SQLite materialization example produces this profile's results; the browser package is not an ADBC driver or general backend adapter. |
 
 The [existing Ossie REST discussion][rest-thread] addresses model/catalog
 interchange; [Polaris #4961][polaris] implements semantic-model CRUD.
 Neither establishes this execution endpoint. The draft narrows familiar
 patterns into a proposed browser contract; it does not claim novel transport
 mechanisms or parity with a native vendor client.
+This is a complementary browser binding, not a Flight SQL or ADBC replacement.
+Two independent backend implementations are a proposed adoption criterion,
+not a claim already met by the fixtures or the single ADBC example.
 
 [mcp]: https://github.com/apache/ossie/pull/529
 [foundation]: https://github.com/apache/ossie/pull/246
