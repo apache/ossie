@@ -538,16 +538,36 @@ def test_identifier_min_length_matches_core_schema() -> None:
     checked = 0
     for node, model in _CONSTRAINED_NODES.items():
         for prop, prop_schema in schema["$defs"][node]["properties"].items():
-            expected = prop_schema.get("minLength")
-            if expected is None:
-                continue
-            assert _model_min_length(model, prop) == expected, (
-                f"{node}.{prop} requires minLength {expected} in the schema"
-            )
-            checked += 1
+            # Pydantic spells both as `min_length`: on a str it is a character count,
+            # on a list an item count, so one comparison covers minLength and minItems.
+            for keyword in ("minLength", "minItems"):
+                expected = prop_schema.get(keyword)
+                if expected is None:
+                    continue
+                assert _model_min_length(model, prop) == expected, (
+                    f"{node}.{prop} requires {keyword} {expected} in the schema"
+                )
+                checked += 1
 
     # Guards against the loop silently checking nothing if the schema moves.
-    assert checked == 8
+    assert checked == 13
+
+
+def test_unique_key_definitions_may_not_be_empty() -> None:
+    """The constraint nests: each definition in `unique_keys` needs a column too.
+
+    The parity test above reads only the top level of each property, so the inner
+    `minItems` is pinned here.
+    """
+    schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    schema = json.loads(schema_path.read_text())
+    unique_keys = schema["$defs"]["Dataset"]["properties"]["unique_keys"]
+
+    assert unique_keys["items"]["minItems"] == 1
+
+    with pytest.raises(ValidationError) as error:
+        OssieDataset(name="orders", source="db.s.orders", unique_keys=[[]])
+    assert any(item["loc"] == ("unique_keys", 0) for item in error.value.errors())
 
 
 @pytest.mark.parametrize(

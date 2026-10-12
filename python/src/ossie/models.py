@@ -18,7 +18,7 @@
 import json
 import math
 from enum import Enum
-from typing import Any, Literal, Optional, Union
+from typing import Annotated, Any, Literal, Optional, Union
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, StrictBool, model_serializer
@@ -248,8 +248,12 @@ class OssieDataset(BaseModel):
 
     name: str = Field(..., min_length=1)
     source: str = Field(..., min_length=1)
-    primary_key: Optional[list[str]] = None
-    unique_keys: Optional[list[list[str]]] = None
+    # The schema gives both `minItems: 1`, as it does the relationship column arrays.
+    # An empty key names nothing, and `Field` mirrors minItems as `min_length` here.
+    primary_key: Optional[list[str]] = Field(default=None, min_length=1)
+    unique_keys: Optional[list[Annotated[list[str], Field(min_length=1)]]] = Field(
+        default=None, min_length=1
+    )
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
     fields: Optional[list[OssieField]] = None
