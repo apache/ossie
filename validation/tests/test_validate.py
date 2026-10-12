@@ -416,6 +416,27 @@ def test_accepts_a_single_expression_containing_a_semicolon(expression: str) -> 
     assert _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx") is None
 
 
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    ["", "   ", "\n", ";", ";;", "-- comment only", "/* comment only */"],
+    ids=[
+        "empty",
+        "whitespace",
+        "newline",
+        "semicolon",
+        "semicolons",
+        "line-comment",
+        "block-comment",
+    ],
+)
+def test_rejects_an_expression_holding_no_statement(expression: str) -> None:
+    """Nothing to validate is an error, not a pass through `SELECT {expr}`."""
+    error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert error == "[SQL] ctx: expression is empty"
+
+
 def _relationship(to_columns: list[str], to: str = "customers") -> dict:
     return {
         "name": "orders_to_customers",
@@ -635,6 +656,34 @@ def test_sql_error_in_metric_with_warning_in_name_is_an_error(run_validator):
     assert exit_code == 1
     assert "Validation FAILED with 1 error(s)" in output
     assert "[SQL] Metric 'Warning: broken_metric'" in output
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_empty_field_expression_fails_validation(run_validator):
+    dataset = {**_ORDERS, "fields": [{
+        "name": "blank",
+        "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": ""}]},
+    }]}
+    document = _document([dataset], [])
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "[SQL] Field 'orders.blank' in model 'm' (ANSI_SQL): expression is empty" in output
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_comment_only_metric_expression_fails_validation(run_validator):
+    document = _document([_ORDERS], [])
+    document["metrics"] = [{
+        "name": "blank_total",
+        "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "-- TODO"}]},
+    }]
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "[SQL] Metric 'blank_total' in model 'm' (ANSI_SQL): expression is empty" in output
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
