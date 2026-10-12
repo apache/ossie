@@ -62,6 +62,8 @@ The core language is based on **ANSI SQL:2003 Core** (ISO/IEC 9075-2:2003), sele
 - Well-defined semantics  
 - Support for modern analytical features (window functions, CTEs)
 
+The language also requires optional SQL:2003 feature T612, the aggregate `<filter clause>` (`FILTER (WHERE ...)`), which is not part of Core. See [Conditional Aggregations](#conditional-aggregations-required).
+
 ### Namespacing and Identifier Resolution
 
 The identifiers will match standard SQL identifiers:
