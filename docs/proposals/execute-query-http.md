@@ -17,14 +17,17 @@
  under the License.
 -->
 
-# Ossie HTTP execution — DRAFT 0.1
+# Ossie HTTP execution — materialized base and live extension
 
-**Status:** proposal `0.1-draft`, not an adopted Apache Ossie standard.
+**Status:** materialized proposal `0.1-draft` with an opt-in
+[`0.2-draft` live extension](execution-http/live-streaming.md), not an adopted Apache Ossie standard.
 The associated TypeScript package is a client and local protocol-validation
 prototype, not a server, semantic engine, or vendor adapter.
 
 This proposal binds structured Ossie query submission and status to HTTP/JSON,
-and completed tabular results to Apache Arrow IPC streams. It targets browser
+and tabular results to Apache Arrow IPC streams. The base materialized mode
+offers completed replayable results; the negotiated live extension permits
+downloading while execution is running. It targets browser
 applications without requiring gRPC. It does not define a new query language.
 It is a complementary access binding, not a replacement for Flight SQL or
 ADBC. Engines may retain those interfaces behind an HTTP adapter; Layer 3
@@ -48,6 +51,9 @@ JSON Schema (draft 2020-12).
 [openapi.json](execution-http/openapi.json) describes the HTTP operations using
 references to those definitions, not a second set of object schemas. These
 documents specify structure; the rules below additionally specify behavior.
+The separate [live schema](execution-http/live.schema.json) reuses the base
+query/column definitions and defines versioned live request and response shapes.
+The base schema and materialized method contracts are not reinterpreted.
 
 The lowercase `expression`, `projection`, `predicate`, and `query` definitions
 are copied unchanged from the [pinned MCP query schema][query-schema].
@@ -55,14 +61,17 @@ The public `Query` definition adds only a portable integer bound to `limit`.
 All wire property names are case-sensitive lower snake case; schema definition
 names such as `Execution` are not wire keys.
 
-In scope: one read-only query, immutable model binding, bounded synchronous wait,
+In scope for the materialized base: one read-only query, immutable model binding, bounded synchronous wait,
 polling, cancellation, errors, and one materialized result delivered as a single
 stream or immutable pages. Out of scope:
 model/catalog CRUD, native-query escape, query compilation, semantic evaluation,
 sessions, transactions, mutations, SSE/progress subscriptions, multi-result or
-live-result delivery, cursor APIs, result-link renewal, and automatic repair or
+live-result delivery without the negotiated extension, cursor APIs, result-link renewal, and automatic repair or
 re-execution.
 Flight is a possible future mapping, not implemented or negotiated by this draft.
+Live delivery is an alternative to materialization, not a change to Arrow IPC.
+Materialized delivery does not require keeping the whole result in memory:
+an implementation can spool to disk, as the ADBC example does.
 
 ### HTTP versions and transport behavior
 
@@ -123,10 +132,13 @@ stricter than the pinned MCP schema's unbounded nonnegative `limit`.
 }
 ```
 
-The three version values MUST match this draft exactly. `query_shapes` is a
+The three base version values MUST match this draft exactly. `query_shapes` is a
 nonempty unique list; `features` is a possibly empty unique list. These advertise
 support, not semantic-conformance certificates. `max_wait_seconds` MUST be an
 integer from 0 through 60.
+An endpoint supporting the live extension additionally advertises
+`live-stream-v0.2` in `features`. The base `contract_version` here remains
+`0.1-draft`; the explicitly opted-in live executions use `0.2-draft`.
 
 `GET /bindings/{id}` returns a `Binding`; `{id}` is its `data_source_id`:
 
@@ -152,6 +164,9 @@ Paths are relative to a deployment-selected base URL. Control requests and
 successful responses use `application/json`. Servers MUST NOT redirect these
 operations. A non-2xx response MUST use `application/problem+json` with
 `ProblemDetails`; this draft uses 4xx/5xx for failures, not redirects.
+The following table describes materialized executions. Live requests use the
+same control paths with the separate shapes and readiness/error rules in
+[the live extension](execution-http/live-streaming.md).
 
 | Operation | Successful response |
 | --- | --- |
@@ -203,7 +218,7 @@ POST beyond `N` seconds waiting for execution completion. It returns `200` if
 terminal or `202` if pending, without cancelling the execution at wait expiry.
 Clients MAY discover/cache the advertised bound or validate only the protocol
 range locally and rely on the server to enforce its advertised maximum.
-The TypeScript prototype does not automatically preflight capabilities or
+The materialized TypeScript methods do not automatically preflight capabilities or
 bindings and does not cache discovery results for submission-time enforcement.
 Its explicit getters return validated data; applications can use that data to
 choose requests, while the server enforces its advertised restrictions.
@@ -296,7 +311,7 @@ executions for inspection; `wait` and `execute` throw for those states.
 
 ## 4. Results and Arrow contract
 
-A successful result is one immutable materialization, available only after
+In materialized mode a successful result is one immutable materialization, available only after
 execution succeeds. Its `ResultManifest` MUST provide **exactly one** delivery
 form: `url` for one self-contained Arrow IPC stream, or a nonempty `pages` array
 of `ResultPage` descriptors, each pointing to a self-contained Arrow IPC stream.
@@ -610,10 +625,12 @@ that criterion. There are no confirmed independent engine commitments recorded
 by this proposal. Keeping the PR experimental avoids treating a prototype as
 community adoption; adoption remains subject to the project's normal process.
 
-A future streaming-partition mode, different metadata attachment rules, or
-renewable access references should be motivated by adapter evidence and reviewed
-as protocol changes. They are not implicit relaxations of this draft's exact
-counts, immutable manifests, page identity, or expiry requirements.
+The separately negotiated live extension defers final counts and starts a
+forward-only stream before completion; it does not relax materialized counts,
+immutable manifests, page identity, or replay guarantees. It is tested with
+controlled HTTP producers, not a live AS, Flight SQL, or ADBC engine.
+Live pagination, different metadata attachment rules, and renewable access
+references remain follow-up protocol changes requiring evidence and review.
 
 ## 8. Prototype implementation notes (non-normative)
 

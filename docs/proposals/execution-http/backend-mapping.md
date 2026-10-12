@@ -24,6 +24,9 @@ additional wire contract or adopted standard.** Flight/ADBC and a browser HTTP
 binding are complementary, not replacements for each other. Reusing established
 backend execution/data APIs can reduce gateway work without pretending that
 they already provide Ossie semantic planning or the HTTP draft's guarantees.
+The main table concerns materialized delivery; the
+[negotiated live extension](live-streaming.md) offers an alternative described
+below without weakening those materialized guarantees.
 
 ## Concrete boundaries
 
@@ -79,7 +82,32 @@ through. Even when some Arrow buffers can be shared in-process, metadata
 rewriting and IPC serialization still incur work: no zero-copy, live-streaming,
 or Flight performance-parity claim follows.
 
-## Evidence first, then possible extensions
+## Live delivery without materialization
+
+The opt-in `0.2-draft` live mode can consume a Flight or ADBC reader as batches
+become available, serialize plain IPC directly to one forward-only HTTP stream,
+and compute row/decoded-byte counts during output rather than before download.
+The schema and Ossie result identity must be established before data starts.
+Each emitted batch must contain final values with the required ordering; no
+correction/retraction protocol is defined. A blocking physical operator may
+still delay the first batch.
+
+The gateway exposes stream readiness on a running execution and concurrently
+retains status. Backend or serialization failure after data headers have been
+sent is published as terminal `failed` with a structured error, then the data
+stream terminates. Final success requires production to finish and publishes
+exact counts for the same result id. The browser validates both the stream and
+that terminal record; EOF alone is not success. ADBC iterator exhaustion or
+Flight RPC completion must not be conflated with successful delivery to a
+particular downstream browser.
+
+No replay or indexed page retrieval is promised for this mode. The gateway
+still owns authorization, state retention, cancellation handling, descriptor
+identity, and IPC framing; it is not a transparent byte proxy and no zero-copy
+claim follows. A server-side live gateway over Flight/ADBC is not implemented
+by the current example.
+
+## Evidence and possible further extensions
 
 The [ADBC SQLite example](../../../examples/execution-adbc/README.md) implements
 one narrow path today: trusted SQL or an existing ADBC reader into immutable,
@@ -89,12 +117,12 @@ validators through synthetic Fetch. It does not run a Flight SQL service or a
 live HTTP engine, implement a planner/job gateway, or prove multiple vendors
 adopt the profile.
 
-This makes the existing materialized contract testable before weakening it.
-A future streaming-partition mode could expose evolving endpoints/unknown
-totals; a future optional-metadata mode could reduce annotation requirements.
-Both would change observable guarantees and need explicit negotiation,
-completeness/ordering/expiry rules, and evidence from additional integrations.
-They are follow-up questions, **not changes made by this mapping or example**.
+This makes the existing materialized contract testable without changing it.
+Controlled HTTP producers exercise the separate live client's early-batch and
+late-error paths; these do not prove live AS or Flight SQL interoperability.
+Multiple evolving live partitions, optional embedded identity metadata, and
+renewable result references remain future protocol changes requiring explicit
+negotiation and evidence. The live extension does not add them implicitly.
 
 [flight]: https://arrow.apache.org/docs/format/Flight.html
 [flight-sql]: https://arrow.apache.org/docs/format/FlightSql.html

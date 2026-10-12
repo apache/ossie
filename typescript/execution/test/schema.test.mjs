@@ -28,13 +28,17 @@ import {
 import {
   BINDING, CAPABILITIES, ERROR, REQUEST, arrowFixture, execution, pagedFixture,
 } from "./fixtures.mjs";
+import { liveFixture } from "./live-fixtures.mjs";
 
 const schema = JSON.parse(await readFile(new URL("../../../docs/proposals/execution-http/execution.schema.json", import.meta.url), "utf8"));
+const liveSchema = JSON.parse(await readFile(new URL("../../../docs/proposals/execution-http/live.schema.json", import.meta.url), "utf8"));
 const openapi = JSON.parse(await readFile(new URL("../../../docs/proposals/execution-http/openapi.json", import.meta.url), "utf8"));
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
-ajv.addSchema(schema);
+ajv.addSchema(schema, "execution.schema.json");
+ajv.addSchema(liveSchema, "live.schema.json");
 const validate = name => ajv.getSchema(`${schema.$id}#/$defs/${name}`);
+const validateLive = name => ajv.getSchema(`${liveSchema.$id}#/$defs/${name}`);
 
 test("independent JSON Schema validators accept every fixture envelope and Arrow metadata document", () => {
   const fixture = arrowFixture();
@@ -111,6 +115,11 @@ test("OpenAPI defines lifecycle and references only available execution schema d
       assert.ok(schema.$defs[name], `Unresolved schema reference ${name}`);
       references++;
     }
+    if (typeof value.$ref === "string" && value.$ref.includes("live.schema.json#/$defs/")) {
+      const name = value.$ref.split("#/$defs/")[1];
+      assert.ok(liveSchema.$defs[name], `Unresolved live schema reference ${name}`);
+      references++;
+    }
     for (const item of Object.values(value)) walk(item);
   }
   walk(openapi);
@@ -121,9 +130,8 @@ test("OpenAPI media-type examples validate against their referenced contract def
   let examples = 0;
   function walk(value) {
     if (!value || typeof value !== "object") return;
-    const reference = value.schema?.$ref;
-    if (typeof reference === "string" && reference.includes("execution.schema.json#/$defs/")) {
-      const validator = validate(reference.split("#/$defs/")[1]);
+    if (value.schema) {
+      const validator = ajv.compile(value.schema);
       const values = [
         ...(Object.hasOwn(value, "example") ? [value.example] : []),
         ...Object.values(value.examples ?? {}).filter(example => Object.hasOwn(example, "value")).map(example => example.value),
@@ -153,7 +161,10 @@ test("normative draft JSON and HTTP-body examples conform structurally to the sh
       : "model" in value && "query_shapes" in value ? "Binding"
       : undefined;
     assert.ok(name, "Every documented JSON object must identify a known contract definition");
-    const validator = validate(name);
+    const liveName = value.contract_version === "0.2-draft"
+      ? { Execution: "LiveExecution", Request: "LiveRequest", ExecutionMetadata: "LiveExecutionMetadata" }[name]
+      : undefined;
+    const validator = liveName ? validateLive(liveName) : validate(name);
     assert.ok(validator(value), `${name}: ${ajv.errorsText(validator.errors)}`);
     if (language === "http" && name === "ProblemDetails") {
       assert.equal(value.status, Number(/^HTTP\/1\.1 (\d+)/.exec(contents)?.[1]));
@@ -162,4 +173,67 @@ test("normative draft JSON and HTTP-body examples conform structurally to the sh
   }
   assert.deepEqual([...definitions].sort(),
     ["Binding", "Capabilities", "Execution", "ExecutionMetadata", "ProblemDetails", "Request"]);
+});
+
+test("LIVE JSON Schema accepts opt-in envelopes and rejects materialized/live shape mixing", () => {
+  const fixture = liveFixture();
+  const request = { ...REQUEST, contract_version: "0.2-draft", delivery: "live" };
+  const examples = [
+    ["LiveRequest", request],
+    ["LiveStream", fixture.stream],
+    ["LiveCompletion", fixture.completion],
+    ["LiveExecutionMetadata", JSON.parse(fixture.schema.metadata.get(EXECUTION_METADATA_KEY))],
+    ["LiveExecution", fixture.live("queued")],
+    ["LiveExecution", fixture.running],
+    ["LiveExecution", fixture.live("cancelling")],
+    ["LiveExecution", fixture.live("failed", { error: ERROR })],
+    ["LiveExecution", fixture.live("cancelled")],
+    ["LiveExecution", fixture.succeeded],
+  ];
+  for (const [name, value] of examples) {
+    const validator = validateLive(name);
+    assert.ok(validator(value), `${name}: ${ajv.errorsText(validator.errors)}`);
+  }
+  const invalid = [
+    ["LiveRequest", REQUEST],
+    ["LiveRequest", { ...request, contract_version: "0.1-draft" }],
+    ["LiveRequest", { ...request, query: { fields: ["x"], measures: ["y"] } }],
+    ["LiveStream", { ...fixture.stream, row_count: 2 }],
+    ["LiveStream", { ...fixture.stream, completeness: "complete" }],
+    ["LiveStream", { ...fixture.stream, replayable: true }],
+    ["LiveStream", { ...fixture.stream, pages: [] }],
+    ["LiveCompletion", { ...fixture.completion, row_count: Number.MAX_SAFE_INTEGER + 1 }],
+    ["LiveCompletion", { ...fixture.completion, completeness: "truncated" }],
+    ["LiveCompletion", { ...fixture.completion, truncation_reason: "unexpected" }],
+    ["LiveExecution", { ...fixture.running, result: arrowFixture().succeeded.result }],
+    ["LiveExecution", { ...fixture.running, state: "queued" }],
+    ["LiveExecution", { ...fixture.running, completion: fixture.completion }],
+    ["LiveExecution", { ...fixture.succeeded, completion: undefined }],
+    ["LiveExecution", { ...fixture.succeeded, stream: undefined }],
+    ["LiveExecution", fixture.live("failed")],
+    ["LiveExecution", fixture.live("cancelled", { progress: {} })],
+    ["LiveExecutionMetadata", { ...JSON.parse(fixture.schema.metadata.get(EXECUTION_METADATA_KEY)), page_index: 0, row_offset: 0 }],
+    ["LiveExecutionMetadata", { ...JSON.parse(fixture.schema.metadata.get(EXECUTION_METADATA_KEY)), delivery: "live" }],
+  ];
+  for (const [name, value] of invalid) assert.equal(validateLive(name)(value), false, name);
+  assert.equal(validate("Request")(request), false);
+  assert.equal(validate("Execution")(fixture.running), false);
+});
+
+test("LIVE companion proposal JSON examples conform to the separate live schema", async () => {
+  const document = await readFile(new URL("../../../docs/proposals/execution-http/live-streaming.md", import.meta.url), "utf8");
+  const definitions = new Set();
+  for (const [, contents] of document.matchAll(/```json\r?\n([\s\S]*?)\r?\n```/g)) {
+    const value = JSON.parse(contents);
+    const name = "state" in value ? "LiveExecution"
+      : "query" in value ? "LiveRequest"
+      : "execution_id" in value ? "LiveExecutionMetadata"
+      : "url" in value ? "LiveStream" : "LiveCompletion";
+    const validator = validateLive(name);
+    assert.ok(validator(value), `${name}: ${ajv.errorsText(validator.errors)}`);
+    definitions.add(name);
+  }
+  for (const required of ["LiveRequest", "LiveExecution", "LiveCompletion"]) {
+    assert.ok(definitions.has(required), `Missing documented ${required} example`);
+  }
 });

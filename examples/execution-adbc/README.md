@@ -32,6 +32,12 @@ trusted backend SQL -> ADBC SQLite execute/fetch_record_batch
                    -> PyArrow IPC materialization -> existing TypeScript client
 ```
 
+This example intentionally exercises the replayable materialized `0.1-draft`
+mode and writes files incrementally; it does not retain the entire result in
+RAM. The [live `0.2-draft` extension](../../docs/proposals/execution-http/live-streaming.md)
+permits early delivery without that spool, but a live HTTP/status gateway over
+this reader is not implemented here.
+
 The CLI seeds a synthetic SQLite fixture, then opens it read-only through ADBC.
 It queries deliberately unsorted input with `ORDER BY sequence`, preserving
 `9007199254740993`, a null, and `-7` exactly. There is no public SQL submission

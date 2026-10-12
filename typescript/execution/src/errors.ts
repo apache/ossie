@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import type { Execution, ProblemDetails, QueryError } from "./types.js";
+import type { Execution, LiveExecution, ProblemDetails, QueryError } from "./types.js";
 
 /** Base error. Messages deliberately exclude URLs, credentials and server bodies.
  * Structured server details are untrusted data and must not be logged blindly.
@@ -46,6 +46,20 @@ export class QueryExecutionError extends OssieError {
 export class ExecutionCancelledError extends OssieError {
   constructor(public readonly execution: Extract<Execution, { state: "cancelled" }>) {
     super("EXECUTION_CANCELLED", "The query execution was cancelled.");
+  }
+}
+
+export class LiveQueryExecutionError extends OssieError {
+  readonly error: QueryError;
+  constructor(public readonly execution: Extract<LiveExecution, { state: "failed" }>) {
+    super(execution.error.code, "The live query execution failed.");
+    this.error = execution.error;
+  }
+}
+
+export class LiveExecutionCancelledError extends OssieError {
+  constructor(public readonly execution: Extract<LiveExecution, { state: "cancelled" }>) {
+    super("EXECUTION_CANCELLED", "The live query execution was cancelled.");
   }
 }
 

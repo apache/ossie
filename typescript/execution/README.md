@@ -20,9 +20,11 @@
 # Ossie execution client — DRAFT
 
 A browser-oriented TypeScript client prototype for
-[Ossie HTTP execution `0.1-draft`](../../docs/proposals/execute-query-http.md):
+[Ossie HTTP execution](../../docs/proposals/execute-query-http.md):
 HTTP/JSON submission, status and cancellation, followed by materialized
-Apache Arrow IPC results, either in one stream or immutable pages.
+`0.1-draft` Apache Arrow IPC results, either in one stream or immutable pages.
+An explicitly opted-in [`0.2-draft` live extension](../../docs/proposals/execution-http/live-streaming.md)
+also delivers batches while execution is running.
 
 **This is a proposal, not an adopted standard or a published-service promise.**
 The package does not implement an execution server, semantic evaluator,
@@ -58,6 +60,8 @@ with Flight have not been demonstrated.
 - [OpenAPI 3.1](../../docs/proposals/execution-http/openapi.json), referencing
   those same definitions.
 - [Public TypeScript types](src/types.ts).
+- [Live extension](../../docs/proposals/execution-http/live-streaming.md) and
+  its [separate schema](../../docs/proposals/execution-http/live.schema.json).
 - [Flight SQL / ADBC backend mapping](../../docs/proposals/execution-http/backend-mapping.md)
   and [materialization example](../../examples/execution-adbc/README.md).
 
@@ -92,6 +96,93 @@ It is a repository-local package; the examples do not imply npm publication.
 Unless noted otherwise, methods accept `RequestOptions` with an optional
 `signal`. Types, `OssieClient`, default-limit constants, and error classes are
 exported from the package entry point.
+
+### Opt-in live API
+
+The existing methods above remain materialized `0.1-draft`. Live delivery uses
+separate methods so an old call cannot silently acquire different completeness,
+replay or pagination semantics.
+
+| Live method | Purpose / return type |
+| --- | --- |
+| `submitLive(request, options?)` | `Promise<LiveExecution>`; verifies the `live-stream-v0.2` capability and sends one explicitly versioned live POST. Accepts `SubmitOptions`. |
+| `getLiveExecution(id, options?)` | `Promise<LiveExecution>`; inspect status without downloading. Accepts `RequestOptions`. |
+| `cancelLive(id, options?)` | `Promise<LiveExecution>`; explicit best-effort backend cancellation. Accepts `RequestOptions`. |
+| `stream(request, options?)` | `AsyncGenerator<RecordBatch, LiveSuccessfulExecution>`; submit once, start downloading when ready, and monitor status concurrently. Accepts `LiveOptions`. |
+| `readLiveBatches(execution, options?)` | Attach to an already submitted live execution without another POST or capability preflight. Same iterator return type; accepts `LiveReadOptions`. |
+| `executeLive(request, options?)` | `Promise<{ execution: LiveSuccessfulExecution; table: Table }>`; uses the same live workflow but buffers within limits and returns only verified data. |
+
+`request` still has the familiar `{ data_source_id, query }` client shape.
+The submitting live methods add the wire version/delivery fields themselves.
+`LiveReadOptions` provides `signal`, `allowTruncated` and an optional
+`onProgress(LiveExecution)` callback (which may return a promise).
+`LiveOptions` also includes `waitSeconds`. Capability discovery, submission,
+status monitoring and download share one overall client deadline.
+
+```ts
+const request = {
+  data_source_id: "sales-v7",
+  query: { fields: ["orders.order_id", "orders.amount"], limit: 100 },
+};
+const iterator = client.stream(request, { waitSeconds: 0 });
+try {
+  while (true) {
+    const step = await iterator.next();
+    if (step.done) {
+      // Verified terminal success; step.value includes exact completion counts.
+      console.log(step.value.completion.row_count);
+      break;
+    }
+    // step.value is a provisional Arrow RecordBatch, not a completed answer.
+  }
+} finally {
+  // Early return releases local reader/poller resources; it does not cancel the engine.
+  await iterator.return(undefined as never);
+}
+```
+
+Do not call `executeLive` after this example to finish it: that would submit a
+second execution. `executeLive` is an alternative consumption style.
+After early return or any failure, discard or explicitly mark previously seen
+batches incomplete. A `for await` loop can consume batches too; only normal
+exhaustion validates the result, and an early `break` does not.
+
+Live readiness is not terminal success. Once the schema is ready, an execution
+can publish its stream while still `running`; the reader must not wait for
+completion before opening it. Counts are absent initially, never fake zeroes.
+The server records a final completion only after evaluation and serialization
+finish. The client checks that record's result id and exact row/decoded-byte
+counts against the fully consumed stream. HTTP `200`, EOF, an Arrow end marker,
+or a succeeded status by itself does not certify delivery.
+
+The data response stays plain Arrow IPC. Once its headers have been sent, late
+engine errors are reported by the execution status resource and the stream
+terminates. The client monitors status concurrently and throws
+`LiveQueryExecutionError` (preserving the Foundation/server code and `.error`)
+or `LiveExecutionCancelledError`; unavailable status, malformed data and
+transport errors also fail the operation. No HTTP trailer support is needed.
+Terminal success may arrive before the last buffered network bytes; the client
+still reads and validates them. EOF may arrive before terminal status; the
+client still waits for that status within the original deadline.
+
+Live streams are single-use (`replayable: false`), not immutable pages:
+no indexed browsing, resume, implicit retry or repeated acquisition is
+promised. A server must enforce single-consumer access. The prototype also
+retains at most 64 live-consumption fences per client and fails closed with
+`LIVE_STREAM_LIMIT` when full, rather than forgetting a consumed id.
+`stream` and `executeLive` reserve capacity before capability discovery or
+submission, including concurrent calls, so local saturation never creates
+an execution they cannot consume. Submission-only `submitLive` remains
+separate and does not reserve a future reader slot.
+`LIVE_STREAM_CONSUMED` rejects a repeated attempt and `forgetExecution` does
+not clear those fences. A new client does not grant permission to replay an
+old server stream. These are prototype safeguards, not protocol capacity limits.
+
+An advertised live `expires_at` bounds when a download may **start**, not an
+already-open stream's completion. The operation deadline and actual received
+row/byte limits still apply. Truncation is decided from the terminal completion;
+`allowTruncated` permits only an explicitly declared truncated answer, never
+invalid IPC or a backend failure. Native Arrow buffers/types remain intact.
 
 ### Example
 
@@ -143,7 +234,7 @@ not how long the query may run. The server may return earlier.
 | Bounded wait (`waitSeconds: 5`) | Wait up to five seconds. Return `200` if terminal, otherwise `202` with the **same running execution**. |
 | Unbounded synchronous | Hold the connection until completion regardless of duration. This draft does not offer that submission mode. |
 
-For a 200 ms query with `waitSeconds: 5`, the submission can return success
+For a 200 ms materialized query with `waitSeconds: 5`, the submission can return success
 without polling. For a 20 s query, the submission returns pending at or before
 five seconds and the client polls the same id. It does not cancel, restart or
 submit another query. Results are still downloaded separately after success.
@@ -208,9 +299,11 @@ Per-request `signal` supports local abort. `SubmitOptions.waitSeconds` controls
 the submission's `Prefer: wait=N`. The client checks the protocol range
 `0..60`; the server enforces its advertised lower `max_wait_seconds` and
 binding support. `getCapabilities` and `getBinding` are explicit validated
-reads, not a cached preflight policy. Submission performs no automatic discovery
+reads, not a cached preflight policy. Materialized submission performs no automatic discovery
 or cached capability/binding enforcement. Applications can use explicit
 discovery results to choose a supported shape and wait preference.
+Live submission performs its mandatory capability preflight and checks the
+advertised wait bound; the server remains responsible for semantic support.
 `WaitOptions.onProgress` receives execution observations.
 `ExecuteOptions.allowTruncated` explicitly accepts a server-declared truncated
 materialization without waiving count, identity, framing, or resource checks.
@@ -260,7 +353,7 @@ Both shapes support `order_by` entries with `field`, optional `ASC`/`DESC`
 are refused locally; the server enforces advertised shape support.
 The client does not repair the query or substitute a native query.
 
-## What result validation means
+## What materialized result validation means
 
 - Result URLs exist only on `succeeded`. Each identifies one immutable,
   self-contained Arrow IPC **stream**, not live rows produced during execution.
@@ -391,7 +484,7 @@ uses Arrow, or that two systems implement the same query semantics.
 
 | Interface | Submission/lifecycle | Result representation | Difference from this package |
 | --- | --- | --- | --- |
-| **This draft/client prototype** | Structured Ossie JSON; bounded wait, handle/poll/cancel | Single stream or indexed immutable Arrow pages; per-page identity/count checks, full-result schema/total checks | Local protocol implementation only; no query server or vendor semantic proof. |
+| **This draft/client prototype** | Structured Ossie JSON; bounded wait, handle/poll/cancel | Default materialized stream/pages, or opt-in live stream with unknown initial counts and mandatory terminal verification | Live batches may arrive while running; no live replay/pages. No query server or vendor semantic proof. |
 | [Databricks Statement Execution][databricks] | SQL over HTTP; bounded synchronous wait, handles, polling, cancellation, manifests | `ARROW_STREAM` **only with `EXTERNAL_LINKS`**; inline supports `JSON_ARRAY`, not Arrow | Closest lifecycle/download prior art; additional formats and fresh link resolution remain beyond this client. External downloads must omit account authorization. |
 | [dbt Semantic Layer GraphQL][dbt-graphql] | `createQuery`, then poll `query` with the id | Paginated base64-encoded Arrow in `arrowResult`; JSON is also available | Semantic query API, but different request schema and delivery encoding. [Its JDBC interface][dbt-jdbc] separately uses Arrow Flight SQL. |
 | [Snowflake SQL API][snowflake-sql] | SQL HTTP submission, status handles, cancellation | Partitioned JSON `ResultSet`/`jsonv2` | Not an Arrow REST result API in the cited contract. [Python connector Arrow fetch APIs][snowflake-python] are a separate connector surface. |

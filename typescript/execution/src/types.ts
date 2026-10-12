@@ -18,6 +18,8 @@
  */
 
 export const CONTRACT_VERSION = "0.1-draft" as const;
+export const LIVE_CONTRACT_VERSION = "0.2-draft" as const;
+export const LIVE_FEATURE = "live-stream-v0.2" as const;
 export const FOUNDATION_REVISION = "cc0d07099a3ef31e85af1fd93458a52186fae2c6" as const;
 export const QUERY_SCHEMA_VERSION = "mcp-0.4-draft" as const;
 export const ARROW_MEDIA_TYPE = "application/vnd.apache.arrow.stream" as const;
@@ -182,3 +184,43 @@ export interface WaitOptions extends RequestOptions {
 export interface ExecuteOptions extends SubmitOptions, WaitOptions {
   allowTruncated?: boolean;
 }
+
+export interface LiveRequest extends ExecuteRequest {
+  contract_version: typeof LIVE_CONTRACT_VERSION;
+  delivery: "live";
+}
+export interface LiveStream {
+  result_id: string;
+  format: "arrow-stream";
+  url: string;
+  expires_at: string;
+  columns: readonly Column[];
+  replayable: false;
+}
+export interface LiveCompletion {
+  result_id: string;
+  row_count: number;
+  byte_count: number;
+  completeness: "complete" | "truncated";
+  truncation_reason?: string;
+}
+interface LiveExecutionBase extends Omit<ExecutionBase, "contract_version"> {
+  contract_version: typeof LIVE_CONTRACT_VERSION;
+  delivery: "live";
+}
+export type LiveExecution = LiveExecutionBase & (
+  | { state: "queued"; progress?: Progress; stream?: never; completion?: never; error?: never }
+  | { state: "running" | "cancelling"; progress?: Progress; stream?: LiveStream; completion?: never; error?: never }
+  | { state: "succeeded"; stream: LiveStream; completion: LiveCompletion; progress?: never; error?: never }
+  | { state: "failed"; error: QueryError; stream?: LiveStream; completion?: never; progress?: never }
+  | { state: "cancelled"; stream?: LiveStream; completion?: never; progress?: never; error?: never }
+);
+export type LiveSuccessfulExecution = Extract<LiveExecution, { state: "succeeded" }>;
+export interface LiveExecutionMetadata extends Omit<ExecutionMetadata, "contract_version" | "page_index" | "row_offset"> {
+  contract_version: typeof LIVE_CONTRACT_VERSION;
+}
+export interface LiveReadOptions extends RequestOptions {
+  onProgress?: (execution: LiveExecution) => void | Promise<void>;
+  allowTruncated?: boolean;
+}
+export interface LiveOptions extends SubmitOptions, LiveReadOptions {}

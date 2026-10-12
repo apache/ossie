@@ -27,8 +27,9 @@ import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { build } from "esbuild";
-import { ARROW_MEDIA_TYPE } from "../../dist/index.js";
+import { ARROW_MEDIA_TYPE, LIVE_CONTRACT_VERSION, LIVE_FEATURE } from "../../dist/index.js";
 import { BINDING, CAPABILITIES, ERROR, REQUEST, arrowFixture, execution, pagedFixture } from "../fixtures.mjs";
+import { deferred, firstBatchEnd, liveFixture } from "../live-fixtures.mjs";
 
 const packageDirectory = fileURLToPath(new URL("../../", import.meta.url));
 const browserCandidates = process.env.OSSIE_BROWSER_BINARY ? [process.env.OSSIE_BROWSER_BINARY] : [
@@ -91,7 +92,7 @@ async function bundle(contents) {
   });
 }
 
-test("real browser validates synthetic HTTP Arrow execution, polling, CORS and late failure", {
+test("real browser validates materialized and LIVE HTTP Arrow, observation gating, CORS and late failure", {
   timeout: 40_000,
 }, async () => {
   assert.ok(browser, "Set OSSIE_BROWSER_BINARY to an installed Chromium/Chrome/Edge executable");
@@ -99,6 +100,9 @@ test("real browser validates synthetic HTTP Arrow execution, polling, CORS and l
   const paginated = pagedFixture();
   const requests = [];
   const polls = { asynchronous: 0, "late-failure": 0 };
+  const live = Object.fromEntries(["live", "live-failure"].map(mode => [mode, {
+    fixture: liveFixture(), observed: false, body: undefined, closed: deferred(), polls: 0,
+  }]));
   let pageOrigin;
   let bundleText = "";
   const pageServer = createServer((request, response) => {
@@ -118,6 +122,7 @@ test("real browser validates synthetic HTTP Arrow execution, polling, CORS and l
       path: request.url, method: request.method, origin: request.headers.origin,
       authorization: request.headers.authorization,
       requestedHeaders: request.headers["access-control-request-headers"],
+      httpVersion: request.httpVersion,
     };
     requests.push(observation);
     const denied = request.url.startsWith("/cors-denied/");
@@ -127,6 +132,29 @@ test("real browser validates synthetic HTTP Arrow execution, polling, CORS and l
       response.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, Prefer");
     }
     if (request.method === "OPTIONS") {
+      response.writeHead(204);
+      response.end();
+      return;
+    }
+    const liveMode = request.url.split("/")[1];
+    const liveState = live[liveMode];
+    if (liveState && request.url.endsWith("/results/result-1")) {
+      assert.equal(liveState.body, undefined, "The browser must not retry the single-use stream");
+      assert.equal(liveState.observed, false, "No terminal state before first-batch observation");
+      liveState.body = response;
+      response.writeHead(200, { "Content-Type": ARROW_MEDIA_TYPE });
+      response.write(liveState.fixture.bytes.slice(0, firstBatchEnd(liveState.fixture.bytes)));
+      response.on("close", () => liveState.closed.resolve());
+      return;
+    }
+    if (liveState && request.url.endsWith("/observed")) {
+      assert.ok(liveState.body, "Browser acknowledges only after opening and decoding the stream");
+      assert.equal(liveState.observed, false);
+      liveState.observed = true;
+      if (liveMode === "live") {
+        liveState.body.end(liveState.fixture.bytes.slice(firstBatchEnd(liveState.fixture.bytes)));
+      }
+      // Failure deliberately leaves the body stalled; only status can stop it.
       response.writeHead(204);
       response.end();
       return;
@@ -147,6 +175,19 @@ test("real browser validates synthetic HTTP Arrow execution, polling, CORS and l
     for await (const chunk of request) bodyParts.push(chunk);
     observation.body = Buffer.concat(bodyParts).toString("utf8");
     const mode = request.url.split("/")[1];
+    if (liveState) {
+      response.writeHead(request.method === "POST" ? 202 : 200, { "Content-Type": "application/json" });
+      if (request.url.endsWith("/capabilities")) {
+        response.end(JSON.stringify({ ...CAPABILITIES, features: [LIVE_FEATURE] }));
+      } else if (request.method === "POST") {
+        response.end(JSON.stringify(liveState.fixture.running));
+      } else {
+        liveState.polls++;
+        response.end(JSON.stringify(!liveState.observed ? liveState.fixture.running
+          : mode === "live" ? liveState.fixture.succeeded : liveState.fixture.live("failed", { error: ERROR })));
+      }
+      return;
+    }
     const pendingSubmission = request.method === "POST" && !["immediate", "paginated"].includes(mode);
     response.writeHead(pendingSubmission ? 202 : 200, { "Content-Type": "application/json" });
     if (request.url.endsWith("/capabilities")) response.end(JSON.stringify(CAPABILITIES));
@@ -166,6 +207,9 @@ test("real browser validates synthetic HTTP Arrow execution, polling, CORS and l
   }
   pageOrigin = `http://127.0.0.1:${pageServer.address().port}`;
   const apiOrigin = `http://127.0.0.1:${apiServer.address().port}`;
+  for (const [mode, state] of Object.entries(live)) {
+    state.fixture.stream.url = `${apiOrigin}/${mode}/results/result-1`;
+  }
   fixture.succeeded.result.url = `${apiOrigin}/results/result-1`;
   for (const stream of paginated.streams) {
     stream.descriptor.url = `${apiOrigin}/results/result-1/pages/${stream.descriptor.page_index}`;
@@ -173,7 +217,7 @@ test("real browser validates synthetic HTTP Arrow execution, polling, CORS and l
   const profile = await mkdtemp(join(packageDirectory, "test", "browser", ".browser-profile-"));
   try {
     const result = await bundle(`
-    import { OssieClient, QueryExecutionError } from './dist/index.js';
+    import { OssieClient, QueryExecutionError, LiveQueryExecutionError } from './dist/index.js';
     const check = (condition, label) => { if (!condition) throw new Error(label); };
     (async () => {
       const createClient = mode => new OssieClient({
@@ -212,6 +256,31 @@ test("real browser validates synthetic HTTP Arrow execution, polling, CORS and l
       check(failure instanceof QueryExecutionError, 'late failure classification');
       check(failure.code === 'INVALID_QUERY', 'late failure error code');
       check(failure.error.replacement_query.measures[0] === 'revenue', 'replacement query retained');
+      for (const mode of ['live', 'live-failure']) {
+        const iterator = createClient(mode).stream(${JSON.stringify(REQUEST)});
+        const first = await iterator.next();
+        check(!first.done && first.value.numRows === 1, 'LIVE first batch before terminal status');
+        check(first.value.getChildAt(1).get(0) === 9007199254740993n, 'LIVE exact int64');
+        // This acknowledgement is the ONLY gate that releases the last batch or
+        // publishes terminal status. Timer-only chunking cannot satisfy this test.
+        const acknowledged = await fetch(${JSON.stringify(apiOrigin)} + '/' + mode + '/observed', {
+          headers: { Authorization: 'Bearer SYNTHETIC_BROWSER_TOKEN' }
+        });
+        check(acknowledged.ok, 'first batch observation gate');
+        if (mode === 'live') {
+          const second = await iterator.next();
+          check(!second.done && second.value.getChildAt(0).get(0) === null, 'LIVE last batch');
+          const end = await iterator.next();
+          check(end.done && end.value.state === 'succeeded' && end.value.completion.row_count === 2,
+            'LIVE verified generator return');
+        } else {
+          let liveFailure;
+          try { await iterator.next(); } catch (error) { liveFailure = error; }
+          check(liveFailure instanceof LiveQueryExecutionError, 'LIVE status interrupts stalled body');
+          check(liveFailure.error.code === 'INVALID_QUERY' && liveFailure.execution.stream.replayable === false,
+            'LIVE terminal failure retains result identity');
+        }
+      }
       const denied = new OssieClient({
         baseUrl: ${JSON.stringify(apiOrigin)} + '/cors-denied',
         allowInsecureLocalhost: true, timeoutMs: 10000
@@ -280,6 +349,17 @@ test("real browser validates synthetic HTTP Arrow execution, polling, CORS and l
         assert.equal(request.authorization, "Bearer SYNTHETIC_BROWSER_TOKEN");
       }
       assert.equal(requests.filter(request => request.path === "/cors-denied/capabilities").length, 1);
+      for (const [mode, state] of Object.entries(live)) {
+        assert.equal(state.observed, true, "Real browser decoded a provisional first batch");
+        assert.ok(state.polls > 0, "Live status polling accompanied streaming");
+        await Promise.race([state.closed.promise, delay(3000).then(() => { throw new Error("Live body was not closed"); })]);
+        const submissions = requests.filter(r => r.method === "POST" && r.path === `/${mode}/queries`);
+        assert.equal(submissions.length, 1);
+        assert.deepEqual(JSON.parse(submissions[0].body),
+          { ...REQUEST, contract_version: LIVE_CONTRACT_VERSION, delivery: "live" });
+        assert.equal(requests.filter(r => r.method === "GET" && r.path === `/${mode}/results/result-1`).length, 1);
+      }
+      assert.ok(requests.every(r => r.httpVersion === "1.1"), "Synthetic harness verifies loopback HTTP/1.1 only");
     } finally {
       if (cdp) {
         await cdp.send("Browser.close").catch(() => {});

@@ -18,8 +18,9 @@
  */
 
 import { ProtocolError } from "./errors.js";
-import { CONTRACT_VERSION, FOUNDATION_REVISION, QUERY_SCHEMA_VERSION } from "./types.js";
+import { CONTRACT_VERSION, FOUNDATION_REVISION, LIVE_CONTRACT_VERSION, QUERY_SCHEMA_VERSION } from "./types.js";
 import type { Binding, Capabilities, ExecuteRequest, Execution, ExecutionMetadata,
+  LiveCompletion, LiveExecution, LiveExecutionMetadata, LiveStream,
   ProblemDetails, Query, QueryError, ResultManifest } from "./types.js";
 
 type ObjectValue = Record<string, unknown>;
@@ -261,9 +262,15 @@ export function validateManifest(value: unknown): ResultManifest {
     assert(manifest.completeness === "truncated", "A complete result cannot have a truncation reason.");
   }
   timestamp(manifest.expires_at);
-  assert(Array.isArray(manifest.columns) && manifest.columns.length > 0, "Expected result columns.");
+  columns(manifest.columns);
+  extensions(manifest);
+  return value as ResultManifest;
+}
+
+function columns(value: unknown): void {
+  assert(Array.isArray(value) && value.length > 0, "Expected result columns.");
   const ids = new Set<string>();
-  for (const item of manifest.columns) {
+  for (const item of value) {
     const column = object(item, ["column_id", "name", "logical_type", "nullable", "role", "model_ref",
       "label", "description", "unit", "currency", "extensions"], ["column_id", "name", "logical_type", "nullable"]);
     text(column.column_id);
@@ -279,8 +286,6 @@ export function validateManifest(value: unknown): ResultManifest {
     }
     extensions(column);
   }
-  extensions(manifest);
-  return value as ResultManifest;
 }
 
 export function validateExecution(value: unknown): Execution {
@@ -333,7 +338,7 @@ export function validateMetadata(value: unknown): ExecutionMetadata {
   return value as ExecutionMetadata;
 }
 
-export function terminal(execution: Execution): boolean {
+export function terminal(execution: Execution | LiveExecution): boolean {
   return ["succeeded", "failed", "cancelled"].includes(execution.state);
 }
 
@@ -347,9 +352,14 @@ export function equivalent(left: unknown, right: unknown): boolean {
   return keys.length === Object.keys(b).length && keys.every(key => own(b, key) && equivalent(a[key], b[key]));
 }
 
-export function transition(previous: Execution, next: Execution): void {
-  assert(previous.execution_id === next.execution_id && previous.data_source_id === next.data_source_id
+export function transition(previous: Execution | LiveExecution, next: Execution | LiveExecution): void {
+  assert(previous.contract_version === next.contract_version
+    && previous.execution_id === next.execution_id && previous.data_source_id === next.data_source_id
     && equivalent(previous.model, next.model), "Execution identity changed.");
+  if ("delivery" in previous) {
+    assert("delivery" in next && next.delivery === previous.delivery, "Execution delivery changed.");
+    if (previous.stream) assert(equivalent(previous.stream, next.stream), "The live stream descriptor changed.");
+  }
   const allowed: Record<Execution["state"], readonly Execution["state"][]> = {
     queued: ["queued", "running", "cancelling", "succeeded", "failed", "cancelled"],
     running: ["running", "cancelling", "succeeded", "failed", "cancelled"],
@@ -360,4 +370,60 @@ export function transition(previous: Execution, next: Execution): void {
   if (terminal(previous)) {
     assert(equivalent(previous, next), "An immutable terminal execution changed.");
   }
+}
+
+export function validateLiveStream(value: unknown): LiveStream {
+  const stream = object(value, ["result_id", "format", "url", "expires_at", "columns", "replayable"],
+    ["result_id", "format", "url", "expires_at", "columns", "replayable"]);
+  text(stream.result_id);
+  enumeration(stream.format, ["arrow-stream"]);
+  resultUrl(stream.url);
+  timestamp(stream.expires_at);
+  columns(stream.columns);
+  assert(stream.replayable === false, "A live stream must be single-use.");
+  return value as LiveStream;
+}
+
+export function validateLiveCompletion(value: unknown): LiveCompletion {
+  const completion = object(value, ["result_id", "row_count", "byte_count", "completeness", "truncation_reason"],
+    ["result_id", "row_count", "byte_count", "completeness"]);
+  text(completion.result_id);
+  count(completion.row_count);
+  count(completion.byte_count);
+  enumeration(completion.completeness, ["complete", "truncated"]);
+  assert(own(completion, "truncation_reason") === (completion.completeness === "truncated"),
+    "Only a truncated live completion must include a truncation reason.");
+  if (own(completion, "truncation_reason")) text(completion.truncation_reason);
+  return value as LiveCompletion;
+}
+
+export function validateLiveExecution(value: unknown): LiveExecution {
+  const execution = object(value, ["contract_version", "delivery", "execution_id", "data_source_id",
+    "model", "warnings", "extensions", "state", "progress", "stream", "completion", "error"],
+  ["contract_version", "delivery", "execution_id", "data_source_id", "model", "warnings", "state"]);
+  enumeration(execution.contract_version, [LIVE_CONTRACT_VERSION]);
+  enumeration(execution.delivery, ["live"]);
+  // Reuse the unchanged 0.1 common-field/state validator, not its result contract.
+  const { delivery: _delivery, stream: _stream, completion: _completion, ...common } = execution;
+  validateExecution({ ...common, contract_version: CONTRACT_VERSION,
+    ...(execution.state === "succeeded" ? { state: "cancelled" } : {}) });
+  if (own(execution, "stream")) {
+    assert(execution.state !== "queued", "Queued live executions cannot advertise a stream.");
+    validateLiveStream(execution.stream);
+  }
+  if (execution.state === "succeeded") {
+    assert(own(execution, "stream"), "Live success requires a stream.");
+    const completion = validateLiveCompletion(execution.completion);
+    assert(completion.result_id === (execution.stream as LiveStream).result_id,
+      "Live completion result identity mismatch.");
+  } else assert(!own(execution, "completion"), "Only live success can include completion.");
+  return value as LiveExecution;
+}
+
+export function validateLiveMetadata(value: unknown): LiveExecutionMetadata {
+  const metadata = object(value, ["contract_version", "execution_id", "result_id", "data_source_id", "model"],
+    ["contract_version", "execution_id", "result_id", "data_source_id", "model"]);
+  enumeration(metadata.contract_version, [LIVE_CONTRACT_VERSION]);
+  validateMetadata({ ...metadata, contract_version: CONTRACT_VERSION });
+  return value as LiveExecutionMetadata;
 }

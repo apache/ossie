@@ -78,7 +78,7 @@ export function cancelBody(response: Response): void {
 /** Reads decoded fetch bytes, never Content-Length (which can describe compressed HTTP data). */
 export class BodySource {
   private readonly reader: ReadableStreamDefaultReader<Uint8Array>;
-  private readonly abort = (): void => { void this.reader.cancel().catch(() => {}); };
+  private readonly abort = (): void => { this.close(); };
   private closed = false;
   private pending: Uint8Array = new Uint8Array(0);
   private offset = 0;

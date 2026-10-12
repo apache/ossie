@@ -22,8 +22,12 @@ import type { RecordBatch, Schema } from "apache-arrow";
 import { OssieError, ProtocolError } from "./errors.js";
 import { BodySource, Operation } from "./transport.js";
 import { COLUMN_METADATA_KEY, EXECUTION_METADATA_KEY } from "./types.js";
-import type { Column, ResultPage, SuccessfulExecution } from "./types.js";
-import { assert, count, equivalent, object, validateMetadata } from "./validation.js";
+import type { Column, LiveExecution, LiveStream, ResultPage, SuccessfulExecution } from "./types.js";
+import { assert, count, equivalent, object, validateLiveMetadata, validateMetadata } from "./validation.js";
+
+type ArrowExecution = SuccessfulExecution | (LiveExecution & { stream: LiveStream });
+export interface ArrowStats { rows: number; bytes: number }
+const descriptor = (execution: ArrowExecution) => "stream" in execution ? execution.stream : execution.result;
 
 const timeUnits = [TimeUnit.SECOND, TimeUnit.MILLISECOND, TimeUnit.MICROSECOND, TimeUnit.NANOSECOND];
 
@@ -69,19 +73,21 @@ function metadataJson(value: string | undefined): unknown {
   catch { throw new ProtocolError("Ossie Arrow metadata is not valid JSON."); }
 }
 
-function schemaMatches(schema: Schema, execution: SuccessfulExecution, page?: ResultPage): void {
-  const metadata = validateMetadata(metadataJson(schema.metadata.get(EXECUTION_METADATA_KEY)));
+function schemaMatches(schema: Schema, execution: ArrowExecution, page?: ResultPage): void {
+  const result = descriptor(execution);
+  const validate = "stream" in execution ? validateLiveMetadata : validateMetadata;
+  const metadata = validate(metadataJson(schema.metadata.get(EXECUTION_METADATA_KEY)));
   assert(equivalent(metadata, {
     contract_version: execution.contract_version,
     execution_id: execution.execution_id,
-    result_id: execution.result.result_id,
+    result_id: result.result_id,
     data_source_id: execution.data_source_id,
     model: execution.model,
     ...(page === undefined ? {} : { page_index: page.page_index, row_offset: page.row_offset }),
   }), "Arrow execution metadata does not match the execution.");
-  assert(schema.fields.length === execution.result.columns.length, "Arrow column count mismatch.");
+  assert(schema.fields.length === result.columns.length, "Arrow column count mismatch.");
   schema.fields.forEach((field, index) => {
-    const column = execution.result.columns[index]!;
+    const column = result.columns[index]!;
     assert(field.name === column.name && field.nullable === column.nullable,
       "Arrow column name, order or nullability mismatch.");
     const metadata = object(metadataJson(field.metadata.get(COLUMN_METADATA_KEY)), ["column_id"], ["column_id"]);
@@ -343,15 +349,18 @@ function validateBatchBody(header: BatchHeader, schema: Schema, body: Uint8Array
 }
 
 /** Validates IPC framing before Arrow allocates or silently accepts schema replacement. */
-async function* frames(source: BodySource, operation: Operation, execution: SuccessfulExecution,
-  maxRows: number, maxBytes: number, page?: ResultPage): AsyncGenerator<Uint8Array> {
+async function* frames(source: BodySource, operation: Operation, execution: ArrowExecution,
+  maxRows: number, maxBytes: number, page?: ResultPage, stats?: ArrowStats): AsyncGenerator<Uint8Array> {
   let schema: Schema | undefined;
   let rows = 0;
-  const counts = page ?? execution.result;
+  const counts = "stream" in execution ? undefined : page ?? execution.result;
   const finish = (): void => {
     assert(schema !== undefined, "The IPC stream has no schema.");
-    assert(source.bytes === counts.byte_count, "Decoded IPC byte count mismatch.");
-    assert(rows === counts.row_count, "Arrow row count mismatch.");
+    if (counts) {
+      assert(source.bytes === counts.byte_count, "Decoded IPC byte count mismatch.");
+      assert(rows === counts.row_count, "Arrow row count mismatch.");
+    }
+    if (stats) { stats.rows = rows; stats.bytes = source.bytes; }
   };
   while (true) {
     operation.check();
@@ -375,7 +384,7 @@ async function* frames(source: BodySource, operation: Operation, execution: Succ
     assert(length > 0 && length <= Math.min(maxBytes, 1024 * 1024), "Invalid Arrow metadata length.");
     assert((length + prefix.byteLength) % 8 === 0, "Unaligned Arrow metadata.");
     const bytes = (await source.exact(length))!;
-    new MetadataVerifier(bytes, operation, maxBytes).verify(schema, execution.result.columns.length);
+    new MetadataVerifier(bytes, operation, maxBytes).verify(schema, descriptor(execution).columns.length);
     const message = Message.decode(bytes);
     assert([MetadataVersion.V4, MetadataVersion.V5].includes(message.version), "Unsupported Arrow metadata version.");
     count(message.bodyLength);
@@ -393,7 +402,7 @@ async function* frames(source: BodySource, operation: Operation, execution: Succ
       if (!Number.isSafeInteger(rows) || rows > maxRows) {
         throw new OssieError("RESULT_LIMIT_EXCEEDED", "The result exceeded the configured row limit.");
       }
-      assert(rows <= counts.row_count, "Arrow row count exceeds the manifest.");
+      if (counts) assert(rows <= counts.row_count, "Arrow row count exceeds the manifest.");
     }
     // Retain at most one complete IPC message, not the whole result.
     const body = (await source.exact(message.bodyLength))!;
@@ -402,14 +411,18 @@ async function* frames(source: BodySource, operation: Operation, execution: Succ
     yield prefix;
     yield bytes;
     if (body.byteLength) yield body;
+    // Arrow 21's async adapter pulls once more when demand exactly equals its
+    // buffered bytes. A zero-byte boundary releases this validated frame without
+    // reading the next network frame (which may depend on consumer progress).
+    if ("stream" in execution) yield new Uint8Array(0);
   }
 }
 
-export async function* arrowBatches(response: Response, execution: SuccessfulExecution,
+export async function* arrowBatches(response: Response, execution: ArrowExecution,
   operation: Operation, maxBytes: number, maxRows: number, page?: ResultPage,
-  remainingBytes = maxBytes): AsyncGenerator<RecordBatch> {
+  remainingBytes = maxBytes, stats?: ArrowStats): AsyncGenerator<RecordBatch> {
   const source = new BodySource(response, operation, Math.min(maxBytes, remainingBytes));
-  const input = frames(source, operation, execution, maxRows, maxBytes, page);
+  const input = frames(source, operation, execution, maxRows, maxBytes, page, stats);
   let reader: RecordBatchReader | undefined;
   try {
     reader = await operation.race(() => RecordBatchReader.from(input));
