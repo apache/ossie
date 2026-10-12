@@ -61,6 +61,30 @@ live-result delivery, cursor APIs, result-link renewal, and automatic repair or
 re-execution.
 Flight is a possible future mapping, not implemented or negotiated by this draft.
 
+### HTTP versions and transport behavior
+
+This is a binding to [HTTP semantics](https://www.rfc-editor.org/rfc/rfc9110),
+not an HTTP/1.1-only protocol. The same methods, status codes, headers, JSON
+objects, and Arrow IPC payloads can be carried over HTTP/1.1, HTTP/2, or
+HTTP/3 where the client, server, and intermediaries support them. The profile
+does not require every deployment to support every HTTP version.
+The `HTTP/1.1` request/response examples below use readable textual notation;
+they do not require that wire framing for HTTP/2 or HTTP/3.
+
+Transport-version negotiation belongs to the HTTP stack and deployment, not
+to the Ossie query or capability schema. The browser Fetch client does not
+select or force a version. HTTPS and the authorization, origin, redirect,
+expiry, and completeness rules apply regardless of the negotiated version.
+
+HTTP/2 and HTTP/3 support multiplexed streams, but multiplexing alone does not
+supply Flight's endpoint/ticket conventions, distributed-result coordination,
+or application-level flow control. The prototype traverses result pages
+sequentially without prefetching. Pull-based consumption through Web Streams
+does not guarantee end-to-end backpressure or bounded buffering in browsers,
+proxies, servers, or query engines. No Flight performance-parity claim is made.
+Current integration fixtures use loopback HTTP/1.1; they do not establish
+HTTP/2 or HTTP/3 deployment interoperability.
+
 ## 2. JSON objects and discovery
 
 JSON messages MUST conform to their named schema definitions. Unknown core

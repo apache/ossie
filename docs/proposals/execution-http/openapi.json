@@ -6,7 +6,7 @@
   "info": {
     "title": "Ossie HTTP execution proposal",
     "version": "0.1-draft",
-    "description": "DRAFT, not an adopted standard or a deployed service. Browser-oriented HTTP/JSON control plane and one materialized result delivered as a single Arrow IPC stream or immutable self-contained pages. All schemas are defined in execution.schema.json. Authentication is deployment supplied; this document does not implement an identity system.",
+    "description": "DRAFT, not an adopted standard or a deployed service. Browser-oriented HTTP/JSON control plane and one materialized result delivered as a single Arrow IPC stream or immutable self-contained pages. This binding uses HTTP semantics, not HTTP/1.1-specific framing: HTTP/1.1, HTTP/2, or HTTP/3 may carry it where supported, with version negotiation left to the HTTP stack and deployment. Supporting every version is not required. Multiplexing does not imply parallel page fetching or Flight-equivalent flow control; the prototype traverses pages sequentially. Current loopback integration fixtures cover HTTP/1.1, not HTTP/2/3 interoperability. All schemas are defined in execution.schema.json. Authentication is deployment supplied; this document does not implement an identity system.",
     "license": {
       "name": "Apache-2.0",
       "identifier": "Apache-2.0"

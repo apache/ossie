@@ -30,6 +30,21 @@ authentication system, Flight transport, or vendor adapters. Local tests
 exercise the protocol against fixtures; they do not prove production vendor
 interoperability, Foundation expression semantics, or row-level security.
 
+## HTTP versions
+
+The binding is **not HTTP/1.1-only**: its HTTP semantics and payloads can run
+over HTTP/1.1, HTTP/2, or HTTP/3 where supported. Fetch and the deployment
+negotiate the transport; the client exposes no version-selection option.
+Textual `HTTP/1.1` examples in the spec are illustrative, not a restriction.
+No deployment is required to support all three versions.
+
+HTTP/2 or HTTP/3 multiplexing does not turn this into Flight or introduce
+parallel page downloads: full-result traversal remains sequential.
+Web Streams provide pull-based consumption, not a guarantee of end-to-end
+backpressure or bounded intermediary buffering. The existing integration
+fixtures use loopback HTTP/1.1; HTTP/2/3 interoperability and performance parity
+with Flight have not been demonstrated.
+
 ## Contract
 
 - [Normative draft](../../docs/proposals/execute-query-http.md).
