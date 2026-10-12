@@ -524,7 +524,7 @@ wheels = [
 
 [[package]]
 name = "orionbelt-semantic-layer"
-version = "2.33.1"
+version = "2.34.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastapi" },
@@ -544,9 +544,9 @@ dependencies = [
     { name = "tzdata" },
     { name = "uvicorn", extra = ["standard"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1c/83/81f382cf71a1a87b62f5aa35505d31752e43f46373f57626223a8756f504/orionbelt_semantic_layer-2.33.1.tar.gz", hash = "sha256:95d40780635ce6e8c89aa155e49644a9f06dd7de4b59c72fcce80d1e35ec658d", size = 11666347, upload-time = "2026-10-02T21:17:35.185Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7e/23/7f0fe9356558922bec36e420d2dadc6e7c73a2fc57edd70c0d5a0bec75f1/orionbelt_semantic_layer-2.34.0.tar.gz", hash = "sha256:1e53224ea9ce3cfb9dd9a5e01bef7f9e6b38bfda39ddebeebab5366565e9106d", size = 11754146, upload-time = "2026-10-08T07:24:01.587Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3f/97/f86903f82e52a2e812087f5d2f13f88e513df99eb612cda1029833938422/orionbelt_semantic_layer-2.33.1-py3-none-any.whl", hash = "sha256:28e4d60476a5027f0b71c3dd59f18c1be891dece66e841715e2214ef72ce60c9", size = 2143733, upload-time = "2026-10-02T21:17:32.846Z" },
+    { url = "https://files.pythonhosted.org/packages/eb/7a/4ef658f47b6045ed76cf2c51f48e661393c0e4d3fd5a0e35ef2846b4161d/orionbelt_semantic_layer-2.34.0-py3-none-any.whl", hash = "sha256:aebbc0309e2b26caf84477d8f29ce5e9ee0a4f7a7356cd3eaf5dce197b696eb1", size = 2177669, upload-time = "2026-10-08T07:23:59.203Z" },
 ]
 
 [[package]]
@@ -1046,14 +1046,14 @@ wheels = [
 
 [[package]]
 name = "types-jsonschema"
-version = "4.26.0.20260518"
+version = "4.26.0.20261006"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "referencing" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/dd/46/73b6a5d61a61015c4248030a8cb07e5bdddb4041430fae9e585a68692578/types_jsonschema-4.26.0.20260518.tar.gz", hash = "sha256:e1dd53dc97a64f5eccdd6fa9839666e09bb500a8ebba2db6fdaf1789faea81a6", size = 16638, upload-time = "2026-05-18T06:06:44.106Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/d2/1f742605f5a6d39f993134885b8de41c98af606871d3ebddaf3e776bd1eb/types_jsonschema-4.26.0.20261006.tar.gz", hash = "sha256:3eb7db61b6819d40addfdaac7173e749071a7d4a9a4394f0c844598ec84b2500", size = 16843, upload-time = "2026-10-06T08:16:07.318Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/07/d5/134f8a147dcecda10db7f60cfc6af0578a25a5c53c87b3907a64385e0184/types_jsonschema-4.26.0.20260518-py3-none-any.whl", hash = "sha256:30b30a518c7fe335df85c919fcbcc631b69c03d4a4b5b632fa916bea03065307", size = 16072, upload-time = "2026-05-18T06:06:43.264Z" },
+    { url = "https://files.pythonhosted.org/packages/8b/a0/4f2e3c0dc3d5cad958006f2e0307065cc8fe4fbf0393ff0b69d55ee9bbe5/types_jsonschema-4.26.0.20261006-py3-none-any.whl", hash = "sha256:29301f4e65e3928540cdf5e23ad716e38bb0c0b416a48dada213edd3d70206ec", size = 16113, upload-time = "2026-10-06T08:16:06.355Z" },
 ]
 
 [[package]]
