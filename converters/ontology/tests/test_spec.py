@@ -65,8 +65,8 @@ def test_tpcds_example_parses():
     assert any(m.datatype for m in model.metrics)
 
 
-def test_foaf_example_keeps_custom_properties():
-    """`custom_properties` carries imported data the spec does not model, so it
+def test_foaf_example_keeps_annotations():
+    """`annotations` carries imported data the spec does not model, so it
     must parse at every level that declares it and survive a dump unchanged."""
     example_path = _EXAMPLES_DIR / "foaf_owl_import.yaml"
     if not example_path.is_file():
@@ -75,20 +75,20 @@ def test_foaf_example_keeps_custom_properties():
     doc = yaml.safe_load(example_path.read_text(encoding="utf-8"))
     spec = OssieSpec.model_validate(doc)
 
-    assert spec.custom_properties == {"dc:title": "Friend of a Friend (FOAF) vocabulary"}
+    assert spec.annotations == {"dc:title": "Friend of a Friend (FOAF) vocabulary"}
     person = spec.ontology[0]
-    assert person.custom_properties["owl:equivalentClass"] == "http://schema.org/Person"
-    assert person.relationships[0].custom_properties["rdfs:subPropertyOf"] == "rdfs:label"
+    assert person.annotations["owl:equivalentClass"] == "http://schema.org/Person"
+    assert person.relationships[0].annotations["rdfs:subPropertyOf"] == "rdfs:label"
 
     dumped = OssieSpec.load_yaml(spec.dump_yaml()).dump_dict()
-    assert dumped["custom_properties"] == doc["custom_properties"]
-    assert dumped["ontology"][0]["custom_properties"] == doc["ontology"][0]["custom_properties"]
-    assert dumped["ontology"][0]["relationships"][1]["custom_properties"] == (
-        doc["ontology"][0]["relationships"][1]["custom_properties"]
+    assert dumped["annotations"] == doc["annotations"]
+    assert dumped["ontology"][0]["annotations"] == doc["ontology"][0]["annotations"]
+    assert dumped["ontology"][0]["relationships"][1]["annotations"] == (
+        doc["ontology"][0]["relationships"][1]["annotations"]
     )
 
 
-def test_role_accepts_custom_properties():
+def test_role_accepts_annotations():
     relationship = OssieSpec.model_validate({
         "name": "test",
         "ontology": [{
@@ -96,8 +96,8 @@ def test_role_accepts_custom_properties():
             "type": "EntityType",
             "relationships": [{
                 "name": "knows",
-                "roles": [{"concept": "Person", "name": "acquaintance", "custom_properties": {"source": "foaf"}}],
+                "roles": [{"concept": "Person", "name": "acquaintance", "annotations": {"source": "foaf"}}],
             }],
         }],
     }).ontology[0].relationships[0]
-    assert relationship.roles[0].custom_properties == {"source": "foaf"}
+    assert relationship.roles[0].annotations == {"source": "foaf"}

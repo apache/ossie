@@ -90,7 +90,7 @@ hierarchically, grouping each relationship under the concept that plays its firs
 | `ontology` | list | Yes | Concepts and relationships they group that form this ontology |
 | `prefixes` | object | No | Namespace prefixes used to abbreviate [IRIs](#global-identifiers) |
 | `ontology_mappings` | list | No | Deprecated; accepted only so existing documents continue to validate. Write mappings as [mapping documents](#mapping-documents) instead |
-| `custom_properties` | object | No | Open set of custom properties not covered by this spec (see [Custom properties](#custom-properties)) |
+| `annotations` | object | No | Open set of annotations for data not covered by this spec (see [Annotations](#annotations)) |
 
 Each component of an ontology declares a concept and lists the relationships where that
 concept plays the first role. The concept's name is the value of the `concept` field, and
@@ -115,7 +115,7 @@ Concepts have the following schema:
 | `requires` | list | No | Expressions that constrain this concept's population |
 | `relationships` | list | No | Relationships where this concept plays the first role |
 | `iri` | string | No | Optional [global identifier](#global-identifiers) of this concept |
-| `custom_properties` | object | No | Open set of custom properties not covered by this spec (see [Custom properties](#custom-properties)) |
+| `annotations` | object | No | Open set of annotations for data not covered by this spec (see [Annotations](#annotations)) |
 
 Each concept is either an entity type or a value type.
 
@@ -161,7 +161,7 @@ Each relationship that is declared under a concept conforms to the following sch
 | `requires` | list | No | Expressions that constrain this relationship's population |
 | `verbalizes` | list | Yes | Patterns describing how to verbalize links |
 | `iri` | string | No | Optional [global identifier](#global-identifiers) of this relationship |
-| `custom_properties` | object | No | Open set of custom properties not covered by this spec (see [Custom properties](#custom-properties)) |
+| `annotations` | object | No | Open set of annotations for data not covered by this spec (see [Annotations](#annotations)) |
 
 Each relationship is uniquely identified by prepending its declared name with that of the containing
 concept. For instance, in:
@@ -205,7 +205,7 @@ using this schema:
 |-------|------|----------|-------------|
 | `concept` | string | Yes | Name of the concept that plays this role |
 | `name` | string | No | Optional role name |
-| `custom_properties` | object | No | Open set of custom properties not covered by this spec (see [Custom properties](#custom-properties)) |
+| `annotations` | object | No | Open set of annotations for data not covered by this spec (see [Annotations](#annotations)) |
 
 For instance, in:
 
@@ -441,17 +441,17 @@ Expressions, roles, and mappings continue to use local names. The IRI serves too
 between this specification and IRI-based languages and lets multiple ontologies state that they
 refer to the same externally defined concept or relationship.
 
-### Custom properties
+### Annotations
 
-The ontology root, concepts, relationships, and roles may each carry a `custom_properties` object: an
+The ontology root, concepts, relationships, and roles may each carry an `annotations` object: an
 open set of key-value pairs for data that the core spec does not model. This gives tools a place to
 attach their own metadata, or to preserve information when importing an ontology from an external
 format so that it can be round-tripped.
 
 Keys are free-form, and values may be any JSON. The spec does not interpret or constrain the structure of
-`custom_properties`; tools that do not understand a given property should preserve it as-is.
+`annotations`; tools that do not understand a given annotation should preserve it as-is.
 
-Use `custom_properties` only for data that the spec cannot express. Data that has a home in the spec,
+Use `annotations` only for data that the spec cannot express. Data that has a home in the spec,
 such as a description, a supertype (`extends`), a derivation (`derived_by`), a constraint (`requires`),
 or a verbalization (`verbalizes`), belongs in that field.
 
@@ -470,14 +470,14 @@ ontology:
     type: EntityType
     description: A person.
     iri: foaf:Person
-    custom_properties:
+    annotations:
       rdfs:label: Person
       owl:equivalentClass: http://schema.org/Person
       vs:term_status: stable
 ```
 
 The full document is in [`examples/foaf_owl_import.yaml`](../examples/foaf_owl_import.yaml). Keying
-properties by qualified name is this importer's convention. The choice of keys belongs to the tool that
+annotations by qualified name is this importer's convention. The choice of keys belongs to the tool that
 writes them.
 
 ## Ontology mappings
@@ -738,7 +738,7 @@ though `Store` plays a role in three of the relationships.
   - Optional IRIs on concepts and relationships, with namespace prefixes declared at the top level
   - Mapping documents (`ontology/mapping.json`) that reference one ontology and one semantic
     model; embedded `ontology_mappings` is deprecated
-  - `custom_properties` on the ontology root, concepts, relationships, and roles for carrying
+  - `annotations` on the ontology root, concepts, relationships, and roles for carrying
     data not covered by the core spec (e.g. when importing from OWL/RDF)
 
 ---

@@ -21,8 +21,8 @@ description: >
   Small ontology imported from the FOAF (Friend of a Friend) OWL vocabulary.
   The importer writes RDF data that has a home in the spec to that field
   (rdfs:comment becomes description) and preserves the rest (labels, axioms,
-  term status) in custom_properties, so the source can be round-tripped. This
-  importer keys custom properties by the source predicate's qualified name;
+  term status) in annotations, so the source can be round-tripped. This
+  importer keys annotations by the source predicate's qualified name;
   that is the importer's convention, not a requirement of the spec.
 prefixes:
   foaf: "http://xmlns.com/foaf/0.1/"
@@ -30,14 +30,14 @@ prefixes:
   owl: "http://www.w3.org/2002/07/owl#"
   dc: "http://purl.org/dc/elements/1.1/"
   vs: "http://www.w3.org/2003/06/sw-vocab-status/ns#"
-custom_properties:
+annotations:
   dc:title: "Friend of a Friend (FOAF) vocabulary"
 ontology:
   - concept: Person
     type: EntityType
     description: "A person."
     iri: foaf:Person
-    custom_properties:
+    annotations:
       rdfs:label: "Person"
       owl:equivalentClass: "http://schema.org/Person"
       vs:term_status: "stable"
@@ -49,7 +49,7 @@ ontology:
           - concept: String
         verbalizes: [ "{Person} has name {String}" ]
         multiplicity: ManyToOne
-        custom_properties:
+        annotations:
           rdfs:label: "name"
           rdfs:subPropertyOf: "rdfs:label"
           vs:term_status: "testing"
@@ -60,6 +60,6 @@ ontology:
           - concept: Person
             name: acquaintance
         verbalizes: [ "{Person} knows {Person:acquaintance}" ]
-        custom_properties:
+        annotations:
           rdfs:label: "knows"
           vs:term_status: "stable"
