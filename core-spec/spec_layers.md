@@ -70,11 +70,16 @@ Together these define the authoring layer of Ossie. Layer 1 is a model *definiti
 not a query concern. It does not prescribe the query language a consumer uses against a deployed
 model—that is a per-layer decision for Layers 2 and 3.
 
+Over a single relation, Layer 1 expressions mean what the equivalent SQL expressions mean.
+Layer 1 does not define how expressions are evaluated across a model with multiple datasets;
+Layers 2 and 3 define that.
+
 ### Layer 2 — Relational Query Interface
 
 Layer 2 is the SQL-native query interface for Ossie models. Its query language is the Layer 1
 expression language extended with the relational constructs of SQL: joins, group-by, filters,
-CTEs, ordering, etc. To this it adds one extension, `MEASURE()`, which evaluates a named
+CTEs, ordering, etc. To this it adds a small set of extensions for measures: a measure column
+type, a way to define measures within a query, and the `MEASURE()` function, which evaluates a
 measure at its declared grain.
 
 Layer 2 establishes the guarantee: **measures are evaluated without duplication regardless of
@@ -98,6 +103,8 @@ This interface trades explicit query control for simplicity, making it accessibl
 users, AI agents, and BI tools without their own data model. Measure correctness is inherited
 from Layer 2: a wide-table query is defined as equivalent to a SQL measures query (with
 heuristic join and filter choices), so the same grain-safe evaluation guarantee holds.
+Layers 2 and 3 query the same model, so a question that Layer 3 cannot express can be answered
+in Layer 2 without changing the model.
 
 **Specification:** *(open PR: [apache/ossie#246](https://github.com/apache/ossie/pull/246))*
 
