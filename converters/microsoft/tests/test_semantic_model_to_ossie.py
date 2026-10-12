@@ -774,6 +774,61 @@ def test_model_stash_preserves_excluded_tables_and_relationships(model):
     assert len(stash["excludedRelationships"]) == 4
 
 
+def test_calculated_table_measures_become_metrics_and_round_trip(bim):
+    measure_table = {
+        "name": "Measure Only",
+        "columns": [
+            {
+                "name": "_",
+                "dataType": "string",
+                "sourceColumn": "_",
+                "type": "calculatedTableColumn",
+                "isHidden": True,
+            }
+        ],
+        "partitions": [
+            {
+                "name": "Measure Only",
+                "mode": "import",
+                "source": {
+                    "type": "calculated",
+                    "expression": 'ROW("_", BLANK())',
+                },
+            }
+        ],
+        "measures": [
+            {
+                "name": "Measure Total",
+                "expression": "SUM(Sales[Amount])",
+                "formatString": "#,0.00",
+            }
+        ],
+    }
+    bim["model"]["tables"].append(measure_table)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        ossie = build_ossie_document(bim)
+
+    metric = _metric(ossie, "Measure Total")
+    assert _expression(metric, "DAX") == "SUM(Sales[Amount])"
+    assert read_stash(metric)["table"] == "Measure Only"
+    stashed_table = next(
+        table
+        for table in read_stash(ossie)["excludedTables"]
+        if table["name"] == "Measure Only"
+    )
+    assert "measures" not in stashed_table
+
+    round_tripped = convert_ossie_to_semantic_model(ossie)
+    restored_table = next(
+        table
+        for table in round_tripped["model"]["tables"]
+        if table["name"] == "Measure Only"
+    )
+    assert restored_table["measures"] == [measure_table["measures"][0]]
+
+
 def test_dataset_stash_preserves_partitions_and_annotations(model):
     stash = read_stash(_dataset(model, "Sales"))
     assert stash["partitions"][0]["source"]["type"] == "m"
