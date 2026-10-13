@@ -257,6 +257,7 @@ datasets:
     - buyers
   unique_keys:
   - - c_customer_sk
+  - - c_customer_id
   fields:
   - name: c_customer_sk
     expression:

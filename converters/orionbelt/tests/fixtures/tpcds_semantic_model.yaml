@@ -219,6 +219,7 @@ datasets:
     primary_key: [c_customer_sk]  # Simple primary key
     unique_keys:
       - [c_customer_sk]  # Simple key: single column
+      - [c_customer_id]  # Alternate key: customer business key
     description: Customer dimension with demographic information
     ai_context:
       synonyms:
