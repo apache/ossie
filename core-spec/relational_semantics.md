@@ -1294,8 +1294,8 @@ This interface builds on the measure model of Hyde and Fremlin,
 [*Measures in SQL*](https://arxiv.org/abs/2406.00251). It keeps that model's core: the `T measure`
 column type, the transparent expansion of a measure into ordinary SQL, and closure (a relation
 with measures behaves like any other relation). The rest of this appendix records where it
-differs: naming and syntax, how a measure is evaluated, and some considerations for extending
-the proposal later.
+differs (naming, syntax, and how a measure is evaluated), where it makes choices the paper leaves
+open, and some considerations for extending the proposal later.
 
 ### Naming and syntax
 
@@ -1312,38 +1312,46 @@ column the alias `measure`."
 
 ### Evaluating a measure
 
-A measure is evaluated only through `AGG()` (R2). The paper treats its `AGGREGATE()` wrapper
-as largely cosmetic: in an aggregate query a bare measure reference is evaluated implicitly. We
-require the explicit call, so the conversion of a `T measure` to a scalar `T` happens at one
-visible place. Further, in SQL, an aggregate function in the `SELECT`, `HAVING`, or `ORDER BY`
-clause is what turns a projection into an aggregation; a bare measure column that implicitly
-aggregates breaks that expectation, so requiring `AGG()` keeps the query syntactically
-ordinary SQL.
+A measure is evaluated only through `AGG()` (R2), which corresponds to the paper's `AGGREGATE()`.
+The paper defines `AGGREGATE(m)` as `m` evaluated `AT (VISIBLE)`: over the rows that satisfy the
+query's grouping, `WHERE` filters, and join conditions. `AGG()` behaves the same way (Section 8.1).
 
-`AGG()` evaluates a measure over exactly the rows the query selects, after its `WHERE` filters
-and joins (Guarantee G1). In contrast, the paper defaults to not applying the query's `WHERE` or
-joins to a measure; a consumer opts those in with `VISIBLE`. Applying the query's filters and
-joins by default matches standard SQL behavior.
+The paper also lets a bare measure reference be evaluated, in a default context that ignores the
+query's `WHERE` clause. This specification rejects a bare measure in an aggregated query (Section
+7.2), for two reasons. First, in SQL an aggregate function is what turns a projection into an
+aggregation, and implicit aggregation breaks that expectation. Second, requiring `AGG()` keeps the
+conversion from `T measure` to `T` in one visible place. Evaluating a measure while ignoring the
+query's filters is, in this specification's terms, an evaluation control (Section 5.3).
+
+### Where this specification makes choices the paper leaves open
+
+The paper defines evaluation informally and calls for a formal semantics as future work. Section
+8.1 defines a measure's input set for every operator between its definition and its evaluation.
+That settles cases the paper leaves open, in a way we believe matches its intent:
+
+- **Filters and joins in intermediate queries.** A `WHERE` filter or join in a subquery or view
+  that passes a measure through restricts the measure, just as one in the evaluating query does.
+- **Joins in the evaluating query.** A measure's input set in each group is defined even when the
+  group keys come from another relation in the join.
+- **Outer joins.** Null-padded rows contribute nothing to a measure on the padded side.
 
 ### Extending the proposal
 
-Evaluation controls are explicitly out of scope in this version (Section 5.3), so this proposal does
-not adopt the paper's `AT` operator or its consumer-modifiable *evaluation context* (a predicate
-over a measure's dimension columns, adjusted at the call site with `ALL`, `SET`, or `WHERE`). A
-measure here is anchored to its source rows (Section 3.2) and evaluated only through `AGG()`.
+This version does not include evaluation controls (Section 5.3), and so does not adopt the paper's
+`AT` operator. The functionality they enable, such as percent of total and period over period, is
+important, and we strongly recommend it as a follow-up extension. An extension will need to
+settle:
 
-The functionality evaluation controls enable, such as percent of total and period over period, is
-important, and we recommend strongly that it be considered as a follow-up extension. Two things
-are worth considering in that design.
-
-**Encapsulation.** The paper encapsulates a measure's *formula*: a consumer uses a measure without
-seeing its definition or the tables it reads (Principle P2). We believe encapsulation should cover a
-measure's *meaning* as well: a measure has a single correct result for a given query, and a
-consumer can slice, dice, and combine measures but cannot reach in and change what a measure
-means. An extension should keep this property: a consumer evaluates a measure over modified
-input sets and combines the results, without escaping its definition.
-
-**Column identity.** The paper's `SET` and `ALL` modifiers identify filters by dimension, which
-requires deciding when two filters are on the same dimension. SQL has no general way to decide
-that two columns are the same, so a context modifier for this interface will need its own answer
-to that question.
+- **Where controls are written.** The paper applies `AT` in the consuming query. Controls could
+  also be declared in a measure's definition, or in any query between the definition and the
+  evaluation. An extension may allow any of these. Where controls apply at more than one level,
+  they should compose so that a level closer to the consumer cannot override what a level closer
+  to the definition specified. The paper's composition rule, under which outer modifiers apply
+  first and inner ones last, has this property.
+- **Which filters a control may lift.** The paper's `SET` can reach rows that the evaluating
+  query's `WHERE` removed. An extension must say which filters can be lifted this way. Filters in
+  intermediate queries, such as a view that restricts rows for security, should not be.
+- **Identifying dimensions.** `SET` and `ALL` act on the terms for a given dimension. The paper
+  leaves open how terms on related expressions are matched (for example `YEAR(date)` and `date`)
+  and how dimensions are linked. An extension needs an answer that works over arbitrary SQL
+  expressions.
