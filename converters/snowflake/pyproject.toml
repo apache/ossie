@@ -43,7 +43,7 @@ dependencies = [
 ]
 
 [project.scripts]
-ossie-snowflake = "ossie_snowflake.converter:main"
+ossie-snowflake = "ossie_snowflake.cli:main"
 
 [project.urls]
 homepage = "https://ossie.apache.org/"

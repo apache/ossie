@@ -22,7 +22,7 @@ import warnings
 import pytest
 import yaml
 
-from ossie_snowflake.converter import (
+from ossie_snowflake.ossie_to_snowflake import (
     OssieConversionError,
     convert_ossie_to_snowflake,
     _classify_field,

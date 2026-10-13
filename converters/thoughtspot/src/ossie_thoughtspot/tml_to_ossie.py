@@ -749,7 +749,7 @@ def convert_field(
     exactly as correct for a call that only ever converts one column at a
     time.
     """
-    properties = column.get("properties") or {}
+    properties = _tml_mapping(column.get("properties"), "column `properties`")
     if properties.get("column_type") != "ATTRIBUTE":
         return None
     if allocator is None:
@@ -1115,7 +1115,7 @@ def convert_metric(
     than it does across fields; a caller that omits it gets a fresh, private
     one, correct for a call that only ever converts one column.
     """
-    properties = column.get("properties") or {}
+    properties = _tml_mapping(column.get("properties"), "column `properties`")
     if properties.get("column_type") != "MEASURE":
         return None
     if allocator is None:
@@ -1436,7 +1436,7 @@ def _index_attribute_columns(
     """
     index: set[tuple[str, str]] = set()
     for column in columns:
-        properties = column.get("properties") or {}
+        properties = _tml_mapping(column.get("properties"), "column `properties`")
         if properties.get("column_type") != "ATTRIBUTE":
             continue
         column_id = column.get("column_id")
@@ -1460,6 +1460,38 @@ def _index_attribute_columns(
     return index
 
 
+def _tml_list(value, what: str) -> list:
+    """A TML collection read from a hand-edited document.
+
+    Issue #469: the converter contracts never to surface a bare traceback. A
+    value of the wrong Python type does -- iterating a string `columns:` yields
+    characters, and the first `.get()` on one raises `AttributeError` naming
+    neither the document nor the key. A wrongly-typed *container* leaves nothing
+    to salvage: with no column list there is no field, no metric and no dataset,
+    so it fails like the other structural problems in `tml.load_document`, as a
+    `ConversionError` that says which key held what type.
+    """
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ConversionError(f"{what} must be a list, not {type(value).__name__}")
+    for entry in value:
+        if not isinstance(entry, dict):
+            raise ConversionError(
+                f"{what} entries must be mappings, not {type(entry).__name__}"
+            )
+    return value
+
+
+def _tml_mapping(value, what: str) -> dict:
+    """A TML sub-object, or a `ConversionError` naming the key and the type."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ConversionError(f"{what} must be a mapping, not {type(value).__name__}")
+    return value
+
+
 def _raw_physical_columns(body: dict, kind: str) -> list[dict]:
     """The verbatim physical-column list for a Table or SQL View document --
     `columns[]` for a `table:`, `sql_view_columns[]` for a `sql_view:`.
@@ -1474,7 +1506,7 @@ def _raw_physical_columns(body: dict, kind: str) -> list[dict]:
     `_normalized_physical_columns` below, never `body.get("columns")` directly.
     """
     key = "sql_view_columns" if kind == "sql_view" else "columns"
-    return body.get(key) or []
+    return _tml_list(body.get(key), f"{kind} {key}")
 
 
 def _normalize_physical_column(entry: dict, kind: str) -> dict:
@@ -2278,7 +2310,23 @@ def _convert_join(
                 object_ref=f"relationship:{referencing_join}",
             )
             return None, None, None
-        to_prefix = (matched.get("destination") or {}).get("name")
+        destination = matched.get("destination")
+        if destination is not None and not isinstance(destination, dict):
+            # A `destination` of the wrong type would raise AttributeError on the
+            # `.get("name")` below (issue #469). One unlocatable target dataset
+            # costs one relationship, so this skips like a missing
+            # `referencing_join` does rather than failing the whole model.
+            log.add(
+                code="TS-JOIN-DESTINATION-INVALID",
+                severity=Severity.WARNING,
+                message=(
+                    f"joins_with entry {referencing_join!r} has destination "
+                    f"{destination!r}, which is not a mapping; the join is skipped"
+                ),
+                object_ref=f"relationship:{referencing_join}",
+            )
+            return None, None, None
+        to_prefix = (destination or {}).get("name")
         on_expression = matched.get("on")
         join_type = join.get("type", matched.get("type"))
         cardinality = join.get("cardinality", matched.get("cardinality"))
@@ -2383,6 +2431,17 @@ def convert(document_set: DocumentSet) -> OssieConversion:
     """
     log = IssueLog()
     model_body = document_set.model.body
+
+    # Fail on a wrongly-typed container before anything reads through it: these
+    # three keys are what every dataset, field, metric and the model stash are
+    # built from, so a string or int here would otherwise reach a `.get()` or a
+    # `for` loop and raise AttributeError/TypeError from inside the conversion
+    # (issue #469).
+    _tml_mapping(model_body.get("properties"), "model `properties`")
+    _tml_list(model_body.get("model_tables"), "model `model_tables`")
+    model_columns = _tml_list(model_body.get("columns"), "model `columns`")
+    for column in model_columns:
+        _tml_mapping(column.get("properties"), "model column `properties`")
 
     model_name_raw = model_body.get("name")
     if "name" in model_body and not isinstance(model_name_raw, str):
@@ -2507,7 +2566,7 @@ def convert(document_set: DocumentSet) -> OssieConversion:
         return {"columns": columns}
 
     # -- Phase 2: the cross-model resolver -----------------------------------
-    model_columns = model_body.get("columns") or []
+    # `model_columns` is the validated list from the top of convert().
     attribute_index = _index_attribute_columns(model_columns, log)
 
     def resolve(table: str, column: str) -> tuple[str, str] | None:
@@ -2594,7 +2653,7 @@ def convert(document_set: DocumentSet) -> OssieConversion:
 
     for column in model_columns:
         display_name = column.get("name", "<unnamed>")
-        properties = column.get("properties") or {}
+        properties = _tml_mapping(column.get("properties"), "column `properties`")
         try:
             field = convert_field(
                 column, formulas, table_lookup, resolve, log, field_name_allocator

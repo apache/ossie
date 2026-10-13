@@ -46,6 +46,7 @@ public final class ConverterConstants {
     public static final String DATASETS = "datasets";
     public static final String FIELDS = "fields";
     public static final String METRICS = "metrics";
+    public static final String PRIMARY_KEY = "primary_key";
 
     // Salesforce semantic model structure
     public static final String SEMANTIC_DATA_OBJECTS = "semanticDataObjects";
@@ -124,6 +125,8 @@ public final class ConverterConstants {
     public static final String STANDARD_TABLE_TYPE = "Standard";
     public static final String DEFAULT_CARDINALITY = "ManyToMany";
     public static final String DEFAULT_JOIN_TYPE = "Auto";
+    public static final String DEFAULT_DIMENSION_DATA_TYPE = "Text";
+    public static final String DEFAULT_MEASUREMENT_DATA_TYPE = "Number";
 
     // Properties the semantic model API requires on every payload it accepts
     public static final String DATASPACE = "dataspace";

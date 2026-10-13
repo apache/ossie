@@ -52,6 +52,7 @@ from ._common import (
     TMSL_UNTYPED,
     is_date_only_format,
     make_expression,
+    read_stash,
     text,
     warn,
     warn_unsupported,
@@ -174,9 +175,19 @@ def build_ossie_document(bim_file):
     if relationships:
         semantic_model["relationships"] = relationships
 
-    metrics, excluded_measures = _convert_metrics(tables)
+    metric_tables = [table for table in all_tables if _is_measure_table(table)]
+    metrics, excluded_measures = _convert_metrics(metric_tables)
+    excluded_tables = _strip_converted_measures(excluded_tables, metrics)
     if metrics:
         semantic_model["metrics"] = metrics
+
+    # An excluded table whose measures became model-level metrics is reported differently:
+    # its measures are not lost to the stash, so the warning must not imply they are.
+    metric_home_tables = frozenset(
+        table_name
+        for metric in metrics
+        if (table_name := read_stash(metric).get("table"))
+    )
 
     _stash_model(
         semantic_model,
@@ -186,6 +197,7 @@ def build_ossie_document(bim_file):
         excluded_tables,
         excluded_relationships,
         excluded_measures,
+        metric_home_tables,
     )
 
     return {"version": OSSIE_VERSION, **semantic_model}
@@ -232,6 +244,20 @@ def _is_calculated_table(table):
         and isinstance(partition.get("source"), dict)
         and partition["source"].get("type") == "calculated"
         for partition in table.get("partitions") or []
+    )
+
+
+def _is_measure_table(table):
+    """Whether measures on a table can become model-level Apache Ossie metrics."""
+    if _is_exported_table(table):
+        return True
+    # Calculated tables have no portable dataset source, but their measures are still
+    # model-level metrics and can be restored to the original table from the stash.
+    return (
+        _is_calculated_table(table)
+        and not table.get("isPrivate")
+        and not table.get("calculationGroup")
+        and not AUTO_DATE_TABLE_RE.match(table["name"])
     )
 
 
@@ -525,6 +551,44 @@ def _convert_metrics(tables):
     return metrics, excluded
 
 
+def _strip_converted_measures(excluded_tables, metrics):
+    """Keep converted metrics out of the table stash to avoid restoring them twice."""
+    converted = set()
+    for metric in metrics:
+        stash = read_stash(metric)
+        table_name = stash.get("table")
+        measure_name = stash.get("name", metric.get("name"))
+        if table_name and measure_name:
+            converted.add((table_name.casefold(), measure_name.casefold()))
+
+    if not converted:
+        return excluded_tables
+
+    result = []
+    for table in excluded_tables:
+        measures = table.get("measures")
+        if not isinstance(measures, list):
+            result.append(table)
+            continue
+        remaining = [
+            measure
+            for measure in measures
+            if not isinstance(measure, dict)
+            or not measure.get("name")
+            or (table["name"].casefold(), measure["name"].casefold()) not in converted
+        ]
+        if len(remaining) == len(measures):
+            result.append(table)
+            continue
+        preserved = dict(table)
+        if remaining:
+            preserved["measures"] = remaining
+        else:
+            preserved.pop("measures", None)
+        result.append(preserved)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Relationships
 # ---------------------------------------------------------------------------
@@ -679,6 +743,7 @@ def _stash_model(
     excluded_tables,
     excluded_relationships,
     excluded_measures,
+    metric_home_tables=frozenset(),
 ):
     # Properties that sit outside the `model` object (compatibilityLevel and friends) are
     # nested so they cannot collide with a model property of the same name.
@@ -694,11 +759,19 @@ def _stash_model(
     if excluded_tables:
         stash["excludedTables"] = excluded_tables
         for table in excluded_tables:
-            warn(
-                f"table '{table['name']}'",
-                f"{_exclusion_reason(table)}; excluded from the Apache Ossie model "
-                "and preserved in custom_extensions",
-            )
+            if table["name"] in metric_home_tables:
+                # The table is not a dataset, but its measures are first-class metrics,
+                # so only the table definition stays in custom_extensions.
+                detail = (
+                    "excluded from the Apache Ossie model as a dataset; its measures are "
+                    "exported as Apache Ossie metrics and the table definition is "
+                    "preserved in custom_extensions"
+                )
+            else:
+                detail = (
+                    "excluded from the Apache Ossie model and preserved in custom_extensions"
+                )
+            warn(f"table '{table['name']}'", f"{_exclusion_reason(table)}; {detail}")
     if excluded_relationships:
         stash["excludedRelationships"] = excluded_relationships
     if excluded_measures:

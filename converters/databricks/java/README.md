@@ -46,7 +46,11 @@ ignored with a notice (the first one wins) rather than rejected. On **import** (
 Apache Ossie), Metric-View-only
 features (`filter`, `parameters`, `materialization`, per-column `format`, measure `window` /
 `partition`) are instead **preserved** in `custom_extensions[DATABRICKS]`, so
-`MV -> Apache Ossie -> MV` is lossless. Any input that breaks a [requirement](#requirements)
+`MV -> Apache Ossie -> MV` is lossless. Each imported expression is labeled with the most
+portable dialect it fits: `OSSIE_SQL_2026` when it uses only the Apache Ossie expression
+language, else `ANSI_SQL` when it uses only standard SQL, else `DATABRICKS` (see
+[Dialect labels on import](#dialect-labels-on-import)). Any input that breaks a
+[requirement](#requirements)
 **raises a `ConversionException`** -- the converter never silently drops a field or produces an
 invalid result.
 
@@ -115,12 +119,36 @@ Each row maps in both directions; the **Notes** flag where a behavior is specifi
 | `relationship.from`/`to` direction | join `cardinality` | Export: source on the many (`from`) side -> `many_to_one`; on the one (`to`) side -> `one_to_many`. |
 | `dataset.primary_key` / `unique_keys` | join `rely.at_most_one_match` | Both directions: export sets `at_most_one_match` when a key covers the join columns; import recovers a `unique_keys` from it. |
 | `dataset.fields[]` | `dimensions[]` | Export: fields flatten into one list and a joined column is qualified by its full join path (`customer.c_name`; `customer.region.r_name` when nested). |
-| `field.expression.dialects[]` | `expr` | Export: prefer the `DATABRICKS` dialect, then `ANSI_SQL`, then `OSSIE_SQL_2026` (Apache Ossie's portable, ANSI-SQL-compatible dialect); other alternatives are ignored when a supported one is present, and a field with no supported dialect is dropped with a notice. |
+| `field.expression.dialects[]` | `expr` | Export: prefer the `DATABRICKS` dialect, then `ANSI_SQL`, then `OSSIE_SQL_2026` (Apache Ossie's portable, ANSI-SQL-compatible dialect); other alternatives are ignored when a supported one is present, and a field with no supported dialect is dropped with a notice. Import: one entry, labeled with the most portable dialect it fits (see [Dialect labels on import](#dialect-labels-on-import)). |
 | `metrics[]` | `measures[]` | Fact columns are referenced bare (`SUM(amount)`). A joined column is addressed by dataset name in Apache Ossie and by its full join path in the Metric View, so export expands `SUM(region.population)` to `SUM(customer.region.population)` and import maps it back. |
 | `field.label` | dimension `display_name` | A measure's `display_name` has no `label` on the Apache Ossie metric shape, so it rides in the stash instead (see the `custom_extensions` row). |
 | `field` / `metric` `description` | `comment` | |
 | `ai_context.synonyms` | `synonyms` | Only `synonyms`: every other member of an `ai_context` object is dropped with a notice. |
 | `custom_extensions[DATABRICKS]` | `filter`, `parameters`, `materialization`, per-column `format`, measure `window` / `partition` / `display_name` | Import stashes Metric-View-only features here; export restores them -- keeping `MV -> Apache Ossie -> MV` lossless. |
+
+### Dialect labels on import
+
+Import labels each expression with the most portable dialect it fits, so a model that went
+`Apache Ossie -> Metric View -> Apache Ossie` keeps a portable expression portable instead of
+coming back as `DATABRICKS`. The check is lexical and conservative: anything it does not
+recognize stays `DATABRICKS`, which is always correct for an expression read from a Metric View.
+An expression also stays `DATABRICKS` when:
+
+- it is a measure with a `window` or `partition`, or any measure of a view with a `filter`: those
+  settings change the value and ride only in the `DATABRICKS` stash;
+- it is a measure that names anything outside an aggregate call (`cost / row_count`), which the
+  Metric View resolves to another measure rather than a column;
+- it names a parameter, or a dimension other than a plain same-named column, bare or as
+  `dataset.name`, since the Metric View may resolve that name to something other than the column;
+- it belongs to a view with an unnamed dimension other than a fact wildcard (`*`, `source.*`),
+  such as `customer.*`, whose expanded names may shadow a column;
+- it qualifies a name with anything but a dataset (a struct field, or `source.` in a dimension);
+- it uses a construct whose Databricks behavior differs from the portable one, such as a window
+  (`OVER`), `DATEDIFF`, a `VARCHAR`, `FLOAT`, or integer `CAST`, or a double-quoted name.
+
+The label does not account for behavior the Apache Ossie specification leaves open, such as
+integer division, `NULL` handling in `CONCAT` and `GREATEST`, rounding of ties, the result type of
+`DATE_TRUNC` and `DATEADD`, and the unit names a date function accepts.
 
 ## Requirements
 
@@ -161,6 +189,7 @@ src/main/java/org/apache/ossie/converter/databricks/
   OssieConverterCommon.java     shared constants, YAML I/O, map accessors, the stash codec
   OssieToMetricView.java        export: Apache Ossie -> Metric View v1.1
   MetricViewToOssie.java        import: Metric View v1.1 -> Apache Ossie
+  ExpressionDialect.java        import: the most portable dialect label for an expression
   OssieDatabricksConverter.java command-line entry point (export / import)
 ```
 

@@ -1261,7 +1261,10 @@ class TestTmlNameWitness:
     normalisation changed the identifier) is trustworthy only while nobody
     has renamed the live Ossie identifier since. Self-verifying: the
     stashed name's own normalised form is compared against the live
-    identifier directly, with no separate stored witness needed."""
+    identifier directly, with no separate stored witness needed.
+
+    A `_N` suffix `_resolve_name_collision` minted after the stash was written
+    is not a rename, so the comparison accepts fold-plus-suffix."""
 
     def test_a_metric_whose_identifier_still_matches_the_stash_uses_the_stashed_name(self):
         orders = _table_doc("orders", [_column("Amount", "AMOUNT", "DOUBLE")])
@@ -1294,6 +1297,60 @@ class TestTmlNameWitness:
         columns, _formulas = _all_columns_and_formulas(doc.body)
 
         assert columns[0]["name"] == "gross_revenue"
+        assert any(i["code"] == "TS-STASH-TML-NAME-STALE" for i in log.as_dicts())
+
+    def test_a_collision_suffix_is_not_reported_as_a_rename(self):
+        # `_resolve_name_collision` minted `gross_profit_2` for the second of two
+        # display names folding to `gross_profit`, and it does that after
+        # STASH_TML_NAME was written. The suffix is this converter's own doing, so
+        # the exact display name is still current and must come back (#468).
+        orders = _table_doc("orders", [_column("Amount", "AMOUNT", "DOUBLE")])
+        metric = _metric(
+            "gross_profit_2", _dialects(("THOUGHTSPOT", "sum ( [orders::Amount] )")),
+            metric_stash={"tml_name": "Gross-Profit-($)"},
+        )
+        model = _semantic_model(datasets=[_dataset("orders", "SALES.PUBLIC.ORDERS")], metrics=[metric])
+        log = IssueLog()
+
+        doc = build_model(model, [orders], log)
+        columns, _formulas = _all_columns_and_formulas(doc.body)
+
+        assert columns[0]["name"] == "Gross-Profit-($)"
+        assert not any(i["code"] == "TS-STASH-TML-NAME-STALE" for i in log.as_dicts())
+
+    def test_a_rename_ending_in_suffix_one_is_still_stale(self):
+        # The first arrival keeps the plain identifier, so `_1` is never a
+        # collision suffix; accepting it would let a genuine rename through.
+        orders = _table_doc("orders", [_column("Amount", "AMOUNT", "DOUBLE")])
+        metric = _metric(
+            "gross_profit_1", _dialects(("THOUGHTSPOT", "sum ( [orders::Amount] )")),
+            metric_stash={"tml_name": "Gross Profit ($)"},
+        )
+        model = _semantic_model(datasets=[_dataset("orders", "SALES.PUBLIC.ORDERS")], metrics=[metric])
+        log = IssueLog()
+
+        doc = build_model(model, [orders], log)
+        columns, _formulas = _all_columns_and_formulas(doc.body)
+
+        assert columns[0]["name"] == "gross_profit_1"
+        assert any(i["code"] == "TS-STASH-TML-NAME-STALE" for i in log.as_dicts())
+
+    def test_a_rename_to_an_unrelated_suffix_is_still_stale(self):
+        # `net_profit_2` folds to `net_profit`, not to the stashed name's fold, so
+        # the suffix rule does not apply -- only a suffix on the very fold the
+        # stash carries is ours.
+        orders = _table_doc("orders", [_column("Amount", "AMOUNT", "DOUBLE")])
+        metric = _metric(
+            "net_profit_2", _dialects(("THOUGHTSPOT", "sum ( [orders::Amount] )")),
+            metric_stash={"tml_name": "Gross Profit ($)"},
+        )
+        model = _semantic_model(datasets=[_dataset("orders", "SALES.PUBLIC.ORDERS")], metrics=[metric])
+        log = IssueLog()
+
+        doc = build_model(model, [orders], log)
+        columns, _formulas = _all_columns_and_formulas(doc.body)
+
+        assert columns[0]["name"] == "net_profit_2"
         assert any(i["code"] == "TS-STASH-TML-NAME-STALE" for i in log.as_dicts())
 
     def test_a_model_whose_identifier_still_matches_the_stash_uses_the_stashed_name(self):
