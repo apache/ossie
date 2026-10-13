@@ -376,12 +376,11 @@ A measure is evaluated through the aggregate function `MEASURE`:
   alias (`MEASURE(o.revenue)`). Because no operator or function is defined on `T measure` (R1),
   a scalar expression over measures, such as `MEASURE(a + b)`, is not well-typed. Write
   `MEASURE(a) + MEASURE(b)` instead.
-  Later extensions may add other expressions of type `T measure`, such as a measure with a
-  modified evaluation context or an anonymous inline measure. This rule admits them without
-  change.
+  Later extensions may add other expressions of type `T measure`, such as a measure whose input
+  set is modified, or an anonymous inline measure. This rule admits them without change.
 
-`MEASURE(m)` evaluates `m`'s calculation at `m`'s grain, within the evaluation context
-established by the enclosing query's filters and grouping (Sections 7-8).
+`MEASURE(m)` evaluates `m`'s calculation over its input set: the source rows of `m` that remain
+in each group after the enclosing query's joins and filters (Section 8.1).
 
 > An engine MAY expose an additional spelling of this function (for example `AGG`) as a
 > synonym. Synonyms are non-normative.
@@ -522,13 +521,13 @@ A join is logically applied before measures are evaluated. It affects a measure'
 in three ways, each handled by the evaluation semantics (Section 8.1) so the measure is still
 evaluated at its own grain:
 
-- **Filtering.** Rows the join drops (an inner join's non-matches) are filtered from the
-  measure's input, just as a `WHERE` filter would, and that filtering is reflected in the measure.
+- **Filtering.** Rows the join drops (an inner join's non-matches) are removed from the
+  measure's input set, just as a `WHERE` filter would remove them.
 - **Duplication.** A source row that matches several rows on the other side appears in several
-  result rows; the duplicates are collapsed before aggregation, so the measure is not inflated.
-- **Null-extension.** An outer join's null-padded rows carry no row identity for the measure
-  (they correspond to no source row); they are dropped from this measure's aggregation input
-  (not from the query result; Section 8.1).
+  result rows, all deriving from the same source row; it enters the input set once, so the
+  measure is not inflated.
+- **Null-extension.** An outer join's null-padded rows derive from no source row of the
+  measure, so they add nothing to its input set (they remain in the query result; Section 8.1).
 
 The result of a join of measure relations is itself a measure relation whose measures retain
 their original grains (Section 3.3), so joins compose.
@@ -590,44 +589,68 @@ query. The consumer-side obligations these guarantees assume are collected in Se
 
 ### 8.1 Evaluation semantics
 
-A measure is evaluated only through `MEASURE()` in an aggregated query (Sections 6, 7.2). To
-evaluate `MEASURE(m)` in a query grouped by fields `D` (possibly empty; an empty `D` is
-the grand total), the query's joins and `WHERE` filters are applied first; then, within each
-output group, and before `m`'s aggregate is applied:
+A measure is evaluated only through `MEASURE()` in an aggregated query (Sections 6, 7.2). Its
+value in each output group is defined by the set of source rows it aggregates in that group.
 
-1. rows that share the same row identity for `m` are collapsed to one (removing duplication a
-   join introduced); and
-2. rows that carry no row identity for `m` are dropped (removing null-padded rows an outer join
-   introduced).
+**Source rows.** A measure `m`'s **source rows** are the rows produced by the `FROM` clause in
+effect where `m` is defined (Section 5.1). Each source row has a distinct row identity
+(Section 3.2).
 
-`m`'s aggregate is then evaluated over the surviving, distinct source rows of the group. If a
-group has no surviving source rows for `m` (its filters removed them all, or no row in the group
-carried `m`'s identity, as on the null-padded side of an outer join), then `m` takes the
-aggregate's standard **empty-input value** in the host SQL dialect: `SUM` and `AVG` yield NULL,
-`COUNT` yields 0, and so on, just as the aggregate would over an empty input in an ordinary
-query.
+**Derivation.** Every row of every relation that carries `m` *derives from* at most one of `m`'s
+source rows:
 
-This collapsing and dropping is internal to evaluating `m`: it changes only the rows `m`'s
-aggregate sees, never the rows or groups the query returns. Which groups appear is fixed by the
-query's joins, filters, and grouping, as in standard SQL; a group in which every row was dropped
-is kept and takes `m`'s empty-input value, rather than vanishing from the result.
+- Each row produced by `m`'s defining `FROM` clause derives from itself.
+- Projection preserves derivation: an output row derives from the source row its input row
+  derives from.
+- `WHERE` preserves derivation for the rows it keeps. A row it removes contributes nothing
+  downstream.
+- A row produced by a join derives from the source row that the joined input row carrying `m`
+  derives from. When a join matches that input row several times, every resulting row derives
+  from the same source row. An outer join's null-padded rows on `m`'s side derive from no source
+  row.
+- Subqueries, CTEs, and views preserve derivation (Section 7.7).
 
-Each measure in a query is evaluated this way independently, at its own grain (row identity,
-Section 3.2); an expression combining several `MEASURE()` calls applies its scalar operators to
-their per-group results, following the host dialect's standard scalar and NULL semantics,
-including its own handling of cases such as division by zero (Section 7.2).
+These rules apply at every query level between `m`'s definition and its evaluation, including
+the defining query and the evaluating query. Derivation is tracked separately for each measure
+column, so in a self-join, each side's measure follows its own side's rows.
 
-Step 1 is unambiguous because a measure's aggregate inputs (its argument expressions) are
-functionally determined by its row identity (Section 3.2): all rows sharing an identity carry
-the same input values. Section 9 gives one concrete realization of this definition; any
-implementation MUST produce the same results.
+**Input set.** In an aggregated query, the **input set** of `MEASURE(m)` for an output group `g`
+is the set of `m`'s source rows from which at least one row of `g` derives. `m`'s aggregate is
+evaluated over the input set, each source row contributing once, with its own argument values.
+If the input set is empty (filters removed every source row, or no row of `g` derives from a
+source row, as on the null-padded side of an outer join), `m` takes the aggregate's standard
+**empty-input value** in the host SQL dialect: `SUM` and `AVG` yield NULL, `COUNT` yields 0, and
+so on, just as the aggregate would over an empty input in an ordinary query.
+
+It follows that:
+
+- Filters and joins anywhere between `m`'s definition and its evaluation restrict `m`'s input
+  set (G1).
+- A source row contributes to `m` at most once per group, however many rows derive from it, so
+  joins never inflate `m` (G2).
+- Null-padded rows never contribute to `m`.
+
+The input set affects only the rows `m`'s aggregate sees, never the rows or groups the query
+returns. Which groups appear is fixed by the query's joins, filters, and grouping, as in standard
+SQL; a group whose input set is empty is kept and takes `m`'s empty-input value, rather than
+vanishing from the result.
+
+Each measure in a query is evaluated this way independently, over its own input set. A derived
+measure (Section 5.2) evaluates each measure it references over that measure's own input set
+for the same group. An expression combining several `MEASURE()` calls applies its scalar
+operators to their per-group results, following the host dialect's standard scalar and NULL
+semantics, including its own handling of cases such as division by zero (Section 7.2).
+
+Section 9 gives one concrete realization of this definition; any implementation MUST produce the
+same results.
 
 ### 8.2 G1: Slice-and-dice responsiveness
 
 `MEASURE(m)` responds to `WHERE` and `GROUP BY` just as a standard SQL aggregate over `m`'s
 definition would: a `WHERE` predicate restricts the input rows `m` sees (Section 7.3), and the
 query's grouping sets the output grain at which `m` is reported (Section 7.4). This follows
-directly from Section 8.1, where filters and grouping are applied ahead of `m`'s aggregate. It
+directly from Section 8.1: filters remove source rows from `m`'s input set, and each group's input
+set contains only the source rows that the group's rows derive from. It
 is what makes filtering and drill-down behave predictably and identically to non-measure
 aggregates.
 
@@ -635,9 +658,9 @@ aggregates.
 
 `MEASURE(m)` aggregates `m` at its own grain without duplication, regardless of the shape of the
 enclosing query: any join type and cardinality, and any other measures or relations present.
-This is the content of steps 1-2 of Section 8.1: each source row of `m` contributes to
-`m`'s aggregate at most once per output group, however many times a join duplicated it, and
-rows an outer join left without identity do not contribute at all. `MEASURE(m)` therefore does
+This follows from Section 8.1: `m`'s input set is a set of source rows, so each source row
+contributes to `m`'s aggregate at most once per output group, however many times a join
+duplicated it, and null-padded rows from an outer join do not contribute at all. `MEASURE(m)` therefore does
 not depend on the cardinality of any other relation or measure in the query.
 
 G2 structurally eliminates the two classic multi-table aggregation errors:
@@ -720,7 +743,7 @@ for each grouping row, by a correlated scalar subquery that de-duplicates to ide
 aggregates:
 
 1. **De-duplicate to identity.** Take the joined, filtered rows of this group, discard those
-   where `k` is null (the identity-less rows of Section 8.1 step 2), and reduce to one row per
+   where `k` is null (rows that derive from no source row, Section 8.1), and reduce to one row per
    `k`, carrying each argument expression through with `ANY_VALUE` (well-defined because every
    `ei` is functionally determined by `k`, Section 3.2). This leaves one row per distinct source
    row of the measure in the group, removing join-introduced duplication.
@@ -1310,8 +1333,8 @@ are worth considering in that design.
 seeing its definition or the tables it reads (Principle P2). We believe encapsulation should cover a
 measure's *meaning* as well: a measure has a single correct result for a given query, and a
 consumer can slice, dice, and combine measures but cannot reach in and change what a measure
-means. An extension should keep this property: a consumer evaluates a measure at additional
-contexts and combines the results, without escaping its definition.
+means. An extension should keep this property: a consumer evaluates a measure over modified
+input sets and combines the results, without escaping its definition.
 
 **Column identity.** The paper's `SET` and `ALL` modifiers identify filters by dimension, which
 requires deciding when two filters are on the same dimension. SQL has no general way to decide
