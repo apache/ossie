@@ -28,7 +28,15 @@ It does not execute actions or enforce business rules.
 
 [behavior-layer.schema.json](behavior-layer.schema.json) is the sole canonical
 schema for Behavior, Action, Effect, and Rule. [ossie-schema.json](ossie-schema.json)
-references it with `$ref`; it does not maintain inline copies of those definitions.
+embeds that resource so consumers can validate offline using just the core schema.
+The root property references the reusable `SemanticModel` definition. The embedded
+resource is generated, never edited separately; CI checks it against the canonical
+source. After changing the source, run:
+
+```sh
+python3 scripts/generate-behavior-schema.py --apply
+```
+
 The YAML and Markdown specifications describe this same contract.
 
 New model documents SHOULD use the optional root-level `behavior` property.

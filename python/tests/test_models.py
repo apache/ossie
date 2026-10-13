@@ -17,6 +17,7 @@
 
 import json
 from collections.abc import Callable
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -275,6 +276,173 @@ def test_behavior_survives_document_and_embedded_model_serialization() -> None:
     del model_data["version"]
     embedded = OssieSemanticModel.model_validate(model_data)
     assert embedded.model_dump(by_alias=True, exclude_none=True, mode="json") == model_data
+
+
+@pytest.fixture(scope="module")
+def behavior_schema() -> dict:
+    path = Path(__file__).parents[2] / "core-spec/behavior-layer.schema.json"
+    return json.loads(path.read_text())
+
+
+def _behavior_node(schema: dict, definitions: dict) -> dict:
+    if "$ref" in schema:
+        return definitions[schema["$ref"].rsplit("/", 1)[-1]]
+    return schema
+
+
+def _behavior_example(schema: dict, definitions: dict):
+    """Populate every declared field, including free-form extension nulls."""
+    schema = _behavior_node(schema, definitions)
+    if "enum" in schema:
+        return schema["enum"][0]
+    if schema["type"] == "object":
+        return {
+            **{
+                name: _behavior_example(child, definitions)
+                for name, child in schema.get("properties", {}).items()
+            },
+            "vendor_extension": {"value": None},
+        }
+    if schema["type"] == "array":
+        return [_behavior_example(schema["items"], definitions)]
+    if schema["type"] == "boolean":
+        return False
+    assert schema["type"] == "string"
+    return "value"
+
+
+def _behavior_nodes(schema: dict, definitions: dict, value, path: tuple = ()):
+    schema = _behavior_node(schema, definitions)
+    yield path, schema
+    if schema["type"] == "object":
+        for name, child in schema.get("properties", {}).items():
+            if name in value:
+                yield from _behavior_nodes(child, definitions, value[name], (*path, name))
+    elif schema["type"] == "array" and value:
+        yield from _behavior_nodes(schema["items"], definitions, value[0], (*path, 0))
+
+
+_BEHAVIOR_MISSING = object()
+
+
+def _mutate_behavior(value: dict, path: tuple, replacement):
+    mutated = deepcopy(value)
+    if not path:
+        return replacement
+    target = mutated
+    for key in path[:-1]:
+        target = target[key]
+    if replacement is _BEHAVIOR_MISSING:
+        del target[path[-1]]
+    else:
+        target[path[-1]] = replacement
+    return mutated
+
+
+@pytest.mark.parametrize("model_class", [OssieDocument, OssieSemanticModel])
+@pytest.mark.parametrize("alias", ["actions", "action_types", "both"])
+def test_behavior_validation_matches_canonical_schema(
+    document_data: dict, behavior_schema: dict, model_class: type[BaseModel], alias: str
+) -> None:
+    """Check every canonical property, enum value, required field, and item type.
+
+    The schema supplies the cases and expected acceptance, so SDK-only constraints
+    cannot silently become a different behavior contract.
+    """
+    jsonschema = pytest.importorskip("jsonschema")
+    validator = jsonschema.Draft202012Validator(behavior_schema)
+    definitions = behavior_schema["$defs"]
+    behavior = _behavior_example(behavior_schema, definitions)
+    if alias != "both":
+        del behavior["action_types" if alias == "actions" else "actions"]
+    data = dict(document_data)
+    if model_class is OssieSemanticModel:
+        del data["version"]
+
+    for path, schema in _behavior_nodes(behavior_schema, definitions, behavior):
+        replacements = [None, False, 1, "", [], {}]
+        if path:
+            replacements.append(_BEHAVIOR_MISSING)
+        if "enum" in schema:
+            replacements.extend([*schema["enum"], "NOT_A_VALID_VALUE"])
+        if schema["type"] == "array":
+            replacements.extend([[None], [1]])
+        if schema["type"] == "boolean":
+            replacements.extend([True, "false"])
+        for replacement in replacements:
+            value = _mutate_behavior(behavior, path, replacement)
+            # Python construction permits top-level None to mean omission, as for
+            # the other optional model fields. Serialized loaders reject it.
+            if value is None:
+                continue
+            expected = validator.is_valid(value)
+            case = f"{model_class.__name__}, {alias}, {path}, {replacement!r}"
+            try:
+                model = model_class.model_validate({**data, "behavior": value})
+            except ValidationError as error:
+                assert not expected, case
+                assert any(item["loc"][0] == "behavior" for item in error.errors()), case
+            else:
+                assert expected, case
+                assert model.behavior == value, case
+
+
+@pytest.mark.parametrize("model_class", [OssieDocument, OssieSemanticModel])
+@pytest.mark.parametrize("alias", ["actions", "action_types", "both"])
+def test_behavior_extensions_aliases_and_round_trips(
+    document_data: dict, behavior_schema: dict, model_class: type[BaseModel], alias: str
+) -> None:
+    behavior = _behavior_example(behavior_schema, behavior_schema["$defs"])
+    if alias != "both":
+        del behavior["action_types" if alias == "actions" else "actions"]
+    # These are extension keys, even though the private validation types use them
+    # as Python names for the reserved words `from` and `if`.
+    for name in ("actions", "action_types"):
+        if name in behavior:
+            behavior[name][0]["effects"][0]["transition"]["from_state"] = None
+    behavior["rules"][0]["condition"] = None
+    data = {**document_data, "behavior": behavior}
+    if model_class is OssieSemanticModel:
+        del data["version"]
+    model = model_class.model_validate(data)
+
+    assert isinstance(model.behavior, dict)
+    assert model.behavior == behavior
+    assert model.model_dump(mode="json", by_alias=True, exclude_none=True) == data
+    assert model_class.model_validate_json(model.model_dump_json(exclude_none=True)) == model
+    document = OssieDocument.model_validate({"version": "0.2.0.dev0", **data})
+    assert OssieDocument.from_ossie_json(document.to_ossie_json()) == document
+    assert OssieDocument.from_ossie_yaml(document.to_ossie_yaml()) == document
+    assert json.loads(document.to_ossie_json())["behavior"] == behavior
+    assert yaml.safe_load(document.to_ossie_yaml())["behavior"] == behavior
+
+
+@pytest.mark.parametrize("model_class", [OssieDocument, OssieSemanticModel])
+def test_behavior_rejects_invalid_blocks_without_schema_dependency(
+    document_data: dict, model_class: type[BaseModel]
+) -> None:
+    data = dict(document_data)
+    if model_class is OssieSemanticModel:
+        del data["version"]
+    invalid_blocks = [
+        {},
+        {"namespace": "example", "behavior_layer_version": "0.1", "rules": []},
+        {
+            "namespace": "example", "behavior_layer_version": "0.1", "rules": [],
+            "actions": [{"id": "action", "title": "Action", "effects": [
+                {"entity": "dataset", "mode": "write", "impact_type": "invalid"}
+            ]}],
+        },
+    ]
+    for behavior in invalid_blocks:
+        with pytest.raises(ValidationError):
+            model_class.model_validate({**data, "behavior": behavior})
+
+    for optional in ({}, {"behavior": None}):
+        assert model_class.model_validate({**data, **optional}).behavior is None
+    for load in (OssieDocument.from_ossie_json, OssieDocument.from_ossie_yaml):
+        with pytest.raises(ValueError, match="set to null"):
+            load(json.dumps({**document_data, "behavior": None}))
 
 
 def test_document_defaults_version_when_omitted(document_data: dict) -> None:

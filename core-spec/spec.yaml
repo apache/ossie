@@ -96,8 +96,7 @@ relationships: []
 # See Metrics section below for detailed structure
 metrics: []
 
-# Optional: Behavior metadata; canonical contract: behavior-layer.schema.json
-behavior: {}
+# Optional: Behavior metadata; see the Behavior Schema below for a valid block.
 
 # Optional: Vendor-specific attributes for extensibility
 # Allows vendors to add custom metadata without breaking core compatibility

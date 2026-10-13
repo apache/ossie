@@ -26,7 +26,7 @@ import pytest
 # validate.py exits at import time when its dependencies are missing, which
 # would abort the whole pytest session during collection — skip instead.
 yaml = pytest.importorskip("yaml")
-pytest.importorskip("jsonschema")
+jsonschema = pytest.importorskip("jsonschema")
 
 _VALIDATE_PATH = Path(__file__).parents[1] / "validate.py"
 _SPEC = spec_from_file_location("ossie_validate", _VALIDATE_PATH)
@@ -108,6 +108,77 @@ def behavior_document():
 def behavior_schema():
     path = Path(__file__).parents[2] / "core-spec/behavior-layer.schema.json"
     return json.loads(path.read_text())
+
+
+def test_behavior_schema_generation_and_drift_check(
+    core_schema, behavior_schema, tmp_path, monkeypatch
+):
+    path = Path(__file__).parents[2] / "scripts/generate-behavior-schema.py"
+    spec = spec_from_file_location("generate_behavior_schema", path)
+    generator = module_from_spec(spec)
+    spec.loader.exec_module(generator)
+    monkeypatch.setattr(generator, "_CORE_SPEC", tmp_path)
+    core_path = tmp_path / "ossie-schema.json"
+    source_path = tmp_path / "behavior-layer.schema.json"
+    original = (path.parents[1] / "core-spec/ossie-schema.json").read_text()
+    core_path.write_text(original)
+    source_path.write_text(json.dumps(behavior_schema))
+
+    assert core_schema["$defs"]["SemanticModel"]["properties"]["behavior"] == behavior_schema
+    monkeypatch.setattr("sys.argv", [str(path), "--check"])
+    assert generator.main() == 0
+
+    behavior_schema["properties"]["namespace"]["minLength"] = 2
+    source_path.write_text(json.dumps(behavior_schema))
+    assert generator.main() == 1
+    assert core_path.read_text() == original
+
+    monkeypatch.setattr("sys.argv", [str(path), "--apply"])
+    assert generator.main() == 0
+    core_schema["$defs"]["SemanticModel"]["properties"]["behavior"] = behavior_schema
+    assert json.loads(core_path.read_text()) == core_schema
+    monkeypatch.setattr("sys.argv", [str(path), "--check"])
+    assert generator.main() == 0
+
+
+@pytest.mark.parametrize("alias", ["actions", "action_types", "both"])
+@pytest.mark.parametrize("embedded", [False, True])
+def test_single_file_behavior_schema_validates_offline(
+    offline, tmp_path, core_schema, behavior_document, alias, embedded
+):
+    # No sibling file or custom registry is available to this consumer.
+    schema_path = tmp_path / "ossie-schema.json"
+    schema_path.write_text(json.dumps(core_schema))
+    schema = json.loads(schema_path.read_text())
+    if embedded:
+        schema = {
+            "$schema": schema["$schema"],
+            "$id": schema["$id"],
+            "$ref": "#/$defs/SemanticModel",
+            "$defs": schema["$defs"],
+        }
+        del behavior_document["version"]
+    behavior = behavior_document["behavior"]
+    if alias == "action_types":
+        behavior["action_types"] = behavior.pop("actions")
+    elif alias == "both":
+        behavior["action_types"] = deepcopy(behavior["actions"])
+    validator = jsonschema.Draft202012Validator(schema)
+    validator.validate(behavior_document)
+    actions = behavior.get("actions", behavior.get("action_types"))
+    actions[0]["effects"][0]["impact_type"] = "invalid"
+    assert not validator.is_valid(behavior_document)
+    behavior_document["behavior"] = {}
+    assert not validator.is_valid(behavior_document)
+
+
+def test_behavior_template_has_a_valid_optional_block(behavior_schema):
+    path = Path(__file__).parents[2] / "core-spec/spec.yaml"
+    documents = list(yaml.safe_load_all(path.read_text()))
+    root = next(document for document in documents if "name" in document and "datasets" in document)
+    assert "behavior" not in root
+    block = next(document["behavior"] for document in documents if "behavior" in document)
+    jsonschema.Draft202012Validator(behavior_schema).validate(block)
 
 
 @pytest.mark.parametrize("alias", ["actions", "action_types", "both"])

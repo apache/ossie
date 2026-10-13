@@ -18,10 +18,20 @@
 import json
 import math
 from enum import Enum
-from typing import Any, Literal, Optional, Union
+from typing import Annotated, Any, Literal, Optional, Union
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, StrictBool, model_serializer
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    StrictBool,
+    TypeAdapter,
+    field_validator,
+    model_serializer,
+)
+from typing_extensions import NotRequired, TypedDict
 
 
 _AI_CONTEXT_FIELDS = frozenset({"instructions", "synonyms", "examples"})
@@ -56,9 +66,9 @@ def _invalid_below(
     accepts the non-standard `NaN`, `Infinity` and `-Infinity`, none of which JSON can
     express -- a `NaN` reaching `to_ossie_json` comes back out as `null`.
 
-    `free_form` marks the parts of `ai_context` where a null is legal: its object form
-    sets `additionalProperties: true`, so an extra key may hold any value. A non-finite
-    number is rejected there too, since it still cannot be serialized.
+    `free_form` marks the parts of `ai_context` where a null is legal, and behavior,
+    whose declared fields are checked separately. Both allow arbitrary extension
+    values. A non-finite number is rejected there too, since it cannot be serialized.
 
     `active` holds the containers on the current branch, so a self-reference raises
     while an anchor reused on a sibling branch still walks. `walked` holds containers
@@ -87,7 +97,9 @@ def _invalid_below(
                     found.append((where, _NULL))
             else:
                 found += _invalid_below(
-                    value, where, inner, walked, legal_null, key == "ai_context"
+                    value, where, inner, walked,
+                    legal_null or (not path and key == "behavior"),
+                    key == "ai_context",
                 )
     else:
         for index, item in enumerate(node):
@@ -283,6 +295,84 @@ class OssieMetric(BaseModel):
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
 
+class _BehaviorObject(TypedDict):
+    __pydantic_config__ = ConfigDict(extra="allow")
+
+
+_BehaviorString = Annotated[str, Field(min_length=1)]
+
+
+class _BehaviorSelectors(_BehaviorObject):
+    dataset: NotRequired[str]
+    field_names: NotRequired[list[str]]
+
+
+class _BehaviorTransition(_BehaviorObject):
+    from_state: NotRequired[Annotated[str, Field(alias="from")]]
+    to: NotRequired[str]
+
+
+class _BehaviorEffect(_BehaviorObject):
+    entity: Literal["dataset", "field", "metric", "relationship"]
+    mode: Literal["read", "write", "derive"]
+    impact_type: NotRequired[Literal[
+        "state_transition", "master_data_mutation", "transactional_write",
+        "derived_metric_change", "other",
+    ]]
+    selectors: NotRequired[_BehaviorSelectors]
+    transition: NotRequired[_BehaviorTransition]
+    set_value: NotRequired[str]
+    confidence: NotRequired[Literal["guaranteed", "likely", "unknown"]]
+    notes: NotRequired[str]
+    tags: NotRequired[list[str]]
+
+
+class _BehaviorAction(_BehaviorObject):
+    id: _BehaviorString
+    title: _BehaviorString
+    description: NotRequired[str]
+    kind: NotRequired[Literal["command", "query"]]
+    operation: NotRequired[str]
+    aggregate: NotRequired[str]
+    entity_name: NotRequired[str]
+    idempotency: NotRequired[Literal["idempotent", "non_idempotent", "unknown"]]
+    applies_to: NotRequired[dict[str, Any]]
+    io_schema: NotRequired[dict[str, Any]]
+    effects: NotRequired[list[_BehaviorEffect]]
+    examples: NotRequired[list[str]]
+    tool_hint: NotRequired[dict[str, Any]]
+    tags: NotRequired[list[str]]
+    synonyms: NotRequired[list[str]]
+    deprecated: NotRequired[bool]
+    version: NotRequired[str]
+
+
+class _BehaviorRule(_BehaviorObject):
+    id: _BehaviorString
+    title: _BehaviorString
+    description: NotRequired[str]
+    severity: Literal["error", "warn", "info"]
+    when: dict[str, Any]
+    condition: NotRequired[Annotated[dict[str, Any], Field(alias="if")]]
+    constraint: dict[str, Any]
+    message: _BehaviorString
+    remediation: NotRequired[str]
+    references: NotRequired[list[dict[str, Any]]]
+    tags: NotRequired[list[str]]
+
+
+class _Behavior(_BehaviorObject):
+    namespace: _BehaviorString
+    behavior_layer_version: _BehaviorString
+    metadata: NotRequired[dict[str, Any]]
+    actions: NotRequired[list[_BehaviorAction]]
+    action_types: NotRequired[list[_BehaviorAction]]
+    rules: list[_BehaviorRule]
+
+
+_BEHAVIOR_ADAPTER = TypeAdapter(_Behavior)
+
+
 class OssieSemanticModel(BaseModel):
     """Semantic model: the datasets, relationships, and metrics for one business domain."""
 
@@ -294,9 +384,19 @@ class OssieSemanticModel(BaseModel):
     datasets: list[OssieDataset] = Field(..., min_length=1)
     relationships: Optional[list[OssieRelationship]] = None
     metrics: Optional[list[OssieMetric]] = None
-    # Behavior field constraints are defined by the canonical JSON Schema.
+    # Keep the dictionary API and extension values while enforcing the canonical
+    # behavior-layer.schema.json constraints; regression tests check schema parity.
     behavior: Optional[dict[str, Any]] = None
     custom_extensions: Optional[list[OssieCustomExtension]] = None
+
+    @field_validator("behavior")
+    @classmethod
+    def _validate_behavior(cls, value: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+        if value is not None:
+            _BEHAVIOR_ADAPTER.validate_python(value, strict=True)
+            if "actions" not in value and "action_types" not in value:
+                raise ValueError("behavior requires actions or action_types")
+        return value
 
 
 class OssieDocument(OssieSemanticModel):

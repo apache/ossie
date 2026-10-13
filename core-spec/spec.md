@@ -171,8 +171,10 @@ The optional root-level `behavior` property describes actions, rules, and effect
 for planning and attribution. It does not execute actions or enforce policies.
 
 [behavior-layer.schema.json](behavior-layer.schema.json) is the canonical
-validation source. `ossie-schema.json` references it with `$ref`, including from
-the reusable `SemanticModel` definition. The YAML reference describes the same
+validation source. `ossie-schema.json` embeds a generated copy in its reusable
+`SemanticModel` definition for single-file offline validation, with a CI check
+preventing drift from the canonical source. The root property references that
+same definition. The YAML reference describes the same
 contract. See [Behavior Layer](behavior-layer.md) for all fields and legacy
 embedded-payload validation.
 
