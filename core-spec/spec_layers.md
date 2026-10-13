@@ -35,7 +35,7 @@ Ossie is organized into four specification layers, each addressing a distinct co
 | Layer | Name | Role |
 |-------|------|------|
 | 1 | Model Definition | Model definition: the Ossie model format and the expression language used within it |
-| 2 | Relational Query Interface | Query interface: SQL-native, grain-safe measure evaluation, full SQL invariants |
+| 2 | Relational Query Interface | Query interface: SQL-native, duplication-free measure evaluation, full SQL invariants |
 | 3 | Wide Table Query Interface | Query interface: declarative flat-object queries, heuristic join resolution |
 | 4 | Ontology | Ontology workstream: higher-order semantic and knowledge-graph concepts |
 
@@ -79,13 +79,13 @@ Layers 2 and 3 define that.
 Layer 2 is the SQL-native query interface for Ossie models. Its query language is the Layer 1
 expression language extended with the relational constructs of SQL: joins, group-by, filters,
 CTEs, ordering, etc. To this it adds a small set of extensions for measures: a measure column
-type, a way to define measures within a query, and the `MEASURE()` function, which evaluates a
-measure at its declared grain.
+type, a way to define measures within a query, and the `AGG()` function, which evaluates a
+measure.
 
 Layer 2 establishes the guarantee: **measures are evaluated without duplication regardless of
 how they are queried.** Fan-out and chasm-trap errors cannot occur when measures are queried
 through this interface. The model's datasets are exposed as SQL relations; consumers query them
-with ordinary SQL, using `MEASURE()` in place of raw aggregates.
+with ordinary SQL, using `AGG()` in place of raw aggregates.
 
 This layer preserves full SQL invariants. Tools that generate SQL, embed SQL in notebooks, or
 build on the relational algebra can use Layer 2 without giving up any SQL guarantees.
@@ -102,7 +102,7 @@ is required from the consumer.
 This interface trades explicit query control for simplicity, making it accessible to ad-hoc
 users, AI agents, and BI tools without their own data model. Measure correctness is inherited
 from Layer 2: a wide-table query is defined as equivalent to a SQL measures query (with
-heuristic join and filter choices), so the same grain-safe evaluation guarantee holds.
+heuristic join and filter choices), so the same duplication-free evaluation guarantee holds.
 Layers 2 and 3 query the same model, so a question that Layer 3 cannot express can be answered
 in Layer 2 without changing the model.
 
@@ -124,7 +124,7 @@ group (`#ossie-ontology-wg`) and is a separate workstream from the query interfa
 Layers 2 and 3 compose: the meaning of a wide-table (Layer 3) query is defined by an
 equivalent SQL measures (Layer 2) query, with heuristic join and filter choices. This means
 correctness guarantees flow from Layer 2 through Layer 3—a consumer using the declarative
-interface gets the same grain-safe measure evaluation as one writing SQL directly.
+interface gets the same duplication-free measure evaluation as one writing SQL directly.
 
 Layer 2 is the semantic target for Layer 3, not a required execution path. An implementation
 does not have to translate Layer 3 queries into Layer 2 SQL text; it only has to return the
@@ -146,7 +146,7 @@ The layered approach was proposed by Justin Talbot in
 clarified the relationship between the wide-table and SQL-compliant interfaces, and proposed a
 prioritization for defining semantics across layers.
 
-The grain-safe measure model underlying Layer 2 is grounded in Hyde and Fremlin,
+The measure model underlying Layer 2 is grounded in Hyde and Fremlin,
 [*Measures in SQL*](https://doi.org/10.48550/arXiv.2406.00251) (arXiv:2406.00251).
 
 ### Mailing List Discussion
@@ -160,7 +160,7 @@ The following `dev@ossie.apache.org` threads trace how the layered model emerged
 
 - **[[DISCUSS] PRs #246 (Foundational Semantics) and #237 (Compliance Suite)](https://lists.apache.org/thread/mqlbbb4ndhb0qo9sf2yn60fb9tlzv59t)**
   (Justin Talbot and Chris Eubank, August 2026). Raised concerns that PR #246 bundled normative
-  correctness guarantees (grain-safe aggregation) with opinionated choices (join paths, filter
+  correctness guarantees (duplication-free aggregation) with opinionated choices (join paths, filter
   propagation, join types) in a way that made adoption all-or-nothing for BI vendors. Argued for
   separating the two into distinct layers.
 
