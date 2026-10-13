@@ -557,15 +557,19 @@ When, adding the query interface, window functions will be subject to where they
 ```sql
 function_name(args) OVER (
   [PARTITION BY partition_expr, ...]
-  [ORDER BY order_expr [ASC|DESC] [NULLS FIRST|NULLS LAST], ...]
+  [ORDER BY order_expr [ASC|DESC] [NULLS {FIRST|LAST}], ...]
   [frame_clause]
 )
 ```
 
-`NULLS FIRST` sorts NULL values of that `order_expr` before non-NULL values, and `NULLS LAST` after them, with either `ASC` or `DESC`:
+Each `ORDER BY` item has three independent parts:
+
+- `order_expr`: the value rows are sorted by.
+- `ASC` or `DESC`: the sort direction of non-NULL values.
+- `NULLS FIRST` or `NULLS LAST`: whether NULL values of `order_expr` sort before or after its non-NULL values, regardless of the sort direction.
 
 ```sql
--- Rank by revenue, rows with a NULL revenue last
+-- Rank non-NULL revenues from high to low, rows with a NULL revenue last
 RANK() OVER (ORDER BY revenue DESC NULLS LAST)
 ```
 
