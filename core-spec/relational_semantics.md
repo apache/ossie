@@ -371,9 +371,14 @@ A measure is evaluated through the aggregate function `MEASURE`:
   appear (e.g. SELECT list, HAVING, ORDER BY), and it MUST NOT appear where a standard aggregate
   may not. Placing it in a SELECT list or `HAVING` makes the query aggregated
   (Section 7.2), just as any aggregate does.
-- **Argument.** The argument MUST resolve to a measure column (a column of type `T measure`),
-  optionally qualified by relation alias (`MEASURE(o.revenue)`). It MUST NOT be an arbitrary
-  scalar expression.
+- **Argument.** The argument MUST be an expression of type `T measure`. In this version, the
+  only such expression is a reference to a measure column, optionally qualified by relation
+  alias (`MEASURE(o.revenue)`). Because no operator or function is defined on `T measure` (R1),
+  a scalar expression over measures, such as `MEASURE(a + b)`, is not well-typed. Write
+  `MEASURE(a) + MEASURE(b)` instead.
+  Later extensions may add other expressions of type `T measure`, such as a measure with a
+  modified evaluation context or an anonymous inline measure. This rule admits them without
+  change.
 
 `MEASURE(m)` evaluates `m`'s calculation at `m`'s grain, within the evaluation context
 established by the enclosing query's filters and grouping (Sections 7-8).
