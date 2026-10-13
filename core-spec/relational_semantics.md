@@ -67,10 +67,10 @@ alone gives flexibility, but not correctness.
 
 This specification proposes that BI and AI tools query Ossie models through standard SQL extended
 with correct measure semantics ([*Measures in SQL*](https://arxiv.org/abs/2406.00251)). The engine
-evaluates a measure at its own grain, and it stays correct however the consumer filters, groups,
-and joins. A tool evaluates it with a single `MEASURE()` aggregate and otherwise writes the SQL it
-always would. Consumers get both governed, consistent measures and the flexibility of a SQL query
-interface.
+evaluates each measure over its own source rows, and it stays correct however the consumer
+filters, groups, and joins. A tool evaluates it with a single `MEASURE()` aggregate and otherwise
+writes the SQL it always would. Consumers get both governed, consistent measures and the
+flexibility of a SQL query interface.
 
 ### 1.2 At a glance
 
@@ -91,13 +91,13 @@ GROUP BY o.region
 ORDER BY MEASURE(o.total_revenue) DESC;
 ```
 
-`total_revenue` (on `orders`) and `ticket_count` (on `support`) are measures at different grains,
-identified as measures from metadata (Section 11). `region`, `customer_id`, and `order_date` are
-ordinary fields. The tool joins the two tables as it would any tables and evaluates a measure from
-each with `MEASURE()`. The engine computes each measure at its own grain, so the many-to-many
-join on `customer_id` inflates neither one (no fan-out or chasm trap, G2), while `WHERE` and
-`GROUP BY` slice them like any aggregate (G1), on any field, join key or not. The same query
-yields the same measure values across tools. A consuming tool writes `MEASURE(name)` where it
+`total_revenue` (on `orders`) and `ticket_count` (on `support`) are measures over different source
+rows, identified as measures from metadata (Section 11). `region`, `customer_id`, and `order_date`
+are ordinary fields. The tool joins the two tables as it would any tables and evaluates a measure
+from each with `MEASURE()`. The engine computes each measure over its own source rows, so the
+many-to-many join on `customer_id` inflates neither one (no fan-out or chasm trap, G2), while
+`WHERE` and `GROUP BY` slice them like any aggregate (G1), on any field, join key or not. The same
+query yields the same measure values across tools. A consuming tool writes `MEASURE(name)` where it
 would otherwise write a raw aggregate, and generates SQL as it always has. Its obligations are in
 Section 8.5.
 
@@ -116,8 +116,8 @@ with several tickets and vice versa. A raw `SUM`/`COUNT` over the joined rows wo
 
 This specification covers:
 
-- The **data model**: relations carrying fields and measures, and the *grain* of a
-  measure (Section 3).
+- The **data model**: relations carrying fields and measures, and the *row identity* of a
+  measure's source rows (Section 3).
 - The **type discipline** for measures (Section 4).
 - The **semantics** of defining measures and of querying them through SQL operators:
   projection, selection, joins, grouping, subqueries, and set operators (Sections 5-7).
@@ -176,8 +176,8 @@ These principles motivate the normative rules and are themselves non-normative.
 
 This interface exposes an Ossie semantic model as SQL relations. Each dataset in an Ossie model
 becomes a relation, and the relation's columns are the dataset's fields and metrics. This section
-defines that relational data model: relations of fields and measures (Section 3.1), the grain a
-measure carries (Section 3.2), and how it maps to the Ossie model (Section 3.4).
+defines that relational data model: relations of fields and measures (Section 3.1), the row
+identity a measure carries (Section 3.2), and how it maps to the Ossie model (Section 3.4).
 
 ### 3.1 Relations, fields, measures
 
@@ -186,7 +186,7 @@ SQL multiset semantics. Each column is exactly one of:
 
 - a **field**: an ordinary SQL column of some scalar type `T`; or
 - a **measure**: a column of type `T measure` (Section 4) that carries an unevaluated
-  aggregate calculation together with the grain at which it is to be evaluated.
+  aggregate calculation together with the row identity of the source rows it aggregates.
 
 A **measure relation** is a relation with at least one measure column. A relation with no
 measure columns is an ordinary relation and MUST behave exactly like a standard SQL relation
@@ -195,12 +195,12 @@ under all operators; this specification imposes no additional requirements on it
 Fields and measures share a single column namespace within a relation. Column names within
 a relation MUST be unique.
 
-### 3.2 Grain (row identity)
+### 3.2 Row identity
 
-Every measure carries the identity of the source rows it aggregates. This identity is its
-**grain**. At the point where a measure is defined (Section 5), each row of the measure's source
-has an identity. This **row identity** is remembered as the measure propagates through a query,
-and it governs how the measure is aggregated (Section 8).
+Every measure carries the identity of the source rows it aggregates. At the point where a
+measure is defined (Section 5), each row of the measure's source has an identity. This **row
+identity** is remembered as the measure propagates through a query, and it governs how the
+measure is aggregated (Section 8).
 
 Two properties define row identity:
 
@@ -210,7 +210,8 @@ Two properties define row identity:
   identity: a candidate identity under which two genuinely different rows collide is not a valid
   identity.)
 - A row **may lack an identity**. In a consuming query this happens to rows a join fabricates
-  that correspond to no source row (for example, the null-padded side of an outer join).
+  that derive from no source row (for example, the null-padded side of an outer join; Section
+  8.1).
 
 A measure's row identity is fixed at definition time and is not altered by a consuming query.
 
@@ -220,17 +221,18 @@ whether any representation is exposed to consumers, are discussed in Sections 9 
 row identity needs a declaration syntax at all is an open question (Section 13.1). It is a
 semantic notion and need not be a stored column; Section 9 gives one concrete realization.
 
-> **Rationale (non-normative).** The grain is the single piece of state that distinguishes a
+> **Rationale (non-normative).** Row identity is the single piece of state that distinguishes a
 > measure from a raw aggregate. A raw aggregate sums whatever rows reach it, so a join that
 > duplicates rows silently inflates downstream aggregates. A measure remembers the identity of
-> its defining rows and so can be de-duplicated back to its own grain no matter how upstream
-> operations multiply rows.
+> its source rows and so aggregates each of them once, no matter how upstream operations
+> multiply rows.
 
-### 3.3 Multi-grain relations
+### 3.3 Relations with measures from several sources
 
-Distinct measures in the same relation MAY have distinct grains. A relation formed by joining
-two measure relations (Section 7.6) carries measures at each contributing relation's original
-grain. Each measure is evaluated at its own grain independently (Guarantee G2).
+Distinct measures in the same relation MAY have distinct source rows. A relation formed by
+joining two measure relations (Section 7.6) carries each contributing relation's measures with
+their original row identities. Each measure is evaluated over its own source rows independently
+(Guarantee G2).
 
 ### 3.4 Relationship to the Ossie semantic model
 
@@ -243,15 +245,15 @@ names. The correspondence:
 | relation | `dataset` | A logical table (fact or dimension) exposed as a SQL relation. |
 | field | `field` | A scalar (non-measure) column; we adopt Ossie's term. Ossie's optional `dimension` role (e.g. `is_time`) is metadata this interface does not require. |
 | measure | `metric` | An aggregate expression on the model's data (of any scalar result type). Ossie currently places metrics at the *model* level, not on a dataset; Section 10.3 reconciles that and recommends Ossie add per-relation measures. |
-| grain / row identity (Section 3.2) | `primary_key` | A dataset's declared primary key is a natural source of a measure's row identity. |
+| row identity (Section 3.2) | `primary_key` | A dataset's declared primary key is a natural source of a measure's row identity. |
 | join relationship (Section 11.3) | `relationship` (`from`/`to`, `from_columns`/`to_columns`) | `from`/`to` map to source/target and the columns to the join predicate (`from` many, `to` one); Section 11.3 adds cardinality, roles, and arbitrary `ON`. |
 | Layer 1 expression | `expression` (per dialect) | Ossie carries SQL per dialect; a Layer 1 expression is the portable form (Section 1.1). |
 
 Ossie model metadata this interface does not natively surface (`ai_context`, `custom_extensions`,
 and non-selected expression dialects) is addressed under discovery (Section 11) and out of scope
-(Section 13.2). A conforming engine MUST preserve metric
-semantics: a metric evaluated via `MEASURE()` is computed from the model's metric definition (its
-aggregate and grain), so two consumers issuing the same query agree on its value (Section 10.2).
+(Section 13.2). A conforming engine MUST preserve metric semantics: a metric evaluated via
+`MEASURE()` is computed from the model's metric definition (its aggregate and source rows), so two
+consumers issuing the same query agree on its value (Section 10.2).
 
 ---
 
@@ -298,7 +300,7 @@ including `MEASURE()`, is valid only in an aggregated context (R2).
 ### 4.3 Propagation
 
 Under projection, selection, joins, and subqueries, a measure column retains its type
-`T measure` and its grain (Sections 3.2, 7).
+`T measure` and its row identity (Sections 3.2, 7).
 
 ---
 
@@ -324,9 +326,10 @@ Normatively:
 
 - The operand of a measure definition MUST be a valid SQL aggregate expression (in the
   Layer 1 expression language). A non-aggregate operand MUST be rejected.
-- The measure's grain (Section 3.2) is captured from the `FROM` clause in effect at the point
-  of definition. The definition's own fields constrain nothing about the grain; the grain
-  is the identity of the source rows, not the projected fields.
+- The measure's source rows, and their row identity (Section 3.2), are captured from the
+  `FROM` clause in effect at the point of definition. The definition's own fields constrain
+  nothing about the row identity; it is the identity of the source rows, not of the projected
+  fields.
 - The result column has type `T measure`, where `T` is the aggregate expressions's output type.
 
 ### 5.2 Derived measures
@@ -343,20 +346,20 @@ avg_order_value := (MEASURE(total_revenue) / COUNT(DISTINCT order_id)) TO MEASUR
 
 `MEASURE(total_revenue)` reads the existing revenue measure and `COUNT(DISTINCT order_id)`
 counts orders from a raw field. A derived measure delegates to the measures it references: each
-is evaluated at its own grain, and the surrounding scalar expression is applied after those
+is evaluated over its own source rows, and the surrounding scalar expression is applied after those
 evaluations (see Section 7.2). Its inner `MEASURE()` calls are captured unevaluated, just as
 `TO MEASURE` captures `SUM(x)`: they are evaluated at query time, in the consuming query's
 context (not when the derived measure is defined), so no `MEASURE()` is evaluated outside an
 aggregated context (R2). Derived measures MAY reference measures from more than one relation;
-such a measure is a **multi-table (cross-grain) measure** (Section 10.3).
+such a measure is a **multi-table measure** (Section 10.3).
 
-### 5.3 Grain and window controls
+### 5.3 Evaluation controls
 
-Because a measure carries its own grain, an engine MAY offer controls that manipulate that
-grain: including or excluding fields from the evaluation grain, semi-additive selection, and
-windowing (cumulative, trailing, period-over-period). These controls are extensions layered on
-top of the base semantics defined here; their specification is out of scope for this document.
-When present, they MUST preserve the guarantees of Section 8 for the grain they declare.
+An engine MAY offer controls that change which source rows a measure aggregates in each group:
+including or excluding fields from the grouping a measure responds to, semi-additive selection,
+and windowing (cumulative, trailing, period-over-period). These controls are extensions layered
+on top of the base semantics defined here; their specification is out of scope for this
+document. When present, they MUST preserve the no-duplication guarantee of Section 8.
 
 ---
 
@@ -404,9 +407,9 @@ follow from the definitions of a measure column and the `MEASURE()` function:
   column, with no special rules thereafter.
 
 Every operator then behaves as in standard SQL. The only measure-specific behavior is that each
-`MEASURE()` is evaluated at its measure's own grain (Section 8.1). That is what makes filtering,
-grouping, and joining compose correctly (G1, G2). The subsections state only that grain behavior
-and the few outright exceptions; the rest is standard SQL and is not restated.
+`MEASURE()` is evaluated over its measure's own input set (Section 8.1). That is what makes
+filtering, grouping, and joining compose correctly (G1, G2). The subsections state only that
+behavior and the few outright exceptions; the rest is standard SQL and is not restated.
 
 The following table summarizes; the subsections are normative.
 
@@ -417,8 +420,8 @@ The following table summarizes; the subsections are normative.
 | WHERE (7.3) | Ordinary predicate; filters the measure's input rows before evaluation. `MEASURE()` only via a scalar subquery. |
 | GROUP BY / GROUPING SETS / CUBE / ROLLUP (7.4) | Grouping ranges over fields; grouping is not defined over `T measure`. `GROUP BY ALL` groups by the non-measure select expressions. |
 | HAVING / ORDER BY (7.5) | `MEASURE()` allowed, as for any aggregate. |
-| JOIN (7.6) | Any join type/condition over fields. Each measure retains its own grain and is de-duplicated before evaluation (G2). Joining on a measure is an error. |
-| Subquery / CTE (7.7) | Measures propagate as `T measure` with grain intact. |
+| JOIN (7.6) | Any join type/condition over fields. Each measure retains its own row identity and is de-duplicated before evaluation (G2). Joining on a measure is an error. |
+| Subquery / CTE (7.7) | Measures propagate as `T measure` with row identity intact. |
 | Set operators, DISTINCT (7.8) | Error when an input carries an unevaluated measure. |
 
 ### 7.1 SELECT (unaggregated)
@@ -426,7 +429,7 @@ The following table summarizes; the subsections are normative.
 In a SELECT without aggregation, a measure column is treated like any other column:
 
 - if projected (by name, renamed, or via `*`), it passes through, keeping its `T measure`
-  type and its grain; if not projected, it is dropped;
+  type and its row identity; if not projected, it is dropped;
 - it MAY be defined or derived by a measure definition in the projection (Section 5);
 - it MUST NOT be the operand of a scalar operator or function (R1);
 - it is not evaluated to a value here: `MEASURE()` is the only way to evaluate a measure, and a
@@ -450,10 +453,10 @@ aggregate expression in its select list. In an aggregated SELECT:
   select list of an aggregated query MUST be rejected.
 - `MEASURE(m)` returns a scalar of type `T`; it MAY be combined with other scalars and
   aggregates in the select list, HAVING, and ORDER BY.
-- For a derived measure or an expression combining several `MEASURE()` calls, each
-  `MEASURE()` is evaluated independently at its own grain and the surrounding scalar expression
-  applied per output group (Section 8.1). For example, `MEASURE(revenue) / MEASURE(ticket_count)`
-  divides two independently grain-correct aggregates within each group.
+- For a derived measure or an expression combining several `MEASURE()` calls, each `MEASURE()` is
+  evaluated independently over its own input set and the surrounding scalar expression applied per
+  output group (Section 8.1). For example, `MEASURE(revenue) / MEASURE(ticket_count)` divides two
+  independently duplication-free aggregates within each group.
 
 Non-normative examples:
 
@@ -486,7 +489,7 @@ WHERE (SELECT MEASURE(gross) FROM budget) > 100 GROUP BY region;  -- ok: MEASURE
 ### 7.4 GROUP BY
 
 - Grouping (`GROUP BY`, `GROUPING SETS`, `CUBE`, `ROLLUP`) ranges over fields; grouping is not
-  defined over `T measure` (R1). The grouping sets the grain at which each measure is reported,
+  defined over `T measure` (R1). The grouping sets the level at which each measure is reported,
   the other half of Guarantee G1 (Section 8.2).
 - Under `GROUP BY ALL`, measures are not grouping columns: a bare (unevaluated) measure in the
   select list has nothing to group by and MUST be rejected; otherwise `ALL` groups by the
@@ -519,7 +522,7 @@ OUTER, CROSS) and any join condition over fields (R1).
 
 A join is logically applied before measures are evaluated. It affects a measure's input rows
 in three ways, each handled by the evaluation semantics (Section 8.1) so the measure is still
-evaluated at its own grain:
+evaluated over its own source rows:
 
 - **Filtering.** Rows the join drops (an inner join's non-matches) are removed from the
   measure's input set, just as a `WHERE` filter would remove them.
@@ -530,9 +533,9 @@ evaluated at its own grain:
   measure, so they add nothing to its input set (they remain in the query result; Section 8.1).
 
 The result of a join of measure relations is itself a measure relation whose measures retain
-their original grains (Section 3.3), so joins compose.
+their original row identities (Section 3.3), so joins compose.
 
-Non-normative example (many-to-many join on `region`, each measure still grain-correct):
+Non-normative example (many-to-many join on `region`, each measure still duplication-free):
 
 ```sql
 SELECT s.region,
@@ -544,7 +547,7 @@ FROM tickets t JOIN sales s ON t.region = s.region;
 
 ### 7.7 Subqueries and CTEs
 
-Measures MUST propagate unchanged (type and grain preserved) through nested query structure:
+Measures MUST propagate unchanged (type and row identity preserved) through nested query structure:
 subqueries (including a derived table in a `FROM` clause), scalar subqueries, CTEs, and views. A
 measure defined in one relation can therefore be carried through and evaluated at the top, even
 where it appears unevaluated in an intermediate select list.
@@ -648,19 +651,19 @@ same results.
 
 `MEASURE(m)` responds to `WHERE` and `GROUP BY` just as a standard SQL aggregate over `m`'s
 definition would: a `WHERE` predicate restricts the input rows `m` sees (Section 7.3), and the
-query's grouping sets the output grain at which `m` is reported (Section 7.4). This follows
+query's grouping sets the level at which `m` is reported (Section 7.4). This follows
 directly from Section 8.1: filters remove source rows from `m`'s input set, and each group's input
 set contains only the source rows that the group's rows derive from. It
 is what makes filtering and drill-down behave predictably and identically to non-measure
 aggregates.
 
-### 8.3 G2: Grain safety (no duplication)
+### 8.3 G2: No duplication
 
-`MEASURE(m)` aggregates `m` at its own grain without duplication, regardless of the shape of the
-enclosing query: any join type and cardinality, and any other measures or relations present.
+`MEASURE(m)` aggregates `m` over its own source rows without duplication, regardless of the shape of
+the enclosing query: any join type and cardinality, and any other measures or relations present.
 This follows from Section 8.1: `m`'s input set is a set of source rows, so each source row
-contributes to `m`'s aggregate at most once per output group, however many times a join
-duplicated it, and null-padded rows from an outer join do not contribute at all. `MEASURE(m)` therefore does
+contributes to `m`'s aggregate at most once per output group, however many times a join duplicated
+it, and null-padded rows from an outer join do not contribute at all. `MEASURE(m)` therefore does
 not depend on the cardinality of any other relation or measure in the query.
 
 G2 structurally eliminates the two classic multi-table aggregation errors:
@@ -668,9 +671,9 @@ G2 structurally eliminates the two classic multi-table aggregation errors:
 - **Fan-out (double counting).** Joining a measure relation to a finer-grained table (one
   source row -> many joined rows) does not inflate the measure; each source row is counted
   once.
-- **Chasm trap.** Joining two independent fact relations through a shared field does not
-  produce cross-product inflation; each measure aggregates at its own grain independently and
-  the results are combined afterward.
+- **Chasm trap.** Joining two independent fact relations through a shared field does not produce
+  cross-product inflation; each measure aggregates over its own source rows independently and the
+  results are combined afterward.
 
 ### 8.4 Corollary: Closure and stable field domains
 
@@ -708,14 +711,14 @@ requirements on the *consumer*, not the engine.
 
 - **Evaluate measures only through `MEASURE()`.** A consumer references a measure by name and lets
   the engine evaluate it (P2); it MUST NOT reconstruct a measure from the underlying columns,
-  which would forgo the grain guarantee.
+  which would forgo the no-duplication guarantee.
 - **Do not reaggregate a `MEASURE()` result on the client.** A `MEASURE()` value is already
-  aggregated at the query's grain; combining such values across groups on the client (for a
-  coarser grain, a drill-up, or a cached-then-refiltered view) is not valid, the same rule
+  aggregated at the query's grouping; combining such values across groups on the client (for a
+  coarser grouping, a drill-up, or a cached-then-refiltered view) is not valid, the same rule
   that applies to non-decomposable aggregates such as `COUNT(DISTINCT ...)` or `MEDIAN`. To
-  change the grain, re-query the engine. For example, given per-state `MEASURE(revenue)`, a tool
-  MUST NOT sum those client-side for a national total; it re-queries grouped at the national
-  grain.
+  change the grouping, re-query the engine. For example, given per-state `MEASURE(revenue)`, a
+  tool MUST NOT sum those client-side for a national total; it re-queries grouped at the national
+  level.
 
 Discovery of measures, model boundaries, and relationships (Section 11) is the remaining
 consumer-side step; a tool that ignores the measure marker still reads its fields as ordinary
@@ -731,7 +734,7 @@ analysis, aggregate-specific algebraic identities, preserving row identity impli
 query structure, etc.), provided the results equal those of this reference
 strategy.
 
-This realization makes row identity concrete as a **grain key**: a single key column `k`
+This realization makes row identity concrete as a **row-identity key**: a single key column `k`
 synthesized when the measure is defined (for example from a declared key, or by row numbering).
 `k` is non-null for every source row, unique per source row, and stable within a single query
 execution. It is implicitly propagated through relational operators between the measure definition
@@ -767,8 +770,8 @@ nothing through step 1 (rows are still reduced to one per `k`) and counts the di
 rows; set-based aggregates behave as expected over them, so `COUNT(DISTINCT ei)`, `AVG(ei)`, or a
 multi-argument `CORR(a, b)` each consume every distinct source row once.
 
-Each measure in the query is evaluated by its own such subquery at its own grain, and the query's
-scalar expressions over the resulting per-group scalars are applied per group (Section 7.2).
+Each measure in the query is evaluated by its own such subquery over its own source rows, and the
+query's scalar expressions over the resulting per-group scalars are applied per group (Section 7.2).
 
 ---
 
@@ -777,7 +780,7 @@ scalar expressions over the resulting per-group scalars are applied per group (S
 ### 10.1 Shape
 
 A multi-table Ossie model is mapped to a set of relations (database tables, views, and measure
-relations), each with its own grain, fields, and measures, together with a set of relationships
+relations), each with its own fields and measures, together with a set of relationships
 among them.
 A tool discovers the relations and relationships (Section 11), then
 generates queries that join them using its own SQL, reading measures via `MEASURE()`.
@@ -786,30 +789,29 @@ Nothing in a tool's multi-table workflow needs to change: the tool joins measure
 just as it joins any table, and the only substitution is `MEASURE(name)` in place of a raw
 aggregate. The engine supplies G1 and G2 across the joins.
 
-Measure relations at peer grains (multi-fact models) are supported directly: a query MAY join
-two or more measure relations and evaluate a measure from each; by G2 each is computed at its own
-grain independently (Section 7.6).
+Independent measure relations (multi-fact models) are supported directly: a query MAY join
+two or more measure relations and evaluate a measure from each; by G2 each is computed over its
+own source rows independently (Section 7.6).
 
-Because the engine guarantees each measure's grain, a consumer can enrich a model freely: join
-a measure relation to any other table with ordinary SQL, or take a different join path, without
-re-declaring the model. Every measure still evaluates at its own grain (G2), so a tool,
-or an AI agent choosing its own path, never reaches a cliff where it must fall back to
-hand-written, grain-safe aggregation.
+Because the engine guarantees that each measure is evaluated without duplication, a consumer can
+enrich a model freely: join a measure relation to any other table with ordinary SQL, or take a
+different join path, without re-declaring the model. Every measure still evaluates over its own
+source rows (G2), so a tool, or an AI agent choosing its own path, never reaches a cliff where
+it must fall back to hand-written, duplication-free aggregation.
 
 ### 10.2 Consistency contract
 
 This is the cross-tool contract, and the boundary of what the standard fixes.
 
-- **Standardized: which rows each measure aggregates, given the same query.** Two conforming
-  engines evaluating the same query (same relations, joins, join types, filters, and grouping)
-  aggregate each measure over the same de-duplicated, identity-bearing source rows at the same
-  grain (G1, G2), and return exactly the rows standard SQL returns for that query; measures never
-  change which rows appear. What the interface does not standardize is the host dialect's own
-  evaluation of the underlying aggregate and scalar expressions over those rows. Like any SQL
-  extension, it inherits dialect differences in approximate aggregates, floating-point
-  accumulation, locale- or timezone-sensitive functions, and the like. Two engines agree on a
-  measure's value to the extent they agree on that underlying SQL; the interface adds no
-  divergence of its own.
+- **Standardized: which rows each measure aggregates, given the same query.** Two conforming engines
+  evaluating the same query (same relations, joins, join types, filters, and grouping) aggregate
+  each measure over the same input set of source rows (Section 8.1; G1, G2), and return exactly the
+  rows standard SQL returns for that query; measures never change which rows appear. What the
+  interface does not standardize is the host dialect's own evaluation of the underlying aggregate
+  and scalar expressions over those rows. Like any SQL extension, it inherits dialect differences in
+  approximate aggregates, floating-point accumulation, locale- or timezone-sensitive functions, and
+  the like. Two engines agree on a measure's value to the extent they agree on that underlying SQL;
+  the interface adds no divergence of its own.
 - **Not standardized: which query a tool generates.** Which relations to include, which join
   types to use (INNER vs. LEFT vs. FULL OUTER), and how to propagate filters are the tool's own
   analytic choices. Different analyses genuinely call for different join and filter behavior, so
@@ -833,8 +835,8 @@ joins. Regenerating the query as the selection changes, if wanted, is the consum
 
 ### 10.3 Home relations and Ossie metrics
 
-Every measure in this interface is a column of a relation (Section 3.1), evaluated at a
-well-defined grain (row identity, Section 3.2). A measure whose correct evaluation depends on a
+Every measure in this interface is a column of a relation (Section 3.1), evaluated over source
+rows with a well-defined row identity (Section 3.2). A measure whose correct evaluation depends on a
 join is defined on a relation whose own definition includes that join, so its row identity
 is well-defined at the point of definition. For example, a measure `SUM(qty * price)` reading
 columns from both `orders` and `products` is a measure on a relation defined
@@ -861,10 +863,10 @@ per query (Sections 1.1, 10.2); that is outside the scope of this specification.
 `metrics` at the model level, above datasets (Section 3.4); it has no notion of a metric
 belonging to a dataset. To expose a model through this interface, every measure needs a home
 relation. We therefore recommend that Ossie add **per-dataset (per-relation) measures** (a
-metric attached to the dataset that supplies its grain), so a model's metrics map directly onto
-queryable measure columns. A single-dataset metric attaches to its dataset; a metric requiring a
-join attaches to a dataset whose definition includes that join, per the pattern above. Apache
-Ossie [PR #343](https://github.com/apache/ossie/pull/343) proposes exactly this: dataset-scoped
+metric attached to the dataset that supplies its source rows), so a model's metrics map directly
+onto queryable measure columns. A single-dataset metric attaches to its dataset; a metric
+requiring a join attaches to a dataset whose definition includes that join, per the pattern
+above. Apache Ossie [PR #343](https://github.com/apache/ossie/pull/343) proposes exactly this: dataset-scoped
 metrics (`datasets[].metrics`) restricted to the dataset's own fields, with cross-dataset metrics
 staying model-scoped. We recommend its adoption.
 
@@ -991,7 +993,7 @@ An implementation conforms to this specification if it satisfies all of the foll
 - **C2 (Operator semantics).** It implements the operator behaviors of Section 7 for measure
   columns, including rejecting the constructs Section 7 requires be rejected.
 - **C3 (G1).** It provides slice-and-dice responsiveness (Section 8.2).
-- **C4 (G2).** It provides grain-safe, duplication-free aggregation for every measure in every
+- **C4 (G2).** It provides duplication-free aggregation for every measure in every
   query (Section 8.3), realizing the evaluation semantics of Section 8.1, with results equal to
   the reference strategy of Section 9.
 - **C5 (Closure).** It preserves the closure / stable-field-domain corollary (Section 8.4).
@@ -1023,10 +1025,10 @@ raises one points to it.
   [PR #343](https://github.com/apache/ossie/pull/343) proposes dataset-scoped metrics
   (`datasets[].metrics`), exactly these per-relation measures, and we recommend the working
   group adopt it; the conformance level remains to be settled.
-- **Grain declaration.** A row identity can be derived automatically (for example by numbering
-  each source row), so the standard may not need a grain-declaration syntax at all. Whether
+- **Row identity declaration.** A row identity can be derived automatically (for example by
+  numbering each source row), so the standard may not need a declaration syntax at all. Whether
   auto-derivation suffices, or an explicit declaration (e.g. a `PRIMARY KEY`) is needed when the
-  intended grain is coarser than one source row, is open (Section 3.2).
+  intended identity is coarser than one source row, is open (Section 3.2).
 - **Top-level unevaluated measures.** Whether a top-level query may return a column of type
   `T measure`. This is currently left to the engine, which MAY reject it or MAY offer a
   compatibility mode (for example returning nulls of the base type); intermediate propagation
@@ -1043,14 +1045,14 @@ raises one points to it.
 ### 13.2 Out of scope for this version
 
 These are not required by this version and do not block the scope above; each is a candidate for
-a later extension. Where an item is a runtime behavior (for example grain and window controls), a
+a later extension. Where an item is a runtime behavior (for example evaluation controls), a
 conforming engine MAY reject it or define its own behavior but MUST NOT rely on cross-engine
 agreement; whether it is a feature or syntax, it is simply out of scope here.
 
 Deferred query and modeling features:
 
-- **Grain and window control semantics.** The detailed semantics of grain-manipulation and
-  windowing controls (Section 5.3) are out of scope, but may be defined by a later extension.
+- **Evaluation control semantics.** The detailed semantics of evaluation controls, such as
+  totals and windowing (Section 5.3), are out of scope, but may be defined by a later extension.
 - **Parameterization.** Whether a model, a dataset, or a measure can take parameters (values
   supplied at query time that vary within a single query) is out of scope.
 - **Relationships beyond equi- and boolean joins.** The relationship model (Section 11.3)
@@ -1087,7 +1089,7 @@ Deferred interface and interop concerns:
 
 These illustrate that ordinary tool-generated SQL, using only the `MEASURE()` substitution,
 composes with the guarantees above. They assume a model with measure relations `orders`
-(grain: order), `sales` (grain: sale), and `tickets` (grain: ticket).
+(one row per order), `sales` (one row per sale), and `tickets` (one row per ticket).
 
 ### A.1 Simple aggregation
 
@@ -1097,7 +1099,7 @@ FROM orders
 GROUP BY category;
 ```
 
-`total_quantity` is aggregated at the order grain and reported per category (G1).
+`total_quantity` is aggregated over orders and reported per category (G1).
 
 ### A.2 Top-N filter via self-join
 
@@ -1138,10 +1140,10 @@ JOIN (SELECT state_id, MEASURE(total_revenue) AS state_revenue
 GROUP BY d.category;
 ```
 
-The inner `MEASURE(total_revenue)` is grain-correct per state (G2); the outer `AVG` is an
+The inner `MEASURE(total_revenue)` is duplication-free per state (G2); the outer `AVG` is an
 ordinary aggregate over the already-evaluated scalar.
 
-### A.4 Multi-fact, cross-grain ratio
+### A.4 Multi-fact ratio
 
 ```sql
 SELECT s.region,
@@ -1153,7 +1155,7 @@ GROUP BY s.region;
 ```
 
 The many-to-many join on `region` neither inflates `ticket_count` nor `total_sales`; each is
-evaluated at its own grain (G2), and the ratio is applied per region afterward (7.2).
+evaluated over its own source rows (G2), and the ratio is applied per region afterward (7.2).
 
 ### A.5 Fan-out: joining to a finer-grained table
 
@@ -1166,8 +1168,8 @@ JOIN order_items i ON i.order_id = o.order_id
 GROUP BY o.category;
 ```
 
-The join produces one row per order item, but `MEASURE(o.total_revenue)` de-duplicates back to
-the order grain (G2): each order's revenue is counted once, not once per line item.
+The join produces one row per order item, but `MEASURE(o.total_revenue)` aggregates each order
+once (G2): each order's revenue is counted once, not once per line item.
 
 ### A.6 Join type: the tool's choice
 
@@ -1185,20 +1187,20 @@ FROM sales s LEFT JOIN tickets t ON s.region = t.region
 GROUP BY s.region;
 ```
 
-The join type is the tool's analytic choice, not something the interface prescribes (Section
-10.2). Either way each measure is evaluated at its own grain (G2). The left join keeps a region
+The join type is the tool's analytic choice, not something the interface prescribes (Section 10.2).
+Either way each measure is evaluated over its own source rows (G2). The left join keeps a region
 that has sales but no tickets; there `MEASURE(t.ticket_count)` has no source rows and takes its
-empty-input value (0 for `COUNT`, Section 8.1), while the inner join omits that region
-entirely. For any region in both results the `MEASURE()` values are identical: the standard
-fixes measure values for a given query, and the join choice fixes which rows appear.
+empty-input value (0 for `COUNT`, Section 8.1), while the inner join omits that region entirely. For
+any region in both results the `MEASURE()` values are identical: the standard fixes measure values
+for a given query, and the join choice fixes which rows appear.
 
 ### A.7 Multi-fact via a conformed-dimension bridge
 
-`sales` (grain: sale) and `tickets` (grain: ticket) are independent facts sharing a conformed
-`regions` dimension, keyed by `region_id`. Per Section 10.3, a cross-fact measure needs a home
-relation whose definition already includes the joins to both facts. So it is defined not on
-the bare `regions` dimension but on a relation built from it. Here that relation is a
-`region_metrics` view:
+`sales` (one row per sale) and `tickets` (one row per ticket) are independent facts sharing a
+conformed `regions` dimension, keyed by `region_id`. Per Section 10.3, a cross-fact measure needs a
+home relation whose definition already includes the joins to both facts. So it is defined not on the
+bare `regions` dimension but on a relation built from it. Here that relation is a `region_metrics`
+view:
 
 ```sql
 -- illustrative: the home relation folds the joins to both facts into its own definition
@@ -1214,7 +1216,7 @@ LEFT JOIN tickets ON tickets.region_id = r.region_id;
 
 `region_metrics` carrying `sales_per_ticket` is then an ordinary measure relation. A consumer
 evaluates `MEASURE(sales_per_ticket)` and MAY join `region_metrics` to further tables with
-ordinary SQL: the measure stays grain-safe (G2), its `region_id` domain is fixed (closure,
+ordinary SQL: the measure stays duplication-free (G2), its `region_id` domain is fixed (closure,
 Section 8.4), and no model re-declaration is needed to bring in another table.
 
 This is how Layer 2 covers multi-fact metrics without free-floating measures (Section 10.3):
@@ -1250,21 +1252,23 @@ Apache Ossie terms (Section 3.4):
 Interface terms:
 
 - **Field.** An ordinary (non-measure) SQL column of a relation, of scalar type `T`.
-- **Measure.** A column of type `T measure` carrying an unevaluated aggregate calculation and a
-  grain.
+- **Measure.** A column of type `T measure` carrying an unevaluated aggregate calculation and
+  the row identity of its source rows.
 - **Measure relation.** A relation with at least one measure column.
-- **Grain / row identity.** The identity of the source rows a measure aggregates, fixed at
+- **Row identity.** The identity of the source rows a measure aggregates, fixed at
   definition: distinct source rows have distinct identities, and equal-identity rows are the
-  same source row. The **grain key** (Section 9) is one implementation of it.
-- **`MEASURE(m)`.** The aggregate function that evaluates measure `m` at its grain, returning
-  `T`.
+  same source row. The **row-identity key** (Section 9) is one implementation of it.
+- **Input set.** For a measure and an output group, the set of the measure's source rows that
+  the group's rows derive from; the measure's aggregate is evaluated over it (Section 8.1).
+- **`MEASURE(m)`.** The aggregate function that evaluates measure `m` over its input set,
+  returning `T`.
 - **Base / derived measure.** A measure defined directly from an aggregate expression, versus
   one defined from `MEASURE()` over other measures.
-- **Cross-grain (multi-table) measure.** A derived measure referencing measures from more than
+- **Multi-table measure.** A derived measure referencing measures from more than
   one relation.
 - **G1 (slice-and-dice).** Measures respond to WHERE and GROUP BY like standard aggregates.
-- **G2 (grain safety).** Measures aggregate at their grain without duplication regardless of
-  query shape.
+- **G2 (no duplication).** Measures aggregate over their own source rows without duplication
+  regardless of query shape.
 - **Closure.** A measure relation behaves as a relation; its field domain is independent of
   which measures are queried.
 - **Fan-out / chasm trap.** The two classic duplication errors G2 eliminates.
@@ -1320,12 +1324,12 @@ joins by default matches standard SQL behavior.
 
 ### Extending the proposal
 
-Grain manipulation is explicitly out of scope in this version (Section 5.3), so this proposal does
+Evaluation controls are explicitly out of scope in this version (Section 5.3), so this proposal does
 not adopt the paper's `AT` operator or its consumer-modifiable *evaluation context* (a predicate
 over a measure's dimension columns, adjusted at the call site with `ALL`, `SET`, or `WHERE`). A
-measure here is anchored to its grain (Section 3.2) and evaluated only through `MEASURE()`.
+measure here is anchored to its source rows (Section 3.2) and evaluated only through `MEASURE()`.
 
-The functionality grain manipulation enables, such as percent of total and period over period, is
+The functionality evaluation controls enable, such as percent of total and period over period, is
 important, and we recommend strongly that it be considered as a follow-up extension. Two things
 are worth considering in that design.
 
