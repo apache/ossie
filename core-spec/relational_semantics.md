@@ -139,7 +139,7 @@ It does not cover:
 - Physical execution, storage, indexing, or performance.
 
 The SQL spelling shown throughout is illustrative and provisional. This specification aims to
-standardize the query extension: the measure column type, `AGG()`, and the measure-definition
+standardize the query extension: the measure type, `AGG()`, and the measure-definition
 marker. Its syntax is expected to be refined during working-group review rather than left for each
 engine to reinvent.
 
@@ -396,10 +396,11 @@ This section specifies how **measure columns** behave under each SQL operator. T
 follow from the definitions of a measure column and the `AGG()` function:
 
 - A measure column has the new type `T measure`, which SQL's operators and functions are not
-  defined on. By R1 (Section 4.1) it cannot be an operand of a scalar operator or function, nor
-  be used where a specific type is required, e.g. a `WHERE` or join predicate must be `boolean` (not
-  `boolean measure`). Grouping is not defined over `T measure`. It passes
-  through a select list unchanged, keeping its `T measure` type.
+  defined on. By R1 (Section 4.1), no expression of that type can be an operand of a scalar
+  operator or function, nor be used where a specific type is required, e.g. a `WHERE` or join
+  predicate must be `boolean` (not `boolean measure`). Grouping is not defined over
+  `T measure`. A measure column passes through a select list unchanged, keeping its
+  `T measure` type.
 - `AGG()` is an aggregate function (Section 6). Ordinary SQL then fixes where it may appear:
   in a `SELECT` list, `HAVING`, or `ORDER BY` (and inside scalar expressions there), and not in
   `WHERE` or `GROUP BY`, just as `SUM(...)` may not.
@@ -449,8 +450,8 @@ SELECT total_sales + 1 FROM v;                    -- rejected: scalar op on a me
 A SELECT is aggregated (as in standard SQL) if it has a `GROUP BY` clause, `HAVING` clause, or an
 aggregate expression in its select list. In an aggregated SELECT:
 
-- A measure column MUST appear only inside `AGG()`. A bare, unevaluated measure in the
-  select list of an aggregated query MUST be rejected.
+- An expression of type `T measure` MUST appear only as the argument of `AGG()`. A bare,
+  unevaluated measure in the select list of an aggregated query MUST be rejected.
 - `AGG(m)` returns a scalar of type `T`; it MAY be combined with other scalars and
   aggregates in the select list, HAVING, and ORDER BY.
 - For a derived measure or an expression combining several `AGG()` calls, each `AGG()` is
