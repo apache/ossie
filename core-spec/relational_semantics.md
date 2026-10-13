@@ -68,7 +68,7 @@ alone gives flexibility, but not correctness.
 This specification proposes that BI and AI tools query Ossie models through standard SQL extended
 with correct measure semantics ([*Measures in SQL*](https://arxiv.org/abs/2406.00251)). The engine
 evaluates each measure over its own source rows, and it stays correct however the consumer
-filters, groups, and joins. A tool evaluates it with a single `MEASURE()` aggregate and otherwise
+filters, groups, and joins. A tool evaluates it with a single `AGG()` aggregate and otherwise
 writes the SQL it always would. Consumers get both governed, consistent measures and the
 flexibility of a SQL query interface.
 
@@ -76,28 +76,28 @@ flexibility of a SQL query interface.
 
 A consumer connects to a semantic layer, discovers a model's relations, and queries them with
 ordinary SQL. The one difference from querying plain tables: a measure is evaluated through the
-`MEASURE()` aggregate:
+`AGG()` aggregate:
 
 ```sql
 -- illustrative
 SELECT o.region,
-       MEASURE(o.total_revenue),
-       MEASURE(s.ticket_count),
-       MEASURE(o.total_revenue) / MEASURE(s.ticket_count) AS revenue_per_ticket
+       AGG(o.total_revenue),
+       AGG(s.ticket_count),
+       AGG(o.total_revenue) / AGG(s.ticket_count) AS revenue_per_ticket
 FROM   model.orders o
 JOIN   model.support s ON o.customer_id = s.customer_id
 WHERE  o.order_date >= DATE '2025-01-01'
 GROUP BY o.region
-ORDER BY MEASURE(o.total_revenue) DESC;
+ORDER BY AGG(o.total_revenue) DESC;
 ```
 
 `total_revenue` (on `orders`) and `ticket_count` (on `support`) are measures over different source
 rows, identified as measures from metadata (Section 11). `region`, `customer_id`, and `order_date`
 are ordinary fields. The tool joins the two tables as it would any tables and evaluates a measure
-from each with `MEASURE()`. The engine computes each measure over its own source rows, so the
+from each with `AGG()`. The engine computes each measure over its own source rows, so the
 many-to-many join on `customer_id` inflates neither one (no fan-out or chasm trap, G2), while
 `WHERE` and `GROUP BY` slice them like any aggregate (G1), on any field, join key or not. The same
-query yields the same measure values across tools. A consuming tool writes `MEASURE(name)` where it
+query yields the same measure values across tools. A consuming tool writes `AGG(name)` where it
 would otherwise write a raw aggregate, and generates SQL as it always has. Its obligations are in
 Section 8.5.
 
@@ -139,7 +139,7 @@ It does not cover:
 - Physical execution, storage, indexing, or performance.
 
 The SQL spelling shown throughout is illustrative and provisional. This specification aims to
-standardize the query extension: the measure column type, `MEASURE()`, and the measure-definition
+standardize the query extension: the measure column type, `AGG()`, and the measure-definition
 marker. Its syntax is expected to be refined during working-group review rather than left for each
 engine to reinvent.
 
@@ -166,7 +166,7 @@ These principles motivate the normative rules and are themselves non-normative.
   by name and never reconstructs its computation, so a governed metric comes out correct and
   identical across every consumer, however the consumer filters, groups, and joins tables.
 - **P3. Minimal consumer change.** Querying a measure differs from an ordinary aggregate by
-  exactly one substitution: a raw aggregate expression becomes `MEASURE(name)`. A tool's query
+  exactly one substitution: a raw aggregate expression becomes `AGG(name)`. A tool's query
   generation is otherwise unchanged. The placement of aggregates in SELECT, HAVING, and ORDER BY,
   and the use of subqueries, joins, and grouping, all carry over as written.
 
@@ -252,7 +252,7 @@ names. The correspondence:
 Ossie model metadata this interface does not natively surface (`ai_context`, `custom_extensions`,
 and non-selected expression dialects) is addressed under discovery (Section 11) and out of scope
 (Section 13.2). A conforming engine MUST preserve metric semantics: a metric evaluated via
-`MEASURE()` is computed from the model's metric definition (its aggregate and source rows), so two
+`AGG()` is computed from the model's metric definition (its aggregate and source rows), so two
 consumers issuing the same query agree on its value (Section 10.2).
 
 ---
@@ -273,7 +273,7 @@ central rules:
   predicate (which must be `boolean`, not `boolean measure`); or as a `GROUP BY` key (grouping is
   not defined over `T measure`). A measure column MAY still pass through a select list, which
   accepts a value of any type, carrying its `T measure` type onward (Section 7.1).
-- **R2.** The only operation that converts `T measure` to `T` is the `MEASURE` aggregate
+- **R2.** The only operation that converts `T measure` to `T` is the `AGG` aggregate
   function (Section 6), which is valid only in an aggregate context.
 
 A well-typed query MUST reject, at analysis time, any expression that violates R1 or R2. For
@@ -295,7 +295,7 @@ SELECT total_sales FROM v GROUP BY total_sales;
 A value of type `T measure` is produced only by a **measure definition** (Section 5), the
 construct that marks an aggregate expression as a measure. That is also the one place an
 aggregate expression may appear outside an aggregated query; everywhere else an aggregate,
-including `MEASURE()`, is valid only in an aggregated context (R2).
+including `AGG()`, is valid only in an aggregated context (R2).
 
 ### 4.3 Propagation
 
@@ -335,21 +335,21 @@ Normatively:
 ### 5.2 Derived measures
 
 A measure definition's expression is an ordinary SQL aggregate expression, so every value in it
-comes from an aggregate function: `MEASURE()` reads an existing measure, just as `SUM` or `COUNT`
-aggregates a raw field. A definition that reads one or more existing measures with `MEASURE()`
+comes from an aggregate function: `AGG()` reads an existing measure, just as `SUM` or `COUNT`
+aggregates a raw field. A definition that reads one or more existing measures with `AGG()`
 yields a derived measure:
 
 ```sql
 -- illustrative
-avg_order_value := (MEASURE(total_revenue) / COUNT(DISTINCT order_id)) TO MEASURE
+avg_order_value := (AGG(total_revenue) / COUNT(DISTINCT order_id)) TO MEASURE
 ```
 
-`MEASURE(total_revenue)` reads the existing revenue measure and `COUNT(DISTINCT order_id)`
+`AGG(total_revenue)` reads the existing revenue measure and `COUNT(DISTINCT order_id)`
 counts orders from a raw field. A derived measure delegates to the measures it references: each
 is evaluated over its own source rows, and the surrounding scalar expression is applied after those
-evaluations (see Section 7.2). Its inner `MEASURE()` calls are captured unevaluated, just as
+evaluations (see Section 7.2). Its inner `AGG()` calls are captured unevaluated, just as
 `TO MEASURE` captures `SUM(x)`: they are evaluated at query time, in the consuming query's
-context (not when the derived measure is defined), so no `MEASURE()` is evaluated outside an
+context (not when the derived measure is defined), so no `AGG()` is evaluated outside an
 aggregated context (R2). Derived measures MAY reference measures from more than one relation;
 such a measure is a **multi-table measure** (Section 10.3).
 
@@ -363,51 +363,51 @@ document. When present, they MUST preserve the no-duplication guarantee of Secti
 
 ---
 
-## 6. Querying measures: the MEASURE function
+## 6. Querying measures: the AGG function
 
-A measure is evaluated through the aggregate function `MEASURE`:
+A measure is evaluated through the aggregate function `AGG`:
 
-- **Signature.** `MEASURE(m)` takes an argument of type `T measure` and returns a value of
+- **Signature.** `AGG(m)` takes an argument of type `T measure` and returns a value of
   type `T`.
-- **Kind.** `MEASURE` is an aggregate function. It MUST be treated syntactically and
+- **Kind.** `AGG` is an aggregate function. It MUST be treated syntactically and
   semantically as an aggregate everywhere: it MAY appear wherever a standard aggregate may
   appear (e.g. SELECT list, HAVING, ORDER BY), and it MUST NOT appear where a standard aggregate
   may not. Placing it in a SELECT list or `HAVING` makes the query aggregated
   (Section 7.2), just as any aggregate does.
 - **Argument.** The argument MUST be an expression of type `T measure`. In this version, the
   only such expression is a reference to a measure column, optionally qualified by relation
-  alias (`MEASURE(o.revenue)`). Because no operator or function is defined on `T measure` (R1),
-  a scalar expression over measures, such as `MEASURE(a + b)`, is not well-typed. Write
-  `MEASURE(a) + MEASURE(b)` instead.
+  alias (`AGG(o.revenue)`). Because no operator or function is defined on `T measure` (R1),
+  a scalar expression over measures, such as `AGG(a + b)`, is not well-typed. Write
+  `AGG(a) + AGG(b)` instead.
   Later extensions may add other expressions of type `T measure`, such as a measure whose input
   set is modified, or an anonymous inline measure. This rule admits them without change.
 
-`MEASURE(m)` evaluates `m`'s calculation over its input set: the source rows of `m` that remain
+`AGG(m)` evaluates `m`'s calculation over its input set: the source rows of `m` that remain
 in each group after the enclosing query's joins and filters (Section 8.1).
 
-> An engine MAY expose an additional spelling of this function (for example `AGG`) as a
-> synonym. Synonyms are non-normative.
+> An engine MAY expose additional spellings of this function (for example `MEASURE()`) as
+> synonyms. Synonyms are non-normative: portable queries and conformance tests use `AGG()`.
 
 ---
 
 ## 7. Operator semantics
 
 This section specifies how **measure columns** behave under each SQL operator. The semantics
-follow from the definitions of a measure column and the `MEASURE()` function:
+follow from the definitions of a measure column and the `AGG()` function:
 
 - A measure column has the new type `T measure`, which SQL's operators and functions are not
   defined on. By R1 (Section 4.1) it cannot be an operand of a scalar operator or function, nor
   be used where a specific type is required, e.g. a `WHERE` or join predicate must be `boolean` (not
   `boolean measure`). Grouping is not defined over `T measure`. It passes
   through a select list unchanged, keeping its `T measure` type.
-- `MEASURE()` is an aggregate function (Section 6). Ordinary SQL then fixes where it may appear:
+- `AGG()` is an aggregate function (Section 6). Ordinary SQL then fixes where it may appear:
   in a `SELECT` list, `HAVING`, or `ORDER BY` (and inside scalar expressions there), and not in
   `WHERE` or `GROUP BY`, just as `SUM(...)` may not.
-- Once `MEASURE()` has evaluated a measure to a field of type `T`, the result is an ordinary
+- Once `AGG()` has evaluated a measure to a field of type `T`, the result is an ordinary
   column, with no special rules thereafter.
 
 Every operator then behaves as in standard SQL. The only measure-specific behavior is that each
-`MEASURE()` is evaluated over its measure's own input set (Section 8.1). That is what makes
+`AGG()` is evaluated over its measure's own input set (Section 8.1). That is what makes
 filtering, grouping, and joining compose correctly (G1, G2). The subsections state only that
 behavior and the few outright exceptions; the rest is standard SQL and is not restated.
 
@@ -415,11 +415,11 @@ The following table summarizes; the subsections are normative.
 
 | Operator | Measure columns |
 | :-- | :-- |
-| SELECT, unaggregated (7.1) | Pass through as `T measure`; may be renamed; `*` includes them; may be (re)defined. Evaluating one via `MEASURE()` makes the query aggregated (7.2). |
-| SELECT, aggregated (7.2) | Measures allowed only inside `MEASURE()`. A bare (unevaluated) measure in an aggregated select is an error. |
-| WHERE (7.3) | Ordinary predicate; filters the measure's input rows before evaluation. `MEASURE()` only via a scalar subquery. |
+| SELECT, unaggregated (7.1) | Pass through as `T measure`; may be renamed; `*` includes them; may be (re)defined. Evaluating one via `AGG()` makes the query aggregated (7.2). |
+| SELECT, aggregated (7.2) | Measures allowed only inside `AGG()`. A bare (unevaluated) measure in an aggregated select is an error. |
+| WHERE (7.3) | Ordinary predicate; filters the measure's input rows before evaluation. `AGG()` only via a scalar subquery. |
 | GROUP BY / GROUPING SETS / CUBE / ROLLUP (7.4) | Grouping ranges over fields; grouping is not defined over `T measure`. `GROUP BY ALL` groups by the non-measure select expressions. |
-| HAVING / ORDER BY (7.5) | `MEASURE()` allowed, as for any aggregate. |
+| HAVING / ORDER BY (7.5) | `AGG()` allowed, as for any aggregate. |
 | JOIN (7.6) | Any join type/condition over fields. Each measure retains its own row identity and is de-duplicated before evaluation (G2). Joining on a measure is an error. |
 | Subquery / CTE (7.7) | Measures propagate as `T measure` with row identity intact. |
 | Set operators, DISTINCT (7.8) | Error when an input carries an unevaluated measure. |
@@ -432,9 +432,9 @@ In a SELECT without aggregation, a measure column is treated like any other colu
   type and its row identity; if not projected, it is dropped;
 - it MAY be defined or derived by a measure definition in the projection (Section 5);
 - it MUST NOT be the operand of a scalar operator or function (R1);
-- it is not evaluated to a value here: `MEASURE()` is the only way to evaluate a measure, and a
-  `MEASURE()` in the select list makes the query aggregated (Section 7.2), so a genuinely
-  unaggregated projection contains no `MEASURE()` (R2).
+- it is not evaluated to a value here: `AGG()` is the only way to evaluate a measure, and a
+  `AGG()` in the select list makes the query aggregated (Section 7.2), so a genuinely
+  unaggregated projection contains no `AGG()` (R2).
 
 Non-normative examples:
 
@@ -449,21 +449,21 @@ SELECT total_sales + 1 FROM v;                    -- rejected: scalar op on a me
 A SELECT is aggregated (as in standard SQL) if it has a `GROUP BY` clause, `HAVING` clause, or an
 aggregate expression in its select list. In an aggregated SELECT:
 
-- A measure column MUST appear only inside `MEASURE()`. A bare, unevaluated measure in the
+- A measure column MUST appear only inside `AGG()`. A bare, unevaluated measure in the
   select list of an aggregated query MUST be rejected.
-- `MEASURE(m)` returns a scalar of type `T`; it MAY be combined with other scalars and
+- `AGG(m)` returns a scalar of type `T`; it MAY be combined with other scalars and
   aggregates in the select list, HAVING, and ORDER BY.
-- For a derived measure or an expression combining several `MEASURE()` calls, each `MEASURE()` is
+- For a derived measure or an expression combining several `AGG()` calls, each `AGG()` is
   evaluated independently over its own input set and the surrounding scalar expression applied per
-  output group (Section 8.1). For example, `MEASURE(revenue) / MEASURE(ticket_count)` divides two
+  output group (Section 8.1). For example, `AGG(revenue) / AGG(ticket_count)` divides two
   independently duplication-free aggregates within each group.
 
 Non-normative examples:
 
 ```sql
-SELECT region, MEASURE(total_revenue) FROM v GROUP BY region;   -- ok
-SELECT MEASURE(total_sales) FROM v;               -- ok: aggregated grand total
-SELECT region, MAX(order_date), MEASURE(total_revenue) FROM v
+SELECT region, AGG(total_revenue) FROM v GROUP BY region;   -- ok
+SELECT AGG(total_sales) FROM v;               -- ok: aggregated grand total
+SELECT region, MAX(order_date), AGG(total_revenue) FROM v
 GROUP BY region;   -- ok: an ordinary aggregate over a field, beside a measure
 SELECT region, total_revenue FROM v GROUP BY region;   -- rejected: bare measure (R1)
 ```
@@ -472,18 +472,18 @@ SELECT region, total_revenue FROM v GROUP BY region;   -- rejected: bare measure
 
 `WHERE` filters the input rows before aggregation, so a measure sees only the surviving rows:
 filtering on a field changes a measure just as it would a raw aggregate over the same rows
-(half of Guarantee G1, Section 8.2). A scalar subquery in the predicate MAY use `MEASURE()`; a
+(half of Guarantee G1, Section 8.2). A scalar subquery in the predicate MAY use `AGG()`; a
 predicate on a measure's value goes in `HAVING`.
 
 Non-normative examples:
 
 ```sql
-SELECT region, MEASURE(total_revenue) FROM v
+SELECT region, AGG(total_revenue) FROM v
 WHERE order_date >= DATE '2025-01-01' GROUP BY region;  -- ok: WHERE filters the measure's input
-SELECT region, MEASURE(total_revenue) FROM v
-WHERE MEASURE(total_revenue) > 100 GROUP BY region;     -- rejected: aggregate in WHERE; use HAVING
-SELECT region, MEASURE(total_revenue) FROM v
-WHERE (SELECT MEASURE(gross) FROM budget) > 100 GROUP BY region;  -- ok: MEASURE() in a subquery
+SELECT region, AGG(total_revenue) FROM v
+WHERE AGG(total_revenue) > 100 GROUP BY region;         -- rejected: aggregate in WHERE; use HAVING
+SELECT region, AGG(total_revenue) FROM v
+WHERE (SELECT AGG(gross) FROM budget) > 100 GROUP BY region;  -- ok: AGG() in a subquery
 ```
 
 ### 7.4 GROUP BY
@@ -498,21 +498,21 @@ WHERE (SELECT MEASURE(gross) FROM budget) > 100 GROUP BY region;  -- ok: MEASURE
 Non-normative examples:
 
 ```sql
-SELECT region, MEASURE(total_revenue) FROM v GROUP BY region;   -- ok
-SELECT region, MEASURE(total_revenue) FROM v GROUP BY ALL;   -- ok, groups by region
+SELECT region, AGG(total_revenue) FROM v GROUP BY region;   -- ok
+SELECT region, AGG(total_revenue) FROM v GROUP BY ALL;   -- ok, groups by region
 SELECT region FROM v GROUP BY total_revenue;   -- rejected: grouping not defined over a measure (R1)
 ```
 
 ### 7.5 HAVING and ORDER BY
 
-Since `MEASURE()` is an aggregate (Section 6), `HAVING` and `ORDER BY` MAY contain `MEASURE()`,
+Since `AGG()` is an aggregate (Section 6), `HAVING` and `ORDER BY` MAY contain `AGG()`,
 and scalar expressions over it, just as they may `SUM(...)`.
 
 Non-normative example:
 
 ```sql
-SELECT region, MEASURE(total_revenue) FROM v GROUP BY region
-HAVING MEASURE(total_revenue) > 100 ORDER BY MEASURE(total_revenue) DESC;   -- ok
+SELECT region, AGG(total_revenue) FROM v GROUP BY region
+HAVING AGG(total_revenue) > 100 ORDER BY AGG(total_revenue) DESC;   -- ok
 ```
 
 ### 7.6 JOIN
@@ -541,7 +541,7 @@ Non-normative example (many-to-many join on `region`, each measure still duplica
 SELECT s.region,
        t.ticket_count,
        s.total_sales,
-       MEASURE(s.total_sales) / MEASURE(t.ticket_count) TO MEASURE AS sales_per_ticket
+       AGG(s.total_sales) / AGG(t.ticket_count) TO MEASURE AS sales_per_ticket
 FROM tickets t JOIN sales s ON t.region = s.region;
 ```
 
@@ -558,7 +558,7 @@ by this specification (Section 13.1); intermediate propagation is fully specifie
 Non-normative example:
 
 ```sql
-SELECT region, MEASURE(total_revenue)
+SELECT region, AGG(total_revenue)
 FROM (SELECT region, total_revenue FROM v WHERE order_date >= DATE '2025-01-01') t
 GROUP BY region;   -- total_revenue stays a measure in the subquery, evaluated at the top
 ```
@@ -571,7 +571,7 @@ unevaluated measure has no value to compare or append. Therefore:
 - A set operator or `DISTINCT` applied to an input relation that carries one or more
   unevaluated measure columns MUST be rejected.
 - The same operators are valid once measures have been evaluated to scalars (via
-  `MEASURE()` in an aggregated subquery) or projected away. For example, a `UNION ALL` of
+  `AGG()` in an aggregated subquery) or projected away. For example, a `UNION ALL` of
   two subqueries that each select only fields is valid.
 
 Non-normative examples:
@@ -592,7 +592,7 @@ query. The consumer-side obligations these guarantees assume are collected in Se
 
 ### 8.1 Evaluation semantics
 
-A measure is evaluated only through `MEASURE()` in an aggregated query (Sections 6, 7.2). Its
+A measure is evaluated only through `AGG()` in an aggregated query (Sections 6, 7.2). Its
 value in each output group is defined by the set of source rows it aggregates in that group.
 
 **Source rows.** A measure `m`'s **source rows** are the rows produced by the `FROM` clause in
@@ -617,7 +617,7 @@ These rules apply at every query level between `m`'s definition and its evaluati
 the defining query and the evaluating query. Derivation is tracked separately for each measure
 column, so in a self-join, each side's measure follows its own side's rows.
 
-**Input set.** In an aggregated query, the **input set** of `MEASURE(m)` for an output group `g`
+**Input set.** In an aggregated query, the **input set** of `AGG(m)` for an output group `g`
 is the set of `m`'s source rows from which at least one row of `g` derives. `m`'s aggregate is
 evaluated over the input set, each source row contributing once, with its own argument values.
 If the input set is empty (filters removed every source row, or no row of `g` derives from a
@@ -640,7 +640,7 @@ vanishing from the result.
 
 Each measure in a query is evaluated this way independently, over its own input set. A derived
 measure (Section 5.2) evaluates each measure it references over that measure's own input set
-for the same group. An expression combining several `MEASURE()` calls applies its scalar
+for the same group. An expression combining several `AGG()` calls applies its scalar
 operators to their per-group results, following the host dialect's standard scalar and NULL
 semantics, including its own handling of cases such as division by zero (Section 7.2).
 
@@ -649,7 +649,7 @@ same results.
 
 ### 8.2 G1: Slice-and-dice responsiveness
 
-`MEASURE(m)` responds to `WHERE` and `GROUP BY` just as a standard SQL aggregate over `m`'s
+`AGG(m)` responds to `WHERE` and `GROUP BY` just as a standard SQL aggregate over `m`'s
 definition would: a `WHERE` predicate restricts the input rows `m` sees (Section 7.3), and the
 query's grouping sets the level at which `m` is reported (Section 7.4). This follows
 directly from Section 8.1: filters remove source rows from `m`'s input set, and each group's input
@@ -659,11 +659,11 @@ aggregates.
 
 ### 8.3 G2: No duplication
 
-`MEASURE(m)` aggregates `m` over its own source rows without duplication, regardless of the shape of
+`AGG(m)` aggregates `m` over its own source rows without duplication, regardless of the shape of
 the enclosing query: any join type and cardinality, and any other measures or relations present.
 This follows from Section 8.1: `m`'s input set is a set of source rows, so each source row
 contributes to `m`'s aggregate at most once per output group, however many times a join duplicated
-it, and null-padded rows from an outer join do not contribute at all. `MEASURE(m)` therefore does
+it, and null-padded rows from an outer join do not contribute at all. `AGG(m)` therefore does
 not depend on the cardinality of any other relation or measure in the query.
 
 G2 structurally eliminates the two classic multi-table aggregation errors:
@@ -677,20 +677,20 @@ G2 structurally eliminates the two classic multi-table aggregation errors:
 
 ### 8.4 Corollary: Closure and stable field domains
 
-Because `MEASURE()` behaves as an ordinary SQL aggregate (G1), a measure relation behaves as an
+Because `AGG()` behaves as an ordinary SQL aggregate (G1), a measure relation behaves as an
 ordinary relation: the set of groups a query returns (its field domain) is fixed by its
 grouping fields and filters, just as with standard `GROUP BY`, and does not depend on which
 measures it selects. In particular, for a measure relation `R`, the set of field values returned
 by
 
 ```sql
-SELECT d, MEASURE(m1) FROM R GROUP BY d
+SELECT d, AGG(m1) FROM R GROUP BY d
 ```
 
 and by
 
 ```sql
-SELECT d, MEASURE(m2) FROM R GROUP BY d
+SELECT d, AGG(m2) FROM R GROUP BY d
 ```
 
 MUST be the same (the domain of `d`), differing only in the measure column. A conforming
@@ -709,14 +709,14 @@ engine MUST preserve this closure property.
 The guarantees above hold when a consuming tool observes the following. Unlike G1-G2, these are
 requirements on the *consumer*, not the engine.
 
-- **Evaluate measures only through `MEASURE()`.** A consumer references a measure by name and lets
+- **Evaluate measures only through `AGG()`.** A consumer references a measure by name and lets
   the engine evaluate it (P2); it MUST NOT reconstruct a measure from the underlying columns,
   which would forgo the no-duplication guarantee.
-- **Do not reaggregate a `MEASURE()` result on the client.** A `MEASURE()` value is already
+- **Do not reaggregate an `AGG()` result on the client.** An `AGG()` value is already
   aggregated at the query's grouping; combining such values across groups on the client (for a
   coarser grouping, a drill-up, or a cached-then-refiltered view) is not valid, the same rule
   that applies to non-decomposable aggregates such as `COUNT(DISTINCT ...)` or `MEDIAN`. To
-  change the grouping, re-query the engine. For example, given per-state `MEASURE(revenue)`, a
+  change the grouping, re-query the engine. For example, given per-state `AGG(revenue)`, a
   tool MUST NOT sum those client-side for a national total; it re-queries grouped at the national
   level.
 
@@ -783,10 +783,10 @@ A multi-table Ossie model is mapped to a set of relations (database tables, view
 relations), each with its own fields and measures, together with a set of relationships
 among them.
 A tool discovers the relations and relationships (Section 11), then
-generates queries that join them using its own SQL, reading measures via `MEASURE()`.
+generates queries that join them using its own SQL, reading measures via `AGG()`.
 
 Nothing in a tool's multi-table workflow needs to change: the tool joins measure relations
-just as it joins any table, and the only substitution is `MEASURE(name)` in place of a raw
+just as it joins any table, and the only substitution is `AGG(name)` in place of a raw
 aggregate. The engine supplies G1 and G2 across the joins.
 
 Independent measure relations (multi-fact models) are supported directly: a query MAY join
@@ -841,14 +841,14 @@ join is defined on a relation whose own definition includes that join, so its ro
 is well-defined at the point of definition. For example, a measure `SUM(qty * price)` reading
 columns from both `orders` and `products` is a measure on a relation defined
 `FROM orders JOIN products`, evaluated at that joined relation's row identity; the consumer
-evaluates it with `MEASURE()` like any other. This is the general pattern: fold a measure's
+evaluates it with `AGG()` like any other. This is the general pattern: fold a measure's
 required joins into its home relation's definition, rather than leaving them to the consuming
 query.
 
 Multi-relation measures fit the same pattern. A measure derived from measures on more than one
 relation (say a ratio of a measure from each of two facts, Section 5.2) lives on a home relation
 whose field domain is fixed, such as a conformed dimension shared by the two facts.
-Defined there as `(MEASURE(a) / MEASURE(b)) TO MEASURE`, it is an ordinary measure relation that
+Defined there as `(AGG(a) / AGG(b)) TO MEASURE`, it is an ordinary measure relation that
 obeys closure (Section 8.4); Appendix A.7 works this through with a conformed-dimension bridge.
 
 A free-floating measure (attached to no relation, evaluated over whatever join path each query
@@ -1087,14 +1087,14 @@ Deferred interface and interop concerns:
 
 ## Appendix A. Worked examples (non-normative)
 
-These illustrate that ordinary tool-generated SQL, using only the `MEASURE()` substitution,
+These illustrate that ordinary tool-generated SQL, using only the `AGG()` substitution,
 composes with the guarantees above. They assume a model with measure relations `orders`
 (one row per order), `sales` (one row per sale), and `tickets` (one row per ticket).
 
 ### A.1 Simple aggregation
 
 ```sql
-SELECT category, MEASURE(total_quantity)
+SELECT category, AGG(total_quantity)
 FROM orders
 GROUP BY category;
 ```
@@ -1106,10 +1106,10 @@ GROUP BY category;
 A tool keeps the top 2 states by revenue by computing them in a subquery and joining back:
 
 ```sql
-SELECT o.category, MEASURE(o.total_quantity)
+SELECT o.category, AGG(o.total_quantity)
 FROM orders o
 JOIN (
-  SELECT state_id, MEASURE(total_revenue) AS r
+  SELECT state_id, AGG(total_revenue) AS r
   FROM orders
   GROUP BY state_id
   ORDER BY r DESC, state_id
@@ -1118,7 +1118,7 @@ JOIN (
 GROUP BY o.category;
 ```
 
-The join filters rows before `MEASURE(o.total_quantity)` is evaluated (G1) and does not inflate
+The join filters rows before `AGG(o.total_quantity)` is evaluated (G1) and does not inflate
 it (G2). Because the interface is standard relational SQL, the `state_id` values the
 subquery ranks are exactly the `state_id` values it joins back on. The field domain is fixed by
 the relation and its filters, independent of which measure is selected (closure, Section 8.4). A
@@ -1134,22 +1134,22 @@ Average, over states, of each state's total revenue:
 ```sql
 SELECT d.category, AVG(m.state_revenue)
 FROM (SELECT category, state_id FROM orders GROUP BY category, state_id) d
-JOIN (SELECT state_id, MEASURE(total_revenue) AS state_revenue
+JOIN (SELECT state_id, AGG(total_revenue) AS state_revenue
       FROM orders GROUP BY state_id) m
   ON d.state_id IS NOT DISTINCT FROM m.state_id
 GROUP BY d.category;
 ```
 
-The inner `MEASURE(total_revenue)` is duplication-free per state (G2); the outer `AVG` is an
+The inner `AGG(total_revenue)` is duplication-free per state (G2); the outer `AVG` is an
 ordinary aggregate over the already-evaluated scalar.
 
 ### A.4 Multi-fact ratio
 
 ```sql
 SELECT s.region,
-       MEASURE(t.ticket_count),
-       MEASURE(s.total_sales),
-       MEASURE(s.total_sales) / MEASURE(t.ticket_count) AS sales_per_ticket
+       AGG(t.ticket_count),
+       AGG(s.total_sales),
+       AGG(s.total_sales) / AGG(t.ticket_count) AS sales_per_ticket
 FROM tickets t JOIN sales s ON t.region = s.region
 GROUP BY s.region;
 ```
@@ -1162,13 +1162,13 @@ evaluated over its own source rows (G2), and the ratio is applied per region aft
 Revenue per category, with the fact joined to its line items (one order -> many items):
 
 ```sql
-SELECT o.category, MEASURE(o.total_revenue)
+SELECT o.category, AGG(o.total_revenue)
 FROM orders o
 JOIN order_items i ON i.order_id = o.order_id
 GROUP BY o.category;
 ```
 
-The join produces one row per order item, but `MEASURE(o.total_revenue)` aggregates each order
+The join produces one row per order item, but `AGG(o.total_revenue)` aggregates each order
 once (G2): each order's revenue is counted once, not once per line item.
 
 ### A.6 Join type: the tool's choice
@@ -1177,21 +1177,21 @@ The same measures under an inner and a left join, differing only in the join typ
 
 ```sql
 -- inner: only regions with both sales and tickets
-SELECT s.region, MEASURE(s.total_sales), MEASURE(t.ticket_count)
+SELECT s.region, AGG(s.total_sales), AGG(t.ticket_count)
 FROM sales s JOIN tickets t ON s.region = t.region
 GROUP BY s.region;
 
 -- left: every sales region; ticket_count is 0 where a region has no tickets
-SELECT s.region, MEASURE(s.total_sales), MEASURE(t.ticket_count)
+SELECT s.region, AGG(s.total_sales), AGG(t.ticket_count)
 FROM sales s LEFT JOIN tickets t ON s.region = t.region
 GROUP BY s.region;
 ```
 
 The join type is the tool's analytic choice, not something the interface prescribes (Section 10.2).
 Either way each measure is evaluated over its own source rows (G2). The left join keeps a region
-that has sales but no tickets; there `MEASURE(t.ticket_count)` has no source rows and takes its
+that has sales but no tickets; there `AGG(t.ticket_count)` has no source rows and takes its
 empty-input value (0 for `COUNT`, Section 8.1), while the inner join omits that region entirely. For
-any region in both results the `MEASURE()` values are identical: the standard fixes measure values
+any region in both results the `AGG()` values are identical: the standard fixes measure values
 for a given query, and the join choice fixes which rows appear.
 
 ### A.7 Multi-fact via a conformed-dimension bridge
@@ -1207,7 +1207,7 @@ view:
 CREATE VIEW region_metrics AS
 SELECT r.region_id,        -- field
        r.region_name,      -- field
-       (MEASURE(sales.total_sales) / MEASURE(tickets.ticket_count))
+       (AGG(sales.total_sales) / AGG(tickets.ticket_count))
            TO MEASURE AS sales_per_ticket   -- derived measure
 FROM   regions r
 LEFT JOIN sales   ON sales.region_id   = r.region_id
@@ -1215,7 +1215,7 @@ LEFT JOIN tickets ON tickets.region_id = r.region_id;
 ```
 
 `region_metrics` carrying `sales_per_ticket` is then an ordinary measure relation. A consumer
-evaluates `MEASURE(sales_per_ticket)` and MAY join `region_metrics` to further tables with
+evaluates `AGG(sales_per_ticket)` and MAY join `region_metrics` to further tables with
 ordinary SQL: the measure stays duplication-free (G2), its `region_id` domain is fixed (closure,
 Section 8.4), and no model re-declaration is needed to bring in another table.
 
@@ -1260,10 +1260,10 @@ Interface terms:
   same source row. The **row-identity key** (Section 9) is one implementation of it.
 - **Input set.** For a measure and an output group, the set of the measure's source rows that
   the group's rows derive from; the measure's aggregate is evaluated over it (Section 8.1).
-- **`MEASURE(m)`.** The aggregate function that evaluates measure `m` over its input set,
+- **`AGG(m)`.** The aggregate function that evaluates measure `m` over its input set,
   returning `T`.
 - **Base / derived measure.** A measure defined directly from an aggregate expression, versus
-  one defined from `MEASURE()` over other measures.
+  one defined from `AGG()` over other measures.
 - **Multi-table measure.** A derived measure referencing measures from more than
   one relation.
 - **G1 (slice-and-dice).** Measures respond to WHERE and GROUP BY like standard aggregates.
@@ -1298,10 +1298,12 @@ the proposal later.
 
 ### Naming and syntax
 
-The evaluation function is `MEASURE()`, not the paper's `AGGREGATE()`. `AGGREGATE` already names a
-different function in some engines (in Databricks it is a higher-order function over arrays), and
-the evaluation function needs a name unlikely to collide with existing functions or reserved words
-across popular SQL engines.
+The evaluation function is `AGG()`, not the paper's `AGGREGATE()`. `AGGREGATE` already names a
+different function in some engines (in Databricks and DuckDB it is a function over arrays or
+lists), and the evaluation function needs a name unlikely to collide with existing functions or
+reserved words across popular SQL engines. Earlier drafts of this specification used `MEASURE()`,
+which reads too much like the `TO MEASURE` definition marker; engines MAY keep it as a synonym
+(Section 6).
 
 A measure is defined with `expr TO MEASURE AS name`, not the paper's `expr AS MEASURE name`.
 `AS MEASURE` is cleaner, but ambiguous: in standard SQL `expr AS measure` already means "give this
@@ -1309,15 +1311,15 @@ column the alias `measure`."
 
 ### Evaluating a measure
 
-A measure is evaluated only through `MEASURE()` (R2). The paper treats its `AGGREGATE()` wrapper
+A measure is evaluated only through `AGG()` (R2). The paper treats its `AGGREGATE()` wrapper
 as largely cosmetic: in an aggregate query a bare measure reference is evaluated implicitly. We
 require the explicit call, so the conversion of a `T measure` to a scalar `T` happens at one
 visible place. Further, in SQL, an aggregate function in the `SELECT`, `HAVING`, or `ORDER BY`
 clause is what turns a projection into an aggregation; a bare measure column that implicitly
-aggregates breaks that expectation, so requiring `MEASURE()` keeps the query syntactically
+aggregates breaks that expectation, so requiring `AGG()` keeps the query syntactically
 ordinary SQL.
 
-`MEASURE()` evaluates a measure over exactly the rows the query selects, after its `WHERE` filters
+`AGG()` evaluates a measure over exactly the rows the query selects, after its `WHERE` filters
 and joins (Guarantee G1). In contrast, the paper defaults to not applying the query's `WHERE` or
 joins to a measure; a consumer opts those in with `VISIBLE`. Applying the query's filters and
 joins by default matches standard SQL behavior.
@@ -1327,7 +1329,7 @@ joins by default matches standard SQL behavior.
 Evaluation controls are explicitly out of scope in this version (Section 5.3), so this proposal does
 not adopt the paper's `AT` operator or its consumer-modifiable *evaluation context* (a predicate
 over a measure's dimension columns, adjusted at the call site with `ALL`, `SET`, or `WHERE`). A
-measure here is anchored to its source rows (Section 3.2) and evaluated only through `MEASURE()`.
+measure here is anchored to its source rows (Section 3.2) and evaluated only through `AGG()`.
 
 The functionality evaluation controls enable, such as percent of total and period over period, is
 important, and we recommend strongly that it be considered as a follow-up extension. Two things
