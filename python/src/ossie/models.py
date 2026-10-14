@@ -18,7 +18,7 @@
 import json
 import math
 from enum import Enum
-from typing import Any, Literal, Optional, Union
+from typing import Annotated, Any, Literal, Optional, Union
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, StrictBool, model_serializer
@@ -29,8 +29,9 @@ _AI_CONTEXT_FIELDS = frozenset({"instructions", "synonyms", "examples"})
 #: Paths listed in a diagnostic before the rest are counted instead.
 _MAX_REPORTED = 20
 
-_NULL = "set to null, which the schema does not allow; omit it instead"
-_NON_FINITE = "not a number JSON can represent, so it cannot round-trip"
+# Each reads as a whole clause, so one can be followed by the paths it applies to.
+_NULL = "property set to null, which the schema does not allow; omit it instead"
+_NON_FINITE = "property holds a number JSON cannot represent, so it cannot round-trip"
 
 
 def _cyclic(path: str) -> ValueError:
@@ -247,8 +248,12 @@ class OssieDataset(BaseModel):
 
     name: str = Field(..., min_length=1)
     source: str = Field(..., min_length=1)
-    primary_key: Optional[list[str]] = None
-    unique_keys: Optional[list[list[str]]] = None
+    # The schema gives both `minItems: 1`, as it does the relationship column arrays.
+    # An empty key names nothing, and `Field` mirrors minItems as `min_length` here.
+    primary_key: Optional[list[str]] = Field(default=None, min_length=1)
+    unique_keys: Optional[list[Annotated[list[str], Field(min_length=1)]]] = Field(
+        default=None, min_length=1
+    )
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
     fields: Optional[list[OssieField]] = None
@@ -378,7 +383,7 @@ class OssieDocument(OssieSemanticModel):
                 listed = ", ".join(paths[:_MAX_REPORTED])
                 if len(paths) > _MAX_REPORTED:
                     listed += f", and {len(paths) - _MAX_REPORTED} more"
-                raise ValueError(f"property {reason}: {listed}")
+                raise ValueError(f"{reason}: {listed}")
         if isinstance(data, dict) and "version" in cls.model_fields and "version" not in data:
             # The field carries a default so Python construction needs no version, but
             # the schema lists it as required, so a document without one is invalid.

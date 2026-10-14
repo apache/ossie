@@ -723,6 +723,13 @@ public class FieldMappingHandler implements PipelineStep {
         for (Object calcDimObj : calcDims) {
             Map<String, Object> calcDim = asMap(calcDimObj);
 
+            // Salesforce returns formulas HTML-escaped; decode before the dimension is
+            // either converted to a field or preserved in custom_extensions.
+            String expressionValue = getString(calcDim, EXPRESSION);
+            if (expressionValue != null) {
+                calcDim.put(EXPRESSION, SalesforceFormulaEscaping.unescape(expressionValue));
+            }
+
             List<Object> dependencies = getList(calcDim, DEPENDENCIES);
             String targetDataObject = getSingleDataObjectFromDependencies(dependencies);
 

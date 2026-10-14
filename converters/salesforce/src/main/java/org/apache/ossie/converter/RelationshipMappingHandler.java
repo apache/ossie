@@ -119,6 +119,7 @@ public class RelationshipMappingHandler implements PipelineStep {
 
         for (Object relObj : sfRelationships) {
             Map<String, Object> sfRel = asMap(relObj);
+            unescapeCriteriaFormulas(sfRel);
             if (hasUnsupportedFieldTypes(sfRel)) {
                 unsupportedRelationships.add(sfRel);
             } else {
@@ -163,6 +164,30 @@ public class RelationshipMappingHandler implements PipelineStep {
 
         // Cleanup: remove processed structural key
         sourceData.remove(SEMANTIC_RELATIONSHIPS);
+    }
+
+    /**
+     * Decodes the HTML escaping Salesforce applies to a criterion whose join side is a
+     * formula rather than a column. Applied before the relationship is sorted into
+     * supported or unsupported, so the text is decoded whether it ends up in
+     * {@code from_columns}/{@code to_columns} or is preserved in {@code custom_extensions}.
+     * A plain field apiName cannot contain an entity, so decoding leaves it untouched.
+     */
+    private void unescapeCriteriaFormulas(Map<String, Object> sfRel) {
+        Object criteriaObj = sfRel.get(CRITERIA);
+        if (criteriaObj == null) {
+            return;
+        }
+
+        for (Object criterionObj : asList(criteriaObj)) {
+            Map<String, Object> criterion = asMap(criterionObj);
+            for (String key : List.of(LEFT_SEMANTIC_FIELD_API_NAME, RIGHT_SEMANTIC_FIELD_API_NAME)) {
+                String value = getString(criterion, key);
+                if (value != null) {
+                    criterion.put(key, SalesforceFormulaEscaping.unescape(value));
+                }
+            }
+        }
     }
 
     /**

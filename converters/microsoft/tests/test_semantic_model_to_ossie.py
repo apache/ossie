@@ -829,6 +829,94 @@ def test_calculated_table_measures_become_metrics_and_round_trip(bim):
     assert restored_table["measures"] == [measure_table["measures"][0]]
 
 
+def _sales_table():
+    # A plain exported table so the model has at least one Apache Ossie dataset.
+    return {
+        "name": "Sales",
+        "columns": [
+            {"name": "Amount", "dataType": "double", "sourceColumn": "Amount"}
+        ],
+    }
+
+
+def _exclusion_warning(bim, table_name):
+    # A fresh bim per call: the shared module-scoped fixture must not be mutated.
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        build_ossie_document(bim)
+    return next(
+        str(w.message)
+        for w in caught
+        if f"table '{table_name}'" in str(w.message)
+        and "custom_extensions" in str(w.message)
+    )
+
+
+def test_measure_only_table_warning_does_not_imply_lost_measures():
+    """A measure-only table's measures become metrics, so the exclusion warning must
+    say so rather than implying the measures survive only in custom_extensions."""
+    bim = {
+        "name": "m",
+        "model": {
+            "tables": [
+                _sales_table(),
+                {
+                    "name": "Measure Only",
+                    "partitions": [
+                        {
+                            "name": "Measure Only",
+                            "mode": "import",
+                            "source": {
+                                "type": "calculated",
+                                "expression": 'ROW("_", BLANK())',
+                            },
+                        }
+                    ],
+                    "measures": [
+                        {"name": "Measure Total", "expression": "SUM(Sales[Amount])"}
+                    ],
+                },
+            ]
+        },
+    }
+
+    message = _exclusion_warning(bim, "Measure Only")
+
+    assert "exported as Apache Ossie metrics" in message
+    assert "excluded from the Apache Ossie model as a dataset" in message
+
+
+def test_calculated_table_without_measures_warning_is_unchanged():
+    """A calculated table with no measures contributes no metric, so its warning must
+    not claim measures were exported."""
+    bim = {
+        "name": "m",
+        "model": {
+            "tables": [
+                _sales_table(),
+                {
+                    "name": "Calendar",
+                    "partitions": [
+                        {
+                            "name": "Calendar",
+                            "mode": "import",
+                            "source": {
+                                "type": "calculated",
+                                "expression": "CALENDARAUTO()",
+                            },
+                        }
+                    ],
+                },
+            ]
+        },
+    }
+
+    message = _exclusion_warning(bim, "Calendar")
+
+    assert "exported as Apache Ossie metrics" not in message
+    assert message.endswith("preserved in custom_extensions")
+
+
 def test_dataset_stash_preserves_partitions_and_annotations(model):
     stash = read_stash(_dataset(model, "Sales"))
     assert stash["partitions"][0]["source"]["type"] == "m"

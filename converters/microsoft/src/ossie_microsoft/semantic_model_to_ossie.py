@@ -181,6 +181,14 @@ def build_ossie_document(bim_file):
     if metrics:
         semantic_model["metrics"] = metrics
 
+    # An excluded table whose measures became model-level metrics is reported differently:
+    # its measures are not lost to the stash, so the warning must not imply they are.
+    metric_home_tables = frozenset(
+        table_name
+        for metric in metrics
+        if (table_name := read_stash(metric).get("table"))
+    )
+
     _stash_model(
         semantic_model,
         bim_file,
@@ -189,6 +197,7 @@ def build_ossie_document(bim_file):
         excluded_tables,
         excluded_relationships,
         excluded_measures,
+        metric_home_tables,
     )
 
     return {"version": OSSIE_VERSION, **semantic_model}
@@ -734,6 +743,7 @@ def _stash_model(
     excluded_tables,
     excluded_relationships,
     excluded_measures,
+    metric_home_tables=frozenset(),
 ):
     # Properties that sit outside the `model` object (compatibilityLevel and friends) are
     # nested so they cannot collide with a model property of the same name.
@@ -749,11 +759,19 @@ def _stash_model(
     if excluded_tables:
         stash["excludedTables"] = excluded_tables
         for table in excluded_tables:
-            warn(
-                f"table '{table['name']}'",
-                f"{_exclusion_reason(table)}; excluded from the Apache Ossie model "
-                "and preserved in custom_extensions",
-            )
+            if table["name"] in metric_home_tables:
+                # The table is not a dataset, but its measures are first-class metrics,
+                # so only the table definition stays in custom_extensions.
+                detail = (
+                    "excluded from the Apache Ossie model as a dataset; its measures are "
+                    "exported as Apache Ossie metrics and the table definition is "
+                    "preserved in custom_extensions"
+                )
+            else:
+                detail = (
+                    "excluded from the Apache Ossie model and preserved in custom_extensions"
+                )
+            warn(f"table '{table['name']}'", f"{_exclusion_reason(table)}; {detail}")
     if excluded_relationships:
         stash["excludedRelationships"] = excluded_relationships
     if excluded_measures:

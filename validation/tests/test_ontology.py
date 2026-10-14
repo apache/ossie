@@ -341,3 +341,96 @@ def test_mapping_document_rejects_invalid_shapes(offline, mapping_schema, mutate
     mutate(document)
 
     assert _VALIDATE.validate_schema(document, mapping_schema)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        # A concept mapping populating neither objects nor links.
+        lambda d: d["concept_mappings"].append({"concept": "Customer"}),
+        # An object mapping that computes nothing and references nothing.
+        lambda d: d["concept_mappings"][0]["object_mappings"].append({}),
+        lambda d: d["concept_mappings"][0]["object_mappings"].append({"concept": "Order"}),
+        # A referent mapping that computes nothing and references nothing.
+        lambda d: d["concept_mappings"][0]["object_mappings"].append(
+            {"referent_mappings": [{"relationship": "placed_by"}]}
+        ),
+        # Present but empty: an empty array satisfies `required` on its own.
+        lambda d: d["concept_mappings"].append({"concept": "Customer", "object_mappings": []}),
+        lambda d: d["concept_mappings"].append({"concept": "Customer", "link_mappings": []}),
+        lambda d: d["concept_mappings"][0]["object_mappings"].append(
+            {"referent_mappings": []}
+        ),
+        lambda d: d["concept_mappings"][0]["object_mappings"].append(
+            {"referent_mappings": [{"relationship": "placed_by", "referent_mappings": []}]}
+        ),
+    ],
+    ids=[
+        "concept-mapping-populates-nothing",
+        "empty-object-mapping",
+        "object-mapping-names-only-a-concept",
+        "referent-mapping-resolves-nothing",
+        "empty-object-mappings-array",
+        "empty-link-mappings-array",
+        "empty-referent-mappings-array",
+        "empty-nested-referent-mappings-array",
+    ],
+)
+def test_mapping_document_rejects_a_mapping_that_maps_nothing(
+    offline, mapping_schema, mutate
+):
+    """Each pair is required-if-the-other-is-absent in `ontology.md`.
+
+    The rule is stated in the Concept mappings, Object mappings and Referent mappings
+    sections, but was not expressed in the schema, so `{}` was a legal object mapping
+    and a document could declare a concept while saying nothing about how to populate
+    it. An empty array satisfies `required`, so each array is also `minItems: 1`.
+    """
+    document = _mapping_document()
+    mutate(document)
+
+    assert _VALIDATE.validate_schema(document, mapping_schema)
+
+
+def test_mapping_document_accepts_either_side_of_each_pair(offline, mapping_schema):
+    """The alternative to the one the base document uses is equally valid."""
+    document = _mapping_document()
+    document["concept_mappings"][0]["object_mappings"].append(
+        {"referent_mappings": [{"relationship": "placed_by", "expression": "orders.cust"}]}
+    )
+    document["concept_mappings"].append(
+        {
+            "concept": "Customer",
+            "link_mappings": [{"object_mapping": {"expression": "customers.id"}}],
+        }
+    )
+
+    assert not _VALIDATE.validate_schema(document, mapping_schema)
+
+
+def test_mapping_document_accepts_both_sides_of_each_pair(offline, mapping_schema):
+    """The rule is at least one, not exactly one, which is why it is `anyOf`.
+
+    `ontology.md` makes each property required only when the other is absent, so a
+    mapping carrying both is not forbidden. `oneOf` would reject this document.
+    """
+    document = _mapping_document()
+    document["concept_mappings"][0].update(
+        object_mappings=[
+            {
+                "expression": "orders.order_id",
+                "referent_mappings": [
+                    {
+                        "relationship": "placed_by",
+                        "expression": "orders.cust",
+                        "referent_mappings": [
+                            {"relationship": "code", "expression": "customers.id"}
+                        ],
+                    }
+                ],
+            }
+        ],
+        link_mappings=[{"object_mapping": {"expression": "customers.id"}}],
+    )
+
+    assert not _VALIDATE.validate_schema(document, mapping_schema)

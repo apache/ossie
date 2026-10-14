@@ -178,6 +178,11 @@ ossieToSf.convert(Paths.get("input/model.yaml"), Paths.get("output/"));
 | `businessPreferences` | `ai_context` |
 | Unmapped properties | `custom_extensions` (vendor: `SALESFORCE`) |
 
+The semantic model API returns a stored formula HTML-escaped, so `'A&B'` comes
+back as `&#39;A&amp;B&#39;`. Import decodes it, in a calculated measurement, in a
+calculated dimension, and in a relationship criterion that joins on a formula, so
+the Ossie expression reads as it was written.
+
 ### Export (Apache Ossie → Salesforce)
 
 | Ossie | Salesforce |

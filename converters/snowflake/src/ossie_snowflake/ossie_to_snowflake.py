@@ -21,12 +21,10 @@ Cortex Analyst semantic model YAML. Pure offline conversion — no Snowflake
 connection required.
 
 Usage:
-    python3 converter.py -i input.yaml -o output.yaml
+    ossie-snowflake -i input.yaml -o output.yaml
 """
 
-import argparse
 import re
-import sys
 import warnings
 
 import yaml
@@ -552,34 +550,3 @@ def _warn_dropped_fields(source, context, extra_dropped=None):
             f"Dropped from {context} (no Snowflake counterpart): "
             + ", ".join(dropped)
         )
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Convert Ossie YAML semantic model to Snowflake Cortex Analyst YAML"
-    )
-    parser.add_argument(
-        "-i", "--input", required=True, help="Path to the Ossie YAML input file"
-    )
-    parser.add_argument(
-        "-o", "--output", required=True, help="Path to write the Snowflake YAML output"
-    )
-    args = parser.parse_args()
-
-    with open(args.input, "r") as f:
-        ossie_yaml_str = f.read()
-
-    try:
-        snowflake_yaml_str = convert_ossie_to_snowflake(ossie_yaml_str)
-    except OssieConversionError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    with open(args.output, "w") as f:
-        f.write(snowflake_yaml_str)
-
-    print(f"Converted {args.input} -> {args.output}")
-
-
-if __name__ == "__main__":
-    main()
