@@ -46,6 +46,7 @@ _ISSUE_REASON: dict[ConverterIssueType, str] = {
     ConverterIssueType.MISSING_DIALECT_EXPRESSION: "no expression was available in the dataset's dialect or ANSI_SQL; the first available dialect was used",
     ConverterIssueType.UNIQUE_KEYS_DROPPED: "wisdom has no unique-key construct",
     ConverterIssueType.CUSTOM_EXTENSION_DROPPED: "wisdom cannot store Ossie custom extensions",
+    ConverterIssueType.RELATIONSHIP_TYPE_UNRESOLVED: "its WISDOM custom extension is malformed or no longer matches its from/to; it was exported as MANY_TO_ONE",
 }
 
 _DROPPED_ISSUE_TYPES = {
