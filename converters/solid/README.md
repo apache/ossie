@@ -158,7 +158,9 @@ Each row maps in both directions; the **Notes** flag where a behavior is specifi
 
 A Solid **fact may be a table-scoped metric** rather than a catalog column — it carries an
 `expression` and no `type`. Import keeps the expression and marks the field
-`role: metric` in the stash; export re-emits it as an expression-only fact.
+`role: metric` in the stash; export re-emits it as an expression-only fact. A
+hand-edited fact carrying both a `type` and an `expression` is marked the same way and
+keeps both on export.
 
 ### Relationships
 
@@ -261,6 +263,8 @@ when an input breaks one of these:
 - the input YAML is malformed, or its root is not a mapping;
 - a Solid model has no `tables`, or an Apache Ossie model has no `datasets` — the spec
   requires at least one dataset;
+- an Apache Ossie model declares two datasets with the same `name`, which relationships
+  and metrics could then resolve to the wrong table (export);
 - a relationship's `from_columns`/`to_columns` differ in length, or name a dataset that
   is not declared;
 - `--dialect` names a dialect outside `ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`, `BIGQUERY`;

@@ -100,6 +100,16 @@ def test_facts_is_always_emitted_even_when_empty(from_fixture):
     assert table["facts"] == []
 
 
+def test_a_duplicate_dataset_name_is_rejected():
+    # Relationships and metrics resolve datasets by name, so accepting a duplicate
+    # would join against whichever one came last.
+    ossie = yaml.safe_load(fixture("tpcds_ossie.yaml"))
+    duplicate = dict(ossie["datasets"][0], source="tpcds.archive.store_sales")
+    ossie["datasets"].append(duplicate)
+    with pytest.raises(ConversionError, match="more than once"):
+        convert_ossie_to_solid(yaml.safe_dump(ossie))
+
+
 def test_unique_keys_are_dropped_with_a_warning():
     _, warnings_ = convert_quietly(
         convert_ossie_to_solid, example("tpcds_semantic_model.yaml")

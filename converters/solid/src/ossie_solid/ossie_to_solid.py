@@ -121,7 +121,14 @@ def _convert_model(ossie, explicit_dialect, model_name):
     for dataset in datasets:
         if not isinstance(dataset, dict):
             raise ConversionError("Each entry of 'datasets' must be a mapping")
-        by_name[require_str(dataset, "name", "dataset")] = dataset
+        name = require_str(dataset, "name", "dataset")
+        if name in by_name:
+            # Relationships and metrics resolve datasets by name, so keeping either one
+            # would silently join against the wrong table.
+            raise ConversionError(
+                f"Apache Ossie model declares dataset '{name}' more than once; dataset "
+                f"names must be unique")
+        by_name[name] = dataset
     # Whether the model records Solid's fact/dimension split at all. If no field
     # anywhere carries a `dimension` block the model was not produced by this converter,
     # so the split is re-derived from the data types the way Solid itself does it.
@@ -310,7 +317,11 @@ def _convert_field(field, dialect, dataset_name, has_dimension_metadata):
         and (stash.get("role") == "metric" or (raw_type is None and _is_computed(expression, name)))
     )
     if is_metric_fact:
-        raw_type = None
+        # Only a type Solid itself recorded is kept; a metric has no catalog type to
+        # derive one from.
+        raw_type = clean_text(stash.get("type"))
+        if raw_type:
+            column["type"] = raw_type
     elif raw_type:
         column["type"] = raw_type
     else:

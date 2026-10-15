@@ -69,6 +69,21 @@ def test_the_intermediate_ossie_model_is_schema_valid(name, assert_valid_ossie):
     assert_valid_ossie(ossie)
 
 
+def test_a_fact_with_both_a_type_and_an_expression_round_trips_exactly():
+    # Solid's own export never writes both, but a hand-edited model can; the stashed
+    # type must not turn the fact back into a plain column and drop its expression.
+    solid = yaml.safe_load(fixture("tpcds_solid.yaml"))
+    store_sales = by_name(solid["semantic_model"]["tables"])["tpcds.public.store_sales"]
+    by_name(store_sales["facts"])["ss_net_profit"]["expression"] = (
+        "ss_ext_sales_price - ss_ext_wholesale_cost"
+    )
+    original = yaml.safe_dump(solid, sort_keys=False)
+    ossie, _ = convert_quietly(convert_solid_to_ossie, original)
+    restored, warnings_ = convert_quietly(convert_ossie_to_solid, ossie)
+    assert normalized_yaml(restored) == normalized_yaml(original)
+    assert not any("computed field" in w for w in warnings_)
+
+
 def test_ossie_to_solid_to_ossie_stays_schema_valid(assert_valid_ossie):
     solid, _ = convert_quietly(
         convert_ossie_to_solid, example("tpcds_semantic_model.yaml")
