@@ -75,6 +75,7 @@ except ImportError:
 
 try:
     import sqlglot
+    from sqlglot import exp
     from sqlglot.errors import ParseError, TokenError
     SQLGLOT_AVAILABLE = True
 except ImportError:
@@ -261,12 +262,26 @@ def validate_unique_names(data: dict) -> list[str]:
     for dup in find_duplicates(dataset_names):
         errors.append(f"[Unique] Duplicate dataset name '{dup}' in model '{model_name}'")
 
-    # Check unique field names within each dataset
+    # Check unique field names within each dataset, and that dataset-scoped
+    # metric names do not duplicate one another or collide with a field name of
+    # the same dataset: a dataset's fields and dataset-scoped metrics share one
+    # namespace.
     for dataset in model.get("datasets", []):
         dataset_name = dataset.get("name", "<unnamed>")
         field_names = [f.get("name") for f in dataset.get("fields", []) if f.get("name")]
         for dup in find_duplicates(field_names):
             errors.append(f"[Unique] Duplicate field name '{dup}' in dataset '{dataset_name}'")
+
+        ds_metric_names = [m.get("name") for m in dataset.get("metrics", []) if m.get("name")]
+        for dup in find_duplicates(ds_metric_names):
+            errors.append(
+                f"[Unique] Duplicate metric name '{dup}' in dataset '{dataset_name}'"
+            )
+        for name in sorted(set(field_names) & set(ds_metric_names)):
+            errors.append(
+                f"[Unique] Name '{name}' in dataset '{dataset_name}' is used by both a field "
+                f"and a dataset-scoped metric; a dataset's fields and metrics share one namespace"
+            )
 
     # Check unique metric names
     metric_names = [m.get("name") for m in model.get("metrics", []) if m.get("name")]
@@ -463,6 +478,19 @@ def validate_sql(data: dict) -> list[str]:
                     if error:
                         errors.append(error)
 
+        # Validate dataset-scoped metric expressions
+        for metric in dataset.get("metrics", []):
+            metric_name = metric.get("name", "<unnamed>")
+            expression = metric.get("expression", {})
+            for dialect_expr in expression.get("dialects", []):
+                dialect = dialect_expr.get("dialect", "ANSI_SQL")
+                expr = dialect_expr.get("expression")
+                if expr is not None:
+                    context = f"Metric '{dataset_name}.{metric_name}' in model '{model_name}' ({dialect})"
+                    error = validate_sql_expression(expr, dialect, context)
+                    if error:
+                        errors.append(error)
+
     # Validate metric expressions
     for metric in model.get("metrics", []):
         metric_name = metric.get("name", "<unnamed>")
@@ -475,6 +503,99 @@ def validate_sql(data: dict) -> list[str]:
                 error = validate_sql_expression(expr, dialect, context)
                 if error:
                     errors.append(error)
+
+    return errors
+
+
+def _parse_metric_expression(expr: str, dialect: str):
+    """Parse a metric expression, trying it bare and then wrapped in SELECT.
+
+    Returns the sqlglot tree, or None when it cannot be parsed (sqlglot
+    unavailable, a dialect sqlglot cannot parse, or a syntax error) so the caller
+    skips the scoping checks rather than reporting a false positive. Syntax
+    errors are reported separately by validate_sql.
+    """
+    if not SQLGLOT_AVAILABLE or dialect in SKIP_SQL_VALIDATION:
+        return None
+
+    sqlglot_dialect = DIALECT_MAP.get(dialect)
+    for candidate in (expr, f"SELECT {expr}"):
+        try:
+            tree = sqlglot.parse_one(candidate, dialect=sqlglot_dialect)
+        except (ParseError, TokenError, RecursionError):
+            continue
+        if tree is not None:
+            return tree
+    return None
+
+
+def validate_metric_scoping(data: dict) -> list[str]:
+    """Validate the field references in each dataset-scoped metric expression.
+
+    A dataset-scoped metric references the declaring dataset's declared fields by
+    single-part (unqualified) name. Two rules are enforced:
+
+    * No qualified reference (`dataset.field`): that is model-scoped and belongs
+      in the model-root metrics.
+    * Every field a dataset-scoped metric references must be a declared field of
+      the dataset; referencing an undeclared name (e.g. a raw source column) is
+      not yet allowed. A bare name is compared case-insensitively; `COUNT(*)` and
+      literals reference no field and are fine.
+
+    Checking the expression needs sqlglot; dialects it cannot parse are skipped
+    rather than reported.
+    """
+    if not isinstance(data, dict) or "datasets" not in data:
+        return []
+
+    model = data
+    errors = []
+    model_name = model.get("name", "<unnamed>")
+
+    for dataset in model.get("datasets", []):
+        dataset_name = dataset.get("name", "<unnamed>")
+        field_names = {
+            f["name"].casefold() for f in dataset.get("fields", []) if f.get("name")
+        }
+        for metric in dataset.get("metrics", []):
+            metric_name = metric.get("name", "<unnamed>")
+            expression = metric.get("expression") or {}
+            for dialect_expr in expression.get("dialects", []):
+                dialect = dialect_expr.get("dialect", "ANSI_SQL")
+                expr = dialect_expr.get("expression")
+                if not expr:
+                    continue
+                tree = _parse_metric_expression(expr, dialect)
+                if tree is None:
+                    continue
+
+                qualifiers = set()
+                undeclared = set()
+                for col in tree.find_all(exp.Column):
+                    parts = [part.name for part in col.parts]
+                    if len(parts) > 1 and parts[0]:
+                        qualifiers.add(parts[0])
+                    elif parts and parts[0].casefold() not in field_names:
+                        undeclared.add(parts[0])
+
+                prefix = (
+                    f"[Scope] Dataset-scoped metric '{dataset_name}.{metric_name}' in model "
+                    f"'{model_name}' ({dialect})"
+                )
+                if qualifiers:
+                    names = ", ".join(repr(q) for q in sorted(qualifiers))
+                    errors.append(
+                        f"{prefix} uses qualified reference(s) {names}. A dataset-scoped metric "
+                        f"expression must reference the dataset's fields by single-part "
+                        f"(unqualified) name; a metric that must reference another dataset "
+                        f"belongs in the model-root metrics."
+                    )
+                if undeclared:
+                    names = ", ".join(repr(n) for n in sorted(undeclared))
+                    errors.append(
+                        f"{prefix} references undeclared field(s) {names}. A dataset-scoped "
+                        f"metric may reference only the dataset's declared fields."
+                    )
 
     return errors
 
@@ -680,6 +801,7 @@ def validate_document(data, schema: dict) -> list[str]:
         errors.extend(validate_unique_names(data))
         errors.extend(validate_references(data))
         errors.extend(validate_relationship_column_arity(data))
+        errors.extend(validate_metric_scoping(data))
         errors.extend(validate_sql(data))
     if not errors and isinstance(data, dict) and "ontology" in data:
         errors.extend(validate_ontology(data))
