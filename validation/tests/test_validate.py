@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import copy
 import json
 import urllib.request
 from importlib.util import module_from_spec, spec_from_file_location
@@ -44,11 +45,13 @@ def core_schema() -> dict:
 
 
 def _document(datasets: list[dict], relationships: list[dict]) -> dict:
+    # Deep-copied so a test can edit the document it gets back without
+    # changing the module-level fixtures below for every test after it.
     return {
         "version": "0.2.0.dev0",
         "name": "m",
-        "datasets": datasets,
-        "relationships": relationships,
+        "datasets": copy.deepcopy(datasets),
+        "relationships": copy.deepcopy(relationships),
     }
 
 
@@ -242,7 +245,7 @@ def _with_duplicate_metrics(name: str) -> dict:
 
 def _with_duplicate_relationships(name: str) -> dict:
     rel = dict(_relationship(to_columns=["id"]), name=name)
-    return _document([_ORDERS, _CUSTOMERS], [dict(rel), dict(rel), dict(rel)])
+    return _document([_ORDERS, _CUSTOMERS], [rel, rel, rel])
 
 
 @pytest.mark.parametrize(
@@ -290,7 +293,7 @@ def test_schema_rejects_empty_identifiers(core_schema: dict, mutate, path: str) 
     # Empty identifiers are invalid data. The schema (minLength: 1) rejects them
     # up front, so no downstream check has to special-case "" -- and a single
     # empty name is caught even though it never trips duplicate detection.
-    document = _document([dict(_ORDERS)], [])
+    document = _document([_ORDERS], [])
     mutate(document)
 
     assert _VALIDATE.validate_schema(document, core_schema) == [
@@ -299,7 +302,7 @@ def test_schema_rejects_empty_identifiers(core_schema: dict, mutate, path: str) 
 
 
 def test_schema_rejects_empty_relationship_endpoints(core_schema: dict) -> None:
-    document = _document([dict(_ORDERS), dict(_CUSTOMERS)], [_relationship(to_columns=["id"])])
+    document = _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["id"])])
     document["relationships"][0]["to"] = ""
 
     assert _VALIDATE.validate_schema(document, core_schema) == [
