@@ -796,17 +796,23 @@ date range. For a row-level shift, add a number of days to the date directly, or
 
 Sigma's table-calculation functions (`RowNumber`, `Rank`, `RunningSum`, `RunningAvg`, `Lag`, `Lead`, etc.) resolve their partition/order context from workbook UI configuration (which pivot/table the calculation is attached to) rather than from arguments passed in the formula text itself. Because that context isn't recoverable from the formula string alone, the Sigma converter (`converters/sigma/`) treats these as untranslatable to ANSI SQL and carries the original Sigma formula through in the `SIGMA` dialect only — see `converters/sigma/LIMITATIONS.md`.
 
-### Window ORDER BY NULL Placement
+---
 
-On an engine whose native NULL placement differs from the Ossie default, an implementation emits the clause explicitly. Where the native default matches, the clause MAY be omitted. Native defaults with no session setting changed:
+## Window ORDER BY NULL Placement
 
-| Engine | Native `ASC` | Native `DESC` | Emits when the clause is omitted |
+When an `ORDER BY` item omits the clause, the Ossie placement is `NULLS LAST` for `ASC` and `NULLS FIRST` for `DESC`. An implementation produces any placement, given or default, as follows:
+
+- On an engine with `NULLS FIRST` and `NULLS LAST`, it emits the clause. It MAY omit a default placement that the native default already gives. This holds only if the session cannot change that default, or the implementation sets it. Snowflake (`DEFAULT_NULL_ORDERING`) and DuckDB (`default_null_order`) let a session change it.
+- On an engine without them, it adds a leading sort key `CASE WHEN order_expr IS NULL THEN 1 ELSE 0 END`. The key is ascending to put NULLs last and descending to put them first.
+
+Native defaults:
+
+| Engine | `NULLS FIRST`, `NULLS LAST` | Native `ASC` | Native `DESC` |
 | :---- | :---- | :---- | :---- |
-| Snowflake, PostgreSQL | NULLS LAST | NULLS FIRST | nothing |
-| BigQuery, Databricks | NULLS FIRST | NULLS LAST | `ASC NULLS LAST`, `DESC NULLS FIRST` |
-| ClickHouse, DuckDB | NULLS LAST | NULLS LAST | `DESC NULLS FIRST` |
-
-Snowflake (`DEFAULT_NULL_ORDERING`) and DuckDB (`default_null_order`) let a session change the native default; an implementation that cannot rely on the setting emits the clause on every `ORDER BY` item.
+| Oracle, PostgreSQL, Redshift, Snowflake | yes | NULLS LAST | NULLS FIRST |
+| BigQuery, Databricks | yes | NULLS FIRST | NULLS LAST |
+| ClickHouse, DuckDB, Trino | yes | NULLS LAST | NULLS LAST |
+| MySQL, SQL Server | no | NULLS FIRST | NULLS LAST |
 
 ---
 
