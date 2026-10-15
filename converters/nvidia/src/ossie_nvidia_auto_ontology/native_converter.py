@@ -589,6 +589,7 @@ def convert_auto_ontology_to_ossie(
     fields_by_term: dict[str, list[dict[str, Any]]] = defaultdict(list)
     field_names_by_term: dict[str, set[str]] = defaultdict(set)
     term_columns: dict[str, set[str]] = defaultdict(set)
+    sampled_unique_columns: dict[str, list[str]] = {}
     attr_owner: dict[str, tuple[str, dict[str, Any]]] = {}
 
     for term in terms:
@@ -630,13 +631,11 @@ def convert_auto_ontology_to_ossie(
             dataset["description"] = str(term["description"])
         if table["item"].get("pk"):
             dataset["primary_key"] = list(table["item"]["pk"])
-        unique_columns = [
+        sampled_unique_columns[name] = [
             str(column.get("name"))
             for column in table["item"].get("columns") or []
             if column.get("is_unique") and column.get("name")
         ]
-        if unique_columns:
-            dataset["unique_keys"] = [[column] for column in unique_columns]
 
         for attribute in term.get("columns_attributes") or []:
             if not isinstance(attribute, dict) or not attribute.get("id"):
@@ -701,32 +700,48 @@ def convert_auto_ontology_to_ossie(
                 catalog,
                 attached_table_id=represented_table_id,
             )
-            ossie_expression = _expression_from_sql(sql)
-            field = {
+            condition = _filter_condition_from_sql(sql)
+            ossie_expression = condition or _expression_from_sql(sql)
+            field: dict[str, Any] = {
                 "name": name,
                 "expression": _ossie_expression(
                     ossie_expression,
                     _ossie_dialect(dialects, sql_databases),
                 ),
-                "custom_extensions": [
-                    _auto_ontology_extension(
-                        {
-                            "entity": "sql_attribute",
-                            "id": attribute_id,
-                            "sql": sql,
-                            "sql_source": source_group,
-                            "sql_column_is": list(attribute.get("sql_column_is") or []),
-                            "term_id": term_id,
-                            "ossie_expression": ossie_expression,
-                        }
-                    )
-                ],
             }
+            if condition is not None:
+                field["datatype"] = "Boolean"
+            field["custom_extensions"] = [
+                _auto_ontology_extension(
+                    {
+                        "entity": "sql_attribute",
+                        "id": attribute_id,
+                        "sql": sql,
+                        "sql_source": source_group,
+                        "sql_column_is": list(attribute.get("sql_column_is") or []),
+                        "term_id": term_id,
+                        "ossie_expression": ossie_expression,
+                    }
+                )
+            ]
             if attribute.get("description"):
                 field["description"] = str(attribute["description"])
             fields_by_term[term_id].append(field)
 
+    relationships = _relationships_from_auto_ontology(
+        root,
+        catalog,
+        datasets_by_table,
+        term_columns,
+        attr_owner,
+        term_by_id,
+    )
     for dataset in datasets:
+        unique_keys = _referenced_unique_keys(
+            dataset, sampled_unique_columns[dataset["name"]], relationships
+        )
+        if unique_keys:
+            dataset["unique_keys"] = unique_keys
         term_id = term_id_by_name[dataset["name"]]
         if fields_by_term[term_id]:
             dataset["fields"] = fields_by_term[term_id]
@@ -769,14 +784,6 @@ def convert_auto_ontology_to_ossie(
             metric["description"] = str(analysis["description"])
         metrics.append(metric)
 
-    relationships = _relationships_from_auto_ontology(
-        root,
-        catalog,
-        datasets_by_table,
-        term_columns,
-        attr_owner,
-        term_by_id,
-    )
     database_names = {
         source[0]
         for source in (table["source"] for table in catalog["tables"].values())
@@ -1176,6 +1183,34 @@ def _validate_auto_ontology_sql_databases(
             "the Auto Ontology importer validates each SQL object against one database"
         )
     return databases
+
+
+def _referenced_unique_keys(
+    dataset: Mapping[str, Any],
+    sampled_unique_columns: list[str],
+    relationships: list[dict[str, Any]],
+) -> list[list[str]]:
+    """Return the single-column unique keys a dataset's sample supports.
+
+    Auto Ontology marks a column unique when its values are distinct in a
+    sample of the table's rows, which an amount, a timestamp or a comment
+    often is without being a key. Ossie reads ``unique_keys`` as constraints,
+    so a sampled column becomes one only where a relationship already
+    references it as a key and the sample agrees. A key the primary key
+    already states is not repeated.
+    """
+    referenced = {
+        relationship["to_columns"][0]
+        for relationship in relationships
+        if relationship["to"] == dataset["name"]
+        and len(relationship["to_columns"]) == 1
+    }
+    primary_key = dataset.get("primary_key") or []
+    return [
+        [column]
+        for column in sampled_unique_columns
+        if column in referenced and [column] != primary_key
+    ]
 
 
 def _relationships_from_auto_ontology(
@@ -1970,6 +2005,25 @@ def _expression_from_sql(sql: str) -> str:
     if isinstance(expression, exp.Alias):
         expression = expression.this
     return expression.sql()
+
+
+def _filter_condition_from_sql(sql: str) -> str | None:
+    """Return the condition of a SQL attribute that selects rows, not a value.
+
+    Auto Ontology stores a derived filter as ``SELECT * FROM t WHERE <condition>``.
+    A star is no field expression, so the field such a filter becomes holds its
+    condition instead, which is true for exactly the rows the filter selects.
+    """
+    parsed = _parse_sql(sql)
+    if parsed is None:
+        return None
+    select = parsed.find(exp.Select)
+    if select is None or len(select.expressions) != 1:
+        return None
+    where = select.args.get("where")
+    if not select.expressions[0].is_star or where is None:
+        return None
+    return where.this.sql()
 
 
 def _expression_matches(current: str, emitted: Any) -> bool:

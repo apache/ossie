@@ -101,9 +101,12 @@ This converter subset currently accepts only Auto Ontology terms that represent
 exactly one table, because one Ossie dataset cannot represent several physical
 tables. Several terms may represent the same table and become distinct Ossie
 datasets sharing one source. SQL attributes become Ossie fields regardless of
-their Auto Ontology source group. Custom analyses remain global by becoming
-model-level Ossie metrics. Relationships are recovered from joins, then
-physical foreign keys, then semantic foreign keys.
+their Auto Ontology source group. A SQL attribute that is a filter,
+`SELECT * FROM t WHERE <condition>`, becomes a `Boolean` field holding its
+condition, which is true for exactly the rows the filter selects; its original
+SQL is preserved, so it returns to Auto Ontology unchanged. Custom analyses
+remain global by becoming model-level Ossie metrics. Relationships are
+recovered from joins, then physical foreign keys, then semantic foreign keys.
 
 Every column pair of an Ossie relationship must match at once, so only pairs
 that form one key share a relationship. A join keeps its own columns together.
@@ -196,9 +199,16 @@ have no relationship name, so Auto Ontology → Ossie synthesizes one from the
 relationship's own columns, `<from>_<from_columns>_to_<to>`, such as
 `orders_customer_id_to_customers`. It does not depend on other relationships,
 so adding a link never renames an existing one. The converter never adds
-fictional fields to the Auto Ontology schema. Auto Ontology records uniqueness
-per column, so Ossie composite unique keys cannot be reconstructed after
-Auto Ontology → Ossie; only single-column unique keys survive.
+fictional fields to the Auto Ontology schema.
+
+Auto Ontology records uniqueness per column, from a sample of each table's
+rows, so it is evidence rather than a constraint: an amount, a timestamp or a
+free-text comment is often distinct across a sample without being a key. On
+Auto Ontology → Ossie, a sampled-unique column therefore becomes a unique key
+only when a relationship references it, which already treats it as a key, and
+not when the primary key already states the same key. Composite unique keys,
+and single-column ones no relationship references, cannot be reconstructed
+after Auto Ontology → Ossie.
 
 Ossie's `datatype` maps to and from the physical type on an Auto Ontology
 catalog column, for fields backed by a single column. Auto Ontology → Ossie
