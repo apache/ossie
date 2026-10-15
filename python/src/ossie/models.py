@@ -242,12 +242,7 @@ class OssieField(BaseModel):
 
 
 class OssieMetric(BaseModel):
-    """Quantitative measure defined on business data.
-
-    Used for both model-scoped metrics (OssieSemanticModel.metrics) and
-    dataset-scoped metrics (OssieDataset.metrics); the two placements share an
-    identical structure and differ only in their resolution rules.
-    """
+    """Quantitative measure defined on business data."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -275,6 +270,7 @@ class OssieDataset(BaseModel):
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
     fields: Optional[list[OssieField]] = None
+    # Dataset-scoped: expressions reference this dataset's declared fields by single-part (unqualified) name.
     metrics: Optional[list[OssieMetric]] = None
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
@@ -303,6 +299,7 @@ class OssieSemanticModel(BaseModel):
     ai_context: Optional[OssieAIContext] = None
     datasets: list[OssieDataset] = Field(..., min_length=1)
     relationships: Optional[list[OssieRelationship]] = None
+    # Model-scoped: expressions reference fields by multi-part name (dataset.field) and may span datasets.
     metrics: Optional[list[OssieMetric]] = None
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 

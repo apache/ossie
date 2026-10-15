@@ -125,7 +125,7 @@ Datasets represent logical tables (fact or dimension tables). They contain field
 | `primary_key` | Single or composite primary key | Map to vendor's PK syntax; note composite keys use arrays like `[order_id, line_number]` |
 | `unique_keys` | Alternative unique identifiers | Map if vendor supports unique constraints |
 | `fields` | Row-level attributes (columns) | See field mapping below |
-| `metrics` | Dataset-scoped aggregate measures whose expressions resolve entirely within this dataset | See metric mapping below. A converter that reads only `semantic_model.metrics` will silently drop these |
+| `metrics` | Dataset-scoped aggregate measures | See metric mapping below |
 | `ai_context` | Synonyms and context for AI | Map if vendor supports semantic annotations |
 | `custom_extensions` | Vendor-specific metadata | Extract extensions matching the target vendor |
 
@@ -184,16 +184,12 @@ means `from.product_id = to.id AND from.variant_id = to.variant_id`. The convert
 
 ### Metrics
 
-Metrics are aggregate measures. They appear in two places, and **a converter must read both**:
+Metrics are aggregate measures. There are two flavors:
 
-- `semantic_model.metrics`: model-scoped. May span multiple datasets via relationships. Expressions reference fields by qualified name (`SUM(orders.amount)`).
-- `datasets[].metrics`: dataset-scoped. The expression may reference this dataset's declared fields, written `dataset.field` (`SUM(orders.net_amount)`), and the columns of its `source`, written unqualified (`SUM(tax)`). A qualified reference must name a declared field.
+- **Dataset-scoped** (`datasets[].metrics`): aggregations that belong to a single dataset. The expression references that dataset's declared fields by single-part (unqualified) name (e.g. `SUM(amount)`) and resolves entirely within it, at the dataset's row level. The dataset then carries its own metrics and stays queryable on its own. Referencing a source column that is not a declared field is a future extension.
+- **Model-scoped** (`metrics` at the model root): aggregations that span datasets across the model. The expression references fields by multi-part name (`dataset.field`) and may combine fields from more than one dataset.
 
-Both placements use the identical metric structure, so the field mapping below applies to each.
-
-A converter that reads only `semantic_model.metrics` produces an incomplete model. That is a lossy conversion, not a valid one: it SHOULD warn, naming the metrics it dropped, and MUST NOT present the output as a faithful representation of the source.
-
-When the target format has only one metric namespace, hoist dataset-scoped metrics to the model level. This requires two changes: qualify the expression's unqualified column references with the dataset name, since references to declared fields are already qualified, and qualify the metric's own name as `dataset_name.metric_name`, since two datasets may each declare a metric with the same local name. If the target namespace disallows dots, use an equivalent encoding.
+When producing Ossie, generally bias toward declaring a metric that is scoped to a single dataset as a dataset-scoped metric rather than at the model root; reserve the model root for aggregations that genuinely span datasets.
 
 See [Metric Scoping](../core-spec/spec.md#metric-scoping) for the full rules.
 

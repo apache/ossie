@@ -233,14 +233,15 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/Field"
-          }
+          },
+          "description": "The dataset's declared fields. Within the dataset, field names and metric names share one namespace and must all be unique across the two."
         },
         "metrics": {
           "type": "array",
           "items": {
             "$ref": "#/$defs/Metric"
           },
-          "description": "Metrics that aggregate data held by this dataset. The expression may reference this dataset's declared fields, written dataset_name.field_name, and the columns of its source, written unqualified; a column used only inside a metric does not need to be declared as a field. A qualified reference must name a declared field of this dataset. An expression referencing another dataset is model-scoped and belongs in semantic_model.metrics. This constrains the expression only, not the query: the metric is joined and grouped like any other, using the model's relationships. Names must be unique within the dataset and must not collide with a field name of this dataset. Referenced from outside the dataset as dataset_name.metric_name. See core-spec/spec.md#metric-scoping."
+          "description": "Dataset-scoped metrics: aggregations evaluated at this dataset's row level, for measures that semantically belong to the dataset. The expression references this dataset's declared fields by single-part (unqualified) name and must resolve entirely within this dataset; an expression that must reference another dataset belongs in the model-scoped metrics instead. Referencing a column of the source that is not a declared field is a future extension. Within the dataset, field names and metric names share one namespace and must all be unique across the two."
         },
         "custom_extensions": {
           "type": "array",
@@ -368,7 +369,7 @@
           "items": {
             "$ref": "#/$defs/Metric"
           },
-          "description": "Model-scoped metrics. Expressions reference fields by qualified name (dataset.field). Names must be unique across the semantic model; reusing the name of a dataset-scoped metric should produce a warning rather than an error. An unqualified metric reference resolves to a model-scoped metric. See core-spec/spec.md#metric-scoping."
+          "description": "Model-scoped metrics: aggregations that span datasets or need to be aware of cross-dataset concepts. Expressions reference fields by multi-part name (dataset.field) and may combine fields from more than one dataset. Names must be unique across the model. See core-spec/spec.md#metric-scoping."
         },
         "custom_extensions": {
           "type": "array",

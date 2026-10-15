@@ -37,8 +37,7 @@
 4. [Relationships](#relationships)
 5. [Fields](#fields)
 6. [Metrics](#metrics)
-7. [Metric Scoping](#metric-scoping)
-8. [Examples](#examples)
+7. [Examples](#examples)
 
 ---
 
@@ -110,7 +109,7 @@ not define a bundle format or cross-model references.
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., custom instructions) |
 | `datasets` | array | Yes | Collection of logical datasets (fact and dimension tables) |
 | `relationships` | array | No | Defines how logical datasets are connected |
-| `metrics` | array | No | Model-scoped metrics: for expressions that must combine fields from more than one dataset. See [Metric Scoping](#metric-scoping). |
+| `metrics` | array | No | Model-scoped metrics: for aggregations that span datasets or need to be aware of cross-dataset concepts. See [Metric Scoping](#metric-scoping). |
 | `custom_extensions` | array | No | Vendor-specific attributes for extensibility |
 
 ### Example
@@ -179,7 +178,7 @@ Logical datasets represent business entities or concepts (fact and dimension tab
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms, common terms) |
 | `fields` | array | No | Row-level attributes for grouping, filtering, and metric expressions |
-| `metrics` | array | No | Dataset-scoped metrics whose expressions resolve entirely within this dataset. See [Metric Scoping](#metric-scoping). |
+| `metrics` | array | No | Dataset-scoped metrics that semantically belong to this dataset; expressions reference its declared fields by single-part name and resolve entirely within it. See [Metric Scoping](#metric-scoping). |
 | `custom_extensions` | array | No | Vendor-specific attributes |
 
 ### Primary Key Examples
@@ -275,6 +274,8 @@ Relationships define how logical datasets are connected through foreign key cons
 ## Fields
 
 Fields represent row-level attributes that can be used for grouping, filtering, and in metric expressions. They can be simple column references or computed expressions.
+
+Within a dataset, field names and dataset-scoped metric names share one namespace, so a field name MUST NOT collide with a dataset-scoped metric name of the same dataset (see [Metric Scoping](#metric-scoping)).
 
 ### Schema
 
@@ -410,10 +411,10 @@ Common combinations:
 
 Quantitative measures defined on business data, representing key calculations like sums, averages, ratios, etc.
 
-Metrics may be defined in two placements, using the same structure in both:
+There are two types of metrics:
 
-- **Model-scoped** (`semantic_model.metrics`): for expressions that must combine fields from more than one dataset.
-- **Dataset-scoped** (`datasets[].metrics`): aggregates data held by one dataset. Still joined and grouped through the model's relationships like any other metric.
+- **Dataset-scoped** (`datasets[].metrics`): aggregations that belong to a single dataset. The expression references that dataset's declared fields by single-part name and resolves entirely within it.
+- **Model-scoped** (the model-root `metrics`): aggregations that span datasets across the model. The expression references fields by multi-part `dataset.field` name and may combine fields across datasets.
 
 See [Metric Scoping](#metric-scoping) for the rules governing each.
 
@@ -472,46 +473,26 @@ expression:
       - "Order Average by customer"
 ```
 
----
+### Metric Scoping
 
-## Metric Scoping
+A metric may be defined on an individual dataset or at the model level. Both placements use the identical metric structure; they differ in what the expression may reference and in what the metric is for:
 
-A metric may be defined at the semantic model level or on an individual dataset. Both placements use the identical metric structure; only the resolution rules differ.
+- A **dataset-scoped** metric (`datasets[].metrics`) belongs to a single dataset: it aggregates that dataset's own fields, at the dataset's row level, so the dataset carries its own measures and stays queryable on its own.
+- A **model-scoped** metric (the model-root `metrics`) spans datasets across the model: it combines fields from more than one dataset.
 
-| | Model-scoped (`semantic_model.metrics`) | Dataset-scoped (`datasets[].metrics`) |
+| | Dataset-scoped (`datasets[].metrics`) | Model-scoped (model-root `metrics`) |
 |---|---|---|
-| Expression references | Fields of any dataset in the model, qualified: `dataset.field` | Fields of its own dataset, qualified: `dataset.field`; columns of its `source`, unqualified: `column` |
-| Name uniqueness | Unique across the semantic model | Unique within its dataset, and distinct from that dataset's field names |
-| Referenced as | `metric_name` | `dataset_name.metric_name` |
+| Expression references | This dataset's declared fields, single-part: `field` | Fields of any dataset, multi-part: `dataset.field` |
+| Spans datasets | No | Yes, via relationships |
+| Referenced as | `dataset_name.metric_name` | `metric_name` |
 
 **Rules**
 
-1. A dataset-scoped metric's expression MAY reference the declared fields of its dataset and the columns of its `source`. A declared field is written `dataset_name.field_name`; a column of the `source` is written unqualified: `SUM(orders.net_amount) / COUNT(DISTINCT tax_id)`. A qualified reference MUST name a declared field of the declaring dataset. An expression that references another dataset MUST be declared in `semantic_model.metrics`.
-2. Dataset-scoped metric names MUST be unique within their dataset. Two datasets MAY each declare a metric with the same name.
-3. A dataset-scoped metric name MUST NOT collide with the name of a field of the same dataset, which under rule 5 would leave `orders.amount` ambiguous.
-4. A model-scoped metric SHOULD NOT reuse the name of a dataset-scoped metric in the same semantic model. Validators SHOULD warn, and SHOULD attribute the warning to the model rather than to the dataset.
-5. An unqualified metric reference resolves to a model-scoped metric. A dataset-scoped metric is referenced as `dataset_name.metric_name`.
+1. A dataset-scoped metric's expression MUST reference only the declared fields of the dataset that declares it, written by single-part (unqualified) name: `SUM(net_amount)`. It MUST NOT reference a field of another dataset; a metric that must do so is model-scoped and MUST be declared in the model-root `metrics`.
+2. Within a dataset, declared field names and dataset-scoped metric names share one namespace and MUST all be unique across the two.
+3. A model-scoped metric's expression references fields by multi-part name, `dataset.field`, and MAY combine fields from more than one dataset.
 
-A column used only inside a metric does not need to be declared as a field. Declaring one is how a metric reuses a field's expression instead of repeating it.
-
-Because the two are spelled differently, a field and a source column MAY share a name without ambiguity. In a metric of `orders`, `orders.foo` is the declared field and `foo` is the source column, so declaring a field named after an existing column does not change the meaning of an expression already using the bare name.
-
-Whether a bare name is a real column of the `source` is not checked, because that requires catalog metadata the model does not carry. A qualified reference is checked, because the field list is in the model.
-
-Rule 1 places no limit on the complexity of the aggregation, and constrains the expression rather than the query. A dataset-scoped metric is joined and grouped like any other using the relationships declared in the model, so a metric declared on `store_sales` as `SUM(ss_ext_sales_price)` may still be grouped by `item.i_brand` or `store.s_state`.
-
-**Which names may repeat**
-
-Names are addressed in three ways, so a name may repeat across them without ambiguity:
-
-| Kind | Addressed as |
-|---|---|
-| Model-scoped metric | Bare: `revenue` |
-| Dataset-scoped metric | Qualified: `orders.revenue` |
-| Field | Qualified: `orders.revenue` |
-| Dataset | Only ever as a qualifier |
-
-A model-scoped metric MAY therefore share a name with a field, or with a dataset. Rule 3 is an error because a field and a metric of one dataset share the same qualified namespace; rule 4 is a warning because the two names remain separately addressable.
+> Referencing a column of a dataset's `source` that is not a declared field is a future extension. Today a dataset-scoped expression reaches only the dataset's declared fields.
 
 **Example: dataset-scoped metrics**
 
@@ -524,48 +505,37 @@ datasets:
       - name: order_id
         expression:
           dialects:
-            - dialect: ANSI_SQL
+            - dialect: OSSIE_SQL_2026
               expression: order_id
         description: Order identifier
       - name: net_amount
         expression:
           dialects:
-            - dialect: ANSI_SQL
+            - dialect: OSSIE_SQL_2026
               expression: amount - discount
         description: Order amount after discount
 
     metrics:
-      # Qualified, so this references the declared field net_amount
       - name: total_net_amount
         expression:
           dialects:
-            - dialect: ANSI_SQL
-              expression: SUM(orders.net_amount)
+            - dialect: OSSIE_SQL_2026
+              expression: SUM(net_amount)
         description: Total order amount after discount
-        datatype: Decimal
-
-      # Unqualified, so this references tax, a column of the source that is
-      # not declared as a field
-      - name: total_tax
-        expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: SUM(tax)
-        description: Total tax collected
         datatype: Decimal
 
       - name: order_count
         expression:
           dialects:
-            - dialect: ANSI_SQL
+            - dialect: OSSIE_SQL_2026
               expression: COUNT(order_id)
         description: Number of orders
         datatype: Integer
 ```
 
-Referenced from a consumer as `orders.total_net_amount`, `orders.total_tax` and `orders.order_count`.
+Referenced from a consumer as `orders.total_net_amount` and `orders.order_count`.
 
-**Example: invalid dataset-scoped metrics**
+**Example: invalid dataset-scoped metric**
 
 ```yaml
 datasets:
@@ -575,31 +545,19 @@ datasets:
       - name: net_amount
         expression:
           dialects:
-            - dialect: ANSI_SQL
+            - dialect: OSSIE_SQL_2026
               expression: amount - discount
     metrics:
       # INVALID (rule 1): references the customers dataset, so this metric is
-      # model-scoped and belongs in semantic_model.metrics
+      # model-scoped and belongs in the model-root metrics
       - name: revenue_per_customer
         expression:
           dialects:
-            - dialect: ANSI_SQL
+            - dialect: OSSIE_SQL_2026
               expression: SUM(net_amount) / COUNT(DISTINCT customers.id)
-
-      # INVALID (rule 1): a qualified reference must name a declared field, and
-      # tax is only a column of the source. Write it unqualified as SUM(tax)
-      - name: total_tax
-        expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: SUM(orders.tax)
 ```
 
-**Consumer guidance: flattening to a single metric namespace**
-
-Hoisting a dataset-scoped metric to the model level requires qualifying its field references with the dataset name, and qualifying the metric's own name as `dataset_name.metric_name` since two datasets may reuse a local name. Use an equivalent encoding if the target namespace disallows dots.
-
-A consumer that reads only `semantic_model.metrics` produces an incomplete representation of the model. This is a lossy conversion rather than a valid one: such a consumer SHOULD warn, naming the metrics it dropped, and MUST NOT present the result as a faithful representation of the source. Producers requiring maximum compatibility may continue declaring all metrics at the model level.
+---
 
 ## Custom Extensions
 

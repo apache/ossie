@@ -92,15 +92,10 @@ datasets: []
 relationships: []
 
 # Optional: Model-scoped metrics
-# Expressions reference fields by qualified name (e.g., SUM(orders.amount)),
-# unlike dataset-scoped metrics, which use unqualified names
-# Names MUST be unique across the semantic model
-# A model-scoped metric SHOULD NOT reuse the name of a dataset-scoped metric;
-# validators warn rather than fail, and attribute the warning to the model
-# An unqualified metric reference resolves to a model-scoped metric
-#
-# Whether a metric expression may reference another metric is not yet defined
-# by this specification and is being handled as a separate proposal
+# For aggregations that span datasets or need to be aware of cross-dataset concepts.
+# Expressions reference fields by multi-part name (e.g., SUM(orders.amount)) and
+# may combine fields from more than one dataset.
+# Names MUST be unique across the model.
 # See Metrics section below for detailed structure
 metrics: []
 
@@ -157,26 +152,20 @@ datasets:
     fields: []
 
     # Optional: Dataset-scoped metrics
-    # Metrics that aggregate data held by this dataset. Same structure as
-    # model-scoped metrics; see the Metrics section below.
+    # Metrics that semantically belong to this dataset, aggregating its own
+    # fields at the dataset's row level. Same structure as model-scoped metrics;
+    # see the Metrics section below.
     #
     # Rules (see core-spec/spec.md#metric-scoping):
-    # - The expression MAY reference this dataset's declared fields and the
-    #   columns of its source. A declared field is written
-    #   dataset_name.field_name; a source column is written unqualified:
-    #   SUM(orders.net_amount) / COUNT(DISTINCT tax_id). A column used only
-    #   inside a metric does not need to be declared as a field.
-    # - A qualified reference MUST name a declared field of this dataset.
-    # - An expression referencing another dataset belongs in
-    #   semantic_model.metrics.
-    # - Names MUST be unique within this dataset and MUST NOT collide with a
-    #   field name of this dataset.
-    # - Referenced from outside the dataset as dataset_name.metric_name. An
-    #   unqualified metric name refers to a model-scoped metric.
-    #
-    # These rules constrain the EXPRESSION only, not the query. The metric is
-    # joined and grouped like any other, using the model's relationships, so it
-    # can be sliced by dimensions of any dataset the model connects.
+    # - The expression MUST reference only this dataset's declared fields,
+    #   written by single-part (unqualified) name: SUM(net_amount).
+    # - It MUST NOT reference another dataset; a metric that must do so is
+    #   model-scoped and belongs in the model-root metrics.
+    # - Referencing a column of the source that is not a declared field is a
+    #   future extension.
+    # - Field names and metric names share one namespace; every name MUST be
+    #   unique across the two.
+    # - Referenced from outside the dataset as dataset_name.metric_name.
     metrics: []
 
     # Optional: Vendor-specific attributes for extensibility
@@ -286,8 +275,8 @@ fields:
 # Represents key calculations like sums, averages, ratios, etc.
 #
 # The same structure is used in two placements:
-# - semantic_model.metrics  (model-scoped): may span datasets via relationships
-# - datasets[].metrics      (dataset-scoped): must resolve within one dataset
+# - the model-root metrics (model-scoped): may span datasets
+# - datasets[].metrics     (dataset-scoped): must resolve within one dataset
 metrics:
   # Required: Unique identifier for the metric
   - name: string
