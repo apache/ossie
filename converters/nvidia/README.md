@@ -108,6 +108,61 @@ SQL is preserved, so it returns to Auto Ontology unchanged. Custom analyses
 remain global by becoming model-level Ossie metrics. Relationships are
 recovered from joins, then physical foreign keys, then semantic foreign keys.
 
+Auto Ontology term names are unique across every database it catalogs, so it
+renames a term whose name another database already uses to
+`Name (database.schema.table)`. An Ossie document is its own namespace, so the
+dataset drops that suffix again wherever the plain name is free in the
+document, and the term keeps its full name on the way back. Auto Ontology also
+gives a foreign-key column no attribute, since the foreign key links the term
+instead; each key and relationship column that no field exposes is exported as
+a field named after the column, marked so that it does not become an attribute
+on the way back.
+
+### Ontology and mapping
+
+Auto Ontology's terms are business concepts, its attributes are properties of
+those concepts, and its foreign keys link one concept to another. The `import`
+command can also write them as an Ossie
+[ontology](../../ontology/ontology.md) and a
+[mapping document](../../ontology/ontology.md#mapping-documents) that
+populates the ontology from the semantic model it writes:
+
+```bash
+uv run ossie-nvidia-auto-ontology import \
+  --input tpcds.auto_ontology.yaml \
+  --output tpcds.semantic_model.yaml \
+  --ontology-output tpcds.ontology.yaml \
+  --mapping-output tpcds.mapping.yaml
+```
+
+```python
+from ossie_nvidia_auto_ontology import convert_auto_ontology_to_ossie_ontology
+
+ontology_yaml, mapping_yaml = convert_auto_ontology_to_ossie_ontology(
+    auto_ontology_yaml, model_name="tpcds"
+)
+```
+
+The two outputs are written together. The mapping references both other
+documents by name and, from the CLI, by a path relative to itself. They are
+read off the semantic model as follows:
+
+| Semantic model | Ontology | Mapping |
+|---|---|---|
+| Dataset | Entity concept, named in PascalCase | One concept mapping |
+| Primary key, else the first unique key | `identify_by` | Object mappings: one expression for a single-field key, referent mappings otherwise |
+| Field with a portable `datatype` | `ManyToOne` relationship to the built-in value type, or `OneToOne` when the field alone identifies the concept | Link mapping from the field |
+| Relationship | `ManyToOne` relationship to the referenced concept | Link mapping to the referenced concept's objects |
+
+A foreign-key column is the link to another concept, so it does not also become
+a value of its own concept. Auto Ontology records no verbalizations, so each
+relationship is verbalized from its field name, such as
+`{Customer} has Account Balance {Decimal}`. A field whose type is unknown, or
+has no built-in value type (`Time`, `Opaque`), is left out rather than guessed.
+A concept whose dataset has no key, or whose key columns are not all
+identifying fields or links, has nothing to name its objects by: it is declared
+in the ontology but not mapped.
+
 Every column pair of an Ossie relationship must match at once, so only pairs
 that form one key share a relationship. A join keeps its own columns together.
 Auto Ontology stores a foreign key, physical or semantic, one column pair at a
@@ -234,5 +289,5 @@ uv run pytest
 
 The suite checks the exact native root shape, deterministic and resolvable
 IDs, official Ossie validation, semantic round trips, native metadata
-preservation, multiple databases, relationships, input validation, and CLI
-behavior.
+preservation, multiple databases, relationships, the ontology and mapping
+documents and their official validation, input validation, and CLI behavior.

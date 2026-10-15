@@ -1100,6 +1100,77 @@ def test_a_query_that_does_more_than_filter_one_table_is_no_boolean_field(
     assert _restored_sql_attribute(ossie)["sql"] == sql
 
 
+def test_a_name_auto_ontology_qualified_is_exported_plain_and_restored() -> None:
+    native = yaml.safe_load(_auto_ontology_yaml())
+    orders = next(
+        term for term in native["semantic_layer"]["terms"] if term["name"] == "orders"
+    )
+    orders["name"] = "orders (analytics.public.orders)"
+
+    ossie = yaml.safe_load(convert_auto_ontology_to_ossie(yaml.safe_dump(native)))
+
+    assert {dataset["name"] for dataset in ossie["datasets"]} == {
+        "orders",
+        "customers",
+    }
+    assert ossie["relationships"][0]["from"] == "orders"
+
+    restored = yaml.safe_load(convert_ossie_to_auto_ontology(yaml.safe_dump(ossie)))
+    restored_orders = next(
+        term
+        for term in restored["semantic_layer"]["terms"]
+        if term["id"] == orders["id"]
+    )
+    assert restored_orders["name"] == "orders (analytics.public.orders)"
+
+
+def test_a_foreign_key_column_without_an_attribute_is_exported_as_a_field() -> None:
+    native = yaml.safe_load(_auto_ontology_yaml())
+    orders = next(
+        term for term in native["semantic_layer"]["terms"] if term["name"] == "orders"
+    )
+    # Auto Ontology gives a foreign-key column no attribute of its own.
+    orders["columns_attributes"] = [
+        attribute
+        for attribute in orders["columns_attributes"]
+        if attribute["name"] != "customer_id"
+    ]
+
+    ossie = yaml.safe_load(convert_auto_ontology_to_ossie(yaml.safe_dump(native)))
+    fields = {
+        field["name"]: field
+        for dataset in ossie["datasets"]
+        if dataset["name"] == "orders"
+        for field in dataset["fields"]
+    }
+    assert fields["customer_id"]["expression"]["dialects"][0]["expression"] == (
+        "customer_id"
+    )
+
+    restored = yaml.safe_load(convert_ossie_to_auto_ontology(yaml.safe_dump(ossie)))
+    restored_orders = next(
+        term
+        for term in restored["semantic_layer"]["terms"]
+        if term["id"] == orders["id"]
+    )
+    assert "customer_id" not in {
+        attribute["name"] for attribute in restored_orders["columns_attributes"]
+    }
+
+
+def test_a_qualified_name_stays_qualified_where_the_plain_name_is_taken() -> None:
+    native = yaml.safe_load(_auto_ontology_yaml())
+    orders = next(
+        term for term in native["semantic_layer"]["terms"] if term["name"] == "orders"
+    )
+    orders["name"] = "customers (analytics.public.orders)"
+
+    assert set(_datasets(native)) == {
+        "customers",
+        "customers (analytics.public.orders)",
+    }
+
+
 def test_auto_ontology_requires_one_represented_table_per_term() -> None:
     native = yaml.safe_load(_auto_ontology_yaml())
     term = native["semantic_layer"]["terms"][0]

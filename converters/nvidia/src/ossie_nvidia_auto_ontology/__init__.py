@@ -20,11 +20,13 @@
 from .converter import (
     AutoOntologyConversionError,
     convert_auto_ontology_to_ossie,
+    convert_auto_ontology_to_ossie_ontology,
     convert_ossie_to_auto_ontology,
 )
 
 __all__ = [
     "AutoOntologyConversionError",
     "convert_auto_ontology_to_ossie",
+    "convert_auto_ontology_to_ossie_ontology",
     "convert_ossie_to_auto_ontology",
 ]
