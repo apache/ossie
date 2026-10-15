@@ -573,6 +573,14 @@ Each `ORDER BY` item has three independent parts:
 RANK() OVER (ORDER BY revenue DESC NULLS LAST)
 ```
 
+Without `NULLS FIRST` or `NULLS LAST`, NULL sorts as the largest value: last for `ASC`, first for `DESC`. Implementations MUST produce this order whatever the native default of the engine; see [Window ORDER BY NULL Placement](#window-order-by-null-placement).
+
+```sql
+-- revenue over three rows: 10, NULL, 5; each comment lists the values numbered 1, 2, 3
+ROW_NUMBER() OVER (ORDER BY revenue)       -- 5, 10, NULL
+ROW_NUMBER() OVER (ORDER BY revenue DESC)  -- NULL, 10, 5
+```
+
 Frame clause options:
 
 - `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`  
@@ -787,6 +795,18 @@ date range. For a row-level shift, add a number of days to the date directly, or
 | `RUNNING_SUM(...)` | `RUNNING_SUM(SUM(...))` | N/A | `CALCULATE(SUM(...), FILTER(...))` | `RunningSum(...)` — same UI-configuration caveat |
 
 Sigma's table-calculation functions (`RowNumber`, `Rank`, `RunningSum`, `RunningAvg`, `Lag`, `Lead`, etc.) resolve their partition/order context from workbook UI configuration (which pivot/table the calculation is attached to) rather than from arguments passed in the formula text itself. Because that context isn't recoverable from the formula string alone, the Sigma converter (`converters/sigma/`) treats these as untranslatable to ANSI SQL and carries the original Sigma formula through in the `SIGMA` dialect only — see `converters/sigma/LIMITATIONS.md`.
+
+### Window ORDER BY NULL Placement
+
+On an engine whose native NULL placement differs from the Ossie default, an implementation emits the clause explicitly. Where the native default matches, the clause MAY be omitted. Native defaults with no session setting changed:
+
+| Engine | Native `ASC` | Native `DESC` | Emits when the clause is omitted |
+| :---- | :---- | :---- | :---- |
+| Snowflake, PostgreSQL | NULLS LAST | NULLS FIRST | nothing |
+| BigQuery, Databricks | NULLS FIRST | NULLS LAST | `ASC NULLS LAST`, `DESC NULLS FIRST` |
+| ClickHouse, DuckDB | NULLS LAST | NULLS LAST | `DESC NULLS FIRST` |
+
+Snowflake (`DEFAULT_NULL_ORDERING`) and DuckDB (`default_null_order`) let a session change the native default; an implementation that cannot rely on the setting emits the clause on every `ORDER BY` item.
 
 ---
 
