@@ -346,7 +346,7 @@ class MetricExportIntegrationTest {
     }
 
     @Test
-    void metricCannotUseJoinCriteriaCorruptedByInheritedRelationshipFiltering() throws Exception {
+    void metricKeepsItsJoinCriteriaWhenAnEarlierRelationshipIsFiltered() throws Exception {
         Map<String, Object> source = model("sales", List.of(metric("combined", "ANSI_SQL",
                 "SUM(orders.profit) + SUM(returns.profit)")));
         Map<String, Object> returns = new LinkedHashMap<>(items(source, "datasets").get(0));
@@ -358,12 +358,11 @@ class MetricExportIntegrationTest {
         source.put("relationships", List.of(valid));
         assertTrue(measurements(convertOne(source)).get(0).get("expression").toString().contains("[returns].[profit]"));
 
+        // A relationship ahead of it is dropped for naming a column that does not exist. The
+        // surviving relationship keeps its own join columns, so the metric resolves unchanged.
         source.put("relationships", List.of(Map.of("name", "removed_first", "from", "orders", "to", "returns",
                 "from_columns", List.of("missing"), "to_columns", List.of("customer_id")), valid));
-        var error = assertThrows(ConversionException.class, () -> convertOne(source));
-        assertTrue(error.getMessage().contains("combined"), error.getMessage());
-        assertTrue(error.getMessage().contains("orders_returns"), error.getMessage());
-        assertTrue(error.getMessage().contains("join key correspondence"), error.getMessage());
+        assertTrue(measurements(convertOne(source)).get(0).get("expression").toString().contains("[returns].[profit]"));
     }
 
     private Map<String, Object> convertOne(Map<String, Object> model) throws IOException {

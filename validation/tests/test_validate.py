@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import copy
 import json
 import urllib.request
 from importlib.util import module_from_spec, spec_from_file_location
@@ -44,11 +45,13 @@ def core_schema() -> dict:
 
 
 def _document(datasets: list[dict], relationships: list[dict]) -> dict:
+    # Deep-copied so a test can edit the document it gets back without
+    # changing the module-level fixtures below for every test after it.
     return {
         "version": "0.2.0.dev0",
         "name": "m",
-        "datasets": datasets,
-        "relationships": relationships,
+        "datasets": copy.deepcopy(datasets),
+        "relationships": copy.deepcopy(relationships),
     }
 
 
@@ -242,7 +245,7 @@ def _with_duplicate_metrics(name: str) -> dict:
 
 def _with_duplicate_relationships(name: str) -> dict:
     rel = dict(_relationship(to_columns=["id"]), name=name)
-    return _document([_ORDERS, _CUSTOMERS], [dict(rel), dict(rel), dict(rel)])
+    return _document([_ORDERS, _CUSTOMERS], [rel, rel, rel])
 
 
 @pytest.mark.parametrize(
@@ -290,7 +293,7 @@ def test_schema_rejects_empty_identifiers(core_schema: dict, mutate, path: str) 
     # Empty identifiers are invalid data. The schema (minLength: 1) rejects them
     # up front, so no downstream check has to special-case "" -- and a single
     # empty name is caught even though it never trips duplicate detection.
-    document = _document([dict(_ORDERS)], [])
+    document = _document([_ORDERS], [])
     mutate(document)
 
     assert _VALIDATE.validate_schema(document, core_schema) == [
@@ -299,7 +302,7 @@ def test_schema_rejects_empty_identifiers(core_schema: dict, mutate, path: str) 
 
 
 def test_schema_rejects_empty_relationship_endpoints(core_schema: dict) -> None:
-    document = _document([dict(_ORDERS), dict(_CUSTOMERS)], [_relationship(to_columns=["id"])])
+    document = _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["id"])])
     document["relationships"][0]["to"] = ""
 
     assert _VALIDATE.validate_schema(document, core_schema) == [
@@ -414,6 +417,27 @@ def test_rejects_an_expression_holding_more_than_one_statement(expression: str) 
 def test_accepts_a_single_expression_containing_a_semicolon(expression: str) -> None:
     """A semicolon in a literal or comment does not make a statement list."""
     assert _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx") is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    ["", "   ", "\n", ";", ";;", "-- comment only", "/* comment only */"],
+    ids=[
+        "empty",
+        "whitespace",
+        "newline",
+        "semicolon",
+        "semicolons",
+        "line-comment",
+        "block-comment",
+    ],
+)
+def test_rejects_an_expression_holding_no_statement(expression: str) -> None:
+    """Nothing to validate is an error, not a pass through `SELECT {expr}`."""
+    error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert error == "[SQL] ctx: expression is empty"
 
 
 def _relationship(to_columns: list[str], to: str = "customers") -> dict:
@@ -635,6 +659,34 @@ def test_sql_error_in_metric_with_warning_in_name_is_an_error(run_validator):
     assert exit_code == 1
     assert "Validation FAILED with 1 error(s)" in output
     assert "[SQL] Metric 'Warning: broken_metric'" in output
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_empty_field_expression_fails_validation(run_validator):
+    dataset = {**_ORDERS, "fields": [{
+        "name": "blank",
+        "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": ""}]},
+    }]}
+    document = _document([dataset], [])
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "[SQL] Field 'orders.blank' in model 'm' (ANSI_SQL): expression is empty" in output
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_comment_only_metric_expression_fails_validation(run_validator):
+    document = _document([_ORDERS], [])
+    document["metrics"] = [{
+        "name": "blank_total",
+        "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "-- TODO"}]},
+    }]
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "[SQL] Metric 'blank_total' in model 'm' (ANSI_SQL): expression is empty" in output
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")

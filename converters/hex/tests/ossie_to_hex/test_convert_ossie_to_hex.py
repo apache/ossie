@@ -287,6 +287,7 @@ resources:
     description: Business key for customer
     type: string
     expr_sql: c_customer_id
+    unique: true
   - id: c_first_name
     description: Customer first name
     type: string

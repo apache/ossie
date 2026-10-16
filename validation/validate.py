@@ -391,6 +391,21 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
             )
         return None
 
+    def holds_no_statement(sql: str) -> bool:
+        """True when there is nothing to validate: an empty string, whitespace,
+        a lone comment or only semicolons.
+
+        Those parse to a list with no statement in it. `parse_one` raises on
+        them, and the `SELECT {expr}` retry below would then parse a bare
+        `SELECT` and report the expression as valid, so they are caught before
+        the retry. Parse failures return False; the retry reports those.
+        """
+        try:
+            statements = sqlglot.parse(sql, dialect=sqlglot_dialect)
+        except (ParseError, TokenError, RecursionError):
+            return False
+        return all(statement is None for statement in statements)
+
     try:
         # Try parsing as expression first (for field expressions like "column_name")
         sqlglot.parse_one(expr, dialect=sqlglot_dialect)
@@ -399,7 +414,8 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
         # SELECT below. RecursionError (deeply nested input) is included so the
         # retry reports it instead of crashing, while genuine errors such as a
         # non-string expr raising TypeError still surface.
-        pass
+        if holds_no_statement(expr):
+            return f"[SQL] {context}: expression is empty"
     else:
         return statement_count_error(expr)
 
@@ -439,8 +455,9 @@ def validate_sql(data: dict) -> list[str]:
             expression = field.get("expression", {})
             for dialect_expr in expression.get("dialects", []):
                 dialect = dialect_expr.get("dialect", "ANSI_SQL")
-                expr = dialect_expr.get("expression", "")
-                if expr:
+                # Only a missing expression is skipped; an empty one is reported.
+                expr = dialect_expr.get("expression")
+                if expr is not None:
                     context = f"Field '{dataset_name}.{field_name}' in model '{model_name}' ({dialect})"
                     error = validate_sql_expression(expr, dialect, context)
                     if error:
@@ -452,8 +469,8 @@ def validate_sql(data: dict) -> list[str]:
         expression = metric.get("expression", {})
         for dialect_expr in expression.get("dialects", []):
             dialect = dialect_expr.get("dialect", "ANSI_SQL")
-            expr = dialect_expr.get("expression", "")
-            if expr:
+            expr = dialect_expr.get("expression")
+            if expr is not None:
                 context = f"Metric '{metric_name}' in model '{model_name}' ({dialect})"
                 error = validate_sql_expression(expr, dialect, context)
                 if error:

@@ -152,6 +152,8 @@ tables:
   unique_keys:
   - columns:
     - c_customer_sk
+  - columns:
+    - c_customer_id
   description: Customer dimension with demographic information
   synonyms:
   - customers

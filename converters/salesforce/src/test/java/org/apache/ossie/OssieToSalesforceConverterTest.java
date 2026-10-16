@@ -251,6 +251,144 @@ class OssieToSalesforceConverterTest {
         assertTrue(hasValidOrdersProducts, "Orders_Products should be included");
     }
 
+    /**
+     * Builds a model whose first relationship is dropped by the validator, because its
+     * join column is not a field of the entity it names, while the second one is valid.
+     * Export has to carry the second relationship's own endpoints and columns across.
+     */
+    private static String ossieModelWithAFilteredRelationshipFirst() {
+        return "version: 0.2.0.dev0\n"
+                + "name: Imported_Model\n"
+                + "datasets:\n"
+                + dataset("Customers", "customer_id")
+                + dataset("Orders", "product_id")
+                + dataset("Products", "product_id")
+                + "relationships:\n"
+                + relationship("Customers_Orders", "Customers", "Orders", "missing_column")
+                + relationship("Orders_Products", "Orders", "Products", "product_id");
+    }
+
+    private static String dataset(String name, String... columns) {
+        StringBuilder yaml = new StringBuilder("- name: " + name + "\n"
+                + "  source: " + name + "__dll\n"
+                + "  fields:\n");
+        for (String column : columns) {
+            yaml.append("  - name: ").append(column).append("\n")
+                    .append("    datatype: String\n")
+                    .append("    dimension: {}\n")
+                    .append("    expression:\n")
+                    .append("      dialects:\n")
+                    .append("      - dialect: ANSI_SQL\n")
+                    .append("        expression: ").append(column).append("\n");
+        }
+        return yaml.toString();
+    }
+
+    private static String relationship(String name, String from, String to, String column) {
+        return "- name: " + name + "\n"
+                + "  from: " + from + "\n"
+                + "  to: " + to + "\n"
+                + "  from_columns: [" + column + "]\n"
+                + "  to_columns: [" + column + "]\n";
+    }
+
+    @Test
+    void testRelationshipAfterAFilteredOneKeepsItsOwnEndpointsAndCriteria() throws Exception {
+        List<String> results = converter.convert(ossieModelWithAFilteredRelationshipFirst());
+        Map<String, Object> sfModel = jsonMapper.readValue(results.get(0), new TypeReference<Map<String, Object>>() {});
+
+        List<Map<String, Object>> relationships = (List<Map<String, Object>>) sfModel.get("semanticRelationships");
+        assertNotNull(relationships);
+        assertEquals(1, relationships.size(), "Only the valid relationship should be exported");
+
+        Map<String, Object> exported = relationships.get(0);
+        assertEquals("Orders_Products", exported.get("apiName"));
+        assertEquals("Orders", exported.get("leftSemanticDefinitionApiName"));
+        assertEquals("Products", exported.get("rightSemanticDefinitionApiName"));
+
+        List<Map<String, Object>> criteria = (List<Map<String, Object>>) exported.get("criteria");
+        assertNotNull(criteria);
+        assertEquals(1, criteria.size());
+        assertEquals("product_id", criteria.get(0).get("leftSemanticFieldApiName"));
+        assertEquals("product_id", criteria.get(0).get("rightSemanticFieldApiName"));
+    }
+
+    @Test
+    void testRelationshipWithUnpairableJoinColumnsLeavesTheNextOneIntact() throws Exception {
+        // The first relationship names two join columns on one side and one on the other, so
+        // there is no criterion to build for it. The second one still gets its own criteria.
+        String model = "version: 0.2.0.dev0\n"
+                + "name: Imported_Model\n"
+                + "datasets:\n"
+                + dataset("Customers", "customer_id", "tenant_id")
+                + dataset("Orders", "customer_id", "product_id")
+                + dataset("Products", "product_id")
+                + "relationships:\n"
+                + "- name: Customers_Orders\n"
+                + "  from: Customers\n"
+                + "  to: Orders\n"
+                + "  from_columns: [customer_id, tenant_id]\n"
+                + "  to_columns: [customer_id]\n"
+                + relationship("Orders_Products", "Orders", "Products", "product_id");
+
+        List<String> results = converter.convert(model);
+        Map<String, Object> sfModel = jsonMapper.readValue(results.get(0), new TypeReference<Map<String, Object>>() {});
+
+        List<Map<String, Object>> relationships = (List<Map<String, Object>>) sfModel.get("semanticRelationships");
+        assertNotNull(relationships);
+        Map<String, Object> exported = relationships.stream()
+                .filter(relationship -> "Orders_Products".equals(relationship.get("apiName")))
+                .findFirst()
+                .orElseThrow();
+
+        List<Map<String, Object>> criteria = (List<Map<String, Object>>) exported.get("criteria");
+        assertNotNull(criteria, "The relationship after an unpairable one keeps its criteria");
+        assertEquals(1, criteria.size());
+        assertEquals("product_id", criteria.get(0).get("leftSemanticFieldApiName"));
+        assertEquals("product_id", criteria.get(0).get("rightSemanticFieldApiName"));
+    }
+
+    @Test
+    void testAModelWhoseRelationshipsAreAllFilteredExportsNone() throws Exception {
+        // Dropping the last valid relationship used to leave the relationship mappings
+        // unclaimed, and whatever is left unclaimed is applied generically once every
+        // handler has run -- putting the rejected relationships back into the payload in
+        // their Ossie shape, which the semantic model API answers with HTTP 500.
+        String ossieModel = "version: 0.2.0.dev0\n"
+                + "name: Imported_Model\n"
+                + "datasets:\n"
+                + "- name: Orders\n"
+                + "  source: Orders__dll\n"
+                + "  fields:\n"
+                + "  - name: order_id\n"
+                + "    dimension: {}\n"
+                + "    expression:\n"
+                + "      dialects:\n"
+                + "      - dialect: ANSI_SQL\n"
+                + "        expression: order_id\n"
+                + "- name: Products\n"
+                + "  source: Products__dll\n"
+                + "  fields:\n"
+                + "  - name: product_id\n"
+                + "    dimension: {}\n"
+                + "    expression:\n"
+                + "      dialects:\n"
+                + "      - dialect: ANSI_SQL\n"
+                + "        expression: product_id\n"
+                + "relationships:\n"
+                + "- name: Orders_Products\n"
+                + "  from: Orders\n"
+                + "  to: Products\n"
+                + "  from_columns: [missing_id]\n"
+                + "  to_columns: [product_id]\n";
+
+        List<String> results = converter.convert(ossieModel);
+        Map<String, Object> sfModel = jsonMapper.readValue(results.get(0), new TypeReference<Map<String, Object>>() {});
+
+        assertNull(sfModel.get("semanticRelationships"),
+                "a relationship dropped by validation should not reach the payload");
+    }
+
     @Test
     void testCustomExtensionsRestoration() throws Exception {
         List<String> results = converter.convert(ossieYaml);
