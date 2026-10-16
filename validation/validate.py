@@ -40,6 +40,14 @@ Ontology documents (--schema ontology/ontology.json) are checked for unique
 concept and relationship names, and for extends, identify_by, roles and QName
 prefixes that resolve to something declared.
 
+Mapping documents (--schema ontology/mapping.json) are cross-checked against the
+ontology and semantic model each iri points at: the reference names the document
+it resolves to, every concept the mapping names is declared there or built in,
+every relationship a referent or link mapping names is declared on its concept
+or inherited through extends, with a role for nested referents to resolve on and
+at the link level its arity calls for, and every dataset.field an expression
+names is a declared field of the model.
+
 Usage:
     python validation/validate.py [--schema <schema_file>] [--] <file> [<file> ...]
     python validation/validate.py <file> --schema ontology/ontology.json
@@ -54,11 +62,13 @@ or --schema at a copy of the schema.
 
 import json
 import os
+import re
 import sys
 import traceback
 from collections import Counter
 from collections.abc import Hashable
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 try:
     import yaml
@@ -617,6 +627,330 @@ def validate_ontology(data: dict) -> list[str]:
     return errors
 
 
+_QUOTED_OR_COMMENT = re.compile(
+    r"'(?:[^']|'')*'"  # string literal
+    r'|"(?:[^"]|"")*"'  # quoted identifier
+    r"|`[^`]*`"  # backtick identifier
+    r"|--[^\n]*"  # line comment
+    r"|/\*.*?\*/",  # block comment
+    re.DOTALL,
+)
+_FIELD_REFERENCE = re.compile(r"(?<![\w.])([A-Za-z_]\w*)\.([A-Za-z_]\w*)(?![\w.]|\s*\()")
+
+
+def field_references(expression: str) -> list[tuple[str, str]]:
+    """The dataset.field pairs a mapping expression names, each once.
+
+    Mapping expressions reach the semantic model through two-part identifiers
+    (ontology.md, Object mappings). String literals, quoted identifiers and
+    comments are blanked first, so a dot inside them is not a reference, and
+    neither is a longer dotted chain or a schema-qualified function call.
+    Quoted identifiers are therefore not resolved.
+    """
+    text = _QUOTED_OR_COMMENT.sub(" ", expression)
+    return list(dict.fromkeys(_FIELD_REFERENCE.findall(text)))
+
+
+def resolve_document_reference(
+    reference: dict, base: Path | None, label: str
+) -> tuple[dict | None, list[str]]:
+    """Follow a mapping document's DocumentReference and return the document.
+
+    The iri is read as a URI reference. One with a scheme or an authority is
+    left to a catalog, and the path of any other is followed, relative to
+    base, the mapping document's own directory, as ontology.md specifies. A
+    reference with no iri, with a scheme, or with a relative path and no base
+    comes back as None with a ValidationWarning. A path that does not read as
+    a YAML document is an error. So is a document not named as the reference
+    says, but that document is still returned for the checks that follow.
+    """
+    name = reference.get("name")
+    iri = reference.get("iri")
+    skipped = f"cross-document checks for {label} skipped"
+    if not isinstance(iri, str) or not iri:
+        return None, [ValidationWarning(
+            f"[Reference] Warning: {label} '{name}' has no iri, so only a catalog can "
+            f"resolve it: {skipped}"
+        )]
+    parts = urlsplit(iri)
+    if parts.scheme or parts.netloc:
+        return None, [ValidationWarning(
+            f"[Reference] Warning: {label} iri '{iri}' is not a path reference, so it is "
+            f"not read: {skipped}"
+        )]
+    path = Path(unquote(parts.path))
+    if not path.is_absolute():
+        if base is None:
+            return None, [ValidationWarning(
+                f"[Reference] Warning: {label} iri '{iri}' is relative but the mapping "
+                f"document has no location to resolve it against: {skipped}"
+            )]
+        path = base / path
+
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as e:
+        return None, [f"[Reference] {label} iri '{iri}' does not resolve: {e.strerror or e}"]
+    except UnicodeDecodeError:
+        return None, [f"[Reference] {label} iri '{iri}' is not valid UTF-8 text"]
+    try:
+        document = load_yaml_named(text, str(path))
+    except yaml.YAMLError as e:
+        return None, [f"[Reference] {label} iri '{iri}' is not valid YAML: {str(e).split(chr(10))[0]}"]
+    except RecursionError:
+        return None, [f"[Reference] {label} iri '{iri}' is too deeply nested to parse"]
+    if not isinstance(document, dict):
+        return None, [f"[Reference] {label} iri '{iri}' does not hold a document"]
+
+    errors = []
+    if document.get("name") != name:
+        errors.append(
+            f"[Reference] {label} names '{name}' but the document at iri '{iri}' is named "
+            f"'{document.get('name', '<unnamed>')}'"
+        )
+    return document, errors
+
+
+class OntologyRelationships:
+    """The relationships an ontology declares, looked up through extends.
+
+    A name resolves on the concept or on a concept it extends, the way
+    validate_ontology resolves identify_by.
+    """
+
+    def __init__(self, components: list[dict]):
+        self._declared: dict[str, dict[str, dict]] = {}
+        self._supertypes: dict[str, list[str]] = {}
+        for component in components:
+            concept = component.get("concept")
+            if not isinstance(concept, str):
+                continue
+            self._declared.setdefault(concept, {}).update(
+                (r["name"], r)
+                for r in as_list(component.get("relationships"))
+                if isinstance(r, dict) and isinstance(r.get("name"), str)
+            )
+            self._supertypes.setdefault(concept, []).extend(
+                s for s in as_list(component.get("extends")) if isinstance(s, str)
+            )
+
+    def ancestors(self, concept: str) -> list[str]:
+        """The concept followed by every concept it extends, each once."""
+        found, pending = [], [concept]
+        while pending:
+            current = pending.pop()
+            if current in found:
+                continue
+            found.append(current)
+            pending.extend(self._supertypes.get(current, []))
+        return found
+
+    def find(self, concept: str, name: str) -> dict | None:
+        for current in self.ancestors(concept):
+            if name in self._declared.get(current, {}):
+                return self._declared[current][name]
+        return None
+
+
+def validate_mapping(data: dict, base: Path | None) -> list[str]:
+    """Cross-check a mapping document against the two documents it references.
+
+    ontology_ref and semantic_model_ref must name the documents they point at,
+    every concept the mapping names must be declared in that ontology or be a
+    built-in concept, every relationship a referent or link mapping names must
+    be declared on the concept whose mapping names it, directly or through
+    extends, with a role for nested referents to resolve on and at the link
+    level its arity calls for, and every dataset.field an expression names
+    must be a field of that semantic model.
+    A dataset that declares no fields list is not checked, since the core spec
+    does not require one. Relative iri are read from base, the mapping
+    document's own directory. A reference that cannot be followed skips its
+    half of the checks with a warning, see resolve_document_reference.
+    """
+    if not isinstance(data, dict) or "concept_mappings" not in data:
+        return []
+
+    errors = []
+    ontology_ref = data.get("ontology_ref") or {}
+    model_ref = data.get("semantic_model_ref") or {}
+    ontology, diagnostics = resolve_document_reference(ontology_ref, base, "ontology_ref")
+    errors.extend(diagnostics)
+    model, diagnostics = resolve_document_reference(model_ref, base, "semantic_model_ref")
+    errors.extend(diagnostics)
+
+    # None means that half of the checks is off: the document was not followed
+    # or is not the kind of document the reference promises.
+    concepts = None
+    relationships = None
+    if ontology is not None:
+        if isinstance(ontology.get("ontology"), list):
+            components = [c for c in ontology["ontology"] if isinstance(c, dict)]
+            concepts = {c.get("concept") for c in components} | BUILT_IN_CONCEPTS
+            relationships = OntologyRelationships(components)
+        else:
+            errors.append(
+                f"[Reference] ontology_ref iri '{ontology_ref.get('iri')}' does not hold an "
+                f"ontology document, so its concepts cannot be checked"
+            )
+    fields_by_dataset = None
+    if model is not None:
+        if isinstance(model.get("datasets"), list):
+            fields_by_dataset = {
+                d.get("name"): (
+                    {f.get("name") for f in d["fields"] if isinstance(f, dict)}
+                    if isinstance(d.get("fields"), list)
+                    else None
+                )
+                for d in model["datasets"]
+                if isinstance(d, dict)
+            }
+        else:
+            errors.append(
+                f"[Reference] semantic_model_ref iri '{model_ref.get('iri')}' does not hold a "
+                f"semantic model document, so its fields cannot be checked"
+            )
+
+    def visit(node: object, path: str) -> None:
+        if isinstance(node, dict):
+            concept = node.get("concept")
+            if concepts is not None and isinstance(concept, str) and concept not in concepts:
+                errors.append(f"[Reference] {path}: concept '{concept}' is not declared in the ontology")
+            expression = node.get("expression")
+            if fields_by_dataset is not None and isinstance(expression, str):
+                for dataset, field in field_references(expression):
+                    if dataset not in fields_by_dataset:
+                        errors.append(
+                            f"[Reference] {path}: expression names '{dataset}.{field}' but "
+                            f"the semantic model declares no dataset '{dataset}'"
+                        )
+                    elif fields_by_dataset[dataset] is not None and field not in fields_by_dataset[dataset]:
+                        errors.append(
+                            f"[Reference] {path}: expression names '{dataset}.{field}' but "
+                            f"dataset '{dataset}' declares no field '{field}'"
+                        )
+            for key, value in node.items():
+                visit(value, f"{path} -> {key}")
+        elif isinstance(node, list):
+            for index, item in enumerate(node):
+                visit(item, f"{path} -> {index}")
+
+    visit(data["concept_mappings"], "concept_mappings")
+    if relationships is not None:
+        errors.extend(
+            mapping_relationship_errors(data["concept_mappings"], concepts, relationships)
+        )
+    return errors
+
+
+def mapping_relationship_errors(
+    concept_mappings: object, concepts: set, relationships: OntologyRelationships
+) -> list[str]:
+    """Report the relationships a mapping names that its ontology does not declare.
+
+    A referent mapping names a relationship of the concept being mapped, and its
+    nested referent mappings name relationships of the concept that plays the
+    last role of that relationship. A link mapping names a relationship of the
+    concept mapping's concept, at the level that matches the relationship's
+    arity. Its root maps that concept and a child maps the objects in the last
+    position of its relationship's links, and an object mapping that names a
+    concept itself maps that concept instead, at the root as well (ontology.md,
+    Object mappings and Link mappings). A relationship written as Concept.name
+    names the concept being mapped or one it extends, as in the spec examples.
+    """
+    errors = []
+
+    def role_concept(relationship: dict | None) -> str | None:
+        roles = as_list(relationship.get("roles")) if relationship else []
+        last = roles[-1] if roles else None
+        concept = last.get("concept") if isinstance(last, dict) else None
+        return concept if isinstance(concept, str) else None
+
+    def resolve(concept: str | None, name: object, path: str) -> dict | None:
+        if concept is None or not isinstance(name, str):
+            return None
+        written = name
+        if "." in name:
+            prefix, name = name.split(".", 1)
+            if prefix not in concepts:
+                errors.append(
+                    f"[Reference] {path}: relationship '{written}' names concept '{prefix}', "
+                    f"which is not declared in the ontology"
+                )
+                return None
+            if prefix not in relationships.ancestors(concept):
+                errors.append(
+                    f"[Reference] {path}: relationship '{written}' names concept '{prefix}' but "
+                    f"this mapping maps '{concept}'"
+                )
+                return None
+            concept = prefix
+        relationship = relationships.find(concept, name)
+        if relationship is None:
+            errors.append(
+                f"[Reference] {path}: relationship '{written}' is not declared on concept "
+                f"'{concept}' or a concept it extends"
+            )
+        return relationship
+
+    def check_referents(items: object, concept: str | None, path: str) -> None:
+        for index, referent in enumerate(as_list(items)):
+            if not isinstance(referent, dict):
+                continue
+            here = f"{path} -> {index}"
+            relationship = resolve(concept, referent.get("relationship"), here)
+            nested = as_list(referent.get("referent_mappings"))
+            target = role_concept(relationship)
+            if relationship is not None and nested and target is None:
+                errors.append(
+                    f"[Reference] {here}: relationship '{referent['relationship']}' has no role "
+                    f"for its referent_mappings to resolve on"
+                )
+            check_referents(nested, target, f"{here} -> referent_mappings")
+
+    def check_object_mapping(node: object, concept: str | None, path: str) -> None:
+        if not isinstance(node, dict):
+            return
+        named = node.get("concept")
+        if isinstance(named, str):
+            # An undeclared concept is reported by the concept check alone.
+            if named not in concepts:
+                return
+            concept = named
+        check_referents(node.get("referent_mappings"), concept, f"{path} -> referent_mappings")
+
+    def check_link_mapping(node: object, concept: str, path: str, level: int) -> None:
+        if not isinstance(node, dict):
+            return
+        relationship = resolve(concept, node.get("relationship"), path)
+        if relationship is not None:
+            arity = len(as_list(relationship.get("roles"))) + 1
+            if arity != level:
+                errors.append(
+                    f"[Reference] {path}: relationship '{node['relationship']}' has arity "
+                    f"{arity} but is named at level {level}"
+                )
+        object_concept = concept if level == 1 else role_concept(relationship)
+        check_object_mapping(
+            node.get("object_mapping"), object_concept, f"{path} -> object_mapping"
+        )
+        for index, child in enumerate(as_list(node.get("children"))):
+            check_link_mapping(child, concept, f"{path} -> children -> {index}", level + 1)
+
+    for index, concept_mapping in enumerate(as_list(concept_mappings)):
+        if not isinstance(concept_mapping, dict):
+            continue
+        concept = concept_mapping.get("concept")
+        # An undeclared concept is reported by the concept check and has nothing to resolve on.
+        if not isinstance(concept, str) or concept not in concepts:
+            continue
+        path = f"concept_mappings -> {index}"
+        for j, node in enumerate(as_list(concept_mapping.get("object_mappings"))):
+            check_object_mapping(node, concept, f"{path} -> object_mappings -> {j}")
+        for j, node in enumerate(as_list(concept_mapping.get("link_mappings"))):
+            check_link_mapping(node, concept, f"{path} -> link_mappings -> {j}", level=1)
+    return errors
+
+
 USAGE = "Usage: python validation/validate.py [--schema <schema_file>] [--] <file> [<file> ...]"
 
 
@@ -669,8 +1003,13 @@ def load_schema_or_report(schema_path: Path) -> dict | None:
     return schema
 
 
-def validate_document(data, schema: dict) -> list[str]:
-    """Run every check on a parsed document and return the diagnostics."""
+def validate_document(data, schema: dict, base: Path | None = None) -> list[str]:
+    """Run every check on a parsed document and return the diagnostics.
+
+    base is the directory the document was read from. A mapping document
+    follows its relative references from there, and without it those checks
+    are skipped with a warning.
+    """
     errors = []
     errors.extend(validate_schema(data, schema))
 
@@ -683,6 +1022,8 @@ def validate_document(data, schema: dict) -> list[str]:
         errors.extend(validate_sql(data))
     if not errors and isinstance(data, dict) and "ontology" in data:
         errors.extend(validate_ontology(data))
+    if not errors and isinstance(data, dict) and "concept_mappings" in data:
+        errors.extend(validate_mapping(data, base))
 
     return errors
 
@@ -707,7 +1048,7 @@ def validate_file(yaml_path: Path, schema: dict) -> bool:
         return False
 
     try:
-        errors = validate_document(data, schema)
+        errors = validate_document(data, schema, yaml_path.parent)
     except Exception as e:
         # A check that raises on this document is a bug in the validator, not in the
         # model. Report it like any other failure so the remaining files still run,

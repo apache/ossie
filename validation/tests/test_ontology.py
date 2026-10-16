@@ -434,3 +434,552 @@ def test_mapping_document_accepts_both_sides_of_each_pair(offline, mapping_schem
     )
 
     assert not _VALIDATE.validate_schema(document, mapping_schema)
+
+
+# ---------------------------------------------------------------------------
+# Mapping documents: cross-checks against the referenced ontology and model.
+# ---------------------------------------------------------------------------
+
+
+def _sales_ontology() -> dict:
+    def relationship(name: str, concept: str) -> dict:
+        return {
+            "name": name,
+            "roles": [{"concept": concept}],
+            "verbalizes": [f"{{_}} has {{{concept}}}"],
+        }
+
+    return {
+        "version": "0.2.0.dev0",
+        "name": "sales",
+        "ontology": [
+            {
+                "concept": "Party",
+                "type": "EntityType",
+                "relationships": [relationship("nr", "Integer")],
+            },
+            # Customer inherits nr from Party.
+            {
+                "concept": "Customer",
+                "type": "EntityType",
+                "extends": ["Party"],
+                "identify_by": ["nr"],
+            },
+            {
+                "concept": "Order",
+                "type": "EntityType",
+                "identify_by": ["nr"],
+                "relationships": [
+                    relationship("nr", "Integer"),
+                    relationship("customer", "Customer"),
+                    # Named at a link mapping root in the undeclared-concept test, so unary.
+                    {"name": "placed_by", "verbalizes": ["{Order} is placed"]},
+                    relationship("total", "Decimal"),
+                    # Unary: a link at level 1, and nothing for a referent to resolve on.
+                    {"name": "active", "verbalizes": ["{Order} is active"]},
+                ],
+            },
+        ],
+    }
+
+
+def _sales_model() -> dict:
+    expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": "order_id"}]}
+    return {
+        "version": "0.2.0.dev0",
+        "name": "sales_model",
+        "datasets": [
+            {
+                "name": "orders",
+                "source": "sales.public.orders",
+                "fields": [
+                    {"name": "order_id", "expression": expression},
+                    {"name": "customer_id", "expression": expression},
+                ],
+            }
+        ],
+    }
+
+
+def _write_mapping_set(tmp_path, mapping=None, ontology=None, model=None) -> dict:
+    """Write the three documents next to each other and return the mapping."""
+    mapping = _mapping_document() if mapping is None else mapping
+    (tmp_path / "sales.ontology.yaml").write_text(
+        yaml.safe_dump(_sales_ontology() if ontology is None else ontology)
+    )
+    (tmp_path / "sales.semantic_model.yaml").write_text(
+        yaml.safe_dump(_sales_model() if model is None else model)
+    )
+    return mapping
+
+
+def _cross_check(tmp_path, mapping_schema, mapping) -> list[str]:
+    return _VALIDATE.validate_document(mapping, mapping_schema, tmp_path)
+
+
+def test_split_flights_mapping_cross_checks_against_its_documents(offline, mapping_schema):
+    mapping = yaml.safe_load((_REPO / "examples/flights.mapping.yaml").read_text())
+
+    assert _VALIDATE.validate_document(mapping, mapping_schema, _REPO / "examples") == []
+
+
+def test_mapping_cross_checks_accept_resolving_references(offline, mapping_schema, tmp_path):
+    mapping = _write_mapping_set(tmp_path)
+
+    assert _cross_check(tmp_path, mapping_schema, mapping) == []
+
+
+@pytest.mark.parametrize("reference", ["ontology_ref", "semantic_model_ref"])
+def test_mapping_reference_must_name_the_document_it_resolves_to(
+    offline, mapping_schema, tmp_path, reference
+):
+    mapping = _write_mapping_set(tmp_path)
+    mapping[reference]["name"] = "something_else"
+    mapping["concept_mappings"][0]["concept"] = "Ordr"
+    iri = mapping[reference]["iri"]
+    actual = {"ontology_ref": "sales", "semantic_model_ref": "sales_model"}[reference]
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    # The misnamed document is still the one the mapping points at, so the
+    # checks against its content run as well.
+    assert errors == [
+        f"[Reference] {reference} names 'something_else' but the document at iri '{iri}' "
+        f"is named '{actual}'",
+        "[Reference] concept_mappings -> 0: concept 'Ordr' is not declared in the ontology",
+    ]
+
+
+def test_mapping_concepts_must_be_declared_in_the_ontology(offline, mapping_schema, tmp_path):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["concept_mappings"] = [
+        {"concept": "Ordr", "object_mappings": [{"expression": "orders.order_id"}]},
+        {
+            "concept": "Order",
+            "link_mappings": [
+                {
+                    "object_mapping": {"expression": "orders.order_id"},
+                    "relationship": "placed_by",
+                    "children": [
+                        {
+                            "object_mapping": {
+                                "concept": "Custmer",
+                                "expression": "orders.customer_id",
+                            }
+                        },
+                        {
+                            "object_mapping": {
+                                "concept": "Integer",
+                                "expression": "orders.customer_id",
+                            }
+                        },
+                    ],
+                }
+            ],
+        },
+    ]
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert errors == [
+        "[Reference] concept_mappings -> 0: concept 'Ordr' is not declared in the ontology",
+        "[Reference] concept_mappings -> 1 -> link_mappings -> 0 -> children -> 0 -> object_mapping: "
+        "concept 'Custmer' is not declared in the ontology",
+    ]
+
+
+def test_mapping_expressions_must_name_declared_fields(offline, mapping_schema, tmp_path):
+    model = _sales_model()
+    # The core spec does not require a fields list, so a dataset without one
+    # cannot be checked and is left alone.
+    model["datasets"].append({"name": "customers", "source": "sales.public.customers"})
+    mapping = _write_mapping_set(tmp_path, model=model)
+    mapping["concept_mappings"][0]["object_mappings"] = [
+        {"expression": "orders.order_id"},
+        {"expression": "orders.order_nr + orders.order_nr"},
+        {"expression": "ORDERS.order_id"},
+        {"expression": "CONCAT(orders.order_id, '.', orders.customer_id)"},
+        {"expression": "CASE WHEN orders.order_id > 0 THEN 'a.b' END"},
+        {"expression": "customers.anything"},
+    ]
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert errors == [
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 1: expression names "
+        "'orders.order_nr' but dataset 'orders' declares no field 'order_nr'",
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 2: expression names "
+        "'ORDERS.order_id' but the semantic model declares no dataset 'ORDERS'",
+    ]
+
+
+@pytest.mark.parametrize(
+    "expression, expected",
+    [
+        ("orders.order_id -- see orders.nope", [("orders", "order_id")]),
+        ("/* orders.nope */ orders.order_id", [("orders", "order_id")]),
+        ('"a.b" + orders.order_id', [("orders", "order_id")]),
+        ("`a.b` + orders.order_id", [("orders", "order_id")]),
+        ("'it''s a.b' || orders.order_id", [("orders", "order_id")]),
+        ("cat.sch.orders.order_id", []),
+        ("sch.fn(orders.order_id)", [("orders", "order_id")]),
+        ("orders.order_id + orders.order_id", [("orders", "order_id")]),
+        ("1.5 * orders.order_id", [("orders", "order_id")]),
+        ("orders.order_id > 0 AND orders.amount > 1.5", [("orders", "order_id"), ("orders", "amount")]),
+    ],
+)
+def test_field_references_read_two_part_identifiers_only(expression, expected):
+    assert _VALIDATE.field_references(expression) == expected
+
+
+def test_mapping_expressions_in_referent_mappings_are_checked(offline, mapping_schema, tmp_path):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["concept_mappings"][0]["object_mappings"] = [
+        {
+            "referent_mappings": [
+                {
+                    "relationship": "customer",
+                    "referent_mappings": [
+                        {"relationship": "nr", "expression": "orders.customer_nr"}
+                    ],
+                }
+            ]
+        }
+    ]
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert errors == [
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 0 -> referent_mappings -> 0 "
+        "-> referent_mappings -> 0: expression names 'orders.customer_nr' but dataset 'orders' "
+        "declares no field 'customer_nr'"
+    ]
+
+
+def test_sales_ontology_fixture_is_a_valid_ontology():
+    assert _VALIDATE.validate_ontology(_sales_ontology()) == []
+
+
+def test_mapping_relationships_resolve_on_their_concept(offline, mapping_schema, tmp_path):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["concept_mappings"] = [
+        {
+            "concept": "Order",
+            "object_mappings": [
+                {
+                    "referent_mappings": [
+                        {"relationship": "nr", "expression": "orders.order_id"},
+                        {
+                            # Resolves on Customer, which inherits nr from Party.
+                            "relationship": "customer",
+                            "referent_mappings": [
+                                {"relationship": "Party.nr", "expression": "orders.customer_id"}
+                            ],
+                        },
+                    ]
+                }
+            ],
+            "link_mappings": [
+                {
+                    # The root maps Order itself, at level 1 for a unary relationship.
+                    "object_mapping": {
+                        "referent_mappings": [
+                            {"relationship": "nr", "expression": "orders.order_id"}
+                        ]
+                    },
+                    "relationship": "active",
+                    "children": [
+                        {
+                            "object_mapping": {
+                                "concept": "Decimal",
+                                "expression": "orders.order_id",
+                            },
+                            "relationship": "total",
+                        },
+                        {
+                            # Maps the Customer in the last position of customer links.
+                            "object_mapping": {
+                                "referent_mappings": [
+                                    {"relationship": "nr", "expression": "orders.customer_id"}
+                                ]
+                            },
+                            "relationship": "customer",
+                        },
+                    ],
+                }
+            ],
+        }
+    ]
+
+    assert _cross_check(tmp_path, mapping_schema, mapping) == []
+
+
+def test_mapping_relationships_must_be_declared_on_their_concept(offline, mapping_schema, tmp_path):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["concept_mappings"] = [
+        {
+            "concept": "Order",
+            "object_mappings": [
+                {
+                    "referent_mappings": [
+                        {"relationship": "nmbr", "expression": "orders.order_id"},
+                        {
+                            "relationship": "customer",
+                            "referent_mappings": [
+                                {"relationship": "code", "expression": "orders.customer_id"}
+                            ],
+                        },
+                    ]
+                }
+            ],
+            "link_mappings": [
+                {
+                    # The root maps Order even though its own relationship does not resolve.
+                    "object_mapping": {
+                        "referent_mappings": [
+                            {"relationship": "nmbr", "expression": "orders.order_id"}
+                        ]
+                    },
+                    "relationship": "placed",
+                    "children": [
+                        {
+                            # Maps a Customer through the customer relationship's role.
+                            "object_mapping": {
+                                "referent_mappings": [
+                                    {"relationship": "code", "expression": "orders.customer_id"}
+                                ],
+                            },
+                            "relationship": "customer",
+                        },
+                        {
+                            # An undeclared concept is reported once, by the concept check.
+                            "object_mapping": {
+                                "concept": "Custmer",
+                                "referent_mappings": [
+                                    {"relationship": "nr", "expression": "orders.customer_id"}
+                                ],
+                            },
+                            "relationship": "customer",
+                        },
+                    ],
+                }
+            ],
+        },
+        {
+            "concept": "Ordr",
+            "object_mappings": [
+                {"referent_mappings": [{"relationship": "nr", "expression": "orders.order_id"}]}
+            ],
+        },
+    ]
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert errors == [
+        "[Reference] concept_mappings -> 0 -> link_mappings -> 0 -> children -> 1 "
+        "-> object_mapping: concept 'Custmer' is not declared in the ontology",
+        "[Reference] concept_mappings -> 1: concept 'Ordr' is not declared in the ontology",
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 0 -> referent_mappings -> 0: "
+        "relationship 'nmbr' is not declared on concept 'Order' or a concept it extends",
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 0 -> referent_mappings -> 1 "
+        "-> referent_mappings -> 0: relationship 'code' is not declared on concept 'Customer' "
+        "or a concept it extends",
+        "[Reference] concept_mappings -> 0 -> link_mappings -> 0: relationship 'placed' is not "
+        "declared on concept 'Order' or a concept it extends",
+        "[Reference] concept_mappings -> 0 -> link_mappings -> 0 -> object_mapping "
+        "-> referent_mappings -> 0: relationship 'nmbr' is not declared on concept 'Order' or a "
+        "concept it extends",
+        "[Reference] concept_mappings -> 0 -> link_mappings -> 0 -> children -> 0 "
+        "-> object_mapping -> referent_mappings -> 0: relationship 'code' is not declared on "
+        "concept 'Customer' or a concept it extends",
+    ]
+
+
+def test_mapping_relationship_prefix_names_the_mapped_concept(offline, mapping_schema, tmp_path):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["concept_mappings"][0]["object_mappings"] = [
+        {
+            "referent_mappings": [
+                {"relationship": "Custmer.nr", "expression": "orders.order_id"},
+                {
+                    "relationship": "customer",
+                    "referent_mappings": [
+                        # Order is neither Customer nor a concept Customer extends.
+                        {"relationship": "Order.nr", "expression": "orders.customer_id"}
+                    ],
+                },
+                {"relationship": "Order.nmbr", "expression": "orders.order_id"},
+            ]
+        }
+    ]
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert errors == [
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 0 -> referent_mappings -> 0: "
+        "relationship 'Custmer.nr' names concept 'Custmer', which is not declared in the ontology",
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 0 -> referent_mappings -> 1 "
+        "-> referent_mappings -> 0: relationship 'Order.nr' names concept 'Order' but this "
+        "mapping maps 'Customer'",
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 0 -> referent_mappings -> 2: "
+        "relationship 'Order.nmbr' is not declared on concept 'Order' or a concept it extends",
+    ]
+
+
+def test_mapping_nested_referents_need_a_role_to_resolve_on(offline, mapping_schema, tmp_path):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["concept_mappings"][0]["object_mappings"] = [
+        {
+            "referent_mappings": [
+                {
+                    "relationship": "active",
+                    "referent_mappings": [{"relationship": "nr", "expression": "orders.order_id"}],
+                }
+            ]
+        }
+    ]
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert errors == [
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 0 -> referent_mappings -> 0: "
+        "relationship 'active' has no role for its referent_mappings to resolve on",
+    ]
+
+
+def test_mapping_link_level_matches_relationship_arity(offline, mapping_schema, tmp_path):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["concept_mappings"][0]["link_mappings"] = [
+        {
+            "object_mapping": {"expression": "orders.order_id"},
+            "relationship": "customer",
+            "children": [
+                {"object_mapping": {"expression": "orders.order_id"}, "relationship": "active"}
+            ],
+        }
+    ]
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert errors == [
+        "[Reference] concept_mappings -> 0 -> link_mappings -> 0: relationship 'customer' has "
+        "arity 2 but is named at level 1",
+        "[Reference] concept_mappings -> 0 -> link_mappings -> 0 -> children -> 0: relationship "
+        "'active' has arity 1 but is named at level 2",
+    ]
+
+
+@pytest.mark.parametrize(
+    "mutate, expected",
+    [
+        (
+            lambda ref: ref.pop("iri"),
+            "ontology_ref 'sales' has no iri, so only a catalog can resolve it",
+        ),
+        (
+            lambda ref: ref.update(iri="https://example.org/sales.ontology.yaml"),
+            "ontology_ref iri 'https://example.org/sales.ontology.yaml' is not a path reference",
+        ),
+    ],
+)
+def test_mapping_reference_this_validator_does_not_follow_is_a_warning(
+    offline, mapping_schema, tmp_path, mutate, expected
+):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["concept_mappings"][0]["concept"] = "Ordr"
+    mapping["concept_mappings"][0]["object_mappings"] = [{"expression": "orders.order_nr"}]
+    mutate(mapping["ontology_ref"])
+
+    diagnostics = _cross_check(tmp_path, mapping_schema, mapping)
+
+    # The ontology half is skipped with a warning, the model half still runs.
+    assert [type(d) for d in diagnostics] == [_VALIDATE.ValidationWarning, str]
+    assert diagnostics[0].startswith(f"[Reference] Warning: {expected}")
+    assert diagnostics[0].endswith("cross-document checks for ontology_ref skipped")
+    assert "declares no field 'order_nr'" in diagnostics[1]
+
+
+def test_mapping_without_a_location_skips_cross_checks_with_a_warning(offline, mapping_schema):
+    diagnostics = _VALIDATE.validate_document(_mapping_document(), mapping_schema)
+
+    assert [type(d) for d in diagnostics] == [_VALIDATE.ValidationWarning] * 2
+    assert all(d.startswith("[Reference] Warning: ") for d in diagnostics)
+    assert all("has no location to resolve it against" in d for d in diagnostics)
+
+
+def test_mapping_iri_is_read_as_a_uri_reference(offline, mapping_schema, tmp_path):
+    mapping = _write_mapping_set(tmp_path)
+    (tmp_path / "sales ontology.yaml").write_text(yaml.safe_dump(_sales_ontology()))
+    mapping["ontology_ref"]["iri"] = "./sales%20ontology.yaml#concepts"
+    mapping["semantic_model_ref"]["iri"] = "sales.semantic_model.yaml?v=1"
+
+    assert _cross_check(tmp_path, mapping_schema, mapping) == []
+
+
+def test_mapping_absolute_path_iri_is_followed_without_a_location(offline, mapping_schema, tmp_path):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["ontology_ref"]["iri"] = str(tmp_path / "sales.ontology.yaml")
+    mapping["semantic_model_ref"]["iri"] = str(tmp_path / "sales.semantic_model.yaml")
+    mapping["concept_mappings"][0]["concept"] = "Ordr"
+
+    errors = _VALIDATE.validate_document(mapping, mapping_schema)
+
+    assert errors == [
+        "[Reference] concept_mappings -> 0: concept 'Ordr' is not declared in the ontology"
+    ]
+
+
+def test_mapping_reference_to_the_wrong_kind_of_document_is_reported_once(
+    offline, mapping_schema, tmp_path
+):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["ontology_ref"] = {"name": "sales_model", "iri": "./sales.semantic_model.yaml"}
+    mapping["concept_mappings"].append(
+        {"concept": "Customer", "object_mappings": [{"expression": "orders.customer_id"}]}
+    )
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    # One line for the document, not one per concept the mapping names.
+    assert errors == [
+        "[Reference] ontology_ref iri './sales.semantic_model.yaml' does not hold an ontology "
+        "document, so its concepts cannot be checked"
+    ]
+
+
+@pytest.mark.parametrize(
+    "content, expected",
+    [
+        (None, "does not resolve: No such file or directory"),
+        ("a: [", "is not valid YAML"),
+        ("- just\n- a list\n", "does not hold a document"),
+    ],
+)
+def test_mapping_reference_that_does_not_read_as_a_document_is_an_error(
+    offline, mapping_schema, tmp_path, content, expected
+):
+    mapping = _write_mapping_set(tmp_path)
+    target = tmp_path / "sales.semantic_model.yaml"
+    if content is None:
+        target.unlink()
+    else:
+        target.write_text(content)
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert len(errors) == 1
+    assert not isinstance(errors[0], _VALIDATE.ValidationWarning)
+    assert errors[0].startswith("[Reference] semantic_model_ref iri './sales.semantic_model.yaml' ")
+    assert expected in errors[0]
+
+
+def test_validate_file_resolves_mapping_references_from_the_file_location(
+    offline, mapping_schema, tmp_path, capsys
+):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["concept_mappings"][0]["object_mappings"] = [{"expression": "orders.order_nr"}]
+    mapping_path = tmp_path / "sales.mapping.yaml"
+    mapping_path.write_text(yaml.safe_dump(mapping))
+
+    assert _VALIDATE.validate_file(mapping_path, mapping_schema) is False
+    assert "declares no field 'order_nr'" in capsys.readouterr().out
