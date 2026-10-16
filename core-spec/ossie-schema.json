@@ -85,8 +85,8 @@
           "$ref": "#/$defs/Vendor"
         },
         "data": {
-          "type": "string",
-          "description": "JSON string containing vendor-specific data"
+          "type": "object",
+          "description": "Vendor-specific data as a structured object. Keys are vendor-defined and values may be any JSON value, including nested objects and arrays. No keys are reserved."
         }
       },
       "required": ["vendor_name", "data"],

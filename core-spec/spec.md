@@ -127,7 +127,9 @@ relationships: []
 metrics: []
 custom_extensions:
   - vendor_name: DBT
-    data: '{"project_name": "tpcds_analytics", "models_path": "models/semantic"}'
+    data:
+      project_name: tpcds_analytics
+      models_path: models/semantic
 ```
 
 The same document structure in JSON:
@@ -217,7 +219,8 @@ datasets:
     fields: []
     custom_extensions:
       - vendor_name: DBT
-        data: '{"materialized": "table"}'
+        data:
+          materialized: table
 ```
 
 ---
@@ -467,15 +470,26 @@ expression:
 
 ## Custom Extensions
 
-Custom extensions allow vendors to add platform-specific metadata without breaking core compatibility. Each extension includes a vendor name and arbitrary JSON data.
+Custom extensions allow vendors to add platform-specific metadata without breaking core compatibility. Each extension includes a vendor name and a structured `data` object.
 
 ### Schema
 
 ```yaml
 custom_extensions:
   - vendor_name: string  # Free-form string identifying the vendor
-    data: string         # JSON string containing vendor-specific data
+    data: object         # Structured vendor-specific data
 ```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `vendor_name` | string | Yes | Free-form identifier for the vendor or organization that owns the extension |
+| `data` | object | Yes | Vendor-specific key/value data. May be empty (`{}`) |
+
+The keys inside `data` are defined by the vendor; the core specification does not
+reserve or require any key. Values may be any JSON value: strings, numbers,
+booleans, `null`, arrays, or nested objects. Prefer an existing core field when a
+property already has a home in the specification, and use `data` only for genuine
+vendor-specific or otherwise unmapped residue.
 
 ### Vendor Names
 
@@ -505,46 +519,41 @@ The following are well-known examples:
 
 ```yaml
 - vendor_name: SNOWFLAKE
-  data: '{
-    "warehouse": "ANALYTICS_WH",
-    "database": "PROD",
-    "schema": "PUBLIC"
-  }'
+  data:
+    warehouse: ANALYTICS_WH
+    database: PROD
+    schema: PUBLIC
 ```
 
 **Salesforce Extension:**
 
 ```yaml
 - vendor_name: SALESFORCE
-  data: '{
-    "tableau_workbook_id": "sales_dashboard",
-    "einstein_enabled": true,
-    "crm_sync": {
-      "enabled": true,
-      "sync_frequency": "daily"
-    }
-  }'
+  data:
+    tableau_workbook_id: sales_dashboard
+    einstein_enabled: true
+    crm_sync:
+      enabled: true
+      sync_frequency: daily
 ```
 
 **DBT Extension:**
 
 ```yaml
 - vendor_name: DBT
-  data: '{
-    "project_name": "analytics",
-    "materialized": "table",
-    "tags": ["daily", "core"]
-  }'
+  data:
+    project_name: analytics
+    materialized: table
+    tags: [daily, core]
 ```
 
 **Databricks Extension:**
 
 ```yaml
 - vendor_name: Databricks
-  data: '{
-    "default_catalog": "finance",
-    "default_schema": "gold"
-  }'
+  data:
+    default_catalog: finance
+    default_schema: gold
 ```
 
 ---
@@ -648,7 +657,8 @@ metrics:
 
 custom_extensions:
   - vendor_name: SNOWFLAKE
-    data: '{"warehouse": "ANALYTICS_WH"}'
+    data:
+      warehouse: ANALYTICS_WH
 ```
 
 ---
