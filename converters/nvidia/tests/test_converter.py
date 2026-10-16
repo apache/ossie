@@ -1000,12 +1000,15 @@ def test_a_unique_key_the_primary_key_states_is_not_repeated() -> None:
     assert "unique_keys" not in datasets["customers"]
 
 
-def test_a_filter_becomes_a_boolean_field_holding_its_condition() -> None:
+def _orders_sql_attribute(sql: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Convert the fixture with *sql* as an orders SQL attribute.
+
+    Returns the Ossie field it becomes and the whole Ossie document.
+    """
     native = yaml.safe_load(_auto_ontology_yaml())
     orders = next(
         term for term in native["semantic_layer"]["terms"] if term["name"] == "orders"
     )
-    sql = 'SELECT * FROM "analytics"."public"."orders" WHERE "discount" > 0'
     native["semantic_layer"]["sql_attributes"]["sql"].append(
         {
             "id": "discounted-orders",
@@ -1016,7 +1019,6 @@ def test_a_filter_becomes_a_boolean_field_holding_its_condition() -> None:
             "term_id": orders["id"],
         }
     )
-
     ossie = yaml.safe_load(convert_auto_ontology_to_ossie(yaml.safe_dump(native)))
     field = next(
         field
@@ -1025,14 +1027,77 @@ def test_a_filter_becomes_a_boolean_field_holding_its_condition() -> None:
         for field in dataset["fields"]
         if field["name"] == "discounted"
     )
+    return field, ossie
+
+
+def _restored_sql_attribute(ossie: dict[str, Any]) -> dict[str, Any]:
+    restored = yaml.safe_load(convert_ossie_to_auto_ontology(yaml.safe_dump(ossie)))
+    [restored_attribute] = restored["semantic_layer"]["sql_attributes"]["sql"]
+    assert restored_attribute["id"] == "discounted-orders"
+    return restored_attribute
+
+
+def test_a_filter_becomes_a_boolean_field_holding_its_condition() -> None:
+    sql = 'SELECT * FROM "analytics"."public"."orders" WHERE "discount" > 0'
+    field, ossie = _orders_sql_attribute(sql)
 
     assert field["expression"]["dialects"][0]["expression"] == '"discount" > 0'
     assert field["datatype"] == "Boolean"
+    assert _restored_sql_attribute(ossie)["sql"] == sql
 
-    restored = yaml.safe_load(convert_ossie_to_auto_ontology(yaml.safe_dump(ossie)))
-    [restored_filter] = restored["semantic_layer"]["sql_attributes"]["sql"]
-    assert restored_filter["id"] == "discounted-orders"
-    assert restored_filter["sql"] == sql
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        pytest.param(
+            'SELECT * FROM "analytics"."public"."orders" AS "o" '
+            'JOIN "analytics"."public"."customers" AS "c" '
+            'ON "o"."customer_id" = "c"."customer_id" WHERE "c"."vip"',
+            id="join",
+        ),
+        pytest.param(
+            'SELECT * FROM "analytics"."public"."orders" AS "o", '
+            '"analytics"."public"."customers" AS "c" WHERE "c"."vip"',
+            id="comma-join",
+        ),
+        pytest.param(
+            'SELECT * FROM "analytics"."public"."orders" WHERE "discount" > 0 LIMIT 10',
+            id="limit",
+        ),
+        pytest.param(
+            'SELECT * FROM "analytics"."public"."orders" WHERE "discount" > 0 '
+            'GROUP BY "customer_id" HAVING COUNT(*) > 1',
+            id="group-by",
+        ),
+        pytest.param(
+            'SELECT DISTINCT * FROM "analytics"."public"."orders" WHERE "discount" > 0',
+            id="distinct",
+        ),
+        pytest.param(
+            'SELECT * FROM "analytics"."public"."orders" WHERE "discount" > 0 '
+            'ORDER BY "subtotal"',
+            id="order-by",
+        ),
+        pytest.param(
+            'SELECT * FROM "analytics"."public"."orders" WHERE "discount" > 0 '
+            'UNION SELECT * FROM "analytics"."public"."orders" WHERE "subtotal" > 0',
+            id="union",
+        ),
+        pytest.param(
+            'SELECT * FROM (SELECT * FROM "analytics"."public"."orders") AS "o" '
+            'WHERE "discount" > 0',
+            id="subquery",
+        ),
+    ],
+)
+def test_a_query_that_does_more_than_filter_one_table_is_no_boolean_field(
+    sql: str,
+) -> None:
+    field, ossie = _orders_sql_attribute(sql)
+
+    assert "datatype" not in field
+    assert field["expression"]["dialects"][0]["expression"] == "*"
+    assert _restored_sql_attribute(ossie)["sql"] == sql
 
 
 def test_auto_ontology_requires_one_represented_table_per_term() -> None:

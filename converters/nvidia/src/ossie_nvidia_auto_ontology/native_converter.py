@@ -64,6 +64,10 @@ _SQL_DIALECTS = (
     "oracle",
     "sqlite",
 )
+# What a filter query may set: one star, one table and a WHERE. sqlglot names the
+# FROM argument ``from_`` in current releases and ``from`` in older ones.
+_FILTER_SELECT_ARGS = frozenset({"expressions", "from", "from_", "where"})
+_FILTER_TABLE_ARGS = frozenset({"this", "db", "catalog", "alias"})
 _DATE_PART_UNITS = frozenset(
     {
         "year",
@@ -2013,17 +2017,31 @@ def _filter_condition_from_sql(sql: str) -> str | None:
     Auto Ontology stores a derived filter as ``SELECT * FROM t WHERE <condition>``.
     A star is no field expression, so the field such a filter becomes holds its
     condition instead, which is true for exactly the rows the filter selects.
+
+    That holds only when the condition is all the query adds to one table. A join,
+    ``LIMIT``, ``GROUP BY``, ``DISTINCT``, set operation or any other clause changes
+    the rows too, so such a query returns ``None`` and keeps the generic path.
     """
     parsed = _parse_sql(sql)
-    if parsed is None:
+    if not isinstance(parsed, exp.Select) or len(parsed.expressions) != 1:
         return None
-    select = parsed.find(exp.Select)
-    if select is None or len(select.expressions) != 1:
+    if not parsed.expressions[0].is_star or not _has_only_args(
+        parsed, _FILTER_SELECT_ARGS
+    ):
         return None
-    where = select.args.get("where")
-    if not select.expressions[0].is_star or where is None:
+    source = parsed.args.get("from_") or parsed.args.get("from")
+    where = parsed.args.get("where")
+    if source is None or where is None:
+        return None
+    if not isinstance(source.this, exp.Table) or not _has_only_args(
+        source.this, _FILTER_TABLE_ARGS
+    ):
         return None
     return where.this.sql()
+
+
+def _has_only_args(node: exp.Expression, allowed: Set[str]) -> bool:
+    return all(key in allowed for key, value in node.args.items() if value)
 
 
 def _expression_matches(current: str, emitted: Any) -> bool:
