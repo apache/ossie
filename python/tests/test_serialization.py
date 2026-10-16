@@ -293,6 +293,10 @@ def _fully_populated_document() -> dict:
         "description": "d",
         "ai_context": dict(ai_context),
         "custom_extensions": list(extensions),
+        "behavior": {
+            "namespace": "example", "behavior_layer_version": "0.1",
+            "actions": [], "rules": [],
+        },
         "datasets": [
             {
                 "name": "orders",
@@ -394,7 +398,10 @@ def test_every_property_in_a_document_rejects_null() -> None:
     for path in paths:
         document = _fully_populated_document()
         _set_null(document, path)
-        with pytest.raises(ValueError, match="set to null"):
+        # Behavior's typed validator checks declared fields; its free-form
+        # extension values may contain null and bypass the generic null walk.
+        diagnostic = None if path.startswith("behavior.") else "set to null"
+        with pytest.raises(ValueError, match=diagnostic):
             OssieDocument.from_ossie_yaml(yaml.safe_dump(document))
 
 
