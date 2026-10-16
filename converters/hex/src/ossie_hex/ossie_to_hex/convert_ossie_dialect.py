@@ -29,6 +29,8 @@ _DIALECT_NAME_MAP: Mapping[OssieDialect, HexDialectName | None] = {
     OssieDialect.BIGQUERY: "bigquery",
     OssieDialect.DATABRICKS: "databricks",
     OssieDialect.SNOWFLAKE: "snowflake",
+    OssieDialect.POSTGRES: "postgres",
+    OssieDialect.REDSHIFT: "redshift",
     # These are expression languages, not SQL dialects or engines
     OssieDialect.MAQL: None,
     OssieDialect.MDX: None,

@@ -1171,3 +1171,32 @@ def test_validate_document_runs_semantic_checks_on_a_valid_shape(core_schema, of
     errors = _VALIDATE.validate_document(_document([_CUSTOMERS, _CUSTOMERS], []), core_schema)
 
     assert any(error.startswith("[Unique]") for error in errors)
+
+
+def test_postgres_and_redshift_are_parsed_as_sql() -> None:
+    # Both are SQL dialects sqlglot reads, so an expression in either is
+    # parsed the way SNOWFLAKE, BIGQUERY and DATABRICKS are, not skipped.
+    assert _VALIDATE.DIALECT_MAP["POSTGRES"] == "postgres"
+    assert _VALIDATE.DIALECT_MAP["REDSHIFT"] == "redshift"
+    assert "POSTGRES" not in _VALIDATE.SKIP_SQL_VALIDATION
+    assert "REDSHIFT" not in _VALIDATE.SKIP_SQL_VALIDATION
+
+
+@pytest.mark.parametrize("dialect", ["POSTGRES", "REDSHIFT"])
+def test_a_postgres_cast_is_valid_sql_in_its_own_dialect(dialect: str) -> None:
+    # `::` is the Postgres cast operator, which Redshift shares.
+    body = "date_trunc('month', orders.created_at)::date"
+    expression = {"dialects": [{"dialect": dialect, "expression": body}]}
+    dataset = {**_ORDERS, "fields": [{"name": "month", "expression": expression}]}
+
+    assert _VALIDATE.validate_sql(_document([dataset], [])) == []
+
+
+@pytest.mark.parametrize("dialect", ["POSTGRES", "REDSHIFT"])
+def test_invalid_sql_is_reported_under_postgres_and_redshift(dialect: str) -> None:
+    # Both dialects are parsed, so a body sqlglot cannot read is reported
+    # rather than skipped the way MDX or DAX are.
+    expression = {"dialects": [{"dialect": dialect, "expression": "SELECT FROM WHERE"}]}
+    dataset = {**_ORDERS, "fields": [{"name": "broken", "expression": expression}]}
+
+    assert _VALIDATE.validate_sql(_document([dataset], [])) != []

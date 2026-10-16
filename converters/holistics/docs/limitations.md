@@ -117,8 +117,8 @@ materialised as a table in Holistics first.
 ### Warehouse SQL has no dialect of its own
 
 `Dialect` in `core-spec/ossie-schema.json` is a closed enumeration. Its members
-today are `ANSI_SQL`, `SNOWFLAKE`, `MDX`, `TABLEAU`, `DATABRICKS`, `MAQL`, `BIGQUERY`, `SIGMA`, `THOUGHTSPOT`, `DAX`, `HOLISTICS_AQL`, and
-`OSSIE_SQL_2026`.
+today are `ANSI_SQL`, `SNOWFLAKE`, `MDX`, `TABLEAU`, `DATABRICKS`, `MAQL`, `BIGQUERY`, `SIGMA`, `THOUGHTSPOT`, `DAX`, `HOLISTICS_AQL`,
+`POSTGRES`, `REDSHIFT` and `OSSIE_SQL_2026`.
 
 `HOLISTICS_AQL` covers AQL. It does not cover a `@sql` body, because that body is the warehouse's SQL rather than a
 Holistics language, and AML does not record which warehouse. A computed `@sql` body takes its dialect from
