@@ -43,7 +43,10 @@ prefixes that resolve to something declared.
 Mapping documents (--schema ontology/mapping.json) are cross-checked against the
 ontology and semantic model each iri points at: the reference names the document
 it resolves to, every concept the mapping names is declared there or built in,
-and every dataset.field an expression names is a declared field of the model.
+every relationship a referent or link mapping names is declared on its concept
+or inherited through extends, with a role for nested referents to resolve on and
+at the link level its arity calls for, and every dataset.field an expression
+names is a declared field of the model.
 
 Usage:
     python validation/validate.py [--schema <schema_file>] [--] <file> [<file> ...]
@@ -708,17 +711,61 @@ def resolve_document_reference(
     return document, errors
 
 
+class OntologyRelationships:
+    """The relationships an ontology declares, looked up through extends.
+
+    A name resolves on the concept or on a concept it extends, the way
+    validate_ontology resolves identify_by.
+    """
+
+    def __init__(self, components: list[dict]):
+        self._declared: dict[str, dict[str, dict]] = {}
+        self._supertypes: dict[str, list[str]] = {}
+        for component in components:
+            concept = component.get("concept")
+            if not isinstance(concept, str):
+                continue
+            self._declared.setdefault(concept, {}).update(
+                (r["name"], r)
+                for r in as_list(component.get("relationships"))
+                if isinstance(r, dict) and isinstance(r.get("name"), str)
+            )
+            self._supertypes.setdefault(concept, []).extend(
+                s for s in as_list(component.get("extends")) if isinstance(s, str)
+            )
+
+    def ancestors(self, concept: str) -> list[str]:
+        """The concept followed by every concept it extends, each once."""
+        found, pending = [], [concept]
+        while pending:
+            current = pending.pop()
+            if current in found:
+                continue
+            found.append(current)
+            pending.extend(self._supertypes.get(current, []))
+        return found
+
+    def find(self, concept: str, name: str) -> dict | None:
+        for current in self.ancestors(concept):
+            if name in self._declared.get(current, {}):
+                return self._declared[current][name]
+        return None
+
+
 def validate_mapping(data: dict, base: Path | None) -> list[str]:
     """Cross-check a mapping document against the two documents it references.
 
     ontology_ref and semantic_model_ref must name the documents they point at,
     every concept the mapping names must be declared in that ontology or be a
-    built-in concept, and every dataset.field an expression names must be a
-    field of that semantic model. A dataset that declares no fields list is not
-    checked, since the core spec does not require one. Relative iri are read
-    from base, the mapping document's own directory. A reference that cannot
-    be followed skips its half of the checks with a warning, see
-    resolve_document_reference.
+    built-in concept, every relationship a referent or link mapping names must
+    be declared on the concept whose mapping names it, directly or through
+    extends, with a role for nested referents to resolve on and at the link
+    level its arity calls for, and every dataset.field an expression names
+    must be a field of that semantic model.
+    A dataset that declares no fields list is not checked, since the core spec
+    does not require one. Relative iri are read from base, the mapping
+    document's own directory. A reference that cannot be followed skips its
+    half of the checks with a warning, see resolve_document_reference.
     """
     if not isinstance(data, dict) or "concept_mappings" not in data:
         return []
@@ -734,11 +781,12 @@ def validate_mapping(data: dict, base: Path | None) -> list[str]:
     # None means that half of the checks is off: the document was not followed
     # or is not the kind of document the reference promises.
     concepts = None
+    relationships = None
     if ontology is not None:
         if isinstance(ontology.get("ontology"), list):
-            concepts = {
-                c.get("concept") for c in ontology["ontology"] if isinstance(c, dict)
-            } | BUILT_IN_CONCEPTS
+            components = [c for c in ontology["ontology"] if isinstance(c, dict)]
+            concepts = {c.get("concept") for c in components} | BUILT_IN_CONCEPTS
+            relationships = OntologyRelationships(components)
         else:
             errors.append(
                 f"[Reference] ontology_ref iri '{ontology_ref.get('iri')}' does not hold an "
@@ -787,6 +835,119 @@ def validate_mapping(data: dict, base: Path | None) -> list[str]:
                 visit(item, f"{path} -> {index}")
 
     visit(data["concept_mappings"], "concept_mappings")
+    if relationships is not None:
+        errors.extend(
+            mapping_relationship_errors(data["concept_mappings"], concepts, relationships)
+        )
+    return errors
+
+
+def mapping_relationship_errors(
+    concept_mappings: object, concepts: set, relationships: OntologyRelationships
+) -> list[str]:
+    """Report the relationships a mapping names that its ontology does not declare.
+
+    A referent mapping names a relationship of the concept being mapped, and its
+    nested referent mappings name relationships of the concept that plays the
+    last role of that relationship. A link mapping names a relationship of the
+    concept mapping's concept, at the level that matches the relationship's
+    arity. Its root maps that concept and a child maps the objects in the last
+    position of its relationship's links, and an object mapping that names a
+    concept itself maps that concept instead, at the root as well (ontology.md,
+    Object mappings and Link mappings). A relationship written as Concept.name
+    names the concept being mapped or one it extends, as in the spec examples.
+    """
+    errors = []
+
+    def role_concept(relationship: dict | None) -> str | None:
+        roles = as_list(relationship.get("roles")) if relationship else []
+        last = roles[-1] if roles else None
+        concept = last.get("concept") if isinstance(last, dict) else None
+        return concept if isinstance(concept, str) else None
+
+    def resolve(concept: str | None, name: object, path: str) -> dict | None:
+        if concept is None or not isinstance(name, str):
+            return None
+        written = name
+        if "." in name:
+            prefix, name = name.split(".", 1)
+            if prefix not in concepts:
+                errors.append(
+                    f"[Reference] {path}: relationship '{written}' names concept '{prefix}', "
+                    f"which is not declared in the ontology"
+                )
+                return None
+            if prefix not in relationships.ancestors(concept):
+                errors.append(
+                    f"[Reference] {path}: relationship '{written}' names concept '{prefix}' but "
+                    f"this mapping maps '{concept}'"
+                )
+                return None
+            concept = prefix
+        relationship = relationships.find(concept, name)
+        if relationship is None:
+            errors.append(
+                f"[Reference] {path}: relationship '{written}' is not declared on concept "
+                f"'{concept}' or a concept it extends"
+            )
+        return relationship
+
+    def check_referents(items: object, concept: str | None, path: str) -> None:
+        for index, referent in enumerate(as_list(items)):
+            if not isinstance(referent, dict):
+                continue
+            here = f"{path} -> {index}"
+            relationship = resolve(concept, referent.get("relationship"), here)
+            nested = as_list(referent.get("referent_mappings"))
+            target = role_concept(relationship)
+            if relationship is not None and nested and target is None:
+                errors.append(
+                    f"[Reference] {here}: relationship '{referent['relationship']}' has no role "
+                    f"for its referent_mappings to resolve on"
+                )
+            check_referents(nested, target, f"{here} -> referent_mappings")
+
+    def check_object_mapping(node: object, concept: str | None, path: str) -> None:
+        if not isinstance(node, dict):
+            return
+        named = node.get("concept")
+        if isinstance(named, str):
+            # An undeclared concept is reported by the concept check alone.
+            if named not in concepts:
+                return
+            concept = named
+        check_referents(node.get("referent_mappings"), concept, f"{path} -> referent_mappings")
+
+    def check_link_mapping(node: object, concept: str, path: str, level: int) -> None:
+        if not isinstance(node, dict):
+            return
+        relationship = resolve(concept, node.get("relationship"), path)
+        if relationship is not None:
+            arity = len(as_list(relationship.get("roles"))) + 1
+            if arity != level:
+                errors.append(
+                    f"[Reference] {path}: relationship '{node['relationship']}' has arity "
+                    f"{arity} but is named at level {level}"
+                )
+        object_concept = concept if level == 1 else role_concept(relationship)
+        check_object_mapping(
+            node.get("object_mapping"), object_concept, f"{path} -> object_mapping"
+        )
+        for index, child in enumerate(as_list(node.get("children"))):
+            check_link_mapping(child, concept, f"{path} -> children -> {index}", level + 1)
+
+    for index, concept_mapping in enumerate(as_list(concept_mappings)):
+        if not isinstance(concept_mapping, dict):
+            continue
+        concept = concept_mapping.get("concept")
+        # An undeclared concept is reported by the concept check and has nothing to resolve on.
+        if not isinstance(concept, str) or concept not in concepts:
+            continue
+        path = f"concept_mappings -> {index}"
+        for j, node in enumerate(as_list(concept_mapping.get("object_mappings"))):
+            check_object_mapping(node, concept, f"{path} -> object_mappings -> {j}")
+        for j, node in enumerate(as_list(concept_mapping.get("link_mappings"))):
+            check_link_mapping(node, concept, f"{path} -> link_mappings -> {j}", level=1)
     return errors
 
 

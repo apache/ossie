@@ -442,12 +442,43 @@ def test_mapping_document_accepts_both_sides_of_each_pair(offline, mapping_schem
 
 
 def _sales_ontology() -> dict:
+    def relationship(name: str, concept: str) -> dict:
+        return {
+            "name": name,
+            "roles": [{"concept": concept}],
+            "verbalizes": [f"{{_}} has {{{concept}}}"],
+        }
+
     return {
         "version": "0.2.0.dev0",
         "name": "sales",
         "ontology": [
-            {"concept": "Order", "type": "EntityType"},
-            {"concept": "Customer", "type": "EntityType"},
+            {
+                "concept": "Party",
+                "type": "EntityType",
+                "relationships": [relationship("nr", "Integer")],
+            },
+            # Customer inherits nr from Party.
+            {
+                "concept": "Customer",
+                "type": "EntityType",
+                "extends": ["Party"],
+                "identify_by": ["nr"],
+            },
+            {
+                "concept": "Order",
+                "type": "EntityType",
+                "identify_by": ["nr"],
+                "relationships": [
+                    relationship("nr", "Integer"),
+                    relationship("customer", "Customer"),
+                    # Named at a link mapping root in the undeclared-concept test, so unary.
+                    {"name": "placed_by", "verbalizes": ["{Order} is placed"]},
+                    relationship("total", "Decimal"),
+                    # Unary: a link at level 1, and nothing for a referent to resolve on.
+                    {"name": "active", "verbalizes": ["{Order} is active"]},
+                ],
+            },
         ],
     }
 
@@ -622,6 +653,219 @@ def test_mapping_expressions_in_referent_mappings_are_checked(offline, mapping_s
         "[Reference] concept_mappings -> 0 -> object_mappings -> 0 -> referent_mappings -> 0 "
         "-> referent_mappings -> 0: expression names 'orders.customer_nr' but dataset 'orders' "
         "declares no field 'customer_nr'"
+    ]
+
+
+def test_sales_ontology_fixture_is_a_valid_ontology():
+    assert _VALIDATE.validate_ontology(_sales_ontology()) == []
+
+
+def test_mapping_relationships_resolve_on_their_concept(offline, mapping_schema, tmp_path):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["concept_mappings"] = [
+        {
+            "concept": "Order",
+            "object_mappings": [
+                {
+                    "referent_mappings": [
+                        {"relationship": "nr", "expression": "orders.order_id"},
+                        {
+                            # Resolves on Customer, which inherits nr from Party.
+                            "relationship": "customer",
+                            "referent_mappings": [
+                                {"relationship": "Party.nr", "expression": "orders.customer_id"}
+                            ],
+                        },
+                    ]
+                }
+            ],
+            "link_mappings": [
+                {
+                    # The root maps Order itself, at level 1 for a unary relationship.
+                    "object_mapping": {
+                        "referent_mappings": [
+                            {"relationship": "nr", "expression": "orders.order_id"}
+                        ]
+                    },
+                    "relationship": "active",
+                    "children": [
+                        {
+                            "object_mapping": {
+                                "concept": "Decimal",
+                                "expression": "orders.order_id",
+                            },
+                            "relationship": "total",
+                        },
+                        {
+                            # Maps the Customer in the last position of customer links.
+                            "object_mapping": {
+                                "referent_mappings": [
+                                    {"relationship": "nr", "expression": "orders.customer_id"}
+                                ]
+                            },
+                            "relationship": "customer",
+                        },
+                    ],
+                }
+            ],
+        }
+    ]
+
+    assert _cross_check(tmp_path, mapping_schema, mapping) == []
+
+
+def test_mapping_relationships_must_be_declared_on_their_concept(offline, mapping_schema, tmp_path):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["concept_mappings"] = [
+        {
+            "concept": "Order",
+            "object_mappings": [
+                {
+                    "referent_mappings": [
+                        {"relationship": "nmbr", "expression": "orders.order_id"},
+                        {
+                            "relationship": "customer",
+                            "referent_mappings": [
+                                {"relationship": "code", "expression": "orders.customer_id"}
+                            ],
+                        },
+                    ]
+                }
+            ],
+            "link_mappings": [
+                {
+                    # The root maps Order even though its own relationship does not resolve.
+                    "object_mapping": {
+                        "referent_mappings": [
+                            {"relationship": "nmbr", "expression": "orders.order_id"}
+                        ]
+                    },
+                    "relationship": "placed",
+                    "children": [
+                        {
+                            # Maps a Customer through the customer relationship's role.
+                            "object_mapping": {
+                                "referent_mappings": [
+                                    {"relationship": "code", "expression": "orders.customer_id"}
+                                ],
+                            },
+                            "relationship": "customer",
+                        },
+                        {
+                            # An undeclared concept is reported once, by the concept check.
+                            "object_mapping": {
+                                "concept": "Custmer",
+                                "referent_mappings": [
+                                    {"relationship": "nr", "expression": "orders.customer_id"}
+                                ],
+                            },
+                            "relationship": "customer",
+                        },
+                    ],
+                }
+            ],
+        },
+        {
+            "concept": "Ordr",
+            "object_mappings": [
+                {"referent_mappings": [{"relationship": "nr", "expression": "orders.order_id"}]}
+            ],
+        },
+    ]
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert errors == [
+        "[Reference] concept_mappings -> 0 -> link_mappings -> 0 -> children -> 1 "
+        "-> object_mapping: concept 'Custmer' is not declared in the ontology",
+        "[Reference] concept_mappings -> 1: concept 'Ordr' is not declared in the ontology",
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 0 -> referent_mappings -> 0: "
+        "relationship 'nmbr' is not declared on concept 'Order' or a concept it extends",
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 0 -> referent_mappings -> 1 "
+        "-> referent_mappings -> 0: relationship 'code' is not declared on concept 'Customer' "
+        "or a concept it extends",
+        "[Reference] concept_mappings -> 0 -> link_mappings -> 0: relationship 'placed' is not "
+        "declared on concept 'Order' or a concept it extends",
+        "[Reference] concept_mappings -> 0 -> link_mappings -> 0 -> object_mapping "
+        "-> referent_mappings -> 0: relationship 'nmbr' is not declared on concept 'Order' or a "
+        "concept it extends",
+        "[Reference] concept_mappings -> 0 -> link_mappings -> 0 -> children -> 0 "
+        "-> object_mapping -> referent_mappings -> 0: relationship 'code' is not declared on "
+        "concept 'Customer' or a concept it extends",
+    ]
+
+
+def test_mapping_relationship_prefix_names_the_mapped_concept(offline, mapping_schema, tmp_path):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["concept_mappings"][0]["object_mappings"] = [
+        {
+            "referent_mappings": [
+                {"relationship": "Custmer.nr", "expression": "orders.order_id"},
+                {
+                    "relationship": "customer",
+                    "referent_mappings": [
+                        # Order is neither Customer nor a concept Customer extends.
+                        {"relationship": "Order.nr", "expression": "orders.customer_id"}
+                    ],
+                },
+                {"relationship": "Order.nmbr", "expression": "orders.order_id"},
+            ]
+        }
+    ]
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert errors == [
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 0 -> referent_mappings -> 0: "
+        "relationship 'Custmer.nr' names concept 'Custmer', which is not declared in the ontology",
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 0 -> referent_mappings -> 1 "
+        "-> referent_mappings -> 0: relationship 'Order.nr' names concept 'Order' but this "
+        "mapping maps 'Customer'",
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 0 -> referent_mappings -> 2: "
+        "relationship 'Order.nmbr' is not declared on concept 'Order' or a concept it extends",
+    ]
+
+
+def test_mapping_nested_referents_need_a_role_to_resolve_on(offline, mapping_schema, tmp_path):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["concept_mappings"][0]["object_mappings"] = [
+        {
+            "referent_mappings": [
+                {
+                    "relationship": "active",
+                    "referent_mappings": [{"relationship": "nr", "expression": "orders.order_id"}],
+                }
+            ]
+        }
+    ]
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert errors == [
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 0 -> referent_mappings -> 0: "
+        "relationship 'active' has no role for its referent_mappings to resolve on",
+    ]
+
+
+def test_mapping_link_level_matches_relationship_arity(offline, mapping_schema, tmp_path):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["concept_mappings"][0]["link_mappings"] = [
+        {
+            "object_mapping": {"expression": "orders.order_id"},
+            "relationship": "customer",
+            "children": [
+                {"object_mapping": {"expression": "orders.order_id"}, "relationship": "active"}
+            ],
+        }
+    ]
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert errors == [
+        "[Reference] concept_mappings -> 0 -> link_mappings -> 0: relationship 'customer' has "
+        "arity 2 but is named at level 1",
+        "[Reference] concept_mappings -> 0 -> link_mappings -> 0 -> children -> 0: relationship "
+        "'active' has arity 1 but is named at level 2",
     ]
 
 
