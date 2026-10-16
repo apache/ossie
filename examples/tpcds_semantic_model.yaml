@@ -147,6 +147,18 @@ datasets:
             - "profit"
             - "margin"
 
+    # Dataset-scoped metric: aggregates this dataset's own declared field by
+    # single-part (unqualified) name; resolves within store_sales. Contrast with
+    # the model-root `metrics:` block below, whose expressions span datasets.
+    metrics:
+      - name: total_quantity
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(ss_quantity)
+        description: Total quantity sold across all store sales
+        datatype: Integer
+
   # Dimension table: Date
   - name: date_dim
     source: tpcds.public.date_dim

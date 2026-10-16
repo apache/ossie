@@ -90,16 +90,6 @@ datasets:
       dialects:
       - dialect: ANSI_SQL
         expression: capacity
-  # Dataset-scoped metric: aggregates this dataset's own declared field by
-  # single-part (unqualified) name; resolves within AIRCRAFT.
-  metrics:
-  - name: total_seats
-    expression:
-      dialects:
-      - dialect: ANSI_SQL
-        expression: SUM(nr_seats)
-    description: Total seats across all aircraft
-    datatype: Integer
 - name: AIRPORT
   source: DATABASE.SCHEMA.AIRPORTS
   description: "An airport that is identified by an IATA code."

@@ -373,13 +373,27 @@ def validate_relationship_column_arity(data: dict) -> list[str]:
     return errors
 
 
-def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None:
-    """Validate a single SQL expression. Returns error message or None if valid."""
-    if not SQLGLOT_AVAILABLE:
-        return None
+def _parse_sql_expression(
+    expr: str, dialect: str, context: str
+) -> tuple[object | None, str | None]:
+    """Parse a SQL expression once and return its tree and any error.
 
-    if dialect in SKIP_SQL_VALIDATION:
-        return None
+    The expression is tried bare first (so a field expression like `column_name`
+    parses), then wrapped in `SELECT {expr}` for bare column references. The parsed
+    sqlglot tree is returned together with a validation error message; each may be
+    None. A valid expression yields `(tree, None)`; a syntax, empty, or
+    multi-statement error yields `(None, error)`.
+
+    Callers that only surface errors read the error (see `validate_sql_expression`);
+    callers that inspect the parsed columns read the tree (see
+    `validate_metric_scoping`). Both go through this single parse, so the statement
+    handling below and any later parser fix reach both without a second copy.
+
+    Returns `(None, None)` when there is nothing to parse: sqlglot is unavailable or
+    the dialect is one sqlglot cannot parse.
+    """
+    if not SQLGLOT_AVAILABLE or dialect in SKIP_SQL_VALIDATION:
+        return None, None
 
     sqlglot_dialect = DIALECT_MAP.get(dialect)
 
@@ -423,27 +437,33 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
 
     try:
         # Try parsing as expression first (for field expressions like "column_name")
-        sqlglot.parse_one(expr, dialect=sqlglot_dialect)
+        tree = sqlglot.parse_one(expr, dialect=sqlglot_dialect)
     except (ParseError, TokenError, RecursionError):
         # A bare column reference fails to parse alone; retry it wrapped in
         # SELECT below. RecursionError (deeply nested input) is included so the
         # retry reports it instead of crashing, while genuine errors such as a
         # non-string expr raising TypeError still surface.
         if holds_no_statement(expr):
-            return f"[SQL] {context}: expression is empty"
+            return None, f"[SQL] {context}: expression is empty"
     else:
-        return statement_count_error(expr)
+        return tree, statement_count_error(expr)
 
     try:
         # Try wrapping in SELECT for simple column references
-        sqlglot.parse_one(f"SELECT {expr}", dialect=sqlglot_dialect)
+        tree = sqlglot.parse_one(f"SELECT {expr}", dialect=sqlglot_dialect)
     except (ParseError, TokenError) as e:
-        return f"[SQL] {context}: {str(e).split(chr(10))[0]}"
+        return None, f"[SQL] {context}: {str(e).split(chr(10))[0]}"
     except RecursionError:
         # Deeply nested input exhausts the recursion limit rather than raising a
         # parser error; report it instead of letting it abort validation.
-        return f"[SQL] {context}: expression is too deeply nested to parse"
-    return statement_count_error(f"SELECT {expr}")
+        return None, f"[SQL] {context}: expression is too deeply nested to parse"
+    return tree, statement_count_error(f"SELECT {expr}")
+
+
+def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None:
+    """Validate a single SQL expression. Returns error message or None if valid."""
+    _tree, error = _parse_sql_expression(expr, dialect, context)
+    return error
 
 
 def validate_sql(data: dict) -> list[str]:
@@ -507,28 +527,6 @@ def validate_sql(data: dict) -> list[str]:
     return errors
 
 
-def _parse_metric_expression(expr: str, dialect: str):
-    """Parse a metric expression, trying it bare and then wrapped in SELECT.
-
-    Returns the sqlglot tree, or None when it cannot be parsed (sqlglot
-    unavailable, a dialect sqlglot cannot parse, or a syntax error) so the caller
-    skips the scoping checks rather than reporting a false positive. Syntax
-    errors are reported separately by validate_sql.
-    """
-    if not SQLGLOT_AVAILABLE or dialect in SKIP_SQL_VALIDATION:
-        return None
-
-    sqlglot_dialect = DIALECT_MAP.get(dialect)
-    for candidate in (expr, f"SELECT {expr}"):
-        try:
-            tree = sqlglot.parse_one(candidate, dialect=sqlglot_dialect)
-        except (ParseError, TokenError, RecursionError):
-            continue
-        if tree is not None:
-            return tree
-    return None
-
-
 def validate_metric_scoping(data: dict) -> list[str]:
     """Validate the field references in each dataset-scoped metric expression.
 
@@ -565,7 +563,11 @@ def validate_metric_scoping(data: dict) -> list[str]:
                 expr = dialect_expr.get("expression")
                 if not expr:
                     continue
-                tree = _parse_metric_expression(expr, dialect)
+                tree, _ = _parse_sql_expression(
+                    expr,
+                    dialect,
+                    f"Metric '{dataset_name}.{metric_name}' in model '{model_name}'",
+                )
                 if tree is None:
                     continue
 
