@@ -1183,13 +1183,24 @@ def test_postgres_and_redshift_are_parsed_as_sql() -> None:
 
 
 @pytest.mark.parametrize("dialect", ["POSTGRES", "REDSHIFT"])
-def test_a_postgres_cast_is_valid_sql_in_its_own_dialect(dialect: str) -> None:
-    # `::` is the Postgres cast operator, which Redshift shares.
-    body = "date_trunc('month', orders.created_at)::date"
+def test_a_postgres_regex_match_is_valid_sql_in_its_own_dialect(dialect: str) -> None:
+    # `~` is the Postgres regular-expression match, which Redshift shares and
+    # sqlglot's default reader rejects, so passing here shows the dialect's
+    # own reader was used. (`::` and ILIKE parse under the default too.)
+    body = "orders.status ~ '^deliv'"
     expression = {"dialects": [{"dialect": dialect, "expression": body}]}
-    dataset = {**_ORDERS, "fields": [{"name": "month", "expression": expression}]}
+    dataset = {**_ORDERS, "fields": [{"name": "delivered", "expression": expression}]}
 
     assert _VALIDATE.validate_sql(_document([dataset], [])) == []
+
+
+def test_the_postgres_regex_match_is_invalid_under_ansi_sql() -> None:
+    # The control for the test above: the same body under ANSI_SQL is an error.
+    body = "orders.status ~ '^deliv'"
+    expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": body}]}
+    dataset = {**_ORDERS, "fields": [{"name": "delivered", "expression": expression}]}
+
+    assert _VALIDATE.validate_sql(_document([dataset], [])) != []
 
 
 @pytest.mark.parametrize("dialect", ["POSTGRES", "REDSHIFT"])

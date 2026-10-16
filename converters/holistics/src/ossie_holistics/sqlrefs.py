@@ -59,6 +59,8 @@ SQLGLOT_DIALECT: dict[str, str | None] = {
     "SNOWFLAKE": "snowflake",
     "DATABRICKS": "databricks",
     "BIGQUERY": "bigquery",
+    "POSTGRES": "postgres",
+    "REDSHIFT": "redshift",
 }
 
 #: Dialects sqlglot cannot parse. A body in one of these is not SQL.
