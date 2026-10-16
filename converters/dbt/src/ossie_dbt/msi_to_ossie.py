@@ -22,6 +22,7 @@ from itertools import combinations
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from ossie import (
+    OssieDataType,
     OssieDataset,
     OssieDialect,
     OssieDialectExpression,
@@ -44,6 +45,7 @@ from metricflow_semantic_interfaces.protocols.measure import (
     Measure,
     MeasureAggregationParameters,
 )
+from metricflow_semantic_interfaces.protocols.meta import SemanticLayerElementConfig
 from metricflow_semantic_interfaces.protocols.metric import Metric
 from metricflow_semantic_interfaces.protocols.semantic_model import SemanticModel
 from metricflow_semantic_interfaces.transformations.convert_count import ConvertCountMetricToSumRule
@@ -143,6 +145,7 @@ class MSIToOssieConverter:
                     name=metric.name,
                     expression=self._make_expression(expr),
                     description=metric.description,
+                    datatype=self._datatype_from_config(metric.config),
                 )
             )
             if len(manifest.semantic_models) > 1 and self._aggregates_a_constant(metric):
@@ -197,7 +200,22 @@ class MSIToOssieConverter:
             dimension=OssieDimension(is_time=is_time),
             label=dim.label,
             description=dim.description,
+            datatype=self._datatype_from_config(dim.config),
         )
+
+    @staticmethod
+    def _datatype_from_config(config: Optional[SemanticLayerElementConfig]) -> Optional[OssieDataType]:
+        """Read the portable datatype from dbt's meta.ossie extension."""
+        ossie_meta = config.meta.get("ossie") if config is not None else None
+        if not isinstance(ossie_meta, dict):
+            return None
+        datatype = ossie_meta.get("datatype")
+        if not isinstance(datatype, str):
+            return None
+        try:
+            return OssieDataType(datatype)
+        except ValueError:
+            return None
 
     def _convert_entity(self, entity: Entity) -> OssieField:
         expr = entity.expr if entity.expr is not None else entity.name

@@ -24,7 +24,7 @@ from syrupy.assertion import SnapshotAssertion
 
 from ossie_dbt.converter_issues import ConverterIssue, ConverterIssueType
 from ossie_dbt.filter_utils import _render_filter_template
-from ossie import OssieDialect, OssieDocument
+from ossie import OssieDataType, OssieDialect, OssieDocument
 from ossie_dbt.msi_to_ossie import MSIToOssieConverter
 from metricflow_semantics.model.dbt_manifest_parser import parse_manifest_from_dbt_generated_manifest
 from metricflow_semantic_interfaces.implementations.metric import (
@@ -1548,3 +1548,69 @@ class TestOssieJsonSerialization:
         assert "primary_key" not in dataset
         assert "unique_keys" not in dataset
         assert "fields" not in dataset
+
+
+class TestDatatypeMetadata:
+    @staticmethod
+    def _convert(config: Optional[dict], legacy_measure: bool = False) -> OssieDocument:
+        sm = semantic_model_with_guaranteed_meta(
+            name="orders",
+            dimensions=[_dimension("status")],
+            measures=[_measure("revenue", expr="amount")] if legacy_measure else [],
+        )
+        metric = (
+            _simple_metric("revenue", "revenue")
+            if legacy_measure
+            else _metric_with_agg("revenue", AggregationType.SUM, "amount", "orders")
+        )
+        raw_manifest = json.loads(_manifest(semantic_models=[sm], metrics=[metric]).json())
+        raw_manifest["semantic_models"][0]["dimensions"][0]["config"] = config
+        raw_manifest["metrics"][0]["config"] = config
+        manifest = parse_manifest_from_dbt_generated_manifest(json.dumps(raw_manifest))
+        return MSIToOssieConverter().convert(manifest).output
+
+    @pytest.mark.parametrize("datatype", list(OssieDataType))
+    @pytest.mark.parametrize("legacy_measure", [False, True])
+    def test_datatype_survives_manifest_parsing(self, datatype: OssieDataType, legacy_measure: bool) -> None:
+        result = self._convert({"meta": {"ossie": {"datatype": datatype.value}}}, legacy_measure)
+
+        assert _fields(result)[0].datatype is datatype
+        assert _ossie_metrics(result)[0].datatype is datatype
+        serialized = json.loads(result.to_ossie_json())
+        assert serialized["datasets"][0]["fields"][0]["datatype"] == datatype.value
+        assert serialized["metrics"][0]["datatype"] == datatype.value
+
+    @pytest.mark.parametrize(
+        "config",
+        [
+            None,
+            {},
+            {"meta": {}},
+            {"meta": {"other": {"datatype": "String"}}},
+            {"meta": {"ossie": None}},
+            {"meta": {"ossie": {}}},
+            {"meta": {"ossie": {"datatype": None}}},
+        ],
+    )
+    def test_missing_datatype_remains_unset(self, config: Optional[dict]) -> None:
+        result = self._convert(config)
+
+        assert _fields(result)[0].datatype is None
+        assert _ossie_metrics(result)[0].datatype is None
+        serialized = json.loads(result.to_ossie_json())
+        assert "datatype" not in serialized["datasets"][0]["fields"][0]
+        assert "datatype" not in serialized["metrics"][0]
+
+    @pytest.mark.parametrize("datatype", ["VARCHAR", "string", "", 123, {}, [], True])
+    def test_invalid_datatype_is_ignored(self, datatype: object) -> None:
+        result = self._convert({"meta": {"ossie": {"datatype": datatype}}})
+
+        assert _fields(result)[0].datatype is None
+        assert _ossie_metrics(result)[0].datatype is None
+
+    @pytest.mark.parametrize("ossie_meta", ["String", [], 123, True])
+    def test_invalid_ossie_metadata_is_ignored(self, ossie_meta: object) -> None:
+        result = self._convert({"meta": {"ossie": ossie_meta}})
+
+        assert _fields(result)[0].datatype is None
+        assert _ossie_metrics(result)[0].datatype is None

@@ -127,6 +127,10 @@ manifest_json = result.output.model_dump_json(by_alias=True, exclude_none=True, 
 | `AMBIGUOUS_REFERENCE_METRIC_DROPPED` | An input metric is listed more than once under one reference with differing filters, so the expression reference is ambiguous; give each occurrence a distinct alias |
 | `CONSTANT_METRIC_SEMANTIC_MODEL_LOSS` | A metric over a constant, such as a row count (`SUM(1)`), has no column to carry its semantic model; recorded when the manifest has more than one, since converting it back will refuse it |
 
+Ossie `datatype` attributes can be populated by `config.meta.ossie.datatype`
+annotations on dimensions and metrics in source dbt models, carried into
+`semantic_manifest.json` by `dbt parse`.
+
 **Ossie → MSI** reconstructs a best-effort MSI manifest from Ossie's simpler schema. Nothing is dropped for supported inputs, but Ossie carries less structural information than MSI, so the converter makes the following choices:
 
 - Composite primary and unique keys are rejected because MSI entities cannot preserve grouped key semantics
