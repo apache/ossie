@@ -244,8 +244,8 @@ def _with_duplicate_metrics(name: str) -> dict:
 
 
 def _with_duplicate_relationships(name: str) -> dict:
-    rel = dict(_relationship(to_columns=["id"]), name=name)
-    return _document([_ORDERS, _CUSTOMERS], [rel, rel, rel])
+    rels = [dict(_relationship(to_columns=["id"]), name=name) for _ in range(3)]
+    return _document([_ORDERS, _CUSTOMERS], rels)
 
 
 @pytest.mark.parametrize(
