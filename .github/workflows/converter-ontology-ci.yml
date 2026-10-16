@@ -71,3 +71,16 @@ jobs:
         working-directory: converters/ontology
         run: |
           uv run pytest
+
+      # The RelationalAI converter tests skip themselves without the optional
+      # extra, so run them again once it is installed. They run offline against
+      # tests/config/raiconfig.yaml.
+      - name: Sync dependencies with relationalai extra
+        working-directory: converters/ontology
+        run: |
+          uv sync --extra relationalai
+
+      - name: RelationalAI Tests
+        working-directory: converters/ontology
+        run: |
+          uv run pytest tests/relationalai

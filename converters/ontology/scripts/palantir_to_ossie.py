@@ -49,7 +49,7 @@ from pathlib import Path
 from ossie_ontology.converter.palantir_to_ossie.converter import PalantirToOssieConverter
 from ossie_ontology.converter.ossie_to_spec.converter import OssieToSpecConverter
 
-from ossie_ontology.external.palantir.parser import PalantirParser
+from ossie_ontology.vendor.palantir.parser import PalantirParser
 
 if __name__ == "__main__":
     db_name = os.environ.get("SNOWFLAKE_DATABASE_NAME", "PALANTIR")

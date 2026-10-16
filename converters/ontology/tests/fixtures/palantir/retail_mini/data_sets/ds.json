@@ -1,0 +1,34 @@
+[
+  {
+    "mainDatasetId": "ri.ot.store",
+    "datasetName": "store_table",
+    "datasetSchema": [
+      {
+        "name": "store_id",
+        "type": "STRING"
+      },
+      {
+        "name": "store_name",
+        "type": "STRING"
+      }
+    ]
+  },
+  {
+    "mainDatasetId": "ri.ot.sale",
+    "datasetName": "sale_table",
+    "datasetSchema": [
+      {
+        "name": "sale_id",
+        "type": "STRING"
+      },
+      {
+        "name": "amount",
+        "type": "STRING"
+      },
+      {
+        "name": "store_id",
+        "type": "STRING"
+      }
+    ]
+  }
+]

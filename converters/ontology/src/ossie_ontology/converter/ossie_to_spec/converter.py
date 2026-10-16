@@ -175,6 +175,7 @@ def _convert_dataset_field(fl: DatasetField) -> SpecDatasetField:
     return SpecDatasetField(
         name=fl.name,
         expression=_convert_expression(fl.expression),
+        datatype=fl.datatype.value if fl.datatype is not None else None,
         dimension=_convert_dimension(fl.dimension),
         label=fl.label,
         description=fl.description,
@@ -213,6 +214,7 @@ def _convert_metric(metric: Metric) -> SpecMetric:
         expression=_convert_expression(metric.expression),
         description=metric.description,
         ai_context=metric.ai_context,
+        datatype=metric.datatype.value if metric.datatype is not None else None,
         custom_extensions=[_convert_custom_extension(ce) for ce in metric.custom_extensions],
     )
 

@@ -20,7 +20,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Protocol
+from typing import Any, Protocol, get_args
+
+from ossie_ontology.spec import CoreVersion
 
 # ---------------------------------------------------------------------------
 # Builtin concept names.
@@ -29,6 +31,37 @@ from typing import Any, Protocol
 BUILTIN_CONCEPTS: frozenset[str] = frozenset({
     "Any", "AnyEntity", "Boolean", "Date", "DateTime", "Decimal", "Float", "Integer", "String"
 })
+
+
+class DataType(str, Enum):
+    """The logical type of a dataset field or metric (core spec, "Data types").
+
+    The shared names are the ontology's builtin value types. `Time` and
+    `DateTimeTz` have no builtin counterpart, and `Opaque` is a known type
+    outside the portable vocabulary. A field whose type is unknown carries no
+    DataType at all.
+    """
+    STRING = "String"
+    INTEGER = "Integer"
+    DECIMAL = "Decimal"
+    FLOAT = "Float"
+    BOOLEAN = "Boolean"
+    DATE = "Date"
+    TIME = "Time"
+    DATETIME = "DateTime"
+    DATETIME_TZ = "DateTimeTz"
+    OPAQUE = "Opaque"
+
+    @property
+    def builtin_name(self) -> str | None:
+        """The builtin concept a column of this type holds: the shared names map
+        to themselves and `DateTimeTz` to `DateTime`, the nearest builtin. `Time`
+        and `Opaque` have none."""
+        if self is DataType.DATETIME_TZ:
+            return "DateTime"
+        if self in (DataType.TIME, DataType.OPAQUE):
+            return None
+        return self.value
 
 # ---------------------------------------------------------------------------
 # Free-form metadata mirroring spec
@@ -171,11 +204,22 @@ class Concept:
 
     @property
     def is_primitive(self) -> bool:
-        if self.is_builtin:
-            return True
-        if self._extends and len(self._extends) == 1:
-            return self._extends[0].is_primitive
-        return False
+        return self.primitive_root is not None
+
+    @property
+    def primitive_root(self) -> Concept | None:
+        """The builtin at the end of this concept's single-parent `extends`
+        chain (the concept itself when it is a builtin), or None when the chain
+        branches, ends without one, or cycles."""
+        concept = self
+        seen: set[Concept] = set()
+        while True:
+            if concept.is_builtin:
+                return concept
+            if len(concept._extends) != 1 or concept in seen:
+                return None
+            seen.add(concept)
+            concept = concept._extends[0]
 
     @property
     def is_derived(self) -> bool:
@@ -490,7 +534,7 @@ class Dimension:
 class DatasetField:
     name: str
     expression: DialectExpressionSet
-    type: Concept | None = None
+    datatype: DataType | None = None
     dimension: Dimension | None = None
     label: str | None = None
     description: str | None = None
@@ -582,8 +626,8 @@ class Dataset:
         return list(self._custom_extensions)
 
     @property
-    def schema(self) -> dict[str, Concept | None]:
-        return {fl.name: fl.type for fl in self._fields}
+    def schema(self) -> dict[str, DataType | None]:
+        return {fl.name: fl.datatype for fl in self._fields}
 
     def __str__(self) -> str:
         return self._name
@@ -662,6 +706,7 @@ class Metric:
     _description: str | None
     _ai_context: AiContext | None
     _custom_extensions: list[CustomExtension]
+    _datatype: DataType | None
 
     def __init__(
         self,
@@ -670,12 +715,14 @@ class Metric:
         description: str | None = None,
         ai_context: AiContext | None = None,
         custom_extensions: list[CustomExtension] | None = None,
+        datatype: DataType | None = None,
     ):
         self._name = name
         self._expression = expression
         self._description = description
         self._ai_context = ai_context
         self._custom_extensions = custom_extensions or []
+        self._datatype = datatype
 
     @property
     def name(self) -> str:
@@ -690,6 +737,10 @@ class Metric:
         return self._description
 
     @property
+    def datatype(self) -> DataType | None:
+        return self._datatype
+
+    @property
     def ai_context(self) -> AiContext | None:
         return self._ai_context
 
@@ -700,7 +751,7 @@ class Metric:
 
 class SemanticModel:
     """Versioned core semantic model embedded in a single OntologyMapping."""
-    _version: str
+    _version: CoreVersion
     _name: str
     _description: str | None
     _ai_context: AiContext | None
@@ -718,11 +769,13 @@ class SemanticModel:
         description: str | None = None,
         ai_context: AiContext | None = None,
         custom_extensions: list[CustomExtension] | None = None,
-        version: str = "0.2.0.dev0",
+        version: CoreVersion = "0.2.0.dev0",
     ):
-        if version != "0.2.0.dev0":
+        # Checked at runtime too: callers outside a type checker pass any string.
+        (supported,) = get_args(CoreVersion)
+        if version != supported:
             raise ValueError(
-                f"Unsupported semantic model version {version!r}; expected '0.2.0.dev0'"
+                f"Unsupported semantic model version {version!r}; expected {supported!r}"
             )
         self._version = version
         self._name = name
@@ -737,7 +790,7 @@ class SemanticModel:
         self._metric_name_map = {}
 
     @property
-    def version(self) -> str:
+    def version(self) -> CoreVersion:
         return self._version
 
     @property

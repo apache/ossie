@@ -1,0 +1,53 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# A concept whose *identifier* is derived rather than loaded: Product is
+# identified by `sku`, and `sku` is computed from Legacy's code.
+#
+# This shape is what separates the two branches of the PyRel emitter's `_head`.
+# A derived identifier must emit `Product.new(sku=...)`, which brings the entity
+# into existence; the non-identifier branch emits `Product.sku(...)`, a fact
+# about an entity nothing ever created. No other fixture in either repo pairs
+# `identify_by` with `derived_by`, so without this one the identifier branch has
+# no coverage at all.
+version: 0.2.0.dev0
+name: DerivedIdentifier
+ontology:
+- concept: Code
+  type: ValueType
+  extends: [String]
+- concept: Legacy
+  type: EntityType
+  identify_by: [legacyCode]
+  relationships:
+  - name: legacyCode
+    roles:
+    - concept: Code
+      name: c
+    verbalizes: ['{Legacy} has {Code:c}']
+    multiplicity: OneToOne
+- concept: Product
+  type: EntityType
+  identify_by: [sku]
+  relationships:
+  - name: sku
+    roles:
+    - concept: Code
+      name: c
+    verbalizes: ['{Product} has {Code:c}']
+    multiplicity: OneToOne
+    derived_by: ['Legacy.legacyCode(c)']

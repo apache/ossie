@@ -1,0 +1,137 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: RETAIL_REFACTORED
+version: 0.2.0.dev0
+description: Retail ontology with employees, stores, products, transactions, orders, payments, and weekly sales facts.
+
+ontology requires:
+
+concepts:
+  Amount (VALUE_TYPE)
+    extends: Decimal
+  CardPayment (ENTITY_TYPE)
+    extends: Payment
+  CashPayment (ENTITY_TYPE)
+    extends: Payment
+  Category (ENTITY_TYPE)
+    identify_by: Category.name
+  CategoryName (VALUE_TYPE)
+    extends: String
+  Class (ENTITY_TYPE)
+    identify_by: Class.nr
+  ClassLabel (ENTITY_TYPE)
+    identify_by: ClassLabel.name
+  ClassLabelName (VALUE_TYPE)
+    extends: String
+  ClassNr (VALUE_TYPE)
+    extends: Integer
+  Contractor (ENTITY_TYPE)
+    extends: Employee
+  Employee (ENTITY_TYPE)
+    identify_by: Employee.nr
+  EmployeeNr (VALUE_TYPE)
+    extends: Integer
+    requires: EmployeeNr > 0
+  Item (ENTITY_TYPE)
+    identify_by: Item.upc
+  Order (ENTITY_TYPE)
+    identify_by: Order.nr
+  OrderLineItem (ENTITY_TYPE)
+    identify_by: OrderLineItem.nr, OrderLineItem.order
+  OrderNr (VALUE_TYPE)
+    extends: Integer
+  Payment (ENTITY_TYPE)
+    identify_by: Payment.id
+  PaymentId (VALUE_TYPE)
+    extends: Integer
+  PermanentEmployee (ENTITY_TYPE)
+    extends: Employee
+  Region (ENTITY_TYPE)
+    identify_by: Region.name
+  RegionName (VALUE_TYPE)
+    extends: String
+  RegisterId (VALUE_TYPE)
+    extends: Integer
+    requires: RegisterId > 0
+  Store (ENTITY_TYPE)
+    identify_by: Store.nr
+  StoreNr (VALUE_TYPE)
+    extends: Integer
+  Terminal (ENTITY_TYPE)
+    identify_by: Terminal.id
+  Transaction (ENTITY_TYPE)
+    identify_by: Transaction.nr
+  TransactionNr (VALUE_TYPE)
+    extends: Integer
+    requires: TransactionNr > 0
+  UniversalProductCode (VALUE_TYPE)
+    extends: Integer
+    requires: 0 < UniversalProductCode AND UniversalProductCode <= 999999999999
+
+relationships:
+  CardPayment.cardHolderName [MANY_TO_ONE]: CardPayment -> String
+  CardPayment.cardNumber [MANY_TO_ONE]: CardPayment -> String
+  CashPayment.cashReceived [MANY_TO_ONE]: CashPayment -> Decimal
+  CashPayment.change [MANY_TO_ONE]: CashPayment -> Decimal
+  Category.name [ONE_TO_ONE]: Category -> CategoryName
+  Class.classToCategory [MANY_TO_ONE]: Class -> Category
+  Class.classToLabel [ONE_TO_ONE]: Class -> ClassLabel
+  Class.nr [ONE_TO_ONE]: Class -> ClassNr
+  ClassLabel.name [ONE_TO_ONE]: ClassLabel -> ClassLabelName
+  Contractor.hourlyRate [MANY_TO_ONE]: Contractor -> Integer
+  Employee.firstName [MANY_TO_ONE]: Employee -> String
+  Employee.lastName [MANY_TO_ONE]: Employee -> String
+  Employee.nr [ONE_TO_ONE]: Employee -> EmployeeNr
+  Employee.reportsTo [MANY_TO_ONE]: Employee -> Employee
+  Item.description [MANY_TO_ONE]: Item -> String
+  Item.itemToClass [MANY_TO_ONE]: Item -> Class
+  Item.item_store_sales [MANY_TO_ONE]: Item -> Store -> Decimal
+  Item.upc [ONE_TO_ONE]: Item -> UniversalProductCode
+  Item.weekly_gross_returns [MANY_TO_ONE]: Item -> Store -> Integer -> Decimal
+  Item.weekly_gross_sales [MANY_TO_ONE]: Item -> Store -> Integer -> Decimal
+  Item.weekly_net_revenue [MANY_TO_ONE]: Item -> Store -> Integer -> Decimal
+  Item.weekly_sales [MANY_TO_ONE]: Item -> Store -> Integer -> Decimal
+  Order.nr [ONE_TO_ONE]: Order -> OrderNr
+  Order.orderDate [MANY_TO_ONE]: Order -> Date
+  OrderLineItem.discounted_amount [MANY_TO_ONE]: OrderLineItem -> Amount
+  OrderLineItem.lineitem_discount [MANY_TO_ONE]: OrderLineItem -> Decimal
+  OrderLineItem.lineitem_extended_price [MANY_TO_ONE]: OrderLineItem -> Decimal
+  OrderLineItem.net_revenue [MANY_TO_ONE]: OrderLineItem -> Decimal
+  OrderLineItem.nr [MANY_TO_ONE]: OrderLineItem -> Integer
+  OrderLineItem.order [MANY_TO_ONE]: OrderLineItem -> Order
+  Payment.amount [MANY_TO_ONE]: Payment -> Decimal
+  Payment.id [ONE_TO_ONE]: Payment -> PaymentId
+  Payment.type [MANY_TO_ONE]: Payment -> String
+  PermanentEmployee.salary [MANY_TO_ONE]: PermanentEmployee -> Integer
+  Region.name [ONE_TO_ONE]: Region -> RegionName
+  Store.avgReturns [MANY_TO_ONE]: Store -> Item -> Amount
+  Store.avgReturnsWithMarkup [MANY_TO_ONE]: Store -> Item -> Amount
+  Store.nr [ONE_TO_ONE]: Store -> StoreNr
+  Store.storeToManager [MANY_TO_ONE]: Store -> Employee
+  Store.storeToRegion [MANY_TO_ONE]: Store -> Region
+  Terminal.deployedTo [MANY_TO_ONE]: Terminal -> Store
+  Terminal.id [ONE_TO_ONE]: Terminal -> RegisterId
+  Transaction.nr [ONE_TO_ONE]: Transaction -> TransactionNr
+  Transaction.registeredBy [MANY_TO_ONE]: Transaction -> Terminal
+  Transaction.returns [MANY_TO_ONE]: Transaction -> Item -> Amount
+  Transaction.sales [MANY_TO_ONE]: Transaction -> Item -> Amount
+  Transaction.storeNrViaBinaryChain [MANY_TO_ONE]: Transaction -> StoreNr
+  Transaction.storeNrViaTernaryChain [MANY_TO_ONE]: Transaction -> StoreNr
+  Transaction.transactionRegion [MANY_TO_ONE]: Transaction -> Region
+  Transaction.transactionStoreManager [MANY_TO_ONE]: Transaction -> Employee
+  Transaction.transactionTerminalStore [None]: Transaction -> Terminal -> Store
