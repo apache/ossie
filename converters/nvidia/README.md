@@ -108,6 +108,18 @@ SQL is preserved, so it returns to Auto Ontology unchanged. Custom analyses
 remain global by becoming model-level Ossie metrics. Relationships are
 recovered from joins, then physical foreign keys, then semantic foreign keys.
 
+Auto Ontology names are display text, such as `Order Line Item`, while Ossie
+names are identifiers that tools write unquoted, as an ontology mapping does in
+`dataset.field`. Each dataset, field, metric and relationship is therefore
+named in lowercase words joined by underscores, such as `order_line_item`. A
+name that SQL reserves gets a trailing underscore (`from_`), one that would
+start with a digit is prefixed with what it names (`field_2024_total`), and one
+that would collide with another in the same namespace gets a number
+(`customer_id_2`). Where the identifier does not spell out the original name,
+because it dropped punctuation or had to be told apart, the original is kept as
+a synonym in `ai_context`. Expressions lifted out of Auto Ontology SQL refer to
+datasets by these names too. Every item keeps its own name on the way back.
+
 Auto Ontology term names are unique across every database it catalogs, so it
 renames a term whose name another database already uses to
 `Name (database.schema.table)`. An Ossie document is its own namespace, so the
@@ -117,6 +129,12 @@ gives a foreign-key column no attribute, since the foreign key links the term
 instead; each key and relationship column that no field exposes is exported as
 a field named after the column, marked so that it does not become an attribute
 on the way back.
+
+Primary keys, unique keys and relationships name the fields that read their
+columns, which is how ontology tools look them up. On the way back, a key or
+relationship column that names a field of its dataset stands for the column
+that field reads; any other is the physical column itself, as earlier exports
+and other tools write it.
 
 ### Ontology and mapping
 
@@ -144,8 +162,30 @@ ontology_yaml, mapping_yaml = convert_auto_ontology_to_ossie_ontology(
 ```
 
 The two outputs are written together. The mapping references both other
-documents by name and, from the CLI, by a path relative to itself. They are
-read off the semantic model as follows:
+documents by name and, from the CLI, by a path relative to itself.
+
+Tools that do not read mapping documents yet read the mapping embedded in the
+ontology instead, a form the specification deprecates but still accepts for
+them. `--embedded-ontology-output` writes the ontology that way, the mapping
+carrying the semantic model whole, on its own or alongside the other outputs:
+
+```bash
+uv run ossie-nvidia-auto-ontology import \
+  --input tpcds.auto_ontology.yaml \
+  --embedded-ontology-output tpcds.ontology.embedded.yaml
+```
+
+```python
+from ossie_nvidia_auto_ontology import (
+    convert_auto_ontology_to_embedded_ossie_ontology,
+)
+
+ontology_yaml = convert_auto_ontology_to_embedded_ossie_ontology(
+    auto_ontology_yaml, model_name="tpcds"
+)
+```
+
+The ontology and mapping are read off the semantic model as follows:
 
 | Semantic model | Ontology | Mapping |
 |---|---|---|
@@ -157,7 +197,8 @@ read off the semantic model as follows:
 A foreign-key column is the link to another concept, so it does not also become
 a value of its own concept. Auto Ontology records no verbalizations, so each
 relationship is verbalized from its field name, such as
-`{Customer} has Account Balance {Decimal}`. A field whose type is unknown, or
+`{Customer} has account balance {Decimal}`. Mapping expressions quote a name
+only where SQL could not read it bare, so `customer.account_balance`. A field whose type is unknown, or
 has no built-in value type (`Time`, `Opaque`), is left out rather than guessed.
 A concept whose dataset has no key, or whose key columns are not all
 identifying fields or links, has nothing to name its objects by: it is declared

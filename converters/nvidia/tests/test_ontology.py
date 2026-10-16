@@ -27,8 +27,13 @@ from typing import Any
 import pytest
 import yaml
 
-from ossie_nvidia_auto_ontology import convert_auto_ontology_to_ossie_ontology
+from ossie_nvidia_auto_ontology import (
+    convert_auto_ontology_to_embedded_ossie_ontology,
+    convert_auto_ontology_to_ossie,
+    convert_auto_ontology_to_ossie_ontology,
+)
 from ossie_nvidia_auto_ontology.converter import main
+from ossie_nvidia_auto_ontology.ontology import build_ontology_documents
 
 FIXTURES = Path(__file__).parent / "fixtures"
 REPOSITORY = Path(__file__).resolve().parents[3]
@@ -86,7 +91,7 @@ def test_terms_become_concepts_identified_by_their_key() -> None:
     assert relationships["customer_id"]["roles"] == [{"concept": "Integer"}]
     assert relationships["customer_name"]["multiplicity"] == "ManyToOne"
     assert relationships["customer_name"]["verbalizes"] == [
-        "{Customers} has customer_name {String}"
+        "{Customers} has customer name {String}"
     ]
 
 
@@ -107,7 +112,7 @@ def test_a_foreign_key_links_two_concepts_instead_of_holding_a_value() -> None:
     assert {
         "object_mapping": {
             "concept": "Customers",
-            "expression": '"orders"."customer_id"',
+            "expression": "orders.customer_id",
         },
         "relationship": "customers",
     } in children
@@ -118,9 +123,9 @@ def test_a_simple_identifier_maps_objects_with_one_expression() -> None:
 
     orders = _concept_mapping(mapping, "Orders")
 
-    assert orders["object_mappings"] == [{"expression": '"orders"."order_id"'}]
+    assert orders["object_mappings"] == [{"expression": "orders.order_id"}]
     assert orders["link_mappings"][0]["object_mapping"] == {
-        "expression": '"orders"."order_id"'
+        "expression": "orders.order_id"
     }
 
 
@@ -135,11 +140,11 @@ def test_a_key_through_a_link_maps_objects_through_the_linked_concept() -> None:
                     "referent_mappings": [
                         {
                             "relationship": "customer_id",
-                            "expression": '"orders"."customer_id"',
+                            "expression": "orders.customer_id",
                         }
                     ],
                 },
-                {"relationship": "order_id", "expression": '"orders"."order_id"'},
+                {"relationship": "order_id", "expression": "orders.order_id"},
             ]
         }
     ]
@@ -237,3 +242,108 @@ def test_cli_requires_the_ontology_and_mapping_outputs_together(
         )
 
     assert raised.value.code == 2
+
+
+def test_mapping_expressions_quote_only_names_sql_cannot_read_bare() -> None:
+    semantic_model = {
+        "version": "0.2.0.dev0",
+        "name": "shop",
+        "datasets": [
+            {
+                "name": "order lines",
+                "source": "shop.public.order_lines",
+                "primary_key": ["select"],
+                "fields": [
+                    {
+                        "name": "select",
+                        "expression": {
+                            "dialects": [{"dialect": "ANSI_SQL", "expression": "ID"}]
+                        },
+                        "datatype": "Integer",
+                    }
+                ],
+            }
+        ],
+    }
+
+    _, mapping = build_ontology_documents(semantic_model)
+
+    assert mapping["concept_mappings"][0]["object_mappings"] == [
+        {"expression": '"order lines"."select"'}
+    ]
+
+
+def test_keys_naming_fields_or_columns_read_as_the_same_ontology() -> None:
+    native = _native()
+    customers = next(
+        term
+        for term in native["semantic_layer"]["terms"]
+        if term["name"] == "customers"
+    )
+    customers["columns_attributes"][0]["name"] = "Customer Number"
+    by_field = yaml.safe_load(convert_auto_ontology_to_ossie(yaml.safe_dump(native)))
+    by_column = yaml.safe_load(yaml.safe_dump(by_field))
+    for dataset in by_column["datasets"]:
+        if dataset["name"] == "customers":
+            dataset["primary_key"] = ["customer_id"]
+    by_column["relationships"][0]["to_columns"] = ["customer_id"]
+
+    assert build_ontology_documents(by_field) == build_ontology_documents(by_column)
+
+
+def test_the_embedded_form_carries_the_mapping_and_its_semantic_model() -> None:
+    native = yaml.safe_dump(_native())
+    ontology, mapping = (
+        yaml.safe_load(document)
+        for document in convert_auto_ontology_to_ossie_ontology(native)
+    )
+
+    embedded = yaml.safe_load(convert_auto_ontology_to_embedded_ossie_ontology(native))
+
+    assert embedded.pop("ontology_mappings") == [
+        {
+            "name": mapping["name"],
+            "description": mapping["description"],
+            "semantic_model": yaml.safe_load(convert_auto_ontology_to_ossie(native)),
+            "concept_mappings": mapping["concept_mappings"],
+        }
+    ]
+    assert embedded == ontology
+
+
+def test_cli_writes_an_embedded_ontology_that_passes_official_validation(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "sales.auto_ontology.yaml"
+    source.write_text(yaml.safe_dump(_native()), encoding="utf-8")
+    embedded = tmp_path / "sales.ontology.embedded.yaml"
+
+    main(
+        [
+            "import",
+            "--input",
+            str(source),
+            "--output",
+            str(tmp_path / "sales.semantic_model.yaml"),
+            "--embedded-ontology-output",
+            str(embedded),
+        ]
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(VALIDATOR),
+            "--schema",
+            str(REPOSITORY / "ontology" / "ontology.json"),
+            str(embedded),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    text = embedded.read_text(encoding="utf-8")
+    # Repeated mappings are written out, not as YAML aliases a reader may refuse.
+    assert "&id" not in text
+    assert yaml.safe_load(text)["ontology_mappings"][0]["concept_mappings"]

@@ -647,9 +647,12 @@ def test_split_links_pick_their_dataset_from_all_links_of_the_table_pair() -> No
 
     ossie = yaml.safe_load(convert_auto_ontology_to_ossie(yaml.safe_dump(native)))
 
+    # The added attribute exposes referrer_id, so the relationship names its field.
     assert _relationship_columns(ossie) == {
         "orders_customer_id_to_customers": [("customer_id", "customer_id")],
-        "orders_referrer_id_to_customers": [("referrer_id", "customer_id")],
+        "orders_referrer_id_to_customers": [
+            ("orders_orders_referrer_id", "customer_id")
+        ],
     }
 
 
@@ -684,10 +687,11 @@ def test_a_composite_key_known_only_from_semantic_fks_stays_one_relationship() -
 
     ossie = convert_auto_ontology_to_ossie(yaml.safe_dump(native))
 
+    # The added attribute exposes the target's region, so its field is named.
     assert _relationship_columns(yaml.safe_load(ossie)) == {
         "orders_customer_id_region_to_customers": [
             ("customer_id", "customer_id"),
-            ("region", "region"),
+            ("region", "customers_customers_region"),
         ],
     }
     restored = yaml.safe_load(convert_ossie_to_auto_ontology(ossie))
@@ -1165,10 +1169,254 @@ def test_a_qualified_name_stays_qualified_where_the_plain_name_is_taken() -> Non
     )
     orders["name"] = "customers (analytics.public.orders)"
 
-    assert set(_datasets(native)) == {
+    ossie = convert_auto_ontology_to_ossie(yaml.safe_dump(native))
+    datasets = {item["name"]: item for item in yaml.safe_load(ossie)["datasets"]}
+
+    assert set(datasets) == {"customers", "customers_analytics_public_orders"}
+    assert datasets["customers_analytics_public_orders"]["ai_context"] == {
+        "synonyms": ["customers (analytics.public.orders)"]
+    }
+    restored = yaml.safe_load(convert_ossie_to_auto_ontology(ossie))
+    assert {term["name"] for term in restored["semantic_layer"]["terms"]} == {
         "customers",
         "customers (analytics.public.orders)",
     }
+
+
+def _term(native: dict[str, Any], name: str) -> dict[str, Any]:
+    return next(
+        term for term in native["semantic_layer"]["terms"] if term["name"] == name
+    )
+
+
+def _attribute(term: dict[str, Any], name: str) -> dict[str, Any]:
+    return next(item for item in term["columns_attributes"] if item["name"] == name)
+
+
+def _display_named_native() -> dict[str, Any]:
+    """The sales fixture as Auto Ontology names things, for people."""
+    native = yaml.safe_load(_auto_ontology_yaml())
+    orders = _term(native, "orders")
+    orders["name"] = "Customer Orders"
+    _attribute(orders, "order_date")["name"] = "Order Date"
+    _attribute(_term(native, "customers"), "customer_id")["name"] = "Customer Number"
+    native["semantic_layer"]["sql_attributes"]["manual"][0]["name"] = "Net Total %"
+    analysis = native["semantic_layer"]["custom_analyses"][0]
+    analysis["name"] = "Revenue per Customer"
+    # Auto Ontology aliases each table by its term's name.
+    analysis["sql"] = (
+        'SELECT SUM("Customer Orders".subtotal) / COUNT(DISTINCT '
+        'customers.customer_id) AS "Revenue per Customer" FROM '
+        '"analytics"."public"."orders" AS "Customer Orders" JOIN '
+        '"analytics"."public"."customers" AS "customers" ON '
+        '"Customer Orders"."customer_id" = "customers"."customer_id"'
+    )
+    return native
+
+
+def test_display_names_become_identifiers_and_come_back() -> None:
+    native = _display_named_native()
+
+    ossie = convert_auto_ontology_to_ossie(yaml.safe_dump(native))
+    model = yaml.safe_load(ossie)
+    datasets = {dataset["name"]: dataset for dataset in model["datasets"]}
+    order_fields = {
+        item["name"]: item for item in datasets["customer_orders"]["fields"]
+    }
+
+    assert set(datasets) == {"customer_orders", "customers"}
+    assert set(order_fields) == {"order_id", "customer_id", "order_date", "net_total"}
+    assert [metric["name"] for metric in model["metrics"]] == ["revenue_per_customer"]
+    # Only a name the identifier does not spell out is kept as a synonym.
+    assert order_fields["net_total"]["ai_context"] == {"synonyms": ["Net Total %"]}
+    assert "ai_context" not in order_fields["order_date"]
+    assert "ai_context" not in datasets["customer_orders"]
+    assert (
+        model["metrics"][0]["expression"]["dialects"][0]["expression"]
+        == "SUM(customer_orders.subtotal) / COUNT(DISTINCT customers.customer_id)"
+    )
+    restored = yaml.safe_load(convert_ossie_to_auto_ontology(ossie))
+    assert restored["semantic_layer"] == native["semantic_layer"]
+    assert restored["data_layer"] == native["data_layer"]
+
+
+def test_keys_and_relationships_name_the_fields_that_read_them() -> None:
+    model = yaml.safe_load(
+        convert_auto_ontology_to_ossie(yaml.safe_dump(_display_named_native()))
+    )
+    datasets = {dataset["name"]: dataset for dataset in model["datasets"]}
+
+    assert datasets["customers"]["primary_key"] == ["customer_number"]
+    assert datasets["customer_orders"]["primary_key"] == ["order_id"]
+    assert model["relationships"] == [
+        {
+            "name": "customer_orders_customer_id_to_customers",
+            "from": "customer_orders",
+            "to": "customers",
+            "from_columns": ["customer_id"],
+            "to_columns": ["customer_number"],
+        }
+    ]
+
+
+def test_keys_and_relationships_may_name_columns_or_fields() -> None:
+    """Earlier exports and other tools name physical columns; both import alike."""
+    by_field = yaml.safe_load(
+        convert_auto_ontology_to_ossie(yaml.safe_dump(_display_named_native()))
+    )
+    by_column = deepcopy(by_field)
+    customers = next(
+        dataset for dataset in by_column["datasets"] if dataset["name"] == "customers"
+    )
+    customers["primary_key"] = ["customer_id"]
+    by_column["relationships"][0]["to_columns"] = ["customer_id"]
+
+    restored = [
+        yaml.safe_load(convert_ossie_to_auto_ontology(yaml.safe_dump(document)))
+        for document in (by_field, by_column)
+    ]
+
+    assert restored[0] == restored[1]
+    tables = {
+        table["name"]: table
+        for table in restored[0]["data_layer"]["databases"][0]["schemas"][0]["tables"]
+    }
+    assert tables["customers"]["pk"] == ["customer_id"]
+    assert restored[0]["data_layer"]["joins"][0]["join_columns"] == [
+        {"source": "customer_id", "target": "customer_id"}
+    ]
+
+
+def test_a_plain_ossie_model_resolves_field_named_keys_to_columns() -> None:
+    model = yaml.safe_load(_ossie_yaml())
+    customers = next(
+        dataset for dataset in model["datasets"] if dataset["name"] == "customers"
+    )
+    key_field = next(
+        item for item in customers["fields"] if item["name"] == "customer_id"
+    )
+    key_field["name"] = "customer_number"
+    customers["primary_key"] = ["customer_number"]
+    model["relationships"][0]["to_columns"] = ["customer_number"]
+
+    native = yaml.safe_load(convert_ossie_to_auto_ontology(yaml.safe_dump(model)))
+
+    tables = {
+        table["name"]: table
+        for table in native["data_layer"]["databases"][0]["schemas"][0]["tables"]
+    }
+    assert tables["customers"]["pk"] == ["customer_id"]
+    # The key names a field, so no column of that name reaches the catalog.
+    assert [column["name"] for column in tables["customers"]["columns"]] == [
+        "customer_id",
+        "name",
+    ]
+    assert native["data_layer"]["joins"][0]["join_columns"] == [
+        {"source": "customer_id", "target": "customer_id"}
+    ]
+
+
+def test_an_export_from_before_identifier_names_keeps_its_identifiers() -> None:
+    native = _display_named_native()
+    _term(native, "Customer Orders")["name"] = (
+        "Customer Orders (analytics.public.orders)"
+    )
+    model = yaml.safe_load(convert_auto_ontology_to_ossie(yaml.safe_dump(native)))
+    # Earlier exports used Auto Ontology's names, a term's without its suffix,
+    # and named the physical columns of keys and relationships.
+    renamed = {
+        "customer_orders": "Customer Orders",
+        "order_date": "Order Date",
+        "customer_number": "Customer Number",
+        "net_total": "Net Total %",
+        "revenue_per_customer": "Revenue per Customer",
+    }
+    for item in [
+        *model["datasets"],
+        *(item for dataset in model["datasets"] for item in dataset["fields"]),
+        *model["metrics"],
+    ]:
+        item["name"] = renamed.get(item["name"], item["name"])
+        item.pop("ai_context", None)
+    for dataset in model["datasets"]:
+        dataset["primary_key"] = [
+            "customer_id" if column == "customer_number" else column
+            for column in dataset["primary_key"]
+        ]
+    relationship = model["relationships"][0]
+    relationship |= {"from": "Customer Orders", "to_columns": ["customer_id"]}
+
+    restored = yaml.safe_load(convert_ossie_to_auto_ontology(yaml.safe_dump(model)))
+
+    assert restored["semantic_layer"] == native["semantic_layer"]
+    assert restored["data_layer"] == native["data_layer"]
+
+
+def test_a_field_renamed_in_ossie_renames_its_attribute() -> None:
+    model = yaml.safe_load(
+        convert_auto_ontology_to_ossie(yaml.safe_dump(_display_named_native()))
+    )
+    orders = next(
+        dataset for dataset in model["datasets"] if dataset["name"] == "customer_orders"
+    )
+    order_date = next(item for item in orders["fields"] if item["name"] == "order_date")
+    order_date["name"] = "placed_on"
+
+    restored = yaml.safe_load(convert_ossie_to_auto_ontology(yaml.safe_dump(model)))
+
+    names = {
+        attribute["name"]
+        for attribute in _term(restored, "Customer Orders")["columns_attributes"]
+    }
+    assert names == {"order_id", "customer_id", "placed_on"}
+
+
+def test_names_that_meet_as_identifiers_are_told_apart() -> None:
+    native = yaml.safe_load(_auto_ontology_yaml())
+    customers = _term(native, "customers")
+    _attribute(customers, "customer_name")["name"] = "Customer-ID"
+    _attribute(customers, "customer_id")["name"] = "Customer ID"
+
+    ossie = convert_auto_ontology_to_ossie(yaml.safe_dump(native))
+    fields = next(
+        dataset["fields"]
+        for dataset in yaml.safe_load(ossie)["datasets"]
+        if dataset["name"] == "customers"
+    )
+
+    assert [(item["name"], item.get("ai_context")) for item in fields] == [
+        ("customer_id", None),
+        ("customer_id_2", {"synonyms": ["Customer-ID"]}),
+    ]
+    restored = yaml.safe_load(convert_ossie_to_auto_ontology(ossie))
+    assert restored["semantic_layer"] == native["semantic_layer"]
+
+
+@pytest.mark.parametrize(
+    ("display_name", "identifier"),
+    [
+        ("Order Line Item", "order_line_item"),
+        ("OrderLineItem", "order_line_item"),
+        ("C_NATIONKEY", "c_nationkey"),
+        ("Revenue %", "revenue"),
+        ("From", "from_"),
+        ("select", "select_"),
+        ("2024 Total", "field_2024_total"),
+        ("%", "field"),
+        ("Café Owner", "café_owner"),
+    ],
+)
+def test_names_are_identifiers_sql_reads_unquoted(
+    display_name: str, identifier: str
+) -> None:
+    from sqlglot import exp, parse_one
+
+    from ossie_nvidia_auto_ontology.native_converter import _ossie_identifier
+
+    assert _ossie_identifier(display_name, "field") == identifier
+    column = parse_one(f"dataset.{identifier}")
+    assert isinstance(column, exp.Column)
+    assert column.name == identifier
 
 
 def test_auto_ontology_requires_one_represented_table_per_term() -> None:

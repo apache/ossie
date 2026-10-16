@@ -19,6 +19,7 @@
 
 from .converter import (
     AutoOntologyConversionError,
+    convert_auto_ontology_to_embedded_ossie_ontology,
     convert_auto_ontology_to_ossie,
     convert_auto_ontology_to_ossie_ontology,
     convert_ossie_to_auto_ontology,
@@ -26,6 +27,7 @@ from .converter import (
 
 __all__ = [
     "AutoOntologyConversionError",
+    "convert_auto_ontology_to_embedded_ossie_ontology",
     "convert_auto_ontology_to_ossie",
     "convert_auto_ontology_to_ossie_ontology",
     "convert_ossie_to_auto_ontology",

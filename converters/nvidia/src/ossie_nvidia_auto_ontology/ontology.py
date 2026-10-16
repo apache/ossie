@@ -36,6 +36,10 @@ import yaml
 from .native_converter import (
     OSSIE_VERSION,
     _dump_yaml,
+    _field_columns,
+    _is_plain_name,
+    _keys_as_columns,
+    _relationship_as_columns,
     _simple_source_column,
     convert_auto_ontology_to_ossie,
 )
@@ -97,6 +101,44 @@ def convert_auto_ontology_to_ossie_ontology(
     return _dump_yaml(ontology), _dump_yaml(mapping)
 
 
+def convert_auto_ontology_to_embedded_ossie_ontology(
+    auto_ontology_yaml: str,
+    *,
+    model_name: str | None = None,
+) -> str:
+    """Return the Ossie ontology for a native document, its mapping embedded.
+
+    The mapping carries the semantic model ``convert_auto_ontology_to_ossie``
+    returns for the same document and name, so the one document is complete.
+    See ``embed_mapping`` for when this form is wanted.
+    """
+    semantic_model = yaml.safe_load(
+        convert_auto_ontology_to_ossie(auto_ontology_yaml, model_name=model_name)
+    )
+    ontology, mapping = build_ontology_documents(semantic_model)
+    return _dump_yaml(embed_mapping(ontology, mapping, semantic_model))
+
+
+def embed_mapping(
+    ontology: dict[str, Any],
+    mapping: dict[str, Any],
+    semantic_model: dict[str, Any],
+) -> dict[str, Any]:
+    """Return *ontology* with *mapping* embedded in it, as ``ontology_mappings``.
+
+    The specification has replaced embedded mappings with mapping documents
+    but still accepts them, and asks for them where a tool requires them:
+    until tools read mapping documents, some read only this form. An embedded
+    mapping carries its semantic model whole rather than referencing it.
+    """
+    embedded: dict[str, Any] = {"name": mapping["name"]}
+    if mapping.get("description"):
+        embedded["description"] = mapping["description"]
+    embedded["semantic_model"] = semantic_model
+    embedded["concept_mappings"] = mapping["concept_mappings"]
+    return {**ontology, "ontology_mappings": [embedded]}
+
+
 def build_ontology_documents(
     semantic_model: dict[str, Any],
     *,
@@ -105,8 +147,20 @@ def build_ontology_documents(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Return the ontology and the mapping documents for *semantic_model*."""
     model_name = str(semantic_model["name"])
-    datasets = semantic_model.get("datasets") or []
-    relationships = semantic_model.get("relationships") or []
+    # Keys and relationships are read by source column, whether the model
+    # names their columns by field, as this converter exports them, or not.
+    field_columns = {
+        str(dataset["name"]): _field_columns(dataset, str(dataset["name"]), "")
+        for dataset in semantic_model.get("datasets") or []
+    }
+    datasets = [
+        _keys_as_columns(dataset, field_columns[str(dataset["name"])])
+        for dataset in semantic_model.get("datasets") or []
+    ]
+    relationships = [
+        _relationship_as_columns(relationship, field_columns)
+        for relationship in semantic_model.get("relationships") or []
+    ]
     concepts = _read_concepts(datasets, relationships)
 
     ontology: dict[str, Any] = {
@@ -236,10 +290,11 @@ def _relationships(
         if item.get("description"):
             relationship["description"] = str(item["description"])
         verb = "is identified by" if identifies else "has"
+        reading = field_name.replace("_", " ")
         relationship |= {
             "roles": [{"concept": value_type}],
             "multiplicity": "OneToOne" if identifies else "ManyToOne",
-            "verbalizes": [f"{{{concept.name}}} {verb} {field_name} {{{value_type}}}"],
+            "verbalizes": [f"{{{concept.name}}} {verb} {reading} {{{value_type}}}"],
         }
         relationships.append(relationship)
     for name, link in concept.links:
@@ -414,11 +469,17 @@ def _field_column(dataset: dict[str, Any], item: dict[str, Any]) -> str | None:
 
 
 def _field_expression(dataset: dict[str, Any], item: dict[str, Any]) -> str:
-    return f"{_quote(str(dataset['name']))}.{_quote(str(item['name']))}"
+    return f"{_sql_name(str(dataset['name']))}.{_sql_name(str(item['name']))}"
 
 
-def _quote(identifier: str) -> str:
-    return '"' + identifier.replace('"', '""') + '"'
+def _sql_name(name: str) -> str:
+    """Write *name* as SQL reads it, quoted only where it has to be.
+
+    Not every tool that reads a mapping expression parses quoted names, while
+    every one reads an identifier, which is what this converter names
+    datasets and fields with.
+    """
+    return name if _is_plain_name(name) else '"' + name.replace('"', '""') + '"'
 
 
 def _pascal_case(text: str) -> str:
