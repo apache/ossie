@@ -403,3 +403,40 @@ def test_root_name_must_be_a_string(name_properties):
     document.update(name_properties)
     with pytest.raises(ConversionError, match="string 'name' at the document root"):
         export(dump_yaml(document))
+
+
+# --- stashed output paths are untrusted -------------------------------------
+
+def _stash_ext(data):
+    import json
+    return [{"vendor_name": "OMNI", "data": json.dumps({"_v": 1, **data})}]
+
+
+@pytest.mark.parametrize("bad", ["../../pwned.txt", "/etc/pwned", "a/../../b", "C:/x", "\\\\srv\\x", " ",
+                                 "views/C:evil.yaml", "a\x00b"])
+@pytest.mark.parametrize("where", ["extra_files", "topic_files", "dataset_file"])
+def test_stashed_paths_cannot_escape_output_dir(where, bad):
+    if where == "extra_files":
+        text = minimal(custom_extensions=_stash_ext({"extra_files": {bad: "x"}}))
+    elif where == "topic_files":
+        text = minimal(custom_extensions=_stash_ext(
+            {"topics": {"t": {}}, "topic_files": {"t": bad}}))
+    else:
+        document = parse(minimal())
+        document["datasets"][0]["custom_extensions"] = _stash_ext({"file": bad})
+        text = dump_yaml(document)
+    with pytest.raises(ConversionError, match="stashed file path"):
+        export(text)
+
+
+def test_stashed_relative_path_is_normalized():
+    files = export(minimal(custom_extensions=_stash_ext(
+        {"extra_files": {"./sub//q.view": "x"}})))
+    assert "sub/q.view" in files
+
+
+def test_stashed_non_string_path_is_rejected():
+    document = parse(minimal())
+    document["datasets"][0]["custom_extensions"] = _stash_ext({"file": ["a", "b"]})
+    with pytest.raises(ConversionError, match="must be a string"):
+        export(dump_yaml(document))

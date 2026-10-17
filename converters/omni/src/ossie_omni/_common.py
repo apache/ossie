@@ -78,6 +78,40 @@ class ConversionError(Exception):
     """Raised when an input cannot be converted."""
 
 
+def safe_relative_path(path, what):
+    """Validate a stashed file path before it is used as an output filename.
+
+    The stash is part of the input document, so a path in it is untrusted: an entry
+    like `../../x.yaml` in `extra_files` would make export write outside the
+    directory the caller named. Refuses anything that is not a plain relative path
+    inside the output root.
+    """
+    if not isinstance(path, str):
+        raise ConversionError(
+            f"{what}: stashed file path must be a string, got {type(path).__name__}")
+    raw = path
+    if "\x00" in raw:
+        raise ConversionError(f"{what}: stashed file path contains a NUL byte")
+    if not raw.strip():
+        raise ConversionError(f"{what}: stashed file path is empty")
+    if raw.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:", raw):
+        raise ConversionError(
+            f"{what}: stashed file path '{raw}' is absolute; expected a path "
+            f"relative to the output directory")
+    parts = [p for p in raw.replace("\\", "/").split("/") if p not in ("", ".")]
+    # A drive on any component makes ntpath.join reset to it, so check each one.
+    if any(re.match(r"^[A-Za-z]:", p) for p in parts):
+        raise ConversionError(
+            f"{what}: stashed file path '{raw}' is absolute; expected a path "
+            f"relative to the output directory")
+    if any(p == ".." for p in parts):
+        raise ConversionError(
+            f"{what}: stashed file path '{raw}' escapes the output directory")
+    if not parts:
+        raise ConversionError(f"{what}: stashed file path '{raw}' names no file")
+    return "/".join(parts)
+
+
 def require(obj, key, what):
     """Return `obj[key]`, or raise a clean ConversionError if it's missing/empty --
     so malformed input surfaces as an error message rather than a raw KeyError.
