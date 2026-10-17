@@ -23,8 +23,82 @@ on the way out. It follows that the stash can only carry what TML contains.
 import json
 from typing import Any
 
-from .constants import STASH_VERSION, VENDOR_KEY
+from .constants import (
+    DATASET_STASH_UNSURFACED_COLUMNS,
+    FIELD_STASH_COLUMN_PROPERTIES,
+    FIELD_STASH_FORMULA_ID,
+    MODEL_STASH_UNATTRIBUTED_FORMULAS,
+    MODEL_STASH_UNREPRESENTABLE_JOINS,
+    MODEL_STASH_MODEL_PROPERTIES,
+    MODEL_STASH_UNSURFACED_FORMULAS,
+    RELATIONSHIP_STASH_TYPE,
+    STASH_VERSION,
+    STASH_TML_NAME,
+    VENDOR_KEY,
+)
 from .errors import ConversionError
+
+#: A known THOUGHTSPOT payload key whose value this converter reads through as a
+#: specific shape -- and therefore the keys whose wrong type crashes rather than
+#: reporting. `list` means a list of mappings, `mapping` a mapping, `string` a
+#: string.
+#:
+#: Deliberately not every stash key. Keys this converter copies wholesale --
+#: `parameters`, `filters`, `column_groups`, `lesson_plans`,
+#: `action_object_associations`, `constraints` -- do not read through their value,
+#: so a wrong type there emits odd TML instead of raising, and rejecting them
+#: here would change what converts successfully today. That is the same line
+#: `_require_document_shape` holds for the Ossie document: check what is read,
+#: not everything a schema could forbid.
+_PAYLOAD_SHAPES = {
+    MODEL_STASH_UNSURFACED_FORMULAS: "list",
+    MODEL_STASH_UNATTRIBUTED_FORMULAS: "list",
+    MODEL_STASH_UNREPRESENTABLE_JOINS: "list",
+    DATASET_STASH_UNSURFACED_COLUMNS: "list",
+    MODEL_STASH_MODEL_PROPERTIES: "mapping",
+    FIELD_STASH_COLUMN_PROPERTIES: "mapping",
+    STASH_TML_NAME: "string",
+    FIELD_STASH_FORMULA_ID: "string",
+    RELATIONSHIP_STASH_TYPE: "string",
+}
+
+_ARTICLES = {"list": "a list", "mapping": "a mapping", "string": "a string"}
+
+
+def _check_payload_shapes(payload: dict, label: str) -> None:
+    """Validate the payload's known keys against `_PAYLOAD_SHAPES`.
+
+    Issue #469: this module's contract is never a bare traceback, and
+    `read_stash` already enforces it for the envelope (a `custom_extensions`
+    that is not a list, an entry that is not a mapping, a `data` that is not a
+    JSON string, an unrecognised shape version). What it did not cover was a
+    value *inside* the payload, so `unsurfaced_formulas: "x"` still reached a
+    `.get()` on a character and `model_properties: 7` a `dict()` on an int.
+    """
+    for key, expected in _PAYLOAD_SHAPES.items():
+        if key not in payload:
+            continue
+        value = payload[key]
+        if value is None:
+            continue
+        ok = (
+            isinstance(value, list) and all(isinstance(entry, dict) for entry in value)
+            if expected == "list"
+            else isinstance(value, dict)
+            if expected == "mapping"
+            else isinstance(value, str)
+        )
+        if not ok:
+            raise ConversionError(
+                f"THOUGHTSPOT custom_extensions payload on {label!r} has "
+                f"{key} of type {type(value).__name__}, expected "
+                f"{_ARTICLES[expected]}"
+                + (
+                    ", every entry of it a mapping"
+                    if expected == "list" and isinstance(value, list)
+                    else ""
+                )
+            )
 
 #: Instance-local identity never travels in a portable document.
 #:
@@ -128,6 +202,7 @@ def read_stash(obj: dict) -> dict[str, Any]:
                 f"which this converter does not recognise (expected "
                 f"{STASH_VERSION!r})"
             )
+        _check_payload_shapes(parsed, _object_label(obj))
         return parsed
     return {}
 

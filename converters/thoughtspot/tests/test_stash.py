@@ -187,3 +187,69 @@ class TestReadStashShapeVersion:
             {"vendor_name": VENDOR_KEY, "data": json.dumps({"_v": STASH_VERSION, "alias": "X"})}
         ]}
         assert stash.read_stash(obj) == {"_v": STASH_VERSION, "alias": "X"}
+
+
+class TestReadStashPayloadShapes:
+    """Issue #469: `read_stash` already refuses a malformed *envelope* -- a
+    `custom_extensions` that is not a list, an entry that is not a mapping, a
+    `data` that is not a JSON string, an unrecognised shape version. A wrongly
+    typed value *inside* the payload was still unguarded, so it reached a
+    `.get()` on a character, a `dict()` on an int, or a `.strip()` on a list and
+    raised a bare traceback naming neither the object nor the key."""
+
+    @staticmethod
+    def _obj(payload: dict) -> dict:
+        return {"name": "orders", "custom_extensions": [
+            {"vendor_name": VENDOR_KEY, "data": json.dumps({"_v": STASH_VERSION, **payload})}
+        ]}
+
+    # A value that does not match each declared shape.
+    _WRONG = {
+        "list": ["oops", 7, {"a": 1}],
+        "mapping": ["oops", 7, ["x"]],
+        "string": [7, ["x"], {"a": 1}],
+    }
+
+    @pytest.mark.parametrize("key, expected", sorted(stash._PAYLOAD_SHAPES.items()))
+    def test_every_declared_shape_rejects_a_value_of_the_wrong_type(self, key, expected):
+        # Iterating the production table, so a key added to it is covered here
+        # without this test having to be told about it.
+        for wrong in self._WRONG[expected]:
+            with pytest.raises(ConversionError) as excinfo:
+                stash.read_stash(self._obj({key: wrong}))
+            message = str(excinfo.value)
+            assert "orders" in message, message
+            assert key in message, message
+            assert type(wrong).__name__ in message, message
+            assert expected in message, message
+
+    @pytest.mark.parametrize("key, expected", sorted(stash._PAYLOAD_SHAPES.items()))
+    def test_the_declared_shape_itself_reads_through(self, key, expected):
+        value = {"list": [{"id": "f1"}], "mapping": {"is_bypass_rls": True},
+                 "string": "formula_f1"}[expected]
+        assert stash.read_stash(self._obj({key: value})) == {
+            "_v": STASH_VERSION, key: value
+        }
+
+    def test_a_list_of_non_mappings_is_named_as_such(self):
+        # The crash this is about: iterating the string's characters, then
+        # `.get()` on one. `unsurfaced_formulas: ["x"]` is the same shape error
+        # one level in, and the message has to say which.
+        with pytest.raises(ConversionError) as excinfo:
+            stash.read_stash(self._obj({"unsurfaced_formulas": ["x"]}))
+        assert "expected a list, every entry of it a mapping" in str(excinfo.value)
+
+    def test_an_absent_or_null_key_is_not_a_shape_error(self):
+        for payload in ({"_nothing": 1}, {"unsurfaced_formulas": None}):
+            assert stash.read_stash(self._obj(payload)) == {"_v": STASH_VERSION, **payload}
+
+    @pytest.mark.parametrize("key", [
+        MODEL_STASH_PARAMETERS, MODEL_STASH_FILTERS, MODEL_STASH_COLUMN_GROUPS,
+        MODEL_STASH_LESSON_PLANS, MODEL_STASH_ACTION_OBJECT_ASSOCIATIONS,
+        MODEL_STASH_CONSTRAINTS, MODEL_STASH_MODEL_JOINS_WITH,
+    ])
+    def test_a_key_read_wholesale_is_left_alone(self, key):
+        # The deliberate limit: these are copied rather than read through, so a
+        # wrong type there makes odd TML rather than raising, and rejecting them
+        # would change what converts successfully today.
+        assert stash.read_stash(self._obj({key: "oops"}))[key] == "oops"
