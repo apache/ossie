@@ -126,6 +126,49 @@ def test_non_string_relationship_type_is_kept_as_many_to_one():
     relationship = model.relationships[0]
     assert (relationship.from_dataset, relationship.to) == ("orders", "customers")
     assert relationship.ai_context is None
+    assert relationship.custom_extensions is None
+
+
+def _wisdom_extension_data(relationship):
+    extensions = [ext for ext in relationship.custom_extensions or [] if ext.vendor_name == "WISDOM"]
+    assert len(extensions) == 1
+    return json.loads(extensions[0].data)
+
+
+def test_relationship_types_are_stored_in_a_wisdom_extension(model):
+    relationships = {relationship.name: relationship for relationship in model.relationships}
+    assert _wisdom_extension_data(relationships["orders_to_customers_2"]) == {
+        "_v": 1,
+        "relationshipType": "ONE_TO_MANY",
+        "normalizedEndpoints": ["orders", "customers"],
+    }
+    assert _wisdom_extension_data(relationships["orders_to_tags"]) == {
+        "_v": 1,
+        "relationshipType": "MANY_TO_MANY",
+        "normalizedEndpoints": ["orders", "tags"],
+    }
+    # MANY_TO_ONE is what Ossie direction already says, so nothing is stored.
+    assert relationships["orders_to_customers"].custom_extensions is None
+    assert relationships["orders_to_tags_2"].custom_extensions is None
+
+
+def test_one_to_many_gets_no_ai_context_note(model):
+    # The note would contradict the flipped direction; the type lives in the WISDOM extension.
+    relationships = {relationship.name: relationship for relationship in model.relationships}
+    assert relationships["orders_to_customers_2"].ai_context is None
+
+
+def test_one_to_one_keeps_its_note_and_stores_its_type():
+    export = json.loads(FIXTURE.read_text())
+    edge = export["domain"]["zsheet_json"]["relationshipGraph"]["relationships"][0]
+    edge["properties"]["relationshipType"] = "ONE_TO_ONE"
+    relationship = WisdomToOssieConverter().convert(export).output.relationships[0]
+    assert relationship.ai_context == "one-to-one relationship"
+    assert _wisdom_extension_data(relationship) == {
+        "_v": 1,
+        "relationshipType": "ONE_TO_ONE",
+        "normalizedEndpoints": ["orders", "customers"],
+    }
 
 
 def test_many_to_many_is_kept_with_cardinality_loss(result, model):
