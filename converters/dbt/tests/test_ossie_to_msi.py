@@ -21,8 +21,6 @@ import pytest
 from pydantic import ValidationError
 from syrupy.assertion import SnapshotAssertion
 
-from ossie import OssieDataType, OssieDimension
-from ossie_dbt.converter_issues import ConverterIssue, ConverterIssueType
 from ossie import (
     OssieDataType,
     OssieDialect,
@@ -33,6 +31,7 @@ from ossie import (
     OssieField,
     OssieMetric,
 )
+from ossie_dbt.converter_issues import ConverterIssue, ConverterIssueType
 from ossie_dbt.msi_to_ossie import MSIToOssieConverter
 from ossie_dbt.ossie_to_msi import OssieToMSIConverter
 from metricflow_semantic_interfaces.implementations.elements.measure import (
@@ -366,16 +365,18 @@ class TestOssieToMSIMetricConversion:
         assert result.output.metrics == []
         assert [i.element_name for i in result.issues] == ["total"]
 
-    def test_unparseable_expression_does_not_abort_the_conversion(self) -> None:
-        """An unterminated quote is a sqlglot TokenError, not a ParseError; it falls back, it doesn't crash."""
+    def test_unparseable_expression_is_dropped_with_an_issue(self) -> None:
         expression = "SUM(CASE WHEN status = 'paid THEN amount END)"
         doc = _ossie_doc(
             datasets=[_ossie_dataset("orders", fields=[_ossie_field("amount")])],
             metrics=[_ossie_metric("paid", expression)],
         )
-        result = OssieToMSIConverter().convert(doc).output
+        result = OssieToMSIConverter().convert(doc)
 
-        assert result.metrics[0].type_params.expr == expression
+        assert result.output.metrics == []
+        assert result.issues == [
+            ConverterIssue(ConverterIssueType.UNSUPPORTED_METRIC_EXPRESSION, "paid")
+        ]
 
     def test_qualified_count_star_uses_dataset_qualifier(self) -> None:
         doc = _ossie_doc(
@@ -481,14 +482,17 @@ class TestOssieToMSIMetricConversion:
         assert [i.element_name for i in result.issues] == ["order_count"]
 
     @pytest.mark.parametrize("expression", ["COUNT(orders.*, amount)", "COUNT(db.orders, *)"])
-    def test_unsupported_count_star_forms_fall_back_to_the_raw_expression(self, expression: str) -> None:
+    def test_unsupported_count_star_forms_are_dropped_with_an_issue(self, expression: str) -> None:
         doc = _ossie_doc(
             datasets=[_ossie_dataset("orders", fields=[_ossie_field("order_id"), _ossie_field("amount")])],
             metrics=[_ossie_metric("odd_count", expression)],
         )
-        result = OssieToMSIConverter().convert(doc).output
+        result = OssieToMSIConverter().convert(doc)
 
-        assert result.metrics[0].type_params.expr == expression
+        assert result.output.metrics == []
+        assert result.issues == [
+            ConverterIssue(ConverterIssueType.UNSUPPORTED_METRIC_EXPRESSION, "odd_count")
+        ]
 
     @pytest.mark.parametrize(
         "expression",
@@ -551,19 +555,82 @@ class TestOssieToMSIMetricConversion:
         names = {m.name for m in simple_metrics}
         assert names == {"ratio__numerator", "ratio__denominator"}
 
-    def test_complex_expression_falls_back_to_simple_with_raw_expr(self) -> None:
+    def test_composite_aggregate_expression_is_dropped_with_issue(self) -> None:
         doc = _ossie_doc(
             datasets=[_ossie_dataset("orders")],
             metrics=[_ossie_metric("complex", "SUM(a) + SUM(b)")],
         )
-        result = OssieToMSIConverter().convert(doc).output
+        result = OssieToMSIConverter().convert(doc)
 
-        assert len(result.metrics) == 1
-        m = result.metrics[0]
-        assert m.type == MetricType.SIMPLE
-        assert m.type_params.measure is None
-        assert m.type_params.metric_aggregation_params is not None
-        assert m.type_params.expr == "SUM(a) + SUM(b)"
+        assert result.output.metrics == []
+        assert result.issues == [
+            ConverterIssue(ConverterIssueType.UNSUPPORTED_METRIC_EXPRESSION, "complex")
+        ]
+
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            "price * quantity",
+            "SUM(MAX(amount))",
+            "SUM(DISTINCT amount)",
+            "SUM(MY_UDAF(amount))",
+            "SUM((SELECT x FROM other_table LIMIT 1))",
+        ],
+    )
+    def test_unsafe_or_non_aggregate_expression_is_dropped_with_issue(
+        self, expression: str
+    ) -> None:
+        doc = _ossie_doc(
+            datasets=[_ossie_dataset("orders", fields=[_ossie_field("amount")])],
+            metrics=[_ossie_metric("unsupported", expression)],
+        )
+
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.output.metrics == []
+        assert result.issues == [
+            ConverterIssue(ConverterIssueType.UNSUPPORTED_METRIC_EXPRESSION, "unsupported")
+        ]
+
+    def test_compound_scalar_expression_cannot_span_semantic_models(self) -> None:
+        doc = _ossie_doc(
+            datasets=[
+                _ossie_dataset("orders", fields=[_ossie_field("amount")]),
+                _ossie_dataset("refunds", fields=[_ossie_field("amount")]),
+            ],
+            metrics=[
+                _ossie_metric(
+                    "net_amount",
+                    "SUM(orders.amount + refunds.amount)",
+                )
+            ],
+        )
+
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.output.metrics == []
+        assert result.issues == [
+            ConverterIssue(ConverterIssueType.UNSUPPORTED_METRIC_EXPRESSION, "net_amount")
+        ]
+
+    def test_dax_measure_is_not_reinterpreted_as_sql_simple_metric(self) -> None:
+        doc = _ossie_doc(
+            datasets=[_ossie_dataset("Sales")],
+            metrics=[
+                _ossie_metric(
+                    "Revenue",
+                    "SUM(Sales[Amount])",
+                    dialect=OssieDialect.DAX,
+                )
+            ],
+        )
+
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.output.metrics == []
+        assert result.issues == [
+            ConverterIssue(ConverterIssueType.UNSUPPORTED_METRIC_EXPRESSION, "Revenue")
+        ]
 
     def test_metric_description_carried_over(self) -> None:
         doc = _ossie_doc(
@@ -842,6 +909,34 @@ class TestOssieToMSIDialectSelection:
 
 
 class TestOssieToMSIRoundTrip:
+    def test_sum_over_case_round_trip_does_not_double_aggregate(self) -> None:
+        expression = "SUM(CASE WHEN orders.status = 'paid' THEN amount ELSE 0 END)"
+        original = _ossie_doc(
+            datasets=[
+                _ossie_dataset(
+                    "orders",
+                    fields=[_ossie_field("status"), _ossie_field("amount")],
+                )
+            ],
+            metrics=[_ossie_metric("paid_revenue", expression)],
+        )
+
+        forward = OssieToMSIConverter().convert(original)
+
+        assert forward.issues == []
+        metric = forward.output.metrics[0]
+        assert metric.type_params.metric_aggregation_params is not None
+        assert metric.type_params.metric_aggregation_params.agg == AggregationType.SUM
+        assert metric.type_params.expr == "CASE WHEN status = 'paid' THEN amount ELSE 0 END"
+
+        backward = MSIToOssieConverter().convert(forward.output)
+
+        assert backward.issues == []
+        assert (
+            backward.output.metrics[0].expression.dialects[0].expression
+            == "SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END)"
+        )
+
     def test_ossie_to_msi_to_ossie_preserves_structure(self, snapshot: SnapshotAssertion) -> None:
         """Ossie → MSI → Ossie preserves dataset names, fields, and metric expressions."""
         original = _ossie_doc(

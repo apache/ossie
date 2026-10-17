@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import Optional, Tuple
+from typing import Optional, Set, Tuple
 
 import sqlglot
 import sqlglot.expressions as exp
@@ -46,6 +46,69 @@ def _col_name(node: exp.Expression) -> str:
     if isinstance(node, exp.Column):
         return node.name
     return node.transform(_unqualify_column).sql()
+
+
+_SAFE_SCALAR_NODE_TYPES = {
+    exp.Abs,
+    exp.Add,
+    exp.And,
+    exp.Between,
+    exp.Boolean,
+    exp.Case,
+    exp.Cast,
+    exp.Ceil,
+    exp.Coalesce,
+    exp.Column,
+    exp.DPipe,
+    exp.DataType,
+    exp.DataTypeParam,
+    exp.DateTrunc,
+    exp.Div,
+    exp.EQ,
+    exp.Extract,
+    exp.Floor,
+    exp.GT,
+    exp.GTE,
+    exp.Greatest,
+    exp.ILike,
+    exp.Identifier,
+    exp.If,
+    exp.In,
+    exp.Is,
+    exp.LT,
+    exp.LTE,
+    exp.Least,
+    exp.Length,
+    exp.Like,
+    exp.Literal,
+    exp.Lower,
+    exp.Mod,
+    exp.Mul,
+    exp.NEQ,
+    exp.Neg,
+    exp.Not,
+    exp.Null,
+    exp.Nullif,
+    exp.Or,
+    exp.Paren,
+    exp.Round,
+    exp.Sub,
+    exp.Substring,
+    exp.Trim,
+    exp.TryCast,
+    exp.Upper,
+}
+
+
+def _is_scalar_expression(node: exp.Expression) -> bool:
+    """Return whether every AST node is explicitly safe beneath a MetricFlow aggregation.
+
+    Unknown functions are deliberately excluded: sqlglot represents both custom
+    scalar functions and custom aggregate functions as ``Anonymous``, so accepting
+    one would risk recreating the nested-aggregation bug this guard prevents.
+    Query nodes are also absent, excluding scalar subqueries.
+    """
+    return all(type(child) in _SAFE_SCALAR_NODE_TYPES for child in node.walk())
 
 
 def _is_row_count_argument(node: exp.Expression) -> bool:
@@ -132,7 +195,11 @@ def _extract_agg_info(expression: str) -> Optional[Tuple[AggregationType, str, O
             # COUNT(*), COUNT(1), COUNT(TRUE), ... → count all rows; COUNT(DISTINCT ...) of one is not valid SQL.
             # Unnested so a redundant paren, e.g. COUNT(DISTINCT (*)), is still recognised.
             return None if distinct else (AggregationType.COUNT, ROW_COUNT_EXPR, None, False)
-        return (AggregationType.COUNT_DISTINCT if distinct else AggregationType.COUNT), _col_name(argument), None, False
+        if not _is_scalar_expression(argument):
+            return None
+        return (
+            AggregationType.COUNT_DISTINCT if distinct else AggregationType.COUNT
+        ), _col_name(argument), None, False
 
     # SUM(CASE WHEN col THEN 1 ELSE 0 END) → SUM_BOOLEAN
     if isinstance(tree, exp.Sum) and isinstance(tree.this, exp.Case):
@@ -145,9 +212,9 @@ def _extract_agg_info(expression: str) -> Optional[Tuple[AggregationType, str, O
             and default.name == "0"
             and isinstance(ifs[0].args.get("true"), exp.Literal)
             and ifs[0].args["true"].name == "1"
+            and _is_scalar_expression(case)
         ):
             return AggregationType.SUM_BOOLEAN, ifs[0].this.sql(), None, False
-        return None
 
     # SUM(col), or SUM(<constant>). A constant keeps its own value (SUM(2) is twice the row count,
     # not SUM(1)); the caller uses _is_constant_expr to send it through the same dataset check as
@@ -156,15 +223,17 @@ def _extract_agg_info(expression: str) -> Optional[Tuple[AggregationType, str, O
         argument = tree.this.unnest()
         if _is_constant_expr(argument.sql()):
             return AggregationType.SUM, argument.sql(), None, False
+        if not _is_scalar_expression(tree.this):
+            return None
         return AggregationType.SUM, _col_name(tree.this), None, False
 
-    if isinstance(tree, exp.Avg):
+    if isinstance(tree, exp.Avg) and _is_scalar_expression(tree.this):
         return AggregationType.AVERAGE, _col_name(tree.this), None, False
 
-    if isinstance(tree, exp.Min):
+    if isinstance(tree, exp.Min) and _is_scalar_expression(tree.this):
         return AggregationType.MIN, _col_name(tree.this), None, False
 
-    if isinstance(tree, exp.Max):
+    if isinstance(tree, exp.Max) and _is_scalar_expression(tree.this):
         return AggregationType.MAX, _col_name(tree.this), None, False
 
     # PERCENTILE_CONT(p) WITHIN GROUP (ORDER BY col)
@@ -179,6 +248,8 @@ def _extract_agg_info(expression: str) -> Optional[Tuple[AggregationType, str, O
         ):
             ordered = order.expressions[0]
             col_node = ordered.this if isinstance(ordered, exp.Ordered) else ordered
+            if not _is_scalar_expression(col_node):
+                return None
             col = _col_name(col_node)
             try:
                 p = float(inner.this.name)
@@ -215,14 +286,19 @@ def _try_parse_ratio(expr_str: str) -> Optional[Tuple[str, str]]:
 
 def _get_dataset_qualifier(expression: str) -> Optional[str]:
     """Return the sole dataset qualifier referenced by an expression, if present."""
+    qualifiers = _get_dataset_qualifiers(expression)
+    return qualifiers.pop() if len(qualifiers) == 1 else None
+
+
+def _get_dataset_qualifiers(expression: str) -> Set[str]:
+    """Return all dataset qualifiers referenced by an expression."""
     try:
         tree = sqlglot.parse_one(expression.strip())
     except sqlglot.errors.SqlglotError:
-        return None
+        return set()
 
-    qualifiers = {
+    return {
         ".".join(part.sql() for part in column.parts[:-1])
         for column in tree.find_all(exp.Column)
         if len(column.parts) > 1
     }
-    return qualifiers.pop() if len(qualifiers) == 1 else None

@@ -135,7 +135,12 @@ manifest_json = result.output.model_dump_json(by_alias=True, exclude_none=True, 
 - `SUM(<constant>)` (e.g. `SUM(1)`) keeps its constant, but has no column to place it in a dataset: with more than one dataset it is skipped with `ROW_COUNT_METRIC_DROPPED`
 - `COUNT(DISTINCT *)`, `COUNT(DISTINCT 1)` and the like, anywhere in an expression, are skipped with `ROW_COUNT_METRIC_DROPPED`: they count whether any row exists, not how many
 - `(expr_a) / (expr_b)` → RATIO metric with auto-generated sub-metrics
-- Anything else → SIMPLE metric with the raw expression stored verbatim
+- A root aggregate over a scalar SQL expression (for example,
+  `SUM(CASE WHEN ... THEN amount ELSE 0 END)`) → SIMPLE metric with the
+  scalar expression in `expr` and the root function in `agg`
+- Expressions that cannot be decomposed without changing aggregation semantics,
+  and non-SQL measure expressions such as DAX, are dropped with an
+  `UNSUPPORTED_METRIC_EXPRESSION` issue
 - Time dimensions always receive `TimeGranularity.DAY` (Ossie carries no granularity field)
 
 ## Development
