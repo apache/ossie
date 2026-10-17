@@ -18,6 +18,7 @@
 """Shared test helpers for Ossie converter tests."""
 
 from ossie import (
+    OssieCustomExtension,
     OssieDataset,
     OssieDialect,
     OssieDialectExpression,
@@ -27,6 +28,9 @@ from ossie import (
     OssieField,
     OssieMetric,
     OssieRelationship,
+)
+from metricflow_semantic_interfaces.implementations.element_config import (
+    PydanticSemanticLayerElementConfig,
 )
 from metricflow_semantic_interfaces.implementations.elements.dimension import (
     PydanticDimension,
@@ -78,6 +82,7 @@ def _simple_metric(
     name: str,
     measure_name: str,
     description: str | None = None,
+    config: PydanticSemanticLayerElementConfig | None = None,
 ) -> PydanticMetric:
     return PydanticMetric(
         name=name,
@@ -88,7 +93,7 @@ def _simple_metric(
         ),
         filter=None,
         metadata=default_meta(),
-        config=None,
+        config=config,
     )
 
 
@@ -99,6 +104,7 @@ def _dimension(
     description: str | None = None,
     label: str | None = None,
     granularity: TimeGranularity | None = None,
+    config: PydanticSemanticLayerElementConfig | None = None,
 ) -> PydanticDimension:
     type_params = PydanticDimensionTypeParams(time_granularity=granularity) if granularity else None
     return PydanticDimension(
@@ -109,7 +115,7 @@ def _dimension(
         label=label,
         type_params=type_params,
         metadata=default_meta(),
-        config=None,
+        config=config,
     )
 
 
@@ -119,6 +125,7 @@ def _measure(
     expr: str | None = None,
     description: str | None = None,
     label: str | None = None,
+    config: PydanticSemanticLayerElementConfig | None = None,
 ) -> PydanticMeasure:
     return PydanticMeasure(
         name=name,
@@ -129,6 +136,7 @@ def _measure(
         create_metric=None,
         agg_params=None,
         metadata=default_meta(),
+        config=config,
     )
 
 
@@ -136,6 +144,7 @@ def _entity(
     name: str,
     entity_type: EntityType = EntityType.PRIMARY,
     expr: str | None = None,
+    config: PydanticSemanticLayerElementConfig | None = None,
 ) -> PydanticEntity:
     return PydanticEntity(
         name=name,
@@ -143,7 +152,7 @@ def _entity(
         expr=expr,
         description=None,
         role=None,
-        config=None,
+        config=config,
     )
 
 
@@ -166,6 +175,7 @@ def _ossie_field(
     is_time: bool | None = None,
     description: str | None = None,
     label: str | None = None,
+    custom_extensions: list[OssieCustomExtension] | None = None,
 ) -> OssieField:
     return OssieField(
         name=name,
@@ -173,6 +183,7 @@ def _ossie_field(
         dimension=OssieDimension(is_time=is_time) if is_time is not None else None,
         description=description,
         label=label,
+        custom_extensions=custom_extensions,
     )
 
 
@@ -183,6 +194,7 @@ def _ossie_dataset(
     primary_key: list[str] | None = None,
     unique_keys: list[list[str]] | None = None,
     description: str | None = None,
+    custom_extensions: list[OssieCustomExtension] | None = None,
 ) -> OssieDataset:
     return OssieDataset(
         name=name,
@@ -191,11 +203,19 @@ def _ossie_dataset(
         primary_key=primary_key,
         unique_keys=unique_keys,
         description=description,
+        custom_extensions=custom_extensions,
     )
 
 
-def _ossie_metric(name: str, expression: str, description: str | None = None) -> OssieMetric:
-    return OssieMetric(name=name, expression=_ossie_expr(expression), description=description)
+def _ossie_metric(
+    name: str,
+    expression: str,
+    description: str | None = None,
+    custom_extensions: list[OssieCustomExtension] | None = None,
+) -> OssieMetric:
+    return OssieMetric(
+        name=name, expression=_ossie_expr(expression), description=description, custom_extensions=custom_extensions
+    )
 
 
 def _ossie_relationship(
