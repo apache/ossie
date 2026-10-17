@@ -305,6 +305,137 @@ class TestConvertEntryPoint:
 # ---------------------------------------------------------------------------
 
 
+class TestDocumentShapeIsCheckedBeforeItIsRead:
+    """Issue #469: a value of the wrong type where a container is read used to
+    reach a `.get()`, a `for` or a `len()` and raise a bare AttributeError or
+    TypeError naming neither the document nor the key. `convert()` promises
+    `ConversionError`, so the shape is now checked on the way in and the
+    message carries the path and the type found.
+
+    The control cases matter as much as the failures: this is deliberately not
+    the whole of `core-spec/ossie-schema.json`, and a document that converts
+    correctly today must keep converting."""
+
+    @staticmethod
+    def _document():
+        return _ossie_document(_semantic_model(
+            datasets=[_dataset("orders", "SALES.PUBLIC.ORDERS", fields=[
+                _round_tripped("amount", "orders", "Amount"),
+            ])],
+            metrics=[_metric("total_amount", _dialects(("THOUGHTSPOT", "sum ( [orders::Amount] )")))],
+        ))
+
+    @pytest.mark.parametrize("mutate, expected", [
+        pytest.param(lambda d: d.__setitem__("datasets", {"orders": {}}),
+                     "datasets must be a list, not dict", id="datasets-is-a-mapping"),
+        pytest.param(lambda d: d["datasets"][0].__setitem__("source", 7),
+                     "datasets[0].source must be a string, not int", id="source-is-an-int"),
+        pytest.param(lambda d: d["datasets"][0].__setitem__("fields", "amount"),
+                     "datasets[0].fields must be a list, not str", id="fields-is-a-string"),
+        pytest.param(lambda d: d["datasets"][0].__setitem__("name", ["orders"]),
+                     "datasets[0].name must be a string, not list", id="dataset-name-is-a-list"),
+        pytest.param(lambda d: d["datasets"][0]["fields"][0].__setitem__("expression", "orders.amount"),
+                     "datasets[0].fields[0].expression must be a mapping, not str",
+                     id="expression-is-a-string"),
+        pytest.param(lambda d: d["datasets"][0]["fields"][0]["expression"].__setitem__(
+                        "dialects", {"dialect": "THOUGHTSPOT", "expression": "[orders::Amount]"}),
+                     "datasets[0].fields[0].expression.dialects must be a list, not dict",
+                     id="dialects-is-a-mapping"),
+        pytest.param(lambda d: d["datasets"][0]["fields"][0]["expression"]["dialects"][0].__setitem__(
+                        "expression", 42),
+                     "datasets[0].fields[0].expression.dialects[0].expression must be a string, not int",
+                     id="dialect-expression-is-an-int"),
+        pytest.param(lambda d: d["datasets"][0]["fields"][0].__setitem__("dimension", "time"),
+                     "datasets[0].fields[0].dimension must be a mapping, not str",
+                     id="dimension-is-a-string"),
+        pytest.param(lambda d: d.__setitem__("metrics", {"total_amount": {}}),
+                     "metrics must be a list, not dict", id="metrics-is-a-mapping"),
+        pytest.param(lambda d: d["metrics"][0]["expression"]["dialects"][0].__setitem__("dialect", 7),
+                     "metrics[0].expression.dialects[0].dialect must be a string, not int",
+                     id="metric-dialect-is-an-int"),
+        pytest.param(lambda d: d.__setitem__("relationships", {"orders_to_customers": {}}),
+                     "relationships must be a list, not dict", id="relationships-is-a-mapping"),
+        pytest.param(lambda d: d.__setitem__("ai_context", ["sales analytics"]),
+                     "ai_context must be a string or a mapping, not list", id="ai_context-is-a-list"),
+        pytest.param(lambda d: d["datasets"][0].__setitem__(
+                        "custom_extensions", [{"vendor_name": "THOUGHTSPOT", "data": {"_v": 1}}]),
+                     "datasets[0].custom_extensions[0].data must be a string, not dict",
+                     id="extension-data-is-a-mapping"),
+    ])
+    def test_a_wrongly_typed_node_is_named_with_its_path_and_type(self, mutate, expected):
+        document = self._document()
+        mutate(document)
+
+        with pytest.raises(ConversionError) as caught:
+            convert(document)
+
+        assert str(caught.value) == f"the Ossie document is not convertible: {expected}"
+
+    @pytest.mark.parametrize("path_to_container, expected", [
+        pytest.param(lambda d: d.__setitem__("datasets", [None]),
+                     "datasets[0] must be a mapping, not null", id="datasets"),
+        pytest.param(lambda d: d["datasets"][0].__setitem__("fields", [None]),
+                     "datasets[0].fields[0] must be a mapping, not null", id="fields"),
+        pytest.param(lambda d: d.__setitem__("metrics", [None]),
+                     "metrics[0] must be a mapping, not null", id="metrics"),
+        pytest.param(lambda d: d.__setitem__("relationships", [None]),
+                     "relationships[0] must be a mapping, not null", id="relationships"),
+        pytest.param(lambda d: d["datasets"][0]["fields"][0]["expression"].__setitem__("dialects", [None]),
+                     "datasets[0].fields[0].expression.dialects[0] must be a mapping, not null",
+                     id="dialects"),
+        pytest.param(lambda d: d["datasets"][0].__setitem__("custom_extensions", [None]),
+                     "datasets[0].custom_extensions[0] must be a mapping, not null",
+                     id="custom_extensions"),
+    ])
+    def test_a_null_element_is_a_named_rejection_not_an_attribute_error(
+        self, path_to_container, expected
+    ):
+        # A null *element* is not an absent key: the reader calls `.get()` on it
+        # next. Each container this check walks builds its element test the same
+        # way, so each needs the case.
+        document = self._document()
+        path_to_container(document)
+
+        with pytest.raises(ConversionError) as caught:
+            convert(document)
+
+        assert str(caught.value) == f"the Ossie document is not convertible: {expected}"
+
+    def test_a_null_container_stays_absent_and_is_not_rejected(self):
+        # The other half of the distinction: `metrics: null` means "no metrics",
+        # which every reader already handles, so it must not become an error here.
+        document = self._document()
+        document["metrics"] = None
+
+        assert convert(document).documents.model.kind == "model"
+
+    def test_the_check_is_narrower_than_the_schema_and_admits_legal_variants(self):
+        # Each of these is valid Ossie that this converter handles today; none
+        # may start failing because the shape check went past what it reads.
+        string_ai_context = self._document()
+        del string_ai_context["metrics"]
+        string_ai_context["ai_context"] = "sales analytics"       # the string form
+        string_ai_context["datasets"][0].pop("fields", None)       # no fields at all
+
+        no_thoughtspot_entry = _ossie_document(_semantic_model(
+            datasets=[_dataset("orders", "SALES.PUBLIC.ORDERS", fields=[
+                _field("amount", _dialects(("ANSI_SQL", "amount"))),  # a hand-authored sibling
+            ])],
+        ))
+
+        dimension_and_object_ai_context = _ossie_document(_semantic_model(
+            datasets=[_dataset("orders", "SALES.PUBLIC.ORDERS", fields=[
+                {**_round_tripped("amount", "orders", "Amount"),
+                 "dimension": {"is_time": False},
+                 "ai_context": {"synonyms": ["amt"]}},           # the object form
+            ])],
+        ))
+
+        for document in (string_ai_context, no_thoughtspot_entry,
+                         dimension_and_object_ai_context):
+            assert convert(document).documents.model.kind == "model"
+
+
 class TestJoinPlacementThroughConvert:
     def _model_with_join(self, **rel_kwargs):
         orders = _dataset("orders", "SALES.PUBLIC.ORDERS")
