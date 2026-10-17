@@ -19,13 +19,21 @@
 
 # Ossie Ontology Converters
 
-Converters between Ossie, Palantir, and Spec ontology formats.
+Converters between Ossie, Palantir, LinkML, and Spec ontology formats.
 
 | Converter           | Direction |
 |---------------------|-----------|
 | `palantir_to_ossie` | Palantir ontology → Ossie model |
 | `ossie_to_spec`     | Ossie model → Spec YAML |
 | `spec_to_ossie`     | Spec YAML → Ossie model |
+| `linkml_to_ossie`   | LinkML schema → Ossie model |
+| `ossie_to_linkml`   | Ossie model → LinkML schema |
+
+### LinkML
+
+The LinkML converters use the natively-compiled [LinkML-Scala](https://github.com/NeverBlink-OSS/linkml-scala) library (see: [converter source code](https://github.com/NeverBlink-OSS/linkml-scala/tree/main/generator/src/eu/neverblink/linkml/generator/ossie)). This repository only provides wrappers – please file any issues [here](https://github.com/NeverBlink-OSS/linkml-scala/issues).
+
+The Ossie <-> LinkML mapping and its limitations are documented [here](https://github.com/NeverBlink-OSS/linkml-scala/blob/main/docs/ossie_mapping.md). In general, LinkML supports only a subset of restriction expressions in Ossie, `derived_by` is not yet supported, and `ontology_mappings` are not representable in LinkML. Conversely, Ossie does not support many of the features of LinkML, such as all possible inheritance patterns. We are working to iteratively improve the coverage of the mapping in both directions.
 
 ## Prerequisites
 
@@ -62,6 +70,8 @@ The package is importable as `ossie_ontology` after installation:
 from ossie_ontology.converter.palantir_to_ossie.converter import PalantirToOssieConverter
 from ossie_ontology.converter.ossie_to_spec.converter import OssieToSpecConverter
 from ossie_ontology.converter.spec_to_ossie.converter import SpecToOssieConverter
+from ossie_ontology.converter.linkml_to_ossie.converter import LinkmlToOssieConverter
+from ossie_ontology.converter.ossie_to_linkml.converter import OssieToLinkmlConverter
 ```
 
 ## Scripts
@@ -93,6 +103,30 @@ If already set in your environment they will be picked up automatically. To over
 SNOWFLAKE_DATABASE_NAME=MY_DB SNOWFLAKE_SCHEMA_NAME=MY_SCHEMA \
   uv run python scripts/palantir_to_ossie.py path/to/palantir_export.zip
 ```
+
+### `scripts/ossie_to_linkml.py`
+
+Converts an Ossie ontology (YAML or JSON) into the LinkML schema that describes it, printed to stdout.
+
+**Usage:**
+
+```bash
+uv run python scripts/ossie_to_linkml.py path/to/ossie.yaml
+# Second argument is optional, and if provided will be used as the schema's `id`:
+uv run python scripts/ossie_to_linkml.py path/to/ossie.yaml https://example.org/my-schema
+```
+
+### `scripts/linkml_to_ossie.py`
+
+Converts a LinkML schema into an Ossie-compliant YAML representation of the ontology it describes, printed to stdout. The schema's `imports` are resolved from disk.
+
+**Usage:**
+
+```bash
+uv run python scripts/linkml_to_ossie.py path/to/schema.yaml
+```
+
+A schema can load and still have errors and warnings against it. Errors and warnings are written to stderr, only fatal problems stop the run.
 
 ## Running the tests
 

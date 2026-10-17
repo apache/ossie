@@ -51,6 +51,8 @@ from ossie_ontology.external.palantir.parser import PalantirParser
 from ossie_ontology.converter.spec_to_ossie.converter import SpecToOssieConverter
 from ossie_ontology.converter.ossie_to_spec.converter import OssieToSpecConverter
 from ossie_ontology.converter.palantir_to_ossie.converter import PalantirToOssieConverter
+from ossie_ontology.converter.linkml_to_ossie.converter import LinkmlToOssieConverter
+from ossie_ontology.converter.ossie_to_linkml.converter import OssieToLinkmlConverter
 
 __all__ = [
     # Model — ontology layer
@@ -88,4 +90,6 @@ __all__ = [
     "SpecToOssieConverter",
     "OssieToSpecConverter",
     "PalantirToOssieConverter",
+    "LinkmlToOssieConverter",
+    "OssieToLinkmlConverter",
 ]
