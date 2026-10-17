@@ -21,7 +21,7 @@ Cortex Analyst semantic model YAML. Pure offline conversion — no Snowflake
 connection required.
 
 Usage:
-    ossie-snowflake -i input.yaml -o output.yaml
+    python3 -m ossie_snowflake.cli ossie-to-snowflake -i ossie.yaml -o snowflake.yaml
 """
 
 import re
@@ -32,22 +32,20 @@ from sqlglot import tokenize
 from sqlglot.errors import TokenError
 from sqlglot.tokens import TokenType
 
+from ._common import (
+    DIALECT_ANSI,
+    DIALECT_OSSIE_SQL,
+    DIALECT_SNOWFLAKE,
+    OSSIE_VERSION,
+    SNOWFLAKE_DATATYPES,
+    TIME_DATATYPES,
+    require_list,
+    require_mappings,
+)
 
-SUPPORTED_VERSION = "0.2.0.dev0"
 
-_TIME_DATATYPES = frozenset({"Date", "Time", "DateTime", "DateTimeTz"})
-
-_SNOWFLAKE_DATATYPES = {
-    "String": "VARCHAR",
-    "Integer": "NUMBER(38,0)",
-    "Decimal": "NUMBER",
-    "Float": "FLOAT",
-    "Boolean": "BOOLEAN",
-    "Date": "DATE",
-    "Time": "TIME",
-    "DateTime": "TIMESTAMP_NTZ",
-    "DateTimeTz": "TIMESTAMP_TZ",
-}
+# Retained under its original name: it is part of this module's published surface.
+SUPPORTED_VERSION = OSSIE_VERSION
 
 
 class OssieConversionError(Exception):
@@ -70,7 +68,7 @@ def _convert_datatype(datatype, field_name):
         )
         return None
 
-    snowflake_datatype = _SNOWFLAKE_DATATYPES.get(datatype)
+    snowflake_datatype = SNOWFLAKE_DATATYPES.get(datatype)
     if snowflake_datatype is None:
         warnings.warn(
             f"Omitting data_type from field '{field_name}': "
@@ -98,7 +96,10 @@ def convert_ossie_to_snowflake(ossie_yaml_str):
     Raises:
         OssieConversionError: If the input cannot be converted.
     """
-    root = yaml.safe_load(ossie_yaml_str)
+    try:
+        root = yaml.safe_load(ossie_yaml_str)
+    except yaml.YAMLError as err:
+        raise OssieConversionError(f"Invalid Ossie YAML: {err}") from err
     if not isinstance(root, dict):
         raise OssieConversionError("Invalid Ossie YAML: expected a mapping at the root")
 
@@ -133,6 +134,16 @@ def convert_ossie_to_snowflake(ossie_yaml_str):
     )
 
 
+def _mappings(value, context):
+    """Applies ``require_mappings`` with this direction's error type."""
+    return require_mappings(value, context, OssieConversionError)
+
+
+def _list(value, context):
+    """Applies ``require_list`` with this direction's error type."""
+    return require_list(value, context, OssieConversionError)
+
+
 def _convert_model(ossie):
     """Converts the root Ossie model dict to a Snowflake semantic model dict."""
     name = ossie.get("name")
@@ -150,21 +161,21 @@ def _convert_model(ossie):
         result["description"] = description
 
     # datasets -> tables
-    datasets = ossie.get("datasets")
+    datasets = _mappings(ossie.get("datasets"), "'datasets'")
     if datasets:
         tables = [_convert_dataset(ds) for ds in datasets]
         if tables:
             result["tables"] = tables
 
     # relationships
-    relationships = ossie.get("relationships")
+    relationships = _mappings(ossie.get("relationships"), "'relationships'")
     if relationships:
         converted_rels = [_convert_relationship(rel) for rel in relationships]
         if converted_rels:
             result["relationships"] = converted_rels
 
     # metrics
-    metrics = ossie.get("metrics")
+    metrics = _mappings(ossie.get("metrics"), "'metrics'")
     if metrics:
         converted_metrics = []
         for m in metrics:
@@ -200,7 +211,7 @@ def _convert_dataset(dataset):
         result["primary_key"] = {"columns": pk}
 
     # unique_keys: [[...], ...] -> unique_keys: [{columns: [...]}, ...]
-    uks = dataset.get("unique_keys")
+    uks = _list(dataset.get("unique_keys"), f"Dataset '{name}': 'unique_keys'")
     if uks:
         result["unique_keys"] = [{"columns": uk} for uk in uks]
 
@@ -217,7 +228,7 @@ def _convert_dataset(dataset):
         result["synonyms"] = synonyms
 
     # Classify fields into dimensions, time_dimensions, facts
-    fields = dataset.get("fields")
+    fields = _mappings(dataset.get("fields"), f"Dataset '{name}': 'fields'")
     if fields:
         dimensions = []
         time_dimensions = []
@@ -282,7 +293,7 @@ def _classify_field(field):
         return "dimension"
     # is_time is unset; default from datatype
     datatype = field.get("datatype")
-    if datatype in _TIME_DATATYPES:
+    if datatype in TIME_DATATYPES:
         return "time_dimension"
     return "dimension"
 
@@ -397,11 +408,11 @@ def _extract_expression(expression, field_name):
 
     for d in dialects:
         dialect_name = (d.get("dialect") or "").upper()
-        if dialect_name == "SNOWFLAKE":
+        if dialect_name == DIALECT_SNOWFLAKE:
             snowflake_expr = d.get("expression")
-        elif dialect_name == "ANSI_SQL":
+        elif dialect_name == DIALECT_ANSI:
             ansi_expr = d.get("expression")
-        elif dialect_name == "OSSIE_SQL_2026":
+        elif dialect_name == DIALECT_OSSIE_SQL:
             ossie_sql_expr = d.get("expression")
 
     if snowflake_expr is not None:

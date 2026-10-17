@@ -750,6 +750,11 @@ class TestConvertOssieToSnowflake:
         with pytest.raises(OssieConversionError, match="expected a mapping"):
             convert_ossie_to_snowflake("- a list")
 
+    def test_malformed_yaml_raises(self):
+        # Not a traceback: the CLI turns this into `Error: ...` and exit status 1.
+        with pytest.raises(OssieConversionError, match="Invalid Ossie YAML"):
+            convert_ossie_to_snowflake("name: x\n  bad: [unclosed\n")
+
     def test_wrong_version_raises(self):
         bad = yaml.dump({"version": "9.9.9", "name": "m"})
         with pytest.raises(OssieConversionError, match="Unsupported Ossie specification"):

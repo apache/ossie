@@ -430,7 +430,7 @@ Broad ecosystem adoption depends on practical tools that let teams validate thei
 
 - [JSON Schema (ossie-schema.json)](core-spec/ossie-schema.json) — schema for structural validation
 - [Validation Script (validate.py)](validation/validate.py) — validates Ossie YAML against JSON Schema, unique names, references, and SQL syntax
-- [Snowflake Converter](converters/snowflake/) — Ossie → Snowflake Cortex Analyst YAML converter
+- [Snowflake Converter](converters/snowflake/) — bidirectional Ossie ↔ Snowflake Cortex Analyst YAML converter
 - [GoodData Converter](converters/gooddata/) — bidirectional Ossie ↔ GoodData LDM converter
 - [Salesforce Converter](converters/salesforce/) — Ossie ↔ Salesforce converter
 - [Apache Polaris Converter](converters/polaris/) — Ossie → Apache Polaris converter

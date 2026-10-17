@@ -22,6 +22,9 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    # Checks the imported model against core-spec/ossie-schema.json, the way the
+    # Microsoft, Cube, NVIDIA, OrionBelt and ThoughtSpot converters already do.
+    "jsonschema>=4.0",
 ]
 
 [project]
