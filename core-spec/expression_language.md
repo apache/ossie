@@ -573,6 +573,14 @@ Each `ORDER BY` item has three independent parts:
 RANK() OVER (ORDER BY revenue DESC NULLS LAST)
 ```
 
+Without `NULLS FIRST` or `NULLS LAST`, NULL sorts as the largest value: last for `ASC`, first for `DESC`. Implementations MUST produce this order whatever the native default of the engine; see [Window ORDER BY NULL Placement](#window-order-by-null-placement).
+
+```sql
+-- revenue over three rows: 10, NULL, 5; each comment lists the values numbered 1, 2, 3
+ROW_NUMBER() OVER (ORDER BY revenue)       -- 5, 10, NULL
+ROW_NUMBER() OVER (ORDER BY revenue DESC)  -- NULL, 10, 5
+```
+
 Frame clause options:
 
 - `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`  
@@ -787,6 +795,24 @@ date range. For a row-level shift, add a number of days to the date directly, or
 | `RUNNING_SUM(...)` | `RUNNING_SUM(SUM(...))` | N/A | `CALCULATE(SUM(...), FILTER(...))` | `RunningSum(...)` — same UI-configuration caveat |
 
 Sigma's table-calculation functions (`RowNumber`, `Rank`, `RunningSum`, `RunningAvg`, `Lag`, `Lead`, etc.) resolve their partition/order context from workbook UI configuration (which pivot/table the calculation is attached to) rather than from arguments passed in the formula text itself. Because that context isn't recoverable from the formula string alone, the Sigma converter (`converters/sigma/`) treats these as untranslatable to ANSI SQL and carries the original Sigma formula through in the `SIGMA` dialect only — see `converters/sigma/LIMITATIONS.md`.
+
+---
+
+## Window ORDER BY NULL Placement
+
+When an `ORDER BY` item omits the clause, the Ossie placement is `NULLS LAST` for `ASC` and `NULLS FIRST` for `DESC`. An implementation produces any placement, given or default, as follows:
+
+- On an engine with `NULLS FIRST` and `NULLS LAST`, it emits the clause. It MAY omit a default placement that the native default already gives. This holds only if the session cannot change that default, or the implementation sets it. Snowflake (`DEFAULT_NULL_ORDERING`) and DuckDB (`default_null_order`) let a session change it.
+- On an engine without them, it adds a leading sort key `CASE WHEN order_expr IS NULL THEN 1 ELSE 0 END`. The key is ascending to put NULLs last and descending to put them first.
+
+Native defaults:
+
+| Engine | `NULLS FIRST`, `NULLS LAST` | Native `ASC` | Native `DESC` |
+| :---- | :---- | :---- | :---- |
+| Oracle, PostgreSQL, Redshift, Snowflake | yes | NULLS LAST | NULLS FIRST |
+| BigQuery, Databricks | yes | NULLS FIRST | NULLS LAST |
+| ClickHouse, DuckDB, Trino | yes | NULLS LAST | NULLS LAST |
+| MySQL, SQL Server | no | NULLS FIRST | NULLS LAST |
 
 ---
 
