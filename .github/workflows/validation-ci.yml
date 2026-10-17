@@ -89,3 +89,6 @@ jobs:
           uv run validation/validate.py examples/flights.ontology.yaml --schema ontology/ontology.json
           uv run validation/validate.py examples/flights.semantic_model.yaml
           uv run validation/validate.py examples/flights.mapping.yaml --schema ontology/mapping.json
+
+      - name: Validate FOAF example
+        run: uv run validation/validate.py examples/foaf_owl_import.yaml --schema ontology/ontology.json
