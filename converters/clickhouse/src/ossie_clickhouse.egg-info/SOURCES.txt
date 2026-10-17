@@ -1,0 +1,5 @@
+pyproject.toml
+src/ossie_clickhouse.egg-info/PKG-INFO
+src/ossie_clickhouse.egg-info/SOURCES.txt
+src/ossie_clickhouse.egg-info/dependency_links.txt
+src/ossie_clickhouse.egg-info/top_level.txt
