@@ -91,8 +91,11 @@ datasets: []
 # See Relationships section below for detailed structure
 relationships: []
 
-# Optional:
-# These metrics can span one or more logical datasets and use relationships
+# Optional: Model-scoped metrics
+# For aggregations that span datasets or need to be aware of cross-dataset concepts.
+# Expressions reference fields by multi-part name (e.g., SUM(orders.amount)) and
+# may combine fields from more than one dataset.
+# Names MUST be unique across the model.
 # See Metrics section below for detailed structure
 metrics: []
 
@@ -147,6 +150,23 @@ datasets:
     # Optional: Row-level calculations for grouping, filtering, and in metric expressions
     # See Fields section below for detailed structure
     fields: []
+
+    # Optional: Dataset-scoped metrics
+    # Metrics that semantically belong to this dataset, aggregating its own
+    # fields at the dataset's row level. Same structure as model-scoped metrics;
+    # see the Metrics section below.
+    #
+    # Rules (see core-spec/spec.md#metric-scoping):
+    # - The expression MUST reference only this dataset's declared fields,
+    #   written by single-part (unqualified) name: SUM(net_amount).
+    # - It MUST NOT reference another dataset; a metric that must do so is
+    #   model-scoped and belongs in the model-root metrics.
+    # - Referencing a column of the source that is not a declared field is a
+    #   future extension.
+    # - Field names and metric names share one namespace; every name MUST be
+    #   unique across the two.
+    # - Referenced from outside the dataset as dataset_name.metric_name.
+    metrics: []
 
     # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
@@ -253,6 +273,10 @@ fields:
 # Metrics Schema
 # Quantitative measures defined on business data
 # Represents key calculations like sums, averages, ratios, etc.
+#
+# The same structure is used in two placements:
+# - the model-root metrics (model-scoped): may span datasets
+# - datasets[].metrics     (dataset-scoped): must resolve within one dataset
 metrics:
   # Required: Unique identifier for the metric
   - name: string

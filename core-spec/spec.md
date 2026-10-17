@@ -109,7 +109,7 @@ not define a bundle format or cross-model references.
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., custom instructions) |
 | `datasets` | array | Yes | Collection of logical datasets (fact and dimension tables) |
 | `relationships` | array | No | Defines how logical datasets are connected |
-| `metrics` | array | No | Quantifiable measures defined as aggregate expressions on fields from logical datasets |
+| `metrics` | array | No | Model-scoped metrics: for aggregations that span datasets or need to be aware of cross-dataset concepts. See [Metric Scoping](#metric-scoping). |
 | `custom_extensions` | array | No | Vendor-specific attributes for extensibility |
 
 ### Example
@@ -178,6 +178,7 @@ Logical datasets represent business entities or concepts (fact and dimension tab
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms, common terms) |
 | `fields` | array | No | Row-level attributes for grouping, filtering, and metric expressions |
+| `metrics` | array | No | Dataset-scoped metrics that semantically belong to this dataset; expressions reference its declared fields by single-part name and resolve entirely within it. See [Metric Scoping](#metric-scoping). |
 | `custom_extensions` | array | No | Vendor-specific attributes |
 
 ### Primary Key Examples
@@ -273,6 +274,8 @@ Relationships define how logical datasets are connected through foreign key cons
 ## Fields
 
 Fields represent row-level attributes that can be used for grouping, filtering, and in metric expressions. They can be simple column references or computed expressions.
+
+Within a dataset, field names and dataset-scoped metric names share one namespace, so a field name MUST NOT collide with a dataset-scoped metric name of the same dataset (see [Metric Scoping](#metric-scoping)).
 
 ### Schema
 
@@ -406,7 +409,14 @@ Common combinations:
 
 ## Metrics
 
-Quantitative measures defined on business data, representing key calculations like sums, averages, ratios, etc. Metrics are defined at the semantic model level and can  span multiple datasets.
+Quantitative measures defined on business data, representing key calculations like sums, averages, ratios, etc.
+
+There are two types of metrics:
+
+- **Dataset-scoped** (`datasets[].metrics`): aggregations that belong to a single dataset. The expression references that dataset's declared fields by single-part name and resolves entirely within it.
+- **Model-scoped** (the model-root `metrics`): aggregations that span datasets across the model. The expression references fields by multi-part `dataset.field` name and may combine fields across datasets.
+
+See [Metric Scoping](#metric-scoping) for the rules governing each.
 
 ### Schema
 
@@ -461,6 +471,90 @@ expression:
   ai_context:
     synonyms:
       - "Order Average by customer"
+```
+
+### Metric Scoping
+
+A metric may be defined on an individual dataset or at the model level. Both placements use the identical metric structure; they differ in what the expression may reference and in what the metric is for:
+
+- A **dataset-scoped** metric (`datasets[].metrics`) belongs to a single dataset: it aggregates that dataset's own fields, at the dataset's row level, so the dataset carries its own measures and stays queryable on its own.
+- A **model-scoped** metric (the model-root `metrics`) spans datasets across the model: it combines fields from more than one dataset.
+
+| | Dataset-scoped (`datasets[].metrics`) | Model-scoped (model-root `metrics`) |
+|---|---|---|
+| Expression references | This dataset's declared fields, single-part: `field` | Fields of any dataset, multi-part: `dataset.field` |
+| Spans datasets | No | Yes, via relationships |
+| Referenced as | `dataset_name.metric_name` | `metric_name` |
+
+**Rules**
+
+1. A dataset-scoped metric's expression MUST reference only the declared fields of the dataset that declares it, written by single-part (unqualified) name: `SUM(net_amount)`. It MUST NOT reference a field of another dataset; a metric that must do so is model-scoped and MUST be declared in the model-root `metrics`.
+2. Within a dataset, declared field names and dataset-scoped metric names share one namespace and MUST all be unique across the two.
+3. A model-scoped metric's expression references fields by multi-part name, `dataset.field`, and MAY combine fields from more than one dataset.
+
+> Referencing a column of a dataset's `source` that is not a declared field is a future extension. Today a dataset-scoped expression reaches only the dataset's declared fields.
+
+**Example: dataset-scoped metrics**
+
+```yaml
+datasets:
+  - name: orders
+    source: sales.public.orders
+    primary_key: [order_id]
+    fields:
+      - name: order_id
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: order_id
+        description: Order identifier
+      - name: net_amount
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: amount - discount
+        description: Order amount after discount
+
+    metrics:
+      - name: total_net_amount
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: SUM(net_amount)
+        description: Total order amount after discount
+        datatype: Decimal
+
+      - name: order_count
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: COUNT(order_id)
+        description: Number of orders
+        datatype: Integer
+```
+
+Referenced from a consumer as `orders.total_net_amount` and `orders.order_count`.
+
+**Example: invalid dataset-scoped metric**
+
+```yaml
+datasets:
+  - name: orders
+    source: sales.public.orders
+    fields:
+      - name: net_amount
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: amount - discount
+    metrics:
+      # INVALID (rule 1): references the customers dataset, so this metric is
+      # model-scoped and belongs in the model-root metrics
+      - name: revenue_per_customer
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: SUM(net_amount) / COUNT(DISTINCT customers.id)
 ```
 
 ---
@@ -597,6 +691,16 @@ datasets:
               expression: amount
         description: Order amount
 
+    # Dataset-scoped: resolves entirely within the orders dataset
+    metrics:
+      - name: total_amount
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(amount)
+        description: Total order amount
+        datatype: Decimal
+
   - name: customers
     source: sales.public.customers
     primary_key: [id]
@@ -616,6 +720,20 @@ datasets:
               expression: email
         description: Customer email
 
+    # Dataset-scoped: resolves entirely within the customers dataset
+    metrics:
+      - name: customer_count
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(DISTINCT id)
+        description: Total number of customers
+        datatype: Integer
+        ai_context:
+          synonyms:
+            - "total customers"
+            - "customer base"
+
 relationships:
   - name: orders_to_customers
     from: orders
@@ -624,27 +742,14 @@ relationships:
     to_columns: [id]
 
 metrics:
-  - name: total_revenue
+  # Model-scoped: spans orders and customers via the relationship
+  - name: revenue_per_customer
     expression:
       dialects:
         - dialect: ANSI_SQL
-          expression: SUM(orders.amount)
-    description: Total revenue from all orders
-    ai_context:
-      synonyms:
-        - "total sales"
-        - "revenue"
-
-  - name: customer_count
-    expression:
-      dialects:
-        - dialect: ANSI_SQL
-          expression: COUNT(DISTINCT customers.id)
-    description: Total number of customers
-    ai_context:
-      synonyms:
-        - "total customers"
-        - "customer base"
+          expression: SUM(orders.amount) / COUNT(DISTINCT customers.id)
+    description: Average revenue per customer
+    datatype: Decimal
 
 custom_extensions:
   - vendor_name: SNOWFLAKE

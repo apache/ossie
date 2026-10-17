@@ -111,7 +111,7 @@ The top-level container. Maps to the root object in each vendor's format.
 | `ai_context` | Instructions, synonyms for AI tools | Map if vendor supports AI/LLM annotations |
 | `datasets` | Logical datasets (fact/dimension tables) | See dataset mapping below |
 | `relationships` | Foreign key connections | See relationship mapping below |
-| `metrics` | Aggregate measures | See metric mapping below |
+| `metrics` | Model-scoped aggregate measures | See metric mapping below |
 | `custom_extensions` | Vendor-specific metadata | Extract extensions matching the target vendor |
 
 ### Datasets
@@ -125,6 +125,7 @@ Datasets represent logical tables (fact or dimension tables). They contain field
 | `primary_key` | Single or composite primary key | Map to vendor's PK syntax; note composite keys use arrays like `[order_id, line_number]` |
 | `unique_keys` | Alternative unique identifiers | Map if vendor supports unique constraints |
 | `fields` | Row-level attributes (columns) | See field mapping below |
+| `metrics` | Dataset-scoped aggregate measures | See metric mapping below |
 | `ai_context` | Synonyms and context for AI | Map if vendor supports semantic annotations |
 | `custom_extensions` | Vendor-specific metadata | Extract extensions matching the target vendor |
 
@@ -183,7 +184,14 @@ means `from.product_id = to.id AND from.variant_id = to.variant_id`. The convert
 
 ### Metrics
 
-Metrics are aggregate measures defined at the semantic model level. They can span multiple datasets via relationships.
+Metrics are aggregate measures. There are two flavors:
+
+- **Dataset-scoped** (`datasets[].metrics`): aggregations that belong to a single dataset. The expression references that dataset's declared fields by single-part (unqualified) name (e.g. `SUM(amount)`) and resolves entirely within it, at the dataset's row level. The dataset then carries its own metrics and stays queryable on its own. Referencing a source column that is not a declared field is a future extension.
+- **Model-scoped** (`metrics` at the model root): aggregations that span datasets across the model. The expression references fields by multi-part name (`dataset.field`) and may combine fields from more than one dataset.
+
+When producing Ossie, generally bias toward declaring a metric that is scoped to a single dataset as a dataset-scoped metric rather than at the model root; reserve the model root for aggregations that genuinely span datasets.
+
+See [Metric Scoping](../core-spec/spec.md#metric-scoping) for the full rules.
 
 | Ossie Field | Description | Converter Consideration |
 |-----------|-------------|------------------------|

@@ -314,6 +314,16 @@ def _fully_populated_document() -> dict:
                         "custom_extensions": list(extensions),
                     }
                 ],
+                "metrics": [
+                    {
+                        "name": "total_amount",
+                        "expression": dict(expression),
+                        "description": "d",
+                        "datatype": "Decimal",
+                        "ai_context": dict(ai_context),
+                        "custom_extensions": list(extensions),
+                    }
+                ],
             }
         ],
         "relationships": [
