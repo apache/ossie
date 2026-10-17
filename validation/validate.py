@@ -87,6 +87,8 @@ DIALECT_MAP = {
     "SNOWFLAKE": "snowflake",
     "DATABRICKS": "databricks",
     "BIGQUERY": "bigquery",
+    "POSTGRES": "postgres",
+    "REDSHIFT": "redshift",
     "MDX": None,  # Not supported by sqlglot, skip validation
     "TABLEAU": None,  # Not supported by sqlglot, skip validation
     "MAQL": None,  # Not supported by sqlglot, skip validation

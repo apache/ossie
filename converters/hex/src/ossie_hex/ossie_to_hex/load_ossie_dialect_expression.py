@@ -98,6 +98,10 @@ def _to_sqlglot_dialect(ossie_dialect: OssieDialect) -> SQLGlotDialect | None:
         read = SQLGlotDialect.DATABRICKS
     elif ossie_dialect == OssieDialect.SNOWFLAKE:
         read = SQLGlotDialect.SNOWFLAKE
+    elif ossie_dialect == OssieDialect.POSTGRES:
+        read = SQLGlotDialect.POSTGRES
+    elif ossie_dialect == OssieDialect.REDSHIFT:
+        read = SQLGlotDialect.REDSHIFT
     elif ossie_dialect == OssieDialect.OSSIE_SQL_2026:
         # Approximate Ossie's SQL with Snowflake (e.g. DATEADD/DATEDIFF)
         # until Ossie provides a parser for its portable expression language.

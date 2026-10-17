@@ -38,6 +38,8 @@ def ctx() -> ExportContext:
         (OssieDialect.BIGQUERY, "bigquery"),
         (OssieDialect.DATABRICKS, "databricks"),
         (OssieDialect.SNOWFLAKE, "snowflake"),
+        (OssieDialect.POSTGRES, "postgres"),
+        (OssieDialect.REDSHIFT, "redshift"),
     ],
 )
 def test_maps_sql_dialect(
