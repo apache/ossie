@@ -294,6 +294,13 @@ columns, and a dataset is free to name a key column in `primary_key` and nowhere
 else, so a key column no field declares would otherwise take every relationship
 joining on it down with it.
 
+**Unpairable join columns** reject the conversion. `from_columns` and `to_columns`
+pair up positionally into join criteria, so a relationship whose two sides declare
+a different number of them has no criteria to export. This is not a Salesforce
+limitation but a spec violation, and Salesforce accepts the broken relationship
+anyway, storing it as an enabled relationship with empty criteria that joins
+nothing, so the conversion fails instead of producing that model.
+
 ### Metric expressions
 
 Metrics select `TABLEAU`, then `SNOWFLAKE`, then `ANSI_SQL`, then

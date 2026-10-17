@@ -30,6 +30,8 @@ import org.apache.ossie.converter.ConverterFactory;
 import org.apache.ossie.converter.ConversionDirection;
 import org.apache.ossie.converter.CustomExtensionHandler;
 import org.apache.ossie.converter.FieldMappingHandler;
+import org.apache.ossie.converter.RelationshipMappingHandler;
+import org.apache.ossie.exception.ValidationException;
 import org.apache.ossie.validator.SchemaValidator;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,6 +45,8 @@ import org.apache.ossie.converter.pipeline.PipelineConfigLoader;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -314,9 +318,12 @@ class OssieToSalesforceConverterTest {
     }
 
     @Test
-    void testRelationshipWithUnpairableJoinColumnsLeavesTheNextOneIntact() throws Exception {
-        // The first relationship names two join columns on one side and one on the other, so
-        // there is no criterion to build for it. The second one still gets its own criteria.
+    void testRelationshipWithUnpairableJoinColumnsIsRejected() {
+        // The two sides name a different number of join columns, so the relationship has no
+        // criteria to export. Salesforce accepts a relationship with no criteria and stores it
+        // as an enabled, queryable relationship that joins nothing, so this is a spec violation
+        // (core-spec/spec.md requires the same count on both sides), not a Salesforce
+        // limitation: the whole conversion must fail instead of silently dropping it.
         String model = "version: 0.2.0.dev0\n"
                 + "name: Imported_Model\n"
                 + "datasets:\n"
@@ -331,21 +338,70 @@ class OssieToSalesforceConverterTest {
                 + "  to_columns: [customer_id]\n"
                 + relationship("Orders_Products", "Orders", "Products", "product_id");
 
-        List<String> results = converter.convert(model);
-        Map<String, Object> sfModel = jsonMapper.readValue(results.get(0), new TypeReference<Map<String, Object>>() {});
+        ValidationException exception = assertThrows(ValidationException.class, () -> converter.convert(model));
+        assertTrue(exception.getMessage().contains("Customers_Orders"),
+                "the rejection must name the relationship that cannot be converted");
+        assertTrue(exception.getMessage().contains("got 2 and 1"),
+                "the rejection must come from the column-count rule");
+    }
 
-        List<Map<String, Object>> relationships = (List<Map<String, Object>>) sfModel.get("semanticRelationships");
-        assertNotNull(relationships);
-        Map<String, Object> exported = relationships.stream()
-                .filter(relationship -> "Orders_Products".equals(relationship.get("apiName")))
-                .findFirst()
-                .orElseThrow();
+    @Test
+    void testRelationshipWithUndeclaredEndpointAndUnpairableJoinColumnsIsRejected() {
+        // The column-count check must not depend on the relationship's endpoints existing.
+        // A relationship naming an undeclared dataset used to be dropped by the entity lookup
+        // before the column-count check ran, so this case was silently filtered instead of
+        // rejected.
+        String model = "version: 0.2.0.dev0\n"
+                + "name: Imported_Model\n"
+                + "datasets:\n"
+                + dataset("Orders", "customer_id", "product_id")
+                + dataset("Products", "product_id")
+                + "relationships:\n"
+                + "- name: Customers_Orders\n"
+                + "  from: Customer\n"
+                + "  to: Orders\n"
+                + "  from_columns: [customer_id, tenant_id]\n"
+                + "  to_columns: [customer_id]\n"
+                + relationship("Orders_Products", "Orders", "Products", "product_id");
 
-        List<Map<String, Object>> criteria = (List<Map<String, Object>>) exported.get("criteria");
-        assertNotNull(criteria, "The relationship after an unpairable one keeps its criteria");
-        assertEquals(1, criteria.size());
-        assertEquals("product_id", criteria.get(0).get("leftSemanticFieldApiName"));
-        assertEquals("product_id", criteria.get(0).get("rightSemanticFieldApiName"));
+        ValidationException exception = assertThrows(ValidationException.class, () -> converter.convert(model));
+        assertTrue(exception.getMessage().contains("Customers_Orders"),
+                "the rejection must name the relationship that cannot be converted");
+        assertTrue(exception.getMessage().contains("got 2 and 1"),
+                "the rejection must come from the column-count rule, not the endpoint lookup");
+    }
+
+    @Test
+    void testRelationshipDeclaringNoJoinColumnsIsRejected() {
+        // The Ossie schema requires from_columns and to_columns and gives each a minimum of
+        // one entry, so a relationship reaches the handler without join columns only when a
+        // caller builds the model in memory instead of parsing a document. It has nothing to
+        // join on either way, so it must still be rejected.
+        Map<String, Object> noJoinColumns = new LinkedHashMap<>(
+                Map.of("name", "Customers_Orders", "from", "Customers", "to", "Orders"));
+        Map<String, Object> joined = new LinkedHashMap<>(Map.of(
+                "name", "Orders_Products", "from", "Orders", "to", "Products",
+                "from_columns", List.of("product_id"), "to_columns", List.of("product_id")));
+        Map<String, Object> sourceData = new LinkedHashMap<>(
+                Map.of("relationships", new ArrayList<>(List.of(noJoinColumns, joined))));
+        Map<String, Object> outputData = new LinkedHashMap<>(Map.of("semanticDataObjects", List.of(
+                dataObjectWithDimension("Customers", "customer_id"),
+                dataObjectWithDimension("Orders", "product_id"),
+                dataObjectWithDimension("Products", "product_id"))));
+
+        RelationshipMappingHandler handler = new RelationshipMappingHandler(ConversionDirection.OSSIE_TO_SALESFORCE,
+                new CustomExtensionHandler(jsonMapper));
+
+        ValidationException exception = assertThrows(ValidationException.class,
+                () -> handler.execute(sourceData, outputData, new LinkedHashMap<>()));
+        assertTrue(exception.getMessage().contains("Customers_Orders"),
+                "the rejection must name the relationship that cannot be converted");
+        assertTrue(exception.getMessage().contains("got 0 and 0"),
+                "the rejection must come from the column-count rule");
+    }
+
+    private static Map<String, Object> dataObjectWithDimension(String apiName, String fieldApiName) {
+        return Map.of("apiName", apiName, "semanticDimensions", List.of(Map.of("apiName", fieldApiName)));
     }
 
     @Test
