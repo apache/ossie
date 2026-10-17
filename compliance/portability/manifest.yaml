@@ -1,0 +1,95 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Portability measurement ladder, rungs M0-M3 (strawman for #576).
+#
+# One capability is added per rung so that a difference in a converter's
+# round-trip localizes to a single construct. Every rung is authored in a
+# PORTABLE dialect (ANSI_SQL / OSSIE_SQL_2026) so it is vendor-neutral and runs
+# through every converter; a vendor-tagged input would only exercise one
+# converter, which is not what a cross-converter measurement wants.
+#
+# This manifest lists the fixtures and the single element each rung exercises.
+# It does NOT encode per-converter expected outputs: those are measured by a
+# grader that diffs the returned document against the input element by element
+# into the outcome vocabulary below. Conformance stays a floor (validate.py
+# passing); scoring stays a harness job (see #348).
+#
+# Reference form: the qualified dataset.field form is carried as the primary
+# fixture wherever a metric references a dataset field, with the bare form as a
+# sibling variant, pending #486 and #343. M1's element is an intra-dataset field
+# expression, so it carries a single fixture.
+#
+# All fixtures validate.py-pass on apache/ossie main (9531429) with sqlglot
+# 29.0.1. Rungs M4-M8 (relationships, metric composition, date scalars, window
+# and offset functions) are held pending #354, #591 and #587; they are not in
+# this set.
+
+outcomes:
+  # per-element, assigned by the grader after diffing input vs returned output
+  - PORTABLE              # returns tagged ANSI_SQL or OSSIE_SQL_2026
+  - TAG_PRESERVED         # sub-flag under PORTABLE: the OSSIE_SQL_2026 tag survived
+  - SURVIVED_VENDOR_ONLY  # returns in a vendor dialect only
+  - ADDED                 # an element appears that was not in the input
+  - RELABELED             # same text, different tag than authored
+  - DROPPED_DIAGNOSED     # removed with a warning or notice
+  - DROPPED_SILENT        # removed with no diagnostic
+  - REJECTED              # the converter refuses the whole document
+
+rungs:
+  - id: M0
+    description: one dataset, one field, one SUM metric
+    element_under_test:
+      kind: metric
+      name: total_amount
+      construct: single-column aggregate (SUM)
+    reference_form_primary: qualified
+    variants:
+      - {id: M0.ansi.qualified,     file: m0/m0_ansi_qualified.ossie.yaml,     tag: ANSI_SQL,       reference_form: qualified, role: primary}
+      - {id: M0.ossiesql.qualified, file: m0/m0_ossiesql_qualified.ossie.yaml, tag: OSSIE_SQL_2026, reference_form: qualified, role: tag-sensitivity}
+      - {id: M0.sum.bare,           file: m0/m0_sum_bare.ossie.yaml,           tag: ANSI_SQL,       reference_form: bare,      role: reference-form-variant}
+
+  - id: M1
+    description: baseline plus one scalar calculated-column field expression, no aggregation
+    element_under_test:
+      kind: field
+      name: amount_with_tax
+      construct: scalar field expression (amount * 1.1)
+    reference_form_primary: n/a   # intra-dataset field expression references its sibling column bare
+    variants:
+      - {id: M1.scalar_field, file: m1/m1_scalar_field.ossie.yaml, tag: ANSI_SQL, reference_form: intra-dataset, role: primary}
+
+  - id: M2
+    description: the core aggregate set (SUM, COUNT, COUNT DISTINCT, AVG, MIN, MAX)
+    element_under_test:
+      kind: metrics
+      construct: core aggregate set
+    reference_form_primary: qualified
+    variants:
+      - {id: M2.aggregates.qualified, file: m2/m2_aggregates_qualified.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
+      - {id: M2.aggregates.bare,      file: m2/m2_aggregates_bare.ossie.yaml,      tag: ANSI_SQL, reference_form: bare,      role: reference-form-variant}
+
+  - id: M3
+    description: a filtered aggregate in the portable form SUM(CASE WHEN ... THEN x ELSE 0 END)
+    element_under_test:
+      kind: metric
+      name: completed_amount
+      construct: conditional aggregation
+    reference_form_primary: qualified
+    variants:
+      - {id: M3.filtered_agg.qualified, file: m3/m3_filtered_agg_qualified.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
+      - {id: M3.filtered_agg.bare,      file: m3/m3_filtered_agg_bare.ossie.yaml,      tag: ANSI_SQL, reference_form: bare,      role: reference-form-variant}
