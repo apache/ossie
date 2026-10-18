@@ -46,7 +46,9 @@ it resolves to, every concept the mapping names is declared there or built in,
 every relationship a referent or link mapping names is declared on its concept
 or inherited through extends, with a role for nested referents to resolve on and
 at the link level its arity calls for, and every dataset.field an expression
-names is a declared field of the model.
+names is a declared field of the model, identifiers compared as
+expression_language.md compares them. A referenced document is checked against
+its own schema first.
 
 Usage:
     python validation/validate.py [--schema <schema_file>] [--] <file> [<file> ...]
@@ -62,12 +64,13 @@ or --schema at a copy of the schema.
 
 import json
 import os
-import re
 import sys
 import traceback
 from collections import Counter
 from collections.abc import Hashable
+from functools import lru_cache
 from pathlib import Path
+from typing import NamedTuple
 from urllib.parse import unquote, urlsplit
 
 try:
@@ -627,28 +630,66 @@ def validate_ontology(data: dict) -> list[str]:
     return errors
 
 
-_QUOTED_OR_COMMENT = re.compile(
-    r"'(?:[^']|'')*'"  # string literal
-    r'|"(?:[^"]|"")*"'  # quoted identifier
-    r"|`[^`]*`"  # backtick identifier
-    r"|--[^\n]*"  # line comment
-    r"|/\*.*?\*/",  # block comment
-    re.DOTALL,
-)
-_FIELD_REFERENCE = re.compile(r"(?<![\w.])([A-Za-z_]\w*)\.([A-Za-z_]\w*)(?![\w.]|\s*\()")
+class FieldReference(NamedTuple):
+    """A dataset.field pair a mapping expression names.
+
+    written holds the two identifiers as the author wrote them, quotes
+    included, and normalized holds them the way expression_language.md
+    compares identifiers: a regular identifier upper-cased, a quoted one as
+    written with its quotes stripped and its escapes undone.
+    """
+
+    written: tuple[str, str]
+    normalized: tuple[str, str]
+
+    @property
+    def text(self) -> str:
+        return ".".join(self.written)
 
 
-def field_references(expression: str) -> list[tuple[str, str]]:
+def normalized_identifier(identifier) -> str:
+    """The normalized form of a parsed identifier (expression_language.md)."""
+    return identifier.name if identifier.quoted else identifier.name.upper()
+
+
+def field_references(expression: str) -> list[FieldReference] | None:
     """The dataset.field pairs a mapping expression names, each once.
 
     Mapping expressions reach the semantic model through two-part identifiers
-    (ontology.md, Object mappings). String literals, quoted identifiers and
-    comments are blanked first, so a dot inside them is not a reference, and
-    neither is a longer dotted chain or a schema-qualified function call.
-    Quoted identifiers are therefore not resolved.
+    (ontology.md, Object mappings), so the expression is parsed and every
+    two-part column in it is a reference. A one-part column, a longer chain,
+    a type name, a function name and a lambda parameter are not, and a column
+    inside a subquery is left to that query's own scope, a correlated
+    reference to a dataset included. Mapping expressions declare no dialect,
+    so the expression is parsed with the sqlglot default,
+    and one that does not parse as a SQL expression comes back as None. That
+    includes a string sqlglot reads as a statement, which a dataset named
+    like a keyword, such as from.x, otherwise would be. Needs sqlglot.
     """
-    text = _QUOTED_OR_COMMENT.sub(" ", expression)
-    return list(dict.fromkeys(_FIELD_REFERENCE.findall(text)))
+    try:
+        tree = sqlglot.parse_one(expression)
+    except Exception:
+        # ParseError and TokenError for input sqlglot rejects, RecursionError
+        # for deep nesting, and the parser raises AttributeError from inside
+        # on token soup such as `{:}`. Every one means it did not parse.
+        return None
+    exp = sqlglot.exp
+    statement = (exp.Command, exp.DDL, exp.DML, exp.Pivot, exp.Values)
+    query = isinstance(tree, exp.Query) and not isinstance(tree, exp.Subquery)
+    if isinstance(tree, statement) or query:
+        return None
+    references = []
+    for column in tree.find_all(sqlglot.exp.Column):
+        parts = column.parts
+        if len(parts) != 2 or not all(isinstance(p, sqlglot.exp.Identifier) for p in parts):
+            continue
+        if column.find_ancestor(sqlglot.exp.Select) is not None:
+            continue
+        references.append(FieldReference(
+            written=(parts[0].sql(), parts[1].sql()),
+            normalized=(normalized_identifier(parts[0]), normalized_identifier(parts[1])),
+        ))
+    return list(dict.fromkeys(references))
 
 
 def resolve_document_reference(
@@ -672,7 +713,10 @@ def resolve_document_reference(
             f"[Reference] Warning: {label} '{name}' has no iri, so only a catalog can "
             f"resolve it: {skipped}"
         )]
-    parts = urlsplit(iri)
+    try:
+        parts = urlsplit(iri)
+    except ValueError as e:
+        return None, [f"[Reference] {label} iri '{iri}' is not a valid URI reference: {e}"]
     if parts.scheme or parts.netloc:
         return None, [ValidationWarning(
             f"[Reference] Warning: {label} iri '{iri}' is not a path reference, so it is "
@@ -693,6 +737,9 @@ def resolve_document_reference(
         return None, [f"[Reference] {label} iri '{iri}' does not resolve: {e.strerror or e}"]
     except UnicodeDecodeError:
         return None, [f"[Reference] {label} iri '{iri}' is not valid UTF-8 text"]
+    except ValueError as e:
+        # A path with an embedded NUL, from %00 in the iri, is rejected before it is opened.
+        return None, [f"[Reference] {label} iri '{iri}' does not resolve: {e}"]
     try:
         document = load_yaml_named(text, str(path))
     except yaml.YAMLError as e:
@@ -711,6 +758,44 @@ def resolve_document_reference(
     return document, errors
 
 
+@lru_cache(maxsize=None)
+def _schema_at(path: Path) -> dict | None:
+    """The schema in a file, or None where the script runs without one."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def schema_checked_document(
+    document: dict | None, schema_file: str, label: str, iri: object, half: str
+) -> tuple[dict | None, list[str]]:
+    """Validate a referenced document against the schema its reference promises.
+
+    The checks that read the document assume the shapes that schema
+    guarantees, so a document that fails it is dropped with one error that
+    names the reference, the schema and the first schema error. The schema
+    is read from this checkout, like the ones validate_schema resolves, and
+    a copy of the script without it skips that half with a warning.
+    """
+    if document is None:
+        return None, []
+    schema = _schema_at(_REPO_ROOT / schema_file)
+    if schema is None:
+        return None, [ValidationWarning(
+            f"[Reference] Warning: {schema_file} is not next to this script, so the {half} "
+            f"of {label} are not checked"
+        )]
+    schema_errors = validate_schema(document, schema)
+    if not schema_errors:
+        return document, []
+    first = schema_errors[0].removeprefix("[Schema] ")
+    return None, [
+        f"[Reference] {label} iri '{iri}' does not validate against {schema_file} "
+        f"({len(schema_errors)} error(s), the first at {first}), so its {half} are not checked"
+    ]
+
+
 class OntologyRelationships:
     """The relationships an ontology declares, looked up through extends.
 
@@ -722,17 +807,11 @@ class OntologyRelationships:
         self._declared: dict[str, dict[str, dict]] = {}
         self._supertypes: dict[str, list[str]] = {}
         for component in components:
-            concept = component.get("concept")
-            if not isinstance(concept, str):
-                continue
+            concept = component["concept"]
             self._declared.setdefault(concept, {}).update(
-                (r["name"], r)
-                for r in as_list(component.get("relationships"))
-                if isinstance(r, dict) and isinstance(r.get("name"), str)
+                (r["name"], r) for r in component.get("relationships", [])
             )
-            self._supertypes.setdefault(concept, []).extend(
-                s for s in as_list(component.get("extends")) if isinstance(s, str)
-            )
+            self._supertypes.setdefault(concept, []).extend(component.get("extends", []))
 
     def ancestors(self, concept: str) -> list[str]:
         """The concept followed by every concept it extends, each once."""
@@ -761,11 +840,16 @@ def validate_mapping(data: dict, base: Path | None) -> list[str]:
     be declared on the concept whose mapping names it, directly or through
     extends, with a role for nested referents to resolve on and at the link
     level its arity calls for, and every dataset.field an expression names
-    must be a field of that semantic model.
+    must be a field of that semantic model, comparing identifiers the way
+    expression_language.md does: regular ones without regard to case, quoted
+    ones as written, and the model's names as regular identifiers.
     A dataset that declares no fields list is not checked, since the core spec
-    does not require one. Relative iri are read from base, the mapping
-    document's own directory. A reference that cannot be followed skips its
-    half of the checks with a warning, see resolve_document_reference.
+    does not require one, and an expression that does not parse as a SQL
+    expression is skipped with a warning, as is every one when sqlglot is missing.
+    Relative iri are read from base, the mapping document's own directory. A
+    reference that cannot be followed, or whose document fails its schema,
+    skips its half of the checks, see resolve_document_reference and
+    schema_checked_document.
     """
     if not isinstance(data, dict) or "concept_mappings" not in data:
         return []
@@ -775,7 +859,15 @@ def validate_mapping(data: dict, base: Path | None) -> list[str]:
     model_ref = data.get("semantic_model_ref") or {}
     ontology, diagnostics = resolve_document_reference(ontology_ref, base, "ontology_ref")
     errors.extend(diagnostics)
+    ontology, diagnostics = schema_checked_document(
+        ontology, "ontology/ontology.json", "ontology_ref", ontology_ref.get("iri"), "concepts"
+    )
+    errors.extend(diagnostics)
     model, diagnostics = resolve_document_reference(model_ref, base, "semantic_model_ref")
+    errors.extend(diagnostics)
+    model, diagnostics = schema_checked_document(
+        model, "core-spec/ossie-schema.json", "semantic_model_ref", model_ref.get("iri"), "fields"
+    )
     errors.extend(diagnostics)
 
     # None means that half of the checks is off: the document was not followed
@@ -783,32 +875,27 @@ def validate_mapping(data: dict, base: Path | None) -> list[str]:
     concepts = None
     relationships = None
     if ontology is not None:
-        if isinstance(ontology.get("ontology"), list):
-            components = [c for c in ontology["ontology"] if isinstance(c, dict)]
-            concepts = {c.get("concept") for c in components} | BUILT_IN_CONCEPTS
-            relationships = OntologyRelationships(components)
-        else:
-            errors.append(
-                f"[Reference] ontology_ref iri '{ontology_ref.get('iri')}' does not hold an "
-                f"ontology document, so its concepts cannot be checked"
-            )
-    fields_by_dataset = None
-    if model is not None:
-        if isinstance(model.get("datasets"), list):
-            fields_by_dataset = {
-                d.get("name"): (
-                    {f.get("name") for f in d["fields"] if isinstance(f, dict)}
-                    if isinstance(d.get("fields"), list)
-                    else None
-                )
-                for d in model["datasets"]
-                if isinstance(d, dict)
-            }
-        else:
-            errors.append(
-                f"[Reference] semantic_model_ref iri '{model_ref.get('iri')}' does not hold a "
-                f"semantic model document, so its fields cannot be checked"
-            )
+        concepts = {c["concept"] for c in ontology["ontology"]} | BUILT_IN_CONCEPTS
+        relationships = OntologyRelationships(ontology["ontology"])
+    # Keyed by the normalized dataset name: the name as first declared and its
+    # normalized field names, or None once a dataset declares no fields list.
+    # Datasets whose names differ only in case are one dataset to a regular
+    # identifier, so their fields are pooled.
+    datasets = None
+    if model is not None and not SQLGLOT_AVAILABLE:
+        errors.append(ValidationWarning(
+            "[Reference] Warning: sqlglot is not installed, so the fields the mapping "
+            "expressions name are not checked. Install with: pip install sqlglot"
+        ))
+    elif model is not None:
+        datasets = {}
+        for dataset in model["datasets"]:
+            name, fields = datasets.get(dataset["name"].upper(), (dataset["name"], set()))
+            if fields is not None and "fields" in dataset:
+                fields = fields | {f["name"].upper() for f in dataset["fields"]}
+            else:
+                fields = None
+            datasets[dataset["name"].upper()] = (name, fields)
 
     def visit(node: object, path: str) -> None:
         if isinstance(node, dict):
@@ -816,17 +903,25 @@ def validate_mapping(data: dict, base: Path | None) -> list[str]:
             if concepts is not None and isinstance(concept, str) and concept not in concepts:
                 errors.append(f"[Reference] {path}: concept '{concept}' is not declared in the ontology")
             expression = node.get("expression")
-            if fields_by_dataset is not None and isinstance(expression, str):
-                for dataset, field in field_references(expression):
-                    if dataset not in fields_by_dataset:
+            if datasets is not None and isinstance(expression, str):
+                references = field_references(expression)
+                if references is None:
+                    errors.append(ValidationWarning(
+                        f"[Reference] Warning: {path}: expression does not parse as a SQL "
+                        f"expression, so the fields it names are not checked"
+                    ))
+                for reference in references or []:
+                    dataset, field = reference.normalized
+                    declared = datasets.get(dataset)
+                    if declared is None:
                         errors.append(
-                            f"[Reference] {path}: expression names '{dataset}.{field}' but "
-                            f"the semantic model declares no dataset '{dataset}'"
+                            f"[Reference] {path}: expression names '{reference.text}' but "
+                            f"the semantic model declares no dataset '{reference.written[0]}'"
                         )
-                    elif fields_by_dataset[dataset] is not None and field not in fields_by_dataset[dataset]:
+                    elif declared[1] is not None and field not in declared[1]:
                         errors.append(
-                            f"[Reference] {path}: expression names '{dataset}.{field}' but "
-                            f"dataset '{dataset}' declares no field '{field}'"
+                            f"[Reference] {path}: expression names '{reference.text}' but "
+                            f"dataset '{declared[0]}' declares no field '{reference.written[1]}'"
                         )
             for key, value in node.items():
                 visit(value, f"{path} -> {key}")
