@@ -269,21 +269,21 @@ class TestDataObjectProperties:
 class TestDimensionProperties:
     """Dimension properties roundtrip.
 
-    Note: Ossie uses column *code* as the field name, so after roundtrip the
-    dimension key becomes the physical code (ORDER_DATE).
+    Ossie names each field by its OBML column name, so the dimension keeps
+    its name through the roundtrip.
     """
 
     def test_dimension_result_type_roundtrip(self):
         result = _roundtrip(_OBML_FULL)
-        assert result["dimensions"]["ORDER_DATE"].get("resultType") == "date"
+        assert result["dimensions"]["Order Date"].get("resultType") == "date"
 
     def test_dimension_description_roundtrip(self):
         result = _roundtrip(_OBML_FULL)
-        assert result["dimensions"]["ORDER_DATE"].get("description") == "Order date dimension"
+        assert result["dimensions"]["Order Date"].get("description") == "Order date dimension"
 
     def test_dimension_owner_roundtrip(self):
         result = _roundtrip(_OBML_FULL)
-        assert result["dimensions"]["ORDER_DATE"].get("owner") == "analytics"
+        assert result["dimensions"]["Order Date"].get("owner") == "analytics"
 
 
 class TestCumulativeMetricDataType:

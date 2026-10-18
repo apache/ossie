@@ -27,10 +27,14 @@ import json
 import re
 from typing import Any
 
+import sqlglot
+from sqlglot import expressions as exp
+
 from ossie_orionbelt._common import (
     _COLUMN_REF_RE,
     _INTERNAL_VENDORS,
     _OBML_VENDOR_READ,
+    _OSSIE_DIALECT_TO_SQLGLOT,
     _OSSIE_VERSION,
     _SQL_PARSEABLE_DIALECTS,
     _VENDOR_OSSIE,
@@ -42,12 +46,33 @@ from ossie_orionbelt._common import (
     obml_decimal_default,
     ossie_metric_datatype_to_obml,
 )
+from ossie_orionbelt._field_names import (
+    FIELD_NAMES_COLUMN,
+    FIELD_NAMES_KEY,
+    field_collisions,
+    rename_keys,
+    rename_metric,
+)
 
 # A dataset/column identifier in a resolved metric expression: either a bare SQL
 # word or a bracket-quoted token. ``_resolve_column_refs`` bracket-quotes any
 # canonical name that is not a bare word (e.g. a display name with spaces) so the
 # downstream ``dataset.column`` parsers below never split it on whitespace.
 _RESOLVED_IDENT = r"(?:\w+|\[[^\]]+\])"
+
+
+def _contains_query(sql: str, dialect: str) -> bool:
+    """Whether *sql* holds a query, such as a subquery or a UNION.
+
+    A metric formula is over measures. A query inside it has no OBML form, and
+    its own tables and aliases are not datasets, so its aggregates must not be
+    lifted into measures.
+    """
+    try:
+        tree = sqlglot.parse_one(sql, read=_OSSIE_DIALECT_TO_SQLGLOT.get(dialect))
+    except sqlglot.errors.SqlglotError:
+        return False
+    return tree.find(exp.Query) is not None
 
 
 class OssietoOBML:
@@ -195,7 +220,12 @@ class OssietoOBML:
             obml.setdefault("customExtensions", []).append(
                 {
                     "vendor": _VENDOR_OSSIE,
-                    "data": json.dumps({"obml_unconverted_metrics": self._unconverted_metrics}),
+                    "data": json.dumps(
+                        {
+                            "obml_unconverted_metrics": self._unconverted_metrics,
+                            FIELD_NAMES_KEY: FIELD_NAMES_COLUMN,
+                        }
+                    ),
                 }
             )
 
@@ -242,10 +272,11 @@ class OssietoOBML:
     def _restore_column_names(self, obml: dict[str, Any], datasets: list) -> None:
         """Rename columns from their Ossie field name back to the OBML column name.
 
-        The export names each field by its physical code and keeps the OBML
-        column name in ``obml_column_name``. Measure filters and model filters
-        refer to columns by that name, so every column key and every reference
-        the import built from field names is renamed to match.
+        Exports before this version named each field by its physical code and
+        kept the OBML column name in ``obml_column_name``. Measure filters and
+        model filters refer to columns by that name, so every column key and
+        every reference the import built from field names is renamed to match,
+        and so are the unique keys and unconverted metrics it keeps verbatim.
         """
         renames: dict[str, dict[str, str]] = {}
         for ds in datasets:
@@ -281,6 +312,38 @@ class OssietoOBML:
                     lambda m: "{[" + m.group(1) + "].[" + rename(m.group(1), m.group(2)) + "]}",
                     measure["expression"],
                 )
+        # What the import keeps verbatim names fields as the document did: the
+        # unique keys, and the metrics OBML cannot represent.
+        for do_name, do_obj in obml.get("dataObjects", {}).items():
+            for ext in do_obj.get("customExtensions", []) or []:
+                data = self._own_stash(ext, "obml_unique_keys")
+                if data is not None:
+                    data["obml_unique_keys"] = rename_keys(
+                        data["obml_unique_keys"],
+                        renames.get(do_name, {}),
+                        (),
+                        self.warnings.append,
+                        f"Dataset '{do_name}'",
+                    )
+                    ext["data"] = json.dumps(data)
+        for ext in obml.get("customExtensions", []) or []:
+            data = self._own_stash(ext, "obml_unconverted_metrics")
+            if data is not None:
+                collisions = field_collisions(obml.get("dataObjects", {}))
+                for metric in data["obml_unconverted_metrics"]:
+                    rename_metric(metric, renames, {}, collisions, self.warnings.append)
+                ext["data"] = json.dumps(data)
+
+    @staticmethod
+    def _own_stash(ext: dict[str, Any], key: str) -> dict[str, Any] | None:
+        """The payload of an Ossie-vendor extension this import wrote under *key*."""
+        if ext.get("vendor") != _VENDOR_OSSIE:
+            return None
+        try:
+            data = json.loads(ext.get("data", "{}"))
+        except (json.JSONDecodeError, TypeError):
+            return None
+        return data if isinstance(data, dict) and isinstance(data.get(key), list) else None
 
     @staticmethod
     def _stashed_obml_settings(model: dict) -> object:
@@ -347,20 +410,20 @@ class OssietoOBML:
             columns[col_name] = col_obj
 
         # ── Primary key flag propagation (Ossie v0.2 first-class) ──
-        # ``primary_key`` lists physical column codes; mark every matching
-        # column with ``primaryKey: true``. Unknown PK columns surface as
-        # a warning (the spec couples PK to relationship cardinality, so
-        # silently dropping is unsafe).
-        pk_codes = ds.get("primary_key") or []
-        if pk_codes:
-            code_to_col = {col.get("code"): (cname, col) for cname, col in columns.items()}
+        # ``primary_key`` lists field names, which are the column names; mark
+        # every matching column with ``primaryKey: true``. A physical code
+        # still matches, as earlier exports listed codes. Unknown PK columns
+        # surface as a warning (the spec couples PK to relationship
+        # cardinality, so silently dropping is unsafe).
+        pk_names = ds.get("primary_key") or []
+        if pk_names:
+            code_to_col = {col.get("code"): col for col in columns.values()}
             unknown_pks: list[str] = []
-            for pk_code in pk_codes:
-                hit = code_to_col.get(pk_code)
-                if hit is None:
-                    unknown_pks.append(pk_code)
+            for pk_name in pk_names:
+                col = columns.get(pk_name) or code_to_col.get(pk_name)
+                if col is None:
+                    unknown_pks.append(pk_name)
                     continue
-                _, col = hit
                 col["primaryKey"] = True
             if unknown_pks:
                 self.warnings.append(
@@ -431,7 +494,12 @@ class OssietoOBML:
             do.setdefault("customExtensions", []).append(
                 {
                     "vendor": _VENDOR_OSSIE,
-                    "data": json.dumps({"obml_unique_keys": [list(g) for g in unique_keys]}),
+                    "data": json.dumps(
+                        {
+                            "obml_unique_keys": [list(g) for g in unique_keys],
+                            FIELD_NAMES_KEY: FIELD_NAMES_COLUMN,
+                        }
+                    ),
                 }
             )
 
@@ -864,6 +932,9 @@ class OssietoOBML:
                     + " / ".join(_SQL_PARSEABLE_DIALECTS)
                     + ") expression",
                 )
+                continue
+            if _contains_query(expr_text, _expr_dialect):
+                self._preserve_unconverted_metric(m, "expression contains a query")
                 continue
 
             # Resolve `dataset.column` references to canonical Ossie names

@@ -45,6 +45,11 @@ dependencies = [
     "pyyaml>=6.0",
     "jsonschema>=4.18",
     "referencing>=0.30",
+    # Runtime: the OSSIE_SQL_2026 check reads an expression's tokens and tree,
+    # quoting asks whether a name parses bare, and field renames in preserved
+    # metrics edit tokens. Capped below 31 because the check depends on token
+    # types and on how sqlglot spells normalized functions.
+    "sqlglot>=30,<31",
 ]
 
 [project.optional-dependencies]

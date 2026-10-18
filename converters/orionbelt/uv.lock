@@ -45,6 +45,7 @@ dependencies = [
     { name = "jsonschema" },
     { name = "pyyaml" },
     { name = "referencing" },
+    { name = "sqlglot" },
 ]
 
 [package.optional-dependencies]
@@ -67,6 +68,7 @@ requires-dist = [
     { name = "orionbelt-semantic-layer", marker = "extra == 'obml-validation'" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "referencing", specifier = ">=0.30" },
+    { name = "sqlglot", specifier = ">=30,<31" },
 ]
 provides-extras = ["obml-validation"]
 

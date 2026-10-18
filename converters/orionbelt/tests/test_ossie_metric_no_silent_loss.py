@@ -248,6 +248,28 @@ class TestNoSilentLoss:
         assert any(m["name"] == "Ratio" for m in _unconverted_stash(obml))
         assert any(w.startswith("LOSSY:") and "Ratio" in w for w in converter.warnings)
 
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            # The subquery's own alias "Orders" is not the dataset.
+            'SUM("Orders".amount) + (SELECT MAX("Orders".amount) FROM adjustments AS "Orders")',
+            "SUM(Orders.amount) / (SELECT COUNT(*) FROM Orders)",
+            "SUM(Orders.amount) - (SELECT 1 UNION ALL SELECT 2)",
+        ],
+    )
+    def test_sql_with_a_query_is_preserved_not_decomposed(self, expression: str) -> None:
+        # A metric formula is over measures; a query inside it has no OBML
+        # form, so its aggregates must not be lifted into measures.
+        ossie = _ossie_model([_metric("Adjusted", "ANSI_SQL", expression)])
+        converter = conv.OssietoOBML(ossie)
+        obml = converter.convert()
+
+        assert "Adjusted" not in obml.get("metrics", {})
+        assert not obml.get("measures")
+        stash = _unconverted_stash(obml)
+        assert [m["expression"]["dialects"][0]["expression"] for m in stash] == [expression]
+        assert any(w.startswith("LOSSY:") and "Adjusted" in w for w in converter.warnings)
+
     def test_roundtrip_restores_preserved_metric(self) -> None:
         original = _metric("Mdx Thing", "MDX", "[Measures].[Amount]", description="from cube")
         ossie = _ossie_model([original])

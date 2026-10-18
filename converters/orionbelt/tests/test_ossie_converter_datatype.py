@@ -135,7 +135,7 @@ class TestExportDatatype:
             ("boolean", "Boolean"),
         ]:
             ossie = conv.OBMLtoOssie(self._obml(abstract_type), model_name="s").convert()
-            assert _ossie_fields(ossie)["val"]["datatype"] == expected
+            assert _ossie_fields(ossie)["Val"]["datatype"] == expected
 
 
 class TestRoundtripLossless:
@@ -314,6 +314,6 @@ class TestEditedDatatypeBeatsStaleStash:
             }
         }
         ossie = conv.OBMLtoOssie(obml, model_name="s").convert()
-        _ossie_fields(ossie)["val"]["datatype"] = "DateTime"
+        _ossie_fields(ossie)["Val"]["datatype"] = "DateTime"
         (col,) = _obml_columns(conv.OssietoOBML(ossie).convert()).values()
         assert col["abstractType"] == "timestamp"
