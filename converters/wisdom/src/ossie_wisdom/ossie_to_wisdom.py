@@ -444,7 +444,9 @@ class OssieToWisdomConverter:
         relationship_type = data.get("relationshipType")
         if not isinstance(relationship_type, str) or relationship_type not in _RELATIONSHIP_TYPES:
             return None
-        # Edited endpoints may no longer match the stored type (e.g. a ONE_TO_MANY swap), so it is not applied.
-        if data.get("normalizedEndpoints") != [relationship.from_dataset, relationship.to]:
+        # Reversing from/to keeps the meaning: ONE_TO_ONE and MANY_TO_MANY are symmetric and
+        # ONE_TO_MANY is swapped back on export. Only endpoints moved to other datasets are stale.
+        endpoints = [relationship.from_dataset, relationship.to]
+        if data.get("normalizedEndpoints") not in (endpoints, endpoints[::-1]):
             return None
         return relationship_type

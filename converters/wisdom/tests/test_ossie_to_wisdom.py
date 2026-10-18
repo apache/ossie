@@ -380,11 +380,40 @@ def test_wisdom_extension_restores_one_to_many_and_swaps_sides_back():
     assert result.issues == []
 
 
-def test_wisdom_extension_with_stale_endpoints_exports_many_to_one():
+@pytest.mark.parametrize("relationship_type", ["ONE_TO_ONE", "MANY_TO_MANY"])
+def test_reversed_symmetric_relationship_keeps_its_type(relationship_type):
     # Endpoints recorded the other way round, as if `from`/`to` were swapped after import.
+    result, edge = _orders_customers_export(
+        ai_context=RELATIONSHIP_TYPE_NOTES[relationship_type],
+        custom_extensions=[
+            _wisdom_extension(
+                {"relationshipType": relationship_type, "normalizedEndpoints": ["customers", "orders"]}
+            )
+        ],
+    )
+    assert edge["properties"]["relationshipType"] == relationship_type
+    assert _join_sides(edge) == (("orders", "customer_fk"), ("customers", "id"))
+    assert result.issues == []
+
+
+def test_reversed_one_to_many_still_describes_the_relationship():
+    # Imported as customers -> orders; `from`/`to` now read orders -> customers, so orders is the
+    # many side. Swapping back gives customers ONE_TO_MANY orders, which says the same thing.
     result, edge = _orders_customers_export(
         custom_extensions=[
             _wisdom_extension({"relationshipType": "ONE_TO_MANY", "normalizedEndpoints": ["customers", "orders"]})
+        ],
+    )
+    assert edge["properties"]["relationshipType"] == "ONE_TO_MANY"
+    assert _join_sides(edge) == (("customers", "id"), ("orders", "customer_fk"))
+    assert result.issues == []
+
+
+def test_wisdom_extension_with_stale_endpoints_exports_many_to_one():
+    # An endpoint now points at a different dataset, as if the relationship was edited after import.
+    result, edge = _orders_customers_export(
+        custom_extensions=[
+            _wisdom_extension({"relationshipType": "ONE_TO_MANY", "normalizedEndpoints": ["orders", "users"]})
         ],
     )
     assert edge["properties"]["relationshipType"] == "MANY_TO_ONE"
@@ -399,6 +428,7 @@ def test_wisdom_extension_with_stale_endpoints_exports_many_to_one():
     "data",
     [
         "not json",
+        pytest.param("[" * 200_000, id="deeply-nested"),
         ["ONE_TO_MANY"],
         {"relationshipType": "SIDEWAYS", "normalizedEndpoints": ["orders", "customers"]},
         {"relationshipType": {"unexpected": "shape"}, "normalizedEndpoints": ["orders", "customers"]},

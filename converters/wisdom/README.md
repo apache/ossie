@@ -106,8 +106,9 @@ are stable:
 - Relationships become `MANY_TO_ONE` edges (Ossie's `from` is the many side). A relationship
   with a `WISDOM` custom extension written by `wisdom-to-ossie` gets its type back from it:
   `ONE_TO_ONE`, `MANY_TO_MANY`, or `ONE_TO_MANY` with the two sides (and their columns)
-  swapped back. If the recorded datasets no longer match the relationship's `from`/`to`
-  (it was edited after import), or the entry is malformed, the edge stays `MANY_TO_ONE`
+  swapped back. Reversing `from`/`to` after import keeps the type, since the relationship
+  means the same thing either way. If a recorded dataset is no longer one of the
+  relationship's `from`/`to`, or the entry is malformed, the edge stays `MANY_TO_ONE`
   with a `RELATIONSHIP_TYPE_UNRESOLVED` warning. The entries read this way are not reported
   as `CUSTOM_EXTENSION_DROPPED`. Composite keys become compound `AND` join conditions.
 - Documents written before the `WISDOM` extension carry the type only as an `ai_context`

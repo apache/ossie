@@ -81,7 +81,7 @@ def decode_extension_data(data: str) -> dict | None:
     or was written in a format version this converter does not understand."""
     try:
         decoded = json.loads(data)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, RecursionError):
         return None
     if not isinstance(decoded, dict):
         return None
