@@ -520,7 +520,13 @@ def _cross_check(tmp_path, mapping_schema, mapping) -> list[str]:
 def test_split_flights_mapping_cross_checks_against_its_documents(offline, mapping_schema):
     mapping = yaml.safe_load((_REPO / "examples/flights.mapping.yaml").read_text())
 
-    assert _VALIDATE.validate_document(mapping, mapping_schema, _REPO / "examples") == []
+    diagnostics = _VALIDATE.validate_document(mapping, mapping_schema, _REPO / "examples")
+
+    # Two Flight link mappings filter with "FLIGHT.id WHERE ( ... == TRUE )", which is
+    # not a SQL expression, so their fields are skipped with a warning and nothing fails.
+    assert [type(d) for d in diagnostics] == [_VALIDATE.ValidationWarning] * 2
+    assert all("expression does not parse as a SQL expression" in d for d in diagnostics)
+    assert all("concept_mappings -> 8 -> link_mappings -> " in d for d in diagnostics)
 
 
 def test_mapping_cross_checks_accept_resolving_references(offline, mapping_schema, tmp_path):
@@ -597,9 +603,18 @@ def test_mapping_expressions_must_name_declared_fields(offline, mapping_schema, 
     mapping["concept_mappings"][0]["object_mappings"] = [
         {"expression": "orders.order_id"},
         {"expression": "orders.order_nr + orders.order_nr"},
-        {"expression": "ORDERS.order_id"},
+        # Regular identifiers match without regard to case (expression_language.md).
+        {"expression": "ORDERS.Order_Id"},
+        {"expression": "ORDERS.ORDER_NR"},
+        # A quoted identifier matches as written, against the model's name upper-cased.
+        {"expression": '"ORDERS"."ORDER_ID"'},
+        {"expression": '"orders".order_id'},
+        {"expression": 'orders."order_id"'},
         {"expression": "CONCAT(orders.order_id, '.', orders.customer_id)"},
         {"expression": "CASE WHEN orders.order_id > 0 THEN 'a.b' END"},
+        {"expression": "CAST(orders.order_id AS pg_catalog.int4)"},
+        {"expression": "orders.order_id::pg_catalog.int4"},
+        {"expression": "transform(orders.order_id, x -> x.y)"},
         {"expression": "customers.anything"},
     ]
 
@@ -608,27 +623,151 @@ def test_mapping_expressions_must_name_declared_fields(offline, mapping_schema, 
     assert errors == [
         "[Reference] concept_mappings -> 0 -> object_mappings -> 1: expression names "
         "'orders.order_nr' but dataset 'orders' declares no field 'order_nr'",
-        "[Reference] concept_mappings -> 0 -> object_mappings -> 2: expression names "
-        "'ORDERS.order_id' but the semantic model declares no dataset 'ORDERS'",
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 3: expression names "
+        "'ORDERS.ORDER_NR' but dataset 'orders' declares no field 'ORDER_NR'",
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 5: expression names "
+        "'\"orders\".order_id' but the semantic model declares no dataset '\"orders\"'",
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 6: expression names "
+        "'orders.\"order_id\"' but dataset 'orders' declares no field '\"order_id\"'",
     ]
+
+
+def test_mapping_datasets_that_differ_only_in_case_pool_their_fields(
+    offline, mapping_schema, tmp_path
+):
+    model = _sales_model()
+    model["datasets"].append(
+        {
+            "name": "ORDERS",
+            "source": "sales.public.orders_v2",
+            "fields": [{"name": "status", "expression": {"dialects": [
+                {"dialect": "ANSI_SQL", "expression": "status"}
+            ]}}],
+        }
+    )
+    mapping = _write_mapping_set(tmp_path, model=model)
+    mapping["concept_mappings"][0]["object_mappings"] = [
+        {"expression": "orders.order_id"},
+        {"expression": "orders.status"},
+        {"expression": "Orders.order_nr"},
+    ]
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert errors == [
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 2: expression names "
+        "'Orders.order_nr' but dataset 'orders' declares no field 'order_nr'"
+    ]
+
+
+def test_mapping_dataset_without_a_fields_list_turns_off_the_check_for_its_name(
+    offline, mapping_schema, tmp_path
+):
+    model = _sales_model()
+    model["datasets"].append({"name": "ORDERS", "source": "sales.public.orders_v2"})
+    mapping = _write_mapping_set(tmp_path, model=model)
+    mapping["concept_mappings"][0]["object_mappings"] = [{"expression": "orders.order_nr"}]
+
+    assert _cross_check(tmp_path, mapping_schema, mapping) == []
+
+
+def test_mapping_expression_that_is_not_sql_is_skipped_with_a_warning(
+    offline, mapping_schema, tmp_path
+):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["concept_mappings"][0]["object_mappings"] = [
+        {"expression": "orders.payload:customer.id"},
+        {"expression": "orders.order_nr"},
+    ]
+
+    diagnostics = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert [type(d) for d in diagnostics] == [_VALIDATE.ValidationWarning, str]
+    assert diagnostics[0] == (
+        "[Reference] Warning: concept_mappings -> 0 -> object_mappings -> 0: expression does "
+        "not parse as a SQL expression, so the fields it names are not checked"
+    )
+    assert "declares no field 'order_nr'" in diagnostics[1]
+
+
+def test_mapping_expressions_are_not_checked_without_sqlglot(
+    offline, mapping_schema, tmp_path, monkeypatch
+):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["concept_mappings"][0]["object_mappings"] = [{"expression": "orders.order_nr"}]
+    monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", False)
+
+    diagnostics = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert diagnostics == [
+        "[Reference] Warning: sqlglot is not installed, so the fields the mapping "
+        "expressions name are not checked. Install with: pip install sqlglot"
+    ]
+    assert isinstance(diagnostics[0], _VALIDATE.ValidationWarning)
+
+
+def _reference(dataset: str, field: str, dataset_quoted: bool = False, field_quoted: bool = False):
+    """A FieldReference for a dataset.field written with the given quoting."""
+    written = (
+        f'"{dataset}"' if dataset_quoted else dataset,
+        f'"{field}"' if field_quoted else field,
+    )
+    normalized = (
+        dataset if dataset_quoted else dataset.upper(),
+        field if field_quoted else field.upper(),
+    )
+    return _VALIDATE.FieldReference(written, normalized)
+
+
+_ORDER_ID = _reference("orders", "order_id")
 
 
 @pytest.mark.parametrize(
     "expression, expected",
     [
-        ("orders.order_id -- see orders.nope", [("orders", "order_id")]),
-        ("/* orders.nope */ orders.order_id", [("orders", "order_id")]),
-        ('"a.b" + orders.order_id', [("orders", "order_id")]),
-        ("`a.b` + orders.order_id", [("orders", "order_id")]),
-        ("'it''s a.b' || orders.order_id", [("orders", "order_id")]),
+        ("orders.order_id -- see orders.nope", [_ORDER_ID]),
+        ("/* orders.nope */ orders.order_id", [_ORDER_ID]),
+        ("'it''s a.b' || orders.order_id", [_ORDER_ID]),
+        ("'orders.nope' || orders.order_id", [_ORDER_ID]),
+        ("order_id", []),
         ("cat.sch.orders.order_id", []),
-        ("sch.fn(orders.order_id)", [("orders", "order_id")]),
-        ("orders.order_id + orders.order_id", [("orders", "order_id")]),
-        ("1.5 * orders.order_id", [("orders", "order_id")]),
-        ("orders.order_id > 0 AND orders.amount > 1.5", [("orders", "order_id"), ("orders", "amount")]),
+        ("orders.*", []),
+        ("COUNT(*)", []),
+        ("sch.fn(orders.order_id)", [_ORDER_ID]),
+        ("CAST(orders.order_id AS pg_catalog.int4)", [_ORDER_ID]),
+        ("orders.order_id::pg_catalog.int4", [_ORDER_ID]),
+        ("transform(orders.order_id, x -> x.y)", [_ORDER_ID]),
+        ("orders.order_id + orders.order_id", [_ORDER_ID]),
+        ("1.5 * orders.order_id", [_ORDER_ID]),
+        (
+            "orders.order_id > 0 AND orders.amount > 1.5",
+            [_ORDER_ID, _reference("orders", "amount")],
+        ),
+        ('"Orders".order_id', [_reference("Orders", "order_id", True, False)]),
+        ('orders."Order Id"', [_reference("orders", "Order Id", False, True)]),
+        # The quoted form is kept as written and the normalized one unescaped.
+        ('"it""s".x', [_VALIDATE.FieldReference(('"it""s"', "x"), ('it"s', "X"))]),
+        # A column inside a subquery resolves in that query, not in the model,
+        # and a correlated reference to a dataset goes with it.
+        ("orders.order_id IN (SELECT o.id FROM other o)", [_ORDER_ID]),
+        ("(SELECT MAX(o.amount) FROM other o WHERE o.id = orders.order_id)", []),
+        # Not SQL expressions: a Snowflake path, a backslash escape, a backtick
+        # identifier, nothing at all, token soup, and nesting past the recursion limit.
+        ("orders.payload:customer.id", None),
+        ("'it\\'s a.b' || orders.order_id", None),
+        ("`a.b` + orders.order_id", None),
+        ("", None),
+        ("orders.order_id = {:}", None),
+        ("(" * 5000 + "orders.order_id" + ")" * 5000, None),
+        # A dataset named like a keyword reads as a statement, not an expression.
+        ("from.x", None),
+        ("update.x", None),
+        ("set.x", None),
+        ("pivot.x", None),
+        ("VALUES (1)", None),
     ],
 )
-def test_field_references_read_two_part_identifiers_only(expression, expected):
+def test_field_references_are_the_two_part_columns_of_the_parsed_expression(expression, expected):
     assert _VALIDATE.field_references(expression) == expected
 
 
@@ -942,9 +1081,59 @@ def test_mapping_reference_to_the_wrong_kind_of_document_is_reported_once(
 
     # One line for the document, not one per concept the mapping names.
     assert errors == [
-        "[Reference] ontology_ref iri './sales.semantic_model.yaml' does not hold an ontology "
-        "document, so its concepts cannot be checked"
+        "[Reference] ontology_ref iri './sales.semantic_model.yaml' does not validate against "
+        "ontology/ontology.json (2 error(s), the first at (root): 'ontology' is a required "
+        "property), so its concepts are not checked"
     ]
+
+
+@pytest.mark.parametrize(
+    "mutate, label, expected",
+    [
+        (
+            lambda o, m: o["ontology"][2].update(concept=["Order"]),
+            "ontology_ref",
+            "ontology -> 2 -> concept: ['Order'] is not of type 'string'",
+        ),
+        (
+            lambda o, m: o["ontology"][2]["relationships"][1].update(roles={"concept": "Customer"}),
+            "ontology_ref",
+            "ontology -> 2 -> relationships -> 1 -> roles: {'concept': 'Customer'} is not of "
+            "type 'array'",
+        ),
+        (
+            lambda o, m: m["datasets"][0].update(name=["orders"]),
+            "semantic_model_ref",
+            "datasets -> 0 -> name: ['orders'] is not of type 'string'",
+        ),
+        (
+            lambda o, m: m["datasets"][0]["fields"][0].update(name={"a": 1}),
+            "semantic_model_ref",
+            "datasets -> 0 -> fields -> 0 -> name: {'a': 1} is not of type 'string'",
+        ),
+    ],
+)
+def test_mapping_referenced_document_that_fails_its_schema_is_one_error(
+    offline, mapping_schema, tmp_path, mutate, label, expected
+):
+    ontology, model = _sales_ontology(), _sales_model()
+    mutate(ontology, model)
+    mapping = _write_mapping_set(tmp_path, ontology=ontology, model=model)
+    # Both halves have something to report. Only the intact half does.
+    mapping["concept_mappings"][0]["concept"] = "Custmer"
+    mapping["concept_mappings"][0]["object_mappings"] = [{"expression": "orders.order_nr"}]
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert len(errors) == 2
+    iri = "./sales.ontology.yaml" if label == "ontology_ref" else "./sales.semantic_model.yaml"
+    half = "concepts" if label == "ontology_ref" else "fields"
+    assert errors[0].startswith(f"[Reference] {label} iri '{iri}' does not validate against ")
+    assert errors[0].endswith(
+        f"(1 error(s), the first at {expected}), so its {half} are not checked"
+    )
+    other = "declares no field 'order_nr'" if label == "ontology_ref" else "concept 'Custmer'"
+    assert other in errors[1]
 
 
 @pytest.mark.parametrize(
@@ -971,6 +1160,51 @@ def test_mapping_reference_that_does_not_read_as_a_document_is_an_error(
     assert not isinstance(errors[0], _VALIDATE.ValidationWarning)
     assert errors[0].startswith("[Reference] semantic_model_ref iri './sales.semantic_model.yaml' ")
     assert expected in errors[0]
+
+
+def test_schema_at_is_none_for_a_file_that_is_not_there_or_not_json(tmp_path):
+    (tmp_path / "broken.json").write_text("{")
+
+    assert _VALIDATE._schema_at(tmp_path / "missing.json") is None
+    assert _VALIDATE._schema_at(tmp_path / "broken.json") is None
+    assert _VALIDATE._schema_at(_REPO / "ontology/ontology.json")["$id"].endswith("ontology.json")
+
+
+def test_mapping_referenced_document_is_not_checked_without_its_schema(
+    offline, mapping_schema, tmp_path, monkeypatch
+):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["concept_mappings"][0]["concept"] = "Custmer"
+    mapping["concept_mappings"][0]["object_mappings"] = [{"expression": "orders.order_nr"}]
+    monkeypatch.setattr(_VALIDATE, "_schema_at", lambda path: None)
+
+    diagnostics = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert [type(d) for d in diagnostics] == [_VALIDATE.ValidationWarning] * 2
+    assert diagnostics[0] == (
+        "[Reference] Warning: ontology/ontology.json is not next to this script, so the "
+        "concepts of ontology_ref are not checked"
+    )
+    assert diagnostics[1].startswith("[Reference] Warning: core-spec/ossie-schema.json is not")
+
+
+@pytest.mark.parametrize(
+    "iri, expected",
+    [
+        ("http://[oops/sales.ontology.yaml", "is not a valid URI reference: Invalid IPv6 URL"),
+        ("//[::1/sales.ontology.yaml", "is not a valid URI reference: Invalid IPv6 URL"),
+        ("./sales%00.ontology.yaml", "does not resolve: embedded null byte"),
+    ],
+)
+def test_mapping_iri_that_cannot_be_followed_is_an_error(
+    offline, mapping_schema, tmp_path, iri, expected
+):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["ontology_ref"]["iri"] = iri
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert errors == [f"[Reference] ontology_ref iri '{iri}' {expected}"]
 
 
 def test_validate_file_resolves_mapping_references_from_the_file_location(
