@@ -45,7 +45,7 @@ from sqlglot import expressions as exp
 from sqlglot.tokens import Token, TokenType
 
 from ossie_orionbelt._common import _OSSIE_DIALECT_TO_SQLGLOT, _SQL_PARSEABLE_DIALECTS
-from ossie_orionbelt._portable import case_collisions, needs_quoting
+from ossie_orionbelt._portable import case_collisions, quoted_name
 
 # Marks a payload whose field references are column names.
 FIELD_NAMES_KEY = "obml_field_names"
@@ -114,8 +114,17 @@ def rename_metric(
     collisions: Collisions,
     warn: Warn,
 ) -> None:
-    """Rename the field references in each SQL expression of *metric*, in place."""
-    for entry in (metric.get("expression") or {}).get("dialects") or []:
+    """Rename the field references in each SQL expression of *metric*, in place.
+
+    A preserved metric is one the converter could not handle, so anything not
+    shaped like a metric expression is left as it is.
+    """
+    expression = metric.get("expression")
+    if not isinstance(expression, dict):
+        return
+    for entry in expression.get("dialects") or []:
+        if not isinstance(entry, dict):
+            continue
         dialect = entry.get("dialect")
         sql = entry.get("expression")
         if dialect not in _SQL_PARSEABLE_DIALECTS or not isinstance(sql, str):
@@ -137,17 +146,17 @@ def rename_sql(
 
     The references are found on the tokens, which keep what the parsed tree
     drops; the tree tells whether a query in the SQL declares the qualifier
-    itself. A quoted name matches exactly, an unquoted one regardless of case,
-    as the import resolves metric references. A new name is written bare only
-    when it can be: not reserved, and not one of *collisions* for its data
-    object, which bare would match another column. SQL that does not parse is
-    kept.
+    itself. A quoted old name matches exactly, as the older exports that wrote
+    it quoted every name as written; an unquoted one matches regardless of
+    case. A new name is written as :func:`quoted_name` says, *collisions*
+    being the names of its data object that differ only by case. SQL that
+    does not parse is kept.
     """
     datasets = set(renames) | set(ambiguous)
     if not datasets:
         return sql
     read = _OSSIE_DIALECT_TO_SQLGLOT.get(dialect)
-    parsed = _parse(sql, read)
+    parsed = parse_expression(sql, read)
     if parsed is None:
         warn(f"{where} does not parse; its field references were not renamed.")
         return sql
@@ -189,17 +198,18 @@ def rename_sql(
             continue
         edits.append((field.start, field.end, renames[do_name][old], do_name))
     for start, end, name, do_name in sorted(edits, reverse=True):
-        if name not in collisions.get(do_name, frozenset()) and not needs_quoting(name):
-            quoted = name
+        quoted = quoted_name(name, collisions.get(do_name, frozenset()))
+        if quoted is None:
+            ident = name
         elif sql[start] == "[":
-            quoted = f"[{name}]"
+            ident = f"[{quoted}]"
         else:
-            quoted = exp.to_identifier(name, quoted=True).sql(dialect=read)
-        sql = sql[:start] + quoted + sql[end + 1 :]
+            ident = exp.to_identifier(quoted, quoted=True).sql(dialect=read)
+        sql = sql[:start] + ident + sql[end + 1 :]
     return sql
 
 
-def _parse(sql: str, read: str | None) -> tuple[str, exp.Expr] | None:
+def parse_expression(sql: str, read: str | None) -> tuple[str, exp.Expr] | None:
     """The text parsed and its tree, retrying with ``[name]`` read as ``"name"``
     like the import.
 

@@ -52,10 +52,10 @@ ontology_mappings:
     semantic_model: { ...full Ossie core-spec model... }   # reused from OBMLtoOssie
     concept_mappings:
       - concept: <Entity>
-        object_mappings: [{ expression: "<table>.<key_col>" }]
+        object_mappings: [{ expression: "<Entity>.<key_field>" }]
         link_mappings:
           - relationship: <A>_to_<B>
-            object_mapping: { concept: <B>, expression: "<table_A>.<fk_col>" }
+            object_mapping: { concept: <B>, expression: "<A>.<fk_field>" }
 ```
 
 ## Mapping rules
@@ -66,12 +66,13 @@ ontology_mappings:
 | `dataObject.description` / `.comment` | `concept.description` | first non-empty wins |
 | `join` (A → B) | `Relationship` under A's component | declaring concept A is the implicit first role; B is an explicit `role` |
 | `join.joinType` | `Relationship.multiplicity` | `many-to-one`→`ManyToOne`, `one-to-one`→`OneToOne` |
-| `column.primaryKey` | entity `object_mappings[].expression` | `<table>.<pk_code>`; identifies the entity |
-| `join.columnsFrom` (FK) | `link_mappings[].object_mapping.expression` | `<table_A>.<fk_code>`; binds the relationship to its far role |
+| `column.primaryKey` | entity `object_mappings[].expression` | `<dataset>.<pk_field>`; identifies the entity |
+| `join.columnsFrom` (FK) | `link_mappings[].object_mapping.expression` | `<dataset_A>.<fk_field>`; binds the relationship to its far role |
 | whole core model | `ontology_mappings[].semantic_model` | complete output from `OBMLtoOssie.convert()`|
 
-`<table>` is the final identifier of the dataset `source` (e.g. `db.schema.t` → `t`),
-falling back to the dataset name when `source` has no dotted physical table.
+Mapping expressions are SQL over the embedded model's dataset fields: `<dataset>` is
+the dataset name (the OBML data object name) and `<field>` the field name (the OBML
+column name), quoted as in the model's metrics, e.g. `Orders."Order ID"`.
 
 ## Gaps and warnings (emitted to `warnings`)
 

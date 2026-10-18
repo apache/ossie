@@ -517,21 +517,42 @@ def _run_on_duckdb(ossie: dict[str, Any]) -> dict[str, Any]:
 
 
 class TestParserKeywordsStayQuoted:
-    @pytest.mark.parametrize("name", ["Qualify", "Limit", "Pivot", "Left"])
-    def test_keyword_data_object_is_quoted_and_runs(self, name: str) -> None:
+    # A regular name DuckDB or sqlglot will not read bare is quoted in its
+    # normalized (upper case) form, which matches it; ``Left`` is reserved in
+    # SQL:2023, so it cannot be regular and is quoted as written.
+    @pytest.mark.parametrize(
+        ("name", "quoted"),
+        [("Qualify", "QUALIFY"), ("Limit", "LIMIT"), ("Pivot", "PIVOT"), ("Left", "Left")],
+    )
+    def test_keyword_data_object_is_quoted_and_runs(self, name: str, quoted: str) -> None:
         ossie, _ = _export(_one_object_model(name, {"Amount": "A"}))
         sql = _sql(ossie)["Total Amount"]
-        assert sql == f'SUM("{name}".Amount)'
+        assert sql == f'SUM("{quoted}".Amount)'
         sqlglot.parse_one(sql)
         assert _run_on_duckdb(ossie) == {"Total Amount": 3}
+
+    @pytest.mark.parametrize("name", ["Qualify", "Left"])
+    def test_keyword_field_round_trip(self, name: str) -> None:
+        obml = _one_object_model("Orders", {name: "A"})
+        obml["metrics"] = {"Twice": {"expression": f"{{[Total {name}]}} * 2"}}
+        del obml["measures"][f"Total {name}"]["resultType"]
+        ossie, _ = _export(obml)
+        for metric in ossie["metrics"]:
+            metric["custom_extensions"] = []
+        back = conv.OssietoOBML(ossie).convert()
+        columns = [c for m in back["measures"].values() for c in m.get("columns", [])]
+        assert columns == [{"dataObject": "Orders", "column": name}]
 
 
 class TestNamesDifferingOnlyByCase:
     def test_both_are_quoted_and_stay_distinct(self) -> None:
-        ossie, _ = _export(_one_object_model("Orders", {"Amount": "A", "amount": "B", "Qty": "B"}))
+        ossie, warnings = _export(
+            _one_object_model("Orders", {"Amount": "A", "amount": "B", "Qty": "B"})
+        )
         assert _sql(ossie)["Total Amount"] == 'SUM(Orders."Amount")'
         assert _sql(ossie)["Total amount"] == 'SUM(Orders."amount")'
         assert _sql(ossie)["Total Qty"] == "SUM(Orders.Qty)"
+        assert any("['Amount', 'amount'] differ only by case" in w for w in warnings)
         # Not run on DuckDB: it matches even quoted identifiers regardless of
         # case, so no DuckDB relation can carry both fields.
 

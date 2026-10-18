@@ -139,28 +139,67 @@ def needs_quoting(name: str) -> bool:
     return not (isinstance(node, exp.Column) and node.table == name and node.name == name)
 
 
+def is_regular(name: str) -> bool:
+    """Whether *name* can be an ANSI regular identifier: identifier-shaped and
+    not a SQL:2023 reserved word.
+
+    The expression language normalizes a regular identifier to upper case; any
+    other name is matched as written.
+    """
+    return bool(_REGULAR_IDENTIFIER.fullmatch(name)) and name.lower() not in SQL_RESERVED_WORDS
+
+
 def case_collisions(names: Iterable[str]) -> frozenset[str]:
     """The names that equal another one regardless of case.
 
     A bare identifier matches regardless of case, so ``Amount`` and ``amount``
-    would be one reference; quoted, each matches only itself.
+    would be one reference.
     """
     names = list(dict.fromkeys(names))
     folded = Counter(name.upper() for name in names)
     return frozenset(name for name in names if folded[name.upper()] > 1)
 
 
-def ossie_ident(name: str, collisions: frozenset[str] = frozenset()) -> str:
-    """*name* as an identifier in an Apache Ossie expression: bare when it can be.
+def quoted_name(name: str, collisions: frozenset[str] = frozenset()) -> str | None:
+    """The text a reference to *name* quotes, or ``None`` when it is written bare.
 
-    The expression language follows ANSI SQL: a regular identifier matches
-    regardless of case, a quoted one exactly. A field declared ``amount`` is
-    regular, so ``"amount"`` would not match it; the reference is written bare.
-    A name that cannot be regular (a space, a leading digit, a reserved word
-    such as ``Order``) is quoted, and matches the declared name exactly, as is
-    a name in *collisions*, which bare would match another one.
+    The expression language follows ANSI SQL (``core-spec/expression_language.md``,
+    "Namespacing and Identifier Resolution"): a regular identifier is normalized
+    to upper case, a quoted one is taken as written. A regular name is written
+    bare. One that DuckDB or sqlglot will not read bare, such as ``Qualify``, is
+    quoted in its normalized form, ``"QUALIFY"``, which matches it. A name that
+    cannot be regular (a space, a leading digit, a reserved word such as
+    ``Order``) is matched as written, so it is quoted as written.
+
+    Names in *collisions* differ only by case, so the language cannot tell them
+    apart; each is quoted as written, which a reader that matches a quoted name
+    exactly, as this converter does, resolves.
     """
-    return sql_ident(name) if name in collisions or needs_quoting(name) else name
+    if name in collisions or not is_regular(name):
+        return name
+    if needs_quoting(name):
+        return name.upper()
+    return None
+
+
+def ossie_ident(name: str, collisions: frozenset[str] = frozenset()) -> str:
+    """*name* as an identifier in an Apache Ossie expression (see :func:`quoted_name`)."""
+    text = quoted_name(name, collisions)
+    return name if text is None else sql_ident(text)
+
+
+def matching_names(ref: str, quoted: bool, names: Iterable[str]) -> list[str]:
+    """The declared *names* the reference *ref* (unquoted text) matches.
+
+    A quoted reference matches the name it spells exactly, else a regular name
+    whose normalized form it spells (``"QUALIFY"`` matches ``Qualify``). A bare
+    one matches regardless of case. More than one match is ambiguous.
+    """
+    names = list(names)
+    if quoted:
+        exact = [n for n in names if n == ref]
+        return exact or [n for n in names if is_regular(n) and n.upper() == ref]
+    return [n for n in names if n.upper() == ref.upper()]
 
 
 def _string_literal(value: str) -> str:

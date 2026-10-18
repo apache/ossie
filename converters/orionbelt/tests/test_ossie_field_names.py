@@ -345,6 +345,27 @@ class TestSavedByOlderVersion:
         assert not any("unique key" in w for w in exporter.warnings)
 
 
+class TestMalformedPreservedMetrics:
+    """A preserved metric is one the converter could not handle; renaming skips
+    what is not shaped like a metric expression instead of crashing."""
+
+    _STRING_EXPRESSION = {"name": "m", "expression": "SUM(Orders.amount)"}
+
+    def test_export_of_obml_saved_by_an_older_version(self) -> None:
+        obml = _saved_by_an_older_version()
+        payload = {"obml_unconverted_metrics": [dict(self._STRING_EXPRESSION), "junk"]}
+        obml["customExtensions"] = [{"vendor": "Ossie", "data": json.dumps(payload)}]
+        ossie = conv.OBMLtoOssie(obml).convert()
+        assert self._STRING_EXPRESSION in ossie["metrics"]
+
+    def test_import_of_an_older_export(self) -> None:
+        legacy = _legacy_export()
+        legacy["metrics"] = [dict(self._STRING_EXPRESSION)]
+        obml = conv.OssietoOBML(legacy).convert()
+        ossie = conv.OBMLtoOssie(obml).convert()
+        assert self._STRING_EXPRESSION in ossie["metrics"]
+
+
 class TestRenamedFieldsDifferingOnlyByCase:
     """A preserved metric renamed to Amount and amount keeps two references."""
 

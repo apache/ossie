@@ -46,7 +46,7 @@ from ossie_orionbelt._field_names import (
     rename_metric,
 )
 from ossie_orionbelt._ossie_sql import ossie_sql, subset_violations
-from ossie_orionbelt._portable import NotPortableError, PortableRenderer
+from ossie_orionbelt._portable import NotPortableError, PortableRenderer, case_collisions
 
 
 class OBMLtoOssie:
@@ -115,6 +115,7 @@ class OBMLtoOssie:
             sem_model["ai_context"] = {"instructions": self.ai_instructions}
 
         sem_model["datasets"] = datasets
+        self._warn_case_collisions()
 
         if all_relationships:
             sem_model["relationships"] = all_relationships
@@ -541,6 +542,26 @@ class OBMLtoOssie:
                     )
             restored.extend(metrics)
         return restored
+
+    def _warn_case_collisions(self) -> None:
+        """Warn of names that differ only by case.
+
+        The expression language normalizes a regular identifier to upper case,
+        so it cannot tell such names apart.
+        """
+        data_objects = self.obml.get("dataObjects", {}) or {}
+        groups = [("Datasets", case_collisions(data_objects))] + [
+            (f"Dataset '{name}': fields", case_collisions(obj.get("columns") or {}))
+            for name, obj in data_objects.items()
+            if isinstance(obj, dict)
+        ]
+        for where, names in groups:
+            if names:
+                self.warnings.append(
+                    f"{where} {sorted(names)} differ only by case, which Apache Ossie "
+                    f"identifiers ignore; references to them are quoted as written, which "
+                    f"only a reader that matches quoted names exactly tells apart."
+                )
 
     def _merge_restored_metrics(self, ossie_metrics: list[dict]) -> None:
         """Append preserved (unconverted) Ossie metrics to the converted ones.

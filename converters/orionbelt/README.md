@@ -98,10 +98,15 @@ Other Ossie consumers read a metric's SQL, not the `ORIONBELT` extension, so the
 OBML to Ossie export writes SQL that computes what OrionBelt computes:
 
 - columns are referenced as `<dataset>.<field>`, the OBML data object and column
-  names, bare where the name can be a regular identifier. A quoted identifier
-  matches only exactly, so a name is double-quoted only when it has to be: a
-  space, a leading digit, a reserved word such as `Order`, or a name that
-  differs from another only by case;
+  names, following the expression language's identifier rules: a regular
+  identifier is normalized to upper case, a quoted one is taken as written. A
+  name is bare where it can be a regular identifier. A name that cannot (a
+  space, a leading digit, a reserved word such as `Order`) is double-quoted as
+  written; a regular name DuckDB or sqlglot will not read bare, such as
+  `Qualify`, is quoted in its normalized form, `"QUALIFY"`. Names that differ
+  only by case are one identifier to the language: they are quoted as written,
+  with a warning. The import resolves references by the same rules, and keeps a
+  metric whose reference matches no field, or more than one, verbatim;
 - measure filters become `AGG(CASE WHEN <condition> THEN <arg> END)`, totals the
   grand-total window `SUM(SUM(x)) OVER ()`, and `defaultValue` a `COALESCE`;
 - synthesized counts and metric-on-metric `{[Name]}` references are inlined;
