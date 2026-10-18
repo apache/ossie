@@ -480,6 +480,9 @@ class ValidatorIntegrationTest(unittest.TestCase):
         self.assertIn("Validation PASSED", result.stdout)
 
     def test_relationship_column_counts_are_checked_in_flat_documents(self):
+        def column(name):
+            return {"name": name, "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": name}]}}
+
         cases = (
             (["customer_id"], ["id"], 0),
             (["customer_id", "region_id"], ["id"], 1),
@@ -491,11 +494,16 @@ class ValidatorIntegrationTest(unittest.TestCase):
                     "version": "0.2.0.dev0",
                     "name": "sales",
                     "datasets": [
-                        {"name": "orders", "source": "analytics.orders"},
+                        {
+                            "name": "orders",
+                            "source": "analytics.orders",
+                            "fields": [column("customer_id"), column("region_id")],
+                        },
                         {
                             "name": "customers",
                             "source": "analytics.customers",
                             "primary_key": ["id"],
+                            "fields": [column("id"), column("region_id")],
                         },
                     ],
                     "relationships": [

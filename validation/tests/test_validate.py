@@ -55,14 +55,25 @@ def _document(datasets: list[dict], relationships: list[dict]) -> dict:
     }
 
 
+def _column(name: str) -> dict:
+    return {"name": name, "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": name}]}}
+
+
+# Keys and relationship columns name declared fields (core-spec/spec.md
+# "Name Resolution"), so the fixtures declare the fields they refer to.
 _CUSTOMERS = {
     "name": "customers",
     "source": "db.s.customers",
     "primary_key": ["id"],
     "unique_keys": [["email"]],
+    "fields": [_column("id"), _column("email"), _column("region")],
 }
 
-_ORDERS = {"name": "orders", "source": "db.s.orders"}
+_ORDERS = {
+    "name": "orders",
+    "source": "db.s.orders",
+    "fields": [_column("customer_id"), _column("amount")],
+}
 
 
 def test_accepts_a_single_root_model(core_schema: dict) -> None:
@@ -708,7 +719,9 @@ def test_metric_expressed_only_in_ossie_sql_2026_validates(run_validator):
     document = _document([_ORDERS], [])
     document["metrics"] = [{
         "name": "total_amount",
-        "expression": {"dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(amount)"}]},
+        "expression": {
+            "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(orders.amount)"}]
+        },
     }]
 
     exit_code, output = run_validator(document)
@@ -1171,3 +1184,463 @@ def test_validate_document_runs_semantic_checks_on_a_valid_shape(core_schema, of
     errors = _VALIDATE.validate_document(_document([_CUSTOMERS, _CUSTOMERS], []), core_schema)
 
     assert any(error.startswith("[Unique]") for error in errors)
+
+# --- field references (core-spec/spec.md "Name Resolution") ---
+
+ValidationWarning = _VALIDATE.ValidationWarning
+
+
+def _field_reference_findings(document: dict) -> list[str]:
+    """The three Name Resolution checks together, in the order validate_document runs them."""
+    return (
+        _VALIDATE.validate_key_references(document)
+        + _VALIDATE.validate_metric_references(document)
+        + _VALIDATE.validate_field_shadowing(document)
+    )
+
+
+def _field(name: str, expression: str | None = None, dialect: str = "ANSI_SQL") -> dict:
+    """A field defined by one expression; by default the same-named source column."""
+    sql = name if expression is None else expression
+    return {"name": name, "expression": {"dialects": [{"dialect": dialect, "expression": sql}]}}
+
+
+def _metric(name: str, expression: str, dialect: str = "ANSI_SQL") -> dict:
+    """A metric carries its expression the way a field does."""
+    return _field(name, expression, dialect)
+
+
+def _renamed_model(**overrides) -> dict:
+    document = {
+        "version": "0.2.0.dev0",
+        "name": "m",
+        "datasets": [
+            {
+                "name": "orders",
+                "source": "db.s.orders",
+                "primary_key": ["order_id"],
+                "fields": [
+                    _field("order_id", "o_orderkey"),
+                    _field("customer_id", "o_custkey"),
+                    _field("total_usd", "total_cents / 100.0"),
+                ],
+            },
+            {
+                "name": "customers",
+                "source": "db.s.customers",
+                "primary_key": ["id"],
+                "unique_keys": [["email"]],
+                "fields": [_field("id", "c_custkey"), _field("email", "c_email")],
+            },
+        ],
+        "relationships": [
+            {
+                "name": "orders_to_customers",
+                "from": "orders",
+                "to": "customers",
+                "from_columns": ["customer_id"],
+                "to_columns": ["id"],
+            },
+        ],
+        "metrics": [
+            _metric("total_revenue", "SUM(orders.total_usd)"),
+        ],
+    }
+    document.update(overrides)
+    return document
+
+
+def test_accepts_keys_relationships_and_metrics_that_name_declared_fields() -> None:
+    assert _field_reference_findings(_renamed_model()) == []
+
+
+def test_field_reference_findings_are_warnings_for_now() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["primary_key"] = ["o_orderkey"]
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(total_usd)"
+    findings = _field_reference_findings(document)
+    assert len(findings) == 2
+    assert all(isinstance(f, ValidationWarning) for f in findings)
+
+
+def test_rejects_primary_key_that_names_a_source_column() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["primary_key"] = ["o_orderkey"]
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "primary_key names 'o_orderkey'" in errors[0]
+
+
+def test_rejects_unique_key_that_names_a_source_column() -> None:
+    document = _renamed_model()
+    document["datasets"][1]["unique_keys"] = [["c_email"]]
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "unique_keys names 'c_email'" in errors[0]
+
+
+def test_rejects_relationship_columns_that_name_source_columns() -> None:
+    document = _renamed_model()
+    document["relationships"][0]["from_columns"] = ["o_custkey"]
+    document["relationships"][0]["to_columns"] = ["c_custkey"]
+    errors = _field_reference_findings(document)
+    assert len(errors) == 2
+    assert "from_columns names 'o_custkey'" in errors[0]
+    assert "to_columns names 'c_custkey'" in errors[1]
+
+
+@pytest.mark.parametrize("fields", [[], None], ids=["empty", "absent"])
+def test_rejects_keys_on_a_dataset_that_declares_no_fields(fields) -> None:
+    document = _renamed_model()
+    if fields is None:
+        del document["datasets"][1]["fields"]
+    else:
+        document["datasets"][1]["fields"] = fields
+    errors = _field_reference_findings(document)
+    assert len(errors) == 3  # primary_key, unique_keys, to_columns
+    assert all("'customers'" in e for e in errors)
+
+
+def test_rejects_metric_that_references_a_source_column() -> None:
+    document = _renamed_model()
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(orders.o_totalprice)"
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "'orders.o_totalprice' is not a declared field of dataset 'orders'" in errors[0]
+
+
+def test_rejects_metric_with_unqualified_field_reference() -> None:
+    document = _renamed_model()
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(total_usd)"
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "'total_usd' is not qualified" in errors[0]
+
+
+def test_rejects_metric_that_references_an_unknown_dataset() -> None:
+    document = _renamed_model()
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(order.total_usd)"
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "references unknown dataset 'order'" in errors[0]
+
+
+def test_metric_check_skips_dialects_that_are_not_sql() -> None:
+    document = _renamed_model()
+    dax = {"dialect": "DAX", "expression": "SUM(Orders[Total])"}
+    document["metrics"][0]["expression"]["dialects"].append(dax)
+    assert _field_reference_findings(document) == []
+
+
+def test_metric_check_leaves_unparseable_sql_to_the_sql_check() -> None:
+    document = _renamed_model()
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(CASE WHEN"
+    assert _field_reference_findings(document) == []
+
+
+def test_field_reference_check_skips_relationships_to_unknown_datasets() -> None:
+    document = _renamed_model()
+    document["relationships"][0]["to"] = "nobody"
+    assert _field_reference_findings(document) == []
+
+
+def test_warns_when_a_field_expression_names_another_field_of_its_dataset() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(_field("total_with_tax", "total_usd * 1.1"))
+    errors = _field_reference_findings(document)
+    assert errors == [
+        "[Reference] Warning: Field 'orders.total_with_tax' in model 'm' (ANSI_SQL): "
+        "'total_usd' is the source column, not the field 'total_usd' defined as "
+        "'total_cents / 100.0'"
+    ]
+    assert isinstance(errors[0], ValidationWarning)
+
+
+def test_field_expression_may_name_a_field_that_passes_its_column_through() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(_field("amount"))
+    document["datasets"][0]["fields"].append(_field("amount_with_tax", "amount * 1.1"))
+    assert _field_reference_findings(document) == []
+
+
+def test_field_expression_may_name_its_own_source_column() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(_field("amount", "amount * 100"))
+    assert _field_reference_findings(document) == []
+
+
+def test_field_shadowing_check_reads_the_same_dialect_as_the_expression() -> None:
+    document = _renamed_model()
+    amount = {"name": "amount", "expression": {"dialects": [
+        {"dialect": "ANSI_SQL", "expression": "amount"},
+        {"dialect": "SNOWFLAKE", "expression": "AMT"},
+    ]}}
+    taxed = {"name": "amount_with_tax", "expression": {"dialects": [
+        {"dialect": "ANSI_SQL", "expression": "amount * 1.1"},
+        {"dialect": "SNOWFLAKE", "expression": "amount * 1.1"},
+    ]}}
+    document["datasets"][0]["fields"] += [amount, taxed]
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert errors[0].startswith(
+        "[Reference] Warning: Field 'orders.amount_with_tax' in model 'm' (SNOWFLAKE): 'amount'"
+    )
+    assert "defined as 'AMT'" in errors[0]
+
+
+def test_field_shadowing_check_skips_dialects_that_are_not_sql_and_unparseable_sql() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(
+        {"name": "x", "expression": {"dialects": [
+            {"dialect": "DAX", "expression": "[total_usd] * 2"},
+            {"dialect": "ANSI_SQL", "expression": "total_usd * ("},
+        ]}}
+    )
+    assert _field_reference_findings(document) == []
+
+
+@pytest.mark.parametrize(
+    "definition", ["(amount)", '"amount"', "amount -- the amount", "((amount))"]
+)
+def test_pass_through_is_read_from_the_parsed_definition(definition: str) -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("amount", definition),
+        _field("amount_cents", "amount * 100"),
+    ]
+    assert _field_reference_findings(document) == []
+
+
+def test_pass_through_compares_names_as_written() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("amount", "AMOUNT"),
+        _field("amount_cents", "amount * 100"),
+    ]
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "defined as 'AMOUNT'" in errors[0]
+
+
+def test_field_shadowing_check_needs_a_sql_definition_to_compare() -> None:
+    document = _renamed_model()
+    dax_only = _field("amount", "[amount]", dialect="DAX")
+    document["datasets"][0]["fields"] += [dax_only, _field("amount_cents", "amount * 100")]
+    assert _field_reference_findings(document) == []
+
+
+def test_field_shadowing_check_falls_back_to_any_dialect_of_the_other_field() -> None:
+    document = _renamed_model()
+    snowflake_only = _field("amount", dialect="SNOWFLAKE")
+    document["datasets"][0]["fields"] += [snowflake_only, _field("amount_cents", "amount * 100")]
+    assert _field_reference_findings(document) == []
+
+
+def test_field_shadowing_check_ignores_qualified_names_and_reports_a_name_once() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("total_usd2", "orders.total_usd * 2"),
+        _field("total_usd3", "total_usd + total_usd"),
+    ]
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "Field 'orders.total_usd3'" in errors[0]
+
+
+def test_metric_that_names_another_metric_is_told_so() -> None:
+    document = _renamed_model()
+    document["metrics"].append(
+        {"name": "revenue_share", "expression": {"dialects": [
+            {"dialect": "ANSI_SQL", "expression": "total_revenue / SUM(orders.total_usd)"}
+        ]}}
+    )
+    errors = _field_reference_findings(document)
+    assert errors == [
+        "[Reference] Warning: Metric 'revenue_share' in model 'm' (ANSI_SQL): "
+        "'total_revenue' names the metric 'total_revenue'; metric expressions cannot refer "
+        "to other metrics"
+    ]
+
+
+def test_metric_check_skips_star_and_reports_more_than_two_parts() -> None:
+    document = _renamed_model()
+    expression = "COUNT(orders.*) + SUM(db.orders.total_usd)"
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = expression
+    errors = _field_reference_findings(document)
+    assert errors == [
+        "[Reference] Warning: Metric 'total_revenue' in model 'm' (ANSI_SQL): "
+        "'db.orders.total_usd' has more than two parts; metric expressions refer to fields "
+        "as dataset.field"
+    ]
+
+
+def test_field_references_are_looked_up_on_the_named_dataset_only() -> None:
+    document = _renamed_model()
+    # id and email are fields of customers, not of orders.
+    document["datasets"][0]["primary_key"] = ["id"]
+    document["relationships"][0]["from_columns"] = ["email"]
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(orders.id)"
+    errors = _field_reference_findings(document)
+    assert len(errors) == 3
+    assert "primary_key names 'id'" in errors[0]
+    assert "from_columns names 'email'" in errors[1]
+    assert "'orders.id' is not a declared field of dataset 'orders'" in errors[2]
+
+
+def test_every_undeclared_name_is_reported_and_each_only_once() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["primary_key"] = ["order_id", "nope", "nada", "nope"]
+    document["datasets"][1]["unique_keys"] = [["email"], ["c_name"], ["c_phone"]]
+    document["relationships"][0]["from_columns"] = ["o_custkey", "o_x"]
+    document["metrics"][0]["expression"]["dialects"] = [
+        {"dialect": "ANSI_SQL", "expression": "SUM(orders.a) + SUM(orders.b)"},
+        {"dialect": "SNOWFLAKE", "expression": "SUM(orders.c)"},
+    ]
+    errors = _field_reference_findings(document)
+    named = [e.split("names ")[1].split(",")[0] for e in errors[:6]]
+    assert named == ["'nope'", "'nada'", "'c_name'", "'c_phone'", "'o_custkey'", "'o_x'"]
+    assert [e.split("'")[5] for e in errors[6:]] == ["orders.a", "orders.b", "orders.c"]
+
+
+def test_field_shadowing_check_reports_the_other_dialect_definition_it_fell_back_to() -> None:
+    document = _renamed_model()
+    snowflake_only = _field("amount", "AMT", dialect="SNOWFLAKE")
+    document["datasets"][0]["fields"] += [snowflake_only, _field("amount_cents", "amount * 100")]
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "(ANSI_SQL): 'amount' is the source column" in errors[0]
+    assert "defined as 'AMT'" in errors[0]
+
+
+def test_field_shadowing_check_looks_at_the_same_dataset_only() -> None:
+    document = _renamed_model()
+    # email is a field of customers, so in an orders expression it is only a source column.
+    document["datasets"][0]["fields"].append(_field("email_domain", "SPLIT_PART(email, '@', 2)"))
+    assert _field_reference_findings(document) == []
+
+
+@pytest.mark.parametrize("definition", ["t.amount", "CAST(amount AS INT)"])
+def test_pass_through_is_the_bare_column_and_nothing_else(definition: str) -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("amount", definition),
+        _field("amount_cents", "amount * 100"),
+    ]
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert f"defined as '{definition}'" in errors[0]
+
+
+def test_pass_through_may_carry_an_alias() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("amount", "amount AS a"),
+        _field("amount_cents", "amount * 100"),
+    ]
+    assert _field_reference_findings(document) == []
+
+
+def test_field_shadowing_check_needs_a_definition_it_can_parse() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("amount", "amount * ("),
+        _field("amount_cents", "amount * 100"),
+    ]
+    assert _field_reference_findings(document) == []
+
+
+def test_qualified_metric_name_is_reported_as_a_missing_field() -> None:
+    document = _renamed_model()
+    document["metrics"].append(
+        _metric("share", "SUM(orders.total_revenue)"),
+    )
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "'orders.total_revenue' is not a declared field of dataset 'orders'" in errors[0]
+
+
+@pytest.mark.parametrize(
+    "name, expression",
+    [
+        ("total_revenue", "total_revenue + 1"),  # the metric's own name
+        ("total_usd_sum", "SUM(total_usd)"),  # a field somewhere in the model
+    ],
+)
+def test_bare_name_of_this_metric_or_a_field_is_reported_as_unqualified(name, expression) -> None:
+    document = _renamed_model()
+    document["metrics"] = [_metric(name, expression)]
+    if name == "total_usd_sum":
+        document["metrics"].append(_renamed_model()["metrics"][0] | {"name": "total_usd"})
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "is not qualified" in errors[0]
+
+
+def test_renamed_fields_example_passes_the_field_reference_check() -> None:
+    import yaml
+
+    example = Path(__file__).parents[2] / "examples" / "renamed_fields.yaml"
+    assert _field_reference_findings(yaml.safe_load(example.read_text())) == []
+
+
+@pytest.mark.parametrize("expression", [
+    "DATEDIFF(day, orders.shipped, orders.ordered)",
+    "TIMESTAMPDIFF(MINUTE, orders.shipped, orders.ordered)",
+    "DATEADD(day, 1, orders.ordered)",
+    "DATE_PART(year, orders.ordered)",
+])
+def test_metric_check_reads_a_date_part_as_a_unit_not_a_column(expression) -> None:
+    document = _renamed_model(metrics=[_metric("age", expression)])
+    document["datasets"][0]["fields"] += [_field("shipped"), _field("ordered")]
+
+    assert _VALIDATE.validate_metric_references(document) == []
+
+
+def test_metric_check_still_reports_a_bare_column_named_like_a_unit() -> None:
+    document = _renamed_model(metrics=[_metric("days", "SUM(day)")])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert len(errors) == 1
+    assert "'day' is not qualified" in errors[0]
+
+
+@pytest.mark.parametrize("document", [
+    {
+        "version": "0.2.0.dev0",
+        "name": "m",
+        "datasets": None,
+        "metrics": None,
+        "relationships": None,
+    },
+    {
+        "version": "0.2.0.dev0",
+        "name": "m",
+        "datasets": [
+            {
+                "name": "orders",
+                "primary_key": [["a"]],
+                "fields": [{"name": "a", "expression": "a"}],
+            },
+            {"name": None, "fields": [{"name": "b", "expression": {"dialects": None}}]},
+        ],
+        "metrics": [{"name": "m", "expression": "SUM(orders.a)"}, "not a metric"],
+        "relationships": [{"name": "r", "from": ["orders"], "to": "orders", "to_columns": "a"}],
+    },
+])
+def test_field_reference_checks_tolerate_shapes_the_schema_rejects(document) -> None:
+    assert _field_reference_findings(document) == []
+
+
+def test_cli_prints_reference_warnings_and_still_passes(run_validator) -> None:
+    document = _renamed_model()
+    document["datasets"][0]["primary_key"] = ["o_orderkey"]
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 0
+    assert "Validation PASSED" in output
+    assert (
+        "[Reference] Warning: Dataset 'orders' in model 'm': primary_key names 'o_orderkey', "
+        "which is not a declared field"
+    ) in output
