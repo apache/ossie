@@ -349,6 +349,19 @@ def test_holistics_aql_is_skipped_rather_than_parsed_as_sql() -> None:
     assert "HOLISTICS_AQL" in _VALIDATE.SKIP_SQL_VALIDATION
 
 
+def test_every_schema_dialect_is_mapped_or_skipped(core_schema: dict) -> None:
+    # A dialect added to the schema enum has to be registered here as well, as
+    # the sqlglot reader that parses it or as one sqlglot cannot read. A None
+    # entry that is not skipped is parsed with the default reader, which only
+    # ANSI_SQL and the portable language are meant to be.
+    dialects = set(core_schema["$defs"]["Dialect"]["enum"])
+    parsed_with_default = {d for d, reader in _VALIDATE.DIALECT_MAP.items() if reader is None}
+
+    assert set(_VALIDATE.DIALECT_MAP) == dialects
+    assert _VALIDATE.SKIP_SQL_VALIDATION <= parsed_with_default
+    assert parsed_with_default - _VALIDATE.SKIP_SQL_VALIDATION == {"ANSI_SQL", "OSSIE_SQL_2026"}
+
+
 def test_a_holistics_aql_expression_is_not_reported_as_invalid_sql() -> None:
     # `|` is AQL's pipe operator. Parsed as SQL it is a bitwise OR over two
     # names, which sqlglot accepts, so the skip is asserted through a body that
