@@ -376,6 +376,42 @@ def test_flags_an_invalid_ossie_sql_2026_expression() -> None:
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_unknown_dialect_is_skipped_as_opaque() -> None:
+    # An unregistered dialect is opaque: skipped, not parsed as ANSI.
+    assert "DB_DIALECT" not in _VALIDATE.DIALECT_MAP
+    error = _VALIDATE.validate_sql_expression(
+        "this is not sql @ all", "DB_DIALECT", "ctx"
+    )
+
+    assert error is None
+
+
+def test_portable_expression_is_validated_as_ossie_sql_2026(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The portable `expression` is validated as OSSIE_SQL_2026, alongside `dialects`.
+    seen = []
+
+    def record_expression(expression: str, dialect: str, context: str) -> None:
+        seen.append((expression, dialect, context))
+
+    monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", True)
+    monkeypatch.setattr(_VALIDATE, "validate_sql_expression", record_expression)
+    expression = {
+        "expression": "amount",
+        "dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}],
+    }
+    dataset = {**_ORDERS, "fields": [{"name": "value", "expression": expression}]}
+    document = _document([dataset], [])
+
+    assert _VALIDATE.validate_sql(document) == []
+    assert seen == [
+        ("amount", "OSSIE_SQL_2026", "Field 'orders.value' in model 'm' (OSSIE_SQL_2026)"),
+        ("amount", "ANSI_SQL", "Field 'orders.value' in model 'm' (ANSI_SQL)"),
+    ]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 @pytest.mark.parametrize(
     "expression",
     [

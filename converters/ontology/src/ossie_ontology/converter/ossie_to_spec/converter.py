@@ -185,6 +185,7 @@ def _convert_dataset_field(fl: DatasetField) -> SpecDatasetField:
 
 def _convert_expression(es: DialectExpressionSet) -> SpecExpression:
     return SpecExpression(
+        expression=es.expression,
         dialects=[SpecDialectExpression(dialect=d.dialect, expression=d.expression) for d in es.dialects]
     )
 

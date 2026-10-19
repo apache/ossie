@@ -122,7 +122,7 @@ def _resolve_formula(
             return translated
         detail = f"ANSI SQL expression {sql!r} has no Sigma formula equivalent"
     else:
-        dialects = ", ".join(d.dialect.value for d in expression.dialects) or "none"
+        dialects = ", ".join(d.dialect for d in expression.dialects) or "none"
         detail = f"no SIGMA or ANSI_SQL dialect expression to translate from (have: {dialects})"
 
     issues.append(

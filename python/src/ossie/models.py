@@ -106,7 +106,8 @@ def _invalid_properties(node: Any) -> list[tuple[str, str]]:
 
 
 class OssieDialect(str, Enum):
-    """Supported SQL and expression language dialects."""
+    """Well-known dialect constants. `dialect` is a free-form string, so this is a
+    convenience set, not a closed one. See `extensions/dialects.md`."""
 
     ANSI_SQL = "ANSI_SQL"
     SNOWFLAKE = "SNOWFLAKE"
@@ -148,7 +149,8 @@ _TEMPORAL_DATA_TYPES = frozenset(
 
 
 class OssieVendor(str, Enum):
-    """Well-known vendor names for custom extensions."""
+    """Well-known vendor constants. `vendor_name` is a free-form string, so this is
+    a convenience set, not a closed one. See `extensions/vendors.md`."""
 
     COMMON = "COMMON"
     SNOWFLAKE = "SNOWFLAKE"
@@ -189,7 +191,8 @@ class OssieDialectExpression(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    dialect: OssieDialect
+    # Free-form; see OssieDialect for the well-known values.
+    dialect: str
     expression: str
 
 
@@ -198,6 +201,8 @@ class OssieExpression(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    # Primary, portable expression written in OSSIE_SQL_2026.
+    expression: Optional[str] = None
     dialects: list[OssieDialectExpression] = Field(..., min_length=1)
 
 

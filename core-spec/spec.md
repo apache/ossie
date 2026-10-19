@@ -47,29 +47,17 @@ Standard enumeration values used throughout the specification.
 
 ### Dialects
 
-Dialects in which metric and field expressions can be declared.
+The `dialect` field is a free-form string, allowing any expression language to be used
+without requiring changes to the core specification.
 
-| Dialect | Description |
-|---------|-------------|
-| `ANSI_SQL` | Standard SQL dialect |
-| `SNOWFLAKE` | Snowflake SQL |
-| `MDX` | Multi-Dimensional Expressions |
-| `TABLEAU` | Tableau calculations |
-| `DATABRICKS` | Databricks SQL |
-| `MAQL` | GoodData MAQL (Multi-Dimensional Analytical Query Language) |
-| `BIGQUERY` | Google BigQuery (GoogleSQL) |
-| `SIGMA` | Sigma Computing's spreadsheet-style formula language |
-| `THOUGHTSPOT` | ThoughtSpot formula language |
-| `DAX` | Data Analysis Expressions (Power BI / Analysis Services) |
-| `HOLISTICS_AQL` | Holistics AQL (Analytical Query Language) |
-| `OSSIE_SQL_2026` | Ossie's portable SQL expression language, defined in `expression_language.md` |
-
-`OSSIE_SQL_2026` is the only dialect whose semantics this specification defines. The other values
-identify vendor or third-party expression languages. Ossie treats expressions in those dialects as
-opaque, and implementations MAY ignore them (see
-[Dialect Extensions](expression_language.md#dialect-extensions)). Registering a dialect makes it
-valid for declaring a model; it does not mean Ossie supports querying in that dialect (see
+`OSSIE_SQL_2026` is the only dialect whose semantics this specification defines (Ossie's
+portable SQL expression language, see `expression_language.md`). All other values identify
+vendor or third-party expression languages, which Ossie treats as opaque and implementations
+MAY ignore. Registering a dialect does not mean Ossie supports querying in it (see
 [Model Declaration vs. Querying](expression_language.md#model-declaration-vs-querying)).
+
+For a non-normative catalog of dialects well-known tools use, see
+[extensions/dialects.md](../extensions/dialects.md).
 
 ### Data types
 
@@ -295,8 +283,9 @@ The expression object supports multiple SQL dialects for cross-platform compatib
 
 ```yaml
 expression:
+  expression: "customer_id"  # Optional: primary, portable form (OSSIE_SQL_2026)
   dialects:
-    - dialect: ANSI_SQL  # Must be one of the dialects enum values
+    - dialect: ANSI_SQL  # Free-form string; OSSIE_SQL_2026 is the only dialect the spec defines
       expression: "customer_id"  # Scalar SQL expression
 ```
 
@@ -304,6 +293,8 @@ expression:
 
 - Use scalar SQL expressions (no aggregations)
 - Can be simple column references (e.g., `customer_id`) or computed expressions (e.g., `first_name || ' ' || last_name`)
+- The optional top-level `expression` is the primary, portable form, written in OSSIE_SQL_2026
+- If both the top-level `expression` and an `OSSIE_SQL_2026` entry in `dialects` are present, the top-level `expression` is authoritative and consumers MUST use it as the OSSIE_SQL_2026 form
 - Multiple dialect versions can be provided for the same field
 
 ### Dimension Object
@@ -425,6 +416,7 @@ The expression object supports multiple dialects
 
 ```yaml
 expression:
+  expression: "SUM(order.sales) / COUNT(DISTINCT order.customer_id)"  # Optional: primary, portable form (OSSIE_SQL_2026)
   dialects:
   - dialect: ANSI_SQL  # Default
     expression: "SUM(order.sales) / COUNT(DISTINCT order.customer_id)"
@@ -482,70 +474,19 @@ custom_extensions:
 The `vendor_name` field is a free-form string, allowing any vendor or organization to
 define custom extensions without requiring changes to the core specification.
 
-The following are well-known examples:
+For a non-normative catalog of `vendor_name` values well-known tools use, see
+[extensions/vendors.md](../extensions/vendors.md).
 
-| Vendor | Description |
-|--------|-------------|
-| `COMMON` | Common/standard extensions |
-| `SNOWFLAKE` | Snowflake-specific attributes |
-| `SALESFORCE` | Salesforce/Tableau-specific attributes |
-| `DBT` | dbt-specific attributes |
-| `DATABRICKS` | Databricks-specific attributes |
-| `GOODDATA` | GoodData-specific attributes |
-| `HONEYDEW` | Honeydew-specific attributes |
-| `WISDOM` | WisdomAI-specific attributes |
-| `POWER_BI` | Microsoft Power BI-specific attributes |
-| `SIGMA` | Sigma Computing-specific attributes |
-| `THOUGHTSPOT` | ThoughtSpot-specific attributes |
-| `HEX` | Hex-specific attributes |
-
-### Examples
-
-**Snowflake Extension:**
+### Example
 
 ```yaml
-- vendor_name: SNOWFLAKE
-  data: '{
-    "warehouse": "ANALYTICS_WH",
-    "database": "PROD",
-    "schema": "PUBLIC"
-  }'
+- vendor_name: DB_VENDOR
+  data: '{"some_setting": "value", "nested": {"option": true}}'
 ```
 
-**Salesforce Extension:**
-
-```yaml
-- vendor_name: SALESFORCE
-  data: '{
-    "tableau_workbook_id": "sales_dashboard",
-    "einstein_enabled": true,
-    "crm_sync": {
-      "enabled": true,
-      "sync_frequency": "daily"
-    }
-  }'
-```
-
-**DBT Extension:**
-
-```yaml
-- vendor_name: DBT
-  data: '{
-    "project_name": "analytics",
-    "materialized": "table",
-    "tags": ["daily", "core"]
-  }'
-```
-
-**Databricks Extension:**
-
-```yaml
-- vendor_name: Databricks
-  data: '{
-    "default_catalog": "finance",
-    "default_schema": "gold"
-  }'
-```
+The `data` payload is an opaque JSON string that Ossie carries but does not
+interpret. For vendor-specific extension examples and the known-vendor catalog,
+see [extensions/vendors.md](../extensions/vendors.md).
 
 ---
 

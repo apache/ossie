@@ -86,6 +86,9 @@ def strip_normalized(ossie):
       (only `is_time: true` has an Omni form -- `timeframes`).
     - a primary-key column no field covers materializes as a hidden
       dimension on export, so it comes back as an extra (stash-only) field.
+    - an expression's top-level `expression` (the portable OSSIE_SQL_2026 form):
+      Omni emits SQL per dialect, so the portable marker is normalized away on
+      export; its text survives as the `ANSI_SQL` dialect entry.
     """
     ossie = copy.deepcopy(ossie)
     model = ossie
@@ -107,6 +110,9 @@ def strip_normalized(ossie):
         fields = ds.get("fields", []) or []
         for field in fields:
             field.pop("custom_extensions", None)
+            fexpr = field.get("expression")
+            if isinstance(fexpr, dict):
+                fexpr.pop("expression", None)
             dimension = field.get("dimension")
             is_time = False
             if dimension is not None:
@@ -138,6 +144,9 @@ def strip_normalized(ossie):
     for metric in model.get("metrics", []) or []:
         metric.pop("custom_extensions", None)
         metric.pop("datatype", None)
+        mexpr = metric.get("expression")
+        if isinstance(mexpr, dict):
+            mexpr.pop("expression", None)
     # Metric order is not semantic; the import regroups metrics by the view
     # their measure lives on.
     if model.get("metrics"):

@@ -366,6 +366,11 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
     if dialect in SKIP_SQL_VALIDATION:
         return None
 
+    # An unregistered dialect is opaque: skip it rather than parse it as ANSI and
+    # report spurious errors. Only dialects mapped below are parsed.
+    if dialect not in DIALECT_MAP:
+        return None
+
     sqlglot_dialect = DIALECT_MAP.get(dialect)
 
     def statement_count_error(sql: str) -> str | None:
@@ -453,6 +458,13 @@ def validate_sql(data: dict) -> list[str]:
         for field in dataset.get("fields", []):
             field_name = field.get("name", "<unnamed>")
             expression = field.get("expression", {})
+            # The optional top-level expression is the portable OSSIE_SQL_2026 form.
+            portable = expression.get("expression")
+            if portable is not None:
+                context = f"Field '{dataset_name}.{field_name}' in model '{model_name}' (OSSIE_SQL_2026)"
+                error = validate_sql_expression(portable, "OSSIE_SQL_2026", context)
+                if error:
+                    errors.append(error)
             for dialect_expr in expression.get("dialects", []):
                 dialect = dialect_expr.get("dialect", "ANSI_SQL")
                 # Only a missing expression is skipped; an empty one is reported.
@@ -467,6 +479,13 @@ def validate_sql(data: dict) -> list[str]:
     for metric in model.get("metrics", []):
         metric_name = metric.get("name", "<unnamed>")
         expression = metric.get("expression", {})
+        # The optional top-level expression is the portable OSSIE_SQL_2026 form.
+        portable = expression.get("expression")
+        if portable is not None:
+            context = f"Metric '{metric_name}' in model '{model_name}' (OSSIE_SQL_2026)"
+            error = validate_sql_expression(portable, "OSSIE_SQL_2026", context)
+            if error:
+                errors.append(error)
         for dialect_expr in expression.get("dialects", []):
             dialect = dialect_expr.get("dialect", "ANSI_SQL")
             expr = dialect_expr.get("expression")

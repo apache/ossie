@@ -43,7 +43,7 @@ def load_ossie_field_expression(
     with ctx.problem_scope("dialects"):
         choice = pick_ossie_dialect_expression(ossie_expression.dialects, ctx=ctx)
         if choice is not None:
-            with ctx.problem_scope(choice.dialect.value):
+            with ctx.problem_scope(choice.dialect):
                 validate_ossie_field_dialect_expression(choice, ctx=ctx)
         return ossie_expression
 
@@ -66,7 +66,7 @@ def load_ossie_metric_expression(
     with ctx.problem_scope("dialects"):
         choice = pick_ossie_dialect_expression(expression.dialects, ctx=ctx)
         if choice is not None:
-            with ctx.problem_scope(choice.dialect.value):
+            with ctx.problem_scope(choice.dialect):
                 validate_ossie_metric_dialect_expression(
                     choice, field_names=field_names, ctx=ctx
                 )

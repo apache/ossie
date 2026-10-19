@@ -70,7 +70,7 @@ def test_columns_become_fields(model):
     orders = next(dataset for dataset in model.datasets if dataset.name == "orders")
     fields = {field.name: field for field in orders.fields}
     assert fields["order_id"].expression.dialects[0].expression == "order_id"
-    assert fields["order_id"].expression.dialects[0].dialect is OssieDialect.SNOWFLAKE
+    assert fields["order_id"].expression.dialects[0].dialect == OssieDialect.SNOWFLAKE
     assert fields["order_date"].dimension.is_time is True
     assert fields["order_id"].dimension is None
     assert fields["status"].label == "Order Status"
@@ -86,7 +86,7 @@ def test_formulas_become_fields(model):
     fields = {field.name: field for field in orders.fields}
     is_large = fields["is_large"]
     assert is_large.expression.dialects[0].expression == 'CASE WHEN "orders"."amount" > 100 THEN TRUE ELSE FALSE END'
-    assert is_large.expression.dialects[0].dialect is OssieDialect.SNOWFLAKE
+    assert is_large.expression.dialects[0].dialect == OssieDialect.SNOWFLAKE
     assert is_large.label == "Is Large"
     assert is_large.description == "true when the order amount exceeds 100"
 
@@ -100,7 +100,7 @@ def test_formula_colliding_with_column_is_dropped(result, model):
 
 def test_unsupported_dialect_falls_back_to_ansi(result, model):
     tags = next(dataset for dataset in model.datasets if dataset.name == "tags")
-    assert all(field.expression.dialects[0].dialect is OssieDialect.ANSI_SQL for field in tags.fields)
+    assert all(field.expression.dialects[0].dialect == OssieDialect.ANSI_SQL for field in tags.fields)
     unsupported = _issues_of(result, ConverterIssueType.UNSUPPORTED_DIALECT)
     assert len(unsupported) == 1
     assert "postgres" in unsupported[0].element_name
@@ -154,7 +154,7 @@ def test_measures_become_metrics(result, model):
     assert set(metrics) == {"total_amount", "customers_total_amount"}
     total = metrics["total_amount"]
     assert total.expression.dialects[0].expression == 'SUM("orders"."amount")'
-    assert total.expression.dialects[0].dialect is OssieDialect.SNOWFLAKE
+    assert total.expression.dialects[0].dialect == OssieDialect.SNOWFLAKE
     assert total.description == "Total order amount"
     collisions = _issues_of(result, ConverterIssueType.METRIC_NAME_COLLISION)
     assert [issue.element_name for issue in collisions] == ["customers.total_amount"]

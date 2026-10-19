@@ -467,8 +467,9 @@ class DialectExpression:
 @dataclass
 class DialectExpressionSet:
     """Runtime equivalent of spec.Expression — same logical expression rendered
-    in one or more dialects."""
+    in one or more dialects, with an optional primary, portable OSSIE_SQL_2026 form."""
     dialects: list[DialectExpression] = field(default_factory=list)
+    expression: str | None = None
 
     def by_dialect(self, dialect: str) -> DialectExpression | None:
         for d in self.dialects:

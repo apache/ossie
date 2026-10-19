@@ -41,10 +41,10 @@ def pick_ossie_dialect_expression(
     if ctx.current_phase_name == "load":
         if fallback is not None:
             ctx.warn(
-                f"Preferred dialect {ctx.ossie_dialect} not found for expression; using fallback dialect {fallback.dialect}"
+                f"Preferred dialect {ctx.ossie_dialect.value} not found for expression; using fallback dialect {fallback.dialect}"
             )
         else:
             ctx.error(
-                f"Preferred dialect {ctx.ossie_dialect} not found for expression and no fallback dialect found"
+                f"Preferred dialect {ctx.ossie_dialect.value} not found for expression and no fallback dialect found"
             )
     return fallback

@@ -72,7 +72,7 @@ def test_prefers_ansi_fallback_over_other_variants(ctx: ExportContext) -> None:
 
     assert result is expression.dialects[-1]
     assert problems_snapshot(ctx.problems) == snapshot(
-        "[WARNING] Preferred dialect OssieDialect.SNOWFLAKE not found for expression; using fallback dialect OssieDialect.ANSI_SQL"
+        "[WARNING] Preferred dialect SNOWFLAKE not found for expression; using fallback dialect ANSI_SQL"
     )
 
 
@@ -85,5 +85,5 @@ def test_falls_back_to_first_variant_when_preferred_and_ansi_are_missing(
 
     assert result is expression.dialects[0]
     assert problems_snapshot(ctx.problems) == snapshot(
-        "[WARNING] Preferred dialect OssieDialect.ANSI_SQL not found for expression; using fallback dialect OssieDialect.BIGQUERY"
+        "[WARNING] Preferred dialect ANSI_SQL not found for expression; using fallback dialect BIGQUERY"
     )

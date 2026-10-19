@@ -345,6 +345,30 @@ def test_field_only_ossie_sql_2026_is_exported_without_missing_issue():
     assert _issues_of(result, ConverterIssueType.MISSING_DIALECT_EXPRESSION) == []
 
 
+def test_field_in_an_unknown_dialect_is_carried_through_without_crashing():
+    """A field in an unregistered dialect still exports (carried through), with a
+    MISSING_DIALECT_EXPRESSION issue since no preferred SQL dialect is present."""
+    document = OssieDocument(
+        name="m",
+        datasets=[
+            OssieDataset(
+                name="orders",
+                source="analytics.sales.orders",
+                fields=[OssieField(name="region", expression=_expr((OssieDialect.ANSI_SQL, "ANSI_region")))],
+            ),
+            OssieDataset(
+                name="events",
+                source="analytics.sales.events",
+                fields=[OssieField(name="kind", expression=_expr(("DB_DIALECT", "opaque_kind_expr")))],
+            ),
+        ],
+    )
+    result = OssieToWisdomConverter().convert(document, exported_at="2026-07-10T00:00:00+00:00")
+    formulas = {formula["name"]: formula["expression"] for formula in _table(result.output, "events").get("formulas", [])}
+    assert formulas == {"kind": "opaque_kind_expr"}
+    assert _issues_of(result, ConverterIssueType.MISSING_DIALECT_EXPRESSION)
+
+
 def test_metric_only_ossie_sql_2026_is_exported_without_missing_issue():
     """A metric expressed only in OSSIE_SQL_2026 is exported as a measure, with no
     spurious MISSING_DIALECT_EXPRESSION issue (#442)."""

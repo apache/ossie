@@ -153,9 +153,10 @@ def test_expression_missing_dialects() -> None:
         OssieExpression()
 
 
-def test_invalid_dialect_in_expression() -> None:
-    with pytest.raises(ValidationError):
-        OssieDialectExpression(dialect="INVALID", expression="order_id")
+def test_free_form_dialect_in_expression() -> None:
+    # `dialect` is free-form: an unregistered value is accepted and preserved.
+    dialect_expr = OssieDialectExpression(dialect="DB_DIALECT", expression="order_id")
+    assert dialect_expr.dialect == "DB_DIALECT"
 
 
 # ---------------------------------------------------------------------------

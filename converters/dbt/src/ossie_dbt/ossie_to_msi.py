@@ -478,9 +478,9 @@ class OssieToMSIConverter:
         ossie_sql_expr: Optional[str] = None
 
         for dialect_expr in ossie_expr.dialects:
-            if dialect_expr.dialect is self._dialect:
+            if dialect_expr.dialect == self._dialect:
                 return dialect_expr.expression
-            if dialect_expr.dialect is OssieDialect.OSSIE_SQL_2026 and ossie_sql_expr is None:
+            if dialect_expr.dialect == OssieDialect.OSSIE_SQL_2026 and ossie_sql_expr is None:
                 ossie_sql_expr = dialect_expr.expression
 
         if ossie_sql_expr is not None:
