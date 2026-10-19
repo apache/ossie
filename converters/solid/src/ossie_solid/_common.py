@@ -225,18 +225,26 @@ def foreign_vendor_extensions(obj):
     ]
 
 
-def pick_expression(ossie_expression, dialect):
+def pick_expression(ossie_expression, dialect, what):
     """Choose the SQL string for an Apache Ossie expression: `dialect`, else ANSI_SQL,
     else OSSIE_SQL_2026.
 
     Returns (expression, fallback) where `fallback` is None when the requested dialect
     was found and otherwise names the portable dialect the value came from, so the
     caller can warn. Returns (None, None) when none of them is present.
+
+    A dialect listed twice with different SQL raises, since which one is read would
+    otherwise come down to list order. An exact repeat says nothing new and is read
+    once. `what` names the field or metric for the error message.
     """
-    dialects = {
-        d.get("dialect"): d.get("expression")
-        for d in (ossie_expression or {}).get("dialects") or []
-    }
+    dialects = {}
+    for entry in (ossie_expression or {}).get("dialects") or []:
+        name, expr = entry.get("dialect"), entry.get("expression")
+        if name in dialects and dialects[name] != expr:
+            raise ConversionError(
+                f"{what} lists the {name} dialect more than once with different "
+                f"expressions; each dialect may appear once")
+        dialects[name] = expr
     candidates = (dialect,) + tuple(d for d in PORTABLE_DIALECTS if d != dialect)
     for candidate in candidates:
         expr = dialects.get(candidate)
@@ -244,7 +252,7 @@ def pick_expression(ossie_expression, dialect):
             continue
         if not isinstance(expr, str):
             raise ConversionError(
-                f"expression must be a string, got {type(expr).__name__}")
+                f"{what}: expression must be a string, got {type(expr).__name__}")
         return expr, None if candidate == dialect else candidate
     return None, None
 
@@ -317,7 +325,12 @@ def dataset_name_for(source, taken):
     identifier is preferred, widening to `schema_table` and then to the whole FQN with
     dots replaced only when a shorter form is already taken.
 
-    `taken` is a set of names already assigned; the chosen name is added to it.
+    Names are kept unique ignoring case. Unquoted SQL identifiers are case-insensitive,
+    so `ORDERS.amount` and `orders.amount` are the same qualifier to most consumers, and
+    to this converter's own expression matching.
+
+    `taken` is a set of the (lower-cased) names already assigned; the chosen name is
+    added to it.
     """
     parts = [p for p in split_source(source) if p]
     if not parts:
@@ -326,16 +339,19 @@ def dataset_name_for(source, taken):
     for depth in range(1, len(parts) + 1):
         candidates.append("_".join(parts[-depth:]).replace("-", "_"))
     for candidate in candidates:
-        if candidate and candidate not in taken:
-            taken.add(candidate)
+        if candidate and candidate.lower() not in taken:
+            taken.add(candidate.lower())
             return candidate
-    # Every qualified form collided (the same FQN appears twice). Suffix rather than
-    # raise, so one duplicated table does not fail an otherwise convertible model.
+    # Every qualified form collided. The caller rejects a repeated FQN (see
+    # solid_to_ossie._convert_model), so a suffixed name only survives for two distinct
+    # FQNs whose full forms normalize alike (`my-db.s.t` and `my_db.s.t`, once `t` and
+    # `s_t` are taken). Suffix rather than raise: both tables are real, and relationships
+    # and metrics find them by FQN, not by this name.
     base = candidates[-1]
     n = 2
-    while f"{base}_{n}" in taken:
+    while f"{base}_{n}".lower() in taken:
         n += 1
-    taken.add(f"{base}_{n}")
+    taken.add(f"{base}_{n}".lower())
     return f"{base}_{n}"
 
 

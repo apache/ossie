@@ -104,7 +104,18 @@ def _convert_model(solid, explicit_dialect, model_name):
     for table in tables:
         dataset = _convert_table(table, resolved_dialect, taken_names)
         datasets.append(dataset)
-        by_source[dataset["source"].lower()] = dataset
+        key = dataset["source"].lower()
+        if key in by_source:
+            # Relationships and metrics name their tables by FQN, matched
+            # case-insensitively, so keeping either copy would silently bind them to
+            # the wrong one.
+            first, second = by_source[key]["source"], dataset["source"]
+            listed = (f"table '{first}' more than once" if first == second else
+                      f"tables '{first}' and '{second}', which differ only in case")
+            raise ConversionError(
+                f"Solid model lists {listed}; relationships and metrics could not tell "
+                f"them apart")
+        by_source[key] = dataset
 
     relationships = _convert_relationships(
         solid.get("relationships") or [], by_source)
@@ -287,6 +298,10 @@ def _convert_column(column, dialect, dataset_name, taken, is_dimension):
         field["ai_context"] = ai_context
 
     stash = {}
+    if name != raw_name:
+        # Restored on export, so the Solid model does not gain a column the catalog does
+        # not have. `to` lets export tell whether the name was changed again since.
+        stash["renamed"] = {"from": raw_name, "to": name}
     if raw_type:
         # Apache Ossie's portable datatype is lossy (NUMBER(38,2), NUMERIC and DECIMAL
         # all collapse to Decimal), so the catalog's own type name is kept verbatim.
@@ -440,6 +455,9 @@ def _convert_metrics(metrics, by_source, datasets, dialect):
         if synonyms:
             converted_metric["ai_context"] = {"synonyms": synonyms}
 
+        stash = {}
+        if name != raw_name:
+            stash["renamed"] = {"from": raw_name, "to": name}
         # Solid's `tables` list only needs stashing when the qualified expression does
         # not already name the same datasets -- which is the case for an unqualifiable
         # expression, and for one that references no column at all (`COUNT(*)`).
@@ -447,8 +465,8 @@ def _convert_metrics(metrics, by_source, datasets, dialect):
         if (unknown
                 or status in (UNPARSED, AMBIGUOUS)
                 or referenced_datasets(expression, dialect, dataset_names) != expected):
-            write_stash(converted_metric,
-                        {"tables": string_list(metric.get("tables"))})
+            stash["tables"] = string_list(metric.get("tables"))
+        write_stash(converted_metric, stash)
         converted.append(converted_metric)
     return converted
 

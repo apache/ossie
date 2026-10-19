@@ -269,6 +269,25 @@ def test_an_unsupported_dialect_is_rejected():
         convert_ossie_to_solid(fixture("tpcds_ossie.yaml"), dialect="ORACLE")
 
 
+def test_a_dialect_listed_twice_with_different_sql_is_rejected():
+    # Which of the two is read would otherwise come down to list order.
+    ossie = yaml.safe_load(fixture("tpcds_ossie.yaml"))
+    by_name(ossie["metrics"])["TOTAL_SALES"]["expression"]["dialects"].append(
+        {"dialect": "SNOWFLAKE", "expression": "AVG(store_sales.ss_ext_sales_price)"})
+    with pytest.raises(ConversionError,
+                       match="TOTAL_SALES.*SNOWFLAKE dialect more than once"):
+        convert_ossie_to_solid(yaml.safe_dump(ossie))
+
+
+def test_an_exact_repeat_of_a_dialect_is_read_once():
+    ossie = yaml.safe_load(fixture("tpcds_ossie.yaml"))
+    dialects = by_name(ossie["metrics"])["TOTAL_SALES"]["expression"]["dialects"]
+    dialects.append(dict(dialects[0]))
+    solid, _ = convert_quietly(convert_ossie_to_solid, yaml.safe_dump(ossie))
+    metric = by_name(solid_model_of(solid)["metrics"])["TOTAL_SALES"]
+    assert metric["expression"] == "SUM(ss_ext_sales_price)"
+
+
 def test_a_missing_dialect_expression_falls_back_to_ansi_with_a_warning():
     ossie = yaml.safe_load(fixture("tpcds_ossie.yaml"))
     field = ossie["datasets"][0]["fields"][0]
@@ -277,6 +296,89 @@ def test_a_missing_dialect_expression_falls_back_to_ansi_with_a_warning():
     ]
     _, warnings_ = convert_quietly(convert_ossie_to_solid, yaml.safe_dump(ossie))
     assert any("no SNOWFLAKE expression" in w for w in warnings_)
+
+
+# --- edits made in Apache Ossie ----------------------------------------------------
+#
+# A stashed value that stands in for a live Apache Ossie field is used only while that
+# field still holds what import wrote; once it is edited in Apache Ossie, the edit wins.
+
+
+def _export_edited(edit, solid_yaml=None):
+    """Import a Solid model (the TPC-DS fixture by default), apply `edit` to the Apache
+    Ossie model, and export it back. Returns (Solid model, [warnings])."""
+    ossie, _ = convert_quietly(
+        convert_solid_to_ossie, solid_yaml or fixture("tpcds_solid.yaml"))
+    ossie = yaml.safe_load(ossie)
+    edit(ossie)
+    solid, warnings_ = convert_quietly(convert_ossie_to_solid, yaml.safe_dump(ossie))
+    return solid_model_of(solid), warnings_
+
+
+@pytest.mark.parametrize("instructions", ["Always filter to completed sales.", None])
+def test_edited_or_removed_instructions_win_over_the_stashed_markup(instructions):
+    def edit(ossie):
+        if instructions is None:
+            del ossie["ai_context"]["instructions"]
+        else:
+            ossie["ai_context"]["instructions"] = instructions
+
+    solid, warnings_ = _export_edited(edit)
+    assert solid["business_context"].get("custom_instructions") == instructions
+    assert any("ai_context.instructions was" in w for w in warnings_)
+
+
+@pytest.mark.parametrize("has_llm_description", [True, False])
+def test_an_edited_description_replaces_the_one_it_was_written_from(
+        has_llm_description):
+    # Import writes the LLM description to `description`, or the customer one when
+    # there is no LLM one; the edit lands in whichever that was.
+    original = yaml.safe_load(fixture("tpcds_solid.yaml"))["semantic_model"]
+    if not has_llm_description:
+        del original["model_llm_description"]
+    customer = original["business_context"]["model_description"].strip()
+
+    solid, warnings_ = _export_edited(
+        lambda ossie: ossie.update(description="Edited."),
+        yaml.safe_dump({"semantic_model": original}))
+    if has_llm_description:
+        assert solid["model_llm_description"] == "Edited."
+        assert solid["business_context"]["model_description"] == customer
+    else:
+        assert "model_llm_description" not in solid
+        assert solid["business_context"]["model_description"] == "Edited."
+    assert any("description was edited" in w for w in warnings_)
+
+
+@pytest.mark.parametrize(
+    "datatype, expected", [("String", "TEXT"), (None, "NUMBER(7,2)")])
+def test_an_edited_datatype_wins_over_the_stashed_raw_type(datatype, expected):
+    # A removed datatype is not an edit: a tool that does not know the field may drop
+    # it, and that should not wipe the warehouse type.
+    def edit(ossie):
+        store_sales = by_name(ossie["datasets"])["store_sales"]
+        field = by_name(store_sales["fields"])["ss_sales_price"]
+        if datatype is None:
+            del field["datatype"]
+        else:
+            field["datatype"] = datatype
+
+    solid, warnings_ = _export_edited(edit)
+    table = by_name(solid["tables"])["tpcds.public.store_sales"]
+    assert by_name(table["facts"])["ss_sales_price"]["type"] == expected
+    assert any("datatype was changed" in w for w in warnings_) == (datatype is not None)
+
+
+def test_an_edited_metric_is_not_bound_to_its_stashed_tables():
+    # ROW_COUNT is `COUNT(*)`, so import stashed its table. Edited to read another
+    # dataset, it must bind to that one rather than to the stashed table.
+    def edit(ossie):
+        dialects = by_name(ossie["metrics"])["ROW_COUNT"]["expression"]["dialects"]
+        dialects[0]["expression"] = "COUNT(DISTINCT customer.c_customer_id)"
+
+    solid, warnings_ = _export_edited(edit)
+    assert by_name(solid["metrics"])["ROW_COUNT"]["tables"] == ["tpcds.public.customer"]
+    assert any("ROW_COUNT" in w and "edited in Apache Ossie" in w for w in warnings_)
 
 
 # --- input validation --------------------------------------------------------------

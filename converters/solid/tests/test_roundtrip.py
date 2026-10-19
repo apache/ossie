@@ -84,6 +84,32 @@ def test_a_fact_with_both_a_type_and_an_expression_round_trips_exactly():
     assert not any("computed field" in w for w in warnings_)
 
 
+def test_a_column_declared_twice_round_trips_under_its_own_name():
+    # Apache Ossie needs field names unique, so import renames the second column
+    # (`ss_quantity_2`). Export must restore the name rather than hand Solid a column
+    # the catalog does not have.
+    solid = yaml.safe_load(fixture("tpcds_solid.yaml"))
+    store_sales = by_name(solid["semantic_model"]["tables"])["tpcds.public.store_sales"]
+    store_sales["facts"].append(dict(by_name(store_sales["facts"])["ss_quantity"]))
+    original = yaml.safe_dump(solid, sort_keys=False)
+    ossie, _ = convert_quietly(convert_solid_to_ossie, original)
+    restored, warnings_ = convert_quietly(convert_ossie_to_solid, ossie)
+    assert normalized_yaml(restored) == normalized_yaml(original)
+    assert not any("computed field" in w for w in warnings_)
+
+
+def test_a_metric_declared_twice_round_trips_under_its_own_name():
+    # The same rename applies to metric names, which Apache Ossie also needs unique.
+    solid = yaml.safe_load(fixture("tpcds_solid.yaml"))
+    metrics = solid["semantic_model"]["metrics"]
+    metrics.append(dict(metrics[0], expression="AVG(ss_ext_sales_price)"))
+    original = yaml.safe_dump(solid, sort_keys=False)
+    ossie, _ = convert_quietly(convert_solid_to_ossie, original)
+    assert "TOTAL_SALES_2" in by_name(model_of(ossie)["metrics"])
+    restored, _ = convert_quietly(convert_ossie_to_solid, ossie)
+    assert normalized_yaml(restored) == normalized_yaml(original)
+
+
 def test_ossie_to_solid_to_ossie_stays_schema_valid(assert_valid_ossie):
     solid, _ = convert_quietly(
         convert_ossie_to_solid, example("tpcds_semantic_model.yaml")

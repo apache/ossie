@@ -85,6 +85,28 @@ def test_dataset_names_are_disambiguated_when_the_last_part_collides():
     assert names == ["orders", "returns_orders"]
 
 
+def test_dataset_names_are_unique_ignoring_case():
+    # `ORDERS.amount` and `orders.amount` are the same qualifier to a SQL reader, so a
+    # table whose short name differs only in case widens like any other collision.
+    solid = yaml.safe_load(fixture("databricks_solid.yaml"))
+    tables = solid["semantic_model"]["tables"]
+    tables.append(dict(tables[0], name="main.archive.ORDERS"))
+    ossie, _ = convert_quietly(convert_solid_to_ossie, yaml.safe_dump(solid))
+    names = [d["name"] for d in model_of(ossie)["datasets"]]
+    assert names == ["orders", "customers", "archive_ORDERS"]
+
+
+@pytest.mark.parametrize("duplicate", ["main.sales.orders", "MAIN.SALES.ORDERS"])
+def test_a_table_listed_twice_is_rejected(duplicate):
+    # Relationships and metrics find their tables by FQN, case-insensitively, so
+    # accepting a second copy would bind them to whichever one came last.
+    solid = yaml.safe_load(fixture("databricks_solid.yaml"))
+    tables = solid["semantic_model"]["tables"]
+    tables.append(dict(tables[0], name=duplicate))
+    with pytest.raises(ConversionError, match="lists table"):
+        convert_solid_to_ossie(yaml.safe_dump(solid))
+
+
 def test_composite_primary_key_scalar_is_split_into_columns(tpcds):
     assert dataset_of(tpcds, "store_sales")["primary_key"] == [
         "ss_item_sk",

@@ -39,7 +39,9 @@ On **export** (Apache Ossie → Solid), Apache Ossie constructs with no Solid sl
 `ai_context`, foreign-vendor `custom_extensions`, `ai_context.examples` below the model
 level — are **dropped with a warning**. On
 **import** (Solid → Apache Ossie), Solid-only features are instead **preserved** in
-`custom_extensions[SOLID]`. Any input that breaks a [requirement](#requirements)
+`custom_extensions[SOLID]`. Where a stashed value stands in for an Apache Ossie field,
+export uses it only while that field still holds what import wrote there: **an edit made
+in Apache Ossie wins**, with a warning. Any input that breaks a [requirement](#requirements)
 **raises a `ConversionError`** — the converter never silently drops a field or produces
 an invalid result.
 
@@ -126,8 +128,8 @@ Each row maps in both directions; the **Notes** flag where a behavior is specifi
 | Apache Ossie | Solid | Notes |
 |---|---|---|
 | `name` (at the document root) | `semantic_model.name` | Both formats hold one model per document. Export also reads the legacy layout that wraps models in a `semantic_model` list (Apache Ossie `0.1.1`), with a warning, and warns if that list holds more than one model. |
-| `description` | `model_llm_description` | |
-| `ai_context.instructions` | `business_context.custom_instructions` | Import resolves Solid's `@<assetlink …>` markup to the display names it carries and keeps the tagged original in the stash, so an export restores the live catalog references. |
+| `description` | `model_llm_description` | Import falls back to `business_context.model_description` when the model has no LLM description, and stashes both. An edit made in Apache Ossie replaces whichever one `description` was written from. |
+| `ai_context.instructions` | `business_context.custom_instructions` | Import resolves Solid's `@<assetlink …>` markup to the display names it carries and keeps the tagged original in the stash, so an export restores the live catalog references. If the instructions were edited in Apache Ossie, the edited text is used instead. |
 | `ai_context.examples` | `business_context.business_questions` | |
 | `custom_extensions[SOLID]` | `business_context.model_description`, `example_queries`, `benchmark_questions` | No Apache Ossie core equivalent. |
 
@@ -135,8 +137,8 @@ Each row maps in both directions; the **Notes** flag where a behavior is specifi
 
 | Apache Ossie | Solid | Notes |
 |---|---|---|
-| `dataset.source` | `tables[].name` | Solid names a table by its `catalog.schema.table`. |
-| `dataset.name` | — | Derived on import from the last part of the FQN, widening to `schema_table` and then the whole FQN if a shorter form is taken. Apache Ossie dataset names double as expression qualifiers, so a dotted name is not usable. |
+| `dataset.source` | `tables[].name` | Solid names a table by its `catalog.schema.table`. Import rejects a table listed twice. |
+| `dataset.name` | — | Derived on import from the last part of the FQN, widening to `schema_table` and then the whole FQN if a shorter form is taken. Apache Ossie dataset names double as expression qualifiers, so a dotted name is not usable, and names are kept unique ignoring case, as an unquoted SQL qualifier is. |
 | `description` | `description` | Solid's AI-written description. |
 | `ai_context.instructions` | `manual_description` | Solid's human-written annotation. |
 | `ai_context.synonyms` | `synonyms` | |
@@ -162,6 +164,11 @@ A Solid **fact may be a table-scoped metric** rather than a catalog column — i
 hand-edited fact carrying both a `type` and an `expression` is marked the same way and
 keeps both on export.
 
+A Solid table **may declare a column name twice**, where Apache Ossie needs field names
+unique within a dataset. Import renames the duplicate (`status` → `status_2`) with a
+warning and stashes both names; export restores `status`, so the Solid model names a
+column the catalog has. A field renamed again in Apache Ossie keeps its new name.
+
 ### Relationships
 
 | Apache Ossie | Solid | Notes |
@@ -177,11 +184,12 @@ keeps both on export.
 | Apache Ossie | Solid | Notes |
 |---|---|---|
 | `metrics[]` | `metrics[]` | Solid metrics are already model-level. |
+| `name` | `name` | A name Solid declares twice is renamed on import and restored on export, as for fields. |
 | `expression.dialects[]` | `expression` + `tables[]` | See [Metric expressions](#metric-expressions). |
 | `description` | `description` | |
 | `datatype` | — | Solid types a metric by evaluating its formula against the warehouse, so there is no slot for a declared result type. Export warns. |
 | `ai_context.synonyms` | `synonyms` | |
-| `custom_extensions[SOLID]` | `tables[]` | Stashed only when the qualified expression does not already name the same datasets — for a cross-table metric, or one referencing no column at all (`COUNT(*)`). |
+| `custom_extensions[SOLID]` | `tables[]` | Stashed only when the qualified expression does not already name the same datasets — for a cross-table metric, or one referencing no column at all (`COUNT(*)`). If the expression was edited in Apache Ossie to read a dataset the stash does not list, export takes the tables from the expression instead. |
 
 ## Cardinality
 
@@ -233,7 +241,10 @@ Solid stores the **raw** warehouse type string verbatim (`NUMBER(38,0)`, `TEXT`,
 `MAP<STRING, STRING>`), so mapping onto Apache Ossie's portable `datatype` is lossy —
 `NUMBER(38,2)`, `NUMERIC` and `DECIMAL` all collapse to `Decimal`. The raw string is
 therefore always kept in the stash and is what an export re-emits; the derived table below
-is only used for an Apache Ossie model that has no stash to read.
+is only used for an Apache Ossie model that has no stash to read, and for a field whose
+`datatype` was changed in Apache Ossie, which no longer matches its stashed type. A
+removed `datatype` is not read as a change: the field is optional, and a tool that does
+not know it may drop it.
 
 | Warehouse type | Apache Ossie `datatype` |
 |---|---|
@@ -265,6 +276,9 @@ when an input breaks one of these:
   requires at least one dataset;
 - an Apache Ossie model declares two datasets with the same `name`, which relationships
   and metrics could then resolve to the wrong table (export);
+- a Solid model lists the same table twice, compared ignoring case, for the same reason
+  (import);
+- a field or metric expression lists the same dialect twice with different SQL (export);
 - a relationship's `from_columns`/`to_columns` differ in length, or name a dataset that
   is not declared;
 - `--dialect` names a dialect outside `ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`, `BIGQUERY`;
