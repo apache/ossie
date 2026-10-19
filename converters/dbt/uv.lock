@@ -51,7 +51,7 @@ dev = [
 requires-dist = [
     { name = "apache-ossie", editable = "../../python" },
     { name = "jinja2", specifier = ">=3.0" },
-    { name = "metricflow", specifier = ">=0.209.0" },
+    { name = "metricflow", specifier = ">=0.213.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "sqlglot", specifier = ">=20.0" },
 ]

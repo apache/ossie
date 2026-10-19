@@ -54,10 +54,25 @@ from metricflow_semantic_interfaces.transformations.semantic_manifest_transforme
 )
 from metricflow_semantic_interfaces.type_enums import (
     AggregationType,
+    DataType,
     DimensionType,
     EntityType,
     MetricType,
 )
+
+
+_MSI_TO_OSSIE_DATATYPE = {
+    DataType.STRING: OssieDataType.STRING,
+    DataType.INTEGER: OssieDataType.INTEGER,
+    DataType.DECIMAL: OssieDataType.DECIMAL,
+    DataType.FLOAT: OssieDataType.FLOAT,
+    DataType.BOOLEAN: OssieDataType.BOOLEAN,
+    DataType.DATE: OssieDataType.DATE,
+    DataType.TIME: OssieDataType.TIME,
+    DataType.DATETIME: OssieDataType.DATE_TIME,
+    DataType.DATETIME_TZ: OssieDataType.DATE_TIME_TZ,
+    DataType.OPAQUE: OssieDataType.OPAQUE,
+}
 
 
 @dataclass(frozen=True)
@@ -145,7 +160,7 @@ class MSIToOssieConverter:
                     name=metric.name,
                     expression=self._make_expression(expr),
                     description=metric.description,
-                    datatype=self._datatype_from_config(metric.config),
+                    datatype=self._resolve_datatype(metric.datatype, metric.config),
                 )
             )
             if len(manifest.semantic_models) > 1 and self._aggregates_a_constant(metric):
@@ -200,21 +215,28 @@ class MSIToOssieConverter:
             dimension=OssieDimension(is_time=is_time),
             label=dim.label,
             description=dim.description,
-            datatype=self._datatype_from_config(dim.config),
+            datatype=self._resolve_datatype(dim.datatype, dim.config),
         )
 
     @staticmethod
-    def _datatype_from_config(config: Optional[SemanticLayerElementConfig]) -> Optional[OssieDataType]:
-        """Read the portable datatype from dbt's meta.ossie extension."""
-        ossie_meta = config.meta.get("ossie") if config is not None else None
-        if not isinstance(ossie_meta, dict):
-            return None
-        datatype = ossie_meta.get("datatype")
-        if not isinstance(datatype, str):
-            return None
-        try:
-            return OssieDataType(datatype)
-        except ValueError:
+    def _resolve_datatype(
+        native_datatype: Optional[DataType], config: Optional[SemanticLayerElementConfig]
+    ) -> Optional[OssieDataType]:
+        """Prefer MetricFlow's native datatype, falling back to dbt's meta.ossie extension."""
+        if native_datatype is not None:
+            return _MSI_TO_OSSIE_DATATYPE[native_datatype]
+        elif config is not None:
+            ossie_meta = config.meta.get("ossie")
+            if not isinstance(ossie_meta, dict):
+                return None
+            datatype = ossie_meta.get("datatype")
+            if not isinstance(datatype, str):
+                return None
+            try:
+                return OssieDataType(datatype)
+            except ValueError:
+                return None
+        else:
             return None
 
     def _convert_entity(self, entity: Entity) -> OssieField:

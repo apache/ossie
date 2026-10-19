@@ -44,6 +44,7 @@ from metricflow_semantic_interfaces.implementations.semantic_model import (
 from metricflow_semantic_interfaces.test_utils import default_meta, semantic_model_with_guaranteed_meta
 from metricflow_semantic_interfaces.type_enums import (
     AggregationType,
+    DataType,
     DimensionType,
     EntityType,
     MetricType,
@@ -1552,7 +1553,9 @@ class TestOssieJsonSerialization:
 
 class TestDatatypeMetadata:
     @staticmethod
-    def _convert(config: Optional[dict], legacy_measure: bool = False) -> OssieDocument:
+    def _convert(
+        config: Optional[dict], legacy_measure: bool = False, native_datatype: Optional[DataType] = None
+    ) -> OssieDocument:
         sm = semantic_model_with_guaranteed_meta(
             name="orders",
             dimensions=[_dimension("status")],
@@ -1566,6 +1569,9 @@ class TestDatatypeMetadata:
         raw_manifest = json.loads(_manifest(semantic_models=[sm], metrics=[metric]).json())
         raw_manifest["semantic_models"][0]["dimensions"][0]["config"] = config
         raw_manifest["metrics"][0]["config"] = config
+        if native_datatype is not None:
+            raw_manifest["semantic_models"][0]["dimensions"][0]["datatype"] = native_datatype.value
+            raw_manifest["metrics"][0]["datatype"] = native_datatype.value
         manifest = parse_manifest_from_dbt_generated_manifest(json.dumps(raw_manifest))
         return MSIToOssieConverter().convert(manifest).output
 
@@ -1614,3 +1620,14 @@ class TestDatatypeMetadata:
 
         assert _fields(result)[0].datatype is None
         assert _ossie_metrics(result)[0].datatype is None
+
+    def test_native_datatype_takes_precedence(self) -> None:
+        result = self._convert(
+            {"meta": {"ossie": {"datatype": "Boolean"}}}, native_datatype=DataType.DATETIME_TZ
+        )
+
+        assert _fields(result)[0].datatype is OssieDataType.DATE_TIME_TZ
+        assert _ossie_metrics(result)[0].datatype is OssieDataType.DATE_TIME_TZ
+        serialized = json.loads(result.to_ossie_json())
+        assert serialized["datasets"][0]["fields"][0]["datatype"] == "DateTimeTz"
+        assert serialized["metrics"][0]["datatype"] == "DateTimeTz"
