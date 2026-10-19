@@ -27,6 +27,7 @@ from ossie_dbt.filter_utils import _render_filter_template
 from ossie import OssieDataType, OssieDialect, OssieDocument
 from ossie_dbt.msi_to_ossie import MSIToOssieConverter
 from metricflow_semantics.model.dbt_manifest_parser import parse_manifest_from_dbt_generated_manifest
+from metricflow_semantic_interfaces.implementations.element_config import PydanticSemanticLayerElementConfig
 from metricflow_semantic_interfaces.implementations.metric import (
     PydanticConversionTypeParams,
     PydanticCumulativeTypeParams,
@@ -41,6 +42,7 @@ from metricflow_semantic_interfaces.implementations.semantic_model import (
     PydanticNodeRelation,
     PydanticSemanticModel,
 )
+from metricflow_semantic_interfaces.implementations.semantic_manifest import PydanticSemanticManifest
 from metricflow_semantic_interfaces.test_utils import default_meta, semantic_model_with_guaranteed_meta
 from metricflow_semantic_interfaces.type_enums import (
     AggregationType,
@@ -1631,3 +1633,66 @@ class TestDatatypeMetadata:
         serialized = json.loads(result.to_ossie_json())
         assert serialized["datasets"][0]["fields"][0]["datatype"] == "DateTimeTz"
         assert serialized["metrics"][0]["datatype"] == "DateTimeTz"
+
+    def test_entity_datatype(self) -> None:
+        entity = _entity("customer_id")
+        entity.config = PydanticSemanticLayerElementConfig(meta={"ossie": {"datatype": "Integer"}})
+        sm = semantic_model_with_guaranteed_meta(name="orders", entities=[entity])
+
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
+
+        assert _fields(result)[0].datatype is OssieDataType.INTEGER
+
+    def test_measure_datatype(self) -> None:
+        measure = _measure("amount", agg=AggregationType.AVERAGE)
+        measure.config = PydanticSemanticLayerElementConfig(meta={"ossie": {"datatype": "Float"}})
+        sm = semantic_model_with_guaranteed_meta(name="orders", measures=[measure])
+
+        result = MSIToOssieConverter().convert(_manifest(semantic_models=[sm])).output
+
+        assert _fields(result)[0].datatype is OssieDataType.FLOAT
+
+    @staticmethod
+    def _manifest_with_generated_metric() -> PydanticSemanticManifest:
+        measure = _measure("customer_count", agg=AggregationType.COUNT_DISTINCT, expr="customer_name")
+        measure.create_metric = True
+        measure.config = PydanticSemanticLayerElementConfig(meta={"ossie": {"datatype": "String"}})
+        sm = semantic_model_with_guaranteed_meta(name="orders", measures=[measure])
+        return _manifest(semantic_models=[sm])
+
+    @pytest.mark.parametrize("input_form", ["raw", "parsed", "reserialized"])
+    def test_generated_metric_does_not_inherit_measure_datatype(self, input_form: str) -> None:
+        manifest = self._manifest_with_generated_metric()
+        if input_form != "raw":
+            manifest = parse_manifest_from_dbt_generated_manifest(manifest.json())
+        if input_form == "reserialized":
+            manifest = PydanticSemanticManifest.parse_raw(manifest.json())
+
+        result = MSIToOssieConverter().convert(manifest).output
+
+        assert _fields(result)[0].datatype is OssieDataType.STRING
+        metric = _ossie_metrics(result)[0]
+        assert metric.expression.dialects[0].expression == "COUNT(DISTINCT orders.customer_name)"
+        assert metric.datatype is None
+        assert manifest.semantic_models[0].measures[0].config.meta["ossie"]["datatype"] == "String"
+
+    def test_generated_metric_keeps_native_datatype(self) -> None:
+        manifest = parse_manifest_from_dbt_generated_manifest(self._manifest_with_generated_metric().json())
+        manifest.metrics[0].datatype = DataType.INTEGER
+
+        result = MSIToOssieConverter().convert(manifest).output
+
+        assert _fields(result)[0].datatype is OssieDataType.STRING
+        assert _ossie_metrics(result)[0].datatype is OssieDataType.INTEGER
+
+    def test_explicit_metric_keeps_its_own_annotation(self) -> None:
+        manifest = self._manifest_with_generated_metric()
+        metric = _simple_metric("customer_count", "customer_count")
+        metric.config = PydanticSemanticLayerElementConfig(meta={"ossie": {"datatype": "Integer"}})
+        manifest.metrics.append(metric)
+        manifest = parse_manifest_from_dbt_generated_manifest(manifest.json())
+
+        result = MSIToOssieConverter().convert(manifest).output
+
+        assert _fields(result)[0].datatype is OssieDataType.STRING
+        assert _ossie_metrics(result)[0].datatype is OssieDataType.INTEGER

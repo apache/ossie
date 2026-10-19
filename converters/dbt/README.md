@@ -128,8 +128,11 @@ manifest_json = result.output.model_dump_json(by_alias=True, exclude_none=True, 
 | `CONSTANT_METRIC_SEMANTIC_MODEL_LOSS` | A metric over a constant, such as a row count (`SUM(1)`), has no column to carry its semantic model; recorded when the manifest has more than one, since converting it back will refuse it |
 
 Ossie `datatype` attributes use native MetricFlow datatype annotations when present,
-falling back to `config.meta.ossie.datatype` annotations on dimensions and metrics
-in source dbt models, carried into `semantic_manifest.json` by `dbt parse`.
+falling back to `config.meta.ossie.datatype` annotations on dimensions, entities,
+measures, and metrics in source dbt models, carried into `semantic_manifest.json`
+by `dbt parse`. A measure annotation types its field; a generated metric with the
+same configuration needs a native datatype or a distinct metric annotation to
+type its aggregate result.
 
 **Ossie → MSI** reconstructs a best-effort MSI manifest from Ossie's simpler schema. Nothing is dropped for supported inputs, but Ossie carries less structural information than MSI, so the converter makes the following choices:
 

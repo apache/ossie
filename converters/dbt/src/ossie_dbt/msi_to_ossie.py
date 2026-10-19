@@ -126,6 +126,12 @@ class MSIToOssieConverter:
 
         metric_index = self._build_metric_index(manifest.metrics)
         expression_cache: Dict[Tuple[str, Optional[str]], str] = {}
+        measure_metric_configs = {
+            measure.name: measure.config
+            for sm in manifest.semantic_models
+            for measure in sm.measures
+            if measure.create_metric
+        }
 
         ossie_metrics: List[OssieMetric] = []
         for metric in manifest.metrics:
@@ -155,12 +161,20 @@ class MSIToOssieConverter:
                     )
                 )
                 continue
+            metric_config = metric.config
+            # MetricFlow copies create_metric measure configs onto generated metrics. Serialized
+            # manifests cannot distinguish that copy from an identical explicit metric config.
+            # Conservatively treat matching name/config as inherited field metadata: a String
+            # input to COUNT_DISTINCT must not type the aggregate as String. Skip this metadata
+            # without inferring an aggregate type; native types and distinct metric configs still apply.
+            if metric.name in measure_metric_configs and metric_config == measure_metric_configs[metric.name]:
+                metric_config = None
             ossie_metrics.append(
                 OssieMetric(
                     name=metric.name,
                     expression=self._make_expression(expr),
                     description=metric.description,
-                    datatype=self._resolve_datatype(metric.datatype, metric.config),
+                    datatype=self._resolve_datatype(metric.datatype, metric_config),
                 )
             )
             if len(manifest.semantic_models) > 1 and self._aggregates_a_constant(metric):
@@ -247,6 +261,7 @@ class MSIToOssieConverter:
             expression=self._make_expression(expr),
             label=entity.label,
             description=entity.description,
+            datatype=self._resolve_datatype(None, entity.config),
         )
 
     def _convert_measure(self, measure: Measure) -> OssieField:
@@ -257,6 +272,7 @@ class MSIToOssieConverter:
             expression=self._make_expression(expr),
             label=measure.label,
             description=measure.description,
+            datatype=self._resolve_datatype(None, measure.config),
         )
 
     @staticmethod
