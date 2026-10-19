@@ -100,6 +100,10 @@ def _schema_values(section: dict) -> list[str]:
     return list(data)
 
 
+#: First words of the second line this script writes above every generated section.
+_GENERATED_MARKER = "# Auto-generated from ossie-schema.json"
+
+
 def _generate_block(section: dict, values: list[str]) -> str:
     key = section["key"]
     comment_col = section["comment_col"]
@@ -115,7 +119,7 @@ def _generate_block(section: dict, values: list[str]) -> str:
 
     lines = [
         section["header"],
-        "# Auto-generated from ossie-schema.json ({}).".format(ref),
+        "{} ({}).".format(_GENERATED_MARKER, ref),
         "{}:".format(key),
     ]
     for v in values:
@@ -126,7 +130,13 @@ def _generate_block(section: dict, values: list[str]) -> str:
     return "\n".join(lines) + "\n\n"
 
 
-def _replace_section(text: str, key: str, block: str) -> str:
+def _is_own_header(line: str, section: dict) -> bool:
+    """Whether this script wrote *line* above *section*."""
+    return line.lstrip().startswith(_GENERATED_MARKER) or line.rstrip() == section["header"]
+
+
+def _replace_section(text: str, section: dict, block: str) -> str:
+    key = section["key"]
     lines = text.splitlines(keepends=True)
 
     key_idx = None
@@ -139,14 +149,28 @@ def _replace_section(text: str, key: str, block: str) -> str:
         print(f"Error: '{key}:' not found in spec.yaml", file=sys.stderr)
         sys.exit(1)
 
+    # Replace this script's own header lines and nothing above them. Walking back over
+    # every contiguous comment swallows hand-written ones as soon as no blank line
+    # separates them, and --check then reports the file as in sync. Each of the two
+    # lines counts on its own, so a section whose marker or header has been edited
+    # away is rewritten in place rather than gaining a second copy of either.
+    # Blank lines are stepped over before each of those two lines, in any arrangement.
+    # This script writes none of them, but a hand edit leaves them above, below or
+    # between the headers, and stopping at one duplicates the header just as silently.
     start = key_idx
-    idx = key_idx - 1
-    while idx >= 0 and lines[idx].strip() == "":
-        start = idx
-        idx -= 1
-    while idx >= 0 and lines[idx].lstrip().startswith("#"):
-        start = idx
-        idx -= 1
+    scan = key_idx - 1
+    consumed = 0
+    while consumed < 2:
+        probe = scan
+        while probe >= 0 and lines[probe].strip() == "":
+            probe -= 1
+        if probe < 0 or not _is_own_header(lines[probe], section):
+            break
+        consumed += 1
+        scan = probe - 1
+        # Move the cut only for a line this script wrote, so a blank above a
+        # hand-authored section is left where its author put it.
+        start = probe
 
     end = key_idx + 1
     while end < len(lines) and (lines[end].strip() == "" or lines[end][0].isspace()):
@@ -159,7 +183,7 @@ def _render(text: str) -> str:
     for section in SECTIONS:
         values = _schema_values(section)
         block = _generate_block(section, values)
-        text = _replace_section(text, section["key"], block)
+        text = _replace_section(text, section, block)
 
     # parse and validate before returning
     try:
@@ -176,7 +200,7 @@ def _apply():
     print(f"Wrote {SPEC}", file=sys.stderr)
 
 
-def _check() -> list:
+def _check() -> int:
     current = SPEC.read_text()
     rendered = _render(current)
     if current == rendered:
@@ -195,7 +219,7 @@ def _check() -> list:
 
 def main():
     parser = argparse.ArgumentParser()
-    group = parser.add_mutually_exclusive_group()
+    group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--check", action="store_true", help="Check spec.yaml is in sync")
     group.add_argument("--apply", action="store_true", help="Update spec.yaml in-place")
     args = parser.parse_args()
@@ -203,9 +227,7 @@ def main():
     if args.apply:
         _apply()
         return
-    if args.check:
-        sys.exit(_check())
-    parser.print_help()
+    sys.exit(_check())
 
 
 if __name__ == "__main__":

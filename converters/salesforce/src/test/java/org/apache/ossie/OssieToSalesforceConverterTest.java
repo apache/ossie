@@ -30,6 +30,8 @@ import org.apache.ossie.converter.ConverterFactory;
 import org.apache.ossie.converter.ConversionDirection;
 import org.apache.ossie.converter.CustomExtensionHandler;
 import org.apache.ossie.converter.FieldMappingHandler;
+import org.apache.ossie.converter.RelationshipMappingHandler;
+import org.apache.ossie.exception.ValidationException;
 import org.apache.ossie.validator.SchemaValidator;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,6 +45,8 @@ import org.apache.ossie.converter.pipeline.PipelineConfigLoader;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -234,6 +238,141 @@ class OssieToSalesforceConverterTest {
     }
 
     @Test
+    void testCalculatedFieldDroppedForItsDialectIsReported() throws Exception {
+        // Export has no translation for a calculation written in any dialect but Tableau,
+        // so it omits the field. Omitting it without a word leaves the exported model
+        // quietly short of fields the Ossie document declares.
+        List<String> reported = new ArrayList<>();
+        List<String> results = convertCollectingFieldWarnings(ossieYamlAnsiSql, reported);
+        Map<String, Object> sfModel = jsonMapper.readValue(results.get(0), new TypeReference<Map<String, Object>>() {});
+
+        List<String> exported = exportedFieldNames(sfModel);
+        assertFalse(exported.contains("customer_email_domain"),
+                "a calculation the export cannot translate must not reach the payload: " + exported);
+        assertFalse(exported.contains("order_year"),
+                "a calculation the export cannot translate must not reach the payload: " + exported);
+
+        assertTrue(reported.stream().anyMatch(m -> m.contains("customer_email_domain")
+                        && m.contains("Customers") && m.contains("ANSI_SQL")),
+                "the warning should name the field, its dataset and its dialect: " + reported);
+        assertTrue(reported.stream().anyMatch(m -> m.contains("order_year") && m.contains("Orders")),
+                "every omitted calculated field should be reported, not just the first: " + reported);
+    }
+
+    @Test
+    void testCalculatedTableauFieldIsExportedWithoutAWarning() throws Exception {
+        // The warning marks a field that was dropped, so a calculation the export does
+        // translate has to pass through silently. Normalize line endings first: the fixture
+        // may check out with CRLF, but the substitutions below are written with LF.
+        String yamlWithTableauCalculations = ossieYamlAnsiSql.replace("\r\n", "\n")
+                .replace("      - dialect: ANSI_SQL\n"
+                        + "        expression: SUBSTRING([Customers].[email], POSITION('@' IN [Customers].[email])\n"
+                        + "          + 1, LENGTH([Customers].[email]))\n",
+                        "      - dialect: TABLEAU\n"
+                        + "        expression: 'SPLIT([Customers].[email], \"@\", 2)'\n")
+                .replace("      - dialect: ANSI_SQL\n"
+                        + "        expression: YEAR([Orders].[order_date])\n",
+                        "      - dialect: TABLEAU\n"
+                        + "        expression: YEAR([Orders].[order_date])\n");
+        assertFalse(yamlWithTableauCalculations.contains("dialect: ANSI_SQL\n        expression: SUBSTRING"),
+                "fixture text substitution did not match");
+        assertFalse(yamlWithTableauCalculations.contains("dialect: ANSI_SQL\n        expression: YEAR"),
+                "fixture text substitution did not match");
+
+        List<String> reported = new ArrayList<>();
+        List<String> results = convertCollectingFieldWarnings(yamlWithTableauCalculations, reported);
+        Map<String, Object> sfModel = jsonMapper.readValue(results.get(0), new TypeReference<Map<String, Object>>() {});
+
+        List<String> exported = exportedFieldNames(sfModel);
+        assertTrue(exported.contains("customer_email_domain"), "a Tableau calculation should be exported");
+        assertTrue(exported.contains("order_year"), "a Tableau calculation should be exported");
+        assertTrue(reported.isEmpty(), "nothing was dropped, so nothing should be reported: " + reported);
+    }
+
+    @Test
+    void testCalculatedFieldWithNoDialectIsReportedAsMissingADialect() {
+        // The Ossie schema makes a dialect mandatory, so a field reaches the handler without
+        // one only when a caller builds the model in memory instead of parsing a document.
+        // The dialect is then null, and naming it would report the dialect as 'null'.
+        Map<String, Object> ossieField = Map.of(
+                "name", "order_year",
+                "dimension", Map.of(),
+                "expression", Map.of("dialects", List.of(Map.of("expression", "YEAR(order_date)"))));
+        Map<String, Object> sourceData = Map.of(
+                "datasets", List.of(Map.of("name", "Orders", "fields", List.of(ossieField))));
+        Map<String, Object> sfDataObject = new LinkedHashMap<>(Map.of("apiName", "Orders"));
+        Map<String, Object> outputData = new LinkedHashMap<>(
+                Map.of("semanticDataObjects", new ArrayList<>(List.of(sfDataObject))));
+
+        Logger fieldLogger = (Logger) LoggerFactory.getLogger(FieldMappingHandler.class);
+        ListAppender<ILoggingEvent> warnings = new ListAppender<>();
+        warnings.start();
+        fieldLogger.addAppender(warnings);
+        try {
+            new FieldMappingHandler(ConversionDirection.OSSIE_TO_SALESFORCE,
+                    new CustomExtensionHandler(jsonMapper))
+                    .execute(sourceData, outputData, Map.of());
+        } finally {
+            fieldLogger.detachAppender(warnings);
+        }
+
+        List<String> reported = warnings.list.stream()
+                .filter(event -> event.getLevel() == Level.WARN)
+                .map(ILoggingEvent::getFormattedMessage)
+                .toList();
+        assertEquals(1, reported.size(), "the omitted field should be reported once: " + reported);
+        assertTrue(reported.get(0).contains("order_year") && reported.get(0).contains("Orders"),
+                "the warning should name the field and its dataset: " + reported);
+        assertFalse(reported.get(0).contains("null"),
+                "a dialect that was never declared must not be reported as the dialect 'null': " + reported);
+        assertNull(sfDataObject.get("semanticDimensions"), "the field should still be omitted");
+    }
+
+    /**
+     * Converts {@code ossieModel}, adding every warning {@link FieldMappingHandler} reported
+     * while doing so to {@code warningsOut}.
+     */
+    private List<String> convertCollectingFieldWarnings(String ossieModel, List<String> warningsOut)
+            throws Exception {
+        Logger fieldLogger = (Logger) LoggerFactory.getLogger(FieldMappingHandler.class);
+        ListAppender<ILoggingEvent> warnings = new ListAppender<>();
+        warnings.start();
+        fieldLogger.addAppender(warnings);
+        try {
+            return converter.convert(ossieModel);
+        } finally {
+            fieldLogger.detachAppender(warnings);
+            warnings.list.stream()
+                    .filter(event -> event.getLevel() == Level.WARN)
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .forEach(warningsOut::add);
+        }
+    }
+
+    /** Every field name the exported model carries, whichever array the field was routed to. */
+    private List<String> exportedFieldNames(Map<String, Object> sfModel) {
+        List<String> names = new ArrayList<>();
+        collectApiNames((List<Map<String, Object>>) sfModel.get("semanticCalculatedDimensions"), names);
+        List<Map<String, Object>> dataObjects = (List<Map<String, Object>>) sfModel.get("semanticDataObjects");
+        if (dataObjects != null) {
+            for (Map<String, Object> dataObject : dataObjects) {
+                collectApiNames((List<Map<String, Object>>) dataObject.get("semanticDimensions"), names);
+                collectApiNames((List<Map<String, Object>>) dataObject.get("semanticMeasurements"), names);
+            }
+        }
+        return names;
+    }
+
+    private void collectApiNames(List<Map<String, Object>> sfFields, List<String> namesOut) {
+        if (sfFields == null) {
+            return;
+        }
+        for (Map<String, Object> sfField : sfFields) {
+            namesOut.add(String.valueOf(sfField.get("apiName")));
+        }
+    }
+
+    @Test
     void testInvalidRelationshipsFiltered() throws Exception {
         List<String> results = converter.convert(ossieYaml);
         Map<String, Object> sfModel = jsonMapper.readValue(results.get(0), new TypeReference<Map<String, Object>>() {});
@@ -314,9 +453,12 @@ class OssieToSalesforceConverterTest {
     }
 
     @Test
-    void testRelationshipWithUnpairableJoinColumnsLeavesTheNextOneIntact() throws Exception {
-        // The first relationship names two join columns on one side and one on the other, so
-        // there is no criterion to build for it. The second one still gets its own criteria.
+    void testRelationshipWithUnpairableJoinColumnsIsRejected() {
+        // The two sides name a different number of join columns, so the relationship has no
+        // criteria to export. Salesforce accepts a relationship with no criteria and stores it
+        // as an enabled, queryable relationship that joins nothing, so this is a spec violation
+        // (core-spec/spec.md requires the same count on both sides), not a Salesforce
+        // limitation: the whole conversion must fail instead of silently dropping it.
         String model = "version: 0.2.0.dev0\n"
                 + "name: Imported_Model\n"
                 + "datasets:\n"
@@ -331,21 +473,70 @@ class OssieToSalesforceConverterTest {
                 + "  to_columns: [customer_id]\n"
                 + relationship("Orders_Products", "Orders", "Products", "product_id");
 
-        List<String> results = converter.convert(model);
-        Map<String, Object> sfModel = jsonMapper.readValue(results.get(0), new TypeReference<Map<String, Object>>() {});
+        ValidationException exception = assertThrows(ValidationException.class, () -> converter.convert(model));
+        assertTrue(exception.getMessage().contains("Customers_Orders"),
+                "the rejection must name the relationship that cannot be converted");
+        assertTrue(exception.getMessage().contains("got 2 and 1"),
+                "the rejection must come from the column-count rule");
+    }
 
-        List<Map<String, Object>> relationships = (List<Map<String, Object>>) sfModel.get("semanticRelationships");
-        assertNotNull(relationships);
-        Map<String, Object> exported = relationships.stream()
-                .filter(relationship -> "Orders_Products".equals(relationship.get("apiName")))
-                .findFirst()
-                .orElseThrow();
+    @Test
+    void testRelationshipWithUndeclaredEndpointAndUnpairableJoinColumnsIsRejected() {
+        // The column-count check must not depend on the relationship's endpoints existing.
+        // A relationship naming an undeclared dataset used to be dropped by the entity lookup
+        // before the column-count check ran, so this case was silently filtered instead of
+        // rejected.
+        String model = "version: 0.2.0.dev0\n"
+                + "name: Imported_Model\n"
+                + "datasets:\n"
+                + dataset("Orders", "customer_id", "product_id")
+                + dataset("Products", "product_id")
+                + "relationships:\n"
+                + "- name: Customers_Orders\n"
+                + "  from: Customer\n"
+                + "  to: Orders\n"
+                + "  from_columns: [customer_id, tenant_id]\n"
+                + "  to_columns: [customer_id]\n"
+                + relationship("Orders_Products", "Orders", "Products", "product_id");
 
-        List<Map<String, Object>> criteria = (List<Map<String, Object>>) exported.get("criteria");
-        assertNotNull(criteria, "The relationship after an unpairable one keeps its criteria");
-        assertEquals(1, criteria.size());
-        assertEquals("product_id", criteria.get(0).get("leftSemanticFieldApiName"));
-        assertEquals("product_id", criteria.get(0).get("rightSemanticFieldApiName"));
+        ValidationException exception = assertThrows(ValidationException.class, () -> converter.convert(model));
+        assertTrue(exception.getMessage().contains("Customers_Orders"),
+                "the rejection must name the relationship that cannot be converted");
+        assertTrue(exception.getMessage().contains("got 2 and 1"),
+                "the rejection must come from the column-count rule, not the endpoint lookup");
+    }
+
+    @Test
+    void testRelationshipDeclaringNoJoinColumnsIsRejected() {
+        // The Ossie schema requires from_columns and to_columns and gives each a minimum of
+        // one entry, so a relationship reaches the handler without join columns only when a
+        // caller builds the model in memory instead of parsing a document. It has nothing to
+        // join on either way, so it must still be rejected.
+        Map<String, Object> noJoinColumns = new LinkedHashMap<>(
+                Map.of("name", "Customers_Orders", "from", "Customers", "to", "Orders"));
+        Map<String, Object> joined = new LinkedHashMap<>(Map.of(
+                "name", "Orders_Products", "from", "Orders", "to", "Products",
+                "from_columns", List.of("product_id"), "to_columns", List.of("product_id")));
+        Map<String, Object> sourceData = new LinkedHashMap<>(
+                Map.of("relationships", new ArrayList<>(List.of(noJoinColumns, joined))));
+        Map<String, Object> outputData = new LinkedHashMap<>(Map.of("semanticDataObjects", List.of(
+                dataObjectWithDimension("Customers", "customer_id"),
+                dataObjectWithDimension("Orders", "product_id"),
+                dataObjectWithDimension("Products", "product_id"))));
+
+        RelationshipMappingHandler handler = new RelationshipMappingHandler(ConversionDirection.OSSIE_TO_SALESFORCE,
+                new CustomExtensionHandler(jsonMapper));
+
+        ValidationException exception = assertThrows(ValidationException.class,
+                () -> handler.execute(sourceData, outputData, new LinkedHashMap<>()));
+        assertTrue(exception.getMessage().contains("Customers_Orders"),
+                "the rejection must name the relationship that cannot be converted");
+        assertTrue(exception.getMessage().contains("got 0 and 0"),
+                "the rejection must come from the column-count rule");
+    }
+
+    private static Map<String, Object> dataObjectWithDimension(String apiName, String fieldApiName) {
+        return Map.of("apiName", apiName, "semanticDimensions", List.of(Map.of("apiName", fieldApiName)));
     }
 
     @Test

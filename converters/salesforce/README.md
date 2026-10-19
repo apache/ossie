@@ -277,6 +277,8 @@ and a measurement as `Number`.
 For direct fields, the presence of the `dimension` object determines whether the
 field is exported to `semanticDimensions` or `semanticMeasurements`. A calculated
 Tableau expression follows the converter's existing calculated-dimension path.
+A calculation in any other dialect is not translated, so the field is omitted and
+a warning names the field, its dataset and the dialect it was written in.
 
 On import, Salesforce `Date` and `DateTime` dimensions set `dimension.is_time` to
 `true`; other dimension types set it to `false`. On export, `dimension.is_time`
@@ -293,6 +295,13 @@ criterion against the declared semantic fields rather than against the table's
 columns, and a dataset is free to name a key column in `primary_key` and nowhere
 else, so a key column no field declares would otherwise take every relationship
 joining on it down with it.
+
+**Unpairable join columns** reject the conversion. `from_columns` and `to_columns`
+pair up positionally into join criteria, so a relationship whose two sides declare
+a different number of them has no criteria to export. This is not a Salesforce
+limitation but a spec violation, and Salesforce accepts the broken relationship
+anyway, storing it as an enabled relationship with empty criteria that joins
+nothing, so the conversion fails instead of producing that model.
 
 ### Metric expressions
 

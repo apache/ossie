@@ -24,6 +24,7 @@ import static org.apache.ossie.util.DataStructureUtils.*;
 
 import org.apache.ossie.converter.ConverterConstants.Level;
 import org.apache.ossie.converter.pipeline.PipelineStep;
+import org.apache.ossie.exception.ValidationException;
 import java.util.*;
 
 import org.apache.ossie.util.MappingUtils;
@@ -215,25 +216,10 @@ public class RelationshipMappingHandler implements PipelineStep {
                 sfRel.put(RIGHT_SEMANTIC_DEFINITION_API_NAME, toEntity);
             }
 
-            Object fromColumnsObj = ossieRel.get(FROM_COLUMNS);
-            Object toColumnsObj = ossieRel.get(TO_COLUMNS);
-
-            // Each relationship is rebuilt on its own: a relationship whose join columns
-            // cannot be paired gets no criteria, and the ones that follow still get theirs.
-            if (fromColumnsObj == null || toColumnsObj == null) {
-                continue;
-            }
-
-            List<Object> fromColumns = asList(fromColumnsObj);
-            List<Object> toColumns = asList(toColumnsObj);
-
-            if (fromColumns.isEmpty() || toColumns.isEmpty()) {
-                continue;
-            }
-
-            if (fromColumns.size() != toColumns.size()) {
-                continue;
-            }
+            // validateAndFilterRelationships already rejected any relationship whose columns
+            // don't pair up, so every relationship reaching this point has a usable pairing.
+            List<Object> fromColumns = asList(ossieRel.get(FROM_COLUMNS));
+            List<Object> toColumns = asList(ossieRel.get(TO_COLUMNS));
 
             List<Map<String, Object>> criteriaArray = new ArrayList<>();
             for (int j = 0; j < fromColumns.size(); j++) {
@@ -318,11 +304,18 @@ public class RelationshipMappingHandler implements PipelineStep {
     }
 
     /**
-     * Validates and filters relationships, removing those that reference non-existent fields. (Calculated fields that are not supported)
+     * Validates and filters relationships, removing those that reference non-existent fields
+     * or entities (Salesforce limitations the spec allows, such as calculated fields it can't
+     * join on). A relationship whose join columns don't pair up is not a Salesforce limitation
+     * but a spec violation - core-spec/spec.md requires from_columns and to_columns to declare
+     * the same number of columns - so that case fails the whole conversion instead of being
+     * dropped silently: an unpaired relationship still deploys to Salesforce as an enabled,
+     * queryable relationship with empty criteria, a join that joins nothing.
      *
      * @param ossieRelationships List of Ossie relationships to validate
      * @param outputData The output data containing semanticDataObjects with their fields
      * @return Filtered list of valid relationships
+     * @throws ValidationException if a relationship's join columns cannot be paired
      */
     private List<Object> validateAndFilterRelationships(List<Object> ossieRelationships, Map<String, Object> outputData) {
         List<Object> validRelationships = new ArrayList<>();
@@ -334,6 +327,18 @@ public class RelationshipMappingHandler implements PipelineStep {
             String fromEntity = getString(ossieRel, FROM);
             String toEntity = getString(ossieRel, TO);
 
+            List<Object> fromColumns = getList(ossieRel, FROM_COLUMNS);
+            List<Object> toColumns = getList(ossieRel, TO_COLUMNS);
+
+            if (!columnsPairable(fromColumns, toColumns)) {
+                throw new ValidationException(String.format(
+                        "Relationship '%s' cannot be converted: from_columns and to_columns must declare "
+                                + "the same number of columns, at least one each (got %d and %d)",
+                        relName,
+                        fromColumns == null ? 0 : fromColumns.size(),
+                        toColumns == null ? 0 : toColumns.size()));
+            }
+
             Map<String, Object> fromDataObject = findDataObjectByName(sfDataObjects, fromEntity);
             Map<String, Object> toDataObject = findDataObjectByName(sfDataObjects, toEntity);
 
@@ -341,9 +346,6 @@ public class RelationshipMappingHandler implements PipelineStep {
                 logger.debug("Removing relationship '{}' - entity not found", relName);
                 continue;
             }
-
-            List<Object> fromColumns = getList(ossieRel, FROM_COLUMNS);
-            List<Object> toColumns = getList(ossieRel, TO_COLUMNS);
 
             if (!validateColumns(fromColumns, fromDataObject, fromEntity, relName) ||
                 !validateColumns(toColumns, toDataObject, toEntity, relName)) {
@@ -365,10 +367,6 @@ public class RelationshipMappingHandler implements PipelineStep {
      */
     private boolean validateColumns(List<Object> columns, Map<String, Object> dataObject,
                                      String entityName, String relName) {
-        if (columns == null || columns.isEmpty()) {
-            return true;
-        }
-
         for (Object colObj : columns) {
             String columnName = (String) colObj;
             if (!fieldExistsInDataObject(dataObject, columnName)) {

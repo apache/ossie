@@ -21,9 +21,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Set
 from copy import deepcopy
 from pathlib import Path
@@ -49,6 +50,55 @@ _SIMPLE_COLUMN = re.compile(
     r"^(?:(?P<qualifier>[A-Za-z_][A-Za-z0-9_]*)\.)?"
     r"(?P<column>[A-Za-z_][A-Za-z0-9_]*)$"
 )
+# A name tools can write unquoted, as in an ontology mapping's ``dataset.field``.
+_PLAIN_NAME = re.compile(r"[^\W\d]\w*")
+_CAMEL_BOUNDARY = re.compile(r"(?<=[^\W_])(?=[A-Z][a-z])|(?<=[a-z0-9])(?=[A-Z])")
+_NAME_SEPARATORS = re.compile(r"[\W_]+")
+_WORD_SEPARATORS = re.compile(r"[\s_-]+")
+# Words SQL reserves so firmly that a parser cannot read them as a table or
+# column name without quotes. A name that would be one gets a trailing
+# underscore instead.
+_SQL_RESERVED_NAMES = frozenset(
+    {
+        "and",
+        "any",
+        "as",
+        "between",
+        "case",
+        "create",
+        "cross",
+        "desc",
+        "distinct",
+        "drop",
+        "else",
+        "except",
+        "fetch",
+        "for",
+        "from",
+        "grant",
+        "having",
+        "in",
+        "inner",
+        "insert",
+        "intersect",
+        "into",
+        "join",
+        "like",
+        "not",
+        "on",
+        "or",
+        "outer",
+        "select",
+        "set",
+        "then",
+        "union",
+        "update",
+        "using",
+        "when",
+        "where",
+        "with",
+    }
+)
 # sqlglot's default parser first, since it is closest to ANSI, then the
 # dialects Auto Ontology connections commonly report.
 _SQL_DIALECTS = (
@@ -64,6 +114,10 @@ _SQL_DIALECTS = (
     "oracle",
     "sqlite",
 )
+# What a filter query may set: one star, one table and a WHERE. sqlglot names the
+# FROM argument ``from_`` in current releases and ``from`` in older ones.
+_FILTER_SELECT_ARGS = frozenset({"expressions", "from", "from_", "where"})
+_FILTER_TABLE_ARGS = frozenset({"this", "db", "catalog", "alias"})
 _DATE_PART_UNITS = frozenset(
     {
         "year",
@@ -252,6 +306,7 @@ def convert_ossie_to_auto_ontology(
     native = _native_snapshot(model)
     preserved = _index_native_document(native)
     datasets: dict[str, dict[str, Any]] = {}
+    field_columns: dict[str, dict[str, str]] = {}
     for item in source_datasets:
         if not isinstance(item, dict) or not item.get("name"):
             raise AutoOntologyConversionError(
@@ -277,9 +332,11 @@ def convert_ossie_to_auto_ontology(
         for column in preserved_table.get("columns") or []:
             if isinstance(column, dict) and column.get("name"):
                 _add_catalog_column(datasets[name], str(column["name"]))
+        field_columns[name] = _field_columns(item, name, str(source["table"]))
+        datasets[name]["original"] = _keys_as_columns(item, field_columns[name])
 
     relationships = [
-        _validate_relationship(item, datasets)
+        _relationship_as_columns(_validate_relationship(item, datasets), field_columns)
         for item in model.get("relationships") or []
     ]
     for relationship in relationships:
@@ -314,7 +371,10 @@ def convert_ossie_to_auto_ontology(
             )
             if source_column:
                 _add_catalog_column(context, source_column)
-                context["simple_fields"].append((field, source_column))
+                # A key column exported as a field is no attribute of the
+                # term: Auto Ontology links it through a foreign key instead.
+                if _auto_ontology_extension_data(field).get("entity") != "key_column":
+                    context["simple_fields"].append((field, source_column))
             else:
                 refs = _field_table_refs(field, selected, name, datasets)
                 context["computed_fields"].append((field, expressions, selected, refs))
@@ -356,7 +416,9 @@ def convert_ossie_to_auto_ontology(
         term_ids[name] = term_id
         term: dict[str, Any] = {
             "id": term_id,
-            "name": name,
+            # A preserved term keeps the name Auto Ontology made unique, which
+            # the dataset may have been exported without.
+            "name": str(preserved_term.get("name") or name),
             "description": str(dataset.get("description") or ""),
             "represents": [table_ids[name]],
             "columns_attributes": [],
@@ -376,7 +438,7 @@ def convert_ossie_to_auto_ontology(
             term["columns_attributes"].append(
                 {
                     "id": attr_id,
-                    "name": field_name,
+                    "name": str(preserved_attr.get("name") or field_name),
                     "description": str(field.get("description") or ""),
                     "column_id": column_ids[(name, source_column)],
                 }
@@ -484,7 +546,7 @@ def convert_ossie_to_auto_ontology(
                         or preserved_attr.get("id")
                         or _stable_id("sql-attribute", name, field_name)
                     ),
-                    "name": field_name,
+                    "name": str(preserved_attr.get("name") or field_name),
                     "description": str(field.get("description") or ""),
                     "sql": full_sql,
                     "sql_column_is": resolved_column_ids,
@@ -531,7 +593,7 @@ def convert_ossie_to_auto_ontology(
                     or preserved_analysis.get("id")
                     or _stable_id("custom-analysis", str(model["name"]), name)
                 ),
-                "name": name,
+                "name": str(preserved_analysis.get("name") or name),
                 "description": str(metric.get("description") or ""),
                 "sql": full_sql,
                 "sql_column_is": referenced_column_ids,
@@ -589,7 +651,16 @@ def convert_auto_ontology_to_ossie(
     fields_by_term: dict[str, list[dict[str, Any]]] = defaultdict(list)
     field_names_by_term: dict[str, set[str]] = defaultdict(set)
     term_columns: dict[str, set[str]] = defaultdict(set)
+    sampled_unique_columns: dict[str, list[str]] = {}
     attr_owner: dict[str, tuple[str, dict[str, Any]]] = {}
+    names = _ossie_names(root, catalog)
+    term_names: set[str] = set()
+    # Auto Ontology SQL aliases each table by its term's name.
+    dataset_by_alias = {
+        str(term["name"]): names["datasets"][str(term.get("id") or "")]
+        for term in terms
+        if isinstance(term, dict) and term.get("name")
+    }
 
     for term in terms:
         term_id = _required_id(term, "Auto Ontology term")
@@ -610,15 +681,18 @@ def convert_auto_ontology_to_ossie(
                 f"Auto Ontology term {term.get('name')!r} represents unknown "
                 f"table {table_id!r}"
             )
-        name = str(term.get("name") or "")
-        if not name:
+        if not term.get("name"):
             raise AutoOntologyConversionError(
                 "Every Auto Ontology term needs a non-empty name"
             )
-        if name in term_id_by_name:
+        # Every Ossie name is told apart, but two terms that share theirs could
+        # not be told apart when the native snapshot is matched back to them.
+        if str(term["name"]) in term_names:
             raise AutoOntologyConversionError(
-                f"Duplicate Auto Ontology term name {name!r}"
+                f"Duplicate Auto Ontology term name {term['name']!r}"
             )
+        term_names.add(str(term["name"]))
+        name = names["datasets"][term_id]
         term_id_by_name[name] = term_id
         datasets_by_table[table_id].append(name)
         term_by_id[term_id] = term
@@ -630,13 +704,12 @@ def convert_auto_ontology_to_ossie(
             dataset["description"] = str(term["description"])
         if table["item"].get("pk"):
             dataset["primary_key"] = list(table["item"]["pk"])
-        unique_columns = [
+        _with_original_name(dataset, names["spelled_from"][term_id])
+        sampled_unique_columns[name] = [
             str(column.get("name"))
             for column in table["item"].get("columns") or []
             if column.get("is_unique") and column.get("name")
         ]
-        if unique_columns:
-            dataset["unique_keys"] = [[column] for column in unique_columns]
 
         for attribute in term.get("columns_attributes") or []:
             if not isinstance(attribute, dict) or not attribute.get("id"):
@@ -650,16 +723,16 @@ def convert_auto_ontology_to_ossie(
                     f"Column attribute {attribute.get('name')!r} references "
                     f"unknown column {column_id!r}"
                 )
-            field_name = str(attribute.get("name") or column["name"])
-            if field_name in field_names_by_term[term_id]:
+            attribute_name = str(attribute.get("name") or column["name"])
+            if attribute_name in field_names_by_term[term_id]:
                 raise AutoOntologyConversionError(
-                    f"Duplicate field name {field_name!r} in Auto Ontology "
+                    f"Duplicate field name {attribute_name!r} in Auto Ontology "
                     f"term {name!r}"
                 )
-            field_names_by_term[term_id].add(field_name)
+            field_names_by_term[term_id].add(attribute_name)
             term_columns[name].add(str(column["name"]))
             field: dict[str, Any] = {
-                "name": field_name,
+                "name": names["fields"][str(attribute["id"])],
                 "expression": _ossie_expression(str(column["name"])),
             }
             datatype = _ossie_datatype(column["item"].get("type"))
@@ -667,6 +740,7 @@ def convert_auto_ontology_to_ossie(
                 field["datatype"] = datatype
             if attribute.get("description"):
                 field["description"] = str(attribute["description"])
+            _with_original_name(field, attribute_name)
             fields_by_term[term_id].append(field)
             attr_owner[str(attribute["id"])] = (term_id, attribute)
 
@@ -701,35 +775,62 @@ def convert_auto_ontology_to_ossie(
                 catalog,
                 attached_table_id=represented_table_id,
             )
-            ossie_expression = _expression_from_sql(sql)
-            field = {
-                "name": name,
+            condition = _filter_condition_from_sql(sql)
+            ossie_expression = _requalified(
+                condition or _expression_from_sql(sql), dataset_by_alias
+            )
+            field: dict[str, Any] = {
+                "name": names["fields"][attribute_id],
                 "expression": _ossie_expression(
                     ossie_expression,
                     _ossie_dialect(dialects, sql_databases),
                 ),
-                "custom_extensions": [
-                    _auto_ontology_extension(
-                        {
-                            "entity": "sql_attribute",
-                            "id": attribute_id,
-                            "sql": sql,
-                            "sql_source": source_group,
-                            "sql_column_is": list(attribute.get("sql_column_is") or []),
-                            "term_id": term_id,
-                            "ossie_expression": ossie_expression,
-                        }
-                    )
-                ],
             }
+            if condition is not None:
+                field["datatype"] = "Boolean"
+            field["custom_extensions"] = [
+                _auto_ontology_extension(
+                    {
+                        "entity": "sql_attribute",
+                        "id": attribute_id,
+                        "sql": sql,
+                        "sql_source": source_group,
+                        "sql_column_is": list(attribute.get("sql_column_is") or []),
+                        "term_id": term_id,
+                        "ossie_expression": ossie_expression,
+                    }
+                )
+            ]
             if attribute.get("description"):
                 field["description"] = str(attribute["description"])
+            _with_original_name(field, name)
             fields_by_term[term_id].append(field)
 
+    relationships = _relationships_from_auto_ontology(
+        root,
+        catalog,
+        datasets_by_table,
+        term_columns,
+        attr_owner,
+        {term_id: name for name, term_id in term_id_by_name.items()},
+    )
     for dataset in datasets:
+        unique_keys = _referenced_unique_keys(
+            dataset, sampled_unique_columns[dataset["name"]], relationships
+        )
+        if unique_keys:
+            dataset["unique_keys"] = unique_keys
         term_id = term_id_by_name[dataset["name"]]
+        represented = catalog["tables"][str(term_by_id[term_id]["represents"][0])]
+        fields_by_term[term_id] += _key_column_fields(
+            dataset,
+            fields_by_term[term_id],
+            represented["item"].get("columns") or [],
+            relationships,
+        )
         if fields_by_term[term_id]:
             dataset["fields"] = fields_by_term[term_id]
+    _name_key_columns_by_field(datasets, relationships)
 
     metrics: list[dict[str, Any]] = []
     for analysis in semantic.get("custom_analyses") or []:
@@ -746,9 +847,9 @@ def convert_auto_ontology_to_ossie(
             analysis.get("sql_column_is") or [],
             catalog,
         )
-        ossie_expression = _expression_from_sql(sql)
+        ossie_expression = _requalified(_expression_from_sql(sql), dataset_by_alias)
         metric: dict[str, Any] = {
-            "name": name,
+            "name": names["metrics"][analysis_id],
             "expression": _ossie_expression(
                 ossie_expression,
                 _ossie_dialect(dialects, sql_databases),
@@ -767,16 +868,9 @@ def convert_auto_ontology_to_ossie(
         }
         if analysis.get("description"):
             metric["description"] = str(analysis["description"])
+        _with_original_name(metric, name)
         metrics.append(metric)
 
-    relationships = _relationships_from_auto_ontology(
-        root,
-        catalog,
-        datasets_by_table,
-        term_columns,
-        attr_owner,
-        term_by_id,
-    )
     database_names = {
         source[0]
         for source in (table["source"] for table in catalog["tables"].values())
@@ -1031,42 +1125,79 @@ def _index_native_document(root: dict[str, Any] | None) -> dict[str, Any]:
         table_id: tuple(table["source"])
         for table_id, table in catalog["tables"].items()
     }
-    for term in root["semantic_layer"].get("terms") or []:
+    terms = root["semantic_layer"].get("terms") or []
+    names = _ossie_names(root, catalog)
+
+    # Every item is found under its own name, under the display name earlier
+    # exports gave it, and under the name it is exported as now, so a document
+    # from any of them keeps its identifiers. The name exported now wins over
+    # another item's older name, should the two meet.
+    def known_as(
+        item: Mapping[str, Any], exported: Mapping[str, str]
+    ) -> tuple[list[str], str]:
+        item_id = str(item.get("id") or "")
+        own = str(item.get("name") or "")
+        older = list(dict.fromkeys((own, names["spelled_from"].get(item_id, own))))
+        return older, exported.get(item_id, own)
+
+    def index(
+        kind: str,
+        item: Any,
+        older_keys: Iterable[tuple[str, ...] | str],
+        exported_key: tuple[str, ...] | str,
+    ) -> None:
+        for key in older_keys:
+            result[kind].setdefault(key, item)
+        result[kind][exported_key] = item
+
+    term_names = {
+        str(term.get("id")): known_as(term, names["datasets"]) for term in terms
+    }
+    for term in terms:
         represents = term.get("represents") or []
         if len(represents) != 1 or str(represents[0]) not in table_source:
             continue
         source = table_source[str(represents[0])]
-        term_name = str(term.get("name") or "")
-        result["terms"][(term_name, source)] = term
+        older_terms, exported_term = term_names[str(term.get("id"))]
+        index(
+            "terms",
+            term,
+            [(name, source) for name in older_terms],
+            (exported_term, source),
+        )
         for attribute in term.get("columns_attributes") or []:
             column = catalog["columns"].get(str(attribute.get("column_id") or ""))
-            if column:
-                result["column_attributes"][
-                    (
-                        term_name,
-                        str(attribute.get("name") or ""),
-                        source,
-                        column["name"],
-                    )
-                ] = attribute
-    term_names = {
-        str(term.get("id")): str(term.get("name") or "")
-        for term in root["semantic_layer"].get("terms") or []
-    }
+            if not column:
+                continue
+            older_fields, exported_field = known_as(attribute, names["fields"])
+            index(
+                "column_attributes",
+                attribute,
+                [
+                    (term_name, field_name, source, column["name"])
+                    for term_name in older_terms
+                    for field_name in older_fields
+                ],
+                (exported_term, exported_field, source, column["name"]),
+            )
     for group in _SQL_GROUPS:
         for attribute in (root["semantic_layer"].get("sql_attributes") or {}).get(
             group, []
         ):
             item = dict(attribute)
             item["source_group"] = group
-            result["sql_attributes"][
-                (
-                    term_names.get(str(attribute.get("term_id") or ""), ""),
-                    str(attribute.get("name") or ""),
-                )
-            ] = item
+            older_terms, exported_term = term_names.get(
+                str(attribute.get("term_id") or ""), ([""], "")
+            )
+            older_fields, exported_field = known_as(attribute, names["fields"])
+            index(
+                "sql_attributes",
+                item,
+                [(term, field) for term in older_terms for field in older_fields],
+                (exported_term, exported_field),
+            )
     for analysis in root["semantic_layer"].get("custom_analyses") or []:
-        result["custom_analyses"][str(analysis.get("name") or "")] = analysis
+        index("custom_analyses", analysis, *known_as(analysis, names["metrics"]))
     return result
 
 
@@ -1178,13 +1309,270 @@ def _validate_auto_ontology_sql_databases(
     return databases
 
 
+def _ossie_names(
+    root: Mapping[str, Any],
+    catalog: Mapping[str, Any],
+) -> dict[str, dict[str, str]]:
+    """Name what each Auto Ontology item becomes in Ossie, keyed by item id.
+
+    ``datasets`` names a term's dataset, ``fields`` the field of a column or
+    SQL attribute, and ``metrics`` the metric of a custom analysis;
+    ``spelled_from`` holds the text each of those names was spelled from.
+    Both directions go through here, so an export and the native snapshot it
+    carries agree on every name.
+
+    Auto Ontology names are display text, such as ``Order Line Item``, while
+    Ossie names are identifiers that tools write unquoted, as an ontology
+    mapping does in ``dataset.field``. Each name is spelled as one, and told
+    apart from any other it would then collide with in the same namespace.
+
+    Auto Ontology term names are unique across every database it catalogs, so
+    a term whose name another database already uses is renamed
+    ``Name (database.schema.table)``. An Ossie document is its own namespace,
+    so that suffix is dropped again wherever the plain name is free in it.
+    """
+    semantic = root.get("semantic_layer") or {}
+    terms = [term for term in semantic.get("terms") or [] if isinstance(term, dict)]
+    spelled_from: dict[str, str] = {}
+    raw: dict[str, str] = {}
+    plain: dict[str, str] = {}
+    for term in terms:
+        term_id = str(term.get("id") or "")
+        name = str(term.get("name") or "")
+        represents = term.get("represents") or []
+        table = (
+            catalog["tables"].get(str(represents[0])) if len(represents) == 1 else None
+        )
+        suffix = f" ({'.'.join(table['source'])})" if table else ""
+        raw[term_id] = name
+        plain[term_id] = (
+            name.removesuffix(suffix)
+            if suffix and name.endswith(suffix) and name != suffix
+            else name
+        )
+    free = Counter(_ossie_identifier(name, "dataset") for name in plain.values())
+    taken: set[str] = set()
+    datasets: dict[str, str] = {}
+    for term_id, name in plain.items():
+        if free[_ossie_identifier(name, "dataset")] > 1:
+            name = raw[term_id]
+        spelled_from[term_id] = name
+        datasets[term_id] = _unique_name(_ossie_identifier(name, "dataset"), taken)
+
+    # Fields in the order the export lists them: column attributes first.
+    fields: dict[str, str] = {}
+    taken_by_term: dict[str, set[str]] = defaultdict(set)
+
+    def add_field(item_id: str, name: str, term_id: str) -> None:
+        spelled_from[item_id] = name
+        fields[item_id] = _unique_name(
+            _ossie_identifier(name, "field"), taken_by_term[term_id]
+        )
+
+    for term in terms:
+        for attribute in term.get("columns_attributes") or []:
+            if isinstance(attribute, dict):
+                column = catalog["columns"].get(str(attribute.get("column_id") or ""))
+                add_field(
+                    str(attribute.get("id") or ""),
+                    str(attribute.get("name") or (column or {}).get("name") or ""),
+                    str(term.get("id") or ""),
+                )
+    for group in _SQL_GROUPS:
+        for attribute in (semantic.get("sql_attributes") or {}).get(group) or []:
+            if isinstance(attribute, dict):
+                add_field(
+                    str(attribute.get("id") or ""),
+                    str(attribute.get("name") or ""),
+                    str(attribute.get("term_id") or ""),
+                )
+
+    taken_metrics: set[str] = set()
+    metrics: dict[str, str] = {}
+    for analysis in semantic.get("custom_analyses") or []:
+        if isinstance(analysis, dict):
+            analysis_id = str(analysis.get("id") or "")
+            spelled_from[analysis_id] = str(analysis.get("name") or "")
+            metrics[analysis_id] = _unique_name(
+                _ossie_identifier(spelled_from[analysis_id], "metric"), taken_metrics
+            )
+    return {
+        "datasets": datasets,
+        "fields": fields,
+        "metrics": metrics,
+        "spelled_from": spelled_from,
+    }
+
+
+def _ossie_identifier(text: str, kind: str) -> str:
+    """Spell *text* as a lowercase identifier, its words joined by underscores.
+
+    *kind* names what is being named, and stands in for a name that has no
+    word in it or prefixes one that would start with a digit.
+    """
+    name = _NAME_SEPARATORS.sub("_", _CAMEL_BOUNDARY.sub("_", text)).strip("_")
+    name = name.lower() or kind
+    if name[0].isdigit():
+        name = f"{kind}_{name}"
+    return f"{name}_" if name in _SQL_RESERVED_NAMES else name
+
+
+def _is_plain_name(name: str) -> bool:
+    """Report whether *name* can be written in SQL without quoting it."""
+    return bool(_PLAIN_NAME.fullmatch(name)) and name.lower() not in _SQL_RESERVED_NAMES
+
+
+def _unique_name(name: str, taken: set[str]) -> str:
+    candidate, count = name, 1
+    while candidate in taken:
+        count += 1
+        candidate = f"{name}_{count}"
+    taken.add(candidate)
+    return candidate
+
+
+def _with_original_name(item: dict[str, Any], original: str) -> None:
+    """Keep *original* as a synonym of *item* where its name does not spell it out.
+
+    A name that differs only in case and in how words are separated reads the
+    same, so it needs no synonym; one that dropped punctuation, or had to be
+    told apart from another, does.
+    """
+    words = _WORD_SEPARATORS.sub("_", _CAMEL_BOUNDARY.sub("_", original))
+    if words.strip("_").lower() != item["name"]:
+        item["ai_context"] = {"synonyms": [original]}
+
+
+def _referenced_unique_keys(
+    dataset: Mapping[str, Any],
+    sampled_unique_columns: list[str],
+    relationships: list[dict[str, Any]],
+) -> list[list[str]]:
+    """Return the single-column unique keys a dataset's sample supports.
+
+    Auto Ontology marks a column unique when its values are distinct in a
+    sample of the table's rows, which an amount, a timestamp or a comment
+    often is without being a key. Ossie reads ``unique_keys`` as constraints,
+    so a sampled column becomes one only where a relationship already
+    references it as a key and the sample agrees. A key the primary key
+    already states is not repeated.
+    """
+    referenced = {
+        relationship["to_columns"][0]
+        for relationship in relationships
+        if relationship["to"] == dataset["name"]
+        and len(relationship["to_columns"]) == 1
+    }
+    primary_key = dataset.get("primary_key") or []
+    return [
+        [column]
+        for column in sampled_unique_columns
+        if column in referenced and [column] != primary_key
+    ]
+
+
+def _key_column_fields(
+    dataset: Mapping[str, Any],
+    fields: list[dict[str, Any]],
+    table_columns: list[Mapping[str, Any]],
+    relationships: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return a field for each key column of a dataset that no field exposes.
+
+    Auto Ontology gives a foreign-key column no attribute, because the foreign
+    key itself links the term to the one it references. Such a column would
+    then reach Ossie only inside keys and relationships, while ontology
+    mappings can reference a dataset only through its fields.
+    """
+    name = str(dataset["name"])
+    exposed = {
+        _simple_source_column(
+            field["expression"]["dialects"][0]["expression"], name, ""
+        )
+        for field in fields
+    }
+    key_columns = [
+        *(dataset.get("primary_key") or []),
+        *(column for key in dataset.get("unique_keys") or [] for column in key),
+        *(
+            column
+            for relationship in relationships
+            for side, columns in (("from", "from_columns"), ("to", "to_columns"))
+            if relationship[side] == name
+            for column in relationship[columns]
+        ),
+    ]
+    catalog_columns = {str(column.get("name")): column for column in table_columns}
+    taken = {str(field["name"]) for field in fields}
+    key_fields: list[dict[str, Any]] = []
+    for column in dict.fromkeys(key_columns):
+        if column in exposed:
+            continue
+        field: dict[str, Any] = {
+            "name": _unique_name(_ossie_identifier(column, "field"), taken),
+            "expression": _ossie_expression(column),
+        }
+        datatype = _ossie_datatype(catalog_columns.get(column, {}).get("type"))
+        if datatype:
+            field["datatype"] = datatype
+        field["custom_extensions"] = [
+            _auto_ontology_extension({"entity": "key_column"})
+        ]
+        key_fields.append(field)
+    return key_fields
+
+
+def _name_key_columns_by_field(
+    datasets: list[dict[str, Any]],
+    relationships: list[dict[str, Any]],
+) -> None:
+    """Name each key and relationship column by the field that reads it.
+
+    Auto Ontology knows keys and links by physical column, but ontology tools
+    look the columns of an Ossie key or relationship up among the dataset's
+    fields. By now every such column is a field, so each is named by it.
+    """
+    by_column = {
+        str(dataset["name"]): _field_names_by_column(dataset) for dataset in datasets
+    }
+    for dataset in datasets:
+        names = by_column[str(dataset["name"])]
+        if dataset.get("primary_key"):
+            dataset["primary_key"] = [
+                names.get(column, column) for column in dataset["primary_key"]
+            ]
+        if dataset.get("unique_keys"):
+            dataset["unique_keys"] = [
+                [names.get(column, column) for column in key]
+                for key in dataset["unique_keys"]
+            ]
+    for relationship in relationships:
+        for side, key in (("from", "from_columns"), ("to", "to_columns")):
+            names = by_column[str(relationship[side])]
+            relationship[key] = [
+                names.get(column, column) for column in relationship[key]
+            ]
+
+
+def _field_names_by_column(dataset: Mapping[str, Any]) -> dict[str, str]:
+    """Name the first field of *dataset* that passes each source column through."""
+    names: dict[str, str] = {}
+    for field in dataset.get("fields") or []:
+        column = _simple_source_column(
+            field["expression"]["dialects"][0]["expression"], str(dataset["name"]), ""
+        )
+        if column:
+            names.setdefault(column, str(field["name"]))
+    return names
+
+
 def _relationships_from_auto_ontology(
     root: dict[str, Any],
     catalog: Mapping[str, Any],
     datasets_by_table: Mapping[str, list[str]],
     term_columns: Mapping[str, set[str]],
     attr_owner: Mapping[str, tuple[str, dict[str, Any]]],
-    term_by_id: Mapping[str, dict[str, Any]],
+    dataset_name_by_term_id: Mapping[str, str],
 ) -> list[dict[str, Any]]:
     # One entry per Ossie relationship. Every column pair of an Ossie
     # relationship must match at once, so only pairs that genuinely form one
@@ -1298,13 +1686,10 @@ def _relationships_from_auto_ontology(
             continue
         target_term_id, target_attr = owner
         target_column = catalog["columns"].get(str(target_attr.get("column_id") or ""))
-        target_term = term_by_id.get(target_term_id)
-        if not target_column or not target_term:
+        to_name = dataset_name_by_term_id.get(target_term_id, "")
+        if not target_column or not to_name:
             continue
         if source["table_id"] not in datasets_by_table:
-            continue
-        to_name = str(target_term.get("name") or "")
-        if not to_name:
             continue
         # A semantic foreign key names its source column, which is enough to
         # pick the source dataset on its own.
@@ -1331,7 +1716,9 @@ def _relationships_from_auto_ontology(
         # Named from its own columns only, so adding another link between the
         # same datasets never renames this one.
         source_columns = "_".join(source for source, _ in columns)
-        base_name = f"{from_name}_{source_columns}_to_{to_name}"
+        base_name = _ossie_identifier(
+            f"{from_name}_{source_columns}_to_{to_name}", "relationship"
+        )
         name, count = base_name, 1
         while name in used_names:
             count += 1
@@ -1556,6 +1943,73 @@ def _validate_relationship(
             "non-empty column lists"
         )
     return relationship
+
+
+def _field_columns(
+    dataset: Mapping[str, Any],
+    dataset_name: str,
+    table_name: str,
+) -> dict[str, str]:
+    """Return the source column each pass-through field of *dataset* reads.
+
+    A field whose expression cannot be read is left out here; it fails with
+    its own error once the dataset's fields are converted.
+    """
+    columns: dict[str, str] = {}
+    for field in dataset.get("fields") or []:
+        if not isinstance(field, dict) or not field.get("name"):
+            continue
+        name = str(field["name"])
+        try:
+            expression = _pick_expression(
+                _normalize_expressions(field.get("expression"), name), name
+            )
+        except AutoOntologyConversionError:
+            continue
+        column = _simple_source_column(expression, dataset_name, table_name)
+        if column:
+            columns.setdefault(name, column)
+    return columns
+
+
+def _keys_as_columns(
+    dataset: dict[str, Any],
+    field_columns: Mapping[str, str],
+) -> dict[str, Any]:
+    """Return *dataset* with its keys naming source columns.
+
+    A key column names a field when the dataset has one by that name, as
+    ontology tools read it and this converter exports it; otherwise it is the
+    physical column itself, as earlier exports and other tools write it.
+    """
+    result = dict(dataset)
+    if isinstance(dataset.get("primary_key"), list):
+        result["primary_key"] = [
+            field_columns.get(str(column), column) for column in dataset["primary_key"]
+        ]
+    if isinstance(dataset.get("unique_keys"), list):
+        result["unique_keys"] = [
+            [field_columns.get(str(column), column) for column in key]
+            if isinstance(key, list)
+            else key
+            for key in dataset["unique_keys"]
+        ]
+    return result
+
+
+def _relationship_as_columns(
+    relationship: dict[str, Any],
+    field_columns: Mapping[str, Mapping[str, str]],
+) -> dict[str, Any]:
+    """Return *relationship* with its columns naming source columns, as keys do.
+
+    *field_columns* holds what ``_field_columns`` returns, by dataset name.
+    """
+    result = dict(relationship)
+    for side, key in (("from", "from_columns"), ("to", "to_columns")):
+        columns = field_columns.get(str(relationship[side]), {})
+        result[key] = [columns.get(str(column), column) for column in relationship[key]]
+    return result
 
 
 def _normalize_expressions(value: Any, name: str) -> list[dict[str, str]]:
@@ -1970,6 +2424,58 @@ def _expression_from_sql(sql: str) -> str:
     if isinstance(expression, exp.Alias):
         expression = expression.this
     return expression.sql()
+
+
+def _requalified(expression: str, dataset_by_alias: Mapping[str, str]) -> str:
+    """Return *expression* with columns qualified by their dataset's name.
+
+    An expression lifted out of Auto Ontology SQL keeps the table aliases
+    that SQL gave it, which are term names; in Ossie the same table is the
+    dataset of that term, and goes by the dataset's name.
+    """
+    parsed = _parse_sql(expression)
+    if parsed is None:
+        return expression
+    changed = False
+    for column in parsed.find_all(exp.Column):
+        dataset = dataset_by_alias.get(column.table) if column.table else None
+        if dataset and dataset != column.table:
+            column.set("table", exp.to_identifier(dataset))
+            changed = True
+    return parsed.sql() if changed else expression
+
+
+def _filter_condition_from_sql(sql: str) -> str | None:
+    """Return the condition of a SQL attribute that selects rows, not a value.
+
+    Auto Ontology stores a derived filter as ``SELECT * FROM t WHERE <condition>``.
+    A star is no field expression, so the field such a filter becomes holds its
+    condition instead, which is true for exactly the rows the filter selects.
+
+    That holds only when the condition is all the query adds to one table. A join,
+    ``LIMIT``, ``GROUP BY``, ``DISTINCT``, set operation or any other clause changes
+    the rows too, so such a query returns ``None`` and keeps the generic path.
+    """
+    parsed = _parse_sql(sql)
+    if not isinstance(parsed, exp.Select) or len(parsed.expressions) != 1:
+        return None
+    if not parsed.expressions[0].is_star or not _has_only_args(
+        parsed, _FILTER_SELECT_ARGS
+    ):
+        return None
+    source = parsed.args.get("from_") or parsed.args.get("from")
+    where = parsed.args.get("where")
+    if source is None or where is None:
+        return None
+    if not isinstance(source.this, exp.Table) or not _has_only_args(
+        source.this, _FILTER_TABLE_ARGS
+    ):
+        return None
+    return where.this.sql()
+
+
+def _has_only_args(node: exp.Expression, allowed: Set[str]) -> bool:
+    return all(key in allowed for key, value in node.args.items() if value)
 
 
 def _expression_matches(current: str, emitted: Any) -> bool:
@@ -2410,11 +2916,40 @@ def _build_parser() -> argparse.ArgumentParser:
         "--name",
         help="Override the inferred Ossie semantic-model name",
     )
+    import_parser.add_argument(
+        "--ontology-output",
+        type=Path,
+        help="Also write the Ossie ontology formed by the model's terms",
+    )
+    import_parser.add_argument(
+        "--mapping-output",
+        type=Path,
+        help="Also write the mapping from that ontology onto the semantic model",
+    )
+    import_parser.add_argument(
+        "--embedded-ontology-output",
+        type=Path,
+        help=(
+            "Also write the ontology with the mapping and semantic model embedded "
+            "in it, for tools that do not read mapping documents yet"
+        ),
+    )
     return parser
 
 
+def _relative_iri(path: Path, base: Path) -> str:
+    """Reference *path* from a document in *base*, as the mapping spec resolves it."""
+    relative = Path(os.path.relpath(path.resolve(), base.resolve())).as_posix()
+    return relative if relative.startswith("../") else f"./{relative}"
+
+
 def main(argv: list[str] | None = None) -> None:
-    args = _build_parser().parse_args(argv)
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    if args.command == "import" and (args.ontology_output is None) != (
+        args.mapping_output is None
+    ):
+        parser.error("--ontology-output and --mapping-output must be given together")
     try:
         source = args.input.read_text(encoding="utf-8")
         if args.command == "export":
@@ -2428,6 +2963,30 @@ def main(argv: list[str] | None = None) -> None:
             print(output, end="")
         else:
             args.output.write_text(output, encoding="utf-8")
+        if args.command == "import" and args.mapping_output is not None:
+            # Imported here because the ontology module builds on this one.
+            from .ontology import convert_auto_ontology_to_ossie_ontology
+
+            base = args.mapping_output.parent
+            ontology, mapping = convert_auto_ontology_to_ossie_ontology(
+                source,
+                model_name=args.name,
+                semantic_model_iri=(
+                    _relative_iri(args.output, base) if args.output else None
+                ),
+                ontology_iri=_relative_iri(args.ontology_output, base),
+            )
+            args.ontology_output.write_text(ontology, encoding="utf-8")
+            args.mapping_output.write_text(mapping, encoding="utf-8")
+        if args.command == "import" and args.embedded_ontology_output is not None:
+            from .ontology import convert_auto_ontology_to_embedded_ossie_ontology
+
+            args.embedded_ontology_output.write_text(
+                convert_auto_ontology_to_embedded_ossie_ontology(
+                    source, model_name=args.name
+                ),
+                encoding="utf-8",
+            )
     except (AutoOntologyConversionError, OSError, UnicodeError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
