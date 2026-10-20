@@ -251,10 +251,12 @@ fields:
       # Optional: The unit system
       # Values: si, imperial, custom
       unit_system: string
+      # If measurement is present, it must contain at least one of the above
 
     # Optional: Display format string for presentation
     # Uses Excel-compatible custom number format conventions
     # Examples: "$#,##0.00", "0.0%", "#,##0", "yyyy-mm-dd"
+    # A format pattern, not an expression or a named preset (e.g. "currency")
     # Consumers MAY fall back to default formatting if unsupported
     display_format: string
 
@@ -272,6 +274,7 @@ fields:
       # Values: first, last
       nulls: string
       # Optional: Sort by a different field (e.g., sort month names by month number)
+      # A name, not an expression. When omitted, the sort is on this field.
       by_field: string
 
     # Optional: Default time granularity for temporal fields
@@ -362,6 +365,7 @@ metrics:
     default_sort:
       direction: string  # asc, desc
       nulls: string      # first, last
+      by_field: string   # Optional: name (not expression) of another field or metric to sort by
 
     # Optional: References to external glossaries, ontologies, or standards
     # Uses SKOS-based predicates as a baseline but the predicate vocabulary is open

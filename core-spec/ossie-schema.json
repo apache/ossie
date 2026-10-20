@@ -175,6 +175,7 @@
           "$ref": "#/$defs/UnitSystem"
         }
       },
+      "minProperties": 1,
       "additionalProperties": false
     },
     "DefaultSort": {
@@ -193,7 +194,7 @@
         },
         "by_field": {
           "type": "string",
-          "description": "Sort by a different field (e.g., sort month names by month number)"
+          "description": "Name of a different field or metric to sort by (e.g., sort month names by month number). A name, not an expression. When omitted, the sort is on the owning field or metric."
         }
       },
       "additionalProperties": false

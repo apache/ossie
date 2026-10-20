@@ -440,6 +440,8 @@ expression:
 
 The following types are used by the extended metadata fields on both fields and metrics. All extended metadata is **optional** and **non-executional** — it does not affect query execution but enables consumers (BI tools, AI agents, developers) to correctly interpret, render, and present data.
 
+`default_aggregation`, `default_sort`, and `default_time_granularity` are hints for tools that build queries. An implementation MUST NOT change query results because they are set: it does not supply an aggregate, add an ordering, or bucket a time field on the author's behalf. Likewise, `display_label` and `group_labels` are presentation strings, not names; expressions and queries reference fields and metrics by `name` only.
+
 ### Semantic Type
 
 High-level classification of a field or metric value. Accepts either a **well-known token** or an **absolute URI** pointing to an external type system. Using URIs keeps the field registry-agnostic and allows governed external type systems to carry the long tail of domain-specific types.
@@ -476,6 +478,8 @@ Describes what a numeric value represents. Enables unit-aware reasoning and form
 | `unit` | string | Specific unit. For currency, use ISO 4217 codes (e.g., `usd`, `eur`, `gbp`). For others, use UCUM or descriptive strings (e.g., `meters`, `kg`, `celsius`) |
 | `unit_system` | string | Unit system: `si`, `imperial`, `custom` |
 
+All three properties are optional, but a `measurement` object MUST contain at least one of them.
+
 **Example:**
 
 ```yaml
@@ -493,7 +497,7 @@ Defines default sorting behavior for a field or metric.
 |-------|------|-------------|
 | `direction` | string | Sort direction: `asc`, `desc` |
 | `nulls` | string | Null positioning: `first`, `last` |
-| `by_field` | string | Sort by a different field (e.g., sort month names by month number) |
+| `by_field` | string | Name of a different field or metric to sort by (e.g., sort month names by month number). A name, not an expression. When omitted, the sort is on the owning field or metric. |
 
 **Example:**
 
@@ -547,6 +551,8 @@ glossary_references:
 ### Display Format
 
 The `display_format` string follows Excel-compatible custom number format conventions. Consumers MAY support a subset, but interoperability is improved when adhering to common patterns.
+
+The value is a format pattern. It is not an expression, and named presets such as `currency` or `percent` are not part of the vocabulary.
 
 **Common Patterns:**
 
