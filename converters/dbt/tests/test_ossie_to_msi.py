@@ -18,6 +18,7 @@
 """Tests for OssieToMSIConverter."""
 
 import pytest
+import sqlglot
 from pydantic import ValidationError
 from syrupy.assertion import SnapshotAssertion
 
@@ -906,6 +907,307 @@ class TestOssieToMSIDialectSelection:
 
         agg_params = result.metrics[0].type_params.metric_aggregation_params
         assert agg_params.semantic_model == "orders"
+
+
+class TestOssieToMSIReviewRegressions:
+    @pytest.mark.parametrize(
+        ("expression", "agg", "scalar"),
+        [
+            ("SUM(price * qty)", AggregationType.SUM, "price * qty"),
+            (
+                "SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END)",
+                AggregationType.SUM_BOOLEAN,
+                "status = 'paid'",
+            ),
+            (
+                "SUM(CASE WHEN status='paid' THEN amount ELSE 0 END)",
+                AggregationType.SUM,
+                "CASE WHEN status = 'paid' THEN amount ELSE 0 END",
+            ),
+            (
+                "SUM(CASE status WHEN 'paid' THEN 1 ELSE 0 END)",
+                AggregationType.SUM,
+                "CASE status WHEN 'paid' THEN 1 ELSE 0 END",
+            ),
+            ("AVG(POWER(price, 2))", AggregationType.AVERAGE, "POWER(price, 2)"),
+            ("SUM(orders.price * qty)", AggregationType.SUM, "price * qty"),
+            ("SUM(orders.price * orders.qty)", AggregationType.SUM, "price * qty"),
+        ],
+    )
+    def test_review_compound_columns_resolve_individually(
+        self, expression: str, agg: AggregationType, scalar: str
+    ) -> None:
+        doc = _ossie_doc(
+            datasets=[
+                _ossie_dataset("refunds", fields=[_ossie_field("refund_id")]),
+                _ossie_dataset(
+                    "orders",
+                    fields=[_ossie_field(name) for name in ("price", "qty", "status", "amount")],
+                ),
+            ],
+            metrics=[_ossie_metric("m", expression)],
+        )
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.issues == []
+        metric = result.output.metrics[0]
+        assert metric.type_params.expr == scalar
+        assert metric.type_params.metric_aggregation_params.agg == agg
+        assert metric.type_params.metric_aggregation_params.semantic_model == "orders"
+
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            "SUM(price * fee)",
+            "SUM(price * missing)",
+            "SUM(amount * price)",
+            "SUM(orders.price + amount)",
+            "SUM(nope.price)",
+            "SUM(CASE WHEN refunds.fee > 0 THEN orders.price ELSE 0 END)",
+        ],
+    )
+    def test_review_ambiguous_or_cross_model_columns_are_still_refused(self, expression: str) -> None:
+        doc = _ossie_doc(
+            datasets=[
+                _ossie_dataset("refunds", fields=[_ossie_field("fee"), _ossie_field("amount")]),
+                _ossie_dataset("orders", fields=[_ossie_field("price"), _ossie_field("amount")]),
+            ],
+            metrics=[_ossie_metric("m", expression)],
+        )
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.output.metrics == []
+        assert result.issues == [ConverterIssue(ConverterIssueType.UNSUPPORTED_METRIC_EXPRESSION, "m")]
+
+    @pytest.mark.parametrize("expression", ["SUM(o.amount)", "SUM(ORDERS.amount)"])
+    def test_review_single_dataset_alias_is_bound_and_unqualified(self, expression: str) -> None:
+        doc = _ossie_doc(
+            datasets=[_ossie_dataset("orders", fields=[_ossie_field("amount")])],
+            metrics=[_ossie_metric("m", expression)],
+        )
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.issues == []
+        assert result.output.metrics[0].type_params.expr == "amount"
+        assert result.output.metrics[0].type_params.metric_aggregation_params.semantic_model == "orders"
+
+    def test_review_multiple_unknown_aliases_do_not_bind_to_the_only_dataset(self) -> None:
+        doc = _ossie_doc(
+            datasets=[_ossie_dataset("orders", fields=[_ossie_field("amount")])],
+            metrics=[_ossie_metric("m", "SUM(o.amount + r.amount)")],
+        )
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.output.metrics == []
+        assert result.issues == [ConverterIssue(ConverterIssueType.UNSUPPORTED_METRIC_EXPRESSION, "m")]
+
+    def test_review_quoted_identifiers_remain_quoted_in_scalar_output(self) -> None:
+        doc = _ossie_doc(
+            datasets=[_ossie_dataset("orders", fields=[_ossie_field("Amount Paid")])],
+            metrics=[_ossie_metric("m", 'SUM(orders."Amount Paid")')],
+        )
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.issues == []
+        assert result.output.metrics[0].type_params.expr == '"Amount Paid"'
+
+    def test_review_casefold_qualifier_does_not_select_between_duplicate_dataset_leaves(self) -> None:
+        doc = _ossie_doc(
+            datasets=[
+                _ossie_dataset("a.orders", fields=[_ossie_field("amount")]),
+                _ossie_dataset("b.orders", fields=[_ossie_field("amount")]),
+            ],
+            metrics=[_ossie_metric("m", "SUM(ORDERS.amount)")],
+        )
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.output.metrics == []
+        assert result.issues == [ConverterIssue(ConverterIssueType.UNSUPPORTED_METRIC_EXPRESSION, "m")]
+
+    def test_review_compound_physical_columns_resolve_through_field_expressions(self) -> None:
+        doc = _ossie_doc(
+            datasets=[
+                _ossie_dataset("refunds", fields=[_ossie_field("id")]),
+                _ossie_dataset(
+                    "orders",
+                    fields=[_ossie_field("price", "unit_price"), _ossie_field("qty", "unit_count")],
+                ),
+            ],
+            metrics=[_ossie_metric("m", "SUM(unit_price * unit_count)")],
+        )
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.issues == []
+        assert result.output.metrics[0].type_params.expr == "unit_price * unit_count"
+        assert result.output.metrics[0].type_params.metric_aggregation_params.semantic_model == "orders"
+
+    def test_review_boolean_scalar_loses_all_qualifiers(self) -> None:
+        doc = _ossie_doc(
+            datasets=[_ossie_dataset("orders", fields=[_ossie_field("status")])],
+            metrics=[_ossie_metric("m", "SUM(CASE WHEN orders.status = 'paid' THEN 1 ELSE 0 END)")],
+        )
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.issues == []
+        assert result.output.metrics[0].type_params.expr == "status = 'paid'"
+
+    @pytest.mark.parametrize(
+        "scalar",
+        [
+            "DATEDIFF(day, start_date, end_date)",
+            "DATEADD(day, 1, order_date)",
+            "DATE_PART('year', order_date)",
+            "YEAR(order_date)",
+            "QUARTER(order_date)",
+            "MONTH(order_date)",
+            "DAY(order_date)",
+            "DAYOFYEAR(order_date)",
+            "HOUR(order_date)",
+            "MINUTE(order_date)",
+            "SECOND(order_date)",
+            "DATE_TRUNC('month', order_date)",
+            "order_date + INTERVAL '1' DAY",
+            "CONCAT(status, region)",
+            "LEFT(status, 2)",
+            "RIGHT(status, 2)",
+            "LTRIM(status)",
+            "RTRIM(status)",
+            "REPLACE(status, 'a', 'b')",
+            "SPLIT_PART(status, '-', 1)",
+            "POSITION('a' IN status)",
+            "CHARINDEX('a', status)",
+            "CONTAINS(status, 'a')",
+            "STARTSWITH(status, 'a')",
+            "ENDSWITH(status, 'a')",
+            "REGEXP_LIKE(status, 'a')",
+            "TRUNC(amount, 2)",
+            "SIGN(amount)",
+            "POWER(amount, 2)",
+            "SQRT(amount)",
+            "EXP(amount)",
+            "LN(amount)",
+            "LOG(2, amount)",
+            "LOG10(amount)",
+            "NVL2(amount, amount, 0)",
+            "ZEROIFNULL(amount)",
+            "NULLIFZERO(amount)",
+            "TRY_CAST(amount AS DECIMAL(10, 2))",
+            "CASE WHEN (status, region) IN (('paid', 'west')) THEN amount ELSE 0 END",
+        ],
+    )
+    def test_review_required_scalar_functions_preserve_one_aggregate(self, scalar: str) -> None:
+        doc = _ossie_doc(
+            datasets=[
+                _ossie_dataset("unrelated", fields=[_ossie_field("id")]),
+                _ossie_dataset(
+                    "orders",
+                    fields=[
+                        _ossie_field(name)
+                        for name in ("start_date", "end_date", "order_date", "status", "region", "amount")
+                    ],
+                ),
+            ],
+            metrics=[_ossie_metric("m", f"MAX({scalar})", dialect=OssieDialect.OSSIE_SQL_2026)],
+        )
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.issues == []
+        metric = result.output.metrics[0]
+        assert metric.type_params.metric_aggregation_params.agg == AggregationType.MAX
+        assert metric.type_params.metric_aggregation_params.semantic_model == "orders"
+        assert metric.type_params.expr == sqlglot.parse_one(scalar, read="snowflake").sql(dialect="snowflake")
+
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            "SUM(POWER(MY_UDAF(amount), 2))",
+            "SUM(CONCAT(status, (SELECT region FROM other_table)))",
+            "MAX(SUM(amount) OVER ())",
+            "SUM(DISTINCT POWER(amount, 2))",
+        ],
+    )
+    def test_review_new_scalar_support_does_not_admit_unsafe_children(self, expression: str) -> None:
+        doc = _ossie_doc(
+            datasets=[_ossie_dataset("orders", fields=[_ossie_field("amount")])],
+            metrics=[_ossie_metric("m", expression)],
+        )
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.output.metrics == []
+        assert result.issues == [ConverterIssue(ConverterIssueType.UNSUPPORTED_METRIC_EXPRESSION, "m")]
+
+    @pytest.mark.parametrize("preferred", [OssieDialect.ANSI_SQL, OssieDialect.DAX])
+    def test_review_non_sql_preference_falls_back_to_portable_metric(self, preferred: OssieDialect) -> None:
+        doc = _doc_with_metric_expression(
+            _multi_dialect_expr(
+                (OssieDialect.DAX, "SUM(Sales[Amount])"),
+                _SNOWFLAKE_METRIC,
+                _OSSIE_SQL_METRIC,
+            )
+        )
+        result = OssieToMSIConverter(dialect=preferred).convert(doc)
+
+        assert result.issues == []
+        assert result.output.metrics[0].type_params.expr == "amount"
+
+    def test_review_non_sql_first_entry_falls_back_to_first_readable_sql(self) -> None:
+        doc = _doc_with_metric_expression(
+            _multi_dialect_expr((OssieDialect.DAX, "SUM(Sales[Amount])"), _SNOWFLAKE_METRIC)
+        )
+        result = OssieToMSIConverter().convert(doc)
+
+        assert result.issues == []
+        assert result.output.metrics[0].type_params.expr == "amt_snowflake_only"
+
+    def test_review_configured_sql_dialect_still_wins_over_portable_alternative(self) -> None:
+        doc = _doc_with_metric_expression(_multi_dialect_expr(_OSSIE_SQL_METRIC, _SNOWFLAKE_METRIC))
+        result = OssieToMSIConverter(dialect=OssieDialect.SNOWFLAKE).convert(doc)
+
+        assert result.issues == []
+        assert result.output.metrics[0].type_params.expr == "amt_snowflake_only"
+
+    @pytest.mark.parametrize(
+        "dialect",
+        [
+            OssieDialect.DAX,
+            OssieDialect.MDX,
+            OssieDialect.MAQL,
+            OssieDialect.TABLEAU,
+            OssieDialect.SIGMA,
+            OssieDialect.THOUGHTSPOT,
+        ],
+    )
+    def test_review_non_sql_only_is_refused_even_if_it_looks_like_sql(self, dialect: OssieDialect) -> None:
+        doc = _doc_with_metric_expression(_multi_dialect_expr((dialect, "SUM(orders.amount)")))
+        result = OssieToMSIConverter(dialect=dialect).convert(doc)
+
+        assert result.output.metrics == []
+        assert result.issues == [ConverterIssue(ConverterIssueType.UNSUPPORTED_METRIC_EXPRESSION, "revenue")]
+
+    @pytest.mark.parametrize(
+        ("dialect", "scalar"),
+        [
+            (OssieDialect.SNOWFLAKE, "DATEDIFF(day, orders.start_date, orders.end_date)"),
+            (OssieDialect.DATABRICKS, "DATEADD(day, 1, orders.start_date)"),
+            (OssieDialect.BIGQUERY, "DATE_DIFF(orders.end_date, orders.start_date, DAY)"),
+        ],
+    )
+    def test_review_selected_sql_dialect_is_used_for_parse_and_render(
+        self, dialect: OssieDialect, scalar: str
+    ) -> None:
+        doc = _ossie_doc(
+            datasets=[_ossie_dataset("orders", fields=[_ossie_field("start_date"), _ossie_field("end_date")])],
+            metrics=[_ossie_metric("m", f"MAX({scalar}) / MAX({scalar})", dialect=dialect)],
+        )
+        result = OssieToMSIConverter(dialect=dialect).convert(doc)
+
+        assert result.issues == []
+        assert len(result.output.metrics) == 3
+        for metric in result.output.metrics[:2]:
+            assert metric.type_params.metric_aggregation_params.semantic_model == "orders"
+            assert "orders." not in metric.type_params.expr
+            tree = sqlglot.parse_one(metric.type_params.expr, read=dialect.value.lower())
+            assert {column.name for column in tree.find_all(sqlglot.exp.Column)} <= {"start_date", "end_date"}
 
 
 class TestOssieToMSIRoundTrip:

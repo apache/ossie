@@ -138,6 +138,20 @@ manifest_json = result.output.model_dump_json(by_alias=True, exclude_none=True, 
 - A root aggregate over a scalar SQL expression (for example,
   `SUM(CASE WHEN ... THEN amount ELSE 0 END)`) → SIMPLE metric with the
   scalar expression in `expr` and the root function in `agg`
+- Compound expressions resolve each referenced column independently. All columns
+  must identify one dataset; ambiguous unqualified or cross-dataset references
+  are refused. A sole unknown qualifier is accepted as an alias only in a
+  single-dataset document; multiple unknown qualifiers are never collapsed.
+- Metric dialect selection skips non-SQL entries, then prefers the configured
+  dialect, `OSSIE_SQL_2026`, and the first available SQLGlot-readable SQL entry.
+  Parsing and rendering retain that dialect through ratio decomposition.
+  The ANSI/portable core uses SQLGlot's Snowflake reader for its unit-first
+  `DATEADD`/`DATEDIFF` syntax; this is syntax handling, not Snowflake execution.
+- The explicit safe scalar AST set covers the core specification's date
+  arithmetic/extraction, string manipulation/search, mathematical, conditional
+  and cast categories, including interval and tuple operands. Unknown/custom
+  functions, nested aggregates, windows and subqueries remain unsupported;
+  function support does not imply support for every core aggregate.
 - Expressions that cannot be decomposed without changing aggregation semantics,
   and non-SQL measure expressions such as DAX, are dropped with an
   `UNSUPPORTED_METRIC_EXPRESSION` issue

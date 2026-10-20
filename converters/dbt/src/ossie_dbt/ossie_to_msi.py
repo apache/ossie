@@ -18,6 +18,9 @@
 from dataclasses import dataclass
 from typing import List, Optional, Set, Tuple
 
+import sqlglot
+from sqlglot import exp
+
 from ossie import (
     OssieDataset,
     OssieDialect,
@@ -33,7 +36,6 @@ from ossie_dbt.expression_utils import (
     _extract_agg_info,
     _contains_distinct_row_count,
     _get_dataset_qualifier,
-    _get_dataset_qualifiers,
     _is_constant_expr,
     _strip_qualifier,
     _try_parse_ratio,
@@ -289,8 +291,9 @@ class OssieToMSIConverter:
         metrics: List[PydanticMetric] = []
         issues: List[ConverterIssue] = []
         for metric in ossie_sm.metrics or []:
-            dialect_expr = self._get_dialect_expression(metric.expression)
-            if dialect_expr is None or dialect_expr.dialect not in self._SQL_DIALECTS:
+            dialect_expr = self._get_dialect_expression(metric.expression, sql_only=True)
+            dialect = self._sql_dialect(dialect_expr.dialect) if dialect_expr is not None else None
+            if dialect_expr is None or dialect is None:
                 issues.append(
                     ConverterIssue(ConverterIssueType.UNSUPPORTED_METRIC_EXPRESSION, metric.name)
                 )
@@ -302,6 +305,7 @@ class OssieToMSIConverter:
                         dialect_expr.expression,
                         metric.description,
                         ossie_sm.datasets,
+                        dialect,
                     )
                 )
             except _UnresolvedRowCountDataset:
@@ -321,6 +325,7 @@ class OssieToMSIConverter:
         expr_str: str,
         description: Optional[str],
         datasets: List[OssieDataset],
+        dialect: str = "",
     ) -> List[PydanticMetric]:
         """Return one or more PydanticMetric objects for the given Ossie expression.
 
@@ -331,15 +336,15 @@ class OssieToMSIConverter:
         sub-metrics for its numerator and denominator.
         """
         # --- SIMPLE: single aggregation ---
-        agg_result = _extract_agg_info(expr_str)
+        agg_result = _extract_agg_info(expr_str, dialect)
         if agg_result is not None:
             agg, col, percentile, use_discrete = agg_result
             is_row_count = agg is AggregationType.COUNT and col == ROW_COUNT_EXPR
             if is_row_count or (agg is AggregationType.SUM and _is_constant_expr(col)):
                 # A constant, not a column: it must not go through the column → dataset lookup.
-                semantic_model_name = self._find_dataset_for_row_count(expr_str, datasets)
+                semantic_model_name = self._find_dataset_for_row_count(expr_str, datasets, dialect)
             else:
-                semantic_model_name = self._find_dataset_for_col(expr_str, col, datasets)
+                semantic_model_name = self._find_dataset_for_col(expr_str, datasets, dialect)
             agg_params = (
                 PydanticMeasureAggregationParameters(
                     percentile=percentile,
@@ -370,13 +375,13 @@ class OssieToMSIConverter:
             ]
 
         # --- RATIO: (num_expr) / (den_expr) ---
-        ratio_result = _try_parse_ratio(expr_str)
+        ratio_result = _try_parse_ratio(expr_str, dialect)
         if ratio_result is not None:
             num_expr, den_expr = ratio_result
             num_name = f"{name}__numerator"
             den_name = f"{name}__denominator"
-            num_metrics = self._convert_metric(num_name, num_expr, None, datasets)
-            den_metrics = self._convert_metric(den_name, den_expr, None, datasets)
+            num_metrics = self._convert_metric(num_name, num_expr, None, datasets, dialect)
+            den_metrics = self._convert_metric(den_name, den_expr, None, datasets, dialect)
             ratio_metric = PydanticMetric(
                 name=name,
                 description=description,
@@ -391,7 +396,7 @@ class OssieToMSIConverter:
             )
             return [*num_metrics, *den_metrics, ratio_metric]
 
-        if _contains_distinct_row_count(expr_str):
+        if _contains_distinct_row_count(expr_str, dialect):
             raise _UnresolvedRowCountDataset(f"{expr_str!r} has no sensible SIMPLE or RATIO translation")
 
         raise _UnsupportedMetricExpression(expr_str)
@@ -403,60 +408,71 @@ class OssieToMSIConverter:
     def _find_dataset_for_col(
         self,
         raw_expr_str: str,
-        bare_col: str,
         datasets: List[OssieDataset],
+        dialect: str = "",
     ) -> str:
-        """Determine which dataset a column belongs to for `metric_aggregation_params.semantic_model`.
-
-        For qualified references like `SUM(orders.amount)` the qualifier is used directly.
-        For unqualified references the datasets are scanned for a matching field name.
-        Falls back to the first dataset's name if no match is found.
-        """
-        # Check for a dataset qualifier in the raw expression (e.g. "orders.amount").
-        # Parse column references instead of splitting the rendered inner expression,
-        # which may be a compound CASE expression for SUM_BOOLEAN metrics.
-        qualifiers = _get_dataset_qualifiers(raw_expr_str)
-        if len(qualifiers) > 1:
-            raise _UnsupportedMetricExpression(
-                f"{raw_expr_str!r} references multiple semantic models"
-            )
-        if qualifiers:
-            dataset_qualifier = next(iter(qualifiers))
-            dataset_names = [dataset.name for dataset in datasets]
-            if dataset_qualifier in dataset_names:
-                return dataset_qualifier
-            by_last_segment = [
-                name
-                for name in dataset_names
-                if _strip_qualifier(name) == _strip_qualifier(dataset_qualifier)
-            ]
-            if len(by_last_segment) == 1:
-                return by_last_segment[0]
-            raise _UnsupportedMetricExpression(
-                f"{dataset_qualifier!r} does not identify one semantic model"
-            )
-
-        matching_datasets = []
-        for dataset in datasets:
-            for field in dataset.fields or []:
-                if field.name == bare_col:
-                    matching_datasets.append(dataset.name)
-                    break
-                field_expr = self._get_expression(field.expression)
-                if _strip_qualifier(field_expr) == bare_col:
-                    matching_datasets.append(dataset.name)
-                    break
-
-        if len(matching_datasets) == 1:
-            return matching_datasets[0]
-        if len(datasets) == 1:
+        """Resolve every referenced column to one model, never a rendered scalar body."""
+        columns = list(sqlglot.parse_one(raw_expr_str, read=dialect).find_all(exp.Column))
+        qualifiers = {
+            ".".join(part.name for part in column.parts[:-1])
+            for column in columns
+            if len(column.parts) > 1
+        }
+        owners: Set[str] = set()
+        for column in columns:
+            if len(column.parts) > 1:
+                qualifier = ".".join(part.name for part in column.parts[:-1])
+                matches = [dataset.name for dataset in datasets if dataset.name == qualifier]
+                if not matches:
+                    matches = [
+                        dataset.name for dataset in datasets
+                        if _strip_qualifier(dataset.name) == _strip_qualifier(qualifier)
+                    ]
+                if not matches and not any(part.args.get("quoted") for part in column.parts[:-1]):
+                    matches = [
+                        dataset.name for dataset in datasets
+                        if _strip_qualifier(dataset.name).casefold() == _strip_qualifier(qualifier).casefold()
+                    ]
+                if not matches and len(datasets) == 1 and len(qualifiers) == 1:
+                    matches = [datasets[0].name]
+            else:
+                matches = [
+                    dataset.name for dataset in datasets
+                    if any(self._field_matches_column(field, column) for field in dataset.fields or [])
+                ]
+                if not matches and len(datasets) == 1:
+                    matches = [datasets[0].name]
+            if len(matches) != 1:
+                raise _UnsupportedMetricExpression(
+                    f"{column.sql(dialect=dialect)!r} does not identify one semantic model"
+                )
+            owners.add(matches[0])
+        if not columns and len(datasets) == 1:
             return datasets[0].name
-        raise _UnsupportedMetricExpression(
-            f"{bare_col!r} does not identify one semantic model"
-        )
+        if len(owners) != 1:
+            raise _UnsupportedMetricExpression(
+                f"{raw_expr_str!r} does not identify one semantic model"
+            )
+        return owners.pop()
+
+    def _field_matches_column(self, field: OssieField, column: exp.Column) -> bool:
+        if field.name == column.name:
+            return True
+        dialect_expr = self._get_dialect_expression(field.expression, sql_only=True)
+        if dialect_expr is None:
+            return False
+        try:
+            field_expr = sqlglot.parse_one(
+                dialect_expr.expression, read=self._sql_dialect(dialect_expr.dialect)
+            )
+        except sqlglot.errors.SqlglotError:
+            return False
+        return isinstance(field_expr, exp.Column) and field_expr.name == column.name
 
     @staticmethod
-    def _find_dataset_for_row_count(raw_expr_str: str, datasets: List[OssieDataset]) -> str:
+    def _find_dataset_for_row_count(
+        raw_expr_str: str, datasets: List[OssieDataset], dialect: str = ""
+    ) -> str:
         """Determine which dataset a ``COUNT(*)`` counts the rows of.
 
         Only the qualifier decides: ``COUNT(orders.*)`` names ``orders`` (a schema prefix such as
@@ -465,7 +481,7 @@ class OssieToMSIConverter:
         Raises ``_UnresolvedRowCountDataset`` when no single dataset can be determined.
         """
         dataset_names = [dataset.name for dataset in datasets]
-        qualifier = _get_dataset_qualifier(raw_expr_str)
+        qualifier = _get_dataset_qualifier(raw_expr_str, dialect)
         if qualifier is None:
             if len(dataset_names) == 1:
                 return dataset_names[0]
@@ -488,7 +504,7 @@ class OssieToMSIConverter:
         return dialect_expr.expression if dialect_expr is not None else ""
 
     def _get_dialect_expression(
-        self, ossie_expr: OssieExpression
+        self, ossie_expr: OssieExpression, sql_only: bool = False
     ) -> Optional[OssieDialectExpression]:
         """Return the expression for the preferred dialect.
 
@@ -496,6 +512,7 @@ class OssieToMSIConverter:
         first entry available. OSSIE_SQL_2026 is Ossie's portable expression
         language, based on ANSI SQL:2003 Core, so it is treated as an ANSI_SQL
         equivalent rather than left to the positional fallback.
+        With ``sql_only``, non-SQL entries are excluded before applying that order.
 
         `dialects` has no `uniqueItems` constraint, so one dialect may appear
         more than once. The first entry wins in that case, as it already does
@@ -504,8 +521,13 @@ class OssieToMSIConverter:
         may still appear further down the list.
         """
         ossie_sql_expr: Optional[OssieDialectExpression] = None
+        first_expr: Optional[OssieDialectExpression] = None
 
         for dialect_expr in ossie_expr.dialects:
+            if sql_only and self._sql_dialect(dialect_expr.dialect) is None:
+                continue
+            if first_expr is None:
+                first_expr = dialect_expr
             if dialect_expr.dialect is self._dialect:
                 return dialect_expr
             if dialect_expr.dialect is OssieDialect.OSSIE_SQL_2026 and ossie_sql_expr is None:
@@ -513,15 +535,29 @@ class OssieToMSIConverter:
 
         if ossie_sql_expr is not None:
             return ossie_sql_expr
-        return ossie_expr.dialects[0] if ossie_expr.dialects else None
+        return first_expr
 
-    _SQL_DIALECTS = {
-        OssieDialect.ANSI_SQL,
-        OssieDialect.OSSIE_SQL_2026,
-        OssieDialect.BIGQUERY,
-        OssieDialect.DATABRICKS,
-        OssieDialect.SNOWFLAKE,
-    }
+    @staticmethod
+    def _sql_dialect(dialect: OssieDialect) -> Optional[str]:
+        # SQLGlot also registers non-SQL expression languages; those are not SQL fallbacks.
+        if dialect in {
+            OssieDialect.DAX,
+            OssieDialect.MDX,
+            OssieDialect.MAQL,
+            OssieDialect.TABLEAU,
+            OssieDialect.SIGMA,
+            OssieDialect.THOUGHTSPOT,
+        }:
+            return None
+        # The portable core's DATEADD/DATEDIFF unit-first syntax matches this reader.
+        if dialect in {OssieDialect.ANSI_SQL, OssieDialect.OSSIE_SQL_2026}:
+            return "snowflake"
+        reader = dialect.value.lower()
+        try:
+            sqlglot.Dialect.get_or_raise(reader)
+        except ValueError:
+            return None
+        return reader
 
     @staticmethod
     def _parse_source(source: str) -> PydanticNodeRelation:
