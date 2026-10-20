@@ -33,6 +33,7 @@ from .engine import (
     validate_with_engine,
 )
 from .ossie_to_semantic_model import convert_ossie_to_semantic_model
+from .pbip import import_powerbi_project
 from .semantic_model_to_ossie import build_ossie_document, convert_semantic_model_to_ossie
 from .tom import (
     TomUnavailableError,
@@ -56,6 +57,7 @@ __all__ = [
     "build_ossie_document",
     "convert_ossie_to_semantic_model",
     "convert_semantic_model_to_ossie",
+    "import_powerbi_project",
     "validate_bim",
     "validate_tmsl",
     "validate_with_engine",

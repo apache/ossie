@@ -162,11 +162,29 @@ def deserialize_tmdl(document, *, assembly_dir=None):
     """Parse a single TMDL document into a TMSL mapping.
 
     Accepts the database-rooted document :func:`serialize_tmdl` produces as well as a
-    model-rooted one.
+    model-rooted one. The text is split into the folder documents TOM accepts and
+    loaded by :func:`deserialize_tmdl_documents`.
     """
 
     if not isinstance(document, str):
         raise TypeError("document must be TMDL text")
+
+    return deserialize_tmdl_documents(
+        _split_tmdl_documents(document.lstrip("\ufeff")),
+        assembly_dir=assembly_dir,
+    )
+
+
+def deserialize_tmdl_documents(documents, *, assembly_dir=None):
+    """Load already-split TMDL documents into a TMSL mapping.
+
+    ``documents`` is ``(logical_path, text)`` in read order. ``logical_path`` is
+    the PBIP path relative to ``definition/`` (``database.tmdl``,
+    ``tables/Orders.tmdl``). TOM resolves references between those documents.
+    """
+
+    if not documents:
+        raise ValueError("TMDL project has no documents")
 
     tom = _load_tom(_assembly_directory(assembly_dir))
     serialization = import_module("Microsoft.AnalysisServices.Tabular.Serialization")
@@ -175,7 +193,7 @@ def deserialize_tmdl(document, *, assembly_dir=None):
     context = serialization.MetadataSerializationContext.Create(
         serialization.MetadataSerializationStyle.Tmdl
     )
-    for logical_path, content in _split_tmdl_documents(document.lstrip("\ufeff")):
+    for logical_path, content in documents:
         context.ReadFromDocument(
             logical_path,
             system.IO.StringReader(content),

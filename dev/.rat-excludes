@@ -38,6 +38,7 @@
 **/*.bim
 **/*.ipynb
 converters/microsoft/tests/fixtures/sales_model.tmdl
+converters/microsoft/tests/fixtures/mini-pbip/**
 
 # Snapshot/fixture test files
 **/snapshots/**

@@ -18,6 +18,7 @@
 import copy
 import json
 import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -29,9 +30,13 @@ pytest.importorskip("clr_loader", reason="optional TOM extra is not installed")
 from ossie_microsoft import (  # noqa: E402
     convert_ossie_to_semantic_model,
     convert_semantic_model_to_ossie,
+    tom,
     validate_bim,
     validate_tmsl,
 )
+from ossie_microsoft._common import read_stash  # noqa: E402
+from ossie_microsoft.cli import main  # noqa: E402
+from ossie_microsoft.pbip import import_powerbi_project  # noqa: E402
 
 HERE = Path(__file__).parent
 FIXTURE = HERE / "fixtures" / "sales_model.bim"
@@ -43,6 +48,77 @@ ASSEMBLIES = Path(
 )
 if not (ASSEMBLIES / "Microsoft.AnalysisServices.Tabular.dll").is_file():
     pytest.skip("optional TOM assemblies have not been restored", allow_module_level=True)
+
+
+@pytest.mark.parametrize(
+    "input_path", ["mini.pbip", "mini.SemanticModel", "mini.SemanticModel/definition"]
+)
+def test_a_split_pbip_imports_the_bigquery_source(input_path, tmp_path):
+    project = HERE / "fixtures" / "mini-pbip"
+    yaml_text = import_powerbi_project(project / input_path)
+    document = yaml.safe_load(yaml_text)
+    assert document["datasets"][0]["name"] == "Orders"
+    assert document["datasets"][0]["source"] == "analytics-prod.sales.orders"
+
+    output = tmp_path / "model.yaml"
+    assert main(["import", "-i", str(project / input_path), "-o", str(output)]) == 0
+    assert yaml.safe_load(output.read_text(encoding="utf-8")) == document
+
+
+def test_split_tmdl_keeps_a_table_with_a_leading_dot(tmp_path):
+    project = tmp_path / "mini"
+    shutil.copytree(HERE / "fixtures" / "mini-pbip", project)
+    definition = project / "mini.SemanticModel" / "definition"
+    (definition / "tables" / ".Hidden.tmdl").write_text(
+        "table '.Hidden'\n\tcolumn id\n\t\tdataType: int64\n\t\tsourceColumn: id\n",
+        encoding="utf-8",
+    )
+    with (definition / "model.tmdl").open("a", encoding="utf-8") as model:
+        model.write("\nref table '.Hidden'\n")
+
+    document = yaml.safe_load(import_powerbi_project(project / "mini.pbip"))
+    assert [dataset["name"] for dataset in document["datasets"]] == ["Orders", ".Hidden"]
+
+
+def test_a_missing_table_ref_follows_tom_behavior(tmp_path):
+    project = tmp_path / "mini"
+    shutil.copytree(HERE / "fixtures" / "mini-pbip", project)
+    with (project / "mini.SemanticModel" / "definition" / "model.tmdl").open(
+        "a", encoding="utf-8"
+    ) as model:
+        model.write("\nref table Missing\n")
+
+    output = tmp_path / "model.yaml"
+    assert main(["import", "--strict", "-i", str(project / "mini.pbip"), "-o", str(output)]) == 0
+    document = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert [dataset["name"] for dataset in document["datasets"]] == ["Orders"]
+
+
+def test_split_tmdl_preserves_model_collections_and_vendor_metadata(tmp_path):
+    original = json.loads(FIXTURE.read_text(encoding="utf-8-sig"))
+    api = tom._load_tom(ASSEMBLIES.resolve())
+    database = api.JsonSerializer.DeserializeDatabase(json.dumps(original))
+    # TOM omits default property values when serializing either representation.
+    normalized = json.loads(api.JsonSerializer.SerializeDatabase(database))
+    definition = tmp_path / "Sales.SemanticModel" / "definition"
+    api.TmdlSerializer.SerializeDatabaseToFolder(database, str(definition))
+
+    expected = yaml.safe_load(convert_semantic_model_to_ossie(normalized))
+    received = yaml.safe_load(import_powerbi_project(definition))
+    assert received["name"] == expected["name"]
+    assert received["description"] == expected["description"]
+    for collection in ("datasets", "metrics", "relationships"):
+        assert [item["name"] for item in received[collection]] == [
+            item["name"] for item in expected[collection]
+        ]
+    for actual, wanted in zip(received["datasets"], expected["datasets"], strict=True):
+        assert actual["source"] == wanted["source"]
+        assert actual.get("fields") == wanted.get("fields")
+    assert received["metrics"] == expected["metrics"]
+    assert received["relationships"] == expected["relationships"]
+    actual_stash, expected_stash = read_stash(received), read_stash(expected)
+    for key in ("roles", "perspectives", "cultures", "expressions"):
+        assert actual_stash[key] == expected_stash[key]
 
 
 def test_sales_fixture_and_round_trip_are_tom_clean():

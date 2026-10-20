@@ -58,6 +58,7 @@ MODULES = frozenset(
         "cli",
         "engine",
         "ossie_to_semantic_model",
+        "pbip",
         "semantic_model_to_ossie",
         "tom",
     }

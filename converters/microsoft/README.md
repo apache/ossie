@@ -41,9 +41,9 @@ uv sync
 ### Optional TOM validation and TMDL serialization
 
 Microsoft's Tabular Object Model (TOM) can load and structurally validate exported
-`model.bim` files and serialize them to canonical TMDL entirely offline. It is
-deliberately optional because TOM is proprietary Microsoft-licensed software. TMSL
-conversion remains independent of .NET.
+`model.bim` files, serialize them to canonical TMDL, and read a split TMDL Power BI
+project back into TMSL, entirely offline. It is deliberately optional because TOM is
+proprietary Microsoft-licensed software. TMSL conversion remains independent of .NET.
 
 ```bash
 uv sync --extra tom
@@ -110,6 +110,21 @@ ossie-microsoft import -i model.bim  -o model.yaml   # Power BI -> Apache Ossie
 ossie-microsoft export -i model.yaml -o model.bim    # Apache Ossie -> Power BI
 ```
 
+Power BI projects saved as split TMDL can be imported too. Pass a `.pbip` file, a
+semantic model folder that contains `definition/`, or that `definition` folder. The
+project root is not an input. A `.pbip` is followed through `datasetReference.byPath`.
+`byConnection` and a project stored as TMSL are outside this path. It needs the
+[optional TOM setup](#optional-tom-validation-and-tmdl-serialization). Importing
+`model.bim` does not.
+
+```bash
+ossie-microsoft import -i "Report.pbip" -o model.yaml
+ossie-microsoft import -i "Report.SemanticModel" -o model.yaml
+ossie-microsoft import -i "Report.SemanticModel/definition" -o model.yaml
+```
+
+TOM ignores a `ref table` whose file is missing, and it does so without a warning.
+
 With no `-o`, the result is written to stdout.
 
 Everything the converter could not carry across faithfully is reported on stderr:
@@ -127,9 +142,11 @@ in the Power BI stash for round trip, but not represented in the Apache Ossie do
 | `--strict` | exit non-zero if anything could not be converted faithfully |
 | `-q`, `--quiet` | suppress the report |
 
-`--strict` is the useful mode in a pipeline that must not silently degrade a model. The
-output file is still written, so a failing run can be inspected. Both flags are accepted
-before or after the subcommand.
+`--strict` exits non-zero when the converter reports a construct it could not represent.
+It does not check that every TMDL `ref` has a definition, or validate DAX expressions.
+Missing input files and invalid TMDL still fail the command. When a conversion produces
+warnings, the output file is still written so the result can be inspected. Both flags
+are accepted before or after the subcommand.
 
 ### Library
 
@@ -138,7 +155,11 @@ import json
 
 import yaml
 
-from ossie_microsoft import convert_ossie_to_semantic_model, convert_semantic_model_to_ossie
+from ossie_microsoft import (
+    convert_ossie_to_semantic_model,
+    convert_semantic_model_to_ossie,
+    import_powerbi_project,
+)
 
 with open("model.bim", encoding="utf-8-sig") as fh:
     ossie_yaml = convert_semantic_model_to_ossie(json.load(fh))
@@ -154,6 +175,8 @@ print(tmdl)
 
 # The import direction also accepts model.bim JSON text or a TMDL document.
 ossie_yaml = convert_semantic_model_to_ossie(tmdl)
+
+ossie_yaml = import_powerbi_project("Report.pbip")
 ```
 
 `output_format` accepts `"TMSL"` (the default) or `"TMDL"`, case-insensitively.

@@ -1,0 +1,16 @@
+table Orders
+
+	column id
+		dataType: int64
+		sourceColumn: id
+
+	partition Orders = m
+		mode: import
+		source =
+				let
+				    Source = GoogleBigQuery.Database(),
+				    #"analytics-prod" = Source{[Name="analytics-prod"]}[Data],
+				    Schema = #"analytics-prod"{[Name="sales",Kind="Schema"]}[Data],
+				    View = Schema{[Name="orders",Kind="View"]}[Data]
+				in
+				    View
