@@ -287,6 +287,13 @@ def _fully_populated_document() -> dict:
     expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}]}
     ai_context = {"instructions": "i", "synonyms": ["s"], "examples": ["e"]}
     extensions = [{"vendor_name": "COMMON", "data": "{}"}]
+    measurement = {"quantity_kind": "currency", "unit": "usd", "unit_system": "custom"}
+    default_sort = {"direction": "desc", "nulls": "last", "by_field": "amount"}
+    glossary_reference = {
+        "target": "https://schema.org/MonetaryAmount",
+        "predicate": "exactMatch",
+        "provenance": "manual",
+    }
     return {
         "version": "0.2.0.dev0",
         "name": "m",
@@ -308,9 +315,19 @@ def _fully_populated_document() -> dict:
                         "expression": dict(expression),
                         "dimension": {"is_time": False},
                         "label": "l",
+                        "display_label": "Amount",
                         "description": "d",
                         "datatype": "Decimal",
                         "ai_context": dict(ai_context),
+                        "semantic_type": "monetary",
+                        "measurement": dict(measurement),
+                        "display_format": "$#,##0.00",
+                        "default_aggregation": "sum",
+                        "default_sort": dict(default_sort),
+                        "default_time_granularity": "month",
+                        "glossary_references": [dict(glossary_reference)],
+                        "hidden": False,
+                        "group_labels": ["g"],
                         "custom_extensions": list(extensions),
                     }
                 ],
@@ -334,6 +351,15 @@ def _fully_populated_document() -> dict:
                 "description": "d",
                 "datatype": "Decimal",
                 "ai_context": dict(ai_context),
+                "display_label": "Revenue",
+                "semantic_type": "monetary",
+                "measurement": dict(measurement),
+                "display_format": "$#,##0.00",
+                "desired_direction": "higher_is_better",
+                "default_sort": dict(default_sort),
+                "glossary_references": [dict(glossary_reference)],
+                "hidden": False,
+                "group_labels": ["g"],
                 "custom_extensions": list(extensions),
             }
         ],
