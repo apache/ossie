@@ -21,10 +21,20 @@ from enum import Enum
 from typing import Annotated, Any, Literal, Optional, Union
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, StrictBool, model_serializer
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializationInfo,
+    SerializerFunctionWrapHandler,
+    StrictBool,
+    TypeAdapter,
+    model_serializer,
+)
 
 
 _AI_CONTEXT_FIELDS = frozenset({"instructions", "synonyms", "examples"})
+_AI_CONTEXT_EXTRAS = TypeAdapter(dict[str, Any])
 
 #: Paths listed in a diagnostic before the rest are counted instead.
 _MAX_REPORTED = 20
@@ -163,13 +173,27 @@ class OssieVendor(str, Enum):
 
 
 class OssieAIContextObject(BaseModel):
-    """Structured AI context with instructions, synonyms, and examples."""
+    """Structured AI context; free-form extras retain null values when serialized."""
 
     model_config = ConfigDict(frozen=True, extra="allow")
 
     instructions: Optional[str] = None
     synonyms: Optional[tuple[str, ...]] = None
     examples: Optional[tuple[str, ...]] = None
+
+    @model_serializer(mode="wrap")
+    def _serialize_context(self, handler: SerializerFunctionWrapHandler, info: SerializationInfo):
+        data = handler(self)
+        if info.exclude_none and self.model_extra:
+            # Null extras are valid data, unlike omitted optional model fields.
+            # Let Pydantic apply include/exclude so an excluded key stays excluded.
+            null_extras = {key: value for key, value in self.model_extra.items() if value is None}
+            data.update(
+                _AI_CONTEXT_EXTRAS.dump_python(
+                    null_extras, include=info.include, exclude=info.exclude
+                )
+            )
+        return data
 
 
 OssieAIContext = Union[str, OssieAIContextObject]
@@ -320,10 +344,11 @@ class OssieDocument(OssieSemanticModel):
         return data
 
     def to_ossie_yaml(self, **kwargs: Any) -> str:
-        """Serialize to Ossie-compliant YAML (uses field aliases and excludes None values).
+        """Serialize to Ossie YAML using aliases and omitting optional fields set to None.
 
-        Both defaults can be overridden through kwargs. ``mode`` cannot: YAML output
-        needs the plain scalars only the JSON mode produces.
+        Null-valued AI context extras are preserved. Both defaults can be overridden
+        through kwargs. ``mode`` cannot: YAML output needs the plain scalars only the
+        JSON mode produces.
         """
         kwargs.setdefault("by_alias", True)
         kwargs.setdefault("exclude_none", True)
@@ -331,9 +356,10 @@ class OssieDocument(OssieSemanticModel):
         return yaml.dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
     def to_ossie_json(self, **kwargs: Any) -> str:
-        """Serialize to Ossie-compliant JSON (uses field aliases and excludes None values).
+        """Serialize to Ossie JSON using aliases and omitting optional fields set to None.
 
-        Both defaults can be overridden through kwargs.
+        Null-valued AI context extras are preserved. Both defaults can be overridden
+        through kwargs.
         """
         kwargs.setdefault("by_alias", True)
         kwargs.setdefault("exclude_none", True)
