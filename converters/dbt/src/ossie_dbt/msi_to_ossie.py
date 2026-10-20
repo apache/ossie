@@ -225,7 +225,7 @@ class MSIToOssieConverter:
         native_datatype: Optional[DataType], config: Optional[SemanticLayerElementConfig]
     ) -> Optional[OssieDataType]:
         """Prefer MetricFlow's native datatype, falling back to dbt's meta.ossie extension."""
-        if native_datatype is not None:
+        if native_datatype in _MSI_TO_OSSIE_DATATYPE:
             return _MSI_TO_OSSIE_DATATYPE[native_datatype]
         elif config is not None:
             ossie_meta = config.meta.get("ossie")
