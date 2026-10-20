@@ -130,9 +130,7 @@ manifest_json = result.output.model_dump_json(by_alias=True, exclude_none=True, 
 Ossie `datatype` attributes use native MetricFlow datatype annotations when present,
 falling back to `config.meta.ossie.datatype` annotations on dimensions, entities,
 measures, and metrics in source dbt models, carried into `semantic_manifest.json`
-by `dbt parse`. A measure annotation types its field; a generated metric with the
-same configuration needs a native datatype or a distinct metric annotation to
-type its aggregate result.
+by `dbt parse`.
 
 **Ossie → MSI** reconstructs a best-effort MSI manifest from Ossie's simpler schema. Nothing is dropped for supported inputs, but Ossie carries less structural information than MSI, so the converter makes the following choices:
 

@@ -1656,12 +1656,12 @@ class TestDatatypeMetadata:
     def _manifest_with_generated_metric() -> PydanticSemanticManifest:
         measure = _measure("customer_count", agg=AggregationType.COUNT_DISTINCT, expr="customer_name")
         measure.create_metric = True
-        measure.config = PydanticSemanticLayerElementConfig(meta={"ossie": {"datatype": "String"}})
+        measure.config = PydanticSemanticLayerElementConfig(meta={"ossie": {"datatype": "Integer"}})
         sm = semantic_model_with_guaranteed_meta(name="orders", measures=[measure])
         return _manifest(semantic_models=[sm])
 
     @pytest.mark.parametrize("input_form", ["raw", "parsed", "reserialized"])
-    def test_generated_metric_does_not_inherit_measure_datatype(self, input_form: str) -> None:
+    def test_generated_metric_preserves_measure_result_datatype(self, input_form: str) -> None:
         manifest = self._manifest_with_generated_metric()
         if input_form != "raw":
             manifest = parse_manifest_from_dbt_generated_manifest(manifest.json())
@@ -1670,11 +1670,11 @@ class TestDatatypeMetadata:
 
         result = MSIToOssieConverter().convert(manifest).output
 
-        assert _fields(result)[0].datatype is OssieDataType.STRING
+        assert _fields(result)[0].datatype is OssieDataType.INTEGER
         metric = _ossie_metrics(result)[0]
         assert metric.expression.dialects[0].expression == "COUNT(DISTINCT orders.customer_name)"
-        assert metric.datatype is None
-        assert manifest.semantic_models[0].measures[0].config.meta["ossie"]["datatype"] == "String"
+        assert metric.datatype is OssieDataType.INTEGER
+        assert manifest.semantic_models[0].measures[0].config.meta["ossie"]["datatype"] == "Integer"
 
     def test_generated_metric_keeps_native_datatype(self) -> None:
         manifest = parse_manifest_from_dbt_generated_manifest(self._manifest_with_generated_metric().json())
@@ -1682,7 +1682,7 @@ class TestDatatypeMetadata:
 
         result = MSIToOssieConverter().convert(manifest).output
 
-        assert _fields(result)[0].datatype is OssieDataType.STRING
+        assert _fields(result)[0].datatype is OssieDataType.INTEGER
         assert _ossie_metrics(result)[0].datatype is OssieDataType.INTEGER
 
     def test_explicit_metric_keeps_its_own_annotation(self) -> None:
@@ -1694,5 +1694,5 @@ class TestDatatypeMetadata:
 
         result = MSIToOssieConverter().convert(manifest).output
 
-        assert _fields(result)[0].datatype is OssieDataType.STRING
+        assert _fields(result)[0].datatype is OssieDataType.INTEGER
         assert _ossie_metrics(result)[0].datatype is OssieDataType.INTEGER

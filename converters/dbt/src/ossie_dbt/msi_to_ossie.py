@@ -126,12 +126,6 @@ class MSIToOssieConverter:
 
         metric_index = self._build_metric_index(manifest.metrics)
         expression_cache: Dict[Tuple[str, Optional[str]], str] = {}
-        measure_metric_configs = {
-            measure.name: measure.config
-            for sm in manifest.semantic_models
-            for measure in sm.measures
-            if measure.create_metric
-        }
 
         ossie_metrics: List[OssieMetric] = []
         for metric in manifest.metrics:
@@ -161,20 +155,14 @@ class MSIToOssieConverter:
                     )
                 )
                 continue
-            metric_config = metric.config
-            # MetricFlow copies create_metric measure configs onto generated metrics. Serialized
-            # manifests cannot distinguish that copy from an identical explicit metric config.
-            # Conservatively treat matching name/config as inherited field metadata: a String
-            # input to COUNT_DISTINCT must not type the aggregate as String. Skip this metadata
-            # without inferring an aggregate type; native types and distinct metric configs still apply.
-            if metric.name in measure_metric_configs and metric_config == measure_metric_configs[metric.name]:
-                metric_config = None
+            # Measure annotations declare aggregate result types, including on generated metrics.
+            # Preserve recognized annotations without validating SQL/type compatibility.
             ossie_metrics.append(
                 OssieMetric(
                     name=metric.name,
                     expression=self._make_expression(expr),
                     description=metric.description,
-                    datatype=self._resolve_datatype(metric.datatype, metric_config),
+                    datatype=self._resolve_datatype(metric.datatype, metric.config),
                 )
             )
             if len(manifest.semantic_models) > 1 and self._aggregates_a_constant(metric):
