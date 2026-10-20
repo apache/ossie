@@ -30,7 +30,7 @@ from _util import load_fixture_dir, parse
 def imp(files, **kwargs):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        return parse(convert_omni_to_ossie(files, **kwargs))["semantic_model"][0]
+        return parse(convert_omni_to_ossie(files, **kwargs))
 
 
 def minimal_files(**view_overrides):
@@ -381,7 +381,7 @@ def test_query_view_preserved_as_extra_file():
     files["views/facts.query.view.yaml"] = "schema: s\nsql: SELECT 1\n"
     with warnings.catch_warnings(record=True) as ws:
         warnings.simplefilter("always")
-        model = parse(convert_omni_to_ossie(files))["semantic_model"][0]
+        model = parse(convert_omni_to_ossie(files))
     assert any("query views" in str(w.message) for w in ws)
     assert "views/facts.query.view.yaml" in stash_of(model)["extra_files"]
 

@@ -274,7 +274,7 @@ class TestMeasureAggregationRoundtrip:
 
     @staticmethod
     def _ossie_metrics(ossie: dict[str, Any]) -> list[dict[str, Any]]:
-        return ossie["semantic_model"][0].get("metrics", [])
+        return ossie.get("metrics", [])
 
     def test_obml_to_ossie_emits_measure_placeholder(self):
         obml = self._delegated_obml()

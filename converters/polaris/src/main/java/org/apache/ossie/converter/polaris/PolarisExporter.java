@@ -54,12 +54,10 @@ public class PolarisExporter {
 
     /**
      * Export the Ossie model to the Polaris catalog.
-     * Each semantic model becomes a namespace, and each dataset becomes a table.
+     * The semantic model becomes a namespace, and each dataset becomes a table.
      */
     public void exportModel(OssieModel model) throws IOException, InterruptedException {
-        for (SemanticModel sm : model.getSemanticModels()) {
-            exportSemanticModel(sm);
-        }
+        exportSemanticModel(Objects.requireNonNull(model.getSemanticModel(), "The document requires a semantic model"));
     }
 
     /**

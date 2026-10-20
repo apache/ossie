@@ -24,6 +24,7 @@ import org.apache.ossie.converter.ConverterFactory;
 import org.apache.ossie.converter.ConversionDirection;
 import org.apache.ossie.exception.ConversionException;
 import org.apache.ossie.exception.InvalidInputException;
+import org.apache.ossie.exception.ValidationException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -39,6 +40,8 @@ public class OssieSalesforceConverter {
 
     public static void main(String[] args) {
         if (args.length < 2) {
+            System.err.println("Usage: ossie-salesforce-converter <direction> <input-file>");
+            System.err.println("  direction: toSF | toOssie");
             System.exit(1);
         }
 
@@ -50,9 +53,14 @@ public class OssieSalesforceConverter {
             ConversionDirection direction = parseDirection(directionArg);
             app.convert(direction, inputPath);
         } catch (InvalidInputException e) {
+            System.err.println("Error: " + e.getMessage());
             System.exit(2);
         } catch (ConversionException e) {
+            System.err.println("Error: " + e.getMessage());
             System.exit(3);
+        } catch (ValidationException e) {
+            System.err.println("Error: " + e.getMessage());
+            System.exit(4);
         }
     }
 

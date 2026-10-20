@@ -40,13 +40,13 @@ public final class ConverterConstants {
     // Ossie root structure
     public static final String VERSION = "version";
     public static final String OSSIE_VERSION = "0.2.0.dev0";
-    public static final String SEMANTIC_MODEL = "semantic_model";
 
     // Ossie semantic model structure
     public static final String CUSTOM_EXTENSIONS = "custom_extensions";
     public static final String DATASETS = "datasets";
     public static final String FIELDS = "fields";
     public static final String METRICS = "metrics";
+    public static final String PRIMARY_KEY = "primary_key";
 
     // Salesforce semantic model structure
     public static final String SEMANTIC_DATA_OBJECTS = "semanticDataObjects";
@@ -89,6 +89,12 @@ public final class ConverterConstants {
     public static final String DIALECTS = "dialects";
     public static final String DIALECT = "dialect";
     public static final String DIALECT_TABLEAU = "TABLEAU";
+    public static final String DIALECT_ANSI_SQL = "ANSI_SQL";
+
+    // Expression syntax. "Tua" is the only syntax type the Salesforce semantic model API
+    // accepts; the dialect names above say how an expression was authored, not its syntax.
+    public static final String SYNTAX = "syntax";
+    public static final String SYNTAX_TUA = "Tua";
 
     // Relationship properties
     public static final String CRITERIA = "criteria";
@@ -119,6 +125,18 @@ public final class ConverterConstants {
     public static final String STANDARD_TABLE_TYPE = "Standard";
     public static final String DEFAULT_CARDINALITY = "ManyToMany";
     public static final String DEFAULT_JOIN_TYPE = "Auto";
+    public static final String DEFAULT_DIMENSION_DATA_TYPE = "Text";
+    public static final String DEFAULT_MEASUREMENT_DATA_TYPE = "Number";
+
+    // Properties the semantic model API requires on every payload it accepts
+    public static final String DATASPACE = "dataspace";
+    public static final String DEFAULT_DATASPACE = "default";
+    public static final String DATA_OBJECT_NAME = "dataObjectName";
+    public static final String DATA_OBJECT_TYPE = "dataObjectType";
+    public static final String DLO_DATA_OBJECT_TYPE = "Dlo";
+    public static final String DMO_DATA_OBJECT_TYPE = "Dmo";
+    // Suffix Data Cloud gives a data model object's name; a data lake object uses "__dll"
+    public static final String DMO_SUFFIX = "__dlm";
 
     // Format names
     public static final String JSON = "json";

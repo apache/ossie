@@ -35,7 +35,6 @@ from ossie import (
     OssieField,
     OssieMetric,
     OssieRelationship,
-    OssieSemanticModel,
 )
 from ossie_wisdom.converter_issues import ConverterIssue, ConverterIssueType, ConverterResult
 
@@ -52,6 +51,14 @@ _BACKTICK_DIALECTS = {OssieDialect.DATABRICKS, OssieDialect.BIGQUERY}
 _TIME_DATA_TYPES = {"DATE", "DATETIME", "TIMESTAMP"}
 
 _SIMPLE_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+# Relationship `ai_context` notes for the Wisdom types Ossie direction can't express.
+# ossie_to_wisdom matches these exactly, so a free-text note is never read as a marker.
+RELATIONSHIP_TYPE_NOTES = {
+    "ONE_TO_MANY": "one-to-many relationship",
+    "ONE_TO_ONE": "one-to-one relationship",
+    "MANY_TO_MANY": "many-to-many relationship; cardinality is not representable in Ossie",
+}
 
 
 class WisdomToOssieConverter:
@@ -77,7 +84,7 @@ class WisdomToOssieConverter:
         dataset_names = {d.name for d in datasets}
         relationships = self._convert_relationships(domain, dataset_names, issues)
 
-        model = OssieSemanticModel(
+        document = OssieDocument(
             name=domain.get("ref", {}).get("name") or export.get("export_metadata", {}).get("domain_name", "domain"),
             description=domain.get("description") or None,
             ai_context=self._build_ai_context(domain),
@@ -85,7 +92,7 @@ class WisdomToOssieConverter:
             relationships=relationships or None,
             metrics=[metric for _, metric in metrics] or None,
         )
-        return ConverterResult(output=OssieDocument(semantic_model=[model]), issues=issues)
+        return ConverterResult(output=document, issues=issues)
 
     def _build_dialect_index(self, export: dict, issues: List[ConverterIssue]) -> Dict[str, OssieDialect]:
         index: Dict[str, OssieDialect] = {}
@@ -272,7 +279,7 @@ class WisdomToOssieConverter:
                 continue
 
             relationship_type = properties.get("relationshipType", "")
-            ai_context: Optional[str] = None
+            ai_context = RELATIONSHIP_TYPE_NOTES.get(relationship_type) if isinstance(relationship_type, str) else None
             # Ossie encodes cardinality by direction: `from` is the many side, `to` the one side.
             if relationship_type == "ONE_TO_MANY":
                 from_dataset, to_dataset = right, left
@@ -282,10 +289,7 @@ class WisdomToOssieConverter:
                 from_dataset, to_dataset = left, right
                 from_columns = [pair[0] for pair in column_pairs]
                 to_columns = [pair[1] for pair in column_pairs]
-                if relationship_type == "ONE_TO_ONE":
-                    ai_context = "one-to-one relationship"
-                elif relationship_type == "MANY_TO_MANY":
-                    ai_context = "many-to-many relationship; cardinality is not representable in Ossie"
+                if relationship_type == "MANY_TO_MANY":
                     issues.append(
                         ConverterIssue(
                             issue_type=ConverterIssueType.CARDINALITY_LOSS, element_name=f"{left} <-> {right}"

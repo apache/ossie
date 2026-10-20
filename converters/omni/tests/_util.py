@@ -88,58 +88,58 @@ def strip_normalized(ossie):
       dimension on export, so it comes back as an extra (stash-only) field.
     """
     ossie = copy.deepcopy(ossie)
-    for model in ossie.get("semantic_model", []):
-        model.pop("custom_extensions", None)
-        ai = model.get("ai_context")
+    model = ossie
+    model.pop("custom_extensions", None)
+    ai = model.get("ai_context")
+    if isinstance(ai, dict):
+        ai.pop("synonyms", None)
+        ai.pop("examples", None)
+        if not ai:
+            model.pop("ai_context")
+    for ds in model.get("datasets", []):
+        ds.pop("custom_extensions", None)
+        ds.pop("unique_keys", None)
+        ai = ds.get("ai_context")
         if isinstance(ai, dict):
             ai.pop("synonyms", None)
-            ai.pop("examples", None)
             if not ai:
-                model.pop("ai_context")
-        for ds in model.get("datasets", []):
-            ds.pop("custom_extensions", None)
-            ds.pop("unique_keys", None)
-            ai = ds.get("ai_context")
-            if isinstance(ai, dict):
-                ai.pop("synonyms", None)
-                if not ai:
-                    ds.pop("ai_context")
-            fields = ds.get("fields", []) or []
-            for field in fields:
-                field.pop("custom_extensions", None)
-                dimension = field.get("dimension")
-                is_time = False
-                if dimension is not None:
-                    is_time_explicit = dimension.get("is_time")
-                    if is_time_explicit is not None:
-                        is_time = bool(is_time_explicit)
-                    else:
-                        is_time = field.get("datatype") in ("Date", "Time", "DateTime", "DateTimez")
-                field.pop("datatype", None)
-                if is_time:
-                    field["dimension"] = {"is_time": True}
+                ds.pop("ai_context")
+        fields = ds.get("fields", []) or []
+        for field in fields:
+            field.pop("custom_extensions", None)
+            dimension = field.get("dimension")
+            is_time = False
+            if dimension is not None:
+                is_time_explicit = dimension.get("is_time")
+                if is_time_explicit is not None:
+                    is_time = bool(is_time_explicit)
                 else:
-                    field.pop("dimension", None)
-            # Drop backfilled key fields: a bare-column field named after a
-            # primary_key column, carrying nothing but its expression.
-            pk = set(ds.get("primary_key") or [])
-            ds_fields = [
-                f for f in fields
-                if not (f["name"] in pk and set(f) <= {"name", "expression"})
-            ]
-            if ds_fields:
-                ds["fields"] = ds_fields
+                    is_time = field.get("datatype") in ("Date", "Time", "DateTime", "DateTimez")
+            field.pop("datatype", None)
+            if is_time:
+                field["dimension"] = {"is_time": True}
             else:
-                ds.pop("fields", None)
-        for rel in model.get("relationships", []) or []:
-            rel["name"] = f"{rel['from']}_to_{rel['to']}"
-            rel.pop("ai_context", None)
-            rel.pop("custom_extensions", None)
-        for metric in model.get("metrics", []) or []:
-            metric.pop("custom_extensions", None)
-            metric.pop("datatype", None)
-        # Metric order is not semantic; the import regroups metrics by the view
-        # their measure lives on.
-        if model.get("metrics"):
-            model["metrics"].sort(key=lambda m: m["name"])
+                field.pop("dimension", None)
+        # Drop backfilled key fields: a bare-column field named after a
+        # primary_key column, carrying nothing but its expression.
+        pk = set(ds.get("primary_key") or [])
+        ds_fields = [
+            f for f in fields
+            if not (f["name"] in pk and set(f) <= {"name", "expression"})
+        ]
+        if ds_fields:
+            ds["fields"] = ds_fields
+        else:
+            ds.pop("fields", None)
+    for rel in model.get("relationships", []) or []:
+        rel["name"] = f"{rel['from']}_to_{rel['to']}"
+        rel.pop("ai_context", None)
+        rel.pop("custom_extensions", None)
+    for metric in model.get("metrics", []) or []:
+        metric.pop("custom_extensions", None)
+        metric.pop("datatype", None)
+    # Metric order is not semantic; the import regroups metrics by the view
+    # their measure lives on.
+    if model.get("metrics"):
+        model["metrics"].sort(key=lambda m: m["name"])
     return ossie

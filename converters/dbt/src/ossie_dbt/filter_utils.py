@@ -18,6 +18,7 @@
 from typing import List, Optional, Sequence
 
 import jinja2
+from jinja2.sandbox import SandboxedEnvironment
 
 from metricflow_semantic_interfaces.protocols.where_filter import WhereFilterIntersection
 
@@ -115,12 +116,18 @@ def _render_filter_template(template: str) -> str:
     and `{{ Metric('revenue') }}` are resolved to their column-name
     equivalents using lightweight stubs. The output is a best-effort SQL
     string suitable for embedding in an Ossie expression.
+    
+    Sandboxing is necessary to prevent SSTI-to-RCE style exploits
     """
-    return jinja2.Template(template, undefined=jinja2.StrictUndefined).render(
-        Dimension=_DimensionStub,
-        TimeDimension=_TimeDimensionStub,
-        Entity=_EntityStub,
-        Metric=_MetricStub,
+    return (
+        SandboxedEnvironment(undefined=jinja2.StrictUndefined)
+        .from_string(template)
+        .render(
+            Dimension=_DimensionStub,
+            TimeDimension=_TimeDimensionStub,
+            Entity=_EntityStub,
+            Metric=_MetricStub,
+        )
     )
 
 
@@ -147,8 +154,14 @@ def _collect_filter_sql(*filters: Optional[WhereFilterIntersection]) -> Optional
 
 
 def _merge_filter_sqls(*parts: Optional[str]) -> Optional[str]:
-    """Join non-None SQL filter strings with AND, wrapping each in parens when multiple."""
-    active = [p for p in parts if p]
+    """Join non-None SQL filter strings with AND, wrapping each in parens when multiple.
+
+    Repeated fragments are dropped. Filters are conjoined and AND is idempotent, so an
+    input metric that restates a filter an enclosing metric already applies contributes
+    nothing but ``(X) AND (X)`` noise — and would otherwise make two logically identical
+    resolutions of the same reference compare unequal.
+    """
+    active = list(dict.fromkeys(p for p in parts if p))
     if not active:
         return None
     if len(active) == 1:

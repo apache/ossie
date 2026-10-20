@@ -23,6 +23,11 @@ Bidirectional converter between GoodData's declarative Logical Data Model (LDM)
 and the [Apache Ossie](https://github.com/apache/ossie)
 semantic model specification.
 
+Ossie input and output use one model per document, with `name`, `datasets`,
+`relationships`, and `metrics` directly at the root beside `version`. Migrate
+legacy `semantic_model` wrappers before conversion; see the
+[format migration guidance](../../core-spec/spec.md#migrating-earlier-document-shapes).
+
 ## Features
 
 - **GoodData → Ossie**: Convert a GoodData declarative LDM JSON to Ossie semantic model YAML

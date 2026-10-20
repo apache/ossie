@@ -144,7 +144,7 @@ def test_api_layout_roundtrip_is_lossless():
 def test_qualified_view_names_come_from_reference_comment():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        ossie = load_yaml(convert_omni_to_ossie(REAL_FILES))["semantic_model"][0]
+        ossie = load_yaml(convert_omni_to_ossie(REAL_FILES))
     names = {d["name"] for d in ossie["datasets"]}
     assert "delighted__response" in names
     assert "upload" in names  # comment name wins even with a folder
@@ -164,7 +164,7 @@ def test_qualified_view_names_come_from_reference_comment():
 def test_unmappable_omni_features_drop_out_of_ossie_but_survive():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        ossie = load_yaml(convert_omni_to_ossie(REAL_FILES))["semantic_model"][0]
+        ossie = load_yaml(convert_omni_to_ossie(REAL_FILES))
     # The extends view is not a dataset; the templated dimension not a field.
     assert "delighted__response_ext" not in {d["name"] for d in ossie["datasets"]}
     response = next(d for d in ossie["datasets"]

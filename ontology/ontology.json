@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/apache/ossie/core-spec/ossie-schema.json",
+  "$id": "https://github.com/apache/ossie/ontology/ontology.json",
   "title": "Apache Ossie Ontology Metadata Specification",
   "description": "JSON Schema for validating Apache Ossie ontology definitions",
   "type": "object",
@@ -38,9 +38,18 @@
     },
     "ontology_mappings": {
       "type": "array",
-      "description": "Collection of ontology maps from logical models",
+      "description": "Deprecated. Embedded ontology maps, accepted only so existing documents continue to validate; write mappings as standalone documents validated against ontology/mapping.json instead.",
+      "deprecated": true,
       "items": {
         "$ref": "#/$defs/OntologyMap"
+      }
+    },
+    "prefixes": {
+      "type": "object",
+      "description": "Maps namespace prefixes to the IRIs they abbreviate, enabling QName expansion (e.g., 'foaf' -> 'http://xmlns.com/foaf/0.1/').",
+      "additionalProperties": {
+        "type": "string",
+        "format": "iri"
       }
     }
   },
@@ -96,6 +105,10 @@
             "$ref": "#/$defs/Relationship"
           },
           "description": "Defines relationships that pertain primarily to the concept defined in this component"
+        },
+        "iri": {
+          "type": "string",
+          "description": "Optional global identifier for this concept, expressed as a full IRI or as a QName (prefix:local) resolved against the ontology-level 'prefixes' map."
         }
       },
       "required": ["concept", "type"],
@@ -147,6 +160,10 @@
             "type": "string"
           },
           "description": "Natural language expressions that verbalize this relationship"
+        },
+        "iri": {
+          "type": "string",
+          "description": "Optional global identifier for this relationship, expressed as a full IRI or as a QName (prefix:local) resolved against the ontology-level 'prefixes' map."
         }
       },
       "required": ["name", "verbalizes"],
@@ -162,6 +179,7 @@
         },
         "object_mappings": {
           "type": "array",
+          "minItems": 1,
           "items": {
             "$ref": "#/$defs/ObjectMapping"
           },
@@ -169,6 +187,7 @@
         },
         "link_mappings": {
           "type": "array",
+          "minItems": 1,
           "items": {
             "$ref": "#/$defs/LinkMapping"
           },
@@ -176,6 +195,7 @@
         }
       },
       "required": ["concept"],
+      "anyOf": [{ "required": ["object_mappings"] }, { "required": ["link_mappings"] }],
       "additionalProperties": false
     },
     "ConceptType": {
@@ -196,12 +216,14 @@
         },
         "referent_mappings": {
           "type": "array",
+          "minItems": 1,
           "items": {
             "$ref": "#/$defs/ReferentMapping"
           }
         }
       },
       "required": ["relationship"],
+      "anyOf": [{ "required": ["expression"] }, { "required": ["referent_mappings"] }],
       "additionalProperties": false
     },
     "Role": {
@@ -230,6 +252,7 @@
         },
         "referent_mappings": {
           "type": "array",
+          "minItems": 1,
           "items": {
             "$ref": "#/$defs/ReferentMapping"
           },
@@ -239,6 +262,7 @@
           "$ref": "#/$defs/Expression"
         }
       },
+      "anyOf": [{ "required": ["expression"] }, { "required": ["referent_mappings"] }],
       "additionalProperties": false
     },
     "LinkMapping": {
@@ -281,7 +305,7 @@
           "description": "Human-readable description of this ontology map"
         },
         "semantic_model": {
-          "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json#/$defs/SemanticModel"
+          "$ref": "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json"
         },
         "concept_mappings": {
           "type": "array",

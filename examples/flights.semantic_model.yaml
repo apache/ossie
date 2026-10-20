@@ -1,0 +1,299 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+version: 0.2.0.dev0
+name: Flights semantic model
+datasets:
+- name: RUNWAY
+  source: DATABASE.SCHEMA.RUNWAYS
+  fields:
+  - name: airport_code
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: airport_code
+  - name: length
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: length
+  - name: shape
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: shape
+  - name: designator
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: designator
+- name: AIRCRAFT
+  source: DATABASE.SCHEMA.AIRCRAFT
+  description: "An airplane, helicopter, or other machine capable of flight"
+  fields:
+  - name: serial_nr
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: serial_nr
+  - name: name
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: name
+  - name: nr_seats
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: nr_seats
+  - name: tail_nr
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: tail_nr
+  - name: carrier_code
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: carrier_code
+  - name: manufacturer
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: manufacturer
+  - name: model
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: model
+  - name: year
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: year
+  - name: capacity
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: capacity
+- name: AIRPORT
+  source: DATABASE.SCHEMA.AIRPORTS
+  description: "An airport that is identified by an IATA code."
+  fields:
+  - name: state_code
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: state_code
+  - name: market_nm
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: market_nm
+  - name: longitude
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: longitude
+  - name: opened
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: opened
+  - name: state_nm
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: state_nm
+  - name: city_nm
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: city_nm
+  - name: name
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: name
+  - name: code
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: code
+  - name: latitude
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: latitude
+- name: FLIGHT
+  source: DATABASE.SCHEMA.FLIGHTS
+  description: "A commercial passenger flight."
+  fields:
+  - name: dep_delay
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: dep_delay
+  - name: air_time
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: air_time
+  - name: nr
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: nr
+  - name: carrier_code
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: carrier_code
+  - name: duration
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: duration
+  - name: scheduled_departure
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: scheduled_departure
+  - name: arr_delay
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: arr_delay
+  - name: cancelled
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: cancelled
+  - name: cancel_code
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: cancel_code
+  - name: distance
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: distance
+  - name: id
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: id
+  - name: scheduled_arrival
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: scheduled_arrival
+  - name: wheels_on
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: wheels_on
+  - name: date
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: date
+  - name: wheels_off
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: wheels_off
+  - name: scheduled_duration
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: scheduled_duration
+  - name: tail_nr
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: tail_nr
+  - name: departure
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: departure
+  - name: route_id
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: route_id
+  - name: diverted
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: diverted
+  - name: arrival
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: arrival
+- name: CARRIER
+  source: DATABASE.SCHEMA.CARRIERS
+  description: "An airline, such as Delta, United, or American."
+  fields:
+  - name: code
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: code
+  - name: name
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: name
+- name: ROUTE
+  source: DATABASE.SCHEMA.ROUTES
+  description: "Represents the existence of one or more flights between a pair of departure
+    arrival airports."
+  fields:
+  - name: orig_airport_code
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: orig_airport_code
+  - name: dest_airport_code
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: dest_airport_code
+  - name: distance
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: distance
+  - name: dist_grp
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: dist_grp
+  - name: id
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: id
+  - name: name
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: name

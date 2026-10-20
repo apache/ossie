@@ -25,6 +25,7 @@ import (
 var convertCmd = &cobra.Command{
 	Use:   "convert --from <platform> --input <path> | --to <platform> --input <path>",
 	Short: "Convert a semantic model between Ossie and a platform format",
+	Args:  cobra.NoArgs,
 	RunE:  runConvert,
 }
 
@@ -43,6 +44,6 @@ func init() {
 }
 
 func runConvert(cmd *cobra.Command, args []string) error {
-	fmt.Fprintln(cmd.OutOrStdout(), "not yet implemented")
-	return nil
+	cmd.SilenceUsage = true
+	return fmt.Errorf("%s is not yet implemented", cmd.CommandPath())
 }

@@ -1,0 +1,68 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# The fact cube: sits on the many side of the join, so its sum/avg measures are
+# not exposed to row multiplication. Exercises a bare `count` (which maps through
+# the primary key), a filtered sum, a calculated measure that references two other
+# measures, and `meta.ai_context` on both a dimension and a measure.
+cubes:
+  - name: orders
+    sql_table: public.orders
+    description: Customer orders
+    joins:
+      - name: users
+        sql: "{CUBE}.user_id = {users}.id"
+        relationship: many_to_one
+    dimensions:
+      - name: id
+        sql: id
+        type: number
+        primary_key: true
+      - name: user_id
+        sql: user_id
+        type: number
+      - name: status
+        sql: status
+        type: string
+        title: Order Status
+        description: Current order status
+        meta:
+          ai_context: Values are pending, shipped, and completed.
+      - name: created_at
+        sql: created_at
+        type: time
+      - name: is_large
+        sql: "{CUBE}.amount > 500"
+        type: boolean
+    measures:
+      - name: count
+        type: count
+      - name: total_amount
+        sql: "{CUBE}.amount"
+        type: sum
+        description: Total order amount
+        format: currency
+        meta:
+          ai_context: Use this for revenue questions.
+      - name: completed_amount
+        sql: "{CUBE}.amount"
+        type: sum
+        filters:
+          - sql: "{CUBE}.status = 'completed'"
+      - name: avg_order_value
+        sql: "{total_amount} / {count}"
+        type: number

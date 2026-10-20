@@ -1,0 +1,58 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+Model order_items {
+  type: 'table'
+  label: 'Order Items'
+  description: 'One row per line item on an order.'
+  data_source_name: 'bigquery_demo'
+  table_name: '`ecommerce`.`order_items`'
+
+  dimension order_id {
+    label: 'Order Id'
+    type: 'number'
+    definition: @sql {{ #SOURCE.order_id }};;
+  }
+
+  dimension product_id {
+    label: 'Product Id'
+    type: 'number'
+    definition: @sql {{ #SOURCE.product_id }};;
+  }
+
+  dimension quantity {
+    label: 'Quantity'
+    type: 'number'
+    definition: @sql {{ #SOURCE.quantity }};;
+  }
+
+  measure total_quantity {
+    label: 'Total Quantity'
+    type: 'number'
+    definition: @sql {{ #SOURCE.quantity }};;
+    aggregation_type: 'sum'
+  }
+
+  measure custom_total_quantity {
+    label: 'Custom Total Quantity'
+    type: 'number'
+    definition: @sql sum({{ #SOURCE.quantity }});;
+    aggregation_type: 'custom'
+  }
+
+  owner: 'dev@ossie.apache.org'
+}

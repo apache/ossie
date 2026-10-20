@@ -43,7 +43,7 @@ are good starting points.
 
 - **Specification Feedback**: Review proposed specification changes and share your perspective on the mailing list, GitHub pull requests, and issues.
 - **Use Case Discussions**: Share how your organization uses semantic models and what challenges you face — this helps shape the specification to address real-world needs.
-- **Code Contributions**: Contribute to validation tooling, converters, examples, or any other part of the project.
+- **Code Contributions**: Contribute to validation tooling, existing converters, examples, or any other part of the project. See [Converter Contributions](#converter-contributions) before starting a new converter.
 - **Documentation**: Help improve and expand the project documentation.
 - **Community Support**: Answer questions, participate in discussions, and help onboard new contributors.
 
@@ -81,17 +81,21 @@ is being made):
 
 ## Contributor License Agreement (ICLA)
 
-All contributions to Apache Ossie are made under the [Apache License 2.0](LICENSE).
-By submitting a pull request or patch, you agree that your contribution is licensed
-under those terms (see Section 5 of the license).
+**No CLA is required to contribute.** All contributions to Apache Ossie are made under
+the [Apache License 2.0](LICENSE). By submitting a pull request or patch, you agree that
+your contribution is licensed under those terms (see Section 5 of the license). You can
+open issues, submit pull requests, and participate in discussions without signing
+anything.
 
-Before your first non-trivial contribution can be merged, and always before you are
-granted commit access, you must have an
-[Individual Contributor License Agreement (ICLA)](https://www.apache.org/licenses/contributor-agreements.html#clas)
-on file with the ASF. If you are contributing on behalf of your employer, a
+An [Individual Contributor License Agreement (ICLA)](https://www.apache.org/licenses/contributor-agreements.html#clas)
+is only required once you are elected as a committer: the ICLA must be on file with the
+ASF before your Apache account and commit access are set up. A
 [Corporate CLA (CCLA)](https://www.apache.org/licenses/contributor-agreements.html#clas)
-may also be required. Please keep individual commits signed off and attributed to
-the correct author so that provenance is clear.
+is likewise not required for contributions, and is only relevant for committers
+contributing on behalf of their employer.
+
+Please keep individual commits attributed to the correct author so that provenance is
+clear.
 
 ## AI-Assisted Contributions
 
@@ -106,7 +110,7 @@ infrastructure (GitBox).
 
 ### Code, Documentation, and Tooling
 
-Non-specification contributions (bug fixes, tooling, documentation, converters,
+Non-specification contributions (bug fixes, tooling, documentation, existing converters,
 examples) follow standard GitHub pull request review:
 
 1. Open an issue or start a thread on `dev@` for anything non-trivial, so the
@@ -116,6 +120,13 @@ examples) follow standard GitHub pull request review:
 4. A committer reviews and merges once the change has at least one **+1** from a
    committer and no unresolved **-1**. The project follows a review-then-commit (RTC)
    model: changes are merged after review rather than committed first.
+
+### Converter Contributions
+
+The main Ossie repository does not accept new converters. Develop new semantic
+model and ontology converters in separate repositories. For Apache Ossie hosting,
+use the [ossie-converters repository](https://github.com/apache/ossie-converters)
+and coordinate contributions on `dev@ossie.apache.org`.
 
 ### Specification Changes
 

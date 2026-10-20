@@ -349,7 +349,7 @@ def build_ossie(rnd):
         model["relationships"] = relationships
     if metrics:
         model["metrics"] = metrics
-    return {"version": OSSIE_VERSION, "semantic_model": [model]}
+    return {"version": OSSIE_VERSION, **model}
 
 
 # --- Round-trip assertions -------------------------------------------------------

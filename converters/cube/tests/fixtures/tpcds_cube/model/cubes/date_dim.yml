@@ -1,0 +1,79 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+cubes:
+- name: date_dim
+  sql_table: tpcds.public.date_dim
+  description: Date dimension with calendar attributes
+  meta:
+    ai_context: 'Also known as: calendar, dates, time periods.'
+    ossie:
+      unique_keys:
+      - - d_date_sk
+      ai_context:
+        synonyms:
+        - calendar
+        - dates
+        - time periods
+  dimensions:
+  - name: d_date_sk
+    sql: d_date_sk
+    type: number
+    primary_key: true
+    description: Surrogate key for date
+  - name: d_date
+    sql: d_date
+    type: time
+    description: Actual date value
+    meta:
+      ai_context: 'Also known as: date, calendar date.'
+      ossie:
+        ai_context:
+          synonyms:
+          - date
+          - calendar date
+  - name: d_year
+    sql: d_year
+    type: number
+    description: Year
+    meta:
+      ai_context: 'Also known as: year.'
+      ossie:
+        ai_context:
+          synonyms:
+          - year
+  - name: d_quarter_name
+    sql: d_quarter_name
+    type: time
+    description: Quarter name (e.g., 2024Q1)
+    meta:
+      ai_context: 'Also known as: quarter, fiscal quarter.'
+      ossie:
+        ai_context:
+          synonyms:
+          - quarter
+          - fiscal quarter
+  - name: d_month_name
+    sql: d_month_name
+    type: time
+    description: Month name
+    meta:
+      ai_context: 'Also known as: month.'
+      ossie:
+        ai_context:
+          synonyms:
+          - month

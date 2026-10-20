@@ -22,6 +22,7 @@ package org.apache.ossie.converter.polaris;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.apache.ossie.converter.polaris.model.OssieModel;
 import org.apache.ossie.converter.polaris.model.OssieModel.*;
 
@@ -29,6 +30,8 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 
@@ -36,71 +39,73 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class OssiePolarisConverterTest {
 
+    @TempDir
+    Path tempDirectory;
+
     private static final String MINIMAL_MODEL =
             "version: \"0.2.0.dev0\"\n"
             + "\n"
-            + "semantic_model:\n"
-            + "  - name: test_model\n"
-            + "    description: A test model\n"
-            + "    datasets:\n"
-            + "      - name: orders\n"
-            + "        source: catalog.ns.orders\n"
-            + "        primary_key: [order_id]\n"
-            + "        description: Order fact table\n"
-            + "        fields:\n"
-            + "          - name: order_id\n"
-            + "            datatype: Integer\n"
-            + "            expression:\n"
-            + "              dialects:\n"
-            + "                - dialect: ANSI_SQL\n"
-            + "                  expression: order_id\n"
-            + "          - name: total_amount\n"
-            + "            datatype: Decimal\n"
-            + "            expression:\n"
-            + "              dialects:\n"
-            + "                - dialect: ANSI_SQL\n"
-            + "                  expression: \"quantity * unit_price\"\n"
-            + "            description: Computed total\n"
-            + "            custom_extensions:\n"
-            + "              - vendor_name: POLARIS\n"
-            + "                data: '{\"iceberg_type\":\"decimal(18,2)\"}'\n"
-            + "          - name: order_date\n"
-            + "            datatype: Date\n"
-            + "            expression:\n"
-            + "              dialects:\n"
-            + "                - dialect: ANSI_SQL\n"
-            + "                  expression: order_date\n"
-            + "            dimension:\n"
-            + "              is_time: true\n"
-            + "      - name: customer\n"
-            + "        source: catalog.ns.customer\n"
-            + "        primary_key: [customer_id]\n"
-            + "        fields:\n"
-            + "          - name: customer_id\n"
-            + "            datatype: String\n"
-            + "            expression:\n"
-            + "              dialects:\n"
-            + "                - dialect: ANSI_SQL\n"
-            + "                  expression: customer_id\n"
-            + "          - name: full_name\n"
-            + "            datatype: String\n"
-            + "            expression:\n"
-            + "              dialects:\n"
-            + "                - dialect: ANSI_SQL\n"
-            + "                  expression: \"first_name || ' ' || last_name\"\n"
-            + "    relationships:\n"
-            + "      - name: orders_to_customer\n"
-            + "        from: orders\n"
-            + "        to: customer\n"
-            + "        from_columns: [customer_id]\n"
-            + "        to_columns: [customer_id]\n"
-            + "    metrics:\n"
-            + "      - name: total_revenue\n"
+            + "name: test_model\n"
+            + "description: A test model\n"
+            + "datasets:\n"
+            + "  - name: orders\n"
+            + "    source: catalog.ns.orders\n"
+            + "    primary_key: [order_id]\n"
+            + "    description: Order fact table\n"
+            + "    fields:\n"
+            + "      - name: order_id\n"
+            + "        datatype: Integer\n"
             + "        expression:\n"
             + "          dialects:\n"
             + "            - dialect: ANSI_SQL\n"
-            + "              expression: SUM(orders.total_amount)\n"
-            + "        description: Total revenue across all orders\n";
+            + "              expression: order_id\n"
+            + "      - name: total_amount\n"
+            + "        datatype: Decimal\n"
+            + "        expression:\n"
+            + "          dialects:\n"
+            + "            - dialect: ANSI_SQL\n"
+            + "              expression: \"quantity * unit_price\"\n"
+            + "        description: Computed total\n"
+            + "        custom_extensions:\n"
+            + "          - vendor_name: POLARIS\n"
+            + "            data: '{\"iceberg_type\":\"decimal(18,2)\"}'\n"
+            + "      - name: order_date\n"
+            + "        datatype: Date\n"
+            + "        expression:\n"
+            + "          dialects:\n"
+            + "            - dialect: ANSI_SQL\n"
+            + "              expression: order_date\n"
+            + "        dimension:\n"
+            + "          is_time: true\n"
+            + "  - name: customer\n"
+            + "    source: catalog.ns.customer\n"
+            + "    primary_key: [customer_id]\n"
+            + "    fields:\n"
+            + "      - name: customer_id\n"
+            + "        datatype: String\n"
+            + "        expression:\n"
+            + "          dialects:\n"
+            + "            - dialect: ANSI_SQL\n"
+            + "              expression: customer_id\n"
+            + "      - name: full_name\n"
+            + "        datatype: String\n"
+            + "        expression:\n"
+            + "          dialects:\n"
+            + "            - dialect: ANSI_SQL\n"
+            + "              expression: \"first_name || ' ' || last_name\"\n"
+            + "relationships:\n"
+            + "  - name: orders_to_customer\n"
+            + "    from: orders\n"
+            + "    to: customer\n"
+            + "    from_columns: [customer_id]\n"
+            + "    to_columns: [customer_id]\n"
+            + "metrics:\n"
+            + "  - name: total_revenue\n"
+            + "    expression:\n"
+            + "      dialects:\n"
+            + "        - dialect: ANSI_SQL\n"
+            + "          expression: SUM(orders.total_amount)\n"
+            + "    description: Total revenue across all orders\n";
 
     // -- Parser tests -------------------------------------------------------
 
@@ -111,9 +116,9 @@ class OssiePolarisConverterTest {
                 new ByteArrayInputStream(MINIMAL_MODEL.getBytes(StandardCharsets.UTF_8)));
 
         assertEquals("0.2.0.dev0", model.getVersion());
-        assertEquals(1, model.getSemanticModels().size());
+        assertNotNull(model.getSemanticModel());
 
-        SemanticModel sm = model.getSemanticModels().get(0);
+        SemanticModel sm = model.getSemanticModel();
         assertEquals("test_model", sm.getName());
         assertEquals(2, sm.getDatasets().size());
         assertEquals(1, sm.getRelationships().size());
@@ -126,7 +131,7 @@ class OssiePolarisConverterTest {
         OssieModel model = parser.parse(
                 new ByteArrayInputStream(MINIMAL_MODEL.getBytes(StandardCharsets.UTF_8)));
 
-        Dataset orders = model.getSemanticModels().get(0).getDatasets().get(0);
+        Dataset orders = model.getSemanticModel().getDatasets().get(0);
         assertEquals("orders", orders.getName());
         assertEquals("catalog.ns.orders", orders.getSource());
         assertEquals(3, orders.getFields().size());
@@ -144,7 +149,7 @@ class OssiePolarisConverterTest {
         OssieModel model = parser.parse(
                 new ByteArrayInputStream(MINIMAL_MODEL.getBytes(StandardCharsets.UTF_8)));
 
-        Dataset orders = model.getSemanticModels().get(0).getDatasets().get(0);
+        Dataset orders = model.getSemanticModel().getDatasets().get(0);
         Field orderDate = orders.getFields().get(2);
         assertEquals("order_date", orderDate.getName());
         assertEquals("Date", orderDate.getDatatype());
@@ -157,7 +162,7 @@ class OssiePolarisConverterTest {
         OssieModel model = parser.parse(
                 new ByteArrayInputStream(MINIMAL_MODEL.getBytes(StandardCharsets.UTF_8)));
 
-        Relationship rel = model.getSemanticModels().get(0).getRelationships().get(0);
+        Relationship rel = model.getSemanticModel().getRelationships().get(0);
         assertEquals("orders_to_customer", rel.getName());
         assertEquals("orders", rel.getFrom());
         assertEquals("customer", rel.getTo());
@@ -194,9 +199,9 @@ class OssiePolarisConverterTest {
         // Re-parse the generated YAML to verify it's valid
         OssieModel reparsed = parser.parse(
                 new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8)));
-        assertEquals(1, reparsed.getSemanticModels().size());
-        assertEquals("test_model", reparsed.getSemanticModels().get(0).getName());
-        assertEquals(2, reparsed.getSemanticModels().get(0).getDatasets().size());
+        assertNotNull(reparsed.getSemanticModel());
+        assertEquals("test_model", reparsed.getSemanticModel().getName());
+        assertEquals(2, reparsed.getSemanticModel().getDatasets().size());
     }
 
     // -- Exporter tests (Iceberg schema generation) -------------------------
@@ -210,7 +215,7 @@ class OssiePolarisConverterTest {
         PolarisClient client = new PolarisClient("http://localhost:8181", "test_catalog");
         PolarisExporter exporter = new PolarisExporter(client);
 
-        Dataset orders = model.getSemanticModels().get(0).getDatasets().get(0);
+        Dataset orders = model.getSemanticModel().getDatasets().get(0);
         String json = exporter.buildCreateTableRequest(orders);
 
         ObjectMapper mapper = new ObjectMapper();
@@ -290,9 +295,11 @@ class OssiePolarisConverterTest {
 
         PolarisClient client = new FakePolarisClient(tableMetadata);
         PolarisImporter importer = new PolarisImporter(client);
-        OssieModel model = importer.importCatalog();
+        List<OssieModel> models = importer.importCatalog();
+        assertEquals(1, models.size());
+        OssieModel model = models.get(0);
 
-        Dataset ds = model.getSemanticModels().get(0).getDatasets().get(0);
+        Dataset ds = model.getSemanticModel().getDatasets().get(0);
         assertEquals("test_table", ds.getName());
         assertEquals("test_catalog.test_ns.test_table", ds.getSource());
         assertEquals(Collections.singletonList("id"), ds.getPrimaryKey());
@@ -336,7 +343,7 @@ class OssiePolarisConverterTest {
         // distinctions survive, while nested IDs are regenerated for the new schema.
         OssieModel reparsed = new OssieModelParser().parse(
                 new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8)));
-        Dataset reparsedDataset = reparsed.getSemanticModels().get(0).getDatasets().get(0);
+        Dataset reparsedDataset = reparsed.getSemanticModel().getDatasets().get(0);
         JsonNode exportedSchema = mapper.readTree(
                 new PolarisExporter(client).buildCreateTableRequest(reparsedDataset)).path("schema");
         JsonNode exportedFields = exportedSchema.path("fields");
@@ -433,7 +440,7 @@ class OssiePolarisConverterTest {
         ds.setFields(fields);
 
         sm.setDatasets(Collections.singletonList(ds));
-        model.setSemanticModels(Collections.singletonList(sm));
+        model.setSemanticModel(sm);
 
         PolarisClient client = new PolarisClient("http://localhost:8181", "cat");
         PolarisExporter exporter = new PolarisExporter(client);
@@ -457,14 +464,144 @@ class OssiePolarisConverterTest {
     void testEmptyModel() {
         String emptyYaml = "version: \"0.2.0.dev0\"\n";
         OssieModelParser parser = new OssieModelParser();
-        OssieModel model = parser.parse(
-                new ByteArrayInputStream(emptyYaml.getBytes(StandardCharsets.UTF_8)));
+        assertThrows(IllegalArgumentException.class, () -> parser.parse(
+                new ByteArrayInputStream(emptyYaml.getBytes(StandardCharsets.UTF_8))));
+    }
 
-        assertEquals("0.2.0.dev0", model.getVersion());
-        assertTrue(model.getSemanticModels().isEmpty());
+    @Test
+    void testRejectsLegacyWrappedDocuments() {
+        for (String value : List.of("[]", "[{name: legacy, datasets: []}]", "{name: legacy, datasets: []}")) {
+            String yaml = "version: 0.2.0.dev0\nsemantic_model: " + value + "\n";
+            IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                    () -> new OssieModelParser().parse(
+                            new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8))));
+            assertTrue(exception.getMessage().contains("Legacy semantic_model wrappers"));
+        }
+    }
+
+    @Test
+    void testRejectsRemovedRootMetadata() {
+        for (String property : List.of("dialects", "vendors")) {
+            for (String value : List.of("null", "[]", "[legacy]")) {
+                String yaml = MINIMAL_MODEL + property + ": " + value + "\n";
+                IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                        () -> new OssieModelParser().parse(
+                                new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8))));
+                assertTrue(exception.getMessage().contains("Root dialects and vendors"));
+            }
+        }
+    }
+
+    @Test
+    void testEmptyDatasetListRoundTrips() {
+        String yaml = "version: 0.2.0.dev0\nname: empty\ndatasets: []\n";
+        OssieModelParser parser = new OssieModelParser();
+        OssieModel model = parser.parse(new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8)));
+        String generated = new OssieYamlGenerator().generate(model);
+        assertFalse(generated.contains("semantic_model:"));
+        OssieModel reparsed = parser.parse(new ByteArrayInputStream(generated.getBytes(StandardCharsets.UTF_8)));
+        assertEquals("empty", reparsed.getSemanticModel().getName());
+        assertTrue(reparsed.getSemanticModel().getDatasets().isEmpty());
+    }
+
+    @Test
+    void testBulkImportWritesSeparateDocumentsWithSafeDistinctNames() throws Exception {
+        PolarisClient client = namespaceClient(List.of(
+                List.of("a_b"), List.of("a", "b"), List.of("../outside")));
+        Path directory = tempDirectory.resolve("models");
+        OssiePolarisConverter.doImport(client, null, directory.toString());
+
+        List<Path> files;
+        try (var paths = Files.list(directory)) {
+            files = paths.sorted().toList();
+        }
+        assertEquals(List.of("0001-___outside.yaml", "0002-a_b.yaml", "0003-a_b.yaml"),
+                files.stream().map(path -> path.getFileName().toString()).toList());
+        assertEquals(List.of("../outside", "a_b", "a_b"), files.stream().map(path -> {
+            try {
+                return new OssieModelParser().parse(path).getSemanticModel().getName();
+            } catch (Exception exception) {
+                throw new AssertionError(exception);
+            }
+        }).toList());
+        assertEquals("test_catalog.a.b.test_table",
+                new OssieModelParser().parse(files.get(1)).getSemanticModel().getDatasets().get(0).getSource());
+        assertEquals("test_catalog.a_b.test_table",
+                new OssieModelParser().parse(files.get(2)).getSemanticModel().getDatasets().get(0).getSource());
+
+        // API enumeration order does not change the output filenames or contents.
+        Path reordered = tempDirectory.resolve("reordered");
+        OssiePolarisConverter.doImport(namespaceClient(List.of(
+                List.of("../outside"), List.of("a", "b"), List.of("a_b"))), null, reordered.toString());
+        for (Path file : files) {
+            assertEquals(Files.readString(file), Files.readString(reordered.resolve(file.getFileName())));
+        }
+    }
+
+    @Test
+    void testMultipleNamespacesRequireOutputDirectory() {
+        PolarisClient client = namespaceClient(List.of(List.of("sales"), List.of("support")));
+        Path output = tempDirectory.resolve("model.yaml");
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> OssiePolarisConverter.doImport(client, output.toString(), null));
+        assertTrue(exception.getMessage().contains("--output-dir"));
+        assertFalse(Files.exists(output));
+        assertThrows(IllegalArgumentException.class, () -> OssiePolarisConverter.doImport(client, null, null));
+    }
+
+    @Test
+    void testSingleNamespaceFileAndStdout() throws Exception {
+        PolarisClient client = namespaceClient(List.of(List.of("sales")));
+        Path output = tempDirectory.resolve("model.yaml");
+        OssiePolarisConverter.doImport(client, output.toString(), null);
+        assertEquals("sales", new OssieModelParser().parse(output).getSemanticModel().getName());
+
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        PrintStream originalOutput = System.out;
+        try {
+            System.setOut(new PrintStream(bytes, true, StandardCharsets.UTF_8));
+            OssiePolarisConverter.doImport(client, null, null);
+        } finally {
+            System.setOut(originalOutput);
+        }
+        assertEquals("sales", new OssieModelParser().parse(
+                new ByteArrayInputStream(bytes.toByteArray())).getSemanticModel().getName());
+    }
+
+    @Test
+    void testBulkImportRefusesExistingFilesBeforeWriting() throws Exception {
+        PolarisClient client = namespaceClient(List.of(List.of("sales"), List.of("support")));
+        Path existing = tempDirectory.resolve("0002-support.yaml");
+        Files.writeString(existing, "keep this file");
+        assertThrows(java.io.IOException.class,
+                () -> OssiePolarisConverter.doImport(client, null, tempDirectory.toString()));
+        assertFalse(Files.exists(tempDirectory.resolve("0001-sales.yaml")));
+        assertEquals("keep this file", Files.readString(existing));
+    }
+
+    @Test
+    void testEmptyCatalogDoesNotWriteInvalidDocument() throws Exception {
+        Path output = tempDirectory.resolve("empty.yaml");
+        OssiePolarisConverter.doImport(namespaceClient(List.of()), output.toString(), null);
+        assertFalse(Files.exists(output));
+    }
+
+    @Test
+    void testOutputOptionsAreMutuallyExclusive() {
+        assertThrows(IllegalArgumentException.class, () -> OssiePolarisConverter.doImport(
+                namespaceClient(List.of()), "model.yaml", tempDirectory.toString()));
     }
 
     // -- Helpers ------------------------------------------------------------
+
+    private PolarisClient namespaceClient(List<List<String>> namespaces) {
+        return new FakePolarisClient(new ObjectMapper().createObjectNode()) {
+            @Override
+            public List<List<String>> listNamespaces() {
+                return namespaces;
+            }
+        };
+    }
 
     private Field makeField(String name, boolean isTime) {
         Field f = new Field();

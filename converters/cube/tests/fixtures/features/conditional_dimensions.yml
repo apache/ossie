@@ -1,0 +1,61 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# `switch` and `case` dimensions: the two kinds that carry no `sql` at all. Both used
+# to convert to an Ossie expression naming a column that does not exist.
+cubes:
+  - name: products
+    sql_table: shop.public.products
+    dimensions:
+      - name: id
+        sql: id
+        type: number
+        primary_key: true
+      - name: size_value
+        sql: size_value
+        type: string
+      - name: english_size
+        sql: english_size
+        type: string
+      # Conditions instead of sql; maps to a real Ossie CASE expression.
+      - name: size
+        type: string
+        case:
+          when:
+            - sql: "{CUBE}.size_value = 'xl-en'"
+              label: xl
+            - sql: "{CUBE}.size_value = 'xxl'"
+              label: "it's xxl"
+          else:
+            label: Unknown
+      # A dynamic label is an expression rather than a literal.
+      - name: localized_size
+        type: string
+        case:
+          when:
+            - sql: "{CUBE}.size_value = 'xl'"
+              label:
+                sql: "{CUBE}.english_size"
+      # Enumerated values, no sql: has no Ossie field form, so it is parked whole.
+      - name: currency
+        type: switch
+        values:
+          - USD
+          - EUR
+    measures:
+      - name: count
+        type: count

@@ -35,26 +35,27 @@ public class OssieYamlGenerator {
      * Generate Ossie YAML string from a model.
      */
     public String generate(OssieModel model) {
+        if (model.getSemanticModel() == null) {
+            throw new IllegalArgumentException("The document requires a semantic model");
+        }
         StringBuilder sb = new StringBuilder();
         sb.append("version: \"").append(model.getVersion()).append("\"\n\n");
-        sb.append("semantic_model:\n");
-
-        for (SemanticModel sm : model.getSemanticModels()) {
-            generateSemanticModel(sb, sm);
-        }
+        generateSemanticModel(sb, model.getSemanticModel());
 
         return sb.toString();
     }
 
     private void generateSemanticModel(StringBuilder sb, SemanticModel sm) {
-        sb.append("  - name: ").append(sm.getName()).append("\n");
+        sb.append("name: ").append(sm.getName()).append("\n");
         if (sm.getDescription() != null) {
-            sb.append("    description: \"").append(escapeYaml(sm.getDescription())).append("\"\n");
+            sb.append("description: \"").append(escapeYaml(sm.getDescription())).append("\"\n");
         }
 
         // Datasets
-        if (!sm.getDatasets().isEmpty()) {
-            sb.append("    datasets:\n");
+        if (sm.getDatasets().isEmpty()) {
+            sb.append("datasets: []\n");
+        } else {
+            sb.append("datasets:\n");
             for (Dataset ds : sm.getDatasets()) {
                 generateDataset(sb, ds);
             }
@@ -62,7 +63,7 @@ public class OssieYamlGenerator {
 
         // Relationships
         if (!sm.getRelationships().isEmpty()) {
-            sb.append("    relationships:\n");
+            sb.append("relationships:\n");
             for (Relationship rel : sm.getRelationships()) {
                 generateRelationship(sb, rel);
             }
@@ -70,7 +71,7 @@ public class OssieYamlGenerator {
 
         // Metrics
         if (!sm.getMetrics().isEmpty()) {
-            sb.append("    metrics:\n");
+            sb.append("metrics:\n");
             for (Metric metric : sm.getMetrics()) {
                 generateMetric(sb, metric);
             }
@@ -78,49 +79,49 @@ public class OssieYamlGenerator {
     }
 
     private void generateDataset(StringBuilder sb, Dataset ds) {
-        sb.append("      - name: ").append(ds.getName()).append("\n");
-        sb.append("        source: ").append(ds.getSource()).append("\n");
+        sb.append("  - name: ").append(ds.getName()).append("\n");
+        sb.append("    source: ").append(ds.getSource()).append("\n");
 
         if (!ds.getPrimaryKey().isEmpty()) {
-            sb.append("        primary_key: [").append(String.join(", ", ds.getPrimaryKey())).append("]\n");
+            sb.append("    primary_key: [").append(String.join(", ", ds.getPrimaryKey())).append("]\n");
         }
 
         if (!ds.getUniqueKeys().isEmpty()) {
-            sb.append("        unique_keys:\n");
+            sb.append("    unique_keys:\n");
             for (List<String> uk : ds.getUniqueKeys()) {
-                sb.append("          - [").append(String.join(", ", uk)).append("]\n");
+                sb.append("      - [").append(String.join(", ", uk)).append("]\n");
             }
         }
 
         if (ds.getDescription() != null) {
-            sb.append("        description: \"").append(escapeYaml(ds.getDescription())).append("\"\n");
+            sb.append("    description: \"").append(escapeYaml(ds.getDescription())).append("\"\n");
         }
 
         if (!ds.getFields().isEmpty()) {
-            sb.append("        fields:\n");
+            sb.append("    fields:\n");
             for (Field field : ds.getFields()) {
                 generateField(sb, field);
             }
         }
 
         if (!ds.getCustomExtensions().isEmpty()) {
-            generateCustomExtensions(sb, ds.getCustomExtensions(), "        ");
+            generateCustomExtensions(sb, ds.getCustomExtensions(), "    ");
         }
     }
 
     private void generateField(StringBuilder sb, Field field) {
-        sb.append("          - name: ").append(field.getName()).append("\n");
+        sb.append("      - name: ").append(field.getName()).append("\n");
 
         if (field.getDatatype() != null) {
-            sb.append("            datatype: ").append(field.getDatatype()).append("\n");
+            sb.append("        datatype: ").append(field.getDatatype()).append("\n");
         }
 
         if (!field.getExpressions().isEmpty()) {
-            sb.append("            expression:\n");
-            sb.append("              dialects:\n");
+            sb.append("        expression:\n");
+            sb.append("          dialects:\n");
             for (DialectExpression de : field.getExpressions()) {
-                sb.append("                - dialect: ").append(de.getDialect()).append("\n");
-                sb.append("                  expression: ");
+                sb.append("            - dialect: ").append(de.getDialect()).append("\n");
+                sb.append("              expression: ");
                 String expr = de.getExpression();
                 if (needsQuoting(expr)) {
                     sb.append("\"").append(escapeYaml(expr)).append("\"");
@@ -132,16 +133,16 @@ public class OssieYamlGenerator {
         }
 
         if (field.isTime()) {
-            sb.append("            dimension:\n");
-            sb.append("              is_time: true\n");
+            sb.append("        dimension:\n");
+            sb.append("          is_time: true\n");
         }
 
         if (field.getDescription() != null) {
-            sb.append("            description: \"").append(escapeYaml(field.getDescription())).append("\"\n");
+            sb.append("        description: \"").append(escapeYaml(field.getDescription())).append("\"\n");
         }
 
         if (!field.getCustomExtensions().isEmpty()) {
-            generateCustomExtensions(sb, field.getCustomExtensions(), "            ");
+            generateCustomExtensions(sb, field.getCustomExtensions(), "        ");
         }
     }
 
@@ -156,22 +157,22 @@ public class OssieYamlGenerator {
     }
 
     private void generateRelationship(StringBuilder sb, Relationship rel) {
-        sb.append("      - name: ").append(rel.getName()).append("\n");
-        sb.append("        from: ").append(rel.getFrom()).append("\n");
-        sb.append("        to: ").append(rel.getTo()).append("\n");
-        sb.append("        from_columns: [").append(String.join(", ", rel.getFromColumns())).append("]\n");
-        sb.append("        to_columns: [").append(String.join(", ", rel.getToColumns())).append("]\n");
+        sb.append("  - name: ").append(rel.getName()).append("\n");
+        sb.append("    from: ").append(rel.getFrom()).append("\n");
+        sb.append("    to: ").append(rel.getTo()).append("\n");
+        sb.append("    from_columns: [").append(String.join(", ", rel.getFromColumns())).append("]\n");
+        sb.append("    to_columns: [").append(String.join(", ", rel.getToColumns())).append("]\n");
     }
 
     private void generateMetric(StringBuilder sb, Metric metric) {
-        sb.append("      - name: ").append(metric.getName()).append("\n");
+        sb.append("  - name: ").append(metric.getName()).append("\n");
 
         if (!metric.getExpressions().isEmpty()) {
-            sb.append("        expression:\n");
-            sb.append("          dialects:\n");
+            sb.append("    expression:\n");
+            sb.append("      dialects:\n");
             for (DialectExpression de : metric.getExpressions()) {
-                sb.append("            - dialect: ").append(de.getDialect()).append("\n");
-                sb.append("              expression: ");
+                sb.append("        - dialect: ").append(de.getDialect()).append("\n");
+                sb.append("          expression: ");
                 String expr = de.getExpression();
                 if (needsQuoting(expr)) {
                     sb.append("\"").append(escapeYaml(expr)).append("\"");
@@ -183,7 +184,7 @@ public class OssieYamlGenerator {
         }
 
         if (metric.getDescription() != null) {
-            sb.append("        description: \"").append(escapeYaml(metric.getDescription())).append("\"\n");
+            sb.append("    description: \"").append(escapeYaml(metric.getDescription())).append("\"\n");
         }
     }
 

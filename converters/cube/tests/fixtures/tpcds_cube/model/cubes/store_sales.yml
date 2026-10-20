@@ -1,0 +1,227 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+cubes:
+- name: store_sales
+  sql_table: tpcds.public.store_sales
+  description: Fact table containing all store sales transactions
+  meta:
+    ai_context: 'Also known as: sales transactions, store purchases, retail sales,
+      POS data.'
+    ossie:
+      unique_keys:
+      - - ss_item_sk
+        - ss_ticket_number
+      ai_context:
+        synonyms:
+        - sales transactions
+        - store purchases
+        - retail sales
+        - POS data
+  joins:
+  - name: date_dim
+    sql: '{CUBE}.ss_sold_date_sk = {date_dim}.d_date_sk'
+    relationship: many_to_one
+  - name: customer
+    sql: '{CUBE}.ss_customer_sk = {customer}.c_customer_sk'
+    relationship: many_to_one
+  - name: item
+    sql: '{CUBE}.ss_item_sk = {item}.i_item_sk'
+    relationship: many_to_one
+  - name: store
+    sql: '{CUBE}.ss_store_sk = {store}.s_store_sk'
+    relationship: many_to_one
+  dimensions:
+  - name: ss_sold_date_sk
+    sql: ss_sold_date_sk
+    type: number
+    description: Foreign key to date dimension
+    meta:
+      ai_context: 'Also known as: sale date, transaction date.'
+      ossie:
+        ai_context:
+          synonyms:
+          - sale date
+          - transaction date
+  - name: ss_item_sk
+    sql: ss_item_sk
+    type: number
+    primary_key: true
+    description: Foreign key to item dimension
+    meta:
+      ai_context: 'Also known as: product, item.'
+      ossie:
+        ai_context:
+          synonyms:
+          - product
+          - item
+  - name: ss_customer_sk
+    sql: ss_customer_sk
+    type: number
+    description: Foreign key to customer dimension
+    meta:
+      ai_context: 'Also known as: customer, buyer.'
+      ossie:
+        ai_context:
+          synonyms:
+          - customer
+          - buyer
+  - name: ss_store_sk
+    sql: ss_store_sk
+    type: number
+    description: Foreign key to store dimension
+    meta:
+      ai_context: 'Also known as: store, location.'
+      ossie:
+        ai_context:
+          synonyms:
+          - store
+          - location
+  - name: ss_quantity
+    sql: ss_quantity
+    type: number
+    description: Quantity of items sold
+    meta:
+      ai_context: 'Also known as: units sold, quantity.'
+      ossie:
+        ai_context:
+          synonyms:
+          - units sold
+          - quantity
+  - name: ss_sales_price
+    sql: ss_sales_price
+    type: number
+    description: Sales price per unit
+    meta:
+      ai_context: 'Also known as: unit price, price.'
+      ossie:
+        ai_context:
+          synonyms:
+          - unit price
+          - price
+  - name: ss_ext_sales_price
+    sql: ss_ext_sales_price
+    type: number
+    description: Extended sales price (quantity * price)
+    meta:
+      ai_context: 'Also known as: total price, line total.'
+      ossie:
+        ai_context:
+          synonyms:
+          - total price
+          - line total
+  - name: ss_net_profit
+    sql: ss_net_profit
+    type: number
+    description: Net profit from the sale
+    meta:
+      ai_context: 'Also known as: profit, margin.'
+      ossie:
+        ai_context:
+          synonyms:
+          - profit
+          - margin
+  - name: ss_ticket_number
+    sql: ss_ticket_number
+    type: string
+    primary_key: true
+    public: false
+  measures:
+  - name: total_sales
+    sql: '{CUBE}.ss_ext_sales_price'
+    type: sum
+    description: Total sales revenue across all transactions
+    meta:
+      ai_context: 'Also known as: total revenue, gross sales, sales amount.'
+      ossie:
+        ai_context:
+          synonyms:
+          - total revenue
+          - gross sales
+          - sales amount
+  - name: total_profit
+    sql: '{CUBE}.ss_net_profit'
+    type: sum
+    description: Total net profit from store sales
+    meta:
+      ai_context: 'Also known as: net profit, total earnings, profit.'
+      ossie:
+        ai_context:
+          synonyms:
+          - net profit
+          - total earnings
+          - profit
+  # The decomposed form of SUM({CUBE}.ss_ext_sales_price) / COUNT(DISTINCT
+  # {customer.c_customer_sk}): one hidden measure per aggregate, each on the cube
+  # its operand reads, so Cube corrects row multiplication per aggregate. This is
+  # the converter's own fixed point -- an inline-authored composite normalizes to
+  # this shape on the first round trip (see test_composite_measures).
+  - name: customer_lifetime_value_part_1
+    sql: '{CUBE}.ss_ext_sales_price'
+    type: sum
+    meta:
+      ossie:
+        part_of: customer_lifetime_value
+    public: false
+  - name: customer_lifetime_value
+    sql: '{CUBE.customer_lifetime_value_part_1} / {customer.customer_lifetime_value_part_2}'
+    type: number
+    description: Average lifetime sales value per customer
+    meta:
+      ai_context: 'Also known as: CLV, LTV, customer value, lifetime revenue.'
+      ossie:
+        decomposed: true
+        ai_context:
+          synonyms:
+          - CLV
+          - LTV
+          - customer value
+          - lifetime revenue
+  - name: sales_by_brand
+    sql: '{CUBE}.ss_ext_sales_price'
+    type: sum
+    description: Total sales by brand (requires grouping by item.i_brand)
+    meta:
+      ai_context: 'Also known as: brand sales, brand performance, brand revenue.'
+      ossie:
+        ai_context:
+          synonyms:
+          - brand sales
+          - brand performance
+          - brand revenue
+  - name: store_productivity_part_1
+    sql: '{CUBE}.ss_ext_sales_price'
+    type: sum
+    meta:
+      ossie:
+        part_of: store_productivity
+    public: false
+  - name: store_productivity
+    sql: '{CUBE.store_productivity_part_1} / NULLIF({store.store_productivity_part_2},
+      0)'
+    type: number
+    description: Sales per employee across stores
+    meta:
+      ai_context: 'Also known as: sales per employee, employee productivity, revenue
+        per employee.'
+      ossie:
+        decomposed: true
+        ai_context:
+          synonyms:
+          - sales per employee
+          - employee productivity
+          - revenue per employee

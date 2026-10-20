@@ -1,0 +1,10 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Salesforce input envelope for flat document conversion tests",
+  "type": "object",
+  "properties": {
+    "apiName": {"type": "string"},
+    "semanticDataObjects": {"type": "array"}
+  },
+  "required": ["apiName", "semanticDataObjects"]
+}

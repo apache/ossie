@@ -221,39 +221,38 @@ class TestRefreshPolicy:
 class TestColumnProperties:
     """Column properties roundtrip.
 
-    Note: Ossie uses column *code* as field name, so after roundtrip the OBML
-    column keys become the physical codes (AMOUNT, ORDER_ID) rather than
-    the original display names.
+    Ossie names each field by its column *code*; the OBML column name rides in
+    the field's extension, so the roundtrip restores the original keys.
     """
 
     def test_sql_type_roundtrip(self):
         result = _roundtrip(_OBML_FULL)
-        amount = result["dataObjects"]["Orders"]["columns"]["AMOUNT"]
+        amount = result["dataObjects"]["Orders"]["columns"]["Amount"]
         assert amount.get("sqlType") == "NUMERIC"
 
     def test_sql_precision_roundtrip(self):
         result = _roundtrip(_OBML_FULL)
-        amount = result["dataObjects"]["Orders"]["columns"]["AMOUNT"]
+        amount = result["dataObjects"]["Orders"]["columns"]["Amount"]
         assert amount.get("sqlPrecision") == 18
 
     def test_sql_scale_roundtrip(self):
         result = _roundtrip(_OBML_FULL)
-        amount = result["dataObjects"]["Orders"]["columns"]["AMOUNT"]
+        amount = result["dataObjects"]["Orders"]["columns"]["Amount"]
         assert amount.get("sqlScale") == 4
 
     def test_num_class_roundtrip(self):
         result = _roundtrip(_OBML_FULL)
-        amount = result["dataObjects"]["Orders"]["columns"]["AMOUNT"]
+        amount = result["dataObjects"]["Orders"]["columns"]["Amount"]
         assert amount.get("numClass") == "decimal"
 
     def test_column_owner_roundtrip(self):
         result = _roundtrip(_OBML_FULL)
-        order_id = result["dataObjects"]["Orders"]["columns"]["ORDER_ID"]
+        order_id = result["dataObjects"]["Orders"]["columns"]["Order ID"]
         assert order_id.get("owner") == "data-eng"
 
     def test_column_comment_roundtrip(self):
         result = _roundtrip(_OBML_FULL)
-        order_id = result["dataObjects"]["Orders"]["columns"]["ORDER_ID"]
+        order_id = result["dataObjects"]["Orders"]["columns"]["Order ID"]
         assert order_id.get("comment") == "Primary key"
 
 
@@ -270,21 +269,21 @@ class TestDataObjectProperties:
 class TestDimensionProperties:
     """Dimension properties roundtrip.
 
-    Note: Ossie uses column *code* as the field name, so after roundtrip the
-    dimension key becomes the physical code (ORDER_DATE).
+    Ossie names each field by its OBML column name, so the dimension keeps
+    its name through the roundtrip.
     """
 
     def test_dimension_result_type_roundtrip(self):
         result = _roundtrip(_OBML_FULL)
-        assert result["dimensions"]["ORDER_DATE"].get("resultType") == "date"
+        assert result["dimensions"]["Order Date"].get("resultType") == "date"
 
     def test_dimension_description_roundtrip(self):
         result = _roundtrip(_OBML_FULL)
-        assert result["dimensions"]["ORDER_DATE"].get("description") == "Order date dimension"
+        assert result["dimensions"]["Order Date"].get("description") == "Order date dimension"
 
     def test_dimension_owner_roundtrip(self):
         result = _roundtrip(_OBML_FULL)
-        assert result["dimensions"]["ORDER_DATE"].get("owner") == "analytics"
+        assert result["dimensions"]["Order Date"].get("owner") == "analytics"
 
 
 class TestCumulativeMetricDataType:

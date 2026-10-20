@@ -1,0 +1,49 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# A `sub_query` dimension reads a *measure* of another cube, which Cube resolves by
+# aggregating in a subquery. An Ossie field expression is dataset-scoped SQL over
+# columns, so the reference survives as text and is reported.
+cubes:
+  - name: products
+    sql_table: shop.public.products
+    joins:
+      - name: orders
+        sql: "{CUBE}.id = {orders}.product_id"
+        relationship: one_to_many
+    dimensions:
+      - name: id
+        sql: id
+        type: number
+        primary_key: true
+      - name: order_count
+        sql: "{orders.count}"
+        type: number
+        sub_query: true
+  - name: orders
+    sql_table: shop.public.orders
+    dimensions:
+      - name: id
+        sql: id
+        type: number
+        primary_key: true
+      - name: product_id
+        sql: product_id
+        type: number
+    measures:
+      - name: count
+        type: count

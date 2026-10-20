@@ -36,11 +36,20 @@ There are two layers in Ossie that need an expression language:
 * **Ontology layer.**  This layer maps onto the ontology layer which sits above the logical layer.  It maps more closely to modelling languages like OWL, [(Py)Rel](https://docs.relational.ai) from RelationalAI, and [Legend](https://legend.finos.org) from Goldman Sachs  
 * **Logical layer.**  This layer maps directly to the databases and physical layer.  It maps closely to traditional BI semantic models.
 
-This proposal is only targeted at the Logical Layer.  It would be nice if the Ontological layer could re-use the same expression language, but that will be treated as a separate proposal.
+This proposal is only targeted at the Logical Layer.  It would be nice if the Ontological layer could reuse the same expression language, but that will be treated as a separate proposal.
 
 This document defines the SQL expression language subset that Ossie-compliant implementations MUST support. The goal is to provide a portable expression language that works across all Ossie implementations while allowing vendors to expose richer database-specific functionality through dialect extensions.  In particular, it is meant for expressions at the logical layer.  This means metrics, fields, filters, etc  In the future, expressions such as arbitrary join expressions should also use this expression language.
 
 We expect there will be extensions to this language to cover concepts such as sub-queries, grain calculations, etc.  However, these will each have their own proposal.
+
+### Model Declaration vs. Querying
+
+This expression language is scoped to *declaring* a model — authoring the logical layer's metrics, fields, and filters. It does not define a query interface. The two are distinct:
+
+* **Declaration** uses expressions to define what a model is. This document governs declaration.
+* **Querying** evaluates a question against a declared model and returns rows. Query interfaces will be defined in separate documents.
+
+Consequently, the expressions defined here only declare a model: adding a dialect here does not mean Ossie supports querying with that dialect.
 
 ### Design Principles
 
@@ -51,8 +60,8 @@ We expect there will be extensions to this language to cover concepts such as su
 
 ### Changes to YAML
 
-1) Create a new dialect in the Ossie spec: Ossie\_SQL\_2026, which refers to this language specification.   
-2) Make Ossie\_SQL\_2026 the default dialect if one is not chosen.
+1) OSSIE\_SQL\_2026 is registered as a dialect in the Ossie spec; it refers to this language specification.   
+2) Make OSSIE\_SQL\_2026 the default dialect if one is not chosen.
 
 ### Standards Reference
 
@@ -61,6 +70,8 @@ The core language is based on **ANSI SQL:2003 Core** (ISO/IEC 9075-2:2003), sele
 - Wide adoption across major databases (Snowflake, Databricks, PostgreSQL, BigQuery)  
 - Well-defined semantics  
 - Support for modern analytical features (window functions, CTEs)
+
+The language also requires optional SQL:2003 feature T612, the aggregate `<filter clause>` (`FILTER (WHERE ...)`), which is not part of Core. See [Conditional Aggregations](#conditional-aggregations-required).
 
 ### Namespacing and Identifier Resolution
 
@@ -76,11 +87,11 @@ All identifiers MUST be valid names and follow ANSI SQL naming, with the size li
 
 Regular identifiers (unquoted) should be case insensitive.    For example, an identifier id is regular, so it would match with Id or iD.  Comparing quoted and non-quoted identifiers is DB specific, so for best portability it is best to use simple identifiers.
 
-The quote character for the Ossie dialect will follow ANSI SQL and support the double quote character (“).  This means that if an expression is in a field expression or as an identifier in the YAML, this will be the expected quoting.  However, there are some databases that use other escape characters.  Working with these have the option of either creating expressions using their dialect or having the Ossie document written in the Ossie dialect, but then having the SQL Interface queried in the local dialect.  The SQL Interface will be defined in a different document. 
+The quote character for the Ossie dialect will follow ANSI SQL and support the double quote character (“).  This means that if an expression is in a field expression or as an identifier in the YAML, this will be the expected quoting.  However, there are some databases that use other escape characters.  Working with these have the option of either creating expressions using their dialect or having the Ossie document written in the Ossie dialect, but then queried in the local dialect. 
 
 #### Comparison Table
 
-| You type this in SQL | Equivalen to | Will it match a column created as id?             |
+| You type this in SQL | Equivalent to | Will it match a column created as id?             |
 | :---- |:-------------|:--------------------------------------------------|
 | id | ID           | **Yes** (Standard behavior)                       |
 | Id | ID           | **Yes** (Standard behavior)                       |
@@ -143,8 +154,8 @@ Standard SQL operator precedence applies (highest to lowest):
 3. Multiplication/Division: `*`, `/`, `%`  
 4. Addition/Subtraction: `+`, `-`  
 5. Comparison: `=`, `<>`, `<`, `>`, `<=`, `>=`, `LIKE`, `IN`, `BETWEEN`, `IS NULL`   
-6`AND`  
-7`OR`
+6. Logical AND: `AND`  
+7. Logical OR: `OR`
 
 ---
 
@@ -217,7 +228,7 @@ APPROX_PERCENTILE(response_time, 0.95)
 ### Conditional Aggregations (REQUIRED)
 
 SUM / COUNT aggregation functions support `DISTINCT.`   
-All aggregations should support filtered aggregation:
+All aggregations must support filtered aggregation:
 
 ```sql
 -- DISTINCT modifier
@@ -225,9 +236,37 @@ SUM(DISTINCT amount)
 COUNT(DISTINCT customer_id)
 
 -- Filtered aggregation via CASE
-SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END)
+SUM(CASE WHEN status = 'completed' THEN amount END)
 COUNT(CASE WHEN status = 'completed' THEN 1 END)
+
+-- Filtered aggregation via FILTER (WHERE ...)
+SUM(amount) FILTER (WHERE status = 'completed')
+COUNT(*) FILTER (WHERE status = 'completed')
 ```
+
+#### `FILTER (WHERE ...)` (REQUIRED)
+
+Every aggregate function must support a postfix `FILTER (WHERE <predicate>)` modifier:
+
+```
+<aggregate_function>(<args>) FILTER (WHERE <predicate>)
+```
+
+The clause has the semantics of the SQL:2003 `<filter clause>` (optional feature T612): the aggregate considers only the rows for which `<predicate>` succeeds. `FILTER` is applied to the aggregate's input, not as a query `WHERE`, so it never removes output groups. A converter or engine MUST NOT rewrite an intrinsic `FILTER` predicate into a query-level `WHERE` clause when doing so would change group membership.
+
+`FILTER (WHERE ...)` is a modifier on an aggregate expression. It is not the standalone `WHERE` clause listed under [Not Supported in Expressions](#not-supported-in-expressions). The `<predicate>` must reference only fields of the same dataset as the aggregate's arguments.
+
+An engine MAY evaluate `FILTER (WHERE ...)` by rewriting it to an equivalent expression, but the result MUST be identical to the result that the `<filter clause>` semantics define.
+
+*Note (non-normative):* For an aggregate function that ignores `NULL` inputs, `FILTER (WHERE ...)` is equivalent to a `CASE` expression with no `ELSE`:
+
+```sql
+SUM(amount) FILTER (WHERE status = 'completed')                  --> SUM(CASE WHEN status = 'completed' THEN amount END)
+COUNT(*) FILTER (WHERE status = 'completed')                     --> COUNT(CASE WHEN status = 'completed' THEN 1 END)
+COUNT(DISTINCT customer_id) FILTER (WHERE status = 'completed')  --> COUNT(DISTINCT CASE WHEN status = 'completed' THEN customer_id END)
+```
+
+A non-matching row contributes `NULL`, which these functions ignore. An `ELSE 0` would count as a real row and would corrupt `AVG`, `MIN`, `MAX`, and `COUNT`. The identity does not hold for an aggregate function that does not ignore `NULL` inputs, such as `ARRAY_AGG`.
 
 ### Decomposability Reference
 
@@ -398,7 +437,7 @@ a dialect extension.
 | Function | Syntax | Description |
 | :---- | :---- | :---- |
 | `CONCAT` | `CONCAT(str1, str2, ...)` | Concatenate strings |
-| `||` | `str1 || str2` | Concatenation operator |
+| `\|\|` | `str1 \|\| str2` | Concatenation operator |
 | `LENGTH` | `LENGTH(str)` | String length in characters |
 | `LOWER` | `LOWER(str)` | Convert to lowercase |
 | `UPPER` | `UPPER(str)` | Convert to uppercase |
@@ -548,9 +587,20 @@ When, adding the query interface, window functions will be subject to where they
 ```sql
 function_name(args) OVER (
   [PARTITION BY partition_expr, ...]
-  [ORDER BY order_expr [ASC|DESC], ...]
+  [ORDER BY order_expr [ASC|DESC] [NULLS {FIRST|LAST}], ...]
   [frame_clause]
 )
+```
+
+Each `ORDER BY` item has three independent parts:
+
+- `order_expr`: the value rows are sorted by.
+- `ASC` or `DESC`: the sort direction of non-NULL values.
+- `NULLS FIRST` or `NULLS LAST`: whether NULL values of `order_expr` sort before or after its non-NULL values, regardless of the sort direction.
+
+```sql
+-- Rank non-NULL revenues from high to low, rows with a NULL revenue last
+RANK() OVER (ORDER BY revenue DESC NULLS LAST)
 ```
 
 Frame clause options:
@@ -664,7 +714,7 @@ expression:
 | :---- | :---- | :---- | :---- | :---- | :---- |
 | Date truncation | `DATE_TRUNC('month', d)` | `DATE_TRUNC('month', d)` | `DATE_TRUNC(d, MONTH)` | `DATE_TRUNC('month', d)` | `DATE_TRUNC('month', d)` |
 | Date add | `DATEADD(day, 7, d)` | `DATEADD(day, 7, d)` | `DATE_ADD(d, INTERVAL 7 DAY)` | `DATE_ADD(d, 7)` | `d + INTERVAL '7 days'` |
-| String concat | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `a || b` |
+| String concat | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `a \|\| b` |
 | Null coalesce | `COALESCE(a, b)` | `COALESCE(a, b)` or `NVL(a, b)` | `COALESCE(a, b)` or `IFNULL(a, b)` | `COALESCE(a, b)` | `COALESCE(a, b)` |
 | Current timestamp | `CURRENT_TIMESTAMP` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP` |
 | Substring | `SUBSTRING(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTRING(s, start, len)` | `SUBSTRING(s, start, len)` |
@@ -682,65 +732,91 @@ This section maps Ossie standard functions to their equivalents in popular BI to
 
 ### Aggregation Function Mapping
 
-| Ossie Standard | Tableau | Looker Studio | DAX |
-| :---- | :---- | :---- | :---- |
-| `SUM(x)` | `SUM(x)` | `SUM(X)` | `SUM(x)` |
-| `COUNT(x)` | `COUNT(x)` | `COUNT(X)` | `COUNT(x)` |
-| `COUNT(DISTINCT x)` | `COUNTD(x)` | `COUNT_DISTINCT(X)` | `DISTINCTCOUNT(x)` |
-| `AVG(x)` | `AVG(x)` | `AVG(X)` | `AVERAGE(x)` |
-| `MIN(x)` | `MIN(x)` | `MIN(X)` | `MIN(x)` |
-| `MAX(x)` | `MAX(x)` | `MAX(X)` | `MAX(x)` |
-| `STDDEV(x)` | `STDEV(x)` | `STDDEV(X)` | `STDEV.S(x)` |
-| `STDDEV_POP(x)` | `STDEVP(x)` | `STDDEV(X)` | `STDEV.P(x)` |
-| `VARIANCE(x)` | `VAR(x)` | `VARIANCE(X)` | `VAR.S(x)` |
-| `MEDIAN(x)` | `MEDIAN(x)` | `MEDIAN(X)` | `MEDIAN(x)` |
-| `PERCENTILE_CONT(x, 0.75)` | `PERCENTILE(x, 0.75)` | `PERCENTILE(X, 75)` | `PERCENTILE.INC(x, 0.75)` |
+| Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
+| :---- | :---- | :---- | :---- | :---- |
+| `SUM(x)` | `SUM(x)` | `SUM(X)` | `SUM(x)` | `Sum(x)` |
+| `COUNT(x)` | `COUNT(x)` | `COUNT(X)` | `COUNT(x)` | `Count(x)` |
+| `COUNT(DISTINCT x)` | `COUNTD(x)` | `COUNT_DISTINCT(X)` | `DISTINCTCOUNT(x)` | `CountDistinct(x)` |
+| `AVG(x)` | `AVG(x)` | `AVG(X)` | `AVERAGE(x)` | `Avg(x)` |
+| `MIN(x)` | `MIN(x)` | `MIN(X)` | `MIN(x)` | `Min(x)` |
+| `MAX(x)` | `MAX(x)` | `MAX(X)` | `MAX(x)` | `Max(x)` |
+| `STDDEV(x)` | `STDEV(x)` | `STDDEV(X)` | `STDEV.S(x)` | `StdDev(x)` |
+| `STDDEV_POP(x)` | `STDEVP(x)` | `STDDEV(X)` | `STDEV.P(x)` | N/A |
+| `VARIANCE(x)` | `VAR(x)` | `VARIANCE(X)` | `VAR.S(x)` | `Variance(x)` |
+| `MEDIAN(x)` | `MEDIAN(x)` | `MEDIAN(X)` | `MEDIAN(x)` | `Median(x)` |
+| `PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY x)` | `PERCENTILE(x, 0.75)` | `PERCENTILE(X, 75)` | `PERCENTILE.INC(x, 0.75)` | `Percentile(x, 0.75)` |
+
+Two of the DAX mappings are not the same-named function, because DAX treats BLANK
+differently from SQL's NULL:
+
+- `COUNT(x)` maps to `COUNTA`, not `COUNT`. Both count non-blank values, but DAX
+  `COUNT` documents `TRUE`/`FALSE` columns as unsupported, whereas SQL `COUNT(x)`
+  counts non-NULL values of any type. `COUNTA` counts non-blank values of any type.
+- `COUNT(DISTINCT x)` maps to `DISTINCTCOUNTNOBLANK`, not `DISTINCTCOUNT`. SQL
+  excludes NULL from the distinct set, but DAX `DISTINCTCOUNT` counts BLANK as a
+  distinct value, so it is off by one on any nullable column.
+
+Two further differences have no faithful DAX equivalent and should be expected rather
+than worked around:
+
+- Over an empty set the SQL count functions return `0`, while the DAX ones return
+  BLANK. This is intentional in DAX, since it lets a visual hide the empty row.
+- `STDEV.S`, `STDEV.P`, `VAR.S` and `VAR.P` raise an error when fewer than two
+  non-blank rows remain, where SQL yields NULL (sample) or `0` (population).
 
 ### Date Function Mapping
 
-| Ossie Standard | Tableau | Looker Studio | DAX |
-| :---- | :---- | :---- | :---- |
-| `YEAR(d)` | `YEAR(d)` | `YEAR(Date)` | `YEAR(d)` |
-| `MONTH(d)` | `MONTH(d)` | `MONTH(Date)` | `MONTH(d)` |
-| `DAY(d)` | `DAY(d)` | `DAY(Date)` | `DAY(d)` |
-| `DATE_TRUNC('month', d)` | `DATETRUNC('month', d)` | `TODATE(d, "YYYYMM01", "YYYYMMDD")` | `DATE(YEAR(d), MONTH(d), 1)` |
-| `DATEADD(day, n, d)` | `DATEADD('day', n, d)` | `DATE_ADD(d, n)` (days only) | `DATE(d) + n` or `DATEADD(d, n, DAY)` |
-| `DATEDIFF(day, d1, d2)` | `DATEDIFF('day', d1, d2)` | `DATE_DIFF(d1, d2)` | `DATEDIFF(d1, d2, DAY)` |
-| `CURRENT_DATE` | `TODAY()` | `TODAY()` | `TODAY()` |
+| Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
+| :---- | :---- | :---- | :---- | :---- |
+| `YEAR(d)` | `YEAR(d)` | `YEAR(Date)` | `YEAR(d)` | `Year(d)` |
+| `MONTH(d)` | `MONTH(d)` | `MONTH(Date)` | `MONTH(d)` | `Month(d)` |
+| `DAY(d)` | `DAY(d)` | `DAY(Date)` | `DAY(d)` | `Day(d)` |
+| `DATE_TRUNC('month', d)` | `DATETRUNC('month', d)` | `TODATE(d, "YYYYMM01", "YYYYMMDD")` | `DATE(YEAR(d), MONTH(d), 1)` | N/A — no direct equivalent; Sigma's UI-driven date bucketing is not addressable as a formula argument |
+| `DATEADD(day, n, d)` | `DATEADD('day', n, d)` | `DATE_ADD(d, n)` (days only) | `DATE(d) + n` or `DATEADD(d, n, DAY)` | `DateAdd(d, n, "day")` |
+| `DATEDIFF(day, d1, d2)` | `DATEDIFF('day', d1, d2)` | `DATE_DIFF(d1, d2)` | `DATEDIFF(d1, d2, DAY)` | `DateDiff(d1, d2, "day")` |
+| `CURRENT_DATE` | `TODAY()` | `TODAY()` | `TODAY()` | `Today()` |
+
+DAX also has a `DATEADD` function, but it is not the equivalent of the scalar SQL
+`DATEADD`: it is a time-intelligence function that returns a *table* of shifted dates
+for the current filter context, and it requires a marked date table with a contiguous
+date range. For a row-level shift, add a number of days to the date directly, or use
+`EDATE` to shift by whole months.
 
 ### String Function Mapping
 
-| Ossie Standard | Tableau | Looker Studio | DAX |
-| :---- | :---- | :---- | :---- |
-| `CONCAT(a, b)` | `a + b` | `CONCAT(X, Y)` | `CONCATENATE(a, b)` or `a & b` |
-| `LENGTH(s)` | `LEN(s)` | `LENGTH(X)` | `LEN(s)` |
-| `LOWER(s)` | `LOWER(s)` | `LOWER(X)` | `LOWER(s)` |
-| `UPPER(s)` | `UPPER(s)` | `UPPER(X)` | `UPPER(s)` |
-| `TRIM(s)` | `TRIM(s)` | `TRIM(X)` | `TRIM(s)` |
-| `LEFT(s, n)` | `LEFT(s, n)` | `LEFT_TEXT(X, n)` | `LEFT(s, n)` |
-| `RIGHT(s, n)` | `RIGHT(s, n)` | `RIGHT_TEXT(X, n)` | `RIGHT(s, n)` |
-| `SUBSTRING(s, start, len)` | `MID(s, start, len)` | `SUBSTR(X, start, len)` | `MID(s, start, len)` |
-| `REPLACE(s, from, to)` | `REPLACE(s, from, to)` | `REPLACE(X, Y, Z)` | `SUBSTITUTE(s, from, to)` |
-| `CONTAINS(s, sub)` | `CONTAINS(s, sub)` | `CONTAINS_TEXT(X, text)` | `CONTAINSSTRING(s, sub)` |
+| Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
+| :---- | :---- | :---- | :---- | :---- |
+| `CONCAT(a, b)` | `a + b` | `CONCAT(X, Y)` | `CONCATENATE(a, b)` or `a & b` | `Concat(a, b)` or `a & b` |
+| `LENGTH(s)` | `LEN(s)` | `LENGTH(X)` | `LEN(s)` | `Length(s)` |
+| `LOWER(s)` | `LOWER(s)` | `LOWER(X)` | `LOWER(s)` | `Lower(s)` |
+| `UPPER(s)` | `UPPER(s)` | `UPPER(X)` | `UPPER(s)` | `Upper(s)` |
+| `TRIM(s)` | `TRIM(s)` | `TRIM(X)` | `TRIM(s)` | `Trim(s)` |
+| `LEFT(s, n)` | `LEFT(s, n)` | `LEFT_TEXT(X, n)` | `LEFT(s, n)` | `Left(s, n)` |
+| `RIGHT(s, n)` | `RIGHT(s, n)` | `RIGHT_TEXT(X, n)` | `RIGHT(s, n)` | `Right(s, n)` |
+| `SUBSTRING(s, start, len)` | `MID(s, start, len)` | `SUBSTR(X, start, len)` | `MID(s, start, len)` | `Mid(s, start, len)` |
+| `REPLACE(s, from, to)` | `REPLACE(s, from, to)` | `REPLACE(X, Y, Z)` | `SUBSTITUTE(s, from, to)` | `Replace(s, from, to)` |
+| `CONTAINS(s, sub)` | `CONTAINS(s, sub)` | `CONTAINS_TEXT(X, text)` | `CONTAINSSTRING(s, sub)` | `Contains(s, sub)` |
 
 ### Conditional Function Mapping
 
-| Ossie Standard | Tableau | Looker Studio | DAX |
-| :---- | :---- | :---- | :---- |
-| `CASE WHEN...` | `CASE WHEN...` or `IF...` | `CASE WHEN...` | `SWITCH(TRUE(), ...)` |
-| `IF(cond, t, f)` | `IF cond THEN t ELSE f END` | N/A (use CASE) | `IF(cond, t, f)` |
-| `COALESCE(a, b)` | `IFNULL(a, b)` or `ZN(a)` | `COALESCE(...)` | `COALESCE(a, b)` |
-| `NULLIF(a, b)` | `IF a = b THEN NULL ELSE a END` | N/A | `IF(a = b, BLANK(), a)` |
+| Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
+| :---- | :---- | :---- | :---- | :---- |
+| `CASE WHEN...` | `CASE WHEN...` or `IF...` | `CASE WHEN...` | `SWITCH(TRUE(), ...)` | Only 3-argument `If(cond, t, f)`; no native multi-branch `CASE` |
+| `IF(cond, t, f)` | `IF cond THEN t ELSE f END` | N/A (use CASE) | `IF(cond, t, f)` | `If(cond, t, f)` |
+| `COALESCE(a, b)` | `IFNULL(a, b)` or `ZN(a)` | `COALESCE(...)` | `COALESCE(a, b)` | `IfNull(a, b)` (2-argument only) |
+| `NULLIF(a, b)` | `IF a = b THEN NULL ELSE a END` | N/A | `IF(a = b, BLANK(), a)` | `If(a = b, Null(), a)` |
 
 ### Window Function Mapping
 
-| Ossie Standard | Tableau | Looker Studio | DAX |
-| :---- | :---- | :---- | :---- |
-| `ROW_NUMBER() OVER(...)` | `INDEX()` | N/A | `RANKX(...)` with DENSE |
-| `RANK() OVER(...)` | `RANK(expr)` | N/A | `RANKX(...)` |
-| `SUM(...) OVER(PARTITION BY...)` | `{FIXED [...]: SUM(...)}` | N/A (blending only) | Context-dependent |
-| `LAG(x, 1) OVER(ORDER BY...)` | `LOOKUP(x, -1)` | N/A | `CALCULATE(x, PREVIOUSDAY(...))` |
-| `RUNNING_SUM(...)` | `RUNNING_SUM(SUM(...))` | N/A | `CALCULATE(SUM(...), FILTER(...))` |
+| Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
+| :---- | :---- | :---- | :---- | :---- |
+| `ROW_NUMBER() OVER(...)` | `INDEX()` | N/A | `RANKX(...)` with DENSE | `RowNumber()` — but partition/order come from UI table-calculation configuration, not formula arguments, so it has no portable expression form |
+| `RANK() OVER(...)` | `RANK(expr)` | N/A | `RANKX(...)` | `Rank()` — same UI-configuration caveat as `RowNumber()` |
+| `SUM(...) OVER(PARTITION BY...)` | `{FIXED [...]: SUM(...)}` | N/A (blending only) | Context-dependent | `RunningSum(...)`/`RunningAvg(...)` — same UI-configuration caveat |
+| `LAG(x, 1) OVER(ORDER BY...)` | `LOOKUP(x, -1)` | N/A | `CALCULATE(x, PREVIOUSDAY(...))` | `Lag(x, 1)` — same UI-configuration caveat |
+| `RUNNING_SUM(...)` | `RUNNING_SUM(SUM(...))` | N/A | `CALCULATE(SUM(...), FILTER(...))` | `RunningSum(...)` — same UI-configuration caveat |
+
+Sigma's table-calculation functions (`RowNumber`, `Rank`, `RunningSum`, `RunningAvg`, `Lag`, `Lead`, etc.) resolve their partition/order context from workbook UI configuration (which pivot/table the calculation is attached to) rather than from arguments passed in the formula text itself. Because that context isn't recoverable from the formula string alone, the Sigma converter (`converters/sigma/`) treats these as untranslatable to ANSI SQL and carries the original Sigma formula through in the `SIGMA` dialect only — see `converters/sigma/LIMITATIONS.md`.
 
 ---
 

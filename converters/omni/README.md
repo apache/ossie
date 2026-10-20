@@ -58,6 +58,10 @@ topic curation, the model file, ...) are instead **preserved** in
 [requirement](#requirements) **raises a `ConversionError`** -- the converter
 never silently drops a field or produces an invalid result.
 
+Ossie documents contain one model directly at the root, with `version`, `name`,
+`datasets`, and optional model properties. Legacy `semantic_model` wrappers
+(arrays or objects) are rejected.
+
 ## Installation
 
 ```bash
@@ -100,7 +104,7 @@ specific to **export** (Ossie -> Omni) or **import** (Omni -> Ossie).
 
 | Ossie | Omni | Notes |
 |---|---|---|
-| `semantic_model.name` | topic file name | Import: the mapped topic's name (override with `--name`). |
+| `name` | topic file name | Import: the mapped topic's name (override with `--name`). |
 | `model.description` / `ai_context.instructions` | topic `description` / `ai_context` | Import: taken from the sole topic, or `--topic`. |
 | dataset | `views/<name>.view.yaml` | Import: a stashed original path (`DELIGHTED/response.view`) is restored on export. |
 | `dataset.source` `catalog.schema.table` / `schema.table` | view `catalog` + `schema` + `table_name` | `table_name` left implicit when it matches the file name; a part that is not a plain identifier is double-quoted (`"Omni Views".upload`). |

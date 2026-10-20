@@ -19,6 +19,16 @@
 
 # Apache Ossie Converters
 
+## Document format
+
+Converters use the flat `0.2.0.dev0` core format: one model per JSON/YAML document,
+with `name`, `datasets`, `relationships`, and `metrics` at the root alongside
+`version`. Legacy `semantic_model` arrays or object wrappers must be migrated
+before conversion; see the [migration guidance](../core-spec/spec.md#migrating-earlier-document-shapes).
+For catalog exports, write separate documents rather than wrapping multiple
+models in one file. Ontology documents retain their embedded `semantic_model`
+property as defined by the ontology schema.
+
 ## Overview
 
 An Ossie Converter translates between the Ossie semantic model format and a specific vendor's semantic implementation. This enables teams to author a semantic model once in the Ossie standard and then generate the corresponding vendor-specific representation automatically.
@@ -75,7 +85,14 @@ The Ossie specification currently defines extensions for the following vendors:
 | `DATABRICKS` | Databricks semantic layer |
 | `OMNI` | Omni semantic model |
 | `WISDOM` | WisdomAI domain |
-| `NVIDIA_GSF` | NVIDIA Generative Semantic Fabric standalone YAML |
+| `NVIDIA_AUTO_ONTOLOGY` | NVIDIA Auto Ontology model document YAML (formerly `NVIDIA_GSF`) |
+| `SIGMA` | Sigma Computing data model |
+| `THOUGHTSPOT` | ThoughtSpot TML (Model + Table/SQL View) |
+| `CUBE` | Cube data model |
+| `HEX` | Hex semantic project |
+| `HOLISTICS` | Holistics AML dataset |
+
+[`wisdom-semantic-view`](wisdom-semantic-view/README.md) is a separate, fixture-scoped spoke. It reads one Snowflake semantic view, writes one Ossie document, writes a Wisdom domain-export JSON (format `1.0`), and reverses that path. It keeps metric synonyms and `module_custom_instructions.sql_generation`. It does not call `converters/snowflake` (Cortex Analyst export only) or `converters/wisdom` (that spoke drops synonyms and field or metric `ai_context`).
 
 Each vendor may define custom extensions (via the `custom_extensions` field in the Ossie spec) to carry vendor-specific metadata that does not have an equivalent in the core specification.
 
@@ -231,7 +248,7 @@ A converter should map `ai_context` when the target vendor supports equivalent c
 
 1. **Validate input**: Use the [Ossie JSON Schema](../core-spec/ossie-schema.json) and the [validation script](../validation/validate.py) to ensure the source Ossie model is valid before conversion.
 
-2. **Parse the Ossie model**: Load the YAML file and iterate over the top-level `semantic_model` entries.
+2. **Parse the Ossie model**: Load the JSON or YAML document as one model.
 
 3. **Map datasets**: For each dataset, translate the `name`, `source`, `primary_key`, `unique_keys`, and `fields` to the vendor's format. Parse the `source` string (typically `database.schema.table`) into the vendor's catalog structure.
 
@@ -289,7 +306,9 @@ Given the [TPC-DS example](../examples/tpcds_semantic_model.yaml) included in th
 
 ## Contributing a New Converter
 
-To add support for a new vendor:
+The main Ossie repository does not accept new converters. Develop new semantic model and ontology converters in a separate repository. For Apache Ossie hosting, use the [ossie-converters repository](https://github.com/apache/ossie-converters) and coordinate contributions on `dev@ossie.apache.org`. See [Converter Contributions](../CONTRIBUTING.md#converter-contributions) for details.
+
+To add support for a new vendor, in your own repository or in `ossie-converters`:
 
 1. Use a stable `vendor_name` string in each custom extension emitted by the converter.
 2. Define the custom extension schema for the vendor (what vendor-specific metadata fields are supported in the `data` JSON).

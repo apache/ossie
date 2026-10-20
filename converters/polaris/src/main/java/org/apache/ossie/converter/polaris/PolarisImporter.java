@@ -45,23 +45,33 @@ public class PolarisImporter {
     }
 
     /**
-     * Import all tables from all namespaces in the catalog into an Ossie model.
-     * Each namespace becomes a separate semantic model.
+     * Import all tables from all namespaces in the catalog.
+     * Each nonempty namespace becomes a separate Ossie document, in namespace order.
      */
-    public OssieModel importCatalog() throws IOException, InterruptedException {
-        OssieModel model = new OssieModel();
-        model.setVersion("0.2.0.dev0");
+    public List<OssieModel> importCatalog() throws IOException, InterruptedException {
+        List<OssieModel> models = new ArrayList<>();
 
-        List<List<String>> namespaces = client.listNamespaces();
+        List<List<String>> namespaces = new ArrayList<>(client.listNamespaces());
+
+        namespaces.sort((left, right) -> {
+            for (int i = 0; i < Math.min(left.size(), right.size()); i++) {
+                int comparison = left.get(i).compareTo(right.get(i));
+                if (comparison != 0) return comparison;
+            }
+            return Integer.compare(left.size(), right.size());
+        });
 
         for (List<String> namespace : namespaces) {
             SemanticModel sm = importNamespace(namespace);
             if (sm != null && !sm.getDatasets().isEmpty()) {
-                model.getSemanticModels().add(sm);
+                OssieModel model = new OssieModel();
+                model.setVersion("0.2.0.dev0");
+                model.setSemanticModel(sm);
+                models.add(model);
             }
         }
 
-        return model;
+        return models;
     }
 
     /**

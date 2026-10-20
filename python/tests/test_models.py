@@ -16,59 +16,81 @@
 # under the License.
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 import yaml
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from ossie import (
+    OssieAIContextObject,
+    OssieCustomExtension,
+    OssieDataset,
     OssieDataType,
+    OssieDialect,
+    OssieDialectExpression,
     OssieDimension,
     OssieDocument,
     OssieExpression,
     OssieField,
+    OssieMetric,
+    OssieRelationship,
+    OssieSemanticModel,
 )
 
 
-def _expression_data(value: str = "value") -> dict:
-    return {"dialects": [{"dialect": "ANSI_SQL", "expression": value}]}
+# ---------------------------------------------------------------------------
+# Data type tests
+# ---------------------------------------------------------------------------
 
 
-def _expression(value: str = "value") -> OssieExpression:
-    return OssieExpression.model_validate(_expression_data(value))
+def test_dialect_enum_matches_core_schema() -> None:
+    schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    schema = json.loads(schema_path.read_text())
+
+    assert {member.value for member in OssieDialect} == set(
+        schema["$defs"]["Dialect"]["enum"]
+    )
 
 
-def _document() -> dict:
-    return {
-        "version": "0.2.0.dev0",
-        "semantic_model": [
-            {
-                "name": "typed_model",
-                "datasets": [
-                    {
-                        "name": "events",
-                        "source": "catalog.schema.events",
-                        "fields": [
-                            {
-                                "name": "occurred_at",
-                                "expression": _expression_data("occurred_at"),
-                                "dimension": {},
-                                "datatype": "DateTimeTz",
-                            }
-                        ],
-                    }
-                ],
-                "metrics": [
-                    {
-                        "name": "revenue",
-                        "expression": _expression_data("SUM(events.revenue)"),
-                        "datatype": "Decimal",
-                    }
-                ],
-            }
-        ],
-    }
+@pytest.mark.parametrize(
+    "dialect",
+    ["ANSI_SQL", OssieDialect.ANSI_SQL],
+    ids=["string", "enum"],
+)
+def test_dialect_accepts_string_and_enum_input(dialect: str | OssieDialect) -> None:
+    expression = OssieExpression.model_validate(
+        {"dialects": [{"dialect": dialect, "expression": "value"}]}
+    )
+
+    assert expression.dialects[0].dialect is OssieDialect.ANSI_SQL
+
+
+def test_dialect_rejects_unknown_string() -> None:
+    with pytest.raises(ValidationError):
+        OssieExpression.model_validate(
+            {"dialects": [{"dialect": "NOT_A_DIALECT", "expression": "value"}]}
+        )
+
+
+def test_ossie_sql_2026_dialect_survives_serialization(document_data: dict) -> None:
+    data = document_data
+    field = data["datasets"][0]["fields"][0]
+    metric = data["metrics"][0]
+    for item in (field, metric):
+        item["expression"]["dialects"][0]["dialect"] = "OSSIE_SQL_2026"
+
+    document = OssieDocument.model_validate(data)
+
+    for item in (document.datasets[0].fields[0], document.metrics[0]):
+        assert item.expression.dialects[0].dialect is OssieDialect.OSSIE_SQL_2026
+
+    as_json = json.loads(document.to_ossie_json())
+    as_yaml = yaml.safe_load(document.to_ossie_yaml())
+    for serialized in (as_json, as_yaml):
+        assert serialized == data
+        assert OssieDocument.model_validate(serialized) == document
 
 
 def test_data_type_enum_matches_core_schema() -> None:
@@ -86,29 +108,340 @@ def test_data_type_enum_matches_core_schema() -> None:
     }
 
 
-def test_field_and_metric_datatypes_survive_serialization() -> None:
-    document = OssieDocument.model_validate(_document())
+def test_field_and_metric_datatypes_survive_serialization(document_data: dict) -> None:
+    document = OssieDocument.model_validate(document_data)
+    field = document.datasets[0].fields[0]
+    metric = document.metrics[0]
 
-    field = document.semantic_model[0].datasets[0].fields[0]
-    metric = document.semantic_model[0].metrics[0]
     assert field.datatype is OssieDataType.DATE_TIME_TZ
     assert metric.datatype is OssieDataType.DECIMAL
 
     as_json = json.loads(document.to_ossie_json())
     as_yaml = yaml.safe_load(document.to_ossie_yaml())
     for serialized in (as_json, as_yaml):
-        model = serialized["semantic_model"][0]
+        model = serialized
         assert model["datasets"][0]["fields"][0]["datatype"] == "DateTimeTz"
         assert model["metrics"][0]["datatype"] == "Decimal"
 
 
-def test_invalid_datatype_is_rejected() -> None:
-    document = _document()
-    field = document["semantic_model"][0]["datasets"][0]["fields"][0]
+def test_document_serialization_preserves_flat_model_and_metadata(
+    document_data: dict,
+) -> None:
+    data = document_data
+    data.update(
+        description="A portable model",
+        ai_context="Use the event timestamp",
+        custom_extensions=[{"vendor_name": "SIGMA", "data": '{"id":"model-1"}'}],
+        relationships=[
+            {
+                "name": "event_link",
+                "from": "events",
+                "to": "events",
+                "from_columns": ["id"],
+                "to_columns": ["id"],
+            }
+        ],
+    )
+    document = OssieDocument.model_validate(data)
+
+    for serialized in (json.loads(document.to_ossie_json()), yaml.safe_load(document.to_ossie_yaml())):
+        assert serialized == data
+        assert "semantic_model" not in serialized
+        assert OssieDocument.model_validate(serialized) == document
+
+
+@pytest.mark.parametrize(
+    "serialize", ["model_dump", "model_dump_json", "to_ossie_yaml", "to_ossie_json"]
+)
+def test_document_serialization_puts_version_first(
+    serialize: str, document_data: dict
+) -> None:
+    data = document_data
+    document = OssieDocument.model_validate(data)
+
+    serialized = getattr(document, serialize)()
+    if isinstance(serialized, str):
+        serialized = yaml.safe_load(serialized)
+
+    assert next(iter(serialized)) == "version"
+    assert serialized["version"] == data["version"]
+
+
+@pytest.mark.parametrize(
+    "serialize", ["model_dump", "model_dump_json", "to_ossie_yaml", "to_ossie_json"]
+)
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"exclude": {"version"}},
+        {"include": {"name", "datasets"}},
+        {"exclude_defaults": True},
+        {"exclude_unset": True},
+    ],
+)
+def test_document_serialization_can_omit_version(
+    serialize: str, options: dict, document_data: dict
+) -> None:
+    data = document_data
+    del data["version"]
+    document = OssieDocument.model_validate(data)
+
+    serialized = getattr(document, serialize)(**options)
+    if isinstance(serialized, str):
+        serialized = yaml.safe_load(serialized)
+
+    assert "version" not in serialized
+    assert serialized["name"] == data["name"]
+
+
+def test_document_serialization_schema_preserves_model_fields() -> None:
+    schema = OssieDocument.model_json_schema(mode="serialization")
+
+    assert schema["properties"]["version"]["type"] == "string"
+    assert schema["properties"]["datasets"]["type"] == "array"
+    # Early Pydantic 2.x versions also require defaulted fields in serialization schemas.
+    assert {"name", "datasets"} <= set(schema["required"])
+    assert schema["additionalProperties"] is False
+
+
+@pytest.mark.parametrize(
+    "legacy_value",
+    [
+        None,
+        [],
+        {"name": "legacy", "datasets": []},
+        [{"name": "legacy", "datasets": []}],
+        [{"name": "first", "datasets": []}, {"name": "second", "datasets": []}],
+    ],
+)
+@pytest.mark.parametrize("include_root_model", [False, True])
+def test_document_rejects_legacy_wrapper(
+    document_data: dict, legacy_value: object, include_root_model: bool
+) -> None:
+    data = document_data if include_root_model else {"version": "0.2.0.dev0"}
+    data["semantic_model"] = legacy_value
+
+    with pytest.raises(ValidationError) as error:
+        OssieDocument.model_validate(data)
+
+    assert any(
+        item["loc"] == ("semantic_model",) and item["type"] == "extra_forbidden"
+        for item in error.value.errors()
+    )
+
+
+@pytest.mark.parametrize("property_name", ["name", "datasets"])
+def test_document_requires_root_model_properties(
+    document_data: dict, property_name: str
+) -> None:
+    data = document_data
+    del data[property_name]
+
+    with pytest.raises(ValidationError):
+        OssieDocument.model_validate(data)
+
+
+@pytest.mark.parametrize("property_name", ["dialects", "vendors"])
+def test_document_rejects_removed_root_metadata(
+    document_data: dict, property_name: str
+) -> None:
+    data = document_data
+    data[property_name] = []
+    with pytest.raises(ValidationError):
+        OssieDocument.model_validate(data)
+
+
+def test_embedded_semantic_model_has_no_document_metadata(document_data: dict) -> None:
+    data = document_data
+    del data["version"]
+
+    embedded = OssieSemanticModel.model_validate(data)
+
+    assert embedded.model_dump(by_alias=True, exclude_none=True, mode="json") == data
+
+
+def test_document_defaults_version_when_omitted(document_data: dict) -> None:
+    del document_data["version"]
+
+    document = OssieDocument.model_validate(document_data)
+
+    assert document.version == "0.2.0.dev0"
+    assert json.loads(document.to_ossie_json())["version"] == "0.2.0.dev0"
+
+
+def test_version_matches_the_core_schema_const() -> None:
+    """The schema pins `version` with `const`, so the model must accept only that value.
+
+    Read from the schema rather than restated, so bumping the spec version there fails
+    here instead of letting the package serialize a version the schema rejects.
+    """
+    schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    schema = json.loads(schema_path.read_text())
+    const = schema["properties"]["version"]["const"]
+
+    assert OssieDocument.model_fields["version"].default == const
+
+    dataset = {"name": "orders", "source": "db.s.orders"}
+    assert OssieDocument.model_validate(
+        {"version": const, "name": "m", "datasets": [dataset]}
+    ).version == const
+
+    with pytest.raises(ValidationError) as error:
+        OssieDocument.model_validate(
+            {"version": "9.9.9", "name": "m", "datasets": [dataset]}
+        )
+    assert any(item["loc"] == ("version",) for item in error.value.errors())
+
+
+def test_document_is_a_semantic_model(document_data: dict) -> None:
+    document = OssieDocument.model_validate(document_data)
+
+    assert isinstance(document, OssieSemanticModel)
+    # `version` is document metadata, absent from the schema's SemanticModel node,
+    # so the embedded model is built from the same data with it removed.
+    del document_data["version"]
+    semantic_model = OssieSemanticModel.model_validate(document_data)
+    assert document.model_dump(exclude={"version"}) == semantic_model.model_dump()
+
+
+@pytest.mark.parametrize(
+    ("container_path", "unknown_key"),
+    [
+        ((), "vendor_extension"),
+        (("datasets", 0), "datasetn"),
+        (("datasets", 0, "fields", 0), "descriptionn"),
+        (("datasets", 0, "fields", 0, "expression"), "dialect"),
+        (("datasets", 0, "fields", 0, "expression", "dialects", 0), "expressions"),
+        (("datasets", 0, "fields", 0, "dimension"), "is_tile"),
+        (("metrics", 0), "expresssion"),
+    ],
+    ids=[
+        "document",
+        "dataset",
+        "field",
+        "expression",
+        "dialect_expression",
+        "dimension",
+        "metric",
+    ],
+)
+def test_every_object_rejects_unknown_fields(
+    document_data: dict, container_path: tuple, unknown_key: str
+) -> None:
+    """The SDK must reject what the schema rejects, not drop it silently.
+
+    Every node of `ossie-schema.json` but `AIContext` sets
+    `additionalProperties: false`. A nested model left at Pydantic's default
+    `extra="ignore"` accepts a mistyped key and loses it on serialization, so a
+    document the SDK round-trips cleanly still fails `ossie validate`.
+    """
+    container = document_data
+    for part in container_path:
+        container = container[part]
+    container[unknown_key] = "typo"
+
+    with pytest.raises(ValidationError) as error:
+        OssieDocument.model_validate(document_data)
+
+    assert any(
+        item["loc"] == (*container_path, unknown_key)
+        and item["type"] == "extra_forbidden"
+        for item in error.value.errors()
+    ), error.value.errors()
+
+
+def test_relationship_rejects_unknown_fields(document_data: dict) -> None:
+    document_data["relationships"] = [
+        {
+            "name": "orders_to_customers",
+            "from": "events",
+            "to": "orders",
+            "from_columns": ["id"],
+            "to_columns": ["id"],
+            "targeet": "typo",
+        }
+    ]
+
+    with pytest.raises(ValidationError) as error:
+        OssieDocument.model_validate(document_data)
+
+    assert any(
+        item["loc"] == ("relationships", 0, "targeet")
+        and item["type"] == "extra_forbidden"
+        for item in error.value.errors()
+    )
+
+
+def test_custom_extension_rejects_unknown_fields(document_data: dict) -> None:
+    document_data["custom_extensions"] = [
+        {"vendor_name": "DBT", "data": "{}", "datta": "typo"}
+    ]
+
+    with pytest.raises(ValidationError) as error:
+        OssieDocument.model_validate(document_data)
+
+    assert any(
+        item["loc"] == ("custom_extensions", 0, "datta")
+        and item["type"] == "extra_forbidden"
+        for item in error.value.errors()
+    )
+
+
+def test_ai_context_keeps_unknown_fields(document_data: dict) -> None:
+    """`AIContext` is the one open node in the schema, so extras stay allowed."""
+    document_data["datasets"][0]["ai_context"] = {"synonyms": ["events"], "glossary": "x"}
+
+    document = OssieDocument.model_validate(document_data)
+
+    assert document.datasets[0].ai_context.glossary == "x"
+    assert "glossary" in document.model_dump(by_alias=True, exclude_none=True, mode="json")[
+        "datasets"
+    ][0]["ai_context"]
+
+
+def test_unknown_field_names_match_the_schema_allowlist() -> None:
+    """Each forbidding schema node needs a forbidding model, and vice versa.
+
+    Without this, a node added to the schema later can keep Pydantic's
+    `extra="ignore"` default and reintroduce the silent drop the SDK had before.
+    """
+    schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    schema = json.loads(schema_path.read_text())
+
+    models = {
+        "CustomExtension": OssieCustomExtension,
+        "DialectExpression": OssieDialectExpression,
+        "Expression": OssieExpression,
+        "Dimension": OssieDimension,
+        "Field": OssieField,
+        "Dataset": OssieDataset,
+        "Relationship": OssieRelationship,
+        "Metric": OssieMetric,
+        "SemanticModel": OssieSemanticModel,
+    }
+
+    forbidden_in_schema = {
+        name
+        for name, node in schema["$defs"].items()
+        if node.get("additionalProperties") is False
+    }
+    assert forbidden_in_schema == set(models), (
+        "the schema gained or dropped an additionalProperties: false node; "
+        "update the model map and configs together"
+    )
+    for name, model in models.items():
+        assert model.model_config.get("extra") == "forbid", f"{model.__name__} must forbid"
+
+    assert OssieAIContextObject.model_config.get("extra") == "allow"
+    assert schema["$defs"]["AIContext"].get("additionalProperties") is not False
+
+
+def test_invalid_datatype_is_rejected(document_data: dict) -> None:
+    field = document_data["datasets"][0]["fields"][0]
     field["datatype"] = "timestamp"
 
     with pytest.raises(ValidationError):
-        OssieDocument.model_validate(document)
+        OssieDocument.model_validate(document_data)
 
 
 @pytest.mark.parametrize(
@@ -123,15 +456,222 @@ def test_invalid_datatype_is_rejected() -> None:
     ],
 )
 def test_effective_time_dimension_role(
+    make_expression: Callable[[str], OssieExpression],
     dimension: OssieDimension | None,
     datatype: OssieDataType | None,
     expected: bool,
 ) -> None:
     field = OssieField(
         name="value",
-        expression=_expression(),
+        expression=make_expression(),
         dimension=dimension,
         datatype=datatype,
     )
 
     assert field.is_time_dimension() is expected
+
+
+@pytest.mark.parametrize("value", ["yes", "true", "True", "no", "off", "1", 1, 0, 1.0, 0.0])
+def test_is_time_rejects_values_the_schema_rejects(value: object) -> None:
+    """The schema types `is_time` as `boolean`, so only true and false are valid.
+
+    Without StrictBool, pydantic's lax mode accepts each of these and stores a real
+    boolean, so the serialized document passes schema validation and the invalid
+    input is lost rather than reported.
+    """
+    with pytest.raises(ValidationError) as error:
+        OssieDimension.model_validate({"is_time": value})
+    assert any(item["loc"] == ("is_time",) for item in error.value.errors())
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_is_time_accepts_the_values_the_schema_allows(value: bool) -> None:
+    assert OssieDimension.model_validate({"is_time": value}).is_time is value
+
+
+def test_is_time_may_be_omitted() -> None:
+    """Omitting the property is what the schema permits; it is not a third value.
+
+    An explicit `null` is not schema-legal, since `is_time` is typed `boolean`.
+    """
+    assert OssieDimension.model_validate({}).is_time is None
+
+
+# ---------------------------------------------------------------------------
+# Identifier constraints
+# ---------------------------------------------------------------------------
+
+
+# Every schema node whose properties the models mirror, so a `minLength` added to
+# the schema without a matching model constraint fails the parity test below.
+_CONSTRAINED_NODES = {
+    "SemanticModel": OssieSemanticModel,
+    "Dataset": OssieDataset,
+    "Field": OssieField,
+    "Metric": OssieMetric,
+    "Relationship": OssieRelationship,
+}
+
+
+def _model_min_length(model: type[BaseModel], prop: str) -> int | None:
+    """Return the `min_length` the model enforces for the field exposed as *prop*."""
+    field = next(
+        (f for name, f in model.model_fields.items() if (f.alias or name) == prop),
+        None,
+    )
+    assert field is not None, f"{model.__name__} has no field exposed as {prop!r}"
+    for meta in field.metadata:
+        if getattr(meta, "min_length", None) is not None:
+            return meta.min_length
+    return None
+
+
+def test_identifier_min_length_matches_core_schema() -> None:
+    """The models must not accept identifiers the schema rejects as empty.
+
+    `to_ossie_yaml()` output is validated against this schema, so a model that
+    permits an empty name serializes a document the schema refuses.
+    """
+    schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    schema = json.loads(schema_path.read_text())
+
+    checked = 0
+    for node, model in _CONSTRAINED_NODES.items():
+        for prop, prop_schema in schema["$defs"][node]["properties"].items():
+            # Pydantic spells both as `min_length`: on a str it is a character count,
+            # on a list an item count, so one comparison covers minLength and minItems.
+            for keyword in ("minLength", "minItems"):
+                expected = prop_schema.get(keyword)
+                if expected is None:
+                    continue
+                assert _model_min_length(model, prop) == expected, (
+                    f"{node}.{prop} requires {keyword} {expected} in the schema"
+                )
+                checked += 1
+
+    # Guards against the loop silently checking nothing if the schema moves.
+    assert checked == 13
+
+
+def test_unique_key_definitions_may_not_be_empty() -> None:
+    """The constraint nests: each definition in `unique_keys` needs a column too.
+
+    The parity test above reads only the top level of each property, so the inner
+    `minItems` is pinned here.
+    """
+    schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    schema = json.loads(schema_path.read_text())
+    unique_keys = schema["$defs"]["Dataset"]["properties"]["unique_keys"]
+
+    assert unique_keys["items"]["minItems"] == 1
+
+    with pytest.raises(ValidationError) as error:
+        OssieDataset(name="orders", source="db.s.orders", unique_keys=[[]])
+    assert any(item["loc"] == ("unique_keys", 0) for item in error.value.errors())
+
+
+@pytest.mark.parametrize(
+    ("build", "label"),
+    [
+        (lambda: OssieSemanticModel(name="", datasets=[_dataset()]), "semantic_model.name"),
+        (lambda: OssieDataset(name="", source="db.s.t"), "dataset.name"),
+        (lambda: OssieDataset(name="orders", source=""), "dataset.source"),
+        (lambda: OssieField(name="", expression=_expression()), "field.name"),
+        (lambda: OssieMetric(name="", expression=_expression()), "metric.name"),
+        (lambda: _relationship(name=""), "relationship.name"),
+        (lambda: _relationship(**{"from": ""}), "relationship.from"),
+        (lambda: _relationship(to=""), "relationship.to"),
+    ],
+    ids=lambda value: value if isinstance(value, str) else "",
+)
+def test_empty_identifiers_are_rejected(build, label: str) -> None:
+    with pytest.raises(ValidationError):
+        build()
+
+
+def _expression() -> OssieExpression:
+    return OssieExpression(
+        dialects=[OssieDialectExpression(dialect=OssieDialect.ANSI_SQL, expression="x")]
+    )
+
+
+def _dataset() -> OssieDataset:
+    return OssieDataset(name="orders", source="db.s.orders")
+
+
+def _relationship(**overrides) -> OssieRelationship:
+    kwargs = {
+        "name": "orders_to_customers",
+        "from": "orders",
+        "to": "customers",
+        "from_columns": ["customer_id"],
+        "to_columns": ["id"],
+    }
+    kwargs.update(overrides)
+    return OssieRelationship.model_validate(kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Model behavior
+# ---------------------------------------------------------------------------
+
+
+def test_ai_context_object_allows_extra() -> None:
+    ai_ctx = OssieAIContextObject(custom_field="custom_value")
+    assert ai_ctx.custom_field == "custom_value"
+
+
+def test_ai_context_accepts_string(document_data: dict) -> None:
+    document_data["ai_context"] = "Plain text context"
+    document = OssieDocument.model_validate(document_data)
+    assert document.ai_context == "Plain text context"
+
+
+def test_ai_context_accepts_object(document_data: dict) -> None:
+    document_data["ai_context"] = {
+        "instructions": "Use this model for analytics"
+    }
+    document = OssieDocument.model_validate(document_data)
+    ai_ctx = document.ai_context
+    assert isinstance(ai_ctx, OssieAIContextObject)
+    assert ai_ctx.instructions == "Use this model for analytics"
+
+
+def test_relationship_with_alias() -> None:
+    relationship = OssieRelationship(
+        name="order_customer",
+        **{"from": "orders"},
+        to="customers",
+        from_columns=["customer_id"],
+        to_columns=["id"],
+    )
+    assert relationship.from_dataset == "orders"
+    assert relationship.to == "customers"
+
+
+def test_relationship_with_python_name() -> None:
+    relationship = OssieRelationship(
+        name="order_customer",
+        from_dataset="orders",
+        to="customers",
+        from_columns=["customer_id"],
+        to_columns=["id"],
+    )
+    assert relationship.from_dataset == "orders"
+
+
+def test_expression_dialects_min_length() -> None:
+    with pytest.raises(ValidationError):
+        OssieExpression(dialects=[])
+
+
+def test_relationship_columns_min_length() -> None:
+    with pytest.raises(ValidationError):
+        OssieRelationship(name="rel", from_dataset="a", to="b", from_columns=[], to_columns=["id"])
+    with pytest.raises(ValidationError):
+        OssieRelationship(name="rel", from_dataset="a", to="b", from_columns=["id"], to_columns=[])
+
+
+def test_semantic_model_datasets_min_length() -> None:
+    with pytest.raises(ValidationError):
+        OssieSemanticModel(name="model", datasets=[])

@@ -17,9 +17,17 @@
   under the License.
 -->
 
-# Ossie ↔ Honeydew Converter
+# Apache Ossie ↔ Honeydew Converter
 
-Bidirectional converter between [Ossie](../../core-spec/spec.md) semantic models and [Honeydew](https://honeydew.ai/docs) workspace YAML.
+Bidirectional converter between [Apache Ossie](../../core-spec/spec.md) semantic models
+and [Honeydew](https://honeydew.ai/docs) [workspace YAML](https://honeydew.ai/docs/yaml-schema).
+
+Honeydew documents this integration from its own side under
+[Apache Ossie (OSI)](https://honeydew.ai/docs/integration/apache-ossie-osi).
+
+Ossie documents contain one model directly at the root, with `version`, `name`,
+`datasets`, and optional model properties. Legacy `semantic_model` wrappers
+(arrays or objects) are rejected.
 
 ## Overview
 
@@ -32,7 +40,7 @@ Bidirectional converter between [Ossie](../../core-spec/spec.md) semantic models
 
 | Ossie concept | Honeydew concept |
 |-------------|-----------------|
-| `semantic_model.name` | `workspace.yml name` |
+| `name` | `workspace.yml name` |
 | `dataset` | Entity + dataset files under `schema/<entity>/` |
 | `dataset.source` | `dataset.sql` |
 | `dataset.primary_key` | `entity.keys` |
@@ -46,7 +54,7 @@ Bidirectional converter between [Ossie](../../core-spec/spec.md) semantic models
 
 | Honeydew concept | Ossie concept |
 |-----------------|-------------|
-| `workspace.name` | `semantic_model.name` |
+| `workspace.name` | `name` |
 | Entity + primary dataset | `dataset` |
 | `entity.keys` | `dataset.primary_key` (and `dataset.unique_keys`) |
 | `dataset.attributes` (columns) | `fields` with `ANSI_SQL` expression = column name |
@@ -70,10 +78,10 @@ uv sync
 
 ```bash
 # Ossie YAML → Honeydew workspace directory
-uv run honeydew-ossie ossie-to-honeydew -i input.yaml -o output_dir/
+uv run ossie-honeydew ossie-to-honeydew -i input.yaml -o output_dir/
 
 # Honeydew workspace directory → Ossie YAML
-uv run honeydew-ossie honeydew-to-ossie -i workspace_dir/ -o output.yaml
+uv run ossie-honeydew honeydew-to-ossie -i workspace_dir/ -o output.yaml
 ```
 
 ## Tests
@@ -85,7 +93,7 @@ uv run pytest
 ## Limitations
 
 - **One source dataset per entity**: Honeydew entities can have multiple source dataset files; the converter always generates exactly one, because an Ossie `dataset` block describes a single table or SQL query.
-- **Datatype inference**: Ossie fields have no explicit datatype; the converter infers Honeydew datatypes from the `dimension.is_time` flag (`timestamp`) and the presence/absence of the `dimension` key (`string` vs `number`).
+- **Datatype inference**: an Ossie field's `datatype` maps to the Honeydew datatype (`String`→`string`, `Integer`→`number`, `Decimal`/`Float`→`float`, `Boolean`→`bool`, `Date`→`date`, `Time`→`time`, `DateTime`/`DateTimeTz`→`timestamp`). Honeydew has no exact-decimal or timezone-aware type, so `Decimal` and `DateTimeTz` are approximated. Fields that omit `datatype` (or declare `Opaque`) fall back to inference from the `dimension.is_time` flag (`timestamp`) and the presence/absence of the `dimension` key (`string` vs `number`). On the return trip the Honeydew datatype becomes the Ossie `dimension` shape, not a `datatype` — so `Ossie → Honeydew → Ossie` does not preserve the declared `datatype`. Ossie `metric.datatype` is not read; Honeydew metrics are always emitted as `number`.
 - **Honeydew SQL expressions**: Calculated attributes and metrics use Honeydew's `entity.attribute` reference syntax. These are exported as `ANSI_SQL` dialect expressions in Ossie; they remain valid for round-tripping but may not run on other databases without adaptation.
 - **Perspectives and domains**: Not converted (no Ossie equivalent).
 - **Connection expressions** (`connection_expr`): Preserved in `HONEYDEW` custom extensions on the Ossie relationship and restored on the return trip.

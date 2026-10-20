@@ -28,7 +28,7 @@ import java.util.List;
 public class OssieModel {
 
     private String version;
-    private List<SemanticModel> semanticModels = new ArrayList<>();
+    private SemanticModel semanticModel;
 
     public String getVersion() {
         return version;
@@ -38,12 +38,12 @@ public class OssieModel {
         this.version = version;
     }
 
-    public List<SemanticModel> getSemanticModels() {
-        return semanticModels;
+    public SemanticModel getSemanticModel() {
+        return semanticModel;
     }
 
-    public void setSemanticModels(List<SemanticModel> semanticModels) {
-        this.semanticModels = semanticModels;
+    public void setSemanticModel(SemanticModel semanticModel) {
+        this.semanticModel = semanticModel;
     }
 
     // -----------------------------------------------------------------------

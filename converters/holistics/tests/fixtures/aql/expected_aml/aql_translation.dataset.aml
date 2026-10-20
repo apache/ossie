@@ -1,0 +1,68 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+Dataset aql_translation {
+  label: 'Aql Translation'
+  description: 'Metrics that exercise each path through the SQL to AQL translation'
+  data_source_name: 'bigquery_demo'
+
+  models: [
+    orders,
+    items,
+    users,
+  ]
+
+  relationships: [
+    relationship(items.order_id > orders.id, true),
+    relationship(orders.user_id > users.id, true),
+  ]
+
+  metric quantity_per_customer {
+    label: 'Quantity Per Customer'
+    type: 'number'
+    description: 'The plain path. SUM and COUNT DISTINCT both have AQL names'
+    definition: @aql sum(items.quantity) / count_distinct(users.id);;
+  }
+
+  metric rounded_ratio {
+    label: 'Rounded Ratio'
+    type: 'number'
+    description: 'Functions AQL has. ROUND, SAFE_DIVIDE and ABS are written natively'
+    definition: @aql round(safe_divide(sum(items.quantity), abs(count(users.id))), 2);;
+  }
+
+  metric untyped_total {
+    label: 'Untyped Total'
+    type: 'number'
+    description: 'A field with no datatype, summed, so the metric is what types it'
+    definition: @aql sum(items.product_id) + count(users.id);;
+  }
+
+  metric borrowed_column_total {
+    label: 'Borrowed Column Total'
+    type: 'number'
+    description: 'A column no dataset declares as a field, so one is added for it'
+    definition: @aql sum(items.sale_price) + count(users.id);;
+  }
+
+  metric passthrough_call {
+    label: 'Passthrough Call'
+    type: 'number'
+    description: 'A function sqlglot does not model, carried by AQL\'s raw-SQL call'
+    definition: @aql sum(items.quantity) + sql_number('MY_WAREHOUSE_UDF', count(users.id), 3);;
+  }
+}
