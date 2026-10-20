@@ -188,6 +188,43 @@ def test_keys_are_mapped(model):
 
 
 @pytest.mark.parametrize(
+    ("tmsl_property", "ossie_property", "ossie_value"),
+    [
+        ("isKey", "primary_key", ["C"]),
+        ("isUnique", "unique_keys", [["C"]]),
+    ],
+)
+def test_explicit_false_key_flags_round_trip_and_ossie_edits_win(
+    tmsl_property, ossie_property, ossie_value
+):
+    bim = {
+        "name": "key_flags",
+        "model": {
+            "tables": [
+                {
+                    "name": "T",
+                    "columns": [{"name": "C", tmsl_property: False}],
+                }
+            ]
+        },
+    }
+
+    ossie = build_ossie_document(bim)
+    dataset = _dataset(ossie, "T")
+    assert ossie_property not in dataset
+    assert read_stash(_field(dataset, "C"))[tmsl_property] is False
+
+    round_tripped = convert_ossie_to_semantic_model(ossie)
+    column = round_tripped["model"]["tables"][0]["columns"][0]
+    assert column[tmsl_property] is False
+
+    dataset[ossie_property] = ossie_value
+    edited = convert_ossie_to_semantic_model(ossie)
+    column = edited["model"]["tables"][0]["columns"][0]
+    assert column[tmsl_property] is True
+
+
+@pytest.mark.parametrize(
     "dataset_name,expected_source",
     [
         ("Sales", "retail.dbo.sales"),
@@ -199,6 +236,75 @@ def test_partition_sources(model, dataset_name, expected_source):
     assert _dataset(model, dataset_name)["source"] == expected_source
 
 
+def _m_table(expression):
+    return {
+        "name": "m",
+        "model": {
+            "tables": [
+                {
+                    "name": "Imported",
+                    "columns": [
+                        {"name": "id", "dataType": "int64", "sourceColumn": "id"},
+                    ],
+                    "partitions": [
+                        {
+                            "name": "Imported",
+                            "mode": "import",
+                            "source": {"type": "m", "expression": expression},
+                        }
+                    ],
+                }
+            ]
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "expression,expected_source",
+    [
+        (
+            [
+                "let",
+                "    Source = GoogleBigQuery.Database(),",
+                '    #"analytics-prod" = Source{[Name="analytics-prod"]}[Data],',
+                '    Schema = #"analytics-prod"'
+                '{[Name="sales",Kind="Schema"]}[Data],',
+                '    View = Schema{[Name="orders",Kind="View"]}[Data]',
+                "in",
+                "    View",
+            ],
+            "analytics-prod.sales.orders",
+        ),
+        (
+            "let\n"
+            "    Source = GoogleBigQuery.Database(),"
+            '    Project = Source{[Name="analytics-prod"]}[Data],'
+            '    Schema = Project{[Kind="Schema",Name="warehouse"]}[Data],'
+            '    View = Schema{[Kind="Table",Name="customers"]}[Data]\n'
+            "in\n"
+            "    View",
+            "analytics-prod.warehouse.customers",
+        ),
+        (
+            'let Source = GoogleBigQuery.Database(), '
+            'Schema = Source{[Name="sales",Kind="Schema"]}[Data], '
+            'View = Schema{[Name="orders",Kind="View"]}[Data] in View',
+            "sales.orders",
+        ),
+    ],
+)
+def test_bigquery_navigator_source_uses_the_visible_parts(expression, expected_source):
+    document = build_ossie_document(_m_table(expression))
+    assert document["datasets"][0]["source"] == expected_source
+
+
+def test_an_unrecognized_m_navigator_falls_back_to_the_table_name():
+    document = build_ossie_document(
+        _m_table('let Source = Something{[Name="not-a-warehouse-table"]}[Data] in Source')
+    )
+    assert document["datasets"][0]["source"] == "Imported"
+
+
 # --- fields ----------------------------------------------------------------
 
 
@@ -207,6 +313,118 @@ def test_plain_column_uses_source_column_as_sql(model):
     assert _expression(amount, "ANSI_SQL") == "amount"
     assert amount["datatype"] == "Decimal"
     assert amount["description"] == "Extended sales amount"
+
+
+def test_dax_string_literal_remains_a_calculated_column():
+    bim = {
+        "name": "dax_literal",
+        "model": {
+            "tables": [
+                {
+                    "name": "T",
+                    "columns": [
+                        {
+                            "name": "World",
+                            "type": "calculated",
+                            "dataType": "string",
+                            "expression": '"Earth"',
+                        }
+                    ],
+                }
+            ]
+        },
+    }
+
+    ossie = build_ossie_document(bim)
+    field = _field(_dataset(ossie, "T"), "World")
+    assert _expression(field, "DAX") == '"Earth"'
+
+    column = convert_ossie_to_semantic_model(ossie)["model"]["tables"][0]["columns"][0]
+    assert column["type"] == "calculated"
+    assert column["expression"] == '"Earth"'
+
+
+def test_dax_expression_whitespace_survives_a_round_trip():
+    bim = {
+        "name": "dax_whitespace",
+        "model": {
+            "tables": [
+                {
+                    "name": "T",
+                    "columns": [
+                        {
+                            "name": "C",
+                            "type": "calculated",
+                            "dataType": "string",
+                            "expression": '\n"Value"\n',
+                        }
+                    ],
+                    "measures": [{"name": "M", "expression": "\nCOUNTROWS('T')\n"}],
+                }
+            ]
+        },
+    }
+
+    round_tripped = convert_ossie_to_semantic_model(build_ossie_document(bim))
+    table = round_tripped["model"]["tables"][0]
+    assert table["columns"][0]["expression"] == ["", '"Value"', ""]
+    assert table["measures"][0]["expression"] == ["", "COUNTROWS('T')", ""]
+
+
+def test_single_line_dax_whitespace_survives_a_round_trip():
+    bim = {
+        "name": "dax_whitespace",
+        "model": {
+            "tables": [
+                {
+                    "name": "T",
+                    "columns": [
+                        {
+                            "name": "C",
+                            "type": "calculated",
+                            "dataType": "string",
+                            "expression": '  "Value"  ',
+                        }
+                    ],
+                    "measures": [{"name": "M", "expression": "  COUNTROWS('T')  "}],
+                }
+            ]
+        },
+    }
+
+    round_tripped = convert_ossie_to_semantic_model(build_ossie_document(bim))
+    table = round_tripped["model"]["tables"][0]
+    assert table["columns"][0]["expression"] == '  "Value"  '
+    assert table["measures"][0]["expression"] == "  COUNTROWS('T')  "
+
+
+@pytest.mark.parametrize(
+    "separator",
+    ["\r", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"],
+)
+def test_non_newline_dax_separators_remain_scalar(separator):
+    expression = f'"left"{separator}"right"'
+    bim = {
+        "name": "dax_separator",
+        "model": {
+            "tables": [
+                {
+                    "name": "T",
+                    "columns": [
+                        {
+                            "name": "C",
+                            "type": "calculated",
+                            "dataType": "string",
+                            "expression": expression,
+                        }
+                    ],
+                }
+            ]
+        },
+    }
+
+    round_tripped = convert_ossie_to_semantic_model(build_ossie_document(bim))
+    assert round_tripped["model"]["tables"][0]["columns"][0]["expression"] == expression
 
 
 def test_calculated_column_uses_dax_dialect(model):
@@ -253,6 +471,138 @@ def test_active_many_to_one_relationship(model):
     rel = next(r for r in model["relationships"] if r["from"] == "Sales" and r["to"] == "Customer")
     assert rel["from_columns"] == ["CustomerKey"]
     assert rel["to_columns"] == ["CustomerKey"]
+
+
+def test_explicit_active_state_survives_a_round_trip():
+    bim = {
+        "name": "active",
+        "model": {
+            "tables": [
+                {"name": "Sales", "columns": [{"name": "CustomerKey"}]},
+                {"name": "Customer", "columns": [{"name": "CustomerKey"}]},
+            ],
+            "relationships": [
+                {
+                    "name": "active_relationship",
+                    "fromTable": "Sales",
+                    "fromColumn": "CustomerKey",
+                    "toTable": "Customer",
+                    "toColumn": "CustomerKey",
+                    "isActive": True,
+                }
+            ],
+        },
+    }
+
+    ossie = build_ossie_document(bim)
+    relationship = ossie["relationships"][0]
+    stash = read_stash(relationship)
+    assert stash["isActive"] is True
+    assert stash["normalizedEndpoints"] == [
+        "Sales",
+        "CustomerKey",
+        "Customer",
+        "CustomerKey",
+    ]
+
+    round_tripped = convert_ossie_to_semantic_model(ossie)
+    assert (
+        round_tripped["model"]["relationships"][0]
+        == bim["model"]["relationships"][0]
+    )
+
+
+@pytest.mark.parametrize(
+    ("property_name", "property_value"),
+    [
+        ("fromCardinality", "many"),
+        ("toCardinality", "one"),
+        ("crossFilteringBehavior", "oneDirection"),
+        ("crossFilteringBehavior", "bothDirections"),
+        ("relyOnReferentialIntegrity", False),
+    ],
+)
+def test_corpus_backed_relationship_properties_survive_an_exact_round_trip(
+    property_name, property_value
+):
+    source_relationship = {
+        "name": "customer_sales",
+        "fromTable": "Sales",
+        "fromColumn": "CustomerKey",
+        "toTable": "Customer",
+        "toColumn": "CustomerKey",
+        property_name: property_value,
+    }
+    bim = {
+        "name": "relationship_properties",
+        "model": {
+            "tables": [
+                {"name": "Sales", "columns": [{"name": "CustomerKey"}]},
+                {"name": "Customer", "columns": [{"name": "CustomerKey"}]},
+            ],
+            "relationships": [source_relationship],
+        },
+    }
+
+    ossie = build_ossie_document(bim)
+    assert read_stash(ossie["relationships"][0])[property_name] == property_value
+
+    round_tripped = convert_ossie_to_semantic_model(ossie)
+    assert round_tripped["model"]["relationships"] == [source_relationship]
+
+
+def test_ossie_relationship_edits_win_over_stale_power_bi_metadata():
+    source_relationship = {
+        "name": "customer_sales",
+        "fromTable": "Sales",
+        "fromColumn": "CustomerKey",
+        "toTable": "Customer",
+        "toColumn": "CustomerKey",
+        "fromCardinality": "many",
+        "toCardinality": "one",
+        "isActive": True,
+        "crossFilteringBehavior": "bothDirections",
+        "relyOnReferentialIntegrity": True,
+    }
+    bim = {
+        "name": "relationship_precedence",
+        "model": {
+            "tables": [
+                {
+                    "name": "Sales",
+                    "columns": [{"name": "CustomerKey"}, {"name": "AlternateKey"}],
+                },
+                {
+                    "name": "Customer",
+                    "columns": [{"name": "CustomerKey"}, {"name": "AlternateKey"}],
+                },
+            ],
+            "relationships": [source_relationship],
+        },
+    }
+    ossie = build_ossie_document(bim)
+    relationship = ossie["relationships"][0]
+    relationship["name"] = "edited_relationship"
+
+    renamed = convert_ossie_to_semantic_model(ossie)
+    assert renamed["model"]["relationships"] == [
+        {**source_relationship, "name": "edited_relationship"}
+    ]
+
+    relationship["from_columns"] = ["AlternateKey"]
+    relationship["to_columns"] = ["AlternateKey"]
+
+    round_tripped = convert_ossie_to_semantic_model(ossie)
+
+    assert round_tripped["model"]["relationships"] == [
+        {
+            "name": "edited_relationship",
+            "fromTable": "Sales",
+            "fromColumn": "AlternateKey",
+            "toTable": "Customer",
+            "toColumn": "AlternateKey",
+        }
+    ]
 
 
 def test_one_to_many_relationship_is_flipped(model):
@@ -422,6 +772,149 @@ def test_model_stash_preserves_excluded_tables_and_relationships(model):
     assert excluded == {"LocalDateTable_9f2a1b3c", "Internal Staging", "Time Intelligence"}
     # Inactive, many-to-many, dangling and auto-date-table relationships are kept verbatim.
     assert len(stash["excludedRelationships"]) == 4
+
+
+def test_calculated_table_measures_become_metrics_and_round_trip(bim):
+    measure_table = {
+        "name": "Measure Only",
+        "columns": [
+            {
+                "name": "_",
+                "dataType": "string",
+                "sourceColumn": "_",
+                "type": "calculatedTableColumn",
+                "isHidden": True,
+            }
+        ],
+        "partitions": [
+            {
+                "name": "Measure Only",
+                "mode": "import",
+                "source": {
+                    "type": "calculated",
+                    "expression": 'ROW("_", BLANK())',
+                },
+            }
+        ],
+        "measures": [
+            {
+                "name": "Measure Total",
+                "expression": "SUM(Sales[Amount])",
+                "formatString": "#,0.00",
+            }
+        ],
+    }
+    bim["model"]["tables"].append(measure_table)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        ossie = build_ossie_document(bim)
+
+    metric = _metric(ossie, "Measure Total")
+    assert _expression(metric, "DAX") == "SUM(Sales[Amount])"
+    assert read_stash(metric)["table"] == "Measure Only"
+    stashed_table = next(
+        table
+        for table in read_stash(ossie)["excludedTables"]
+        if table["name"] == "Measure Only"
+    )
+    assert "measures" not in stashed_table
+
+    round_tripped = convert_ossie_to_semantic_model(ossie)
+    restored_table = next(
+        table
+        for table in round_tripped["model"]["tables"]
+        if table["name"] == "Measure Only"
+    )
+    assert restored_table["measures"] == [measure_table["measures"][0]]
+
+
+def _sales_table():
+    # A plain exported table so the model has at least one Apache Ossie dataset.
+    return {
+        "name": "Sales",
+        "columns": [
+            {"name": "Amount", "dataType": "double", "sourceColumn": "Amount"}
+        ],
+    }
+
+
+def _exclusion_warning(bim, table_name):
+    # A fresh bim per call: the shared module-scoped fixture must not be mutated.
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        build_ossie_document(bim)
+    return next(
+        str(w.message)
+        for w in caught
+        if f"table '{table_name}'" in str(w.message)
+        and "custom_extensions" in str(w.message)
+    )
+
+
+def test_measure_only_table_warning_does_not_imply_lost_measures():
+    """A measure-only table's measures become metrics, so the exclusion warning must
+    say so rather than implying the measures survive only in custom_extensions."""
+    bim = {
+        "name": "m",
+        "model": {
+            "tables": [
+                _sales_table(),
+                {
+                    "name": "Measure Only",
+                    "partitions": [
+                        {
+                            "name": "Measure Only",
+                            "mode": "import",
+                            "source": {
+                                "type": "calculated",
+                                "expression": 'ROW("_", BLANK())',
+                            },
+                        }
+                    ],
+                    "measures": [
+                        {"name": "Measure Total", "expression": "SUM(Sales[Amount])"}
+                    ],
+                },
+            ]
+        },
+    }
+
+    message = _exclusion_warning(bim, "Measure Only")
+
+    assert "exported as Apache Ossie metrics" in message
+    assert "excluded from the Apache Ossie model as a dataset" in message
+
+
+def test_calculated_table_without_measures_warning_is_unchanged():
+    """A calculated table with no measures contributes no metric, so its warning must
+    not claim measures were exported."""
+    bim = {
+        "name": "m",
+        "model": {
+            "tables": [
+                _sales_table(),
+                {
+                    "name": "Calendar",
+                    "partitions": [
+                        {
+                            "name": "Calendar",
+                            "mode": "import",
+                            "source": {
+                                "type": "calculated",
+                                "expression": "CALENDARAUTO()",
+                            },
+                        }
+                    ],
+                },
+            ]
+        },
+    }
+
+    message = _exclusion_warning(bim, "Calendar")
+
+    assert "exported as Apache Ossie metrics" not in message
+    assert message.endswith("preserved in custom_extensions")
 
 
 def test_dataset_stash_preserves_partitions_and_annotations(model):

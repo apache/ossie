@@ -27,6 +27,9 @@ from __future__ import annotations
 
 from typing import Any
 
+import sqlglot
+from sqlglot import expressions as exp
+
 import ossie_orionbelt.converter as conv
 
 _OBML: dict[str, Any] = {
@@ -117,15 +120,40 @@ class TestOntologyStructure:
         doc = conv.OBMLtoOssieOntology(_OBML, model_name="sales").convert()
         cms = {cm["concept"]: cm for cm in doc["ontology_mappings"][0]["concept_mappings"]}
 
-        # Entity identity from primary key.
-        assert cms["Customers"]["object_mappings"] == [{"expression": "CUSTOMERS.CUSTOMER_ID"}]
+        # Entity identity from primary key, over the embedded model's fields.
+        assert cms["Customers"]["object_mappings"] == [{"expression": 'Customers."Customer ID"'}]
 
-        # Relationship link mapping binds to the FK column in the from-table.
+        # Relationship link mapping binds to the FK field in the from-dataset.
         links = {lm["relationship"]: lm for lm in cms["Orders"]["link_mappings"]}
         assert links["Orders_to_Customers"]["object_mapping"] == {
             "concept": "Customers",
-            "expression": "ORDERS.CUSTOMER_ID",
+            "expression": 'Orders."Customer Ref"',
         }
+
+    def test_mappings_name_fields_of_the_embedded_model(self) -> None:
+        # Mappings are SQL over the embedded semantic model's dataset fields,
+        # so each one must parse to a field that model declares.
+        doc = conv.OBMLtoOssieOntology(_OBML, model_name="sales").convert()
+        omap = doc["ontology_mappings"][0]
+        declared = {
+            (ds["name"], f["name"])
+            for ds in omap["semantic_model"]["datasets"]
+            for f in ds["fields"]
+        }
+        expressions = [
+            m["expression"]
+            for cm in omap["concept_mappings"]
+            for m in cm.get("object_mappings", [])
+        ] + [
+            lm["object_mapping"]["expression"]
+            for cm in omap["concept_mappings"]
+            for lm in cm.get("link_mappings", [])
+        ]
+        assert expressions
+        for expression in expressions:
+            column = sqlglot.parse_one(expression)
+            assert isinstance(column, exp.Column)
+            assert (column.table, column.name) in declared, expression
 
     def test_passes_ontology_semantic_validation(self) -> None:
         doc = conv.OBMLtoOssieOntology(_OBML, model_name="sales").convert()
@@ -197,5 +225,5 @@ class TestOntologyGaps:
         c = conv.OBMLtoOssieOntology(obml)
         doc = c.convert()
         cm = doc["ontology_mappings"][0]["concept_mappings"][0]
-        assert cm["object_mappings"] == [{"expression": "A.LABEL"}]
+        assert cm["object_mappings"] == [{"expression": "A.Label"}]
         assert any("no primary key" in w for w in c.warnings)

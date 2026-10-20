@@ -22,8 +22,8 @@ has to compute what OrionBelt computes. OBML carries semantics in structure
 (measure ``filters``, ``total``, synthesized counts, metric-on-metric
 references) that the expression must spell out:
 
-* column references are ``<dataset>.<field>``: the OBML data object name and
-  the column's physical code, which are the Ossie dataset and field names;
+* column references are ``<dataset>.<field>``: the OBML data object and column
+  names, which are the Ossie dataset and field names;
 * measure ``filters`` become ``AGG(CASE WHEN <cond> THEN <arg> END)``, the
   spec's portable filtered aggregation, mirroring the compiler's own rendering;
 * ``total: true`` becomes the grand-total window the compiler emits, e.g.
@@ -38,7 +38,15 @@ caller can leave it out of the Ossie document instead of guessing.
 from __future__ import annotations
 
 import re
+from collections import Counter
+from collections.abc import Iterable
+from functools import cache
 from typing import Any
+
+import sqlglot
+from sqlglot import expressions as exp
+
+from ossie_orionbelt._sql_reserved import DUCKDB_REJECTED_WORDS, SQL_RESERVED_WORDS
 
 _MEASURE_REF = re.compile(r"\{\[([^\]]+)\]\}")
 _COLUMN_REF = re.compile(r"\{\[([^\]]+)\]\.\[([^\]]+)\]\}")
@@ -75,6 +83,16 @@ _WINDOW_FUNCS = {
     "last_value",
 }
 
+# Filter operators whose OSSIE_SQL_2026 form differs from the ANSI one.
+_PATTERN_OPERATORS = {
+    "contains",
+    "notcontains",
+    "starts_with",
+    "ends_with",
+    "like",
+    "notlike",
+}
+
 _COMPARISONS = {
     "equals": "=",
     "notequals": "<>",
@@ -92,11 +110,96 @@ class NotPortableError(Exception):
 def sql_ident(name: str) -> str:
     """Render *name* as a double-quoted identifier.
 
-    Always quoted: a plain-looking name can still be a reserved word (a data
-    object called ``Order``), and a quoted identifier matches the Ossie dataset
-    or field name exactly, case included.
+    A quoted identifier matches exactly, case included. A reference to an
+    Ossie dataset or field uses :func:`ossie_ident`, which quotes only when
+    it has to.
     """
     return '"' + name.replace('"', '""') + '"'
+
+
+_REGULAR_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+@cache
+def needs_quoting(name: str) -> bool:
+    """Whether *name* cannot be a regular (unquoted) identifier in an export.
+
+    Not identifier-shaped, a SQL:2023 reserved word, a word DuckDB refuses
+    bare, or one sqlglot does not read as ``<name>.<name>``: what runs and
+    validates these exports must parse the reference too.
+    """
+    if not _REGULAR_IDENTIFIER.fullmatch(name):
+        return True
+    if name.lower() in SQL_RESERVED_WORDS | DUCKDB_REJECTED_WORDS:
+        return True
+    try:
+        node = sqlglot.parse_one(f"{name}.{name}")
+    except sqlglot.errors.SqlglotError:
+        return True
+    return not (isinstance(node, exp.Column) and node.table == name and node.name == name)
+
+
+def is_regular(name: str) -> bool:
+    """Whether *name* can be an ANSI regular identifier: identifier-shaped and
+    not a SQL:2023 reserved word.
+
+    The expression language normalizes a regular identifier to upper case; any
+    other name is matched as written.
+    """
+    return bool(_REGULAR_IDENTIFIER.fullmatch(name)) and name.lower() not in SQL_RESERVED_WORDS
+
+
+def case_collisions(names: Iterable[str]) -> frozenset[str]:
+    """The names that equal another one regardless of case.
+
+    A bare identifier matches regardless of case, so ``Amount`` and ``amount``
+    would be one reference.
+    """
+    names = list(dict.fromkeys(names))
+    folded = Counter(name.upper() for name in names)
+    return frozenset(name for name in names if folded[name.upper()] > 1)
+
+
+def quoted_name(name: str, collisions: frozenset[str] = frozenset()) -> str | None:
+    """The text a reference to *name* quotes, or ``None`` when it is written bare.
+
+    The expression language follows ANSI SQL (``core-spec/expression_language.md``,
+    "Namespacing and Identifier Resolution"): a regular identifier is normalized
+    to upper case, a quoted one is taken as written. A regular name is written
+    bare. One that DuckDB or sqlglot will not read bare, such as ``Qualify``, is
+    quoted in its normalized form, ``"QUALIFY"``, which matches it. A name that
+    cannot be regular (a space, a leading digit, a reserved word such as
+    ``Order``) is matched as written, so it is quoted as written.
+
+    Names in *collisions* differ only by case, so the language cannot tell them
+    apart; each is quoted as written, which a reader that matches a quoted name
+    exactly, as this converter does, resolves.
+    """
+    if name in collisions or not is_regular(name):
+        return name
+    if needs_quoting(name):
+        return name.upper()
+    return None
+
+
+def ossie_ident(name: str, collisions: frozenset[str] = frozenset()) -> str:
+    """*name* as an identifier in an Apache Ossie expression (see :func:`quoted_name`)."""
+    text = quoted_name(name, collisions)
+    return name if text is None else sql_ident(text)
+
+
+def matching_names(ref: str, quoted: bool, names: Iterable[str]) -> list[str]:
+    """The declared *names* the reference *ref* (unquoted text) matches.
+
+    A quoted reference matches the name it spells exactly, else a regular name
+    whose normalized form it spells (``"QUALIFY"`` matches ``Qualify``). A bare
+    one matches regardless of case. More than one match is ambiguous.
+    """
+    names = list(names)
+    if quoted:
+        exact = [n for n in names if n == ref]
+        return exact or [n for n in names if is_regular(n) and n.upper() == ref]
+    return [n for n in names if n.upper() == ref.upper()]
 
 
 def _string_literal(value: str) -> str:
@@ -113,8 +216,12 @@ def _scalar_literal(value: Any) -> str:
     return _string_literal(str(value))
 
 
-def _filter_literal(fv: dict[str, Any]) -> str:
-    """Render a typed OBML ``FilterValue`` as the literal the compiler compares against."""
+def _filter_literal(fv: dict[str, Any], ossie: bool = False) -> str:
+    """Render a typed OBML ``FilterValue`` as the literal the compiler compares against.
+
+    ``OSSIE_SQL_2026`` has no plain ``TIMESTAMP '...'`` literal, so with *ossie*
+    a timestamp is a ``CAST``.
+    """
     if fv.get("isNull"):
         return "NULL"
     data_type = fv.get("dataType")
@@ -127,7 +234,8 @@ def _filter_literal(fv: dict[str, Any]) -> str:
     if data_type == "date" and fv.get("valueDate") is not None:
         return f"DATE {_string_literal(str(fv['valueDate']))}"
     if data_type == "timestamp" and fv.get("valueDate") is not None:
-        return f"TIMESTAMP {_string_literal(str(fv['valueDate']))}"
+        text = _string_literal(str(fv["valueDate"]))
+        return f"CAST({text} AS TIMESTAMP)" if ossie else f"TIMESTAMP {text}"
     return _scalar_literal(fv.get("valueString"))
 
 
@@ -171,15 +279,30 @@ def synthesized_counts(obml: dict[str, Any]) -> dict[str, str]:
 
 
 class PortableRenderer:
-    """Render OBML measures and metrics as portable Ossie SQL expressions."""
+    """Render OBML measures and metrics as portable Ossie SQL expressions.
 
-    def __init__(self, obml: dict[str, Any]) -> None:
+    By default the expressions are ANSI SQL. With *ossie* they use the forms of
+    Apache Ossie's ``OSSIE_SQL_2026`` language where the two differ: ``CONTAINS``,
+    ``STARTSWITH`` and ``ENDSWITH`` instead of ``LIKE ... ESCAPE``, and a
+    ``CAST`` for a timestamp literal. A filter that needs ``ESCAPE`` has
+    no such form and raises :class:`NotPortableError`.
+    """
+
+    def __init__(self, obml: dict[str, Any], *, ossie: bool = False) -> None:
+        self.ossie = ossie
         self.data_objects: dict[str, Any] = obml.get("dataObjects") or {}
         self.dimensions: dict[str, Any] = obml.get("dimensions") or {}
         self.measures: dict[str, Any] = obml.get("measures") or {}
         self.metrics: dict[str, Any] = obml.get("metrics") or {}
         self.counts = synthesized_counts(obml)
         self._resolving: set[str] = set()
+        # Names a bare reference could not tell apart: dataset names across the
+        # model, field names within each data object.
+        self._dataset_collisions = case_collisions(self.data_objects)
+        self._field_collisions = {
+            name: case_collisions(obj.get("columns") or {})
+            for name, obj in self.data_objects.items()
+        }
 
     # ── references ────────────────────────────────────────────────────
 
@@ -188,9 +311,9 @@ class PortableRenderer:
         obj = self.data_objects.get(data_object)
         if obj is None:
             raise NotPortableError(f"references unknown data object '{data_object}'")
-        col = (obj.get("columns") or {}).get(column, {})
-        code = col.get("code", column.lower().replace(" ", "_"))
-        return f"{sql_ident(data_object)}.{sql_ident(code)}"
+        dataset = ossie_ident(data_object, self._dataset_collisions)
+        field = ossie_ident(column, self._field_collisions.get(data_object, frozenset()))
+        return f"{dataset}.{field}"
 
     def _column_ref(self, ref: dict[str, Any]) -> str:
         return self.column(ref.get("dataObject", ""), ref.get("column", ""))
@@ -295,17 +418,20 @@ class PortableRenderer:
         col = self._column_ref(f.get("column") or {})
         op = str(f.get("operator", "")).lower()
         values = f.get("values") or []
-        first = _filter_literal(values[0]) if values else "NULL"
+        first = _filter_literal(values[0], self.ossie) if values else "NULL"
         if op in _COMPARISONS:
             return f"{col} {_COMPARISONS[op]} {first}"
         if op in ("inlist", "notinlist"):
             keyword = "NOT IN" if op == "notinlist" else "IN"
-            return f"{col} {keyword} ({', '.join(_filter_literal(v) for v in values)})"
+            literals = ", ".join(_filter_literal(v, self.ossie) for v in values)
+            return f"{col} {keyword} ({literals})"
         if op == "set":
             return f"{col} IS NOT NULL"
         if op == "notset":
             return f"{col} IS NULL"
         text = _filter_text(values[0]) if values else ""
+        if self.ossie and op in _PATTERN_OPERATORS:
+            return self._ossie_pattern(col, op, text)
         if op in ("contains", "notcontains"):
             return _like(col, ("%", "%"), text, negated=op == "notcontains")
         if op == "starts_with":
@@ -319,8 +445,31 @@ class PortableRenderer:
             if len(values) < 2:
                 return f"{col} {'<>' if op == 'notbetween' else '='} {first}"
             keyword = "NOT BETWEEN" if op == "notbetween" else "BETWEEN"
-            return f"{col} {keyword} {first} AND {_filter_literal(values[1])}"
+            return f"{col} {keyword} {first} AND {_filter_literal(values[1], self.ossie)}"
         raise NotPortableError(f"measure filter operator '{op}' has no portable form")
+
+    @staticmethod
+    def _ossie_pattern(col: str, op: str, text: str) -> str:
+        """A pattern filter in its ``OSSIE_SQL_2026`` form.
+
+        The substring operators match *text* literally, so they need no escaping;
+        a ``LIKE`` pattern that relies on OBML's backslash escape has no form,
+        because the language has no ``ESCAPE`` clause.
+        """
+        literal = _string_literal(text)
+        if op in ("contains", "notcontains"):
+            negation = "NOT " if op == "notcontains" else ""
+            return f"{negation}CONTAINS({col}, {literal})"
+        if op == "starts_with":
+            return f"STARTSWITH({col}, {literal})"
+        if op == "ends_with":
+            return f"ENDSWITH({col}, {literal})"
+        if "\\" in text:
+            raise NotPortableError(
+                f"pattern {literal} needs an ESCAPE clause, which OSSIE_SQL_2026 does not have"
+            )
+        keyword = op.removeprefix("not").upper()
+        return f"{col} {'NOT ' if op.startswith('not') else ''}{keyword} {literal}"
 
     # ── metrics ───────────────────────────────────────────────────────
 

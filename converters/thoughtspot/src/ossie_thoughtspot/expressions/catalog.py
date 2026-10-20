@@ -1729,7 +1729,8 @@ def _split_table_row(line: str) -> list[str]:
 
     The document contains at least one cell whose code span itself contains a
     pipe character - the `||` concatenation operator, written as
-    `` `str1 || str2` `` - which a naive `str.split("|")` would shred into
+    `` `str1 \\|\\| str2` `` (GitHub-Flavored Markdown requires escaping pipes
+    even inside a code span) - which a naive `str.split("|")` would shred into
     extra empty cells. Backticks otherwise never appear as literal (non-code)
     content in this document's tables, so "toggle on backtick" is a safe,
     general rule rather than a special case for that one row.
@@ -1756,8 +1757,9 @@ def _split_table_row(line: str) -> list[str]:
 
 
 def _clean(cell: str) -> str:
-    """Strip markdown code-span backticks, leaving the underlying syntax text."""
-    return cell.replace("`", "").strip()
+    """Strip markdown code-span backticks and unescape pipes, leaving the
+    underlying syntax text."""
+    return cell.replace("`", "").replace("\\|", "|").strip()
 
 
 def _is_section_excluded(heading_stack: dict[int, str]) -> bool:

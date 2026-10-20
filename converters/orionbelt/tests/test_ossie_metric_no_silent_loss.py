@@ -59,6 +59,10 @@ def _ossie_model(metrics: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _expr(sql: str) -> dict[str, Any]:
+    return {"dialects": [{"dialect": "ANSI_SQL", "expression": sql}]}
+
+
 def _metric(name: str, dialect: str, expression: str, **extra: Any) -> dict[str, Any]:
     m: dict[str, Any] = {
         "name": name,
@@ -248,6 +252,30 @@ class TestNoSilentLoss:
         assert any(m["name"] == "Ratio" for m in _unconverted_stash(obml))
         assert any(w.startswith("LOSSY:") and "Ratio" in w for w in converter.warnings)
 
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            # The subquery's own alias "Orders" is not the dataset.
+            'SUM("Orders".amount) + (SELECT MAX("Orders".amount) FROM adjustments AS "Orders")',
+            "SUM(Orders.amount) / (SELECT COUNT(*) FROM Orders)",
+            "SUM(Orders.amount) - (SELECT 1 UNION ALL SELECT 2)",
+            # Bracket-quoted, which sqlglot reads only once rewritten as "name".
+            "SUM([Orders].[amount]) + (SELECT MAX([Orders].[amount]) FROM adjustments AS [Orders])",
+        ],
+    )
+    def test_sql_with_a_query_is_preserved_not_decomposed(self, expression: str) -> None:
+        # A metric formula is over measures; a query inside it has no OBML
+        # form, so its aggregates must not be lifted into measures.
+        ossie = _ossie_model([_metric("Adjusted", "ANSI_SQL", expression)])
+        converter = conv.OssietoOBML(ossie)
+        obml = converter.convert()
+
+        assert "Adjusted" not in obml.get("metrics", {})
+        assert not obml.get("measures")
+        stash = _unconverted_stash(obml)
+        assert [m["expression"]["dialects"][0]["expression"] for m in stash] == [expression]
+        assert any(w.startswith("LOSSY:") and "Adjusted" in w for w in converter.warnings)
+
     def test_roundtrip_restores_preserved_metric(self) -> None:
         original = _metric("Mdx Thing", "MDX", "[Measures].[Amount]", description="from cube")
         ossie = _ossie_model([original])
@@ -417,3 +445,44 @@ def test_explicit_datatype_roundtrips() -> None:
         "total_amount", {"code": "total_amount", "abstractType": "string"}, "Orders", {}
     )
     assert field.get("datatype") == "String"
+
+
+class TestReferencesResolveLikeTheSpec:
+    """A metric reference resolves to exactly one field, as the expression language
+    resolves identifiers, or the metric is preserved."""
+
+    @staticmethod
+    def _convert(fields: list[str], sql: str) -> tuple[dict[str, Any], list[str]]:
+        ossie = _ossie_model([_metric("m", "OSSIE_SQL_2026", sql)])
+        ossie["datasets"][0]["fields"] = [
+            {"name": name, "expression": _expr(f"col_{i}")} for i, name in enumerate(fields)
+        ]
+        converter = conv.OssietoOBML(ossie)
+        return converter.convert(), converter.warnings
+
+    @pytest.mark.parametrize("column", ["Amount", "amount"])
+    def test_quoted_reference_matches_exactly(self, column: str) -> None:
+        obml, _ = self._convert(["Amount", "amount"], f'SUM(Orders."{column}")')
+        assert obml["measures"]["m"]["columns"] == [{"dataObject": "Orders", "column": column}]
+
+    @pytest.mark.parametrize("sql", ["SUM(Orders.amount)", 'SUM(Orders."AMOUNT")'])
+    def test_reference_matching_two_fields_is_preserved(self, sql: str) -> None:
+        obml, warnings = self._convert(["Amount", "amount"], sql)
+        assert "m" not in obml.get("measures", {})
+        assert [m["name"] for m in _unconverted_stash(obml)] == ["m"]
+        assert any(w.startswith("LOSSY:") and "ambiguous" in w for w in warnings)
+
+    def test_quoted_normalized_form_matches_a_regular_name(self) -> None:
+        # A regular identifier is normalized to upper case: "AMOUNT" is amount.
+        obml, _ = self._convert(["amount"], 'SUM(Orders."AMOUNT")')
+        assert obml["measures"]["m"]["columns"] == [{"dataObject": "Orders", "column": "amount"}]
+
+    def test_quoted_reference_in_another_case_is_preserved(self) -> None:
+        # "Amount" is taken as written; the regular name amount is AMOUNT.
+        obml, _ = self._convert(["amount"], 'SUM(Orders."Amount")')
+        assert "m" not in obml.get("measures", {})
+        assert [m["name"] for m in _unconverted_stash(obml)] == ["m"]
+
+    def test_bare_reference_matches_regardless_of_case(self) -> None:
+        obml, _ = self._convert(["amount"], "SUM(ORDERS.AMOUNT)")
+        assert obml["measures"]["m"]["columns"] == [{"dataObject": "Orders", "column": "amount"}]

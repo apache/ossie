@@ -24,6 +24,8 @@ docstring and the shared constants in :mod:`ossie_orionbelt._common`.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from functools import partial
 from typing import Any
 
 from ossie_orionbelt._common import (
@@ -35,7 +37,16 @@ from ossie_orionbelt._common import (
     OBML_TO_OSSIE_TYPE,
     obml_datatype_to_ossie,
 )
-from ossie_orionbelt._portable import NotPortableError, PortableRenderer
+from ossie_orionbelt._field_names import (
+    FIELD_NAMES_COLUMN,
+    FIELD_NAMES_KEY,
+    code_renames,
+    field_collisions,
+    rename_keys,
+    rename_metric,
+)
+from ossie_orionbelt._ossie_sql import ossie_sql, subset_violations
+from ossie_orionbelt._portable import NotPortableError, PortableRenderer, case_collisions
 
 
 class OBMLtoOssie:
@@ -62,6 +73,11 @@ class OBMLtoOssie:
         # instance does not duplicate warnings or left-out entities.
         self.warnings = []
         self.unexported = {}
+        # For what OBML saved by an earlier version keeps verbatim, which may
+        # name fields by code (see _field_names).
+        self._legacy_renames, self._legacy_ambiguous = code_renames(
+            self.obml.get("dataObjects", {}) or {}
+        )
 
         ossie: dict[str, Any] = {"version": _OSSIE_VERSION}
 
@@ -99,6 +115,7 @@ class OBMLtoOssie:
             sem_model["ai_context"] = {"instructions": self.ai_instructions}
 
         sem_model["datasets"] = datasets
+        self._warn_case_collisions()
 
         if all_relationships:
             sem_model["relationships"] = all_relationships
@@ -148,10 +165,12 @@ class OBMLtoOssie:
             self.obml.get("customExtensions"), sem_model["custom_extensions"]
         )
 
+        # One model per document, its properties at the root (apache/ossie#383).
+        # The root is additionalProperties:false, so there are no root-level
+        # ``dialects`` / ``vendors`` arrays: dialects live per expression in
+        # ``expression.dialects[]`` and vendors per entity in
+        # ``custom_extensions[].vendor_name``.
         ossie.update(sem_model)
-
-        # Dialects and vendors are represented on the expressions and extensions
-        # that use them; root-level advertisement arrays are not supported.
         return ossie
 
     def _emit_foreign_extensions(self, obml_exts: list[dict] | None, ossie_exts: list[dict]) -> None:
@@ -193,13 +212,9 @@ class OBMLtoOssie:
             for col_name, col in (do_obj.get("columns", {}) or {}).items()
             if col.get("primaryKey")
         ]
-        # Use the physical ``code`` for each column when present — Ossie
-        # field names mirror the physical column code (see _convert_column).
+        # Ossie field names are the OBML column names (see _convert_column).
         if pk_columns:
-            columns_map = do_obj.get("columns", {}) or {}
-            dataset["primary_key"] = [
-                columns_map[c].get("code", c.lower().replace(" ", "_")) for c in pk_columns
-            ]
+            dataset["primary_key"] = pk_columns
 
         # ── Unique keys (v0.2 first-class, lossless roundtrip via OBSL) ──
         # OBML doesn't model unique keys natively today; round-trip via the
@@ -216,6 +231,14 @@ class OBMLtoOssie:
             uk = data.get("obml_unique_keys")
             if isinstance(uk, list) and all(isinstance(g, list) for g in uk):
                 unique_keys_extra = [list(g) for g in uk]
+                if data.get(FIELD_NAMES_KEY) != FIELD_NAMES_COLUMN:
+                    unique_keys_extra = rename_keys(
+                        unique_keys_extra,
+                        self._legacy_renames.get(do_name, {}),
+                        self._legacy_ambiguous.get(do_name, set()),
+                        self.warnings.append,
+                        f"Dataset '{do_name}'",
+                    )
                 break
         if unique_keys_extra:
             dataset["unique_keys"] = unique_keys_extra
@@ -258,7 +281,7 @@ class OBMLtoOssie:
         relationships = []
         joins = do_obj.get("joins", [])
         for i, join in enumerate(joins):
-            rel = self._convert_join_to_relationship(ossie_name, do_name, do_obj, join, i)
+            rel = self._convert_join_to_relationship(ossie_name, do_name, join, i)
             if rel:
                 relationships.append(rel)
 
@@ -299,11 +322,16 @@ class OBMLtoOssie:
     def _convert_column(
         self, col_name: str, col_obj: dict, do_name: str, obml_dimensions: dict
     ) -> dict:
-        """Convert an OBML column to an Ossie field."""
+        """Convert an OBML column to an Ossie field.
+
+        The field is named by the OBML column name and computed by the column
+        ``code``. The code can be a SQL expression (a calculated column from an
+        Ossie import), which must never become the field name.
+        """
         code = col_obj.get("code", col_name.lower().replace(" ", "_"))
 
         field: dict[str, Any] = {
-            "name": code,
+            "name": col_name,
             "expression": {
                 "dialects": [
                     {
@@ -340,8 +368,6 @@ class OBMLtoOssie:
             field["description"] = col_obj["description"]
         elif col_obj.get("comment"):
             field["description"] = col_obj["comment"]
-        else:
-            field["description"] = col_name  # Use display name as description
 
         # ── Field label (Ossie v0.2 first-class) ──
         # Surfaced from OBSL-vendor customExtensions ``obml_field_label`` —
@@ -376,11 +402,6 @@ class OBMLtoOssie:
             merged = list(existing) + [s for s in obml_col_synonyms if s not in existing]
             ai_ctx["synonyms"] = merged
 
-        # Build ai_context with synonyms from display name
-        display_synonym = col_name.lower()
-        code_clean = code.lower()
-        if display_synonym != code_clean:
-            synonyms.insert(0, col_name)
         if synonyms:
             ai_ctx.setdefault("synonyms", []).extend(
                 s for s in synonyms if s not in ai_ctx.get("synonyms", [])
@@ -399,11 +420,6 @@ class OBMLtoOssie:
             "data_type": ossie_type,
             "obml_abstract_type": abstract_type,
         }
-        # The Ossie field name is the physical code; keep the OBML column name
-        # so the reverse trip restores it (measure filters and model filters
-        # refer to columns by that name).
-        if col_name != code:
-            ext_data["obml_column_name"] = col_name
         # Preserve OBML-only column properties
         if col_obj.get("sqlType"):
             ext_data["obml_sql_type"] = col_obj["sqlType"]
@@ -454,21 +470,16 @@ class OBMLtoOssie:
         return field
 
     def _convert_join_to_relationship(
-        self, ossie_from_name: str, _obml_from_name: str, from_do: dict, join: dict, index: int
+        self, ossie_from_name: str, _obml_from_name: str, join: dict, index: int
     ) -> dict | None:
         """Convert an OBML join to an Ossie relationship."""
         join_to_display = join.get("joinTo", "")
         # Use the OBML display name as the Ossie target name (consistent with
         # _convert_data_object which uses display name as Ossie dataset name)
         to_name = join_to_display
-        target_do = self.obml.get("dataObjects", {}).get(join_to_display, {})
-
-        # Map column display names to codes
-        from_columns_display = join.get("columnsFrom", [])
-        to_columns_display = join.get("columnsTo", [])
-
-        from_cols = self._resolve_column_codes(from_do, from_columns_display)
-        to_cols = self._resolve_column_codes(target_do, to_columns_display)
+        # Ossie field names are the OBML column names (see _convert_column).
+        from_cols = list(join.get("columnsFrom", []))
+        to_cols = list(join.get("columnsTo", []))
 
         # Generate relationship name
         path_name = join.get("pathName", "")
@@ -499,21 +510,13 @@ class OBMLtoOssie:
 
         return rel
 
-    def _resolve_column_codes(self, do_obj: dict, col_display_names: list) -> list:
-        """Resolve OBML column display names to their code values."""
-        columns = do_obj.get("columns", {})
-        codes = []
-        for display in col_display_names:
-            col = columns.get(display, {})
-            codes.append(col.get("code", display.lower().replace(" ", "_")))
-        return codes
-
     def _restore_unconverted_metrics(self) -> list[dict]:
         """Recover Ossie metrics preserved verbatim during Ossie -> OBML import.
 
         The import path stashes metrics OBML can't represent under an Ossie-vendor
         model-level customExtension (``obml_unconverted_metrics``). Re-emit them
-        unchanged so a full Ossie -> OBML -> Ossie roundtrip keeps them.
+        so a full Ossie -> OBML -> Ossie roundtrip keeps them, renaming the field
+        references of a payload saved by an earlier version (see _field_names).
         """
         restored: list[dict] = []
         for ext in self.obml.get("customExtensions", []) or []:
@@ -524,9 +527,41 @@ class OBMLtoOssie:
             except (json.JSONDecodeError, TypeError):
                 continue
             preserved = data.get("obml_unconverted_metrics")
-            if isinstance(preserved, list):
-                restored.extend(m for m in preserved if isinstance(m, dict))
+            if not isinstance(preserved, list):
+                continue
+            metrics = [m for m in preserved if isinstance(m, dict)]
+            if data.get(FIELD_NAMES_KEY) != FIELD_NAMES_COLUMN:
+                collisions = field_collisions(self.obml.get("dataObjects", {}) or {})
+                for metric in metrics:
+                    rename_metric(
+                        metric,
+                        self._legacy_renames,
+                        self._legacy_ambiguous,
+                        collisions,
+                        self.warnings.append,
+                    )
+            restored.extend(metrics)
         return restored
+
+    def _warn_case_collisions(self) -> None:
+        """Warn of names that differ only by case.
+
+        The expression language normalizes a regular identifier to upper case,
+        so it cannot tell such names apart.
+        """
+        data_objects = self.obml.get("dataObjects", {}) or {}
+        groups = [("Datasets", case_collisions(data_objects))] + [
+            (f"Dataset '{name}': fields", case_collisions(obj.get("columns") or {}))
+            for name, obj in data_objects.items()
+            if isinstance(obj, dict)
+        ]
+        for where, names in groups:
+            if names:
+                self.warnings.append(
+                    f"{where} {sorted(names)} differ only by case, which Apache Ossie "
+                    f"identifiers ignore; references to them are quoted as written, which "
+                    f"only a reader that matches quoted names exactly tells apart."
+                )
 
     def _merge_restored_metrics(self, ossie_metrics: list[dict]) -> None:
         """Append preserved (unconverted) Ossie metrics to the converted ones.
@@ -557,9 +592,12 @@ class OBMLtoOssie:
         :class:`PortableRenderer` and computes what OrionBelt computes. A measure
         or metric with no faithful expression is left out of the document and
         kept whole in ``self.unexported`` for the model-level extension; the
-        reverse conversion restores it from there.
+        reverse conversion restores it from there. Each expression is
+        ``ANSI_SQL``, and also ``OSSIE_SQL_2026`` where it has a form inside
+        that language (see :meth:`_add_ossie_dialect`).
         """
         renderer = PortableRenderer(self.obml)
+        ossie_renderer = PortableRenderer(self.obml, ossie=True)
         ossie_metrics = []
 
         for name, measure in obml_measures.items():
@@ -572,6 +610,7 @@ class OBMLtoOssie:
                     self._leave_out("measures", name, measure, str(exc))
                     continue
                 ossie_metric = self._convert_measure(name, measure, sql)
+                self._add_ossie_dialect(ossie_metric, partial(ossie_renderer.measure, name))
             self._finish_ossie_metric("measure", measure, ossie_metric)
             ossie_metrics.append(ossie_metric)
 
@@ -582,10 +621,33 @@ class OBMLtoOssie:
                 self._leave_out("metrics", name, metric, str(exc))
                 continue
             ossie_metric = self._convert_metric(name, metric, sql)
+            self._add_ossie_dialect(ossie_metric, partial(ossie_renderer.metric, name))
             self._finish_ossie_metric("metric", metric, ossie_metric)
             ossie_metrics.append(ossie_metric)
 
         return ossie_metrics
+
+    @staticmethod
+    def _add_ossie_dialect(ossie_metric: dict, render: Callable[[], str]) -> None:
+        """Add the expression in ``OSSIE_SQL_2026`` when it has a form in that language.
+
+        Rendered in the language's own forms, then checked node by node against
+        the subset the spec defines, so the tag is a claim another tool can rely
+        on. A measure using ``MODE``, ``LISTAGG``, an escaped pattern, or an
+        authored expression outside the subset keeps its ``ANSI_SQL`` form only.
+        """
+        try:
+            sql = render()
+        except NotPortableError:
+            return
+        if subset_violations(sql):
+            # An imported formula keeps sqlglot's spelling (STARTS_WITH); the
+            # language's own may differ (STARTSWITH).
+            sql = ossie_sql(sql)
+        if not subset_violations(sql):
+            ossie_metric["expression"]["dialects"].append(
+                {"dialect": "OSSIE_SQL_2026", "expression": sql}
+            )
 
     def _leave_out(self, kind: str, name: str, definition: dict, reason: str) -> None:
         """Keep a non-portable measure or metric for the model-level extension."""

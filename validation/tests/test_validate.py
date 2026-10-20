@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import copy
 import json
 import urllib.request
 from importlib.util import module_from_spec, spec_from_file_location
@@ -24,7 +25,7 @@ import pytest
 
 # validate.py exits at import time when its dependencies are missing, which
 # would abort the whole pytest session during collection — skip instead.
-pytest.importorskip("yaml")
+yaml = pytest.importorskip("yaml")
 pytest.importorskip("jsonschema")
 
 _VALIDATE_PATH = Path(__file__).parents[1] / "validate.py"
@@ -44,11 +45,13 @@ def core_schema() -> dict:
 
 
 def _document(datasets: list[dict], relationships: list[dict]) -> dict:
+    # Deep-copied so a test can edit the document it gets back without
+    # changing the module-level fixtures below for every test after it.
     return {
         "version": "0.2.0.dev0",
         "name": "m",
-        "datasets": datasets,
-        "relationships": relationships,
+        "datasets": copy.deepcopy(datasets),
+        "relationships": copy.deepcopy(relationships),
     }
 
 
@@ -213,11 +216,63 @@ def test_find_duplicates_reports_each_name_once(items: list[str], expected: list
     assert _VALIDATE.find_duplicates(items) == expected
 
 
-def test_a_name_repeated_three_times_is_one_error() -> None:
-    """Three copies of a name are one problem, not two identical messages."""
-    errors = _VALIDATE.validate_unique_names(_document([_ORDERS, _ORDERS, _ORDERS], []))
+def _expression(expr: str = "x") -> dict:
+    return {"dialects": [{"dialect": "ANSI_SQL", "expression": expr}]}
 
-    assert errors == ["[Unique] Duplicate dataset name 'orders' in model 'm'"]
+
+def _with_duplicate_fields(name: str) -> dict:
+    dataset = {
+        "name": "orders",
+        "source": "db.s.orders",
+        "fields": [
+            {"name": name, "expression": _expression()},
+            {"name": name, "expression": _expression()},
+            {"name": name, "expression": _expression()},
+        ],
+    }
+    return _document([dataset], [])
+
+
+def _with_duplicate_metrics(name: str) -> dict:
+    document = _document([_ORDERS], [])
+    document["metrics"] = [
+        {"name": name, "expression": _expression("SUM(orders.amount)")},
+        {"name": name, "expression": _expression("SUM(orders.amount)")},
+        {"name": name, "expression": _expression("SUM(orders.amount)")},
+    ]
+    return document
+
+
+def _with_duplicate_relationships(name: str) -> dict:
+    rels = [dict(_relationship(to_columns=["id"]), name=name) for _ in range(3)]
+    return _document([_ORDERS, _CUSTOMERS], rels)
+
+
+@pytest.mark.parametrize(
+    ("build", "expected"),
+    [
+        (
+            lambda: _document([_ORDERS, _ORDERS, _ORDERS], []),
+            "[Unique] Duplicate dataset name 'orders' in model 'm'",
+        ),
+        (
+            lambda: _with_duplicate_fields("amount"),
+            "[Unique] Duplicate field name 'amount' in dataset 'orders'",
+        ),
+        (
+            lambda: _with_duplicate_metrics("revenue"),
+            "[Unique] Duplicate metric name 'revenue' in model 'm'",
+        ),
+        (
+            lambda: _with_duplicate_relationships("orders_to_customers"),
+            "[Unique] Duplicate relationship name 'orders_to_customers' in model 'm'",
+        ),
+    ],
+    ids=["dataset", "field", "metric", "relationship"],
+)
+def test_a_name_repeated_three_times_is_one_error(build, expected: str) -> None:
+    """Three copies of a name are one problem, for every kind of name checked."""
+    assert _VALIDATE.validate_unique_names(build()) == [expected]
 
 
 def test_unique_names_are_checked_in_the_root_model() -> None:
@@ -238,7 +293,7 @@ def test_schema_rejects_empty_identifiers(core_schema: dict, mutate, path: str) 
     # Empty identifiers are invalid data. The schema (minLength: 1) rejects them
     # up front, so no downstream check has to special-case "" -- and a single
     # empty name is caught even though it never trips duplicate detection.
-    document = _document([dict(_ORDERS)], [])
+    document = _document([_ORDERS], [])
     mutate(document)
 
     assert _VALIDATE.validate_schema(document, core_schema) == [
@@ -247,7 +302,7 @@ def test_schema_rejects_empty_identifiers(core_schema: dict, mutate, path: str) 
 
 
 def test_schema_rejects_empty_relationship_endpoints(core_schema: dict) -> None:
-    document = _document([dict(_ORDERS), dict(_CUSTOMERS)], [_relationship(to_columns=["id"])])
+    document = _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["id"])])
     document["relationships"][0]["to"] = ""
 
     assert _VALIDATE.validate_schema(document, core_schema) == [
@@ -285,6 +340,26 @@ def test_ossie_sql_2026_maps_to_the_ansi_default_explicitly() -> None:
     assert "OSSIE_SQL_2026" not in _VALIDATE.SKIP_SQL_VALIDATION
 
 
+def test_holistics_aql_is_skipped_rather_than_parsed_as_sql() -> None:
+    # AQL is relationship-aware and is not SQL, so sqlglot cannot parse it.
+    # Skipping it is what lets a Holistics field carry its body at all, the way
+    # MDX, MAQL, THOUGHTSPOT and DAX already do.
+    assert "HOLISTICS_AQL" in _VALIDATE.DIALECT_MAP
+    assert _VALIDATE.DIALECT_MAP["HOLISTICS_AQL"] is None
+    assert "HOLISTICS_AQL" in _VALIDATE.SKIP_SQL_VALIDATION
+
+
+def test_a_holistics_aql_expression_is_not_reported_as_invalid_sql() -> None:
+    # `|` is AQL's pipe operator. Parsed as SQL it is a bitwise OR over two
+    # names, which sqlglot accepts, so the skip is asserted through a body that
+    # SQL cannot read at all.
+    body = "count(orders.id) | where(orders.status == 'delivered')"
+    expression = {"dialects": [{"dialect": "HOLISTICS_AQL", "expression": body}]}
+    dataset = {**_ORDERS, "fields": [{"name": "delivered", "expression": expression}]}
+
+    assert _VALIDATE.validate_sql(_document([dataset], [])) == []
+
+
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 def test_validates_a_valid_ossie_sql_2026_expression() -> None:
     error = _VALIDATE.validate_sql_expression("SUM(amount)", "OSSIE_SQL_2026", "ctx")
@@ -298,6 +373,71 @@ def test_flags_an_invalid_ossie_sql_2026_expression() -> None:
 
     assert error is not None
     assert error.startswith("[SQL] ctx:")
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "amount; DROP TABLE customers",
+        "SUM(amount); SELECT 1",
+        "SELECT amount; DROP TABLE customers",
+    ],
+    ids=["column-then-statement", "aggregate-then-select", "select-then-statement"],
+)
+def test_rejects_an_expression_holding_more_than_one_statement(expression: str) -> None:
+    """A field or metric holds one expression; `parse_one` returns a Block for a list."""
+    error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert error == "[SQL] ctx: expected a single expression but found 2 statements"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "amount",
+        "amount;",
+        "amount;;",
+        "SUM(amount)",
+        "a /* ; */ + b",
+        "'a;b'",
+        "CONCAT(a, ';', b)",
+    ],
+    ids=[
+        "column",
+        "trailing-semicolon",
+        "repeated-trailing-semicolons",
+        "aggregate",
+        "in-comment",
+        "in-literal",
+        "in-argument",
+    ],
+)
+def test_accepts_a_single_expression_containing_a_semicolon(expression: str) -> None:
+    """A semicolon in a literal or comment does not make a statement list."""
+    assert _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx") is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    ["", "   ", "\n", ";", ";;", "-- comment only", "/* comment only */"],
+    ids=[
+        "empty",
+        "whitespace",
+        "newline",
+        "semicolon",
+        "semicolons",
+        "line-comment",
+        "block-comment",
+    ],
+)
+def test_rejects_an_expression_holding_no_statement(expression: str) -> None:
+    """Nothing to validate is an error, not a pass through `SELECT {expr}`."""
+    error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert error == "[SQL] ctx: expression is empty"
 
 
 def _relationship(to_columns: list[str], to: str = "customers") -> dict:
@@ -522,6 +662,34 @@ def test_sql_error_in_metric_with_warning_in_name_is_an_error(run_validator):
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_empty_field_expression_fails_validation(run_validator):
+    dataset = {**_ORDERS, "fields": [{
+        "name": "blank",
+        "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": ""}]},
+    }]}
+    document = _document([dataset], [])
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "[SQL] Field 'orders.blank' in model 'm' (ANSI_SQL): expression is empty" in output
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_comment_only_metric_expression_fails_validation(run_validator):
+    document = _document([_ORDERS], [])
+    document["metrics"] = [{
+        "name": "blank_total",
+        "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "-- TODO"}]},
+    }]
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "[SQL] Metric 'blank_total' in model 'm' (ANSI_SQL): expression is empty" in output
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 def test_field_expressed_only_in_ossie_sql_2026_validates(run_validator):
     dataset = {**_ORDERS, "fields": [{
         "name": "half_amount",
@@ -635,3 +803,371 @@ def test_arity_skips_non_list_columns() -> None:
     rel["to_columns"] = "id"
 
     assert validate_relationship_column_arity(_document([_ORDERS, _CUSTOMERS], [rel])) == []
+
+
+def test_a_multi_statement_expression_fails_validation(run_validator):
+    dataset = {**_ORDERS, "fields": [
+        {
+            "name": "amount",
+            "expression": {
+                "dialects": [
+                    {"dialect": "ANSI_SQL", "expression": "amount; DROP TABLE customers"}
+                ]
+            },
+        }
+    ]}
+
+    exit_code, output = run_validator(_document([dataset], []))
+
+    assert exit_code == 1
+    assert "expected a single expression but found 2 statements" in output
+
+
+validate_ontology = _VALIDATE.validate_ontology
+
+_ONTOLOGY_SCHEMA = Path(__file__).parents[2] / "ontology/ontology.json"
+
+
+def _ontology(components: list[dict], **extra) -> dict:
+    return {"version": "0.2.0.dev0", "name": "o", "ontology": components, **extra}
+
+
+def _concept(name: str, **fields) -> dict:
+    return {"concept": name, "type": "EntityType", **fields}
+
+
+def _ontology_relationship(name: str, role: str, **fields) -> dict:
+    return {
+        "name": name,
+        "roles": [{"concept": role}],
+        "verbalizes": [f"{{x}} {name} {{{role}}}"],
+        **fields,
+    }
+
+
+def test_ontology_checks_accept_the_flights_example() -> None:
+    flights = yaml.safe_load((Path(__file__).parents[2] / "examples/flights.yaml").read_text())
+
+    assert validate_ontology(flights) == []
+
+
+@pytest.mark.parametrize("data", [None, [], {}, {"datasets": []}, {"ontology": {"concept": "A"}}])
+def test_ontology_checks_skip_non_ontology_payloads(data: object) -> None:
+    assert validate_ontology(data) == []
+
+
+def test_duplicate_concepts_are_reported_once_per_repeat() -> None:
+    errors = validate_ontology(_ontology([_concept("Order"), _concept("Order"), _concept("Item")]))
+
+    assert errors == ["[Unique] Duplicate concept 'Order' in ontology 'o'"]
+
+
+def test_a_duplicate_concept_does_not_repeat_its_reference_errors() -> None:
+    first = _concept("Order", extends=["Ghost"], relationships=[_ontology_relationship("nr", "Integer")])
+    second = _concept("Order", identify_by=["nr"])
+
+    errors = validate_ontology(_ontology([first, second]))
+
+    assert errors == [
+        "[Unique] Duplicate concept 'Order' in ontology 'o'",
+        "[Reference] Concept 'Order' extends unknown concept 'Ghost'",
+    ]
+
+
+def test_duplicate_relationship_names_are_scoped_to_their_concept() -> None:
+    order = _concept("Order", relationships=[_ontology_relationship("nr", "Integer"), _ontology_relationship("nr", "String")])
+    item = _concept("Item", relationships=[_ontology_relationship("nr", "Integer")])
+
+    errors = validate_ontology(_ontology([order, item]))
+
+    assert errors == ["[Unique] Duplicate relationship 'nr' in concept 'Order'"]
+
+
+@pytest.mark.parametrize(
+    ("component", "expected"),
+    [
+        (
+            _concept("Order", extends=["Ghost"]),
+            "[Reference] Concept 'Order' extends unknown concept 'Ghost'",
+        ),
+        (
+            _concept("Order", identify_by=["nr"]),
+            "[Reference] Concept 'Order' identify_by references unknown relationship 'nr'",
+        ),
+        (
+            _concept("Order", relationships=[_ontology_relationship("placed_by", "Nobody")]),
+            "[Reference] Relationship 'Order.placed_by' has a role played by unknown concept 'Nobody'",
+        ),
+        (
+            _concept("Order", iri="ex:Order"),
+            "[Reference] Concept 'Order' iri uses undeclared prefix 'ex'",
+        ),
+        (
+            _concept("Order", relationships=[_ontology_relationship("nr", "Integer", iri="ex:nr")]),
+            "[Reference] Relationship 'Order.nr' iri uses undeclared prefix 'ex'",
+        ),
+    ],
+)
+def test_dangling_ontology_references_are_reported(component: dict, expected: str) -> None:
+    assert validate_ontology(_ontology([component])) == [expected]
+
+
+def test_built_in_concepts_resolve_without_being_declared() -> None:
+    amount = {"concept": "Amount", "type": "ValueType", "extends": ["Decimal"]}
+    order = _concept(
+        "Order",
+        extends=["Any"],
+        relationships=[_ontology_relationship("total", "Amount"), _ontology_relationship("placed_on", "DateTime")],
+    )
+
+    assert validate_ontology(_ontology([amount, order])) == []
+
+
+def test_identify_by_resolves_relationships_declared_on_a_supertype() -> None:
+    party = _concept("Party", relationships=[_ontology_relationship("nr", "Integer")])
+    person = _concept("Person", extends=["Party"], identify_by=["nr"])
+
+    assert validate_ontology(_ontology([party, person])) == []
+
+
+@pytest.mark.parametrize(
+    ("components", "expected"),
+    [
+        (
+            [_concept("A", extends=["B"]), _concept("B", extends=["A"])],
+            ["[Reference] Concept 'A' extends itself: A -> B -> A"],
+        ),
+        (
+            [_concept("A", extends=["A"])],
+            ["[Reference] Concept 'A' extends itself: A -> A"],
+        ),
+        (
+            [_concept("A", extends=["B"]), _concept("B", extends=["C"]), _concept("C", extends=["Any"])],
+            [],
+        ),
+    ],
+)
+def test_extends_cycles_are_reported_once(components: list[dict], expected: list[str]) -> None:
+    assert validate_ontology(_ontology(components)) == expected
+
+
+@pytest.mark.parametrize(
+    "iri",
+    [
+        "ex:Order",
+        "http://example.com/Order",
+        "urn:isbn:0451450523",
+        "urn:x",
+        "https://example.com/ns#Order",
+        "mailto:orders@example.com",
+        "tel:+15551234567",
+        "MAILTO:orders@example.com",
+    ],
+)
+def test_declared_prefixes_and_full_iris_are_accepted(iri: str) -> None:
+    document = _ontology([_concept("Order", iri=iri)], prefixes={"ex": "http://example.com/"})
+
+    assert validate_ontology(document) == []
+
+
+def test_undeclared_prefix_is_reported_even_when_prefixes_are_declared() -> None:
+    document = _ontology([_concept("Order", iri="foaf:Order")], prefixes={"ex": "http://example.com/"})
+
+    assert validate_ontology(document) == ["[Reference] Concept 'Order' iri uses undeclared prefix 'foaf'"]
+
+
+def test_ontology_checks_tolerate_malformed_shapes() -> None:
+    # Schema validation owns shape errors; the semantic pass must not crash on them.
+    document = _ontology(
+        ["not a component", _concept("Order", extends="Any", identify_by="nr", relationships=[None, {}])],
+        prefixes="foaf",
+    )
+
+    assert validate_ontology(document) == []
+
+
+def test_ontology_cli_reports_dangling_references(run_validator, offline) -> None:
+    document = _ontology([_concept("Order", extends=["Ghost"])])
+
+    exit_code, output = run_validator(document, _ONTOLOGY_SCHEMA)
+
+    assert exit_code == 1
+    assert "[Reference] Concept 'Order' extends unknown concept 'Ghost'" in output
+
+
+def test_ontology_cli_skips_semantic_checks_when_the_schema_fails(run_validator, offline) -> None:
+    document = _ontology([{"concept": "Order", "extends": ["Ghost"]}])  # missing required type
+
+    exit_code, output = run_validator(document, _ONTOLOGY_SCHEMA)
+
+    assert exit_code == 1
+    assert "[Schema]" in output
+    assert "[Reference]" not in output
+
+
+# --- command line: several files, schema lookup -----------------------------
+
+def _write_document(tmp_path, name, document):
+    path = tmp_path / name
+    path.write_text(json.dumps(document))
+    return path
+
+
+def _run_cli(monkeypatch, capsys, *args):
+    monkeypatch.setattr(_VALIDATE.sys, "argv", [str(_VALIDATE_PATH), *map(str, args)])
+    with pytest.raises(SystemExit) as caught:
+        _VALIDATE.main()
+    return caught.value.code, capsys.readouterr().out
+
+
+def test_cli_validates_every_file_and_summarises(tmp_path, monkeypatch, capsys, offline):
+    first = _write_document(tmp_path, "first.json", _document([_CUSTOMERS], []))
+    second = _write_document(tmp_path, "second.json", _document([_ORDERS], []))
+
+    code, output = _run_cli(monkeypatch, capsys, first, second)
+
+    assert code == 0
+    assert "Validation PASSED: first.json" in output
+    assert "Validation PASSED: second.json" in output
+    assert "2 of 2 file(s) passed" in output
+
+
+def test_cli_fails_when_any_file_fails_but_reports_them_all(tmp_path, monkeypatch, capsys, offline):
+    good = _write_document(tmp_path, "good.json", _document([_CUSTOMERS], []))
+    bad_document = _document([_CUSTOMERS], [])
+    bad_document["version"] = "0.1.0"
+    bad = _write_document(tmp_path, "bad.json", bad_document)
+
+    code, output = _run_cli(monkeypatch, capsys, good, bad)
+
+    assert code == 1
+    assert "Validation PASSED: good.json" in output
+    assert "Validation FAILED with 1 error(s)" in output
+    assert "1 of 2 file(s) passed" in output
+
+
+def test_cli_reports_a_missing_file_and_goes_on(tmp_path, monkeypatch, capsys, offline):
+    good = _write_document(tmp_path, "good.json", _document([_CUSTOMERS], []))
+
+    code, output = _run_cli(monkeypatch, capsys, tmp_path / "missing.json", good)
+
+    assert code == 1
+    assert "Error: File not found" in output and "missing.json" in output
+    assert "Validation PASSED: good.json" in output
+
+
+def test_cli_reports_an_unreadable_file_and_goes_on(tmp_path, monkeypatch, capsys, offline):
+    good = _write_document(tmp_path, "good.json", _document([_CUSTOMERS], []))
+    binary = tmp_path / "binary.yaml"
+    binary.write_bytes(b"\xff\xfe\x00")
+
+    code, output = _run_cli(monkeypatch, capsys, binary, tmp_path, good)
+
+    assert code == 1
+    assert "is not valid UTF-8 text" in output and "binary.yaml" in output
+    assert f"Error: Could not read {tmp_path}" in output
+    assert "Validation PASSED: good.json" in output
+
+
+def test_cli_reports_a_check_that_raises_and_goes_on(tmp_path, monkeypatch, capsys, offline):
+    good = _write_document(tmp_path, "good.json", _document([_CUSTOMERS], []))
+    bad = _write_document(tmp_path, "bad.json", _document([_ORDERS], []))
+
+    def explode(data, schema):
+        if "orders" in json.dumps(data):
+            raise KeyError("dialect")
+        return []
+
+    monkeypatch.setattr(_VALIDATE, "validate_document", explode)
+
+    code, output = _run_cli(monkeypatch, capsys, bad, good)
+
+    assert code == 1
+    assert f"Error: KeyError while validating {bad}: 'dialect'" in output
+    assert "Validation PASSED: good.json" in output
+    assert "1 of 2 file(s) passed" in output
+
+
+def test_cli_takes_files_after_a_double_dash_literally(tmp_path, monkeypatch, capsys, offline):
+    dashed = _write_document(tmp_path, "-model.json", _document([_CUSTOMERS], []))
+    monkeypatch.chdir(tmp_path)
+
+    code, output = _run_cli(monkeypatch, capsys, "--", "-model.json")
+
+    assert code == 0
+    assert output.strip() == "Validation PASSED: -model.json"
+
+
+def test_cli_single_file_output_has_no_summary(tmp_path, monkeypatch, capsys, offline):
+    only = _write_document(tmp_path, "model.json", _document([_CUSTOMERS], []))
+
+    code, output = _run_cli(monkeypatch, capsys, only)
+
+    assert code == 0
+    assert output.strip() == "Validation PASSED: model.json"
+
+
+def test_cli_accepts_schema_option_before_the_files(tmp_path, monkeypatch, capsys, offline):
+    schema = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    only = _write_document(tmp_path, "model.json", _document([_CUSTOMERS], []))
+
+    code, output = _run_cli(monkeypatch, capsys, "--schema", schema, only)
+
+    assert code == 0
+    assert "Validation PASSED: model.json" in output
+
+
+def test_cli_reads_the_schema_from_ossie_schema_env(tmp_path, monkeypatch, capsys, offline, core_schema):
+    copied = tmp_path / "vendored-schema.json"
+    copied.write_text(json.dumps(core_schema))
+    monkeypatch.setenv("OSSIE_SCHEMA", str(copied))
+    only = _write_document(tmp_path, "model.json", _document([_CUSTOMERS], []))
+
+    code, output = _run_cli(monkeypatch, capsys, only)
+
+    assert code == 0
+    assert "Validation PASSED: model.json" in output
+
+
+def test_cli_schema_option_wins_over_the_env(tmp_path, monkeypatch, capsys, offline):
+    monkeypatch.setenv("OSSIE_SCHEMA", str(tmp_path / "nowhere.json"))
+    schema = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    only = _write_document(tmp_path, "model.json", _document([_CUSTOMERS], []))
+
+    code, output = _run_cli(monkeypatch, capsys, only, "--schema", schema)
+
+    assert code == 0
+
+
+def test_cli_missing_default_schema_names_both_overrides(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("OSSIE_SCHEMA", str(tmp_path / "nowhere.json"))
+    only = _write_document(tmp_path, "model.json", _document([_CUSTOMERS], []))
+
+    code, output = _run_cli(monkeypatch, capsys, only)
+
+    assert code == 1
+    assert "Schema not found" in output
+    assert "--schema" in output and "OSSIE_SCHEMA" in output
+
+
+@pytest.mark.parametrize("argv", [["--schema"], ["--verbose", "x.yaml"], ["--schema", "s.json"], ["--"]])
+def test_cli_rejects_malformed_arguments(monkeypatch, capsys, argv):
+    code, output = _run_cli(monkeypatch, capsys, *argv)
+
+    assert code == 1
+    assert output.startswith("Usage:")
+
+
+def test_validate_document_stops_at_schema_errors(core_schema, offline):
+    document = _document([_CUSTOMERS, _CUSTOMERS], [])
+    document["version"] = "0.1.0"
+
+    errors = _VALIDATE.validate_document(document, core_schema)
+
+    assert len(errors) == 1 and errors[0].startswith("[Schema]")
+
+
+def test_validate_document_runs_semantic_checks_on_a_valid_shape(core_schema, offline):
+    errors = _VALIDATE.validate_document(_document([_CUSTOMERS, _CUSTOMERS], []), core_schema)
+
+    assert any(error.startswith("[Unique]") for error in errors)

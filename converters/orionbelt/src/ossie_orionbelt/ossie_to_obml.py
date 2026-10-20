@@ -27,10 +27,13 @@ import json
 import re
 from typing import Any
 
+from sqlglot import expressions as exp
+
 from ossie_orionbelt._common import (
     _COLUMN_REF_RE,
     _INTERNAL_VENDORS,
     _OBML_VENDOR_READ,
+    _OSSIE_DIALECT_TO_SQLGLOT,
     _OSSIE_VERSION,
     _SQL_PARSEABLE_DIALECTS,
     _VENDOR_OSSIE,
@@ -42,12 +45,32 @@ from ossie_orionbelt._common import (
     obml_decimal_default,
     ossie_metric_datatype_to_obml,
 )
+from ossie_orionbelt._field_names import (
+    FIELD_NAMES_COLUMN,
+    FIELD_NAMES_KEY,
+    field_collisions,
+    parse_expression,
+    rename_keys,
+    rename_metric,
+)
+from ossie_orionbelt._portable import matching_names
 
 # A dataset/column identifier in a resolved metric expression: either a bare SQL
 # word or a bracket-quoted token. ``_resolve_column_refs`` bracket-quotes any
 # canonical name that is not a bare word (e.g. a display name with spaces) so the
 # downstream ``dataset.column`` parsers below never split it on whitespace.
 _RESOLVED_IDENT = r"(?:\w+|\[[^\]]+\])"
+
+
+def _contains_query(sql: str, dialect: str) -> bool:
+    """Whether *sql* holds a query, such as a subquery or a UNION.
+
+    A metric formula is over measures. A query inside it has no OBML form, and
+    its own tables and aliases are not datasets, so its aggregates must not be
+    lifted into measures.
+    """
+    parsed = parse_expression(sql, _OSSIE_DIALECT_TO_SQLGLOT.get(dialect))
+    return parsed is not None and parsed[1].find(exp.Query) is not None
 
 
 class OssietoOBML:
@@ -195,7 +218,12 @@ class OssietoOBML:
             obml.setdefault("customExtensions", []).append(
                 {
                     "vendor": _VENDOR_OSSIE,
-                    "data": json.dumps({"obml_unconverted_metrics": self._unconverted_metrics}),
+                    "data": json.dumps(
+                        {
+                            "obml_unconverted_metrics": self._unconverted_metrics,
+                            FIELD_NAMES_KEY: FIELD_NAMES_COLUMN,
+                        }
+                    ),
                 }
             )
 
@@ -242,10 +270,11 @@ class OssietoOBML:
     def _restore_column_names(self, obml: dict[str, Any], datasets: list) -> None:
         """Rename columns from their Ossie field name back to the OBML column name.
 
-        The export names each field by its physical code and keeps the OBML
-        column name in ``obml_column_name``. Measure filters and model filters
-        refer to columns by that name, so every column key and every reference
-        the import built from field names is renamed to match.
+        Exports before this version named each field by its physical code and
+        kept the OBML column name in ``obml_column_name``. Measure filters and
+        model filters refer to columns by that name, so every column key and
+        every reference the import built from field names is renamed to match,
+        and so are the unique keys and unconverted metrics it keeps verbatim.
         """
         renames: dict[str, dict[str, str]] = {}
         for ds in datasets:
@@ -281,6 +310,39 @@ class OssietoOBML:
                     lambda m: "{[" + m.group(1) + "].[" + rename(m.group(1), m.group(2)) + "]}",
                     measure["expression"],
                 )
+        # What the import keeps verbatim names fields as the document did: the
+        # unique keys, and the metrics OBML cannot represent.
+        for do_name, do_obj in obml.get("dataObjects", {}).items():
+            for ext in do_obj.get("customExtensions", []) or []:
+                data = self._own_stash(ext, "obml_unique_keys")
+                if data is not None:
+                    data["obml_unique_keys"] = rename_keys(
+                        data["obml_unique_keys"],
+                        renames.get(do_name, {}),
+                        (),
+                        self.warnings.append,
+                        f"Dataset '{do_name}'",
+                    )
+                    ext["data"] = json.dumps(data)
+        for ext in obml.get("customExtensions", []) or []:
+            data = self._own_stash(ext, "obml_unconverted_metrics")
+            if data is not None:
+                collisions = field_collisions(obml.get("dataObjects", {}))
+                for metric in data["obml_unconverted_metrics"]:
+                    if isinstance(metric, dict):
+                        rename_metric(metric, renames, {}, collisions, self.warnings.append)
+                ext["data"] = json.dumps(data)
+
+    @staticmethod
+    def _own_stash(ext: dict[str, Any], key: str) -> dict[str, Any] | None:
+        """The payload of an Ossie-vendor extension this import wrote under *key*."""
+        if ext.get("vendor") != _VENDOR_OSSIE:
+            return None
+        try:
+            data = json.loads(ext.get("data", "{}"))
+        except (json.JSONDecodeError, TypeError):
+            return None
+        return data if isinstance(data, dict) and isinstance(data.get(key), list) else None
 
     @staticmethod
     def _stashed_obml_settings(model: dict) -> object:
@@ -347,20 +409,20 @@ class OssietoOBML:
             columns[col_name] = col_obj
 
         # ── Primary key flag propagation (Ossie v0.2 first-class) ──
-        # ``primary_key`` lists physical column codes; mark every matching
-        # column with ``primaryKey: true``. Unknown PK columns surface as
-        # a warning (the spec couples PK to relationship cardinality, so
-        # silently dropping is unsafe).
-        pk_codes = ds.get("primary_key") or []
-        if pk_codes:
-            code_to_col = {col.get("code"): (cname, col) for cname, col in columns.items()}
+        # ``primary_key`` lists field names, which are the column names; mark
+        # every matching column with ``primaryKey: true``. A physical code
+        # still matches, as earlier exports listed codes. Unknown PK columns
+        # surface as a warning (the spec couples PK to relationship
+        # cardinality, so silently dropping is unsafe).
+        pk_names = ds.get("primary_key") or []
+        if pk_names:
+            code_to_col = {col.get("code"): col for col in columns.values()}
             unknown_pks: list[str] = []
-            for pk_code in pk_codes:
-                hit = code_to_col.get(pk_code)
-                if hit is None:
-                    unknown_pks.append(pk_code)
+            for pk_name in pk_names:
+                col = columns.get(pk_name) or code_to_col.get(pk_name)
+                if col is None:
+                    unknown_pks.append(pk_name)
                     continue
-                _, col = hit
                 col["primaryKey"] = True
             if unknown_pks:
                 self.warnings.append(
@@ -431,7 +493,12 @@ class OssietoOBML:
             do.setdefault("customExtensions", []).append(
                 {
                     "vendor": _VENDOR_OSSIE,
-                    "data": json.dumps({"obml_unique_keys": [list(g) for g in unique_keys]}),
+                    "data": json.dumps(
+                        {
+                            "obml_unique_keys": [list(g) for g in unique_keys],
+                            FIELD_NAMES_KEY: FIELD_NAMES_COLUMN,
+                        }
+                    ),
                 }
             )
 
@@ -461,24 +528,13 @@ class OssietoOBML:
             elif code == name and dialects:
                 code = dialects[0].get("expression", name)
 
-        # Determine abstract type. Precedence: the spec `datatype` (capitalised
-        # `DataType` enum) > legacy lowercase `data_type` > name heuristic. An
-        # OBML-origin field additionally restores its exact `abstractType` from
-        # the stashed extension below, keeping OBML -> Ossie -> OBML lossless,
-        # unless the `datatype` was edited since. A non-string value (a
-        # hand-authored document) counts as absent rather than crashing.
+        # An OBML-origin field additionally restores its exact `abstractType`
+        # from the stashed extension below, keeping OBML -> Ossie -> OBML
+        # lossless, unless the `datatype` was edited since.
         ossie_datatype = field.get("datatype")
         if not isinstance(ossie_datatype, str):
             ossie_datatype = ""
-        legacy_type = field.get("data_type")
-        if not isinstance(legacy_type, str):
-            legacy_type = ""
-        if ossie_datatype in OSSIE_DATATYPE_TO_OBML_ABSTRACT:
-            abstract_type = OSSIE_DATATYPE_TO_OBML_ABSTRACT[ossie_datatype]
-        elif legacy_type and legacy_type in OSSIE_TO_OBML_TYPE:
-            abstract_type = OSSIE_TO_OBML_TYPE[legacy_type]
-        else:
-            abstract_type = self._infer_obml_type(field)
+        abstract_type = self._field_abstract_type(field)
 
         col: dict[str, Any] = {
             "code": code,
@@ -556,6 +612,21 @@ class OssietoOBML:
         self._carry_foreign_extensions(field.get("custom_extensions"), col)
 
         return name, col
+
+    def _field_abstract_type(self, field: dict) -> str:
+        """OBML abstractType of an Ossie field.
+
+        Precedence: the spec `datatype` (capitalised `DataType` enum) > legacy
+        lowercase `data_type` > name heuristic. A non-string value (a
+        hand-authored document) counts as absent rather than crashing.
+        """
+        ossie_datatype = field.get("datatype")
+        if isinstance(ossie_datatype, str) and ossie_datatype in OSSIE_DATATYPE_TO_OBML_ABSTRACT:
+            return OSSIE_DATATYPE_TO_OBML_ABSTRACT[ossie_datatype]
+        legacy_type = field.get("data_type")
+        if isinstance(legacy_type, str) and legacy_type in OSSIE_TO_OBML_TYPE:
+            return OSSIE_TO_OBML_TYPE[legacy_type]
+        return self._infer_obml_type(field)
 
     def _infer_obml_type(self, field: dict) -> str:
         """Infer OBML abstractType from Ossie field metadata."""
@@ -685,7 +756,16 @@ class OssietoOBML:
                 # Skip join key columns — they are FK/PK, not analytical dims
                 if (ds_name, field_name) in self._join_key_columns:
                     continue
-                abstract_type = self._infer_obml_type(field)
+                abstract_type = self._field_abstract_type(field)
+                # OBML marks a time dimension by its temporal result type, so a
+                # time dimension over a non-temporal field (an Integer year)
+                # stays a date dimension.
+                if (
+                    isinstance(dim, dict)
+                    and dim.get("is_time")
+                    and abstract_type not in ("date", "time", "timestamp", "timestamp_tz")
+                ):
+                    abstract_type = "date"
                 dim_def: dict[str, Any] = {
                     "dataObject": ds_name,
                     "column": field_name,
@@ -751,37 +831,32 @@ class OssietoOBML:
         measures: dict[str, Any] = {}
         metrics: dict[str, Any] = {}
 
-        # Case-insensitive dataset/field index for resolving SQL identifiers
-        # back to their canonical Ossie names (Snowflake/Databricks expressions
-        # commonly upper-case or quote them). Identifiers resolve by BOTH the
-        # Ossie name and the physical code (source-table code / bare-identifier
-        # field expression): our own OBML -> Ossie emitter writes metric SQL
-        # against the physical code (e.g. SUM(fact_orders.amount)), so resolving
-        # names only would drop such metrics on the return trip. Names take
-        # precedence over codes on any collision.
-        ds_lc: dict[str, str] = {}
-        for ds_name in ds_map:
-            ds_lc.setdefault(ds_name.lower(), ds_name)
+        # Dataset/field index for resolving SQL identifiers back to their
+        # canonical Ossie names. Identifiers resolve by the Ossie name and,
+        # failing that, by the physical code (source-table code / bare-identifier
+        # field expression), regardless of case: Snowflake/Databricks
+        # expressions commonly upper-case or quote them, and older exports
+        # wrote metric SQL against the physical code (e.g. SUM(fact_orders.amount)).
+        dataset_codes: dict[str, list[str]] = {}
+        fields: dict[str, list[str]] = {}
+        field_codes: dict[str, dict[str, list[str]]] = {}
         for ds_name, ds in ds_map.items():
             # Unquote so a quoted source table (Snowflake/Databricks style,
             # e.g. WH.PUBLIC."fact_orders") is indexed by its bare code.
             table_code = self._unquote_identifier(self._parse_source(ds.get("source", ds_name))[2])
             if table_code:
-                ds_lc.setdefault(table_code.lower(), ds_name)
-
-        fields_lc: dict[str, dict[str, str]] = {}
-        for ds_name, ds in ds_map.items():
-            fmap: dict[str, str] = {}
-            ossie_fields = ds.get("fields", []) or []
-            for f in ossie_fields:
-                if isinstance(f, dict) and f.get("name"):
-                    fmap.setdefault(f["name"].lower(), f["name"])
-            for f in ossie_fields:
-                if isinstance(f, dict) and f.get("name"):
+                dataset_codes.setdefault(table_code.lower(), []).append(ds_name)
+            names: list[str] = []
+            codes: dict[str, list[str]] = {}
+            for f in ds.get("fields", []) or []:
+                if isinstance(f, dict) and isinstance(f.get("name"), str) and f["name"]:
+                    names.append(f["name"])
                     code = self._field_expr_identifier(f)
                     if code:
-                        fmap.setdefault(code.lower(), f["name"])
-            fields_lc[ds_name] = fmap
+                        codes.setdefault(code.lower(), []).append(f["name"])
+            fields[ds_name] = names
+            field_codes[ds_name] = codes
+        datasets = (list(ds_map), dataset_codes)
 
         for m in ossie_metrics:
             name = m["name"]
@@ -865,17 +940,20 @@ class OssietoOBML:
                     + ") expression",
                 )
                 continue
+            if _contains_query(expr_text, _expr_dialect):
+                self._preserve_unconverted_metric(m, "expression contains a query")
+                continue
 
             # Resolve `dataset.column` references to canonical Ossie names
-            # (case-insensitive, quote-stripped) before parsing. Copying raw
-            # Snowflake/Databricks identifiers verbatim would yield OBML refs to
-            # non-existent dataObjects/columns; when a reference cannot be
-            # mapped the metric is preserved rather than emitted dangling.
-            resolved_expr = self._resolve_column_refs(expr_text, ds_lc, fields_lc)
+            # before parsing. Copying raw Snowflake/Databricks identifiers
+            # verbatim would yield OBML refs to non-existent dataObjects/columns;
+            # when a reference cannot be mapped to exactly one field the metric
+            # is preserved rather than emitted dangling or on the wrong column.
+            resolved_expr, problem = self._resolve_column_refs(
+                expr_text, datasets, fields, field_codes
+            )
             if resolved_expr is None:
-                self._preserve_unconverted_metric(
-                    m, "expression references columns not found in the model"
-                )
+                self._preserve_unconverted_metric(m, problem)
                 continue
             expr_text = resolved_expr
 
@@ -1201,38 +1279,58 @@ class OssietoOBML:
                         return candidate
         return None
 
+    @classmethod
+    def _matching(cls, raw: str, names: list[str], codes: dict[str, list[str]]) -> list[str]:
+        """The names the identifier *raw*, as written in SQL, refers to.
+
+        A name matches as the expression language resolves identifiers (see
+        :func:`matching_names`): a double-quoted or bracketed identifier
+        exactly, else by its normalized form; a bare or backticked one
+        (Databricks compares those regardless of case) regardless of case.
+        One that names nothing may name a physical code, regardless of case.
+        """
+        ref = cls._unquote_identifier(raw)
+        if raw.startswith('"'):
+            ref = ref.replace('""', '"')
+        return matching_names(ref, raw[0] in '"[', names) or codes.get(ref.lower(), [])
+
     def _resolve_column_refs(
-        self, expr: str, ds_lc: dict[str, str], fields_lc: dict[str, dict[str, str]]
-    ) -> str | None:
+        self,
+        expr: str,
+        datasets: tuple[list[str], dict[str, list[str]]],
+        fields: dict[str, list[str]],
+        field_codes: dict[str, dict[str, list[str]]],
+    ) -> tuple[str | None, str]:
         """Rewrite ``dataset.column`` references to canonical Ossie names.
 
-        Identifiers are matched case-insensitively and with SQL quoting
-        stripped, so Snowflake/Databricks forms such as ``SUM(ORDERS.AMOUNT)``
-        or ``SUM("Orders"."amount")`` resolve to the real ``Orders.amount``.
-        Returns the rewritten expression, or ``None`` if any reference cannot be
-        mapped (the caller then preserves the metric verbatim rather than emit a
-        dangling reference that would fail query resolution).
+        Each part must match exactly one dataset or field (see :meth:`_matching`),
+        so forms such as ``SUM(ORDERS.AMOUNT)`` resolve. Returns the rewritten
+        expression, or ``None`` and the reason when a reference matches nothing
+        or more than one (the caller then preserves the metric verbatim rather
+        than emit a dangling reference or one to the wrong column).
         """
-        unresolved = False
+        problems: list[str] = []
 
         def repl(match: re.Match[str]) -> str:
-            nonlocal unresolved
-            ds_real = ds_lc.get(self._unquote_identifier(match.group("ds")).lower())
-            if ds_real is None:
-                unresolved = True
-                return match.group(0)
-            col_real = fields_lc.get(ds_real, {}).get(
-                self._unquote_identifier(match.group("col")).lower()
+            ds_hits = self._matching(match.group("ds"), *datasets)
+            col_hits = (
+                self._matching(match.group("col"), fields[ds_hits[0]], field_codes[ds_hits[0]])
+                if len(ds_hits) == 1
+                else []
             )
-            if col_real is None:
-                unresolved = True
+            if len(ds_hits) > 1 or len(col_hits) > 1:
+                hits = ds_hits if len(ds_hits) > 1 else col_hits
+                problems.append(f"reference {match.group(0)} is ambiguous: {sorted(hits)}")
+                return match.group(0)
+            if not col_hits:
+                problems.append("expression references columns not found in the model")
                 return match.group(0)
             # Bracket-quote names that are not bare words so the downstream
             # dataset.column parsers keep multi-word display names intact.
-            return f"{self._q_ident(ds_real)}.{self._q_ident(col_real)}"
+            return f"{self._q_ident(ds_hits[0])}.{self._q_ident(col_hits[0])}"
 
         rewritten = _COLUMN_REF_RE.sub(repl, expr)
-        return None if unresolved else rewritten
+        return (None, problems[0]) if problems else (rewritten, "")
 
     def _preserve_unconverted_metric(self, ossie_metric: dict, reason: str) -> None:
         """Preserve an Ossie metric that has no OBML representation.

@@ -36,20 +36,34 @@ Validates Ossie YAML or JSON documents containing one semantic model against:
 4. Relationship column arity (from_columns and to_columns lengths match)
 5. SQL syntax (using sqlglot)
 
+Ontology documents (--schema ontology/ontology.json) are checked for unique
+concept and relationship names, and for extends, identify_by, roles and QName
+prefixes that resolve to something declared.
+
 Usage:
-    python validation/validate.py <yaml_file>
-    python validation/validate.py <yaml_file> --schema ontology/ontology.json
+    python validation/validate.py [--schema <schema_file>] [--] <file> [<file> ...]
+    python validation/validate.py <file> --schema ontology/ontology.json
     python validation/validate.py examples/tpcds_semantic_model.yaml
+
+Every file is validated and reported, including one whose checks fail
+unexpectedly; the exit status is non-zero if any of them failed. Put -- before
+a file name that starts with a dash. The schema defaults to core-spec/ossie-schema.json in this
+repository's layout; when the script is vendored elsewhere, point OSSIE_SCHEMA
+or --schema at a copy of the schema.
 """
 
 import json
+import os
 import sys
+import traceback
+from collections import Counter
 from collections.abc import Hashable
 from pathlib import Path
 
 try:
     import yaml
     from jsonschema import Draft202012Validator
+    from jsonschema.exceptions import SchemaError
     from referencing import Registry
     from referencing.exceptions import NoSuchResource, Unresolvable
     from referencing.retrieval import to_cached_resource
@@ -79,10 +93,22 @@ DIALECT_MAP = {
     "SIGMA": None,  # Sigma's spreadsheet-style formula language, not SQL; skip validation
     "THOUGHTSPOT": None,  # Not supported by sqlglot, skip validation
     "DAX": None,  # Not supported by sqlglot, skip validation
+    "HOLISTICS_AQL": None,  # Holistics AQL, not SQL; skip validation
 }
 
 # Dialects that sqlglot cannot parse
-SKIP_SQL_VALIDATION = {"MDX", "TABLEAU", "MAQL", "SIGMA", "THOUGHTSPOT", "DAX"}
+SKIP_SQL_VALIDATION = {
+    "MDX",
+    "TABLEAU",
+    "MAQL",
+    "SIGMA",
+    "THOUGHTSPOT",
+    "DAX",
+    "HOLISTICS_AQL",
+}
+
+# Concepts every ontology includes implicitly (ontology.md, "Built-in concepts")
+BUILT_IN_CONCEPTS = {"Any", "Boolean", "Date", "DateTime", "Decimal", "Float", "Integer", "String"}
 
 
 class ValidationWarning(str):
@@ -149,6 +175,29 @@ class UniqueKeyLoader(yaml.SafeLoader):
                 self._check_unique_keys(child, visited)
 
 
+def load_yaml_named(text: str, name: str):
+    """Parse text with UniqueKeyLoader, naming the source in any parser mark.
+
+    yaml.load() names a str source "<unicode string>", which drops the path from
+    malformed-YAML and duplicate-key diagnostics. Naming the loader restores it
+    and keeps the offending line, which PyYAML only records for a str source:
+    Reader.get_mark() passes its buffer to the Mark only when the input was not
+    a stream, so a named StringIO would name the file but lose the snippet.
+    """
+    try:
+        loader = UniqueKeyLoader(text)
+    except yaml.reader.ReaderError as e:
+        # Reader.__init__ rejects an unprintable character (a NUL decodes as
+        # valid UTF-8 and gets this far) before the name below can be set.
+        e.name = name
+        raise
+    loader.name = name
+    try:
+        return loader.get_single_data()
+    finally:
+        loader.dispose()
+
+
 # Ossie schemas reference one another by raw GitHub URL or canonical $id.
 # Resolve those URLs onto files in this checkout only when a reference needs
 # them. The decorator parses and caches each retrieved schema across calls.
@@ -194,10 +243,7 @@ def find_duplicates(items: list[str]) -> list[str]:
     occurrence would emit the same message twice and inflate the error count.
     Order follows first appearance, so a document's diagnostics are stable.
     """
-    counts: dict[str, int] = {}
-    for item in items:
-        counts[item] = counts.get(item, 0) + 1
-    return [item for item, count in counts.items() if count > 1]
+    return [item for item, count in Counter(items).items() if count > 1]
 
 
 def validate_unique_names(data: dict) -> list[str]:
@@ -322,27 +368,67 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
 
     sqlglot_dialect = DIALECT_MAP.get(dialect)
 
+    def statement_count_error(sql: str) -> str | None:
+        """Reject a parseable string that holds more than one statement.
+
+        `parse_one` accepts a statement list and returns one `Block` spanning it,
+        so `amount; DROP TABLE t` parses and would otherwise validate as an
+        expression. A semicolon inside a string literal or comment does not
+        split, so this only rejects a real statement list. Stray semicolons parse
+        as empty statements and are not counted, so `amount;` and `amount;;` are
+        both a single expression. Parse failures return None; the checks below
+        report those.
+        """
+        try:
+            statements = sqlglot.parse(sql, dialect=sqlglot_dialect)
+        except (ParseError, TokenError, RecursionError):
+            return None
+        count = len([statement for statement in statements if statement is not None])
+        if count > 1:
+            return (
+                f"[SQL] {context}: expected a single expression but found "
+                f"{count} statements"
+            )
+        return None
+
+    def holds_no_statement(sql: str) -> bool:
+        """True when there is nothing to validate: an empty string, whitespace,
+        a lone comment or only semicolons.
+
+        Those parse to a list with no statement in it. `parse_one` raises on
+        them, and the `SELECT {expr}` retry below would then parse a bare
+        `SELECT` and report the expression as valid, so they are caught before
+        the retry. Parse failures return False; the retry reports those.
+        """
+        try:
+            statements = sqlglot.parse(sql, dialect=sqlglot_dialect)
+        except (ParseError, TokenError, RecursionError):
+            return False
+        return all(statement is None for statement in statements)
+
     try:
         # Try parsing as expression first (for field expressions like "column_name")
         sqlglot.parse_one(expr, dialect=sqlglot_dialect)
-        return None
     except (ParseError, TokenError, RecursionError):
         # A bare column reference fails to parse alone; retry it wrapped in
         # SELECT below. RecursionError (deeply nested input) is included so the
         # retry reports it instead of crashing, while genuine errors such as a
         # non-string expr raising TypeError still surface.
-        pass
+        if holds_no_statement(expr):
+            return f"[SQL] {context}: expression is empty"
+    else:
+        return statement_count_error(expr)
 
     try:
         # Try wrapping in SELECT for simple column references
         sqlglot.parse_one(f"SELECT {expr}", dialect=sqlglot_dialect)
-        return None
     except (ParseError, TokenError) as e:
         return f"[SQL] {context}: {str(e).split(chr(10))[0]}"
     except RecursionError:
         # Deeply nested input exhausts the recursion limit rather than raising a
         # parser error; report it instead of letting it abort validation.
         return f"[SQL] {context}: expression is too deeply nested to parse"
+    return statement_count_error(f"SELECT {expr}")
 
 
 def validate_sql(data: dict) -> list[str]:
@@ -369,8 +455,9 @@ def validate_sql(data: dict) -> list[str]:
             expression = field.get("expression", {})
             for dialect_expr in expression.get("dialects", []):
                 dialect = dialect_expr.get("dialect", "ANSI_SQL")
-                expr = dialect_expr.get("expression", "")
-                if expr:
+                # Only a missing expression is skipped; an empty one is reported.
+                expr = dialect_expr.get("expression")
+                if expr is not None:
                     context = f"Field '{dataset_name}.{field_name}' in model '{model_name}' ({dialect})"
                     error = validate_sql_expression(expr, dialect, context)
                     if error:
@@ -382,8 +469,8 @@ def validate_sql(data: dict) -> list[str]:
         expression = metric.get("expression", {})
         for dialect_expr in expression.get("dialects", []):
             dialect = dialect_expr.get("dialect", "ANSI_SQL")
-            expr = dialect_expr.get("expression", "")
-            if expr:
+            expr = dialect_expr.get("expression")
+            if expr is not None:
                 context = f"Metric '{metric_name}' in model '{model_name}' ({dialect})"
                 error = validate_sql_expression(expr, dialect, context)
                 if error:
@@ -392,46 +479,198 @@ def validate_sql(data: dict) -> list[str]:
     return errors
 
 
-def main():
-    if len(sys.argv) < 2:
-        print(__doc__)
-        sys.exit(1)
+def as_list(value: object) -> list:
+    """The items of a list, or nothing for shapes that already failed the schema."""
+    return value if isinstance(value, list) else []
 
-    args = sys.argv[1:]
-    yaml_path = Path(args[0])
 
-    schema_path = Path(__file__).parent.parent / "core-spec" / "ossie-schema.json"
-    if len(args) > 1:
-        if len(args) == 3 and args[1] == "--schema":
-            schema_path = Path(args[2])
-        else:
-            print("Usage: python validation/validate.py <yaml_file> [--schema <schema_file>]")
-            sys.exit(1)
+# URI schemes whose IRIs have no "//" and may have a single colon (mailto:a@b.org,
+# tel:+1555..., urn:x). Without this list they look like prefix:local QNames.
+URI_SCHEMES = frozenset(
+    {"http", "https", "urn", "mailto", "tel", "file", "ftp", "data", "did", "doi", "geo", "ldap", "news", "sms", "tag"}
+)
 
-    if not yaml_path.exists():
-        print(f"Error: File not found: {yaml_path}")
-        sys.exit(1)
 
-    if not schema_path.exists():
-        print(f"Error: Schema not found: {schema_path}")
-        sys.exit(1)
+def undeclared_qname_prefix(iri: object, prefixes: dict) -> str | None:
+    """Return the prefix of a QName iri that prefixes does not declare."""
+    if not isinstance(iri, str) or ":" not in iri:
+        return None
+    prefix, local = iri.split(":", 1)
+    # ontology.md allows a full IRI or a prefix:local QName. A scheme followed
+    # by "//" (http://...), a second colon (urn:isbn:...) or a known URI scheme
+    # marks a full IRI; anything else is read as a QName.
+    if local.startswith("//") or ":" in local or prefix.lower() in URI_SCHEMES:
+        return None
+    return None if prefix in prefixes else prefix
 
-    # Load files
-    with open(schema_path) as f:
-        schema = json.load(f)
 
-    with open(yaml_path) as f:
-        try:
-            data = yaml.load(f, Loader=UniqueKeyLoader)
-        except yaml.YAMLError as e:
-            print(f"Error: Invalid YAML: {e}")
-            sys.exit(1)
-        except RecursionError:
-            # Deeply nested input surfaces as RecursionError, not YAMLError.
-            print("Error: Invalid YAML: input is too deeply nested to parse")
-            sys.exit(1)
+def find_extends_cycles(supertypes: dict[str, list[str]]) -> list[list[str]]:
+    """Find cycles in the extends graph, each reported once as a path."""
+    cycles = []
+    state = {}  # concept -> "active" while on the current path, "done" after
 
-    # Run validations
+    def visit(concept: str, path: list[str]) -> None:
+        state[concept] = "active"
+        path.append(concept)
+        for supertype in supertypes.get(concept, []):
+            if state.get(supertype) == "active":
+                cycles.append(path[path.index(supertype):] + [supertype])
+            elif supertype not in state:
+                visit(supertype, path)
+        path.pop()
+        state[concept] = "done"
+
+    for concept in supertypes:
+        if concept not in state:
+            visit(concept, [])
+    return cycles
+
+
+def validate_ontology(data: dict) -> list[str]:
+    """Validate the concepts and relationships of an ontology document.
+
+    The same kind of checks the core side gets from validate_unique_names and
+    validate_references: concept names are unique within the ontology,
+    relationship names are unique within their concept, and extends,
+    identify_by, roles and QName prefixes resolve to something declared.
+    ontology_mappings are left to schema validation.
+    """
+    if not isinstance(data, dict) or not isinstance(data.get("ontology"), list):
+        return []
+
+    errors = []
+
+    ontology_name = data.get("name", "<unnamed>")
+    components = [c for c in data["ontology"] if isinstance(c, dict)]
+    prefixes = data.get("prefixes") if isinstance(data.get("prefixes"), dict) else {}
+
+    concept_names = [c.get("concept") for c in components if c.get("concept")]
+    for dup in find_duplicates(concept_names):
+        errors.append(f"[Unique] Duplicate concept '{dup}' in ontology '{ontology_name}'")
+
+    declared = set(concept_names) | BUILT_IN_CONCEPTS
+    supertypes = {}
+    relationships = {}
+    for component in components:
+        concept = component.get("concept", "<unnamed>")
+        rel_names = [
+            r.get("name") for r in as_list(component.get("relationships"))
+            if isinstance(r, dict) and r.get("name")
+        ]
+        for dup in find_duplicates(rel_names):
+            errors.append(f"[Unique] Duplicate relationship '{dup}' in concept '{concept}'")
+        # Merged across duplicate components, so a duplicate concept is reported
+        # once rather than again as every reference to the first declaration
+        # failing. Reference checks below read each component directly.
+        supertypes.setdefault(concept, []).extend(
+            s for s in as_list(component.get("extends")) if isinstance(s, str)
+        )
+        relationships.setdefault(concept, set()).update(rel_names)
+
+    def inherited_relationships(concept: str) -> set[str]:
+        # A concept can identify itself by a relationship declared on a supertype,
+        # which is how the reference parser resolves identify_by as well.
+        names, pending, seen = set(), [concept], set()
+        while pending:
+            current = pending.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            names |= relationships.get(current, set())
+            pending.extend(supertypes.get(current, []))
+        return names
+
+    for component in components:
+        concept = component.get("concept", "<unnamed>")
+
+        for supertype in as_list(component.get("extends")):
+            if isinstance(supertype, str) and supertype not in declared:
+                errors.append(f"[Reference] Concept '{concept}' extends unknown concept '{supertype}'")
+
+        for identifier in as_list(component.get("identify_by")):
+            if isinstance(identifier, str) and identifier not in inherited_relationships(concept):
+                errors.append(
+                    f"[Reference] Concept '{concept}' identify_by references unknown relationship '{identifier}'"
+                )
+
+        prefix = undeclared_qname_prefix(component.get("iri"), prefixes)
+        if prefix:
+            errors.append(f"[Reference] Concept '{concept}' iri uses undeclared prefix '{prefix}'")
+
+        for relationship in as_list(component.get("relationships")):
+            if not isinstance(relationship, dict):
+                continue
+            rel_name = f"{concept}.{relationship.get('name', '<unnamed>')}"
+            for role in as_list(relationship.get("roles")):
+                role_concept = role.get("concept") if isinstance(role, dict) else None
+                if role_concept and role_concept not in declared:
+                    errors.append(
+                        f"[Reference] Relationship '{rel_name}' has a role played by unknown concept '{role_concept}'"
+                    )
+            prefix = undeclared_qname_prefix(relationship.get("iri"), prefixes)
+            if prefix:
+                errors.append(f"[Reference] Relationship '{rel_name}' iri uses undeclared prefix '{prefix}'")
+
+    for cycle in find_extends_cycles(supertypes):
+        errors.append(f"[Reference] Concept '{cycle[0]}' extends itself: {' -> '.join(cycle)}")
+
+    return errors
+
+
+USAGE = "Usage: python validation/validate.py [--schema <schema_file>] [--] <file> [<file> ...]"
+
+
+def read_text_or_report(path: Path, description: str) -> str | None:
+    """Read path as UTF-8 text, or report why it could not be read and return None."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as e:
+        print(f"Error: Could not read {description}: {e}")
+        return None
+    except UnicodeDecodeError as e:
+        print(f"Error: {description} is not valid UTF-8 text: {e}")
+        return None
+
+
+def default_schema_path() -> Path:
+    """OSSIE_SCHEMA if set, else the schema in this repository's layout."""
+    env = os.environ.get("OSSIE_SCHEMA")
+    if env:
+        return Path(env)
+    return Path(__file__).parent.parent / "core-spec" / "ossie-schema.json"
+
+
+def load_schema_or_report(schema_path: Path) -> dict | None:
+    """Read and metaschema-check a schema file, or report what is wrong and return None."""
+    # Read first, then parse. exists() passes for a path that cannot be read as text — a
+    # directory, one without read permission, or a binary file — so reading is guarded
+    # to report like every other bad input rather than raise.
+    schema_text = read_text_or_report(schema_path, f"schema {schema_path}")
+    if schema_text is None:
+        return None
+    try:
+        schema = json.loads(schema_text)
+    except json.JSONDecodeError as e:
+        print(f"Error: Invalid JSON in schema {schema_path}: {e}")
+        return None
+
+    # json.loads accepts any JSON value, but a schema has to be an object or a
+    # boolean. Handing the validator anything else raises AttributeError from inside
+    # referencing, which names neither the schema nor the file it came from. Checking
+    # against the metaschema also catches an object whose keywords are the wrong
+    # shape, such as a string "required", which otherwise validates the model against
+    # nonsense without complaint.
+    try:
+        Draft202012Validator.check_schema(schema)
+    except SchemaError as e:
+        location = " -> ".join(str(part) for part in e.absolute_path) if e.absolute_path else "(root)"
+        print(f"Error: Invalid schema {schema_path}: {location}: {e.message}")
+        return None
+    return schema
+
+
+def validate_document(data, schema: dict) -> list[str]:
+    """Run every check on a parsed document and return the diagnostics."""
     errors = []
     errors.extend(validate_schema(data, schema))
 
@@ -442,27 +681,106 @@ def main():
         errors.extend(validate_references(data))
         errors.extend(validate_relationship_column_arity(data))
         errors.extend(validate_sql(data))
+    if not errors and isinstance(data, dict) and "ontology" in data:
+        errors.extend(validate_ontology(data))
 
-    # Report results
-    if errors:
-        # Severity must not depend on user-controlled text in a diagnostic.
-        warnings = [e for e in errors if isinstance(e, ValidationWarning)]
-        actual_errors = [e for e in errors if not isinstance(e, ValidationWarning)]
+    return errors
 
-        for warning in warnings:
-            print(f"  {warning}")
 
-        if actual_errors:
-            print(f"\nValidation FAILED with {len(actual_errors)} error(s):\n")
-            for error in actual_errors:
-                print(f"  {error}")
+def validate_file(yaml_path: Path, schema: dict) -> bool:
+    """Validate one document, print its report and return True if it passed."""
+    if not yaml_path.exists():
+        print(f"Error: File not found: {yaml_path}")
+        return False
+
+    model_text = read_text_or_report(yaml_path, str(yaml_path))
+    if model_text is None:
+        return False
+    try:
+        data = load_yaml_named(model_text, str(yaml_path))
+    except yaml.YAMLError as e:
+        print(f"Error: Invalid YAML: {e}")
+        return False
+    except RecursionError:
+        # Deeply nested input surfaces as RecursionError, not YAMLError.
+        print("Error: Invalid YAML: input is too deeply nested to parse")
+        return False
+
+    try:
+        errors = validate_document(data, schema)
+    except Exception as e:
+        # A check that raises on this document is a bug in the validator, not in the
+        # model. Report it like any other failure so the remaining files still run,
+        # and keep the traceback on stderr for whoever fixes the check.
+        print(f"Error: {type(e).__name__} while validating {yaml_path}: {e}")
+        traceback.print_exc()
+        return False
+
+    # Severity must not depend on user-controlled text in a diagnostic.
+    warnings = [e for e in errors if isinstance(e, ValidationWarning)]
+    actual_errors = [e for e in errors if not isinstance(e, ValidationWarning)]
+
+    for warning in warnings:
+        print(f"  {warning}")
+
+    if actual_errors:
+        print(f"\nValidation FAILED with {len(actual_errors)} error(s):\n")
+        for error in actual_errors:
+            print(f"  {error}")
+        return False
+
+    print(f"Validation PASSED: {yaml_path.name}")
+    return True
+
+
+def main():
+    if len(sys.argv) < 2:
+        print(__doc__)
+        sys.exit(1)
+
+    paths: list[Path] = []
+    schema_arg: str | None = None
+    args = sys.argv[1:]
+    while args:
+        arg = args.pop(0)
+        if arg == "--schema":
+            if not args or schema_arg is not None:
+                print(USAGE)
+                sys.exit(1)
+            schema_arg = args.pop(0)
+        elif arg == "--":
+            paths.extend(Path(rest) for rest in args)
+            break
+        elif arg.startswith("-"):
+            print(USAGE)
             sys.exit(1)
         else:
-            print(f"Validation PASSED: {yaml_path.name}")
-            sys.exit(0)
-    else:
-        print(f"Validation PASSED: {yaml_path.name}")
-        sys.exit(0)
+            paths.append(Path(arg))
+    if not paths:
+        print(USAGE)
+        sys.exit(1)
+
+    schema_path = Path(schema_arg) if schema_arg else default_schema_path()
+    if not schema_path.exists():
+        print(f"Error: Schema not found: {schema_path}")
+        if schema_arg is None:
+            print("Pass --schema <schema_file> or set OSSIE_SCHEMA to point at ossie-schema.json.")
+        sys.exit(1)
+
+    schema = load_schema_or_report(schema_path)
+    if schema is None:
+        sys.exit(1)
+
+    failed = 0
+    for yaml_path in paths:
+        if len(paths) > 1:
+            print(f"== {yaml_path}")
+        if not validate_file(yaml_path, schema):
+            failed += 1
+
+    if len(paths) > 1:
+        print(f"\n{len(paths) - failed} of {len(paths)} file(s) passed")
+    sys.exit(1 if failed else 0)
 
 
 if __name__ == "__main__":

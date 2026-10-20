@@ -1,0 +1,45 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+- code: HOLISTICS_METRIC_RENDERED_AS_AQL
+  severity: WARNING
+  message: >-
+    the metric sits on the dataset, where AML accepts only an AQL body. The ANSI_SQL expression was
+    rendered as AQL: 'SUM(items.quantity) / COUNT(users.id)' became 'sum(items.quantity) / count(users.id)'
+  object_ref: quantity_per_customer
+  remedy: check the AQL against the Ossie SQL it came from
+- code: HOLISTICS_METRIC_RENDERED_AS_AQL
+  severity: WARNING
+  message: >-
+    the metric sits on the dataset, where AML accepts only an AQL body. The ANSI_SQL expression was
+    rendered as AQL: 'quantity_per_customer / 2' became 'quantity_per_customer / 2'
+  object_ref: half_quantity_per_customer
+  remedy: check the AQL against the Ossie SQL it came from
+- code: HOLISTICS_METRIC_RENDERED_AS_AQL
+  severity: WARNING
+  message: >-
+    the metric sits on the dataset, where AML accepts only an AQL body. The ANSI_SQL expression was
+    rendered as AQL: 'items_quantity + COUNT(users.id)' became 'items.items_quantity + count(users.id)'
+  object_ref: quantity_and_customers
+  remedy: check the AQL against the Ossie SQL it came from
+- code: HOLISTICS_METRIC_RENDERED_AS_AQL
+  severity: WARNING
+  message: >-
+    the metric sits on the dataset, where AML accepts only an AQL body. The ANSI_SQL expression was
+    rendered as AQL: 'SUM(items.quantity) * quantity_per_customer' became 'sum(items.quantity) * quantity_per_customer'
+  object_ref: scaled_quantity_per_customer
+  remedy: check the AQL against the Ossie SQL it came from

@@ -142,7 +142,25 @@ public class DatasetMappingHandler implements PipelineStep {
                 dataObject.put(LABEL, apiName);
             }
             dataObject.putIfAbsent(TABLE_TYPE, STANDARD_TABLE_TYPE);
+            dataObject.putIfAbsent(
+                    DATA_OBJECT_TYPE, referenceTypeOf(getString(dataObject, DATA_OBJECT_NAME)));
         }
+    }
+
+    /**
+     * Returns the reference type the semantic model API expects for a data object name.
+     *
+     * <p>Data Cloud suffixes the name with the kind of object it is, so the dataset's
+     * {@code source} already carries the answer: {@code Orders__dll} is a data lake
+     * object and {@code Orders__dlm} a data model object. A name with neither suffix
+     * came from outside Data Cloud, such as a Snowflake table or a dbt model, and
+     * lands in a data lake object once ingested, so that is the default.
+     */
+    private static String referenceTypeOf(String dataObjectName) {
+        if (dataObjectName != null && dataObjectName.endsWith(DMO_SUFFIX)) {
+            return DMO_DATA_OBJECT_TYPE;
+        }
+        return DLO_DATA_OBJECT_TYPE;
     }
 
     /**

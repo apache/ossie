@@ -415,4 +415,25 @@ class SalesforceToOssieConverterTest {
 
         assertEquals("Customer_Orders_Model", ossieRoot.get("name"));
     }
+
+    @Test
+    void testCalculatedDimensionSyntaxSurvivesRoundTrip() throws Exception {
+        // A calculated dimension imported from Salesforce comes back as a Tableau-dialect field,
+        // so re-exporting it must still declare the Tua syntax the Salesforce API accepts.
+        String ossieYaml = converter.convert(salesforceJson).get(0);
+
+        Converter exporter = ConverterFactory.getConverter(ConversionDirection.OSSIE_TO_SALESFORCE);
+        Map<String, Object> sfModel = new ObjectMapper().readValue(exporter.convert(ossieYaml).get(0), Map.class);
+
+        List<Map<String, Object>> calcDimensions =
+                (List<Map<String, Object>>) sfModel.get("semanticCalculatedDimensions");
+        assertNotNull(calcDimensions);
+        Map<String, Object> orderYear = calcDimensions.stream()
+                .filter(d -> "order_year".equals(d.get("apiName")))
+                .findFirst()
+                .orElse(null);
+        assertNotNull(orderYear);
+        assertEquals("Tua", orderYear.get("syntax"),
+                "the re-exported calculated dimension must declare the Tua expression syntax");
+    }
 }

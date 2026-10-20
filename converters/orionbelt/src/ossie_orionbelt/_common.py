@@ -42,6 +42,15 @@ _OSSIE_VERSION = "0.2.0.dev0"
 # THOUGHTSPOT, DAX) are never parsed as SQL.
 _SQL_PARSEABLE_DIALECTS = ("ANSI_SQL", "OSSIE_SQL_2026", "SNOWFLAKE", "DATABRICKS")
 
+# Ossie SQL-dialect tag -> sqlglot ``read`` dialect. ANSI and the portable
+# OSSIE_SQL_2026 map to sqlglot's default (None).
+_OSSIE_DIALECT_TO_SQLGLOT: dict[str, str | None] = {
+    "ANSI_SQL": None,
+    "OSSIE_SQL_2026": None,
+    "SNOWFLAKE": "snowflake",
+    "DATABRICKS": "databricks",
+}
+
 # Matches a ``dataset.column`` reference inside a SQL expression, where each
 # side is a bare identifier or a quoted identifier (double quotes, backticks, or
 # brackets). The leading lookbehind prevents matching the tail of a longer path

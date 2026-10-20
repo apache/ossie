@@ -92,6 +92,7 @@ from .constants import (
     FIELD_STASH_DATA_TYPE_WITNESS,
     FIELD_STASH_DB_COLUMN_NAME,
     FIELD_STASH_DB_COLUMN_NAME_WITNESS,
+    METRIC_STASH_AGGREGATION_NONE,
     METRIC_STASH_COLUMN_AGGREGATION,
     METRIC_SHAPE_COLUMN_AGGREGATION,
     METRIC_SHAPE_FORMULA,
@@ -130,7 +131,17 @@ from .tml import DocumentSet, TmlDocument, block_scalar
 #: stripped. This is what a hand-authored field's own physical-column
 #: expression looks like: no dataset qualifier (a field's expression runs
 #: against its own dataset's source), no operators, no function calls.
-_BARE_IDENTIFIER_RE = re.compile(r'^(?:[A-Za-z_][A-Za-z0-9_]{0,127}|"[^"]{1,128}")$')
+#:
+#: The quoted alternative admits a **doubled** double quote, because that is
+#: how a literal one is spelled inside a quoted identifier and it is what the
+#: forward direction writes: `_sql_identifier` in `tml_to_ossie` emits a
+#: ThoughtSpot column displayed as `Size (")` as `"Size ("")"`. Matching only
+#: `[^"]` here rejected exactly the strings this converter itself produces, so
+#: such a field was not recognised as physical at all on the way back and was
+#: dropped as untranslatable.
+_BARE_IDENTIFIER_RE = re.compile(
+    r'^(?:[A-Za-z_][A-Za-z0-9_]{0,127}|"(?:[^"]|""){1,128}")$'
+)
 
 #: Any source string containing whitespace outside of a quoted identifier
 #: reads as a query rather than a `db.schema.table` reference — a real
@@ -193,7 +204,10 @@ def _bare_sql_identifier(expression: str) -> str | None:
     if _BARE_IDENTIFIER_RE.match(text) is None:
         return None
     if text.startswith('"') and text.endswith('"'):
-        return text[1:-1]
+        # Undouble: `""` inside a quoted identifier is one literal `"`, so the
+        # column ThoughtSpot displays as `Size (")` arrives as `"Size ("")"`.
+        # Stripping the outer quotes alone would name a column no warehouse has.
+        return text[1:-1].replace('""', '"')
     return text
 
 
@@ -844,6 +858,34 @@ def _normalise_or_self(text: str) -> str:
         return text
 
 
+#: `_resolve_name_collision` appends `_2`, `_3`, ... to the later of two display
+#: names that fold to one identifier, and it does so after the exact display name
+#: has already been stashed. The witness below therefore has to accept the fold
+#: plus one such suffix, or every collided column reports its own suffix as a
+#: rename and comes back under the generated identifier.
+_COLLISION_SUFFIX_RE = re.compile(r"^(?P<base>.+)_(?P<suffix>[2-9]|[1-9][0-9]+)$")
+
+
+def _fold_matches_identifier(fold: str, live_identifier: str) -> bool:
+    """Whether `fold` is this object's identifier -- ours or the modeller's.
+
+    Equal, as the plain witness requires; or equal to the identifier with one
+    `_N` collision suffix removed, because that suffix is this converter's own
+    doing and not a rename.
+
+    What cannot be told apart is a modeller who renamed the Ossie identifier to
+    exactly `<fold>_<N>` themselves: that reads as our suffix, and the stashed
+    display name is restored. Restoring is the better error -- renaming a column
+    nobody asked to rename changes what users see and what the model's saved
+    questions reference, while a missed rename only keeps a name that was already
+    reported as a collision on the forward trip.
+    """
+    if fold == live_identifier:
+        return True
+    match = _COLLISION_SUFFIX_RE.match(live_identifier)
+    return match is not None and match.group("base") == fold
+
+
 def _restore_tml_name(
     payload: dict, live_identifier: str, log: IssueLog, *, object_ref: str
 ) -> str:
@@ -860,11 +902,16 @@ def _restore_tml_name(
     restored; if they disagree, the identifier was renamed and the stash
     describes a name that no longer belongs to this object, so it is
     dropped and the live identifier is used instead.
+
+    "Still agree" counts a `_N` collision suffix this converter added after the
+    stash was written, which `_fold_matches_identifier` spells out; without it a
+    collided column was declared stale, lost its display name, and the reported
+    reason -- that it was renamed -- was false.
     """
     stashed = payload.get(STASH_TML_NAME)
     if not isinstance(stashed, str) or not stashed:
         return live_identifier
-    if _normalise_or_self(stashed) == live_identifier:
+    if _fold_matches_identifier(_normalise_or_self(stashed), live_identifier):
         return stashed
     log.add(
         code="TS-STASH-TML-NAME-STALE",
@@ -1585,6 +1632,13 @@ def _build_metric(
     preserved_aggregation = payload.get(METRIC_STASH_COLUMN_AGGREGATION)
     if preserved_aggregation and "aggregation" not in properties:
         properties["aggregation"] = preserved_aggregation
+
+    # An EXPLICIT `aggregation: NONE`, restored before the conventional path.
+    # Dropping it is not a cosmetic loss: ThoughtSpot applies its own default to
+    # an absent key, so a metric the author declared un-aggregated came back as
+    # one ThoughtSpot rolls up -- a per-row ratio returned as a sum of ratios.
+    if payload.get(METRIC_STASH_AGGREGATION_NONE) and "aggregation" not in properties:
+        properties["aggregation"] = "NONE"
 
     if "aggregation" not in properties:
         conventional = _outer_aggregation_of(ts_expr)

@@ -33,9 +33,10 @@ import json
 from typing import Any
 
 import pytest
+import sqlglot
 
 import ossie_orionbelt.converter as conv
-from ossie_orionbelt._portable import sql_ident
+from ossie_orionbelt._portable import ossie_ident, sql_ident
 
 _MODEL: dict[str, Any] = {
     "version": 1.0,
@@ -189,7 +190,6 @@ def _sql(ossie: dict[str, Any]) -> dict[str, str]:
 
 class TestReferencesResolve:
     def test_every_column_reference_is_a_dataset_field(self) -> None:
-        sqlglot = pytest.importorskip("sqlglot")
         ossie, _ = _export()
         fields = {ds["name"]: {f["name"] for f in ds["fields"]} for ds in ossie["datasets"]}
         for name, sql in _sql(ossie).items():
@@ -207,6 +207,52 @@ class TestReferencesResolve:
         assert sql_ident("Order Lines") == '"Order Lines"'
         assert sql_ident('a"b') == '"a""b"'
 
+    @pytest.mark.parametrize(
+        ("name", "rendered"),
+        [
+            ("amount", "amount"),
+            ("Amount", "Amount"),
+            ("_net_2", "_net_2"),
+            ("Order Lines", '"Order Lines"'),
+            ("2nd", '"2nd"'),
+            ("Order", '"Order"'),
+            ("date", '"date"'),
+            ("value", '"value"'),
+            ('a"b', '"a""b"'),
+            ("Größe", '"Größe"'),
+        ],
+    )
+    def test_ossie_ident_quotes_only_what_cannot_be_regular(self, name: str, rendered: str) -> None:
+        # The Ossie expression language follows ANSI SQL: a quoted "amount"
+        # would match a field declared amount only by exact case, so a regular
+        # name is bare; a space, a leading digit or a reserved word is quoted.
+        assert ossie_ident(name) == rendered
+
+    def test_reserved_and_mixed_case_names_round_trip(self) -> None:
+        obml = copy.deepcopy(_MODEL)
+        lines = obml["dataObjects"]["Order Lines"]["columns"]
+        lines["value"] = lines.pop("Amount")
+        obml["measures"] = {
+            "Sales": {
+                "columns": [{"dataObject": "Order Lines", "column": "value"}],
+                "resultType": "float",
+                "aggregation": "sum",
+            },
+            "Statuses": {
+                "columns": [{"dataObject": "Order Lines", "column": "Status"}],
+                "resultType": "int",
+                "aggregation": "count",
+                "distinct": True,
+            },
+        }
+        obml["dimensions"], obml["metrics"] = {}, {}
+        ossie, _ = _export(obml)
+        assert _sql(ossie)["Sales"] == 'SUM("Order Lines"."value")'
+        assert _sql(ossie)["Statuses"] == 'COUNT(DISTINCT "Order Lines".Status)'
+        back = conv.OssietoOBML(ossie).convert()
+        assert back["measures"]["Sales"]["columns"][0]["column"] == "value"
+        assert back["measures"]["Statuses"]["columns"][0]["column"] == "Status"
+
     def test_reserved_word_data_object_parses(self) -> None:
         obml = copy.deepcopy(_MODEL)
         obml["dataObjects"]["Order"] = obml["dataObjects"].pop("Order Lines")
@@ -220,18 +266,19 @@ class TestReferencesResolve:
         obml["dimensions"] = {}
         obml["metrics"] = {}
         ossie, _ = _export(obml)
-        assert _sql(ossie)["Sales"] == 'SUM("Order"."AMT")'
-        sqlglot = pytest.importorskip("sqlglot")
+        assert _sql(ossie)["Sales"] == 'SUM("Order".Amount)'
         sqlglot.parse_one(_sql(ossie)["Sales"])
 
 
-# Column references as the export writes them
+# Column references as the export writes them: Ossie dataset and field names,
+# which are the OBML data object and column names, not the physical codes.
+# A name that can be a regular identifier is bare; "Order Lines" cannot.
 LINES = '"Order Lines"'
-AMT = f'{LINES}."AMT"'
-STATUS = f'{LINES}."STATUS"'
-COUNTRY = '"Customers"."COUNTRY"'
+AMT = f"{LINES}.Amount"
+STATUS = f"{LINES}.Status"
+COUNTRY = "Customers.Country"
 # "Line Date" declares resultType: date, so the truncation is cast back to DATE.
-MONTH = f"CAST(DATE_TRUNC('month', {LINES}.\"LINE_DT\") AS DATE)"
+MONTH = f"CAST(DATE_TRUNC('month', {LINES}.\"Line Date\") AS DATE)"
 
 
 class TestSemanticsSpelledOut:
@@ -256,11 +303,11 @@ class TestSemanticsSpelledOut:
 
     def test_count_distinct(self) -> None:
         ossie, _ = _export()
-        assert _sql(ossie)["Customers Reached"] == f'COUNT(DISTINCT {LINES}."CUST_ID")'
+        assert _sql(ossie)["Customers Reached"] == f"COUNT(DISTINCT {LINES}.Customer)"
 
     def test_synthesized_count_is_inlined(self) -> None:
         ossie, _ = _export()
-        assert _sql(ossie)["Sales per Line"] == f'SUM({AMT}) / COUNT({LINES}."LINE_ID")'
+        assert _sql(ossie)["Sales per Line"] == f'SUM({AMT}) / COUNT({LINES}."Line ID")'
 
     def test_metric_on_metric_is_inlined(self) -> None:
         ossie, _ = _export()
@@ -292,8 +339,9 @@ class TestSemanticsSpelledOut:
 class TestExportedSqlRuns:
     """Every exported metric runs in the query OrionBelt would group it by.
 
-    The datasets are aliased to their Ossie names, and the query groups by the
-    time dimension at its grain and the partition dimension, as OrionBelt does.
+    Each dataset is read as an Ossie consumer reads it: its fields, each computed
+    by its expression, under the dataset's name. The query groups by the time
+    dimension at its grain and the partition dimension, as OrionBelt does.
     """
 
     @staticmethod
@@ -312,15 +360,27 @@ class TestExportedSqlRuns:
         con.execute("INSERT INTO cust VALUES ('a', 'US'), ('b', 'DE')")
         return con
 
+    @staticmethod
+    def _dataset(ossie: dict[str, Any], name: str, table: str) -> str:
+        """The dataset as a subquery projecting each field from its expression."""
+        ds = next(d for d in ossie["datasets"] if d["name"] == name)
+        fields = ", ".join(
+            f"{f['expression']['dialects'][0]['expression']} AS {sql_ident(f['name'])}"
+            for f in ds["fields"]
+        )
+        return f"(SELECT {fields} FROM {table}) AS {sql_ident(name)}"
+
     def test_every_exported_metric_executes(self) -> None:
         con = self._connection()
         ossie, _ = _export()
+        lines = self._dataset(ossie, "Order Lines", "fct")
+        customers = self._dataset(ossie, "Customers", "cust")
         for name, sql in _sql(ossie).items():
             (
                 con.execute(
                     f"SELECT {MONTH}, {COUNTRY}, {sql} "
-                    f'FROM fct AS {LINES} LEFT JOIN cust AS "Customers" '
-                    f'ON {LINES}."CUST_ID" = "Customers"."ID" '
+                    f"FROM {lines} LEFT JOIN {customers} "
+                    f'ON {LINES}."Customer" = "Customers"."Customer ID" '
                     f"GROUP BY {MONTH}, {COUNTRY}"
                 ).fetchall(),
                 name,
@@ -404,8 +464,8 @@ class TestRoundTrip:
             assert list(back["dataObjects"][do_name]["columns"]) == list(do_obj["columns"])
         assert back["dataObjects"]["Order Lines"]["joins"][0]["columnsFrom"] == ["Customer"]
         assert back["dataObjects"]["Order Lines"]["joins"][0]["columnsTo"] == ["Customer ID"]
-        # The import names a dimension after its field; the column is the OBML one.
-        assert back["dimensions"]["COUNTRY"]["column"] == "Country"
+        # The import names a dimension after its field, the OBML column name.
+        assert back["dimensions"]["Country"]["column"] == "Country"
 
     def test_left_out_entities_ride_in_the_model_extension(self) -> None:
         ossie, _ = _export()
@@ -413,3 +473,104 @@ class TestRoundTrip:
         kept = json.loads(ext["data"])["obml_unexported"]
         assert set(kept["metrics"]) == {"Sales MoM", "Fixed Grain Share"}
         assert set(kept["measures"]) == {"Sales At Fixed Grain"}
+
+
+def _one_object_model(object_name: str, columns: dict[str, str]) -> dict[str, Any]:
+    """One data object with a SUM measure per column, column name -> code."""
+    return {
+        "version": 1.0,
+        "dataObjects": {
+            object_name: {
+                "code": "fct",
+                "columns": {
+                    name: {"code": code, "abstractType": "float"} for name, code in columns.items()
+                },
+            }
+        },
+        "measures": {
+            f"Total {name}": {
+                "columns": [{"dataObject": object_name, "column": name}],
+                "resultType": "float",
+                "aggregation": "sum",
+            }
+            for name in columns
+        },
+    }
+
+
+def _run_on_duckdb(ossie: dict[str, Any]) -> dict[str, Any]:
+    """Each exported metric over its dataset read as its fields, as a consumer does."""
+    duckdb = pytest.importorskip("duckdb")
+    con = duckdb.connect()
+    con.execute("CREATE TABLE fct (A DOUBLE, B DOUBLE)")
+    con.execute("INSERT INTO fct VALUES (1, 10), (2, 20)")
+    ds = ossie["datasets"][0]
+    fields = ", ".join(
+        f"{f['expression']['dialects'][0]['expression']} AS {sql_ident(f['name'])}"
+        for f in ds["fields"]
+    )
+    source = f"(SELECT {fields} FROM fct) AS {sql_ident(ds['name'])}"
+    return {
+        name: con.execute(f"SELECT {sql} FROM {source}").fetchone()[0]
+        for name, sql in _sql(ossie).items()
+    }
+
+
+class TestParserKeywordsStayQuoted:
+    # A regular name DuckDB or sqlglot will not read bare is quoted in its
+    # normalized (upper case) form, which matches it; ``Left`` is reserved in
+    # SQL:2023, so it cannot be regular and is quoted as written.
+    @pytest.mark.parametrize(
+        ("name", "quoted"),
+        [("Qualify", "QUALIFY"), ("Limit", "LIMIT"), ("Pivot", "PIVOT"), ("Left", "Left")],
+    )
+    def test_keyword_data_object_is_quoted_and_runs(self, name: str, quoted: str) -> None:
+        ossie, _ = _export(_one_object_model(name, {"Amount": "A"}))
+        sql = _sql(ossie)["Total Amount"]
+        assert sql == f'SUM("{quoted}".Amount)'
+        sqlglot.parse_one(sql)
+        assert _run_on_duckdb(ossie) == {"Total Amount": 3}
+
+    @pytest.mark.parametrize("name", ["Qualify", "Left"])
+    def test_keyword_field_round_trip(self, name: str) -> None:
+        obml = _one_object_model("Orders", {name: "A"})
+        obml["metrics"] = {"Twice": {"expression": f"{{[Total {name}]}} * 2"}}
+        del obml["measures"][f"Total {name}"]["resultType"]
+        ossie, _ = _export(obml)
+        for metric in ossie["metrics"]:
+            metric["custom_extensions"] = []
+        back = conv.OssietoOBML(ossie).convert()
+        columns = [c for m in back["measures"].values() for c in m.get("columns", [])]
+        assert columns == [{"dataObject": "Orders", "column": name}]
+
+
+class TestNamesDifferingOnlyByCase:
+    def test_both_are_quoted_and_stay_distinct(self) -> None:
+        ossie, warnings = _export(
+            _one_object_model("Orders", {"Amount": "A", "amount": "B", "Qty": "B"})
+        )
+        assert _sql(ossie)["Total Amount"] == 'SUM(Orders."Amount")'
+        assert _sql(ossie)["Total amount"] == 'SUM(Orders."amount")'
+        assert _sql(ossie)["Total Qty"] == "SUM(Orders.Qty)"
+        assert any("['Amount', 'amount'] differ only by case" in w for w in warnings)
+        # Not run on DuckDB: it matches even quoted identifiers regardless of
+        # case, so no DuckDB relation can carry both fields.
+
+    def test_round_trip_keeps_each_column(self) -> None:
+        ossie, _ = _export(_one_object_model("Orders", {"Amount": "A", "amount": "B"}))
+        back = conv.OssietoOBML(ossie).convert()
+        assert back["measures"]["Total Amount"]["columns"][0]["column"] == "Amount"
+        assert back["measures"]["Total amount"]["columns"][0]["column"] == "amount"
+
+    def test_data_objects_differing_by_case_are_quoted(self) -> None:
+        obml = _one_object_model("Orders", {"Amount": "A"})
+        other = _one_object_model("ORDERS", {"Amount": "B"})
+        obml["dataObjects"].update(other["dataObjects"])
+        obml["measures"]["Upper Total"] = {
+            "columns": [{"dataObject": "ORDERS", "column": "Amount"}],
+            "resultType": "float",
+            "aggregation": "sum",
+        }
+        ossie, _ = _export(obml)
+        assert _sql(ossie)["Total Amount"] == 'SUM("Orders".Amount)'
+        assert _sql(ossie)["Upper Total"] == 'SUM("ORDERS".Amount)'

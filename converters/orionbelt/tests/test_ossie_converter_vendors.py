@@ -201,7 +201,7 @@ class TestForeignVendorRoundtrip:
         }
         ossie = conv.OBMLtoOssie(obml).convert()
         field = next(
-            f for f in ossie["datasets"][0]["fields"] if f["name"] == "status"
+            f for f in ossie["datasets"][0]["fields"] if f["name"] == "Status"
         )
         assert any(e["vendor_name"] == "TABLEAU" for e in field["custom_extensions"])
 
@@ -237,6 +237,8 @@ class TestLegacyBackCompat:
         }
         ossie = conv.OBMLtoOssie(obml).convert()
         ds = ossie["datasets"][0]
-        assert ds.get("unique_keys") == [["order_id"]]
-        order_id = next(f for f in ds["fields"] if f["name"] == "order_id")
+        # Saved before fields were named by column: the key names the code,
+        # and is exported by the field name.
+        assert ds.get("unique_keys") == [["Order ID"]]
+        order_id = next(f for f in ds["fields"] if f["name"] == "Order ID")
         assert order_id.get("label") == "filter"

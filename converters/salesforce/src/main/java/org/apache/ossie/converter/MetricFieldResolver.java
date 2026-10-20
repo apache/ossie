@@ -19,6 +19,7 @@
 
 package org.apache.ossie.converter;
 
+import static org.apache.ossie.util.DataStructureUtils.columnsPairable;
 import static org.apache.ossie.util.DataStructureUtils.getList;
 import static org.apache.ossie.util.DataStructureUtils.getString;
 import static org.apache.ossie.util.DataStructureUtils.streamMaps;
@@ -111,7 +112,7 @@ final class MetricFieldResolver {
         List<Object> from = getList(source, "from_columns");
         List<Object> to = getList(source, "to_columns");
         List<Map<String, Object>> criteria = items(target, "criteria");
-        if (from == null || to == null || from.isEmpty() || from.size() != to.size() || from.size() != criteria.size()) {
+        if (!columnsPairable(from, to) || from.size() != criteria.size()) {
             throw new IllegalArgumentException("changed or missing composite join keys");
         }
         for (int i = 0; i < from.size(); i++) {

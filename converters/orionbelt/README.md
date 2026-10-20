@@ -97,19 +97,38 @@ obml_again = OssietoOBML(ossie).convert()
 Other Ossie consumers read a metric's SQL, not the `ORIONBELT` extension, so the
 OBML to Ossie export writes SQL that computes what OrionBelt computes:
 
-- columns are referenced as `"<dataset>"."<field>"`, always double-quoted;
+- columns are referenced as `<dataset>.<field>`, the OBML data object and column
+  names, following the expression language's identifier rules: a regular
+  identifier is normalized to upper case, a quoted one is taken as written. A
+  name is bare where it can be a regular identifier. A name that cannot (a
+  space, a leading digit, a reserved word such as `Order`) is double-quoted as
+  written; a regular name DuckDB or sqlglot will not read bare, such as
+  `Qualify`, is quoted in its normalized form, `"QUALIFY"`. Names that differ
+  only by case are one identifier to the language: they are quoted as written,
+  with a warning. The import resolves references by the same rules, and keeps a
+  metric whose reference matches no field, or more than one, verbatim;
 - measure filters become `AGG(CASE WHEN <condition> THEN <arg> END)`, totals the
   grand-total window `SUM(SUM(x)) OVER ()`, and `defaultValue` a `COALESCE`;
 - synthesized counts and metric-on-metric `{[Name]}` references are inlined;
 - cumulative and window metrics order and partition by each dimension at its
   `timeGrain`, as the query groups it.
 
+Each expression is written in `ANSI_SQL` and, where it has a form in Apache
+Ossie's own expression language, also in `OSSIE_SQL_2026`. That form uses the
+language's functions where they differ from ANSI (`CONTAINS`, `STARTSWITH` and
+`ENDSWITH` instead of `LIKE ... ESCAPE`, and a `CAST` for a timestamp literal) and
+is checked against `core-spec/expression_language.md`, both as written and as
+parsed with sqlglot. A measure with no such form (`MODE`, a pattern that needs
+`ESCAPE`, an authored expression outside the language) keeps `ANSI_SQL` only.
+
 A measure or metric with no faithful single expression (period-over-period,
 `grain`, `filterContext`, `anchor`, nested windows, reference cycles) is left out
 of the Ossie metrics with a warning and kept whole in the model-level extension
 (`obml_unexported`). Every exported measure and metric also carries its OBML
-definition, and every field its OBML column name, so Ossie to OBML restores the
-original model instead of re-parsing the SQL.
+definition, and every field is named by its OBML column name with the column
+`code` as its expression, so Ossie to OBML restores the original model instead of
+re-parsing the SQL. Documents from earlier versions, which named fields by `code`,
+still import.
 
 `validate_ossie` checks JSON Schema conformance, unique names, and relationship
 references. If the schema file or `jsonschema` package is unavailable, it emits

@@ -178,6 +178,11 @@ ossieToSf.convert(Paths.get("input/model.yaml"), Paths.get("output/"));
 | `businessPreferences` | `ai_context` |
 | Unmapped properties | `custom_extensions` (vendor: `SALESFORCE`) |
 
+The semantic model API returns a stored formula HTML-escaped, so `'A&B'` comes
+back as `&#39;A&amp;B&#39;`. Import decodes it, in a calculated measurement, in a
+calculated dimension, and in a relationship criterion that joins on a formula, so
+the Ossie expression reads as it was written.
+
 ### Export (Apache Ossie → Salesforce)
 
 | Ossie | Salesforce |
@@ -190,11 +195,36 @@ ossieToSf.convert(Paths.get("input/model.yaml"), Paths.get("output/"));
 | Calculated Tableau fields | `semanticCalculatedDimensions[]` through the existing expression-analysis path |
 | `expression.dialects[].expression` | `dataObjectFieldName` |
 | Field `datatype` | Field `dataType` when a safe mapping exists |
+| `datasets[].primary_key` | A `semanticDimensions[]` entry for each key column no field declares |
 | `relationships[]` | `semanticRelationships[]` |
 | `from_columns` + `to_columns` | `criteria[]` |
 | `metrics[]` | Validated Tua expressions in `semanticCalculatedMeasurements[]` |
 | `ai_context` | `businessPreferences` |
 | `custom_extensions` (vendor: `SALESFORCE`) | Restored properties |
+
+### Required Salesforce Properties
+
+The semantic model API rejects a payload that omits the model's `dataspace`, a
+data object's `dataObjectType`, or a field's `dataType`. None has a guaranteed
+Ossie equivalent, so export supplies them:
+
+| Salesforce | Exported value |
+|------------|----------------|
+| `dataspace` | `default`, the dataspace every Data Cloud org provisions |
+| `semanticDataObjects[].dataObjectType` | `Dmo` when `dataObjectName` ends in `__dlm`, otherwise `Dlo` |
+| field `dataType` | `Text` for a dimension and `Number` for a measurement, when `datatype` yields neither |
+
+Data Cloud suffixes a data object's name with the kind of object it is, so the
+dataset's `source` already carries the reference type: `Orders__dll` is a data
+lake object and `Orders__dlm` a data model object. A name with neither suffix
+came from outside Data Cloud, such as a Snowflake table or a dbt model, and lands
+in a data lake object once ingested. A `SALESFORCE` custom extension restored
+from an imported model takes precedence over both defaults.
+
+Note that the published schema's `dataObjectType` enum is narrower than the API
+it documents: it lists `Dlo` and `Query`, while API v67.0 accepts `Dlo` and `Dmo`
+and rejects `Query`. Import therefore rejects a model backed by a data model
+object until the published schema catches up.
 
 ### Data Types
 
@@ -226,7 +256,7 @@ type exists:
 | `Boolean` | `Boolean` |
 | `Date` | `Date` |
 | `DateTime`, `DateTimeTz` | `DateTime` |
-| `Time`, `Opaque` | Omitted with a warning unless an exact extension type exists |
+| `Time`, `Opaque` | The role default below, with a warning, unless an exact extension type exists |
 
 Salesforce has one `DateTime` type, so exporting timezone-free Ossie `DateTime`
 loses its distinction from `DateTimeTz`; the converter logs a warning because a
@@ -236,12 +266,19 @@ An exact Salesforce extension value takes precedence over the portable mapping.
 If it conflicts with `datatype`, the converter preserves the exact Salesforce
 value and logs a warning.
 
+Ossie makes `datatype` optional, so a field may reach export carrying no type at
+all. Salesforce rejects such a field, so the converter falls back to the one type
+signal the document still carries, the field's role: a dimension exports as `Text`
+and a measurement as `Number`.
+
 ### Field Role and Time Dimensions
 
 `datatype` does not determine whether an Ossie field is a dimension or a fact.
 For direct fields, the presence of the `dimension` object determines whether the
 field is exported to `semanticDimensions` or `semanticMeasurements`. A calculated
 Tableau expression follows the converter's existing calculated-dimension path.
+A calculation in any other dialect is not translated, so the field is omitted and
+a warning names the field, its dataset and the dialect it was written in.
 
 On import, Salesforce `Date` and `DateTime` dimensions set `dimension.is_time` to
 `true`; other dimension types set it to `false`. On export, `dimension.is_time`
@@ -253,12 +290,26 @@ dimensions.
 
 **Unsupported relationships** (containing Formula or SemanticField types) are stored in `custom_extensions` at the model level rather than being converted to Ossie relationships.
 
+**Primary key columns** are exported as dimensions. Salesforce resolves a join
+criterion against the declared semantic fields rather than against the table's
+columns, and a dataset is free to name a key column in `primary_key` and nowhere
+else, so a key column no field declares would otherwise take every relationship
+joining on it down with it.
+
+**Unpairable join columns** reject the conversion. `from_columns` and `to_columns`
+pair up positionally into join criteria, so a relationship whose two sides declare
+a different number of them has no criteria to export. This is not a Salesforce
+limitation but a spec violation, and Salesforce accepts the broken relationship
+anyway, storing it as an enabled relationship with empty criteria that joins
+nothing, so the conversion fails instead of producing that model.
+
 ### Metric expressions
 
-Metrics select `TABLEAU`, then `SNOWFLAKE`, then `ANSI_SQL`, independent of entry
-order. The selected expression is parsed and validated; an invalid preferred
-expression fails rather than falling back to another dialect. Duplicate selected
-dialect entries are errors. Successful conversion exports every declared metric.
+Metrics select `TABLEAU`, then `SNOWFLAKE`, then `ANSI_SQL`, then
+`OSSIE_SQL_2026`, independent of entry order. The selected expression is parsed
+and validated; an invalid preferred expression fails rather than falling back to
+another dialect. Duplicate selected dialect entries are errors. Successful
+conversion exports every declared metric.
 
 The target is the Salesforce/Tableau Next semantic model's
 [Tua calculation language](https://developer.salesforce.com/docs/data/semantic-layer/guide/query-api-in-depth-functions.html).
@@ -274,10 +325,20 @@ and [aggregation rules](https://developer.salesforce.com/docs/data/semantic-laye
 | `+`, `-`, `*`, `/`, parentheses, numeric constants | Explicitly grouped arithmetic |
 | Searched `CASE WHEN` | `IF … THEN … ELSEIF … ELSE … END` |
 | Comparisons, `AND`, `OR`, `NOT` | Equivalent grouped operators |
+| Field `IN (...)`, `NOT IN (...)` with scalar literals | Grouped equality comparisons joined by `OR`, optionally wrapped in `NOT` |
 | `COALESCE(a, b, …)` | Nested `IFNULL` |
 | `NULLIF(a, b)` | `IF a = b THEN NULL ELSE a END` |
 | `IS NULL`, `IS NOT NULL` | `ISNULL`, `NOT ISNULL` |
 | `ABS`, `ROUND`, `CEIL`, `FLOOR` | `ABS`, `ROUND`, `CEILING`, `FLOOR` |
+
+Membership lists must be nonempty and contain only scalar literals (including NULL
+and signed numbers), with a direct field on the left. Types must be compatible;
+subqueries, tuples and computed operands are unsupported. NULL membership follows
+SQL three-valued logic, including for `NOT IN`.
+When combining membership with `AND` or `OR`, parenthesize each membership
+predicate, for example `(orders.status IN ('paid', 'pending')) AND orders.active`.
+The current SQL parser can misgroup unparenthesized membership before a Boolean
+operator; those forms are rejected rather than translated.
 
 These constructs compose. For example, with declared numeric fields `profit` and
 `revenue` in dataset `orders`:
@@ -317,7 +378,15 @@ belong to separate converter work.
 subset is the Tua equivalents above, including `IF`, `IFNULL`, `ISNULL`, `COUNTD`
 and `CEILING`. Existing `ANSI_SQL` expressions using complete bracket notation
 retain that spelling as a compatibility case and receive the same validation.
-Bracket notation is not accepted as Snowflake SQL.
+Bracket notation is not accepted as Snowflake or `OSSIE_SQL_2026` SQL.
+
+`OSSIE_SQL_2026` is the spec's own
+[portable expression language](../../core-spec/expression_language.md), based on
+ANSI SQL:2003 Core, so it is parsed and validated exactly like `ANSI_SQL` and
+quotes identifiers with double quotes. It is selected last because a dialect
+authored for a specific engine states that engine's intent more precisely. The
+supported function subset is unchanged: spec aliases such as `IFNULL`, `NVL` and
+`CEILING` remain outside it, as they already are for `ANSI_SQL`.
 
 Fields need a known compatible datatype, either declared in OSI or restored from
 an existing Salesforce field type. Arithmetic and `SUM`/`AVG` require numbers;
