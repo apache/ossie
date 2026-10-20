@@ -139,4 +139,19 @@ public final class DataStructureUtils {
                 .findFirst()
                 .orElse(null);
     }
+
+    /**
+     * Checks whether two column lists pair up positionally into join criteria: both present,
+     * both non-empty, and the same length. A composite join key is defined by this pairing,
+     * so both the converter and the metric resolver treat it as the same rule.
+     *
+     * @param fromColumns Columns on one side of a relationship
+     * @param toColumns Columns on the other side of a relationship
+     * @return true if the two lists pair up one to one
+     */
+    public static boolean columnsPairable(List<Object> fromColumns, List<Object> toColumns) {
+        return fromColumns != null && toColumns != null
+                && !fromColumns.isEmpty() && !toColumns.isEmpty()
+                && fromColumns.size() == toColumns.size();
+    }
 }

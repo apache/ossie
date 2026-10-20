@@ -31,7 +31,7 @@ datasets:
       - dialect: THOUGHTSPOT
         expression: '[orders::order_id]'
       - dialect: ANSI_SQL
-        expression: orders.order_id
+        expression: order_id
     datatype: Integer
   custom_extensions:
   - vendor_name: THOUGHTSPOT
@@ -54,7 +54,7 @@ datasets:
       - dialect: THOUGHTSPOT
         expression: '[customers::customer_name]'
       - dialect: ANSI_SQL
-        expression: customers.customer_name
+        expression: customer_name
     datatype: String
   custom_extensions:
   - vendor_name: THOUGHTSPOT

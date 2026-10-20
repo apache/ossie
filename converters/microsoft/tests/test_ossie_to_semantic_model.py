@@ -342,6 +342,26 @@ def test_a_sql_concatenation_becomes_a_table_qualified_calculated_column():
     )
 
 
+def test_a_dax_identifier_is_not_indexed_as_a_physical_column_alias():
+    semantic_model = _minimal()
+    semantic_model["datasets"][0]["fields"] = [
+        {
+            "name": "Calculated",
+            "datatype": "String",
+            "expression": make_expression("source_alias", "DAX"),
+        },
+        {
+            "name": "Label",
+            "datatype": "String",
+            "expression": make_expression("source_alias || ' suffix'", "ANSI_SQL"),
+        },
+    ]
+
+    with pytest.warns(UserWarning, match="source_alias"):
+        column = _column(_table(_convert(semantic_model), "T"), "Label")
+    assert column["expression"] == "BLANK()"
+
+
 def test_an_ossie_sql_concatenation_becomes_a_calculated_column():
     semantic_model = _minimal()
     semantic_model["datasets"][0]["fields"] = [
@@ -1085,6 +1105,50 @@ def test_a_relationship_to_a_missing_column_is_skipped():
     with pytest.warns(UserWarning, match="is not in the model"):
         bim = _convert(semantic_model)
     assert "relationships" not in bim["model"]
+
+
+def test_a_legacy_relationship_stash_keeps_non_cardinality_metadata():
+    semantic_model = {
+        "name": "m",
+        "datasets": [
+            {
+                "name": "A",
+                "source": "a",
+                "fields": [{"name": "K", "expression": make_expression("k", "ANSI_SQL")}],
+            },
+            {
+                "name": "B",
+                "source": "b",
+                "fields": [{"name": "K", "expression": make_expression("k", "ANSI_SQL")}],
+            },
+        ],
+        "relationships": [
+            {
+                "name": "customer_sales",
+                "from": "A",
+                "to": "B",
+                "from_columns": ["K"],
+                "to_columns": ["K"],
+            }
+        ],
+    }
+    write_stash(
+        semantic_model["relationships"][0],
+        {
+            "fromCardinality": "many",
+            "toCardinality": "one",
+            "isActive": True,
+            "crossFilteringBehavior": "bothDirections",
+            "relyOnReferentialIntegrity": True,
+        },
+    )
+
+    relationship = _convert(semantic_model)["model"]["relationships"][0]
+    assert "fromCardinality" not in relationship
+    assert "toCardinality" not in relationship
+    assert relationship["isActive"] is True
+    assert relationship["crossFilteringBehavior"] == "bothDirections"
+    assert relationship["relyOnReferentialIntegrity"] is True
 
 
 # --- other vendors ---------------------------------------------------------

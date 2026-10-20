@@ -23,7 +23,7 @@ cubes:
     ai_context: 'Also known as: stores, retail locations, branches.'
     ossie:
       unique_keys:
-      - - s_store_id
+      - - s_store_sk
       ai_context:
         synonyms:
         - stores

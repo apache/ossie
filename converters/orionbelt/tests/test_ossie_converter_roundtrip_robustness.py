@@ -62,11 +62,11 @@ class TestMetricRoundTripCodeVsName:
     }
 
     def test_emitter_references_dataset_name(self) -> None:
-        # Ossie resolves ``<dataset>.<field>``: the dataset is named after the
-        # OBML data object, not its physical table code.
+        # Ossie resolves ``<dataset>.<field>``: the dataset and field are named
+        # after the OBML data object and column, not their physical codes.
         ossie = conv.OBMLtoOssie(self._OBML).convert()
         sql = ossie["metrics"][0]["expression"]["dialects"][0]["expression"]
-        assert sql == 'SUM("Orders"."amount")'
+        assert sql == "SUM(Orders.Amount)"
 
     def test_measure_survives_round_trip(self) -> None:
         ossie = conv.OBMLtoOssie(self._OBML).convert()

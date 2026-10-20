@@ -1,0 +1,105 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+Model store_sales {
+  type: 'table'
+  label: 'Store Sales'
+  description: 'Fact table containing all store sales transactions'
+  data_source_name: 'tpcds_warehouse'
+  table_name: 'tpcds.public.store_sales'
+
+  dimension ss_sold_date_sk {
+    label: 'Ss Sold Date Sk'
+    type: 'number'
+    description: 'Foreign key to date dimension'
+    definition: @sql {{ #SOURCE.ss_sold_date_sk }};;
+  }
+
+  dimension ss_item_sk {
+    label: 'Ss Item Sk'
+    type: 'number'
+    description: 'Foreign key to item dimension'
+    definition: @sql {{ #SOURCE.ss_item_sk }};;
+    primary_key: true
+  }
+
+  dimension ss_customer_sk {
+    label: 'Ss Customer Sk'
+    type: 'number'
+    description: 'Foreign key to customer dimension'
+    definition: @sql {{ #SOURCE.ss_customer_sk }};;
+  }
+
+  dimension ss_store_sk {
+    label: 'Ss Store Sk'
+    type: 'number'
+    description: 'Foreign key to store dimension'
+    definition: @sql {{ #SOURCE.ss_store_sk }};;
+  }
+
+  dimension ss_quantity {
+    label: 'Ss Quantity'
+    type: 'number'
+    description: 'Quantity of items sold'
+    definition: @sql {{ #SOURCE.ss_quantity }};;
+  }
+
+  dimension ss_sales_price {
+    label: 'Ss Sales Price'
+    type: 'number'
+    description: 'Sales price per unit'
+    definition: @sql {{ #SOURCE.ss_sales_price }};;
+  }
+
+  dimension ss_ext_sales_price {
+    label: 'Ss Ext Sales Price'
+    type: 'number'
+    description: 'Extended sales price (quantity * price)'
+    definition: @sql {{ #SOURCE.ss_ext_sales_price }};;
+  }
+
+  dimension ss_net_profit {
+    label: 'Ss Net Profit'
+    type: 'number'
+    description: 'Net profit from the sale'
+    definition: @sql {{ #SOURCE.ss_net_profit }};;
+  }
+
+  measure total_sales {
+    label: 'Total Sales'
+    type: 'number'
+    description: 'Total sales revenue across all transactions'
+    definition: @sql SUM({{ ss_ext_sales_price }});;
+    aggregation_type: 'custom'
+  }
+
+  measure total_profit {
+    label: 'Total Profit'
+    type: 'number'
+    description: 'Total net profit from store sales'
+    definition: @sql SUM({{ ss_net_profit }});;
+    aggregation_type: 'custom'
+  }
+
+  measure sales_by_brand {
+    label: 'Sales By Brand'
+    type: 'number'
+    description: 'Total sales by brand (requires grouping by item.i_brand)'
+    definition: @sql SUM({{ ss_ext_sales_price }});;
+    aggregation_type: 'custom'
+  }
+}

@@ -89,6 +89,10 @@ The Ossie specification currently defines extensions for the following vendors:
 | `SIGMA` | Sigma Computing data model |
 | `THOUGHTSPOT` | ThoughtSpot TML (Model + Table/SQL View) |
 | `CUBE` | Cube data model |
+| `HEX` | Hex semantic project |
+| `HOLISTICS` | Holistics AML dataset |
+
+[`wisdom-semantic-view`](wisdom-semantic-view/README.md) is a separate, fixture-scoped spoke. It reads one Snowflake semantic view, writes one Ossie document, writes a Wisdom domain-export JSON (format `1.0`), and reverses that path. It keeps metric synonyms and `module_custom_instructions.sql_generation`. It does not call `converters/snowflake` (Cortex Analyst export only) or `converters/wisdom` (that spoke drops synonyms and field or metric `ai_context`).
 
 Each vendor may define custom extensions (via the `custom_extensions` field in the Ossie spec) to carry vendor-specific metadata that does not have an equivalent in the core specification.
 
@@ -302,7 +306,9 @@ Given the [TPC-DS example](../examples/tpcds_semantic_model.yaml) included in th
 
 ## Contributing a New Converter
 
-To add support for a new vendor:
+The main Ossie repository does not accept new converters. Develop new semantic model and ontology converters in a separate repository. For Apache Ossie hosting, use the [ossie-converters repository](https://github.com/apache/ossie-converters) and coordinate contributions on `dev@ossie.apache.org`. See [Converter Contributions](../CONTRIBUTING.md#converter-contributions) for details.
+
+To add support for a new vendor, in your own repository or in `ossie-converters`:
 
 1. Use a stable `vendor_name` string in each custom extension emitted by the converter.
 2. Define the custom extension schema for the vendor (what vendor-specific metadata fields are supported in the `data` JSON).

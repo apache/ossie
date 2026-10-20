@@ -26,6 +26,7 @@ from __future__ import annotations
 from typing import Any
 
 from ossie_orionbelt._common import _OSSIE_VERSION
+from ossie_orionbelt._portable import PortableRenderer
 from ossie_orionbelt.obml_to_ossie import OBMLtoOssie
 
 
@@ -62,23 +63,7 @@ class OBMLtoOssieOntology:
         self.ai_instructions = ai_instructions
         self.warnings: list[str] = []
 
-    @staticmethod
-    def _table_ref(do_obj: dict, fallback: str) -> str:
-        """Best-effort physical table identifier for SQL mapping expressions."""
-        database = do_obj.get("database", "")
-        schema = do_obj.get("schema", "")
-        code = do_obj.get("code", "")
-        source = f"{database}.{schema}.{code}" if database else code
-        if source:
-            return source.split(".")[-1]
-        return fallback
-
-    @staticmethod
-    def _col_code(do_obj: dict, display: str) -> str:
-        col = (do_obj.get("columns", {}) or {}).get(display, {})
-        return col.get("code", display.lower().replace(" ", "_"))
-
-    def _entity_key_expr(self, do_name: str, do_obj: dict, table_ref: str) -> str | None:
+    def _entity_key_expr(self, do_name: str, do_obj: dict, refs: PortableRenderer) -> str | None:
         """Identifying SQL expression for an entity (primary key, else first column)."""
         cols = do_obj.get("columns", {}) or {}
         pk = [c for c, col in cols.items() if col.get("primaryKey")]
@@ -89,13 +74,13 @@ class OBMLtoOssieOntology:
             self.warnings.append(
                 f"Entity '{do_name}' has no primary key; identified by first column '{first}'"
             )
-            return f"{table_ref}.{self._col_code(do_obj, first)}"
+            return refs.column(do_name, first)
         if len(pk) > 1:
             self.warnings.append(
                 f"Entity '{do_name}' has a composite primary key; ontology object "
                 f"mapping uses only the first key column '{pk[0]}'"
             )
-        return f"{table_ref}.{self._col_code(do_obj, pk[0])}"
+        return refs.column(do_name, pk[0])
 
     def convert(self) -> dict:
         # 1. Core semantic model (embedded — required by Ossie OntologyMap).
@@ -109,7 +94,9 @@ class OBMLtoOssieOntology:
         self.warnings.extend(core_conv.warnings)
 
         data_objects = self.obml.get("dataObjects", {}) or {}
-        table_refs = {n: self._table_ref(o, n) for n, o in data_objects.items()}
+        # Mappings are SQL over the embedded model's fields: ``<dataset>.<field>``,
+        # quoted as the model's metrics are.
+        refs = PortableRenderer(self.obml, ossie=True)
 
         # 2. Ontology components (one EntityType concept per dataObject) plus
         #    the outgoing relationships keyed by that concept. Collect link
@@ -183,7 +170,7 @@ class OBMLtoOssieOntology:
                             f"Join {do_name} -> {to_name} has a composite key; link "
                             f"mapping uses only the first column '{from_cols[0]}'"
                         )
-                    fk_expr = f"{table_refs[do_name]}.{self._col_code(do_obj, from_cols[0])}"
+                    fk_expr = refs.column(do_name, from_cols[0])
                 rel_links.setdefault(do_name, []).append((rel_name, to_name, fk_expr))
 
             if relationships:
@@ -195,7 +182,7 @@ class OBMLtoOssieOntology:
         concept_mappings: list[dict[str, Any]] = []
         for do_name, do_obj in data_objects.items():
             cm: dict[str, Any] = {"concept": do_name}
-            key_expr = self._entity_key_expr(do_name, do_obj, table_refs[do_name])
+            key_expr = self._entity_key_expr(do_name, do_obj, refs)
             if key_expr:
                 cm["object_mappings"] = [{"expression": key_expr}]
             links: list[dict[str, Any]] = []

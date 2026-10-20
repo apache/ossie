@@ -27,6 +27,12 @@ dev = [
     # so its absence never fails the suite -- the package's only *runtime* dependency
     # stays PyYAML. Same dev-group placement as converters/nvidia's pyproject.toml.
     "jsonschema>=4.26.0",
+    # Dev/test-only: the parser Apache's own `validation/validate.py` uses, so a
+    # test can assert an emitted portable expression actually PARSES. Without it
+    # that check silently skipped -- and so did the validator's, which reports
+    # "Validation PASSED" while printing "sqlglot not installed, skipping SQL
+    # validation". Guarded by pytest.importorskip, same discipline as the two below.
+    "sqlglot>=25.0",
     # Dev/test-only: drives tests/test_roundtrip_properties.py. Guarded there by
     # pytest.importorskip("hypothesis"), same discipline as jsonschema above --
     # the package's only runtime dependency stays PyYAML. Same dev-group

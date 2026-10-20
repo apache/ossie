@@ -43,7 +43,6 @@ updates:
     directories:
       - "/python"
       - "/converters/cube"
-      - "/converters/databricks/python"
       - "/converters/dbt"
       - "/converters/gooddata"
       - "/converters/honeydew"

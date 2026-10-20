@@ -24,6 +24,7 @@ cubes:
     ossie:
       unique_keys:
       - - c_customer_sk
+      - - c_customer_id
       ai_context:
         synonyms:
         - customers
