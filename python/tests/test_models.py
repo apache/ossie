@@ -28,15 +28,25 @@ from ossie import (
     OssieCustomExtension,
     OssieDataset,
     OssieDataType,
+    OssieDefaultAggregation,
+    OssieDefaultSort,
+    OssieDesiredDirection,
     OssieDialect,
     OssieDialectExpression,
     OssieDimension,
     OssieDocument,
     OssieExpression,
     OssieField,
+    OssieGlossaryReference,
+    OssieMeasurement,
     OssieMetric,
+    OssieNullsOrder,
     OssieRelationship,
     OssieSemanticModel,
+    OssieSemanticTypeToken,
+    OssieSortDirection,
+    OssieTimeGranularity,
+    OssieUnitSystem,
 )
 
 
@@ -418,6 +428,9 @@ def test_unknown_field_names_match_the_schema_allowlist() -> None:
         "Relationship": OssieRelationship,
         "Metric": OssieMetric,
         "SemanticModel": OssieSemanticModel,
+        "Measurement": OssieMeasurement,
+        "DefaultSort": OssieDefaultSort,
+        "GlossaryReference": OssieGlossaryReference,
     }
 
     forbidden_in_schema = {
@@ -675,3 +688,188 @@ def test_relationship_columns_min_length() -> None:
 def test_semantic_model_datasets_min_length() -> None:
     with pytest.raises(ValidationError):
         OssieSemanticModel(name="model", datasets=[])
+
+
+# ---------------------------------------------------------------------------
+# Extended metadata
+# ---------------------------------------------------------------------------
+
+
+def _extended_document(document_data: dict) -> dict:
+    """The fixture with every extended metadata property set on a field and a metric."""
+    document_data["datasets"][0]["fields"][0].update(
+        display_label="Occurred At",
+        semantic_type="temporal",
+        display_format="yyyy-mm-dd",
+        default_time_granularity="month",
+        default_sort={"direction": "desc", "nulls": "last"},
+        hidden=False,
+        group_labels=["Time"],
+    )
+    document_data["datasets"][0]["fields"].append(
+        {
+            "name": "amount",
+            "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}]},
+            "display_label": "Sales Amount",
+            "semantic_type": "https://www.iso20022.org/glossary/ActiveCurrencyAndAmount",
+            "measurement": {"quantity_kind": "currency", "unit": "usd", "unit_system": "custom"},
+            "display_format": "$#,##0.00",
+            "default_aggregation": "count_distinct",
+            "default_sort": {"direction": "asc", "nulls": "first", "by_field": "occurred_at"},
+            "glossary_references": [
+                {"target": "https://schema.org/MonetaryAmount"},
+                {
+                    "target": "https://www.esma.europa.eu/emir/Counterparty",
+                    "predicate": "DISTINCT_FROM",
+                    "provenance": "manual",
+                },
+            ],
+            "hidden": True,
+            "group_labels": ["Revenue", "Financial Metrics"],
+        }
+    )
+    document_data["metrics"][0].update(
+        display_label="Revenue",
+        semantic_type="monetary",
+        measurement={"unit": "usd"},
+        display_format="$#,##0",
+        desired_direction="higher_is_better",
+        default_sort={"direction": "desc", "by_field": "revenue"},
+        glossary_references=[{"target": "https://schema.org/MonetaryAmount", "predicate": "exactMatch"}],
+        hidden=False,
+        group_labels=["Revenue"],
+    )
+    return document_data
+
+
+@pytest.mark.parametrize(
+    ("enum", "definition"),
+    [
+        (OssieSemanticTypeToken, None),
+        (OssieDesiredDirection, "DesiredDirection"),
+        (OssieDefaultAggregation, "DefaultAggregation"),
+        (OssieTimeGranularity, "DefaultTimeGranularity"),
+        (OssieUnitSystem, "UnitSystem"),
+    ],
+)
+def test_extended_metadata_enums_match_core_schema(enum, definition: str | None) -> None:
+    schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    defs = json.loads(schema_path.read_text())["$defs"]
+
+    if definition is None:
+        # SemanticType is token-or-URI; the token branch carries the enum.
+        expected = next(branch["enum"] for branch in defs["SemanticType"]["anyOf"] if "enum" in branch)
+    else:
+        expected = defs[definition]["enum"]
+    assert [member.value for member in enum] == expected
+
+
+def test_sort_enums_match_core_schema() -> None:
+    schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    sort = json.loads(schema_path.read_text())["$defs"]["DefaultSort"]["properties"]
+
+    assert [member.value for member in OssieSortDirection] == sort["direction"]["enum"]
+    assert [member.value for member in OssieNullsOrder] == sort["nulls"]["enum"]
+
+
+def test_extended_metadata_survives_serialization(document_data: dict) -> None:
+    data = _extended_document(document_data)
+    document = OssieDocument.model_validate(data)
+
+    for serialized in (json.loads(document.to_ossie_json()), yaml.safe_load(document.to_ossie_yaml())):
+        assert serialized == data
+        assert OssieDocument.model_validate(serialized) == document
+
+
+def test_extended_metadata_serializes_to_a_schema_valid_document(document_data: dict) -> None:
+    """What the models accept and emit, the schema accepts too."""
+    jsonschema = pytest.importorskip("jsonschema")
+    schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    schema = json.loads(schema_path.read_text())
+
+    document = OssieDocument.model_validate(_extended_document(document_data))
+
+    jsonschema.validate(json.loads(document.to_ossie_json()), schema)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("monetary", OssieSemanticTypeToken.MONETARY),
+        ("https://www.iso20022.org/glossary/LEI", "https://www.iso20022.org/glossary/LEI"),
+        ("urn:isin:US0378331005", "urn:isin:US0378331005"),
+    ],
+    ids=["token", "https_uri", "urn"],
+)
+def test_semantic_type_accepts_token_or_uri(make_expression, value: str, expected) -> None:
+    field = OssieField(name="f", expression=make_expression("f"), semantic_type=value)
+    assert field.semantic_type == expected
+
+
+@pytest.mark.parametrize("value", ["monetory", "Monetary", "", "schema.org/MonetaryAmount"])
+def test_semantic_type_rejects_what_is_neither_token_nor_uri(make_expression, value: str) -> None:
+    """A misspelled token must not pass as an opaque type reference."""
+    with pytest.raises(ValidationError):
+        OssieField(name="f", expression=make_expression("f"), semantic_type=value)
+
+
+def test_measurement_requires_a_property() -> None:
+    """The schema sets `minProperties: 1` on `Measurement`."""
+    with pytest.raises(ValidationError):
+        OssieMeasurement.model_validate({})
+    assert OssieMeasurement.model_validate({"unit": "usd"}).unit == "usd"
+
+
+def test_glossary_reference_requires_target() -> None:
+    with pytest.raises(ValidationError):
+        OssieGlossaryReference.model_validate({"predicate": "exactMatch"})
+
+
+@pytest.mark.parametrize("value", ["yes", "true", 1, 0])
+def test_hidden_rejects_values_the_schema_rejects(make_expression, value: object) -> None:
+    with pytest.raises(ValidationError):
+        OssieField(name="f", expression=make_expression("f"), hidden=value)
+    with pytest.raises(ValidationError):
+        OssieMetric(name="m", expression=make_expression("m"), hidden=value)
+
+
+@pytest.mark.parametrize(
+    ("property_name", "value"),
+    [
+        ("measurement", {"unit": "usd", "units": "typo"}),
+        ("default_sort", {"direction": "asc", "order": "typo"}),
+        ("glossary_references", [{"target": "https://schema.org/Thing", "predicat": "typo"}]),
+    ],
+)
+def test_extended_metadata_objects_reject_unknown_fields(
+    document_data: dict, property_name: str, value: object
+) -> None:
+    document_data["metrics"][0][property_name] = value
+
+    with pytest.raises(ValidationError) as error:
+        OssieDocument.model_validate(document_data)
+
+    assert any(item["type"] == "extra_forbidden" for item in error.value.errors()), error.value.errors()
+
+
+@pytest.mark.parametrize(
+    ("container", "property_name", "value"),
+    [
+        ("field", "default_aggregation", "SUM"),
+        ("field", "default_time_granularity", "hour"),
+        ("metric", "desired_direction", "up"),
+        ("metric", "default_sort", {"direction": "ASC"}),
+        ("metric", "default_sort", {"nulls": "NULLS LAST"}),
+        ("metric", "measurement", {"unit_system": "metric"}),
+    ],
+)
+def test_extended_metadata_rejects_values_outside_the_vocabulary(
+    document_data: dict, container: str, property_name: str, value: object
+) -> None:
+    target = (
+        document_data["datasets"][0]["fields"][0] if container == "field" else document_data["metrics"][0]
+    )
+    target[property_name] = value
+
+    with pytest.raises(ValidationError):
+        OssieDocument.model_validate(document_data)
