@@ -19,7 +19,7 @@
 
 # Apache Ossie Working Groups
 
-Join the community on Slack: [join.slack.com/t/opensemanticx](https://join.slack.com/t/opensemanticx/shared_invite/zt-3yuad6c0h-MaoPgVSD1g9MEOf1_QeaiQ)
+Join the community on Slack: [join.slack.com/t/apache-ossie](https://join.slack.com/t/apache-ossie/shared_invite/zt-4drnzih1v-T0tcnaZZoLlddLh_plY~bw)
 
 ## 1. Metric Language and Relationships
 
