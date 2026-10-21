@@ -72,6 +72,11 @@ from ossie_sigma.sigma_formula import (
             "COUNT(DISTINCT CASE WHEN \"Status\" = 'won' AND \"Qty\" > 0 THEN \"Cust\" END)",
         ),
         ("CountIf([Qty] > 1)", "T", 'COUNT(CASE WHEN "Qty" > 1 THEN 1 END)'),
+        (
+            'CountIf([Qty] > 1, [Status] = "won")',
+            "T",
+            "COUNT(CASE WHEN \"Qty\" > 1 AND \"Status\" = 'won' THEN 1 END)",
+        ),
         ('Contains([Name], "a")', "T", "\"Name\" LIKE '%' || 'a' || '%'"),
         ("Concat([A], [B])", "T", '"A" || "B"'),
         ("2 ^ 3", "T", "POWER(2, 3)"),
