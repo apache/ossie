@@ -544,14 +544,16 @@ def _build_call(node: FuncCall, dataset_alias: Optional[str]) -> exp.Expression:
     if name == "isnotnull" and len(args) == 1:
         return exp.Not(this=exp.Is(this=built[0], expression=exp.Null()))
 
-    if name == "sumif" and len(args) == 2:
-        return exp.Sum(this=_case(built[0], built[1], None))
-    if name == "countif" and len(args) == 1:
-        return exp.Count(this=_case(built[0], exp.Literal.number(1), None))
-    if name == "countdistinctif" and len(args) == 2:
-        return exp.Count(this=exp.Distinct(expressions=[_case(built[0], built[1], None)]))
-    if name == "averageif" and len(args) == 2:
-        return exp.Avg(this=_case(built[0], built[1], None))
+    if name == "sumif" and len(args) >= 2:
+        return exp.Sum(this=_case(exp.and_(*built[1:]), built[0], None))
+    if name == "countif" and len(args) >= 1:
+        return exp.Count(this=_case(exp.and_(*built), exp.Literal.number(1), None))
+    if name == "countdistinctif" and len(args) >= 2:
+        return exp.Count(
+            this=exp.Distinct(expressions=[_case(exp.and_(*built[1:]), built[0], None)])
+        )
+    if name in ("avgif", "averageif") and len(args) >= 2:
+        return exp.Avg(this=_case(exp.and_(*built[1:]), built[0], None))
 
     if name in ("left", "right", "mid", "substring") and args:
         return _build_string_slice(name, args, dataset_alias)

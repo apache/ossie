@@ -61,7 +61,7 @@
             },
             {
               "id": "colNetAmount",
-              "formula": "IfNull([Amount], 0) - SumIf([Status] = \"refunded\", [Amount])",
+              "formula": "IfNull([Amount], 0) - SumIf([Amount], [Status] = \"refunded\")",
               "name": "Net Amount"
             }
           ],
