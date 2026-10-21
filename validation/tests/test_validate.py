@@ -1411,15 +1411,34 @@ def test_pass_through_is_read_from_the_parsed_definition(definition: str) -> Non
     assert _field_reference_findings(document) == []
 
 
-def test_pass_through_compares_names_as_written() -> None:
+def test_pass_through_compares_names_without_regard_to_case() -> None:
     document = _renamed_model()
     document["datasets"][0]["fields"] += [
         _field("amount", "AMOUNT"),
         _field("amount_cents", "amount * 100"),
     ]
+    assert _field_reference_findings(document) == []
+
+
+def test_field_shadowing_check_compares_names_without_regard_to_case() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(_field("total_eur", "Total_USD * 0.9"))
+
     errors = _field_reference_findings(document)
+
     assert len(errors) == 1
-    assert "defined as 'AMOUNT'" in errors[0]
+    assert "'Total_USD' is the source column, not the field 'total_usd'" in errors[0]
+
+
+def test_field_shadowing_check_reads_a_date_part_as_a_unit_not_a_column() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("day", "EXTRACT(DAY FROM order_date)"),
+        _field("month", "EXTRACT(MONTH FROM order_date)"),
+        _field("days_open", "DATEDIFF(day, opened_at, closed_at)"),
+        _field("months_open", "DATEDIFF(month, opened_at, closed_at)"),
+    ]
+    assert _field_reference_findings(document) == []
 
 
 def test_field_shadowing_check_needs_a_sql_definition_to_compare() -> None:
@@ -1585,15 +1604,104 @@ def test_renamed_fields_example_passes_the_field_reference_check() -> None:
 
 @pytest.mark.parametrize("expression", [
     "DATEDIFF(day, orders.shipped, orders.ordered)",
+    "DATEDIFF(month, orders.shipped, orders.ordered)",
+    "DATEDIFF(days, orders.shipped, orders.ordered)",
     "TIMESTAMPDIFF(MINUTE, orders.shipped, orders.ordered)",
+    "TIMESTAMPDIFF(MONTH, orders.shipped, orders.ordered)",
     "DATEADD(day, 1, orders.ordered)",
+    "DATEADD(dd, 1, orders.ordered)",
+    "DATEADD(month, 1, orders.ordered)",
     "DATE_PART(year, orders.ordered)",
+    "DATE_PART(month, orders.ordered)",
 ])
 def test_metric_check_reads_a_date_part_as_a_unit_not_a_column(expression) -> None:
     document = _renamed_model(metrics=[_metric("age", expression)])
     document["datasets"][0]["fields"] += [_field("shipped"), _field("ordered")]
 
     assert _VALIDATE.validate_metric_references(document) == []
+
+
+def test_metric_check_compares_names_without_regard_to_case() -> None:
+    document = _renamed_model(metrics=[
+        _metric("Revenue", "SUM(ORDERS.TOTAL_USD)"),
+        _metric("revenue_eur", "SUM(ORDERS.TOTAL_EUR)"),
+        _metric("doubled", "revenue * 2"),
+    ])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert len(errors) == 2
+    assert "'ORDERS.TOTAL_EUR' is not a declared field of dataset 'ORDERS'" in errors[0]
+    assert "'revenue' names the metric 'Revenue'" in errors[1]
+
+
+def test_datasets_that_differ_only_in_case_pool_their_fields() -> None:
+    # Whether two such names may coexist is validate_unique_names' question;
+    # the Name Resolution checks must not warn about either one's own fields.
+    document = _renamed_model()
+    document["datasets"].append(
+        {"name": "Orders", "source": "db.s.orders2", "primary_key": ["order_id"], "fields": [_field("oid", "k")]}
+    )
+    assert _field_reference_findings(document) == []
+
+
+def test_a_field_passing_through_its_own_column_in_another_case_is_not_shadowing() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(_field("Total_USD", "total_usd"))
+
+    assert _field_reference_findings(document) == []
+
+
+def test_fields_that_differ_only_in_case_compare_against_the_first_declared() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("Total_USD", "total_cents"),
+        _field("total_eur", "total_usd * 0.9"),
+    ]
+
+    errors = _field_reference_findings(document)
+
+    assert len(errors) == 1
+    assert "not the field 'total_usd' defined as 'total_cents / 100.0'" in errors[0]
+
+
+def test_a_column_named_like_a_unit_outside_the_unit_position_is_a_column() -> None:
+    document = _renamed_model(metrics=[
+        _metric("age", "SUM(DATEDIFF(day, ms, orders.total_usd))"),
+        _metric("month_start", "MIN(DATE_TRUNC(month, d))"),
+    ])
+    document["datasets"][0]["fields"] += [_field("q", "quarter_start"), _field("closed_at")]
+    document["datasets"][0]["fields"].append(_field("open_days", "DATEDIFF(day, q, closed_at)"))
+
+    errors = _field_reference_findings(document)
+
+    assert [e.split(": ", 2)[2] for e in errors] == [
+        "'ms' is not qualified; metric expressions refer to fields as dataset.field",
+        "'d' is not qualified; metric expressions refer to fields as dataset.field",
+        "'q' is the source column, not the field 'q' defined as 'quarter_start'",
+    ]
+
+
+def test_a_parser_that_knows_the_unit_leaves_the_date_arguments_as_columns() -> None:
+    # Snowflake reads the unit itself and puts the last date argument where
+    # the default parser puts the unit, so `d` must still be seen.
+    document = _renamed_model(metrics=[
+        _metric("ok", "SUM(DATEDIFF(day, orders.total_usd, orders.total_usd))", dialect="SNOWFLAKE"),
+        _metric("bad", "SUM(DATEDIFF(day, orders.total_usd, d))", dialect="SNOWFLAKE"),
+    ])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert len(errors) == 1
+    assert "'d' is not qualified" in errors[0]
+
+
+def test_key_check_compares_names_without_regard_to_case() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["primary_key"] = ["ORDER_ID"]
+    document["relationships"][0]["from_columns"] = ["Customer_Id"]
+
+    assert _VALIDATE.validate_key_references(document) == []
 
 
 def test_metric_check_still_reports_a_bare_column_named_like_a_unit() -> None:
