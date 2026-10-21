@@ -66,18 +66,24 @@ def test_dialect_accepts_string_and_enum_input(dialect: str | OssieDialect) -> N
     assert expression.dialects[0].dialect is OssieDialect.ANSI_SQL
 
 
-def test_iceberg_dialect_accepts_string_and_enum_input() -> None:
+@pytest.mark.parametrize(
+    "dialect",
+    ["PYICEBERG", OssieDialect.PYICEBERG],
+    ids=["string", "enum"],
+)
+def test_pyiceberg_dialect_accepts_string_and_enum_input(dialect: str | OssieDialect) -> None:
     expression = OssieExpression.model_validate(
-        {"dialects": [{"dialect": "ICEBERG", "expression": "order_date >= '2026-01-01'"}]}
+        {"dialects": [{"dialect": dialect, "expression": "order_date >= '2026-01-01'"}]}
     )
 
-    assert expression.dialects[0].dialect is OssieDialect.ICEBERG
+    assert expression.dialects[0].dialect is OssieDialect.PYICEBERG
 
 
-def test_dialect_rejects_unknown_string() -> None:
+@pytest.mark.parametrize("dialect", ["NOT_A_DIALECT", "ICEBERG"])
+def test_dialect_rejects_unknown_string(dialect: str) -> None:
     with pytest.raises(ValidationError):
         OssieExpression.model_validate(
-            {"dialects": [{"dialect": "NOT_A_DIALECT", "expression": "value"}]}
+            {"dialects": [{"dialect": dialect, "expression": "value"}]}
         )
 
 

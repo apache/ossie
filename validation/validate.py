@@ -84,11 +84,11 @@ DIALECT_MAP = {
     "SIGMA": None,  # Sigma's spreadsheet-style formula language, not SQL; skip validation
     "THOUGHTSPOT": None,  # Not supported by sqlglot, skip validation
     "DAX": None,  # Not supported by sqlglot, skip validation
-    "ICEBERG": None,  # PyIceberg predicate strings, SQL-like but not SQL; skip validation
+    "PYICEBERG": None,  # PyIceberg predicate strings, SQL-like but not SQL; skip validation
 }
 
 # Dialects that sqlglot cannot parse
-SKIP_SQL_VALIDATION = {"MDX", "TABLEAU", "MAQL", "SIGMA", "THOUGHTSPOT", "DAX", "ICEBERG"}
+SKIP_SQL_VALIDATION = {"MDX", "TABLEAU", "MAQL", "SIGMA", "THOUGHTSPOT", "DAX", "PYICEBERG"}
 
 # Concepts every ontology includes implicitly (ontology.md, "Built-in concepts")
 BUILT_IN_CONCEPTS = {"Any", "Boolean", "Date", "DateTime", "Decimal", "Float", "Integer", "String"}

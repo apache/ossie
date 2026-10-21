@@ -352,13 +352,13 @@ def test_flags_an_invalid_ossie_sql_2026_expression() -> None:
     assert error.startswith("[SQL] ctx:")
 
 
-def test_iceberg_dialect_is_skipped_from_sql_validation() -> None:
-    # ICEBERG expressions are PyIceberg predicate strings: SQL-like, but with
-    # forms such as IS NAN that a SQL parser rejects, so they are never parsed.
-    assert "ICEBERG" in _VALIDATE.DIALECT_MAP
-    assert "ICEBERG" in _VALIDATE.SKIP_SQL_VALIDATION
+def test_pyiceberg_dialect_is_skipped_from_sql_validation() -> None:
+    assert "PYICEBERG" in _VALIDATE.DIALECT_MAP
+    assert "PYICEBERG" in _VALIDATE.SKIP_SQL_VALIDATION
+    assert "ICEBERG" not in _VALIDATE.DIALECT_MAP
+    assert "ICEBERG" not in _VALIDATE.SKIP_SQL_VALIDATION
 
-    error = _VALIDATE.validate_sql_expression("ratio IS NOT NAN AND region = 'EMEA'", "ICEBERG", "ctx")
+    error = _VALIDATE.validate_sql_expression("ratio IS NOT NAN AND region = 'EMEA'", "PYICEBERG", "ctx")
 
     assert error is None
 
