@@ -38,4 +38,4 @@ Apache Ossie provides a single JSON- and YAML-based specification that any tool 
 - **Contribute:** See [CONTRIBUTING.md](CONTRIBUTING.md) for how to propose specification changes, contribute code, and participate in the community.
 - **Roadmap:** See [ROADMAP.md](ROADMAP.md) for current working groups, future efforts, and planned enhancements informed by community discussion.
 - **Discuss:** Join the conversation on [GitHub Discussions](https://github.com/apache/ossie/discussions) and [Issues](https://github.com/apache/ossie/issues).
-- **Join the Slack community:** Chat directly with contributors on [Slack](https://join.slack.com/t/apache-ossie/shared_invite/zt-42zw4rflt-Gpve8_NFJq7AsdAQTY~SCg).
+- **Join the Slack community:** Chat directly with contributors on [Slack](https://join.slack.com/t/apache-ossie/shared_invite/zt-4drnzih1v-T0tcnaZZoLlddLh_plY~bw).

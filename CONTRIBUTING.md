@@ -69,7 +69,7 @@ is being made):
 
 - [GitHub Issues](https://github.com/apache/ossie/issues) and
   [Discussions](https://github.com/apache/ossie/discussions)
-- [Slack](https://join.slack.com/t/apache-ossie/shared_invite/zt-42zw4rflt-Gpve8_NFJq7AsdAQTY~SCg)
+- [Slack](https://join.slack.com/t/apache-ossie/shared_invite/zt-4drnzih1v-T0tcnaZZoLlddLh_plY~bw)
 
 ## Getting Started
 
