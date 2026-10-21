@@ -71,6 +71,8 @@ The core language is based on **ANSI SQL:2003 Core** (ISO/IEC 9075-2:2003), sele
 - Well-defined semantics  
 - Support for modern analytical features (window functions, CTEs)
 
+The language also requires optional SQL:2003 feature T612, the aggregate `<filter clause>` (`FILTER (WHERE ...)`), which is not part of Core. See [Conditional Aggregations](#conditional-aggregations-required).
+
 ### Namespacing and Identifier Resolution
 
 The identifiers will match standard SQL identifiers:
@@ -226,7 +228,7 @@ APPROX_PERCENTILE(response_time, 0.95)
 ### Conditional Aggregations (REQUIRED)
 
 SUM / COUNT aggregation functions support `DISTINCT.`   
-All aggregations should support filtered aggregation:
+All aggregations must support filtered aggregation:
 
 ```sql
 -- DISTINCT modifier
@@ -234,9 +236,37 @@ SUM(DISTINCT amount)
 COUNT(DISTINCT customer_id)
 
 -- Filtered aggregation via CASE
-SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END)
+SUM(CASE WHEN status = 'completed' THEN amount END)
 COUNT(CASE WHEN status = 'completed' THEN 1 END)
+
+-- Filtered aggregation via FILTER (WHERE ...)
+SUM(amount) FILTER (WHERE status = 'completed')
+COUNT(*) FILTER (WHERE status = 'completed')
 ```
+
+#### `FILTER (WHERE ...)` (REQUIRED)
+
+Every aggregate function must support a postfix `FILTER (WHERE <predicate>)` modifier:
+
+```
+<aggregate_function>(<args>) FILTER (WHERE <predicate>)
+```
+
+The clause has the semantics of the SQL:2003 `<filter clause>` (optional feature T612): the aggregate considers only the rows for which `<predicate>` succeeds. `FILTER` is applied to the aggregate's input, not as a query `WHERE`, so it never removes output groups. A converter or engine MUST NOT rewrite an intrinsic `FILTER` predicate into a query-level `WHERE` clause when doing so would change group membership.
+
+`FILTER (WHERE ...)` is a modifier on an aggregate expression. It is not the standalone `WHERE` clause listed under [Not Supported in Expressions](#not-supported-in-expressions). The `<predicate>` must reference only fields of the same dataset as the aggregate's arguments.
+
+An engine MAY evaluate `FILTER (WHERE ...)` by rewriting it to an equivalent expression, but the result MUST be identical to the result that the `<filter clause>` semantics define.
+
+*Note (non-normative):* For an aggregate function that ignores `NULL` inputs, `FILTER (WHERE ...)` is equivalent to a `CASE` expression with no `ELSE`:
+
+```sql
+SUM(amount) FILTER (WHERE status = 'completed')                  --> SUM(CASE WHEN status = 'completed' THEN amount END)
+COUNT(*) FILTER (WHERE status = 'completed')                     --> COUNT(CASE WHEN status = 'completed' THEN 1 END)
+COUNT(DISTINCT customer_id) FILTER (WHERE status = 'completed')  --> COUNT(DISTINCT CASE WHEN status = 'completed' THEN customer_id END)
+```
+
+A non-matching row contributes `NULL`, which these functions ignore. An `ELSE 0` would count as a real row and would corrupt `AVG`, `MIN`, `MAX`, and `COUNT`. The identity does not hold for an aggregate function that does not ignore `NULL` inputs, such as `ARRAY_AGG`.
 
 ### Decomposability Reference
 
@@ -407,7 +437,7 @@ a dialect extension.
 | Function | Syntax | Description |
 | :---- | :---- | :---- |
 | `CONCAT` | `CONCAT(str1, str2, ...)` | Concatenate strings |
-| `||` | `str1 || str2` | Concatenation operator |
+| `\|\|` | `str1 \|\| str2` | Concatenation operator |
 | `LENGTH` | `LENGTH(str)` | String length in characters |
 | `LOWER` | `LOWER(str)` | Convert to lowercase |
 | `UPPER` | `UPPER(str)` | Convert to uppercase |
@@ -557,9 +587,20 @@ When, adding the query interface, window functions will be subject to where they
 ```sql
 function_name(args) OVER (
   [PARTITION BY partition_expr, ...]
-  [ORDER BY order_expr [ASC|DESC], ...]
+  [ORDER BY order_expr [ASC|DESC] [NULLS {FIRST|LAST}], ...]
   [frame_clause]
 )
+```
+
+Each `ORDER BY` item has three independent parts:
+
+- `order_expr`: the value rows are sorted by.
+- `ASC` or `DESC`: the sort direction of non-NULL values.
+- `NULLS FIRST` or `NULLS LAST`: whether NULL values of `order_expr` sort before or after its non-NULL values, regardless of the sort direction.
+
+```sql
+-- Rank non-NULL revenues from high to low, rows with a NULL revenue last
+RANK() OVER (ORDER BY revenue DESC NULLS LAST)
 ```
 
 Frame clause options:
@@ -673,7 +714,7 @@ expression:
 | :---- | :---- | :---- | :---- | :---- | :---- |
 | Date truncation | `DATE_TRUNC('month', d)` | `DATE_TRUNC('month', d)` | `DATE_TRUNC(d, MONTH)` | `DATE_TRUNC('month', d)` | `DATE_TRUNC('month', d)` |
 | Date add | `DATEADD(day, 7, d)` | `DATEADD(day, 7, d)` | `DATE_ADD(d, INTERVAL 7 DAY)` | `DATE_ADD(d, 7)` | `d + INTERVAL '7 days'` |
-| String concat | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `a || b` |
+| String concat | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `a \|\| b` |
 | Null coalesce | `COALESCE(a, b)` | `COALESCE(a, b)` or `NVL(a, b)` | `COALESCE(a, b)` or `IFNULL(a, b)` | `COALESCE(a, b)` | `COALESCE(a, b)` |
 | Current timestamp | `CURRENT_TIMESTAMP` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP` |
 | Substring | `SUBSTRING(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTRING(s, start, len)` | `SUBSTRING(s, start, len)` |
@@ -703,7 +744,7 @@ This section maps Ossie standard functions to their equivalents in popular BI to
 | `STDDEV_POP(x)` | `STDEVP(x)` | `STDDEV(X)` | `STDEV.P(x)` | N/A |
 | `VARIANCE(x)` | `VAR(x)` | `VARIANCE(X)` | `VAR.S(x)` | `Variance(x)` |
 | `MEDIAN(x)` | `MEDIAN(x)` | `MEDIAN(X)` | `MEDIAN(x)` | `Median(x)` |
-| `PERCENTILE_CONT(x, 0.75)` | `PERCENTILE(x, 0.75)` | `PERCENTILE(X, 75)` | `PERCENTILE.INC(x, 0.75)` | `Percentile(x, 0.75)` |
+| `PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY x)` | `PERCENTILE(x, 0.75)` | `PERCENTILE(X, 75)` | `PERCENTILE.INC(x, 0.75)` | `Percentile(x, 0.75)` |
 
 Two of the DAX mappings are not the same-named function, because DAX treats BLANK
 differently from SQL's NULL:
@@ -775,7 +816,7 @@ date range. For a row-level shift, add a number of days to the date directly, or
 | `LAG(x, 1) OVER(ORDER BY...)` | `LOOKUP(x, -1)` | N/A | `CALCULATE(x, PREVIOUSDAY(...))` | `Lag(x, 1)` — same UI-configuration caveat |
 | `RUNNING_SUM(...)` | `RUNNING_SUM(SUM(...))` | N/A | `CALCULATE(SUM(...), FILTER(...))` | `RunningSum(...)` — same UI-configuration caveat |
 
-Sigma's table-calculation functions (`RowNumber`, `Rank`, `RunningSum`, `RunningAvg`, `Lag`, `Lead`, etc.) resolve their partition/order context from workbook UI configuration (which pivot/table the calculation is attached to) rather than from arguments passed in the formula text itself. Because that context isn't recoverable from the formula string alone, the Sigma converter (`converters/sigma/`) treats these as untranslatable to ANSI SQL and carries the original Sigma formula through in the `SIGMA` dialect only — see `converters/sigma/LIMITATIONS.md`.
+Sigma's table-calculation functions (`RowNumber`, `Rank`, `RunningSum`, `RunningAvg`, `Lag`, `Lead`, etc.) resolve their partition/order context from workbook UI configuration (which pivot/table the calculation is attached to) rather than from arguments passed in the formula text itself. Because that context isn't recoverable from the formula string alone, the [Sigma converter](https://github.com/apache/ossie-converters/tree/main/sigma) treats these as untranslatable to ANSI SQL and carries the original Sigma formula through in the `SIGMA` dialect only — see its [`LIMITATIONS.md`](https://github.com/apache/ossie-converters/blob/main/sigma/LIMITATIONS.md).
 
 ---
 

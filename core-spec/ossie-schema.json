@@ -207,6 +207,7 @@
           "items": {
             "type": "string"
           },
+          "minItems": 1,
           "description": "Primary key columns (single or composite)"
         },
         "unique_keys": {
@@ -215,8 +216,10 @@
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "minItems": 1
           },
+          "minItems": 1,
           "description": "Array of unique key definitions (each can be single or composite)"
         },
         "description": {

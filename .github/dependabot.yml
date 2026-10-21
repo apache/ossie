@@ -40,41 +40,10 @@ updates:
   # Python projects (PEP 621 / hatchling). They pin in uv.lock, which the
   # "pip" ecosystem does not read, so they are updated as "uv" projects.
   - package-ecosystem: "uv"
-    directories:
-      - "/python"
-      - "/converters/cube"
-      - "/converters/dbt"
-      - "/converters/gooddata"
-      - "/converters/honeydew"
-      - "/converters/microsoft"
-      - "/converters/nvidia"
-      - "/converters/omni"
-      - "/converters/ontology"
-      - "/converters/orionbelt"
-      - "/converters/sigma"
-      - "/converters/snowflake"
-      - "/converters/thoughtspot"
-      - "/converters/wisdom"
+    directory: "/python"
     schedule:
       interval: "weekly"
     groups:
       python-dependencies:
         patterns:
           - "*"
-
-  # Maven / Java converters
-  - package-ecosystem: "maven"
-    directories:
-      - "/converters/databricks/java"
-      - "/converters/polaris"
-      - "/converters/salesforce"
-    schedule:
-      interval: "weekly"
-    groups:
-      maven-dependencies:
-        patterns:
-          - "*"
-    ignore:
-      # 2.x/3.x introduced breaking package/API changes; only allow minor/patch updates
-      - dependency-name: "com.networknt:json-schema-validator"
-        update-types: ["version-update:semver-major"]
