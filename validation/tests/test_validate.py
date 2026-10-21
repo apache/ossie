@@ -437,6 +437,48 @@ def test_schema_rejects_empty_dialects_without_portable_form(core_schema: dict) 
     ]
 
 
+def test_unknown_dialect_emits_one_deduped_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    # An unrecognized dialect is nonfatal, but one warning per dialect reports that
+    # its expressions went unvalidated. The field and metric below share the dialect,
+    # so they collapse into a single warning carrying the count.
+    monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", True)
+    expression = {"dialects": [{"dialect": "ACME_SQL", "expression": "x"}]}
+    dataset = {**_ORDERS, "fields": [{"name": "f", "expression": expression}]}
+    document = _document([dataset], [])
+    document["metrics"] = [{"name": "total", "expression": expression}]
+
+    result = _VALIDATE.validate_sql(document)
+
+    assert result == ["[SQL] Warning: unknown dialect 'ACME_SQL'; 2 expressions not validated"]
+    assert all(isinstance(item, _VALIDATE.ValidationWarning) for item in result)
+
+
+def test_distinct_unknown_dialects_each_warn_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Two different unrecognized dialects produce two warnings, sorted by name.
+    monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", True)
+    fields = [
+        {"name": "a", "expression": {"dialects": [{"dialect": "ZETA_SQL", "expression": "x"}]}},
+        {"name": "b", "expression": {"dialects": [{"dialect": "ACME_SQL", "expression": "y"}]}},
+    ]
+    dataset = {**_ORDERS, "fields": fields}
+
+    assert _VALIDATE.validate_sql(_document([dataset], [])) == [
+        "[SQL] Warning: unknown dialect 'ACME_SQL'; 1 expression not validated",
+        "[SQL] Warning: unknown dialect 'ZETA_SQL'; 1 expression not validated",
+    ]
+
+
+def test_known_unparseable_dialect_is_not_flagged_as_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # MDX is recognized but unparseable: it is skipped silently, not warned as unknown.
+    monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", True)
+    expression = {"dialects": [{"dialect": "MDX", "expression": "[Measures].[Sales]"}]}
+    dataset = {**_ORDERS, "fields": [{"name": "f", "expression": expression}]}
+
+    assert _VALIDATE.validate_sql(_document([dataset], [])) == []
+
+
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 @pytest.mark.parametrize(
     "expression",

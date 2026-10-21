@@ -449,6 +449,10 @@ def validate_sql(data: dict) -> list[str]:
 
     model = data
     errors = []
+    # Count expressions whose dialect this validator does not recognize, so a single
+    # nonfatal warning per unknown dialect reports what went unvalidated. A free-form
+    # dialect is legitimate, but silence would also hide a typo like `SNOWFLKE`.
+    unknown_dialects: Counter = Counter()
 
     model_name = model.get("name", "<unnamed>")
 
@@ -470,6 +474,8 @@ def validate_sql(data: dict) -> list[str]:
                 # Only a missing expression is skipped; an empty one is reported.
                 expr = dialect_expr.get("expression")
                 if expr is not None:
+                    if dialect not in DIALECT_MAP:
+                        unknown_dialects[dialect] += 1
                     context = f"Field '{dataset_name}.{field_name}' in model '{model_name}' ({dialect})"
                     error = validate_sql_expression(expr, dialect, context)
                     if error:
@@ -490,10 +496,20 @@ def validate_sql(data: dict) -> list[str]:
             dialect = dialect_expr.get("dialect", "ANSI_SQL")
             expr = dialect_expr.get("expression")
             if expr is not None:
+                if dialect not in DIALECT_MAP:
+                    unknown_dialects[dialect] += 1
                 context = f"Metric '{metric_name}' in model '{model_name}' ({dialect})"
                 error = validate_sql_expression(expr, dialect, context)
                 if error:
                     errors.append(error)
+
+    # One nonfatal warning per unrecognized dialect, sorted for deterministic output.
+    for dialect in sorted(unknown_dialects):
+        count = unknown_dialects[dialect]
+        plural = "s" if count != 1 else ""
+        errors.append(ValidationWarning(
+            f"[SQL] Warning: unknown dialect '{dialect}'; {count} expression{plural} not validated"
+        ))
 
     return errors
 
