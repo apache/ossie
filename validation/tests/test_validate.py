@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import copy
 import json
 import urllib.request
 from importlib.util import module_from_spec, spec_from_file_location
@@ -44,11 +45,13 @@ def core_schema() -> dict:
 
 
 def _document(datasets: list[dict], relationships: list[dict]) -> dict:
+    # Deep-copied so a test can edit the document it gets back without
+    # changing the module-level fixtures below for every test after it.
     return {
         "version": "0.2.0.dev0",
         "name": "m",
-        "datasets": datasets,
-        "relationships": relationships,
+        "datasets": copy.deepcopy(datasets),
+        "relationships": copy.deepcopy(relationships),
     }
 
 
@@ -241,8 +244,8 @@ def _with_duplicate_metrics(name: str) -> dict:
 
 
 def _with_duplicate_relationships(name: str) -> dict:
-    rel = dict(_relationship(to_columns=["id"]), name=name)
-    return _document([_ORDERS, _CUSTOMERS], [dict(rel), dict(rel), dict(rel)])
+    rels = [dict(_relationship(to_columns=["id"]), name=name) for _ in range(3)]
+    return _document([_ORDERS, _CUSTOMERS], rels)
 
 
 @pytest.mark.parametrize(
@@ -290,7 +293,7 @@ def test_schema_rejects_empty_identifiers(core_schema: dict, mutate, path: str) 
     # Empty identifiers are invalid data. The schema (minLength: 1) rejects them
     # up front, so no downstream check has to special-case "" -- and a single
     # empty name is caught even though it never trips duplicate detection.
-    document = _document([dict(_ORDERS)], [])
+    document = _document([_ORDERS], [])
     mutate(document)
 
     assert _VALIDATE.validate_schema(document, core_schema) == [
@@ -299,7 +302,7 @@ def test_schema_rejects_empty_identifiers(core_schema: dict, mutate, path: str) 
 
 
 def test_schema_rejects_empty_relationship_endpoints(core_schema: dict) -> None:
-    document = _document([dict(_ORDERS), dict(_CUSTOMERS)], [_relationship(to_columns=["id"])])
+    document = _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["id"])])
     document["relationships"][0]["to"] = ""
 
     assert _VALIDATE.validate_schema(document, core_schema) == [
@@ -414,6 +417,27 @@ def test_rejects_an_expression_holding_more_than_one_statement(expression: str) 
 def test_accepts_a_single_expression_containing_a_semicolon(expression: str) -> None:
     """A semicolon in a literal or comment does not make a statement list."""
     assert _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx") is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    ["", "   ", "\n", ";", ";;", "-- comment only", "/* comment only */"],
+    ids=[
+        "empty",
+        "whitespace",
+        "newline",
+        "semicolon",
+        "semicolons",
+        "line-comment",
+        "block-comment",
+    ],
+)
+def test_rejects_an_expression_holding_no_statement(expression: str) -> None:
+    """Nothing to validate is an error, not a pass through `SELECT {expr}`."""
+    error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert error == "[SQL] ctx: expression is empty"
 
 
 def _relationship(to_columns: list[str], to: str = "customers") -> dict:
@@ -635,6 +659,34 @@ def test_sql_error_in_metric_with_warning_in_name_is_an_error(run_validator):
     assert exit_code == 1
     assert "Validation FAILED with 1 error(s)" in output
     assert "[SQL] Metric 'Warning: broken_metric'" in output
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_empty_field_expression_fails_validation(run_validator):
+    dataset = {**_ORDERS, "fields": [{
+        "name": "blank",
+        "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": ""}]},
+    }]}
+    document = _document([dataset], [])
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "[SQL] Field 'orders.blank' in model 'm' (ANSI_SQL): expression is empty" in output
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_comment_only_metric_expression_fails_validation(run_validator):
+    document = _document([_ORDERS], [])
+    document["metrics"] = [{
+        "name": "blank_total",
+        "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "-- TODO"}]},
+    }]
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 1
+    assert "[SQL] Metric 'blank_total' in model 'm' (ANSI_SQL): expression is empty" in output
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
@@ -951,3 +1003,171 @@ def test_ontology_cli_skips_semantic_checks_when_the_schema_fails(run_validator,
     assert exit_code == 1
     assert "[Schema]" in output
     assert "[Reference]" not in output
+
+
+# --- command line: several files, schema lookup -----------------------------
+
+def _write_document(tmp_path, name, document):
+    path = tmp_path / name
+    path.write_text(json.dumps(document))
+    return path
+
+
+def _run_cli(monkeypatch, capsys, *args):
+    monkeypatch.setattr(_VALIDATE.sys, "argv", [str(_VALIDATE_PATH), *map(str, args)])
+    with pytest.raises(SystemExit) as caught:
+        _VALIDATE.main()
+    return caught.value.code, capsys.readouterr().out
+
+
+def test_cli_validates_every_file_and_summarises(tmp_path, monkeypatch, capsys, offline):
+    first = _write_document(tmp_path, "first.json", _document([_CUSTOMERS], []))
+    second = _write_document(tmp_path, "second.json", _document([_ORDERS], []))
+
+    code, output = _run_cli(monkeypatch, capsys, first, second)
+
+    assert code == 0
+    assert "Validation PASSED: first.json" in output
+    assert "Validation PASSED: second.json" in output
+    assert "2 of 2 file(s) passed" in output
+
+
+def test_cli_fails_when_any_file_fails_but_reports_them_all(tmp_path, monkeypatch, capsys, offline):
+    good = _write_document(tmp_path, "good.json", _document([_CUSTOMERS], []))
+    bad_document = _document([_CUSTOMERS], [])
+    bad_document["version"] = "0.1.0"
+    bad = _write_document(tmp_path, "bad.json", bad_document)
+
+    code, output = _run_cli(monkeypatch, capsys, good, bad)
+
+    assert code == 1
+    assert "Validation PASSED: good.json" in output
+    assert "Validation FAILED with 1 error(s)" in output
+    assert "1 of 2 file(s) passed" in output
+
+
+def test_cli_reports_a_missing_file_and_goes_on(tmp_path, monkeypatch, capsys, offline):
+    good = _write_document(tmp_path, "good.json", _document([_CUSTOMERS], []))
+
+    code, output = _run_cli(monkeypatch, capsys, tmp_path / "missing.json", good)
+
+    assert code == 1
+    assert "Error: File not found" in output and "missing.json" in output
+    assert "Validation PASSED: good.json" in output
+
+
+def test_cli_reports_an_unreadable_file_and_goes_on(tmp_path, monkeypatch, capsys, offline):
+    good = _write_document(tmp_path, "good.json", _document([_CUSTOMERS], []))
+    binary = tmp_path / "binary.yaml"
+    binary.write_bytes(b"\xff\xfe\x00")
+
+    code, output = _run_cli(monkeypatch, capsys, binary, tmp_path, good)
+
+    assert code == 1
+    assert "is not valid UTF-8 text" in output and "binary.yaml" in output
+    assert f"Error: Could not read {tmp_path}" in output
+    assert "Validation PASSED: good.json" in output
+
+
+def test_cli_reports_a_check_that_raises_and_goes_on(tmp_path, monkeypatch, capsys, offline):
+    good = _write_document(tmp_path, "good.json", _document([_CUSTOMERS], []))
+    bad = _write_document(tmp_path, "bad.json", _document([_ORDERS], []))
+
+    def explode(data, schema):
+        if "orders" in json.dumps(data):
+            raise KeyError("dialect")
+        return []
+
+    monkeypatch.setattr(_VALIDATE, "validate_document", explode)
+
+    code, output = _run_cli(monkeypatch, capsys, bad, good)
+
+    assert code == 1
+    assert f"Error: KeyError while validating {bad}: 'dialect'" in output
+    assert "Validation PASSED: good.json" in output
+    assert "1 of 2 file(s) passed" in output
+
+
+def test_cli_takes_files_after_a_double_dash_literally(tmp_path, monkeypatch, capsys, offline):
+    dashed = _write_document(tmp_path, "-model.json", _document([_CUSTOMERS], []))
+    monkeypatch.chdir(tmp_path)
+
+    code, output = _run_cli(monkeypatch, capsys, "--", "-model.json")
+
+    assert code == 0
+    assert output.strip() == "Validation PASSED: -model.json"
+
+
+def test_cli_single_file_output_has_no_summary(tmp_path, monkeypatch, capsys, offline):
+    only = _write_document(tmp_path, "model.json", _document([_CUSTOMERS], []))
+
+    code, output = _run_cli(monkeypatch, capsys, only)
+
+    assert code == 0
+    assert output.strip() == "Validation PASSED: model.json"
+
+
+def test_cli_accepts_schema_option_before_the_files(tmp_path, monkeypatch, capsys, offline):
+    schema = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    only = _write_document(tmp_path, "model.json", _document([_CUSTOMERS], []))
+
+    code, output = _run_cli(monkeypatch, capsys, "--schema", schema, only)
+
+    assert code == 0
+    assert "Validation PASSED: model.json" in output
+
+
+def test_cli_reads_the_schema_from_ossie_schema_env(tmp_path, monkeypatch, capsys, offline, core_schema):
+    copied = tmp_path / "vendored-schema.json"
+    copied.write_text(json.dumps(core_schema))
+    monkeypatch.setenv("OSSIE_SCHEMA", str(copied))
+    only = _write_document(tmp_path, "model.json", _document([_CUSTOMERS], []))
+
+    code, output = _run_cli(monkeypatch, capsys, only)
+
+    assert code == 0
+    assert "Validation PASSED: model.json" in output
+
+
+def test_cli_schema_option_wins_over_the_env(tmp_path, monkeypatch, capsys, offline):
+    monkeypatch.setenv("OSSIE_SCHEMA", str(tmp_path / "nowhere.json"))
+    schema = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
+    only = _write_document(tmp_path, "model.json", _document([_CUSTOMERS], []))
+
+    code, output = _run_cli(monkeypatch, capsys, only, "--schema", schema)
+
+    assert code == 0
+
+
+def test_cli_missing_default_schema_names_both_overrides(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("OSSIE_SCHEMA", str(tmp_path / "nowhere.json"))
+    only = _write_document(tmp_path, "model.json", _document([_CUSTOMERS], []))
+
+    code, output = _run_cli(monkeypatch, capsys, only)
+
+    assert code == 1
+    assert "Schema not found" in output
+    assert "--schema" in output and "OSSIE_SCHEMA" in output
+
+
+@pytest.mark.parametrize("argv", [["--schema"], ["--verbose", "x.yaml"], ["--schema", "s.json"], ["--"]])
+def test_cli_rejects_malformed_arguments(monkeypatch, capsys, argv):
+    code, output = _run_cli(monkeypatch, capsys, *argv)
+
+    assert code == 1
+    assert output.startswith("Usage:")
+
+
+def test_validate_document_stops_at_schema_errors(core_schema, offline):
+    document = _document([_CUSTOMERS, _CUSTOMERS], [])
+    document["version"] = "0.1.0"
+
+    errors = _VALIDATE.validate_document(document, core_schema)
+
+    assert len(errors) == 1 and errors[0].startswith("[Schema]")
+
+
+def test_validate_document_runs_semantic_checks_on_a_valid_shape(core_schema, offline):
+    errors = _VALIDATE.validate_document(_document([_CUSTOMERS, _CUSTOMERS], []), core_schema)
+
+    assert any(error.startswith("[Unique]") for error in errors)
