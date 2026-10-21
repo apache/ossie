@@ -286,7 +286,7 @@
         },
         "display_format": {
           "type": "string",
-          "description": "Excel-compatible display format string (e.g., $#,##0.00, 0.0%, #,##0)"
+          "description": "Excel-compatible, locale-invariant display format pattern (e.g., #,##0.00, 0.0%). '.' and ',' are decimal and grouping separator placeholders rendered in the viewer's locale."
         },
         "default_aggregation": {
           "$ref": "#/$defs/DefaultAggregation"
@@ -464,7 +464,7 @@
         },
         "display_format": {
           "type": "string",
-          "description": "Excel-compatible display format string (e.g., $#,##0.00, 0.0%, #,##0)"
+          "description": "Excel-compatible, locale-invariant display format pattern (e.g., #,##0.00, 0.0%). '.' and ',' are decimal and grouping separator placeholders rendered in the viewer's locale."
         },
         "desired_direction": {
           "$ref": "#/$defs/DesiredDirection"

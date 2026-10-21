@@ -288,7 +288,7 @@ Fields represent row-level attributes that can be used for grouping, filtering, 
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms) |
 | `semantic_type` | string | No | High-level semantic classification (see [Semantic Type](#semantic-type)) |
 | `measurement` | object | No | Unit and quantity metadata (see [Measurement](#measurement)) |
-| `display_format` | string | No | Excel-compatible format string (e.g., `$#,##0.00`, `0.0%`) |
+| `display_format` | string | No | Excel-compatible, locale-invariant format pattern (e.g., `#,##0.00`, `0.0%`). See [Display Format](#display-format). |
 | `default_aggregation` | string | No | Default aggregation when used as a measure: `sum`, `avg`, `min`, `max`, `count`, `count_distinct` |
 | `default_sort` | object | No | Default sorting behavior (see [Default Sort](#default-sort)) |
 | `default_time_granularity` | string | No | Default time bucket for temporal fields: `day`, `week`, `month`, `quarter`, `year` |
@@ -430,7 +430,7 @@ Quantitative measures defined on business data, representing key calculations li
 | `display_label` | string | No | Human-readable display name for UI and AI interaction |
 | `semantic_type` | string | No | High-level semantic classification (see [Semantic Type](#semantic-type)) |
 | `measurement` | object | No | Unit and quantity metadata (see [Measurement](#measurement)) |
-| `display_format` | string | No | Excel-compatible format string (e.g., `$#,##0.00`, `0.0%`) |
+| `display_format` | string | No | Excel-compatible, locale-invariant format pattern (e.g., `#,##0.00`, `0.0%`). See [Display Format](#display-format). |
 | `desired_direction` | string | No | KPI polarity: `higher_is_better`, `lower_is_better`, `neutral` |
 | `default_sort` | object | No | Default sorting behavior (see [Default Sort](#default-sort)) |
 | `glossary_references` | array | No | References to concepts in external glossaries or ontologies (see [Glossary References](#glossary-references)) |
@@ -528,6 +528,8 @@ Describes what a numeric value represents. Enables unit-aware reasoning and form
 
 All three properties are optional, but a `measurement` object MUST contain at least one of them.
 
+When `quantity_kind` is `currency`, `unit` is the authoritative currency of the value. Consumers SHOULD derive the currency symbol and its placement from `unit` and the viewer's locale rather than from a symbol written into `display_format` (see [Display Format](#display-format)).
+
 **Example:**
 
 ```yaml
@@ -602,16 +604,29 @@ The `display_format` string follows Excel-compatible custom number format conven
 
 The value is a format pattern. It is not an expression, and named presets such as `currency` or `percent` are not part of the vocabulary.
 
+**The pattern is locale-invariant.** In a pattern, `.` denotes the decimal separator and `,` the grouping separator; they are placeholders, not literal characters. Consumers render them with the viewer's locale, so one pattern serves every locale: `#,##0.00` displays as `1,234.56` for `en-AU` and `1 234,56` for `sv-SE`. This is the convention of LDML/ICU number patterns, and how Excel number formats behave across regional settings. A separator meant literally is quoted or escaped, as in Excel.
+
+**Currency symbols.** A currency symbol written into the pattern, such as the `$` in `$#,##0.00`, is a literal and renders the same in every locale. For currency values, prefer recording the currency in `measurement.unit` and omitting the symbol from the pattern, so that consumers can write the symbol in the viewer's locale.
+
 **Common Patterns:**
 
 | Pattern | Description | Example Output |
 |---------|-------------|----------------|
-| `$#,##0.00` | Currency with 2 decimals | $1,234.56 |
+| `$#,##0.00` | Literal `$`, 2 decimals (renders `$` in every locale) | $1,234.56 |
+| `#,##0.00` | 2 decimals; pair with `measurement.unit` for currency | 1,234.56 |
 | `#,##0` | Integer with grouping | 12,345 |
 | `0.0%` | Percentage with 1 decimal | 12.3% |
 | `#,##0.00;(#,##0.00)` | Positive/negative | 1,234.56 or (1,234.56) |
 | `0.00E+00` | Scientific notation | 1.23E+04 |
 | `yyyy-mm-dd` | Date format | 2024-01-15 |
+
+Example outputs are shown for `en-US`.
+
+### Localization
+
+The string properties of a field or metric (`display_label`, `description`, `ai_context`, `group_labels`) are written in a single language, the language the model is authored in. This version of the specification does not define localized or audience-specific variants of them. That is proposed separately as presentation overlays.
+
+Rendering a value for a viewer's locale changes how it is written, not what it is. A consumer MUST NOT present a value in a currency other than its `measurement.unit`, for example by showing `usd` amounts with a `€` symbol. An amount in another currency is a different value and is defined as a separate metric.
 
 ---
 
@@ -630,7 +645,7 @@ The value is a format pattern. It is not an expression, and named presets such a
   measurement:
     quantity_kind: currency
     unit: usd
-  display_format: "$#,##0.00"
+  display_format: "#,##0.00"
   default_aggregation: sum
   default_sort:
     direction: desc
@@ -657,7 +672,7 @@ The value is a format pattern. It is not an expression, and named presets such a
   measurement:
     quantity_kind: currency
     unit: usd
-  display_format: "$#,##0.00"
+  display_format: "#,##0.00"
   desired_direction: higher_is_better
   default_sort:
     direction: desc
