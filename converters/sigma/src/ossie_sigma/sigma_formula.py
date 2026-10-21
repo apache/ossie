@@ -545,7 +545,7 @@ def _build_call(node: FuncCall, dataset_alias: Optional[str]) -> exp.Expression:
         return exp.Not(this=exp.Is(this=built[0], expression=exp.Null()))
 
     if name == "sumif" and len(args) == 2:
-        return exp.Sum(this=_case(built[0], built[1], exp.Literal.number(0)))
+        return exp.Sum(this=_case(built[0], built[1], None))
     if name == "countif" and len(args) == 1:
         return exp.Count(this=_case(built[0], exp.Literal.number(1), None))
     if name == "countdistinctif" and len(args) == 2:

@@ -49,7 +49,7 @@ from ossie_sigma.sigma_formula import (
         ("[Qty] * [Price] + 1", "T", '"Qty" * "Price" + 1'),
         ("([Qty] + 1) * [Price]", "T", '("Qty" + 1) * "Price"'),
         ("Median([Amount])", "T", 'PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY "Amount")'),
-        ('SumIf([Status] = "won", [Amount])', "T", "SUM(CASE WHEN \"Status\" = 'won' THEN \"Amount\" ELSE 0 END)"),
+        ('SumIf([Status] = "won", [Amount])', "T", "SUM(CASE WHEN \"Status\" = 'won' THEN \"Amount\" END)"),
         ("CountIf([Qty] > 1)", "T", 'COUNT(CASE WHEN "Qty" > 1 THEN 1 END)'),
         ('Contains([Name], "a")', "T", "\"Name\" LIKE '%' || 'a' || '%'"),
         ("Concat([A], [B])", "T", '"A" || "B"'),
