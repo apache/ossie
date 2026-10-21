@@ -632,6 +632,44 @@ def test_mapping_expressions_must_name_declared_fields(offline, mapping_schema, 
     ]
 
 
+def test_mapping_correlated_subquery_reference_is_checked(offline, mapping_schema, tmp_path):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["concept_mappings"][0]["object_mappings"] = [
+        {"expression": "EXISTS(SELECT 1 FROM t WHERE t.a = orders.order_id)"},
+        {"expression": "EXISTS(SELECT 1 FROM t WHERE t.a = orders.nonexistent)"},
+    ]
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert errors == [
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 1: expression names "
+        "'orders.nonexistent' but dataset 'orders' declares no field 'nonexistent'",
+    ]
+
+
+def test_warning_before_the_mapping_checks_does_not_skip_them(
+    offline, mapping_schema, tmp_path, monkeypatch
+):
+    # No check that runs before the mapping checks warns on a mapping document
+    # today, so one is made to: the gate must count errors, not diagnostics.
+    mapping = _write_mapping_set(tmp_path)
+    mapping["concept_mappings"][0]["concept"] = "Ordr"
+    validate_schema = _VALIDATE.validate_schema
+
+    def warn_on_the_mapping(data, schema):
+        warning = [_VALIDATE.ValidationWarning("[Schema] Warning: probe")] if data is mapping else []
+        return warning + validate_schema(data, schema)
+
+    monkeypatch.setattr(_VALIDATE, "validate_schema", warn_on_the_mapping)
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert errors == [
+        "[Schema] Warning: probe",
+        "[Reference] concept_mappings -> 0: concept 'Ordr' is not declared in the ontology",
+    ]
+
+
 def test_mapping_datasets_that_differ_only_in_case_pool_their_fields(
     offline, mapping_schema, tmp_path
 ):
@@ -747,10 +785,60 @@ _ORDER_ID = _reference("orders", "order_id")
         ('orders."Order Id"', [_reference("orders", "Order Id", False, True)]),
         # The quoted form is kept as written and the normalized one unescaped.
         ('"it""s".x', [_VALIDATE.FieldReference(('"it""s"', "x"), ('it"s', "X"))]),
-        # A column inside a subquery resolves in that query, not in the model,
-        # and a correlated reference to a dataset goes with it.
+        # A column inside a subquery that names a table or alias bound in that
+        # query, or in a query around it, resolves there, not in the model. A
+        # correlated reference to a dataset is still a reference.
         ("orders.order_id IN (SELECT o.id FROM other o)", [_ORDER_ID]),
-        ("(SELECT MAX(o.amount) FROM other o WHERE o.id = orders.order_id)", []),
+        ("(SELECT MAX(o.amount) FROM other o WHERE o.id = orders.order_id)", [_ORDER_ID]),
+        ("EXISTS(SELECT 1 FROM t WHERE t.a = orders.order_id)", [_ORDER_ID]),
+        ("EXISTS(SELECT 1 FROM t AS u WHERE u.a = orders.order_id)", [_ORDER_ID]),
+        ("EXISTS(SELECT 1 FROM sch.t WHERE t.a = orders.order_id)", [_ORDER_ID]),
+        (
+            "EXISTS(SELECT 1 FROM t JOIN u ON t.id = u.id WHERE u.v = orders.order_id)",
+            [_ORDER_ID],
+        ),
+        (
+            "EXISTS(SELECT 1 FROM (SELECT 1 AS k) AS s WHERE s.k = orders.order_id)",
+            [_ORDER_ID],
+        ),
+        (
+            "EXISTS(WITH c AS (SELECT 1 AS k FROM z) SELECT 1 FROM c WHERE c.k = orders.order_id)",
+            [_ORDER_ID],
+        ),
+        (
+            "EXISTS(SELECT 1 FROM UNNEST(orders.tags) AS u WHERE u.v = orders.order_id)",
+            [_reference("orders", "tags"), _ORDER_ID],
+        ),
+        ("EXISTS(SELECT 1 FROM (VALUES (1)) AS t(k) WHERE t.k = orders.order_id)", [_ORDER_ID]),
+        (
+            "EXISTS(SELECT 1 FROM a PIVOT (SUM(x) FOR y IN ('p')) AS p WHERE p.x = orders.order_id)",
+            [_ORDER_ID],
+        ),
+        ("EXISTS(SELECT 1 FROM a, b WHERE a.k = b.k AND b.z = orders.order_id)", [_ORDER_ID]),
+        ("EXISTS(SELECT a.k FROM a GROUP BY a.k HAVING MAX(a.v) > orders.order_id)", [_ORDER_ID]),
+        # Inside the query, a dataset's own name is bound like any table.
+        ("EXISTS(SELECT 1 FROM orders AS o WHERE o.k = orders.order_id)", [_ORDER_ID]),
+        ("EXISTS(SELECT 1 FROM orders WHERE orders.order_id > 0)", []),
+        (
+            "EXISTS(SELECT 1 FROM a WHERE EXISTS(SELECT 1 FROM b WHERE b.k = a.k AND a.z = orders.order_id))",
+            [_ORDER_ID],
+        ),
+        # A name bound in a nested query, or in the other branch of a set
+        # operation, is not visible outside it.
+        (
+            "EXISTS(SELECT 1 FROM a UNION ALL SELECT 1 FROM b WHERE a.k = orders.order_id)",
+            [_reference("a", "k"), _ORDER_ID],
+        ),
+        (
+            "EXISTS(SELECT 1 FROM a WHERE EXISTS(SELECT 1 FROM b) AND b.k = orders.order_id)",
+            [_reference("b", "k"), _ORDER_ID],
+        ),
+        # Bindings follow identifier normalization: a quoted alias binds as written.
+        (
+            'EXISTS(SELECT 1 FROM t AS "Orders" WHERE "Orders".x = orders.order_id)',
+            [_ORDER_ID],
+        ),
+        ('EXISTS(SELECT 1 FROM t AS "ORDERS" WHERE orders.order_id > 0)', []),
         # Not SQL expressions: a Snowflake path, a backslash escape, a backtick
         # identifier, nothing at all, token soup, and nesting past the recursion limit.
         ("orders.payload:customer.id", None),

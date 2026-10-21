@@ -821,9 +821,10 @@ def field_references(expression: str) -> list[FieldReference] | None:
     Mapping expressions reach the semantic model through two-part identifiers
     (ontology.md, Object mappings), so the expression is parsed and every
     two-part column in it is a reference. A one-part column, a longer chain,
-    a type name, a function name and a lambda parameter are not, and a column
-    inside a subquery is left to that query's own scope, a correlated
-    reference to a dataset included. Mapping expressions declare no dialect,
+    a type name, a function name and a lambda parameter are not. A column
+    inside a subquery whose table part names something bound in that query,
+    or in a query around it, is left to that query, while a correlated
+    reference to a dataset is a reference. Mapping expressions declare no dialect,
     so the expression is parsed with the sqlglot default,
     and one that does not parse as a SQL expression comes back as None. That
     includes a string sqlglot reads as a statement, which a dataset named
@@ -841,18 +842,47 @@ def field_references(expression: str) -> list[FieldReference] | None:
     query = isinstance(tree, exp.Query) and not isinstance(tree, exp.Subquery)
     if isinstance(tree, statement) or query:
         return None
+    visible = _names_visible_in_queries(tree)
     references = []
-    for column in tree.find_all(sqlglot.exp.Column):
+    for column in tree.find_all(exp.Column):
         parts = column.parts
-        if len(parts) != 2 or not all(isinstance(p, sqlglot.exp.Identifier) for p in parts):
+        if len(parts) != 2 or not all(isinstance(p, exp.Identifier) for p in parts):
             continue
-        if column.find_ancestor(sqlglot.exp.Select) is not None:
+        dataset, field = (normalized_identifier(p) for p in parts)
+        query = column.find_ancestor(exp.Select)
+        if query is not None and dataset in visible[id(query)]:
             continue
         references.append(FieldReference(
-            written=(parts[0].sql(), parts[1].sql()),
-            normalized=(normalized_identifier(parts[0]), normalized_identifier(parts[1])),
+            written=(parts[0].sql(), parts[1].sql()), normalized=(dataset, field)
         ))
     return list(dict.fromkeys(references))
+
+
+def _names_visible_in_queries(tree) -> dict[int, set[str]]:
+    """For each SELECT in the tree, keyed by id, the names bound for a table part.
+
+    A query binds the names of its own FROM, JOIN and WITH clauses: a table
+    by its name, or by its alias when it has one, and a derived table, table
+    function, VALUES list, PIVOT or CTE by its alias. An inner query also sees
+    the names of the queries around it; a name bound in some other query, a
+    sibling or a nested one, is not visible. Names are normalized the way the
+    references are (expression_language.md).
+    """
+    exp = sqlglot.exp
+    # Each binding node belongs to the nearest query around it. An aliased
+    # table is bound by its TableAlias node, so its own name is skipped.
+    bound: dict[int, set[str]] = {}
+    for node in tree.find_all(exp.Table, exp.TableAlias):
+        aliased_table = isinstance(node, exp.Table) and node.args.get("alias")
+        if not aliased_table and isinstance(node.this, exp.Identifier):
+            query = node.find_ancestor(exp.Select)
+            bound.setdefault(id(query), set()).add(normalized_identifier(node.this))
+    # find_all walks breadth-first, so a query comes after the queries around it.
+    visible: dict[int, set[str]] = {}
+    for query in tree.find_all(exp.Select):
+        outer = query.find_ancestor(exp.Select)
+        visible[id(query)] = bound.get(id(query), set()) | visible.get(id(outer), set())
+    return visible
 
 
 def resolve_document_reference(
@@ -1271,17 +1301,21 @@ def validate_document(data, schema: dict, base: Path | None = None) -> list[str]
     errors = []
     errors.extend(validate_schema(data, schema))
 
+    def clean() -> bool:
+        # A warning is in the same list but must not stop the checks that follow.
+        return not any(not isinstance(e, ValidationWarning) for e in errors)
+
     # Semantic checks rely on valid structure; let schema validation report
     # malformed inputs (including legacy arrays) without traversing them.
-    if not errors and isinstance(data, dict) and "datasets" in data:
+    if clean() and isinstance(data, dict) and "datasets" in data:
         errors.extend(validate_unique_names(data))
         errors.extend(validate_references(data))
         errors.extend(validate_relationship_column_arity(data))
         errors.extend(validate_metric_scoping(data))
         errors.extend(validate_sql(data))
-    if not errors and isinstance(data, dict) and "ontology" in data:
+    if clean() and isinstance(data, dict) and "ontology" in data:
         errors.extend(validate_ontology(data))
-    if not errors and isinstance(data, dict) and "concept_mappings" in data:
+    if clean() and isinstance(data, dict) and "concept_mappings" in data:
         errors.extend(validate_mapping(data, base))
 
     return errors
