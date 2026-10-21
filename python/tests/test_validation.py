@@ -148,9 +148,40 @@ def test_dialect_expression_missing_expression() -> None:
         OssieDialectExpression(dialect=OssieDialect.ANSI_SQL)
 
 
-def test_expression_missing_dialects() -> None:
+def test_expression_requires_expression_or_dialects() -> None:
+    # Neither the portable `expression` nor `dialects`: rejected (schema anyOf).
     with pytest.raises(ValidationError):
         OssieExpression()
+
+
+def test_expression_portable_only_is_valid() -> None:
+    # The portable `expression` may stand alone, with no `dialects`.
+    expr = OssieExpression(expression="c_first_name || ' ' || c_last_name")
+    assert expr.expression == "c_first_name || ' ' || c_last_name"
+    assert expr.dialects is None
+
+
+def test_expression_dialects_only_is_valid() -> None:
+    # `dialects` alone, with no portable `expression`, remains valid.
+    expr = OssieExpression(dialects=[OssieDialectExpression(dialect="ANSI_SQL", expression="x")])
+    assert expr.expression is None
+    assert expr.dialects is not None and len(expr.dialects) == 1
+
+
+def test_expression_both_present_is_valid() -> None:
+    # Both forms together: valid; the portable form is authoritative.
+    expr = OssieExpression(
+        expression="x",
+        dialects=[OssieDialectExpression(dialect="ANSI_SQL", expression="x")],
+    )
+    assert expr.expression == "x"
+    assert expr.dialects is not None and len(expr.dialects) == 1
+
+
+def test_expression_empty_dialects_is_rejected() -> None:
+    # An explicitly empty `dialects` list fails min_length even without a portable form.
+    with pytest.raises(ValidationError):
+        OssieExpression(dialects=[])
 
 
 def test_free_form_dialect_in_expression() -> None:

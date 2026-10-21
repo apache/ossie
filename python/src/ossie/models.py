@@ -21,7 +21,15 @@ from enum import Enum
 from typing import Annotated, Any, Literal, Optional, Union
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, StrictBool, model_serializer
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    StrictBool,
+    model_serializer,
+    model_validator,
+)
 
 
 _AI_CONTEXT_FIELDS = frozenset({"instructions", "synonyms", "examples"})
@@ -203,7 +211,17 @@ class OssieExpression(BaseModel):
 
     # Primary, portable expression written in OSSIE_SQL_2026.
     expression: Optional[str] = None
-    dialects: list[OssieDialectExpression] = Field(..., min_length=1)
+    # When present, a non-empty list; the portable `expression` may stand in for it.
+    dialects: Optional[list[OssieDialectExpression]] = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _require_expression_or_dialects(self) -> "OssieExpression":
+        # Mirrors the schema anyOf: at least one of `expression` or `dialects`
+        # must be present. The `dialects` min_length rule already rejects an
+        # empty list, so here only the both-absent case remains.
+        if self.expression is None and not self.dialects:
+            raise ValueError("expression requires at least one of 'expression' or 'dialects'")
+        return self
 
 
 class OssieDimension(BaseModel):

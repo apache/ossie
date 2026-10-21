@@ -294,6 +294,7 @@ expression:
 - Use scalar SQL expressions (no aggregations)
 - Can be simple column references (e.g., `customer_id`) or computed expressions (e.g., `first_name || ' ' || last_name`)
 - The optional top-level `expression` is the primary, portable form, written in OSSIE_SQL_2026
+- At least one of the top-level `expression` or `dialects` MUST be present; either MAY stand alone
 - If both the top-level `expression` and an `OSSIE_SQL_2026` entry in `dialects` are present, the top-level `expression` is authoritative and consumers MUST use it as the OSSIE_SQL_2026 form
 - Multiple dialect versions can be provided for the same field
 
@@ -421,6 +422,8 @@ expression:
   - dialect: ANSI_SQL  # Default
     expression: "SUM(order.sales) / COUNT(DISTINCT order.customer_id)"
 ```
+
+At least one of the top-level `expression` or `dialects` MUST be present; either MAY stand alone. When both a top-level `expression` and an `OSSIE_SQL_2026` entry in `dialects` are present, the top-level `expression` is authoritative.
 
 ### Examples
 

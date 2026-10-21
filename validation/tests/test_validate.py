@@ -411,6 +411,32 @@ def test_portable_expression_is_validated_as_ossie_sql_2026(
     ]
 
 
+def test_schema_accepts_portable_only_expression(core_schema: dict) -> None:
+    # The portable `expression` may stand alone, with no `dialects` (schema anyOf).
+    dataset = {**_ORDERS, "fields": [{"name": "f", "expression": {"expression": "amount"}}]}
+
+    assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == []
+
+
+def test_schema_rejects_expression_with_neither_form(core_schema: dict) -> None:
+    # An expression object carrying neither `expression` nor `dialects` is invalid.
+    dataset = {**_ORDERS, "fields": [{"name": "f", "expression": {}}]}
+
+    assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == [
+        "[Schema] datasets -> 0 -> fields -> 0 -> expression: "
+        "{} is not valid under any of the given schemas"
+    ]
+
+
+def test_schema_rejects_empty_dialects_without_portable_form(core_schema: dict) -> None:
+    # An explicitly empty `dialects` list still fails min_length.
+    dataset = {**_ORDERS, "fields": [{"name": "f", "expression": {"dialects": []}}]}
+
+    assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == [
+        "[Schema] datasets -> 0 -> fields -> 0 -> expression -> dialects: [] should be non-empty"
+    ]
+
+
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 @pytest.mark.parametrize(
     "expression",

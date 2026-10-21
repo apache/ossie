@@ -192,6 +192,7 @@ fields:
     # Supports multiple SQL dialects for cross-platform compatibility
     # Each field can have expressions in different dialects for portability
     # Can be a simple column reference or a complex scalar expression
+    # At least one of the portable `expression` or `dialects` must be present; either may stand alone
     expression:
       # Optional: primary, portable expression written in OSSIE_SQL_2026
       expression: string  # OSSIE_SQL_2026 form, e.g., "customer_id", "first_name || ' ' || last_name"
@@ -249,6 +250,7 @@ metrics:
     # Required: Expression definition with dialect support
     # Supports multiple SQL dialects for cross-platform compatibility
     # Each metric can have expressions in different dialects for portability
+    # At least one of the portable `expression` or `dialects` must be present; either may stand alone
     expression:
       # Optional: primary, portable expression written in OSSIE_SQL_2026
       expression: string  # OSSIE_SQL_2026 form, e.g., "SUM(orders.sales)", "AVG(orders.amount)"
