@@ -125,3 +125,13 @@ rungs:
     reference_form_primary: qualified   # model-scoped metrics reference dataset.field
     variants:
       - {id: M4.cross_dataset, file: m4/m4_cross_dataset.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
+
+  - id: M5
+    description: a model-scoped metric composed from other model-scoped metrics, referenced by name
+    element_under_test:
+      kind: metric
+      name: avg_order_value
+      construct: metric-to-metric reference (total_amount / order_count)
+    reference_form_primary: qualified   # base metrics qualify dataset.field; the composite references metric names
+    variants:
+      - {id: M5.metric_ref, file: m5/m5_metric_ref.ossie.yaml, tag: ANSI_SQL, reference_form: metric-name, role: primary}
