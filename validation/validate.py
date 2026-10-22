@@ -522,6 +522,13 @@ def validate_sql(data: dict) -> list[str]:
         for metric in dataset.get("metrics", []):
             metric_name = metric.get("name", "<unnamed>")
             expression = metric.get("expression", {})
+            # The optional top-level `sql` is the portable OSSIE_SQL_2026 form.
+            portable = expression.get("sql")
+            if portable is not None:
+                context = f"Metric '{dataset_name}.{metric_name}' in model '{model_name}' (OSSIE_SQL_2026)"
+                error = validate_sql_expression(portable, "OSSIE_SQL_2026", context)
+                if error:
+                    errors.append(error)
             for dialect_expr in expression.get("dialects", []):
                 dialect = dialect_expr.get("dialect", "ANSI_SQL")
                 expr = dialect_expr.get("expression")
@@ -587,6 +594,49 @@ def validate_metric_scoping(data: dict) -> list[str]:
     errors = []
     model_name = model.get("name", "<unnamed>")
 
+    def scope_errors(
+        expr: str, dialect: str, dataset_name: str, metric_name: str, field_names: set
+    ) -> list[str]:
+        # Parse once; an empty, unparseable, or unknown-dialect expression yields no
+        # tree and is skipped (reported, if at all, by `validate_sql`).
+        tree, _ = _parse_sql_expression(
+            expr,
+            dialect,
+            f"Metric '{dataset_name}.{metric_name}' in model '{model_name}'",
+        )
+        if tree is None:
+            return []
+
+        qualifiers = set()
+        undeclared = set()
+        for col in tree.find_all(exp.Column):
+            parts = [part.name for part in col.parts]
+            if len(parts) > 1 and parts[0]:
+                qualifiers.add(parts[0])
+            elif parts and parts[0].casefold() not in field_names:
+                undeclared.add(parts[0])
+
+        prefix = (
+            f"[Scope] Dataset-scoped metric '{dataset_name}.{metric_name}' in model "
+            f"'{model_name}' ({dialect})"
+        )
+        out = []
+        if qualifiers:
+            names = ", ".join(repr(q) for q in sorted(qualifiers))
+            out.append(
+                f"{prefix} uses qualified reference(s) {names}. A dataset-scoped metric "
+                f"expression must reference the dataset's fields by single-part "
+                f"(unqualified) name; a metric that must reference another dataset "
+                f"belongs in the model-root metrics."
+            )
+        if undeclared:
+            names = ", ".join(repr(n) for n in sorted(undeclared))
+            out.append(
+                f"{prefix} references undeclared field(s) {names}. A dataset-scoped "
+                f"metric may reference only the dataset's declared fields."
+            )
+        return out
+
     for dataset in model.get("datasets", []):
         dataset_name = dataset.get("name", "<unnamed>")
         field_names = {
@@ -595,46 +645,22 @@ def validate_metric_scoping(data: dict) -> list[str]:
         for metric in dataset.get("metrics", []):
             metric_name = metric.get("name", "<unnamed>")
             expression = metric.get("expression") or {}
+            # The portable OSSIE_SQL_2026 form is scope-checked like its dialect siblings.
+            portable = expression.get("sql")
+            if portable:
+                errors.extend(
+                    scope_errors(
+                        portable, "OSSIE_SQL_2026", dataset_name, metric_name, field_names
+                    )
+                )
             for dialect_expr in expression.get("dialects", []):
                 dialect = dialect_expr.get("dialect", "ANSI_SQL")
                 expr = dialect_expr.get("expression")
                 if not expr:
                     continue
-                tree, _ = _parse_sql_expression(
-                    expr,
-                    dialect,
-                    f"Metric '{dataset_name}.{metric_name}' in model '{model_name}'",
+                errors.extend(
+                    scope_errors(expr, dialect, dataset_name, metric_name, field_names)
                 )
-                if tree is None:
-                    continue
-
-                qualifiers = set()
-                undeclared = set()
-                for col in tree.find_all(exp.Column):
-                    parts = [part.name for part in col.parts]
-                    if len(parts) > 1 and parts[0]:
-                        qualifiers.add(parts[0])
-                    elif parts and parts[0].casefold() not in field_names:
-                        undeclared.add(parts[0])
-
-                prefix = (
-                    f"[Scope] Dataset-scoped metric '{dataset_name}.{metric_name}' in model "
-                    f"'{model_name}' ({dialect})"
-                )
-                if qualifiers:
-                    names = ", ".join(repr(q) for q in sorted(qualifiers))
-                    errors.append(
-                        f"{prefix} uses qualified reference(s) {names}. A dataset-scoped metric "
-                        f"expression must reference the dataset's fields by single-part "
-                        f"(unqualified) name; a metric that must reference another dataset "
-                        f"belongs in the model-root metrics."
-                    )
-                if undeclared:
-                    names = ", ".join(repr(n) for n in sorted(undeclared))
-                    errors.append(
-                        f"{prefix} references undeclared field(s) {names}. A dataset-scoped "
-                        f"metric may reference only the dataset's declared fields."
-                    )
 
     return errors
 

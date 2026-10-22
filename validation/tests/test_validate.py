@@ -1286,6 +1286,11 @@ def _ds_expr(sql: str, dialect: str = "OSSIE_SQL_2026") -> dict:
     return {"dialects": [{"dialect": dialect, "expression": sql}]}
 
 
+def _ds_portable(sql: str) -> dict:
+    # A dataset-scoped metric written with only the portable `sql` form, no dialects.
+    return {"sql": sql}
+
+
 def _orders_with(fields=None, metrics=None) -> dict:
     dataset = {"name": "orders", "source": "db.s.orders"}
     if fields is not None:
@@ -1399,3 +1404,60 @@ def test_qualified_dataset_scoped_metric_fails_document_validation(core_schema, 
     scope_errors = [error for error in errors if error.startswith("[Scope]")]
     assert scope_errors
     assert all(not isinstance(error, _VALIDATE.ValidationWarning) for error in scope_errors)
+
+
+def test_dataset_scoped_metric_portable_sql_accepts_declared_field() -> None:
+    # The portable `sql` form is scope-checked like a dialect: a single-part
+    # declared field passes.
+    doc = _orders_with(
+        fields=[{"name": "amount", "expression": _ds_expr("amount")}],
+        metrics=[{"name": "total_amount", "expression": _ds_portable("SUM(amount)")}],
+    )
+
+    assert _VALIDATE.validate_metric_scoping(doc) == []
+
+
+def test_dataset_scoped_metric_portable_sql_rejects_a_cross_dataset_reference() -> None:
+    # A portable-only dataset-scoped metric no longer escapes scope-checking; the
+    # qualified reference is reported against the OSSIE_SQL_2026 context.
+    doc = _orders_with(
+        fields=[{"name": "amount", "expression": _ds_expr("amount")}],
+        metrics=[
+            {"name": "bad", "expression": _ds_portable("SUM(amount) / COUNT(customers.id)")}
+        ],
+    )
+
+    errors = _VALIDATE.validate_metric_scoping(doc)
+
+    assert any(
+        error.startswith("[Scope]") and "'customers'" in error and "(OSSIE_SQL_2026)" in error
+        for error in errors
+    )
+
+
+def test_dataset_scoped_metric_portable_sql_rejects_an_undeclared_field() -> None:
+    doc = _orders_with(
+        fields=[{"name": "amount", "expression": _ds_expr("amount")}],
+        metrics=[{"name": "total_qty", "expression": _ds_portable("SUM(quantity)")}],
+    )
+
+    errors = _VALIDATE.validate_metric_scoping(doc)
+
+    assert any(
+        error.startswith("[Scope]") and "'quantity'" in error and "(OSSIE_SQL_2026)" in error
+        for error in errors
+    )
+
+
+def test_dataset_scoped_metric_portable_sql_is_sql_validated() -> None:
+    # The portable `sql` of a dataset-scoped metric is now parsed as OSSIE_SQL_2026,
+    # so a syntactically invalid portable form is reported (previously skipped).
+    doc = _orders_with(
+        metrics=[{"name": "broken", "expression": _ds_portable("SUM(")}],
+    )
+
+    errors = _VALIDATE.validate_sql(doc)
+
+    assert any(
+        "Metric 'orders.broken'" in error and "(OSSIE_SQL_2026)" in error for error in errors
+    )
