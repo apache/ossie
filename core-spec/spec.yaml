@@ -289,8 +289,9 @@ metrics:
     # Required: Expression definition with dialect support
     # Supports multiple SQL dialects for cross-platform compatibility
     # Each metric can have expressions in different dialects for portability
-    # References are dataset fields, qualified as dataset.field, not columns of
-    # the dataset's source
+    # References are dataset fields, not columns of the dataset's source
+    # Model-scoped metrics qualify them as dataset.field; dataset-scoped
+    # metrics use unqualified field names
     # Metrics cannot reference other metrics
     expression:
       dialects:
