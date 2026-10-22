@@ -170,6 +170,7 @@ class OssieVendor(str, Enum):
     WISDOM = "WISDOM"
     SIGMA = "SIGMA"
     HEX = "HEX"
+    ATACCAMA = "ATACCAMA"
 
 
 class OssieAIContextObject(BaseModel):
