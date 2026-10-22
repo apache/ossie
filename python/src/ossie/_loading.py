@@ -26,8 +26,8 @@ class UniqueKeyLoader(yaml.SafeLoader):
     """Reject duplicate explicit keys, preserving YAML merge overrides."""
 
     def construct_document(self, node: yaml.Node):
-        # Match validation/validate.py: inspect authored mappings before
-        # SafeLoader flattens merges, which mutates shared alias nodes in place.
+        # Inspect authored mappings before SafeLoader flattens merges, which
+        # mutates shared alias nodes in place.
         self._check_unique_keys(node, set())
         return super().construct_document(node)
 
@@ -38,10 +38,12 @@ class UniqueKeyLoader(yaml.SafeLoader):
 
         if isinstance(node, yaml.MappingNode):
             seen = set()
-            merge_key = object()
             for key_node, value_node in node.value:
                 if key_node.tag == "tag:yaml.org,2002:merge":
-                    key, display_key = merge_key, "<<"
+                    # Repeated merge directives are allowed. Check their sources
+                    # for explicit duplicates, then let SafeLoader expand them.
+                    self._check_unique_keys(value_node, visited)
+                    continue
                 elif key_node.tag == "tag:yaml.org,2002:value":
                     # SafeLoader treats "=" keys as strings while flattening.
                     # Read the scalar without changing the shared node's tag.

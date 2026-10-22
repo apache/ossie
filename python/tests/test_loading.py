@@ -53,7 +53,22 @@ datasets:
         (_YAML_MODEL + "ai_context: {metadata: {1: first, 01: second}}\n", 1),
         (_YAML_MODEL + 'ai_context: {=: first, "=": second}\n', "="),
         (_YAML_MODEL + "ai_context: {<<: {note: first, note: second}}\n", "note"),
-        (_YAML_MODEL + "ai_context: {<<: {note: first}, <<: {other: second}}\n", "<<"),
+        (
+            _YAML_MODEL + "ai_context: {<<: {note: first}, <<: {note: a, note: b}}\n",
+            "note",
+        ),
+        (
+            _YAML_MODEL + "ai_context: {<<: {note: a, note: b}, <<: {note: last}}\n",
+            "note",
+        ),
+        (
+            _YAML_MODEL + "ai_context: {note: first, <<: {}, <<: {}, note: last}\n",
+            "note",
+        ),
+        (
+            _YAML_MODEL + 'ai_context: {<<: {}, "<<": first, !!str <<: last}\n',
+            "<<",
+        ),
         (
             _YAML_MODEL
             + """\
@@ -182,6 +197,46 @@ ai_context:
         assert metadata[name] == {"note": "overridden", "other": "kept"}
     assert metadata["literal"] == {"note": "original", "other": "kept", "<<": "literal"}
     assert metadata["numeric"] == {"1": "string", 1: "number"}
+
+
+@pytest.mark.parametrize(
+    ("mapping", "expected"),
+    [
+        ("{<<: {note: first}, <<: {note: second}}", "second"),
+        ("{<<: [{note: first}, {note: second}]}", "first"),
+        ("{note: local, <<: {note: first}, <<: {note: second}}", "local"),
+        ("{<<: {note: first}, note: local, <<: {note: second}}", "local"),
+        ("{<<: {note: first}, <<: {note: second}, note: local}", "local"),
+    ],
+)
+def test_yaml_merge_precedence_is_preserved(mapping: str, expected: str) -> None:
+    text = _YAML_MODEL + f"ai_context: {mapping}\n"
+
+    document = OssieDocument.from_ossie_yaml(text)
+
+    assert document.ai_context.note == expected
+    assert document.ai_context.model_dump(exclude_unset=True) == yaml.safe_load(text)[
+        "ai_context"
+    ]
+
+
+def test_yaml_repeated_merge_aliases_are_preserved() -> None:
+    text = _YAML_MODEL + """\
+ai_context:
+  first: &first {note: original, other: kept}
+  second: &second {note: replaced}
+  merged: &merged {<<: *first, <<: *second}
+  reused: *merged
+  sequence: {<<: [*second, *first]}
+  literal: {<<: *first, <<: *second, "<<": literal}
+"""
+    document = OssieDocument.from_ossie_yaml(text)
+
+    assert document.ai_context.model_dump(exclude_unset=True) == yaml.safe_load(text)[
+        "ai_context"
+    ]
+    for name in ("merged", "reused", "sequence"):
+        assert getattr(document.ai_context, name) == {"note": "replaced", "other": "kept"}
 
 
 @pytest.mark.parametrize("key", ["=", '!!value "="'])

@@ -48,16 +48,17 @@ Usage:
 Every file is validated and reported, including one whose checks fail
 unexpectedly; the exit status is non-zero if any of them failed. Put -- before
 a file name that starts with a dash. The schema defaults to core-spec/ossie-schema.json in this
-repository's layout; when the script is vendored elsewhere, point OSSIE_SCHEMA
-or --schema at a copy of the schema.
+repository's layout. When the script is vendored elsewhere, install the Python
+SDK (pip install /path/to/ossie/python) for its shared YAML loader and point
+OSSIE_SCHEMA or --schema at a copy of the schema.
 """
 
+import importlib.util
 import json
 import os
 import sys
 import traceback
 from collections import Counter
-from collections.abc import Hashable
 from pathlib import Path
 
 try:
@@ -67,11 +68,21 @@ try:
     from referencing import Registry
     from referencing.exceptions import NoSuchResource, Unresolvable
     from referencing.retrieval import to_cached_resource
-    from yaml.constructor import ConstructorError
 except ImportError:
     print("Missing dependencies. Install with:")
     print("  pip install pyyaml jsonschema")
     sys.exit(1)
+
+# Use the checkout's loader without importing the SDK's model dependencies.
+# A vendored copy of this script uses the installed SDK instead.
+_LOADER_PATH = Path(__file__).resolve().parents[1] / "python/src/ossie/_loading.py"
+if _LOADER_PATH.is_file():
+    _loader_spec = importlib.util.spec_from_file_location("ossie_loading", _LOADER_PATH)
+    _loader_module = importlib.util.module_from_spec(_loader_spec)
+    _loader_spec.loader.exec_module(_loader_module)
+    UniqueKeyLoader = _loader_module.UniqueKeyLoader
+else:
+    from ossie._loading import UniqueKeyLoader
 
 try:
     import sqlglot
@@ -113,66 +124,6 @@ BUILT_IN_CONCEPTS = {"Any", "Boolean", "Date", "DateTime", "Decimal", "Float", "
 
 class ValidationWarning(str):
     """An explicitly nonfatal diagnostic, compatible with existing string callers."""
-
-
-class UniqueKeyLoader(yaml.SafeLoader):
-    """Safe YAML loader that rejects duplicate explicit mapping keys."""
-
-    MERGE_TAG = "tag:yaml.org,2002:merge"
-
-    def construct_document(self, node: yaml.Node):
-        # Validate the composed node graph before SafeConstructor touches it:
-        # flatten_mapping() rewrites mapping nodes in place while expanding "<<",
-        # so a check that runs during construction sees merged, not authored, keys.
-        self._check_unique_keys(node, set())
-        return super().construct_document(node)
-
-    def _check_unique_keys(self, node: yaml.Node, visited: set) -> None:
-        if id(node) in visited:  # alias or recursive anchor: check the node once
-            return
-        visited.add(id(node))
-
-        if isinstance(node, yaml.MappingNode):
-            seen = set()
-            merge_key = object()
-            for key_node, value_node in node.value:
-                if key_node.tag == self.MERGE_TAG:
-                    key, display_key = merge_key, "<<"
-                elif isinstance(key_node, yaml.ScalarNode):
-                    key = display_key = self.construct_object(key_node, deep=True)
-                else:
-                    # Collection keys are unhashable under SafeLoader. Reject them
-                    # here rather than constructing them, which would run
-                    # flatten_mapping() on the graph this walk must not disturb.
-                    raise ConstructorError(
-                        "while constructing a mapping",
-                        node.start_mark,
-                        "found an unhashable key",
-                        key_node.start_mark,
-                    )
-
-                if not isinstance(key, Hashable):
-                    raise ConstructorError(
-                        "while constructing a mapping",
-                        node.start_mark,
-                        "found an unhashable key",
-                        key_node.start_mark,
-                    )
-
-                if key in seen:
-                    raise ConstructorError(
-                        "while constructing a mapping",
-                        node.start_mark,
-                        f"found duplicate key {display_key!r}",
-                        key_node.start_mark,
-                    )
-                seen.add(key)
-
-                self._check_unique_keys(key_node, visited)
-                self._check_unique_keys(value_node, visited)
-        elif isinstance(node, yaml.SequenceNode):
-            for child in node.value:
-                self._check_unique_keys(child, visited)
 
 
 def load_yaml_named(text: str, name: str):
