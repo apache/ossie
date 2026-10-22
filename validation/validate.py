@@ -34,7 +34,9 @@ Validates Ossie YAML or JSON documents containing one semantic model against:
 2. Unique names (datasets, fields, metrics, relationships)
 3. Valid relationship references
 4. Relationship column arity (from_columns and to_columns lengths match)
-5. SQL syntax (using sqlglot)
+5. Field references: keys, relationship columns and metric expressions name declared
+   fields, and a field expression that names another field is flagged (warnings)
+6. SQL syntax (using sqlglot)
 
 Ontology documents (--schema ontology/ontology.json) are checked for unique
 concept and relationship names, and for extends, identify_by, roles and QName
@@ -75,6 +77,7 @@ except ImportError:
 
 try:
     import sqlglot
+    from sqlglot.dialects.dialect import Dialect
     from sqlglot.errors import ParseError, TokenError
     SQLGLOT_AVAILABLE = True
 except ImportError:
@@ -356,6 +359,285 @@ def validate_relationship_column_arity(data: dict) -> list[str]:
             )
 
     return errors
+
+
+def fold(name: str) -> str:
+    """The form regular identifiers are compared in: they are case-insensitive
+    (expression_language.md), so `id`, `Id` and `ID` are one name. Upper-casing
+    also merges a few non-ASCII pairs, which a warning can live with."""
+    return name.upper()
+
+
+def declared_fields(model: dict) -> dict[str, set[str]]:
+    """The folded names of the fields each dataset declares, by folded dataset name.
+
+    A dataset without a fields list declares none: model-level constructs do
+    not reach through a dataset to its source (spec.md, Name Resolution).
+    """
+    fields: dict[str, set[str]] = {}
+    for d in as_list(model.get("datasets")):
+        if not isinstance(d, dict) or not isinstance(d.get("name"), str):
+            continue
+        # Names that differ only by case are left to validate_unique_names to
+        # judge; here they pool their fields rather than hide each other's.
+        fields.setdefault(fold(d["name"]), set()).update(
+            fold(f["name"])
+            for f in as_list(d.get("fields"))
+            if isinstance(f, dict) and isinstance(f.get("name"), str)
+        )
+    return fields
+
+
+def sql_dialect_expressions(node: dict, dialect: str | None = None) -> list[tuple[str, str]]:
+    """The (dialect, expression) pairs of a field or metric that sqlglot can
+    parse, or only those in one dialect when it is given."""
+    expression = node.get("expression")
+    if not isinstance(expression, dict):
+        return []
+    found = []
+    for dialect_expr in as_list(expression.get("dialects")):
+        if not isinstance(dialect_expr, dict):
+            continue
+        d = dialect_expr.get("dialect", "ANSI_SQL")
+        expr = dialect_expr.get("expression")
+        if not isinstance(expr, str) or not expr or d in SKIP_SQL_VALIDATION:
+            continue
+        if dialect is None or d == dialect:
+            found.append((d, expr))
+    return found
+
+
+def parse_sql(expr: str, dialect: str):
+    """The sqlglot tree of expr, or None when it is not one expression.
+
+    The SQL check reports what does not parse at all. What parses only as a
+    SELECT item, such as ``DISTINCT x``, passes that check and is skipped here.
+    """
+    try:
+        return sqlglot.parse_one(expr, dialect=DIALECT_MAP.get(dialect))
+    except (ParseError, TokenError, RecursionError):
+        return None
+
+
+# Date functions sqlglot leaves untyped under the default parser; their first
+# argument is the unit. DATEDIFF and TIMESTAMPDIFF parse to typed nodes.
+DATE_PART_FUNCTIONS = {
+    "DATEADD", "DATE_ADD", "DATEDIFF", "DATE_DIFF", "DATE_PART", "DATEPART",
+    "TIMESTAMPADD", "TIMESTAMPDIFF",
+}
+
+
+def is_date_part_name(name: str) -> bool:
+    """Whether a name is a date part or one of its aliases (day, dd, days, ...)."""
+    parts = Dialect.DATE_PART_MAPPING
+    return name.upper() in parts or name.upper() in parts.values()
+
+
+def is_date_part(column) -> bool:
+    """Whether a bare name is the unit argument of a date function.
+
+    Only the unit position counts, since the alias table also holds short
+    names such as q, w and ms that are ordinary column names elsewhere. A
+    parser that knows the function reads the unit into ``unit`` and the date
+    arguments into ``this`` and ``expression``; the default parser does not
+    know DATEDIFF's unit, so it leaves the written unit as the column in
+    ``this`` and reads the last argument as ``unit`` instead. The two are told
+    apart by whether ``unit`` names a date part; when the last argument is
+    itself named like one, the two readings cannot be told apart and the
+    column in ``this`` is reported. Functions the parser leaves anonymous
+    carry the unit as their first argument. DATE_ADD, DATE_TRUNC and their
+    kin never parse the unit as a column.
+    """
+    exp = sqlglot.exp
+    parent = column.parent
+    if column.table or not is_date_part_name(column.name):
+        return False
+    if isinstance(parent, (exp.DateDiff, exp.TimestampDiff)):
+        unit = parent.args.get("unit")
+        unit_consumed = unit is not None and is_date_part_name(unit.name)
+        return column.arg_key == "this" and not unit_consumed
+    if isinstance(parent, exp.Anonymous) and parent.name.upper() in DATE_PART_FUNCTIONS:
+        return bool(parent.expressions) and parent.expressions[0] is column
+    return False
+
+
+def validate_key_references(data: dict) -> list[str]:
+    """Warn when primary_key, unique_keys or relationship from_columns/to_columns
+    name something other than a declared field of their dataset (spec.md, Name
+    Resolution). Warnings while converters catch up with the rule."""
+    if not isinstance(data, dict) or "datasets" not in data:
+        return []
+    model_name = data.get("name", "<unnamed>")
+    fields = declared_fields(data)
+    warnings = []
+
+    def undeclared(dataset_name: str, columns) -> list[str]:
+        names = [c for c in as_list(columns) if isinstance(c, str)]
+        declared = fields.get(fold(dataset_name), set())
+        return [c for c in dict.fromkeys(names) if fold(c) not in declared]
+
+    for dataset in as_list(data.get("datasets")):
+        if not isinstance(dataset, dict) or not isinstance(dataset.get("name"), str):
+            continue
+        name = dataset["name"]
+        if fold(name) not in fields:
+            continue
+        context = f"Dataset '{name}' in model '{model_name}'"
+        for col in undeclared(name, dataset.get("primary_key")):
+            warnings.append(ValidationWarning(
+                f"[Reference] Warning: {context}: primary_key names '{col}', which is not a "
+                f"declared field"
+            ))
+        for key in as_list(dataset.get("unique_keys")):
+            for col in undeclared(name, key):
+                warnings.append(ValidationWarning(
+                    f"[Reference] Warning: {context}: unique_keys names '{col}', which is not a "
+                    f"declared field"
+                ))
+
+    for rel in as_list(data.get("relationships")):
+        if not isinstance(rel, dict):
+            continue
+        context = f"Relationship '{rel.get('name', '<unnamed>')}' in model '{model_name}'"
+        for side, endpoint in (("from_columns", "from"), ("to_columns", "to")):
+            dataset_name = rel.get(endpoint)
+            if not isinstance(dataset_name, str) or fold(dataset_name) not in fields:
+                continue  # reported by validate_references
+            for col in undeclared(dataset_name, rel.get(side)):
+                warnings.append(ValidationWarning(
+                    f"[Reference] Warning: {context}: {side} names '{col}', which is not a "
+                    f"declared field of dataset '{dataset_name}'"
+                ))
+    return warnings
+
+
+def validate_metric_references(data: dict) -> list[str]:
+    """Warn when a metric expression refers to anything but a declared field
+    written as dataset.field (spec.md, Name Resolution): an unqualified name,
+    another metric, a dataset the model does not declare or a field the dataset
+    does not. Dialects sqlglot cannot parse are skipped and an expression that
+    does not parse is left to the SQL check."""
+    if not SQLGLOT_AVAILABLE or not isinstance(data, dict) or "datasets" not in data:
+        return []
+    model_name = data.get("name", "<unnamed>")
+    fields = declared_fields(data)
+    field_names = set().union(*fields.values()) if fields else set()
+    metrics = [m for m in as_list(data.get("metrics")) if isinstance(m, dict)]
+    declared_metrics = {fold(m["name"]): m["name"] for m in metrics if isinstance(m.get("name"), str)}
+    warnings = []
+
+    for metric in metrics:
+        metric_name = metric.get("name", "<unnamed>")
+        own_name = fold(metric_name) if isinstance(metric.get("name"), str) else None
+        # A bare name that is another metric, and not also a field or this
+        # metric itself, was most likely meant as that metric.
+        other_metrics = {
+            folded: name for folded, name in declared_metrics.items()
+            if folded not in field_names and folded != own_name
+        }
+        for dialect, expr in sql_dialect_expressions(metric):
+            tree = parse_sql(expr, dialect)
+            if tree is None:
+                continue
+            context = f"Metric '{metric_name}' in model '{model_name}' ({dialect})"
+            for column in tree.find_all(sqlglot.exp.Column):
+                if isinstance(column.this, sqlglot.exp.Star) or is_date_part(column):
+                    continue
+                name, table = fold(column.name), fold(column.table)
+                if column.db:
+                    written = ".".join(part.name for part in column.parts)
+                    message = (
+                        f"'{written}' has more than two parts; metric expressions refer to "
+                        f"fields as dataset.field"
+                    )
+                elif not column.table and name in other_metrics:
+                    message = (
+                        f"'{column.name}' names the metric '{other_metrics[name]}'; "
+                        f"metric expressions cannot refer to other metrics"
+                    )
+                elif not column.table:
+                    message = (
+                        f"'{column.name}' is not qualified; metric expressions refer to fields "
+                        f"as dataset.field"
+                    )
+                elif table not in fields:
+                    message = (
+                        f"'{column.table}.{column.name}' references unknown dataset "
+                        f"'{column.table}'"
+                    )
+                elif name not in fields[table]:
+                    message = (
+                        f"'{column.table}.{column.name}' is not a declared field of dataset "
+                        f"'{column.table}'"
+                    )
+                else:
+                    continue
+                warnings.append(ValidationWarning(f"[Reference] Warning: {context}: {message}"))
+    return warnings
+
+
+def validate_field_shadowing(data: dict) -> list[str]:
+    """Warn when a field expression names another field of the same dataset.
+
+    A bare name in a field expression is a column of the dataset's source
+    (spec.md, Name Resolution), so when another field carries that name the
+    author may have meant the field. Nothing is reported when that field is
+    the same-named column passed through, since both readings then agree, when
+    it has no SQL definition the validator can read, or when a field names its
+    own column.
+    """
+    if not SQLGLOT_AVAILABLE or not isinstance(data, dict) or "datasets" not in data:
+        return []
+    model_name = data.get("name", "<unnamed>")
+    warnings = []
+
+    def passes_through(tree, name: str) -> bool:
+        while isinstance(tree, (sqlglot.exp.Paren, sqlglot.exp.Alias)):
+            tree = tree.this
+        return isinstance(tree, sqlglot.exp.Column) and not tree.table and fold(tree.name) == fold(name)
+
+    for dataset in as_list(data.get("datasets")):
+        if not isinstance(dataset, dict):
+            continue
+        dataset_name = dataset.get("name", "<unnamed>")
+        declared = [
+            f for f in as_list(dataset.get("fields"))
+            if isinstance(f, dict) and isinstance(f.get("name"), str)
+        ]
+        # Of two fields whose names differ only by case, the first declared is
+        # the one other expressions are compared against.
+        by_name: dict[str, dict] = {}
+        for f in declared:
+            by_name.setdefault(fold(f["name"]), f)
+        for field in declared:
+            for dialect, expr in sql_dialect_expressions(field):
+                tree = parse_sql(expr, dialect)
+                if tree is None:
+                    continue
+                names = [
+                    c.name for c in tree.find_all(sqlglot.exp.Column)
+                    if not c.table and not is_date_part(c)
+                ]
+                for name in dict.fromkeys(names):
+                    other = by_name.get(fold(name))
+                    if other is None or fold(other["name"]) == fold(field["name"]):
+                        continue
+                    definitions = (
+                        sql_dialect_expressions(other, dialect) or sql_dialect_expressions(other)
+                    )
+                    # A definition that does not parse gives nothing to compare.
+                    parsed = [(e, t) for d, e in definitions if (t := parse_sql(e, d)) is not None]
+                    if not parsed or any(passes_through(t, name) for _, t in parsed):
+                        continue
+                    context = (
+                        f"Field '{dataset_name}.{field['name']}' in model '{model_name}' "
+                        f"({dialect})"
+                    )
+                    warnings.append(ValidationWarning(
+                        f"[Reference] Warning: {context}: '{name}' is the source column, not the "
+                        f"field '{other['name']}' defined as '{parsed[0][0]}'"
+                    ))
+    return warnings
 
 
 def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None:
@@ -680,6 +962,9 @@ def validate_document(data, schema: dict) -> list[str]:
         errors.extend(validate_unique_names(data))
         errors.extend(validate_references(data))
         errors.extend(validate_relationship_column_arity(data))
+        errors.extend(validate_key_references(data))
+        errors.extend(validate_metric_references(data))
+        errors.extend(validate_field_shadowing(data))
         errors.extend(validate_sql(data))
     if not errors and isinstance(data, dict) and "ontology" in data:
         errors.extend(validate_ontology(data))
