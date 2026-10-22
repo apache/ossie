@@ -94,7 +94,7 @@ rungs:
       - {id: M2.aggregates.bare,      file: m2/m2_aggregates_bare.ossie.yaml,      tag: ANSI_SQL, reference_form: bare,      role: reference-form-variant}
 
   - id: M3
-    description: a filtered aggregate in the portable form SUM(CASE WHEN ... THEN x ELSE 0 END)
+    description: a filtered aggregate, in the portable form SUM(CASE WHEN ... THEN x ELSE 0 END) and with the REQUIRED FILTER (WHERE ...) clause
     element_under_test:
       kind: metric
       name: completed_amount
@@ -103,6 +103,8 @@ rungs:
     variants:
       - {id: M3.filtered_agg.qualified, file: m3/m3_filtered_agg_qualified.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
       - {id: M3.filtered_agg.bare,      file: m3/m3_filtered_agg_bare.ossie.yaml,      tag: ANSI_SQL, reference_form: bare,      role: reference-form-variant}
+      - {id: M3.filter_clause.qualified, file: m3/m3_filter_clause_qualified.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: filter-clause-form}
+      - {id: M3.filter_clause.bare,      file: m3/m3_filter_clause_bare.ossie.yaml,      tag: ANSI_SQL, reference_form: bare,      role: filter-clause-form}
 
   - id: M6
     description: date and time scalars from the portable core (YEAR, DATE_TRUNC, DATEDIFF part-first)
