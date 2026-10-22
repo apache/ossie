@@ -115,3 +115,13 @@ rungs:
     reference_form_primary: qualified   # the fields reference sibling columns intra-dataset
     variants:
       - {id: M6.date_scalars, file: m6/m6_date_scalars.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
+
+  - id: M4
+    description: two datasets joined by a relationship, with a model-scoped metric across the join
+    element_under_test:
+      kind: metric
+      name: revenue_per_customer
+      construct: cross-dataset (model-scoped) metric over a declared relationship
+    reference_form_primary: qualified   # model-scoped metrics reference dataset.field
+    variants:
+      - {id: M4.cross_dataset, file: m4/m4_cross_dataset.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
