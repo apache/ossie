@@ -375,6 +375,48 @@ def test_flags_an_invalid_ossie_sql_2026_expression() -> None:
     assert error.startswith("[SQL] ctx:")
 
 
+def _parse_ossie_sql(expression: str):
+    """Parse *expression* the way the validator parses an OSSIE_SQL_2026 body."""
+    return _VALIDATE.sqlglot.parse_one(
+        expression, dialect=_VALIDATE.DIALECT_MAP["OSSIE_SQL_2026"]
+    )
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_not_binds_looser_than_comparison() -> None:
+    """`NOT a = b` is `NOT (a = b)`, the rank expression_language.md gives NOT.
+
+    Listing NOT among the unary operators would instead read it as `(NOT a) = b`,
+    which negates a before comparing it and is a different expression. Pinned so
+    the precedence table and the parser behind it cannot drift apart.
+    """
+    exp = _VALIDATE.sqlglot.exp
+    tree = _parse_ossie_sql("NOT a = b")
+
+    assert isinstance(tree, exp.Not)
+    assert isinstance(tree.this, exp.EQ)
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_unary_minus_binds_tighter_than_comparison() -> None:
+    """`- a = b` is `(-a) = b`: the operators NOT was listed beside do bind first."""
+    exp = _VALIDATE.sqlglot.exp
+    tree = _parse_ossie_sql("- a = b")
+
+    assert isinstance(tree, exp.EQ)
+    assert isinstance(tree.this, exp.Neg)
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_not_binds_tighter_than_and() -> None:
+    """`NOT a AND b` is `(NOT a) AND b`, placing NOT above AND rather than below."""
+    exp = _VALIDATE.sqlglot.exp
+    tree = _parse_ossie_sql("NOT a AND b")
+
+    assert isinstance(tree, exp.And)
+    assert isinstance(tree.this, exp.Not)
+
+
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 @pytest.mark.parametrize(
     "expression",
