@@ -499,8 +499,8 @@ def validate_sql(data: dict) -> list[str]:
         for field in dataset.get("fields", []):
             field_name = field.get("name", "<unnamed>")
             expression = field.get("expression", {})
-            # The optional top-level expression is the portable OSSIE_SQL_2026 form.
-            portable = expression.get("expression")
+            # The optional top-level `sql` is the portable OSSIE_SQL_2026 form.
+            portable = expression.get("sql")
             if portable is not None:
                 context = f"Field '{dataset_name}.{field_name}' in model '{model_name}' (OSSIE_SQL_2026)"
                 error = validate_sql_expression(portable, "OSSIE_SQL_2026", context)
@@ -535,8 +535,8 @@ def validate_sql(data: dict) -> list[str]:
     for metric in model.get("metrics", []):
         metric_name = metric.get("name", "<unnamed>")
         expression = metric.get("expression", {})
-        # The optional top-level expression is the portable OSSIE_SQL_2026 form.
-        portable = expression.get("expression")
+        # The optional top-level `sql` is the portable OSSIE_SQL_2026 form.
+        portable = expression.get("sql")
         if portable is not None:
             context = f"Metric '{metric_name}' in model '{model_name}' (OSSIE_SQL_2026)"
             error = validate_sql_expression(portable, "OSSIE_SQL_2026", context)

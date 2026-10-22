@@ -226,18 +226,18 @@ class OssieExpression(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    # Primary, portable expression written in OSSIE_SQL_2026.
-    expression: Optional[str] = None
-    # When present, a non-empty list; the portable `expression` may stand in for it.
+    # Primary, portable expression written in OSSIE_SQL (the OSSIE_SQL_2026 dialect).
+    sql: Optional[str] = None
+    # When present, a non-empty list; the portable `sql` may stand in for it.
     dialects: Optional[list[OssieDialectExpression]] = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
-    def _require_expression_or_dialects(self) -> "OssieExpression":
-        # Mirrors the schema anyOf: at least one of `expression` or `dialects`
+    def _require_sql_or_dialects(self) -> "OssieExpression":
+        # Mirrors the schema anyOf: at least one of `sql` or `dialects`
         # must be present. The `dialects` min_length rule already rejects an
         # empty list, so here only the both-absent case remains.
-        if self.expression is None and not self.dialects:
-            raise ValueError("expression requires at least one of 'expression' or 'dialects'")
+        if self.sql is None and not self.dialects:
+            raise ValueError("expression requires at least one of 'sql' or 'dialects'")
         return self
 
 

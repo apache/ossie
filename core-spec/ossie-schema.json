@@ -111,9 +111,9 @@
       "type": "object",
       "description": "Expression definition with multi-dialect support",
       "properties": {
-        "expression": {
+        "sql": {
           "type": "string",
-          "description": "Primary, portable expression written in OSSIE_SQL_2026. When both this field and an OSSIE_SQL_2026 entry in `dialects` are present, this field is authoritative."
+          "description": "Primary, portable expression written in OSSIE_SQL (the OSSIE_SQL_2026 dialect). When both this field and an OSSIE_SQL_2026 entry in `dialects` are present, this field is authoritative."
         },
         "dialects": {
           "type": "array",
@@ -124,7 +124,7 @@
         }
       },
       "anyOf": [
-        { "required": ["expression"] },
+        { "required": ["sql"] },
         { "required": ["dialects"] }
       ],
       "additionalProperties": false

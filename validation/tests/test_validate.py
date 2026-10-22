@@ -389,7 +389,7 @@ def test_unknown_dialect_is_skipped_as_opaque() -> None:
 def test_portable_expression_is_validated_as_ossie_sql_2026(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The portable `expression` is validated as OSSIE_SQL_2026, alongside `dialects`.
+    # The portable `sql` is validated as OSSIE_SQL_2026, alongside `dialects`.
     seen = []
 
     def record_expression(expression: str, dialect: str, context: str) -> None:
@@ -398,7 +398,7 @@ def test_portable_expression_is_validated_as_ossie_sql_2026(
     monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", True)
     monkeypatch.setattr(_VALIDATE, "validate_sql_expression", record_expression)
     expression = {
-        "expression": "amount",
+        "sql": "amount",
         "dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}],
     }
     dataset = {**_ORDERS, "fields": [{"name": "value", "expression": expression}]}
@@ -412,8 +412,8 @@ def test_portable_expression_is_validated_as_ossie_sql_2026(
 
 
 def test_schema_accepts_portable_only_expression(core_schema: dict) -> None:
-    # The portable `expression` may stand alone, with no `dialects` (schema anyOf).
-    dataset = {**_ORDERS, "fields": [{"name": "f", "expression": {"expression": "amount"}}]}
+    # The portable `sql` may stand alone, with no `dialects` (schema anyOf).
+    dataset = {**_ORDERS, "fields": [{"name": "f", "expression": {"sql": "amount"}}]}
 
     assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == []
 

@@ -217,10 +217,10 @@ fields:
     # Each field can have expressions in different dialects for portability
     # Can be a simple column reference or a complex scalar expression
     # Identifiers refer to columns of the dataset's source, not to other fields
-    # At least one of the portable `expression` or `dialects` must be present; either may stand alone
+    # At least one of the portable `sql` or `dialects` must be present; either may stand alone
     expression:
-      # Optional: primary, portable expression written in OSSIE_SQL_2026
-      expression: string  # OSSIE_SQL_2026 form, e.g., "customer_id", "first_name || ' ' || last_name"
+      # Optional: primary, portable expression written in OSSIE_SQL (the OSSIE_SQL_2026 dialect)
+      sql: string  # OSSIE_SQL_2026 form, e.g., "customer_id", "first_name || ' ' || last_name"
       dialects:
         - dialect: string  # Free-form string; OSSIE_SQL_2026 is the only dialect the spec defines
           expression: string  # SQL scalar expression, e.g., "customer_id", "first_name || ' ' || last_name", "UPPER(email)"
@@ -283,10 +283,10 @@ metrics:
     # Model-scoped metrics qualify them as dataset.field; dataset-scoped
     # metrics use unqualified field names
     # Metrics cannot reference other metrics
-    # At least one of the portable `expression` or `dialects` must be present; either may stand alone
+    # At least one of the portable `sql` or `dialects` must be present; either may stand alone
     expression:
-      # Optional: primary, portable expression written in OSSIE_SQL_2026
-      expression: string  # OSSIE_SQL_2026 form, e.g., "SUM(orders.sales)", "AVG(orders.amount)"
+      # Optional: primary, portable expression written in OSSIE_SQL (the OSSIE_SQL_2026 dialect)
+      sql: string  # OSSIE_SQL_2026 form, e.g., "SUM(orders.sales)", "AVG(orders.amount)"
       dialects:
         - dialect: string  # Free-form string; OSSIE_SQL_2026 is the only dialect the spec defines
           expression: string  # Full SQL expression with aggregate functions, e.g., "SUM(orders.sales)", "AVG(orders.amount)"

@@ -148,33 +148,33 @@ def test_dialect_expression_missing_expression() -> None:
         OssieDialectExpression(dialect=OssieDialect.ANSI_SQL)
 
 
-def test_expression_requires_expression_or_dialects() -> None:
-    # Neither the portable `expression` nor `dialects`: rejected (schema anyOf).
+def test_expression_requires_sql_or_dialects() -> None:
+    # Neither the portable `sql` nor `dialects`: rejected (schema anyOf).
     with pytest.raises(ValidationError):
         OssieExpression()
 
 
 def test_expression_portable_only_is_valid() -> None:
-    # The portable `expression` may stand alone, with no `dialects`.
-    expr = OssieExpression(expression="c_first_name || ' ' || c_last_name")
-    assert expr.expression == "c_first_name || ' ' || c_last_name"
+    # The portable `sql` may stand alone, with no `dialects`.
+    expr = OssieExpression(sql="c_first_name || ' ' || c_last_name")
+    assert expr.sql == "c_first_name || ' ' || c_last_name"
     assert expr.dialects is None
 
 
 def test_expression_dialects_only_is_valid() -> None:
-    # `dialects` alone, with no portable `expression`, remains valid.
+    # `dialects` alone, with no portable `sql`, remains valid.
     expr = OssieExpression(dialects=[OssieDialectExpression(dialect="ANSI_SQL", expression="x")])
-    assert expr.expression is None
+    assert expr.sql is None
     assert expr.dialects is not None and len(expr.dialects) == 1
 
 
 def test_expression_both_present_is_valid() -> None:
     # Both forms together: valid; the portable form is authoritative.
     expr = OssieExpression(
-        expression="x",
+        sql="x",
         dialects=[OssieDialectExpression(dialect="ANSI_SQL", expression="x")],
     )
-    assert expr.expression == "x"
+    assert expr.sql == "x"
     assert expr.dialects is not None and len(expr.dialects) == 1
 
 

@@ -285,7 +285,7 @@ def _missing_properties(model: type[BaseModel], sample: object, where: str) -> l
 def _fully_populated_document() -> dict:
     """A document that sets every optional property, so each can be nulled in turn."""
     expression = {
-        "expression": "amount",
+        "sql": "amount",
         "dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}],
     }
     ai_context = {"instructions": "i", "synonyms": ["s"], "examples": ["e"]}

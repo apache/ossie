@@ -298,7 +298,7 @@ The expression object supports multiple SQL dialects for cross-platform compatib
 
 ```yaml
 expression:
-  expression: "customer_id"  # Optional: primary, portable form (OSSIE_SQL_2026)
+  sql: "customer_id"  # Optional: primary, portable OSSIE_SQL form (OSSIE_SQL_2026)
   dialects:
     - dialect: ANSI_SQL  # Free-form string; OSSIE_SQL_2026 is the only dialect the spec defines
       expression: "customer_id"  # Scalar SQL expression
@@ -308,9 +308,9 @@ expression:
 
 - Use scalar SQL expressions (no aggregations)
 - Can be simple column references (e.g., `customer_id`) or computed expressions (e.g., `first_name || ' ' || last_name`)
-- The optional top-level `expression` is the primary, portable form, written in OSSIE_SQL_2026
-- At least one of the top-level `expression` or `dialects` MUST be present; either MAY stand alone
-- If both the top-level `expression` and an `OSSIE_SQL_2026` entry in `dialects` are present, the top-level `expression` is authoritative and consumers MUST use it as the OSSIE_SQL_2026 form
+- The optional top-level `sql` is the primary, portable form, written in OSSIE_SQL (the OSSIE_SQL_2026 dialect)
+- At least one of the top-level `sql` or `dialects` MUST be present; either MAY stand alone
+- If both the top-level `sql` and an `OSSIE_SQL_2026` entry in `dialects` are present, the top-level `sql` is authoritative and consumers MUST use it as the OSSIE_SQL_2026 form
 - Identifiers refer to columns of the dataset's `source`, not to other fields. See [Name Resolution](#name-resolution).
 - Multiple dialect versions can be provided for the same field
 
@@ -440,13 +440,13 @@ The expression object supports multiple dialects
 
 ```yaml
 expression:
-  expression: "SUM(order.sales) / COUNT(DISTINCT order.customer_id)"  # Optional: primary, portable form (OSSIE_SQL_2026)
+  sql: "SUM(order.sales) / COUNT(DISTINCT order.customer_id)"  # Optional: primary, portable OSSIE_SQL form (OSSIE_SQL_2026)
   dialects:
   - dialect: ANSI_SQL  # Default
     expression: "SUM(order.sales) / COUNT(DISTINCT order.customer_id)"
 ```
 
-At least one of the top-level `expression` or `dialects` MUST be present; either MAY stand alone. When both a top-level `expression` and an `OSSIE_SQL_2026` entry in `dialects` are present, the top-level `expression` is authoritative.
+At least one of the top-level `sql` or `dialects` MUST be present; either MAY stand alone. When both a top-level `sql` and an `OSSIE_SQL_2026` entry in `dialects` are present, the top-level `sql` is authoritative.
 
 ### Examples
 

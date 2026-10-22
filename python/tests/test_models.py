@@ -100,20 +100,20 @@ def test_ossie_sql_2026_dialect_survives_serialization(document_data: dict) -> N
 def test_portable_expression_round_trips_and_is_omitted_when_absent(
     document_data: dict,
 ) -> None:
-    # The optional portable `expression` round-trips when set and is omitted when unset.
+    # The optional portable `sql` round-trips when set and is omitted when unset.
     data = document_data
-    data["datasets"][0]["fields"][0]["expression"]["expression"] = "customer_id"
+    data["datasets"][0]["fields"][0]["expression"]["sql"] = "customer_id"
 
     document = OssieDocument.model_validate(data)
-    assert document.datasets[0].fields[0].expression.expression == "customer_id"
+    assert document.datasets[0].fields[0].expression.sql == "customer_id"
     # A field whose expression omits the portable form keeps it unset.
-    assert document.metrics[0].expression.expression is None
+    assert document.metrics[0].expression.sql is None
 
     as_json = json.loads(document.to_ossie_json())
     as_yaml = yaml.safe_load(document.to_ossie_yaml())
     for serialized in (as_json, as_yaml):
         assert serialized == data
-        assert "expression" not in serialized["metrics"][0]["expression"]
+        assert "sql" not in serialized["metrics"][0]["expression"]
         assert OssieDocument.model_validate(serialized) == document
 
 

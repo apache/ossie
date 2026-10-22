@@ -309,8 +309,8 @@ datasets:
 
       - name: customer_full_name
         expression:
-          # Primary, portable form (OSSIE_SQL_2026)
-          expression: c_first_name || ' ' || c_last_name
+          # Primary, portable OSSIE_SQL form (OSSIE_SQL_2026)
+          sql: c_first_name || ' ' || c_last_name
           dialects:
             - dialect: ANSI_SQL
               expression: c_first_name || ' ' || c_last_name
