@@ -17,7 +17,7 @@
   under the License.
 -->
 
-# Portability measurement ladder (M0-M3)
+# Portability measurement ladder (M0-M6)
 
 A small set of portable fixtures, and a grader, for measuring how faithfully a
 model survives a round-trip through each converter. This is issue #576
@@ -37,7 +37,10 @@ difference in a converter's output localizes to a single construct:
 | M0 | baseline | one dataset, one field, one `SUM` metric |
 | M1 | a scalar field, no aggregation | `amount * 1.1` calculated column |
 | M2 | the core aggregate set | `SUM`, `COUNT`, `COUNT(DISTINCT)`, `AVG`, `MIN`, `MAX` |
-| M3 | a filtered aggregate | `SUM(CASE WHEN ... THEN x ELSE 0 END)` |
+| M3 | a filtered aggregate | `SUM(CASE WHEN ... THEN x ELSE 0 END)`, and the same with `FILTER (WHERE ...)` |
+| M4 | a cross-dataset metric | two datasets, a relationship, a model-scoped metric across the join |
+| M5 | metric composition | a model-scoped metric built from two other metrics by name |
+| M6 | date and time scalars | `YEAR`, `DATE_TRUNC`, `DATEDIFF(part, start, end)` |
 
 `manifest.yaml` lists the fixtures, the element each rung exercises, and the
 per-element outcome vocabulary the grader assigns (PORTABLE / TAG_PRESERVED,
@@ -61,10 +64,10 @@ grades the real fixtures all-PORTABLE. See `grader/README.md`.
 
 ## Scope and placement
 
-Rungs M4-M8 (relationships and cross-dataset metrics, metric-to-metric
-composition, date and time scalars, window and offset functions) are held
-pending #354, #591 and #587, and are not in this set.
+Rungs M7 and M8 (window and offset functions: time intelligence and
+ratio-to-total) are held until the default NULL placement in window `ORDER BY`
+is settled (#587), and are not in this set.
 
-Location is a starting point. If these should sit with the interoperability
-harness from #348 or elsewhere once that lands, they can move; the fixtures are
-self-contained and the manifest paths are relative.
+The fixtures measure the specification rather than any one converter, so they
+live in this repository; the fixtures are self-contained and the manifest paths
+are relative.
