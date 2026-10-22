@@ -117,8 +117,8 @@ def _invalid_properties(node: Any) -> list[tuple[str, str]]:
 
 
 class OssieDialect(str, Enum):
-    """Well-known dialect constants. `dialect` is a free-form string, so this is a
-    convenience set, not a closed one. See `extensions/dialects.md`."""
+    """Well-known dialect values. The field accepts any string; see
+    `extensions/dialects.md`."""
 
     ANSI_SQL = "ANSI_SQL"
     SNOWFLAKE = "SNOWFLAKE"
@@ -160,8 +160,8 @@ _TEMPORAL_DATA_TYPES = frozenset(
 
 
 class OssieVendor(str, Enum):
-    """Well-known vendor constants. `vendor_name` is a free-form string, so this is
-    a convenience set, not a closed one. See `extensions/vendors.md`."""
+    """Well-known vendor values. The field accepts any string; see
+    `extensions/vendors.md`."""
 
     COMMON = "COMMON"
     SNOWFLAKE = "SNOWFLAKE"
@@ -226,16 +226,12 @@ class OssieExpression(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    # Primary, portable expression written in OSSIE_SQL (the OSSIE_SQL_2026 dialect).
+    # Primary, portable expression written in OSSIE_SQL_2026.
     sql: Optional[str] = None
-    # When present, a non-empty list; the portable `sql` may stand in for it.
     dialects: Optional[list[OssieDialectExpression]] = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def _require_sql_or_dialects(self) -> "OssieExpression":
-        # Mirrors the schema anyOf: at least one of `sql` or `dialects`
-        # must be present. The `dialects` min_length rule already rejects an
-        # empty list, so here only the both-absent case remains.
         if self.sql is None and not self.dialects:
             raise ValueError("expression requires at least one of 'sql' or 'dialects'")
         return self

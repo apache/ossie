@@ -330,23 +330,22 @@ def test_sql_checks_traverse_root_fields_and_metrics(monkeypatch: pytest.MonkeyP
     ]
 
 
-def test_ossie_sql_2026_maps_to_the_ansi_default_explicitly() -> None:
-    # OSSIE_SQL_2026 is ANSI-SQL-compatible, so it must resolve to the same
-    # sqlglot default (None) as ANSI_SQL. Assert it via an explicit key rather
-    # than DIALECT_MAP.get()'s default, which happened to return the same None.
-    assert "OSSIE_SQL_2026" in _VALIDATE.DIALECT_MAP
-    assert _VALIDATE.DIALECT_MAP["OSSIE_SQL_2026"] is _VALIDATE.DIALECT_MAP["ANSI_SQL"]
-    # It is parseable as ANSI SQL, so it stays validated rather than skipped.
-    assert "OSSIE_SQL_2026" not in _VALIDATE.SKIP_SQL_VALIDATION
+def test_ossie_sql_2026_maps_to_the_ansi_default() -> None:
+    # OSSIE_SQL_2026 is ANSI-SQL-compatible, so it resolves to the same sqlglot
+    # default (None) as ANSI_SQL, and is parseable rather than a non-SQL dialect.
+    assert (
+        _VALIDATE.SQLGLOT_DIALECTS["OSSIE_SQL_2026"]
+        is _VALIDATE.SQLGLOT_DIALECTS["ANSI_SQL"]
+    )
+    assert "OSSIE_SQL_2026" not in _VALIDATE.NON_SQL_DIALECTS
 
 
 def test_holistics_aql_is_skipped_rather_than_parsed_as_sql() -> None:
     # AQL is relationship-aware and is not SQL, so sqlglot cannot parse it.
     # Skipping it is what lets a Holistics field carry its body at all, the way
     # MDX, MAQL, THOUGHTSPOT and DAX already do.
-    assert "HOLISTICS_AQL" in _VALIDATE.DIALECT_MAP
-    assert _VALIDATE.DIALECT_MAP["HOLISTICS_AQL"] is None
-    assert "HOLISTICS_AQL" in _VALIDATE.SKIP_SQL_VALIDATION
+    assert "HOLISTICS_AQL" in _VALIDATE.NON_SQL_DIALECTS
+    assert "HOLISTICS_AQL" not in _VALIDATE.SQLGLOT_DIALECTS
 
 
 def test_a_holistics_aql_expression_is_not_reported_as_invalid_sql() -> None:
@@ -376,9 +375,9 @@ def test_flags_an_invalid_ossie_sql_2026_expression() -> None:
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
-def test_unknown_dialect_is_skipped_as_opaque() -> None:
-    # An unregistered dialect is opaque: skipped, not parsed as ANSI.
-    assert "DB_DIALECT" not in _VALIDATE.DIALECT_MAP
+def test_unsupported_dialect_is_skipped() -> None:
+    # A dialect this validator cannot parse is skipped, not parsed as ANSI.
+    assert "DB_DIALECT" not in _VALIDATE.SQLGLOT_DIALECTS
     error = _VALIDATE.validate_sql_expression(
         "this is not sql @ all", "DB_DIALECT", "ctx"
     )
@@ -419,7 +418,7 @@ def test_schema_accepts_portable_only_expression(core_schema: dict) -> None:
 
 
 def test_schema_rejects_expression_with_neither_form(core_schema: dict) -> None:
-    # An expression object carrying neither `expression` nor `dialects` is invalid.
+    # An expression object carrying neither `sql` nor `dialects` is invalid.
     dataset = {**_ORDERS, "fields": [{"name": "f", "expression": {}}]}
 
     assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == [
@@ -437,10 +436,10 @@ def test_schema_rejects_empty_dialects_without_portable_form(core_schema: dict) 
     ]
 
 
-def test_unknown_dialect_emits_one_deduped_warning(monkeypatch: pytest.MonkeyPatch) -> None:
-    # An unrecognized dialect is nonfatal, but one warning per dialect reports that
-    # its expressions went unvalidated. The field and metric below share the dialect,
-    # so they collapse into a single warning carrying the count.
+def test_unsupported_dialect_emits_one_deduped_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A dialect this validator cannot parse is nonfatal, but one warning per dialect
+    # reports that its expressions went unchecked. The field and metric below share
+    # the dialect, so they collapse into a single warning carrying the count.
     monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", True)
     expression = {"dialects": [{"dialect": "ACME_SQL", "expression": "x"}]}
     dataset = {**_ORDERS, "fields": [{"name": "f", "expression": expression}]}
@@ -449,12 +448,15 @@ def test_unknown_dialect_emits_one_deduped_warning(monkeypatch: pytest.MonkeyPat
 
     result = _VALIDATE.validate_sql(document)
 
-    assert result == ["[SQL] Warning: unknown dialect 'ACME_SQL'; 2 expressions not validated"]
+    assert result == [
+        "[SQL] Warning: dialect 'ACME_SQL' is not supported by this validator; "
+        "2 expressions not syntax-checked"
+    ]
     assert all(isinstance(item, _VALIDATE.ValidationWarning) for item in result)
 
 
-def test_distinct_unknown_dialects_each_warn_once(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Two different unrecognized dialects produce two warnings, sorted by name.
+def test_distinct_unsupported_dialects_each_warn_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Two different unsupported dialects produce two warnings, sorted by name.
     monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", True)
     fields = [
         {"name": "a", "expression": {"dialects": [{"dialect": "ZETA_SQL", "expression": "x"}]}},
@@ -463,15 +465,17 @@ def test_distinct_unknown_dialects_each_warn_once(monkeypatch: pytest.MonkeyPatc
     dataset = {**_ORDERS, "fields": fields}
 
     assert _VALIDATE.validate_sql(_document([dataset], [])) == [
-        "[SQL] Warning: unknown dialect 'ACME_SQL'; 1 expression not validated",
-        "[SQL] Warning: unknown dialect 'ZETA_SQL'; 1 expression not validated",
+        "[SQL] Warning: dialect 'ACME_SQL' is not supported by this validator; "
+        "1 expression not syntax-checked",
+        "[SQL] Warning: dialect 'ZETA_SQL' is not supported by this validator; "
+        "1 expression not syntax-checked",
     ]
 
 
-def test_known_unparseable_dialect_is_not_flagged_as_unknown(
+def test_known_unparseable_dialect_is_not_flagged(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # MDX is recognized but unparseable: it is skipped silently, not warned as unknown.
+    # MDX is a known non-SQL dialect: it is skipped silently, not warned as unsupported.
     monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", True)
     expression = {"dialects": [{"dialect": "MDX", "expression": "[Measures].[Sales]"}]}
     dataset = {**_ORDERS, "fields": [{"name": "f", "expression": expression}]}
@@ -1407,8 +1411,6 @@ def test_qualified_dataset_scoped_metric_fails_document_validation(core_schema, 
 
 
 def test_dataset_scoped_metric_portable_sql_accepts_declared_field() -> None:
-    # The portable `sql` form is scope-checked like a dialect: a single-part
-    # declared field passes.
     doc = _orders_with(
         fields=[{"name": "amount", "expression": _ds_expr("amount")}],
         metrics=[{"name": "total_amount", "expression": _ds_portable("SUM(amount)")}],
@@ -1418,8 +1420,6 @@ def test_dataset_scoped_metric_portable_sql_accepts_declared_field() -> None:
 
 
 def test_dataset_scoped_metric_portable_sql_rejects_a_cross_dataset_reference() -> None:
-    # A portable-only dataset-scoped metric no longer escapes scope-checking; the
-    # qualified reference is reported against the OSSIE_SQL_2026 context.
     doc = _orders_with(
         fields=[{"name": "amount", "expression": _ds_expr("amount")}],
         metrics=[
@@ -1427,12 +1427,12 @@ def test_dataset_scoped_metric_portable_sql_rejects_a_cross_dataset_reference() 
         ],
     )
 
-    errors = _VALIDATE.validate_metric_scoping(doc)
-
-    assert any(
-        error.startswith("[Scope]") and "'customers'" in error and "(OSSIE_SQL_2026)" in error
-        for error in errors
-    )
+    assert _VALIDATE.validate_metric_scoping(doc) == [
+        "[Scope] Dataset-scoped metric 'orders.bad' in model 'm' (OSSIE_SQL_2026) uses "
+        "qualified reference(s) 'customers'. A dataset-scoped metric expression must "
+        "reference the dataset's fields by single-part (unqualified) name; a metric that "
+        "must reference another dataset belongs in the model-root metrics."
+    ]
 
 
 def test_dataset_scoped_metric_portable_sql_rejects_an_undeclared_field() -> None:
@@ -1441,23 +1441,57 @@ def test_dataset_scoped_metric_portable_sql_rejects_an_undeclared_field() -> Non
         metrics=[{"name": "total_qty", "expression": _ds_portable("SUM(quantity)")}],
     )
 
-    errors = _VALIDATE.validate_metric_scoping(doc)
-
-    assert any(
-        error.startswith("[Scope]") and "'quantity'" in error and "(OSSIE_SQL_2026)" in error
-        for error in errors
-    )
+    assert _VALIDATE.validate_metric_scoping(doc) == [
+        "[Scope] Dataset-scoped metric 'orders.total_qty' in model 'm' (OSSIE_SQL_2026) "
+        "references undeclared field(s) 'quantity'. A dataset-scoped metric may reference "
+        "only the dataset's declared fields."
+    ]
 
 
 def test_dataset_scoped_metric_portable_sql_is_sql_validated() -> None:
-    # The portable `sql` of a dataset-scoped metric is now parsed as OSSIE_SQL_2026,
-    # so a syntactically invalid portable form is reported (previously skipped).
     doc = _orders_with(
         metrics=[{"name": "broken", "expression": _ds_portable("SUM(")}],
     )
 
     errors = _VALIDATE.validate_sql(doc)
 
-    assert any(
-        "Metric 'orders.broken'" in error and "(OSSIE_SQL_2026)" in error for error in errors
+    # The sqlglot error text varies by version, so assert the context prefix only.
+    assert len(errors) == 1
+    assert errors[0].startswith("[SQL] Metric 'orders.broken' in model 'm' (OSSIE_SQL_2026):")
+
+
+def test_invalid_superseded_ossie_sql_2026_dialect_entry_warns_not_fails() -> None:
+    # The top-level `sql` is authoritative, so an invalid OSSIE_SQL_2026 dialect
+    # entry beside it is reported as a nonfatal warning, not a hard error.
+    expression = {
+        "sql": "SUM(amount)",
+        "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM("}],
+    }
+    doc = _orders_with(
+        fields=[{"name": "amount", "expression": _ds_expr("amount")}],
+        metrics=[{"name": "total", "expression": expression}],
     )
+
+    errors = _VALIDATE.validate_sql(doc)
+
+    assert errors == [
+        "[SQL] Warning: Metric 'orders.total' in model 'm' (OSSIE_SQL_2026): not valid "
+        "SQL; ignored because the top-level 'sql' is authoritative"
+    ]
+    assert all(isinstance(e, _VALIDATE.ValidationWarning) for e in errors)
+
+
+def test_superseded_ossie_sql_2026_dialect_entry_is_not_scope_checked() -> None:
+    # The authoritative top-level `sql` is scope-checked; a superseded
+    # OSSIE_SQL_2026 dialect entry beside it is not, so its cross-dataset
+    # reference does not fail the document.
+    expression = {
+        "sql": "SUM(amount)",
+        "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(customers.id)"}],
+    }
+    doc = _orders_with(
+        fields=[{"name": "amount", "expression": _ds_expr("amount")}],
+        metrics=[{"name": "total", "expression": expression}],
+    )
+
+    assert _VALIDATE.validate_metric_scoping(doc) == []

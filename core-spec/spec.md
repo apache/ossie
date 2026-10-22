@@ -298,7 +298,7 @@ The expression object supports multiple SQL dialects for cross-platform compatib
 
 ```yaml
 expression:
-  sql: "customer_id"  # Optional: primary, portable OSSIE_SQL form (OSSIE_SQL_2026)
+  sql: "customer_id"  # Primary, portable OSSIE_SQL_2026 form
   dialects:
     - dialect: ANSI_SQL  # Free-form string; OSSIE_SQL_2026 is the only dialect the spec defines
       expression: "customer_id"  # Scalar SQL expression
@@ -308,7 +308,7 @@ expression:
 
 - Use scalar SQL expressions (no aggregations)
 - Can be simple column references (e.g., `customer_id`) or computed expressions (e.g., `first_name || ' ' || last_name`)
-- The optional top-level `sql` is the primary, portable form, written in OSSIE_SQL (the OSSIE_SQL_2026 dialect)
+- The optional top-level `sql` is the primary, portable form, written in OSSIE_SQL_2026
 - At least one of the top-level `sql` or `dialects` MUST be present; either MAY stand alone
 - If both the top-level `sql` and an `OSSIE_SQL_2026` entry in `dialects` are present, the top-level `sql` is authoritative and consumers MUST use it as the OSSIE_SQL_2026 form
 - Identifiers refer to columns of the dataset's `source`, not to other fields. See [Name Resolution](#name-resolution).
@@ -440,7 +440,7 @@ The expression object supports multiple dialects
 
 ```yaml
 expression:
-  sql: "SUM(order.sales) / COUNT(DISTINCT order.customer_id)"  # Optional: primary, portable OSSIE_SQL form (OSSIE_SQL_2026)
+  sql: "SUM(order.sales) / COUNT(DISTINCT order.customer_id)"  # Primary, portable OSSIE_SQL_2026 form
   dialects:
   - dialect: ANSI_SQL  # Default
     expression: "SUM(order.sales) / COUNT(DISTINCT order.customer_id)"
@@ -594,7 +594,7 @@ For a non-normative catalog of `vendor_name` values well-known tools use, see
   data: '{"some_setting": "value", "nested": {"option": true}}'
 ```
 
-The `data` payload is an opaque JSON string that Ossie carries but does not
+The `data` payload is an opaque string that Ossie carries but does not
 interpret. For vendor-specific extension examples and the known-vendor catalog,
 see [extensions/vendors.md](../extensions/vendors.md).
 

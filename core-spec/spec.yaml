@@ -219,8 +219,7 @@ fields:
     # Identifiers refer to columns of the dataset's source, not to other fields
     # At least one of the portable `sql` or `dialects` must be present; either may stand alone
     expression:
-      # Optional: primary, portable expression written in OSSIE_SQL (the OSSIE_SQL_2026 dialect)
-      sql: string  # OSSIE_SQL_2026 form, e.g., "customer_id", "first_name || ' ' || last_name"
+      sql: string  # Primary, portable OSSIE_SQL_2026 form, e.g., "customer_id", "first_name || ' ' || last_name"
       dialects:
         - dialect: string  # Free-form string; OSSIE_SQL_2026 is the only dialect the spec defines
           expression: string  # SQL scalar expression, e.g., "customer_id", "first_name || ' ' || last_name", "UPPER(email)"
@@ -285,8 +284,7 @@ metrics:
     # Metrics cannot reference other metrics
     # At least one of the portable `sql` or `dialects` must be present; either may stand alone
     expression:
-      # Optional: primary, portable expression written in OSSIE_SQL (the OSSIE_SQL_2026 dialect)
-      sql: string  # OSSIE_SQL_2026 form, e.g., "SUM(orders.sales)", "AVG(orders.amount)"
+      sql: string  # Primary, portable OSSIE_SQL_2026 form, e.g., "SUM(orders.sales)", "AVG(orders.amount)"
       dialects:
         - dialect: string  # Free-form string; OSSIE_SQL_2026 is the only dialect the spec defines
           expression: string  # Full SQL expression with aggregate functions, e.g., "SUM(orders.sales)", "AVG(orders.amount)"

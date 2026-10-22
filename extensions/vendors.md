@@ -28,7 +28,7 @@ custom_extensions:
     data: string         # JSON string containing vendor-specific data
 ```
 
-`vendor_name` is a free-form string and `data` is an opaque JSON string that Ossie
+`vendor_name` is a free-form string and `data` is an opaque string that Ossie
 carries but does not interpret. This is a registry of `vendor_name` tokens the
 community uses (see [`README.md`](README.md) for how these lists are used).
 

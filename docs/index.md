@@ -59,7 +59,7 @@ The Ossie core specification (current version: **0.2.0.dev0**, latest released: 
 | **Custom Extensions** | Vendor-specific metadata stored as JSON, allowing platforms to carry additional information without breaking core compatibility. |
 | **AI Context** | Optional annotations at every level (model, dataset, field, relationship, metric) to help AI tools understand business meaning — including instructions, synonyms, and example queries. |
 
-An expression carries a primary, portable form in `OSSIE_SQL_2026` (the dialect Ossie defines) and may also carry vendor-specific variants. The `dialect` label is a free-form string, so expressions can be tailored to any platform while maintaining a common model structure.
+An expression carries a primary, portable form in `OSSIE_SQL_2026` and may also carry vendor-specific variants. The `dialect` label is a free-form string, so expressions can be tailored to any platform while maintaining a common model structure.
 
 For the full specification, see [core-spec/spec.md](../core-spec/spec.md). For validation tooling, see [validation/validate.py](../validation/validate.py). For a complete example, see the [TPC-DS semantic model](../examples/tpcds_semantic_model.yaml).
 
@@ -199,7 +199,7 @@ A key architectural feature of Ossie is its multi-dialect expression system. An 
 
 ```yaml
 expression:
-  sql: LOWER(email)                 # primary, portable OSSIE_SQL form (OSSIE_SQL_2026)
+  sql: LOWER(email)                 # primary, portable OSSIE_SQL_2026 form
   dialects:
     - dialect: SNOWFLAKE
       expression: LOWER(email)::VARCHAR
@@ -319,8 +319,8 @@ A practical guide for organizations looking to adopt Ossie.
 | **Dimension** | A categorical attribute used to slice and filter data (e.g., region, product category, date). In Ossie, dimensions are represented as fields with optional metadata such as `is_time`. |
 | **Metric** | A quantitative measure computed by aggregating fields (e.g., total revenue, average order value). A dataset-scoped metric is defined on an individual dataset, for a measure that semantically belongs to it and is evaluated at the dataset's row level; a model-scoped metric is defined at the model root and may span datasets. |
 | **Relationship** | A foreign key connection between two datasets, defining how they can be joined. Relationships are always many-to-one (from the referencing dataset to the referenced dataset). |
-| **Dialect** | A SQL or expression language variant an expression is written in (e.g., `ANSI_SQL`, `SNOWFLAKE`, `DATABRICKS`). A free-form string; `OSSIE_SQL_2026` is the only dialect Ossie defines, and all others are opaque. |
-| **Custom Extension** | Vendor-specific metadata attached to any Ossie construct as a JSON string. Extensions allow platforms to carry additional information without modifying the core specification. |
+| **Dialect** | A SQL or expression language variant an expression is written in (e.g., `ANSI_SQL`). A free-form string; `OSSIE_SQL_2026` is the only dialect Ossie defines, and all others are opaque. |
+| **Custom Extension** | Vendor-specific metadata attached to any Ossie construct as an opaque string. Extensions allow platforms to carry additional information without modifying the core specification. |
 | **AI Context** | Optional annotations on any Ossie construct (model, dataset, field, relationship, metric) that provide additional context for AI tools — including natural language instructions, synonyms, and example queries. |
 | **Converter** | A tool that translates between the Ossie format and a specific vendor's semantic model format. Converters come in pairs: import (vendor → Ossie) and export (Ossie → vendor). |
 | **Hub-and-Spoke** | The architectural pattern used by Ossie, where the specification acts as the central format (hub) and vendor converters act as spokes, avoiding the need for point-to-point integrations. |

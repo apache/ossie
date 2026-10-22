@@ -70,7 +70,7 @@ def test_dialect_accepts_string_and_enum_input(dialect: str | OssieDialect) -> N
 
 
 def test_dialect_accepts_unknown_string() -> None:
-    # Free-form dialect: an unregistered value is accepted and preserved.
+    # Free-form dialect: an unknown value is accepted and preserved.
     expression = OssieExpression.model_validate(
         {"dialects": [{"dialect": "DB_DIALECT", "expression": "value"}]}
     )
@@ -106,7 +106,7 @@ def test_portable_expression_round_trips_and_is_omitted_when_absent(
 
     document = OssieDocument.model_validate(data)
     assert document.datasets[0].fields[0].expression.sql == "customer_id"
-    # A field whose expression omits the portable form keeps it unset.
+    # A metric whose expression omits the portable form keeps it unset.
     assert document.metrics[0].expression.sql is None
 
     as_json = json.loads(document.to_ossie_json())
