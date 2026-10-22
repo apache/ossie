@@ -35,9 +35,8 @@
 # expression, so it carries a single fixture.
 #
 # All fixtures validate.py-pass on apache/ossie main (9531429) with sqlglot
-# 29.0.1. Rungs M4-M8 (relationships, metric composition, date scalars, window
-# and offset functions) are held pending #354, #591 and #587; they are not in
-# this set.
+# 29.0.1. Rungs M7 and M8 (window and offset functions) are held pending #587;
+# they are not in this set.
 
 outcomes:
   # per-element, assigned by the grader after diffing input vs returned output
@@ -106,16 +105,6 @@ rungs:
       - {id: M3.filter_clause.qualified, file: m3/m3_filter_clause_qualified.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: filter-clause-form}
       - {id: M3.filter_clause.bare,      file: m3/m3_filter_clause_bare.ossie.yaml,      tag: ANSI_SQL, reference_form: bare,      role: filter-clause-form}
 
-  - id: M6
-    description: date and time scalars from the portable core (YEAR, DATE_TRUNC, DATEDIFF part-first)
-    element_under_test:
-      kind: fields and metric
-      name: order_year, order_month_start, avg_fulfillment_days
-      construct: date scalar functions (DATEDIFF(part, start, end) per expression_language.md)
-    reference_form_primary: qualified   # the fields reference sibling columns intra-dataset
-    variants:
-      - {id: M6.date_scalars, file: m6/m6_date_scalars.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
-
   - id: M4
     description: two datasets joined by a relationship, with a model-scoped metric across the join
     element_under_test:
@@ -135,3 +124,13 @@ rungs:
     reference_form_primary: qualified   # base metrics qualify dataset.field; the composite references metric names
     variants:
       - {id: M5.metric_ref, file: m5/m5_metric_ref.ossie.yaml, tag: ANSI_SQL, reference_form: metric-name, role: primary}
+
+  - id: M6
+    description: date and time scalars from the portable core (YEAR, DATE_TRUNC, DATEDIFF part-first)
+    element_under_test:
+      kind: fields and metric
+      name: order_year, order_month_start, avg_fulfillment_days
+      construct: date scalar functions (DATEDIFF(part, start, end) per expression_language.md)
+    reference_form_primary: qualified   # the fields reference sibling columns intra-dataset
+    variants:
+      - {id: M6.date_scalars, file: m6/m6_date_scalars.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
