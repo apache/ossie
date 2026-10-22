@@ -103,3 +103,13 @@ rungs:
     variants:
       - {id: M3.filtered_agg.qualified, file: m3/m3_filtered_agg_qualified.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
       - {id: M3.filtered_agg.bare,      file: m3/m3_filtered_agg_bare.ossie.yaml,      tag: ANSI_SQL, reference_form: bare,      role: reference-form-variant}
+
+  - id: M6
+    description: date and time scalars from the portable core (YEAR, DATE_TRUNC, DATEDIFF part-first)
+    element_under_test:
+      kind: fields and metric
+      name: order_year, order_month_start, avg_fulfillment_days
+      construct: date scalar functions (DATEDIFF(part, start, end) per expression_language.md)
+    reference_form_primary: qualified   # the fields reference sibling columns intra-dataset
+    variants:
+      - {id: M6.date_scalars, file: m6/m6_date_scalars.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
