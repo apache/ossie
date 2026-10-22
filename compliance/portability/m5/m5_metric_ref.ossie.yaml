@@ -1,0 +1,59 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# M5 ladder rung: metric composition, a model-scoped metric that references
+# other model-scoped metrics by name (avg_order_value refers to total_amount and
+# order_count), as described under Metric Scoping in core-spec/spec.md, where a
+# model-scoped metric is referenced as metric_name. Single fixture.
+version: "0.2.0.dev0"
+name: m5_sales
+description: "M5: a metric that references other metrics (composition)."
+datasets:
+  - name: sales
+    source: samples.sales.orders
+    fields:
+      - name: amount
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: amount
+        datatype: Decimal
+      - name: order_id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: order_id
+        datatype: Integer
+metrics:
+  - name: total_amount
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(sales.amount)
+    datatype: Decimal
+  - name: order_count
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: COUNT(sales.order_id)
+    datatype: Integer
+  - name: avg_order_value
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: total_amount / order_count
+    datatype: Decimal
