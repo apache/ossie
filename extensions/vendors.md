@@ -48,6 +48,7 @@ community uses (see [`README.md`](README.md) for how these lists are used).
 | `SIGMA` | Sigma Computing-specific attributes |
 | `THOUGHTSPOT` | ThoughtSpot-specific attributes |
 | `HEX` | Hex-specific attributes |
+| `ATACCAMA` | Ataccama-specific attributes |
 
 ## Examples
 
