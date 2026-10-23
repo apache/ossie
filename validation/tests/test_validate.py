@@ -362,6 +362,17 @@ def test_every_schema_dialect_is_mapped_or_skipped(core_schema: dict) -> None:
     assert parsed_with_default - _VALIDATE.SKIP_SQL_VALIDATION == {"ANSI_SQL", "OSSIE_SQL_2026"}
 
 
+def test_every_sqlglot_reader_exists() -> None:
+    # Separate from the enum check above so that one still runs without
+    # sqlglot. A misspelled reader passes the enum check and then makes
+    # sqlglot raise ValueError, which validate_sql_expression does not catch.
+    sqlglot = pytest.importorskip("sqlglot")
+
+    for reader in _VALIDATE.DIALECT_MAP.values():
+        if reader is not None:
+            sqlglot.Dialect.get_or_raise(reader)
+
+
 def test_a_holistics_aql_expression_is_not_reported_as_invalid_sql() -> None:
     # `|` is AQL's pipe operator. Parsed as SQL it is a bitwise OR over two
     # names, which sqlglot accepts, so the skip is asserted through a body that
