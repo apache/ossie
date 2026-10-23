@@ -377,7 +377,7 @@ def test_flags_an_invalid_ossie_sql_2026_expression() -> None:
 def _parse_ossie_sql(expression: str):
     """Parse *expression* the way the validator parses an OSSIE_SQL_2026 body."""
     return _VALIDATE.sqlglot.parse_one(
-        expression, dialect=_VALIDATE.DIALECT_MAP["OSSIE_SQL_2026"]
+        expression, dialect=_VALIDATE.SQLGLOT_DIALECTS[_VALIDATE.PORTABLE_DIALECT]
     )
 
 
