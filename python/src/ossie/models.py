@@ -33,6 +33,8 @@ from pydantic import (
     model_validator,
 )
 
+from ossie._loading import UniqueKeyLoader, unique_json_object
+
 
 _AI_CONTEXT_FIELDS = frozenset({"instructions", "synonyms", "examples"})
 _AI_CONTEXT_EXTRAS = TypeAdapter(dict[str, Any])
@@ -173,6 +175,7 @@ class OssieVendor(str, Enum):
     WISDOM = "WISDOM"
     SIGMA = "SIGMA"
     HEX = "HEX"
+    ATACCAMA = "ATACCAMA"
 
 
 class OssieAIContextObject(BaseModel):
@@ -390,8 +393,9 @@ class OssieDocument(OssieSemanticModel):
         different: it is the artefact the schema governs, so these rules apply to it
         and not to the models.
 
-        Rejected here: a property set to null, a missing ``version``, a non-finite
-        number, and a cyclic alias. The field types reject the rest of the schema.
+        Rejected here: a duplicate mapping key, a property set to null, a missing
+        ``version``, a non-finite number, and a cyclic alias. YAML merge overrides
+        remain supported. The field types reject the rest of the schema.
 
         A diagnostic lists at most :data:`_MAX_REPORTED` paths and counts the rest, so
         fixing the ones named can reveal more on the next run.
@@ -404,7 +408,7 @@ class OssieDocument(OssieSemanticModel):
         out, is a property of the models rather than of parsing, and is not in scope
         here.
         """
-        return cls._from_document(yaml.safe_load(text))
+        return cls._from_document(yaml.load(text, Loader=UniqueKeyLoader))
 
     @classmethod
     def from_ossie_json(cls, text: str) -> "OssieDocument":
@@ -413,7 +417,7 @@ class OssieDocument(OssieSemanticModel):
         The counterpart of :meth:`to_ossie_json`; see :meth:`from_ossie_yaml` for what
         is and is not checked.
         """
-        return cls._from_document(json.loads(text))
+        return cls._from_document(json.loads(text, object_pairs_hook=unique_json_object))
 
     @classmethod
     def _from_document(cls, data: Any) -> "OssieDocument":
