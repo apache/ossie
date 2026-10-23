@@ -31,6 +31,7 @@ Apache Ossie provides a single JSON- and YAML-based specification that any tool 
 - [`examples/`](examples/) — Example semantic models, including a complete TPC-DS model.
 - [`validation/`](validation/) — Tooling for validating semantic models against the Ossie schema.
 - [`docs/`](docs/) — Project documentation and overview.
+- [`typescript/execution/`](typescript/execution/) — Experimental browser-first HTTP/Arrow execution client for the [proposed Layer 3 execution profile](docs/proposals/execute-query-http.md), not an adopted standard or query engine.
 
 Reference converters that translate between Ossie and other semantic formats (e.g., dbt, GoodData, Polaris, Salesforce) live in the [apache/ossie-converters](https://github.com/apache/ossie-converters) repository.
 

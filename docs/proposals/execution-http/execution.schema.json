@@ -1,0 +1,431 @@
+{
+  "$comment": "Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements. See NOTICE for copyright ownership. Licensed under the Apache License, Version 2.0; http://www.apache.org/licenses/LICENSE-2.0 . Unless required by applicable law or agreed to in writing, distributed on an AS IS BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND.",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:apache:ossie:execution:http:0.1-draft",
+  "title": "Ossie HTTP execution proposal 0.1-draft",
+  "description": "Not an adopted standard. Select a definition by fragment; Request is the default. Structural validation does not establish expression validity, authorization, or semantic conformance.",
+  "$ref": "#/$defs/Request",
+  "$defs": {
+    "Request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["data_source_id", "query"],
+      "properties": {
+        "data_source_id": { "$ref": "#/$defs/Identifier" },
+        "query": { "$ref": "#/$defs/Query" }
+      }
+    },
+    "Query": {
+      "description": "Pinned MCP profile 0.4 query shape, with the HTTP binding's additional portable safe-integer limit constraint.",
+      "allOf": [
+        { "$ref": "#/$defs/query" },
+        {
+          "type": "object",
+          "properties": {
+            "limit": { "$ref": "#/$defs/Counter" }
+          }
+        }
+      ]
+    },
+    "Capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "foundation_revision", "query_schema_version", "result_formats", "query_shapes", "features", "max_wait_seconds"],
+      "properties": {
+        "contract_version": { "$ref": "#/$defs/ContractVersion" },
+        "foundation_revision": { "const": "cc0d07099a3ef31e85af1fd93458a52186fae2c6" },
+        "query_schema_version": { "const": "mcp-0.4-draft" },
+        "result_formats": {
+          "type": "array",
+          "prefixItems": [{ "const": "arrow-stream" }],
+          "minItems": 1,
+          "maxItems": 1,
+          "items": false
+        },
+        "query_shapes": { "$ref": "#/$defs/QueryShapes" },
+        "features": { "$ref": "#/$defs/Features" },
+        "max_wait_seconds": { "type": "integer", "minimum": 0, "maximum": 60 },
+        "extensions": { "$ref": "#/$defs/Extensions" }
+      }
+    },
+    "Binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["data_source_id", "model", "query_shapes", "features"],
+      "properties": {
+        "data_source_id": { "$ref": "#/$defs/Identifier" },
+        "model": { "$ref": "#/$defs/ModelIdentity" },
+        "query_shapes": { "$ref": "#/$defs/QueryShapes" },
+        "features": { "$ref": "#/$defs/Features" },
+        "extensions": { "$ref": "#/$defs/Extensions" }
+      }
+    },
+    "Execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "execution_id", "data_source_id", "model", "state", "warnings"],
+      "properties": {
+        "contract_version": { "$ref": "#/$defs/ContractVersion" },
+        "execution_id": { "$ref": "#/$defs/Identifier" },
+        "data_source_id": { "$ref": "#/$defs/Identifier" },
+        "model": { "$ref": "#/$defs/ModelIdentity" },
+        "state": { "$ref": "#/$defs/State" },
+        "warnings": { "type": "array", "items": { "$ref": "#/$defs/Warning" } },
+        "extensions": { "$ref": "#/$defs/Extensions" },
+        "progress": { "$ref": "#/$defs/Progress" },
+        "result": { "$ref": "#/$defs/ResultManifest" },
+        "error": { "$ref": "#/$defs/QueryError" }
+      },
+      "oneOf": [
+        {
+          "properties": { "state": { "enum": ["queued", "running", "cancelling"] } },
+          "not": { "anyOf": [{ "required": ["result"] }, { "required": ["error"] }] }
+        },
+        {
+          "properties": { "state": { "const": "succeeded" } },
+          "required": ["result"],
+          "not": { "anyOf": [{ "required": ["progress"] }, { "required": ["error"] }] }
+        },
+        {
+          "properties": { "state": { "const": "failed" } },
+          "required": ["error"],
+          "not": { "anyOf": [{ "required": ["progress"] }, { "required": ["result"] }] }
+        },
+        {
+          "properties": { "state": { "const": "cancelled" } },
+          "not": { "anyOf": [{ "required": ["progress"] }, { "required": ["result"] }, { "required": ["error"] }] }
+        }
+      ]
+    },
+    "ResultManifest": {
+      "description": "One immutable materialized result, delivered by exactly one of url or pages. Root row_count and byte_count are totals, including when truncated. Page indices and row offsets must be contiguous from zero; descriptor row and decoded-byte sums must equal the root totals. These cross-page invariants require runtime validation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result_id", "format", "row_count", "byte_count", "completeness", "expires_at", "columns"],
+      "properties": {
+        "result_id": { "$ref": "#/$defs/Identifier" },
+        "format": { "const": "arrow-stream" },
+        "url": { "$ref": "#/$defs/ResultUrl" },
+        "pages": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/ResultPage" },
+          "description": "Entire immutable server-selected partition, available only after success; not a cursor API. No zero-row page except the sole page of a zero-row result. Every page is a self-contained IPC stream with the same physical schema and field metadata."
+        },
+        "row_count": { "$ref": "#/$defs/Counter" },
+        "byte_count": {
+          "$ref": "#/$defs/Counter",
+          "description": "Total IPC byte length after HTTP content decoding, summed across all pages including their repeated schemas when paged; not Content-Length under compression and not a cryptographic integrity guarantee."
+        },
+        "completeness": { "enum": ["complete", "truncated"] },
+        "truncation_reason": { "$ref": "#/$defs/NonEmptyString" },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Whole-result expiry applying to the single stream or every page; no link renewal."
+        },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/Column" },
+          "description": "In Arrow field order. column_id must be unique across this array; names may repeat. Uniqueness by column_id is a runtime invariant."
+        },
+        "extensions": { "$ref": "#/$defs/Extensions" }
+      },
+      "oneOf": [{ "required": ["url"] }, { "required": ["pages"] }],
+      "if": { "properties": { "completeness": { "const": "truncated" } }, "required": ["completeness"] },
+      "then": { "required": ["truncation_reason"] },
+      "else": { "not": { "required": ["truncation_reason"] } }
+    },
+    "ResultPage": {
+      "description": "One immutable self-contained IPC stream. page_index must equal its zero-based array index; row_offset must equal the sum of preceding page row counts. Descriptor counts are exact after HTTP decoding. Only a zero-row result may have a zero-row page, which must be its sole page.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["page_index", "row_offset", "row_count", "byte_count", "url"],
+      "properties": {
+        "page_index": { "$ref": "#/$defs/Counter" },
+        "row_offset": { "$ref": "#/$defs/Counter" },
+        "row_count": { "$ref": "#/$defs/Counter" },
+        "byte_count": {
+          "$ref": "#/$defs/Counter",
+          "minimum": 1,
+          "description": "Positive decoded IPC byte length including this page's schema, even for a zero-row result."
+        },
+        "url": { "$ref": "#/$defs/ResultUrl" }
+      }
+    },
+    "ResultUrl": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https?://",
+      "description": "Absolute HTTPS URL; explicit same-origin localhost testing is the only HTTP exception. No userinfo, fragment, or redirects. Cross-origin requires an explicit client allowlist. Identical authorization, origin, and expiry protections apply to every page."
+    },
+    "Column": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column_id", "name", "logical_type", "nullable"],
+      "properties": {
+        "column_id": { "$ref": "#/$defs/Identifier" },
+        "name": { "$ref": "#/$defs/NonEmptyString" },
+        "logical_type": { "$ref": "#/$defs/LogicalType" },
+        "nullable": { "type": "boolean" },
+        "role": { "enum": ["dimension", "measure", "field"] },
+        "model_ref": { "$ref": "#/$defs/NonEmptyString" },
+        "label": { "$ref": "#/$defs/NonEmptyString" },
+        "description": { "$ref": "#/$defs/NonEmptyString" },
+        "unit": { "$ref": "#/$defs/NonEmptyString" },
+        "currency": { "$ref": "#/$defs/NonEmptyString" },
+        "extensions": { "$ref": "#/$defs/Extensions" }
+      }
+    },
+    "QueryError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/NonEmptyString",
+          "description": "Foundation error code directly, without a transport prefix or wrapper taxonomy. A string preserves codes this client does not recognize."
+        },
+        "message": { "$ref": "#/$defs/NonEmptyString" },
+        "retryable": { "type": "boolean" },
+        "replacement_query": { "$ref": "#/$defs/Query" },
+        "extensions": { "$ref": "#/$defs/Extensions" }
+      }
+    },
+    "ProblemDetails": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "title", "status", "error"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1, "pattern": "\\S", "format": "uri-reference" },
+        "title": { "$ref": "#/$defs/NonEmptyString" },
+        "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+        "detail": { "$ref": "#/$defs/NonEmptyString" },
+        "error": { "$ref": "#/$defs/QueryError" }
+      }
+    },
+    "Progress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fraction": { "type": "number", "minimum": 0, "maximum": 1 },
+        "phase": { "$ref": "#/$defs/NonEmptyString" }
+      }
+    },
+    "Warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "$ref": "#/$defs/NonEmptyString" },
+        "message": { "$ref": "#/$defs/NonEmptyString" }
+      }
+    },
+    "ExecutionMetadata": {
+      "description": "JSON value stored under Arrow schema metadata key org.apache.ossie.execution. page_index and row_offset must appear together, must match the selected ResultPage when paged, and are forbidden for single-stream delivery. Matching delivery mode and descriptor identity requires runtime validation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "execution_id", "result_id", "data_source_id", "model"],
+      "properties": {
+        "contract_version": { "$ref": "#/$defs/ContractVersion" },
+        "execution_id": { "$ref": "#/$defs/Identifier" },
+        "result_id": { "$ref": "#/$defs/Identifier" },
+        "data_source_id": { "$ref": "#/$defs/Identifier" },
+        "model": { "$ref": "#/$defs/ModelIdentity" },
+        "page_index": { "$ref": "#/$defs/Counter" },
+        "row_offset": { "$ref": "#/$defs/Counter" }
+      },
+      "dependentRequired": {
+        "page_index": ["row_offset"],
+        "row_offset": ["page_index"]
+      }
+    },
+    "ColumnMetadata": {
+      "description": "JSON value stored under each Arrow field metadata key org.apache.ossie.column.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column_id"],
+      "properties": { "column_id": { "$ref": "#/$defs/Identifier" } }
+    },
+    "ModelIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Identifier" },
+        "revision": { "$ref": "#/$defs/Identifier" }
+      }
+    },
+    "ContractVersion": { "const": "0.1-draft" },
+    "State": { "enum": ["queued", "running", "cancelling", "succeeded", "failed", "cancelled"] },
+    "LogicalType": { "enum": ["String", "Integer", "Decimal", "Float", "Boolean", "Date", "Time", "DateTime", "DateTimeTz"] },
+    "QueryShape": { "enum": ["aggregation", "scalar"] },
+    "QueryShapes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/QueryShape" }
+    },
+    "Features": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/NonEmptyString" }
+    },
+    "Identifier": { "$ref": "#/$defs/NonEmptyString" },
+    "NonEmptyString": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "Counter": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "PreferWait": { "type": "string", "pattern": "^wait=([0-9]|[1-5][0-9]|60)$" },
+    "Extensions": {
+      "type": "object",
+      "description": "Opaque JSON objects with nonblank namespace keys. Reverse-DNS naming is recommended, not syntactically required. Extensions must not redefine core fields or relax required behavior.",
+      "propertyNames": { "$ref": "#/$defs/NonEmptyString" },
+      "additionalProperties": { "type": "object" }
+    },
+    "expression": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "projection": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/expression"
+      }
+    },
+    "predicate": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/expression"
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/expression"
+          }
+        }
+      ]
+    },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dimensions": {
+          "$ref": "#/$defs/projection"
+        },
+        "measures": {
+          "$ref": "#/$defs/projection"
+        },
+        "fields": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/projection"
+            }
+          ],
+          "minItems": 1
+        },
+        "where": {
+          "$ref": "#/$defs/predicate"
+        },
+        "having": {
+          "$ref": "#/$defs/predicate"
+        },
+        "order_by": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "field"
+            ],
+            "properties": {
+              "field": {
+                "$ref": "#/$defs/expression"
+              },
+              "direction": {
+                "enum": [
+                  "ASC",
+                  "DESC"
+                ]
+              },
+              "nulls": {
+                "enum": [
+                  "FIRST",
+                  "LAST"
+                ]
+              }
+            }
+          }
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "oneOf": [
+        {
+          "not": {
+            "required": [
+              "fields"
+            ]
+          },
+          "anyOf": [
+            {
+              "required": [
+                "dimensions"
+              ],
+              "properties": {
+                "dimensions": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "required": [
+                "measures"
+              ],
+              "properties": {
+                "measures": {
+                  "minItems": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "required": [
+            "fields"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "dimensions"
+                ]
+              },
+              {
+                "required": [
+                  "measures"
+                ]
+              },
+              {
+                "required": [
+                  "having"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "x-query-provenance": {
+    "source": "https://raw.githubusercontent.com/apache/ossie/b5418ee3aa19f117a1c464733de21f5a0dc0326b/validation/mcp/execute-query-query.schema.json",
+    "source_id": "urn:apache:ossie:execute-query:query:0.4-draft",
+    "source_revision": "b5418ee3aa19f117a1c464733de21f5a0dc0326b",
+    "copied_definitions": ["expression", "projection", "predicate", "query"],
+    "note": "The four lowercase definitions are copied without changes. Query adds only the HTTP safe-integer limit bound; no expression parser or semantic validator is implied."
+  }
+}
