@@ -53,13 +53,17 @@ SDK (pip install /path/to/ossie/python) for its shared YAML loader and point
 OSSIE_SCHEMA or --schema at a copy of the schema.
 """
 
+import difflib
 import importlib.util
 import json
 import os
 import sys
 import traceback
 from collections import Counter
+from collections.abc import Hashable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 try:
     import yaml
@@ -92,24 +96,23 @@ try:
 except ImportError:
     SQLGLOT_AVAILABLE = False
 
-# Map Ossie dialects to sqlglot dialects
-DIALECT_MAP = {
-    "ANSI_SQL": None,  # sqlglot default
-    "OSSIE_SQL_2026": None,  # ANSI-SQL-compatible; parse with the sqlglot default
+# The dialect the portable `sql` form is written in; the only one this
+# specification defines.
+PORTABLE_DIALECT = "OSSIE_SQL_2026"
+
+# Ossie dialects sqlglot can parse, each mapped to the sqlglot dialect to parse it
+# as. None is sqlglot's default (ANSI) dialect.
+SQLGLOT_DIALECTS = {
+    "ANSI_SQL": None,
+    PORTABLE_DIALECT: None,
     "SNOWFLAKE": "snowflake",
     "DATABRICKS": "databricks",
     "BIGQUERY": "bigquery",
-    "MDX": None,  # Not supported by sqlglot, skip validation
-    "TABLEAU": None,  # Not supported by sqlglot, skip validation
-    "MAQL": None,  # Not supported by sqlglot, skip validation
-    "SIGMA": None,  # Sigma's spreadsheet-style formula language, not SQL; skip validation
-    "THOUGHTSPOT": None,  # Not supported by sqlglot, skip validation
-    "DAX": None,  # Not supported by sqlglot, skip validation
-    "HOLISTICS_AQL": None,  # Holistics AQL, not SQL; skip validation
 }
 
-# Dialects that sqlglot cannot parse
-SKIP_SQL_VALIDATION = {
+# Known non-SQL dialects: sqlglot cannot parse them, so their expressions are
+# carried but not validated.
+NON_SQL_DIALECTS = {
     "MDX",
     "TABLEAU",
     "MAQL",
@@ -118,6 +121,9 @@ SKIP_SQL_VALIDATION = {
     "DAX",
     "HOLISTICS_AQL",
 }
+
+# Every dialect this validator knows, for close-match suggestions on a typo.
+KNOWN_DIALECTS = (*SQLGLOT_DIALECTS, *NON_SQL_DIALECTS)
 
 # Concepts every ontology includes implicitly (ontology.md, "Built-in concepts")
 BUILT_IN_CONCEPTS = {"Any", "Boolean", "Date", "DateTime", "Decimal", "Float", "Integer", "String"}
@@ -343,10 +349,10 @@ def _parse_sql_expression(
     Returns `(None, None)` when there is nothing to parse: sqlglot is unavailable or
     the dialect is one sqlglot cannot parse.
     """
-    if not SQLGLOT_AVAILABLE or dialect in SKIP_SQL_VALIDATION:
+    if not SQLGLOT_AVAILABLE or dialect not in SQLGLOT_DIALECTS:
         return None, None
 
-    sqlglot_dialect = DIALECT_MAP.get(dialect)
+    sqlglot_dialect = SQLGLOT_DIALECTS[dialect]
 
     def statement_count_error(sql: str) -> str | None:
         """Reject a parseable string that holds more than one statement.
@@ -417,6 +423,90 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
     return error
 
 
+ExpressionKind = Literal["field", "dataset_metric", "model_metric"]
+
+
+@dataclass(frozen=True)
+class Expression:
+    """An expression and its context within a document.
+
+    `kind` identifies the declaring element, and `name` identifies the field
+    or metric. `dialect` is OSSIE_SQL_2026 for portable `sql` expressions,
+    or the dialect's label otherwise. `field_names` contains the enclosing
+    dataset's field names, or is empty for model-scoped metrics.
+    `superseded_by` is the authoritative top-level `sql` text when this is an
+    OSSIE_SQL_2026 dialect entry that `sql` outranks, else None: such an entry
+    is non-authoritative, since a client reads the `sql` instead.
+    """
+
+    kind: ExpressionKind
+    dataset_name: str
+    name: str
+    dialect: str
+    text: str
+    field_names: frozenset[str]
+    superseded_by: str | None = None
+
+    def context(self, model_name: str) -> str:
+        if self.kind == "field":
+            label = f"Field '{self.dataset_name}.{self.name}'"
+        elif self.kind == "dataset_metric":
+            label = f"Metric '{self.dataset_name}.{self.name}'"
+        else:
+            label = f"Metric '{self.name}'"
+        return f"{label} in model '{model_name}' ({self.dialect})"
+
+
+def _expressions_in(
+    member: dict, kind: ExpressionKind, dataset_name: str, field_names: frozenset[str]
+) -> Iterator[Expression]:
+    expression = member.get("expression") or {}
+    name = member.get("name", "<unnamed>")
+    sql = expression.get("sql")
+    if sql is not None:
+        yield Expression(
+            kind=kind,
+            dataset_name=dataset_name,
+            name=name,
+            dialect=PORTABLE_DIALECT,
+            text=sql,
+            field_names=field_names,
+        )
+    for dialect_expr in expression.get("dialects", []):
+        text = dialect_expr.get("expression")
+        if text is None:
+            continue
+        dialect = dialect_expr["dialect"]
+        yield Expression(
+            kind=kind,
+            dataset_name=dataset_name,
+            name=name,
+            dialect=dialect,
+            text=text,
+            field_names=field_names,
+            # A top-level `sql` is the authoritative OSSIE_SQL_2026 form, so an
+            # OSSIE_SQL_2026 dialect entry alongside it is non-authoritative.
+            superseded_by=sql if dialect == PORTABLE_DIALECT and sql is not None else None,
+        )
+
+
+def iter_expressions(data: dict) -> Iterator[Expression]:
+    """Yield every expression in a core semantic model document. A missing
+    expression is skipped; an empty one is yielded, so a caller decides whether to
+    report it."""
+    for dataset in data.get("datasets", []):
+        dataset_name = dataset.get("name", "<unnamed>")
+        field_names = frozenset(
+            f["name"].casefold() for f in dataset.get("fields", []) if f.get("name")
+        )
+        for field in dataset.get("fields", []):
+            yield from _expressions_in(field, "field", dataset_name, field_names)
+        for metric in dataset.get("metrics", []):
+            yield from _expressions_in(metric, "dataset_metric", dataset_name, field_names)
+    for metric in data.get("metrics", []):
+        yield from _expressions_in(metric, "model_metric", "", frozenset())
+
+
 def validate_sql(data: dict) -> list[str]:
     """Validate SQL expressions in fields and metrics."""
     # Only core semantic model documents contain a root datasets property.
@@ -428,52 +518,54 @@ def validate_sql(data: dict) -> list[str]:
             "[SQL] Warning: sqlglot not installed, skipping SQL validation. Install with: pip install sqlglot"
         )]
 
-    model = data
+    model_name = data.get("name", "<unnamed>")
     errors = []
+    # A dialect outside both sets is one this validator cannot parse. It may be a
+    # legitimate entry from extensions/dialects.md, so warn once that its
+    # expressions went unchecked rather than treat it as an error.
+    unsupported_dialects = Counter()
 
-    model_name = model.get("name", "<unnamed>")
+    for expression in iter_expressions(data):
+        dialect = expression.dialect
+        if dialect in NON_SQL_DIALECTS:
+            continue
+        if dialect not in SQLGLOT_DIALECTS:
+            unsupported_dialects[dialect] += 1
+            continue
+        error = validate_sql_expression(
+            expression.text, dialect, expression.context(model_name)
+        )
+        if expression.superseded_by is not None:
+            # A top-level `sql` is authoritative, so this OSSIE_SQL_2026 dialect
+            # entry does not fail the document. Warn if it is dead text -- invalid,
+            # or differing from the `sql` a client reads instead -- and stay silent
+            # when it merely duplicates the `sql`.
+            if error:
+                reason = "is not valid SQL"
+            elif expression.text != expression.superseded_by:
+                reason = "differs from the top-level 'sql'"
+            else:
+                continue
+            errors.append(ValidationWarning(
+                f"[SQL] Warning: {expression.context(model_name)}: dialect entry {reason} "
+                f"and is ignored; the top-level 'sql' is authoritative"
+            ))
+        elif error:
+            errors.append(error)
 
-    # Validate field expressions
-    for dataset in model.get("datasets", []):
-        dataset_name = dataset.get("name", "<unnamed>")
-        for field in dataset.get("fields", []):
-            field_name = field.get("name", "<unnamed>")
-            expression = field.get("expression", {})
-            for dialect_expr in expression.get("dialects", []):
-                dialect = dialect_expr.get("dialect", "ANSI_SQL")
-                # Only a missing expression is skipped; an empty one is reported.
-                expr = dialect_expr.get("expression")
-                if expr is not None:
-                    context = f"Field '{dataset_name}.{field_name}' in model '{model_name}' ({dialect})"
-                    error = validate_sql_expression(expr, dialect, context)
-                    if error:
-                        errors.append(error)
-
-        # Validate dataset-scoped metric expressions
-        for metric in dataset.get("metrics", []):
-            metric_name = metric.get("name", "<unnamed>")
-            expression = metric.get("expression", {})
-            for dialect_expr in expression.get("dialects", []):
-                dialect = dialect_expr.get("dialect", "ANSI_SQL")
-                expr = dialect_expr.get("expression")
-                if expr is not None:
-                    context = f"Metric '{dataset_name}.{metric_name}' in model '{model_name}' ({dialect})"
-                    error = validate_sql_expression(expr, dialect, context)
-                    if error:
-                        errors.append(error)
-
-    # Validate metric expressions
-    for metric in model.get("metrics", []):
-        metric_name = metric.get("name", "<unnamed>")
-        expression = metric.get("expression", {})
-        for dialect_expr in expression.get("dialects", []):
-            dialect = dialect_expr.get("dialect", "ANSI_SQL")
-            expr = dialect_expr.get("expression")
-            if expr is not None:
-                context = f"Metric '{metric_name}' in model '{model_name}' ({dialect})"
-                error = validate_sql_expression(expr, dialect, context)
-                if error:
-                    errors.append(error)
+    for dialect in sorted(unsupported_dialects):
+        count = unsupported_dialects[dialect]
+        plural = "s" if count != 1 else ""
+        message = (
+            f"[SQL] Warning: dialect '{dialect}' is not supported by this validator; "
+            f"{count} expression{plural} not syntax-checked"
+        )
+        # Only a close match is suggested, so a legitimate new dialect gets no
+        # spurious "did you mean".
+        suggestion = difflib.get_close_matches(dialect, KNOWN_DIALECTS, n=1, cutoff=0.8)
+        if suggestion:
+            message += f". Did you mean '{suggestion[0]}'?"
+        errors.append(ValidationWarning(message))
 
     return errors
 
@@ -497,58 +589,56 @@ def validate_metric_scoping(data: dict) -> list[str]:
     if not isinstance(data, dict) or "datasets" not in data:
         return []
 
-    model = data
+    model_name = data.get("name", "<unnamed>")
     errors = []
-    model_name = model.get("name", "<unnamed>")
 
-    for dataset in model.get("datasets", []):
-        dataset_name = dataset.get("name", "<unnamed>")
-        field_names = {
-            f["name"].casefold() for f in dataset.get("fields", []) if f.get("name")
-        }
-        for metric in dataset.get("metrics", []):
-            metric_name = metric.get("name", "<unnamed>")
-            expression = metric.get("expression") or {}
-            for dialect_expr in expression.get("dialects", []):
-                dialect = dialect_expr.get("dialect", "ANSI_SQL")
-                expr = dialect_expr.get("expression")
-                if not expr:
-                    continue
-                tree, _ = _parse_sql_expression(
-                    expr,
-                    dialect,
-                    f"Metric '{dataset_name}.{metric_name}' in model '{model_name}'",
-                )
-                if tree is None:
-                    continue
+    def scope_errors(expression: Expression) -> list[str]:
+        tree, _ = _parse_sql_expression(
+            expression.text, expression.dialect, expression.context(model_name)
+        )
+        if tree is None:
+            return []
 
-                qualifiers = set()
-                undeclared = set()
-                for col in tree.find_all(exp.Column):
-                    parts = [part.name for part in col.parts]
-                    if len(parts) > 1 and parts[0]:
-                        qualifiers.add(parts[0])
-                    elif parts and parts[0].casefold() not in field_names:
-                        undeclared.add(parts[0])
+        qualifiers = set()
+        undeclared = set()
+        for col in tree.find_all(exp.Column):
+            parts = [part.name for part in col.parts]
+            if len(parts) > 1 and parts[0]:
+                qualifiers.add(parts[0])
+            elif parts and parts[0].casefold() not in expression.field_names:
+                undeclared.add(parts[0])
 
-                prefix = (
-                    f"[Scope] Dataset-scoped metric '{dataset_name}.{metric_name}' in model "
-                    f"'{model_name}' ({dialect})"
-                )
-                if qualifiers:
-                    names = ", ".join(repr(q) for q in sorted(qualifiers))
-                    errors.append(
-                        f"{prefix} uses qualified reference(s) {names}. A dataset-scoped metric "
-                        f"expression must reference the dataset's fields by single-part "
-                        f"(unqualified) name; a metric that must reference another dataset "
-                        f"belongs in the model-root metrics."
-                    )
-                if undeclared:
-                    names = ", ".join(repr(n) for n in sorted(undeclared))
-                    errors.append(
-                        f"{prefix} references undeclared field(s) {names}. A dataset-scoped "
-                        f"metric may reference only the dataset's declared fields."
-                    )
+        prefix = (
+            f"[Scope] Dataset-scoped metric '{expression.dataset_name}.{expression.name}' "
+            f"in model '{model_name}' ({expression.dialect})"
+        )
+        out = []
+        if qualifiers:
+            names = ", ".join(repr(q) for q in sorted(qualifiers))
+            out.append(
+                f"{prefix} uses qualified reference(s) {names}. A dataset-scoped metric "
+                f"expression must reference the dataset's fields by single-part "
+                f"(unqualified) name; a metric that must reference another dataset "
+                f"belongs in the model-root metrics."
+            )
+        if undeclared:
+            names = ", ".join(repr(n) for n in sorted(undeclared))
+            out.append(
+                f"{prefix} references undeclared field(s) {names}. A dataset-scoped "
+                f"metric may reference only the dataset's declared fields."
+            )
+        return out
+
+    for expression in iter_expressions(data):
+        # A superseded OSSIE_SQL_2026 dialect entry is non-authoritative; the
+        # top-level `sql` it defers to is scope-checked in its place.
+        if (
+            expression.kind != "dataset_metric"
+            or not expression.text
+            or expression.superseded_by is not None
+        ):
+            continue
+        errors.extend(scope_errors(expression))
 
     return errors
 
