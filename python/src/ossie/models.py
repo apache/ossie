@@ -203,11 +203,11 @@ OssieAIContext = Union[str, OssieAIContextObject]
 
 
 class OssieCustomExtension(BaseModel):
-    """Vendor-specific metadata as a serialized JSON string."""
+    """Vendor-specific metadata carried as an opaque string."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    vendor_name: str
+    vendor_name: str = Field(min_length=1)
     data: str
 
 
@@ -217,8 +217,8 @@ class OssieDialectExpression(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     # Free-form; see OssieDialect for the well-known values.
-    dialect: str
-    expression: str
+    dialect: str = Field(min_length=1)
+    expression: str = Field(min_length=1)
 
 
 class OssieExpression(BaseModel):
@@ -227,7 +227,7 @@ class OssieExpression(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     # Primary, portable expression written in OSSIE_SQL_2026.
-    sql: Optional[str] = None
+    sql: Optional[str] = Field(default=None, min_length=1)
     dialects: Optional[list[OssieDialectExpression]] = Field(default=None, min_length=1)
 
     @model_validator(mode="after")

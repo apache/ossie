@@ -436,6 +436,49 @@ def test_schema_rejects_empty_dialects_without_portable_form(core_schema: dict) 
     ]
 
 
+def test_schema_rejects_empty_portable_sql(core_schema: dict) -> None:
+    # `sql` requires minLength 1, so an empty portable form fails the schema
+    # rather than slipping through to the SQL validator.
+    dataset = {**_ORDERS, "fields": [{"name": "f", "expression": {"sql": ""}}]}
+
+    assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == [
+        "[Schema] datasets -> 0 -> fields -> 0 -> expression -> sql: '' should be non-empty"
+    ]
+
+
+def test_schema_rejects_empty_dialect(core_schema: dict) -> None:
+    # `dialect` requires minLength 1, so an empty dialect fails the schema rather
+    # than producing an "is not supported by this validator" warning.
+    expression = {"dialects": [{"dialect": "", "expression": "x"}]}
+    dataset = {**_ORDERS, "fields": [{"name": "f", "expression": expression}]}
+
+    assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == [
+        "[Schema] datasets -> 0 -> fields -> 0 -> expression -> dialects -> 0 -> dialect: "
+        "'' should be non-empty"
+    ]
+
+
+def test_schema_rejects_empty_dialect_expression(core_schema: dict) -> None:
+    # The per-dialect `expression` requires minLength 1, like `sql`.
+    expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": ""}]}
+    dataset = {**_ORDERS, "fields": [{"name": "f", "expression": expression}]}
+
+    assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == [
+        "[Schema] datasets -> 0 -> fields -> 0 -> expression -> dialects -> 0 -> "
+        "expression: '' should be non-empty"
+    ]
+
+
+def test_schema_rejects_empty_vendor_name(core_schema: dict) -> None:
+    # `vendor_name` requires minLength 1.
+    dataset = {**_ORDERS, "custom_extensions": [{"vendor_name": "", "data": "{}"}]}
+
+    assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == [
+        "[Schema] datasets -> 0 -> custom_extensions -> 0 -> vendor_name: "
+        "'' should be non-empty"
+    ]
+
+
 def test_unsupported_dialect_emits_one_deduped_warning(monkeypatch: pytest.MonkeyPatch) -> None:
     # A dialect this validator cannot parse is nonfatal, but one warning per dialect
     # reports that its expressions went unchecked. The field and metric below share
@@ -481,6 +524,20 @@ def test_known_unparseable_dialect_is_not_flagged(
     dataset = {**_ORDERS, "fields": [{"name": "f", "expression": expression}]}
 
     assert _VALIDATE.validate_sql(_document([dataset], [])) == []
+
+
+def test_unsupported_dialect_warning_suggests_a_close_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A near-miss of a known dialect gets a "did you mean" hint.
+    monkeypatch.setattr(_VALIDATE, "SQLGLOT_AVAILABLE", True)
+    expression = {"dialects": [{"dialect": "SNOWFLKE", "expression": "x"}]}
+    dataset = {**_ORDERS, "fields": [{"name": "f", "expression": expression}]}
+
+    assert _VALIDATE.validate_sql(_document([dataset], [])) == [
+        "[SQL] Warning: dialect 'SNOWFLKE' is not supported by this validator; "
+        "1 expression not syntax-checked. Did you mean 'SNOWFLAKE'?"
+    ]
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
@@ -769,8 +826,9 @@ def test_sql_error_in_metric_with_warning_in_name_is_an_error(run_validator):
     assert "[SQL] Metric 'Warning: broken_metric'" in output
 
 
-@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 def test_empty_field_expression_fails_validation(run_validator):
+    # An empty per-dialect expression now fails the schema (minLength 1), before
+    # the SQL check runs.
     dataset = {**_ORDERS, "fields": [{
         "name": "blank",
         "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": ""}]},
@@ -780,7 +838,10 @@ def test_empty_field_expression_fails_validation(run_validator):
     exit_code, output = run_validator(document)
 
     assert exit_code == 1
-    assert "[SQL] Field 'orders.blank' in model 'm' (ANSI_SQL): expression is empty" in output
+    assert (
+        "[Schema] datasets -> 0 -> fields -> 0 -> expression -> dialects -> 0 -> "
+        "expression: '' should be non-empty" in output
+    )
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
@@ -1460,25 +1521,52 @@ def test_dataset_scoped_metric_portable_sql_is_sql_validated() -> None:
     assert errors[0].startswith("[SQL] Metric 'orders.broken' in model 'm' (OSSIE_SQL_2026):")
 
 
+def _metric_with_sql_and_ossie_dialect(sql: str, dialect_sql: str) -> dict:
+    return _orders_with(
+        fields=[{"name": "amount", "expression": _ds_expr("amount")}],
+        metrics=[
+            {
+                "name": "total",
+                "expression": {
+                    "sql": sql,
+                    "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": dialect_sql}],
+                },
+            }
+        ],
+    )
+
+
 def test_invalid_superseded_ossie_sql_2026_dialect_entry_warns_not_fails() -> None:
     # The top-level `sql` is authoritative, so an invalid OSSIE_SQL_2026 dialect
     # entry beside it is reported as a nonfatal warning, not a hard error.
-    expression = {
-        "sql": "SUM(amount)",
-        "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM("}],
-    }
-    doc = _orders_with(
-        fields=[{"name": "amount", "expression": _ds_expr("amount")}],
-        metrics=[{"name": "total", "expression": expression}],
-    )
-
-    errors = _VALIDATE.validate_sql(doc)
+    errors = _VALIDATE.validate_sql(_metric_with_sql_and_ossie_dialect("SUM(amount)", "SUM("))
 
     assert errors == [
-        "[SQL] Warning: Metric 'orders.total' in model 'm' (OSSIE_SQL_2026): not valid "
-        "SQL; ignored because the top-level 'sql' is authoritative"
+        "[SQL] Warning: Metric 'orders.total' in model 'm' (OSSIE_SQL_2026): dialect entry "
+        "is not valid SQL and is ignored; the top-level 'sql' is authoritative"
     ]
     assert all(isinstance(e, _VALIDATE.ValidationWarning) for e in errors)
+
+
+def test_differing_superseded_ossie_sql_2026_dialect_entry_warns() -> None:
+    # A valid OSSIE_SQL_2026 dialect entry that differs from the authoritative
+    # top-level `sql` is dead text; warn so the drift is caught.
+    errors = _VALIDATE.validate_sql(
+        _metric_with_sql_and_ossie_dialect("SUM(amount)", "AVG(amount)")
+    )
+
+    assert errors == [
+        "[SQL] Warning: Metric 'orders.total' in model 'm' (OSSIE_SQL_2026): dialect entry "
+        "differs from the top-level 'sql' and is ignored; the top-level 'sql' is authoritative"
+    ]
+
+
+def test_identical_superseded_ossie_sql_2026_dialect_entry_is_silent() -> None:
+    # An OSSIE_SQL_2026 dialect entry identical to the top-level `sql` is harmless
+    # redundancy, not drift, so it is not warned.
+    assert _VALIDATE.validate_sql(
+        _metric_with_sql_and_ossie_dialect("SUM(amount)", "SUM(amount)")
+    ) == []
 
 
 def test_superseded_ossie_sql_2026_dialect_entry_is_not_scope_checked() -> None:

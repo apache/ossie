@@ -182,6 +182,30 @@ def test_expression_empty_dialects_is_rejected() -> None:
         OssieExpression(dialects=[])
 
 
+def test_expression_empty_sql_is_rejected() -> None:
+    # `sql` has min_length 1, matching the schema, so an empty portable form is rejected.
+    with pytest.raises(ValidationError):
+        OssieExpression(sql="")
+
+
+def test_dialect_expression_empty_dialect_is_rejected() -> None:
+    # `dialect` has min_length 1, matching the schema, so an empty dialect is rejected.
+    with pytest.raises(ValidationError):
+        OssieDialectExpression(dialect="", expression="order_id")
+
+
+def test_dialect_expression_empty_expression_is_rejected() -> None:
+    # The per-dialect `expression` has min_length 1, matching the schema.
+    with pytest.raises(ValidationError):
+        OssieDialectExpression(dialect="ANSI_SQL", expression="")
+
+
+def test_custom_extension_empty_vendor_name_is_rejected() -> None:
+    # `vendor_name` has min_length 1, matching the schema.
+    with pytest.raises(ValidationError):
+        OssieCustomExtension(vendor_name="", data="{}")
+
+
 def test_free_form_dialect_in_expression() -> None:
     # `dialect` is free-form: an unknown value is accepted and preserved.
     dialect_expr = OssieDialectExpression(dialect="DB_DIALECT", expression="order_id")

@@ -52,6 +52,7 @@ repository's layout; when the script is vendored elsewhere, point OSSIE_SCHEMA
 or --schema at a copy of the schema.
 """
 
+import difflib
 import json
 import os
 import sys
@@ -108,6 +109,9 @@ NON_SQL_DIALECTS = {
     "DAX",
     "HOLISTICS_AQL",
 }
+
+# Every dialect this validator knows, for close-match suggestions on a typo.
+KNOWN_DIALECTS = (*SQLGLOT_DIALECTS, *NON_SQL_DIALECTS)
 
 # Concepts every ontology includes implicitly (ontology.md, "Built-in concepts")
 BUILT_IN_CONCEPTS = {"Any", "Boolean", "Date", "DateTime", "Decimal", "Float", "Integer", "String"}
@@ -477,9 +481,10 @@ class Expression:
     `kind` identifies the declaring element, and `name` identifies the field
     or metric. `dialect` is OSSIE_SQL_2026 for portable `sql` expressions,
     or the dialect's label otherwise. `field_names` contains the enclosing
-    dataset's field names, or is empty for model-scoped metrics. `superseded`
-    marks an OSSIE_SQL_2026 dialect entry that a top-level `sql` outranks, so
-    it is non-authoritative: a client reads the `sql` instead.
+    dataset's field names, or is empty for model-scoped metrics.
+    `superseded_by` is the authoritative top-level `sql` text when this is an
+    OSSIE_SQL_2026 dialect entry that `sql` outranks, else None: such an entry
+    is non-authoritative, since a client reads the `sql` instead.
     """
 
     kind: ExpressionKind
@@ -488,7 +493,7 @@ class Expression:
     dialect: str
     text: str
     field_names: frozenset[str]
-    superseded: bool = False
+    superseded_by: str | None = None
 
     def context(self, model_name: str) -> str:
         if self.kind == "field":
@@ -529,7 +534,7 @@ def _expressions_in(
             field_names=field_names,
             # A top-level `sql` is the authoritative OSSIE_SQL_2026 form, so an
             # OSSIE_SQL_2026 dialect entry alongside it is non-authoritative.
-            superseded=sql is not None and dialect == PORTABLE_DIALECT,
+            superseded_by=sql if dialect == PORTABLE_DIALECT and sql is not None else None,
         )
 
 
@@ -578,26 +583,37 @@ def validate_sql(data: dict) -> list[str]:
         error = validate_sql_expression(
             expression.text, dialect, expression.context(model_name)
         )
-        if not error:
-            continue
-        if expression.superseded:
-            # A top-level `sql` is authoritative, so an invalid OSSIE_SQL_2026
-            # dialect entry does not fail the document; warn, since a client may
-            # still read the dialect entry instead of `sql`.
+        if expression.superseded_by is not None:
+            # A top-level `sql` is authoritative, so this OSSIE_SQL_2026 dialect
+            # entry does not fail the document. Warn if it is dead text -- invalid,
+            # or differing from the `sql` a client reads instead -- and stay silent
+            # when it merely duplicates the `sql`.
+            if error:
+                reason = "is not valid SQL"
+            elif expression.text != expression.superseded_by:
+                reason = "differs from the top-level 'sql'"
+            else:
+                continue
             errors.append(ValidationWarning(
-                f"[SQL] Warning: {expression.context(model_name)}: not valid SQL; "
-                f"ignored because the top-level 'sql' is authoritative"
+                f"[SQL] Warning: {expression.context(model_name)}: dialect entry {reason} "
+                f"and is ignored; the top-level 'sql' is authoritative"
             ))
-        else:
+        elif error:
             errors.append(error)
 
     for dialect in sorted(unsupported_dialects):
         count = unsupported_dialects[dialect]
         plural = "s" if count != 1 else ""
-        errors.append(ValidationWarning(
+        message = (
             f"[SQL] Warning: dialect '{dialect}' is not supported by this validator; "
             f"{count} expression{plural} not syntax-checked"
-        ))
+        )
+        # Only a close match is suggested, so a legitimate new dialect gets no
+        # spurious "did you mean".
+        suggestion = difflib.get_close_matches(dialect, KNOWN_DIALECTS, n=1, cutoff=0.8)
+        if suggestion:
+            message += f". Did you mean '{suggestion[0]}'?"
+        errors.append(ValidationWarning(message))
 
     return errors
 
@@ -667,7 +683,7 @@ def validate_metric_scoping(data: dict) -> list[str]:
         if (
             expression.kind != "dataset_metric"
             or not expression.text
-            or expression.superseded
+            or expression.superseded_by is not None
         ):
             continue
         errors.extend(scope_errors(expression))
