@@ -479,17 +479,14 @@ def validate_sql(data: dict) -> list[str]:
 
 
 def validate_metric_scoping(data: dict) -> list[str]:
-    """Validate the field references in each dataset-scoped metric expression.
+    """Validate the references in each dataset-scoped metric expression.
 
-    A dataset-scoped metric references the declaring dataset's declared fields by
-    single-part (unqualified) name. Two rules are enforced:
-
-    * No qualified reference (`dataset.field`): that is model-scoped and belongs
-      in the model-root metrics.
-    * Every field a dataset-scoped metric references must be a declared field of
-      the dataset; referencing an undeclared name (e.g. a raw source column) is
-      not yet allowed. A bare name is compared case-insensitively; `COUNT(*)` and
-      literals reference no field and are fine.
+    A dataset-scoped metric references the declaring dataset's declared fields
+    and the columns of its source. An unqualified name is a field if the dataset
+    declares one of that name and otherwise a source column, which the validator
+    cannot check. `source.column` names a source column. Any other qualified
+    reference (`dataset.field`) is model-scoped and belongs in the model-root
+    metrics, so it is reported.
 
     Checking the expression needs sqlglot; dialects it cannot parse are skipped
     rather than reported.
@@ -503,9 +500,6 @@ def validate_metric_scoping(data: dict) -> list[str]:
 
     for dataset in model.get("datasets", []):
         dataset_name = dataset.get("name", "<unnamed>")
-        field_names = {
-            f["name"].casefold() for f in dataset.get("fields", []) if f.get("name")
-        }
         for metric in dataset.get("metrics", []):
             metric_name = metric.get("name", "<unnamed>")
             expression = metric.get("expression") or {}
@@ -523,13 +517,12 @@ def validate_metric_scoping(data: dict) -> list[str]:
                     continue
 
                 qualifiers = set()
-                undeclared = set()
                 for col in tree.find_all(exp.Column):
                     parts = [part.name for part in col.parts]
+                    if len(parts) == 2 and parts[0].casefold() == "source":
+                        continue
                     if len(parts) > 1 and parts[0]:
                         qualifiers.add(parts[0])
-                    elif parts and parts[0].casefold() not in field_names:
-                        undeclared.add(parts[0])
 
                 prefix = (
                     f"[Scope] Dataset-scoped metric '{dataset_name}.{metric_name}' in model "
@@ -540,14 +533,9 @@ def validate_metric_scoping(data: dict) -> list[str]:
                     errors.append(
                         f"{prefix} uses qualified reference(s) {names}. A dataset-scoped metric "
                         f"expression must reference the dataset's fields by single-part "
-                        f"(unqualified) name; a metric that must reference another dataset "
+                        f"(unqualified) name and its source columns as column or "
+                        f"source.column; a metric that must reference another dataset "
                         f"belongs in the model-root metrics."
-                    )
-                if undeclared:
-                    names = ", ".join(repr(n) for n in sorted(undeclared))
-                    errors.append(
-                        f"{prefix} references undeclared field(s) {names}. A dataset-scoped "
-                        f"metric may reference only the dataset's declared fields."
                     )
 
     return errors
