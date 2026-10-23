@@ -76,8 +76,7 @@ harness can submit the file as it is.
 
 - The header row holds the column names of the query.
 - NULL is an empty field without quotes. An empty string is `""`.
-- Values are not rounded. Exact numerics keep their scale, for example
-  `29025.00`.
+- Values are not rounded, for example `2073.214285714286`.
 - If the query has `ORDER BY`, the rows are in that order.
 
 DuckDB writes this format with `COPY ... TO ... (HEADER)`.
@@ -127,13 +126,15 @@ Comparison of results
 - Compare column names without regard to case.
 - Compare row order only if the Ossie query has `ORDER BY`.
 - Do not compare data types. The SQL standard lets an implementation choose
-  some result types. For example, the precision and scale of `AVG` over an
-  exact numeric type are implementation-defined.
-- Integers, and exact numerics whose scale the standard fixes, must be equal.
-  For example, `COUNT(*)`, and `SUM` over `DECIMAL(7, 2)`, which has scale 2.
-- Other numeric values (for example, `AVG`, division, and approximate numerics)
-  are not exact. An actual value matches if it differs from the expected value
-  by 0.01 or less. Thus rounding and truncation to 2 decimal places both match.
+  some result types, for example the precision of `COUNT(*)`.
+- A value is exact or approximate by the type that the SQL standard gives to
+  its expression. `COUNT(*)` is exact. `SUM(sal)` and `AVG(sal)` are
+  approximate, because `sal` is `DOUBLE PRECISION`.
+- Exact numerics must be equal.
+- An approximate numeric matches if
+  `|actual - expected| <= 1e-9 * max(|expected|, 1)`. This is a relative
+  tolerance of 1e-9. For an expected value between -1 and 1, it is an absolute
+  tolerance of 1e-9.
 
 Adding a case
 -------------
@@ -154,7 +155,10 @@ Adding a case
   query. For a case with joins, the second query can write the input set of
   each measure directly from Section 8.1, for example with `EXISTS` over the
   join condition.
-- Prefer queries whose result does not depend on implementation-defined
+- Do not use an expression whose result type the SQL standard leaves
+  implementation-defined, such as `AVG` over an exact numeric or the division
+  of two exact numerics. Use a `DOUBLE PRECISION` column or a `CAST` instead.
+- Prefer queries whose result does not depend on other implementation-defined
   behavior. If a result does depend on it, say so in the header of
   `query.ossie.sql`.
 

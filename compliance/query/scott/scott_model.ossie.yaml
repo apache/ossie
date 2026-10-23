@@ -58,10 +58,10 @@ datasets:
         datatype: Date
         expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: hiredate}]}
       - name: sal
-        datatype: Decimal
+        datatype: Float
         expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: sal}]}
       - name: comm
-        datatype: Decimal
+        datatype: Float
         expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: comm}]}
       - name: deptno
         datatype: Integer
@@ -69,7 +69,7 @@ datasets:
     metrics:
       - name: sum_sal
         description: Total salary
-        datatype: Decimal
+        datatype: Float
         expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: SUM(sal)}]}
       - name: avg_sal
         description: Average salary
@@ -85,7 +85,7 @@ datasets:
         expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: COUNT(comm)}]}
       - name: sum_comm
         description: Total commission
-        datatype: Decimal
+        datatype: Float
         expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: SUM(comm)}]}
       - name: avg_comm
         description: Average commission, over employees that have a commission
