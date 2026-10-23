@@ -18,9 +18,9 @@
 -- ============================================================================
 -- Data: the SCOTT schema
 --
--- Shared input data for the query compliance cases in ../cases/. Every case
--- file runs after this file. Do not change the values: the expected results
--- of all cases depend on them.
+-- Shared input data for the query compliance cases in ../cases/. Load this
+-- file before a case runs. Do not change the values: the expected results of
+-- all cases depend on them.
 --
 -- Values are the same as the SCOTT tables in Apache Calcite
 -- (core/src/test/resources/sql/within-distinct.iq).

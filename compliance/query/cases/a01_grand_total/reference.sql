@@ -14,24 +14,9 @@
 -- KIND, either express or implied.  See the License for the
 -- specific language governing permissions and limitations
 -- under the License.
-
--- ----------------------------------------------------------------------------
--- A1. Grand total.
--- AGG() is an aggregate. Without GROUP BY, the query returns one row.
--- Spec: 6, 7.2
--- ----------------------------------------------------------------------------
--- Ossie:
---   SELECT AGG(sum_sal) AS sum_sal,
---          AGG(emp_count) AS emp_count,
---          AGG(avg_sal) AS avg_sal
---   FROM scott_model.emp;
+-- Reference query for case A1 (query.sql), over the base tables in
+-- ../../scott/scott.sql. Its result is expected.csv.
 SELECT SUM(sal) AS sum_sal,
        COUNT(*) AS emp_count,
        AVG(sal) AS avg_sal
 FROM scott.emp;
--- +----------+-----------+---------+
--- | SUM_SAL  | EMP_COUNT | AVG_SAL |
--- +----------+-----------+---------+
--- | 29025.00 |        14 | 2073.21 |
--- +----------+-----------+---------+
--- (1 row)
