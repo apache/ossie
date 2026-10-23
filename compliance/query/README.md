@@ -88,7 +88,10 @@ FROM (VALUES (29025.00, 14)) AS expected (sum_sal, emp_count);
   gives the types, and it MUST end with `WHERE 1 = 0`.
 - If `query.ossie.sql` has `ORDER BY`, the rows MUST be in that order.
 
-`reference.duckdb.sql` uses the same column names as `query.ossie.sql`.
+`reference.duckdb.sql` is non-normative. It helps to derive `expected.sql` and
+to check it again. The spec is normative: if the reference query and the spec
+disagree, the case is wrong, and it MUST be corrected to follow the spec. The
+reference query uses the same column names as `query.ossie.sql`.
 
 - For a case on one relation, the reference query is the Ossie query with each
   `AGG(m)` replaced by the expression of `m`, and each model relation replaced
