@@ -24,18 +24,18 @@ Query compliance tests
 Test cases for the
 [Relational Query Interface](../../core-spec/relational_semantics.md).
 
-This directory sets up the layout and the case format. It starts with one
-case, A1. Further cases are added in later pull requests, each with one case
-or a small group of cases.
+This directory sets up the layout and the case format.
 
 Layout
 ------
 
 | Path | Contents |
 |------|----------|
-| [`scott/scott.sql`](scott/scott.sql) | The SCOTT schema and its data. All cases use it. |
-| [`scott/scott_model.ossie.yaml`](scott/scott_model.ossie.yaml) | An Ossie model over SCOTT, with dataset-scoped metrics. All cases use it. |
+| [`scott/scott.sql`](scott/scott.sql) | The SCOTT schema and its data. |
+| [`scott/scott_model.ossie.yaml`](scott/scott_model.ossie.yaml) | An Ossie model over SCOTT, with dataset-scoped metrics. |
 | [`cases/`](cases/) | One file for each case. |
+
+All cases use the same data and the same model.
 
 Run
 ---
@@ -84,18 +84,15 @@ Semantics of the expected results
 ---------------------------------
 
 The expected results use standard SQL semantics (ISO/IEC 9075) for aggregates
-and for scalar operators. They do not use the defaults of a particular engine.
-Section 8.1 of the spec refers to the "host dialect". For these tests, the host
-dialect is standard SQL. For example, `SUM` and `AVG` over no rows give NULL,
-and `COUNT` over no rows gives 0.
+and for scalar operators. Section 8.1 of the spec refers to the "host
+dialect". For these tests, the host dialect is standard SQL. For example, `SUM`
+and `AVG` over no rows give NULL, and `COUNT` over no rows gives 0.
 
 If the defaults of an engine are different (for example, if `SUM` over no rows
 gives 0), run the engine in a mode with standard SQL semantics.
 
 Comparison of results
 ---------------------
-
-Compare an actual result to the expected result by these rules:
 
 - Compare column names without regard to case.
 - Compare row order only if the Ossie query has `ORDER BY`.
