@@ -23,12 +23,7 @@
 -- all cases depend on them.
 --
 -- Values are the same as the SCOTT tables in Apache Calcite
--- (core/src/test/resources/sql/within-distinct.iq), but the money columns
--- (emp.sal and emp.comm) are DOUBLE PRECISION, not DECIMAL(7, 2). For AVG
--- over an exact numeric, the SQL standard leaves the scale of the result
--- implementation-defined, so the result cannot be compared precisely. SUM and
--- AVG over DOUBLE PRECISION give approximate numerics, which ../README.md
--- compares with a tolerance.
+-- (core/src/test/resources/sql/within-distinct.iq).
 -- ============================================================================
 
 DROP SCHEMA IF EXISTS scott CASCADE;
@@ -52,8 +47,8 @@ CREATE TABLE scott.emp (
   job      VARCHAR NOT NULL,
   mgr      INTEGER,
   hiredate DATE NOT NULL,
-  sal      DOUBLE PRECISION NOT NULL,
-  comm     DOUBLE PRECISION,
+  sal      DECIMAL(7, 2) NOT NULL,
+  comm     DECIMAL(7, 2),
   deptno   INTEGER NOT NULL
 );
 

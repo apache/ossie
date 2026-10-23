@@ -42,18 +42,25 @@ Each case directory has three files:
 | File | Contents |
 |------|----------|
 | `query.ossie.sql` | The Ossie query. It evaluates measures with `AGG()`, and it refers to the model relations by two-part name, for example `scott_model.emp`. |
-| `expected.csv` | The expected result of the Ossie query. |
-| `reference.duckdb.sql` | A DuckDB query over the base tables in `scott/scott.sql`. Its result is `expected.csv`. |
+| `expected.sql` | The expected result of the Ossie query, as a standard SQL query over literals. |
+| `reference.duckdb.sql` | A DuckDB query over the base tables in `scott/scott.sql`. Its result is equal to the result of `expected.sql`. |
 
 The part of the file name before `.sql` gives the SQL dialect of the file:
-`.ossie.sql` for an Ossie query, and `.duckdb.sql` for DuckDB SQL.
+`.ossie.sql` for an Ossie query, and `.duckdb.sql` for DuckDB SQL. A file name
+without a dialect part, such as `expected.sql`, is standard SQL (ISO/IEC 9075).
 
 An implementation passes a case if it loads the data and the model, accepts
-`query.ossie.sql`, and returns a result that matches `expected.csv` by the
-rules in "Comparison of results". The implementation does not use
-`reference.duckdb.sql`.
+`query.ossie.sql`, and returns a result that is equal to the result of
+`expected.sql` by the rules in "Comparison of results". The implementation does
+not use `reference.duckdb.sql`.
 
 See [`cases/a01_grand_total/`](cases/a01_grand_total/) for an example.
+
+The key words "MUST", "MUST NOT", "SHOULD", "SHOULD NOT", and "MAY" in the rest
+of this document are to be interpreted as described in BCP 14
+([RFC 2119](https://www.rfc-editor.org/rfc/rfc2119),
+[RFC 8174](https://www.rfc-editor.org/rfc/rfc8174)) when, and only when, they
+appear in all capitals, as shown here.
 
 Case files
 ----------
@@ -63,6 +70,24 @@ title, one or two sentences about the behavior under test, and the spec
 sections (for example, `Spec: 6, 7.2`). The query follows the header. A
 harness can submit the file as it is.
 
+`expected.sql` is one query of this form:
+
+```sql
+SELECT *
+FROM (VALUES (29025.00, 14)) AS expected (sum_sal, emp_count);
+```
+
+- The column names and their order MUST be the same as in `query.ossie.sql`.
+- The values MUST be literals of standard SQL: `NULL`, character string
+  literals (`'SALES'`), exact numeric literals (`29025.00`), date and time
+  literals (`DATE '1981-12-03'`), and `TRUE` or `FALSE`. Approximate numeric
+  literals (`2.5E3`) MUST NOT be used.
+- If every value of a column is NULL, the first row MUST give the type with
+  `CAST(NULL AS <type>)`, because a bare NULL has no type.
+- If the expected result has no rows, `expected.sql` MUST have one row that
+  gives the types, and it MUST end with `WHERE 1 = 0`.
+- If `query.ossie.sql` has `ORDER BY`, the rows MUST be in that order.
+
 `reference.duckdb.sql` uses the same column names as `query.ossie.sql`.
 
 - For a case on one relation, the reference query is the Ossie query with each
@@ -71,15 +96,6 @@ harness can submit the file as it is.
 - For a case with joins, the reference query applies the reference evaluation
   strategy of Section 9 of the spec. It removes join duplicates by row identity
   (the dataset's `primary_key`), and then it aggregates.
-
-`expected.csv` is a CSV file (RFC 4180) with one header row:
-
-- The header row holds the column names of the query.
-- NULL is an empty field without quotes. An empty string is `""`.
-- Values are not rounded, for example `2073.214285714286`.
-- If the query has `ORDER BY`, the rows are in that order.
-
-DuckDB writes this format with `COPY ... TO ... (HEADER)`.
 
 Run
 ---
@@ -91,17 +107,23 @@ cat compliance/query/scott/scott.sql \
   compliance/query/cases/*/reference.duckdb.sql | duckdb
 ```
 
-To write `expected.csv` for one case from its reference query:
+To check one case, compare the result of `reference.duckdb.sql` with the result
+of `expected.sql`. The command prints the number of rows that are different;
+for a correct case, it is 0:
 
 ```sh
 CASE=compliance/query/cases/a01_grand_total
 duckdb -c ".read compliance/query/scott/scott.sql" \
-  -c "SET VARIABLE q = (SELECT content FROM read_text('$CASE/reference.duckdb.sql'))" \
-  -c "COPY (FROM query(getvariable('q'))) TO '$CASE/expected.csv' (HEADER)"
+  -c "SET VARIABLE r = (SELECT content FROM read_text('$CASE/reference.duckdb.sql'))" \
+  -c "SET VARIABLE e = (SELECT content FROM read_text('$CASE/expected.sql'))" \
+  -c "SELECT count(*) AS differences FROM (
+        (FROM query(getvariable('r')) EXCEPT ALL FROM query(getvariable('e')))
+        UNION ALL
+        (FROM query(getvariable('e')) EXCEPT ALL FROM query(getvariable('r'))))"
 ```
 
-To check `expected.csv` instead, write to `/dev/stdout` and compare with
-`diff - "$CASE/expected.csv"`.
+This command does not compare row order. For a case with `ORDER BY`, also
+compare the order of the rows.
 
 To check the model:
 
@@ -115,26 +137,37 @@ Semantics of the expected results
 The expected results use standard SQL semantics (ISO/IEC 9075) for aggregates
 and for scalar operators. Section 8.1 of the spec refers to the "host
 dialect". For these tests, the host dialect is standard SQL. For example, `SUM`
-and `AVG` over no rows give NULL, and `COUNT` over no rows gives 0.
+over no rows gives NULL, and `COUNT` over no rows gives 0.
 
 If the defaults of an engine are different (for example, if `SUM` over no rows
-gives 0), run the engine in a mode with standard SQL semantics.
+gives 0), the engine MUST run in a mode with standard SQL semantics.
+
+Every expected value is exact, and the comparison has no tolerance. Thus a
+case MUST NOT have a result column whose type is approximate numeric (`REAL`,
+`DOUBLE PRECISION`, or `FLOAT`), or whose scale the SQL standard leaves
+implementation-defined. Examples of the second kind are `AVG` over an exact
+numeric and the division of two exact numerics. For this reason, the model has
+no `AVG` metric.
 
 Comparison of results
 ---------------------
 
-- Compare column names without regard to case.
-- Compare row order only if the Ossie query has `ORDER BY`.
-- Do not compare data types. The SQL standard lets an implementation choose
-  some result types, for example the precision of `COUNT(*)`.
-- A value is exact or approximate by the type that the SQL standard gives to
-  its expression. `COUNT(*)` is exact. `SUM(sal)` and `AVG(sal)` are
-  approximate, because `sal` is `DOUBLE PRECISION`.
-- Exact numerics must be equal.
-- An approximate numeric matches if
-  `|actual - expected| <= 1e-9 * max(|expected|, 1)`. This is a relative
-  tolerance of 1e-9. For an expected value between -1 and 1, it is an absolute
-  tolerance of 1e-9.
+The actual result is the result of `query.ossie.sql`. The expected result is
+the result of `expected.sql`.
+
+- The two results MUST have the same number of columns. Columns are compared by
+  position. Column names MUST be equal without regard to case.
+- The two results MUST be equal as bags (multisets): each row MUST occur the
+  same number of times in both results.
+- Two values are equal if both are NULL, or if neither is NULL and the SQL `=`
+  operator gives TRUE. This is `IS NOT DISTINCT FROM`. Data types are not
+  compared, so `29025.00` is equal to `29025`.
+- If `query.ossie.sql` has `ORDER BY`, the rows MUST also be in the same order.
+  The `ORDER BY` of a case MUST give one order only: its sort key MUST be
+  unique in the result.
+
+In SQL, `(actual EXCEPT ALL expected) UNION ALL (expected EXCEPT ALL actual)`
+gives no rows if and only if the two results are equal as bags.
 
 Adding a case
 -------------
@@ -150,17 +183,14 @@ Adding a case
 - Use the model in `scott/scott_model.ossie.yaml`. If a case needs a new metric,
   add the metric in the same pull request, and check the model with
   `validation/validate.py`.
-- Write `expected.csv` from `reference.duckdb.sql` with the command in "Run".
-  Do not write it by hand. If possible, confirm it with a second, independent
-  query. For a case with joins, the second query can write the input set of
-  each measure directly from Section 8.1, for example with `EXISTS` over the
-  join condition.
-- Do not use an expression whose result type the SQL standard leaves
-  implementation-defined, such as `AVG` over an exact numeric or the division
-  of two exact numerics. Use a `DOUBLE PRECISION` column or a `CAST` instead.
-- Prefer queries whose result does not depend on other implementation-defined
-  behavior. If a result does depend on it, say so in the header of
-  `query.ossie.sql`.
+- Copy the values in `expected.sql` from the output of `reference.duckdb.sql`.
+  Do not calculate them by hand. Check the case with the command in "Run". If
+  possible, confirm the result with a second, independent query. For a case
+  with joins, the second query can write the input set of each measure
+  directly from Section 8.1, for example with `EXISTS` over the join
+  condition.
+- A case SHOULD NOT depend on other implementation-defined behavior. If a
+  result does depend on it, say so in the header of `query.ossie.sql`.
 
 Future work
 -----------

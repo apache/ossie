@@ -15,8 +15,7 @@
 -- specific language governing permissions and limitations
 -- under the License.
 -- Reference query for case A1 (query.ossie.sql), over the base tables in
--- ../../scott/scott.sql. Its result is expected.csv.
+-- ../../scott/scott.sql. Its result is equal to the result of expected.sql.
 SELECT SUM(sal) AS sum_sal,
-       COUNT(*) AS emp_count,
-       AVG(sal) AS avg_sal
+       COUNT(*) AS emp_count
 FROM scott.emp;

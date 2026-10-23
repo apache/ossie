@@ -30,6 +30,10 @@
 # The primary_key of each dataset is the row identity of its measures
 # (Section 3.2).
 #
+# The model has no AVG metric. For AVG over an exact numeric, the SQL standard
+# leaves the scale of the result implementation-defined, so the cases cannot
+# compare it exactly (../README.md, "Comparison of results").
+#
 # The emp-to-salgrade join (e.sal BETWEEN s.losal AND s.hisal) is a range join.
 # An Ossie relationship cannot express it, so a case that uses it writes the
 # join in the query (Section 11.3).
@@ -58,10 +62,10 @@ datasets:
         datatype: Date
         expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: hiredate}]}
       - name: sal
-        datatype: Float
+        datatype: Decimal
         expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: sal}]}
       - name: comm
-        datatype: Float
+        datatype: Decimal
         expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: comm}]}
       - name: deptno
         datatype: Integer
@@ -69,12 +73,8 @@ datasets:
     metrics:
       - name: sum_sal
         description: Total salary
-        datatype: Float
+        datatype: Decimal
         expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: SUM(sal)}]}
-      - name: avg_sal
-        description: Average salary
-        datatype: Float
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: AVG(sal)}]}
       - name: emp_count
         description: Number of employees
         datatype: Integer
@@ -85,12 +85,8 @@ datasets:
         expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: COUNT(comm)}]}
       - name: sum_comm
         description: Total commission
-        datatype: Float
+        datatype: Decimal
         expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: SUM(comm)}]}
-      - name: avg_comm
-        description: Average commission, over employees that have a commission
-        datatype: Float
-        expression: {dialects: [{dialect: OSSIE_SQL_2026, expression: AVG(comm)}]}
 
   - name: dept
     source: scott.dept
