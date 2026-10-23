@@ -96,7 +96,7 @@ form *path*`:`*line*`:`*column*`: `*message*, for example
 
 ```
 tests/basic.ost:12:31: trailing space
-tests/basic.ost:40:1: unterminated command (open '(' at 38:6)
+tests/basic.ost:38:1: unterminated command (open '(' at 38:6)
 ```
 
 A script read from standard input has path `-`.
@@ -210,7 +210,9 @@ error in the command's output (see *Errors*).
 ### Output
 
 A command's expected output immediately follows the line on which
-the command ends. It is one of:
+the command ends, and consists of the lines that start with `+`,
+`|` or `>` (and the lines of any raw string they contain, and the
+row count that ends a table). It is one of:
 
 * Nothing. A command that produces nothing (such as `connect`, or a
   `create table` statement) has no output.
@@ -220,7 +222,9 @@ the command ends. It is one of:
 
 If the lines after a command contain more than one table, value or
 error, the expected output does not match, and the regenerated
-script contains only the actual output.
+script contains only the actual output. An output line that does
+not follow a command or another output line (for example, one after
+a blank line) is an error, and `ost` does not run the script.
 
 A command that has no expected output is still run, and its output
 is written to the regenerated script. To write a new test, write the
