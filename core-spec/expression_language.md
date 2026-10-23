@@ -111,9 +111,9 @@ will be able to be multi-part and the parts will be separated by the '.' charact
 What an identifier refers to depends on where the expression appears:
 
 * In a **field expression**, identifiers refer to columns of the dataset's `source`.  A field expression cannot refer to other fields.
-* In a **dataset-scoped metric expression**, identifiers are unqualified and refer to fields declared in that dataset.
-* In a **model-scoped metric expression**, identifiers must be qualified as `dataset.field` and refer to a field declared in that dataset.
-* Metric expressions cannot refer to columns of the dataset's `source` or to other metrics.  If a field and a source column share a name, a metric expression refers to the field.
+* In a **dataset-scoped metric expression**, an unqualified identifier refers to the field of that name declared in the dataset, or, if there is none, to the column of that name in the dataset's `source`.  The qualified identifier `source.column` always refers to a column of the dataset's `source`, so it reaches a column that a field of the same name shadows.
+* In a **model-scoped metric expression**, identifiers must be qualified as `dataset.field` and refer to a field declared in that dataset.  Model-scoped metric expressions cannot refer to source columns.
+* Metric expressions cannot refer to other metrics.
 
 See [Name Resolution](spec.md#name-resolution) in the core specification.
 
@@ -277,6 +277,20 @@ COUNT(DISTINCT customer_id) FILTER (WHERE status = 'completed')  --> COUNT(DISTI
 ```
 
 A non-matching row contributes `NULL`, which these functions ignore. An `ELSE 0` would count as a real row and would corrupt `AVG`, `MIN`, `MAX`, and `COUNT`. The identity does not hold for an aggregate function that does not ignore `NULL` inputs, such as `ARRAY_AGG`.
+
+### Measure Evaluation: `AGG`
+
+Ossie SQL reserves the function name `AGG` for evaluating a measure, as defined by the [Relational Query Interface](relational_semantics.md#6-querying-measures-the-agg-function). An implementation MUST NOT give `AGG` any other meaning, and a dialect extension MUST NOT define a function of that name.
+
+`AGG` is a valid aggregate function in a dataset-scoped metric expression whose dataset's `source` is a relation that carries measures, such as a relation exposed through the Relational Query Interface. The argument MUST be a measure column of the source, referenced like any other source column (see [Name Spaces](#name-spaces)):
+
+```sql
+AGG(revenue)                                   -- source measure; no field is named revenue
+AGG(source.revenue)                            -- source measure shadowed by a field named revenue
+AGG(source.revenue) / COUNT(DISTINCT customer_id)
+```
+
+`AGG(m)` evaluates the source's measure `m` with the semantics defined there: over the source rows that remain in each group of the consuming query. Its decomposability is that of the measure it evaluates. A source column that is not a measure is not a valid argument, and a measure column is not valid outside `AGG`.
 
 ### Decomposability Reference
 
@@ -851,6 +865,7 @@ Implementations MAY support additional functions through dialect extensions. The
 | Version   | Date       | Changes |
 |:----------|:-----------| :---- |
 | 0.2.0.dev | 2026-07-15 | Initial draft |
+| 0.2.0.dev | 2026-10-23 | Reserve `AGG` for measure evaluation; allow dataset-scoped metrics to reference source columns, unqualified or as `source.column` |
 
 ---
 

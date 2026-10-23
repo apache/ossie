@@ -1296,15 +1296,36 @@ def test_dataset_scoped_metric_rejects_a_cross_dataset_reference() -> None:
     assert any(error.startswith("[Scope]") and "'customers'" in error for error in errors)
 
 
-def test_dataset_scoped_metric_rejects_an_undeclared_field() -> None:
+def test_dataset_scoped_metric_accepts_an_unqualified_source_column() -> None:
+    # No field is named quantity, so the name refers to the source column.
     doc = _orders_with(
         fields=[{"name": "amount", "expression": _ds_expr("amount")}],
         metrics=[{"name": "total_qty", "expression": _ds_expr("SUM(quantity)")}],
     )
 
+    assert _VALIDATE.validate_metric_scoping(doc) == []
+
+
+def test_dataset_scoped_metric_accepts_a_source_qualified_column() -> None:
+    doc = _orders_with(
+        fields=[{"name": "amount", "expression": _ds_expr("amount * 100")}],
+        metrics=[
+            {"name": "total_amount", "expression": _ds_expr("SUM(source.amount)")},
+            {"name": "total_revenue", "expression": _ds_expr("AGG(Source.revenue)")},
+        ],
+    )
+
+    assert _VALIDATE.validate_metric_scoping(doc) == []
+
+
+def test_dataset_scoped_metric_rejects_a_three_part_source_reference() -> None:
+    doc = _orders_with(
+        metrics=[{"name": "total", "expression": _ds_expr("SUM(source.orders.amount)")}],
+    )
+
     errors = _VALIDATE.validate_metric_scoping(doc)
 
-    assert any(error.startswith("[Scope]") and "'quantity'" in error for error in errors)
+    assert any(error.startswith("[Scope]") and "'source'" in error for error in errors)
 
 
 def test_dataset_scoped_metric_count_star_references_no_field() -> None:

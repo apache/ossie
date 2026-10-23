@@ -241,7 +241,7 @@
           "items": {
             "$ref": "#/$defs/Metric"
           },
-          "description": "Dataset-scoped metrics: aggregations evaluated at this dataset's row level, for measures that semantically belong to the dataset. The expression references this dataset's declared fields by single-part (unqualified) name and must resolve entirely within this dataset; an expression that must reference another dataset belongs in the model-scoped metrics instead. Referencing a column of the source that is not a declared field is a future extension. Within the dataset, field names and metric names share one namespace and must all be unique across the two."
+          "description": "Dataset-scoped metrics: aggregations evaluated at this dataset's row level, for measures that semantically belong to the dataset. The expression references this dataset's declared fields by single-part (unqualified) name, and may reference columns of the dataset's source, unqualified when no field shadows them or as source.column. It must resolve entirely within this dataset; an expression that must reference another dataset belongs in the model-scoped metrics instead. Within the dataset, field names and metric names share one namespace and must all be unique across the two."
         },
         "custom_extensions": {
           "type": "array",
