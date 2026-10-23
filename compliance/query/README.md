@@ -41,25 +41,29 @@ Each case directory has three files:
 
 | File | Contents |
 |------|----------|
-| `query.sql` | The Ossie query. It evaluates measures with `AGG()`, and it refers to the model relations by two-part name, for example `scott_model.emp`. |
+| `query.ossie.sql` | The Ossie query. It evaluates measures with `AGG()`, and it refers to the model relations by two-part name, for example `scott_model.emp`. |
 | `expected.csv` | The expected result of the Ossie query. |
-| `reference.sql` | A DuckDB query over the base tables in `scott/scott.sql`. Its result is `expected.csv`. |
+| `reference.duckdb.sql` | A DuckDB query over the base tables in `scott/scott.sql`. Its result is `expected.csv`. |
+
+The part of the file name before `.sql` gives the SQL dialect of the file:
+`.ossie.sql` for an Ossie query, and `.duckdb.sql` for DuckDB SQL.
 
 An implementation passes a case if it loads the data and the model, accepts
-`query.sql`, and returns a result that matches `expected.csv` by the rules in
-"Comparison of results". The implementation does not use `reference.sql`.
+`query.ossie.sql`, and returns a result that matches `expected.csv` by the
+rules in "Comparison of results". The implementation does not use
+`reference.duckdb.sql`.
 
 See [`cases/a01_grand_total/`](cases/a01_grand_total/) for an example.
 
 Case files
 ----------
 
-`query.sql` starts with a header in SQL comments: the case ID and title, one or
-two sentences about the behavior under test, and the spec sections (for
-example, `Spec: 6, 7.2`). The query follows the header. A harness can submit
-the file as it is.
+`query.ossie.sql` starts with a header in SQL comments: the case ID and
+title, one or two sentences about the behavior under test, and the spec
+sections (for example, `Spec: 6, 7.2`). The query follows the header. A
+harness can submit the file as it is.
 
-`reference.sql` uses the same column names as `query.sql`.
+`reference.duckdb.sql` uses the same column names as `query.ossie.sql`.
 
 - For a case on one relation, the reference query is the Ossie query with each
   `AGG(m)` replaced by the expression of `m`, and each model relation replaced
@@ -84,7 +88,8 @@ Run
 DuckDB needs no extensions. To run all reference queries:
 
 ```sh
-cat compliance/query/scott/scott.sql compliance/query/cases/*/reference.sql | duckdb
+cat compliance/query/scott/scott.sql \
+  compliance/query/cases/*/reference.duckdb.sql | duckdb
 ```
 
 To write `expected.csv` for one case from its reference query:
@@ -92,7 +97,7 @@ To write `expected.csv` for one case from its reference query:
 ```sh
 CASE=compliance/query/cases/a01_grand_total
 duckdb -c ".read compliance/query/scott/scott.sql" \
-  -c "SET VARIABLE q = (SELECT content FROM read_text('$CASE/reference.sql'))" \
+  -c "SET VARIABLE q = (SELECT content FROM read_text('$CASE/reference.duckdb.sql'))" \
   -c "COPY (FROM query(getvariable('q'))) TO '$CASE/expected.csv' (HEADER)"
 ```
 
@@ -144,14 +149,14 @@ Adding a case
 - Use the model in `scott/scott_model.ossie.yaml`. If a case needs a new metric,
   add the metric in the same pull request, and check the model with
   `validation/validate.py`.
-- Write `expected.csv` from `reference.sql` with the command in "Run". Do not
-  write it by hand. If possible, confirm it with a second, independent query.
-  For a case with joins, the second query can write the input set of each
-  measure directly from Section 8.1, for example with `EXISTS` over the join
-  condition.
+- Write `expected.csv` from `reference.duckdb.sql` with the command in "Run".
+  Do not write it by hand. If possible, confirm it with a second, independent
+  query. For a case with joins, the second query can write the input set of
+  each measure directly from Section 8.1, for example with `EXISTS` over the
+  join condition.
 - Prefer queries whose result does not depend on implementation-defined
   behavior. If a result does depend on it, say so in the header of
-  `query.sql`.
+  `query.ossie.sql`.
 
 Future work
 -----------

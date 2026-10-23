@@ -14,7 +14,7 @@
 -- KIND, either express or implied.  See the License for the
 -- specific language governing permissions and limitations
 -- under the License.
--- Reference query for case A1 (query.sql), over the base tables in
+-- Reference query for case A1 (query.ossie.sql), over the base tables in
 -- ../../scott/scott.sql. Its result is expected.csv.
 SELECT SUM(sal) AS sum_sal,
        COUNT(*) AS emp_count,
