@@ -132,6 +132,7 @@ class OssieDialect(str, Enum):
     DAX = "DAX"
     HOLISTICS_AQL = "HOLISTICS_AQL"
     OSSIE_SQL_2026 = "OSSIE_SQL_2026"
+    CLICKHOUSE = "CLICKHOUSE"
 
 
 class OssieDataType(str, Enum):

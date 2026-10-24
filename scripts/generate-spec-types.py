@@ -68,6 +68,7 @@ SECTIONS = [
             "DAX": "Data Analysis Expressions (Power BI / Analysis Services)",
             "HOLISTICS_AQL": "Holistics AQL (Analytical Query Language)",
             "OSSIE_SQL_2026": "Ossie portable SQL expression language (see expression_language.md)",
+            "CLICKHOUSE": "ClickHouse SQL",
         },
     },
     {
