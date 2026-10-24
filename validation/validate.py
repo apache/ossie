@@ -106,6 +106,7 @@ DIALECT_MAP = {
     "THOUGHTSPOT": None,  # Not supported by sqlglot, skip validation
     "DAX": None,  # Not supported by sqlglot, skip validation
     "HOLISTICS_AQL": None,  # Holistics AQL, not SQL; skip validation
+    "TRINO": "trino",
 }
 
 # Dialects that sqlglot cannot parse
