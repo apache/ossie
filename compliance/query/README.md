@@ -152,9 +152,7 @@ Adding a case
   `scott/scott_model.ossie.yaml` in the same pull request, and validate the
   model.
 - Copy `expected.sql` from the output of `reference.duckdb.sql`. Do not
-  calculate it by hand. Where possible, confirm it with a second, independent
-  query. For a join case, that query can build the input set of each measure
-  from Section 8.1, for example with `EXISTS` over the join condition.
+  calculate it by hand.
 - Cases SHOULD NOT depend on other implementation-defined behavior. Document
   any such dependency in the header of `query.ossie.sql`.
 
