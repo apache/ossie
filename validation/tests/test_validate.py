@@ -1337,3 +1337,43 @@ def test_qualified_dataset_scoped_metric_fails_document_validation(core_schema, 
     scope_errors = [error for error in errors if error.startswith("[Scope]")]
     assert scope_errors
     assert all(not isinstance(error, _VALIDATE.ValidationWarning) for error in scope_errors)
+
+
+def test_postgres_and_redshift_are_parsed_as_sql() -> None:
+    # Both are SQL dialects sqlglot reads, so an expression in either is
+    # parsed the way SNOWFLAKE, BIGQUERY and DATABRICKS are, not skipped.
+    assert _VALIDATE.DIALECT_MAP["POSTGRES"] == "postgres"
+    assert _VALIDATE.DIALECT_MAP["REDSHIFT"] == "redshift"
+    assert "POSTGRES" not in _VALIDATE.SKIP_SQL_VALIDATION
+    assert "REDSHIFT" not in _VALIDATE.SKIP_SQL_VALIDATION
+
+
+@pytest.mark.parametrize("dialect", ["POSTGRES", "REDSHIFT"])
+def test_a_postgres_regex_match_is_valid_sql_in_its_own_dialect(dialect: str) -> None:
+    # `~` is the Postgres regular-expression match, which Redshift shares and
+    # sqlglot's default reader rejects, so passing here shows the dialect's
+    # own reader was used. (`::` and ILIKE parse under the default too.)
+    body = "orders.status ~ '^deliv'"
+    expression = {"dialects": [{"dialect": dialect, "expression": body}]}
+    dataset = {**_ORDERS, "fields": [{"name": "delivered", "expression": expression}]}
+
+    assert _VALIDATE.validate_sql(_document([dataset], [])) == []
+
+
+def test_the_postgres_regex_match_is_invalid_under_ansi_sql() -> None:
+    # The control for the test above: the same body under ANSI_SQL is an error.
+    body = "orders.status ~ '^deliv'"
+    expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": body}]}
+    dataset = {**_ORDERS, "fields": [{"name": "delivered", "expression": expression}]}
+
+    assert _VALIDATE.validate_sql(_document([dataset], [])) != []
+
+
+@pytest.mark.parametrize("dialect", ["POSTGRES", "REDSHIFT"])
+def test_invalid_sql_is_reported_under_postgres_and_redshift(dialect: str) -> None:
+    # Both dialects are parsed, so a body sqlglot cannot read is reported
+    # rather than skipped the way MDX or DAX are.
+    expression = {"dialects": [{"dialect": dialect, "expression": "SELECT FROM WHERE"}]}
+    dataset = {**_ORDERS, "fields": [{"name": "broken", "expression": expression}]}
+
+    assert _VALIDATE.validate_sql(_document([dataset], [])) != []
