@@ -30,9 +30,10 @@
 # The primary_key of each dataset is the row identity of its measures
 # (Section 3.2).
 #
-# The model has no AVG metric. For AVG over an exact numeric, the SQL standard
-# leaves the scale of the result implementation-defined, so the cases cannot
-# compare it exactly (../README.md, "Comparison of results").
+# The model has no AVG metric yet. For AVG over an exact numeric, the SQL
+# standard leaves the scale of the result implementation-defined, so a case
+# that needs AVG adds a metric over an approximate argument, for example
+# AVG(CAST(sal AS DOUBLE PRECISION)) (../README.md, "Result semantics").
 #
 # The emp-to-salgrade join (e.sal BETWEEN s.losal AND s.hisal) is a range join.
 # An Ossie relationship cannot express it, so a case that uses it writes the
