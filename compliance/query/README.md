@@ -21,87 +21,101 @@
 Query compliance tests
 ======================
 
-Test cases for the
-[Relational Query Interface](../../core-spec/relational_semantics.md).
+Compliance tests for the
+[Relational Query Interface](../../core-spec/relational_semantics.md). All
+cases use the same SCOTT data and Ossie model.
 
-This directory sets up the layout and the case format.
+The key words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are to be
+interpreted as described in BCP 14
+([RFC 2119](https://www.rfc-editor.org/rfc/rfc2119),
+[RFC 8174](https://www.rfc-editor.org/rfc/rfc8174)) when they appear in
+uppercase.
 
 Layout
 ------
 
 | Path | Contents |
 |------|----------|
-| [`scott/scott.sql`](scott/scott.sql) | The SCOTT schema and its data. |
-| [`scott/scott_model.ossie.yaml`](scott/scott_model.ossie.yaml) | An Ossie model over SCOTT, with dataset-scoped metrics. |
-| [`cases/`](cases/) | One directory for each case. |
+| [`scott/scott.sql`](scott/scott.sql) | SCOTT schema and data |
+| [`scott/scott_model.ossie.yaml`](scott/scott_model.ossie.yaml) | Ossie model with dataset-scoped metrics |
+| `cases/<case>/query.ossie.sql` | Ossie query under test |
+| `cases/<case>/expected.sql` | Expected result, as standard SQL over literals |
+| `cases/<case>/reference.duckdb.sql` | Non-normative DuckDB query that derives the expected result |
 
-All cases use the same data and the same model.
+The file name suffix gives the SQL dialect: `.ossie.sql` for Ossie SQL,
+`.duckdb.sql` for DuckDB SQL, and `.sql` for standard SQL (ISO/IEC 9075).
 
-Each case directory has three files:
-
-| File | Contents |
-|------|----------|
-| `query.ossie.sql` | The Ossie query. It evaluates measures with `AGG()`, and it refers to the model relations by two-part name, for example `scott_model.emp`. |
-| `expected.sql` | The expected result of the Ossie query, as a standard SQL query over literals. |
-| `reference.duckdb.sql` | A DuckDB query over the base tables in `scott/scott.sql`. Its result is equal to the result of `expected.sql`. |
-
-The part of the file name before `.sql` gives the SQL dialect of the file:
-`.ossie.sql` for an Ossie query, and `.duckdb.sql` for DuckDB SQL. A file name
-without a dialect part, such as `expected.sql`, is standard SQL (ISO/IEC 9075).
-
-An implementation passes a case if it loads the data and the model, accepts
-`query.ossie.sql`, and returns a result that is equal to the result of
-`expected.sql` by the rules in "Comparison of results". The implementation does
-not use `reference.duckdb.sql`.
-
-See [`cases/a01_grand_total/`](cases/a01_grand_total/) for an example.
-
-The key words "MUST", "MUST NOT", "SHOULD", "SHOULD NOT", and "MAY" in the rest
-of this document are to be interpreted as described in BCP 14
-([RFC 2119](https://www.rfc-editor.org/rfc/rfc2119),
-[RFC 8174](https://www.rfc-editor.org/rfc/rfc8174)) when, and only when, they
-appear in all capitals, as shown here.
+A case passes when an implementation loads the data and the model, runs
+`query.ossie.sql`, and returns a result equal to the result of `expected.sql`
+(see "Comparing results"). For an example, see
+[`cases/a01_grand_total/`](cases/a01_grand_total/).
 
 Case files
 ----------
 
-`query.ossie.sql` starts with a header in SQL comments: the case ID and
-title, one or two sentences about the behavior under test, and the spec
-sections (for example, `Spec: 6, 7.2`). The query follows the header. A
-harness can submit the file as it is.
+`query.ossie.sql` starts with a comment header: the case ID and title, the
+behavior under test, and the spec sections (for example, `Spec: 6, 7.2`). The
+file can be submitted to an implementation as it is.
 
-`expected.sql` is one query of this form:
+`expected.sql` is one query:
 
 ```sql
 SELECT *
 FROM (VALUES (29025.00, 14)) AS expected (sum_sal, emp_count);
 ```
 
-- The column names and their order MUST be the same as in `query.ossie.sql`.
-- The values MUST be literals of standard SQL: `NULL`, character string
-  literals (`'SALES'`), exact numeric literals (`29025.00`), date and time
-  literals (`DATE '1981-12-03'`), and `TRUE` or `FALSE`. Approximate numeric
-  literals (`2.5E3`) MUST NOT be used.
-- If every value of a column is NULL, the first row MUST give the type with
-  `CAST(NULL AS <type>)`, because a bare NULL has no type.
-- If the expected result has no rows, `expected.sql` MUST have one row that
-  gives the types, and it MUST end with `WHERE 1 = 0`.
+- Column names and order MUST match `query.ossie.sql`.
+- Values MUST be standard SQL literals. An exact result MUST be an exact
+  numeric literal (`29025.00`). An approximate result MUST be an approximate
+  numeric literal (`2.073214285714286E3`).
+- A column that is NULL in every row MUST give its type in the first row, with
+  `CAST(NULL AS <type>)`.
+- An empty result MUST use one typed row and `WHERE 1 = 0`.
 - If `query.ossie.sql` has `ORDER BY`, the rows MUST be in that order.
 
-`reference.duckdb.sql` is non-normative. It helps to derive `expected.sql` and
-to check it again. The spec is normative: if the reference query and the spec
-disagree, the case is wrong, and it MUST be corrected to follow the spec. The
-reference query uses the same column names as `query.ossie.sql`.
+`reference.duckdb.sql` is non-normative. If it disagrees with the spec, the
+spec is correct, and the case MUST be fixed. It uses the column names of
+`query.ossie.sql`. For one relation, it replaces each `AGG(m)` with the
+expression of `m`, and each model relation with its source table. For joins,
+it follows the reference evaluation strategy of Section 9: it removes join
+duplicates by `primary_key`, and then it aggregates.
 
-- For a case on one relation, the reference query is the Ossie query with each
-  `AGG(m)` replaced by the expression of `m`, and each model relation replaced
-  by its source table.
-- For a case with joins, the reference query applies the reference evaluation
-  strategy of Section 9 of the spec. It removes join duplicates by row identity
-  (the dataset's `primary_key`), and then it aggregates.
+Result semantics
+----------------
 
-Run
----
+Expected results use standard SQL (ISO/IEC 9075) semantics. For these tests,
+the host dialect of Section 8.1 is standard SQL. For example, `SUM` over no
+rows is NULL, and `COUNT` over no rows is 0. An implementation with other
+defaults MUST run the tests with standard SQL semantics.
+
+A case MUST NOT return an exact numeric whose scale the standard leaves
+implementation-defined, such as `AVG` over an exact numeric or the division of
+two exact numerics. For this reason, the model has no `AVG` metric. A case
+MUST NOT return NaN or an infinity.
+
+Comparing results
+-----------------
+
+- Columns are matched by position. The column counts MUST be equal. Column
+  names are compared case-insensitively.
+- Rows MUST match as multisets, including the number of duplicates.
+- If `query.ossie.sql` has `ORDER BY`, the row order MUST also match, and the
+  sort key MUST order the result uniquely.
+- Two values match if both are NULL, or if neither is NULL and they are equal.
+  Types are not compared: `29025.00` matches `29025`.
+- Exact numerics MUST be equal.
+- An approximate numeric `a` matches an expected value `e` if
+  `|a - e| <= 1e-9 * max(|a|, |e|, 1)`. This is a relative tolerance of 1e-9,
+  with an absolute tolerance of 1e-9 near zero.
+
+The rule for approximate numerics is provisional. How to compare
+floating-point results across engines is an open question: the size of the
+tolerance, the tolerance near zero, and how to match rows as multisets when
+values match only within the tolerance. Until it is settled, cases SHOULD use
+exact results.
+
+Running the tests
+-----------------
 
 DuckDB needs no extensions. To run all reference queries:
 
@@ -110,96 +124,41 @@ cat compliance/query/scott/scott.sql \
   compliance/query/cases/*/reference.duckdb.sql | duckdb
 ```
 
-To check one case, compare the result of `reference.duckdb.sql` with the result
-of `expected.sql`. The command prints the number of rows that are different;
-for a correct case, it is 0:
+To show the result of a reference query above the result of its
+`expected.sql`:
 
 ```sh
 CASE=compliance/query/cases/a01_grand_total
-duckdb -c ".read compliance/query/scott/scott.sql" \
-  -c "SET VARIABLE r = (SELECT content FROM read_text('$CASE/reference.duckdb.sql'))" \
-  -c "SET VARIABLE e = (SELECT content FROM read_text('$CASE/expected.sql'))" \
-  -c "SELECT count(*) AS differences FROM (
-        (FROM query(getvariable('r')) EXCEPT ALL FROM query(getvariable('e')))
-        UNION ALL
-        (FROM query(getvariable('e')) EXCEPT ALL FROM query(getvariable('r'))))"
+cat compliance/query/scott/scott.sql \
+  "$CASE/reference.duckdb.sql" "$CASE/expected.sql" | duckdb
 ```
 
-This command does not compare row order. For a case with `ORDER BY`, also
-compare the order of the rows.
-
-To check the model:
+To validate the model:
 
 ```sh
 uv run validation/validate.py compliance/query/scott/scott_model.ossie.yaml
 ```
 
-Semantics of the expected results
----------------------------------
-
-The expected results use standard SQL semantics (ISO/IEC 9075) for aggregates
-and for scalar operators. Section 8.1 of the spec refers to the "host
-dialect". For these tests, the host dialect is standard SQL. For example, `SUM`
-over no rows gives NULL, and `COUNT` over no rows gives 0.
-
-If the defaults of an engine are different (for example, if `SUM` over no rows
-gives 0), the engine MUST run in a mode with standard SQL semantics.
-
-Every expected value is exact, and the comparison has no tolerance. Thus a
-case MUST NOT have a result column whose type is approximate numeric (`REAL`,
-`DOUBLE PRECISION`, or `FLOAT`), or whose scale the SQL standard leaves
-implementation-defined. Examples of the second kind are `AVG` over an exact
-numeric and the division of two exact numerics. For this reason, the model has
-no `AVG` metric.
-
-Comparison of results
----------------------
-
-The actual result is the result of `query.ossie.sql`. The expected result is
-the result of `expected.sql`.
-
-- The two results MUST have the same number of columns. Columns are compared by
-  position. Column names MUST be equal without regard to case.
-- The two results MUST be equal as bags (multisets): each row MUST occur the
-  same number of times in both results.
-- Two values are equal if both are NULL, or if neither is NULL and the SQL `=`
-  operator gives TRUE. This is `IS NOT DISTINCT FROM`. Data types are not
-  compared, so `29025.00` is equal to `29025`.
-- If `query.ossie.sql` has `ORDER BY`, the rows MUST also be in the same order.
-  The `ORDER BY` of a case MUST give one order only: its sort key MUST be
-  unique in the result.
-
-In SQL, `(actual EXCEPT ALL expected) UNION ALL (expected EXCEPT ALL actual)`
-gives no rows if and only if the two results are equal as bags.
-
 Adding a case
 -------------
 
-- Add one directory in `cases/` for each case, with the three files above.
-  Name the directory with the lowercase case ID, with a two-digit number, and
-  a short name, for example `a02_group_by`. The two-digit number keeps the
-  directories in ID order.
-- Use the ID prefix `A` for a case on one relation, and `B` for a case with
-  joins.
-- Use only the data in `scott/scott.sql`. Do not change the data, because the
-  expected results of all cases depend on it.
-- Use the model in `scott/scott_model.ossie.yaml`. If a case needs a new metric,
-  add the metric in the same pull request, and check the model with
-  `validation/validate.py`.
-- Copy the values in `expected.sql` from the output of `reference.duckdb.sql`.
-  Do not calculate them by hand. Check the case with the command in "Run". If
-  possible, confirm the result with a second, independent query. For a case
-  with joins, the second query can write the input set of each measure
-  directly from Section 8.1, for example with `EXISTS` over the join
-  condition.
-- A case SHOULD NOT depend on other implementation-defined behavior. If a
-  result does depend on it, say so in the header of `query.ossie.sql`.
+- Add a directory under `cases/` with the three files. Name it with the
+  lowercase case ID, with a two-digit number, and a short name, for example
+  `a02_group_by`. Use the ID prefix `A` for one relation and `B` for joins.
+- Do not change `scott/scott.sql`. Add any new metric to
+  `scott/scott_model.ossie.yaml` in the same pull request, and validate the
+  model.
+- Copy `expected.sql` from the output of `reference.duckdb.sql`. Do not
+  calculate it by hand. Where possible, confirm it with a second, independent
+  query. For a join case, that query can build the input set of each measure
+  from Section 8.1, for example with `EXISTS` over the join condition.
+- Cases SHOULD NOT depend on other implementation-defined behavior. Document
+  any such dependency in the header of `query.ossie.sql`.
 
 Future work
 -----------
 
-These tests are a light version of the `.ost` test format
-([#501](https://github.com/apache/ossie/issues/501)) and the view expander
-([#502](https://github.com/apache/ossie/issues/502)). When those are
-available, each case can become an `.ost` test, and a runner can check the
-Ossie query directly.
+The cases can move to the `.ost` test format
+([#501](https://github.com/apache/ossie/issues/501)) and use the view expander
+([#502](https://github.com/apache/ossie/issues/502)) to run Ossie queries
+directly.
