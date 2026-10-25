@@ -113,8 +113,9 @@ datasets:
   # Required: Unique identifier for the logical dataset
   - name: string
 
-    # Required: Reference to the underlying physical table/view or query
-    # Format should be either database_name.schema_name.table_name or query
+    # Required: Relation identifier for a physical table or view,
+    # e.g. database_name.schema_name.table_name
+    # SQL text is non-portable; consumers MAY reject unresolved sources.
     source: string
 
     # Optional: Dataset fields that uniquely identify rows

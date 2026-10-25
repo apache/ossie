@@ -200,7 +200,7 @@
         "source": {
           "type": "string",
           "minLength": 1,
-          "description": "Reference to underlying physical table/view (database.schema.table) or query"
+          "description": "Relation identifier for a physical table or view (e.g., database.schema.table). SQL text is non-portable and consumers MAY reject it."
         },
         "primary_key": {
           "type": "array",

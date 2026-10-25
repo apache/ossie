@@ -173,7 +173,7 @@ Logical datasets represent business entities or concepts (fact and dimension tab
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | Yes | Unique identifier for the dataset |
-| `source` | string | Yes | Reference to underlying physical table/view (e.g., `database.schema.table`) or query |
+| `source` | string | Yes | Relation identifier for a physical table or view (e.g., `database.schema.table`). SQL text is schema-valid but has no defined dialect; consumers MAY reject it. |
 | `primary_key` | array | No | Dataset fields that uniquely identify rows |
 | `unique_keys` | array of arrays | No | Array of unique key definitions, each a list of dataset fields |
 | `description` | string | No | Human-readable description |
@@ -660,8 +660,9 @@ The following are well-known examples:
 
 An Ossie model has three levels of names:
 
-1. **Source columns.** The columns of the table, view, or query named by a
-   dataset's `source`. The Ossie document does not declare them.
+1. **Source columns.** The columns of the table or view identified by a
+   dataset's `source`. The Ossie document does not declare them. Column
+   resolution for SQL text in `source` is consumer-defined and MAY fail.
 2. **Dataset fields.** The fields declared in a dataset's `fields`. Each field
    is defined in terms of that dataset's source columns, just as a view's
    `SELECT` list can only reference columns from its `FROM` clause. A dataset's
@@ -910,6 +911,7 @@ ai_context:
 - **0.2.0.dev0** (Unreleased): In-development next minor release. Schema is mutable; do not depend on this version in production.
   - Breaking: each standalone document contains one model directly at the root; the `semantic_model` array is removed.
   - Breaking: metric expressions, `primary_key`, `unique_keys`, and relationship `from_columns`/`to_columns` refer to dataset fields, not columns of the dataset's `source`. Model-scoped metric expressions must use qualified `dataset.field` references; dataset-scoped metric expressions use unqualified field names. Earlier versions did not specify this, and some converters read these names as source columns; those converters must now resolve them as fields. See [Name Resolution](#name-resolution).
+  - Clarified: the portable value of `Dataset.source` is a relation identifier for a table or view. SQL text in `source` stays schema-valid but has no defined dialect, and consumers MAY reject it. The schema is unchanged.
 - **0.1.1** (2025-12-11): Initial release
   - Core semantic model structure
   - Support for datasets, relationships, fields, and metrics
