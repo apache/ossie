@@ -1372,6 +1372,9 @@ def _warning_text(errors: list) -> list[str]:
         ("COUNT(amount)", "COUNT(DISTINCT amount)", ["COUNT", "COUNT|DISTINCT"]),
         ("SUM(amount)", "SUM(price)", ["amount", "price"]),
         ("SUM(amount) * 1.08", "SUM(amount) * 1.18", ["1.08", "1.18"]),
+        ("SUM(amount) * (1.08)", "SUM(amount) * (1.18)", ["1.08", "1.18"]),
+        ("SUM(amount) * -1.08", "SUM(amount) * -1.18", ["-1.08", "-1.18"]),
+        ("SUM(amount) * -1.08", "SUM(amount) * 1.08", ["-1.08"]),
         (
             "SUM(CASE WHEN region = 'EU' THEN amount ELSE 0 END)",
             "SUM(CASE WHEN region = 'US' THEN amount ELSE 0 END)",
@@ -1460,6 +1463,14 @@ def test_impure_metric_call_is_reported_and_not_executed(
             ("BIGQUERY", "FORMAT_DATE('%Y-%m', d)"),
         ],
         [
+            ("ANSI_SQL", "SUM(amount) * (1.08)"),
+            ("SNOWFLAKE", "SUM(amount) * 1.08"),
+        ],
+        [
+            ("ANSI_SQL", "SUM(amount) * -1.08"),
+            ("SNOWFLAKE", "SUM(amount) * -(1.08)"),
+        ],
+        [
             ("ANSI_SQL", "SUM(CASE WHEN a = 1 AND b = 2 THEN amt ELSE 0 END)"),
             ("SNOWFLAKE", "SUM(CASE WHEN a = 1 OR b = 2 THEN amt ELSE 0 END)"),
         ],
@@ -1469,6 +1480,54 @@ def test_equivalent_dialect_spellings_are_not_drift(core_schema, offline, dialec
     errors = _VALIDATE.validate_document(_metric_model("revenue", dialects), core_schema)
 
     assert errors == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expressions",
+    [
+        [
+            ("ANSI_SQL", "SUM(amount) * 1e309"),
+            ("SNOWFLAKE", "SUM(amount) * 1e309"),
+        ],
+        [
+            ("ANSI_SQL", "amt > 1e309"),
+            ("SNOWFLAKE", "amt > 1e309"),
+        ],
+        [
+            ("ANSI_SQL", "SUM(amount) * -1e309"),
+            ("SNOWFLAKE", "SUM(amount) * -(1e309)"),
+        ],
+    ],
+)
+def test_non_finite_numeric_literals_do_not_crash(core_schema, offline, expressions):
+    errors = _VALIDATE.validate_document(_metric_model("revenue", expressions), core_schema)
+
+    assert errors == []
+    # NaN and overflow both parse as float and do not fit in an int. The token
+    # is stable, so two dialects that use the same spelling still agree.
+    assert _VALIDATE._number_text("nan") == _VALIDATE._number_text("NaN")
+    assert _VALIDATE._number_text("1e309") == _VALIDATE._number_text("+1e309")
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_non_finite_literal_cli_does_not_traceback(tmp_path, monkeypatch, capsys):
+    document = _metric_model(
+        "revenue",
+        [("ANSI_SQL", "SUM(amount) * 1e309"), ("SNOWFLAKE", "amt > 1e309")],
+    )
+    model_path = tmp_path / "model.json"
+    model_path.write_text(json.dumps(document))
+    monkeypatch.setattr(_VALIDATE.sys, "argv", [str(_VALIDATE_PATH), str(model_path)])
+
+    with pytest.raises(SystemExit) as caught:
+        _VALIDATE.main()
+    captured = capsys.readouterr()
+
+    assert caught.value.code == 0
+    assert "Validation PASSED" in captured.out
+    assert "Traceback" not in captured.err
+    assert "OverflowError" not in captured.out
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")

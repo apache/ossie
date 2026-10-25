@@ -480,12 +480,38 @@ def validate_sql(data: dict) -> list[str]:
 
 
 def _number_text(text: str) -> str:
-    """Normalise a numeric literal so 100 and 100.0 agree and 1.08 and 1.18 do not."""
+    """Normalise a numeric literal so 100 and 100.0 agree and 1.08 and 1.18 do not.
+
+    ``1e309`` and ``NaN`` parse as numbers but do not fit in an int. Those
+    stay a stable token instead of raising out of validation.
+    """
     try:
         value = float(text)
     except (TypeError, ValueError):
         return str(text)
-    return str(int(value)) if value == int(value) else repr(value)
+    try:
+        whole = int(value)
+    except (OverflowError, ValueError):
+        return repr(value)
+    return str(whole) if value == whole else repr(value)
+
+
+def _arithmetic_constant(node, negative: bool = False) -> str | None:
+    """A numeric arithmetic operand, with parentheses removed and the sign kept.
+
+    ``(1.08)`` and ``1.08`` are the same factor. ``-1.08`` and ``-(1.08)`` are
+    the same factor, and neither matches ``1.08``.
+    """
+    while isinstance(node, exp.Paren):
+        node = node.this
+    if isinstance(node, exp.Neg):
+        return _arithmetic_constant(node.this, not negative)
+    if not isinstance(node, exp.Literal) or not node.is_number:
+        return None
+    text = _number_text(node.name)
+    if not negative:
+        return text
+    return text[1:] if text.startswith("-") else f"-{text}"
 
 
 def _comparison_operand(node) -> str:
@@ -565,8 +591,9 @@ def _expression_signature(tree) -> tuple:
     constants = set()
     for node in tree.find_all(exp.Mul, exp.Div, exp.Add, exp.Sub):
         for side in (node.this, node.args.get("expression")):
-            if isinstance(side, exp.Literal) and side.is_number:
-                constants.add(_number_text(side.name))
+            constant = _arithmetic_constant(side)
+            if constant is not None:
+                constants.add(constant)
     predicates = frozenset(
         _predicate_token(node)
         for node in tree.find_all(exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.In)
