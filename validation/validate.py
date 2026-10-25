@@ -35,6 +35,7 @@ Validates Ossie YAML or JSON documents containing one semantic model against:
 3. Valid relationship references
 4. Relationship column arity (from_columns and to_columns lengths match)
 5. SQL syntax (using sqlglot)
+6. Metric dialect agreement and expression purity (warnings; GitHub issue #279)
 
 Ontology documents (--schema ontology/ontology.json) are checked for unique
 concept and relationship names, and for extends, identify_by, roles and QName
@@ -478,6 +479,199 @@ def validate_sql(data: dict) -> list[str]:
     return errors
 
 
+def _number_text(text: str) -> str:
+    """Normalise a numeric literal so 100 and 100.0 agree and 1.08 and 1.18 do not."""
+    try:
+        value = float(text)
+    except (TypeError, ValueError):
+        return str(text)
+    return str(int(value)) if value == int(value) else repr(value)
+
+
+def _comparison_operand(node) -> str:
+    """One side of a comparison, ignoring dialect spelling of the same value."""
+    if node is None:
+        return ""
+    if isinstance(node, exp.Column):
+        return node.name.lower()
+    # TRUE and 1 are the same filter; engines spell booleans differently.
+    if isinstance(node, exp.Boolean):
+        return "1" if node.this else "0"
+    if isinstance(node, exp.Null):
+        return "null"
+    if isinstance(node, exp.Literal):
+        return _number_text(node.name) if node.is_number else f"'{node.name}'"
+    return " ".join(node.sql().lower().split())
+
+
+# ``100 < amt`` and ``amt > 100`` are the same comparison written the other way.
+_FLIPPED_COMPARISON = {
+    "GT": "LT",
+    "LT": "GT",
+    "GTE": "LTE",
+    "LTE": "GTE",
+    "EQ": "EQ",
+    "NEQ": "NEQ",
+}
+
+# Calls that make a metric non-reproducible or side-effecting. Read from the
+# parsed tree only; the expression is never executed (GitHub issue #279).
+_IMPURE_CALLS = {
+    "now": "NOW",
+    "current_timestamp": "NOW",
+    "random": "RANDOM",
+    "rand": "RANDOM",
+    "pg_read_file": "pg_read_file",
+}
+
+
+def _predicate_token(node) -> str:
+    """Normalise one comparison so operand order and IN-list order do not matter."""
+    kind = type(node).__name__.upper()
+    left = _comparison_operand(node.this)
+    if isinstance(node, exp.In):
+        items = sorted(_comparison_operand(item) for item in (node.expressions or []))
+        return f"IN({left},[{','.join(items)}])"
+    right = _comparison_operand(node.args.get("expression"))
+    if kind in _FLIPPED_COMPARISON and left and right:
+        left_is_column = isinstance(node.this, exp.Column)
+        right_is_column = isinstance(node.args.get("expression"), exp.Column)
+        if right_is_column and not left_is_column:
+            kind, left, right = _FLIPPED_COMPARISON[kind], right, left
+    return f"{kind}({left},{right})"
+
+
+def _expression_signature(tree) -> tuple:
+    """Aggregate class, columns, arithmetic constants, and filter predicates.
+
+    Rendered SQL is not compared: ``NVL`` and ``COALESCE``, ``FILTER`` and
+    ``CASE``, and swapped comparison operands share a signature. Constants
+    that only exist to spell a filter (``ELSE 0``, ``col = 1``) are not
+    arithmetic, so they stay out of the constant set. This is a heuristic
+    for GitHub issue #279, not a proof that two expressions are equivalent:
+    ``AND`` versus ``OR`` over the same comparisons is invisible here.
+    """
+    aggregates = []
+    for aggregate in tree.find_all(exp.AggFunc):
+        name = type(aggregate).__name__.upper()
+        # DISTINCT on this aggregate only. A nested COUNT(DISTINCT ...) must
+        # not mark the outer SUM as distinct.
+        if isinstance(aggregate.this, exp.Distinct):
+            name += "|DISTINCT"
+        aggregates.append(name)
+    columns = frozenset(
+        column.name.lower() for column in tree.find_all(exp.Column) if column.name
+    )
+    constants = set()
+    for node in tree.find_all(exp.Mul, exp.Div, exp.Add, exp.Sub):
+        for side in (node.this, node.args.get("expression")):
+            if isinstance(side, exp.Literal) and side.is_number:
+                constants.add(_number_text(side.name))
+    predicates = frozenset(
+        _predicate_token(node)
+        for node in tree.find_all(exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.In)
+    )
+    return tuple(sorted(aggregates)), columns, frozenset(constants), predicates
+
+
+def _impure_calls(tree) -> list[str]:
+    """Names of non-reproducible or side-effecting calls in a parsed expression."""
+    found = set()
+    for node in tree.find_all(exp.Func):
+        if isinstance(node, exp.Anonymous):
+            name = (node.name or "").lower()
+        else:
+            name = node.sql_name().lower()
+        if name in _IMPURE_CALLS:
+            found.add(_IMPURE_CALLS[name])
+    return sorted(found)
+
+
+def _iter_metrics(data: dict):
+    """Model metrics and dataset-scoped metrics, labeled the way other checks are."""
+    for dataset in data.get("datasets") or []:
+        if not isinstance(dataset, dict):
+            continue
+        dataset_name = dataset.get("name") or "<unnamed>"
+        for metric in dataset.get("metrics") or []:
+            if isinstance(metric, dict):
+                yield f"{dataset_name}.{metric.get('name') or '<unnamed>'}", metric
+    for metric in data.get("metrics") or []:
+        if isinstance(metric, dict):
+            yield metric.get("name") or "<unnamed>", metric
+
+
+def _axis_detail(parsed: list[tuple[str, tuple]], index: int) -> str:
+    parts = []
+    for dialect, signature in parsed:
+        value = signature[index]
+        shown = list(value) if isinstance(value, tuple) else sorted(value)
+        parts.append(f"{dialect}={shown}")
+    return ", ".join(parts)
+
+
+def validate_metric_agreement(data: dict) -> list[str]:
+    """Warn when one metric's dialects disagree or its SQL is impure.
+
+    Parsing (see ``validate_sql``) accepts ``SUM(amount)`` and ``AVG(amount)``
+    equally. This check compares the structural signature of each dialect
+    sqlglot can parse and warns when the aggregate class, columns, arithmetic
+    constants, or filter predicates differ. It also warns on ``NOW()``,
+    ``RANDOM()``, and ``pg_read_file``, which parse but are not a
+    reproducible read. Nothing is executed: there is no connection, no
+    function call into a warehouse, and no subprocess. Dialects sqlglot
+    cannot parse are skipped. Findings are warnings, so a document whose
+    only defect is drift still passes.
+    """
+    if not isinstance(data, dict) or "datasets" not in data or not SQLGLOT_AVAILABLE:
+        return []
+
+    model_name = data.get("name") or "<unnamed>"
+    warnings = []
+    for label, metric in _iter_metrics(data):
+        expression = metric.get("expression")
+        dialects = expression.get("dialects") if isinstance(expression, dict) else None
+        if not isinstance(dialects, list):
+            continue
+        parsed = []
+        for dialect_expr in dialects:
+            if not isinstance(dialect_expr, dict):
+                continue
+            dialect = dialect_expr.get("dialect") or "ANSI_SQL"
+            expr = dialect_expr.get("expression")
+            if not isinstance(expr, str) or not isinstance(dialect, str):
+                continue
+            tree, error = _parse_sql_expression(
+                expr, dialect, f"Metric '{label}' in model '{model_name}' ({dialect})"
+            )
+            # A syntax error is already reported by validate_sql. An unparsed
+            # dialect is skipped rather than failed.
+            if tree is None or error:
+                continue
+            parsed.append((dialect, _expression_signature(tree)))
+            for call in _impure_calls(tree):
+                warnings.append(ValidationWarning(
+                    f"[Purity] Warning: Metric '{label}' in model '{model_name}' ({dialect}): "
+                    f"expression calls {call}, which is not a reproducible read"
+                ))
+        if len(parsed) < 2:
+            continue
+        axes = (
+            (0, "aggregate functions"),
+            (1, "referenced columns"),
+            (2, "arithmetic constants"),
+            (3, "filter predicates"),
+        )
+        for index, axis in axes:
+            values = [signature[index] for _, signature in parsed]
+            if len(set(values)) > 1:
+                warnings.append(ValidationWarning(
+                    f"[Drift] Warning: Metric '{label}' in model '{model_name}': "
+                    f"{axis} differ across dialects ({_axis_detail(parsed, index)})"
+                ))
+    return warnings
+
+
 def validate_metric_scoping(data: dict) -> list[str]:
     """Validate the field references in each dataset-scoped metric expression.
 
@@ -756,6 +950,7 @@ def validate_document(data, schema: dict) -> list[str]:
         errors.extend(validate_relationship_column_arity(data))
         errors.extend(validate_metric_scoping(data))
         errors.extend(validate_sql(data))
+        errors.extend(validate_metric_agreement(data))
     if not errors and isinstance(data, dict) and "ontology" in data:
         errors.extend(validate_ontology(data))
 
