@@ -17,6 +17,7 @@
 
 import copy
 import json
+import re
 import urllib.request
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
@@ -346,6 +347,49 @@ def test_holistics_aql_is_skipped_rather_than_parsed_as_sql() -> None:
     # MDX, MAQL, THOUGHTSPOT and DAX already do.
     assert "HOLISTICS_AQL" in _VALIDATE.NON_SQL_DIALECTS
     assert "HOLISTICS_AQL" not in _VALIDATE.SQLGLOT_DIALECTS
+
+
+def _registered_dialects() -> set[str]:
+    """The tokens in the table of extensions/dialects.md."""
+    registry = Path(__file__).parents[2] / "extensions" / "dialects.md"
+    return {
+        match.group(1)
+        for line in registry.read_text(encoding="utf-8").splitlines()
+        if (match := re.match(r"^\|\s*`([^`]+)`\s*\|", line))
+    }
+
+
+def test_the_dialect_tables_match_the_registry() -> None:
+    # A dialect registered in extensions/dialects.md has to be listed here as
+    # well, as the sqlglot reader that parses it or as one sqlglot cannot read,
+    # or the validator warns about a token the registry says is fine. A dialect
+    # listed here but not in the registry is a registration someone skipped.
+    known = set(_VALIDATE.SQLGLOT_DIALECTS) | _VALIDATE.NON_SQL_DIALECTS
+
+    assert known == _registered_dialects(), (
+        "extensions/dialects.md and SQLGLOT_DIALECTS / NON_SQL_DIALECTS in"
+        " validate.py do not list the same dialects; register a dialect in both"
+    )
+    assert set(_VALIDATE.SQLGLOT_DIALECTS) & _VALIDATE.NON_SQL_DIALECTS == set()
+
+
+def test_only_the_portable_dialects_use_the_default_reader() -> None:
+    # A None reader is sqlglot's default, which only ANSI_SQL and the portable
+    # language are meant to be parsed with.
+    default_reader = {d for d, reader in _VALIDATE.SQLGLOT_DIALECTS.items() if reader is None}
+
+    assert default_reader == {"ANSI_SQL", _VALIDATE.PORTABLE_DIALECT}
+
+
+def test_every_sqlglot_reader_exists() -> None:
+    # Separate from the registry checks so that those still run without
+    # sqlglot. A misspelled reader passes them and then makes sqlglot raise
+    # ValueError, which _parse_sql_expression does not catch.
+    sqlglot = pytest.importorskip("sqlglot")
+
+    for reader in _VALIDATE.SQLGLOT_DIALECTS.values():
+        if reader is not None:
+            sqlglot.Dialect.get_or_raise(reader)
 
 
 def test_a_holistics_aql_expression_is_not_reported_as_invalid_sql() -> None:

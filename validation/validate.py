@@ -520,9 +520,11 @@ def validate_sql(data: dict) -> list[str]:
 
     model_name = data.get("name", "<unnamed>")
     errors = []
-    # A dialect outside both sets is one this validator cannot parse. It may be a
-    # legitimate entry from extensions/dialects.md, so warn once that its
-    # expressions went unchecked rather than treat it as an error.
+    # A dialect outside both sets is one this validator does not know. The two
+    # sets are pinned to extensions/dialects.md, so this is a token the registry
+    # does not have either; it is still legitimate (dialect is free-form), so
+    # warn once that its expressions went unchecked rather than treat it as an
+    # error.
     unsupported_dialects = Counter()
 
     for expression in iter_expressions(data):
