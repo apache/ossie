@@ -171,8 +171,8 @@
     },
     "DefaultAggregation": {
       "type": "string",
-      "enum": ["sum", "avg", "min", "max", "count", "count_distinct"],
-      "description": "Default aggregation function to apply when this field is used as a measure"
+      "enum": ["sum", "avg", "min", "max", "count", "count_distinct", "none"],
+      "description": "Default aggregation function to apply when this field is used as a measure. `none` means do not aggregate implicitly (e.g. a numeric identifier); omitting the property means no preference."
     },
     "DefaultTimeGranularity": {
       "type": "string",
@@ -194,7 +194,7 @@
         },
         "unit": {
           "type": "string",
-          "description": "Specific unit. For currency use ISO 4217 (e.g., usd, eur). For others use UCUM or descriptive strings."
+          "description": "Specific unit. For currency, an ISO 4217 alphabetic code (e.g., USD, EUR), compared case-insensitively; an omitted unit leaves the currency unspecified. For others use UCUM or descriptive strings."
         },
         "unit_system": {
           "$ref": "#/$defs/UnitSystem"
@@ -219,7 +219,7 @@
         },
         "by_field": {
           "type": "string",
-          "description": "Name of a different field or metric to sort by (e.g., sort month names by month number). A name, not an expression. When omitted, the sort is on the owning field or metric."
+          "description": "Sort key: the name of another field (same dataset) or metric (same scope) whose values order this one's, e.g. month names by month number. A name, not an expression; must resolve, must not name its owner, and must not form a cycle. When omitted, values are ordered by their own value."
         }
       },
       "additionalProperties": false

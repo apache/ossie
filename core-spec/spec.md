@@ -292,7 +292,7 @@ Within a dataset, field names and dataset-scoped metric names share one namespac
 | `semantic_type` | string | No | High-level semantic classification (see [Semantic Type](#semantic-type)) |
 | `measurement` | object | No | Unit and quantity metadata (see [Measurement](#measurement)) |
 | `display_format` | string | No | Excel-compatible, locale-invariant format pattern (e.g., `#,##0.00`, `0.0%`). See [Display Format](#display-format). |
-| `default_aggregation` | string | No | Default aggregation when used as a measure: `sum`, `avg`, `min`, `max`, `count`, `count_distinct` |
+| `default_aggregation` | string | No | Default aggregation when used as a measure: `sum`, `avg`, `min`, `max`, `count`, `count_distinct`, or `none` (do not aggregate implicitly). Omit when there is no preference. |
 | `default_sort` | object | No | Default sorting behavior (see [Default Sort](#default-sort)) |
 | `default_time_granularity` | string | No | Default time bucket for temporal fields: `day`, `week`, `month`, `quarter`, `year` |
 | `glossary_references` | array | No | References to concepts in external glossaries or ontologies (see [Glossary References](#glossary-references)) |
@@ -592,6 +592,8 @@ The following types are used by the extended metadata fields on both fields and 
 
 `default_aggregation`, `default_sort`, and `default_time_granularity` are hints for tools that build queries. An implementation MUST NOT change query results because they are set: it does not supply an aggregate, add an ordering, or bucket a time field on the author's behalf. Likewise, `display_label` and `group_labels` are presentation strings, not names; expressions and queries reference fields and metrics by `name` only.
 
+**`default_aggregation: none` vs. omitted.** Omitting `default_aggregation` means the author states no preference, and a consumer applies its own default. `none` means the field should not be aggregated implicitly, as for a numeric identifier such as `customer_id`: a consumer SHOULD NOT add an aggregate when the field is placed in a query, but MAY still apply one the user explicitly requests.
+
 ### Semantic Type
 
 High-level classification of a field or metric value. Accepts either a **well-known token** or an **absolute URI** pointing to an external type system. Using URIs keeps the field registry-agnostic and allows governed external type systems to carry the long tail of domain-specific types.
@@ -618,6 +620,48 @@ semantic_type: https://spec.edmcouncil.org/fibo/ontology/FBC/ProductsAndServices
 
 A URI value MUST include a scheme (for example `https:` or `urn:`). This keeps the URI form distinguishable from the token form, so a value that is neither a well-known token nor a scheme-qualified URI — such as a misspelled `monetory` — is rejected rather than silently accepted as an opaque type reference.
 
+**Choosing a token or a URI.** Use the broad token when it is enough to interpret the values. Use a URI when consumers need to tell apart values that the token conflates. `geographic` alone does not say whether `CA` is a country (Canada) or a subdivision (California), or whether a number is a latitude or a longitude; both are angular coordinates, but they are not interchangeable.
+
+**Example — distinguishing geographic roles:**
+
+```yaml
+fields:
+  - name: country_code
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: country_code
+    semantic_type: https://schema.org/Country
+    description: ISO 3166-1 alpha-2 country code
+  - name: state_code
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: state_code
+    semantic_type: https://schema.org/State
+    description: ISO 3166-2 subdivision code
+  - name: lat
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: lat
+    semantic_type: https://schema.org/latitude
+    measurement:
+      quantity_kind: angle
+      unit: deg
+  - name: lng
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: lng
+    semantic_type: https://schema.org/longitude
+    measurement:
+      quantity_kind: angle
+      unit: deg
+```
+
+A converter whose source carries a finer category with no agreed portable URI SHOULD keep `geographic` (or the closest token) and preserve the original category under `custom_extensions`, rather than dropping it.
+
 ### Measurement
 
 Describes what a numeric value represents. Enables unit-aware reasoning and formatting.
@@ -625,38 +669,57 @@ Describes what a numeric value represents. Enables unit-aware reasoning and form
 | Field | Type | Description |
 |-------|------|-------------|
 | `quantity_kind` | string | The kind of quantity (e.g., `currency`, `length`, `weight`, `temperature`, `percentage`, `duration`) |
-| `unit` | string | Specific unit. For currency, use ISO 4217 codes (e.g., `usd`, `eur`, `gbp`). For others, use UCUM or descriptive strings (e.g., `meters`, `kg`, `celsius`) |
+| `unit` | string | Specific unit. For currency, an [ISO 4217](https://www.iso.org/iso-4217-currency-codes.html) alphabetic code (e.g., `USD`, `EUR`, `GBP`). For others, use UCUM or descriptive strings (e.g., `m`, `kg`, `Cel`) |
 | `unit_system` | string | Unit system: `si`, `imperial`, `custom` |
 
 All three properties are optional, but a `measurement` object MUST contain at least one of them.
 
-When `quantity_kind` is `currency`, `unit` is the authoritative currency of the value. Consumers SHOULD derive the currency symbol and its placement from `unit` and the viewer's locale rather than from a symbol written into `display_format` (see [Display Format](#display-format)).
+**Currency.** When `quantity_kind` is `currency`, `unit` identifies the currency of the value and is authoritative:
+
+- **Identity** follows [ISO 4217](https://www.iso.org/iso-4217-currency-codes.html). Consumers compare currency codes case-insensitively; authors SHOULD write them in uppercase, the form ISO 4217 uses. (Units other than currencies are not case-folded: UCUM codes are case-sensitive.)
+- **Presentation** follows [Unicode CLDR](https://unicode.org/reports/tr35/tr35-numbers.html#Currencies). Consumers SHOULD derive the currency symbol and its placement from `unit` and the viewer's locale, rather than from a symbol written into `display_format` (see [Display Format](#display-format)). Ossie does not define its own symbol mapping.
+- **An omitted `unit` leaves the currency unspecified.** A consumer MUST NOT infer a currency from a symbol in `display_format` or from the viewer's locale: `$` alone does not distinguish USD, AUD and CAD.
 
 **Example:**
 
 ```yaml
 measurement:
   quantity_kind: currency
-  unit: usd
+  unit: USD
   unit_system: custom
 ```
 
 ### Default Sort
 
-Defines default sorting behavior for a field or metric.
+Defines default sorting behavior for a field or metric. It carries two distinct things:
+
+- **Default result ordering** — `direction` and `nulls`: how a result is ordered when it is sorted by this field or metric and the user has not said otherwise (for example, revenue descending).
+- **Sort key** — `by_field`: the values of this field or metric are ordered by the values of another one (for example, `month_name` ordered by `month_number`, so that January precedes February rather than April).
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `direction` | string | Sort direction: `asc`, `desc` |
 | `nulls` | string | Null positioning: `first`, `last` |
-| `by_field` | string | Name of a different field or metric to sort by (e.g., sort month names by month number). A name, not an expression. When omitted, the sort is on the owning field or metric. |
+| `by_field` | string | Name of the sort key. A name, not an expression. When omitted, values are ordered by their own value. |
+
+**Sort key rules:**
+
+- **Scope.** On a field, `by_field` names another field of the same dataset. On a metric, it names another metric in the same scope: a model-scoped metric names a model-scoped metric, and a dataset-scoped metric names a metric of the same dataset.
+- **Resolution.** A `by_field` that names nothing in scope, or that names its owner, is invalid. Sort keys MUST NOT form a cycle (`a` by `b`, `b` by `a`).
+- **One value per key.** Each value of the owning field MUST correspond to exactly one value of the sort key; `month_name` works with `month_number` because each month name has one number. This is a property of the data and is not checked by validation. If it does not hold, the ordering is undefined.
+- `direction` and `nulls` apply to the sort key's values when `by_field` is set.
 
 **Example:**
 
 ```yaml
-default_sort:
-  direction: desc
-  nulls: last
+- name: month_name
+  expression:
+    dialects:
+      - dialect: ANSI_SQL
+        expression: month_name
+  default_sort:
+    by_field: month_number
+    direction: asc
 ```
 
 ### Glossary References
@@ -702,9 +765,25 @@ glossary_references:
 
 ### Display Format
 
-The `display_format` string follows Excel-compatible custom number format conventions. Consumers MAY support a subset, but interoperability is improved when adhering to common patterns.
+The `display_format` string is a number format pattern in the grammar of SpreadsheetML number formats ([ECMA-376](https://ecma-international.org/publications-and-standards/standards/ecma-376/) Part 1, `numFmt`), as implemented by Office and described in [MS-OI29500](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/17d11129-219b-4e2c-88db-45844d21e528). Ossie adopts the **core subset** below. Where that reference describes locale-dependent behavior, the locale-invariant reading stated in this section applies instead.
 
 The value is a format pattern. It is not an expression, and named presets such as `currency` or `percent` are not part of the vocabulary.
+
+**Core subset.** Consumers SHOULD support:
+
+| Element | Meaning |
+|---------|---------|
+| `0`, `#`, `?` | Digit placeholders: `0` always shows a digit, `#` only significant digits, `?` pads with a space |
+| `.` and `,` | Decimal and grouping separator placeholders (see below). A trailing `,` after the digits scales by 1,000 (`#,##0,` shows `12,345,678` as `12,346`) |
+| `%` | Multiplies by 100 and shows a percent sign (`0.0%` shows `0.123` as `12.3%`) |
+| `E+`, `E-` | Scientific notation |
+| `;` | Section separator: `positive;negative;zero` |
+| `"text"` and `\c` | Literal text, quoted, or a single escaped character |
+| `yyyy`, `yy`, `mm`, `m`, `dd`, `d`, `hh`, `h`, `ss`, `AM/PM` | Date and time parts (`m`/`mm` means minutes when next to `h` or `s`) |
+
+Outside the core: bracketed codes (colors such as `[Red]`, conditions such as `[>=100]`, locale and currency tags such as `[$€-x]`, elapsed time such as `[h]`), and padding and fill (`_`, `*`).
+
+**Unsupported patterns are preserved, not approximated.** A consumer that cannot render a pattern SHOULD fall back to its own default formatting for that value and MUST NOT rewrite the stored pattern. A converter whose source format has no core equivalent SHOULD omit `display_format` and preserve the native format under `custom_extensions` rather than writing an approximation, so that a round trip back to the source is lossless.
 
 **The pattern is locale-invariant.** In a pattern, `.` denotes the decimal separator and `,` the grouping separator; they are placeholders, not literal characters. Consumers render them with the viewer's locale, so one pattern serves every locale: `#,##0.00` displays as `1,234.56` for `en-AU` and `1 234,56` for `sv-SE`. This is the convention of LDML/ICU number patterns, and how Excel number formats behave across regional settings. A separator meant literally is quoted or escaped, as in Excel.
 
@@ -717,8 +796,10 @@ The value is a format pattern. It is not an expression, and named presets such a
 | `$#,##0.00` | Literal `$`, 2 decimals (renders `$` in every locale) | $1,234.56 |
 | `#,##0.00` | 2 decimals; pair with `measurement.unit` for currency | 1,234.56 |
 | `#,##0` | Integer with grouping | 12,345 |
-| `0.0%` | Percentage with 1 decimal | 12.3% |
-| `#,##0.00;(#,##0.00)` | Positive/negative | 1,234.56 or (1,234.56) |
+| `#,##0.00;(#,##0.00)` | Positive/negative sections | 1,234.56 or (1,234.56) |
+| `#,##0;-#,##0;"—"` | Positive, negative and zero sections, with a quoted literal for zero | 1,234 or -1,234 or — |
+| `0.0%` | Percent: value multiplied by 100 | 0.123 → 12.3% |
+| `#,##0,"K"` | Thousands scaling with a quoted suffix | 12,345 → 12K |
 | `0.00E+00` | Scientific notation | 1.23E+04 |
 | `yyyy-mm-dd` | Date format | 2024-01-15 |
 
@@ -728,7 +809,7 @@ Example outputs are shown for `en-US`.
 
 The string properties of a field or metric (`display_label`, `description`, `ai_context`, `group_labels`) are written in a single language, the language the model is authored in. This version of the specification does not define localized or audience-specific variants of them. That is proposed separately as presentation overlays.
 
-Rendering a value for a viewer's locale changes how it is written, not what it is. A consumer MUST NOT present a value in a currency other than its `measurement.unit`, for example by showing `usd` amounts with a `€` symbol. An amount in another currency is a different value and is defined as a separate metric.
+Rendering a value for a viewer's locale changes how it is written, not what it is. A consumer MUST NOT present a value in a currency other than its `measurement.unit`, for example by showing `USD` amounts with a `€` symbol. An amount in another currency is a different value and is defined as a separate metric.
 
 ---
 
@@ -746,7 +827,7 @@ Rendering a value for a viewer's locale changes how it is written, not what it i
   semantic_type: monetary
   measurement:
     quantity_kind: currency
-    unit: usd
+    unit: USD
   display_format: "#,##0.00"
   default_aggregation: sum
   default_sort:
@@ -773,7 +854,7 @@ Rendering a value for a viewer's locale changes how it is written, not what it i
   semantic_type: monetary
   measurement:
     quantity_kind: currency
-    unit: usd
+    unit: USD
   display_format: "#,##0.00"
   desired_direction: higher_is_better
   default_sort:

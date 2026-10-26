@@ -277,9 +277,10 @@ fields:
       # Examples: currency, length, weight, temperature, percentage, duration
       quantity_kind: string
       # Optional: The specific unit of measurement
-      # For currency, use ISO 4217 codes (e.g., usd, eur, gbp); this is the
-      # authoritative currency, and consumers derive the symbol from it
-      # For other units, use UCUM or descriptive strings (e.g., meters, kg, celsius)
+      # For currency, an ISO 4217 code (e.g., USD, EUR, GBP), compared
+      # case-insensitively; this is the authoritative currency, and consumers
+      # derive the symbol from it. An omitted unit leaves the currency unspecified
+      # For other units, use UCUM or descriptive strings (e.g., m, kg, Cel)
       unit: string
       # Optional: The unit system
       # Values: si, imperial, custom
@@ -287,18 +288,20 @@ fields:
       # If measurement is present, it must contain at least one of the above
 
     # Optional: Display format string for presentation
-    # Uses Excel-compatible custom number format conventions
+    # SpreadsheetML (ECMA-376) number format grammar, core subset (see spec.md)
     # Examples: "#,##0.00", "0.0%", "#,##0", "yyyy-mm-dd"
     # A format pattern, not an expression or a named preset (e.g. "currency")
     # Locale-invariant: "." and "," are the decimal and grouping separator
     # placeholders, rendered in the viewer's locale. A literal currency symbol
     # (e.g. "$#,##0.00") renders as written; prefer measurement.unit instead
-    # Consumers MAY fall back to default formatting if unsupported
+    # Consumers MAY fall back to default formatting if unsupported, and MUST NOT
+    # rewrite a pattern they cannot render
     display_format: string
 
     # Optional: Default aggregation behavior when this field is used as a measure
     # Removes ambiguity in query generation for consumers
-    # Values: sum, avg, min, max, count, count_distinct
+    # Values: sum, avg, min, max, count, count_distinct, none
+    # none: do not aggregate implicitly (e.g. a numeric ID); omit for no preference
     default_aggregation: string
 
     # Optional: Default sorting behavior for this field
@@ -309,8 +312,9 @@ fields:
       # Optional: Null handling
       # Values: first, last
       nulls: string
-      # Optional: Sort by a different field (e.g., sort month names by month number)
-      # A name, not an expression. When omitted, the sort is on this field.
+      # Optional: Sort key: another field of the same dataset whose values order
+      # this field's (e.g., month names by month number). A name, not an
+      # expression; must resolve, must not name this field, no cycles.
       by_field: string
 
     # Optional: Default time granularity for temporal fields
@@ -412,7 +416,7 @@ metrics:
     default_sort:
       direction: string  # asc, desc
       nulls: string      # first, last
-      by_field: string   # Optional: name (not expression) of another field or metric to sort by
+      by_field: string   # Optional: sort key, another metric in the same scope (name, not expression)
 
     # Optional: References to external glossaries, ontologies, or standards
     # Uses SKOS-based predicates as a baseline but the predicate vocabulary is open

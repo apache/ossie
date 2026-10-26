@@ -849,6 +849,17 @@ def test_semantic_type_rejects_what_is_neither_token_nor_uri(make_expression, va
         OssieField(name="f", expression=make_expression("f"), semantic_type=value)
 
 
+def test_default_aggregation_none_is_distinct_from_unset(make_expression) -> None:
+    """`none` says "do not aggregate implicitly"; omitting the property states no preference."""
+    explicit = OssieField(name="customer_id", expression=make_expression("customer_id"), default_aggregation="none")
+    unset = OssieField(name="customer_id", expression=make_expression("customer_id"))
+
+    assert explicit.default_aggregation is OssieDefaultAggregation.NONE
+    assert unset.default_aggregation is None
+    assert explicit.model_dump(mode="json", exclude_none=True)["default_aggregation"] == "none"
+    assert "default_aggregation" not in unset.model_dump(mode="json", exclude_none=True)
+
+
 def test_measurement_requires_a_property() -> None:
     """The schema sets `minProperties: 1` on `Measurement`."""
     with pytest.raises(ValidationError):

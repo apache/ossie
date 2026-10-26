@@ -214,6 +214,8 @@ class OssieDefaultAggregation(str, Enum):
     MAX = "max"
     COUNT = "count"
     COUNT_DISTINCT = "count_distinct"
+    # Do not aggregate implicitly; distinct from leaving the property unset.
+    NONE = "none"
 
 
 class OssieTimeGranularity(str, Enum):
