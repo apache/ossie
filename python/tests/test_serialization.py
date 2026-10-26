@@ -284,7 +284,10 @@ def _missing_properties(model: type[BaseModel], sample: object, where: str) -> l
 
 def _fully_populated_document() -> dict:
     """A document that sets every optional property, so each can be nulled in turn."""
-    expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}]}
+    expression = {
+        "sql": "amount",
+        "dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}],
+    }
     ai_context = {"instructions": "i", "synonyms": ["s"], "examples": ["e"]}
     extensions = [{"vendor_name": "COMMON", "data": "{}"}]
     measurement = {"quantity_kind": "currency", "unit": "usd", "unit_system": "custom"}
@@ -328,6 +331,16 @@ def _fully_populated_document() -> dict:
                         "glossary_references": [dict(glossary_reference)],
                         "hidden": False,
                         "group_labels": ["g"],
+                        "custom_extensions": list(extensions),
+                    }
+                ],
+                "metrics": [
+                    {
+                        "name": "total_amount",
+                        "expression": dict(expression),
+                        "description": "d",
+                        "datatype": "Decimal",
+                        "ai_context": dict(ai_context),
                         "custom_extensions": list(extensions),
                     }
                 ],

@@ -51,7 +51,7 @@ interface for BI and AI tools that generate their own SQL and want its full powe
 counterpart, **Layer 3, the Wide Table Interface**, flattens the model into a single object that a
 consumer queries without writing joins. That is simpler but more restricted, and it is proposed
 separately in [apache/ossie#246](https://github.com/apache/ossie/pull/246). **Layer 1**, the
-[Common Expression Language](https://github.com/apache/ossie/blob/main/core-spec/expression_language.md),
+[Common Expression Language](expression_language.md),
 is the portable SQL expression subset the higher layers build on. A higher ontology layer
 (Layer 4) sits above these and is out of scope here.
 

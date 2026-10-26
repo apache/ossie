@@ -34,7 +34,6 @@ from pathlib import Path
 import yaml
 from validate import UniqueKeyLoader
 
-
 # chmod(0o000) makes a file unreadable only under POSIX permissions, and not
 # for root, which bypasses them. Elsewhere (notably Windows) chmod only toggles
 # the read-only flag and the file stays readable.
@@ -112,11 +111,46 @@ class UniqueKeyLoaderTest(unittest.TestCase):
             "source",
         )
 
-    def test_rejects_repeated_merge_key(self):
-        self.assert_duplicate_key(
-            "dataset:\n  <<: &first\n    source: staging.orders\n  <<: &second\n    name: orders\n",
-            "<<",
+    def test_allows_repeated_merge_keys(self):
+        content = (
+            "first: &first {source: staging.orders, name: orders}\n"
+            "second: &second {source: production.orders}\n"
+            "dataset: &dataset {<<: *first, <<: *second}\n"
+            "reused: *dataset\n"
         )
+        loaded = self.load(content)
+
+        self.assertEqual(loaded, yaml.safe_load(content))
+        self.assertEqual(loaded["dataset"], {"name": "orders", "source": "production.orders"})
+        self.assertIs(loaded["dataset"], loaded["reused"])
+
+    def test_preserves_merge_precedence(self):
+        for mapping, expected in (
+            ("{<<: {source: first}, <<: {source: second}}", "second"),
+            ("{<<: [{source: first}, {source: second}]}", "first"),
+            ("{source: local, <<: {source: first}, <<: {source: second}}", "local"),
+            ("{<<: {source: first}, source: local, <<: {source: second}}", "local"),
+            ("{<<: {source: first}, <<: {source: second}, source: local}", "local"),
+        ):
+            with self.subTest(mapping=mapping):
+                self.assertEqual(self.load(mapping), {"source": expected})
+
+    def test_rejects_explicit_duplicates_with_repeated_merges(self):
+        for content in (
+            "{<<: {source: a, source: b}, <<: {source: last}}",
+            "{<<: {source: first}, <<: {source: a, source: b}}",
+            "{source: first, <<: {}, <<: {}, source: last}",
+            "{<<: [{source: a, source: b}], <<: {source: last}}",
+        ):
+            with self.subTest(content=content):
+                self.assert_duplicate_key(content, "source")
+
+    def test_rejects_duplicate_literal_merge_keys(self):
+        self.assert_duplicate_key('{<<: {}, "<<": first, !!str <<: last}', "<<")
+
+    def test_preserves_value_keys(self):
+        self.assertEqual(self.load('{<<: {=: first}, =: second}'), {"=": "second"})
+        self.assert_duplicate_key('{=: first, "=": second}', "=")
 
     def test_allows_same_key_in_separate_mappings(self):
         loaded = self.load(
@@ -366,6 +400,27 @@ class ValidatorIntegrationTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("Error: Invalid YAML", result.stdout)
         self.assertIn("found duplicate key 'name'", result.stdout)
+
+    def test_repeated_merge_keys_pass_validation(self):
+        result = self.run_validator(
+            "version: 0.2.0.dev0\nname: sales\ndatasets:\n"
+            "  - <<: {name: orders, source: staging.orders}\n"
+            "    <<: {source: production.orders}\n"
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Validation PASSED", result.stdout)
+
+    def test_duplicate_in_repeated_merge_source_exits_nonzero(self):
+        result = self.run_validator(
+            "version: 0.2.0.dev0\nname: sales\ndatasets:\n"
+            "  - <<: {name: orders, source: staging.orders}\n"
+            "    <<: {source: first, source: second}\n"
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("found duplicate key 'source'", result.stdout)
+        self.assertIn("model.yaml", result.stdout)
 
     def run_validator_args(self, *args) -> subprocess.CompletedProcess[str]:
         """Run validate.py with arbitrary arguments, for bad-path cases."""

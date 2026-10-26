@@ -37,7 +37,8 @@
 4. [Relationships](#relationships)
 5. [Fields](#fields)
 6. [Metrics](#metrics)
-7. [Examples](#examples)
+7. [Name Resolution](#name-resolution)
+8. [Examples](#examples)
 
 ---
 
@@ -47,29 +48,17 @@ Standard enumeration values used throughout the specification.
 
 ### Dialects
 
-Dialects in which metric and field expressions can be declared.
+The `dialect` field is a free-form string, allowing any expression language to be used
+without requiring changes to the core specification.
 
-| Dialect | Description |
-|---------|-------------|
-| `ANSI_SQL` | Standard SQL dialect |
-| `SNOWFLAKE` | Snowflake SQL |
-| `MDX` | Multi-Dimensional Expressions |
-| `TABLEAU` | Tableau calculations |
-| `DATABRICKS` | Databricks SQL |
-| `MAQL` | GoodData MAQL (Multi-Dimensional Analytical Query Language) |
-| `BIGQUERY` | Google BigQuery (GoogleSQL) |
-| `SIGMA` | Sigma Computing's spreadsheet-style formula language |
-| `THOUGHTSPOT` | ThoughtSpot formula language |
-| `DAX` | Data Analysis Expressions (Power BI / Analysis Services) |
-| `HOLISTICS_AQL` | Holistics AQL (Analytical Query Language) |
-| `OSSIE_SQL_2026` | Ossie's portable SQL expression language, defined in `expression_language.md` |
-
-`OSSIE_SQL_2026` is the only dialect whose semantics this specification defines. The other values
-identify vendor or third-party expression languages. Ossie treats expressions in those dialects as
-opaque, and implementations MAY ignore them (see
-[Dialect Extensions](expression_language.md#dialect-extensions)). Registering a dialect makes it
-valid for declaring a model; it does not mean Ossie supports querying in that dialect (see
+`OSSIE_SQL_2026` is the only dialect whose semantics this specification defines (Ossie's
+portable SQL expression language, see `expression_language.md`). All other values identify
+vendor or third-party expression languages, which Ossie treats as opaque and implementations
+MAY ignore. Registering a dialect does not mean Ossie supports querying in it (see
 [Model Declaration vs. Querying](expression_language.md#model-declaration-vs-querying)).
+
+For a non-normative catalog of dialects well-known tools use, see
+[extensions/dialects.md](../extensions/dialects.md).
 
 ### Data types
 
@@ -109,7 +98,7 @@ not define a bundle format or cross-model references.
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., custom instructions) |
 | `datasets` | array | Yes | Collection of logical datasets (fact and dimension tables) |
 | `relationships` | array | No | Defines how logical datasets are connected |
-| `metrics` | array | No | Quantifiable measures defined as aggregate expressions on fields from logical datasets |
+| `metrics` | array | No | Model-scoped metrics: for aggregations that span datasets or need to be aware of cross-dataset concepts. See [Metric Scoping](#metric-scoping). |
 | `custom_extensions` | array | No | Vendor-specific attributes for extensibility |
 
 ### Example
@@ -173,11 +162,12 @@ Logical datasets represent business entities or concepts (fact and dimension tab
 |-------|------|----------|-------------|
 | `name` | string | Yes | Unique identifier for the dataset |
 | `source` | string | Yes | Reference to underlying physical table/view (e.g., `database.schema.table`) or query |
-| `primary_key` | array | No | Primary key columns that uniquely identify rows (single or composite) |
-| `unique_keys` | array of arrays | No | Array of unique key definitions (each can be single or composite) |
+| `primary_key` | array | No | Dataset fields that uniquely identify rows |
+| `unique_keys` | array of arrays | No | Array of unique key definitions, each a list of dataset fields |
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools (e.g., synonyms, common terms) |
 | `fields` | array | No | Row-level attributes for grouping, filtering, and metric expressions |
+| `metrics` | array | No | Dataset-scoped metrics that semantically belong to this dataset; expressions reference its declared fields by single-part name and resolve entirely within it. See [Metric Scoping](#metric-scoping). |
 | `custom_extensions` | array | No | Vendor-specific attributes |
 
 ### Primary Key Examples
@@ -214,7 +204,17 @@ datasets:
       synonyms:
         - "purchases"
         - "sales"
-    fields: []
+    fields:
+      - name: order_id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: order_id
+      - name: order_number
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: order_number
     custom_extensions:
       - vendor_name: DBT
         data: '{"materialized": "table"}'
@@ -233,17 +233,18 @@ Relationships define how logical datasets are connected through foreign key cons
 | `name` | string | Yes | Unique identifier for the relationship |
 | `from` | string | Yes | The logical dataset on the many side of the relationship |
 | `to` | string | Yes | The logical dataset on the one side of the relationship |
-| `from_columns` | array | Yes | Array of column names in the "from" dataset (foreign key columns) |
-| `to_columns` | array | Yes | Array of column names in the "to" dataset (primary or unique key columns) |
+| `from_columns` | array | Yes | Array of field names in the "from" dataset (foreign key fields) |
+| `to_columns` | array | Yes | Array of field names in the "to" dataset (primary or unique key fields) |
 | `ai_context` | string/object | No | Additional context for AI tools |
 | `custom_extensions` | array | No | Vendor-specific attributes |
 
 ### Important Notes
 
-- The order of columns in `from_columns` must correspond to the order in `to_columns`
-- Both arrays must have the same number of columns
-- For simple relationships, use a single column: `[column1]`
-- For composite relationships, use multiple columns: `[column1, column2]`
+- Despite their names, `from_columns` and `to_columns` contain names of fields declared in the `from` and `to` datasets, not columns of those datasets' sources. See [Name Resolution](#name-resolution).
+- The order of fields in `from_columns` must correspond to the order in `to_columns`
+- Both arrays must have the same number of fields
+- For simple relationships, use a single field: `[field1]`
+- For composite relationships, use multiple fields: `[field1, field2]`
 
 ### Examples
 
@@ -273,6 +274,8 @@ Relationships define how logical datasets are connected through foreign key cons
 ## Fields
 
 Fields represent row-level attributes that can be used for grouping, filtering, and in metric expressions. They can be simple column references or computed expressions.
+
+Within a dataset, field names and dataset-scoped metric names share one namespace, so a field name MUST NOT collide with a dataset-scoped metric name of the same dataset (see [Metric Scoping](#metric-scoping)).
 
 ### Schema
 
@@ -305,8 +308,9 @@ The expression object supports multiple SQL dialects for cross-platform compatib
 
 ```yaml
 expression:
+  sql: "customer_id"  # Primary, portable OSSIE_SQL_2026 form
   dialects:
-    - dialect: ANSI_SQL  # Must be one of the dialects enum values
+    - dialect: ANSI_SQL  # Free-form string; OSSIE_SQL_2026 is the only dialect the spec defines
       expression: "customer_id"  # Scalar SQL expression
 ```
 
@@ -314,6 +318,10 @@ expression:
 
 - Use scalar SQL expressions (no aggregations)
 - Can be simple column references (e.g., `customer_id`) or computed expressions (e.g., `first_name || ' ' || last_name`)
+- The optional top-level `sql` is the primary, portable form, written in OSSIE_SQL_2026
+- At least one of the top-level `sql` or `dialects` MUST be present; either MAY stand alone
+- If both the top-level `sql` and an `OSSIE_SQL_2026` entry in `dialects` are present, the top-level `sql` is authoritative and consumers MUST use it as the OSSIE_SQL_2026 form
+- Identifiers refer to columns of the dataset's `source`, not to other fields. See [Name Resolution](#name-resolution).
 - Multiple dialect versions can be provided for the same field
 
 ### Dimension Object
@@ -416,7 +424,14 @@ Common combinations:
 
 ## Metrics
 
-Quantitative measures defined on business data, representing key calculations like sums, averages, ratios, etc. Metrics are defined at the semantic model level and can  span multiple datasets.
+Quantitative measures defined on business data, representing key calculations like sums, averages, ratios, etc.
+
+There are two types of metrics:
+
+- **Dataset-scoped** (`datasets[].metrics`): aggregations that belong to a single dataset. The expression references that dataset's declared fields by single-part name and resolves entirely within it.
+- **Model-scoped** (the model-root `metrics`): aggregations that span datasets across the model. The expression references fields by multi-part `dataset.field` name and may combine fields across datasets.
+
+Metric expressions refer to dataset fields. They cannot refer to columns of a dataset's `source` or to other metrics. See [Metric Scoping](#metric-scoping) for the rules governing each and [Name Resolution](#name-resolution) for how names resolve.
 
 ### Schema
 
@@ -444,10 +459,13 @@ The expression object supports multiple dialects
 
 ```yaml
 expression:
+  sql: "SUM(order.sales) / COUNT(DISTINCT order.customer_id)"  # Primary, portable OSSIE_SQL_2026 form
   dialects:
   - dialect: ANSI_SQL  # Default
     expression: "SUM(order.sales) / COUNT(DISTINCT order.customer_id)"
 ```
+
+At least one of the top-level `sql` or `dialects` MUST be present; either MAY stand alone. When both a top-level `sql` and an `OSSIE_SQL_2026` entry in `dialects` are present, the top-level `sql` is authoritative.
 
 ### Examples
 
@@ -480,6 +498,90 @@ expression:
   ai_context:
     synonyms:
       - "Order Average by customer"
+```
+
+### Metric Scoping
+
+A metric may be defined on an individual dataset or at the model level. Both placements use the identical metric structure; they differ in what the expression may reference and in what the metric is for:
+
+- A **dataset-scoped** metric (`datasets[].metrics`) belongs to a single dataset: it aggregates that dataset's own fields, at the dataset's row level, so the dataset carries its own measures and stays queryable on its own.
+- A **model-scoped** metric (the model-root `metrics`) spans datasets across the model: it combines fields from more than one dataset.
+
+| | Dataset-scoped (`datasets[].metrics`) | Model-scoped (model-root `metrics`) |
+|---|---|---|
+| Expression references | This dataset's declared fields, single-part: `field` | Fields of any dataset, multi-part: `dataset.field` |
+| Spans datasets | No | Yes, via relationships |
+| Referenced as | `dataset_name.metric_name` | `metric_name` |
+
+**Rules**
+
+1. A dataset-scoped metric's expression MUST reference only the declared fields of the dataset that declares it, written by single-part (unqualified) name: `SUM(net_amount)`. It MUST NOT reference a field of another dataset; a metric that must do so is model-scoped and MUST be declared in the model-root `metrics`.
+2. Within a dataset, declared field names and dataset-scoped metric names share one namespace and MUST all be unique across the two.
+3. A model-scoped metric's expression references fields by multi-part name, `dataset.field`, and MAY combine fields from more than one dataset.
+
+> Referencing a column of a dataset's `source` that is not a declared field is a future extension. Today a dataset-scoped expression reaches only the dataset's declared fields.
+
+**Example: dataset-scoped metrics**
+
+```yaml
+datasets:
+  - name: orders
+    source: sales.public.orders
+    primary_key: [order_id]
+    fields:
+      - name: order_id
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: order_id
+        description: Order identifier
+      - name: net_amount
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: amount - discount
+        description: Order amount after discount
+
+    metrics:
+      - name: total_net_amount
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: SUM(net_amount)
+        description: Total order amount after discount
+        datatype: Decimal
+
+      - name: order_count
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: COUNT(order_id)
+        description: Number of orders
+        datatype: Integer
+```
+
+Referenced from a consumer as `orders.total_net_amount` and `orders.order_count`.
+
+**Example: invalid dataset-scoped metric**
+
+```yaml
+datasets:
+  - name: orders
+    source: sales.public.orders
+    fields:
+      - name: net_amount
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: amount - discount
+    metrics:
+      # INVALID (rule 1): references the customers dataset, so this metric is
+      # model-scoped and belongs in the model-root metrics
+      - name: revenue_per_customer
+        expression:
+          dialects:
+            - dialect: OSSIE_SQL_2026
+              expression: SUM(net_amount) / COUNT(DISTINCT customers.id)
 ```
 
 ---
@@ -732,70 +834,119 @@ custom_extensions:
 The `vendor_name` field is a free-form string, allowing any vendor or organization to
 define custom extensions without requiring changes to the core specification.
 
-The following are well-known examples:
+For a non-normative catalog of `vendor_name` values well-known tools use, see
+[extensions/vendors.md](../extensions/vendors.md).
 
-| Vendor | Description |
-|--------|-------------|
-| `COMMON` | Common/standard extensions |
-| `SNOWFLAKE` | Snowflake-specific attributes |
-| `SALESFORCE` | Salesforce/Tableau-specific attributes |
-| `DBT` | dbt-specific attributes |
-| `DATABRICKS` | Databricks-specific attributes |
-| `GOODDATA` | GoodData-specific attributes |
-| `HONEYDEW` | Honeydew-specific attributes |
-| `WISDOM` | WisdomAI-specific attributes |
-| `POWER_BI` | Microsoft Power BI-specific attributes |
-| `SIGMA` | Sigma Computing-specific attributes |
-| `THOUGHTSPOT` | ThoughtSpot-specific attributes |
-| `HEX` | Hex-specific attributes |
-
-### Examples
-
-**Snowflake Extension:**
+### Example
 
 ```yaml
-- vendor_name: SNOWFLAKE
-  data: '{
-    "warehouse": "ANALYTICS_WH",
-    "database": "PROD",
-    "schema": "PUBLIC"
-  }'
+- vendor_name: DB_VENDOR
+  data: '{"some_setting": "value", "nested": {"option": true}}'
 ```
 
-**Salesforce Extension:**
+The `data` payload is an opaque string that Ossie carries but does not
+interpret. For vendor-specific extension examples and the known-vendor catalog,
+see [extensions/vendors.md](../extensions/vendors.md).
+
+---
+
+## Name Resolution
+
+An Ossie model has three levels of names:
+
+1. **Source columns.** The columns of the table, view, or query named by a
+   dataset's `source`. The Ossie document does not declare them.
+2. **Dataset fields.** The fields declared in a dataset's `fields`. Each field
+   is defined in terms of that dataset's source columns, just as a view's
+   `SELECT` list can only reference columns from its `FROM` clause. A dataset's
+   fields are its public interface.
+3. **Metrics.** Dataset-scoped metrics (`datasets[].metrics`) and model-scoped
+   metrics (the model-root `metrics`), defined in terms of dataset fields.
+
+Metrics and relationships do not reach through a dataset to its source
+columns, so a dataset that declares no fields exposes nothing to them.
+
+| Where the name appears | What it refers to |
+|------------------------|-------------------|
+| Field `expression` | A column of the same dataset's `source` |
+| `datasets[].primary_key`, `datasets[].unique_keys` | A field of the same dataset |
+| `relationships[].from_columns` | A field of the `from` dataset |
+| `relationships[].to_columns` | A field of the `to` dataset |
+| Dataset-scoped metric `expression` (`datasets[].metrics`) | A field of the same dataset, unqualified |
+| Model-scoped metric `expression` (model-root `metrics`) | A field of the named dataset, qualified as `dataset.field` |
+
+For example, a dataset can expose the source column `o_totalprice` as the
+field `total_amount`, and derive `total_usd` from `total_cents`:
 
 ```yaml
-- vendor_name: SALESFORCE
-  data: '{
-    "tableau_workbook_id": "sales_dashboard",
-    "einstein_enabled": true,
-    "crm_sync": {
-      "enabled": true,
-      "sync_frequency": "daily"
-    }
-  }'
+datasets:
+  - name: orders
+    source: sales.public.orders   # columns: o_orderkey, o_custkey, o_totalprice, total_cents
+    primary_key: [order_id]       # field name, not o_orderkey
+    fields:
+      - name: order_id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: o_orderkey      # source column
+      - name: customer_id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: o_custkey
+      - name: total_amount
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: o_totalprice
+      - name: total_usd
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: total_cents / 100.0
+
+relationships:
+  - name: orders_to_customers
+    from: orders
+    to: customers
+    from_columns: [customer_id]   # field of orders, not o_custkey
+    to_columns: [id]              # field of customers (dataset not shown)
+
+metrics:
+  - name: total_revenue
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(orders.total_usd)   # field, not a source column
 ```
 
-**DBT Extension:**
+In this model, these references are invalid:
 
-```yaml
-- vendor_name: DBT
-  data: '{
-    "project_name": "analytics",
-    "materialized": "table",
-    "tags": ["daily", "core"]
-  }'
-```
+- `SUM(orders.o_totalprice)` and `from_columns: [o_custkey]`, because
+  `o_totalprice` and `o_custkey` are source columns, not fields of `orders`.
+- `SUM(total_usd)` in a model-scoped metric, because model-scoped metric
+  expressions must qualify field names with the dataset name, even when only
+  one dataset has a field with that name.
+- `SUM(o_totalprice)` in a metric declared on `orders`, because dataset-scoped
+  metrics reach only the dataset's declared fields, not its source columns.
 
-**Databricks Extension:**
+If a field and a source column share a name (as in a field `amount` defined as
+`amount`), the name refers to the source column inside that dataset's field
+expressions and to the field everywhere else.
 
-```yaml
-- vendor_name: Databricks
-  data: '{
-    "default_catalog": "finance",
-    "default_schema": "gold"
-  }'
-```
+Consumers that generate SQL against the source tables, rather than against a
+layer that exposes the fields, must replace each field reference with the
+field's expression. For example, `SUM(orders.total_amount)` compiles to
+`SUM(o_totalprice)` over `sales.public.orders`.
+
+This version of the specification does not support:
+
+- a field expression that refers to another field, in the same or another
+  dataset;
+- a metric expression that refers to another metric;
+- a dataset that uses another dataset as its `source`.
+
+Future versions may add these.
 
 ---
 
@@ -847,6 +998,16 @@ datasets:
               expression: amount
         description: Order amount
 
+    # Dataset-scoped: resolves entirely within the orders dataset
+    metrics:
+      - name: total_amount
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(amount)
+        description: Total order amount
+        datatype: Decimal
+
   - name: customers
     source: sales.public.customers
     primary_key: [id]
@@ -866,6 +1027,20 @@ datasets:
               expression: email
         description: Customer email
 
+    # Dataset-scoped: resolves entirely within the customers dataset
+    metrics:
+      - name: customer_count
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(DISTINCT id)
+        description: Total number of customers
+        datatype: Integer
+        ai_context:
+          synonyms:
+            - "total customers"
+            - "customer base"
+
 relationships:
   - name: orders_to_customers
     from: orders
@@ -874,27 +1049,14 @@ relationships:
     to_columns: [id]
 
 metrics:
-  - name: total_revenue
+  # Model-scoped: spans orders and customers via the relationship
+  - name: revenue_per_customer
     expression:
       dialects:
         - dialect: ANSI_SQL
-          expression: SUM(orders.amount)
-    description: Total revenue from all orders
-    ai_context:
-      synonyms:
-        - "total sales"
-        - "revenue"
-
-  - name: customer_count
-    expression:
-      dialects:
-        - dialect: ANSI_SQL
-          expression: COUNT(DISTINCT customers.id)
-    description: Total number of customers
-    ai_context:
-      synonyms:
-        - "total customers"
-        - "customer base"
+          expression: SUM(orders.amount) / COUNT(DISTINCT customers.id)
+    description: Average revenue per customer
+    datatype: Decimal
 
 custom_extensions:
   - vendor_name: SNOWFLAKE
@@ -941,6 +1103,7 @@ ai_context:
 
 - **0.2.0.dev0** (Unreleased): In-development next minor release. Schema is mutable; do not depend on this version in production.
   - Breaking: each standalone document contains one model directly at the root; the `semantic_model` array is removed.
+  - Breaking: metric expressions, `primary_key`, `unique_keys`, and relationship `from_columns`/`to_columns` refer to dataset fields, not columns of the dataset's `source`. Model-scoped metric expressions must use qualified `dataset.field` references; dataset-scoped metric expressions use unqualified field names. Earlier versions did not specify this, and some converters read these names as source columns; those converters must now resolve them as fields. See [Name Resolution](#name-resolution).
 - **0.1.1** (2025-12-11): Initial release
   - Core semantic model structure
   - Support for datasets, relationships, fields, and metrics

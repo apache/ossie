@@ -71,6 +71,16 @@ datasets:
             - "product"
             - "item"
 
+      - name: ss_ticket_number
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: ss_ticket_number
+        description: Ticket number identifying the sales transaction
+        datatype: Integer
+        dimension:
+          is_time: false
+
       - name: ss_customer_sk
         expression:
           dialects:
@@ -146,6 +156,18 @@ datasets:
           synonyms:
             - "profit"
             - "margin"
+
+    # Dataset-scoped metric: aggregates this dataset's own declared field by
+    # single-part (unqualified) name; resolves within store_sales. Contrast with
+    # the model-root `metrics:` block below, whose expressions span datasets.
+    metrics:
+      - name: total_quantity
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(ss_quantity)
+        description: Total quantity sold across all store sales
+        datatype: Integer
 
   # Dimension table: Date
   - name: date_dim
@@ -287,6 +309,8 @@ datasets:
 
       - name: customer_full_name
         expression:
+          # Primary, portable OSSIE_SQL_2026 form
+          sql: c_first_name || ' ' || c_last_name
           dialects:
             - dialect: ANSI_SQL
               expression: c_first_name || ' ' || c_last_name

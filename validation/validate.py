@@ -48,17 +48,22 @@ Usage:
 Every file is validated and reported, including one whose checks fail
 unexpectedly; the exit status is non-zero if any of them failed. Put -- before
 a file name that starts with a dash. The schema defaults to core-spec/ossie-schema.json in this
-repository's layout; when the script is vendored elsewhere, point OSSIE_SCHEMA
-or --schema at a copy of the schema.
+repository's layout. When the script is vendored elsewhere, install the Python
+SDK (pip install /path/to/ossie/python) for its shared YAML loader and point
+OSSIE_SCHEMA or --schema at a copy of the schema.
 """
 
+import difflib
+import importlib.util
 import json
 import os
 import sys
 import traceback
 from collections import Counter
-from collections.abc import Hashable
+from collections.abc import Hashable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 try:
     import yaml
@@ -67,37 +72,47 @@ try:
     from referencing import Registry
     from referencing.exceptions import NoSuchResource, Unresolvable
     from referencing.retrieval import to_cached_resource
-    from yaml.constructor import ConstructorError
 except ImportError:
     print("Missing dependencies. Install with:")
     print("  pip install pyyaml jsonschema")
     sys.exit(1)
 
+# Use the checkout's loader without importing the SDK's model dependencies.
+# A vendored copy of this script uses the installed SDK instead.
+_LOADER_PATH = Path(__file__).resolve().parents[1] / "python/src/ossie/_loading.py"
+if _LOADER_PATH.is_file():
+    _loader_spec = importlib.util.spec_from_file_location("ossie_loading", _LOADER_PATH)
+    _loader_module = importlib.util.module_from_spec(_loader_spec)
+    _loader_spec.loader.exec_module(_loader_module)
+    UniqueKeyLoader = _loader_module.UniqueKeyLoader
+else:
+    from ossie._loading import UniqueKeyLoader
+
 try:
     import sqlglot
+    from sqlglot import exp
     from sqlglot.errors import ParseError, TokenError
     SQLGLOT_AVAILABLE = True
 except ImportError:
     SQLGLOT_AVAILABLE = False
 
-# Map Ossie dialects to sqlglot dialects
-DIALECT_MAP = {
-    "ANSI_SQL": None,  # sqlglot default
-    "OSSIE_SQL_2026": None,  # ANSI-SQL-compatible; parse with the sqlglot default
+# The dialect the portable `sql` form is written in; the only one this
+# specification defines.
+PORTABLE_DIALECT = "OSSIE_SQL_2026"
+
+# Ossie dialects sqlglot can parse, each mapped to the sqlglot dialect to parse it
+# as. None is sqlglot's default (ANSI) dialect.
+SQLGLOT_DIALECTS = {
+    "ANSI_SQL": None,
+    PORTABLE_DIALECT: None,
     "SNOWFLAKE": "snowflake",
     "DATABRICKS": "databricks",
     "BIGQUERY": "bigquery",
-    "MDX": None,  # Not supported by sqlglot, skip validation
-    "TABLEAU": None,  # Not supported by sqlglot, skip validation
-    "MAQL": None,  # Not supported by sqlglot, skip validation
-    "SIGMA": None,  # Sigma's spreadsheet-style formula language, not SQL; skip validation
-    "THOUGHTSPOT": None,  # Not supported by sqlglot, skip validation
-    "DAX": None,  # Not supported by sqlglot, skip validation
-    "HOLISTICS_AQL": None,  # Holistics AQL, not SQL; skip validation
 }
 
-# Dialects that sqlglot cannot parse
-SKIP_SQL_VALIDATION = {
+# Known non-SQL dialects: sqlglot cannot parse them, so their expressions are
+# carried but not validated.
+NON_SQL_DIALECTS = {
     "MDX",
     "TABLEAU",
     "MAQL",
@@ -107,72 +122,15 @@ SKIP_SQL_VALIDATION = {
     "HOLISTICS_AQL",
 }
 
+# Every dialect this validator knows, for close-match suggestions on a typo.
+KNOWN_DIALECTS = (*SQLGLOT_DIALECTS, *NON_SQL_DIALECTS)
+
 # Concepts every ontology includes implicitly (ontology.md, "Built-in concepts")
 BUILT_IN_CONCEPTS = {"Any", "Boolean", "Date", "DateTime", "Decimal", "Float", "Integer", "String"}
 
 
 class ValidationWarning(str):
     """An explicitly nonfatal diagnostic, compatible with existing string callers."""
-
-
-class UniqueKeyLoader(yaml.SafeLoader):
-    """Safe YAML loader that rejects duplicate explicit mapping keys."""
-
-    MERGE_TAG = "tag:yaml.org,2002:merge"
-
-    def construct_document(self, node: yaml.Node):
-        # Validate the composed node graph before SafeConstructor touches it:
-        # flatten_mapping() rewrites mapping nodes in place while expanding "<<",
-        # so a check that runs during construction sees merged, not authored, keys.
-        self._check_unique_keys(node, set())
-        return super().construct_document(node)
-
-    def _check_unique_keys(self, node: yaml.Node, visited: set) -> None:
-        if id(node) in visited:  # alias or recursive anchor: check the node once
-            return
-        visited.add(id(node))
-
-        if isinstance(node, yaml.MappingNode):
-            seen = set()
-            merge_key = object()
-            for key_node, value_node in node.value:
-                if key_node.tag == self.MERGE_TAG:
-                    key, display_key = merge_key, "<<"
-                elif isinstance(key_node, yaml.ScalarNode):
-                    key = display_key = self.construct_object(key_node, deep=True)
-                else:
-                    # Collection keys are unhashable under SafeLoader. Reject them
-                    # here rather than constructing them, which would run
-                    # flatten_mapping() on the graph this walk must not disturb.
-                    raise ConstructorError(
-                        "while constructing a mapping",
-                        node.start_mark,
-                        "found an unhashable key",
-                        key_node.start_mark,
-                    )
-
-                if not isinstance(key, Hashable):
-                    raise ConstructorError(
-                        "while constructing a mapping",
-                        node.start_mark,
-                        "found an unhashable key",
-                        key_node.start_mark,
-                    )
-
-                if key in seen:
-                    raise ConstructorError(
-                        "while constructing a mapping",
-                        node.start_mark,
-                        f"found duplicate key {display_key!r}",
-                        key_node.start_mark,
-                    )
-                seen.add(key)
-
-                self._check_unique_keys(key_node, visited)
-                self._check_unique_keys(value_node, visited)
-        elif isinstance(node, yaml.SequenceNode):
-            for child in node.value:
-                self._check_unique_keys(child, visited)
 
 
 def load_yaml_named(text: str, name: str):
@@ -261,12 +219,26 @@ def validate_unique_names(data: dict) -> list[str]:
     for dup in find_duplicates(dataset_names):
         errors.append(f"[Unique] Duplicate dataset name '{dup}' in model '{model_name}'")
 
-    # Check unique field names within each dataset
+    # Check unique field names within each dataset, and that dataset-scoped
+    # metric names do not duplicate one another or collide with a field name of
+    # the same dataset: a dataset's fields and dataset-scoped metrics share one
+    # namespace.
     for dataset in model.get("datasets", []):
         dataset_name = dataset.get("name", "<unnamed>")
         field_names = [f.get("name") for f in dataset.get("fields", []) if f.get("name")]
         for dup in find_duplicates(field_names):
             errors.append(f"[Unique] Duplicate field name '{dup}' in dataset '{dataset_name}'")
+
+        ds_metric_names = [m.get("name") for m in dataset.get("metrics", []) if m.get("name")]
+        for dup in find_duplicates(ds_metric_names):
+            errors.append(
+                f"[Unique] Duplicate metric name '{dup}' in dataset '{dataset_name}'"
+            )
+        for name in sorted(set(field_names) & set(ds_metric_names)):
+            errors.append(
+                f"[Unique] Name '{name}' in dataset '{dataset_name}' is used by both a field "
+                f"and a dataset-scoped metric; a dataset's fields and metrics share one namespace"
+            )
 
     # Check unique metric names
     metric_names = [m.get("name") for m in model.get("metrics", []) if m.get("name")]
@@ -358,15 +330,29 @@ def validate_relationship_column_arity(data: dict) -> list[str]:
     return errors
 
 
-def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None:
-    """Validate a single SQL expression. Returns error message or None if valid."""
-    if not SQLGLOT_AVAILABLE:
-        return None
+def _parse_sql_expression(
+    expr: str, dialect: str, context: str
+) -> tuple[object | None, str | None]:
+    """Parse a SQL expression once and return its tree and any error.
 
-    if dialect in SKIP_SQL_VALIDATION:
-        return None
+    The expression is tried bare first (so a field expression like `column_name`
+    parses), then wrapped in `SELECT {expr}` for bare column references. The parsed
+    sqlglot tree is returned together with a validation error message; each may be
+    None. A valid expression yields `(tree, None)`; a syntax, empty, or
+    multi-statement error yields `(None, error)`.
 
-    sqlglot_dialect = DIALECT_MAP.get(dialect)
+    Callers that only surface errors read the error (see `validate_sql_expression`);
+    callers that inspect the parsed columns read the tree (see
+    `validate_metric_scoping`). Both go through this single parse, so the statement
+    handling below and any later parser fix reach both without a second copy.
+
+    Returns `(None, None)` when there is nothing to parse: sqlglot is unavailable or
+    the dialect is one sqlglot cannot parse.
+    """
+    if not SQLGLOT_AVAILABLE or dialect not in SQLGLOT_DIALECTS:
+        return None, None
+
+    sqlglot_dialect = SQLGLOT_DIALECTS[dialect]
 
     def statement_count_error(sql: str) -> str | None:
         """Reject a parseable string that holds more than one statement.
@@ -408,27 +394,117 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
 
     try:
         # Try parsing as expression first (for field expressions like "column_name")
-        sqlglot.parse_one(expr, dialect=sqlglot_dialect)
+        tree = sqlglot.parse_one(expr, dialect=sqlglot_dialect)
     except (ParseError, TokenError, RecursionError):
         # A bare column reference fails to parse alone; retry it wrapped in
         # SELECT below. RecursionError (deeply nested input) is included so the
         # retry reports it instead of crashing, while genuine errors such as a
         # non-string expr raising TypeError still surface.
         if holds_no_statement(expr):
-            return f"[SQL] {context}: expression is empty"
+            return None, f"[SQL] {context}: expression is empty"
     else:
-        return statement_count_error(expr)
+        return tree, statement_count_error(expr)
 
     try:
         # Try wrapping in SELECT for simple column references
-        sqlglot.parse_one(f"SELECT {expr}", dialect=sqlglot_dialect)
+        tree = sqlglot.parse_one(f"SELECT {expr}", dialect=sqlglot_dialect)
     except (ParseError, TokenError) as e:
-        return f"[SQL] {context}: {str(e).split(chr(10))[0]}"
+        return None, f"[SQL] {context}: {str(e).split(chr(10))[0]}"
     except RecursionError:
         # Deeply nested input exhausts the recursion limit rather than raising a
         # parser error; report it instead of letting it abort validation.
-        return f"[SQL] {context}: expression is too deeply nested to parse"
-    return statement_count_error(f"SELECT {expr}")
+        return None, f"[SQL] {context}: expression is too deeply nested to parse"
+    return tree, statement_count_error(f"SELECT {expr}")
+
+
+def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None:
+    """Validate a single SQL expression. Returns error message or None if valid."""
+    _tree, error = _parse_sql_expression(expr, dialect, context)
+    return error
+
+
+ExpressionKind = Literal["field", "dataset_metric", "model_metric"]
+
+
+@dataclass(frozen=True)
+class Expression:
+    """An expression and its context within a document.
+
+    `kind` identifies the declaring element, and `name` identifies the field
+    or metric. `dialect` is OSSIE_SQL_2026 for portable `sql` expressions,
+    or the dialect's label otherwise. `field_names` contains the enclosing
+    dataset's field names, or is empty for model-scoped metrics.
+    `superseded_by` is the authoritative top-level `sql` text when this is an
+    OSSIE_SQL_2026 dialect entry that `sql` outranks, else None: such an entry
+    is non-authoritative, since a client reads the `sql` instead.
+    """
+
+    kind: ExpressionKind
+    dataset_name: str
+    name: str
+    dialect: str
+    text: str
+    field_names: frozenset[str]
+    superseded_by: str | None = None
+
+    def context(self, model_name: str) -> str:
+        if self.kind == "field":
+            label = f"Field '{self.dataset_name}.{self.name}'"
+        elif self.kind == "dataset_metric":
+            label = f"Metric '{self.dataset_name}.{self.name}'"
+        else:
+            label = f"Metric '{self.name}'"
+        return f"{label} in model '{model_name}' ({self.dialect})"
+
+
+def _expressions_in(
+    member: dict, kind: ExpressionKind, dataset_name: str, field_names: frozenset[str]
+) -> Iterator[Expression]:
+    expression = member.get("expression") or {}
+    name = member.get("name", "<unnamed>")
+    sql = expression.get("sql")
+    if sql is not None:
+        yield Expression(
+            kind=kind,
+            dataset_name=dataset_name,
+            name=name,
+            dialect=PORTABLE_DIALECT,
+            text=sql,
+            field_names=field_names,
+        )
+    for dialect_expr in expression.get("dialects", []):
+        text = dialect_expr.get("expression")
+        if text is None:
+            continue
+        dialect = dialect_expr["dialect"]
+        yield Expression(
+            kind=kind,
+            dataset_name=dataset_name,
+            name=name,
+            dialect=dialect,
+            text=text,
+            field_names=field_names,
+            # A top-level `sql` is the authoritative OSSIE_SQL_2026 form, so an
+            # OSSIE_SQL_2026 dialect entry alongside it is non-authoritative.
+            superseded_by=sql if dialect == PORTABLE_DIALECT and sql is not None else None,
+        )
+
+
+def iter_expressions(data: dict) -> Iterator[Expression]:
+    """Yield every expression in a core semantic model document. A missing
+    expression is skipped; an empty one is yielded, so a caller decides whether to
+    report it."""
+    for dataset in data.get("datasets", []):
+        dataset_name = dataset.get("name", "<unnamed>")
+        field_names = frozenset(
+            f["name"].casefold() for f in dataset.get("fields", []) if f.get("name")
+        )
+        for field in dataset.get("fields", []):
+            yield from _expressions_in(field, "field", dataset_name, field_names)
+        for metric in dataset.get("metrics", []):
+            yield from _expressions_in(metric, "dataset_metric", dataset_name, field_names)
+    for metric in data.get("metrics", []):
+        yield from _expressions_in(metric, "model_metric", "", frozenset())
 
 
 def validate_sql(data: dict) -> list[str]:
@@ -442,39 +518,127 @@ def validate_sql(data: dict) -> list[str]:
             "[SQL] Warning: sqlglot not installed, skipping SQL validation. Install with: pip install sqlglot"
         )]
 
-    model = data
+    model_name = data.get("name", "<unnamed>")
+    errors = []
+    # A dialect outside both sets is one this validator cannot parse. It may be a
+    # legitimate entry from extensions/dialects.md, so warn once that its
+    # expressions went unchecked rather than treat it as an error.
+    unsupported_dialects = Counter()
+
+    for expression in iter_expressions(data):
+        dialect = expression.dialect
+        if dialect in NON_SQL_DIALECTS:
+            continue
+        if dialect not in SQLGLOT_DIALECTS:
+            unsupported_dialects[dialect] += 1
+            continue
+        error = validate_sql_expression(
+            expression.text, dialect, expression.context(model_name)
+        )
+        if expression.superseded_by is not None:
+            # A top-level `sql` is authoritative, so this OSSIE_SQL_2026 dialect
+            # entry does not fail the document. Warn if it is dead text -- invalid,
+            # or differing from the `sql` a client reads instead -- and stay silent
+            # when it merely duplicates the `sql`.
+            if error:
+                reason = "is not valid SQL"
+            elif expression.text != expression.superseded_by:
+                reason = "differs from the top-level 'sql'"
+            else:
+                continue
+            errors.append(ValidationWarning(
+                f"[SQL] Warning: {expression.context(model_name)}: dialect entry {reason} "
+                f"and is ignored; the top-level 'sql' is authoritative"
+            ))
+        elif error:
+            errors.append(error)
+
+    for dialect in sorted(unsupported_dialects):
+        count = unsupported_dialects[dialect]
+        plural = "s" if count != 1 else ""
+        message = (
+            f"[SQL] Warning: dialect '{dialect}' is not supported by this validator; "
+            f"{count} expression{plural} not syntax-checked"
+        )
+        # Only a close match is suggested, so a legitimate new dialect gets no
+        # spurious "did you mean".
+        suggestion = difflib.get_close_matches(dialect, KNOWN_DIALECTS, n=1, cutoff=0.8)
+        if suggestion:
+            message += f". Did you mean '{suggestion[0]}'?"
+        errors.append(ValidationWarning(message))
+
+    return errors
+
+
+def validate_metric_scoping(data: dict) -> list[str]:
+    """Validate the field references in each dataset-scoped metric expression.
+
+    A dataset-scoped metric references the declaring dataset's declared fields by
+    single-part (unqualified) name. Two rules are enforced:
+
+    * No qualified reference (`dataset.field`): that is model-scoped and belongs
+      in the model-root metrics.
+    * Every field a dataset-scoped metric references must be a declared field of
+      the dataset; referencing an undeclared name (e.g. a raw source column) is
+      not yet allowed. A bare name is compared case-insensitively; `COUNT(*)` and
+      literals reference no field and are fine.
+
+    Checking the expression needs sqlglot; dialects it cannot parse are skipped
+    rather than reported.
+    """
+    if not isinstance(data, dict) or "datasets" not in data:
+        return []
+
+    model_name = data.get("name", "<unnamed>")
     errors = []
 
-    model_name = model.get("name", "<unnamed>")
+    def scope_errors(expression: Expression) -> list[str]:
+        tree, _ = _parse_sql_expression(
+            expression.text, expression.dialect, expression.context(model_name)
+        )
+        if tree is None:
+            return []
 
-    # Validate field expressions
-    for dataset in model.get("datasets", []):
-        dataset_name = dataset.get("name", "<unnamed>")
-        for field in dataset.get("fields", []):
-            field_name = field.get("name", "<unnamed>")
-            expression = field.get("expression", {})
-            for dialect_expr in expression.get("dialects", []):
-                dialect = dialect_expr.get("dialect", "ANSI_SQL")
-                # Only a missing expression is skipped; an empty one is reported.
-                expr = dialect_expr.get("expression")
-                if expr is not None:
-                    context = f"Field '{dataset_name}.{field_name}' in model '{model_name}' ({dialect})"
-                    error = validate_sql_expression(expr, dialect, context)
-                    if error:
-                        errors.append(error)
+        qualifiers = set()
+        undeclared = set()
+        for col in tree.find_all(exp.Column):
+            parts = [part.name for part in col.parts]
+            if len(parts) > 1 and parts[0]:
+                qualifiers.add(parts[0])
+            elif parts and parts[0].casefold() not in expression.field_names:
+                undeclared.add(parts[0])
 
-    # Validate metric expressions
-    for metric in model.get("metrics", []):
-        metric_name = metric.get("name", "<unnamed>")
-        expression = metric.get("expression", {})
-        for dialect_expr in expression.get("dialects", []):
-            dialect = dialect_expr.get("dialect", "ANSI_SQL")
-            expr = dialect_expr.get("expression")
-            if expr is not None:
-                context = f"Metric '{metric_name}' in model '{model_name}' ({dialect})"
-                error = validate_sql_expression(expr, dialect, context)
-                if error:
-                    errors.append(error)
+        prefix = (
+            f"[Scope] Dataset-scoped metric '{expression.dataset_name}.{expression.name}' "
+            f"in model '{model_name}' ({expression.dialect})"
+        )
+        out = []
+        if qualifiers:
+            names = ", ".join(repr(q) for q in sorted(qualifiers))
+            out.append(
+                f"{prefix} uses qualified reference(s) {names}. A dataset-scoped metric "
+                f"expression must reference the dataset's fields by single-part "
+                f"(unqualified) name; a metric that must reference another dataset "
+                f"belongs in the model-root metrics."
+            )
+        if undeclared:
+            names = ", ".join(repr(n) for n in sorted(undeclared))
+            out.append(
+                f"{prefix} references undeclared field(s) {names}. A dataset-scoped "
+                f"metric may reference only the dataset's declared fields."
+            )
+        return out
+
+    for expression in iter_expressions(data):
+        # A superseded OSSIE_SQL_2026 dialect entry is non-authoritative; the
+        # top-level `sql` it defers to is scope-checked in its place.
+        if (
+            expression.kind != "dataset_metric"
+            or not expression.text
+            or expression.superseded_by is not None
+        ):
+            continue
+        errors.extend(scope_errors(expression))
 
     return errors
 
@@ -680,6 +844,7 @@ def validate_document(data, schema: dict) -> list[str]:
         errors.extend(validate_unique_names(data))
         errors.extend(validate_references(data))
         errors.extend(validate_relationship_column_arity(data))
+        errors.extend(validate_metric_scoping(data))
         errors.extend(validate_sql(data))
     if not errors and isinstance(data, dict) and "ontology" in data:
         errors.extend(validate_ontology(data))

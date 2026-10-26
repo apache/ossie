@@ -105,8 +105,17 @@ Sometimes, we may refer to a **normalized identifier**.  This is a form the iden
 
 #### Name Spaces
 
-Namespaces define how an identifier is looked up in an expression.  They are covered in the semantics document.  Identifiers
+Namespaces define how an identifier is looked up in an expression.  Identifiers
 will be able to be multi-part and the parts will be separated by the '.' characters,  E.g. `dataset.field`  This matches SQL conventions.
+
+What an identifier refers to depends on where the expression appears:
+
+* In a **field expression**, identifiers refer to columns of the dataset's `source`.  A field expression cannot refer to other fields.
+* In a **dataset-scoped metric expression**, identifiers are unqualified and refer to fields declared in that dataset.
+* In a **model-scoped metric expression**, identifiers must be qualified as `dataset.field` and refer to a field declared in that dataset.
+* Metric expressions cannot refer to columns of the dataset's `source` or to other metrics.  If a field and a source column share a name, a metric expression refers to the field.
+
+See [Name Resolution](spec.md#name-resolution) in the core specification.
 
 ## SQL Language Subset
 
@@ -116,7 +125,7 @@ Ossie expressions support the following SQL constructs within any expression:
 
 | Construct | Notes                                                                                                                                                                                                                                                                                 |
 | :---- |:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Column and Metric references | Varies based on whether in Ontology or Semantic models. See namespaceing in [Ossie Discussion Point: Core Analytic Abstractions](https://docs.google.com/document/d/1si8DqU4arG18ZgX4HnRG5D_zS2X7V1s-vgNY35rvxhM/edit?tab=t.0#heading=h.le505t8uoyfy) And future Ontology documentation |
+| Column and Metric references | Varies based on whether in Ontology or Semantic models. For semantic models, see [Name Resolution](spec.md#name-resolution). See also namespacing in [Ossie Discussion Point: Core Analytic Abstractions](https://docs.google.com/document/d/1si8DqU4arG18ZgX4HnRG5D_zS2X7V1s-vgNY35rvxhM/edit?tab=t.0#heading=h.le505t8uoyfy) And future Ontology documentation |
 | Arithmetic operators | `+`, `-`, `*`, `/`, `%` (modulo)                                                                                                                                                                                                                                                      |
 | Comparison operators | `=`, `<>`, `!=`, `<`, `>`, `<=`, `>=`                                                                                                                                                                                                                                                 |
 | Logical operators | `AND`, `OR`, `NOT`                                                                                                                                                                                                                                                                    |
@@ -150,12 +159,13 @@ Ossie expressions support the following SQL constructs within any expression:
 Standard SQL operator precedence applies (highest to lowest):
 
 1. Parentheses `()`  
-2. Unary operators: `+`, `-`, `NOT`  
+2. Unary operators: `+`, `-`  
 3. Multiplication/Division: `*`, `/`, `%`  
 4. Addition/Subtraction: `+`, `-`  
 5. Comparison: `=`, `<>`, `<`, `>`, `<=`, `>=`, `LIKE`, `IN`, `BETWEEN`, `IS NULL`   
-6. Logical AND: `AND`  
-7. Logical OR: `OR`
+6. Logical NOT: `NOT`  
+7. Logical AND: `AND`  
+8. Logical OR: `OR`
 
 ---
 
@@ -695,6 +705,8 @@ Ossie implementations MAY support additional functions through dialect-specific 
 
 The Ossie dialect should always be supported.  Other dialects MAY be ignored.  There is no guarantee that all different dialects for an expression will act the same, so implementations should be consistent with their dialect handling.  This means that if an Ossie model has an expression written in two dialects, the implementation should deterministically choose which dialect to use.  
 
+The `dialect` field is a free-form string; the core specification does not enumerate a closed set. For a non-normative catalog of dialects well-known tools use, see [extensions/dialects.md](../extensions/dialects.md).
+
 ### Declaring Dialect-Specific Expressions
 
 ```
@@ -816,7 +828,7 @@ date range. For a row-level shift, add a number of days to the date directly, or
 | `LAG(x, 1) OVER(ORDER BY...)` | `LOOKUP(x, -1)` | N/A | `CALCULATE(x, PREVIOUSDAY(...))` | `Lag(x, 1)` — same UI-configuration caveat |
 | `RUNNING_SUM(...)` | `RUNNING_SUM(SUM(...))` | N/A | `CALCULATE(SUM(...), FILTER(...))` | `RunningSum(...)` — same UI-configuration caveat |
 
-Sigma's table-calculation functions (`RowNumber`, `Rank`, `RunningSum`, `RunningAvg`, `Lag`, `Lead`, etc.) resolve their partition/order context from workbook UI configuration (which pivot/table the calculation is attached to) rather than from arguments passed in the formula text itself. Because that context isn't recoverable from the formula string alone, the Sigma converter (`converters/sigma/`) treats these as untranslatable to ANSI SQL and carries the original Sigma formula through in the `SIGMA` dialect only — see `converters/sigma/LIMITATIONS.md`.
+Sigma's table-calculation functions (`RowNumber`, `Rank`, `RunningSum`, `RunningAvg`, `Lag`, `Lead`, etc.) resolve their partition/order context from workbook UI configuration (which pivot/table the calculation is attached to) rather than from arguments passed in the formula text itself. Because that context isn't recoverable from the formula string alone, the [Sigma converter](https://github.com/apache/ossie-converters/tree/main/sigma) treats these as untranslatable to ANSI SQL and carries the original Sigma formula through in the `SIGMA` dialect only — see its [`LIMITATIONS.md`](https://github.com/apache/ossie-converters/blob/main/sigma/LIMITATIONS.md).
 
 ---
 
