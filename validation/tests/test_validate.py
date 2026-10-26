@@ -601,6 +601,87 @@ def test_rejects_an_expression_holding_more_than_one_statement(expression: str) 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 @pytest.mark.parametrize(
+    ("expression", "kind"),
+    [
+        ("DROP TABLE t", "DROP"),
+        ("DELETE FROM orders", "DELETE"),
+        ("GRANT SELECT ON orders TO public", "GRANT"),
+        ("INSERT INTO orders VALUES (1)", "INSERT"),
+        ("UPDATE orders SET x = 1", "UPDATE"),
+        ("CREATE TABLE t (id INT)", "CREATE"),
+        ("TRUNCATE TABLE orders", "TRUNCATE TABLE"),
+        ("ALTER TABLE orders ADD COLUMN x INT", "ALTER"),
+        ("BEGIN", "TRANSACTION"),
+        ("COMMIT", "COMMIT"),
+        ("SET x = 1", "SET"),
+        ("USE db", "USE"),
+    ],
+    ids=[
+        "drop",
+        "delete",
+        "grant",
+        "insert",
+        "update",
+        "create",
+        "truncate",
+        "alter",
+        "begin",
+        "commit",
+        "set",
+        "use",
+    ],
+)
+def test_rejects_a_sql_statement_used_as_an_expression(
+    expression: str, kind: str
+) -> None:
+    """parse_one accepts one statement of any kind; count==1 is not enough."""
+    error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert error == f"[SQL] ctx: expected an expression, found a {kind} statement"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_rejects_a_sql_statement_in_ossie_sql_2026() -> None:
+    error = _VALIDATE.validate_sql_expression("DROP TABLE t", "OSSIE_SQL_2026", "ctx")
+
+    assert error == "[SQL] ctx: expected an expression, found a DROP statement"
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "SELECT 1",
+        "SELECT amount FROM orders",
+        "(SELECT amount FROM orders)",
+        "SUM(amount)",
+        "amount",
+    ],
+    ids=["select-literal", "select-query", "scalar-subquery", "aggregate", "column"],
+)
+def test_still_accepts_queries_and_value_expressions(expression: str) -> None:
+    """Top-level SELECT is out of this change; value expressions stay valid."""
+    assert _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx") is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_validate_sql_rejects_a_delete_used_as_a_field_expression() -> None:
+    expression = {
+        "dialects": [{"dialect": "ANSI_SQL", "expression": "DELETE FROM orders"}]
+    }
+    dataset = {
+        **_ORDERS,
+        "fields": [{"name": "evil", "expression": expression}],
+    }
+
+    assert _VALIDATE.validate_sql(_document([dataset], [])) == [
+        "[SQL] Field 'orders.evil' in model 'm' (ANSI_SQL): "
+        "expected an expression, found a DELETE statement"
+    ]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
     "expression",
     [
         "amount",

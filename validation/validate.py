@@ -125,6 +125,45 @@ NON_SQL_DIALECTS = {
 # Every dialect this validator knows, for close-match suggestions on a typo.
 KNOWN_DIALECTS = (*SQLGLOT_DIALECTS, *NON_SQL_DIALECTS)
 
+# sqlglot puts DROP/CREATE/SET in expressions.ddl and DELETE/INSERT in
+# expressions.dml even when the node is not a subclass of exp.DDL / exp.DML
+# (Drop is the example). GRANT lives in expressions.query, so it is listed
+# separately. Query roots (SELECT, UNION, scalar subquery) are not statements
+# for this check: spec.md has not defined that, and wrapping a failed parse
+# as SELECT {expr} depends on parse_one accepting a SELECT.
+_SQL_STATEMENT_MODULES = frozenset({
+    "sqlglot.expressions.ddl",
+    "sqlglot.expressions.dml",
+})
+
+
+def _human_sql_kind(node: object) -> str:
+    """Turn TruncateTable into TRUNCATE TABLE for the diagnostic."""
+    name = type(node).__name__
+    pieces: list[str] = []
+    for i, char in enumerate(name):
+        if i and char.isupper():
+            pieces.append(" ")
+        pieces.append(char)
+    return "".join(pieces).upper()
+
+
+def sql_statement_kind(node: object) -> str | None:
+    """Label a sqlglot root that is a SQL statement, not an expression.
+
+    Field and metric values are SQL expressions (spec.md Fields / Metrics).
+    parse_one accepts DROP TABLE t as one statement, so a statement-count
+    check is not enough. Returns None for value expressions and for Query
+    roots (SELECT / subquery), which are not rejected here.
+    """
+    if not SQLGLOT_AVAILABLE:
+        return None
+    if isinstance(node, exp.Grant):
+        return _human_sql_kind(node)
+    if type(node).__module__ in _SQL_STATEMENT_MODULES:
+        return _human_sql_kind(node)
+    return None
+
 # Concepts every ontology includes implicitly (ontology.md, "Built-in concepts")
 BUILT_IN_CONCEPTS = {"Any", "Boolean", "Date", "DateTime", "Decimal", "Float", "Integer", "String"}
 
@@ -338,8 +377,8 @@ def _parse_sql_expression(
     The expression is tried bare first (so a field expression like `column_name`
     parses), then wrapped in `SELECT {expr}` for bare column references. The parsed
     sqlglot tree is returned together with a validation error message; each may be
-    None. A valid expression yields `(tree, None)`; a syntax, empty, or
-    multi-statement error yields `(None, error)`.
+    None. A valid expression yields `(tree, None)`; a syntax, empty,
+    multi-statement, or non-expression statement error yields `(None, error)`.
 
     Callers that only surface errors read the error (see `validate_sql_expression`);
     callers that inspect the parsed columns read the tree (see
@@ -392,6 +431,21 @@ def _parse_sql_expression(
             return False
         return all(statement is None for statement in statements)
 
+    def statement_kind_error(node: object) -> str | None:
+        """Reject a single parseable unit that is a statement, not an expression.
+
+        The count check above only rejects a list. DROP/DELETE/GRANT parse as
+        one statement and would otherwise pass. Kind is not checked on the
+        SELECT-wrap retry: that path exists to parse a bare column, and a
+        successful wrap is always a SELECT.
+        """
+        kind = sql_statement_kind(node)
+        if kind is None:
+            return None
+        return (
+            f"[SQL] {context}: expected an expression, found a {kind} statement"
+        )
+
     try:
         # Try parsing as expression first (for field expressions like "column_name")
         tree = sqlglot.parse_one(expr, dialect=sqlglot_dialect)
@@ -403,7 +457,13 @@ def _parse_sql_expression(
         if holds_no_statement(expr):
             return None, f"[SQL] {context}: expression is empty"
     else:
-        return tree, statement_count_error(expr)
+        count_error = statement_count_error(expr)
+        if count_error:
+            return None, count_error
+        kind_error = statement_kind_error(tree)
+        if kind_error:
+            return None, kind_error
+        return tree, None
 
     try:
         # Try wrapping in SELECT for simple column references
@@ -418,7 +478,12 @@ def _parse_sql_expression(
 
 
 def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None:
-    """Validate a single SQL expression. Returns error message or None if valid."""
+    """Validate a single SQL expression. Returns error message or None if valid.
+
+    A field or metric holds one expression (spec.md Fields / Metrics), not a
+    statement. Multi-statement strings and DDL/DML/session statements are
+    rejected. Top-level SELECT is not rejected here.
+    """
     _tree, error = _parse_sql_expression(expr, dialect, context)
     return error
 
