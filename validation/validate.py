@@ -92,6 +92,7 @@ try:
     import sqlglot
     from sqlglot import exp
     from sqlglot.errors import ParseError, TokenError
+    from sqlglot.tokens import TokenType
     SQLGLOT_AVAILABLE = True
 except ImportError:
     SQLGLOT_AVAILABLE = False
@@ -189,6 +190,29 @@ def sql_statement_kind(node: object) -> str | None:
     if isinstance(node, _SQL_STATEMENT_TYPES):
         return _human_sql_kind(node)
     return None
+
+
+def _single_identifier_text(sql: str, dialect: object) -> str | None:
+    """Name of a one-token identifier, else None.
+
+    parse_one("commit") is a Commit statement, so the kind check would reject
+    a field whose expression is that column. COMMIT WORK is two tokens and
+    stays a statement. Trailing semicolons match amount; comments are already
+    stripped by tokenize.
+    """
+    if not SQLGLOT_AVAILABLE:
+        return None
+    try:
+        tokens = sqlglot.tokenize(sql, dialect=dialect)
+    except (TokenError, RecursionError):
+        return None
+    names = [tok for tok in tokens if tok.token_type is not TokenType.SEMICOLON]
+    if len(names) != 1:
+        return None
+    text = names[0].text
+    if not text or not (text[0].isalpha() or text[0] == "_"):
+        return None
+    return text
 
 # Concepts every ontology includes implicitly (ontology.md, "Built-in concepts")
 BUILT_IN_CONCEPTS = {"Any", "Boolean", "Date", "DateTime", "Decimal", "Float", "Integer", "String"}
@@ -464,7 +488,10 @@ def _parse_sql_expression(
         one statement and would otherwise pass. Kind is isinstance of the
         named statement classes, not sqlglot's file layout. Kind is not
         checked on the SELECT-wrap retry: that path exists to parse a bare
-        column, and a successful wrap is always a SELECT.
+        column, and a successful wrap is always a SELECT. A statement that is
+        still a single identifier (commit, begin) is a keyword-named column
+        and is accepted by the caller; wrapping every statement in SELECT
+        would accept DELETE FROM orders as SELECT DELETE FROM orders.
         """
         kind = sql_statement_kind(node)
         if kind is None:
@@ -489,6 +516,12 @@ def _parse_sql_expression(
             return None, count_error
         kind_error = statement_kind_error(tree)
         if kind_error:
+            ident = _single_identifier_text(expr, sqlglot_dialect)
+            if ident is not None:
+                # Keyword-named column: return a Column so metric scoping still
+                # sees the name. Do not SELECT-wrap: that rewrite accepts
+                # DELETE FROM orders and FETCH FIRST ROWS ONLY.
+                return exp.column(ident), None
             return None, kind_error
         return tree, None
 
