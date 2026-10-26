@@ -410,6 +410,15 @@ class OssieMetric(BaseModel):
     description: Optional[str] = None
     datatype: Optional[OssieDataType] = None
     ai_context: Optional[OssieAIContext] = None
+    display_label: Optional[str] = None
+    semantic_type: Optional[OssieSemanticType] = None
+    measurement: Optional[OssieMeasurement] = None
+    display_format: Optional[str] = None
+    desired_direction: Optional[OssieDesiredDirection] = None
+    default_sort: Optional[OssieDefaultSort] = None
+    glossary_references: Optional[list[OssieGlossaryReference]] = None
+    hidden: Optional[StrictBool] = None
+    group_labels: Optional[list[str]] = None
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
 
@@ -445,28 +454,6 @@ class OssieRelationship(BaseModel):
     from_columns: list[str] = Field(..., min_length=1)
     to_columns: list[str] = Field(..., min_length=1)
     ai_context: Optional[OssieAIContext] = None
-    custom_extensions: Optional[list[OssieCustomExtension]] = None
-
-
-class OssieMetric(BaseModel):
-    """Quantitative measure defined on business data."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    name: str = Field(..., min_length=1)
-    expression: OssieExpression
-    description: Optional[str] = None
-    datatype: Optional[OssieDataType] = None
-    ai_context: Optional[OssieAIContext] = None
-    display_label: Optional[str] = None
-    semantic_type: Optional[OssieSemanticType] = None
-    measurement: Optional[OssieMeasurement] = None
-    display_format: Optional[str] = None
-    desired_direction: Optional[OssieDesiredDirection] = None
-    default_sort: Optional[OssieDefaultSort] = None
-    glossary_references: Optional[list[OssieGlossaryReference]] = None
-    hidden: Optional[StrictBool] = None
-    group_labels: Optional[list[str]] = None
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
 

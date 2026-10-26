@@ -805,6 +805,18 @@ def test_extended_metadata_survives_serialization(document_data: dict) -> None:
         assert OssieDocument.model_validate(serialized) == document
 
 
+def test_dataset_scoped_metrics_accept_extended_metadata(document_data: dict) -> None:
+    """Both metric placements share one model, so neither drops the extended properties."""
+    metric = dict(document_data["metrics"][0], name="dataset_revenue")
+    metric.update(display_label="Revenue", desired_direction="higher_is_better", hidden=True)
+    document_data["datasets"][0]["metrics"] = [metric]
+
+    document = OssieDocument.model_validate(document_data)
+
+    assert document.datasets[0].metrics[0].display_label == "Revenue"
+    assert OssieDataset.model_fields["metrics"].annotation == OssieSemanticModel.model_fields["metrics"].annotation
+
+
 def test_extended_metadata_serializes_to_a_schema_valid_document(document_data: dict) -> None:
     """What the models accept and emit, the schema accepts too."""
     jsonschema = pytest.importorskip("jsonschema")
