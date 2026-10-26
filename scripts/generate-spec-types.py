@@ -51,26 +51,6 @@ SPEC = REPO / "core-spec" / "spec.yaml"
 
 SECTIONS = [
     {
-        "key": "dialects",
-        "schema_path": ["$defs", "Dialect", "enum"],
-        "comment_col": 28,
-        "header": "# Supported expression language dialects",
-        "descriptions": {
-            "ANSI_SQL": "Standard SQL dialect",
-            "SNOWFLAKE": "Snowflake",
-            "MDX": "Multi-Dimensional Expressions",
-            "TABLEAU": "Tableau",
-            "DATABRICKS": "Databricks SQL",
-            "MAQL": "GoodData MAQL (Multi-Dimensional Analytical Query Language)",
-            "BIGQUERY": "Google BigQuery GoogleSQL",
-            "SIGMA": "Sigma Computing spreadsheet-style formula language",
-            "THOUGHTSPOT": "ThoughtSpot formula language (not SQL)",
-            "DAX": "Data Analysis Expressions (Power BI / Analysis Services)",
-            "HOLISTICS_AQL": "Holistics AQL (Analytical Query Language)",
-            "OSSIE_SQL_2026": "Ossie portable SQL expression language (see expression_language.md)",
-        },
-    },
-    {
         "key": "datatypes",
         "schema_path": ["$defs", "DataType", "enum"],
         "comment_col": 28,

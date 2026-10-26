@@ -45,13 +45,15 @@ from ossie import (
 # ---------------------------------------------------------------------------
 
 
-def test_dialect_enum_matches_core_schema() -> None:
+def test_dialect_is_free_form_in_core_schema() -> None:
+    # `dialect` is a free-form string in the core schema (no closed enum).
     schema_path = Path(__file__).parents[2] / "core-spec" / "ossie-schema.json"
     schema = json.loads(schema_path.read_text())
 
-    assert {member.value for member in OssieDialect} == set(
-        schema["$defs"]["Dialect"]["enum"]
-    )
+    dialect = schema["$defs"]["Dialect"]
+    assert "enum" not in dialect
+    assert dialect["type"] == "string"
+    assert "OSSIE_SQL_2026" in dialect["examples"]
 
 
 @pytest.mark.parametrize(
@@ -64,14 +66,16 @@ def test_dialect_accepts_string_and_enum_input(dialect: str | OssieDialect) -> N
         {"dialects": [{"dialect": dialect, "expression": "value"}]}
     )
 
-    assert expression.dialects[0].dialect is OssieDialect.ANSI_SQL
+    assert expression.dialects[0].dialect == "ANSI_SQL"
 
 
-def test_dialect_rejects_unknown_string() -> None:
-    with pytest.raises(ValidationError):
-        OssieExpression.model_validate(
-            {"dialects": [{"dialect": "NOT_A_DIALECT", "expression": "value"}]}
-        )
+def test_dialect_accepts_unknown_string() -> None:
+    # Free-form dialect: an unknown value is accepted and preserved.
+    expression = OssieExpression.model_validate(
+        {"dialects": [{"dialect": "DB_DIALECT", "expression": "value"}]}
+    )
+
+    assert expression.dialects[0].dialect == "DB_DIALECT"
 
 
 def test_ossie_sql_2026_dialect_survives_serialization(document_data: dict) -> None:
@@ -84,12 +88,32 @@ def test_ossie_sql_2026_dialect_survives_serialization(document_data: dict) -> N
     document = OssieDocument.model_validate(data)
 
     for item in (document.datasets[0].fields[0], document.metrics[0]):
-        assert item.expression.dialects[0].dialect is OssieDialect.OSSIE_SQL_2026
+        assert item.expression.dialects[0].dialect == "OSSIE_SQL_2026"
 
     as_json = json.loads(document.to_ossie_json())
     as_yaml = yaml.safe_load(document.to_ossie_yaml())
     for serialized in (as_json, as_yaml):
         assert serialized == data
+        assert OssieDocument.model_validate(serialized) == document
+
+
+def test_portable_expression_round_trips_and_is_omitted_when_absent(
+    document_data: dict,
+) -> None:
+    # The optional portable `sql` round-trips when set and is omitted when unset.
+    data = document_data
+    data["datasets"][0]["fields"][0]["expression"]["sql"] = "customer_id"
+
+    document = OssieDocument.model_validate(data)
+    assert document.datasets[0].fields[0].expression.sql == "customer_id"
+    # A metric whose expression omits the portable form keeps it unset.
+    assert document.metrics[0].expression.sql is None
+
+    as_json = json.loads(document.to_ossie_json())
+    as_yaml = yaml.safe_load(document.to_ossie_yaml())
+    for serialized in (as_json, as_yaml):
+        assert serialized == data
+        assert "sql" not in serialized["metrics"][0]["expression"]
         assert OssieDocument.model_validate(serialized) == document
 
 

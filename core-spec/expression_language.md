@@ -705,6 +705,8 @@ Ossie implementations MAY support additional functions through dialect-specific 
 
 The Ossie dialect should always be supported.  Other dialects MAY be ignored.  There is no guarantee that all different dialects for an expression will act the same, so implementations should be consistent with their dialect handling.  This means that if an Ossie model has an expression written in two dialects, the implementation should deterministically choose which dialect to use.  
 
+The `dialect` field is a free-form string; the core specification does not enumerate a closed set. For a non-normative catalog of dialects well-known tools use, see [extensions/dialects.md](../extensions/dialects.md).
+
 ### Declaring Dialect-Specific Expressions
 
 ```

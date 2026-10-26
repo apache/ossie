@@ -28,21 +28,8 @@ version: 0.2.0.dev0
 # Enumerations
 # Standard enums used throughout the specification
 
-# Supported expression language dialects
-# Auto-generated from ossie-schema.json ($defs.Dialect.enum).
-dialects:
-  - "ANSI_SQL"              # Standard SQL dialect
-  - "SNOWFLAKE"             # Snowflake
-  - "MDX"                   # Multi-Dimensional Expressions
-  - "TABLEAU"               # Tableau
-  - "DATABRICKS"            # Databricks SQL
-  - "MAQL"                  # GoodData MAQL (Multi-Dimensional Analytical Query Language)
-  - "BIGQUERY"              # Google BigQuery GoogleSQL
-  - "SIGMA"                 # Sigma Computing spreadsheet-style formula language
-  - "THOUGHTSPOT"           # ThoughtSpot formula language (not SQL)
-  - "DAX"                   # Data Analysis Expressions (Power BI / Analysis Services)
-  - "HOLISTICS_AQL"         # Holistics AQL (Analytical Query Language)
-  - "OSSIE_SQL_2026"        # Ossie portable SQL expression language (see expression_language.md)
+# The `dialect` field is a free-form string, not a closed set. OSSIE_SQL_2026 is
+# the only dialect this spec defines. See extensions/dialects.md.
 
 # Supported logical data types for fields and metrics
 # Auto-generated from ossie-schema.json ($defs.DataType.enum).
@@ -58,8 +45,8 @@ datatypes:
   - "DateTimeTz"            # Instant identified using offset or timezone context
   - "Opaque"                # Known type outside the portable vocabulary
 
-# Vendor name for custom extensions (free-form string)
-# Examples: "COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA", "WISDOM", "POWER_BI", "HEX"
+# Vendor name for custom extensions (free-form string).
+# See the known-vendor catalog in extensions/vendors.md.
 vendor_name: string
 
 
@@ -230,9 +217,11 @@ fields:
     # Each field can have expressions in different dialects for portability
     # Can be a simple column reference or a complex scalar expression
     # Identifiers refer to columns of the dataset's source, not to other fields
+    # At least one of the portable `sql` or `dialects` must be present; either may stand alone
     expression:
+      sql: string  # Primary, portable OSSIE_SQL_2026 form, e.g., "customer_id", "first_name || ' ' || last_name"
       dialects:
-        - dialect: string  # Must be one of the values from 'dialects' enum above, Default: "ANSI_SQL"
+        - dialect: string  # Free-form string; OSSIE_SQL_2026 is the only dialect the spec defines
           expression: string  # SQL scalar expression, e.g., "customer_id", "first_name || ' ' || last_name", "UPPER(email)"
 
     # Optional: Dimension metadata
@@ -293,9 +282,11 @@ metrics:
     # Model-scoped metrics qualify them as dataset.field; dataset-scoped
     # metrics use unqualified field names
     # Metrics cannot reference other metrics
+    # At least one of the portable `sql` or `dialects` must be present; either may stand alone
     expression:
+      sql: string  # Primary, portable OSSIE_SQL_2026 form, e.g., "SUM(orders.sales)", "AVG(orders.amount)"
       dialects:
-        - dialect: string  # Must be one of the values from 'dialects' enum above, Default: "ANSI_SQL"
+        - dialect: string  # Free-form string; OSSIE_SQL_2026 is the only dialect the spec defines
           expression: string  # Full SQL expression with aggregate functions, e.g., "SUM(orders.sales)", "AVG(orders.amount)"
 
     # Optional: Human-readable description of the metric

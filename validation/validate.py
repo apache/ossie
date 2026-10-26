@@ -54,13 +54,19 @@ SDK (pip install /path/to/ossie/python) for its shared YAML loader and point
 OSSIE_SCHEMA or --schema at a copy of the schema.
 """
 
+import difflib
 import importlib.util
+import itertools
 import json
 import os
 import sys
 import traceback
 from collections import Counter
+from collections.abc import Hashable, Iterator
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from typing import Literal
 
 try:
     import yaml
@@ -93,24 +99,23 @@ try:
 except ImportError:
     SQLGLOT_AVAILABLE = False
 
-# Map Ossie dialects to sqlglot dialects
-DIALECT_MAP = {
-    "ANSI_SQL": None,  # sqlglot default
-    "OSSIE_SQL_2026": None,  # ANSI-SQL-compatible; parse with the sqlglot default
+# The dialect the portable `sql` form is written in; the only one this
+# specification defines.
+PORTABLE_DIALECT = "OSSIE_SQL_2026"
+
+# Ossie dialects sqlglot can parse, each mapped to the sqlglot dialect to parse it
+# as. None is sqlglot's default (ANSI) dialect.
+SQLGLOT_DIALECTS = {
+    "ANSI_SQL": None,
+    PORTABLE_DIALECT: None,
     "SNOWFLAKE": "snowflake",
     "DATABRICKS": "databricks",
     "BIGQUERY": "bigquery",
-    "MDX": None,  # Not supported by sqlglot, skip validation
-    "TABLEAU": None,  # Not supported by sqlglot, skip validation
-    "MAQL": None,  # Not supported by sqlglot, skip validation
-    "SIGMA": None,  # Sigma's spreadsheet-style formula language, not SQL; skip validation
-    "THOUGHTSPOT": None,  # Not supported by sqlglot, skip validation
-    "DAX": None,  # Not supported by sqlglot, skip validation
-    "HOLISTICS_AQL": None,  # Holistics AQL, not SQL; skip validation
 }
 
-# Dialects that sqlglot cannot parse
-SKIP_SQL_VALIDATION = {
+# Known non-SQL dialects: sqlglot cannot parse them, so their expressions are
+# carried but not validated.
+NON_SQL_DIALECTS = {
     "MDX",
     "TABLEAU",
     "MAQL",
@@ -119,6 +124,9 @@ SKIP_SQL_VALIDATION = {
     "DAX",
     "HOLISTICS_AQL",
 }
+
+# Every dialect this validator knows, for close-match suggestions on a typo.
+KNOWN_DIALECTS = (*SQLGLOT_DIALECTS, *NON_SQL_DIALECTS)
 
 # Concepts every ontology includes implicitly (ontology.md, "Built-in concepts")
 BUILT_IN_CONCEPTS = {"Any", "Boolean", "Date", "DateTime", "Decimal", "Float", "Integer", "String"}
@@ -344,10 +352,10 @@ def _parse_sql_expression(
     Returns `(None, None)` when there is nothing to parse: sqlglot is unavailable or
     the dialect is one sqlglot cannot parse.
     """
-    if not SQLGLOT_AVAILABLE or dialect in SKIP_SQL_VALIDATION:
+    if not SQLGLOT_AVAILABLE or dialect not in SQLGLOT_DIALECTS:
         return None, None
 
-    sqlglot_dialect = DIALECT_MAP.get(dialect)
+    sqlglot_dialect = SQLGLOT_DIALECTS[dialect]
 
     def statement_count_error(sql: str) -> str | None:
         """Reject a parseable string that holds more than one statement.
@@ -418,6 +426,90 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
     return error
 
 
+ExpressionKind = Literal["field", "dataset_metric", "model_metric"]
+
+
+@dataclass(frozen=True)
+class Expression:
+    """An expression and its context within a document.
+
+    `kind` identifies the declaring element, and `name` identifies the field
+    or metric. `dialect` is OSSIE_SQL_2026 for portable `sql` expressions,
+    or the dialect's label otherwise. `field_names` contains the enclosing
+    dataset's field names, or is empty for model-scoped metrics.
+    `superseded_by` is the authoritative top-level `sql` text when this is an
+    OSSIE_SQL_2026 dialect entry that `sql` outranks, else None: such an entry
+    is non-authoritative, since a client reads the `sql` instead.
+    """
+
+    kind: ExpressionKind
+    dataset_name: str
+    name: str
+    dialect: str
+    text: str
+    field_names: frozenset[str]
+    superseded_by: str | None = None
+
+    def context(self, model_name: str) -> str:
+        if self.kind == "field":
+            label = f"Field '{self.dataset_name}.{self.name}'"
+        elif self.kind == "dataset_metric":
+            label = f"Metric '{self.dataset_name}.{self.name}'"
+        else:
+            label = f"Metric '{self.name}'"
+        return f"{label} in model '{model_name}' ({self.dialect})"
+
+
+def _expressions_in(
+    member: dict, kind: ExpressionKind, dataset_name: str, field_names: frozenset[str]
+) -> Iterator[Expression]:
+    expression = member.get("expression") or {}
+    name = member.get("name", "<unnamed>")
+    sql = expression.get("sql")
+    if sql is not None:
+        yield Expression(
+            kind=kind,
+            dataset_name=dataset_name,
+            name=name,
+            dialect=PORTABLE_DIALECT,
+            text=sql,
+            field_names=field_names,
+        )
+    for dialect_expr in expression.get("dialects", []):
+        text = dialect_expr.get("expression")
+        if text is None:
+            continue
+        dialect = dialect_expr["dialect"]
+        yield Expression(
+            kind=kind,
+            dataset_name=dataset_name,
+            name=name,
+            dialect=dialect,
+            text=text,
+            field_names=field_names,
+            # A top-level `sql` is the authoritative OSSIE_SQL_2026 form, so an
+            # OSSIE_SQL_2026 dialect entry alongside it is non-authoritative.
+            superseded_by=sql if dialect == PORTABLE_DIALECT and sql is not None else None,
+        )
+
+
+def iter_expressions(data: dict) -> Iterator[Expression]:
+    """Yield every expression in a core semantic model document. A missing
+    expression is skipped; an empty one is yielded, so a caller decides whether to
+    report it."""
+    for dataset in data.get("datasets", []):
+        dataset_name = dataset.get("name", "<unnamed>")
+        field_names = frozenset(
+            f["name"].casefold() for f in dataset.get("fields", []) if f.get("name")
+        )
+        for field in dataset.get("fields", []):
+            yield from _expressions_in(field, "field", dataset_name, field_names)
+        for metric in dataset.get("metrics", []):
+            yield from _expressions_in(metric, "dataset_metric", dataset_name, field_names)
+    for metric in data.get("metrics", []):
+        yield from _expressions_in(metric, "model_metric", "", frozenset())
+
+
 def validate_sql(data: dict) -> list[str]:
     """Validate SQL expressions in fields and metrics."""
     # Only core semantic model documents contain a root datasets property.
@@ -429,52 +521,54 @@ def validate_sql(data: dict) -> list[str]:
             "[SQL] Warning: sqlglot not installed, skipping SQL validation. Install with: pip install sqlglot"
         )]
 
-    model = data
+    model_name = data.get("name", "<unnamed>")
     errors = []
+    # A dialect outside both sets is one this validator cannot parse. It may be a
+    # legitimate entry from extensions/dialects.md, so warn once that its
+    # expressions went unchecked rather than treat it as an error.
+    unsupported_dialects = Counter()
 
-    model_name = model.get("name", "<unnamed>")
+    for expression in iter_expressions(data):
+        dialect = expression.dialect
+        if dialect in NON_SQL_DIALECTS:
+            continue
+        if dialect not in SQLGLOT_DIALECTS:
+            unsupported_dialects[dialect] += 1
+            continue
+        error = validate_sql_expression(
+            expression.text, dialect, expression.context(model_name)
+        )
+        if expression.superseded_by is not None:
+            # A top-level `sql` is authoritative, so this OSSIE_SQL_2026 dialect
+            # entry does not fail the document. Warn if it is dead text -- invalid,
+            # or differing from the `sql` a client reads instead -- and stay silent
+            # when it merely duplicates the `sql`.
+            if error:
+                reason = "is not valid SQL"
+            elif expression.text != expression.superseded_by:
+                reason = "differs from the top-level 'sql'"
+            else:
+                continue
+            errors.append(ValidationWarning(
+                f"[SQL] Warning: {expression.context(model_name)}: dialect entry {reason} "
+                f"and is ignored; the top-level 'sql' is authoritative"
+            ))
+        elif error:
+            errors.append(error)
 
-    # Validate field expressions
-    for dataset in model.get("datasets", []):
-        dataset_name = dataset.get("name", "<unnamed>")
-        for field in dataset.get("fields", []):
-            field_name = field.get("name", "<unnamed>")
-            expression = field.get("expression", {})
-            for dialect_expr in expression.get("dialects", []):
-                dialect = dialect_expr.get("dialect", "ANSI_SQL")
-                # Only a missing expression is skipped; an empty one is reported.
-                expr = dialect_expr.get("expression")
-                if expr is not None:
-                    context = f"Field '{dataset_name}.{field_name}' in model '{model_name}' ({dialect})"
-                    error = validate_sql_expression(expr, dialect, context)
-                    if error:
-                        errors.append(error)
-
-        # Validate dataset-scoped metric expressions
-        for metric in dataset.get("metrics", []):
-            metric_name = metric.get("name", "<unnamed>")
-            expression = metric.get("expression", {})
-            for dialect_expr in expression.get("dialects", []):
-                dialect = dialect_expr.get("dialect", "ANSI_SQL")
-                expr = dialect_expr.get("expression")
-                if expr is not None:
-                    context = f"Metric '{dataset_name}.{metric_name}' in model '{model_name}' ({dialect})"
-                    error = validate_sql_expression(expr, dialect, context)
-                    if error:
-                        errors.append(error)
-
-    # Validate metric expressions
-    for metric in model.get("metrics", []):
-        metric_name = metric.get("name", "<unnamed>")
-        expression = metric.get("expression", {})
-        for dialect_expr in expression.get("dialects", []):
-            dialect = dialect_expr.get("dialect", "ANSI_SQL")
-            expr = dialect_expr.get("expression")
-            if expr is not None:
-                context = f"Metric '{metric_name}' in model '{model_name}' ({dialect})"
-                error = validate_sql_expression(expr, dialect, context)
-                if error:
-                    errors.append(error)
+    for dialect in sorted(unsupported_dialects):
+        count = unsupported_dialects[dialect]
+        plural = "s" if count != 1 else ""
+        message = (
+            f"[SQL] Warning: dialect '{dialect}' is not supported by this validator; "
+            f"{count} expression{plural} not syntax-checked"
+        )
+        # Only a close match is suggested, so a legitimate new dialect gets no
+        # spurious "did you mean".
+        suggestion = difflib.get_close_matches(dialect, KNOWN_DIALECTS, n=1, cutoff=0.8)
+        if suggestion:
+            message += f". Did you mean '{suggestion[0]}'?"
+        errors.append(ValidationWarning(message))
 
     return errors
 
@@ -482,18 +576,23 @@ def validate_sql(data: dict) -> list[str]:
 def _number_text(text: str) -> str:
     """Normalise a numeric literal so 100 and 100.0 agree and 1.08 and 1.18 do not.
 
-    ``1e309`` and ``NaN`` parse as numbers but do not fit in an int. Those
-    stay a stable token instead of raising out of validation.
+    ``Decimal`` preserves precision for large numbers and large exponents without
+    overflowing float64 or rounding 20+ digit integers.
     """
     try:
-        value = float(text)
-    except (TypeError, ValueError):
+        value = Decimal(str(text))
+    except (InvalidOperation, TypeError, ValueError):
         return str(text)
+    if value.is_nan():
+        return "nan"
+    if value.is_infinite():
+        return "-infinity" if value < 0 else "infinity"
     try:
-        whole = int(value)
-    except (OverflowError, ValueError):
-        return repr(value)
-    return str(whole) if value == whole else repr(value)
+        if value % 1 == 0:
+            return str(int(value))
+    except (InvalidOperation, OverflowError):
+        pass
+    return str(value.normalize())
 
 
 def _arithmetic_constant(node, negative: bool = False) -> str | None:
@@ -514,10 +613,24 @@ def _arithmetic_constant(node, negative: bool = False) -> str | None:
     return text[1:] if text.startswith("-") else f"-{text}"
 
 
+def _is_literal_operand(node) -> bool:
+    while isinstance(node, exp.Paren):
+        node = node.this
+    return (
+        _arithmetic_constant(node) is not None
+        or isinstance(node, (exp.Boolean, exp.Null, exp.Literal))
+    )
+
+
 def _comparison_operand(node) -> str:
     """One side of a comparison, ignoring dialect spelling of the same value."""
     if node is None:
         return ""
+    while isinstance(node, exp.Paren):
+        node = node.this
+    constant = _arithmetic_constant(node)
+    if constant is not None:
+        return constant
     if isinstance(node, exp.Column):
         return node.name.lower()
     # TRUE and 1 are the same filter; engines spell booleans differently.
@@ -526,7 +639,7 @@ def _comparison_operand(node) -> str:
     if isinstance(node, exp.Null):
         return "null"
     if isinstance(node, exp.Literal):
-        return _number_text(node.name) if node.is_number else f"'{node.name}'"
+        return f"'{node.name}'"
     return " ".join(node.sql().lower().split())
 
 
@@ -557,14 +670,37 @@ def _predicate_token(node) -> str:
     left = _comparison_operand(node.this)
     if isinstance(node, exp.In):
         items = sorted(_comparison_operand(item) for item in (node.expressions or []))
-        return f"IN({left},[{','.join(items)}])"
-    right = _comparison_operand(node.args.get("expression"))
-    if kind in _FLIPPED_COMPARISON and left and right:
-        left_is_column = isinstance(node.this, exp.Column)
-        right_is_column = isinstance(node.args.get("expression"), exp.Column)
-        if right_is_column and not left_is_column:
-            kind, left, right = _FLIPPED_COMPARISON[kind], right, left
-    return f"{kind}({left},{right})"
+        token = f"IN({left},[{','.join(items)}])"
+    elif isinstance(node, exp.Is):
+        right = _comparison_operand(node.args.get("expression"))
+        token = f"IS({left},{right})"
+    elif isinstance(node, exp.Between):
+        low = _comparison_operand(node.args.get("low"))
+        high = _comparison_operand(node.args.get("high"))
+        token = f"BETWEEN({left},{low},{high})"
+    elif isinstance(node, exp.Like):
+        right = _comparison_operand(node.args.get("expression"))
+        token = f"LIKE({left},{right})"
+    else:
+        right = _comparison_operand(node.args.get("expression"))
+        if kind in _FLIPPED_COMPARISON and left and right:
+            left_is_lit = _is_literal_operand(node.this)
+            right_is_lit = _is_literal_operand(node.args.get("expression"))
+            if (left_is_lit != right_is_lit and left_is_lit) or (
+                left_is_lit == right_is_lit and left > right
+            ):
+                kind, left, right = _FLIPPED_COMPARISON[kind], right, left
+        token = f"{kind}({left},{right})"
+
+    is_neg = bool(node.args.get("negate") or node.args.get("is_not"))
+    p = node.parent
+    while isinstance(p, (exp.Paren, exp.Not)):
+        if isinstance(p, exp.Not):
+            is_neg = not is_neg
+        p = p.parent
+    if is_neg:
+        token = f"NOT({token})"
+    return token
 
 
 def _expression_signature(tree) -> tuple:
@@ -573,9 +709,14 @@ def _expression_signature(tree) -> tuple:
     Rendered SQL is not compared: ``NVL`` and ``COALESCE``, ``FILTER`` and
     ``CASE``, and swapped comparison operands share a signature. Constants
     that only exist to spell a filter (``ELSE 0``, ``col = 1``) are not
-    arithmetic, so they stay out of the constant set. This is a heuristic
-    for GitHub issue #279, not a proof that two expressions are equivalent:
-    ``AND`` versus ``OR`` over the same comparisons is invisible here.
+    arithmetic, so they stay out of the constant set.
+
+    Columns are compared by bare lowercased name, so table or dataset qualifiers
+    (such as ``o.amount`` vs ``r.amount``) do not cause drift.
+
+    This is a heuristic for GitHub issue #279, not a proof that two expressions
+    are equivalent: logical combinations like ``AND`` versus ``OR`` over the same
+    comparisons are a known blind spot that is invisible here.
     """
     aggregates = []
     for aggregate in tree.find_all(exp.AggFunc):
@@ -596,7 +737,9 @@ def _expression_signature(tree) -> tuple:
                 constants.add(constant)
     predicates = frozenset(
         _predicate_token(node)
-        for node in tree.find_all(exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.In)
+        for node in tree.find_all(
+            exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.In, exp.Is, exp.Between, exp.Like
+        )
     )
     return tuple(sorted(aggregates)), columns, frozenset(constants), predicates
 
@@ -612,20 +755,6 @@ def _impure_calls(tree) -> list[str]:
         if name in _IMPURE_CALLS:
             found.add(_IMPURE_CALLS[name])
     return sorted(found)
-
-
-def _iter_metrics(data: dict):
-    """Model metrics and dataset-scoped metrics, labeled the way other checks are."""
-    for dataset in data.get("datasets") or []:
-        if not isinstance(dataset, dict):
-            continue
-        dataset_name = dataset.get("name") or "<unnamed>"
-        for metric in dataset.get("metrics") or []:
-            if isinstance(metric, dict):
-                yield f"{dataset_name}.{metric.get('name') or '<unnamed>'}", metric
-    for metric in data.get("metrics") or []:
-        if isinstance(metric, dict):
-            yield metric.get("name") or "<unnamed>", metric
 
 
 def _axis_detail(parsed: list[tuple[str, tuple]], index: int) -> str:
@@ -655,30 +784,32 @@ def validate_metric_agreement(data: dict) -> list[str]:
 
     model_name = data.get("name") or "<unnamed>"
     warnings = []
-    for label, metric in _iter_metrics(data):
-        expression = metric.get("expression")
-        dialects = expression.get("dialects") if isinstance(expression, dict) else None
-        if not isinstance(dialects, list):
-            continue
+
+    metric_expressions = [
+        expr
+        for expr in iter_expressions(data)
+        if expr.kind in ("dataset_metric", "model_metric")
+    ]
+
+    for (kind, dataset_name, name), group in itertools.groupby(
+        metric_expressions, key=lambda e: (e.kind, e.dataset_name, e.name)
+    ):
+        label = f"{dataset_name}.{name}" if dataset_name else name
         parsed = []
-        for dialect_expr in dialects:
-            if not isinstance(dialect_expr, dict):
-                continue
-            dialect = dialect_expr.get("dialect") or "ANSI_SQL"
-            expr = dialect_expr.get("expression")
-            if not isinstance(expr, str) or not isinstance(dialect, str):
+        for expr in group:
+            if not expr.text or expr.superseded_by is not None:
                 continue
             tree, error = _parse_sql_expression(
-                expr, dialect, f"Metric '{label}' in model '{model_name}' ({dialect})"
+                expr.text, expr.dialect, expr.context(model_name)
             )
             # A syntax error is already reported by validate_sql. An unparsed
             # dialect is skipped rather than failed.
             if tree is None or error:
                 continue
-            parsed.append((dialect, _expression_signature(tree)))
+            parsed.append((expr.dialect, _expression_signature(tree)))
             for call in _impure_calls(tree):
                 warnings.append(ValidationWarning(
-                    f"[Purity] Warning: Metric '{label}' in model '{model_name}' ({dialect}): "
+                    f"[Purity] Warning: {expr.context(model_name)}: "
                     f"expression calls {call}, which is not a reproducible read"
                 ))
         if len(parsed) < 2:
@@ -718,58 +849,56 @@ def validate_metric_scoping(data: dict) -> list[str]:
     if not isinstance(data, dict) or "datasets" not in data:
         return []
 
-    model = data
+    model_name = data.get("name", "<unnamed>")
     errors = []
-    model_name = model.get("name", "<unnamed>")
 
-    for dataset in model.get("datasets", []):
-        dataset_name = dataset.get("name", "<unnamed>")
-        field_names = {
-            f["name"].casefold() for f in dataset.get("fields", []) if f.get("name")
-        }
-        for metric in dataset.get("metrics", []):
-            metric_name = metric.get("name", "<unnamed>")
-            expression = metric.get("expression") or {}
-            for dialect_expr in expression.get("dialects", []):
-                dialect = dialect_expr.get("dialect", "ANSI_SQL")
-                expr = dialect_expr.get("expression")
-                if not expr:
-                    continue
-                tree, _ = _parse_sql_expression(
-                    expr,
-                    dialect,
-                    f"Metric '{dataset_name}.{metric_name}' in model '{model_name}'",
-                )
-                if tree is None:
-                    continue
+    def scope_errors(expression: Expression) -> list[str]:
+        tree, _ = _parse_sql_expression(
+            expression.text, expression.dialect, expression.context(model_name)
+        )
+        if tree is None:
+            return []
 
-                qualifiers = set()
-                undeclared = set()
-                for col in tree.find_all(exp.Column):
-                    parts = [part.name for part in col.parts]
-                    if len(parts) > 1 and parts[0]:
-                        qualifiers.add(parts[0])
-                    elif parts and parts[0].casefold() not in field_names:
-                        undeclared.add(parts[0])
+        qualifiers = set()
+        undeclared = set()
+        for col in tree.find_all(exp.Column):
+            parts = [part.name for part in col.parts]
+            if len(parts) > 1 and parts[0]:
+                qualifiers.add(parts[0])
+            elif parts and parts[0].casefold() not in expression.field_names:
+                undeclared.add(parts[0])
 
-                prefix = (
-                    f"[Scope] Dataset-scoped metric '{dataset_name}.{metric_name}' in model "
-                    f"'{model_name}' ({dialect})"
-                )
-                if qualifiers:
-                    names = ", ".join(repr(q) for q in sorted(qualifiers))
-                    errors.append(
-                        f"{prefix} uses qualified reference(s) {names}. A dataset-scoped metric "
-                        f"expression must reference the dataset's fields by single-part "
-                        f"(unqualified) name; a metric that must reference another dataset "
-                        f"belongs in the model-root metrics."
-                    )
-                if undeclared:
-                    names = ", ".join(repr(n) for n in sorted(undeclared))
-                    errors.append(
-                        f"{prefix} references undeclared field(s) {names}. A dataset-scoped "
-                        f"metric may reference only the dataset's declared fields."
-                    )
+        prefix = (
+            f"[Scope] Dataset-scoped metric '{expression.dataset_name}.{expression.name}' "
+            f"in model '{model_name}' ({expression.dialect})"
+        )
+        out = []
+        if qualifiers:
+            names = ", ".join(repr(q) for q in sorted(qualifiers))
+            out.append(
+                f"{prefix} uses qualified reference(s) {names}. A dataset-scoped metric "
+                f"expression must reference the dataset's fields by single-part "
+                f"(unqualified) name; a metric that must reference another dataset "
+                f"belongs in the model-root metrics."
+            )
+        if undeclared:
+            names = ", ".join(repr(n) for n in sorted(undeclared))
+            out.append(
+                f"{prefix} references undeclared field(s) {names}. A dataset-scoped "
+                f"metric may reference only the dataset's declared fields."
+            )
+        return out
+
+    for expression in iter_expressions(data):
+        # A superseded OSSIE_SQL_2026 dialect entry is non-authoritative; the
+        # top-level `sql` it defers to is scope-checked in its place.
+        if (
+            expression.kind != "dataset_metric"
+            or not expression.text
+            or expression.superseded_by is not None
+        ):
+            continue
+        errors.extend(scope_errors(expression))
 
     return errors
 

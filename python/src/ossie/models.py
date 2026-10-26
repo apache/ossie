@@ -30,6 +30,7 @@ from pydantic import (
     StrictBool,
     TypeAdapter,
     model_serializer,
+    model_validator,
 )
 
 from ossie._loading import UniqueKeyLoader, unique_json_object
@@ -118,7 +119,8 @@ def _invalid_properties(node: Any) -> list[tuple[str, str]]:
 
 
 class OssieDialect(str, Enum):
-    """Supported SQL and expression language dialects."""
+    """Well-known dialect values. The field accepts any string; see
+    `extensions/dialects.md`."""
 
     ANSI_SQL = "ANSI_SQL"
     SNOWFLAKE = "SNOWFLAKE"
@@ -160,7 +162,8 @@ _TEMPORAL_DATA_TYPES = frozenset(
 
 
 class OssieVendor(str, Enum):
-    """Well-known vendor names for custom extensions."""
+    """Well-known vendor values. The field accepts any string; see
+    `extensions/vendors.md`."""
 
     COMMON = "COMMON"
     SNOWFLAKE = "SNOWFLAKE"
@@ -203,11 +206,11 @@ OssieAIContext = Union[str, OssieAIContextObject]
 
 
 class OssieCustomExtension(BaseModel):
-    """Vendor-specific metadata as a serialized JSON string."""
+    """Vendor-specific metadata carried as an opaque string."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    vendor_name: str
+    vendor_name: str = Field(min_length=1)
     data: str
 
 
@@ -216,8 +219,9 @@ class OssieDialectExpression(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    dialect: OssieDialect
-    expression: str
+    # Free-form; see OssieDialect for the well-known values.
+    dialect: str = Field(min_length=1)
+    expression: str = Field(min_length=1)
 
 
 class OssieExpression(BaseModel):
@@ -225,7 +229,15 @@ class OssieExpression(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    dialects: list[OssieDialectExpression] = Field(..., min_length=1)
+    # Primary, portable expression written in OSSIE_SQL_2026.
+    sql: Optional[str] = Field(default=None, min_length=1)
+    dialects: Optional[list[OssieDialectExpression]] = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _require_sql_or_dialects(self) -> "OssieExpression":
+        if self.sql is None and not self.dialects:
+            raise ValueError("expression requires at least one of 'sql' or 'dialects'")
+        return self
 
 
 class OssieDimension(BaseModel):
