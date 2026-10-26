@@ -125,16 +125,44 @@ NON_SQL_DIALECTS = {
 # Every dialect this validator knows, for close-match suggestions on a typo.
 KNOWN_DIALECTS = (*SQLGLOT_DIALECTS, *NON_SQL_DIALECTS)
 
-# sqlglot puts DROP/CREATE/SET in expressions.ddl and DELETE/INSERT in
-# expressions.dml even when the node is not a subclass of exp.DDL / exp.DML
-# (Drop is the example). GRANT lives in expressions.query, so it is listed
-# separately. Query roots (SELECT, UNION, scalar subquery) are not statements
-# for this check: spec.md has not defined that, and wrapping a failed parse
-# as SELECT {expr} depends on parse_one accepting a SELECT.
-_SQL_STATEMENT_MODULES = frozenset({
-    "sqlglot.expressions.ddl",
-    "sqlglot.expressions.dml",
-})
+# Named sqlglot statement classes, not module paths: Drop is not a subclass of
+# DDL, Grant/Revoke/Analyze live under expressions.query, and CI installs
+# sqlglot unpinned. getattr skips names a given sqlglot version does not ship.
+# Select / Union / Subquery are omitted: spec.md has not defined that, and
+# wrapping a failed parse as SELECT {expr} depends on parse_one accepting a
+# SELECT. Command is sqlglot's fallback for SHOW / EXPLAIN / CALL.
+_SQL_STATEMENT_CLASS_NAMES = (
+    "Drop",
+    "Delete",
+    "Insert",
+    "Update",
+    "Create",
+    "Alter",
+    "Set",
+    "Use",
+    "Transaction",
+    "Commit",
+    "Rollback",
+    "Merge",
+    "Grant",
+    "Revoke",
+    "Analyze",
+    "TruncateTable",
+    "Command",
+    "Describe",
+    "Comment",
+    "Pragma",
+    "Copy",
+)
+_SQL_STATEMENT_TYPES: tuple[type, ...] = (
+    tuple(
+        cls
+        for name in _SQL_STATEMENT_CLASS_NAMES
+        if (cls := getattr(exp, name, None)) is not None
+    )
+    if SQLGLOT_AVAILABLE
+    else ()
+)
 
 
 def _human_sql_kind(node: object) -> str:
@@ -156,11 +184,9 @@ def sql_statement_kind(node: object) -> str | None:
     check is not enough. Returns None for value expressions and for Query
     roots (SELECT / subquery), which are not rejected here.
     """
-    if not SQLGLOT_AVAILABLE:
+    if not _SQL_STATEMENT_TYPES:
         return None
-    if isinstance(node, exp.Grant):
-        return _human_sql_kind(node)
-    if type(node).__module__ in _SQL_STATEMENT_MODULES:
+    if isinstance(node, _SQL_STATEMENT_TYPES):
         return _human_sql_kind(node)
     return None
 
@@ -435,9 +461,10 @@ def _parse_sql_expression(
         """Reject a single parseable unit that is a statement, not an expression.
 
         The count check above only rejects a list. DROP/DELETE/GRANT parse as
-        one statement and would otherwise pass. Kind is not checked on the
-        SELECT-wrap retry: that path exists to parse a bare column, and a
-        successful wrap is always a SELECT.
+        one statement and would otherwise pass. Kind is isinstance of the
+        named statement classes, not sqlglot's file layout. Kind is not
+        checked on the SELECT-wrap retry: that path exists to parse a bare
+        column, and a successful wrap is always a SELECT.
         """
         kind = sql_statement_kind(node)
         if kind is None:

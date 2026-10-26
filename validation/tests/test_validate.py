@@ -606,6 +606,8 @@ def test_rejects_an_expression_holding_more_than_one_statement(expression: str) 
         ("DROP TABLE t", "DROP"),
         ("DELETE FROM orders", "DELETE"),
         ("GRANT SELECT ON orders TO public", "GRANT"),
+        ("REVOKE SELECT ON t FROM u", "REVOKE"),
+        ("ANALYZE t", "ANALYZE"),
         ("INSERT INTO orders VALUES (1)", "INSERT"),
         ("UPDATE orders SET x = 1", "UPDATE"),
         ("CREATE TABLE t (id INT)", "CREATE"),
@@ -620,6 +622,8 @@ def test_rejects_an_expression_holding_more_than_one_statement(expression: str) 
         "drop",
         "delete",
         "grant",
+        "revoke",
+        "analyze",
         "insert",
         "update",
         "create",
@@ -634,7 +638,7 @@ def test_rejects_an_expression_holding_more_than_one_statement(expression: str) 
 def test_rejects_a_sql_statement_used_as_an_expression(
     expression: str, kind: str
 ) -> None:
-    """parse_one accepts one statement of any kind; count==1 is not enough."""
+    """A single DDL/DML/session statement is not a field or metric expression."""
     error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
 
     assert error == f"[SQL] ctx: expected an expression, found a {kind} statement"
