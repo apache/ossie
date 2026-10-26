@@ -55,14 +55,26 @@ def _document(datasets: list[dict], relationships: list[dict]) -> dict:
     }
 
 
+def _field(name: str) -> dict:
+    return {
+        "name": name,
+        "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": name}]},
+    }
+
+
 _CUSTOMERS = {
     "name": "customers",
     "source": "db.s.customers",
     "primary_key": ["id"],
     "unique_keys": [["email"]],
+    "fields": [_field("id"), _field("email"), _field("region"), _field("tenant_id")],
 }
 
-_ORDERS = {"name": "orders", "source": "db.s.orders"}
+_ORDERS = {
+    "name": "orders",
+    "source": "db.s.orders",
+    "fields": [_field("customer_id"), _field("product_id"), _field("variant_id")],
+}
 
 
 def test_accepts_a_single_root_model(core_schema: dict) -> None:
@@ -699,6 +711,7 @@ def test_accepts_composite_key_regardless_of_column_order() -> None:
         "name": "order_lines",
         "source": "db.s.order_lines",
         "primary_key": ["order_id", "line_number"],
+        "fields": [_field("order_id"), _field("line_number")],
     }
     rel = _relationship(to_columns=["line_number", "order_id"], to="order_lines")
 
@@ -706,7 +719,11 @@ def test_accepts_composite_key_regardless_of_column_order() -> None:
 
 
 def test_skips_datasets_that_declare_no_keys() -> None:
-    no_keys = {"name": "raw_table", "source": "db.s.raw_table"}
+    no_keys = {
+        "name": "raw_table",
+        "source": "db.s.raw_table",
+        "fields": [_field("anything")],
+    }
     rel = _relationship(to_columns=["anything"], to="raw_table")
 
     assert validate_references(_document([_ORDERS, no_keys], [rel])) == []
@@ -744,8 +761,13 @@ def test_non_string_expression_surfaces_instead_of_being_reported_valid() -> Non
 
 def test_tolerates_null_unique_keys() -> None:
     # `unique_keys:` present but empty parses to None; the check must not crash.
-    dataset = {"name": "customers", "source": "db.s.customers",
-               "primary_key": ["id"], "unique_keys": None}
+    dataset = {
+        "name": "customers",
+        "source": "db.s.customers",
+        "primary_key": ["id"],
+        "unique_keys": None,
+        "fields": [_field("id")],
+    }
     errors = validate_references(
         _document([_ORDERS, dataset], [_relationship(to_columns=["id"])])
     )
@@ -765,12 +787,108 @@ def test_skips_non_list_to_columns() -> None:
 def test_skips_malformed_flat_unique_keys() -> None:
     # unique_keys mistakenly written flat like primary_key: strings are not
     # keys, so with no well-formed key declared the check does not fire.
-    dataset = {"name": "customers", "source": "db.s.customers", "unique_keys": ["email"]}
+    dataset = {
+        "name": "customers",
+        "source": "db.s.customers",
+        "unique_keys": ["email"],
+        "fields": [_field("email")],
+    }
     errors = validate_references(
         _document([_ORDERS, dataset], [_relationship(to_columns=["email"])])
     )
 
     assert errors == []
+
+
+def test_rejects_from_columns_that_are_not_fields() -> None:
+    rel = _relationship(to_columns=["id"])
+    rel["from_columns"] = ["GHOST_COLUMN"]
+
+    errors = validate_references(_document([_ORDERS, _CUSTOMERS], [rel]))
+
+    assert errors == [
+        "[Reference] Relationship 'orders_to_customers' in model 'm': from_columns "
+        "references undeclared field 'GHOST_COLUMN'. from_columns must be field names "
+        "of the from dataset 'orders'."
+    ]
+
+
+def test_rejects_to_columns_that_are_not_fields() -> None:
+    errors = validate_references(
+        _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["GHOST_TO"])])
+    )
+
+    assert errors == [
+        "[Reference] Relationship 'orders_to_customers' in model 'm': to_columns "
+        "references undeclared field 'GHOST_TO'. to_columns must be field names "
+        "of the to dataset 'customers'."
+    ]
+
+
+def test_rejects_multiple_undeclared_from_columns() -> None:
+    rel = _relationship(to_columns=["id"])
+    rel["from_columns"] = ["missing_a", "missing_b"]
+
+    errors = validate_references(_document([_ORDERS, _CUSTOMERS], [rel]))
+
+    assert errors == [
+        "[Reference] Relationship 'orders_to_customers' in model 'm': from_columns "
+        "references undeclared fields 'missing_a', 'missing_b'. from_columns must be "
+        "field names of the from dataset 'orders'."
+    ]
+
+
+def test_accepts_relationship_columns_that_differ_only_in_case() -> None:
+    rel = _relationship(to_columns=["ID"])
+    rel["from_columns"] = ["Customer_ID"]
+
+    assert validate_references(_document([_ORDERS, _CUSTOMERS], [rel])) == []
+
+
+def test_rejects_primary_key_that_is_not_a_field() -> None:
+    dataset = {
+        "name": "customers",
+        "source": "db.s.customers",
+        "primary_key": ["GHOST_PK"],
+        "fields": [_field("id")],
+    }
+
+    errors = validate_references(_document([dataset], []))
+
+    assert errors == [
+        "[Reference] Dataset 'customers' in model 'm': primary_key references "
+        "undeclared field 'GHOST_PK'. primary_key must be field names of dataset "
+        "'customers'."
+    ]
+
+
+def test_rejects_unique_keys_that_are_not_fields() -> None:
+    dataset = {
+        "name": "customers",
+        "source": "db.s.customers",
+        "unique_keys": [["GHOST_UK"]],
+        "fields": [_field("id")],
+    }
+
+    errors = validate_references(_document([dataset], []))
+
+    assert errors == [
+        "[Reference] Dataset 'customers' in model 'm': unique_keys references "
+        "undeclared field 'GHOST_UK'. unique_keys must be field names of dataset "
+        "'customers'."
+    ]
+
+
+def test_ghost_from_columns_fails_document_validation(core_schema: dict) -> None:
+    rel = _relationship(to_columns=["id"])
+    rel["from_columns"] = ["GHOST_COLUMN"]
+
+    errors = _VALIDATE.validate_document(
+        _document([_ORDERS, _CUSTOMERS], [rel]), core_schema
+    )
+
+    assert any("GHOST_COLUMN" in error and "from_columns" in error for error in errors)
+    assert all(not isinstance(error, _VALIDATE.ValidationWarning) for error in errors)
 
 
 @pytest.fixture

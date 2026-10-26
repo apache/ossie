@@ -204,6 +204,50 @@ def find_duplicates(items: list[str]) -> list[str]:
     return [item for item, count in Counter(items).items() if count > 1]
 
 
+def dataset_field_names(dataset: dict) -> frozenset[str]:
+    """Case-folded field names declared on a dataset.
+
+    Name Resolution (spec.md) treats primary_key, unique_keys, and relationship
+    from_columns/to_columns as field names of that dataset. Comparison is
+    case-insensitive, matching dataset-scoped metric scoping.
+    """
+    names: list[str] = []
+    for field in dataset.get("fields") or []:
+        if not isinstance(field, dict):
+            continue
+        name = field.get("name")
+        if isinstance(name, str) and name:
+            names.append(name.casefold())
+    return frozenset(names)
+
+
+def undeclared_field_names(used: object, declared: frozenset[str]) -> list[str]:
+    """Names in used that are not declared fields, original spelling, first seen."""
+    if not isinstance(used, list):
+        return []
+    seen: set[str] = set()
+    missing: list[str] = []
+    for name in used:
+        if not isinstance(name, str) or not name:
+            continue
+        folded = name.casefold()
+        if folded not in declared and folded not in seen:
+            seen.add(folded)
+            missing.append(name)
+    return missing
+
+
+def _undeclared_fields_error(
+    prefix: str, where: str, names: list[str], dataset_label: str
+) -> str:
+    listed = ", ".join(repr(n) for n in sorted(names))
+    noun = "field" if len(names) == 1 else "fields"
+    return (
+        f"[Reference] {prefix}: {where} references undeclared {noun} {listed}. "
+        f"{where} must be field names of {dataset_label}."
+    )
+
+
 def validate_unique_names(data: dict) -> list[str]:
     """Validate unique names for datasets, fields, metrics, relationships."""
     if not isinstance(data, dict) or "datasets" not in data:
@@ -254,8 +298,15 @@ def validate_unique_names(data: dict) -> list[str]:
 
 
 def validate_references(data: dict) -> list[str]:
-    """Validate that relationships reference existing datasets and that
-    to_columns covers a declared key of the 'to' dataset."""
+    """Validate relationship and key names against declared fields.
+
+    Unknown from/to datasets are errors. from_columns, to_columns, primary_key
+    and unique_keys must name fields of those datasets (spec.md Name
+    Resolution); missing names are errors. JSON Schema cannot express that.
+    to_columns that does not cover a declared key of the to dataset is a
+    warning. Coverage uses only keys whose names are themselves declared
+    fields, compared case-insensitively.
+    """
     if not isinstance(data, dict) or "datasets" not in data:
         return []
 
@@ -265,33 +316,114 @@ def validate_references(data: dict) -> list[str]:
     model_name = model.get("name", "<unnamed>")
     datasets = {d.get("name"): d for d in model.get("datasets", []) if d.get("name")}
 
+    for dataset in model.get("datasets", []):
+        dataset_name = dataset.get("name", "<unnamed>")
+        declared = dataset_field_names(dataset)
+        prefix = f"Dataset '{dataset_name}' in model '{model_name}'"
+        missing_pk = undeclared_field_names(dataset.get("primary_key"), declared)
+        if missing_pk:
+            errors.append(
+                _undeclared_fields_error(
+                    prefix, "primary_key", missing_pk, f"dataset '{dataset_name}'"
+                )
+            )
+        unique_keys = dataset.get("unique_keys")
+        used_uk: list[str] = []
+        if isinstance(unique_keys, list):
+            for key in unique_keys:
+                if isinstance(key, list):
+                    used_uk.extend(name for name in key if isinstance(name, str) and name)
+        missing_uk = undeclared_field_names(used_uk, declared)
+        if missing_uk:
+            errors.append(
+                _undeclared_fields_error(
+                    prefix, "unique_keys", missing_uk, f"dataset '{dataset_name}'"
+                )
+            )
+
     for rel in model.get("relationships", []):
         rel_name = rel.get("name", "<unnamed>")
         from_ds = rel.get("from")
         to_ds = rel.get("to")
+        prefix = f"Relationship '{rel_name}' in model '{model_name}'"
 
         if from_ds and from_ds not in datasets:
-            errors.append(f"[Reference] Relationship '{rel_name}' in model '{model_name}' references unknown dataset '{from_ds}'")
+            errors.append(
+                f"[Reference] {prefix} references unknown dataset '{from_ds}'"
+            )
         if to_ds and to_ds not in datasets:
-            errors.append(f"[Reference] Relationship '{rel_name}' in model '{model_name}' references unknown dataset '{to_ds}'")
+            errors.append(
+                f"[Reference] {prefix} references unknown dataset '{to_ds}'"
+            )
 
-        # The spec defines to_columns as "Primary/unique key columns in the
-        # 'to' dataset". Coverage (superset of a key) still guarantees the
-        # many-to-one join, and declared keys may be incomplete since
-        # primary_key and unique_keys are optional — so accept any
-        # to_columns that covers a declared key, report a warning rather
-        # than an error, and skip datasets that declare no keys.
-        # Shape guards keep semantic checks from crashing on documents
-        # that already fail schema validation.
-        dataset = datasets.get(to_ds)
+        from_dataset = datasets.get(from_ds)
+        from_columns = rel.get("from_columns")
+        if from_dataset is not None and isinstance(from_columns, list):
+            missing_from = undeclared_field_names(
+                from_columns, dataset_field_names(from_dataset)
+            )
+            if missing_from:
+                errors.append(
+                    _undeclared_fields_error(
+                        prefix,
+                        "from_columns",
+                        missing_from,
+                        f"the from dataset '{from_ds}'",
+                    )
+                )
+
+        to_dataset = datasets.get(to_ds)
         to_columns = rel.get("to_columns")
-        if dataset and isinstance(to_columns, list) and to_columns:
-            candidate_keys = [dataset.get("primary_key")] + list(dataset.get("unique_keys") or [])
-            declared_keys = [k for k in candidate_keys if isinstance(k, list) and k]
-            to_column_set = set(to_columns)
-            if declared_keys and not any(set(key) <= to_column_set for key in declared_keys):
+        missing_to: list[str] = []
+        if to_dataset is not None and isinstance(to_columns, list):
+            missing_to = undeclared_field_names(
+                to_columns, dataset_field_names(to_dataset)
+            )
+            if missing_to:
+                errors.append(
+                    _undeclared_fields_error(
+                        prefix,
+                        "to_columns",
+                        missing_to,
+                        f"the to dataset '{to_ds}'",
+                    )
+                )
+
+        # Coverage (superset of a key) still guarantees the many-to-one join.
+        # primary_key and unique_keys are optional, so skip datasets that
+        # declare no usable keys. Keys whose names are not fields are not
+        # usable; to_columns that already failed the field check is not
+        # coverage-checked. Shape guards keep semantic checks from crashing
+        # on documents that already fail schema validation.
+        if (
+            to_dataset is not None
+            and isinstance(to_columns, list)
+            and to_columns
+            and not missing_to
+        ):
+            declared = dataset_field_names(to_dataset)
+            candidate_keys = [to_dataset.get("primary_key")] + list(
+                to_dataset.get("unique_keys") or []
+            )
+            declared_keys = []
+            for key in candidate_keys:
+                if not isinstance(key, list) or not key:
+                    continue
+                folded = [
+                    name.casefold()
+                    for name in key
+                    if isinstance(name, str) and name
+                ]
+                if len(folded) == len(key) and all(name in declared for name in folded):
+                    declared_keys.append(set(folded))
+            to_column_set = {
+                name.casefold()
+                for name in to_columns
+                if isinstance(name, str) and name
+            }
+            if declared_keys and not any(key <= to_column_set for key in declared_keys):
                 errors.append(ValidationWarning(
-                    f"[Reference] Warning: Relationship '{rel_name}' in model '{model_name}': to_columns {to_columns} does not cover the primary key or a unique key of dataset '{to_ds}'"
+                    f"[Reference] Warning: {prefix}: to_columns {to_columns} does not cover the primary key or a unique key of dataset '{to_ds}'"
                 ))
 
     return errors
@@ -496,9 +628,7 @@ def iter_expressions(data: dict) -> Iterator[Expression]:
     report it."""
     for dataset in data.get("datasets", []):
         dataset_name = dataset.get("name", "<unnamed>")
-        field_names = frozenset(
-            f["name"].casefold() for f in dataset.get("fields", []) if f.get("name")
-        )
+        field_names = dataset_field_names(dataset)
         for field in dataset.get("fields", []):
             yield from _expressions_in(field, "field", dataset_name, field_names)
         for metric in dataset.get("metrics", []):
