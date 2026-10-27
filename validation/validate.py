@@ -124,6 +124,8 @@ SQLGLOT_DIALECTS = {
     "BIGQUERY": "bigquery",
     "TRINO": "trino",
     "CLICKHOUSE": "clickhouse",
+    "POSTGRES": "postgres",
+    "REDSHIFT": "redshift",
 }
 
 # Known non-SQL dialects: sqlglot cannot parse them, so their expressions are

@@ -137,6 +137,8 @@ class OssieDialect(str, Enum):
     SPARQL = "SPARQL"
     TRINO = "TRINO"
     CLICKHOUSE = "CLICKHOUSE"
+    POSTGRES = "POSTGRES"
+    REDSHIFT = "REDSHIFT"
 
 
 class OssieDataType(str, Enum):
