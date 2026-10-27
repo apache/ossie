@@ -29,7 +29,6 @@ Apache Ossie provides a single JSON- and YAML-based specification that any tool 
 
 - [`core-spec/`](core-spec/) — The Ossie core specification (`spec.md`), the machine-readable schema (`spec.yaml`, `ossie-schema.json`), and accompanying documentation.
 - [`examples/`](examples/) — Example semantic models, including a complete TPC-DS model.
-- [`core-spec/grammar/`](core-spec/grammar/) — non-authoritative ANTLR 4 grammar for the `OSSIE_SQL_2026` expression language, with tests.
 - [`validation/`](validation/) — Tooling for validating semantic models against the Ossie schema.
 - [`docs/`](docs/) — Project documentation and overview.
 
