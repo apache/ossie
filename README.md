@@ -33,7 +33,6 @@ Apache Ossie provides a single JSON- and YAML-based specification that any tool 
 - [`dev/`](dev/) — Development utilities.
 - [`docs/`](docs/) — Project documentation and overview.
 - [`examples/`](examples/) — Example semantic models, including a complete TPC-DS model.
-- [`core-spec/grammar/`](core-spec/grammar/) — non-authoritative ANTLR 4 grammar for the `OSSIE_SQL_2026` expression language, with tests.
 - [`extensions/`](extensions/) — Community registry of dialect and vendor tokens used in extension metadata.
 - [`ontology/`](ontology/) — The ontology specification (`ontology.md`), its machine-readable schemas (`ontology.json`, `mapping.json`), and supporting documentation.
 - [`python/`](python/) — Python SDK with Pydantic v2 models for parsing, validating, and serializing Ossie documents.
