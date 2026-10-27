@@ -228,7 +228,9 @@ def undeclared_field_names(used: object, declared: frozenset[str]) -> list[str]:
     seen: set[str] = set()
     missing: list[str] = []
     for name in used:
-        if not isinstance(name, str) or not name:
+        # "" is not a declared field. Schema items for these arrays have no
+        # minLength, so skipping empty would print Validation PASSED.
+        if not isinstance(name, str):
             continue
         folded = name.casefold()
         if folded not in declared and folded not in seen:
@@ -332,7 +334,7 @@ def validate_references(data: dict) -> list[str]:
         if isinstance(unique_keys, list):
             for key in unique_keys:
                 if isinstance(key, list):
-                    used_uk.extend(name for name in key if isinstance(name, str) and name)
+                    used_uk.extend(name for name in key if isinstance(name, str))
         missing_uk = undeclared_field_names(used_uk, declared)
         if missing_uk:
             errors.append(

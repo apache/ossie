@@ -879,6 +879,90 @@ def test_rejects_unique_keys_that_are_not_fields() -> None:
     ]
 
 
+def test_rejects_empty_from_column_name() -> None:
+    rel = _relationship(to_columns=["id"])
+    rel["from_columns"] = [""]
+
+    errors = validate_references(_document([_ORDERS, _CUSTOMERS], [rel]))
+
+    assert errors == [
+        "[Reference] Relationship 'orders_to_customers' in model 'm': from_columns "
+        "references undeclared field ''. from_columns must be field names "
+        "of the from dataset 'orders'."
+    ]
+
+
+def test_rejects_empty_to_column_name() -> None:
+    errors = validate_references(
+        _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=[""])])
+    )
+
+    assert errors == [
+        "[Reference] Relationship 'orders_to_customers' in model 'm': to_columns "
+        "references undeclared field ''. to_columns must be field names "
+        "of the to dataset 'customers'."
+    ]
+
+
+def test_rejects_empty_primary_key_name() -> None:
+    dataset = {
+        "name": "customers",
+        "source": "db.s.customers",
+        "primary_key": [""],
+        "fields": [_field("id")],
+    }
+
+    errors = validate_references(_document([dataset], []))
+
+    assert errors == [
+        "[Reference] Dataset 'customers' in model 'm': primary_key references "
+        "undeclared field ''. primary_key must be field names of dataset "
+        "'customers'."
+    ]
+
+
+def test_rejects_empty_unique_key_name() -> None:
+    dataset = {
+        "name": "customers",
+        "source": "db.s.customers",
+        "unique_keys": [[""]],
+        "fields": [_field("id")],
+    }
+
+    errors = validate_references(_document([dataset], []))
+
+    assert errors == [
+        "[Reference] Dataset 'customers' in model 'm': unique_keys references "
+        "undeclared field ''. unique_keys must be field names of dataset "
+        "'customers'."
+    ]
+
+
+def test_rejects_empty_name_mixed_with_a_declared_from_column() -> None:
+    rel = _relationship(to_columns=["id"])
+    rel["from_columns"] = ["customer_id", ""]
+
+    errors = validate_references(_document([_ORDERS, _CUSTOMERS], [rel]))
+
+    assert errors == [
+        "[Reference] Relationship 'orders_to_customers' in model 'm': from_columns "
+        "references undeclared field ''. from_columns must be field names "
+        "of the from dataset 'orders'."
+    ]
+
+
+def test_rejects_empty_name_mixed_with_a_declared_to_column() -> None:
+    errors = validate_references(
+        _document([_ORDERS, _CUSTOMERS], [_relationship(to_columns=["id", ""])])
+    )
+
+    assert errors == [
+        "[Reference] Relationship 'orders_to_customers' in model 'm': to_columns "
+        "references undeclared field ''. to_columns must be field names "
+        "of the to dataset 'customers'."
+    ]
+
+
 def test_ghost_from_columns_fails_document_validation(core_schema: dict) -> None:
     rel = _relationship(to_columns=["id"])
     rel["from_columns"] = ["GHOST_COLUMN"]
@@ -887,8 +971,11 @@ def test_ghost_from_columns_fails_document_validation(core_schema: dict) -> None
         _document([_ORDERS, _CUSTOMERS], [rel]), core_schema
     )
 
-    assert any("GHOST_COLUMN" in error and "from_columns" in error for error in errors)
-    assert all(not isinstance(error, _VALIDATE.ValidationWarning) for error in errors)
+    ghost_errors = [
+        error for error in errors if "GHOST_COLUMN" in error and "from_columns" in error
+    ]
+    assert ghost_errors
+    assert all(not isinstance(error, _VALIDATE.ValidationWarning) for error in ghost_errors)
 
 
 @pytest.fixture
