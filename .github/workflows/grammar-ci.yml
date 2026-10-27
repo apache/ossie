@@ -22,14 +22,16 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "grammar/**"
+      - "core-spec/grammar/**"
+      - "compliance/expressions/**"
       - "core-spec/expression_language.md"
       - "examples/**"
       - ".github/workflows/grammar-ci.yml"
   pull_request:
     branches: ["main"]
     paths:
-      - "grammar/**"
+      - "core-spec/grammar/**"
+      - "compliance/expressions/**"
       - "core-spec/expression_language.md"
       - "examples/**"
       - ".github/workflows/grammar-ci.yml"
@@ -63,4 +65,4 @@ jobs:
       - name: Run grammar tests
         run: >
           uv run --with pytest --with pyyaml --with antlr4-python3-runtime==4.13.2
-          -m pytest grammar/tests/
+          -m pytest core-spec/grammar/tests/

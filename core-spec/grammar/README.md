@@ -22,13 +22,14 @@ under the License.
 
 `OssieExpression.g4` is an [ANTLR 4](https://www.antlr.org/) grammar for the
 `OSSIE_SQL_2026` expression language described in
-[`core-spec/expression_language.md`](../core-spec/expression_language.md). It covers
+[`expression_language.md`](../expression_language.md). It covers
 expressions only (no `SELECT`, `FROM`, `WHERE`, subqueries). Function names and arities
 are not checked: every function parses as `name(args)`, which functions exist is a
 semantic question. Constructs with their own syntax (`CASE`, `CAST`, `EXTRACT`,
 `POSITION`, `FILTER`, `WITHIN GROUP`, `OVER`, typed literals) have their own rules.
 
-The entry rule is `expression`. The generated parser is not committed.
+The spec is normative, the grammar is a reference artifact. The entry rule is `expression`. The
+generated parser is not committed.
 
 ## Where the grammar goes beyond the spec text
 
@@ -47,12 +48,13 @@ against a pinned SHA-256; ANTLR is BSD-3-Clause licensed.
 
 ```bash
 uv run --with pytest --with pyyaml --with antlr4-python3-runtime==4.13.2 \
-  -m pytest grammar/tests/
+  -m pytest core-spec/grammar/tests/
 ```
 
-`tests/fixtures/*.txt` hold one expression per line (`#` starts a comment):
+The conformance fixtures are in [`compliance/expressions/`](../../compliance/expressions/), so any
+parser can run them. They hold one expression per line (`#` starts a comment):
 `valid.txt` must parse, `invalid.txt` must be rejected. `test_example_models_parse` also
 parses every `ANSI_SQL` / `OSSIE_SQL_2026` expression and top-level `sql` in `examples/*.yaml`.
 
-Python style is checked with `uv run --with ruff ruff check grammar/ && uv run --with ruff ruff format --check grammar/`
+Python style is checked with `uv run --with ruff ruff check core-spec/grammar/ && uv run --with ruff ruff format --check core-spec/grammar/`
 (settings in `ruff.toml`).

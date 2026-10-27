@@ -34,7 +34,9 @@ docs:
 
 grammar:
   - changed-files:
-      - any-glob-to-any-file: 'grammar/**'
+      - any-glob-to-any-file:
+          - 'core-spec/grammar/**'
+          - 'compliance/expressions/**'
 
 validation:
   - changed-files:

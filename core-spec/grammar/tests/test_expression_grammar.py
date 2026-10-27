@@ -23,8 +23,9 @@ import yaml
 from antlr4 import CommonTokenStream, InputStream
 from antlr4.error.ErrorListener import ErrorListener
 
-FIXTURES = Path(__file__).parent / "fixtures"
-EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
+REPO = Path(__file__).resolve().parents[3]
+FIXTURES = REPO / "compliance" / "expressions"
+EXAMPLES = REPO / "examples"
 PORTABLE_DIALECTS = {"ANSI_SQL", "OSSIE_SQL_2026"}
 
 

@@ -31,9 +31,8 @@ options { caseInsensitive = true; }
 //
 // Operands of comparisons and predicates are arithmetic expressions: `a = b = c` needs parentheses.
 //
-// Deviations from the precedence list in the spec, which puts NOT above * and /: NOT sits between
-// the predicates and AND, as in ANSI SQL -- otherwise `NOT a = b` would mean `(NOT a) = b`.
-// `||` is parsed at the level of + and -.
+// Precedence follows the list in the spec. The spec does not say where `||` sits: it is parsed at
+// the level of + and -.
 
 expression
  : expr EOF
@@ -108,7 +107,7 @@ currentDatetime
 ;
 
 functionCall
- : name=identifier LPAREN (STAR | DISTINCT? (expr (COMMA expr)*)?) RPAREN
+ : name=identifier LPAREN (STAR | DISTINCT expr (COMMA expr)* | (expr (COMMA expr)*)?) RPAREN
    withinGroup? filterClause? overClause?
 ;
 
