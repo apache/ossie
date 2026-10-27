@@ -31,5 +31,8 @@ indent_size = 2
 indent_style = space
 indent_size = 4
 
+[*.g4]
+indent_style = space
+
 [{Makefile,go.mod,*.go}]
 indent_style = tab
