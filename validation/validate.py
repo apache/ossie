@@ -214,6 +214,15 @@ def _single_identifier_text(sql: str, dialect: object) -> str | None:
         return None
     return text
 
+
+def _is_bare_projection(tree: object) -> bool:
+    """`SELECT {expr}` parsed to one unaliased projection and nothing else."""
+    if not SQLGLOT_AVAILABLE or not isinstance(tree, exp.Select):
+        return False
+    if len(tree.expressions) != 1 or isinstance(tree.expressions[0], exp.Alias):
+        return False
+    return not any(value for key, value in tree.args.items() if key != "expressions")
+
 # Concepts every ontology includes implicitly (ontology.md, "Built-in concepts")
 BUILT_IN_CONCEPTS = {"Any", "Boolean", "Date", "DateTime", "Decimal", "Float", "Integer", "String"}
 
@@ -486,12 +495,11 @@ def _parse_sql_expression(
 
         The count check above only rejects a list. DROP/DELETE/GRANT parse as
         one statement and would otherwise pass. Kind is isinstance of the
-        named statement classes, not sqlglot's file layout. Kind is not
-        checked on the SELECT-wrap retry: that path exists to parse a bare
-        column, and a successful wrap is always a SELECT. A statement that is
-        still a single identifier (commit, begin) is a keyword-named column
-        and is accepted by the caller; wrapping every statement in SELECT
-        would accept DELETE FROM orders as SELECT DELETE FROM orders.
+        named statement classes, not sqlglot's file layout. A statement that
+        is still a single identifier (commit, begin) is a keyword-named
+        column. Other statement roots, including Command fallbacks such as
+        comment IS NOT NULL, may be retried as SELECT {expr} and kept only
+        when that wrap is a bare one-projection SELECT.
         """
         kind = sql_statement_kind(node)
         if kind is None:
@@ -499,6 +507,20 @@ def _parse_sql_expression(
         return (
             f"[SQL] {context}: expected an expression, found a {kind} statement"
         )
+
+    def wrapped_select() -> tuple[object | None, str | None]:
+        try:
+            wrapped = sqlglot.parse_one(f"SELECT {expr}", dialect=sqlglot_dialect)
+        except (ParseError, TokenError) as e:
+            return None, f"[SQL] {context}: {str(e).split(chr(10))[0]}"
+        except RecursionError:
+            return None, (
+                f"[SQL] {context}: expression is too deeply nested to parse"
+            )
+        count_error = statement_count_error(f"SELECT {expr}")
+        if count_error:
+            return None, count_error
+        return wrapped, None
 
     try:
         # Try parsing as expression first (for field expressions like "column_name")
@@ -518,23 +540,21 @@ def _parse_sql_expression(
         if kind_error:
             ident = _single_identifier_text(expr, sqlglot_dialect)
             if ident is not None:
-                # Keyword-named column: return a Column so metric scoping still
-                # sees the name. Do not SELECT-wrap: that rewrite accepts
-                # DELETE FROM orders and FETCH FIRST ROWS ONLY.
+                # fetch wraps as FETCH FIRST ROWS ONLY, so the one-token
+                # column still has to bypass wrap.
                 return exp.column(ident), None
+            wrapped, _wrap_error = wrapped_select()
+            if wrapped is not None and _is_bare_projection(wrapped):
+                return wrapped, None
             return None, kind_error
         return tree, None
 
-    try:
-        # Try wrapping in SELECT for simple column references
-        tree = sqlglot.parse_one(f"SELECT {expr}", dialect=sqlglot_dialect)
-    except (ParseError, TokenError) as e:
-        return None, f"[SQL] {context}: {str(e).split(chr(10))[0]}"
-    except RecursionError:
-        # Deeply nested input exhausts the recursion limit rather than raising a
-        # parser error; report it instead of letting it abort validation.
-        return None, f"[SQL] {context}: expression is too deeply nested to parse"
-    return tree, statement_count_error(f"SELECT {expr}")
+    wrapped, wrap_error = wrapped_select()
+    if wrap_error:
+        return None, wrap_error
+    if wrapped is not None and _is_bare_projection(wrapped):
+        return wrapped, None
+    return None, f"[SQL] {context}: expected an expression, found a statement"
 
 
 def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None:

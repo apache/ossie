@@ -668,6 +668,10 @@ def test_rejects_a_sql_statement_in_ossie_sql_2026() -> None:
         "fetch",
         "set",
         '"commit"',
+        "comment IS NOT NULL",
+        "show = 1",
+        "comment = 'a'",
+        "set * 2",
     ],
     ids=[
         "select-literal",
@@ -683,15 +687,25 @@ def test_rejects_a_sql_statement_in_ossie_sql_2026() -> None:
         "column-fetch",
         "column-set",
         "quoted-commit",
+        "comment-is-not-null",
+        "show-eq",
+        "comment-eq",
+        "set-times",
     ],
 )
 def test_still_accepts_queries_and_value_expressions(expression: str) -> None:
     """Top-level SELECT is out of this change; value expressions stay valid.
 
     Bare commit/begin/rollback/show/comment parse as statements in sqlglot;
-    they are still legal column names.
+    they are still legal column names. Expressions that start with those
+    names wrap to a bare SELECT projection.
     """
     assert _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx") is None
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_accepts_begin_compared_in_bigquery() -> None:
+    assert _VALIDATE.validate_sql_expression("begin > 0", "BIGQUERY", "ctx") is None
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
@@ -701,11 +715,36 @@ def test_still_accepts_queries_and_value_expressions(expression: str) -> None:
     ids=["drop-missing-name", "delete-missing-name"],
 )
 def test_rejects_malformed_ddl_or_dml_used_as_an_expression(expression: str) -> None:
-    """Incomplete DROP/DELETE still fail; the SELECT wrap does not rescue them."""
+    """Incomplete DROP/DELETE still fail the wrap parse."""
     error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
 
     assert error is not None
     assert error.startswith("[SQL] ctx:")
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "DELETE FROM orders GROUP BY x",
+        "DELETE FROM orders FOR UPDATE",
+        "MERGE FROM orders",
+        "DELETE FROM orders UNION SELECT 1",
+        "TRUNCATE TABLE",
+    ],
+    ids=[
+        "delete-group-by",
+        "delete-for-update",
+        "merge-from",
+        "delete-union",
+        "truncate-missing-name",
+    ],
+)
+def test_rejects_a_statement_rescued_by_select_wrap(expression: str) -> None:
+    """A wrap that parses is kept only as a bare one-projection SELECT."""
+    error = _VALIDATE.validate_sql_expression(expression, "ANSI_SQL", "ctx")
+
+    assert error == "[SQL] ctx: expected an expression, found a statement"
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
