@@ -15,6 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# Conformance fixture for the OSSIE_SQL_2026 expression language: every line must be rejected by a
+# parser for it (valid.txt: every line must be accepted). One expression per line; blank lines
+# and lines starting with '#' are skipped.
+
 1 +
 SUM(
 (a
@@ -30,3 +34,7 @@ CAST(x AS)
 # INTERVAL is not part of OSSIE_SQL_2026, date arithmetic uses DATEADD(part, amount, date_expr)
 order_date + INTERVAL '7 days'
 DATE_ADD(d, INTERVAL 7 DAY)
+
+# DISTINCT needs an argument
+SUM(DISTINCT)
+COUNT(DISTINCT)

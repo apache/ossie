@@ -38,9 +38,9 @@ ANTLR_URL = (
     f"{ANTLR_VERSION}/antlr4-{ANTLR_VERSION}-complete.jar"
 )
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[3]
 JAR = REPO / "dev" / "lib" / f"antlr4-{ANTLR_VERSION}-complete.jar"
-GRAMMAR = Path(__file__).resolve().parent.parent / "OssieExpression.g4"
+GRAMMAR = Path(__file__).resolve().parents[1] / "OssieExpression.g4"
 
 
 def sha256(path):

@@ -15,7 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# One expression per line; blank lines and lines starting with '#' are skipped.
+# Conformance fixture for the OSSIE_SQL_2026 expression language: every line must be accepted by a
+# parser for it (invalid.txt: every line must be rejected). One expression per line; blank lines
+# and lines starting with '#' are skipped. The reference parser is core-spec/grammar/.
 # Each line exercises a different part of the grammar. Function names are not checked by the
 # grammar, so one generic call stands for all of them. Expressions of examples/*.yaml are parsed
 # by test_example_models_parse and are not repeated here.
