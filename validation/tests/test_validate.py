@@ -55,11 +55,10 @@ def _document(datasets: list[dict], relationships: list[dict]) -> dict:
     }
 
 
-def _field(name: str) -> dict:
-    return {
-        "name": name,
-        "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": name}]},
-    }
+def _field(name: str, expression: str | None = None, dialect: str = "ANSI_SQL") -> dict:
+    """A field defined by one expression; by default the same-named source column."""
+    sql = name if expression is None else expression
+    return {"name": name, "expression": {"dialects": [{"dialect": dialect, "expression": sql}]}}
 
 
 _CUSTOMERS = {
@@ -1942,3 +1941,681 @@ def test_expression_context_names_the_declaring_element(kind, dataset_name, expe
     )
 
     assert expr.context("m") == expected
+
+
+# --- field references (core-spec/spec.md "Name Resolution") ---
+
+def _field_reference_findings(document: dict) -> list[str]:
+    """The two Name Resolution checks together, in the order validate_document runs them."""
+    return _VALIDATE.validate_metric_references(document) + _VALIDATE.validate_field_shadowing(document)
+
+
+def _metric(name: str, expression: str, dialect: str = "ANSI_SQL") -> dict:
+    """A metric carries its expression the way a field does."""
+    return _field(name, expression, dialect)
+
+
+def _renamed_model(**overrides) -> dict:
+    document = {
+        "version": "0.2.0.dev0",
+        "name": "m",
+        "datasets": [
+            {
+                "name": "orders",
+                "source": "db.s.orders",
+                "primary_key": ["order_id"],
+                "fields": [
+                    _field("order_id", "o_orderkey"),
+                    _field("customer_id", "o_custkey"),
+                    _field("total_usd", "total_cents / 100.0"),
+                ],
+            },
+            {
+                "name": "customers",
+                "source": "db.s.customers",
+                "primary_key": ["id"],
+                "unique_keys": [["email"]],
+                "fields": [_field("id", "c_custkey"), _field("email", "c_email")],
+            },
+        ],
+        "relationships": [
+            {
+                "name": "orders_to_customers",
+                "from": "orders",
+                "to": "customers",
+                "from_columns": ["customer_id"],
+                "to_columns": ["id"],
+            },
+        ],
+        "metrics": [
+            _metric("total_revenue", "SUM(orders.total_usd)"),
+        ],
+    }
+    document.update(overrides)
+    return document
+
+
+def test_accepts_metrics_and_fields_that_name_declared_fields() -> None:
+    assert _field_reference_findings(_renamed_model()) == []
+
+
+def test_field_reference_findings_are_warnings_for_now() -> None:
+    document = _renamed_model()
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(total_usd)"
+    document["datasets"][0]["fields"].append(_field("total", "total_usd"))
+    findings = _field_reference_findings(document)
+    assert len(findings) == 2
+    assert all(isinstance(f, _VALIDATE.ValidationWarning) for f in findings)
+
+
+def test_warns_on_metric_that_references_a_source_column() -> None:
+    document = _renamed_model()
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(orders.o_totalprice)"
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "'orders.o_totalprice' is not a declared field of dataset 'orders'" in errors[0]
+
+
+def test_warns_on_metric_with_unqualified_field_reference() -> None:
+    document = _renamed_model()
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(total_usd)"
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "'total_usd' is not qualified" in errors[0]
+
+
+def test_warns_on_metric_that_references_an_unknown_dataset() -> None:
+    document = _renamed_model()
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(order.total_usd)"
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "references unknown dataset 'order'" in errors[0]
+
+
+def test_metric_check_skips_dialects_that_are_not_sql() -> None:
+    document = _renamed_model()
+    dax = {"dialect": "DAX", "expression": "SUM(Orders[Total])"}
+    document["metrics"][0]["expression"]["dialects"].append(dax)
+    assert _field_reference_findings(document) == []
+
+
+def test_metric_check_leaves_unparseable_sql_to_the_sql_check() -> None:
+    document = _renamed_model()
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(CASE WHEN"
+    assert _field_reference_findings(document) == []
+
+
+def test_warns_when_a_field_expression_names_another_field_of_its_dataset() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(_field("total_with_tax", "total_usd * 1.1"))
+    errors = _field_reference_findings(document)
+    assert errors == [
+        "[Reference] Warning: Field 'orders.total_with_tax' in model 'm' (ANSI_SQL): "
+        "'total_usd' is the source column, not the field 'total_usd' defined as "
+        "'total_cents / 100.0'"
+    ]
+    assert isinstance(errors[0], _VALIDATE.ValidationWarning)
+
+
+def test_field_expression_may_name_a_field_that_passes_its_column_through() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(_field("amount"))
+    document["datasets"][0]["fields"].append(_field("amount_with_tax", "amount * 1.1"))
+    assert _field_reference_findings(document) == []
+
+
+def test_field_expression_may_name_its_own_source_column() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(_field("amount", "amount * 100"))
+    assert _field_reference_findings(document) == []
+
+
+def test_field_shadowing_check_reads_the_same_dialect_as_the_expression() -> None:
+    document = _renamed_model()
+    amount = {"name": "amount", "expression": {"dialects": [
+        {"dialect": "ANSI_SQL", "expression": "amount"},
+        {"dialect": "SNOWFLAKE", "expression": "AMT"},
+    ]}}
+    taxed = {"name": "amount_with_tax", "expression": {"dialects": [
+        {"dialect": "ANSI_SQL", "expression": "amount * 1.1"},
+        {"dialect": "SNOWFLAKE", "expression": "amount * 1.1"},
+    ]}}
+    document["datasets"][0]["fields"] += [amount, taxed]
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert errors[0].startswith(
+        "[Reference] Warning: Field 'orders.amount_with_tax' in model 'm' (SNOWFLAKE): 'amount'"
+    )
+    assert "defined as 'AMT'" in errors[0]
+
+
+def test_field_shadowing_check_skips_dialects_that_are_not_sql_and_unparseable_sql() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(
+        {"name": "x", "expression": {"dialects": [
+            {"dialect": "DAX", "expression": "[total_usd] * 2"},
+            {"dialect": "ANSI_SQL", "expression": "total_usd * ("},
+        ]}}
+    )
+    assert _field_reference_findings(document) == []
+
+
+@pytest.mark.parametrize(
+    "definition", ["(amount)", '"amount"', "amount -- the amount", "((amount))"]
+)
+def test_pass_through_is_read_from_the_parsed_definition(definition: str) -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("amount", definition),
+        _field("amount_cents", "amount * 100"),
+    ]
+    assert _field_reference_findings(document) == []
+
+
+def test_pass_through_compares_names_without_regard_to_case() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("amount", "AMOUNT"),
+        _field("amount_cents", "amount * 100"),
+    ]
+    assert _field_reference_findings(document) == []
+
+
+def test_field_shadowing_check_compares_names_without_regard_to_case() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(_field("total_eur", "Total_USD * 0.9"))
+
+    errors = _field_reference_findings(document)
+
+    assert len(errors) == 1
+    assert "'Total_USD' is the source column, not the field 'total_usd'" in errors[0]
+
+
+def test_field_shadowing_check_reads_a_date_part_as_a_unit_not_a_column() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("day", "EXTRACT(DAY FROM order_date)"),
+        _field("month", "EXTRACT(MONTH FROM order_date)"),
+        _field("days_open", "DATEDIFF(day, opened_at, closed_at)"),
+        _field("months_open", "DATEDIFF(month, opened_at, closed_at)"),
+    ]
+    assert _field_reference_findings(document) == []
+
+
+def test_field_shadowing_check_needs_a_sql_definition_to_compare() -> None:
+    document = _renamed_model()
+    dax_only = _field("amount", "[amount]", dialect="DAX")
+    document["datasets"][0]["fields"] += [dax_only, _field("amount_cents", "amount * 100")]
+    assert _field_reference_findings(document) == []
+
+
+def test_field_shadowing_check_falls_back_to_any_dialect_of_the_other_field() -> None:
+    document = _renamed_model()
+    snowflake_only = _field("amount", dialect="SNOWFLAKE")
+    document["datasets"][0]["fields"] += [snowflake_only, _field("amount_cents", "amount * 100")]
+    assert _field_reference_findings(document) == []
+
+
+def test_field_shadowing_check_ignores_qualified_names_and_reports_a_name_once() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("total_usd2", "orders.total_usd * 2"),
+        _field("total_usd3", "total_usd + total_usd"),
+    ]
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "Field 'orders.total_usd3'" in errors[0]
+
+
+def test_metric_that_names_another_metric_is_told_so() -> None:
+    document = _renamed_model()
+    document["metrics"].append(
+        {"name": "revenue_share", "expression": {"dialects": [
+            {"dialect": "ANSI_SQL", "expression": "total_revenue / SUM(orders.total_usd)"}
+        ]}}
+    )
+    errors = _field_reference_findings(document)
+    assert errors == [
+        "[Reference] Warning: Metric 'revenue_share' in model 'm' (ANSI_SQL): "
+        "'total_revenue' names the metric 'total_revenue'; metric expressions cannot refer "
+        "to other metrics"
+    ]
+
+
+def test_metric_check_skips_star_and_reports_more_than_two_parts() -> None:
+    document = _renamed_model()
+    expression = "COUNT(orders.*) + SUM(db.orders.total_usd)"
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = expression
+    errors = _field_reference_findings(document)
+    assert errors == [
+        "[Reference] Warning: Metric 'total_revenue' in model 'm' (ANSI_SQL): "
+        "'db.orders.total_usd' has more than two parts; metric expressions refer to fields "
+        "as dataset.field"
+    ]
+
+
+def test_field_references_are_looked_up_on_the_named_dataset_only() -> None:
+    document = _renamed_model()
+    # id is a field of customers, not of orders.
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(orders.id)"
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "'orders.id' is not a declared field of dataset 'orders'" in errors[0]
+
+
+def test_every_undeclared_name_is_reported_and_each_only_once() -> None:
+    document = _renamed_model()
+    document["metrics"][0]["expression"]["dialects"] = [
+        {"dialect": "ANSI_SQL", "expression": "SUM(orders.a) + SUM(orders.b)"},
+        {"dialect": "SNOWFLAKE", "expression": "SUM(orders.c)"},
+    ]
+    errors = _field_reference_findings(document)
+    assert [e.split("'")[5] for e in errors] == ["orders.a", "orders.b", "orders.c"]
+
+
+def test_field_shadowing_check_reports_the_other_dialect_definition_it_fell_back_to() -> None:
+    document = _renamed_model()
+    snowflake_only = _field("amount", "AMT", dialect="SNOWFLAKE")
+    document["datasets"][0]["fields"] += [snowflake_only, _field("amount_cents", "amount * 100")]
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "(ANSI_SQL): 'amount' is the source column" in errors[0]
+    assert "defined as 'AMT'" in errors[0]
+
+
+def test_field_shadowing_check_looks_at_the_same_dataset_only() -> None:
+    document = _renamed_model()
+    # email is a field of customers, so in an orders expression it is only a source column.
+    document["datasets"][0]["fields"].append(_field("email_domain", "SPLIT_PART(email, '@', 2)"))
+    assert _field_reference_findings(document) == []
+
+
+@pytest.mark.parametrize("definition", ["t.amount", "CAST(amount AS INT)"])
+def test_pass_through_is_the_bare_column_and_nothing_else(definition: str) -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("amount", definition),
+        _field("amount_cents", "amount * 100"),
+    ]
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert f"defined as '{definition}'" in errors[0]
+
+
+def test_pass_through_may_carry_an_alias() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("amount", "amount AS a"),
+        _field("amount_cents", "amount * 100"),
+    ]
+    assert _field_reference_findings(document) == []
+
+
+def test_field_shadowing_check_needs_a_definition_it_can_parse() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("amount", "amount * ("),
+        _field("amount_cents", "amount * 100"),
+    ]
+    assert _field_reference_findings(document) == []
+
+
+def test_qualified_metric_name_is_reported_as_a_missing_field() -> None:
+    document = _renamed_model()
+    document["metrics"].append(
+        _metric("share", "SUM(orders.total_revenue)"),
+    )
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "'orders.total_revenue' is not a declared field of dataset 'orders'" in errors[0]
+
+
+@pytest.mark.parametrize(
+    "name, expression",
+    [
+        ("total_revenue", "total_revenue + 1"),  # the metric's own name
+        ("total_usd_sum", "SUM(total_usd)"),  # a field somewhere in the model
+    ],
+)
+def test_bare_name_of_this_metric_or_a_field_is_reported_as_unqualified(name, expression) -> None:
+    document = _renamed_model()
+    document["metrics"] = [_metric(name, expression)]
+    if name == "total_usd_sum":
+        document["metrics"].append(_renamed_model()["metrics"][0] | {"name": "total_usd"})
+    errors = _field_reference_findings(document)
+    assert len(errors) == 1
+    assert "is not qualified" in errors[0]
+
+
+def test_renamed_fields_example_passes_the_field_reference_check() -> None:
+    import yaml
+
+    example = Path(__file__).parents[2] / "examples" / "renamed_fields.yaml"
+    assert _field_reference_findings(yaml.safe_load(example.read_text())) == []
+
+
+@pytest.mark.parametrize("expression", [
+    "DATEDIFF(day, orders.shipped, orders.ordered)",
+    "DATEDIFF(month, orders.shipped, orders.ordered)",
+    "DATEDIFF(days, orders.shipped, orders.ordered)",
+    "TIMESTAMPDIFF(MINUTE, orders.shipped, orders.ordered)",
+    "TIMESTAMPDIFF(MONTH, orders.shipped, orders.ordered)",
+    "DATEADD(day, 1, orders.ordered)",
+    "DATEADD(dd, 1, orders.ordered)",
+    "DATEADD(month, 1, orders.ordered)",
+    "DATE_PART(year, orders.ordered)",
+    "DATE_PART(month, orders.ordered)",
+])
+def test_metric_check_reads_a_date_part_as_a_unit_not_a_column(expression) -> None:
+    document = _renamed_model(metrics=[_metric("age", expression)])
+    document["datasets"][0]["fields"] += [_field("shipped"), _field("ordered")]
+
+    assert _VALIDATE.validate_metric_references(document) == []
+
+
+def test_metric_check_compares_names_without_regard_to_case() -> None:
+    document = _renamed_model(metrics=[
+        _metric("Revenue", "SUM(ORDERS.TOTAL_USD)"),
+        _metric("revenue_eur", "SUM(ORDERS.TOTAL_EUR)"),
+        _metric("doubled", "revenue * 2"),
+    ])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert len(errors) == 2
+    assert "'ORDERS.TOTAL_EUR' is not a declared field of dataset 'ORDERS'" in errors[0]
+    assert "'revenue' names the metric 'Revenue'" in errors[1]
+
+
+def test_datasets_that_differ_only_in_case_pool_their_fields() -> None:
+    # Whether two such names may coexist is validate_unique_names' question;
+    # the Name Resolution checks must not warn about either one's own fields.
+    document = _renamed_model()
+    document["datasets"].append(
+        {"name": "Orders", "source": "db.s.orders2", "primary_key": ["order_id"], "fields": [_field("oid", "k")]}
+    )
+    assert _field_reference_findings(document) == []
+
+
+def test_a_field_passing_through_its_own_column_in_another_case_is_not_shadowing() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(_field("Total_USD", "total_usd"))
+
+    assert _field_reference_findings(document) == []
+
+
+def test_fields_that_differ_only_in_case_compare_against_the_first_declared() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("Total_USD", "total_cents"),
+        _field("total_eur", "total_usd * 0.9"),
+    ]
+
+    errors = _field_reference_findings(document)
+
+    assert len(errors) == 1
+    assert "not the field 'total_usd' defined as 'total_cents / 100.0'" in errors[0]
+
+
+def test_a_column_named_like_a_unit_outside_the_unit_position_is_a_column() -> None:
+    document = _renamed_model(metrics=[
+        _metric("age", "SUM(DATEDIFF(day, ms, orders.total_usd))"),
+        _metric("month_start", "MIN(DATE_TRUNC(month, d))"),
+    ])
+    document["datasets"][0]["fields"] += [_field("q", "quarter_start"), _field("closed_at")]
+    document["datasets"][0]["fields"].append(_field("open_days", "DATEDIFF(day, q, closed_at)"))
+
+    errors = _field_reference_findings(document)
+
+    assert [e.split(": ", 2)[2] for e in errors] == [
+        "'ms' is not qualified; metric expressions refer to fields as dataset.field",
+        "'d' is not qualified; metric expressions refer to fields as dataset.field",
+        "'q' is the source column, not the field 'q' defined as 'quarter_start'",
+    ]
+
+
+def test_a_parser_that_knows_the_unit_leaves_the_date_arguments_as_columns() -> None:
+    # Snowflake reads the unit itself and puts the last date argument where
+    # the default parser puts the unit, so `d` must still be seen.
+    document = _renamed_model(metrics=[
+        _metric("ok", "SUM(DATEDIFF(day, orders.total_usd, orders.total_usd))", dialect="SNOWFLAKE"),
+        _metric("bad", "SUM(DATEDIFF(day, orders.total_usd, d))", dialect="SNOWFLAKE"),
+    ])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert len(errors) == 1
+    assert "'d' is not qualified" in errors[0]
+
+
+def test_metric_check_still_reports_a_bare_column_named_like_a_unit() -> None:
+    document = _renamed_model(metrics=[_metric("days", "SUM(day)")])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert len(errors) == 1
+    assert "'day' is not qualified" in errors[0]
+
+
+@pytest.mark.parametrize("document", [
+    {
+        "version": "0.2.0.dev0",
+        "name": "m",
+        "datasets": None,
+        "metrics": None,
+        "relationships": None,
+    },
+    {
+        "version": "0.2.0.dev0",
+        "name": "m",
+        "datasets": [
+            {
+                "name": "orders",
+                "primary_key": [["a"]],
+                "fields": [{"name": "a", "expression": "a"}],
+            },
+            {"name": None, "fields": [{"name": "b", "expression": {"dialects": None}}]},
+        ],
+        "metrics": [{"name": "m", "expression": "SUM(orders.a)"}, "not a metric"],
+        "relationships": [{"name": "r", "from": ["orders"], "to": "orders", "to_columns": "a"}],
+    },
+])
+def test_field_reference_checks_tolerate_shapes_the_schema_rejects(document) -> None:
+    assert _field_reference_findings(document) == []
+
+
+def test_cli_prints_reference_warnings_and_still_passes(run_validator) -> None:
+    document = _renamed_model()
+    document["metrics"][0]["expression"]["dialects"][0]["expression"] = "SUM(total_usd)"
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 0
+    assert "Validation PASSED" in output
+    assert (
+        "[Reference] Warning: Metric 'total_revenue' in model 'm' (ANSI_SQL): 'total_usd' is not "
+        "qualified; metric expressions refer to fields as dataset.field"
+    ) in output
+
+
+def test_metric_check_reads_the_portable_sql_form() -> None:
+    document = _renamed_model(metrics=[{"name": "revenue", "expression": {"sql": "SUM(total_usd)"}}])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert errors == [
+        "[Reference] Warning: Metric 'revenue' in model 'm' (OSSIE_SQL_2026): 'total_usd' is not "
+        "qualified; metric expressions refer to fields as dataset.field"
+    ]
+
+
+def test_metric_check_skips_a_dialect_entry_the_portable_sql_supersedes() -> None:
+    # The top-level `sql` is what a client reads, so the OSSIE_SQL_2026 dialect
+    # entry beside it is not checked twice under a second name.
+    document = _renamed_model(metrics=[{
+        "name": "revenue",
+        "expression": {
+            "sql": "SUM(orders.total_usd)",
+            "dialects": [{"dialect": "OSSIE_SQL_2026", "expression": "SUM(total_usd)"}],
+        },
+    }])
+
+    assert _VALIDATE.validate_metric_references(document) == []
+
+
+def test_reference_checks_skip_a_dialect_this_validator_does_not_parse() -> None:
+    # A dialect outside SQLGLOT_DIALECTS is carried, not read: validate_sql warns
+    # once that it went unchecked, and these checks say nothing about it.
+    document = _renamed_model(metrics=[_metric("revenue", "SUM(total_usd)", dialect="DUCKDB")])
+    document["datasets"][0]["fields"].append(_field("total_eur", "total_usd * 0.9", dialect="DUCKDB"))
+
+    assert _field_reference_findings(document) == []
+
+
+def test_field_shadowing_check_reads_the_portable_sql_form() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"].append(
+        {"name": "total_eur", "expression": {"sql": "total_usd * 0.9"}}
+    )
+
+    errors = _VALIDATE.validate_field_shadowing(document)
+
+    assert errors == [
+        "[Reference] Warning: Field 'orders.total_eur' in model 'm' (OSSIE_SQL_2026): 'total_usd' is "
+        "the source column, not the field 'total_usd' defined as 'total_cents / 100.0'"
+    ]
+
+
+def test_metric_check_reads_a_column_in_the_unit_slot_as_a_column() -> None:
+    # Under the default parser the last DATEDIFF argument lands in `unit` as a
+    # Var, so without this it would escape every check.
+    document = _renamed_model(metrics=[
+        _metric("age", "SUM(DATEDIFF(day, orders.total_usd, closed_at))"),
+    ])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert len(errors) == 1
+    assert "'CLOSED_AT' is not qualified" in errors[0]
+
+
+def test_field_shadowing_check_reads_a_column_in_the_unit_slot_as_a_column() -> None:
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        _field("closed_at", "closed_ts"),
+        _field("open_days", "DATEDIFF(day, opened_at, closed_at)"),
+    ]
+
+    errors = _VALIDATE.validate_field_shadowing(document)
+
+    assert errors == [
+        "[Reference] Warning: Field 'orders.open_days' in model 'm' (ANSI_SQL): 'CLOSED_AT' is the "
+        "source column, not the field 'closed_at' defined as 'closed_ts'"
+    ]
+
+
+def test_validate_module_imports_without_sqlglot(monkeypatch) -> None:
+    # A None entry in sys.modules makes `import sqlglot` raise ImportError, the
+    # way a missing install does; the module must still load and say so.
+    import sys
+
+    for name in [m for m in sys.modules if m == "sqlglot" or m.startswith("sqlglot.")]:
+        monkeypatch.setitem(sys.modules, name, None)
+    spec = spec_from_file_location("ossie_validate_without_sqlglot", _VALIDATE_PATH)
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.SQLGLOT_AVAILABLE is False
+
+
+@pytest.mark.parametrize("expression, dialect", [
+    ("SUM(DATEDIFF(day, orders.total_usd, '2026-01-01'))", "ANSI_SQL"),
+    ("SUM(DATEDIFF(day, orders.total_usd, 1))", "ANSI_SQL"),
+    ("SUM(DATE_DIFF(orders.total_usd, orders.total_usd, ISOWEEK))", "BIGQUERY"),
+    ("SUM(DATEDIFF(nanoseconds, orders.total_usd, orders.total_usd))", "SNOWFLAKE"),
+    ("SUM(DATEDIFF(day, orders.total_usd, orders.d))", "ANSI_SQL"),
+])
+def test_a_literal_or_an_unlisted_unit_in_the_unit_slot_is_not_a_column(expression, dialect) -> None:
+    # A literal the default parser leaves in `unit`, a unit alias the table lacks
+    # under a parser that knows the function, and a declared column named like
+    # a unit alias in the last slot: none of them is a bare column.
+    document = _renamed_model(metrics=[_metric("x", expression, dialect=dialect)])
+    document["datasets"][0]["fields"].append(_field("d", "delivered_at"))
+
+    assert _VALIDATE.validate_metric_references(document) == []
+
+
+def test_a_repeated_reference_is_reported_once_per_expression() -> None:
+    document = _renamed_model(metrics=[
+        _metric("ratio", "SUM(orders.zz) / COUNT(orders.zz)"),
+        _metric("mean", "SUM(total_usd) / COUNT(total_usd)"),
+    ])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert [e.split(": ", 2)[2] for e in errors] == [
+        "'orders.zz' is not a declared field of dataset 'orders'",
+        "'total_usd' is not qualified; metric expressions refer to fields as dataset.field",
+    ]
+
+
+@pytest.mark.parametrize("dialect", ["ANSI_SQL", "SNOWFLAKE"])
+def test_date_add_reads_its_unit_as_a_unit_and_its_date_as_a_column(dialect) -> None:
+    # The default parser keeps DATE_ADD's unit in `this` and its date in `unit`.
+    document = _renamed_model(metrics=[
+        _metric("ok", "MAX(DATE_ADD(day, 1, orders.total_usd))", dialect=dialect),
+        _metric("bad", "MAX(DATE_ADD(day, 1, shipped))", dialect=dialect),
+    ])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert [e.split(": ", 2)[2] for e in errors] == [
+        "'SHIPPED' is not qualified; metric expressions refer to fields as dataset.field",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        ("SUM(DATEDIFF(x, orders.total_usd, z))", ["'x' is not qualified"]),
+        ("SUM(DATEDIFF(orders.day, orders.total_usd, z))", ["'orders.day' is not a declared field"]),
+    ],
+    ids=["first-argument-not-a-unit", "first-argument-qualified"],
+)
+def test_the_unit_slot_is_read_back_only_behind_a_bare_unit(expression, expected) -> None:
+    # Only a bare date-part name in `this` means the parser shifted the arguments.
+    document = _renamed_model(metrics=[_metric("m1", expression)])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert len(errors) == len(expected)
+    assert all(want in got for want, got in zip(expected, errors))
+
+
+def test_field_shadowing_check_falls_back_past_an_empty_definition() -> None:
+    # An empty ANSI_SQL entry gives nothing to compare, so the other dialect is read.
+    document = _renamed_model()
+    document["datasets"][0]["fields"] += [
+        {"name": "total", "expression": {"dialects": [
+            {"dialect": "ANSI_SQL", "expression": ""},
+            {"dialect": "SNOWFLAKE", "expression": "total_cents / 100"},
+        ]}},
+        _field("doubled", "total * 2"),
+    ]
+
+    errors = _VALIDATE.validate_field_shadowing(document)
+
+    assert [e.split(": ", 2)[2] for e in errors] == [
+        "'total' is the source column, not the field 'total' defined as 'total_cents / 100'",
+    ]
+
+
+@pytest.mark.parametrize("expression", ["MAX(DATE_ADD(d, 7))", "SUM(DATEDIFF(d, orders.total_usd))"])
+def test_a_two_argument_date_function_reads_its_first_argument_as_a_column(expression) -> None:
+    # With no unit slot filled, a name like `d` is the date, not a unit.
+    document = _renamed_model(metrics=[_metric("m1", expression)])
+
+    errors = _VALIDATE.validate_metric_references(document)
+
+    assert len(errors) == 1
+    assert "'d' is not qualified" in errors[0]
