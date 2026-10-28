@@ -49,6 +49,7 @@ community uses (see [`README.md`](README.md) for how these lists are used).
 | `THOUGHTSPOT` | ThoughtSpot-specific attributes |
 | `HEX` | Hex-specific attributes |
 | `ATACCAMA` | Ataccama-specific attributes |
+| `STARDOG` | Stardog knowledge graph and semantic data platform |
 
 ## Examples
 
@@ -97,3 +98,12 @@ community uses (see [`README.md`](README.md) for how these lists are used).
     "default_schema": "gold"
   }'
 ```
+
+**StarDog Extension:**
+
+```yaml
+- vendor_name: STARDOG
+  data: '{
+    "graph_name": "customer360"
+  }'
+  ```
