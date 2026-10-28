@@ -333,7 +333,7 @@ components:
   schemas:
     OssieDocument:
       description: A semantic model, as defined by the Ossie core specification.
-      $ref: "../core-spec/ossie-schema.json"
+      $ref: "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json"
 
     ModelSummary:
       type: object
