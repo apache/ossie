@@ -2756,37 +2756,49 @@ def test_postgres_and_redshift_are_parsed_as_sql() -> None:
     assert "REDSHIFT" not in _VALIDATE.NON_SQL_DIALECTS
 
 
-@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
-@pytest.mark.parametrize("dialect", ["POSTGRES", "REDSHIFT"])
-def test_a_postgres_regex_match_is_valid_sql_in_its_own_dialect(dialect: str) -> None:
+def _regex_match_document(dialect: str) -> dict:
     # `~` is the Postgres regular-expression match, which Redshift shares and
-    # sqlglot's default reader rejects, so passing here shows the dialect's
-    # own reader was used. (`::` and ILIKE parse under the default too.)
+    # sqlglot's default reader rejects, so a dialect passing it shows its own
+    # reader was used. (`::` and ILIKE parse under the default too.)
     body = "orders.status ~ '^deliv'"
     expression = {"dialects": [{"dialect": dialect, "expression": body}]}
     dataset = {**_ORDERS, "fields": [{"name": "delivered", "expression": expression}]}
-
-    assert _VALIDATE.validate_sql(_document([dataset], [])) == []
-
-
-@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
-def test_the_postgres_regex_match_is_invalid_under_ansi_sql() -> None:
-    # The control for the test above: the same body under ANSI_SQL is an error.
-    body = "orders.status ~ '^deliv'"
-    expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": body}]}
-    dataset = {**_ORDERS, "fields": [{"name": "delivered", "expression": expression}]}
-
-    assert _VALIDATE.validate_sql(_document([dataset], [])) != []
+    return _document([dataset], [])
 
 
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
-@pytest.mark.parametrize("dialect", ["POSTGRES", "REDSHIFT"])
-def test_invalid_sql_is_reported_under_postgres_and_redshift(dialect: str) -> None:
-    # Both dialects are parsed, so a body sqlglot cannot read is an error
-    # rather than the unchecked-dialect warning an unregistered token gets.
+def test_a_regex_match_is_valid_sql_under_postgres() -> None:
+    assert _VALIDATE.validate_sql(_regex_match_document("POSTGRES")) == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_a_regex_match_is_valid_sql_under_redshift() -> None:
+    assert _VALIDATE.validate_sql(_regex_match_document("REDSHIFT")) == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_the_regex_match_is_invalid_under_ansi_sql() -> None:
+    # The control for the two tests above: the same body under ANSI_SQL is an error.
+    assert _VALIDATE.validate_sql(_regex_match_document("ANSI_SQL")) != []
+
+
+def _unparseable_document(dialect: str) -> dict:
     expression = {"dialects": [{"dialect": dialect, "expression": "SELECT FROM WHERE"}]}
     dataset = {**_ORDERS, "fields": [{"name": "broken", "expression": expression}]}
+    return _document([dataset], [])
 
-    result = _VALIDATE.validate_sql(_document([dataset], []))
-    assert result != []
-    assert not any(isinstance(item, _VALIDATE.ValidationWarning) for item in result)
+
+def _is_error_not_warning(result: list) -> bool:
+    # A registered dialect is parsed, so a body sqlglot cannot read is an error
+    # rather than the unchecked-dialect warning an unregistered token gets.
+    return result != [] and not any(isinstance(item, _VALIDATE.ValidationWarning) for item in result)
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_invalid_sql_is_reported_under_postgres() -> None:
+    assert _is_error_not_warning(_VALIDATE.validate_sql(_unparseable_document("POSTGRES")))
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_invalid_sql_is_reported_under_redshift() -> None:
+    assert _is_error_not_warning(_VALIDATE.validate_sql(_unparseable_document("REDSHIFT")))
