@@ -606,7 +606,7 @@ def test_mapping_expressions_must_name_declared_fields(offline, mapping_schema, 
         # Regular identifiers match without regard to case (expression_language.md).
         {"expression": "ORDERS.Order_Id"},
         {"expression": "ORDERS.ORDER_NR"},
-        # A quoted identifier matches as written, against the model's name upper-cased.
+        # A quoted identifier matches as written, against the model's regular name upper-cased.
         {"expression": '"ORDERS"."ORDER_ID"'},
         {"expression": '"orders".order_id'},
         {"expression": 'orders."order_id"'},
@@ -695,6 +695,46 @@ def test_mapping_datasets_that_differ_only_in_case_pool_their_fields(
     assert errors == [
         "[Reference] concept_mappings -> 0 -> object_mappings -> 2: expression names "
         "'Orders.order_nr' but dataset 'orders' declares no field 'order_nr'"
+    ]
+
+
+def test_mapping_declared_names_normalize_like_references(offline, mapping_schema, tmp_path):
+    model = _sales_model()
+    expression = {"dialects": [{"dialect": "ANSI_SQL", "expression": "1"}]}
+    model["datasets"] += [
+        {
+            "name": "order items",
+            "source": "sales.public.order_items",
+            "fields": [{"name": "Order Id", "expression": expression}],
+        },
+        {
+            "name": "été",
+            "source": "sales.public.ete",
+            "fields": [
+                {"name": "jour", "expression": expression},
+                {"name": "from", "expression": expression},
+            ],
+        },
+    ]
+    mapping = _write_mapping_set(tmp_path, model=model)
+    mapping["concept_mappings"][0]["object_mappings"] = [
+        # A name that is not a regular identifier can only be written quoted,
+        # so it matches as written.
+        {"expression": '"order items"."Order Id"'},
+        {"expression": '"ORDER ITEMS"."ORDER ID"'},
+        # A name the parser reads unquoted is regular, whatever its first
+        # letter, and so is a keyword it reads as a field.
+        {"expression": "été.jour"},
+        {"expression": "ÉTÉ.Jour"},
+        {"expression": "été.from"},
+    ]
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert errors == [
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 1: expression names "
+        "'\"ORDER ITEMS\".\"ORDER ID\"' but the semantic model declares no dataset "
+        "'\"ORDER ITEMS\"'"
     ]
 
 
@@ -847,16 +887,42 @@ _ORDER_ID = _reference("orders", "order_id")
         ("", None),
         ("orders.order_id = {:}", None),
         ("(" * 5000 + "orders.order_id" + ")" * 5000, None),
-        # A dataset named like a keyword reads as a statement, not an expression.
+        # Parsed as an expression, a dataset named like a keyword reads as a
+        # column. A statement, or two expressions, does not parse.
+        ("use.no_such_field", [_reference("use", "no_such_field")]),
+        ("cache.x", [_reference("cache", "x")]),
+        ("analyze.x", [_reference("analyze", "x")]),
+        ("truncate.x", [_reference("truncate", "x")]),
+        ("update.x", [_reference("update", "x")]),
+        ("set.x", [_reference("set", "x")]),
+        ("pivot.x", [_reference("pivot", "x")]),
         ("from.x", None),
-        ("update.x", None),
-        ("set.x", None),
-        ("pivot.x", None),
         ("VALUES (1)", None),
+        ("orders.order_id; DROP TABLE t", None),
+        ("orders.order_id; orders.customer_id", None),
     ],
 )
 def test_field_references_are_the_two_part_columns_of_the_parsed_expression(expression, expected):
     assert _VALIDATE.field_references(expression) == expected
+
+
+@pytest.mark.parametrize(
+    "name, expected",
+    [
+        ("order_id", "ORDER_ID"),
+        ("Order_Id", "ORDER_ID"),
+        ("été", "ÉTÉ"),
+        ("order", "ORDER"),
+        ("from", "FROM"),
+        ("case", "CASE"),
+        ("order items", "order items"),
+        ("order_id ", "order_id "),
+        ("1x", "1x"),
+        ("select", "select"),
+    ],
+)
+def test_declared_name_is_upper_cased_only_when_regular(name, expected):
+    assert _VALIDATE.declared_name(name) == expected
 
 
 def test_mapping_expressions_in_referent_mappings_are_checked(offline, mapping_schema, tmp_path):
@@ -1282,6 +1348,13 @@ def test_mapping_referenced_document_is_not_checked_without_its_schema(
         ("http://[oops/sales.ontology.yaml", "is not a valid URI reference: Invalid IPv6 URL"),
         ("//[::1/sales.ontology.yaml", "is not a valid URI reference: Invalid IPv6 URL"),
         ("./sales%00.ontology.yaml", "does not resolve: embedded null byte"),
+        # Not a regular file: the mapping document's own directory, and a device.
+        (".", "does not name a regular file"),
+        pytest.param(
+            "/dev/null",
+            "does not name a regular file",
+            marks=pytest.mark.skipif(not Path("/dev/null").exists(), reason="no /dev/null"),
+        ),
     ],
 )
 def test_mapping_iri_that_cannot_be_followed_is_an_error(

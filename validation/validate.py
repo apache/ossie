@@ -67,6 +67,7 @@ import difflib
 import importlib.util
 import json
 import os
+import stat
 import sys
 import traceback
 from collections import Counter
@@ -815,6 +816,29 @@ def normalized_identifier(identifier) -> str:
     return identifier.name if identifier.quoted else identifier.name.upper()
 
 
+def declared_name(name: str) -> str:
+    """The normalized form of a name declared in a document.
+
+    A name the parser reads unquoted as the second part of a reference, such
+    as order_id, été or from, is a regular identifier and is upper-cased. Any
+    other name can only be written quoted and is kept as written. A keyword
+    that cannot open a reference unquoted, such as alter, is still upper-cased,
+    so a dataset of that name is referenced as "ALTER". Needs sqlglot.
+    """
+    try:
+        column = sqlglot.parse_one(f"x.{name}", into=sqlglot.exp.Condition)
+    except Exception:
+        return name
+    parts = column.parts if isinstance(column, sqlglot.exp.Column) else []
+    regular = (
+        len(parts) == 2
+        and isinstance(parts[1], sqlglot.exp.Identifier)
+        and not parts[1].quoted
+        and parts[1].name == name
+    )
+    return name.upper() if regular else name
+
+
 def field_references(expression: str) -> list[FieldReference] | None:
     """The dataset.field pairs a mapping expression names, each once.
 
@@ -825,22 +849,21 @@ def field_references(expression: str) -> list[FieldReference] | None:
     inside a subquery whose table part names something bound in that query,
     or in a query around it, is left to that query, while a correlated
     reference to a dataset is a reference. Mapping expressions declare no dialect,
-    so the expression is parsed with the sqlglot default,
-    and one that does not parse as a SQL expression comes back as None. That
-    includes a string sqlglot reads as a statement, which a dataset named
-    like a keyword, such as from.x, otherwise would be. Needs sqlglot.
+    so the expression is parsed with the sqlglot default, as an expression
+    rather than a statement, and one that does not parse comes back as None.
+    A dataset named like many keywords, as in use.x, then reads as a column. A
+    statement does not parse, and two expressions separated by a semicolon
+    come back as None too. Needs sqlglot.
     """
     try:
-        tree = sqlglot.parse_one(expression)
+        tree = sqlglot.parse_one(expression, into=sqlglot.exp.Condition)
     except Exception:
         # ParseError and TokenError for input sqlglot rejects, RecursionError
         # for deep nesting, and the parser raises AttributeError from inside
         # on token soup such as `{:}`. Every one means it did not parse.
         return None
     exp = sqlglot.exp
-    statement = (exp.Command, exp.DDL, exp.DML, exp.Pivot, exp.Values)
-    query = isinstance(tree, exp.Query) and not isinstance(tree, exp.Subquery)
-    if isinstance(tree, statement) or query:
+    if isinstance(tree, exp.Block):
         return None
     visible = _names_visible_in_queries(tree)
     references = []
@@ -894,9 +917,11 @@ def resolve_document_reference(
     left to a catalog, and the path of any other is followed, relative to
     base, the mapping document's own directory, as ontology.md specifies. A
     reference with no iri, with a scheme, or with a relative path and no base
-    comes back as None with a ValidationWarning. A path that does not read as
-    a YAML document is an error. So is a document not named as the reference
-    says, but that document is still returned for the checks that follow.
+    comes back as None with a ValidationWarning. A path that is not a regular
+    file, such as a directory, a device or a pipe, is an error and is not
+    opened. So is a path that does not read as a YAML document, and a
+    document not named as the reference says, but that document is still
+    returned for the checks that follow.
     """
     name = reference.get("name")
     iri = reference.get("iri")
@@ -925,14 +950,17 @@ def resolve_document_reference(
         path = base / path
 
     try:
+        if not stat.S_ISREG(path.stat().st_mode):
+            return None, [f"[Reference] {label} iri '{iri}' does not name a regular file"]
         text = path.read_text(encoding="utf-8")
     except OSError as e:
         return None, [f"[Reference] {label} iri '{iri}' does not resolve: {e.strerror or e}"]
     except UnicodeDecodeError:
         return None, [f"[Reference] {label} iri '{iri}' is not valid UTF-8 text"]
-    except ValueError as e:
-        # A path with an embedded NUL, from %00 in the iri, is rejected before it is opened.
-        return None, [f"[Reference] {label} iri '{iri}' does not resolve: {e}"]
+    except ValueError:
+        # A path with an embedded NUL, from %00 in the iri, is rejected before it is opened,
+        # in words that vary across Python versions.
+        return None, [f"[Reference] {label} iri '{iri}' does not resolve: embedded null byte"]
     try:
         document = load_yaml_named(text, str(path))
     except yaml.YAMLError as e:
@@ -1083,12 +1111,13 @@ def validate_mapping(data: dict, base: Path | None) -> list[str]:
     elif model is not None:
         datasets = {}
         for dataset in model["datasets"]:
-            name, fields = datasets.get(dataset["name"].upper(), (dataset["name"], set()))
+            key = declared_name(dataset["name"])
+            name, fields = datasets.get(key, (dataset["name"], set()))
             if fields is not None and "fields" in dataset:
-                fields = fields | {f["name"].upper() for f in dataset["fields"]}
+                fields = fields | {declared_name(f["name"]) for f in dataset["fields"]}
             else:
                 fields = None
-            datasets[dataset["name"].upper()] = (name, fields)
+            datasets[key] = (name, fields)
 
     def visit(node: object, path: str) -> None:
         if isinstance(node, dict):
