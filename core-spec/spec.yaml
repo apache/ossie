@@ -243,6 +243,10 @@ fields:
     # Optional: Label for categorization (e.g., "filter")
     label: string
 
+    # Optional: Human-readable display name for UI and AI interaction
+    # Provides a user-friendly name distinct from the technical field name
+    display_label: string
+
     # Optional: Human-readable description of the field
     description: string
 
@@ -257,6 +261,85 @@ fields:
     # Optional: Additional context for AI tools (e.g., synonyms, business terms)
     # Helps LLMs understand the field meaning and generate better queries
     ai_context: {}  # see AIContext in ossie-schema.json
+
+    # Optional: High-level semantic classification of the field
+    # Helps consumers determine appropriate visualization and handling
+    # Either a well-known token OR an absolute URI (scheme required) pointing to
+    # an external type system
+    # Well-known tokens: categorical, quantitative, monetary, temporal, geographic, ordinal, identifier
+    # URI examples: https://www.iso20022.org/glossary/LEI, https://fpml.org/types/ISIN
+    semantic_type: string
+
+    # Optional: Describes what a numeric value represents (units and measurement)
+    # Enables unit-aware reasoning and formatting
+    measurement:
+      # Optional: The kind of quantity being measured
+      # Examples: currency, length, weight, temperature, percentage, duration
+      quantity_kind: string
+      # Optional: The specific unit of measurement
+      # For currency, an ISO 4217 code (e.g., USD, EUR, GBP), compared
+      # case-insensitively; this is the authoritative currency, and consumers
+      # derive the symbol from it. An omitted unit leaves the currency unspecified
+      # For other units, use UCUM or descriptive strings (e.g., m, kg, Cel)
+      unit: string
+      # Optional: The unit system
+      # Values: si, imperial, custom
+      unit_system: string
+      # If measurement is present, it must contain at least one of the above
+
+    # Optional: Display format string for presentation
+    # SpreadsheetML (ECMA-376) number format grammar, core subset (see spec.md)
+    # Examples: "#,##0.00", "0.0%", "#,##0", "yyyy-mm-dd"
+    # A format pattern, not an expression or a named preset (e.g. "currency")
+    # Locale-invariant: "." and "," are the decimal and grouping separator
+    # placeholders, rendered in the viewer's locale. A literal currency symbol
+    # (e.g. "$#,##0.00") renders as written; prefer measurement.unit instead
+    # Consumers MAY fall back to default formatting if unsupported, and MUST NOT
+    # rewrite a pattern they cannot render
+    display_format: string
+
+    # Optional: Default aggregation behavior when this field is used as a measure
+    # Removes ambiguity in query generation for consumers
+    # Values: sum, avg, min, max, count, count_distinct, none
+    # none: do not aggregate implicitly (e.g. a numeric ID); omit for no preference
+    default_aggregation: string
+
+    # Optional: Default sorting behavior for this field
+    default_sort:
+      # Optional: Sort direction
+      # Values: asc, desc
+      direction: string
+      # Optional: Null handling
+      # Values: first, last
+      nulls: string
+      # Optional: Sort key: another field of the same dataset whose values order
+      # this field's (e.g., month names by month number). A name, not an
+      # expression; must resolve, must not name this field, no cycles.
+      by_field: string
+
+    # Optional: Default time granularity for temporal fields
+    # Only applicable when dimension.is_time is true
+    # Values: day, week, month, quarter, year
+    default_time_granularity: string
+
+    # Optional: References to external glossaries, ontologies, or standards
+    # Uses SKOS-based predicates as a baseline but the predicate vocabulary is open,
+    # allowing extensions to express non-positive assertions (e.g., DISTINCT_FROM)
+    glossary_references:
+      - target: string      # URI of the external concept (e.g., https://schema.org/MonetaryAmount)
+        predicate: string   # Relationship type. SKOS baseline: exactMatch, closeMatch, broadMatch,
+                            # narrowMatch, relatedMatch. Defaults to exactMatch. Vocabulary is open.
+        provenance: string  # Optional: source of this reference (e.g., "manual", "FIBO 4.1", a tool name)
+
+    # Optional: Whether this field should be hidden from consumer UIs
+    # Hidden fields remain available for expressions but are not surfaced to end users
+    hidden: boolean
+
+    # Optional: Organizational grouping labels for UI presentation
+    # Used to organize fields into logical folders or categories
+    # A field may belong to more than one group
+    group_labels:
+      - string  # e.g., "Revenue", "Financial Metrics"
 
     # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
@@ -304,6 +387,51 @@ metrics:
     # Optional: Additional context for AI tools (e.g., synonyms, business context)
     # Helps LLMs understand the metric meaning and suggest it appropriately
     ai_context: {}  # see AIContext in ossie-schema.json
+
+    # Optional: Human-readable display name for UI and AI interaction
+    display_label: string
+
+    # Optional: High-level semantic classification of the metric
+    # Either a well-known token OR an absolute URI (scheme required) pointing to
+    # an external type system
+    # Well-known tokens: categorical, quantitative, monetary, temporal, geographic, ordinal, identifier
+    semantic_type: string
+
+    # Optional: Describes what the metric value represents (units and measurement)
+    measurement:
+      quantity_kind: string
+      unit: string
+      unit_system: string
+
+    # Optional: Display format string for presentation
+    # Uses Excel-compatible custom number format conventions
+    # Locale-invariant; same rules as the field display_format above
+    display_format: string
+
+    # Optional: Indicates KPI polarity for scorecards and AI summarization
+    # Values: higher_is_better, lower_is_better, neutral
+    desired_direction: string
+
+    # Optional: Default sorting behavior for this metric
+    default_sort:
+      direction: string  # asc, desc
+      nulls: string      # first, last
+      by_field: string   # Optional: sort key, another metric in the same scope (name, not expression)
+
+    # Optional: References to external glossaries, ontologies, or standards
+    # Uses SKOS-based predicates as a baseline but the predicate vocabulary is open
+    glossary_references:
+      - target: string      # URI of the external concept
+        predicate: string   # Relationship type (SKOS baseline, open vocabulary). Default: exactMatch
+        provenance: string  # Optional: source of this reference
+
+    # Optional: Whether this metric should be hidden from consumer UIs
+    hidden: boolean
+
+    # Optional: Organizational grouping labels for UI presentation
+    # A metric may belong to more than one group
+    group_labels:
+      - string  # e.g., "Revenue", "Financial Metrics"
 
     # Optional: Vendor-specific attributes for extensibility
     custom_extensions:

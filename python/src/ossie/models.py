@@ -178,6 +178,117 @@ class OssieVendor(str, Enum):
     ATACCAMA = "ATACCAMA"
 
 
+class OssieSemanticTypeToken(str, Enum):
+    """Well-known semantic type tokens."""
+
+    CATEGORICAL = "categorical"
+    QUANTITATIVE = "quantitative"
+    MONETARY = "monetary"
+    TEMPORAL = "temporal"
+    GEOGRAPHIC = "geographic"
+    ORDINAL = "ordinal"
+    IDENTIFIER = "identifier"
+
+
+# The schema requires a scheme on the URI form, which keeps it disjoint from the
+# token form: a misspelled token such as "monetory" matches neither and is rejected.
+OssieSemanticType = Union[
+    OssieSemanticTypeToken, Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9+.-]*:")]
+]
+
+
+class OssieDesiredDirection(str, Enum):
+    """KPI polarity indicating whether higher or lower values are preferred."""
+
+    HIGHER_IS_BETTER = "higher_is_better"
+    LOWER_IS_BETTER = "lower_is_better"
+    NEUTRAL = "neutral"
+
+
+class OssieDefaultAggregation(str, Enum):
+    """Default aggregation to apply when a field is used as a measure."""
+
+    SUM = "sum"
+    AVG = "avg"
+    MIN = "min"
+    MAX = "max"
+    COUNT = "count"
+    COUNT_DISTINCT = "count_distinct"
+    # Do not aggregate implicitly; distinct from leaving the property unset.
+    NONE = "none"
+
+
+class OssieTimeGranularity(str, Enum):
+    """Default time bucket for temporal fields."""
+
+    DAY = "day"
+    WEEK = "week"
+    MONTH = "month"
+    QUARTER = "quarter"
+    YEAR = "year"
+
+
+class OssieUnitSystem(str, Enum):
+    """Unit system classification."""
+
+    SI = "si"
+    IMPERIAL = "imperial"
+    CUSTOM = "custom"
+
+
+class OssieSortDirection(str, Enum):
+    """Sort direction."""
+
+    ASC = "asc"
+    DESC = "desc"
+
+
+class OssieNullsOrder(str, Enum):
+    """Null value positioning in a sort."""
+
+    FIRST = "first"
+    LAST = "last"
+
+
+class OssieMeasurement(BaseModel):
+    """What a numeric value represents: its quantity kind, unit, and unit system."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    quantity_kind: Optional[str] = None
+    unit: Optional[str] = None
+    unit_system: Optional[OssieUnitSystem] = None
+
+    @model_validator(mode="after")
+    def _has_a_property(self) -> "OssieMeasurement":
+        # Mirrors the schema's `minProperties: 1`: an empty measurement says nothing.
+        if self.quantity_kind is None and self.unit is None and self.unit_system is None:
+            raise ValueError("measurement must set at least one of quantity_kind, unit, unit_system")
+        return self
+
+
+class OssieDefaultSort(BaseModel):
+    """Default sorting behavior for a field or metric."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    direction: Optional[OssieSortDirection] = None
+    nulls: Optional[OssieNullsOrder] = None
+    # The name of another field or metric, not an expression.
+    by_field: Optional[str] = None
+
+
+class OssieGlossaryReference(BaseModel):
+    """Reference to a concept in an external glossary, ontology, or standard."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    target: str
+    # Open vocabulary with a SKOS baseline; the schema leaves it unconstrained.
+    predicate: Optional[str] = None
+    provenance: Optional[str] = None
+
+
 class OssieAIContextObject(BaseModel):
     """Structured AI context; free-form extras retain null values when serialized."""
 
@@ -261,9 +372,20 @@ class OssieField(BaseModel):
     expression: OssieExpression
     dimension: Optional[OssieDimension] = None
     label: Optional[str] = None
+    display_label: Optional[str] = None
     description: Optional[str] = None
     datatype: Optional[OssieDataType] = None
     ai_context: Optional[OssieAIContext] = None
+    semantic_type: Optional[OssieSemanticType] = None
+    measurement: Optional[OssieMeasurement] = None
+    display_format: Optional[str] = None
+    default_aggregation: Optional[OssieDefaultAggregation] = None
+    default_sort: Optional[OssieDefaultSort] = None
+    default_time_granularity: Optional[OssieTimeGranularity] = None
+    glossary_references: Optional[list[OssieGlossaryReference]] = None
+    # StrictBool for the reason given on `OssieDimension.is_time`.
+    hidden: Optional[StrictBool] = None
+    group_labels: Optional[list[str]] = None
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
     def is_time_dimension(self) -> bool:
@@ -290,6 +412,15 @@ class OssieMetric(BaseModel):
     description: Optional[str] = None
     datatype: Optional[OssieDataType] = None
     ai_context: Optional[OssieAIContext] = None
+    display_label: Optional[str] = None
+    semantic_type: Optional[OssieSemanticType] = None
+    measurement: Optional[OssieMeasurement] = None
+    display_format: Optional[str] = None
+    desired_direction: Optional[OssieDesiredDirection] = None
+    default_sort: Optional[OssieDefaultSort] = None
+    glossary_references: Optional[list[OssieGlossaryReference]] = None
+    hidden: Optional[StrictBool] = None
+    group_labels: Optional[list[str]] = None
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
 
