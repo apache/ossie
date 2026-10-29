@@ -569,6 +569,33 @@ booleans, `null`, arrays, or nested objects. Prefer an existing core field when 
 property already has a home in the specification, and use `data` only for genuine
 vendor-specific or otherwise unmapped residue.
 
+`data` MUST be representable as JSON: keys are strings and values are JSON values.
+YAML-only values have no portable meaning; for example, an unquoted YAML date such as
+`2026-10-29` is written out as the JSON string `"2026-10-29"`, and a non-string key
+is rejected. A `null` inside `data` is preserved as written, unlike optional core
+fields, which are omitted when they are `null`.
+
+Consumers MUST preserve `data` they do not understand and MAY ignore it.
+
+### Migrating from string `data`
+
+Earlier drafts defined `data` as a JSON-encoded string. `data` is now an object, and
+a string `data` value is rejected by the schema. No upgrade tool converts it; to
+migrate, parse the old string as JSON and write the resulting object in its place:
+
+```yaml
+# Before
+- vendor_name: DBT
+  data: '{"materialized": "table"}'
+# After
+- vendor_name: DBT
+  data:
+    materialized: table
+```
+
+Ontology mapping documents (`ontology/mapping.json`) reference the core
+`custom_extensions` schema, so they inherit this change.
+
 ### Vendor Names
 
 The `vendor_name` field is a free-form string, allowing any vendor or organization to

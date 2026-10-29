@@ -40,6 +40,9 @@ cross-vendor token. Metadata that more than one vendor needs belongs in the
 core specification, where it has defined semantics, and not in an opaque
 extension payload.
 
+`data` was previously a JSON-encoded string. To migrate, parse that string
+into an object; see [Migrating from string `data`](../core-spec/spec.md#migrating-from-string-data).
+
 ## Known vendors
 
 | Vendor | Description |
