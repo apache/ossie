@@ -50,6 +50,9 @@ A case passes when an implementation loads the data and the model, runs
 (see "Comparing results"). For an example, see
 [`cases/a01_grand_total/`](cases/a01_grand_total/).
 
+The cases refer to each dataset by the name `<model name>.<dataset name>`, for
+example `scott_model.emp`.
+
 Case files
 ----------
 
@@ -64,7 +67,7 @@ SELECT *
 FROM (VALUES (29025.00, 14)) AS expected (sum_sal, emp_count);
 ```
 
-- Column names and order MUST match `query.ossie.sql`.
+- `expected.sql` MUST use the column names and order of `query.ossie.sql`.
 - Values MUST be standard SQL literals. An exact result MUST be an exact
   numeric literal (`29025.00`). An approximate result MUST be an approximate
   numeric literal (`2.073214285714286E3`).
@@ -100,7 +103,8 @@ Comparing results
 -----------------
 
 - Columns are matched by position. The column counts MUST be equal. Column
-  names are compared case-insensitively.
+  names are compared case-insensitively, so the implementation's own column
+  names are not required to match exactly.
 - Rows MUST match as multisets, including the number of duplicates.
 - If `query.ossie.sql` has `ORDER BY`, the row order MUST also match, and the
   sort key MUST order the result uniquely.
