@@ -179,6 +179,7 @@ class OssieVendor(str, Enum):
     THOUGHTSPOT = "THOUGHTSPOT"
     HEX = "HEX"
     ATACCAMA = "ATACCAMA"
+    OMNI = "OMNI"
 
 
 class OssieAIContextObject(BaseModel):

@@ -50,6 +50,7 @@ community uses (see [`README.md`](README.md) for how these lists are used).
 | `THOUGHTSPOT` | ThoughtSpot-specific attributes |
 | `HEX` | Hex-specific attributes |
 | `ATACCAMA` | Ataccama-specific attributes |
+| `OMNI` | Omni-specific attributes |
 
 ## Examples
 
