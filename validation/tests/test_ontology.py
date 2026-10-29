@@ -596,8 +596,7 @@ def test_mapping_concepts_must_be_declared_in_the_ontology(offline, mapping_sche
 
 def test_mapping_expressions_must_name_declared_fields(offline, mapping_schema, tmp_path):
     model = _sales_model()
-    # The core spec does not require a fields list, so a dataset without one
-    # cannot be checked and is left alone.
+    # A dataset that declares no fields list exposes no fields (spec.md, Name Resolution).
     model["datasets"].append({"name": "customers", "source": "sales.public.customers"})
     mapping = _write_mapping_set(tmp_path, model=model)
     mapping["concept_mappings"][0]["object_mappings"] = [
@@ -629,6 +628,8 @@ def test_mapping_expressions_must_name_declared_fields(offline, mapping_schema, 
         "'\"orders\".order_id' but the semantic model declares no dataset '\"orders\"'",
         "[Reference] concept_mappings -> 0 -> object_mappings -> 6: expression names "
         "'orders.\"order_id\"' but dataset 'orders' declares no field '\"order_id\"'",
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 12: expression names "
+        "'customers.anything' but dataset 'customers' declares no field 'anything'",
     ]
 
 
@@ -738,15 +739,49 @@ def test_mapping_declared_names_normalize_like_references(offline, mapping_schem
     ]
 
 
-def test_mapping_dataset_without_a_fields_list_turns_off_the_check_for_its_name(
+def test_mapping_dataset_without_a_fields_list_adds_no_fields_to_its_name(
     offline, mapping_schema, tmp_path
 ):
     model = _sales_model()
     model["datasets"].append({"name": "ORDERS", "source": "sales.public.orders_v2"})
     mapping = _write_mapping_set(tmp_path, model=model)
-    mapping["concept_mappings"][0]["object_mappings"] = [{"expression": "orders.order_nr"}]
+    mapping["concept_mappings"][0]["object_mappings"] = [
+        {"expression": "orders.order_id"},
+        {"expression": "orders.order_nr"},
+    ]
 
-    assert _cross_check(tmp_path, mapping_schema, mapping) == []
+    assert _cross_check(tmp_path, mapping_schema, mapping) == [
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 1: expression names "
+        "'orders.order_nr' but dataset 'orders' declares no field 'order_nr'",
+    ]
+
+
+@pytest.mark.parametrize("expression", ["", "   ", "-- nothing", ";"])
+def test_mapping_expression_that_holds_nothing_is_an_error(
+    offline, mapping_schema, tmp_path, expression
+):
+    mapping = _write_mapping_set(tmp_path)
+    mapping["concept_mappings"][0]["object_mappings"] = [{"expression": expression}]
+
+    assert _cross_check(tmp_path, mapping_schema, mapping) == [
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 0: expression is empty",
+    ]
+
+
+def test_mapping_expression_that_holds_nothing_is_an_error_without_the_model(
+    offline, mapping_schema, tmp_path
+):
+    mapping = _write_mapping_set(tmp_path)
+    (tmp_path / "sales.semantic_model.yaml").unlink()
+    mapping["concept_mappings"][0]["object_mappings"] = [{"expression": "  "}]
+
+    errors = _cross_check(tmp_path, mapping_schema, mapping)
+
+    assert len(errors) == 2
+    assert "does not resolve" in errors[0]
+    assert errors[1] == (
+        "[Reference] concept_mappings -> 0 -> object_mappings -> 0: expression is empty"
+    )
 
 
 def test_mapping_expression_that_is_not_sql_is_skipped_with_a_warning(
@@ -1296,6 +1331,15 @@ def test_mapping_referenced_document_that_fails_its_schema_is_one_error(
         (None, "does not resolve: No such file or directory"),
         ("a: [", "is not valid YAML"),
         ("- just\n- a list\n", "does not hold a document"),
+        # SafeLoader raises ValueError, AttributeError or KeyError, not YAMLError,
+        # for a scalar it resolves to a tag but cannot build.
+        ("description: 2024-02-30\n", "holds a value YAML cannot build: "),
+        ("description: !!int abc\n", "holds a value YAML cannot build: "),
+        ("description: !!timestamp abc\n", "holds a value YAML cannot build: "),
+        ("description: !!bool abc\n", "holds a value YAML cannot build: "),
+        ("description: !!int ''\n", "holds a value YAML cannot build: "),
+        (b"name: caf\xe9\n", "is not valid UTF-8 text"),
+        ("[" * 5000, "is too deeply nested to parse"),
     ],
 )
 def test_mapping_reference_that_does_not_read_as_a_document_is_an_error(
@@ -1305,6 +1349,8 @@ def test_mapping_reference_that_does_not_read_as_a_document_is_an_error(
     target = tmp_path / "sales.semantic_model.yaml"
     if content is None:
         target.unlink()
+    elif isinstance(content, bytes):
+        target.write_bytes(content)
     else:
         target.write_text(content)
 
@@ -1348,6 +1394,7 @@ def test_mapping_referenced_document_is_not_checked_without_its_schema(
         ("http://[oops/sales.ontology.yaml", "is not a valid URI reference: Invalid IPv6 URL"),
         ("//[::1/sales.ontology.yaml", "is not a valid URI reference: Invalid IPv6 URL"),
         ("./sales%00.ontology.yaml", "does not resolve: embedded null byte"),
+        ("./sales\ud800.ontology.yaml", "is not a valid file name"),
         # Not a regular file: the mapping document's own directory, and a device.
         (".", "does not name a regular file"),
         pytest.param(

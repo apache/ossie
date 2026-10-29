@@ -839,6 +839,19 @@ def declared_name(name: str) -> str:
     return name.upper() if regular else name
 
 
+def expression_is_empty(expression: str) -> bool:
+    """True when an expression holds nothing: empty, whitespace, a comment or
+    only semicolons, which the core checks report as empty. Without sqlglot,
+    only an empty or whitespace-only expression is.
+    """
+    if not SQLGLOT_AVAILABLE:
+        return not expression.strip()
+    try:
+        return all(statement is None for statement in sqlglot.parse(expression))
+    except Exception:
+        return False
+
+
 def field_references(expression: str) -> list[FieldReference] | None:
     """The dataset.field pairs a mapping expression names, each once.
 
@@ -957,6 +970,9 @@ def resolve_document_reference(
         return None, [f"[Reference] {label} iri '{iri}' does not resolve: {e.strerror or e}"]
     except UnicodeDecodeError:
         return None, [f"[Reference] {label} iri '{iri}' is not valid UTF-8 text"]
+    except UnicodeEncodeError:
+        # A lone surrogate, from a \ud800 escape in the iri, cannot name a file.
+        return None, [f"[Reference] {label} iri '{iri}' is not a valid file name"]
     except ValueError:
         # A path with an embedded NUL, from %00 in the iri, is rejected before it is opened,
         # in words that vary across Python versions.
@@ -967,6 +983,10 @@ def resolve_document_reference(
         return None, [f"[Reference] {label} iri '{iri}' is not valid YAML: {str(e).split(chr(10))[0]}"]
     except RecursionError:
         return None, [f"[Reference] {label} iri '{iri}' is too deeply nested to parse"]
+    except (ValueError, AttributeError, LookupError) as e:
+        # SafeLoader raises these, not YAMLError, for a scalar it cannot build:
+        # 2024-02-30 or !!int abc, !!timestamp abc, !!bool abc, !!int ''.
+        return None, [f"[Reference] {label} iri '{iri}' holds a value YAML cannot build: {e}"]
     if not isinstance(document, dict):
         return None, [f"[Reference] {label} iri '{iri}' does not hold a document"]
 
@@ -1063,10 +1083,11 @@ def validate_mapping(data: dict, base: Path | None) -> list[str]:
     level its arity calls for, and every dataset.field an expression names
     must be a field of that semantic model, comparing identifiers the way
     expression_language.md does: regular ones without regard to case, quoted
-    ones as written, and the model's names as regular identifiers.
-    A dataset that declares no fields list is not checked, since the core spec
-    does not require one, and an expression that does not parse as a SQL
-    expression is skipped with a warning, as is every one when sqlglot is missing.
+    ones as written, and the model's names the way a reference to them reads
+    (declared_name). A dataset that declares no fields list exposes no fields
+    (spec.md, Name Resolution). An empty expression is an error, as in the core
+    checks, and one that does not parse as a SQL expression is skipped with a
+    warning, as is every one when sqlglot is missing.
     Relative iri are read from base, the mapping document's own directory. A
     reference that cannot be followed, or whose document fails its schema,
     skips its half of the checks, see resolve_document_reference and
@@ -1099,9 +1120,8 @@ def validate_mapping(data: dict, base: Path | None) -> list[str]:
         concepts = {c["concept"] for c in ontology["ontology"]} | BUILT_IN_CONCEPTS
         relationships = OntologyRelationships(ontology["ontology"])
     # Keyed by the normalized dataset name: the name as first declared and its
-    # normalized field names, or None once a dataset declares no fields list.
-    # Datasets whose names differ only in case are one dataset to a regular
-    # identifier, so their fields are pooled.
+    # normalized field names. Datasets whose names differ only in case are one
+    # dataset to a regular identifier, so their fields are pooled.
     datasets = None
     if model is not None and not SQLGLOT_AVAILABLE:
         errors.append(ValidationWarning(
@@ -1113,10 +1133,7 @@ def validate_mapping(data: dict, base: Path | None) -> list[str]:
         for dataset in model["datasets"]:
             key = declared_name(dataset["name"])
             name, fields = datasets.get(key, (dataset["name"], set()))
-            if fields is not None and "fields" in dataset:
-                fields = fields | {declared_name(f["name"]) for f in dataset["fields"]}
-            else:
-                fields = None
+            fields = fields | {declared_name(f["name"]) for f in dataset.get("fields", [])}
             datasets[key] = (name, fields)
 
     def visit(node: object, path: str) -> None:
@@ -1125,7 +1142,9 @@ def validate_mapping(data: dict, base: Path | None) -> list[str]:
             if concepts is not None and isinstance(concept, str) and concept not in concepts:
                 errors.append(f"[Reference] {path}: concept '{concept}' is not declared in the ontology")
             expression = node.get("expression")
-            if datasets is not None and isinstance(expression, str):
+            if isinstance(expression, str) and expression_is_empty(expression):
+                errors.append(f"[Reference] {path}: expression is empty")
+            elif datasets is not None and isinstance(expression, str):
                 references = field_references(expression)
                 if references is None:
                     errors.append(ValidationWarning(
@@ -1140,7 +1159,7 @@ def validate_mapping(data: dict, base: Path | None) -> list[str]:
                             f"[Reference] {path}: expression names '{reference.text}' but "
                             f"the semantic model declares no dataset '{reference.written[0]}'"
                         )
-                    elif declared[1] is not None and field not in declared[1]:
+                    elif field not in declared[1]:
                         errors.append(
                             f"[Reference] {path}: expression names '{reference.text}' but "
                             f"dataset '{declared[0]}' declares no field '{reference.written[1]}'"
