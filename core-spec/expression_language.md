@@ -87,6 +87,8 @@ All identifiers MUST be valid names and follow ANSI SQL naming, with the size li
 
 Regular identifiers (unquoted) should be case insensitive.    For example, an identifier id is regular, so it would match with Id or iD.  Comparing quoted and non-quoted identifiers is DB specific, so for best portability it is best to use simple identifiers.
 
+Function names should also be case insensitive.  For example, `SUM`, `sum`, and `Sum` name the same function.  Function names and identifiers are separate namespaces, so a field, metric, or column may have the same name as a function.
+
 The quote character for the Ossie dialect will follow ANSI SQL and support the double quote character (“).  This means that if an expression is in a field expression or as an identifier in the YAML, this will be the expected quoting.  However, there are some databases that use other escape characters.  Working with these have the option of either creating expressions using their dialect or having the Ossie document written in the Ossie dialect, but then queried in the local dialect. 
 
 #### Comparison Table
@@ -277,6 +279,14 @@ COUNT(DISTINCT customer_id) FILTER (WHERE status = 'completed')  --> COUNT(DISTI
 ```
 
 A non-matching row contributes `NULL`, which these functions ignore. An `ELSE 0` would count as a real row and would corrupt `AVG`, `MIN`, `MAX`, and `COUNT`. The identity does not hold for an aggregate function that does not ignore `NULL` inputs, such as `ARRAY_AGG`.
+
+### Measure Evaluation: `AGG` (RESERVED)
+
+Ossie SQL reserves the function name `AGG` for evaluating a measure: a column that holds an aggregate calculation instead of a value for each row. The [Relational Query Interface](relational_semantics.md) defines measures (Section 4) and `AGG` (Section 6), including its valid arguments. An implementation MUST NOT give `AGG` any other meaning, and a dialect extension MUST NOT define a function of that name. Because function names should be case insensitive, the reservation covers every capitalization, such as `agg` and `Agg`.
+
+This version reserves the name only. A future version will define where model declarations may use `AGG`.
+
+**Compatibility.** Earlier versions of this specification did not reserve `AGG`, so an older `OSSIE_SQL_2026` expression might call a different function by that name. To update it, rename that function or write the expression in a vendor dialect. Fields, metrics, and columns can still be named `agg`.
 
 ### Decomposability Reference
 
@@ -853,6 +863,7 @@ Implementations MAY support additional functions through dialect extensions. The
 | Version   | Date       | Changes |
 |:----------|:-----------| :---- |
 | 0.2.0.dev | 2026-07-15 | Initial draft |
+| 0.2.0.dev | 2026-10-29 | State that function names are case insensitive. Reserve `AGG` for measure evaluation; expressions that call another function named `AGG` must rename it or move to a vendor dialect |
 
 ---
 
