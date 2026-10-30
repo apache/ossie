@@ -31,9 +31,12 @@
 # passing); scoring stays a harness job (see #348).
 #
 # Reference form: the qualified dataset.field form is carried as the primary
-# fixture wherever a metric references a dataset field, with the bare form as a
-# sibling variant, pending #486 and #343. M1's element is an intra-dataset field
-# expression, so it carries a single fixture.
+# fixture wherever a metric references a dataset field, as a model-scoped metric.
+# The bare form is a sibling variant carried as a dataset-scoped metric
+# (datasets[].metrics), the only place the spec allows a single-part field name
+# in a metric (Metric Scoping, #486). The grader keys a dataset-scoped metric as
+# dataset.metric. M1's element is an intra-dataset field expression, so it
+# carries a single fixture.
 #
 # All fixtures validate.py-pass on apache/ossie main (9531429) with sqlglot
 # 29.0.1. Rungs M7 and M8 (window and offset functions) are held pending #587;

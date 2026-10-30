@@ -29,6 +29,11 @@ in `../manifest.yaml`. A thin runner (modelled on `cube/tools/interop_matrix.py`
 apache/ossie-converters) drives each converter and feeds the
 grader, so the measurement table becomes one command.
 
+Elements are metrics and field expressions. A model-scoped metric is keyed by its
+name, a dataset-scoped metric (`datasets[].metrics`) and a field by `dataset.name`,
+the way the spec references them. A metric a converter moves between the two scopes
+with the same expression is graded REWRITTEN (identity not preserved), not PORTABLE.
+
 ## Usage
 
 ```
