@@ -36,6 +36,60 @@ Each regenerated script is written under `target/ost/`. For each
 script that fails, `ost` prints the path of the script and of the
 regenerated script, and a diff between them.
 
+## Example
+
+Go to the `ost` directory, from the root of the repository:
+
+```bash
+$ cd ost
+```
+
+Write a script, `emp.ost`, with one query and no output:
+
+```
+connect("scott");
+
+select deptno, count(*) as c
+from emp
+group by deptno;
+```
+
+Run it. It fails, because its output is missing, and `ost` prints
+a diff whose `+` lines are the output that the query produced:
+
+```bash
+$ uv run ost emp.ost
+ost: emp.ost failed; regenerated script is target/ost/emp.ost
+--- emp.ost
++++ target/ost/emp.ost
+@@ -3,3 +3,11 @@
+ select deptno, count(*) as c
+ from emp
+ group by deptno;
+++--------+---+
++| deptno | c |
+++--------+---+
++|     10 | 3 |
++|     20 | 5 |
++|     30 | 6 |
+++--------+---+
++(3 rows)
+```
+
+Check that the output is correct, then copy the regenerated script
+over the script (or run `uv run ost --update emp.ost`, which does the
+same):
+
+```bash
+$ cp target/ost/emp.ost emp.ost
+```
+
+Run it again. It passes, and `ost` prints nothing:
+
+```bash
+$ uv run ost emp.ost
+```
+
 ## Defining functions
 
 `ossie_ost.run` takes a `functions` argument that adds functions to
