@@ -16,6 +16,7 @@
 # under the License.
 
 import json
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -37,6 +38,7 @@ from ossie import (
     OssieMetric,
     OssieRelationship,
     OssieSemanticModel,
+    OssieVendor,
 )
 
 
@@ -54,6 +56,30 @@ def test_dialect_is_free_form_in_core_schema() -> None:
     assert "enum" not in dialect
     assert dialect["type"] == "string"
     assert "OSSIE_SQL_2026" in dialect["examples"]
+
+
+def _registered_tokens(registry: str) -> set[str]:
+    """The tokens in the table of extensions/<registry>.md."""
+    path = Path(__file__).parents[2] / "extensions" / f"{registry}.md"
+    return {
+        match.group(1)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if (match := re.match(r"^\|\s*`([^`]+)`\s*\|", line))
+    }
+
+
+def test_dialect_enum_matches_the_registry() -> None:
+    # The field accepts any string; the enum is the well-known values, so it
+    # carries exactly what extensions/dialects.md registers.
+    assert {member.value for member in OssieDialect} == _registered_tokens("dialects"), (
+        "OssieDialect and extensions/dialects.md do not list the same dialects"
+    )
+
+
+def test_vendor_enum_matches_the_registry() -> None:
+    assert {member.value for member in OssieVendor} == _registered_tokens("vendors"), (
+        "OssieVendor and extensions/vendors.md do not list the same vendors"
+    )
 
 
 @pytest.mark.parametrize(

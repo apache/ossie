@@ -237,17 +237,17 @@ their original row identities. Each measure is evaluated over its own source row
 ### 3.4 Relationship to the Ossie semantic model
 
 The relations, fields, and measures above are how this interface presents an Ossie
-`semantic_model` (its `datasets`, `relationships`, and `metrics`) to SQL consumers, in SQL-native
-names. The correspondence:
+`semantic_model` (its `datasets`, their `metrics`, and its `relationships`) to SQL consumers, in
+SQL-native names. The correspondence:
 
 | This spec | Apache Ossie | Notes |
 |---|---|---|
 | relation | `dataset` | A logical table (fact or dimension) exposed as a SQL relation. |
 | field | `field` | A scalar (non-measure) column; we adopt Ossie's term. Ossie's optional `dimension` role (e.g. `is_time`) is metadata this interface does not require. |
-| measure | `metric` | An aggregate expression on the model's data (of any scalar result type). Ossie currently places metrics at the *model* level, not on a dataset; Section 10.3 reconciles that and recommends Ossie add per-relation measures. |
+| measure | dataset-scoped `metric` (`datasets[].metrics`) | An aggregate expression over the dataset's rows (of any scalar result type), exposed as a measure on the dataset's relation. Model-scoped metrics are not exposed as measure columns (Section 10.3). |
 | row identity (Section 3.2) | `primary_key` | A dataset's declared primary key is a natural source of a measure's row identity. |
 | join relationship (Section 11.3) | `relationship` (`from`/`to`, `from_columns`/`to_columns`) | `from`/`to` map to source/target and the columns to the join predicate (`from` many, `to` one); Section 11.3 adds cardinality, roles, and arbitrary `ON`. |
-| Layer 1 expression | `expression` (per dialect) | Ossie carries SQL per dialect; a Layer 1 expression is the portable form (Section 1.1). |
+| Layer 1 expression | `OSSIE_SQL_2026` expression (`expression.sql`, or an `OSSIE_SQL_2026` entry in `dialects`) | The portable form of an Ossie expression, in the Layer 1 language (Section 1.1). For the resolution rules, see [Expression Object](spec.md#expression-object). |
 
 Ossie model metadata this interface does not natively surface (`ai_context`, `custom_extensions`,
 and non-selected expression dialects) is addressed under discovery (Section 11) and out of scope
@@ -860,16 +860,10 @@ floating measure are the derived measures above, each defined on a home relation
 could instead fit a Layer 3 wide-table interface, whose job is precisely to resolve a join path
 per query (Sections 1.1, 10.2); that is outside the scope of this specification.
 
-**Recommendation to Ossie (Layer 2 needs per-relation measures).** Apache Ossie places
-`metrics` at the model level, above datasets (Section 3.4); it has no notion of a metric
-belonging to a dataset. To expose a model through this interface, every measure needs a home
-relation. We therefore recommend that Ossie add **per-dataset (per-relation) measures** (a
-metric attached to the dataset that supplies its source rows), so a model's metrics map directly
-onto queryable measure columns. A single-dataset metric attaches to its dataset; a metric
-requiring a join attaches to a dataset whose definition includes that join, per the pattern
-above. Apache Ossie [PR #343](https://github.com/apache/ossie/pull/343) proposes exactly this: dataset-scoped
-metrics (`datasets[].metrics`) restricted to the dataset's own fields, with cross-dataset metrics
-staying model-scoped. We recommend its adoption.
+**Ossie metrics.** This layer exposes Ossie's dataset-scoped metrics (`datasets[].metrics`): each
+is a measure on its dataset's relation (Section 3.4). Ossie's model-scoped metrics (the
+model-root `metrics`) have no declared home relation and are not exposed as measure columns by
+this interface.
 
 ---
 
@@ -1021,11 +1015,6 @@ These are blocking: each must be resolved before a conforming implementation can
 scope of Section 1.3. They are collected here rather than restated throughout; each section that
 raises one points to it.
 
-- **Per-relation measures in Ossie.** Every measure in this interface needs a home relation
-  (Section 10.3), but Ossie's metrics are model-level and cannot supply one. Apache Ossie
-  [PR #343](https://github.com/apache/ossie/pull/343) proposes dataset-scoped metrics
-  (`datasets[].metrics`), exactly these per-relation measures, and we recommend the working
-  group adopt it; the conformance level remains to be settled.
 - **Row identity declaration.** A row identity can be derived automatically (for example by
   numbering each source row), so the standard may not need a declaration syntax at all. Whether
   auto-derivation suffices, or an explicit declaration (e.g. a `PRIMARY KEY`) is needed when the
@@ -1244,8 +1233,9 @@ Apache Ossie terms (Section 3.4):
 - **Dataset (Ossie).** A logical table (fact or dimension) in an Ossie model; exposed here as a
   *relation*.
 - **Field (Ossie).** A scalar column of a dataset; our *field* (Ossie's term, adopted).
-- **Metric (Ossie).** An aggregate expression, defined at the Ossie *model* level; exposed here
-  as a *measure* on a home relation (Section 10.3).
+- **Metric (Ossie).** An aggregate expression, declared on a dataset (`datasets[].metrics`) or at
+  the Ossie *model* level. A dataset-scoped metric is exposed here as a *measure* on its dataset's
+  relation (Section 10.3).
 - **Relationship (Ossie).** A directional link between datasets (`from`/`to`,
   `from_columns`/`to_columns`); `from` is the many side, `to` the one. Surfaced via the
   relationship model of Section 11.3.
