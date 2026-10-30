@@ -69,12 +69,6 @@ Ossie is supported by a broad coalition of 50+ organizations across the data eco
 
 Alation, Anomalo, Atlan, AtScale, Bigeye, BlackRock, Blue Yonder, Carto, Cloudera, Coalesce, Collate, Collibra, Cogniti, Count, Credible, Cube, Databricks, DataHub, Denodo, dbt Labs, Dremio, Domo, Elementum AI, Firebolt, GoodData, Hex, Honeydew, Informatica, Instacart, JetBrains, Lightdash, Mistral AI, Omni, Oracle, Preset, Qlik, RelationalAI, Salesforce, Select Star, Sigma, Snowflake, Solid, Starburst Data, Strategy, Sundial, ThoughtSpot, and more.
 
-### Converters
-
-Ossie converters follow a **hub-and-spoke** architecture: the Ossie core specification acts as the central, vendor-neutral format, and each converter handles translation to or from a specific vendor format (e.g., Snowflake, dbt, Salesforce, Databricks). This avoids the need for point-to-point converters between every pair of vendors.
-
-For details on implementing a converter, see the [Converters Guide](https://github.com/apache/ossie-converters/blob/main/README.md).
-
 ---
 
 ## Project Governance
@@ -230,7 +224,7 @@ No. Ossie is vendor-agnostic by design. The specification is developed and gover
 Yes, as long as a converter exists (or is built) for your tool. The hub-and-spoke model means that adding Ossie support to a single tool gives it interoperability with every other Ossie-compatible tool. Check the [Converters Guide](https://github.com/apache/ossie-converters/blob/main/README.md) for currently supported vendors.
 
 **What if my vendor isn't supported yet?**
-You can build a converter in a separate repository or contribute one to the [ossie-converters repository](https://github.com/apache/ossie-converters). The main Ossie repository does not accept new converters. The [Converters Guide](https://github.com/apache/ossie-converters/blob/main/README.md) provides implementation guidance; see [Converter Contributions](../CONTRIBUTING.md#converter-contributions) for contribution and hosting guidance.
+You can build a converter in your own repository, or contribute one to the [apache/ossie-converters](https://github.com/apache/ossie-converters) repository, which hosts the reference converters and their authoring guide.
 
 **Do I need to rewrite my existing semantic models?**
 No. Import converters translate existing vendor-specific models into the Ossie format automatically. Your existing models remain intact — Ossie provides an additional interchange layer on top of them.
@@ -353,7 +347,7 @@ We welcome contributions from everyone — whether you are a developer, a data e
 
 - **Specification Feedback**: Review proposed specification changes and share your perspective on GitHub pull requests and issues.
 - **Use Case Discussions**: Share how your organization uses semantic models and what challenges you face — this helps shape the specification to address real-world needs.
-- **Code Contributions**: Contribute to validation tooling, existing converters (in the [apache/ossie-converters](https://github.com/apache/ossie-converters) repository), examples, or any other part of the project. See [Converter Contributions](../CONTRIBUTING.md#converter-contributions) before starting a new converter.
+- **Code Contributions**: Contribute to validation tooling, examples, or any other part of the project. Converters live in the separate [apache/ossie-converters](https://github.com/apache/ossie-converters) repository.
 - **Documentation**: Help improve and expand the project documentation.
 - **Community Support**: Answer questions, participate in discussions, and help onboard new contributors.
 
