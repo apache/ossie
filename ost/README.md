@@ -22,6 +22,37 @@
 `ost` runs Ossie SQL Test (`.ost`) scripts. See [`docs/ost.md`](docs/ost.md)
 for the command and the script format.
 
+## Usage
+
+```bash
+uv sync
+uv run ost --help
+uv run ost tests/scripts/example.ost   # runs one script
+uv run ost tests/scripts               # runs every .ost file under a directory
+uv run ost --update tests/scripts      # overwrites failing scripts
+```
+
+Each regenerated script is written under `target/ost/`. For each
+script that fails, `ost` prints the path of the script and of the
+regenerated script, and a diff between them.
+
+## Defining functions
+
+`ossie_ost.run` takes a `functions` argument that adds functions to
+the built-in ones. Each is a `Function` with the kinds of its
+parameters, and a callable that receives the `Session` and the
+arguments, and returns a value (`int`, `float`, `bool` or `str`), a
+`Table`, or `None` for no output. If it raises, the command's output
+is an error.
+
+```python
+from ossie_ost import Function, Kind, run
+
+functions = {"twice": Function((Kind.STRING,), lambda session, s: s + s)}
+run('twice("ab");\n', functions=functions).output
+# 'twice("ab");\n> "abab" : string\n'
+```
+
 ## Development
 
 ```bash

@@ -36,7 +36,13 @@ keywords = [
     "Apache Ossie",
     "Ossie",
 ]
-dependencies = []
+dependencies = [
+    "duckdb>=2.0.0",
+    "pytz>=2026.6",
+]
+
+[project.scripts]
+ost = "ossie_ost.cli:main"
 
 [project.urls]
 homepage = "https://ossie.apache.org/"
