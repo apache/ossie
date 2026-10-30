@@ -27,7 +27,8 @@ It does NOT drive the converters: that is the thin runner's job (modelled on
 document a converter returned, and diffs them element by element into the outcome
 vocabulary in ``../manifest.yaml``:
 
-* PORTABLE             returned under a portable tag, expression unchanged
+* PORTABLE             an authored portable form (the ``sql`` form or a portable
+                       dialect entry) returned unchanged under its tag
 * TAG_PRESERVED        sub-flag of PORTABLE: an OSSIE_SQL_2026 input kept its tag
 * REWRITTEN            same portable tag, expression text changed. A change the
                        normalized comparison proves is only spelling (requalify,
@@ -140,13 +141,44 @@ def _equivalent_tree(left, right):
 
 
 def _dialect_map(expression_obj):
+    """Return {dialect: normalized expression} for one expression object.
+
+    The portable ``sql`` form is OSSIE_SQL_2026 by definition, so it is read under
+    that tag. It goes in first, so ``_authored_tag`` (first portable key) resolves to
+    it ahead of an ANSI_SQL entry, and as the primary form it wins over an
+    OSSIE_SQL_2026 entry in ``dialects``. Whether an element came back PORTABLE is
+    decided on ``_authored_pairs`` instead, which keeps every authored form.
+    """
     result = {}
     if not isinstance(expression_obj, dict):
         return result
+    has_sql = isinstance(expression_obj.get("sql"), str) and bool(expression_obj["sql"].strip())
+    if has_sql:
+        result["OSSIE_SQL_2026"] = _normalize(expression_obj["sql"])
     for entry in expression_obj.get("dialects") or []:
         if isinstance(entry, dict) and entry.get("dialect") is not None:
+            if has_sql and entry["dialect"] == "OSSIE_SQL_2026":
+                continue
             result[entry["dialect"]] = _normalize(entry.get("expression"))
     return result
+
+
+def _authored_pairs(expression_obj):
+    """Return every (dialect, normalized expression) pair one expression object carries.
+
+    The ``sql`` form counts as OSSIE_SQL_2026, and every ``dialects`` entry counts,
+    including an OSSIE_SQL_2026 entry next to ``sql`` that ``_dialect_map`` leaves out:
+    each one was authored.
+    """
+    if not isinstance(expression_obj, dict):
+        return frozenset()
+    pairs = set()
+    if isinstance(expression_obj.get("sql"), str) and expression_obj["sql"].strip():
+        pairs.add(("OSSIE_SQL_2026", _normalize(expression_obj["sql"])))
+    for entry in expression_obj.get("dialects") or []:
+        if isinstance(entry, dict) and entry.get("dialect") is not None:
+            pairs.add((entry["dialect"], _normalize(entry.get("expression"))))
+    return frozenset(pairs)
 
 
 @dataclass
@@ -154,6 +186,7 @@ class Element:
     kind: str  # "metric" or "field"
     name: str
     dialects: dict
+    authored: frozenset = frozenset()
 
 
 def _collect(document):
@@ -164,7 +197,10 @@ def _collect(document):
     for metric in document.get("metrics") or []:
         if isinstance(metric, dict) and metric.get("name"):
             key = ("metric", metric["name"])
-            elements[key] = Element("metric", metric["name"], _dialect_map(metric.get("expression")))
+            expression = metric.get("expression")
+            elements[key] = Element(
+                "metric", metric["name"], _dialect_map(expression), _authored_pairs(expression)
+            )
     for dataset in document.get("datasets") or []:
         if not isinstance(dataset, dict):
             continue
@@ -172,7 +208,10 @@ def _collect(document):
         for field_def in dataset.get("fields") or []:
             if isinstance(field_def, dict) and field_def.get("name"):
                 name = f"{dataset_name}.{field_def['name']}"
-                elements[("field", name)] = Element("field", name, _dialect_map(field_def.get("expression")))
+                expression = field_def.get("expression")
+                elements[("field", name)] = Element(
+                    "field", name, _dialect_map(expression), _authored_pairs(expression)
+                )
     return elements
 
 
@@ -216,14 +255,22 @@ def _classify_present(input_element, output_element):
     authored_tag = _authored_tag(in_dialects)
     authored_text = in_dialects.get(authored_tag, "")
 
-    # PORTABLE: authored portable tag returned with the same text under that tag.
-    if authored_tag in PORTABLE_DIALECTS and out_dialects.get(authored_tag) == authored_text:
+    # PORTABLE: any authored portable form came back unchanged under its tag. When an
+    # expression carries both the `sql` form and dialect entries, each one was authored,
+    # so a converter that reads and writes only one of them is portable either way.
+    kept = sorted(
+        dialect
+        for dialect, _ in input_element.authored & output_element.authored
+        if dialect in PORTABLE_DIALECTS
+    )
+    if kept:
+        preserved = "OSSIE_SQL_2026" in kept
         return Finding(
             input_element.kind,
             input_element.name,
             PORTABLE,
-            tag_preserved=authored_tag == "OSSIE_SQL_2026",
-            detail=f"returned as {authored_tag}",
+            tag_preserved=preserved,
+            detail=f"returned as {'OSSIE_SQL_2026' if preserved else kept[0]}",
         )
 
     # RELABELED: the authored expression came back verbatim, under a different tag.
