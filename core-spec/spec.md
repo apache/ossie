@@ -116,7 +116,9 @@ relationships: []
 metrics: []
 custom_extensions:
   - vendor_name: DBT
-    data: '{"project_name": "tpcds_analytics", "models_path": "models/semantic"}'
+    data:
+      project_name: tpcds_analytics
+      models_path: models/semantic
 ```
 
 The same document structure in JSON:
@@ -217,7 +219,8 @@ datasets:
               expression: order_number
     custom_extensions:
       - vendor_name: DBT
-        data: '{"materialized": "table"}'
+        data:
+          materialized: table
 ```
 
 ---
@@ -569,15 +572,53 @@ datasets:
 
 ## Custom Extensions
 
-Custom extensions allow vendors to add platform-specific metadata without breaking core compatibility. Each extension includes a vendor name and arbitrary JSON data.
+Custom extensions allow vendors to add platform-specific metadata without breaking core compatibility. Each extension includes a vendor name and a structured `data` object.
 
 ### Schema
 
 ```yaml
 custom_extensions:
   - vendor_name: string  # Free-form string identifying the vendor
-    data: string         # JSON string containing vendor-specific data
+    data: object         # Structured vendor-specific data
 ```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `vendor_name` | string | Yes | Free-form identifier for the vendor or organization that owns the extension |
+| `data` | object | Yes | Vendor-specific key/value data. May be empty (`{}`) |
+
+The keys inside `data` are defined by the vendor; the core specification does not
+reserve or require any key. Values may be any JSON value: strings, numbers,
+booleans, `null`, arrays, or nested objects. Prefer an existing core field when a
+property already has a home in the specification, and use `data` only for genuine
+vendor-specific or otherwise unmapped residue.
+
+`data` MUST be representable as JSON: keys are strings and values are JSON values.
+YAML-only values have no portable meaning; for example, an unquoted YAML date such as
+`2026-10-29` is written out as the JSON string `"2026-10-29"`, and a non-string key
+is rejected. A `null` inside `data` is preserved as written, unlike optional core
+fields, which are omitted when they are `null`.
+
+Consumers MUST preserve `data` they do not understand and MAY ignore it.
+
+### Migrating from string `data`
+
+Earlier drafts defined `data` as a JSON-encoded string. `data` is now an object, and
+a string `data` value is rejected by the schema. No upgrade tool converts it; to
+migrate, parse the old string as JSON and write the resulting object in its place:
+
+```yaml
+# Before
+- vendor_name: DBT
+  data: '{"materialized": "table"}'
+# After
+- vendor_name: DBT
+  data:
+    materialized: table
+```
+
+Ontology mapping documents (`ontology/mapping.json`) reference the core
+`custom_extensions` schema, so they inherit this change.
 
 ### Vendor Names
 
@@ -591,10 +632,13 @@ For a non-normative catalog of `vendor_name` values well-known tools use, see
 
 ```yaml
 - vendor_name: DB_VENDOR
-  data: '{"some_setting": "value", "nested": {"option": true}}'
+  data:
+    some_setting: value
+    nested:
+      option: true
 ```
 
-The `data` payload is an opaque string that Ossie carries but does not
+The `data` payload is a structured object that Ossie carries but does not
 interpret. For vendor-specific extension examples and the known-vendor catalog,
 see [extensions/vendors.md](../extensions/vendors.md).
 
@@ -810,7 +854,8 @@ metrics:
 
 custom_extensions:
   - vendor_name: SNOWFLAKE
-    data: '{"warehouse": "ANALYTICS_WH"}'
+    data:
+      warehouse: ANALYTICS_WH
 ```
 
 ---

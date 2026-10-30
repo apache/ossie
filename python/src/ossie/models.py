@@ -210,12 +210,12 @@ OssieAIContext = Union[str, OssieAIContextObject]
 
 
 class OssieCustomExtension(BaseModel):
-    """Vendor-specific metadata carried as an opaque string."""
+    """Vendor-specific metadata as a structured object with vendor-defined keys."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     vendor_name: str = Field(min_length=1)
-    data: str
+    data: dict[str, Any]
 
 
 class OssieDialectExpression(BaseModel):

@@ -181,7 +181,7 @@ def test_document_serialization_preserves_flat_model_and_metadata(
     data.update(
         description="A portable model",
         ai_context="Use the event timestamp",
-        custom_extensions=[{"vendor_name": "SIGMA", "data": '{"id":"model-1"}'}],
+        custom_extensions=[{"vendor_name": "SIGMA", "data": {"id": "model-1"}}],
         relationships=[
             {
                 "name": "event_link",
@@ -424,7 +424,7 @@ def test_relationship_rejects_unknown_fields(document_data: dict) -> None:
 
 def test_custom_extension_rejects_unknown_fields(document_data: dict) -> None:
     document_data["custom_extensions"] = [
-        {"vendor_name": "DBT", "data": "{}", "datta": "typo"}
+        {"vendor_name": "DBT", "data": {}, "datta": "typo"}
     ]
 
     with pytest.raises(ValidationError) as error:

@@ -322,6 +322,53 @@ def test_schema_rejects_empty_relationship_endpoints(core_schema: dict) -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    "data",
+    [
+        {},
+        {"warehouse": "ANALYTICS_WH", "some_unmapped_flag": True},
+        {"text": '{"legacy": true}', "nested": {"tags": ["a", None], "n": 1.5}},
+    ],
+)
+def test_custom_extension_data_accepts_objects(core_schema: dict, data: dict) -> None:
+    document = _document([dict(_ORDERS)], [])
+    document["custom_extensions"] = [{"vendor_name": "SNOWFLAKE", "data": data}]
+    document["datasets"][0]["custom_extensions"] = [{"vendor_name": "DBT", "data": data}]
+
+    assert _VALIDATE.validate_schema(document, core_schema) == []
+
+
+_EXTENSION_LOCATIONS = {
+    "model": lambda d: d,
+    "dataset": lambda d: d["datasets"][0],
+    "field": lambda d: d["datasets"][0]["fields"][0],
+    "dataset_metric": lambda d: d["datasets"][0]["metrics"][0],
+    "metric": lambda d: d["metrics"][0],
+    "relationship": lambda d: d["relationships"][0],
+}
+
+
+@pytest.mark.parametrize("location", list(_EXTENSION_LOCATIONS))
+@pytest.mark.parametrize("data", ['{"warehouse": "ANALYTICS_WH"}', ["warehouse"], 1, True, None])
+def test_custom_extension_data_rejects_non_objects(
+    core_schema: dict, location: str, data: object
+) -> None:
+    document = _document(
+        [dict(_ORDERS, metrics=[_metric("order_count", "COUNT(customer_id)")]), _CUSTOMERS],
+        [_relationship(["id"])],
+    )
+    document["metrics"] = [_metric("customer_count", "COUNT(customers.id)")]
+    _EXTENSION_LOCATIONS[location](document)["custom_extensions"] = [
+        {"vendor_name": "SNOWFLAKE", "data": data}
+    ]
+
+    errors = _VALIDATE.validate_schema(document, core_schema)
+
+    assert len(errors) == 1
+    assert "custom_extensions -> 0 -> data:" in errors[0]
+    assert "is not of type 'object'" in errors[0]
+
+
 def test_sql_checks_traverse_root_fields_and_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
     seen = []
 
@@ -568,7 +615,7 @@ def test_schema_rejects_empty_dialect_expression(core_schema: dict) -> None:
 
 def test_schema_rejects_empty_vendor_name(core_schema: dict) -> None:
     # `vendor_name` requires minLength 1.
-    dataset = {**_ORDERS, "custom_extensions": [{"vendor_name": "", "data": "{}"}]}
+    dataset = {**_ORDERS, "custom_extensions": [{"vendor_name": "", "data": {}}]}
 
     assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == [
         "[Schema] datasets -> 0 -> custom_extensions -> 0 -> vendor_name: "
