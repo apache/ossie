@@ -134,6 +134,7 @@ NON_SQL_DIALECTS = {
     "THOUGHTSPOT",
     "DAX",
     "HOLISTICS_AQL",
+    "SPARQL"
 }
 
 # Every dialect this validator knows, for close-match suggestions on a typo.
