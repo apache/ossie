@@ -32,21 +32,22 @@ _SPEC_HEAD = """# Enumerations
 
 """
 
-_DIALECT_HEADER = "# Supported expression language dialects"
-_DIALECT_MARKER = "# Auto-generated from ossie-schema.json ($defs.Dialect.enum)."
-
-_DIALECTS = """# Supported expression language dialects
-# Auto-generated from ossie-schema.json ($defs.Dialect.enum).
-dialects:
-  - "ANSI_SQL"              # Standard SQL dialect
-
-"""
+# `datatypes` is the one managed section: generate-spec-types.py syncs it from
+# ossie-schema.json ($defs.DataType.enum). `dialects` is intentionally NOT
+# generated -- `dialect` is a free-form string -- so it appears below only as an
+# unmanaged, hand-authored section the generator must leave untouched.
+_HEADER = "# Supported logical data types for fields and metrics"
+_MARKER = "# Auto-generated from ossie-schema.json ($defs.DataType.enum)."
 
 _DATATYPES = """# Supported logical data types for fields and metrics
 # Auto-generated from ossie-schema.json ($defs.DataType.enum).
 datatypes:
   - "String"                # Variable-length Unicode character data
+
 """
+
+# A hand-authored section the generator does not manage.
+_UNMANAGED = 'dialects:\n  - "ANSI_SQL"\n\n'
 
 
 @pytest.fixture
@@ -67,11 +68,11 @@ def _write_spec(tmp_path: Path, text: str) -> Path:
 def test_apply_keeps_hand_written_comments_above_a_section(generator, monkeypatch, tmp_path):
     """A comment not separated by a blank line used to be swallowed by --apply.
 
-    The walk back from `dialects:` consumed every contiguous comment, so the lines
-    above the generated header went with it, and --check then reported the file as in
-    sync, hiding the loss from CI.
+    The walk back from `datatypes:` must consume only this script's own header lines,
+    not the hand-written comments above them, so the enumerations preamble survives and
+    --check still reports the file as in sync.
     """
-    path = _write_spec(tmp_path, _SPEC_HEAD.rstrip("\n") + "\n" + _DIALECTS + _DATATYPES)
+    path = _write_spec(tmp_path, _SPEC_HEAD.rstrip("\n") + "\n" + _DATATYPES)
     monkeypatch.setattr(generator, "SPEC", path)
 
     generator._apply()
@@ -81,17 +82,17 @@ def test_apply_keeps_hand_written_comments_above_a_section(generator, monkeypatc
     assert "# Standard enums used throughout the specification" in written
     # Keeping the comments is not enough: the block must have been rewritten once,
     # and the result must satisfy the check CI runs.
-    assert written.count(_DIALECT_HEADER) == 1
-    assert written.count("dialects:") == 1
+    assert written.count(_HEADER) == 1
+    assert written.count("datatypes:") == 1
     assert generator._check() == 0
 
 
 @pytest.mark.parametrize(
     ("above_key", "label"),
     [
-        (_DIALECT_HEADER + "\n" + _DIALECT_MARKER + "\n", "header-and-marker"),
-        (_DIALECT_HEADER + "\n", "header-without-marker"),
-        (_DIALECT_MARKER + "\n", "marker-without-header"),
+        (_HEADER + "\n" + _MARKER + "\n", "header-and-marker"),
+        (_HEADER + "\n", "header-without-marker"),
+        (_MARKER + "\n", "marker-without-header"),
         ("", "neither"),
     ],
 )
@@ -103,15 +104,15 @@ def test_apply_rewrites_a_section_however_its_header_survives(
     Matching the marker alone would leave a stale header in place and insert a second
     copy above the key, which `--check` then accepts.
     """
-    spec = _SPEC_HEAD + above_key + 'dialects:\n  - "ANSI_SQL"\n\n' + _DATATYPES
+    spec = _SPEC_HEAD + above_key + 'datatypes:\n  - "String"\n'
     path = _write_spec(tmp_path, spec)
     monkeypatch.setattr(generator, "SPEC", path)
 
     generator._apply()
     written = path.read_text()
 
-    assert written.count(_DIALECT_HEADER) == 1
-    assert written.count(_DIALECT_MARKER) == 1
+    assert written.count(_HEADER) == 1
+    assert written.count(_MARKER) == 1
     assert "# Enumerations" in written
     assert generator._check() == 0
 
@@ -128,22 +129,22 @@ def test_apply_steps_over_blank_lines_in_any_position(
     """
     above_key = (
         "\n" * above
-        + _DIALECT_HEADER
+        + _HEADER
         + "\n"
         + "\n" * between
-        + _DIALECT_MARKER
+        + _MARKER
         + "\n"
         + "\n" * below
     )
-    spec = _SPEC_HEAD + above_key + 'dialects:\n  - "ANSI_SQL"\n\n' + _DATATYPES
+    spec = _SPEC_HEAD + above_key + 'datatypes:\n  - "String"\n'
     path = _write_spec(tmp_path, spec)
     monkeypatch.setattr(generator, "SPEC", path)
 
     generator._apply()
     written = path.read_text()
 
-    assert written.count(_DIALECT_HEADER) == 1
-    assert written.count(_DIALECT_MARKER) == 1
+    assert written.count(_HEADER) == 1
+    assert written.count(_MARKER) == 1
     assert "# Enumerations" in written
     assert generator._check() == 0
 
@@ -151,21 +152,24 @@ def test_apply_steps_over_blank_lines_in_any_position(
 def test_apply_does_not_eat_a_blank_line_it_did_not_write(generator, monkeypatch, tmp_path):
     """Reaching past blanks is only correct when they separate this script's own output.
 
-    A hand-authored section has no generated header, so the blank above its key is the
-    author's and must survive.
+    A hand-authored, unmanaged section has no generated header, so the blank above its
+    key is the author's and must survive.
     """
-    spec = _SPEC_HEAD + 'dialects:\n  - "ANSI_SQL"\n\n' + _DATATYPES
+    spec = _SPEC_HEAD + _UNMANAGED + _DATATYPES
     path = _write_spec(tmp_path, spec)
     monkeypatch.setattr(generator, "SPEC", path)
 
     generator._apply()
+    written = path.read_text()
 
-    assert path.read_text().startswith(_SPEC_HEAD)
+    assert written.startswith(_SPEC_HEAD)
+    # The unmanaged section is left exactly as the author wrote it.
+    assert _UNMANAGED in written
     assert generator._check() == 0
 
 
 def test_apply_is_idempotent(generator, monkeypatch, tmp_path):
-    path = _write_spec(tmp_path, _SPEC_HEAD + _DIALECTS + _DATATYPES)
+    path = _write_spec(tmp_path, _SPEC_HEAD + _DATATYPES)
     monkeypatch.setattr(generator, "SPEC", path)
 
     generator._apply()
@@ -176,7 +180,11 @@ def test_apply_is_idempotent(generator, monkeypatch, tmp_path):
 
 
 def test_check_reports_a_file_that_is_out_of_sync(generator, monkeypatch, tmp_path, capsys):
-    path = _write_spec(tmp_path, _SPEC_HEAD + _DIALECTS.replace("ANSI_SQL", "MADE_UP") + _DATATYPES)
+    # Seed the full generated block, then mutate one value, so a single wrong
+    # value is the only thing out of sync (not a missing/incomplete section).
+    section = generator.SECTIONS[0]
+    in_sync = generator._generate_block(section, generator._schema_values(section))
+    path = _write_spec(tmp_path, _SPEC_HEAD + in_sync.replace("String", "MADE_UP", 1))
     monkeypatch.setattr(generator, "SPEC", path)
 
     assert generator._check() == 1

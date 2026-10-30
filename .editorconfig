@@ -30,6 +30,3 @@ indent_size = 2
 [*.{py,java,toml}]
 indent_style = space
 indent_size = 4
-
-[{Makefile,go.mod,*.go}]
-indent_style = tab

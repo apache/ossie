@@ -16,10 +16,6 @@
 # under the License.
 
 # Other areas
-cli:
-  - changed-files:
-      - any-glob-to-any-file: 'cli/**'
-
 spec:
   - changed-files:
       - any-glob-to-any-file: 'core-spec/**'
