@@ -709,11 +709,13 @@ The `dialect` field is a free-form string; the core specification does not enume
 
 ### Declaring Dialect-Specific Expressions
 
-```
+Put the portable expression in `sql` and keep vendor-specific variants in
+`dialects`:
+
+```yaml
 expression:
+  sql: DATE_TRUNC('month', order_date)
   dialects:
-    - dialect: ANSI_SQL
-      expression: DATE_TRUNC('month', order_date)
     - dialect: SNOWFLAKE
       expression: DATE_TRUNC('month', order_date)
     - dialect: BIGQUERY

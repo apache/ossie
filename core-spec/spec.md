@@ -207,14 +207,10 @@ datasets:
     fields:
       - name: order_id
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: order_id
+          sql: order_id
       - name: order_number
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: order_number
+          sql: order_number
     custom_extensions:
       - vendor_name: DBT
         data: '{"materialized": "table"}'
@@ -292,16 +288,14 @@ Within a dataset, field names and dataset-scoped metric names share one namespac
 
 ### Expression Object
 
-The expression object supports multiple SQL dialects for cross-platform compatibility. Each field can define expressions in different dialects.
+Use `sql` for the primary, portable expression. Optional vendor-specific variants
+can be supplied in `dialects` (see the multi-dialect example below).
 
 **Structure:**
 
 ```yaml
 expression:
   sql: "customer_id"  # Primary, portable OSSIE_SQL_2026 form
-  dialects:
-    - dialect: ANSI_SQL  # Free-form string; OSSIE_SQL_2026 is the only dialect the spec defines
-      expression: "customer_id"  # Scalar SQL expression
 ```
 
 **Key Points:**
@@ -327,9 +321,7 @@ expression:
 ```yaml
 - name: customer_id
   expression:
-    dialects:
-      - dialect: ANSI_SQL
-        expression: customer_id
+    sql: customer_id
   description: Customer identifier
   dimension:
     is_time: false
@@ -340,9 +332,7 @@ expression:
 ```yaml
 - name: full_name
   expression:
-    dialects:
-      - dialect: ANSI_SQL
-        expression: first_name || ' ' || last_name
+    sql: first_name || ' ' || last_name
   description: Customer full name
   ai_context:
     synonyms:
@@ -355,9 +345,7 @@ expression:
 ```yaml
 - name: order_date
   expression:
-    dialects:
-      - dialect: ANSI_SQL
-        expression: order_date
+    sql: order_date
   datatype: Date
   dimension:
     is_time: true
@@ -373,9 +361,8 @@ expression:
 ```yaml
 - name: email_normalized
   expression:
+    sql: LOWER(email)
     dialects:
-      - dialect: ANSI_SQL
-        expression: LOWER(email)
       - dialect: SNOWFLAKE
         expression: LOWER(email)::VARCHAR
       - dialect: BIGQUERY
@@ -436,14 +423,15 @@ Metric expressions refer to dataset fields. They cannot refer to columns of a da
 
 ### Expression Object
 
-The expression object supports multiple dialects
+Use `sql` for the primary, portable metric expression. Optional vendor-specific
+variants can be supplied in `dialects`.
 
 ```yaml
 expression:
   sql: "SUM(order.sales) / COUNT(DISTINCT order.customer_id)"  # Primary, portable OSSIE_SQL_2026 form
   dialects:
-  - dialect: ANSI_SQL  # Default
-    expression: "SUM(order.sales) / COUNT(DISTINCT order.customer_id)"
+    - dialect: BIGQUERY
+      expression: "SAFE_DIVIDE(SUM(order.sales), COUNT(DISTINCT order.customer_id))"
 ```
 
 At least one of the top-level `sql` or `dialects` MUST be present; either MAY stand alone. When both a top-level `sql` and an `OSSIE_SQL_2026` entry in `dialects` are present, the top-level `sql` is authoritative.
@@ -455,9 +443,7 @@ At least one of the top-level `sql` or `dialects` MUST be present; either MAY st
 ```yaml
 - name: total_revenue
   expression:
-    dialects:
-      - dialect: ANSI_SQL
-        expression: SUM(orders.amount)
+    sql: SUM(orders.amount)
   description: Total revenue across all orders
   datatype: Decimal
   ai_context:
@@ -471,9 +457,7 @@ At least one of the top-level `sql` or `dialects` MUST be present; either MAY st
 ```yaml
 - name: avg_orders
   expression:
-    dialects:
-      - dialect: ANSI_SQL
-        expression: SUM(orders.amount) / COUNT(DISTINCT customers.id)
+    sql: SUM(orders.amount) / COUNT(DISTINCT customers.id)
   description: Average orders
   datatype: Decimal
   ai_context:
@@ -512,31 +496,23 @@ datasets:
     fields:
       - name: order_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: order_id
+          sql: order_id
         description: Order identifier
       - name: net_amount
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: amount - discount
+          sql: amount - discount
         description: Order amount after discount
 
     metrics:
       - name: total_net_amount
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: SUM(net_amount)
+          sql: SUM(net_amount)
         description: Total order amount after discount
         datatype: Decimal
 
       - name: order_count
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: COUNT(order_id)
+          sql: COUNT(order_id)
         description: Number of orders
         datatype: Integer
 ```
@@ -552,17 +528,13 @@ datasets:
     fields:
       - name: net_amount
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: amount - discount
+          sql: amount - discount
     metrics:
       # INVALID (rule 1): references the customers dataset, so this metric is
       # model-scoped and belongs in the model-root metrics
       - name: revenue_per_customer
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: SUM(net_amount) / COUNT(DISTINCT customers.id)
+          sql: SUM(net_amount) / COUNT(DISTINCT customers.id)
 ```
 
 ---
@@ -636,24 +608,16 @@ datasets:
     fields:
       - name: order_id
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: o_orderkey      # source column
+          sql: o_orderkey      # source column
       - name: customer_id
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: o_custkey
+          sql: o_custkey
       - name: total_amount
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: o_totalprice
+          sql: o_totalprice
       - name: total_usd
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: total_cents / 100.0
+          sql: total_cents / 100.0
 
 relationships:
   - name: orders_to_customers
@@ -665,9 +629,7 @@ relationships:
 metrics:
   - name: total_revenue
     expression:
-      dialects:
-        - dialect: ANSI_SQL
-          expression: SUM(orders.total_usd)   # field, not a source column
+      sql: SUM(orders.total_usd)   # field, not a source column
 ```
 
 In this model, these references are invalid:
@@ -719,23 +681,17 @@ datasets:
     fields:
       - name: order_id
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: order_id
+          sql: order_id
         description: Order identifier
 
       - name: customer_id
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: customer_id
+          sql: customer_id
         description: Customer identifier
 
       - name: order_date
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: order_date
+          sql: order_date
         datatype: Date
         dimension:
           is_time: true
@@ -743,18 +699,14 @@ datasets:
 
       - name: amount
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: amount
+          sql: amount
         description: Order amount
 
     # Dataset-scoped: resolves entirely within the orders dataset
     metrics:
       - name: total_amount
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: SUM(amount)
+          sql: SUM(amount)
         description: Total order amount
         datatype: Decimal
 
@@ -765,25 +717,19 @@ datasets:
     fields:
       - name: id
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: id
+          sql: id
         description: Customer identifier
 
       - name: email
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: email
+          sql: email
         description: Customer email
 
     # Dataset-scoped: resolves entirely within the customers dataset
     metrics:
       - name: customer_count
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: COUNT(DISTINCT id)
+          sql: COUNT(DISTINCT id)
         description: Total number of customers
         datatype: Integer
         ai_context:
@@ -802,9 +748,7 @@ metrics:
   # Model-scoped: spans orders and customers via the relationship
   - name: revenue_per_customer
     expression:
-      dialects:
-        - dialect: ANSI_SQL
-          expression: SUM(orders.amount) / COUNT(DISTINCT customers.id)
+      sql: SUM(orders.amount) / COUNT(DISTINCT customers.id)
     description: Average revenue per customer
     datatype: Decimal
 

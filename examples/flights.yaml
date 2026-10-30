@@ -548,245 +548,158 @@ ontology_mappings:
       fields:
       - name: airport_code
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: airport_code
+          sql: airport_code
       - name: length
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: length
+          sql: length
       - name: shape
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: shape
+          sql: shape
       - name: designator
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: designator
+          sql: designator
     - name: AIRCRAFT
       source: DATABASE.SCHEMA.AIRCRAFT
       description: "An airplane, helicopter, or other machine capable of flight"
       fields:
       - name: serial_nr
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: serial_nr
+          sql: serial_nr
       - name: name
         expression:
+          sql: name
           dialects:
-          - dialect: ANSI_SQL
-            expression: name
+            - dialect: SNOWFLAKE
+              expression: name::VARCHAR
       - name: nr_seats
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: nr_seats
+          sql: nr_seats
       - name: tail_nr
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: tail_nr
+          sql: tail_nr
       - name: carrier_code
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: carrier_code
+          sql: carrier_code
       - name: manufacturer
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: manufacturer
+          sql: manufacturer
       - name: model
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: model
+          sql: model
       - name: year
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: year
+          sql: year
       - name: capacity
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: capacity
+          sql: capacity
     - name: AIRPORT
       source: DATABASE.SCHEMA.AIRPORTS
       description: "An airport that is identified by an IATA code."
       fields:
       - name: state_code
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: state_code
+          sql: state_code
       - name: market_nm
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: market_nm
+          sql: market_nm
       - name: longitude
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: longitude
+          sql: longitude
       - name: opened
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: opened
+          sql: opened
       - name: state_nm
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: state_nm
+          sql: state_nm
       - name: city_nm
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: city_nm
+          sql: city_nm
       - name: name
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: name
+          sql: name
       - name: code
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: code
+          sql: code
       - name: latitude
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: latitude
+          sql: latitude
     - name: FLIGHT
       source: DATABASE.SCHEMA.FLIGHTS
       description: "A commercial passenger flight."
       fields:
       - name: dep_delay
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: dep_delay
+          sql: dep_delay
       - name: air_time
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: air_time
+          sql: air_time
       - name: nr
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: nr
+          sql: nr
       - name: carrier_code
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: carrier_code
+          sql: carrier_code
       - name: duration
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: duration
+          sql: duration
       - name: scheduled_departure
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: scheduled_departure
+          sql: scheduled_departure
       - name: arr_delay
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: arr_delay
+          sql: arr_delay
       - name: cancelled
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: cancelled
+          sql: cancelled
       - name: cancel_code
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: cancel_code
+          sql: cancel_code
       - name: distance
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: distance
+          sql: distance
       - name: id
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: id
+          sql: id
       - name: scheduled_arrival
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: scheduled_arrival
+          sql: scheduled_arrival
       - name: wheels_on
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: wheels_on
+          sql: wheels_on
       - name: date
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: date
+          sql: date
       - name: wheels_off
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: wheels_off
+          sql: wheels_off
       - name: scheduled_duration
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: scheduled_duration
+          sql: scheduled_duration
       - name: tail_nr
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: tail_nr
+          sql: tail_nr
       - name: departure
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: departure
+          sql: departure
       - name: route_id
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: route_id
+          sql: route_id
       - name: diverted
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: diverted
+          sql: diverted
       - name: arrival
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: arrival
+          sql: arrival
     - name: CARRIER
       source: DATABASE.SCHEMA.CARRIERS
       description: "An airline, such as Delta, United, or American."
       fields:
       - name: code
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: code
+          sql: code
       - name: name
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: name
+          sql: name
     - name: ROUTE
       source: DATABASE.SCHEMA.ROUTES
       description: "Represents the existence of one or more flights between a pair of departure
@@ -794,34 +707,22 @@ ontology_mappings:
       fields:
       - name: orig_airport_code
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: orig_airport_code
+          sql: orig_airport_code
       - name: dest_airport_code
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: dest_airport_code
+          sql: dest_airport_code
       - name: distance
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: distance
+          sql: distance
       - name: dist_grp
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: dist_grp
+          sql: dist_grp
       - name: id
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: id
+          sql: id
       - name: name
         expression:
-          dialects:
-          - dialect: ANSI_SQL
-            expression: name
+          sql: name
   concept_mappings:
   - concept: Runway
     object_mappings:
