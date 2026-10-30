@@ -63,6 +63,13 @@ An expression carries a primary, portable form in `OSSIE_SQL_2026` and may also 
 
 For the full specification, see [core-spec/spec.md](../core-spec/spec.md). For validation tooling, see [validation/validate.py](../validation/validate.py). For a complete example, see the [TPC-DS semantic model](../examples/tpcds_semantic_model.yaml).
 
+### Execution Contract Proposal
+
+The [execute_query MCP working draft](proposals/execute-query-mcp.md) proposes an
+optional engine/catalog execution profile: model-resolved Layer 3 query objects,
+embedded CSV, semantic diagnostics, locale-neutral encoding and MCP Tasks.
+It is not an adopted specification or an Ossie server implementation.
+
 ### Participating Organizations
 
 Ossie is supported by a broad coalition of 50+ organizations across the data ecosystem, including:
