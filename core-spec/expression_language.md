@@ -573,7 +573,7 @@ Each `ORDER BY` item has three independent parts:
 RANK() OVER (ORDER BY revenue DESC NULLS LAST)
 ```
 
-Without `NULLS FIRST` or `NULLS LAST`, NULL sorts as the largest value: last for `ASC`, first for `DESC`. Implementations MUST produce this order whatever the native default of the engine; see [Window ORDER BY NULL Placement](#window-order-by-null-placement).
+Without `NULLS FIRST` or `NULLS LAST`, NULL sorts as the largest value: last for `ASC`, first for `DESC`. This applies to `OSSIE_SQL_2026` expressions; other dialects keep their own semantics. Implementations MUST produce this order whatever the native default of the engine, or report the error that [Window ORDER BY NULL Placement](#window-order-by-null-placement) requires. An implementation that converts a native expression into `OSSIE_SQL_2026` MUST add `NULLS FIRST` or `NULLS LAST` to each item whose native placement differs from this default.
 
 ```sql
 -- revenue over three rows: 10, NULL, 5; each comment lists the values numbered 1, 2, 3
@@ -803,7 +803,8 @@ Sigma's table-calculation functions (`RowNumber`, `Rank`, `RunningSum`, `Running
 When an `ORDER BY` item omits the clause, the Ossie placement is `NULLS LAST` for `ASC` and `NULLS FIRST` for `DESC`. An implementation produces any placement, given or default, as follows:
 
 - On an engine with `NULLS FIRST` and `NULLS LAST`, it emits the clause. It MAY omit a default placement that the native default already gives. This holds only if the session cannot change that default, or the implementation sets it. Snowflake (`DEFAULT_NULL_ORDERING`) and DuckDB (`default_null_order`) let a session change it.
-- On an engine without them, it adds a leading sort key `CASE WHEN order_expr IS NULL THEN 1 ELSE 0 END`. The key is ascending to put NULLs last and descending to put them first.
+- On an engine without them, it puts a sort key `CASE WHEN order_expr IS NULL THEN 1 ELSE 0 END` immediately before each `ORDER BY` item, built from that item's `order_expr`. The key is ascending to put NULLs last and descending to put them first. For example, `ORDER BY d_year, d_moy DESC` becomes `ORDER BY CASE WHEN d_year IS NULL THEN 1 ELSE 0 END, d_year, CASE WHEN d_moy IS NULL THEN 1 ELSE 0 END DESC, d_moy DESC`. Where the native placement already matches, it MAY omit the key, on the same condition as in the bullet above.
+- If an item needs the key and the engine cannot add it, the implementation MUST report an error instead of emitting SQL that places NULLs differently. For example, MySQL requires exactly one `ORDER BY` expression in a `RANGE` frame with an offset.
 
 Native defaults:
 
