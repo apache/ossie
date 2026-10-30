@@ -32,6 +32,12 @@ docs:
   - changed-files:
       - any-glob-to-any-file: 'docs/**'
 
+grammar:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'core-spec/grammar/**'
+          - 'compliance/expressions/**'
+
 validation:
   - changed-files:
       - any-glob-to-any-file: 'validation/**'

@@ -848,6 +848,11 @@ Implementations MAY support additional functions through dialect extensions. The
 
 ---
 
+## ANTLR4 Grammar
+
+A machine-readable ANTLR 4 grammar for this language is available in [`grammar/`](grammar/). It is a
+tooling aid; where it and this document differ, this document is authoritative.
+
 ## Version History
 
 | Version   | Date       | Changes |

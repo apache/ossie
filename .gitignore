@@ -35,3 +35,10 @@ cli/.tool-versions
 
 # Apache RAT (downloaded by dev/check-license)
 dev/lib/
+
+# ANTLR generated output (core-spec/grammar/)
+core-spec/grammar/**/gen/
+core-spec/grammar/**/OssieExpression*.py
+core-spec/grammar/**/*.java
+core-spec/grammar/**/*.interp
+core-spec/grammar/**/*.tokens
