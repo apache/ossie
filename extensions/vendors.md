@@ -29,8 +29,11 @@ custom_extensions:
 ```
 
 `vendor_name` is a free-form string and `data` is an opaque string that Ossie
-carries but does not interpret. This is a registry of `vendor_name` tokens the
-community uses (see [`README.md`](README.md) for how these lists are used).
+carries but does not interpret; for the precise extensions a given vendor emits
+and consumes, see the
+[apache/ossie-converters](https://github.com/apache/ossie-converters) repository.
+This is a registry of `vendor_name` tokens the community uses (see
+[`README.md`](README.md) for how these lists are used).
 
 ## Known vendors
 
@@ -51,51 +54,3 @@ community uses (see [`README.md`](README.md) for how these lists are used).
 | `HEX` | Hex-specific attributes |
 | `ATACCAMA` | Ataccama-specific attributes |
 | `OMNI` | Omni-specific attributes |
-
-## Examples
-
-**Snowflake Extension:**
-
-```yaml
-- vendor_name: SNOWFLAKE
-  data: '{
-    "warehouse": "ANALYTICS_WH",
-    "database": "PROD",
-    "schema": "PUBLIC"
-  }'
-```
-
-**Salesforce Extension:**
-
-```yaml
-- vendor_name: SALESFORCE
-  data: '{
-    "tableau_workbook_id": "sales_dashboard",
-    "einstein_enabled": true,
-    "crm_sync": {
-      "enabled": true,
-      "sync_frequency": "daily"
-    }
-  }'
-```
-
-**DBT Extension:**
-
-```yaml
-- vendor_name: DBT
-  data: '{
-    "project_name": "analytics",
-    "materialized": "table",
-    "tags": ["daily", "core"]
-  }'
-```
-
-**Databricks Extension:**
-
-```yaml
-- vendor_name: Databricks
-  data: '{
-    "default_catalog": "finance",
-    "default_schema": "gold"
-  }'
-```
