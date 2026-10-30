@@ -28,7 +28,6 @@
 
 # Lock files and dependency manifests
 **/*.lock
-**/go.sum
 
 # Data/config files that cannot contain comments
 **/*.json

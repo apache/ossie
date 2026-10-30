@@ -34,7 +34,7 @@ jobs:
       - name: Check PR title format
         run: |
           # Enforce "Area: Description" or "type(scope): description" format
-          # Examples: "Converter/dbt: Add metric support", "fix(dbt): correct round-trip", "CLI: Fix plugin listing"
+          # Examples: "Converter/dbt: Add metric support", "fix(dbt): correct round-trip", "Validation: Report dangling references"
           PATTERN='^(Revert ")?[A-Za-z][A-Za-z0-9._+/&,()-]*( [A-Za-z0-9][A-Za-z0-9._+/&,()-]*)*: .+'
           if ! echo "$PR_TITLE" | grep -Eq "$PATTERN"; then
             echo "::error::PR title must follow 'Area: Description' or 'type(scope): description' format."
@@ -43,7 +43,7 @@ jobs:
             echo "  Converter/dbt: Add metric support"
             echo "  fix(dbt): correct round-trip for PERCENTILE"
             echo "  docs(core-spec): clarify operator precedence"
-            echo "  CLI: Fix plugin listing"
+            echo "  Validation: Report dangling references"
             echo "  Infra: Add community workflows"
             echo ""
             echo "Valid patterns: Area:, Area/sub:, type(scope):"
