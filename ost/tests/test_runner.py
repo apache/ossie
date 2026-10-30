@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import time
 from pathlib import Path
 
 import pytest
@@ -95,6 +96,24 @@ def test_mismatch_keeps_order_of_matching_command():
     assert output(first + "plus(1, 2);\n> 4 : int\n") == (
         first + "plus(1, 2);\n> 3 : int\n"
     )
+
+
+def test_mismatch_large_table():
+    # A table of 80,000 rows that does not match: the expected rows are
+    # in reverse order, and one is wrong. When putting the rows in the
+    # expected order took time quadratic in the number of rows, this
+    # took over a minute.
+    n = 80_000
+    rows = "".join(f"| {i} |\n" for i in range(n - 1, 0, -1)) + "| -1 |\n"
+    text = (
+        f"select x from range({n}) as t(x);\n"
+        f"+---+\n| x |\n+---+\n{rows}+---+\n({n} rows)\n"
+    )
+    start = time.perf_counter()
+    lines = output(text).splitlines()
+    assert time.perf_counter() - start < 10
+    expected = [str(i) for i in range(n - 1, -1, -1)]
+    assert [line.strip("| ") for line in lines[4 : n + 4]] == expected
 
 
 def test_wrong_row_count():

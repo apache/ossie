@@ -25,6 +25,7 @@ written, otherwise it is replaced with the actual output.
 
 from __future__ import annotations
 
+import collections
 import datetime
 import json
 import math
@@ -474,12 +475,19 @@ def reorder(actual: Table, command: Command) -> Table:
     expected = parse_block(command.blocks[0])
     if not isinstance(expected, Table):
         return actual
-    rest = list(actual.rows)
+    unused = collections.Counter(actual.rows)
     first = []
     for row in expected.rows:
-        if row in rest:
-            rest.remove(row)
+        if unused[row] > 0:
+            unused[row] -= 1
             first.append(row)
+    used = collections.Counter(first)
+    rest = []
+    for row in actual.rows:
+        if used[row] > 0:
+            used[row] -= 1
+        else:
+            rest.append(row)
     return Table(actual.columns, actual.families, tuple(first + rest), False)
 
 
