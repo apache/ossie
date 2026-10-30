@@ -1,0 +1,108 @@
+{
+  "$comment": "Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements. See NOTICE for copyright ownership. Licensed under the Apache License, Version 2.0; http://www.apache.org/licenses/LICENSE-2.0 . Unless required by applicable law or agreed to in writing, distributed on an AS IS BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND.",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:apache:ossie:execution:http:live:0.2-draft",
+  "title": "Ossie optional LIVE HTTP execution extension 0.2-draft",
+  "description": "Explicit opt-in advertised by live-stream-v0.2 in unchanged 0.1 capabilities. Not an adopted standard. References use the locally registered 0.1 schema URN, never a remote fetch. Cross-observation immutability, single consumption and terminal count equality require runtime validation.",
+  "$ref": "#/$defs/LiveRequest",
+  "$defs": {
+    "LiveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "delivery", "data_source_id", "query"],
+      "properties": {
+        "contract_version": { "const": "0.2-draft" },
+        "delivery": { "const": "live" },
+        "data_source_id": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/Identifier" },
+        "query": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/Query" }
+      }
+    },
+    "LiveExecution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "delivery", "execution_id", "data_source_id", "model", "state", "warnings"],
+      "properties": {
+        "contract_version": { "const": "0.2-draft" },
+        "delivery": { "const": "live" },
+        "execution_id": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/Identifier" },
+        "data_source_id": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/Identifier" },
+        "model": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/ModelIdentity" },
+        "state": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/State" },
+        "warnings": { "type": "array", "items": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/Warning" } },
+        "extensions": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/Extensions" },
+        "progress": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/Progress" },
+        "stream": { "$ref": "#/$defs/LiveStream" },
+        "completion": { "$ref": "#/$defs/LiveCompletion" },
+        "error": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/QueryError" }
+      },
+      "oneOf": [
+        {
+          "properties": { "state": { "const": "queued" } },
+          "not": { "anyOf": [{ "required": ["stream"] }, { "required": ["completion"] }, { "required": ["error"] }] }
+        },
+        {
+          "properties": { "state": { "enum": ["running", "cancelling"] } },
+          "not": { "anyOf": [{ "required": ["completion"] }, { "required": ["error"] }] }
+        },
+        {
+          "properties": { "state": { "const": "succeeded" } },
+          "required": ["stream", "completion"],
+          "not": { "anyOf": [{ "required": ["progress"] }, { "required": ["error"] }] }
+        },
+        {
+          "properties": { "state": { "const": "failed" } },
+          "required": ["error"],
+          "not": { "anyOf": [{ "required": ["progress"] }, { "required": ["completion"] }] }
+        },
+        {
+          "properties": { "state": { "const": "cancelled" } },
+          "not": { "anyOf": [{ "required": ["progress"] }, { "required": ["completion"] }, { "required": ["error"] }] }
+        }
+      ],
+      "description": "Version, delivery, execution, source and model identities are fixed. Once advertised, stream is immutable and remains present even on failed/cancelled terminal states. All terminal representations are immutable. Status remains readable through terminal verification under the server's documented retention window."
+    },
+    "LiveStream": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result_id", "format", "url", "expires_at", "columns", "replayable"],
+      "properties": {
+        "result_id": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/Identifier" },
+        "format": { "const": "arrow-stream" },
+        "url": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/ResultUrl" },
+        "expires_at": { "type": "string", "format": "date-time", "description": "Latest instant to START consumption; an already-open stream may finish within the operation deadline." },
+        "columns": { "type": "array", "minItems": 1, "items": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/Column" } },
+        "replayable": { "const": false }
+      },
+      "description": "One single-consumer non-replayable Arrow IPC stream. No pages, upfront counts, completeness, range, resume or retries. Columns are ordered and column_id values unique. Batches are provisional until complete IPC and matching terminal success are both verified."
+    },
+    "LiveCompletion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result_id", "row_count", "byte_count", "completeness"],
+      "properties": {
+        "result_id": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/Identifier" },
+        "row_count": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/Counter" },
+        "byte_count": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/Counter" },
+        "completeness": { "enum": ["complete", "truncated"] },
+        "truncation_reason": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/NonEmptyString" }
+      },
+      "if": { "properties": { "completeness": { "const": "truncated" } }, "required": ["completeness"] },
+      "then": { "required": ["truncation_reason"] },
+      "else": { "not": { "required": ["truncation_reason"] } },
+      "description": "Only terminal success, after serialization is finalized without error. result_id matches stream.result_id. Exact row and raw IPC byte counts after HTTP decompression must match full consumption; EOF/EOS or HTTP 200 alone is not success."
+    },
+    "LiveExecutionMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "execution_id", "result_id", "data_source_id", "model"],
+      "properties": {
+        "contract_version": { "const": "0.2-draft" },
+        "execution_id": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/Identifier" },
+        "result_id": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/Identifier" },
+        "data_source_id": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/Identifier" },
+        "model": { "$ref": "urn:apache:ossie:execution:http:0.1-draft#/$defs/ModelIdentity" }
+      },
+      "description": "JSON schema metadata under org.apache.ossie.execution. Matches the live execution/stream identities; no delivery or page metadata fields. Column metadata is the unchanged 0.1 ColumnMetadata definition."
+    }
+  }
+}

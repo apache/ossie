@@ -24,6 +24,7 @@
 **/coverage.xml
 **/htmlcov/
 **/dist/
+**/node_modules/
 **/target/
 **/.tom/
 *.py[cod]

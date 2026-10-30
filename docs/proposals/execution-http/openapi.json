@@ -1,0 +1,260 @@
+{
+  "openapi": "3.1.0",
+  "x-license": {
+    "$comment": "Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements. See NOTICE for copyright ownership. Licensed under the Apache License, Version 2.0; http://www.apache.org/licenses/LICENSE-2.0 . Unless required by applicable law or agreed to in writing, distributed on an AS IS BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND."
+  },
+  "info": {
+    "title": "Ossie HTTP execution proposal",
+    "version": "0.2-draft",
+    "description": "DRAFT, not an adopted standard or deployed service. Unchanged materialized 0.1 HTTP/JSON execution and immutable single-stream/paged Arrow results, plus explicit optional LIVE 0.2 streaming. Schemas are execution.schema.json and live.schema.json. This binding uses HTTP semantics, not HTTP/1.1-specific framing: HTTP/1.1, HTTP/2, or HTTP/3 may carry it where supported, with negotiation left to the stack and deployment. Supporting every version is not required. Multiplexing does not imply parallel pages or Flight-equivalent flow control; materialized pages are traversed sequentially. Synthetic loopback integration fixtures cover HTTP/1.1, not HTTP/2/3 or a real engine. Authentication is deployment supplied; this document does not implement an identity system.",
+    "license": {
+      "name": "Apache-2.0",
+      "identifier": "Apache-2.0"
+    }
+  },
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "paths": {
+    "/capabilities": {
+      "get": {
+        "operationId": "getCapabilities",
+        "summary": "Discover the caller-visible contract and query capabilities",
+        "responses": {
+          "200": {
+            "description": "Unchanged 0.1 capabilities for this authorized caller; optional features token live-stream-v0.2 advertises explicit 0.2 LIVE opt-in. Clients preflight it before live submission, without fallback. Declarations do not prove semantic conformance.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "execution.schema.json#/$defs/Capabilities" }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/bindings/{id}": {
+      "parameters": [{ "$ref": "#/components/parameters/Id" }],
+      "get": {
+        "operationId": "getBinding",
+        "summary": "Resolve an immutable data source binding",
+        "responses": {
+          "200": {
+            "description": "The id is data_source_id. This id MUST NOT be rebound to another model revision.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "execution.schema.json#/$defs/Binding" }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/queries": {
+      "post": {
+        "operationId": "submit",
+        "summary": "Submit one read-only structured query",
+        "description": "Submit one execution job, not separate sync/async jobs. The unchanged Request selects materialized 0.1; only LiveRequest with contract_version=0.2-draft and delivery=live selects the advertised LIVE extension. Reject unsupported live requests, never fall back or resubmit. Omitting Prefer means wait=0: return immediately with 202 unless already terminal (200). wait=N holds POST at most N seconds, returning terminal 200 or pending 202 for the same execution_id; the server may return earlier, particularly when a live stream is ready. Bounded wait is not an execution deadline or download timeout and never cancels the query. No automatic retries, query repair, native SQL escape, or idempotency guarantee. Materialized pagination partitions the completed result, not the query; LIVE has no pages. limit remains a semantic cap.",
+        "parameters": [
+          {
+            "name": "Prefer",
+            "in": "header",
+            "required": false,
+            "description": "One wait=N preference; integer N from 0 through 60 and no greater than advertised max_wait_seconds. Bounds POST waiting only; expiry returns the same job without cancellation. Invalid or unsupported waits are rejected.",
+            "schema": { "$ref": "execution.schema.json#/$defs/PreferWait" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "oneOf": [
+                { "$ref": "execution.schema.json#/$defs/Request" },
+                { "$ref": "live.schema.json#/$defs/LiveRequest" }
+              ] },
+              "example": {
+                "data_source_id": "sales-v7",
+                "query": { "dimensions": ["region"], "measures": ["revenue"], "limit": 100 }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Terminal Execution or LiveExecution: succeeded, failed, or cancelled. HTTP success alone does not imply query success. Materialized success includes the immutable result manifest. LIVE success includes immutable stream and completion, with exact decoded IPC counts and matching result_id. The control-JSON limit is 1 MiB.",
+            "content": {
+              "application/json": {
+                "schema": { "oneOf": [
+                  { "$ref": "execution.schema.json#/$defs/Execution" },
+                  { "$ref": "live.schema.json#/$defs/LiveExecution" }
+                ] },
+                "examples": {
+                  "single-stream": {
+                    "summary": "Existing single-stream delivery (illustrative IPC counts)",
+                    "value": {
+                      "contract_version": "0.1-draft",
+                      "execution_id": "q-42",
+                      "data_source_id": "sales-v7",
+                      "model": { "id": "sales", "revision": "7" },
+                      "state": "succeeded",
+                      "warnings": [],
+                      "result": {
+                        "result_id": "r-42",
+                        "format": "arrow-stream",
+                        "url": "https://api.example.test/results/r-42",
+                        "row_count": 2,
+                        "byte_count": 1536,
+                        "completeness": "complete",
+                        "expires_at": "2026-10-12T00:00:00Z",
+                        "columns": [
+                          { "column_id": "c-1", "name": "region", "logical_type": "String", "nullable": true }
+                        ]
+                      }
+                    }
+                  },
+                  "paged": {
+                    "summary": "Server-selected immutable pages (illustrative IPC counts)",
+                    "value": {
+                      "contract_version": "0.1-draft",
+                      "execution_id": "q-43",
+                      "data_source_id": "sales-v7",
+                      "model": { "id": "sales", "revision": "7" },
+                      "state": "succeeded",
+                      "warnings": [],
+                      "result": {
+                        "result_id": "r-43",
+                        "format": "arrow-stream",
+                        "pages": [
+                          { "page_index": 0, "row_offset": 0, "row_count": 1, "byte_count": 1024, "url": "https://api.example.test/results/r-43/pages/0" },
+                          { "page_index": 1, "row_offset": 1, "row_count": 1, "byte_count": 1024, "url": "https://api.example.test/results/r-43/pages/1" }
+                        ],
+                        "row_count": 2,
+                        "byte_count": 2048,
+                        "completeness": "complete",
+                        "expires_at": "2026-10-12T00:00:00Z",
+                        "columns": [
+                          { "column_id": "c-1", "name": "region", "logical_type": "String", "nullable": true }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Pending Execution or LiveExecution: queued, running, or cancelling. Poll using execution_id. LIVE running/cancelling may advertise the immutable single-use stream: open immediately and poll concurrently rather than waiting for success.",
+            "content": {
+              "application/json": {
+                "schema": { "oneOf": [
+                  { "$ref": "execution.schema.json#/$defs/Execution" },
+                  { "$ref": "live.schema.json#/$defs/LiveExecution" }
+                ] }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/queries/{id}": {
+      "parameters": [{ "$ref": "#/components/parameters/Id" }],
+      "get": {
+        "operationId": "getExecution",
+        "summary": "Read the current execution state",
+        "responses": {
+          "200": {
+            "description": "Execution or LiveExecution in any state. Version/delivery and source/model identity never change; terminal representations and advertised live descriptors are immutable. Live descriptors remain on failure/cancellation. Status must remain readable through terminal verification for the documented server retention window. Concurrent polling is the live failure channel, including while a body stalls: errors are never embedded as JSON in Arrow or dependent on HTTP trailers.",
+            "content": {
+              "application/json": {
+                "schema": { "oneOf": [
+                  { "$ref": "execution.schema.json#/$defs/Execution" },
+                  { "$ref": "live.schema.json#/$defs/LiveExecution" }
+                ] }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/queries/{id}/cancel": {
+      "parameters": [{ "$ref": "#/components/parameters/Id" }],
+      "post": {
+        "operationId": "cancel",
+        "summary": "Request best-effort cancellation without a request body",
+        "description": "Idempotent for an execution. Completion may win the race. Cancelling is pending, not proof of cancellation. Aborting a local HTTP request does not invoke this operation.",
+        "responses": {
+          "200": {
+            "description": "Terminal Execution: cancelled, succeeded, or failed.",
+            "content": {
+              "application/json": {
+                "schema": { "oneOf": [
+                  { "$ref": "execution.schema.json#/$defs/Execution" },
+                  { "$ref": "live.schema.json#/$defs/LiveExecution" }
+                ] }
+              }
+            }
+          },
+          "202": {
+            "description": "Pending Execution: cancelling or another currently observed pending state.",
+            "content": {
+              "application/json": {
+                "schema": { "oneOf": [
+                  { "$ref": "execution.schema.json#/$defs/Execution" },
+                  { "$ref": "live.schema.json#/$defs/LiveExecution" }
+                ] }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "Id": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Opaque identifier, encoded as a single path segment. A binding id is data_source_id; a query id is execution_id.",
+        "schema": { "$ref": "execution.schema.json#/$defs/Identifier" }
+      }
+    },
+    "responses": {
+      "Problem": {
+        "description": "Non-2xx failure using RFC 9457 ProblemDetails. status matches the HTTP status; error.code is the Foundation code directly. Redirects are not allowed.",
+        "content": {
+          "application/problem+json": {
+            "schema": { "$ref": "execution.schema.json#/$defs/ProblemDetails" }
+          }
+        }
+      }
+    }
+  },
+  "x-result-download": {
+    "method": "GET",
+    "url": "Execution.result.url OR Execution.result.pages[i].url, only when state is succeeded",
+    "manifest-schema": { "$ref": "execution.schema.json#/$defs/ResultManifest" },
+    "page-schema": { "$ref": "execution.schema.json#/$defs/ResultPage" },
+    "success-status": 200,
+    "media-type": "application/vnd.apache.arrow.stream",
+    "description": "Dynamic absolute same-origin or explicitly allowlisted HTTPS URL, not a fixed API path or cursor API. Every download is one immutable self-contained IPC stream with required Ossie schema/field metadata; no concatenation, redirects, or Range requests. Server-selected page_index and row_offset are contiguous from zero; page row/decoded-byte sums equal root totals, including repeated schemas. No empty page except the sole page of a zero-row result; page bytes are positive. Every page has identical fields and actual physical types (including decimal scale and timestamp unit/timezone) and metadata except ExecutionMetadata page_index/row_offset, which must appear together and match its descriptor; both are forbidden unpaged. Cross-origin fetch omits account authorization and cookies. The same authorization, origin, and whole-result expires_at protections apply to each page. HTTP content compression is allowed; Arrow IPC buffer compression is not. Decode bytes before comparing counts. Selected-page browsing does not establish complete-result consumption; completeness describes the whole result. Explicit repeated reads before expiry are allowed, but no automatic retries, resubmission, link renewal, live execution rows, or Flight are defined."
+  },
+  "x-live-download": {
+    "method": "GET",
+    "url": "LiveExecution.stream.url, as soon as advertised (never while queued)",
+    "schema": { "$ref": "live.schema.json#/$defs/LiveStream" },
+    "completion-schema": { "$ref": "live.schema.json#/$defs/LiveCompletion" },
+    "metadata-schema": { "$ref": "live.schema.json#/$defs/LiveExecutionMetadata" },
+    "success-status": 200,
+    "media-type": "application/vnd.apache.arrow.stream",
+    "description": "Explicit optional LIVE only. Single consumer enforced by server, non-replayable, no page/range/resume/retry/fallback. Same origin, token, CORS and IPC safety rules as materialized results. Expiry is the latest start time, not an already-open stream deadline. Consume provisional Arrow batches concurrently with status polling; failed/cancelled status stops the reader. Status errors fail verification. Terminal success never aborts a still-open body: require valid complete IPC, matching result_id and exact row/decoded-byte counts. A network or malformed-body error cannot be cured by success status; one bounded status read may preserve an already-published engine error. EOF/EOS alone is not success. No JSON control messages inside Arrow, HTTP trailer dependency, row retractions or Flight. Blocking operators may delay batches."
+  },
+  "x-browser-cors": {
+    "allow-methods": ["GET", "POST", "OPTIONS"],
+    "allow-headers": ["Authorization", "Content-Type", "Accept", "Prefer"],
+    "expose-headers": ["Content-Type", "Content-Length", "Content-Encoding"],
+    "description": "Servers and result hosts must explicitly allow approved application origins and satisfy preflight requests. A token broker or backend-for-frontend is deployment infrastructure, not supplied by this package."
+  }
+}

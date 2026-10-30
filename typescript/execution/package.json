@@ -1,0 +1,36 @@
+{
+  "name": "@apache-ossie/execution-client",
+  "version": "0.1.0-draft.0",
+  "private": true,
+  "description": "Experimental, unpublished browser-first implementation of the Ossie HTTP execution proposal.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE", "NOTICE"],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "test:browser": "npm run build && node --test test/browser/*.test.mjs",
+    "check": "npm run test"
+  },
+  "dependencies": {
+    "apache-arrow": "21.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.3"
+  }
+}

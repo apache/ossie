@@ -1,0 +1,90 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements. See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership. The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License. You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied. See the License for the
+# specific language governing permissions and limitations
+# under the License.
+#
+
+name: Execution Client CI
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "typescript/execution/**"
+      - "examples/execution-adbc/**"
+      - "docs/proposals/execute-query-http.md"
+      - "docs/proposals/execution-http/**"
+      - ".github/workflows/execution-client-ci.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "typescript/execution/**"
+      - "examples/execution-adbc/**"
+      - "docs/proposals/execute-query-http.md"
+      - "docs/proposals/execution-http/**"
+      - ".github/workflows/execution-client-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["22", "24"]
+    defaults:
+      run:
+        working-directory: typescript/execution
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: typescript/execution/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Check types, contract and client
+        run: npm test
+      - name: Exercise a real browser
+        if: matrix.node-version == '24'
+        run: |
+          export OSSIE_BROWSER_BINARY="$(command -v google-chrome)"
+          test -n "$OSSIE_BROWSER_BINARY"
+          npm run test:browser
+      - name: Set up Python for ADBC example
+        if: matrix.node-version == '24'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install uv
+        if: matrix.node-version == '24'
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.19"
+      - name: Exercise ADBC-to-TypeScript materialization
+        if: matrix.node-version == '24'
+        working-directory: .
+        run: |
+          uv run --frozen --project examples/execution-adbc pytest examples/execution-adbc
+          uv run --frozen --project examples/execution-adbc python examples/execution-adbc/demo.py --output "$RUNNER_TEMP/ossie-adbc-capture"
+          node examples/execution-adbc/verify-client.mjs "$RUNNER_TEMP/ossie-adbc-capture"
