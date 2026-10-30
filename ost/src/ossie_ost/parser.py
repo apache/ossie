@@ -28,6 +28,8 @@ lines are expected output, but it does not parse arguments; see
 
 from __future__ import annotations
 
+import bisect
+import itertools
 import json
 import re
 from collections.abc import Container, Iterator
@@ -151,7 +153,10 @@ def is_output_line(line: str) -> bool:
 class _Parser:
     def __init__(self, text: str, path: str) -> None:
         self.path = path
+        self.text = text
         self.lines = split_lines(text)
+        # The offset in the text at which each line starts.
+        self.starts = [0, *itertools.accumulate(len(line) for line in self.lines)]
 
     def error(self, line: int, column: int, message: str) -> ScriptError:
         return ScriptError(self.path, [Problem(line, column, message)])
@@ -198,22 +203,21 @@ class _Parser:
         Returns the index of the line on which the command ends, and the
         command's body (its text, up to its terminating ``;``).
         """
-        text = "".join(self.lines[start:])
-        scanner = Scanner(text)
+        scanner = Scanner(self.text)
         try:
-            pos = scanner.find_terminator()
+            pos = scanner.find_terminator(self.starts[start])
         except ScanError as e:
             line, column = scanner.position(e.offset)
-            raise self.error(start + line + 1, column, e.message) from None
+            raise self.error(line + 1, column, e.message) from None
         if pos is None:
             message = "unterminated command"
             if scanner.open is not None:
                 construct, offset = scanner.open
                 line, column = scanner.position(offset)
-                message += f" (open '{construct}' at {start + line + 1}:{column})"
+                message += f" (open '{construct}' at {line + 1}:{column})"
             raise self.error(start + 1, 1, message)
-        end = start + text.count("\n", 0, pos)
-        return end, text[:pos]
+        end = bisect.bisect_right(self.starts, pos) - 1
+        return end, self.text[self.starts[start] : pos]
 
     def scan_block(self, start: int) -> int:
         """Scans an output block that starts at line ``start``.
@@ -297,15 +301,15 @@ class Scanner:
             return len(self.text)
         return j + len(close)
 
-    def find_terminator(self) -> int | None:
-        """Returns the offset of the ``;`` that ends the command, or None
-        if the text ends first.
+    def find_terminator(self, start: int = 0) -> int | None:
+        """Returns the offset of the ``;`` that ends the command that
+        starts at offset ``start``, or None if the text ends first.
 
         Raises :class:`ScanError` if there is an unmatched ``)``.
         """
         text = self.text
         parens: list[int] = []
-        for i in self.significant():
+        for i in self.significant(start):
             c = text[i]
             if c == "(":
                 parens.append(i)

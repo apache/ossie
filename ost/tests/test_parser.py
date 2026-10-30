@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import time
+
 import pytest
 
 from ossie_ost.parser import (
@@ -200,6 +202,22 @@ def test_only_newline_ends_a_line(c: str) -> None:
     assert x.blocks == ("> 1 : int\n",)
     assert two.line == 3
     assert parse(text).text() == text
+
+
+def test_large_script() -> None:
+    # A script of 64,000 commands and 512,000 lines. When parsing took
+    # time quadratic in the length of the script, this took over a
+    # minute.
+    n = 64_000
+    text = "".join(
+        f"select {i} as x;\n+---+\n| x |\n+---+\n| {i} |\n+---+\n(1 row)\n\n"
+        for i in range(n)
+    )
+    start = time.perf_counter()
+    script = parse(text)
+    assert time.perf_counter() - start < 10
+    assert sum(isinstance(c, Command) for c in script.chunks) == n
+    assert script.text() == text
 
 
 def test_script_error_message() -> None:
