@@ -301,7 +301,8 @@ A cell is written as follows:
   with a space, starts with `"`, contains `|`, or contains a control
   character or a whitespace character other than a space. Then it is
   written in quotes, with the escapes of JSON: `""`, `" a"`,
-  `"a|b"`, `"a\nb"`.
+  `"a|b"`, `"a\nb"`. Control characters, U+2028 (line separator)
+  and U+2029 (paragraph separator) are written as `\uXXXX`.
 * A date is written `YYYY-MM-DD`, as in `2024-03-10`.
 * A time is written `HH:MM:SS`, followed by a fraction of a second
   only if it is not zero, without trailing zeros: `12:34:56`,
@@ -349,7 +350,8 @@ and its type:
 
 An integer, floating-point number or boolean is written as in a
 table cell. A string is written in quotes, with the escapes of JSON,
-and with non-ASCII characters verbatim.
+and with non-ASCII characters verbatim except for control characters,
+U+2028 and U+2029, which are written as `\uXXXX`.
 
 A function that returns nothing (`None`) has no output.
 

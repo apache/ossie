@@ -51,6 +51,10 @@ from ossie_ost.parser import (
 
 ORDER_BY = re.compile(r"\border\s+by\b", re.IGNORECASE)
 VALUE_TYPE = re.compile(r" *: *([a-z]+)")
+# Characters that json.dumps does not escape, but that are hard to see
+# or that an editor may treat as a line break: DEL, the C1 control
+# characters, U+2028 (line separator) and U+2029 (paragraph separator).
+UNESCAPED = re.compile("[\x7f-\x9f\u2028\u2029]")
 
 INTEGER_TYPES = {
     "TINYINT",
@@ -242,7 +246,12 @@ def needs_quotes(s: str) -> bool:
 
 
 def quote(s: str) -> str:
-    return json.dumps(s, ensure_ascii=False)
+    """Writes a string in quotes, with the escapes of JSON. Escapes
+    every control character, and U+2028 and U+2029, but writes other
+    non-ASCII characters verbatim."""
+    return UNESCAPED.sub(
+        lambda m: f"\\u{ord(m.group()):04x}", json.dumps(s, ensure_ascii=False)
+    )
 
 
 def to_value(v: object) -> Value | None:

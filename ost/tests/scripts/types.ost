@@ -63,7 +63,8 @@ select 'inf'::double as c;
 +-----+
 (1 row)
 
-# Strings are quoted if they are empty or contain special characters.
+# Strings are quoted if they are empty or contain special characters,
+# and control characters and line separators are escaped.
 # NULL is an empty cell.
 select 'a b' as s union all select '' union all select null;
 +-----+
@@ -87,6 +88,20 @@ select 'x' || chr(10) || 'y' as c;
 +--------+
 | "x\ny" |
 +--------+
+(1 row)
+select 'a' || chr(127) || chr(133) || chr(8232) || chr(8233) || 'b' as c;
++------------------------------+
+| c                            |
++------------------------------+
+| "a\u007f\u0085\u2028\u2029b" |
++------------------------------+
+(1 row)
+select 'caf' || chr(233) as c;
++------+
+| c    |
++------+
+| café |
++------+
 (1 row)
 
 # Booleans.
