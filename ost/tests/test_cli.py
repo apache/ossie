@@ -58,13 +58,26 @@ def test_fail(cwd, capsys):
     assert run_main(["tests/a.ost"]) == 1
     out = capsys.readouterr().out
     assert out.startswith(
-        "ost: tests/a.ost failed; regenerated script is target/ost/tests/a.ost\n"
+        "ost: there were failures\n"
+        "diff -u tests/a.ost target/ost/tests/a.ost\n"
         "--- tests/a.ost\n"
         "+++ target/ost/tests/a.ost\n"
     )
     assert "-> 4 : int\n+> 3 : int\n" in out
     assert (cwd / "tests/a.ost").read_text() == FAIL
     assert (cwd / "target/ost/tests/a.ost").read_text() == PASS
+
+
+def test_fail_twice(cwd, capsys):
+    (cwd / "a b.ost").write_text(FAIL)
+    (cwd / "c.ost").write_text(FAIL)
+    assert run_main(["a b.ost", "c.ost"]) == 1
+    lines = capsys.readouterr().out.splitlines()
+    assert [line for line in lines if line[:1] not in "-+@ >"] == [
+        "ost: there were failures",
+        "diff -u 'a b.ost' 'target/ost/a b.ost'",
+        "diff -u c.ost target/ost/c.ost",
+    ]
 
 
 def test_update(cwd):

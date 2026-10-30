@@ -88,8 +88,10 @@ scripts and generate the same output.
 : Interrupt any command that runs for longer than *seconds* (default
   60). The command's output is an error (see *Errors*).
 
-For each script that fails, `ost` prints a unified diff between the
-script and the regenerated script.
+If a script fails, `ost` prints `ost: there were failures`. Then,
+for each script that fails, it prints a `diff -u` command that
+compares the script with the regenerated script, and that command's
+output.
 
 ## EXIT STATUS
 

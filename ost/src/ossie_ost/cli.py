@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import shlex
 import sys
 import tempfile
 from pathlib import Path
@@ -37,7 +38,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Run Ossie SQL Test (.ost) scripts. Each command's output "
         "is compared with its expected output, and the regenerated script "
         "is written to the output directory. For each script that fails, "
-        "prints a diff between the script and the regenerated script.",
+        "prints a diff command and its output, a unified diff between the "
+        "script and the regenerated script.",
         epilog="Exit status is 0 if every script passed, 1 if at least one "
         "failed, 2 for a usage error or a malformed script.",
     )
@@ -93,6 +95,7 @@ def run_main(argv: list[str]) -> int:
     directory = Path(args.dir)
     output_dir = Path(args.output_dir)
     status = 0
+    failed = False
     for name in args.files:
         if name == "-":
             status = max(status, run_stdin(args))
@@ -114,11 +117,18 @@ def run_main(argv: list[str]) -> int:
             continue
         for script in scripts:
             out = output_path(script, directory, output_dir)
-            status = max(status, run_file(script, out, args))
+            script_status = run_file(script, out, args, failed)
+            failed = failed or script_status == 1
+            status = max(status, script_status)
     return status
 
 
-def run_file(path: Path, out: Path, args: argparse.Namespace) -> int:
+def run_file(path: Path, out: Path, args: argparse.Namespace, failed: bool) -> int:
+    """Runs a script, writes the regenerated script to ``out``, and
+    returns 0 if the script passed, 1 if it failed, 2 if it is malformed.
+
+    ``failed`` is whether an earlier script failed; if not, a failure
+    first prints a line saying that there were failures."""
     text = path.read_bytes().decode("utf-8")
     try:
         result = run(text, str(path), timeout=args.timeout, echo=_echo(args))
@@ -129,7 +139,9 @@ def run_file(path: Path, out: Path, args: argparse.Namespace) -> int:
     out.write_bytes(result.output.encode("utf-8"))
     if result.passed:
         return 0
-    print(f"ost: {path} failed; regenerated script is {out}")
+    if not failed:
+        print("ost: there were failures")
+    print(f"diff -u {shlex.quote(str(path))} {shlex.quote(str(out))}")
     sys.stdout.writelines(_diff(text, result.output, str(path), str(out)))
     if args.update:
         path.write_bytes(result.output.encode("utf-8"))

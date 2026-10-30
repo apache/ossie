@@ -33,8 +33,8 @@ uv run ost --update tests/scripts      # overwrites failing scripts
 ```
 
 Each regenerated script is written under `target/ost/`. For each
-script that fails, `ost` prints the path of the script and of the
-regenerated script, and a diff between them.
+script that fails, `ost` prints a `diff -u` command that compares
+the script with the regenerated script, and that command's output.
 
 ## Example
 
@@ -59,7 +59,8 @@ a diff whose `+` lines are the output that the query produced:
 
 ```bash
 $ uv run ost emp.ost
-ost: emp.ost failed; regenerated script is target/ost/emp.ost
+ost: there were failures
+diff -u emp.ost target/ost/emp.ost
 --- emp.ost
 +++ target/ost/emp.ost
 @@ -3,3 +3,11 @@
