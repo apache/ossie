@@ -347,7 +347,7 @@ def parse_block(block: str) -> Output:
     if block.startswith("> "):
         return _parse_value(block[2:].rstrip("\n"))
     if block.startswith("+"):
-        return _parse_table(block.splitlines())
+        return _parse_table(block.removesuffix("\n").split("\n"))
     return None
 
 

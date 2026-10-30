@@ -134,6 +134,16 @@ def parse(text: str, path: str = "<string>") -> Script:
     return _Parser(text, path).parse()
 
 
+def split_lines(text: str) -> list[str]:
+    """Splits text into lines, each with its terminating newline.
+
+    Unlike :meth:`str.splitlines`, breaks only at ``\\n``, not at other
+    characters such as form feed or ``U+2028``."""
+    lines = [line + "\n" for line in text.split("\n")]
+    lines[-1] = lines[-1][:-1]
+    return lines if lines[-1] else lines[:-1]
+
+
 def is_output_line(line: str) -> bool:
     return line.startswith(("+", "|", ">"))
 
@@ -141,7 +151,7 @@ def is_output_line(line: str) -> bool:
 class _Parser:
     def __init__(self, text: str, path: str) -> None:
         self.path = path
-        self.lines = text.splitlines(keepends=True)
+        self.lines = split_lines(text)
 
     def error(self, line: int, column: int, message: str) -> ScriptError:
         return ScriptError(self.path, [Problem(line, column, message)])

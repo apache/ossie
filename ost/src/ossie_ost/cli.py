@@ -24,7 +24,7 @@ import difflib
 import sys
 from pathlib import Path
 
-from ossie_ost.parser import ScriptError
+from ossie_ost.parser import ScriptError, split_lines
 from ossie_ost.runner import run
 
 
@@ -149,9 +149,7 @@ def _echo(args: argparse.Namespace):
 
 
 def _diff(a: str, b: str, a_name: str, b_name: str) -> list[str]:
-    lines = difflib.unified_diff(
-        a.splitlines(keepends=True), b.splitlines(keepends=True), a_name, b_name
-    )
+    lines = difflib.unified_diff(split_lines(a), split_lines(b), a_name, b_name)
     return [line if line.endswith("\n") else line + "\n" for line in lines]
 
 

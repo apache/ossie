@@ -189,6 +189,19 @@ def test_whitespace_in_string_literal() -> None:
     assert problems("select 'a \nb';\n") == [Problem(1, 10, "trailing space")]
 
 
+@pytest.mark.parametrize("c", ["\x0b", "\x0c", "\x1c", "\x85", " ", " "])
+def test_only_newline_ends_a_line(c: str) -> None:
+    # Python's str.splitlines breaks at these characters too; ost
+    # does not.
+    text = f"select 'a{c}b' as x;\n> 1 : int\nselect 2;\n"
+    x, two = commands(text)
+    assert x.line == 1
+    assert x.body == f"select 'a{c}b' as x"
+    assert x.blocks == ("> 1 : int\n",)
+    assert two.line == 3
+    assert parse(text).text() == text
+
+
 def test_script_error_message() -> None:
     with pytest.raises(ScriptError) as e:
         parse("a\t;\nb; \n", path="tests/x.ost")

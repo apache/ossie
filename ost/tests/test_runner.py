@@ -52,6 +52,14 @@ def test_ordered_rows_must_be_in_order():
     assert not run(text).passed
 
 
+def test_error_with_line_separator():
+    # The error message contains U+2028, which ost writes unescaped;
+    # the regenerated script must still parse, and pass.
+    text = "select error('a' || chr(8232) || 'b');\n"
+    assert output(text).endswith("> error: Invalid Input Error: a b\n")
+    assert run(output(text)).passed
+
+
 def test_mismatch_keeps_expected_row_order():
     text = (
         "select * from (values (1), (2), (3)) as t(x);\n"
