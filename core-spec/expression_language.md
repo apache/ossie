@@ -111,9 +111,9 @@ will be able to be multi-part and the parts will be separated by the '.' charact
 What an identifier refers to depends on where the expression appears:
 
 * In a **field expression**, identifiers refer to columns of the dataset's `source`.  A field expression cannot refer to other fields.
-* In a **dataset-scoped metric expression**, identifiers are unqualified and refer to fields declared in that dataset.
+* In a **dataset-scoped metric expression**, unqualified identifiers refer to fields declared in that dataset.  Identifiers qualified with `source`, as in `source.column`, refer to columns of the dataset's `source`.  The `source` qualifier is case insensitive.  If the dataset declares a field named `source`, the name refers to that field, and the dataset's metrics cannot refer to source columns.
 * In a **model-scoped metric expression**, identifiers must be qualified as `dataset.field` and refer to a field declared in that dataset.
-* Metric expressions cannot refer to columns of the dataset's `source` or to other metrics.  If a field and a source column share a name, a metric expression refers to the field.
+* Model-scoped metric expressions cannot refer to source columns, and no metric expression can refer to another metric.  If a field and a source column share a name, an unqualified name in a metric expression refers to the field.
 
 See [Name Resolution](spec.md#name-resolution) in the core specification.
 
