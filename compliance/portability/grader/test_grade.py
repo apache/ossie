@@ -22,7 +22,8 @@ exercises exactly one outcome. The identity test runs the real posted M0-M6 fixt
 through a no-op converter: returned unchanged, every element must grade PORTABLE.
 The manifest tests check that every element the manifest names can be found by
 kind and name in each variant, and that each primary variant uses the rung's
-primary reference form.
+primary reference form. The dataset-scoped tests check that a metric in
+``datasets[].metrics`` is graded as ``dataset.metric``.
 """
 
 import glob
@@ -308,6 +309,10 @@ def test_identity_on_real_m0_m6_fixtures_is_all_portable():
         report = grade.grade(document, document)
         bad = [(f.name, f.outcome) for f in report.findings if f.outcome != grade.PORTABLE]
         assert not bad, f"{os.path.basename(path)} graded non-PORTABLE: {bad}"
+        graded = sum(1 for f in report.findings if f.kind == "metric")
+        assert graded == len(_names(document, "metric")), (
+            f"{os.path.basename(path)}: not every metric was graded"
+        )
 
 
 def _manifest_rungs():
@@ -316,7 +321,11 @@ def _manifest_rungs():
 
 def _names(document, kind):
     if kind == "metric":
-        return {metric["name"] for metric in document.get("metrics") or []}
+        return {metric["name"] for metric in document.get("metrics") or []} | {
+            metric["name"]
+            for dataset in document.get("datasets") or []
+            for metric in dataset.get("metrics") or []
+        }
     return {
         field["name"]
         for dataset in document.get("datasets") or []
@@ -346,3 +355,44 @@ def test_each_primary_variant_uses_the_rungs_primary_reference_form():
         primary = [v for v in rung["variants"] if v["role"] == "primary"]
         assert len(primary) == 1, rung["id"]
         assert primary[0]["reference_form"] == rung["reference_form_primary"], rung["id"]
+
+
+def _dataset_metric_document(metric_expression="SUM(amount)"):
+    return {
+        "datasets": [
+            {
+                "name": "sales",
+                "fields": [{"name": "amount", "expression": {"dialects": [
+                    {"dialect": "ANSI_SQL", "expression": "amount"}]}}],
+                "metrics": [_metric("total_amount", "ANSI_SQL", metric_expression)],
+            }
+        ]
+    }
+
+
+def test_a_dataset_scoped_metric_is_graded_under_dataset_dot_name():
+    document = _dataset_metric_document()
+    report = grade.grade(document, document)
+    outcomes = {(f.kind, f.name): f.outcome for f in report.findings}
+    assert outcomes[("metric", "sales.total_amount")] == grade.PORTABLE
+
+
+def test_a_dropped_dataset_scoped_metric_is_reported():
+    returned = _dataset_metric_document()
+    returned["datasets"][0]["metrics"] = []
+    report = grade.grade(_dataset_metric_document(), returned)
+    outcomes = {(f.kind, f.name): f.outcome for f in report.findings}
+    assert outcomes[("metric", "sales.total_amount")] == grade.DROPPED_SILENT
+
+
+def test_a_dataset_scoped_metric_moved_to_the_model_is_not_the_same_element():
+    returned = _dataset_metric_document()
+    returned["datasets"][0]["metrics"] = []
+    returned["metrics"] = [_metric("total_amount", "ANSI_SQL", "SUM(amount)")]
+    report = grade.grade(_dataset_metric_document(), returned)
+    outcomes = {(f.kind, f.name): f.outcome for f in report.findings}
+    # Same expression under another name: one element whose identity changed,
+    # not a drop plus an unrelated addition.
+    assert outcomes[("metric", "sales.total_amount")] == grade.REWRITTEN
+    assert ("metric", "total_amount") not in outcomes
+

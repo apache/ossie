@@ -18,13 +18,11 @@
 # yaml-language-server: $schema=../../../../core-spec/ossie-schema.json
 #
 # M0 ladder rung -- one dataset, one field, one SUM metric.
-# Variant: BARE reference form -- SUM(amount), a bare column name rather than
-# dataset.field. ANSI_SQL tag. This is the "SUM(amount)" variant from the runs.
-# Kept as a sibling variant to the qualified primary, not baked into the rung,
-# because #343 (bare name means a source column inside a dataset-scoped metric)
-# and #486 (qualified dataset.field only) are still settling which form is the
-# model-level reference. sigma drops this as a cross-dataset metric on a
-# one-dataset model.
+# Variant: BARE reference form, carried as a DATASET-SCOPED metric
+# (datasets[].metrics), where core-spec/spec.md (Metric Scoping) requires the
+# single-part field name. A bare name in a model-scoped metric is not valid
+# since #486; the qualified primary keeps the model-scoped form.
+# ANSI_SQL tag. This is the "SUM(amount)" variant from the runs.
 version: "0.3.0.dev0"
 name: m0_sales
 description: M0 baseline -- single dataset, single field, single SUM metric.
@@ -38,10 +36,10 @@ datasets:
             - dialect: ANSI_SQL
               expression: amount
         datatype: Decimal
-metrics:
-  - name: total_amount
-    expression:
-      dialects:
-        - dialect: ANSI_SQL
-          expression: SUM(amount)
-    datatype: Decimal
+    metrics:
+      - name: total_amount
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(amount)
+        datatype: Decimal
