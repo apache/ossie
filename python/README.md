@@ -53,3 +53,7 @@ uv sync
 ```bash
 uv build
 ```
+
+`LICENSE`, `NOTICE` and `DISCLAIMER` in this directory are copies of the files at
+the repository root, so that both the sdist and the wheel carry them. Update the
+root files and copy them here; CI fails if they differ.

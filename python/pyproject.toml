@@ -32,18 +32,35 @@ authors = [{ name = "Apache Software Foundation", email = "dev@ossie.apache.org"
 requires-python = ">=3.11"
 readme = "README.md"
 license = "Apache-2.0"
+# Copies of the repository root files; CI checks they stay identical.
+license-files = ["LICENSE", "NOTICE", "DISCLAIMER"]
 keywords = [
     "Apache Ossie",
     "Ossie",
 ]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
 dependencies = [
-    "pydantic>=2.0",
-    "PyYAML>=6.0",
+    # The lowest versions the test suite passes with; CI checks them.
+    "pydantic>=2.7",
+    "PyYAML>=6.0.1",
 ]
 
 [project.urls]
 homepage = "https://ossie.apache.org/"
 repository = "https://github.com/apache/ossie/"
+issues = "https://github.com/apache/ossie/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ossie"]

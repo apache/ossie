@@ -1,0 +1,103 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+#
+
+# Builds the apache-ossie sdist and wheel and checks they are fit to distribute.
+# It never publishes: PyPI uploads happen by hand, after a release passes its votes.
+# Run it manually on a release candidate tag to get the files to sign and stage.
+name: Python Package
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'python/**'
+      - 'LICENSE'
+      - 'NOTICE'
+      - 'DISCLAIMER'
+      - '.github/workflows/python-package.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'python/**'
+      - 'LICENSE'
+      - 'NOTICE'
+      - 'DISCLAIMER'
+      - '.github/workflows/python-package.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.12.19"
+
+      - name: Check the license files match the repository root
+        run: |
+          for file in LICENSE NOTICE DISCLAIMER; do
+            cmp "$file" "python/$file" || {
+              echo "::error::python/$file differs from $file; copy the root file over it"
+              exit 1
+            }
+          done
+
+      - name: Build sdist and wheel
+        working-directory: python
+        run: |
+          uv build
+
+      - name: Check distribution metadata
+        working-directory: python
+        run: |
+          uvx twine==7.0.0 check --strict dist/*
+
+      - name: Check both distributions carry the license files
+        working-directory: python
+        run: |
+          for file in LICENSE NOTICE DISCLAIMER; do
+            tar -tzf dist/*.tar.gz | grep -qx "apache_ossie-[^/]*/$file" || {
+              echo "::error::$file is missing from the sdist"
+              exit 1
+            }
+            unzip -Z1 dist/*.whl | grep -qx "apache_ossie-[^/]*\.dist-info/licenses/$file" || {
+              echo "::error::$file is missing from the wheel"
+              exit 1
+            }
+          done
+
+      - name: Run the tests against the installed wheel
+        working-directory: python
+        run: |
+          uv run --isolated --no-project --with "$(ls dist/*.whl)" --with pytest pytest
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python-distributions
+          path: python/dist/
+          if-no-files-found: error
