@@ -1729,6 +1729,49 @@ def test_dataset_scoped_metric_rejects_an_undeclared_field() -> None:
     assert any(error.startswith("[Scope]") and "'quantity'" in error for error in errors)
 
 
+def test_dataset_scoped_metric_accepts_source_columns() -> None:
+    # The source qualifier is case insensitive, and reaches a column that a field
+    # of the same name shadows.
+    doc = _orders_with(
+        fields=[{"name": "amount", "expression": _ds_expr("amount * 100")}],
+        metrics=[
+            {"name": "total_amount", "expression": _ds_expr("SUM(source.amount)")},
+            {"name": "total_qty", "expression": _ds_expr("SUM(SOURCE.quantity)")},
+            {"name": "total_cents", "expression": _ds_expr("SUM(amount)")},
+        ],
+    )
+
+    assert _VALIDATE.validate_metric_scoping(doc) == []
+
+
+def test_dataset_scoped_metric_rejects_a_three_part_source_reference() -> None:
+    doc = _orders_with(
+        metrics=[{"name": "total", "expression": _ds_expr("SUM(source.orders.amount)")}],
+    )
+
+    errors = _VALIDATE.validate_metric_scoping(doc)
+
+    assert any(error.startswith("[Scope]") and "'source'" in error for error in errors)
+
+
+def test_dataset_scoped_metric_rejects_source_columns_when_a_field_is_named_source() -> None:
+    # A field named source takes precedence over the source qualifier.
+    doc = _orders_with(
+        fields=[{"name": "source", "expression": _ds_expr("channel")}],
+        metrics=[
+            {"name": "sources", "expression": _ds_expr("COUNT(DISTINCT source)")},
+            {"name": "total_amount", "expression": _ds_expr("SUM(source.amount)")},
+        ],
+    )
+
+    assert _VALIDATE.validate_metric_scoping(doc) == [
+        "[Scope] Dataset-scoped metric 'orders.total_amount' in model 'm' (OSSIE_SQL_2026) "
+        "uses source.column, but dataset 'orders' declares a field named 'source', which "
+        "takes precedence over the source qualifier. This dataset's metrics cannot refer "
+        "to source columns."
+    ]
+
+
 def test_dataset_scoped_metric_count_star_references_no_field() -> None:
     doc = _orders_with(metrics=[{"name": "n", "expression": _ds_expr("COUNT(*)")}])
 
@@ -1781,8 +1824,9 @@ def test_dataset_scoped_metric_portable_sql_rejects_a_cross_dataset_reference() 
     assert _VALIDATE.validate_metric_scoping(doc) == [
         "[Scope] Dataset-scoped metric 'orders.bad' in model 'm' (OSSIE_SQL_2026) uses "
         "qualified reference(s) 'customers'. A dataset-scoped metric expression must "
-        "reference the dataset's fields by single-part (unqualified) name; a metric that "
-        "must reference another dataset belongs in the model-root metrics."
+        "reference the dataset's fields by single-part (unqualified) name and its source "
+        "columns as source.column; a metric that must reference another dataset belongs "
+        "in the model-root metrics."
     ]
 
 
@@ -1795,7 +1839,7 @@ def test_dataset_scoped_metric_portable_sql_rejects_an_undeclared_field() -> Non
     assert _VALIDATE.validate_metric_scoping(doc) == [
         "[Scope] Dataset-scoped metric 'orders.total_qty' in model 'm' (OSSIE_SQL_2026) "
         "references undeclared field(s) 'quantity'. A dataset-scoped metric may reference "
-        "only the dataset's declared fields."
+        "only the dataset's declared fields, and its source columns as source.column."
     ]
 
 
