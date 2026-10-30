@@ -15,13 +15,15 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# M5 ladder rung: metric composition, a model-scoped metric that references
-# other model-scoped metrics by name (avg_order_value refers to total_amount and
-# order_count), as described under Metric Scoping in core-spec/spec.md, where a
-# model-scoped metric is referenced as metric_name. Single fixture.
+# M5 ladder rung: metric composition. A metric expression cannot refer to other
+# metrics (core-spec/spec.md, Metric Scoping; expression_language.md), so a
+# composed measure in a source tool (avg_order_value = total_amount / order_count)
+# is carried with its parts inlined: a ratio of two aggregates over qualified
+# dataset.field references, NULL when there are no orders. The two base metrics
+# stay alongside it. Single fixture.
 version: "0.2.0.dev0"
 name: m5_sales
-description: "M5: a metric that references other metrics (composition)."
+description: "M5: a composed metric, with the metrics it is built from inlined."
 datasets:
   - name: sales
     source: samples.sales.orders
@@ -55,5 +57,5 @@ metrics:
     expression:
       dialects:
         - dialect: ANSI_SQL
-          expression: total_amount / order_count
+          expression: SUM(sales.amount) / NULLIF(COUNT(sales.order_id), 0)
     datatype: Decimal

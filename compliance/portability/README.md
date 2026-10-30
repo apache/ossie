@@ -39,7 +39,7 @@ difference in a converter's output localizes to a single construct:
 | M2 | the core aggregate set | `SUM`, `COUNT`, `COUNT(DISTINCT)`, `AVG`, `MIN`, `MAX` |
 | M3 | a filtered aggregate | `SUM(CASE WHEN ... THEN x ELSE 0 END)`, and the same with `FILTER (WHERE ...)` |
 | M4 | a cross-dataset metric | two datasets, a relationship, a model-scoped metric across the join |
-| M5 | metric composition | a model-scoped metric built from two other metrics by name |
+| M5 | metric composition | a model-scoped metric built from two others, inlined (a metric expression cannot refer to other metrics) |
 | M6 | date and time scalars | `YEAR`, `DATE_TRUNC`, `DATEDIFF(part, start, end)` |
 
 `manifest.yaml` lists the fixtures, the element each rung exercises, and the
