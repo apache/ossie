@@ -62,5 +62,7 @@ PLACEHOLDER, ADDED, RELABELED, DROPPED_DIAGNOSED, DROPPED_SILENT, REJECTED.
 ## Tests
 
 `test_grade.py` has one test per outcome plus an identity check that runs the real
-M0-M3 fixtures through a no-op converter and asserts every element grades
-PORTABLE. Run with `PYTHONPATH=. pytest test_grade.py`.
+M0-M6 fixtures through a no-op converter and asserts every element grades
+PORTABLE. Two manifest checks assert that every element the manifest names is found
+by kind and name in each variant, and that each primary variant uses the rung's primary
+reference form. Run with `PYTHONPATH=. pytest test_grade.py`.
