@@ -135,6 +135,7 @@ class OssieDialect(str, Enum):
     HOLISTICS_AQL = "HOLISTICS_AQL"
     OSSIE_SQL_2026 = "OSSIE_SQL_2026"
     SPARQL = "SPARQL"
+    TRINO = "TRINO"
 
 
 class OssieDataType(str, Enum):

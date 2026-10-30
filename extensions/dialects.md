@@ -41,3 +41,4 @@ only dialect the specification defines; all others are opaque to Ossie.
 | `HOLISTICS_AQL` | Holistics AQL (Analytical Query Language) |
 | `SPARQL` | SPARQL Query Language |
 
+| `TRINO` | Trino SQL |
