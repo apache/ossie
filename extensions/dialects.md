@@ -39,3 +39,4 @@ only dialect the specification defines; all others are opaque to Ossie.
 | `THOUGHTSPOT` | ThoughtSpot formula language |
 | `DAX` | Data Analysis Expressions (Power BI / Analysis Services) |
 | `HOLISTICS_AQL` | Holistics AQL (Analytical Query Language) |
+| `TRINO` | Trino SQL |
