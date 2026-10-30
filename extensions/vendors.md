@@ -42,6 +42,7 @@ community uses (see [`README.md`](README.md) for how these lists are used).
 | `DBT` | dbt-specific attributes |
 | `DATABRICKS` | Databricks-specific attributes |
 | `GOODDATA` | GoodData-specific attributes |
+| `SEMANTIDO` | Semantido-specific attributes |
 | `HONEYDEW` | Honeydew-specific attributes |
 | `WISDOM` | WisdomAI-specific attributes |
 | `POWER_BI` | Microsoft Power BI-specific attributes |
@@ -49,6 +50,7 @@ community uses (see [`README.md`](README.md) for how these lists are used).
 | `THOUGHTSPOT` | ThoughtSpot-specific attributes |
 | `HEX` | Hex-specific attributes |
 | `ATACCAMA` | Ataccama-specific attributes |
+| `OMNI` | Omni-specific attributes |
 
 ## Examples
 

@@ -25,12 +25,14 @@ on:
     paths:
       - 'python/**'
       - 'core-spec/**'
+      - 'extensions/**'
       - '.github/workflows/python-ci.yml'
   pull_request:
     branches: [ "main" ]
     paths:
       - 'python/**'
       - 'core-spec/**'
+      - 'extensions/**'
       - '.github/workflows/python-ci.yml'
 
 permissions:

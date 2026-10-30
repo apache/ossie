@@ -173,10 +173,14 @@ class OssieVendor(str, Enum):
     DATABRICKS = "DATABRICKS"
     GOODDATA = "GOODDATA"
     SEMANTIDO = "SEMANTIDO"
+    HONEYDEW = "HONEYDEW"
     WISDOM = "WISDOM"
+    POWER_BI = "POWER_BI"
     SIGMA = "SIGMA"
+    THOUGHTSPOT = "THOUGHTSPOT"
     HEX = "HEX"
     ATACCAMA = "ATACCAMA"
+    OMNI = "OMNI"
 
 
 class OssieAIContextObject(BaseModel):
