@@ -133,14 +133,14 @@ rungs:
       - {id: M4.cross_dataset, file: m4/m4_cross_dataset.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
 
   - id: M5
-    description: a model-scoped metric composed from other model-scoped metrics, referenced by name
+    description: a model-scoped metric composed from two others, with their expressions inlined
     elements_under_test:
       - kind: metric
         name: avg_order_value
-        construct: metric-to-metric reference (total_amount / order_count)
-    reference_form_primary: metric-name   # the composite under test references metric names (its base metrics qualify dataset.field)
+        construct: composition inlined (total_amount / order_count as SUM(...) / NULLIF(COUNT(...), 0)); metric expressions cannot refer to other metrics
+    reference_form_primary: qualified
     variants:
-      - {id: M5.metric_ref, file: m5/m5_metric_ref.ossie.yaml, tag: ANSI_SQL, reference_form: metric-name, role: primary}
+      - {id: M5.metric_ref, file: m5/m5_metric_ref.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
 
   - id: M6
     description: date and time scalars from the portable core (YEAR, DATE_TRUNC, DATEDIFF part-first)
