@@ -578,44 +578,61 @@ class Session:
             ordered = bool(ORDER_BY.search(sql))
         con = self.connection
         timed_out = threading.Event()
+        finished = threading.Event()
+        lock = threading.Lock()
 
         def interrupt() -> None:
+            # DuckDB ignores an interrupt that arrives between statements,
+            # so interrupt until the query finishes. The lock ensures that
+            # no interrupt arrives after it has finished.
             timed_out.set()
-            con.interrupt()
+            while True:
+                with lock:
+                    if finished.is_set():
+                        return
+                    con.interrupt()
+                finished.wait(0.01)
 
         timer = threading.Timer(self.timeout, interrupt)
         timer.start()
         try:
-            statement = cursor = None
-            for statement in con.extract_statements(sql):
-                cursor = con.execute(statement)
-            if cursor is None or cursor.description is None:
-                return None
-            columns = tuple(d[0] for d in cursor.description)
-            if statement.type not in ROW_STATEMENTS and not (
-                statement.type in DML_STATEMENTS and columns != ("Count",)
-            ):
-                return None
-            type_names = [str(d[1]) for d in cursor.description]
-            families = []
-            for t in type_names:
-                f = family(t)
-                if f is None:
-                    raise OstError(f"unsupported type {t}")
-                families.append(f)
-            rows = tuple(
-                tuple(
-                    format_cell(v, f, t) for v, f, t in zip(row, families, type_names)
-                )
-                for row in cursor.fetchall()
-            )
-            return Table(columns, tuple(families), rows, ordered)
+            result = self._query(sql, ordered)
         except duckdb.Error:
-            if timed_out.is_set():
-                raise OstError(f"timeout after {self.timeout:g} seconds") from None
-            raise
+            if not timed_out.is_set():
+                raise
+            result = None
         finally:
             timer.cancel()
+            with lock:
+                finished.set()
+        if timed_out.is_set():
+            raise OstError(f"timeout after {self.timeout:g} seconds")
+        return result
+
+    def _query(self, sql: str, ordered: bool) -> Table | None:
+        con = self.connection
+        statement = cursor = None
+        for statement in con.extract_statements(sql):
+            cursor = con.execute(statement)
+        if cursor is None or cursor.description is None:
+            return None
+        columns = tuple(d[0] for d in cursor.description)
+        if statement.type not in ROW_STATEMENTS and not (
+            statement.type in DML_STATEMENTS and columns != ("Count",)
+        ):
+            return None
+        type_names = [str(d[1]) for d in cursor.description]
+        families = []
+        for t in type_names:
+            f = family(t)
+            if f is None:
+                raise OstError(f"unsupported type {t}")
+            families.append(f)
+        rows = tuple(
+            tuple(format_cell(v, f, t) for v, f, t in zip(row, families, type_names))
+            for row in cursor.fetchall()
+        )
+        return Table(columns, tuple(families), rows, ordered)
 
     def execute(self, command: Command) -> Output:
         """Executes a command, and returns its output."""

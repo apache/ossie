@@ -154,6 +154,15 @@ def test_timeout():
     )
 
 
+def test_timeout_between_statements():
+    # Each statement is fast, so the timeout almost always expires
+    # between statements, when DuckDB ignores an interrupt.
+    sql = "select 1 as x; " * 20000 + "select 2 as x;\n"
+    assert run(sql, timeout=0.1).output.endswith(
+        "> error: ost: timeout after 0.1 seconds\n"
+    )
+
+
 def test_custom_function():
     functions = {"twice": Function((Kind.STRING,), lambda session, s: s + s)}
     result = run('twice("ab");\n', functions=functions)
