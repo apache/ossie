@@ -19,7 +19,7 @@ import json
 
 import pytest
 import yaml
-from ossie import OssieDocument
+from ossie import OssieSemanticModel
 
 _YAML_MODEL = """\
 version: 0.2.0.dev0
@@ -88,7 +88,7 @@ def test_yaml_rejects_duplicate_keys(text: str, key: str | bool | int) -> None:
     with pytest.raises(
         yaml.constructor.ConstructorError, match="duplicate key"
     ) as error:
-        OssieDocument.from_ossie_yaml(text)
+        OssieSemanticModel.from_ossie_yaml(text)
 
     assert f"duplicate key {key!r}" in str(error.value)
     assert error.value.context_mark is not None
@@ -157,7 +157,7 @@ def test_yaml_rejects_duplicate_keys(text: str, key: str | bool | int) -> None:
 @pytest.mark.parametrize("format_name", ["json", "yaml"])
 def test_json_rejects_duplicate_keys(text: str, key: str, format_name: str) -> None:
     # JSON is also accepted by the YAML entry point.
-    parse = getattr(OssieDocument, f"from_ossie_{format_name}")
+    parse = getattr(OssieSemanticModel, f"from_ossie_{format_name}")
     with pytest.raises(
         (ValueError, yaml.constructor.ConstructorError), match="duplicate key"
     ) as error:
@@ -168,7 +168,7 @@ def test_json_rejects_duplicate_keys(text: str, key: str, format_name: str) -> N
 
 def test_yaml_duplicate_key_diagnostic_identifies_both_locations() -> None:
     with pytest.raises(yaml.constructor.ConstructorError) as error:
-        OssieDocument.from_ossie_yaml(_YAML_MODEL + "    source: staging.orders\n")
+        OssieSemanticModel.from_ossie_yaml(_YAML_MODEL + "    source: staging.orders\n")
 
     assert error.value.context_mark.line == 3
     assert error.value.problem_mark.line == 5
@@ -189,7 +189,7 @@ ai_context:
   numeric: {"1": string, 1: number}
 """
     )
-    document = OssieDocument.from_ossie_yaml(text)
+    document = OssieSemanticModel.from_ossie_yaml(text)
     metadata = document.ai_context.model_dump()
 
     assert metadata["first"] == {"note": "original", "other": "kept"}
@@ -212,7 +212,7 @@ ai_context:
 def test_yaml_merge_precedence_is_preserved(mapping: str, expected: str) -> None:
     text = _YAML_MODEL + f"ai_context: {mapping}\n"
 
-    document = OssieDocument.from_ossie_yaml(text)
+    document = OssieSemanticModel.from_ossie_yaml(text)
 
     assert document.ai_context.note == expected
     assert document.ai_context.model_dump(exclude_unset=True) == yaml.safe_load(text)[
@@ -230,7 +230,7 @@ ai_context:
   sequence: {<<: [*second, *first]}
   literal: {<<: *first, <<: *second, "<<": literal}
 """
-    document = OssieDocument.from_ossie_yaml(text)
+    document = OssieSemanticModel.from_ossie_yaml(text)
 
     assert document.ai_context.model_dump(exclude_unset=True) == yaml.safe_load(text)[
         "ai_context"
@@ -247,7 +247,7 @@ def test_yaml_value_keys_are_preserved_in_mappings_and_merges(key: str) -> None:
         "  reused: *original\n"
     )
 
-    document = OssieDocument.from_ossie_yaml(text)
+    document = OssieSemanticModel.from_ossie_yaml(text)
     assert document.ai_context.original == {"=": "first"}
     assert document.ai_context.merged == {"=": "second"}
     assert document.ai_context.reused == {"=": "first"}
@@ -264,8 +264,8 @@ def test_same_key_in_separate_objects_is_preserved() -> None:
         "ai_context": {"first": {"note": 1}, "second": {"note": 2}},
     }
     for parse, text in (
-        (OssieDocument.from_ossie_json, json.dumps(data)),
-        (OssieDocument.from_ossie_yaml, yaml.safe_dump(data)),
+        (OssieSemanticModel.from_ossie_json, json.dumps(data)),
+        (OssieSemanticModel.from_ossie_yaml, yaml.safe_dump(data)),
     ):
         document = parse(text)
         assert json.loads(document.to_ossie_json()) == data
@@ -273,7 +273,7 @@ def test_same_key_in_separate_objects_is_preserved() -> None:
 
 def test_json_entry_point_still_requires_json() -> None:
     with pytest.raises(json.JSONDecodeError):
-        OssieDocument.from_ossie_json(_YAML_MODEL)
+        OssieSemanticModel.from_ossie_json(_YAML_MODEL)
 
 
 @pytest.mark.parametrize("key", ["[first, second]", "{first: second}"])
@@ -281,7 +281,7 @@ def test_yaml_collection_keys_still_raise_a_constructor_error(key: str) -> None:
     text = _YAML_MODEL + f"ai_context: {{{key}: value}}\n"
 
     with pytest.raises(yaml.constructor.ConstructorError, match="unhashable key"):
-        OssieDocument.from_ossie_yaml(text)
+        OssieSemanticModel.from_ossie_yaml(text)
 
 
 def test_json_number_and_boolean_types_are_preserved() -> None:
@@ -291,7 +291,7 @@ def test_json_number_and_boolean_types_are_preserved() -> None:
         '"ai_context":{"number":1e3,"flag":true,"missing":null}}'
     )
 
-    document = OssieDocument.from_ossie_json(text)
+    document = OssieSemanticModel.from_ossie_json(text)
     assert document.ai_context.number == 1000.0
     assert isinstance(document.ai_context.number, float)
     assert document.ai_context.flag is True
