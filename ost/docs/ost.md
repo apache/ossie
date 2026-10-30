@@ -68,10 +68,17 @@ scripts and generate the same output.
 : For each script that fails, overwrite the script with the
   regenerated script.
 
+`-d` *dir*
+: Write each regenerated script at the script's path relative to
+  *dir* (default `.`), under the output directory. Running
+  `ost a/b/c.ost` in a directory and `ost -d .. b/c.ost` in its
+  subdirectory `a` therefore write the same file. A script outside
+  *dir* is written under `ost/target` in the temporary directory
+  (usually `/tmp`), at its absolute path, as if *dir* were `/`.
+
 `--output-dir` *dir*
-: Write each regenerated script to *dir* (default `target/ost`), at
-  the script's path relative to the current directory. A script
-  outside the current directory is written at its file name.
+: Write each regenerated script under *dir* (default `target/ost`).
+  A relative *dir* is relative to the `-d` directory.
 
 `--echo`
 : Write the regenerated script to standard output as each command
@@ -552,7 +559,13 @@ each starting with *path*.
 ## FILES
 
 `target/ost/`
-: Default directory for regenerated scripts.
+: Default directory for regenerated scripts, relative to the `-d`
+  directory.
+
+`/tmp/ost/target/`
+: Directory for regenerated scripts that are outside the `-d`
+  directory. `/tmp` is the temporary directory, as given by Python's
+  `tempfile.gettempdir()`.
 
 ## SEE ALSO
 

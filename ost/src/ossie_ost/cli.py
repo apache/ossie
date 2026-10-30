@@ -22,10 +22,13 @@ from __future__ import annotations
 import argparse
 import difflib
 import sys
+import tempfile
 from pathlib import Path
 
 from ossie_ost.parser import ScriptError, split_lines
 from ossie_ost.runner import run
+
+OUTSIDE_DIR = Path(tempfile.gettempdir()) / "ost/target"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -51,10 +54,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="overwrite each script that fails with the regenerated script",
     )
     parser.add_argument(
+        "-d",
+        dest="dir",
+        metavar="dir",
+        default=".",
+        help="directory that the paths of regenerated scripts are relative "
+        "to (default: %(default)s)",
+    )
+    parser.add_argument(
         "--output-dir",
         metavar="dir",
         default="target/ost",
-        help="directory for regenerated scripts (default: %(default)s)",
+        help="directory for regenerated scripts, relative to the -d "
+        "directory (default: %(default)s)",
     )
     parser.add_argument(
         "--echo",
@@ -78,6 +90,7 @@ def main() -> None:
 
 def run_main(argv: list[str]) -> int:
     args = build_parser().parse_args(argv)
+    directory = Path(args.dir)
     output_dir = Path(args.output_dir)
     status = 0
     for name in args.files:
@@ -89,7 +102,9 @@ def run_main(argv: list[str]) -> int:
             scripts = sorted(
                 p
                 for p in path.rglob("*.ost")
-                if p.is_file() and not _is_under(p, output_dir)
+                if p.is_file()
+                and not _is_under(p, directory / output_dir)
+                and not _is_under(p, OUTSIDE_DIR)
             )
         elif path.is_file():
             scripts = [path]
@@ -98,18 +113,18 @@ def run_main(argv: list[str]) -> int:
             status = 2
             continue
         for script in scripts:
-            status = max(status, run_file(script, output_dir, args))
+            out = output_path(script, directory, output_dir)
+            status = max(status, run_file(script, out, args))
     return status
 
 
-def run_file(path: Path, output_dir: Path, args: argparse.Namespace) -> int:
+def run_file(path: Path, out: Path, args: argparse.Namespace) -> int:
     text = path.read_bytes().decode("utf-8")
     try:
         result = run(text, str(path), timeout=args.timeout, echo=_echo(args))
     except ScriptError as e:
         print(e, file=sys.stderr)
         return 2
-    out = output_dir / _relative(path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(result.output.encode("utf-8"))
     if result.passed:
@@ -153,13 +168,19 @@ def _diff(a: str, b: str, a_name: str, b_name: str) -> list[str]:
     return [line if line.endswith("\n") else line + "\n" for line in lines]
 
 
-def _relative(path: Path) -> Path:
-    """Returns the path of a script relative to the current directory,
-    or its file name if it is outside the current directory."""
+def output_path(path: Path, directory: Path, output_dir: Path) -> Path:
+    """Returns the path of the regenerated script for the script at
+    ``path``.
+
+    A script under ``directory`` is written under ``directory /
+    output_dir`` at its path relative to ``directory``. Any other script
+    is written under ``OUTSIDE_DIR`` at its absolute path, as if
+    ``directory`` were the root directory."""
+    resolved = path.resolve()
     try:
-        return path.resolve().relative_to(Path.cwd().resolve())
+        return directory / output_dir / resolved.relative_to(directory.resolve())
     except ValueError:
-        return Path(path.name)
+        return OUTSIDE_DIR / resolved.relative_to(resolved.anchor)
 
 
 def _is_under(path: Path, directory: Path) -> bool:

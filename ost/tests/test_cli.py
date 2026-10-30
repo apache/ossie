@@ -16,10 +16,11 @@
 # under the License.
 
 import io
+from pathlib import Path
 
 import pytest
 
-from ossie_ost.cli import run_main
+from ossie_ost.cli import OUTSIDE_DIR, output_path, run_main
 
 PASS = "plus(1, 2);\n> 3 : int\n"
 FAIL = "plus(1, 2);\n> 4 : int\n"
@@ -81,6 +82,32 @@ def test_directory_skips_output_dir(cwd):
     (cwd / "d/out/c.ost").write_text(FAIL)
     assert run_main(["--output-dir", "d/out", "d"]) == 0
     assert (cwd / "d/out/d/e/b.ost").read_text() == PASS
+
+
+def test_output_path_independent_of_cwd(cwd, monkeypatch):
+    out = output_path(Path("a/b/c.ost"), Path("."), Path("target/ost"))
+    assert out == Path("target/ost/a/b/c.ost")
+    (cwd / "a").mkdir()
+    monkeypatch.chdir(cwd / "a")
+    out2 = output_path(Path("b/c.ost"), Path(".."), Path("target/ost"))
+    assert out2 == Path("../target/ost/a/b/c.ost")
+    assert out2.resolve() == (cwd / "target/ost/a/b/c.ost").resolve()
+
+
+def test_output_path_absolute_output_dir(cwd):
+    out = output_path(Path("a/c.ost"), Path("."), cwd / "out")
+    assert out == cwd / "out/a/c.ost"
+
+
+def test_output_path_outside_dir(cwd):
+    (cwd / "d").mkdir()
+    x = cwd / "x/test.ost"
+    y = cwd / "y/test.ost"
+    out_x = output_path(x, Path("d"), Path("target/ost"))
+    out_y = output_path(y, Path("d"), Path("target/ost"))
+    assert out_x == OUTSIDE_DIR / x.resolve().relative_to(x.resolve().anchor)
+    assert out_y == OUTSIDE_DIR / y.resolve().relative_to(y.resolve().anchor)
+    assert out_x != out_y
 
 
 def test_malformed(cwd, capsys):
