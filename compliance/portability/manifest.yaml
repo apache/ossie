@@ -23,7 +23,8 @@
 # through every converter; a vendor-tagged input would only exercise one
 # converter, which is not what a cross-converter measurement wants.
 #
-# This manifest lists the fixtures and the single element each rung exercises.
+# This manifest lists the fixtures and the elements each rung exercises, each by
+# kind (metric or field) and name, as they appear in every variant of the rung.
 # It does NOT encode per-converter expected outputs: those are measured by a
 # grader that diffs the returned document against the input element by element
 # into the outcome vocabulary below. Conformance stays a floor (validate.py
@@ -35,9 +36,8 @@
 # expression, so it carries a single fixture.
 #
 # All fixtures validate.py-pass on apache/ossie main (9531429) with sqlglot
-# 29.0.1. Rungs M4-M8 (relationships, metric composition, date scalars, window
-# and offset functions) are held pending #354, #591 and #587; they are not in
-# this set.
+# 29.0.1. Rungs M7 and M8 (window and offset functions) are held pending #587;
+# they are not in this set.
 
 outcomes:
   # per-element, assigned by the grader after diffing input vs returned output
@@ -63,10 +63,10 @@ outcomes:
 rungs:
   - id: M0
     description: one dataset, one field, one SUM metric
-    element_under_test:
-      kind: metric
-      name: total_amount
-      construct: single-column aggregate (SUM)
+    elements_under_test:
+      - kind: metric
+        name: total_amount
+        construct: single-column aggregate (SUM)
     reference_form_primary: qualified
     variants:
       - {id: M0.ansi.qualified,     file: m0/m0_ansi_qualified.ossie.yaml,     tag: ANSI_SQL,       reference_form: qualified, role: primary}
@@ -75,31 +75,85 @@ rungs:
 
   - id: M1
     description: baseline plus one scalar calculated-column field expression, no aggregation
-    element_under_test:
-      kind: field
-      name: amount_with_tax
-      construct: scalar field expression (amount * 1.1)
+    elements_under_test:
+      - kind: field
+        name: amount_with_tax
+        construct: scalar field expression (amount * 1.1)
     reference_form_primary: n/a   # intra-dataset field expression references its sibling column bare
     variants:
       - {id: M1.scalar_field, file: m1/m1_scalar_field.ossie.yaml, tag: ANSI_SQL, reference_form: intra-dataset, role: primary}
 
   - id: M2
     description: the core aggregate set (SUM, COUNT, COUNT DISTINCT, AVG, MIN, MAX)
-    element_under_test:
-      kind: metrics
-      construct: core aggregate set
+    elements_under_test:
+      - kind: metric
+        name: sum_amount
+        construct: SUM
+      - kind: metric
+        name: count_orders
+        construct: COUNT
+      - kind: metric
+        name: distinct_customers
+        construct: COUNT DISTINCT
+      - kind: metric
+        name: avg_amount
+        construct: AVG
+      - kind: metric
+        name: min_amount
+        construct: MIN
+      - kind: metric
+        name: max_amount
+        construct: MAX
     reference_form_primary: qualified
     variants:
       - {id: M2.aggregates.qualified, file: m2/m2_aggregates_qualified.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
       - {id: M2.aggregates.bare,      file: m2/m2_aggregates_bare.ossie.yaml,      tag: ANSI_SQL, reference_form: bare,      role: reference-form-variant}
 
   - id: M3
-    description: a filtered aggregate in the portable form SUM(CASE WHEN ... THEN x ELSE 0 END)
-    element_under_test:
-      kind: metric
-      name: completed_amount
-      construct: conditional aggregation
+    description: a filtered aggregate, in the portable form SUM(CASE WHEN ... THEN x ELSE 0 END) and with the REQUIRED FILTER (WHERE ...) clause
+    elements_under_test:
+      - kind: metric
+        name: completed_amount
+        construct: conditional aggregation
     reference_form_primary: qualified
     variants:
       - {id: M3.filtered_agg.qualified, file: m3/m3_filtered_agg_qualified.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
       - {id: M3.filtered_agg.bare,      file: m3/m3_filtered_agg_bare.ossie.yaml,      tag: ANSI_SQL, reference_form: bare,      role: reference-form-variant}
+      - {id: M3.filter_clause.qualified, file: m3/m3_filter_clause_qualified.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: filter-clause-form}
+      - {id: M3.filter_clause.bare,      file: m3/m3_filter_clause_bare.ossie.yaml,      tag: ANSI_SQL, reference_form: bare,      role: filter-clause-form}
+
+  - id: M4
+    description: two datasets joined by a relationship, with a model-scoped metric across the join
+    elements_under_test:
+      - kind: metric
+        name: revenue_per_customer
+        construct: cross-dataset (model-scoped) metric over a declared relationship
+    reference_form_primary: qualified   # model-scoped metrics reference dataset.field
+    variants:
+      - {id: M4.cross_dataset, file: m4/m4_cross_dataset.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
+
+  - id: M5
+    description: a model-scoped metric composed from two others, with their expressions inlined
+    elements_under_test:
+      - kind: metric
+        name: avg_order_value
+        construct: composition inlined (total_amount / order_count as SUM(...) / NULLIF(COUNT(...), 0)); metric expressions cannot refer to other metrics
+    reference_form_primary: qualified
+    variants:
+      - {id: M5.metric_ref, file: m5/m5_metric_ref.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
+
+  - id: M6
+    description: date and time scalars from the portable core (YEAR, DATE_TRUNC, DATEDIFF part-first)
+    elements_under_test:
+      - kind: field
+        name: order_year
+        construct: YEAR
+      - kind: field
+        name: order_month_start
+        construct: DATE_TRUNC
+      - kind: metric
+        name: avg_fulfillment_days
+        construct: DATEDIFF(part, start, end) per expression_language.md
+    reference_form_primary: qualified   # the metric qualifies dataset.field; the fields reference sibling columns bare (intra-dataset)
+    variants:
+      - {id: M6.date_scalars, file: m6/m6_date_scalars.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}

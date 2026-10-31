@@ -1,0 +1,59 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# M6 ladder rung: date and time scalars from the portable core (YEAR,
+# DATE_TRUNC, DATEDIFF). DATEDIFF uses the spec's part-first argument order
+# DATEDIFF(part, start, end). The date-part fields resolve inside their own
+# dataset (sibling columns), and the DATEDIFF metric uses the qualified form.
+version: "0.2.0.dev0"
+name: m6_sales
+description: "M6: date and time scalar functions from the portable core."
+datasets:
+  - name: sales
+    source: samples.sales.orders
+    fields:
+      - name: order_date
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: order_date
+        datatype: Date
+      - name: ship_date
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: ship_date
+        datatype: Date
+      - name: order_year
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: YEAR(order_date)
+        datatype: Integer
+      - name: order_month_start
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: DATE_TRUNC('month', order_date)
+        datatype: Date
+metrics:
+  - name: avg_fulfillment_days
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: AVG(DATEDIFF('day', sales.order_date, sales.ship_date))
+    datatype: Decimal

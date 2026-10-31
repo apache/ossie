@@ -18,14 +18,19 @@
 """Outcome tests for the #576 fidelity grader.
 
 Each test builds a tiny input document and a synthetic returned document that
-exercises exactly one outcome. The last test runs the real posted M0-M3 fixtures
+exercises exactly one outcome. The identity test runs the real posted M0-M6 fixtures
 through a no-op converter: returned unchanged, every element must grade PORTABLE.
+The manifest tests check that every element the manifest names can be found by
+kind and name in each variant, and that each primary variant uses the rung's
+primary reference form.
 """
 
 import glob
 import os
 
 import grade
+
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _metric(name, dialect, expression):
@@ -144,16 +149,53 @@ def test_whitespace_is_not_a_difference():
     assert _only(grade.grade(src, returned)).outcome == grade.PORTABLE
 
 
-def test_identity_on_real_m0_m3_fixtures_is_all_portable():
-    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+def test_identity_on_real_m0_m6_fixtures_is_all_portable():
     files = sorted(
         path
-        for rung in ("m0", "m1", "m2", "m3")
-        for path in glob.glob(os.path.join(here, rung, "*.ossie.yaml"))
+        for rung in ("m0", "m1", "m2", "m3", "m4", "m5", "m6")
+        for path in glob.glob(os.path.join(HERE, rung, "*.ossie.yaml"))
     )
-    assert files, "no M0-M3 fixtures found"
+    assert files, "no M0-M6 fixtures found"
     for path in files:
         document = grade._load(path)
         report = grade.grade(document, document)
         bad = [(f.name, f.outcome) for f in report.findings if f.outcome != grade.PORTABLE]
         assert not bad, f"{os.path.basename(path)} graded non-PORTABLE: {bad}"
+
+
+def _manifest_rungs():
+    return grade._load(os.path.join(HERE, "manifest.yaml"))["rungs"]
+
+
+def _names(document, kind):
+    if kind == "metric":
+        return {metric["name"] for metric in document.get("metrics") or []}
+    return {
+        field["name"]
+        for dataset in document.get("datasets") or []
+        for field in dataset.get("fields") or []
+    }
+
+
+def test_every_manifest_element_is_found_by_kind_and_name_in_each_variant():
+    checked = 0
+    for rung in _manifest_rungs():
+        for variant in rung["variants"]:
+            document = grade._load(os.path.join(HERE, variant["file"]))
+            for element in rung["elements_under_test"]:
+                assert element["kind"] in ("metric", "field"), (rung["id"], element)
+                assert element["name"] in _names(document, element["kind"]), (
+                    variant["id"],
+                    element,
+                )
+                checked += 1
+    assert checked, "the manifest names no elements"
+
+
+def test_each_primary_variant_uses_the_rungs_primary_reference_form():
+    for rung in _manifest_rungs():
+        if rung["reference_form_primary"] == "n/a":
+            continue
+        primary = [v for v in rung["variants"] if v["role"] == "primary"]
+        assert len(primary) == 1, rung["id"]
+        assert primary[0]["reference_form"] == rung["reference_form_primary"], rung["id"]
