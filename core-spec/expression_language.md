@@ -42,6 +42,15 @@ This document defines the SQL expression language subset that Ossie-compliant im
 
 We expect there will be extensions to this language to cover concepts such as sub-queries, grain calculations, etc.  However, these will each have their own proposal.
 
+### Model Declaration vs. Querying
+
+This expression language is scoped to *declaring* a model — authoring the logical layer's metrics, fields, and filters. It does not define a query interface. The two are distinct:
+
+* **Declaration** uses expressions to define what a model is. This document governs declaration.
+* **Querying** evaluates a question against a declared model and returns rows. Query interfaces will be defined in separate documents.
+
+Consequently, the expressions defined here only declare a model: adding a dialect here does not mean Ossie supports querying with that dialect.
+
 ### Design Principles
 
 1. **Portability**: Core functions work identically across all implementations  
@@ -62,6 +71,8 @@ The core language is based on **ANSI SQL:2003 Core** (ISO/IEC 9075-2:2003), sele
 - Well-defined semantics  
 - Support for modern analytical features (window functions, CTEs)
 
+The language also requires optional SQL:2003 feature T612, the aggregate `<filter clause>` (`FILTER (WHERE ...)`), which is not part of Core. See [Conditional Aggregations](#conditional-aggregations-required).
+
 ### Namespacing and Identifier Resolution
 
 The identifiers will match standard SQL identifiers:
@@ -76,7 +87,7 @@ All identifiers MUST be valid names and follow ANSI SQL naming, with the size li
 
 Regular identifiers (unquoted) should be case insensitive.    For example, an identifier id is regular, so it would match with Id or iD.  Comparing quoted and non-quoted identifiers is DB specific, so for best portability it is best to use simple identifiers.
 
-The quote character for the Ossie dialect will follow ANSI SQL and support the double quote character (“).  This means that if an expression is in a field expression or as an identifier in the YAML, this will be the expected quoting.  However, there are some databases that use other escape characters.  Working with these have the option of either creating expressions using their dialect or having the Ossie document written in the Ossie dialect, but then having the SQL Interface queried in the local dialect.  The SQL Interface will be defined in a different document. 
+The quote character for the Ossie dialect will follow ANSI SQL and support the double quote character (“).  This means that if an expression is in a field expression or as an identifier in the YAML, this will be the expected quoting.  However, there are some databases that use other escape characters.  Working with these have the option of either creating expressions using their dialect or having the Ossie document written in the Ossie dialect, but then queried in the local dialect. 
 
 #### Comparison Table
 
@@ -94,8 +105,17 @@ Sometimes, we may refer to a **normalized identifier**.  This is a form the iden
 
 #### Name Spaces
 
-Namespaces define how an identifier is looked up in an expression.  They are covered in the semantics document.  Identifiers
+Namespaces define how an identifier is looked up in an expression.  Identifiers
 will be able to be multi-part and the parts will be separated by the '.' characters,  E.g. `dataset.field`  This matches SQL conventions.
+
+What an identifier refers to depends on where the expression appears:
+
+* In a **field expression**, identifiers refer to columns of the dataset's `source`.  A field expression cannot refer to other fields.
+* In a **dataset-scoped metric expression**, identifiers are unqualified and refer to fields declared in that dataset.
+* In a **model-scoped metric expression**, identifiers must be qualified as `dataset.field` and refer to a field declared in that dataset.
+* Metric expressions cannot refer to columns of the dataset's `source` or to other metrics.  If a field and a source column share a name, a metric expression refers to the field.
+
+See [Name Resolution](spec.md#name-resolution) in the core specification.
 
 ## SQL Language Subset
 
@@ -105,7 +125,7 @@ Ossie expressions support the following SQL constructs within any expression:
 
 | Construct | Notes                                                                                                                                                                                                                                                                                 |
 | :---- |:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Column and Metric references | Varies based on whether in Ontology or Semantic models. See namespaceing in [Ossie Discussion Point: Core Analytic Abstractions](https://docs.google.com/document/d/1si8DqU4arG18ZgX4HnRG5D_zS2X7V1s-vgNY35rvxhM/edit?tab=t.0#heading=h.le505t8uoyfy) And future Ontology documentation |
+| Column and Metric references | Varies based on whether in Ontology or Semantic models. For semantic models, see [Name Resolution](spec.md#name-resolution). See also namespacing in [Ossie Discussion Point: Core Analytic Abstractions](https://docs.google.com/document/d/1si8DqU4arG18ZgX4HnRG5D_zS2X7V1s-vgNY35rvxhM/edit?tab=t.0#heading=h.le505t8uoyfy) And future Ontology documentation |
 | Arithmetic operators | `+`, `-`, `*`, `/`, `%` (modulo)                                                                                                                                                                                                                                                      |
 | Comparison operators | `=`, `<>`, `!=`, `<`, `>`, `<=`, `>=`                                                                                                                                                                                                                                                 |
 | Logical operators | `AND`, `OR`, `NOT`                                                                                                                                                                                                                                                                    |
@@ -139,12 +159,13 @@ Ossie expressions support the following SQL constructs within any expression:
 Standard SQL operator precedence applies (highest to lowest):
 
 1. Parentheses `()`  
-2. Unary operators: `+`, `-`, `NOT`  
+2. Unary operators: `+`, `-`  
 3. Multiplication/Division: `*`, `/`, `%`  
 4. Addition/Subtraction: `+`, `-`  
 5. Comparison: `=`, `<>`, `<`, `>`, `<=`, `>=`, `LIKE`, `IN`, `BETWEEN`, `IS NULL`   
-6. Logical AND: `AND`  
-7. Logical OR: `OR`
+6. Logical NOT: `NOT`  
+7. Logical AND: `AND`  
+8. Logical OR: `OR`
 
 ---
 
@@ -217,7 +238,7 @@ APPROX_PERCENTILE(response_time, 0.95)
 ### Conditional Aggregations (REQUIRED)
 
 SUM / COUNT aggregation functions support `DISTINCT.`   
-All aggregations should support filtered aggregation:
+All aggregations must support filtered aggregation:
 
 ```sql
 -- DISTINCT modifier
@@ -225,9 +246,37 @@ SUM(DISTINCT amount)
 COUNT(DISTINCT customer_id)
 
 -- Filtered aggregation via CASE
-SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END)
+SUM(CASE WHEN status = 'completed' THEN amount END)
 COUNT(CASE WHEN status = 'completed' THEN 1 END)
+
+-- Filtered aggregation via FILTER (WHERE ...)
+SUM(amount) FILTER (WHERE status = 'completed')
+COUNT(*) FILTER (WHERE status = 'completed')
 ```
+
+#### `FILTER (WHERE ...)` (REQUIRED)
+
+Every aggregate function must support a postfix `FILTER (WHERE <predicate>)` modifier:
+
+```
+<aggregate_function>(<args>) FILTER (WHERE <predicate>)
+```
+
+The clause has the semantics of the SQL:2003 `<filter clause>` (optional feature T612): the aggregate considers only the rows for which `<predicate>` succeeds. `FILTER` is applied to the aggregate's input, not as a query `WHERE`, so it never removes output groups. A converter or engine MUST NOT rewrite an intrinsic `FILTER` predicate into a query-level `WHERE` clause when doing so would change group membership.
+
+`FILTER (WHERE ...)` is a modifier on an aggregate expression. It is not the standalone `WHERE` clause listed under [Not Supported in Expressions](#not-supported-in-expressions). The `<predicate>` must reference only fields of the same dataset as the aggregate's arguments.
+
+An engine MAY evaluate `FILTER (WHERE ...)` by rewriting it to an equivalent expression, but the result MUST be identical to the result that the `<filter clause>` semantics define.
+
+*Note (non-normative):* For an aggregate function that ignores `NULL` inputs, `FILTER (WHERE ...)` is equivalent to a `CASE` expression with no `ELSE`:
+
+```sql
+SUM(amount) FILTER (WHERE status = 'completed')                  --> SUM(CASE WHEN status = 'completed' THEN amount END)
+COUNT(*) FILTER (WHERE status = 'completed')                     --> COUNT(CASE WHEN status = 'completed' THEN 1 END)
+COUNT(DISTINCT customer_id) FILTER (WHERE status = 'completed')  --> COUNT(DISTINCT CASE WHEN status = 'completed' THEN customer_id END)
+```
+
+A non-matching row contributes `NULL`, which these functions ignore. An `ELSE 0` would count as a real row and would corrupt `AVG`, `MIN`, `MAX`, and `COUNT`. The identity does not hold for an aggregate function that does not ignore `NULL` inputs, such as `ARRAY_AGG`.
 
 ### Decomposability Reference
 
@@ -398,7 +447,7 @@ a dialect extension.
 | Function | Syntax | Description |
 | :---- | :---- | :---- |
 | `CONCAT` | `CONCAT(str1, str2, ...)` | Concatenate strings |
-| `||` | `str1 || str2` | Concatenation operator |
+| `\|\|` | `str1 \|\| str2` | Concatenation operator |
 | `LENGTH` | `LENGTH(str)` | String length in characters |
 | `LOWER` | `LOWER(str)` | Convert to lowercase |
 | `UPPER` | `UPPER(str)` | Convert to uppercase |
@@ -548,9 +597,20 @@ When, adding the query interface, window functions will be subject to where they
 ```sql
 function_name(args) OVER (
   [PARTITION BY partition_expr, ...]
-  [ORDER BY order_expr [ASC|DESC], ...]
+  [ORDER BY order_expr [ASC|DESC] [NULLS {FIRST|LAST}], ...]
   [frame_clause]
 )
+```
+
+Each `ORDER BY` item has three independent parts:
+
+- `order_expr`: the value rows are sorted by.
+- `ASC` or `DESC`: the sort direction of non-NULL values.
+- `NULLS FIRST` or `NULLS LAST`: whether NULL values of `order_expr` sort before or after its non-NULL values, regardless of the sort direction.
+
+```sql
+-- Rank non-NULL revenues from high to low, rows with a NULL revenue last
+RANK() OVER (ORDER BY revenue DESC NULLS LAST)
 ```
 
 Frame clause options:
@@ -645,6 +705,8 @@ Ossie implementations MAY support additional functions through dialect-specific 
 
 The Ossie dialect should always be supported.  Other dialects MAY be ignored.  There is no guarantee that all different dialects for an expression will act the same, so implementations should be consistent with their dialect handling.  This means that if an Ossie model has an expression written in two dialects, the implementation should deterministically choose which dialect to use.  
 
+The `dialect` field is a free-form string; the core specification does not enumerate a closed set. For a non-normative catalog of dialects well-known tools use, see [extensions/dialects.md](../extensions/dialects.md).
+
 ### Declaring Dialect-Specific Expressions
 
 ```
@@ -664,7 +726,7 @@ expression:
 | :---- | :---- | :---- | :---- | :---- | :---- |
 | Date truncation | `DATE_TRUNC('month', d)` | `DATE_TRUNC('month', d)` | `DATE_TRUNC(d, MONTH)` | `DATE_TRUNC('month', d)` | `DATE_TRUNC('month', d)` |
 | Date add | `DATEADD(day, 7, d)` | `DATEADD(day, 7, d)` | `DATE_ADD(d, INTERVAL 7 DAY)` | `DATE_ADD(d, 7)` | `d + INTERVAL '7 days'` |
-| String concat | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `a || b` |
+| String concat | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `CONCAT(a, b)` | `a \|\| b` |
 | Null coalesce | `COALESCE(a, b)` | `COALESCE(a, b)` or `NVL(a, b)` | `COALESCE(a, b)` or `IFNULL(a, b)` | `COALESCE(a, b)` | `COALESCE(a, b)` |
 | Current timestamp | `CURRENT_TIMESTAMP` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP` |
 | Substring | `SUBSTRING(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTRING(s, start, len)` | `SUBSTRING(s, start, len)` |
@@ -694,7 +756,7 @@ This section maps Ossie standard functions to their equivalents in popular BI to
 | `STDDEV_POP(x)` | `STDEVP(x)` | `STDDEV(X)` | `STDEV.P(x)` | N/A |
 | `VARIANCE(x)` | `VAR(x)` | `VARIANCE(X)` | `VAR.S(x)` | `Variance(x)` |
 | `MEDIAN(x)` | `MEDIAN(x)` | `MEDIAN(X)` | `MEDIAN(x)` | `Median(x)` |
-| `PERCENTILE_CONT(x, 0.75)` | `PERCENTILE(x, 0.75)` | `PERCENTILE(X, 75)` | `PERCENTILE.INC(x, 0.75)` | `Percentile(x, 0.75)` |
+| `PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY x)` | `PERCENTILE(x, 0.75)` | `PERCENTILE(X, 75)` | `PERCENTILE.INC(x, 0.75)` | `Percentile(x, 0.75)` |
 
 Two of the DAX mappings are not the same-named function, because DAX treats BLANK
 differently from SQL's NULL:
@@ -751,10 +813,10 @@ date range. For a row-level shift, add a number of days to the date directly, or
 
 | Ossie Standard | Tableau | Looker Studio | DAX | Sigma |
 | :---- | :---- | :---- | :---- | :---- |
-| `CASE WHEN...` | `CASE WHEN...` or `IF...` | `CASE WHEN...` | `SWITCH(TRUE(), ...)` | Only 3-argument `If(cond, t, f)`; no native multi-branch `CASE` |
+| `CASE WHEN...` | `CASE WHEN...` or `IF...` | `CASE WHEN...` | `SWITCH(TRUE(), ...)` | `If(c1, v1, c2, v2, ..., else)` (variadic; else is optional and defaults to Null) |
 | `IF(cond, t, f)` | `IF cond THEN t ELSE f END` | N/A (use CASE) | `IF(cond, t, f)` | `If(cond, t, f)` |
 | `COALESCE(a, b)` | `IFNULL(a, b)` or `ZN(a)` | `COALESCE(...)` | `COALESCE(a, b)` | `IfNull(a, b)` (2-argument only) |
-| `NULLIF(a, b)` | `IF a = b THEN NULL ELSE a END` | N/A | `IF(a = b, BLANK(), a)` | `If(a = b, Null(), a)` |
+| `NULLIF(a, b)` | `IF a = b THEN NULL ELSE a END` | N/A | `IF(a = b, BLANK(), a)` | `NullIf(a, b)` |
 
 ### Window Function Mapping
 
@@ -766,7 +828,7 @@ date range. For a row-level shift, add a number of days to the date directly, or
 | `LAG(x, 1) OVER(ORDER BY...)` | `LOOKUP(x, -1)` | N/A | `CALCULATE(x, PREVIOUSDAY(...))` | `Lag(x, 1)` — same UI-configuration caveat |
 | `RUNNING_SUM(...)` | `RUNNING_SUM(SUM(...))` | N/A | `CALCULATE(SUM(...), FILTER(...))` | `RunningSum(...)` — same UI-configuration caveat |
 
-Sigma's table-calculation functions (`RowNumber`, `Rank`, `RunningSum`, `RunningAvg`, `Lag`, `Lead`, etc.) resolve their partition/order context from workbook UI configuration (which pivot/table the calculation is attached to) rather than from arguments passed in the formula text itself. Because that context isn't recoverable from the formula string alone, the Sigma converter (`converters/sigma/`) treats these as untranslatable to ANSI SQL and carries the original Sigma formula through in the `SIGMA` dialect only — see `converters/sigma/LIMITATIONS.md`.
+Sigma's table-calculation functions (`RowNumber`, `Rank`, `RunningSum`, `RunningAvg`, `Lag`, `Lead`, etc.) resolve their partition/order context from workbook UI configuration (which pivot/table the calculation is attached to) rather than from arguments passed in the formula text itself. Because that context isn't recoverable from the formula string alone, the [Sigma converter](https://github.com/apache/ossie-converters/tree/main/sigma) treats these as untranslatable to ANSI SQL and carries the original Sigma formula through in the `SIGMA` dialect only — see its [`LIMITATIONS.md`](https://github.com/apache/ossie-converters/blob/main/sigma/LIMITATIONS.md).
 
 ---
 

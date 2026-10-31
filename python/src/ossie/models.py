@@ -15,15 +15,112 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import json
+import math
 from enum import Enum
-from typing import Any, Optional, Union
+from typing import Annotated, Any, Literal, Optional, Union
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializationInfo,
+    SerializerFunctionWrapHandler,
+    StrictBool,
+    TypeAdapter,
+    model_serializer,
+    model_validator,
+)
+
+from ossie._loading import UniqueKeyLoader, unique_json_object
+
+
+_AI_CONTEXT_FIELDS = frozenset({"instructions", "synonyms", "examples"})
+_AI_CONTEXT_EXTRAS = TypeAdapter(dict[str, Any])
+
+#: Paths listed in a diagnostic before the rest are counted instead.
+_MAX_REPORTED = 20
+
+# Each reads as a whole clause, so one can be followed by the paths it applies to.
+_NULL = "property set to null, which the schema does not allow; omit it instead"
+_NON_FINITE = "property holds a number JSON cannot represent, so it cannot round-trip"
+
+
+def _cyclic(path: str) -> ValueError:
+    return ValueError(
+        f"document contains a cyclic alias at {path or 'the root'}, "
+        f"which cannot be represented as an Ossie document"
+    )
+
+
+def _invalid_below(
+    node: Any,
+    path: str,
+    active: tuple[int, ...],
+    walked: set[tuple[int, bool, bool]],
+    free_form: bool,
+    ai_context: bool,
+) -> list[tuple[str, str]]:
+    """Paths below `node` holding a value an Ossie document cannot carry.
+
+    A null is one, because no property in `ossie-schema.json` is nullable. So is a
+    non-finite number: `yaml.safe_load` reads `.nan` and `.inf`, and `json.loads`
+    accepts the non-standard `NaN`, `Infinity` and `-Infinity`, none of which JSON can
+    express -- a `NaN` reaching `to_ossie_json` comes back out as `null`.
+
+    `free_form` marks the parts of `ai_context` where a null is legal: its object form
+    sets `additionalProperties: true`, so an extra key may hold any value. A non-finite
+    number is rejected there too, since it still cannot be serialized.
+
+    `active` holds the containers on the current branch, so a self-reference raises
+    while an anchor reused on a sibling branch still walks. `walked` holds containers
+    already covered: one reached again through another alias is not reported twice,
+    because an anchor is one property in the source, and because a chain of anchors
+    shaped `[*previous, *previous]` expands to 2^n copies of the anchored subtree.
+    """
+    if isinstance(node, float) and not math.isfinite(node):
+        return [(path, _NON_FINITE)]
+    if not isinstance(node, (dict, list)):
+        return []
+    if id(node) in active:
+        raise _cyclic(path)
+    seen = (id(node), free_form, ai_context)
+    if seen in walked:
+        return []
+    walked.add(seen)
+    inner = (*active, id(node))
+    found: list[tuple[str, str]] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            where = f"{path}.{key}" if path else str(key)
+            legal_null = free_form or (ai_context and key not in _AI_CONTEXT_FIELDS)
+            if value is None:
+                if not legal_null:
+                    found.append((where, _NULL))
+            else:
+                found += _invalid_below(
+                    value, where, inner, walked, legal_null, key == "ai_context"
+                )
+    else:
+        for index, item in enumerate(node):
+            found += _invalid_below(
+                item, f"{path}[{index}]", inner, walked, free_form, False
+            )
+    return found
+
+
+def _invalid_properties(node: Any) -> list[tuple[str, str]]:
+    """Return every property holding a value an Ossie document cannot carry.
+
+    Raises `ValueError` if the document holds a cyclic alias.
+    """
+    return _invalid_below(node, "", (), set(), False, False)
 
 
 class OssieDialect(str, Enum):
-    """Supported SQL and expression language dialects."""
+    """Well-known dialect values. The field accepts any string; see
+    `extensions/dialects.md`."""
 
     ANSI_SQL = "ANSI_SQL"
     SNOWFLAKE = "SNOWFLAKE"
@@ -35,7 +132,10 @@ class OssieDialect(str, Enum):
     SIGMA = "SIGMA"
     THOUGHTSPOT = "THOUGHTSPOT"
     DAX = "DAX"
+    HOLISTICS_AQL = "HOLISTICS_AQL"
     OSSIE_SQL_2026 = "OSSIE_SQL_2026"
+    TRINO = "TRINO"
+    CLICKHOUSE = "CLICKHOUSE"
 
 
 class OssieDataType(str, Enum):
@@ -64,7 +164,8 @@ _TEMPORAL_DATA_TYPES = frozenset(
 
 
 class OssieVendor(str, Enum):
-    """Well-known vendor names for custom extensions."""
+    """Well-known vendor values. The field accepts any string; see
+    `extensions/vendors.md`."""
 
     COMMON = "COMMON"
     SNOWFLAKE = "SNOWFLAKE"
@@ -73,12 +174,18 @@ class OssieVendor(str, Enum):
     DATABRICKS = "DATABRICKS"
     GOODDATA = "GOODDATA"
     SEMANTIDO = "SEMANTIDO"
+    HONEYDEW = "HONEYDEW"
     WISDOM = "WISDOM"
+    POWER_BI = "POWER_BI"
     SIGMA = "SIGMA"
+    THOUGHTSPOT = "THOUGHTSPOT"
+    HEX = "HEX"
+    ATACCAMA = "ATACCAMA"
+    OMNI = "OMNI"
 
 
 class OssieAIContextObject(BaseModel):
-    """Structured AI context with instructions, synonyms, and examples."""
+    """Structured AI context; free-form extras retain null values when serialized."""
 
     model_config = ConfigDict(frozen=True, extra="allow")
 
@@ -86,48 +193,75 @@ class OssieAIContextObject(BaseModel):
     synonyms: Optional[tuple[str, ...]] = None
     examples: Optional[tuple[str, ...]] = None
 
+    @model_serializer(mode="wrap")
+    def _serialize_context(self, handler: SerializerFunctionWrapHandler, info: SerializationInfo):
+        data = handler(self)
+        if info.exclude_none and self.model_extra:
+            # Null extras are valid data, unlike omitted optional model fields.
+            # Let Pydantic apply include/exclude so an excluded key stays excluded.
+            null_extras = {key: value for key, value in self.model_extra.items() if value is None}
+            data.update(
+                _AI_CONTEXT_EXTRAS.dump_python(
+                    null_extras, include=info.include, exclude=info.exclude
+                )
+            )
+        return data
+
 
 OssieAIContext = Union[str, OssieAIContextObject]
 
 
 class OssieCustomExtension(BaseModel):
-    """Vendor-specific metadata as a serialized JSON string."""
+    """Vendor-specific metadata carried as an opaque string."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-    vendor_name: str
+    vendor_name: str = Field(min_length=1)
     data: str
 
 
 class OssieDialectExpression(BaseModel):
     """Expression in a specific dialect."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-    dialect: OssieDialect
-    expression: str
+    # Free-form; see OssieDialect for the well-known values.
+    dialect: str = Field(min_length=1)
+    expression: str = Field(min_length=1)
 
 
 class OssieExpression(BaseModel):
     """Expression definition with multi-dialect support."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-    dialects: list[OssieDialectExpression] = Field(..., min_length=1)
+    # Primary, portable expression written in OSSIE_SQL_2026.
+    sql: Optional[str] = Field(default=None, min_length=1)
+    dialects: Optional[list[OssieDialectExpression]] = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _require_sql_or_dialects(self) -> "OssieExpression":
+        if self.sql is None and not self.dialects:
+            raise ValueError("expression requires at least one of 'sql' or 'dialects'")
+        return self
 
 
 class OssieDimension(BaseModel):
     """Dimension metadata on a field."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-    is_time: Optional[bool] = None
+    # The schema types this `boolean`, which admits only true and false. A plain
+    # `bool` would let pydantic's lax mode accept "yes", "1", 1 or 1.0 and store a
+    # real boolean, so input the schema forbids is silently rewritten into output it
+    # allows, and the mistake is never reported.
+    is_time: Optional[StrictBool] = None
 
 
 class OssieField(BaseModel):
     """Row-level attribute for grouping, filtering, and metric expressions."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str = Field(..., min_length=1)
     expression: OssieExpression
@@ -152,25 +286,44 @@ class OssieField(BaseModel):
         return self.datatype in _TEMPORAL_DATA_TYPES
 
 
+class OssieMetric(BaseModel):
+    """Quantitative measure defined on business data."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str = Field(..., min_length=1)
+    expression: OssieExpression
+    description: Optional[str] = None
+    datatype: Optional[OssieDataType] = None
+    ai_context: Optional[OssieAIContext] = None
+    custom_extensions: Optional[list[OssieCustomExtension]] = None
+
+
 class OssieDataset(BaseModel):
     """Logical dataset representing a business entity (fact or dimension table)."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str = Field(..., min_length=1)
     source: str = Field(..., min_length=1)
-    primary_key: Optional[list[str]] = None
-    unique_keys: Optional[list[list[str]]] = None
+    # The schema gives both `minItems: 1`, as it does the relationship column arrays.
+    # An empty key names nothing, and `Field` mirrors minItems as `min_length` here.
+    primary_key: Optional[list[str]] = Field(default=None, min_length=1)
+    unique_keys: Optional[list[Annotated[list[str], Field(min_length=1)]]] = Field(
+        default=None, min_length=1
+    )
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
     fields: Optional[list[OssieField]] = None
+    # Dataset-scoped: expressions reference this dataset's declared fields by single-part (unqualified) name.
+    metrics: Optional[list[OssieMetric]] = None
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
 
 class OssieRelationship(BaseModel):
     """Foreign key relationship between datasets."""
 
-    model_config = ConfigDict(frozen=True, populate_by_name=True)
+    model_config = ConfigDict(frozen=True, extra="forbid", populate_by_name=True)
 
     name: str = Field(..., min_length=1)
     from_dataset: str = Field(..., alias="from", min_length=1)
@@ -181,29 +334,17 @@ class OssieRelationship(BaseModel):
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
 
-class OssieMetric(BaseModel):
-    """Quantitative measure defined on business data."""
-
-    model_config = ConfigDict(frozen=True)
-
-    name: str = Field(..., min_length=1)
-    expression: OssieExpression
-    description: Optional[str] = None
-    datatype: Optional[OssieDataType] = None
-    ai_context: Optional[OssieAIContext] = None
-    custom_extensions: Optional[list[OssieCustomExtension]] = None
-
-
 class OssieSemanticModel(BaseModel):
     """Semantic model: the datasets, relationships, and metrics for one business domain."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str = Field(..., min_length=1)
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
     datasets: list[OssieDataset] = Field(..., min_length=1)
     relationships: Optional[list[OssieRelationship]] = None
+    # Model-scoped: expressions reference fields by multi-part name (dataset.field) and may span datasets.
     metrics: Optional[list[OssieMetric]] = None
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
@@ -213,7 +354,10 @@ class OssieDocument(OssieSemanticModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    version: str = "0.2.0.dev0"
+    # The schema pins this with `const`, so a document may not declare any other
+    # version. Mirrored as a Literal rather than a plain str, which would let the
+    # package serialize a version the schema rejects.
+    version: Literal["0.2.0.dev0"] = "0.2.0.dev0"
 
     @model_serializer(mode="wrap")
     def _serialize_document(self, handler: SerializerFunctionWrapHandler):
@@ -224,10 +368,75 @@ class OssieDocument(OssieSemanticModel):
         return data
 
     def to_ossie_yaml(self, **kwargs: Any) -> str:
-        """Serialize to Ossie-compliant YAML (uses field aliases and excludes None values)."""
-        data = self.model_dump(by_alias=True, exclude_none=True, mode="json", **kwargs)
+        """Serialize to Ossie YAML using aliases and omitting optional fields set to None.
+
+        Null-valued AI context extras are preserved. Both defaults can be overridden
+        through kwargs. ``mode`` cannot: YAML output needs the plain scalars only the
+        JSON mode produces.
+        """
+        kwargs.setdefault("by_alias", True)
+        kwargs.setdefault("exclude_none", True)
+        data = self.model_dump(mode="json", **kwargs)
         return yaml.dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
     def to_ossie_json(self, **kwargs: Any) -> str:
-        """Serialize to Ossie-compliant JSON (uses field aliases and excludes None values)."""
-        return self.model_dump_json(by_alias=True, exclude_none=True, **kwargs)
+        """Serialize to Ossie JSON using aliases and omitting optional fields set to None.
+
+        Null-valued AI context extras are preserved. Both defaults can be overridden
+        through kwargs.
+        """
+        kwargs.setdefault("by_alias", True)
+        kwargs.setdefault("exclude_none", True)
+        return self.model_dump_json(**kwargs)
+
+    @classmethod
+    def from_ossie_yaml(cls, text: str) -> "OssieDocument":
+        """Parse an Ossie YAML document, checking what pydantic alone cannot.
+
+        The counterpart of :meth:`to_ossie_yaml`. ``model_validate`` stays lenient,
+        because a caller building a model in Python routinely passes a value that may
+        be ``None`` -- ``label=dim.label`` -- and means "omit it". A document is
+        different: it is the artefact the schema governs, so these rules apply to it
+        and not to the models.
+
+        Rejected here: a duplicate mapping key, a property set to null, a missing
+        ``version``, a non-finite number, and a cyclic alias. YAML merge overrides
+        remain supported. The field types reject the rest of the schema.
+
+        A diagnostic lists at most :data:`_MAX_REPORTED` paths and counts the rest, so
+        fixing the ones named can reveal more on the next run.
+
+        Not checked: the free-form content of ``ai_context``, whose object form sets
+        ``additionalProperties: true``. A value there outside JSON's own data model --
+        a YAML set or date, a non-string mapping key -- is passed through and
+        serialized as whatever it maps to, exactly as ``model_validate`` does today.
+        Auditing that, and bounding how far a shared alias graph expands on the way
+        out, is a property of the models rather than of parsing, and is not in scope
+        here.
+        """
+        return cls._from_document(yaml.load(text, Loader=UniqueKeyLoader))
+
+    @classmethod
+    def from_ossie_json(cls, text: str) -> "OssieDocument":
+        """Parse an Ossie JSON document, checking what pydantic alone cannot.
+
+        The counterpart of :meth:`to_ossie_json`; see :meth:`from_ossie_yaml` for what
+        is and is not checked.
+        """
+        return cls._from_document(json.loads(text, object_pairs_hook=unique_json_object))
+
+    @classmethod
+    def _from_document(cls, data: Any) -> "OssieDocument":
+        for reason in (_NULL, _NON_FINITE):
+            paths = [path for path, why in _invalid_properties(data) if why == reason]
+            if paths:
+                # A document may hold many; list enough to act on and count the rest.
+                listed = ", ".join(paths[:_MAX_REPORTED])
+                if len(paths) > _MAX_REPORTED:
+                    listed += f", and {len(paths) - _MAX_REPORTED} more"
+                raise ValueError(f"{reason}: {listed}")
+        if isinstance(data, dict) and "version" in cls.model_fields and "version" not in data:
+            # The field carries a default so Python construction needs no version, but
+            # the schema lists it as required, so a document without one is invalid.
+            raise ValueError("document is missing the required property: version")
+        return cls.model_validate(data)

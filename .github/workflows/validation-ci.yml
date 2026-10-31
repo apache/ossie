@@ -26,9 +26,12 @@ on:
       - "validation/**"
       - "python/**"
       - "core-spec/**"
+      - "extensions/**"
       - "ontology/**"
       - "examples/flights*.yaml"
       - "examples/tpcds_semantic_model.yaml"
+      - "examples/renamed_fields.yaml"
+      - "examples/foaf_owl_import.yaml"
       - ".github/workflows/validation-ci.yml"
       - "scripts/generate-spec-types.py"
   pull_request:
@@ -37,9 +40,12 @@ on:
       - "validation/**"
       - "python/**"
       - "core-spec/**"
+      - "extensions/**"
       - "ontology/**"
       - "examples/flights*.yaml"
       - "examples/tpcds_semantic_model.yaml"
+      - "examples/renamed_fields.yaml"
+      - "examples/foaf_owl_import.yaml"
       - ".github/workflows/validation-ci.yml"
       - "scripts/generate-spec-types.py"
 
@@ -59,12 +65,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           version: "0.12.19"
 
@@ -89,6 +95,9 @@ jobs:
           uv run validation/validate.py examples/flights.ontology.yaml --schema ontology/ontology.json
           uv run validation/validate.py examples/flights.semantic_model.yaml
           uv run validation/validate.py examples/flights.mapping.yaml --schema ontology/mapping.json
+
+      - name: Validate renamed-fields example
+        run: uv run validation/validate.py examples/renamed_fields.yaml
 
       - name: Validate FOAF example
         run: uv run validation/validate.py examples/foaf_owl_import.yaml --schema ontology/ontology.json

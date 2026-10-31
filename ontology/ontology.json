@@ -193,6 +193,7 @@
         },
         "object_mappings": {
           "type": "array",
+          "minItems": 1,
           "items": {
             "$ref": "#/$defs/ObjectMapping"
           },
@@ -200,6 +201,7 @@
         },
         "link_mappings": {
           "type": "array",
+          "minItems": 1,
           "items": {
             "$ref": "#/$defs/LinkMapping"
           },
@@ -207,6 +209,7 @@
         }
       },
       "required": ["concept"],
+      "anyOf": [{ "required": ["object_mappings"] }, { "required": ["link_mappings"] }],
       "additionalProperties": false
     },
     "ConceptType": {
@@ -227,12 +230,14 @@
         },
         "referent_mappings": {
           "type": "array",
+          "minItems": 1,
           "items": {
             "$ref": "#/$defs/ReferentMapping"
           }
         }
       },
       "required": ["relationship"],
+      "anyOf": [{ "required": ["expression"] }, { "required": ["referent_mappings"] }],
       "additionalProperties": false
     },
     "Role": {
@@ -264,6 +269,7 @@
         },
         "referent_mappings": {
           "type": "array",
+          "minItems": 1,
           "items": {
             "$ref": "#/$defs/ReferentMapping"
           },
@@ -273,6 +279,7 @@
           "$ref": "#/$defs/Expression"
         }
       },
+      "anyOf": [{ "required": ["expression"] }, { "required": ["referent_mappings"] }],
       "additionalProperties": false
     },
     "LinkMapping": {

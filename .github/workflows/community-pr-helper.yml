@@ -59,7 +59,7 @@ jobs:
                 '',
                 'No ICLA is required to contribute. If you are elected as a committer in the future, you will need an [Individual Contributor License Agreement (ICLA)](https://www.apache.org/licenses/contributor-agreements.html) on file with the ASF.',
                 '',
-                '**Questions?** Ask in the PR comments or join us on [Slack](https://join.slack.com/t/apache-ossie/shared_invite/zt-42zw4rflt-Gpve8_NFJq7AsdAQTY~SCg).',
+                '**Questions?** Ask in the PR comments or join us on [Slack](https://join.slack.com/t/apache-ossie/shared_invite/zt-4drnzih1v-T0tcnaZZoLlddLh_plY~bw).',
                 '',
                 'We appreciate your contribution!'
               ].join('\n')

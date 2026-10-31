@@ -37,13 +37,15 @@
   "$defs": {
     "Dialect": {
       "type": "string",
-      "enum": ["ANSI_SQL", "SNOWFLAKE", "MDX", "TABLEAU", "DATABRICKS", "MAQL", "BIGQUERY", "SIGMA", "THOUGHTSPOT", "DAX", "OSSIE_SQL_2026"],
-      "description": "Supported SQL and expression language dialects"
+      "minLength": 1,
+      "examples": ["OSSIE_SQL_2026", "ANSI_SQL", "DB_DIALECT", "BI_EXPRESSION", "SEMANTIC_MODEL_EXPRESSION", "PROGRAMMING_LANGUAGE"],
+      "description": "Expression language a metric or field expression is declared in. Any non-empty string is accepted. OSSIE_SQL_2026 is the only dialect this specification defines; others are opaque to Ossie. See extensions/dialects.md."
     },
     "Vendor": {
       "type": "string",
-      "examples": ["COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA", "WISDOM", "POWER_BI"],
-      "description": "Vendor name for custom extensions. Any string value is accepted."
+      "minLength": 1,
+      "examples": ["COMMON", "BI_TOOL", "DB_VENDOR", "SEMANTIC_LAYER"],
+      "description": "Vendor name for custom extensions. Any non-empty string is accepted. See extensions/vendors.md."
     },
     "AIContext": {
       "description": "Additional context for AI tools",
@@ -86,7 +88,7 @@
         },
         "data": {
           "type": "string",
-          "description": "JSON string containing vendor-specific data"
+          "description": "Opaque string of vendor-specific data that Ossie carries but does not interpret"
         }
       },
       "required": ["vendor_name", "data"],
@@ -101,6 +103,7 @@
         },
         "expression": {
           "type": "string",
+          "minLength": 1,
           "description": "SQL or dialect-specific expression"
         }
       },
@@ -111,6 +114,11 @@
       "type": "object",
       "description": "Expression definition with multi-dialect support",
       "properties": {
+        "sql": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Primary, portable expression written in OSSIE_SQL_2026. When both this field and an OSSIE_SQL_2026 entry in `dialects` are present, this field is authoritative."
+        },
         "dialects": {
           "type": "array",
           "items": {
@@ -119,7 +127,10 @@
           "minItems": 1
         }
       },
-      "required": ["dialects"],
+      "anyOf": [
+        { "required": ["sql"] },
+        { "required": ["dialects"] }
+      ],
       "additionalProperties": false
     },
     "DataType": {
@@ -207,7 +218,8 @@
           "items": {
             "type": "string"
           },
-          "description": "Primary key columns (single or composite)"
+          "minItems": 1,
+          "description": "Dataset fields that uniquely identify rows"
         },
         "unique_keys": {
           "type": "array",
@@ -215,9 +227,11 @@
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "minItems": 1
           },
-          "description": "Array of unique key definitions (each can be single or composite)"
+          "minItems": 1,
+          "description": "Array of unique key definitions, each a list of dataset fields"
         },
         "description": {
           "type": "string",
@@ -230,7 +244,15 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/Field"
-          }
+          },
+          "description": "The dataset's declared fields. Within the dataset, field names and metric names share one namespace and must all be unique across the two."
+        },
+        "metrics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Metric"
+          },
+          "description": "Dataset-scoped metrics: aggregations evaluated at this dataset's row level, for measures that semantically belong to the dataset. The expression references this dataset's declared fields by single-part (unqualified) name and must resolve entirely within this dataset; an expression that must reference another dataset belongs in the model-scoped metrics instead. Referencing a column of the source that is not a declared field is a future extension. Within the dataset, field names and metric names share one namespace and must all be unique across the two."
         },
         "custom_extensions": {
           "type": "array",
@@ -267,7 +289,7 @@
             "type": "string"
           },
           "minItems": 1,
-          "description": "Foreign key columns in the 'from' dataset"
+          "description": "Array of field names in the 'from' dataset (foreign key fields)"
         },
         "to_columns": {
           "type": "array",
@@ -275,7 +297,7 @@
             "type": "string"
           },
           "minItems": 1,
-          "description": "Primary/unique key columns in the 'to' dataset"
+          "description": "Array of field names in the 'to' dataset (primary or unique key fields)"
         },
         "ai_context": {
           "$ref": "#/$defs/AIContext"
@@ -358,7 +380,7 @@
           "items": {
             "$ref": "#/$defs/Metric"
           },
-          "description": "Quantifiable measures spanning datasets"
+          "description": "Model-scoped metrics: aggregations that span datasets or need to be aware of cross-dataset concepts. Expressions reference fields by multi-part name (dataset.field) and may combine fields from more than one dataset. Names must be unique across the model. See core-spec/spec.md#metric-scoping."
         },
         "custom_extensions": {
           "type": "array",

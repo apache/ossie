@@ -705,8 +705,8 @@ fields:
         link_mappings:
           - object_mapping:
               referent_mappings:
-                relationship: Item.nr
-                expression: METRICS.SKU
+                - relationship: Item.nr
+                  expression: METRICS.SKU
             relationship: active
             children:
               - object_mapping:

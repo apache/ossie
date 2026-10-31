@@ -37,9 +37,7 @@
 - [ ] New or modified terms are defined and documented
 
 ### Converters
-- [ ] Converter logic in `converters/` is updated to reflect spec or ontology changes
-- [ ] New converters include tests under the converter's test directory
-- [ ] If adding a new converter, `.github/labeler.yml` is updated with the new path
+- [ ] Spec or ontology changes that affect converters have a matching issue or PR in [apache/ossie-converters](https://github.com/apache/ossie-converters)
 
 ### Validation
 - [ ] Validation rules in `validation/` are updated if the spec changed
@@ -51,7 +49,7 @@
 - [ ] `CONTRIBUTING.md` is updated if the contribution process changed
 
 ### Examples
-- [ ] `examples/` are added or updated for any new spec constructs or converter support
+- [ ] `examples/` are added or updated for any new spec constructs
 
 ### Tests
 - [ ] All existing tests pass (`pytest` / CI green)

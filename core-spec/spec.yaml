@@ -28,20 +28,8 @@ version: 0.2.0.dev0
 # Enumerations
 # Standard enums used throughout the specification
 
-# Supported expression language dialects
-# Auto-generated from ossie-schema.json ($defs.Dialect.enum).
-dialects:
-  - "ANSI_SQL"              # Standard SQL dialect
-  - "SNOWFLAKE"             # Snowflake
-  - "MDX"                   # Multi-Dimensional Expressions
-  - "TABLEAU"               # Tableau
-  - "DATABRICKS"            # Databricks SQL
-  - "MAQL"                  # GoodData MAQL (Multi-Dimensional Analytical Query Language)
-  - "BIGQUERY"              # Google BigQuery GoogleSQL
-  - "SIGMA"                 # Sigma Computing spreadsheet-style formula language
-  - "THOUGHTSPOT"           # ThoughtSpot formula language (not SQL)
-  - "DAX"                   # Data Analysis Expressions (Power BI / Analysis Services)
-  - "OSSIE_SQL_2026"        # Ossie portable SQL expression language (see expression_language.md)
+# The `dialect` field is a free-form string, not a closed set. OSSIE_SQL_2026 is
+# the only dialect this spec defines. See extensions/dialects.md.
 
 # Supported logical data types for fields and metrics
 # Auto-generated from ossie-schema.json ($defs.DataType.enum).
@@ -57,8 +45,8 @@ datatypes:
   - "DateTimeTz"            # Instant identified using offset or timezone context
   - "Opaque"                # Known type outside the portable vocabulary
 
-# Vendor name for custom extensions (free-form string)
-# Examples: "COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA", "WISDOM", "POWER_BI"
+# Vendor name for custom extensions (free-form string).
+# See the known-vendor catalog in extensions/vendors.md.
 vendor_name: string
 
 
@@ -90,8 +78,11 @@ datasets: []
 # See Relationships section below for detailed structure
 relationships: []
 
-# Optional:
-# These metrics can span one or more logical datasets and use relationships
+# Optional: Model-scoped metrics
+# For aggregations that span datasets or need to be aware of cross-dataset concepts.
+# Expressions reference fields by multi-part name (e.g., SUM(orders.amount)) and
+# may combine fields from more than one dataset.
+# Names MUST be unique across the model.
 # See Metrics section below for detailed structure
 metrics: []
 
@@ -113,28 +104,30 @@ datasets:
     # Format should be either database_name.schema_name.table_name or query
     source: string
 
-    # Optional: Primary key definition that uniquely identifies rows in this dataset
-    # Can be a single column or a composite of multiple columns
+    # Optional: Dataset fields that uniquely identify rows
+    # These are fields declared in the dataset, not columns of its source
+    # Can be a single field or a composite of multiple fields
     # This is the preferred unique identifier for this dataset and is used in relationships to determine many-to-one or one-to-one.
     # Examples:
     # primary_key: [customer_id]            # Simple primary key
     #
     # primary_key: [order_id, line_number]  # Composite primary key
-    primary_key: []  # Array of column names (single or composite)
+    primary_key: []  # Array of field names
 
-    # Optional: Array of unique key definitions that uniquely identify rows in this dataset
-    # Each unique key can be a single column or a composite of multiple columns
+    # Optional: Array of unique key definitions, each a list of dataset fields
+    # These are fields declared in the dataset, not columns of its source
+    # Each unique key can be a single field or a composite of multiple fields
     # Used for determining relationship type of either many-to-one or one-to-one
     # Examples:
     # unique_keys:
-    #   - [column1]
-    #   - [column2, column3]
+    #   - [field1]
+    #   - [field2, field3]
     #
     # unique_keys:
-    #   - [column1, column2]
-    #   - [column3, column4]
+    #   - [field1, field2]
+    #   - [field3, field4]
     unique_keys:
-      - []  # Array of column names (single or composite)
+      - []  # Array of field names
 
     # Optional: Human-readable description of the logical dataset
     description: string
@@ -146,6 +139,23 @@ datasets:
     # Optional: Row-level calculations for grouping, filtering, and in metric expressions
     # See Fields section below for detailed structure
     fields: []
+
+    # Optional: Dataset-scoped metrics
+    # Metrics that semantically belong to this dataset, aggregating its own
+    # fields at the dataset's row level. Same structure as model-scoped metrics;
+    # see the Metrics section below.
+    #
+    # Rules (see core-spec/spec.md#metric-scoping):
+    # - The expression MUST reference only this dataset's declared fields,
+    #   written by single-part (unqualified) name: SUM(net_amount).
+    # - It MUST NOT reference another dataset; a metric that must do so is
+    #   model-scoped and belongs in the model-root metrics.
+    # - Referencing a column of the source that is not a declared field is a
+    #   future extension.
+    # - Field names and metric names share one namespace; every name MUST be
+    #   unique across the two.
+    # - Referenced from outside the dataset as dataset_name.metric_name.
+    metrics: []
 
     # Optional: Vendor-specific attributes for extensibility
     custom_extensions:
@@ -168,21 +178,23 @@ relationships:
     # References a logical dataset name
     to: string
 
-    # Required: Array of column names in the "from" dataset (foreign key columns)
-    # For simple relationships, use a single column: [column1]
-    # For composite relationships, use multiple columns: [column1, column2]
-    # The order of columns must correspond to the order in to_columns
+    # Required: Array of field names in the "from" dataset (foreign key fields)
+    # These are fields declared in the dataset, not columns of its source
+    # For simple relationships, use a single field: [field1]
+    # For composite relationships, use multiple fields: [field1, field2]
+    # The order of fields must correspond to the order in to_columns
     # Examples:
     #   - [customer_id]              # Simple foreign key
     #   - [order_id, line_number]    # Composite foreign key
-    from_columns: []  # Array of column names
+    from_columns: []  # Array of field names
 
-    # Required: Array of column names in the "to" dataset (primary or unique key columns)
-    # Must have the same number of columns as from_columns in corresponding order
+    # Required: Array of field names in the "to" dataset (primary or unique key fields)
+    # These are fields declared in the dataset, not columns of its source
+    # Must have the same number of fields as from_columns in corresponding order
     # Examples:
     #   - [id]                       # Simple key
     #   - [order_id, line_number]    # Composite key
-    to_columns: []  # Array of column names
+    to_columns: []  # Array of field names
 
     # Optional: Additional context for AI tools (e.g., synonyms, business context)
     # Helps LLMs understand when and why the datasets should be joined
@@ -204,9 +216,12 @@ fields:
     # Supports multiple SQL dialects for cross-platform compatibility
     # Each field can have expressions in different dialects for portability
     # Can be a simple column reference or a complex scalar expression
+    # Identifiers refer to columns of the dataset's source, not to other fields
+    # At least one of the portable `sql` or `dialects` must be present; either may stand alone
     expression:
+      sql: string  # Primary, portable OSSIE_SQL_2026 form, e.g., "customer_id", "first_name || ' ' || last_name"
       dialects:
-        - dialect: string  # Must be one of the values from 'dialects' enum above, Default: "ANSI_SQL"
+        - dialect: string  # Free-form string; OSSIE_SQL_2026 is the only dialect the spec defines
           expression: string  # SQL scalar expression, e.g., "customer_id", "first_name || ' ' || last_name", "UPPER(email)"
 
     # Optional: Dimension metadata
@@ -252,6 +267,10 @@ fields:
 # Metrics Schema
 # Quantitative measures defined on business data
 # Represents key calculations like sums, averages, ratios, etc.
+#
+# The same structure is used in two placements:
+# - the model-root metrics (model-scoped): may span datasets
+# - datasets[].metrics     (dataset-scoped): must resolve within one dataset
 metrics:
   # Required: Unique identifier for the metric
   - name: string
@@ -259,9 +278,15 @@ metrics:
     # Required: Expression definition with dialect support
     # Supports multiple SQL dialects for cross-platform compatibility
     # Each metric can have expressions in different dialects for portability
+    # References are dataset fields, not columns of the dataset's source
+    # Model-scoped metrics qualify them as dataset.field; dataset-scoped
+    # metrics use unqualified field names
+    # Metrics cannot reference other metrics
+    # At least one of the portable `sql` or `dialects` must be present; either may stand alone
     expression:
+      sql: string  # Primary, portable OSSIE_SQL_2026 form, e.g., "SUM(orders.sales)", "AVG(orders.amount)"
       dialects:
-        - dialect: string  # Must be one of the values from 'dialects' enum above, Default: "ANSI_SQL"
+        - dialect: string  # Free-form string; OSSIE_SQL_2026 is the only dialect the spec defines
           expression: string  # Full SQL expression with aggregate functions, e.g., "SUM(orders.sales)", "AVG(orders.amount)"
 
     # Optional: Human-readable description of the metric

@@ -28,16 +28,10 @@
 
 # Lock files and dependency manifests
 **/*.lock
-**/go.sum
 
 # Data/config files that cannot contain comments
 **/*.json
 **/*.csv
-
-# Microsoft BI fixture formats (TOM/BIM/TMDL treat leading lines as object descriptions)
-**/*.bim
-**/*.ipynb
-converters/microsoft/tests/fixtures/sales_model.tmdl
 
 # Snapshot/fixture test files
 **/snapshots/**
@@ -63,5 +57,5 @@ converters/microsoft/tests/fixtures/sales_model.tmdl
 **/NOTICE
 
 # Specific project files
-.editorconfig
-.python-version
+**/.editorconfig
+**/.python-version

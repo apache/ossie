@@ -23,6 +23,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -32,6 +33,19 @@ from pathlib import Path
 
 import yaml
 from validate import UniqueKeyLoader
+
+# chmod(0o000) makes a file unreadable only under POSIX permissions, and not
+# for root, which bypasses them. Elsewhere (notably Windows) chmod only toggles
+# the read-only flag and the file stays readable.
+_MODE_BLOCKS_READS = hasattr(os, "geteuid") and os.geteuid() != 0
+
+_MINIMAL_MODEL = (
+    "version: 0.2.0.dev0\n"
+    "name: sales\n"
+    "datasets:\n"
+    "  - name: orders\n"
+    "    source: analytics.orders\n"
+)
 
 
 class UniqueKeyLoaderTest(unittest.TestCase):
@@ -97,11 +111,46 @@ class UniqueKeyLoaderTest(unittest.TestCase):
             "source",
         )
 
-    def test_rejects_repeated_merge_key(self):
-        self.assert_duplicate_key(
-            "dataset:\n  <<: &first\n    source: staging.orders\n  <<: &second\n    name: orders\n",
-            "<<",
+    def test_allows_repeated_merge_keys(self):
+        content = (
+            "first: &first {source: staging.orders, name: orders}\n"
+            "second: &second {source: production.orders}\n"
+            "dataset: &dataset {<<: *first, <<: *second}\n"
+            "reused: *dataset\n"
         )
+        loaded = self.load(content)
+
+        self.assertEqual(loaded, yaml.safe_load(content))
+        self.assertEqual(loaded["dataset"], {"name": "orders", "source": "production.orders"})
+        self.assertIs(loaded["dataset"], loaded["reused"])
+
+    def test_preserves_merge_precedence(self):
+        for mapping, expected in (
+            ("{<<: {source: first}, <<: {source: second}}", "second"),
+            ("{<<: [{source: first}, {source: second}]}", "first"),
+            ("{source: local, <<: {source: first}, <<: {source: second}}", "local"),
+            ("{<<: {source: first}, source: local, <<: {source: second}}", "local"),
+            ("{<<: {source: first}, <<: {source: second}, source: local}", "local"),
+        ):
+            with self.subTest(mapping=mapping):
+                self.assertEqual(self.load(mapping), {"source": expected})
+
+    def test_rejects_explicit_duplicates_with_repeated_merges(self):
+        for content in (
+            "{<<: {source: a, source: b}, <<: {source: last}}",
+            "{<<: {source: first}, <<: {source: a, source: b}}",
+            "{source: first, <<: {}, <<: {}, source: last}",
+            "{<<: [{source: a, source: b}], <<: {source: last}}",
+        ):
+            with self.subTest(content=content):
+                self.assert_duplicate_key(content, "source")
+
+    def test_rejects_duplicate_literal_merge_keys(self):
+        self.assert_duplicate_key('{<<: {}, "<<": first, !!str <<: last}', "<<")
+
+    def test_preserves_value_keys(self):
+        self.assertEqual(self.load('{<<: {=: first}, =: second}'), {"=": "second"})
+        self.assert_duplicate_key('{=: first, "=": second}', "=")
 
     def test_allows_same_key_in_separate_mappings(self):
         loaded = self.load(
@@ -352,6 +401,127 @@ class ValidatorIntegrationTest(unittest.TestCase):
         self.assertIn("Error: Invalid YAML", result.stdout)
         self.assertIn("found duplicate key 'name'", result.stdout)
 
+    def test_repeated_merge_keys_pass_validation(self):
+        result = self.run_validator(
+            "version: 0.2.0.dev0\nname: sales\ndatasets:\n"
+            "  - <<: {name: orders, source: staging.orders}\n"
+            "    <<: {source: production.orders}\n"
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Validation PASSED", result.stdout)
+
+    def test_duplicate_in_repeated_merge_source_exits_nonzero(self):
+        result = self.run_validator(
+            "version: 0.2.0.dev0\nname: sales\ndatasets:\n"
+            "  - <<: {name: orders, source: staging.orders}\n"
+            "    <<: {source: first, source: second}\n"
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("found duplicate key 'source'", result.stdout)
+        self.assertIn("model.yaml", result.stdout)
+
+    def run_validator_args(self, *args) -> subprocess.CompletedProcess[str]:
+        """Run validate.py with arbitrary arguments, for bad-path cases."""
+        return subprocess.run(
+            [sys.executable, Path(__file__).with_name("validate.py"), *args],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_directory_as_input_is_reported(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = self.run_validator_args(temp_dir)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Error: Could not read", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    @unittest.skipUnless(
+        _MODE_BLOCKS_READS,
+        "chmod(0o000) only blocks reads for a non-root POSIX user",
+    )
+    def test_unreadable_input_is_reported(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_path = Path(temp_dir) / "model.yaml"
+            model_path.write_text("version: 0.2.0.dev0\n")
+            model_path.chmod(0o000)
+            result = self.run_validator_args(model_path)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Error: Could not read", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_directory_as_schema_is_reported(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_path = Path(temp_dir) / "model.yaml"
+            model_path.write_text(_MINIMAL_MODEL)
+            result = self.run_validator_args(model_path, "--schema", temp_dir)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Error: Could not read schema", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_schema_that_is_not_json_is_reported(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_path = Path(temp_dir) / "model.yaml"
+            model_path.write_text(_MINIMAL_MODEL)
+            schema_path = Path(temp_dir) / "schema.json"
+            schema_path.write_text("not json {{{\n")
+            result = self.run_validator_args(model_path, "--schema", schema_path)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Error: Invalid JSON in schema", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    @unittest.skipUnless(
+        _MODE_BLOCKS_READS,
+        "chmod(0o000) only blocks reads for a non-root POSIX user",
+    )
+    def test_unreadable_schema_is_reported(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_path = Path(temp_dir) / "model.yaml"
+            model_path.write_text(_MINIMAL_MODEL)
+            schema_path = Path(temp_dir) / "schema.json"
+            schema_path.write_text("{}")
+            schema_path.chmod(0o000)
+            result = self.run_validator_args(model_path, "--schema", schema_path)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Error: Could not read schema", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_binary_input_is_reported(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_path = Path(temp_dir) / "model.yaml"
+            model_path.write_bytes(b"\xff\xfe\x00binary")
+            result = self.run_validator_args(model_path)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("is not valid UTF-8 text", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_binary_schema_is_reported(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_path = Path(temp_dir) / "model.yaml"
+            model_path.write_text(_MINIMAL_MODEL)
+            schema_path = Path(temp_dir) / "schema.json"
+            schema_path.write_bytes(b"\xff\xfe\x00binary")
+            result = self.run_validator_args(model_path, "--schema", schema_path)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("is not valid UTF-8 text", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_missing_input_is_still_reported_as_not_found(self):
+        """The existing guard keeps its own message, rather than the read error."""
+        result = self.run_validator_args("no-such-file.yaml")
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Error: File not found", result.stdout)
+
     def test_valid_model_still_passes(self):
         result = self.run_validator(
             "version: 0.2.0.dev0\n"
@@ -376,11 +546,59 @@ class ValidatorIntegrationTest(unittest.TestCase):
                     "version": "0.2.0.dev0",
                     "name": "sales",
                     "datasets": [
-                        {"name": "orders", "source": "analytics.orders"},
+                        {
+                            "name": "orders",
+                            "source": "analytics.orders",
+                            "fields": [
+                                {
+                                    "name": "customer_id",
+                                    "expression": {
+                                        "dialects": [
+                                            {
+                                                "dialect": "ANSI_SQL",
+                                                "expression": "customer_id",
+                                            }
+                                        ]
+                                    },
+                                },
+                                {
+                                    "name": "region_id",
+                                    "expression": {
+                                        "dialects": [
+                                            {
+                                                "dialect": "ANSI_SQL",
+                                                "expression": "region_id",
+                                            }
+                                        ]
+                                    },
+                                },
+                            ],
+                        },
                         {
                             "name": "customers",
                             "source": "analytics.customers",
                             "primary_key": ["id"],
+                            "fields": [
+                                {
+                                    "name": "id",
+                                    "expression": {
+                                        "dialects": [
+                                            {"dialect": "ANSI_SQL", "expression": "id"}
+                                        ]
+                                    },
+                                },
+                                {
+                                    "name": "region_id",
+                                    "expression": {
+                                        "dialects": [
+                                            {
+                                                "dialect": "ANSI_SQL",
+                                                "expression": "region_id",
+                                            }
+                                        ]
+                                    },
+                                },
+                            ],
                         },
                     ],
                     "relationships": [
@@ -452,6 +670,82 @@ class ValidatorIntegrationTest(unittest.TestCase):
         self.assertNotIn("Traceback", result.stderr)
         self.assertIn("Validation FAILED", result.stdout)
         self.assertIn("[Schema] relationships -> 0 -> to: '' should be non-empty", result.stdout)
+
+    def test_yaml_diagnostics_name_the_file_and_show_the_line(self):
+        # A parser mark is only actionable if it names the model: a str source
+        # is otherwise reported as "<unicode string>". Parsing a str also gets
+        # the offending line quoted under the mark, which a stream source does
+        # not record, so assert the caret wherever PyYAML produces one.
+        cases = (
+            ("name: x\n  bad: [\n", "mapping values are not allowed here", True),
+            (
+                "version: 0.2.0.dev0\nname: sales\nname: finance\n",
+                "found duplicate key 'name'",
+                True,
+            ),
+            # Raised while the loader is constructed, before it can be named,
+            # and carrying a position rather than a mark with a snippet.
+            ("version: 0.2.0.dev0\nname: sa\x00les\n", "special characters are not allowed", False),
+        )
+        for content, detail, has_snippet in cases:
+            with self.subTest(detail=detail):
+                result = self.run_validator(content)
+
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("Error: Invalid YAML", result.stdout)
+                self.assertIn(detail, result.stdout)
+                self.assertIn('in "', result.stdout)
+                self.assertIn("model.yaml", result.stdout)
+                self.assertNotIn("<unicode string>", result.stdout)
+                self.assertNotIn("Traceback", result.stderr)
+                if has_snippet:
+                    self.assertIn("^", result.stdout)
+
+    def test_schema_that_is_not_an_object_is_reported(self):
+        """A schema may be an object or a boolean; any other JSON value is rejected."""
+        for schema_text in ("[]", '"a string"', "3", "null", "[{}]"):
+            with self.subTest(schema=schema_text):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    model_path = Path(temp_dir) / "model.yaml"
+                    model_path.write_text(_MINIMAL_MODEL)
+                    schema_path = Path(temp_dir) / "schema.json"
+                    schema_path.write_text(schema_text)
+                    result = self.run_validator_args(model_path, "--schema", schema_path)
+
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("Error: Invalid schema", result.stdout)
+                self.assertIn("is not of type 'object', 'boolean'", result.stdout)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_schema_with_a_malformed_keyword_is_reported(self):
+        """`required` taking a string used to make the validator demand its characters."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_path = Path(temp_dir) / "model.yaml"
+            model_path.write_text(_MINIMAL_MODEL)
+            schema_path = Path(temp_dir) / "schema.json"
+            schema_path.write_text('{"type": "object", "required": "name"}')
+            result = self.run_validator_args(model_path, "--schema", schema_path)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Error: Invalid schema", result.stdout)
+        self.assertIn("required", result.stdout)
+        self.assertNotIn("'a' is a required property", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_boolean_schemas_are_still_accepted(self):
+        """`true` and `false` are legal schemas, so the new check must let them through."""
+        for schema_text, expected_code in (("true", 0), ("false", 1)):
+            with self.subTest(schema=schema_text):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    model_path = Path(temp_dir) / "model.yaml"
+                    model_path.write_text(_MINIMAL_MODEL)
+                    schema_path = Path(temp_dir) / "schema.json"
+                    schema_path.write_text(schema_text)
+                    result = self.run_validator_args(model_path, "--schema", schema_path)
+
+                self.assertEqual(result.returncode, expected_code)
+                self.assertNotIn("Error: Invalid schema", result.stdout)
+                self.assertNotIn("Traceback", result.stderr)
 
 
 if __name__ == "__main__":
