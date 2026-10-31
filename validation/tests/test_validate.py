@@ -203,6 +203,7 @@ def test_semantic_checks_skip_non_model_payloads(data: object) -> None:
     assert validate_references(data) == []
     assert validate_relationship_column_arity(data) == []
     assert _VALIDATE.validate_sql(data) == []
+    assert _VALIDATE.validate_metric_agreement(data) == []
 
 
 @pytest.mark.parametrize(
@@ -1985,6 +1986,277 @@ def test_expression_context_names_the_declaring_element(kind, dataset_name, expe
     )
 
     assert expr.context("m") == expected
+
+
+# ---------------------------------------------------------------------------
+# Issue #279: cross-dialect metric drift and expression purity.
+# Diagnostics come from validate_document, which runs the shipped checker.
+# ---------------------------------------------------------------------------
+
+
+def _metric_model(name: str, dialects: list[tuple[str, str]]) -> dict:
+    document = _document([_ORDERS], [])
+    document["metrics"] = [{
+        "name": name,
+        "expression": {
+            "dialects": [
+                {"dialect": dialect, "expression": expression}
+                for dialect, expression in dialects
+            ]
+        },
+    }]
+    return document
+
+
+def _warning_text(errors: list) -> list[str]:
+    return [error for error in errors if isinstance(error, _VALIDATE.ValidationWarning)]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    ("left", "right", "fragments"),
+    [
+        ("SUM(amount)", "AVG(amount)", ["SUM", "AVG"]),
+        ("COUNT(amount)", "COUNT(DISTINCT amount)", ["COUNT", "COUNT|DISTINCT"]),
+        ("SUM(amount)", "SUM(price)", ["amount", "price"]),
+        ("SUM(amount) * 1.08", "SUM(amount) * 1.18", ["1.08", "1.18"]),
+        ("SUM(amount) * (1.08)", "SUM(amount) * (1.18)", ["1.08", "1.18"]),
+        ("SUM(amount) * -1.08", "SUM(amount) * -1.18", ["-1.08", "-1.18"]),
+        ("SUM(amount) * -1.08", "SUM(amount) * 1.08", ["-1.08"]),
+        (
+            "SUM(CASE WHEN region = 'EU' THEN amount ELSE 0 END)",
+            "SUM(CASE WHEN region = 'US' THEN amount ELSE 0 END)",
+            ["EU", "US"],
+        ),
+        (
+            "SUM(CASE WHEN amt > 100 THEN amt ELSE 0 END)",
+            "SUM(CASE WHEN amt >= 100 THEN amt ELSE 0 END)",
+            ["GT(amt,100)", "GTE(amt,100)"],
+        ),
+        (
+            "SUM(CASE WHEN status IN (1, 2) THEN amt ELSE 0 END)",
+            "SUM(CASE WHEN status NOT IN (1, 2) THEN amt ELSE 0 END)",
+            ["IN(status,[1,2])", "NOT(IN(status,[1,2]))"],
+        ),
+        (
+            "SUM(CASE WHEN col IS NULL THEN amt ELSE 0 END)",
+            "SUM(CASE WHEN col IS NOT NULL THEN amt ELSE 0 END)",
+            ["IS(col,null)", "NOT(IS(col,null))"],
+        ),
+        (
+            "SUM(CASE WHEN col BETWEEN 1 AND 10 THEN amt ELSE 0 END)",
+            "SUM(CASE WHEN col NOT BETWEEN 1 AND 10 THEN amt ELSE 0 END)",
+            ["BETWEEN(col,1,10)", "NOT(BETWEEN(col,1,10))"],
+        ),
+        (
+            "SUM(CASE WHEN col LIKE '%foo%' THEN amt ELSE 0 END)",
+            "SUM(CASE WHEN col NOT LIKE '%foo%' THEN amt ELSE 0 END)",
+            ["LIKE(col,'%foo%')", "NOT(LIKE(col,'%foo%'))"],
+        ),
+        (
+            "SUM(amount) * 12345678901234567890123",
+            "SUM(amount) * 12345678901234567890124",
+            ["12345678901234567890123", "12345678901234567890124"],
+        ),
+        (
+            "SUM(amount) * 1e309",
+            "SUM(amount) * 1e310",
+            ["1E+309", "1E+310"],
+        ),
+    ],
+)
+def test_metric_dialect_drift_is_reported(core_schema, offline, left, right, fragments):
+    # Two parseable dialects of one metric must not silently disagree.
+    errors = _VALIDATE.validate_document(
+        _metric_model("revenue", [("ANSI_SQL", left), ("SNOWFLAKE", right)]),
+        core_schema,
+    )
+
+    warnings = _warning_text(errors)
+    assert any(
+        "revenue" in warning and all(fragment in warning for fragment in fragments)
+        for warning in warnings
+    )
+    assert [error for error in errors if not isinstance(error, _VALIDATE.ValidationWarning)] == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    ("dialect", "expression", "call"),
+    [
+        ("ANSI_SQL", "NOW()", "NOW"),
+        ("DATABRICKS", "NOW()", "NOW"),
+        ("ANSI_SQL", "RANDOM()", "RANDOM"),
+        ("ANSI_SQL", "pg_read_file('/etc/passwd')", "pg_read_file"),
+    ],
+)
+def test_impure_metric_call_is_reported_and_not_executed(
+    core_schema, offline, monkeypatch, dialect, expression, call
+):
+    def executed(*args, **kwargs):
+        raise AssertionError(f"metric SQL must not be executed: {args!r}")
+
+    monkeypatch.setattr("subprocess.Popen", executed)
+    monkeypatch.setattr("subprocess.run", executed)
+
+    errors = _VALIDATE.validate_document(
+        _metric_model("revenue", [(dialect, expression)]),
+        core_schema,
+    )
+
+    assert [error for error in errors if not isinstance(error, _VALIDATE.ValidationWarning)] == []
+    assert any("revenue" in warning and call in warning for warning in _warning_text(errors))
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "dialects",
+    [
+        [
+            ("ANSI_SQL", "AVG(COALESCE(price, 0))"),
+            ("SNOWFLAKE", "AVG(NVL(price, 0))"),
+        ],
+        [
+            ("ANSI_SQL", "SUM(CASE WHEN s = 1 THEN amt ELSE 0 END)"),
+            ("SNOWFLAKE", "SUM(amt) FILTER (WHERE s = 1)"),
+        ],
+        [
+            ("ANSI_SQL", "SUM(CASE WHEN s = 1 THEN amt ELSE 0 END)"),
+            ("BIGQUERY", "SUM(IF(s = 1, amt, 0))"),
+        ],
+        [
+            ("ANSI_SQL", "is_active = TRUE"),
+            ("SNOWFLAKE", "is_active = 1"),
+        ],
+        [
+            ("ANSI_SQL", "amt > 100"),
+            ("SNOWFLAKE", "100 < amt"),
+        ],
+        [
+            ("ANSI_SQL", "amt > -1"),
+            ("SNOWFLAKE", "amt > -1.0"),
+            ("DATABRICKS", "amt > -(1)"),
+            ("BIGQUERY", "-1 < amt"),
+        ],
+        [
+            ("ANSI_SQL", "a < b"),
+            ("SNOWFLAKE", "b > a"),
+        ],
+        [
+            ("ANSI_SQL", "a = b"),
+            ("SNOWFLAKE", "b = a"),
+        ],
+        [
+            ("ANSI_SQL", "5 < CAST(x AS INT)"),
+            ("SNOWFLAKE", "CAST(x AS INT) > 5"),
+        ],
+        [
+            ("ANSI_SQL", "status IN (1, 2)"),
+            ("SNOWFLAKE", "status IN (2, 1)"),
+        ],
+        [
+            ("ANSI_SQL", "SUM(o.amount)"),
+            ("SNOWFLAKE", "SUM(r.amount)"),
+        ],
+    ],
+)
+def test_equivalent_spellings_are_not_reported_as_drift(core_schema, offline, dialects):
+    errors = _VALIDATE.validate_document(_metric_model("revenue", dialects), core_schema)
+
+    assert not any(
+        isinstance(error, _VALIDATE.ValidationWarning) and "[Drift]" in error
+        for error in errors
+    )
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_known_blind_spot_and_vs_or(core_schema, offline):
+    # AND versus OR over the same comparisons is a documented heuristic blind
+    # spot: _expression_signature collects predicates as an unordered set without
+    # modeling the boolean connective tree.
+    errors = _VALIDATE.validate_document(
+        _metric_model(
+            "revenue",
+            [("ANSI_SQL", "a = 1 AND b = 2"), ("SNOWFLAKE", "a = 1 OR b = 2")],
+        ),
+        core_schema,
+    )
+
+    warnings = _warning_text(errors)
+    assert not any("revenue" in w and "filter predicates" in w for w in warnings)
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_single_dialect_metric_has_no_drift(core_schema, offline):
+    errors = _VALIDATE.validate_document(
+        _metric_model("revenue", [("ANSI_SQL", "SUM(amount)")]),
+        core_schema,
+    )
+
+    assert not any(
+        isinstance(error, _VALIDATE.ValidationWarning) and "[Drift]" in error
+        for error in errors
+    )
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_unparsed_dialect_is_skipped_without_warning(core_schema, offline):
+    # MDX is not parsed by sqlglot. It should not raise, drift, or purity-warn.
+    errors = _VALIDATE.validate_document(
+        _metric_model("revenue", [("ANSI_SQL", "SUM(amount)"), ("MDX", "[Measures].[Total]")]),
+        core_schema,
+    )
+
+    warnings = _warning_text(errors)
+    assert not any(
+        "revenue" in warning and ("[Drift]" in warning or "[Purity]" in warning)
+        for warning in warnings
+    )
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_cli_exits_zero_when_document_has_drift_only(run_validator):
+    document = _metric_model("revenue", [("ANSI_SQL", "SUM(amount)"), ("SNOWFLAKE", "AVG(amount)")])
+
+    exit_code, output = run_validator(document)
+
+    assert exit_code == 0
+    assert "[Drift]" in output
+    assert "revenue" in output
+    assert "SUM" in output and "AVG" in output
+    assert "Validation PASSED" in output
+    assert "Validation FAILED" not in output
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_metric_portable_sql_and_dialect_drift_is_reported(core_schema, offline):
+    doc = _document([_ORDERS], [])
+    doc["metrics"] = [{
+        "name": "revenue",
+        "expression": {
+            "sql": "SUM(amount)",
+            "dialects": [{"dialect": "SNOWFLAKE", "expression": "AVG(amount)"}],
+        },
+    }]
+
+    errors = _VALIDATE.validate_document(doc, core_schema)
+
+    warnings = _warning_text(errors)
+    assert any("revenue" in w and "SUM" in w and "AVG" in w for w in warnings)
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_metric_portable_sql_purity_is_reported(core_schema, offline):
+    doc = _document([_ORDERS], [])
+    doc["metrics"] = [{
+        "name": "now_metric",
+        "expression": {"sql": "NOW()"},
+    }]
+
+    errors = _VALIDATE.validate_document(doc, core_schema)
+
+    warnings = _warning_text(errors)
+    assert any("now_metric" in w and "NOW" in w for w in warnings)
 
 
 # --- field references (core-spec/spec.md "Name Resolution") ---
