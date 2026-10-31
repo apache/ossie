@@ -1,0 +1,430 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+openapi: 3.1.0
+info:
+  title: Apache Ossie REST API
+  version: 0.1.0
+  description: |
+    Standard REST API to produce, consume and orchestrate Apache Ossie semantic
+    models. It is meant to be implemented by metadata and data catalogs, and
+    consumed by query engines, BI tools, AI agents and converter orchestrators,
+    so that clients can use Ossie without knowing the server implementation.
+
+    ## Media types
+
+    A semantic model document (see `core-spec/ossie-schema.json`) is exchanged as:
+
+    * `application/vnd.ossie+yaml`
+    * `application/vnd.ossie+json`
+
+    Both accept an optional `version` parameter naming a spec line, for example
+    `application/vnd.ossie+yaml; version="0.2"` meaning any `0.2.x` document. The
+    parameter is a negotiation hint only: the `version` field of the document body
+    is authoritative. A server that cannot serve the requested line answers `406`.
+
+    ## Optimistic concurrency
+
+    Every model carries an `ETag`. Updates and deletes SHOULD send `If-Match`;
+    a stale value is answered with `412`.
+
+    ## Extensibility
+
+    Servers MAY add vendor-specific response fields and operations under
+    `/v1/x-{vendor}/`. Clients MUST ignore response fields they do not know.
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+servers:
+  - url: https://{host}/ossie
+    variables:
+      host:
+        default: localhost:8181
+security:
+  - bearerAuth: []
+tags:
+  - name: Models
+    description: Create, read, update and delete semantic models.
+  - name: Conversions
+    description: Translate Ossie models to and from vendor formats through registered converters.
+  - name: Validation
+    description: Validate a document against the Ossie core specification.
+  - name: Discovery
+    description: Server capabilities.
+
+paths:
+  /v1/config:
+    get:
+      tags: [Discovery]
+      operationId: getConfig
+      summary: Describe what this server supports
+      security: []
+      responses:
+        "200":
+          description: Server capabilities.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerConfig"
+
+  /v1/models:
+    get:
+      tags: [Models]
+      operationId: listModels
+      summary: List semantic models
+      parameters:
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/PageToken"
+        - name: name
+          in: query
+          description: Return only models whose name contains this text.
+          schema: { type: string }
+      responses:
+        "200":
+          description: A page of model summaries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListModelsResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Models]
+      operationId: createModel
+      summary: Create a semantic model
+      requestBody:
+        $ref: "#/components/requestBodies/OssieDocument"
+      responses:
+        "201":
+          description: Model created.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+            Location: { schema: { type: string, format: uri-reference } }
+          content:
+            application/vnd.ossie+yaml: { schema: { $ref: "#/components/schemas/OssieDocument" } }
+            application/vnd.ossie+json: { schema: { $ref: "#/components/schemas/OssieDocument" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "422": { $ref: "#/components/responses/InvalidModel" }
+
+  /v1/models/{name}:
+    parameters:
+      - $ref: "#/components/parameters/ModelName"
+    get:
+      tags: [Models]
+      operationId: getModel
+      summary: Get a semantic model
+      description: |
+        The representation is chosen from `Accept`. Without an `Accept` header the
+        server returns `application/vnd.ossie+yaml`.
+      parameters:
+        - name: If-None-Match
+          in: header
+          schema: { type: string }
+      responses:
+        "200":
+          description: The model.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/vnd.ossie+yaml: { schema: { $ref: "#/components/schemas/OssieDocument" } }
+            application/vnd.ossie+json: { schema: { $ref: "#/components/schemas/OssieDocument" } }
+        "304": { description: "Not modified." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "406": { $ref: "#/components/responses/NotAcceptable" }
+    put:
+      tags: [Models]
+      operationId: replaceModel
+      summary: Replace a semantic model
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        $ref: "#/components/requestBodies/OssieDocument"
+      responses:
+        "200":
+          description: Model replaced.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/vnd.ossie+yaml: { schema: { $ref: "#/components/schemas/OssieDocument" } }
+            application/vnd.ossie+json: { schema: { $ref: "#/components/schemas/OssieDocument" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "422": { $ref: "#/components/responses/InvalidModel" }
+    delete:
+      tags: [Models]
+      operationId: deleteModel
+      summary: Delete a semantic model
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "204": { description: "Model deleted." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
+
+  /v1/validate:
+    post:
+      tags: [Validation]
+      operationId: validateModel
+      summary: Validate a document without storing it
+      requestBody:
+        $ref: "#/components/requestBodies/OssieDocument"
+      responses:
+        "200":
+          description: Validation outcome; `valid` is false when the document does not conform.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationResult"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+
+  /v1/converters:
+    get:
+      tags: [Conversions]
+      operationId: listConverters
+      summary: List the converters registered on this server
+      responses:
+        "200":
+          description: Registered converters.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [converters]
+                properties:
+                  converters:
+                    type: array
+                    items: { $ref: "#/components/schemas/Converter" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/converters/{converter}/import:
+    post:
+      tags: [Conversions]
+      operationId: importModel
+      summary: Convert a vendor document into an Ossie model
+      description: |
+        The body is a vendor-native document in the content type the converter
+        advertises under `import_media_types`. The result is an Ossie document;
+        nothing is stored unless `store` is true.
+      parameters:
+        - $ref: "#/components/parameters/ConverterName"
+        - name: store
+          in: query
+          description: Also create the converted model on the server.
+          schema: { type: boolean, default: false }
+      requestBody:
+        required: true
+        content:
+          "*/*":
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: The converted model.
+          content:
+            application/vnd.ossie+yaml: { schema: { $ref: "#/components/schemas/ConversionResult" } }
+            application/vnd.ossie+json: { schema: { $ref: "#/components/schemas/ConversionResult" } }
+            application/json: { schema: { $ref: "#/components/schemas/ConversionResult" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "422": { $ref: "#/components/responses/InvalidModel" }
+
+  /v1/converters/{converter}/export:
+    post:
+      tags: [Conversions]
+      operationId: exportModel
+      summary: Convert an Ossie model into a vendor document
+      description: |
+        Either send an Ossie document as the body, or send `{"model": "<name>"}`
+        as `application/json` to export a stored model. Conversion warnings
+        (constructs the target cannot express) are returned in the
+        `Ossie-Warnings` header as a count and in `X-Ossie-Warning` headers.
+      parameters:
+        - $ref: "#/components/parameters/ConverterName"
+      requestBody:
+        required: true
+        content:
+          application/vnd.ossie+yaml: { schema: { $ref: "#/components/schemas/OssieDocument" } }
+          application/vnd.ossie+json: { schema: { $ref: "#/components/schemas/OssieDocument" } }
+          application/json:
+            schema:
+              type: object
+              required: [model]
+              properties:
+                model: { type: string, description: Name of a stored model. }
+      responses:
+        "200":
+          description: The vendor-native document, in the type the converter advertises under `export_media_types`.
+          content:
+            "*/*":
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "422": { $ref: "#/components/responses/InvalidModel" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: OAuth2 access token or equivalent. Servers MAY support other schemes.
+
+  headers:
+    ETag:
+      description: Opaque version of the model.
+      schema: { type: string }
+
+  parameters:
+    ModelName:
+      name: name
+      in: path
+      required: true
+      schema: { type: string }
+    ConverterName:
+      name: converter
+      in: path
+      required: true
+      description: Converter identifier, for example `snowflake` or `dbt`.
+      schema: { type: string }
+    IfMatch:
+      name: If-Match
+      in: header
+      description: ETag the client last saw.
+      schema: { type: string }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 1000, default: 100 }
+    PageToken:
+      name: page_token
+      in: query
+      schema: { type: string }
+
+  requestBodies:
+    OssieDocument:
+      required: true
+      content:
+        application/vnd.ossie+yaml: { schema: { $ref: "#/components/schemas/OssieDocument" } }
+        application/vnd.ossie+json: { schema: { $ref: "#/components/schemas/OssieDocument" } }
+
+  schemas:
+    OssieDocument:
+      description: A semantic model, as defined by the Ossie core specification.
+      $ref: "https://raw.githubusercontent.com/apache/ossie/main/core-spec/ossie-schema.json"
+
+    ModelSummary:
+      type: object
+      required: [name, version]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        version: { type: string, description: Ossie spec version of the document. }
+        etag: { type: string }
+
+    ListModelsResponse:
+      type: object
+      required: [models]
+      properties:
+        models:
+          type: array
+          items: { $ref: "#/components/schemas/ModelSummary" }
+        next_page_token:
+          type: [string, "null"]
+
+    ServerConfig:
+      type: object
+      required: [spec_versions, media_types]
+      properties:
+        spec_versions:
+          type: array
+          items: { type: string }
+          description: Ossie spec versions the server can read and write.
+          examples: [["0.2.0.dev0"]]
+        media_types:
+          type: array
+          items: { type: string }
+          examples: [["application/vnd.ossie+yaml", "application/vnd.ossie+json"]]
+        features:
+          type: array
+          items: { type: string, enum: [models, validate, conversions] }
+
+    ValidationResult:
+      type: object
+      required: [valid, errors]
+      properties:
+        valid: { type: boolean }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [path, message]
+            properties:
+              path: { type: string, description: JSON Pointer into the document. }
+              message: { type: string }
+
+    Converter:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        import_media_types:
+          type: array
+          items: { type: string }
+        export_media_types:
+          type: array
+          items: { type: string }
+
+    ConversionResult:
+      description: Converted model plus the converter's findings.
+      type: object
+      required: [model]
+      properties:
+        model: { $ref: "#/components/schemas/OssieDocument" }
+        warnings:
+          type: array
+          items: { type: string }
+
+    Error:
+      description: RFC 9457 problem details.
+      type: object
+      required: [title, status]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+
+  responses:
+    BadRequest: { description: "Malformed request.", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    Unauthorized: { description: "Missing or invalid credentials.", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    NotFound: { description: "Resource not found.", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    NotAcceptable: { description: "No representation matches Accept, including the version parameter.", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    Conflict: { description: "A model with this name already exists.", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    PreconditionFailed: { description: "If-Match does not match the current ETag.", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    UnsupportedMediaType: { description: "Content-Type not supported.", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    InvalidModel: { description: "Well-formed but does not conform to the Ossie specification.", content: { application/problem+json: { schema: { $ref: "#/components/schemas/Error" } } } }
