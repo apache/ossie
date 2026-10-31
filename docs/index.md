@@ -236,7 +236,7 @@ You can build a converter in a separate repository or contribute one to the [oss
 No. Import converters translate existing vendor-specific models into the Ossie format automatically. Your existing models remain intact — Ossie provides an additional interchange layer on top of them.
 
 **How do I validate an Ossie model?**
-Use the [validation script](../validation/validate.py) included in the repository. It checks your model against the [JSON Schema](../core-spec/ossie-schema.json), validates SQL expressions across dialects, and ensures referential integrity between datasets and relationships.
+Use the [validation script](../validation/validate.py) included in the repository. It checks your model against the [JSON Schema](../core-spec/ossie-schema.json), validates SQL expressions across dialects, and ensures referential integrity between datasets and relationships. Schema errors are reported first; semantic checks run after those errors are fixed so malformed document shapes cannot interrupt validation.
 
 ### Technical
 
