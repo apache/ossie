@@ -1779,6 +1779,11 @@ def validate_file(yaml_path: Path, schema: dict) -> bool:
         # Deeply nested input surfaces as RecursionError, not YAMLError.
         print("Error: Invalid YAML: input is too deeply nested to parse")
         return False
+    except (ValueError, AttributeError, LookupError) as e:
+        # SafeLoader raises these, not YAMLError, for a scalar it cannot build:
+        # 2024-02-30 or !!int abc, !!timestamp abc, !!bool abc, !!int ''.
+        print(f"Error: Invalid YAML: {yaml_path} holds a value YAML cannot build: {e}")
+        return False
 
     try:
         errors = validate_document(data, schema, yaml_path.parent)
@@ -1808,6 +1813,12 @@ def validate_file(yaml_path: Path, schema: dict) -> bool:
 
 
 def main():
+    # A diagnostic echoes the text it is about, and a "\ud800" escape in the document
+    # puts a lone surrogate in it that the strict stdout encoder refuses. Escape it
+    # instead of crashing after the check has already found the problem.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="backslashreplace")
+
     if len(sys.argv) < 2:
         print(__doc__)
         sys.exit(1)
