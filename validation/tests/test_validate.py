@@ -370,17 +370,33 @@ def _registered_dialects() -> set[str]:
     }
 
 
+def _registry_mismatch(kind: str, listed: set[str], registered: set[str], code: str) -> str:
+    """The message for a pin that failed: which side each token is missing from."""
+    registry = f"extensions/{kind}.md"
+    parts = []
+    if only_registered := sorted(registered - listed):
+        parts.append(f"in {registry} but not in {code}: {', '.join(only_registered)}")
+    if only_listed := sorted(listed - registered):
+        parts.append(f"in {code} but not in {registry}: {', '.join(only_listed)}")
+    return f"{code} and {registry} do not list the same {kind}: " + "; ".join(parts)
+
+
+def test_registry_mismatch_names_each_side() -> None:
+    assert _registry_mismatch("dialects", {"A", "B"}, {"B", "C"}, "code") == (
+        "code and extensions/dialects.md do not list the same dialects: "
+        "in extensions/dialects.md but not in code: C; in code but not in extensions/dialects.md: A"
+    )
+
+
 def test_the_dialect_tables_match_the_registry() -> None:
     # A dialect registered in extensions/dialects.md has to be listed here as
     # well, as the sqlglot reader that parses it or as one sqlglot cannot read,
     # or the validator warns about a token the registry says is fine. A dialect
     # listed here but not in the registry is a registration someone skipped.
     known = set(_VALIDATE.SQLGLOT_DIALECTS) | _VALIDATE.NON_SQL_DIALECTS
+    registered = _registered_dialects()
 
-    assert known == _registered_dialects(), (
-        "extensions/dialects.md and SQLGLOT_DIALECTS / NON_SQL_DIALECTS in"
-        " validate.py do not list the same dialects; register a dialect in both"
-    )
+    assert known == registered, _registry_mismatch("dialects", known, registered, "validate.py")
     assert set(_VALIDATE.SQLGLOT_DIALECTS) & _VALIDATE.NON_SQL_DIALECTS == set()
 
 
