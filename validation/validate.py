@@ -1779,6 +1779,11 @@ def validate_file(yaml_path: Path, schema: dict) -> bool:
         # Deeply nested input surfaces as RecursionError, not YAMLError.
         print("Error: Invalid YAML: input is too deeply nested to parse")
         return False
+    except (ValueError, AttributeError, LookupError) as e:
+        # SafeLoader raises these, not YAMLError, for a scalar it cannot build:
+        # 2024-02-30 or !!int abc, !!timestamp abc, !!bool abc, !!int ''.
+        print(f"Error: Invalid YAML: {yaml_path} holds a value YAML cannot build: {e}")
+        return False
 
     try:
         errors = validate_document(data, schema, yaml_path.parent)

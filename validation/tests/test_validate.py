@@ -1547,6 +1547,27 @@ def test_cli_reports_a_check_that_raises_and_goes_on(tmp_path, monkeypatch, caps
     assert "1 of 2 file(s) passed" in output
 
 
+@pytest.mark.parametrize(
+    "scalar", ["2024-02-30", "!!int abc", "!!timestamp abc", "!!bool abc", "!!int ''"]
+)
+def test_cli_reports_a_value_yaml_cannot_build_and_goes_on(
+    tmp_path, monkeypatch, capsys, offline, scalar
+):
+    # SafeLoader raises ValueError, AttributeError, KeyError or IndexError for these,
+    # not YAMLError.
+    good = _write_document(tmp_path, "good.json", _document([_CUSTOMERS], []))
+    bad = tmp_path / "bad.yaml"
+    bad.write_text(f'version: "0.2.0.dev0"\nname: {scalar}\ndatasets: []\n')
+
+    code, output = _run_cli(monkeypatch, capsys, bad, good)
+
+    assert code == 1
+    assert f"Error: Invalid YAML: {bad} holds a value YAML cannot build:" in output
+    assert "Traceback" not in output
+    assert "Validation PASSED: good.json" in output
+    assert "1 of 2 file(s) passed" in output
+
+
 def test_cli_takes_files_after_a_double_dash_literally(tmp_path, monkeypatch, capsys, offline):
     dashed = _write_document(tmp_path, "-model.json", _document([_CUSTOMERS], []))
     monkeypatch.chdir(tmp_path)
