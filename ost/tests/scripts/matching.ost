@@ -1,0 +1,112 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Tests for how the runner matches actual output with expected output.
+
+# A command with no output.
+create table t (i int);
+insert into t values (1);
+
+# Only the last statement of a command produces output.
+select 1 as a; select 2 as b;
++---+
+| b |
++---+
+| 2 |
++---+
+(1 row)
+
+# Without ORDER BY, rows may be in any order. Column names are
+# case-insensitive, and widths and padding may differ.
+select * from (values (1, 'a'), (2, 'b')) as t(x, y);
++--+--+
+| X | y |
++--+--+
+|2|b|
+|1|a|
++--+--+
+(2 rows)
+
+# The same query twice, with the expected rows in opposite orders.
+# The DBMS returns the rows in the same order both times, so one of
+# the commands has its rows in a different order than expected, and
+# both pass only if matching ignores the order of rows.
+select * from (values (1), (2), (3)) as t(x);
++---+
+| x |
++---+
+| 1 |
+| 2 |
+| 3 |
++---+
+(3 rows)
+select * from (values (1), (2), (3)) as t(x);
++---+
+| x |
++---+
+| 3 |
+| 2 |
+| 1 |
++---+
+(3 rows)
+
+# The same query, with whitespace that differs from what ost would
+# generate: no padding, extra padding, left and right alignment, and
+# borders that are narrower or wider than the cells.
+select * from (values (1), (2), (3)) as t(x);
++-+
+|x|
++--------+
+|1|
+|   2    |
+|      3 |
++------+
+(3 rows)
+
+# queryUnordered ignores ORDER BY.
+queryUnordered(select * from (values (1), (2)) as t(x) order by x);
++---+
+| x |
++---+
+| 2 |
+| 1 |
++---+
+(2 rows)
+
+# queryOrdered and ORDER BY.
+queryOrdered(select * from (values (2), (1)) as t(x));
++---+
+| x |
++---+
+| 2 |
+| 1 |
++---+
+(2 rows)
+select * from (values (2), (1)) as t(x) order by x;
++---+
+| x |
++---+
+| 1 |
+| 2 |
++---+
+(2 rows)
+
+# Spacing in a value may differ.
+plus(1, 2);
+>    3:int
+
+# End matching.ost

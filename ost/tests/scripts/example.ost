@@ -1,0 +1,47 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# An example .ost (Ossie SQL Test) file.
+
+# Connect to the SCOTT schema.
+connect("scott");
+
+# A SQL query. Because there is no ORDER BY clause, the rows may be
+# in any order. Column widths and padding may also differ.
+select *
+from emp
+where job = 'CLERK';
++-------+--------+-------+------+------------+---------+------+--------+
+| empno | ename  | job   | mgr  | hiredate   | sal     | comm | deptno |
++-------+--------+-------+------+------------+---------+------+--------+
+|  7934 | MILLER | CLERK | 7782 | 1982-01-23 | 1300.00 |      |     10 |
+|  7369 | SMITH  | CLERK | 7902 | 1980-12-17 |  800.00 |      |     20 |
+|  7876 | ADAMS  | CLERK | 7788 | 1987-05-23 | 1100.00 |      |     20 |
+|  7900 | JAMES  | CLERK | 7698 | 1981-12-03 |  950.00 |      |     30 |
++-------+--------+-------+------+------------+---------+------+--------+
+(4 rows)
+
+# A function call. A value that is not a set of rows is printed
+# with a '> ' prefix, followed by its type.
+plus(1, 2);
+> 3 : int
+
+# A command that fails prints the first line of its error.
+select * from nonexistent;
+> error: Catalog Error: Table with name nonexistent does not exist!
+
+# End example.ost
