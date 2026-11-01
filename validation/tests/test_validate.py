@@ -370,21 +370,25 @@ def _registered_dialects() -> set[str]:
     }
 
 
-def _registry_mismatch(kind: str, listed: set[str], registered: set[str], code: str) -> str:
+def _registry_mismatch(kind: str, code: str, in_code: set[str], in_registry: set[str]) -> str:
     """The message for a pin that failed: which side each token is missing from."""
     registry = f"extensions/{kind}.md"
     parts = []
-    if only_registered := sorted(registered - listed):
-        parts.append(f"in {registry} but not in {code}: {', '.join(only_registered)}")
-    if only_listed := sorted(listed - registered):
-        parts.append(f"in {code} but not in {registry}: {', '.join(only_listed)}")
+    if only_registry := sorted(in_registry - in_code):
+        parts.append(f"in {registry} but not in {code}: {', '.join(only_registry)}")
+    if only_code := sorted(in_code - in_registry):
+        parts.append(f"in {code} but not in {registry}: {', '.join(only_code)}")
     return f"{code} and {registry} do not list the same {kind}: " + "; ".join(parts)
 
 
 def test_registry_mismatch_names_each_side() -> None:
-    assert _registry_mismatch("dialects", {"A", "B"}, {"B", "C"}, "code") == (
+    assert _registry_mismatch("dialects", "code", {"A", "B"}, {"B", "C"}) == (
         "code and extensions/dialects.md do not list the same dialects: "
         "in extensions/dialects.md but not in code: C; in code but not in extensions/dialects.md: A"
+    )
+    assert _registry_mismatch("vendors", "code", {"a"}, {"a", "b"}) == (
+        "code and extensions/vendors.md do not list the same vendors: "
+        "in extensions/vendors.md but not in code: b"
     )
 
 
@@ -396,7 +400,9 @@ def test_the_dialect_tables_match_the_registry() -> None:
     known = set(_VALIDATE.SQLGLOT_DIALECTS) | _VALIDATE.NON_SQL_DIALECTS
     registered = _registered_dialects()
 
-    assert known == registered, _registry_mismatch("dialects", known, registered, "validate.py")
+    assert known == registered, _registry_mismatch(
+        "dialects", "validate.py (SQLGLOT_DIALECTS or NON_SQL_DIALECTS)", known, registered
+    )
     assert set(_VALIDATE.SQLGLOT_DIALECTS) & _VALIDATE.NON_SQL_DIALECTS == set()
 
 
