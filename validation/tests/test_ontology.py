@@ -1332,12 +1332,12 @@ def test_mapping_referenced_document_that_fails_its_schema_is_one_error(
         ("a: [", "is not valid YAML"),
         ("- just\n- a list\n", "does not hold a document"),
         # SafeLoader raises ValueError, AttributeError or KeyError, not YAMLError,
-        # for a scalar it resolves to a tag but cannot build.
-        ("description: 2024-02-30\n", "holds a value YAML cannot build: "),
-        ("description: !!int abc\n", "holds a value YAML cannot build: "),
-        ("description: !!timestamp abc\n", "holds a value YAML cannot build: "),
-        ("description: !!bool abc\n", "holds a value YAML cannot build: "),
-        ("description: !!int ''\n", "holds a value YAML cannot build: "),
+        # for a scalar it resolves to a tag but cannot build; the loader reports them.
+        ("description: 2024-02-30\n", "is not valid YAML: cannot build '2024-02-30' as timestamp"),
+        ("description: !!int abc\n", "is not valid YAML: cannot build 'abc' as int"),
+        ("description: !!timestamp abc\n", "is not valid YAML: cannot build 'abc' as timestamp"),
+        ("description: !!bool abc\n", "is not valid YAML: cannot build 'abc' as bool"),
+        ("description: !!int ''\n", "is not valid YAML: cannot build '' as int"),
         (b"name: caf\xe9\n", "is not valid UTF-8 text"),
         ("[" * 5000, "is too deeply nested to parse"),
     ],

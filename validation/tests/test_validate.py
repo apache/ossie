@@ -1548,10 +1548,17 @@ def test_cli_reports_a_check_that_raises_and_goes_on(tmp_path, monkeypatch, caps
 
 
 @pytest.mark.parametrize(
-    "scalar", ["2024-02-30", "!!int abc", "!!timestamp abc", "!!bool abc", "!!int ''"]
+    "scalar, expected",
+    [
+        ("2024-02-30", "cannot build '2024-02-30' as timestamp"),
+        ("!!int abc", "cannot build 'abc' as int"),
+        ("!!timestamp abc", "cannot build 'abc' as timestamp"),
+        ("!!bool abc", "cannot build 'abc' as bool"),
+        ("!!int ''", "cannot build '' as int"),
+    ],
 )
 def test_cli_reports_a_value_yaml_cannot_build_and_goes_on(
-    tmp_path, monkeypatch, capsys, offline, scalar
+    tmp_path, monkeypatch, capsys, offline, scalar, expected
 ):
     # SafeLoader raises ValueError, AttributeError, KeyError or IndexError for these,
     # not YAMLError.
@@ -1562,8 +1569,8 @@ def test_cli_reports_a_value_yaml_cannot_build_and_goes_on(
     code, output = _run_cli(monkeypatch, capsys, bad, good)
 
     assert code == 1
-    assert f"Error: Invalid YAML: {bad} holds a value YAML cannot build:" in output
-    assert "Traceback" not in output
+    assert f"Error: Invalid YAML: {expected}" in output
+    assert f'in "{bad}", line 2, column 7' in output
     assert "Validation PASSED: good.json" in output
     assert "1 of 2 file(s) passed" in output
 
