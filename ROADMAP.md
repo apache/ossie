@@ -430,12 +430,7 @@ Broad ecosystem adoption depends on practical tools that let teams validate thei
 
 - [JSON Schema (ossie-schema.json)](core-spec/ossie-schema.json) — schema for structural validation
 - [Validation Script (validate.py)](validation/validate.py) — validates Ossie YAML against JSON Schema, unique names, references, and SQL syntax
-- [Snowflake Converter](https://github.com/apache/ossie-converters/tree/main/snowflake) — Ossie → Snowflake Cortex Analyst YAML converter
-- [GoodData Converter](https://github.com/apache/ossie-converters/tree/main/gooddata) — bidirectional Ossie ↔ GoodData LDM converter
-- [Salesforce Converter](https://github.com/apache/ossie-converters/tree/main/salesforce) — Ossie ↔ Salesforce converter
-- [Apache Polaris Converter](https://github.com/apache/ossie-converters/tree/main/polaris) — Ossie → Apache Polaris converter
-- [OrionBelt Converter](https://github.com/apache/ossie-converters/tree/main/orionbelt) — bidirectional Ossie ↔ OrionBelt OBML converter
-- [Microsoft Converter](https://github.com/apache/ossie-converters/tree/main/microsoft) — bidirectional Ossie ↔ Power BI / Fabric semantic model (TMSL) converter
+- [Reference converters (apache/ossie-converters)](https://github.com/apache/ossie-converters) — Ossie ↔ vendor converters
 
 **Related Issues:**
 
