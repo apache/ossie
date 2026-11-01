@@ -595,8 +595,8 @@ For a non-normative catalog of `vendor_name` values well-known tools use, see
 ```
 
 The `data` payload is an opaque string that Ossie carries but does not
-interpret. For vendor-specific extension examples and the known-vendor catalog,
-see [extensions/vendors.md](../extensions/vendors.md).
+interpret. For the known-vendor catalog, see
+[extensions/vendors.md](../extensions/vendors.md).
 
 ---
 
