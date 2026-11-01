@@ -42,3 +42,5 @@ only dialect the specification defines; all others are opaque to Ossie.
 | `SPARQL` | SPARQL Query Language |
 | `TRINO` | Trino SQL |
 | `CLICKHOUSE` | ClickHouse SQL |
+| `POSTGRES` | PostgreSQL |
+| `REDSHIFT` | Amazon Redshift SQL |
