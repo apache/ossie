@@ -37,8 +37,12 @@
 4. [Relationships](#relationships)
 5. [Fields](#fields)
 6. [Metrics](#metrics)
-7. [Name Resolution](#name-resolution)
-8. [Examples](#examples)
+7. [Custom Extensions](#custom-extensions)
+8. [Name Resolution](#name-resolution)
+9. [Complete Example](#complete-example)
+10. [AI Context Structure](#ai-context-structure)
+11. [Version History](#version-history)
+12. [License](#license)
 
 ---
 
