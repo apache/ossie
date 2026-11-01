@@ -68,18 +68,40 @@ def _registered_tokens(registry: str) -> set[str]:
     }
 
 
+def _registry_mismatch(kind: str, code: str, in_code: set[str], in_registry: set[str]) -> str:
+    """The message for a pin that failed: which side each token is missing from."""
+    registry = f"extensions/{kind}.md"
+    parts = []
+    if only_registry := sorted(in_registry - in_code):
+        parts.append(f"in {registry} but not in {code}: {', '.join(only_registry)}")
+    if only_code := sorted(in_code - in_registry):
+        parts.append(f"in {code} but not in {registry}: {', '.join(only_code)}")
+    return f"{code} and {registry} do not list the same {kind}: " + "; ".join(parts)
+
+
+def test_registry_mismatch_names_each_side() -> None:
+    assert _registry_mismatch("dialects", "code", {"A", "B"}, {"B", "C"}) == (
+        "code and extensions/dialects.md do not list the same dialects: "
+        "in extensions/dialects.md but not in code: C; in code but not in extensions/dialects.md: A"
+    )
+    assert _registry_mismatch("vendors", "code", {"a"}, {"a", "b"}) == (
+        "code and extensions/vendors.md do not list the same vendors: "
+        "in extensions/vendors.md but not in code: b"
+    )
+
+
 def test_dialect_enum_matches_the_registry() -> None:
     # The field accepts any string; the enum is the well-known values, so it
     # carries exactly what extensions/dialects.md registers.
-    assert {member.value for member in OssieDialect} == _registered_tokens("dialects"), (
-        "OssieDialect and extensions/dialects.md do not list the same dialects"
-    )
+    listed = {member.value for member in OssieDialect}
+    registered = _registered_tokens("dialects")
+    assert listed == registered, _registry_mismatch("dialects", "OssieDialect", listed, registered)
 
 
 def test_vendor_enum_matches_the_registry() -> None:
-    assert {member.value for member in OssieVendor} == _registered_tokens("vendors"), (
-        "OssieVendor and extensions/vendors.md do not list the same vendors"
-    )
+    listed = {member.value for member in OssieVendor}
+    registered = _registered_tokens("vendors")
+    assert listed == registered, _registry_mismatch("vendors", "OssieVendor", listed, registered)
 
 
 @pytest.mark.parametrize(
