@@ -110,7 +110,7 @@ rungs:
       - {id: M2.aggregates.bare,      file: m2/m2_aggregates_bare.ossie.yaml,      tag: ANSI_SQL, reference_form: bare,      role: reference-form-variant}
 
   - id: M3
-    description: a filtered aggregate, in the portable form SUM(CASE WHEN ... THEN x ELSE 0 END) and with the REQUIRED FILTER (WHERE ...) clause
+    description: a filtered aggregate, in the portable form SUM(CASE WHEN ... THEN x END) (no ELSE, equal to FILTER per expression_language.md) and with the REQUIRED FILTER (WHERE ...) clause
     elements_under_test:
       - kind: metric
         name: completed_amount

@@ -37,7 +37,7 @@ difference in a converter's output localizes to a single construct:
 | M0 | baseline | one dataset, one field, one `SUM` metric |
 | M1 | a scalar field, no aggregation | `amount * 1.1` calculated column |
 | M2 | the core aggregate set | `SUM`, `COUNT`, `COUNT(DISTINCT)`, `AVG`, `MIN`, `MAX` |
-| M3 | a filtered aggregate | `SUM(CASE WHEN ... THEN x ELSE 0 END)`, and the same with `FILTER (WHERE ...)` |
+| M3 | a filtered aggregate | `SUM(CASE WHEN ... THEN x END)` (no `ELSE`, so it equals the `FILTER` form), and the same with `FILTER (WHERE ...)` |
 | M4 | a cross-dataset metric | two datasets, a relationship, a model-scoped metric across the join |
 | M5 | metric composition | a model-scoped metric built from two others, inlined (a metric expression cannot refer to other metrics) |
 | M6 | date and time scalars | `YEAR`, `DATE_TRUNC`, `DATEDIFF(part, start, end)` |
