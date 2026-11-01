@@ -139,8 +139,6 @@ Ossie expressions support the following SQL constructs within any expression:
 | Scalar functions | See function categories below                                                                                                                                                                                                                                                         |
 | Parentheses | Expression grouping                                                                                                                                                                                                                                                                   |
 
-### 
-
 ### Not Supported in Expressions
 
 | Construct | Reason |
@@ -730,8 +728,6 @@ expression:
 | Null coalesce | `COALESCE(a, b)` | `COALESCE(a, b)` or `NVL(a, b)` | `COALESCE(a, b)` or `IFNULL(a, b)` | `COALESCE(a, b)` | `COALESCE(a, b)` |
 | Current timestamp | `CURRENT_TIMESTAMP` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP` |
 | Substring | `SUBSTRING(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTRING(s, start, len)` | `SUBSTRING(s, start, len)` |
-
-### 
 
 ### Dialect-Specific Extensions
 
