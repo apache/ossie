@@ -17,6 +17,7 @@
 
 import copy
 import json
+import os
 import re
 import urllib.request
 from importlib.util import module_from_spec, spec_from_file_location
@@ -1590,6 +1591,20 @@ def test_cli_escapes_a_lone_surrogate_in_a_diagnostic(tmp_path, monkeypatch, cap
     assert "[Unique] Duplicate field name '\\ud800' in dataset 'customers'" in output
     assert "Validation PASSED: good.json" in output
     assert "1 of 2 file(s) passed" in output
+
+
+def test_cli_escapes_a_file_name_stdout_cannot_encode(tmp_path, monkeypatch, capsys, offline):
+    # A name that is not valid UTF-8 decodes with a surrogate escape, which the
+    # strict stdout encoder refuses when the report names the file.
+    try:
+        model = _write_document(tmp_path, os.fsdecode(b"m\xff.json"), _document([_CUSTOMERS], []))
+    except OSError:
+        pytest.skip("the file system refuses a name that is not valid UTF-8")
+
+    code, output = _run_cli(monkeypatch, capsys, model)
+
+    assert code == 0
+    assert "Validation PASSED: m\\udcff.json" in output
 
 
 def test_cli_takes_files_after_a_double_dash_literally(tmp_path, monkeypatch, capsys, offline):

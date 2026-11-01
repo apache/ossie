@@ -1822,9 +1822,10 @@ def validate_file(yaml_path: Path, schema: dict) -> bool:
 
 
 def main():
-    # A diagnostic echoes the text it is about, and a "\ud800" escape in the document
-    # puts a lone surrogate in it that the strict stdout encoder refuses. Escape it
-    # instead of crashing after the check has already found the problem.
+    # The report echoes text it did not choose: a "\ud800" escape in the document
+    # puts a lone surrogate in a diagnostic, and a file name that is not valid UTF-8
+    # decodes with a surrogate escape. The strict stdout encoder refuses both, so
+    # escape them instead of crashing after the check has already run.
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="backslashreplace")
 
