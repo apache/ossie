@@ -311,6 +311,169 @@ def test_mapping_document_rejects_empty_identifiers(
     assert _VALIDATE.validate_schema(document, mapping_schema)
 
 
+def _detailed_ontology() -> dict:
+    """An ontology exercising every string that names something."""
+    return {
+        "version": "0.2.0.dev0",
+        "name": "sales",
+        "prefixes": {"foaf": "http://xmlns.com/foaf/0.1/"},
+        "requires": ["orders.total > 0"],
+        "ontology": [
+            {
+                "concept": "Order",
+                "type": "EntityType",
+                "extends": ["Record"],
+                "identify_by": ["order_id"],
+                "iri": "http://example.org/Order",
+                "relationships": [
+                    {
+                        "name": "order_id",
+                        "verbalizes": ["{Order} is identified by {OrderId}"],
+                        "iri": "http://example.org/orderId",
+                        "roles": [{"concept": "OrderId", "name": "identifier"}],
+                    }
+                ],
+            }
+        ],
+    }
+
+
+def _only_min_length_paths(validator, document) -> list[tuple]:
+    """Paths of the minLength errors, so a case cannot pass on another error."""
+    return [
+        tuple(error.absolute_path)
+        for error in validator.iter_errors(document)
+        if error.validator == "minLength"
+    ]
+
+
+@pytest.mark.parametrize(
+    "mutate, path",
+    [
+        (lambda d: d.update(name=""), ("name",)),
+        (lambda d: d["prefixes"].update(foaf=""), ("prefixes", "foaf")),
+        (lambda d: d.update(requires=[""]), ("requires", 0)),
+        (lambda d: d["ontology"][0].update(concept=""), ("ontology", 0, "concept")),
+        (lambda d: d["ontology"][0].update(extends=[""]),
+         ("ontology", 0, "extends", 0)),
+        (lambda d: d["ontology"][0].update(identify_by=[""]),
+         ("ontology", 0, "identify_by", 0)),
+        (lambda d: d["ontology"][0].update(iri=""), ("ontology", 0, "iri")),
+        (lambda d: d["ontology"][0]["relationships"][0].update(name=""),
+         ("ontology", 0, "relationships", 0, "name")),
+        (lambda d: d["ontology"][0]["relationships"][0].update(verbalizes=[""]),
+         ("ontology", 0, "relationships", 0, "verbalizes", 0)),
+        (lambda d: d["ontology"][0]["relationships"][0].update(iri=""),
+         ("ontology", 0, "relationships", 0, "iri")),
+        (lambda d: d["ontology"][0]["relationships"][0]["roles"][0].update(concept=""),
+         ("ontology", 0, "relationships", 0, "roles", 0, "concept")),
+        (lambda d: d["ontology"][0]["relationships"][0]["roles"][0].update(name=""),
+         ("ontology", 0, "relationships", 0, "roles", 0, "name")),
+    ],
+    ids=[
+        "ontology-name",
+        "prefix-iri",
+        "requires-expression",
+        "concept",
+        "extends",
+        "identify_by",
+        "concept-iri",
+        "relationship-name",
+        "verbalizes",
+        "relationship-iri",
+        "role-concept",
+        "role-name",
+    ],
+)
+def test_ontology_rejects_empty_identifiers(ontology_validator, mutate, path):
+    """A string that names something cannot be empty; a description still can."""
+    document = _detailed_ontology()
+    assert not _only_min_length_paths(ontology_validator, document)
+
+    mutate(document)
+
+    assert _only_min_length_paths(ontology_validator, document) == [path]
+
+
+def test_ontology_still_accepts_an_empty_description(ontology_validator):
+    """Descriptions are free text, so the constraint does not reach them."""
+    document = _detailed_ontology()
+    document["description"] = ""
+    document["ontology"][0]["description"] = ""
+    document["ontology"][0]["relationships"][0]["description"] = ""
+
+    assert not _only_min_length_paths(ontology_validator, document)
+
+
+def _mapping_with_nested_mappings() -> dict:
+    document = _mapping_document()
+    document["concept_mappings"] = [
+        {
+            "concept": "Order",
+            "object_mappings": [
+                {
+                    "concept": "Order",
+                    "referent_mappings": [
+                        {"relationship": "order_id", "expression": "orders.order_id"}
+                    ],
+                }
+            ],
+            "link_mappings": [
+                {
+                    "relationship": "customer",
+                    "object_mapping": {"expression": "orders.customer_id"},
+                }
+            ],
+        }
+    ]
+    return document
+
+
+@pytest.mark.parametrize(
+    "mutate, path",
+    [
+        (lambda d: d["concept_mappings"][0].update(concept=""),
+         ("concept_mappings", 0, "concept")),
+        (lambda d: d["concept_mappings"][0]["object_mappings"][0].update(concept=""),
+         ("concept_mappings", 0, "object_mappings", 0, "concept")),
+        (lambda d: d["concept_mappings"][0]["object_mappings"][0]
+                    ["referent_mappings"][0].update(relationship=""),
+         ("concept_mappings", 0, "object_mappings", 0, "referent_mappings", 0,
+          "relationship")),
+        (lambda d: d["concept_mappings"][0]["object_mappings"][0]
+                    ["referent_mappings"][0].update(expression=""),
+         ("concept_mappings", 0, "object_mappings", 0, "referent_mappings", 0,
+          "expression")),
+        (lambda d: d["concept_mappings"][0]["link_mappings"][0].update(relationship=""),
+         ("concept_mappings", 0, "link_mappings", 0, "relationship")),
+        (lambda d: d["concept_mappings"][0]["link_mappings"][0]["object_mapping"]
+                    .update(expression=""),
+         ("concept_mappings", 0, "link_mappings", 0, "object_mapping", "expression")),
+    ],
+    ids=[
+        "concept-mapping-concept",
+        "object-mapping-concept",
+        "referent-mapping-relationship",
+        "referent-mapping-expression",
+        "link-mapping-relationship",
+        "object-mapping-expression",
+    ],
+)
+def test_mapping_document_rejects_empty_ontology_identifiers(
+    offline, mapping_schema, mutate, path
+):
+    """The mapping schema takes these $defs from ontology.json, constraints included."""
+    validator = Draft202012Validator(
+        mapping_schema, registry=_VALIDATE._SCHEMA_REGISTRY
+    )
+    document = _mapping_with_nested_mappings()
+    assert not _only_min_length_paths(validator, document)
+
+    mutate(document)
+
+    assert _only_min_length_paths(validator, document) == [path]
+
+
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -756,16 +919,41 @@ def test_mapping_dataset_without_a_fields_list_adds_no_fields_to_its_name(
     ]
 
 
-@pytest.mark.parametrize("expression", ["", "   ", "-- nothing", ";"])
+@pytest.mark.parametrize(
+    "expression, error",
+    [
+        # An empty string is rejected by the schema, before any SQL is parsed.
+        (
+            "",
+            "[Schema] concept_mappings -> 0 -> object_mappings -> 0 -> expression: "
+            "'' should be non-empty",
+        ),
+        # These carry characters, so minLength passes and the SQL check reports them.
+        (
+            "   ",
+            "[Reference] concept_mappings -> 0 -> object_mappings -> 0: "
+            "expression is empty",
+        ),
+        (
+            "-- nothing",
+            "[Reference] concept_mappings -> 0 -> object_mappings -> 0: "
+            "expression is empty",
+        ),
+        (
+            ";",
+            "[Reference] concept_mappings -> 0 -> object_mappings -> 0: "
+            "expression is empty",
+        ),
+    ],
+    ids=["empty", "whitespace", "comment", "semicolon"],
+)
 def test_mapping_expression_that_holds_nothing_is_an_error(
-    offline, mapping_schema, tmp_path, expression
+    offline, mapping_schema, tmp_path, expression, error
 ):
     mapping = _write_mapping_set(tmp_path)
     mapping["concept_mappings"][0]["object_mappings"] = [{"expression": expression}]
 
-    assert _cross_check(tmp_path, mapping_schema, mapping) == [
-        "[Reference] concept_mappings -> 0 -> object_mappings -> 0: expression is empty",
-    ]
+    assert _cross_check(tmp_path, mapping_schema, mapping) == [error]
 
 
 def test_mapping_expression_that_holds_nothing_is_an_error_without_the_model(
