@@ -150,8 +150,26 @@ class ValidationWarning(str):
     """An explicitly nonfatal diagnostic, compatible with existing string callers."""
 
 
+class _ValidatingLoader(UniqueKeyLoader):
+    """Report a scalar SafeLoader cannot build as a YAML error at its position.
+
+    SafeLoader raises ValueError, AttributeError or LookupError, not YAMLError,
+    for 2024-02-30 or !!int abc, !!timestamp abc, !!bool abc, !!int ''. The node
+    is still in scope here, so the error can name the value, its tag and its line.
+    """
+
+    def construct_object(self, node, deep=False):
+        try:
+            return super().construct_object(node, deep)
+        except (ValueError, AttributeError, LookupError) as e:
+            tag = node.tag.rsplit(":", 1)[-1]
+            raise yaml.constructor.ConstructorError(
+                None, None, f"cannot build {node.value!r} as {tag}", node.start_mark
+            ) from e
+
+
 def load_yaml_named(text: str, name: str):
-    """Parse text with UniqueKeyLoader, naming the source in any parser mark.
+    """Parse text with _ValidatingLoader, naming the source in any parser mark.
 
     yaml.load() names a str source "<unicode string>", which drops the path from
     malformed-YAML and duplicate-key diagnostics. Naming the loader restores it
@@ -160,7 +178,7 @@ def load_yaml_named(text: str, name: str):
     a stream, so a named StringIO would name the file but lose the snippet.
     """
     try:
-        loader = UniqueKeyLoader(text)
+        loader = _ValidatingLoader(text)
     except yaml.reader.ReaderError as e:
         # Reader.__init__ rejects an unprintable character (a NUL decodes as
         # valid UTF-8 and gets this far) before the name below can be set.
@@ -1374,10 +1392,6 @@ def resolve_document_reference(
         return None, [f"[Reference] {label} iri '{iri}' is not valid YAML: {str(e).split(chr(10))[0]}"]
     except RecursionError:
         return None, [f"[Reference] {label} iri '{iri}' is too deeply nested to parse"]
-    except (ValueError, AttributeError, LookupError) as e:
-        # SafeLoader raises these, not YAMLError, for a scalar it cannot build:
-        # 2024-02-30 or !!int abc, !!timestamp abc, !!bool abc, !!int ''.
-        return None, [f"[Reference] {label} iri '{iri}' holds a value YAML cannot build: {e}"]
     if not isinstance(document, dict):
         return None, [f"[Reference] {label} iri '{iri}' does not hold a document"]
 
@@ -1809,6 +1823,13 @@ def validate_file(yaml_path: Path, schema: dict) -> bool:
 
 
 def main():
+    # The report echoes text it did not choose: a "\ud800" escape in the document
+    # puts a lone surrogate in a diagnostic, and a file name that is not valid UTF-8
+    # decodes with a surrogate escape. The strict stdout encoder refuses both, so
+    # escape them instead of crashing after the check has already run.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="backslashreplace")
+
     if len(sys.argv) < 2:
         print(__doc__)
         sys.exit(1)

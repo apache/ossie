@@ -17,6 +17,7 @@
 
 import copy
 import json
+import os
 import re
 import urllib.request
 from importlib.util import module_from_spec, spec_from_file_location
@@ -1567,6 +1568,65 @@ def test_cli_reports_a_check_that_raises_and_goes_on(tmp_path, monkeypatch, caps
     assert f"Error: KeyError while validating {bad}: 'dialect'" in output
     assert "Validation PASSED: good.json" in output
     assert "1 of 2 file(s) passed" in output
+
+
+@pytest.mark.parametrize(
+    "scalar, expected",
+    [
+        ("2024-02-30", "cannot build '2024-02-30' as timestamp"),
+        ("!!int abc", "cannot build 'abc' as int"),
+        ("!!timestamp abc", "cannot build 'abc' as timestamp"),
+        ("!!bool abc", "cannot build 'abc' as bool"),
+        ("!!int ''", "cannot build '' as int"),
+    ],
+)
+def test_cli_reports_a_value_yaml_cannot_build_and_goes_on(
+    tmp_path, monkeypatch, capsys, offline, scalar, expected
+):
+    # SafeLoader raises ValueError, AttributeError, KeyError or IndexError for these,
+    # not YAMLError.
+    good = _write_document(tmp_path, "good.json", _document([_CUSTOMERS], []))
+    bad = tmp_path / "bad.yaml"
+    bad.write_text(f'version: "0.2.0.dev0"\nname: {scalar}\ndatasets: []\n')
+
+    code, output = _run_cli(monkeypatch, capsys, bad, good)
+
+    assert code == 1
+    assert f"Error: Invalid YAML: {expected}" in output
+    assert f'in "{bad}", line 2, column 7' in output
+    assert "Validation PASSED: good.json" in output
+    assert "1 of 2 file(s) passed" in output
+
+
+def test_cli_escapes_a_lone_surrogate_in_a_diagnostic(tmp_path, monkeypatch, capsys, offline):
+    # A "\ud800" escape loads as a lone surrogate, which the strict stdout encoder
+    # refuses when the diagnostic that names it is printed.
+    dataset = json.loads(json.dumps(_CUSTOMERS))
+    field = dict(dataset["fields"][0], name="\ud800")
+    dataset["fields"] = dataset["fields"] + [field, dict(field)]
+    bad = _write_document(tmp_path, "bad.json", _document([dataset], []))
+    good = _write_document(tmp_path, "good.json", _document([_CUSTOMERS], []))
+
+    code, output = _run_cli(monkeypatch, capsys, bad, good)
+
+    assert code == 1
+    assert "[Unique] Duplicate field name '\\ud800' in dataset 'customers'" in output
+    assert "Validation PASSED: good.json" in output
+    assert "1 of 2 file(s) passed" in output
+
+
+def test_cli_escapes_a_file_name_stdout_cannot_encode(tmp_path, monkeypatch, capsys, offline):
+    # A name that is not valid UTF-8 decodes with a surrogate escape, which the
+    # strict stdout encoder refuses when the report names the file.
+    try:
+        model = _write_document(tmp_path, os.fsdecode(b"m\xff.json"), _document([_CUSTOMERS], []))
+    except OSError:
+        pytest.skip("the file system refuses a name that is not valid UTF-8")
+
+    code, output = _run_cli(monkeypatch, capsys, model)
+
+    assert code == 0
+    assert "Validation PASSED: m\\udcff.json" in output
 
 
 def test_cli_takes_files_after_a_double_dash_literally(tmp_path, monkeypatch, capsys, offline):
