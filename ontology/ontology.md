@@ -82,13 +82,17 @@ Ontologies are conceptual models of enterprise data that describe the enterprise
 of concepts, relationships, and business rules. This specification represents an ontology
 hierarchically, grouping each relationship under the concept that plays its first role.
 
+A field described below as non-empty cannot be the empty string `""`. This applies to every
+string that names or references something, to IRIs, and to expressions. Descriptions are free
+text and may be empty.
+
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | string | Yes | Unique name of this specification |
+| `name` | string | Yes | Unique name of this specification; must be non-empty |
 | `description` | string | No | Human-readable description |
 | `ai_context` | string/object | No | Additional context for AI tools |
 | `ontology` | list | Yes | Concepts and relationships they group that form this ontology |
-| `prefixes` | object | No | Namespace prefixes used to abbreviate [IRIs](#global-identifiers) |
+| `prefixes` | object | No | Namespace prefixes used to abbreviate [IRIs](#global-identifiers); each prefix's IRI must be non-empty |
 | `ontology_mappings` | list | No | Deprecated; accepted only so existing documents continue to validate. Write mappings as [mapping documents](#mapping-documents) instead |
 
 Each component of an ontology declares a concept and lists the relationships where that
@@ -105,15 +109,15 @@ Concepts have the following schema:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `concept` | string | Yes | Unique name of this concept |
+| `concept` | string | Yes | Unique name of this concept; must be non-empty |
 | `type` | ConceptType | Yes | Entity type or value type |
 | `description` | string | No | Human-readable description |
-| `extends` | list | No | Names of this concept's supertypes |
-| `derived_by` | list | No | Expressions that derive this concept's population |
-| `identify_by` | list | No | Names of relationships that uniquely reference objects of this concept |
-| `requires` | list | No | Expressions that constrain this concept's population |
+| `extends` | list | No | Names of this concept's supertypes; each must be non-empty |
+| `derived_by` | list | No | Expressions that derive this concept's population; each must be non-empty |
+| `identify_by` | list | No | Names of relationships that uniquely reference objects of this concept; each must be non-empty |
+| `requires` | list | No | Expressions that constrain this concept's population; each must be non-empty |
 | `relationships` | list | No | Relationships where this concept plays the first role |
-| `iri` | string | No | Optional [global identifier](#global-identifiers) of this concept |
+| `iri` | string | No | Optional [global identifier](#global-identifiers) of this concept; must be non-empty when present |
 
 Each concept is either an entity type or a value type.
 
@@ -151,14 +155,14 @@ Each relationship that is declared under a concept conforms to the following sch
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | string | Yes | Part of the identifier for this relationship |
+| `name` | string | Yes | Part of the identifier for this relationship; must be non-empty |
 | `description` | string | No | Human-readable description |
 | `multiplicity` | enum | No | Multiplicity constraint |
 | `roles` | list | No | List of additional roles in this relationship |
-| `derived_by` | list | No | Expressions that derive links of this relationship |
-| `requires` | list | No | Expressions that constrain this relationship's population |
-| `verbalizes` | list | Yes | Patterns describing how to verbalize links |
-| `iri` | string | No | Optional [global identifier](#global-identifiers) of this relationship |
+| `derived_by` | list | No | Expressions that derive links of this relationship; each must be non-empty |
+| `requires` | list | No | Expressions that constrain this relationship's population; each must be non-empty |
+| `verbalizes` | list | Yes | Patterns describing how to verbalize links; each must be non-empty |
+| `iri` | string | No | Optional [global identifier](#global-identifiers) of this relationship; must be non-empty when present |
 
 Each relationship is uniquely identified by prepending its declared name with that of the containing
 concept. For instance, in:
@@ -200,8 +204,8 @@ using this schema:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `concept` | string | Yes | Name of the concept that plays this role |
-| `name` | string | No | Optional role name |
+| `concept` | string | Yes | Name of the concept that plays this role; must be non-empty |
+| `name` | string | No | Optional role name; must be non-empty when present |
 
 For instance, in:
 
@@ -452,7 +456,7 @@ either:
 | Field | Type | Required | Description |
 |---------------|---------|-----|-------|
 | `version` | string | Yes | Mapping specification version |
-| `name` | string | Yes | Unique identifier for this mapping |
+| `name` | string | Yes | Unique identifier for this mapping; must be non-empty |
 | `description` | string | No | Human-readable description of this mapping |
 | `ontology_ref` | object | Yes | Reference to the ontology document this mapping targets (see below) |
 | `semantic_model_ref` | object | Yes | Reference to the semantic model document this mapping draws from (see below) |
@@ -464,8 +468,8 @@ Both `ontology_ref` and `semantic_model_ref` are references with the following s
 
 | Field | Type | Required | Description |
 |---------------|---------|-----|-------|
-| `name` | string | Yes | Must equal the referenced document's own `name`; this is the reference's identity |
-| `iri` | string | No | Where to resolve the referenced document from. A relative reference such as `./flights.ontology.yaml` is resolved against the mapping document's own location or base IRI; an absolute IRI identifies the location directly. May be omitted where a catalog resolves documents by `name` |
+| `name` | string | Yes | Must be non-empty and equal the referenced document's own `name`; this is the reference's identity |
+| `iri` | string | No | Where to resolve the referenced document from. A relative reference such as `./flights.ontology.yaml` is resolved against the mapping document's own location or base IRI; an absolute IRI identifies the location directly. May be omitted where a catalog resolves documents by `name`. Must be non-empty when present |
 
 A mapping document references exactly one ontology and exactly one semantic model. When more than
 one semantic model maps to an ontology, each mapping is its own document.
@@ -496,7 +500,7 @@ Concept mappings have the following schema:
 
 | Field | Type | Required | Description |
 |---------------|---------|-----|-------|
-| `concept`         | string  | Yes | Names the concept whose part of the ontology is covered by this concept mapping |
+| `concept`         | string  | Yes | Names the concept whose part of the ontology is covered by this concept mapping; must be non-empty |
 | `object_mappings` | list  | if no `link_mappings` | Mappings that populate this concept |
 | `link_mappings`   | list  | if no `object_mappings` | Mappings that populate the relationships grouped under this concept |
 
@@ -509,8 +513,8 @@ An object mapping has the following schema:
 
 | Field | Type | Required | Description |
 |---------------|---------|-----|-------|
-| `concept`     | string  | No | Names the concept being mapped to using this object map |
-| `expression`  | string  | if no `referent_mappings` | SQL expression that computes a value from fields |
+| `concept`     | string  | No | Names the concept being mapped to using this object map; must be non-empty when present |
+| `expression`  | string  | if no `referent_mappings` | SQL expression that computes a value from fields; must be non-empty when present |
 | `referent_mappings` | list  | if no `expression` | Referent mappings that find entity objects using identifying relationships |
 
 When the concept is a value type or an entity type with a simple identifier, then an object mapping is just
@@ -558,8 +562,8 @@ Referent mappings have the following schema:
 
 | Field | Type | Required | Description |
 |----------------|--------|-----|-------|
-| `relationship` | string | Yes | Name of an identifying relationship |
-| `expression`  | string  | if no `referent_mappings` | SQL expression that computes a value from fields |
+| `relationship` | string | Yes | Name of an identifying relationship; must be non-empty |
+| `expression`  | string  | if no `referent_mappings` | SQL expression that computes a value from fields; must be non-empty when present |
 | `referent_mappings` | list  | if no `expression` | Referent mappings that find entity objects using identifying relationships |
 
 For instance, consider this ontology snippet:
@@ -617,7 +621,7 @@ Link mappings have the following schema:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `object_mapping` | object | Yes | Maps to objects in the last position of mapped tuples |
-| `relationship` | string | No | Relationship whose links include the tuples mapped to by this mapping |
+| `relationship` | string | No | Relationship whose links include the tuples mapped to by this mapping; must be non-empty when present |
 | `children` | list | No | List of child nodes in the tree |
 
 The level of a link mapping must coincide with the arity of the relationship it names. So a
@@ -690,6 +694,7 @@ though `Store` plays a role in three of the relationships.
 
 - **0.2.0.dev0** (2026-05-29): Basic support for ontologies and logical schema mappings
   - Breaking: each ontology map's `semantic_model` now requires its own `version`.
+  - Breaking: names, IRIs, prefix IRIs and expressions can no longer be empty strings.
   - Core ontology structure: Concepts, relationships, and business rules (requires and derived_by)
   - Schema mappings from one or more logical models into an ontology
   - Optional IRIs on concepts and relationships, with namespace prefixes declared at the top level
