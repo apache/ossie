@@ -242,7 +242,7 @@ FROM       (SELECT AGG(o.c1) AS c1 FROM orders o)    b1
 CROSS JOIN (SELECT AGG(c.c2) AS c2 FROM customers c) b2;
 ```
 
-On the data in Appendix B.1, the value is 650 / 4 = 162.5.
+On the data in Appendix B.1, the value is 650 / 4 = 162.5. Each branch aggregates the rows of its own home dataset, and a dataset that only another branch needs is not joined to it: `c2` counts C4, which has no orders. A plan that computes both components in one query over a join from `orders` to `customers` (e.g. inner, left) counts only the three customers with orders, and gives 650 / 3.
 
 ### 5.3 Reachability
 
@@ -397,6 +397,8 @@ An error with code 13, 14, or 16 MUST identify the dimension or the filter, and 
 Conformance is semantic: each query must produce the specified rows or error. Bindings define the representation of queries, results, and errors, and interoperability between their implementations.
 
 An engine conforms if it satisfies Sections 3, 4, 5, and 8 through every binding it offers. It need not generate SQL text, but SHOULD expose its lowering, for example through `EXPLAIN`.
+
+An engine MAY answer a query that this version rejects only when the query or the model requests that behavior explicitly, for example through an engine-defined query property or a `custom_extensions` entry. Otherwise, the engine MUST raise the error that Section 8 specifies.
 
 ---
 
