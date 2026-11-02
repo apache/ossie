@@ -42,20 +42,26 @@ extension payload.
 
 ## Known vendors
 
-| Vendor        | Description                            |
-| ------------- | -------------------------------------- |
-| `SNOWFLAKE`   | Snowflake-specific attributes          |
-| `SALESFORCE`  | Salesforce/Tableau-specific attributes |
-| `DBT`         | dbt-specific attributes                |
-| `DATABRICKS`  | Databricks-specific attributes         |
-| `GOODDATA`    | GoodData-specific attributes           |
-| `SEMANTIDO`   | Semantido-specific attributes          |
-| `HONEYDEW`    | Honeydew-specific attributes           |
-| `WISDOM`      | WisdomAI-specific attributes           |
-| `POWER_BI`    | Microsoft Power BI-specific attributes |
-| `SIGMA`       | Sigma Computing-specific attributes    |
-| `THOUGHTSPOT` | ThoughtSpot-specific attributes        |
-| `HEX`         | Hex-specific attributes                |
-| `ATACCAMA`    | Ataccama-specific attributes           |
-| `OMNI`        | Omni-specific attributes               |
-| `PRECISELY`   | Precisely-specific attributes          |
+| Vendor | Description |
+| ------ | ----------- |
+
+# <<<<<<< HEAD
+
+| `COMMON` | Common/standard extensions |
+
+> > > > > > > 5520d75 (Format vendor extension catalog)
+> > > > > > > | `SNOWFLAKE` | Snowflake-specific attributes |
+> > > > > > > | `SALESFORCE` | Salesforce/Tableau-specific attributes |
+> > > > > > > | `DBT` | dbt-specific attributes |
+> > > > > > > | `DATABRICKS` | Databricks-specific attributes |
+> > > > > > > | `GOODDATA` | GoodData-specific attributes |
+> > > > > > > | `SEMANTIDO` | Semantido-specific attributes |
+> > > > > > > | `HONEYDEW` | Honeydew-specific attributes |
+> > > > > > > | `WISDOM` | WisdomAI-specific attributes |
+> > > > > > > | `POWER_BI` | Microsoft Power BI-specific attributes |
+> > > > > > > | `SIGMA` | Sigma Computing-specific attributes |
+> > > > > > > | `THOUGHTSPOT` | ThoughtSpot-specific attributes |
+> > > > > > > | `HEX` | Hex-specific attributes |
+> > > > > > > | `ATACCAMA` | Ataccama-specific attributes |
+> > > > > > > | `OMNI` | Omni-specific attributes |
+> > > > > > > | `PRECISELY` | Precisely-specific attributes |
