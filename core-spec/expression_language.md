@@ -709,9 +709,7 @@ expression:
 
 ### Dialect and Tool Mapping Reference
 
-Dialect-specific function syntax and BI-tool mappings are non-normative and may vary across implementations. The core specification defines the portable expression baseline; individual functions may not be supported by every database, and equivalent-looking functions may have different semantics across dialects.
 
-See [Dialect and Tool Mappings](../extensions/tool-mappings.md) for database support details and dialect-specific variations.
 
 ## Compliance Levels
 

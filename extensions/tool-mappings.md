@@ -119,7 +119,7 @@ to ANSI SQL. See the [converter limitations](https://github.com/apache/ossie-con
 
 ## Database Function Support
 
-**Database Support:**
+
 
 | Function | Snowflake | BigQuery | Databricks | PostgreSQL |
 | :---- | :---- | :---- | :---- | :---- |
