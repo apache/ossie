@@ -1630,7 +1630,7 @@ def test_cli_escapes_a_file_name_stdout_cannot_encode(tmp_path, monkeypatch, cap
 
 
 def test_cli_takes_files_after_a_double_dash_literally(tmp_path, monkeypatch, capsys, offline):
-    dashed = _write_document(tmp_path, "-model.json", _document([_CUSTOMERS], []))
+    _write_document(tmp_path, "-model.json", _document([_CUSTOMERS], []))
     monkeypatch.chdir(tmp_path)
 
     code, output = _run_cli(monkeypatch, capsys, "--", "-model.json")
