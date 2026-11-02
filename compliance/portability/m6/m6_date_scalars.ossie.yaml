@@ -55,5 +55,5 @@ metrics:
     expression:
       dialects:
         - dialect: ANSI_SQL
-          expression: AVG(DATEDIFF('day', sales.order_date, sales.ship_date))
+          expression: AVG(DATEDIFF(day, sales.order_date, sales.ship_date))
     datatype: Decimal
