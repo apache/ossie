@@ -173,17 +173,14 @@ def _manifest_rungs():
 
 
 def _names(document, kind):
-    if kind == "metric":
-        return {metric["name"] for metric in document.get("metrics") or []} | {
-            metric["name"]
-            for dataset in document.get("datasets") or []
-            for metric in dataset.get("metrics") or []
-        }
-    return {
-        field["name"]
-        for dataset in document.get("datasets") or []
-        for field in dataset.get("fields") or []
-    }
+    # The grader's own keys, so the manifest and the findings cannot drift apart.
+    return {name for (element_kind, name) in grade._collect(document) if element_kind == kind}
+
+
+def _reported_name(element, variant):
+    if element["kind"] == "metric" and variant.get("metrics_in"):
+        return f"{variant['metrics_in']}.{element['name']}"
+    return element["name"]
 
 
 def test_every_manifest_element_is_found_by_kind_and_name_in_each_variant():
@@ -193,7 +190,7 @@ def test_every_manifest_element_is_found_by_kind_and_name_in_each_variant():
             document = grade._load(os.path.join(HERE, variant["file"]))
             for element in rung["elements_under_test"]:
                 assert element["kind"] in ("metric", "field"), (rung["id"], element)
-                assert element["name"] in _names(document, element["kind"]), (
+                assert _reported_name(element, variant) in _names(document, element["kind"]), (
                     variant["id"],
                     element,
                 )
