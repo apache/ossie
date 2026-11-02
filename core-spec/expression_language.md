@@ -128,7 +128,7 @@ Ossie expressions support the following SQL constructs within any expression:
 | Construct | Notes                                                                                                                                                                                                                                                                                 |
 | :---- |:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Column and Metric references | Varies based on whether in Ontology or Semantic models. For semantic models, see [Name Resolution](spec.md#name-resolution). See also namespacing in [Ossie Discussion Point: Core Analytic Abstractions](https://docs.google.com/document/d/1si8DqU4arG18ZgX4HnRG5D_zS2X7V1s-vgNY35rvxhM/edit?tab=t.0#heading=h.le505t8uoyfy) And future Ontology documentation |
-| Arithmetic operators | `+`, `-`, `*`, `/`, `%` (modulo)                                                                                                                                                                                                                                                      |
+| Arithmetic operators | `+`, `-`, `*`, `/` (true division, see [Numeric Semantics](#numeric-semantics)), `%` (modulo)                                                                                                                                                                                                                                                      |
 | Comparison operators | `=`, `<>`, `!=`, `<`, `>`, `<=`, `>=`                                                                                                                                                                                                                                                 |
 | Logical operators | `AND`, `OR`, `NOT`                                                                                                                                                                                                                                                                    |
 | `BETWEEN` | `x BETWEEN a AND b`                                                                                                                                                                                                                                                                   |
@@ -509,12 +509,31 @@ Pattern wildcards for `LIKE`:
 | Function | Syntax | Description |
 | :---- | :---- | :---- |
 | `ABS` | `ABS(x)` | Absolute value |
-| `ROUND` | `ROUND(x, d)` | Round to d decimal places |
+| `ROUND` | `ROUND(x, d)` | Round to d decimal places; a value exactly halfway rounds away from zero (see [Numeric Semantics](#numeric-semantics)) |
 | `FLOOR` | `FLOOR(x)` | Round down to integer |
 | `CEIL` / `CEILING` | `CEIL(x)` | Round up to integer |
 | `TRUNC` / `TRUNCATE` | `TRUNC(x, d)` | Truncate to d decimal places |
 | `MOD` | `MOD(x, y)` | Modulo (remainder) |
 | `SIGN` | `SIGN(x)` | Sign (-1, 0, or 1\) |
+
+### Numeric Semantics
+
+Two results depend on the engine unless the language fixes them, so the same metric
+could return different numbers on different engines:
+
+- **`ROUND(x, d)` breaks ties half away from zero.** A value exactly halfway between two
+  results rounds to the one farther from zero: `ROUND(2.5, 0)` is `3`, `ROUND(-2.5, 0)` is
+  `-3`, `ROUND(0.125, 2)` is `0.13`. The rule applies to the value as stored: a `FLOAT` /
+  `DOUBLE` value such as `2.675` is not exactly halfway in binary, so its result follows
+  from the stored value.
+- **`/` is true division.** The quotient keeps its fractional part whatever the operand
+  types: `5 / 2` is `2.5`, not `2`. Integer division is written explicitly, for example
+  `TRUNC(x / y, 0)` (toward zero) or `FLOOR(x / y)`.
+
+An engine whose default differs (half-to-even rounding, or integer division for two
+integer operands) evaluates an equivalent expression instead, for example
+`CAST(x AS DOUBLE) / y` for true division. Because the rule is fixed, a converter can
+emit that rewrite without changing the meaning.
 
 ### Advanced Math (REQUIRED)
 
