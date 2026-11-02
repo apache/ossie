@@ -1,0 +1,250 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Generated from the GASP Standard (https://gaspwiki.com) by `npm run derive` in gasp-wiki-mcp. Do not edit; edit /standard/ and re-run.
+version: 0.2.0.dev0
+name: gasp_saas_mapping
+description: Maps the GASP SaaS core ontology onto the GASP SaaS core semantic model.
+ontology_ref:
+  name: GASP SaaS core
+  iri: ./gasp_saas.ontology.yaml
+semantic_model_ref:
+  name: GASP SaaS core
+  iri: ./gasp_saas.semantic_model.yaml
+concept_mappings:
+  - concept: RevenueEvent
+    object_mappings:
+      - referent_mappings:
+          - relationship: event_id
+            expression: revenue_event.event_id
+    link_mappings:
+      - object_mapping:
+          referent_mappings:
+            - relationship: event_id
+              expression: revenue_event.event_id
+        children:
+          - object_mapping:
+              concept: ChangeNature
+              expression: revenue_event.change_nature
+            relationship: change_nature
+          - object_mapping:
+              concept: Currency
+              expression: revenue_event.currency
+            relationship: currency
+          - object_mapping:
+              concept: Customer
+              referent_mappings:
+                - relationship: customer_id
+                  expression: revenue_event.customer_id
+            relationship: customer_id
+          - object_mapping:
+              concept: EventType
+              expression: revenue_event.event_type
+            relationship: event_type
+          - object_mapping:
+              concept: ExpansionClassification
+              expression: revenue_event.expansion_classification
+            relationship: expansion_classification
+          - object_mapping:
+              concept: LifecycleAttribution
+              expression: revenue_event.lifecycle_attribution
+            relationship: lifecycle_attribution
+          - object_mapping:
+              concept: MrrChange
+              expression: revenue_event.mrr_change
+            relationship: mrr_change
+          - object_mapping:
+              concept: NewMrr
+              expression: revenue_event.new_mrr
+            relationship: new_mrr
+          - object_mapping:
+              concept: PriorMrr
+              expression: revenue_event.prior_mrr
+            relationship: prior_mrr
+          - object_mapping:
+              concept: SegmentValue
+              expression: revenue_event.segment
+            relationship: segment
+          - object_mapping:
+              concept: Subscription
+              referent_mappings:
+                - relationship: subscription_id
+                  expression: revenue_event.subscription_id
+            relationship: subscription_id
+  - concept: CostEvent
+    object_mappings:
+      - referent_mappings:
+          - relationship: event_id
+            expression: cost_event.event_id
+    link_mappings:
+      - object_mapping:
+          referent_mappings:
+            - relationship: event_id
+              expression: cost_event.event_id
+        children:
+          - object_mapping:
+              concept: Cost
+              expression: cost_event.cost
+            relationship: cost
+          - object_mapping:
+              concept: CostCentre
+              expression: cost_event.cost_centre
+            relationship: cost_centre
+          - object_mapping:
+              concept: CostFunction
+              expression: cost_event.cost_function
+            relationship: cost_function
+          - object_mapping:
+              concept: CostType
+              expression: cost_event.cost_type
+            relationship: cost_type
+          - object_mapping:
+              concept: Currency
+              expression: cost_event.currency
+            relationship: currency
+          - object_mapping:
+              concept: Customer
+              referent_mappings:
+                - relationship: customer_id
+                  expression: cost_event.customer_id
+            relationship: customer_id
+          - object_mapping:
+              concept: LifecycleAttribution
+              expression: cost_event.lifecycle_attribution
+            relationship: lifecycle_attribution
+  - concept: Customer
+    object_mappings:
+      - referent_mappings:
+          - relationship: customer_id
+            expression: customer.customer_id
+    link_mappings:
+      - object_mapping:
+          referent_mappings:
+            - relationship: customer_id
+              expression: customer.customer_id
+      - object_mapping:
+          referent_mappings:
+            - relationship: customer_id
+              expression: subscription.customer_id
+        children:
+          - object_mapping:
+              concept: Subscription
+              referent_mappings:
+                - relationship: subscription_id
+                  expression: subscription.subscription_id
+            relationship: owns
+  - concept: Subscription
+    object_mappings:
+      - referent_mappings:
+          - relationship: subscription_id
+            expression: subscription.subscription_id
+    link_mappings:
+      - object_mapping:
+          referent_mappings:
+            - relationship: subscription_id
+              expression: subscription.subscription_id
+        children:
+          - object_mapping:
+              concept: Customer
+              referent_mappings:
+                - relationship: customer_id
+                  expression: subscription.customer_id
+            relationship: customer_id
+      - object_mapping:
+          referent_mappings:
+            - relationship: subscription_id
+              expression: subscription.subscription_id
+  - concept: SurveyResponse
+    object_mappings:
+      - referent_mappings:
+          - relationship: response_id
+            expression: survey_response.response_id
+    link_mappings:
+      - object_mapping:
+          referent_mappings:
+            - relationship: response_id
+              expression: survey_response.response_id
+        children:
+          - object_mapping:
+              concept: CesScore
+              expression: survey_response.ces_score
+            relationship: ces_score
+          - object_mapping:
+              concept: Customer
+              referent_mappings:
+                - relationship: customer_id
+                  expression: survey_response.customer_id
+            relationship: customer_id
+          - object_mapping:
+              concept: EngagementScore
+              expression: survey_response.engagement_score
+            relationship: engagement_score
+          - object_mapping:
+              concept: NpsScore
+              expression: survey_response.nps_score
+            relationship: nps_score
+          - object_mapping:
+              concept: SatisfactionScore
+              expression: survey_response.satisfaction_score
+            relationship: satisfaction_score
+          - object_mapping:
+              concept: SurveyCompleted
+              expression: survey_response.survey_completed
+            relationship: survey_completed
+          - object_mapping:
+              concept: SurveyType
+              expression: survey_response.survey_type
+            relationship: survey_type
+  - concept: Financials
+    object_mappings:
+      - referent_mappings:
+          - relationship: period_start
+            expression: financials.period_start
+    link_mappings:
+      - object_mapping:
+          referent_mappings:
+            - relationship: period_start
+              expression: financials.period_start
+        children:
+          - object_mapping:
+              concept: BadDebtExpense
+              expression: financials.bad_debt_expense
+            relationship: bad_debt_expense
+          - object_mapping:
+              concept: CapitalExpenditures
+              expression: financials.capital_expenditures
+            relationship: capital_expenditures
+          - object_mapping:
+              concept: Ebitda
+              expression: financials.ebitda
+            relationship: ebitda
+          - object_mapping:
+              concept: NetIncome
+              expression: financials.net_income
+            relationship: net_income
+          - object_mapping:
+              concept: OperatingCashFlow
+              expression: financials.operating_cash_flow
+            relationship: operating_cash_flow
+          - object_mapping:
+              concept: RevenueValue
+              expression: financials.revenue
+            relationship: revenue
+          - object_mapping:
+              concept: RevenueType
+              expression: financials.revenue_type
+            relationship: revenue_type

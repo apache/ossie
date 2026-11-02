@@ -31,6 +31,7 @@ on:
       - "examples/flights*.yaml"
       - "examples/tpcds_semantic_model.yaml"
       - "examples/renamed_fields.yaml"
+      - "examples/gasp_saas*.yaml"
       - ".github/workflows/validation-ci.yml"
       - "scripts/generate-spec-types.py"
   pull_request:
@@ -44,6 +45,7 @@ on:
       - "examples/flights*.yaml"
       - "examples/tpcds_semantic_model.yaml"
       - "examples/renamed_fields.yaml"
+      - "examples/gasp_saas*.yaml"
       - ".github/workflows/validation-ci.yml"
       - "scripts/generate-spec-types.py"
 
@@ -96,3 +98,9 @@ jobs:
 
       - name: Validate renamed-fields example
         run: uv run validation/validate.py examples/renamed_fields.yaml
+
+      - name: Validate GASP SaaS example
+        run: |
+          uv run validation/validate.py examples/gasp_saas.ontology.yaml --schema ontology/ontology.json
+          uv run validation/validate.py examples/gasp_saas.semantic_model.yaml
+          uv run validation/validate.py examples/gasp_saas.mapping.yaml --schema ontology/mapping.json
