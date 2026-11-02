@@ -24,7 +24,10 @@
 # converter, which is not what a cross-converter measurement wants.
 #
 # This manifest lists the fixtures and the elements each rung exercises, each by
-# kind (metric or field) and name, as they appear in every variant of the rung.
+# kind (metric or field) and by the name the grader reports it under: a field as
+# dataset.field, a model-scoped metric by its name. A variant with
+# `metrics_in: <dataset>` carries the rung's metrics as dataset-scoped metrics of
+# that dataset, which the grader reports as <dataset>.<metric>.
 # It does NOT encode per-converter expected outputs: those are measured by a
 # grader that diffs the returned document against the input element by element
 # into the outcome vocabulary below. Conformance stays a floor (validate.py
@@ -74,13 +77,13 @@ rungs:
     variants:
       - {id: M0.ansi.qualified,     file: m0/m0_ansi_qualified.ossie.yaml,     tag: ANSI_SQL,       reference_form: qualified, role: primary}
       - {id: M0.ossiesql.qualified, file: m0/m0_ossiesql_qualified.ossie.yaml, tag: OSSIE_SQL_2026, reference_form: qualified, role: tag-sensitivity}
-      - {id: M0.sum.bare,           file: m0/m0_sum_bare.ossie.yaml,           tag: ANSI_SQL,       reference_form: bare,      role: reference-form-variant}
+      - {id: M0.sum.bare,           file: m0/m0_sum_bare.ossie.yaml,           tag: ANSI_SQL,       reference_form: bare,      role: reference-form-variant, metrics_in: sales}
 
   - id: M1
     description: baseline plus one scalar calculated-column field expression, no aggregation
     elements_under_test:
       - kind: field
-        name: amount_with_tax
+        name: sales.amount_with_tax
         construct: scalar field expression (amount * 1.1)
     reference_form_primary: n/a   # intra-dataset field expression references its sibling column bare
     variants:
@@ -110,7 +113,7 @@ rungs:
     reference_form_primary: qualified
     variants:
       - {id: M2.aggregates.qualified, file: m2/m2_aggregates_qualified.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
-      - {id: M2.aggregates.bare,      file: m2/m2_aggregates_bare.ossie.yaml,      tag: ANSI_SQL, reference_form: bare,      role: reference-form-variant}
+      - {id: M2.aggregates.bare,      file: m2/m2_aggregates_bare.ossie.yaml,      tag: ANSI_SQL, reference_form: bare,      role: reference-form-variant, metrics_in: sales}
 
   - id: M3
     description: a filtered aggregate, in the portable form SUM(CASE WHEN ... THEN x END) (no ELSE, equal to FILTER per expression_language.md) and with the REQUIRED FILTER (WHERE ...) clause
@@ -121,9 +124,9 @@ rungs:
     reference_form_primary: qualified
     variants:
       - {id: M3.filtered_agg.qualified, file: m3/m3_filtered_agg_qualified.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: primary}
-      - {id: M3.filtered_agg.bare,      file: m3/m3_filtered_agg_bare.ossie.yaml,      tag: ANSI_SQL, reference_form: bare,      role: reference-form-variant}
+      - {id: M3.filtered_agg.bare,      file: m3/m3_filtered_agg_bare.ossie.yaml,      tag: ANSI_SQL, reference_form: bare,      role: reference-form-variant, metrics_in: sales}
       - {id: M3.filter_clause.qualified, file: m3/m3_filter_clause_qualified.ossie.yaml, tag: ANSI_SQL, reference_form: qualified, role: filter-clause-form}
-      - {id: M3.filter_clause.bare,      file: m3/m3_filter_clause_bare.ossie.yaml,      tag: ANSI_SQL, reference_form: bare,      role: filter-clause-form}
+      - {id: M3.filter_clause.bare,      file: m3/m3_filter_clause_bare.ossie.yaml,      tag: ANSI_SQL, reference_form: bare,      role: filter-clause-form, metrics_in: sales}
 
   - id: M4
     description: two datasets joined by a relationship, with a model-scoped metric across the join
@@ -149,10 +152,10 @@ rungs:
     description: date and time scalars from the portable core (YEAR, DATE_TRUNC, DATEDIFF part-first)
     elements_under_test:
       - kind: field
-        name: order_year
+        name: sales.order_year
         construct: YEAR
       - kind: field
-        name: order_month_start
+        name: sales.order_month_start
         construct: DATE_TRUNC
       - kind: metric
         name: avg_fulfillment_days
