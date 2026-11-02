@@ -501,7 +501,7 @@ def test_unknown_field_names_match_the_schema_allowlist() -> None:
         "the schema gained or dropped an additionalProperties: false node; "
         "update the model map and configs together"
     )
-    for name, model in models.items():
+    for model in models.values():
         assert model.model_config.get("extra") == "forbid", f"{model.__name__} must forbid"
 
     assert OssieAIContextObject.model_config.get("extra") == "allow"

@@ -71,7 +71,7 @@ import stat
 import sys
 import traceback
 from collections import Counter
-from collections.abc import Hashable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
