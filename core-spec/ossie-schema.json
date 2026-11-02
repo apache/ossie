@@ -44,7 +44,7 @@
     "Vendor": {
       "type": "string",
       "minLength": 1,
-      "examples": ["COMMON", "BI_TOOL", "DB_VENDOR", "SEMANTIC_LAYER"],
+      "examples": ["BI_TOOL", "DB_VENDOR", "SEMANTIC_LAYER"],
       "description": "Vendor name for custom extensions. Any non-empty string is accepted. See extensions/vendors.md."
     },
     "AIContext": {
