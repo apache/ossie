@@ -530,10 +530,17 @@ could return different numbers on different engines:
   types: `5 / 2` is `2.5`, not `2`. Integer division is written explicitly, for example
   `TRUNC(x / y, 0)` (toward zero) or `FLOOR(x / y)`.
 
-An engine whose default differs (half-to-even rounding, or integer division for two
-integer operands) evaluates an equivalent expression instead, for example
-`CAST(x AS DOUBLE) / y` for true division. Because the rule is fixed, a converter can
-emit that rewrite without changing the meaning.
+An engine whose default differs evaluates an equivalent expression instead, and
+because the rules are fixed a converter can emit it:
+
+- **Integer division** (two integer operands): `CAST(x AS DOUBLE) / y`, or a cast to
+  `DECIMAL` to keep the result exact.
+- **Half-to-even `ROUND`** (for example PostgreSQL's `round` for `double precision`):
+  `SIGN(x) * FLOOR(ABS(x) * f + 0.5) / f`, where, for a literal `d`, `f` is `10` to the
+  power `d` written as an exact literal (`100` for `d = 2`). On `DECIMAL` / `NUMERIC` values this is exact. On
+  `FLOAT` / `DOUBLE` values the multiplication can introduce floating-point error near a
+  tie, so on an engine that needs this rewrite, exact ties of binary floating-point values
+  are best effort.
 
 ### Advanced Math (REQUIRED)
 
