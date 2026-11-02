@@ -139,6 +139,7 @@ class OssieDialect(str, Enum):
     CLICKHOUSE = "CLICKHOUSE"
     POSTGRES = "POSTGRES"
     REDSHIFT = "REDSHIFT"
+    PYICEBERG = "PYICEBERG"
 
 
 class OssieDataType(str, Enum):
