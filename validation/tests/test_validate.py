@@ -2802,3 +2802,113 @@ def test_invalid_sql_is_reported_under_postgres() -> None:
 @pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
 def test_invalid_sql_is_reported_under_redshift() -> None:
     assert _is_error_not_warning(_VALIDATE.validate_sql(_unparseable_document("REDSHIFT")))
+
+
+# ── Portable expressions are expressions, not queries ──────────────────────────
+
+
+def _metric_document(expression: str, dialect: str = "OSSIE_SQL_2026") -> dict:
+    document = _document([_ORDERS], [])
+    document["metrics"] = [_metric("m1", expression, dialect)]
+    return document
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression, reported",
+    [
+        ("(SELECT SUM(orders.customer_id) FROM orders)", "contains a subquery"),
+        ("SUM(orders.customer_id) + (SELECT 1)", "contains a subquery"),
+        ("SUM(orders.customer_id) FROM orders", "contains a FROM clause"),
+        ("SUM(orders.customer_id) WHERE orders.product_id = 1", "contains a WHERE clause"),
+        ("SUM(orders.customer_id) FROM orders GROUP BY orders.product_id", "contains a FROM clause"),
+    ],
+)
+def test_a_portable_expression_that_is_a_query_is_an_error(expression: str, reported: str) -> None:
+    result = _VALIDATE.validate_sql(_metric_document(expression))
+    assert _is_error_not_warning(result)
+    assert len(result) == 1
+    assert reported in result[0]
+    assert "Metric 'm1'" in result[0]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize("dialect", ["OSSIE_SQL_2026", "ANSI_SQL"])
+def test_the_shape_check_covers_both_portable_dialects(dialect: str) -> None:
+    result = _VALIDATE.validate_sql(_metric_document("(SELECT 1)", dialect))
+    assert _is_error_not_warning(result)
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "SUM(orders.customer_id) FILTER (WHERE orders.product_id = 1)",
+        "COUNT(*) FILTER (WHERE orders.product_id IN (1, 2))",
+        "COUNT(DISTINCT orders.customer_id) FILTER (WHERE orders.product_id IS NOT NULL)",
+        "SUM(orders.customer_id) OVER (PARTITION BY orders.product_id ORDER BY orders.variant_id)",
+        "CASE WHEN orders.product_id = 1 THEN orders.customer_id ELSE 0 END",
+        "CAST(SUM(orders.customer_id) AS DECIMAL) / NULLIF(COUNT(orders.product_id), 0)",
+        "orders.customer_id",
+    ],
+)
+def test_filters_windows_and_scalars_are_expressions(expression: str) -> None:
+    assert _VALIDATE.validate_sql(_metric_document(expression)) == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_a_vendor_dialect_query_is_not_shape_checked() -> None:
+    # expression_language.md governs the portable dialects; a vendor dialect is opaque to Ossie.
+    assert _VALIDATE.validate_sql(_metric_document("(SELECT SUM(customer_id) FROM orders)", "SNOWFLAKE")) == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_a_field_expression_is_shape_checked_too() -> None:
+    document = _document([_ORDERS], [])
+    document["datasets"][0]["fields"].append(_field("total", "(SELECT 1)", "OSSIE_SQL_2026"))
+    result = _VALIDATE.validate_sql(document)
+    assert _is_error_not_warning(result)
+    assert "Field 'orders.total'" in result[0]
+
+
+# ── A dataset source written as a query parses ─────────────────────────────────
+
+
+def _source_document(source: str) -> dict:
+    return _document([{**_ORDERS, "source": source}], [])
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+@pytest.mark.parametrize(
+    "source",
+    [
+        "db.s.orders",
+        "SELECT customer_id, product_id, variant_id FROM db.s.orders WHERE product_id IS NOT NULL",
+        "(SELECT customer_id, product_id, variant_id FROM db.s.orders)",
+        "WITH o AS (SELECT * FROM db.s.orders) SELECT * FROM o",
+    ],
+)
+def test_a_table_reference_or_a_query_that_parses_is_accepted(source: str) -> None:
+    assert _VALIDATE.validate_dataset_sources(_source_document(source)) == []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_a_query_source_that_does_not_parse_is_a_warning() -> None:
+    result = _VALIDATE.validate_dataset_sources(_source_document("SELECT customer_id FROM WHERE ((("))
+    assert len(result) == 1
+    assert isinstance(result[0], _VALIDATE.ValidationWarning)
+    assert "Dataset 'orders'" in result[0]
+    assert "source query does not parse" in result[0]
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_a_source_holding_two_statements_is_a_warning() -> None:
+    result = _VALIDATE.validate_dataset_sources(_source_document("SELECT 1; SELECT 2"))
+    assert len(result) == 1
+    assert "more than one statement" in result[0]
+
+
+def test_dataset_sources_are_checked_by_validate_document(core_schema: dict) -> None:
+    document = _source_document("SELECT customer_id FROM WHERE (((")
+    result = _VALIDATE.validate_document(document, core_schema)
+    assert any("source query does not parse" in item for item in result)

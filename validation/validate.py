@@ -35,6 +35,11 @@ Validates Ossie YAML or JSON documents containing one semantic model against:
 3. Valid relationship references
 4. Relationship column arity (from_columns and to_columns lengths match)
 5. SQL syntax (using sqlglot)
+6. Portable expressions are expressions: an OSSIE_SQL_2026 or ANSI_SQL field or
+   metric expression that is a query (a subquery, or a FROM, WHERE or other
+   clause) is an error (expression_language.md, Not Supported in Expressions)
+7. A dataset `source` written as a query parses as SQL (a warning when it does not,
+   since a source declares no dialect)
 
 Ontology documents (--schema ontology/ontology.json) are checked for unique
 concept and relationship names, and for extends, identify_by, roles and QName
@@ -67,6 +72,7 @@ import difflib
 import importlib.util
 import json
 import os
+import re
 import stat
 import sys
 import traceback
@@ -113,6 +119,10 @@ except ImportError:
 # The dialect the portable `sql` form is written in; the only one this
 # specification defines.
 PORTABLE_DIALECT = "OSSIE_SQL_2026"
+
+# The dialects expression_language.md governs. An expression in one of them is
+# an aggregate or scalar expression over fields; a query is not an expression.
+PORTABLE_DIALECTS = frozenset({"ANSI_SQL", PORTABLE_DIALECT})
 
 # Ossie dialects sqlglot can parse, each mapped to the sqlglot dialect to parse it
 # as. None is sqlglot's default (ANSI) dialect.
@@ -812,8 +822,95 @@ def _parse_sql_expression(
 
 def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None:
     """Validate a single SQL expression. Returns error message or None if valid."""
-    _tree, error = _parse_sql_expression(expr, dialect, context)
+    tree, error = _parse_sql_expression(expr, dialect, context)
+    if error is None and tree is not None and dialect in PORTABLE_DIALECTS:
+        return query_shape_error(tree, context)
     return error
+
+
+# Clauses that make a SELECT a query. `FILTER (WHERE ...)` on an aggregate is a
+# modifier the language requires (exp.Filter), not a WHERE clause, and a window
+# frame (exp.Window) is likewise part of the expression.
+_QUERY_CLAUSES = (
+    # sqlglot names the FROM argument `from_` from 28 on and `from` before that.
+    ("with", "WITH"), ("from_", "FROM"), ("from", "FROM"), ("joins", "JOIN"), ("where", "WHERE"),
+    ("group", "GROUP BY"), ("having", "HAVING"), ("qualify", "QUALIFY"),
+    ("order", "ORDER BY"), ("limit", "LIMIT"), ("offset", "OFFSET"),
+)
+
+
+def query_shape_error(tree, context: str) -> str | None:
+    """The reason a parsed portable expression is a query rather than an
+    expression, or None when it is an expression.
+
+    expression_language.md lists subqueries and the standalone WHERE clause under
+    Not Supported in Expressions: a field or metric expression is one aggregate or
+    scalar expression over fields, and the consuming query supplies the FROM,
+    WHERE and GROUP BY. _parse_sql_expression wraps an expression that does not
+    parse alone in `SELECT {expr}`, so the root may be that wrapper: its
+    projections are the expression and any clause on it came from the expression
+    text (`SUM(x) FROM t`, `SUM(x) WHERE y = 1`). Any SELECT below the root is a
+    subquery.
+    """
+    if isinstance(tree, exp.Select):
+        for arg, clause in _QUERY_CLAUSES:
+            if tree.args.get(arg):
+                return (
+                    f"[SQL] {context}: contains a {clause} clause; an expression is an "
+                    f"aggregate or scalar expression over fields, not a query "
+                    f"(expression_language.md, Not Supported in Expressions)"
+                )
+        inner = list(tree.expressions)
+    else:
+        inner = [tree]
+    for node in inner:
+        if node is not None and node.find(exp.Select) is not None:
+            return (
+                f"[SQL] {context}: contains a subquery; the expression language does "
+                f"not support subqueries (expression_language.md, Not Supported in "
+                f"Expressions)"
+            )
+    return None
+
+
+# A source that is a query rather than a table reference: it starts with SELECT
+# or WITH, possibly in parentheses.
+_QUERY_SOURCE = re.compile(r"^\s*\(?\s*(SELECT|WITH)\b", re.IGNORECASE)
+
+
+def validate_dataset_sources(data: dict) -> list[str]:
+    """Warn when a dataset `source` written as a query does not parse as SQL.
+
+    `Dataset.source` is a table reference (database.schema.table) or a query
+    (ossie-schema.json). A table reference is not parsed. A query is read with
+    sqlglot's default reader because a source declares no dialect, so a query in
+    a vendor dialect the default reader cannot read is reported as a warning
+    rather than an error.
+    """
+    if not SQLGLOT_AVAILABLE or not isinstance(data, dict) or "datasets" not in data:
+        return []
+    model_name = data.get("name", "<unnamed>")
+    warnings = []
+    for dataset in as_list(data.get("datasets")):
+        if not isinstance(dataset, dict):
+            continue
+        source = dataset.get("source")
+        if not isinstance(source, str) or not _QUERY_SOURCE.match(source):
+            continue
+        context = f"Dataset '{dataset.get('name', '<unnamed>')}' in model '{model_name}'"
+        try:
+            statements = sqlglot.parse(source)
+        except (ParseError, TokenError, RecursionError) as e:
+            warnings.append(ValidationWarning(
+                f"[SQL] Warning: {context}: source query does not parse: "
+                f"{str(e).split(chr(10))[0]}"
+            ))
+            continue
+        if len([statement for statement in statements if statement is not None]) != 1:
+            warnings.append(ValidationWarning(
+                f"[SQL] Warning: {context}: source query holds more than one statement"
+            ))
+    return warnings
 
 
 def parse_tree(expr: str, dialect: str, context: str):
@@ -1770,6 +1867,7 @@ def validate_document(data, schema: dict, base: Path | None = None) -> list[str]
         errors.extend(validate_field_shadowing(data))
         errors.extend(validate_metric_scoping(data))
         errors.extend(validate_sql(data))
+        errors.extend(validate_dataset_sources(data))
     if clean() and isinstance(data, dict) and "ontology" in data:
         errors.extend(validate_ontology(data))
     if clean() and isinstance(data, dict) and "concept_mappings" in data:
