@@ -83,7 +83,7 @@ def test_schema_errors_defer_semantic_errors(
 ) -> None:
     model_path = tmp_path / "model.yaml"
     model_path.write_text(
-        "version: 0.2.0.dev0\n"
+        "version: 0.3.0.dev0\n"
         "name: sales\n"
         "unknown: true\n"
         "datasets:\n"
@@ -116,7 +116,7 @@ def _document(datasets: list[dict], relationships: list[dict]) -> dict:
     # Deep-copied so a test can edit the document it gets back without
     # changing the module-level fixtures below for every test after it.
     return {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "m",
         "datasets": copy.deepcopy(datasets),
         "relationships": copy.deepcopy(relationships),
@@ -241,7 +241,7 @@ def test_rejects_null_model_properties(core_schema: dict, property_name: str) ->
     ],
 )
 def test_rejects_legacy_or_object_wrappers(core_schema: dict, wrapped: object) -> None:
-    document = {"version": "0.2.0.dev0", "semantic_model": wrapped}
+    document = {"version": "0.3.0.dev0", "semantic_model": wrapped}
 
     assert _VALIDATE.validate_schema(document, core_schema)
 
@@ -261,8 +261,8 @@ def test_rejects_legacy_or_object_wrappers(core_schema: dict, wrapped: object) -
         None,
         [],
         42,
-        {"version": "0.2.0.dev0"},
-        {"version": "0.2.0.dev0", "semantic_model": [{"name": "old", "datasets": []}]},
+        {"version": "0.3.0.dev0"},
+        {"version": "0.3.0.dev0", "semantic_model": [{"name": "old", "datasets": []}]},
     ],
 )
 def test_semantic_checks_skip_non_model_payloads(data: object) -> None:
@@ -1126,14 +1126,14 @@ def run_validator(tmp_path, monkeypatch, capsys):
     return run
 
 
-@pytest.mark.parametrize("version, expected_exit", [("0.2.0.dev0", 0), ("0.1.0", 1)])
+@pytest.mark.parametrize("version, expected_exit", [("0.3.0.dev0", 0), ("0.1.0", 1)])
 def test_ontology_cli_validates_embedded_documents_offline(
     run_validator, offline, version, expected_exit
 ):
     model = _document([_ORDERS], [])
     model["version"] = version
     document = {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "sales",
         "ai_context": {"instructions": "Use for sales analysis"},
         "ontology": [{"concept": "Order", "type": "EntityType"}],
@@ -1377,7 +1377,7 @@ _ONTOLOGY_SCHEMA = Path(__file__).parents[2] / "ontology/ontology.json"
 
 
 def _ontology(components: list[dict], **extra) -> dict:
-    return {"version": "0.2.0.dev0", "name": "o", "ontology": components, **extra}
+    return {"version": "0.3.0.dev0", "name": "o", "ontology": components, **extra}
 
 
 def _concept(name: str, **fields) -> dict:
@@ -1653,7 +1653,7 @@ def test_cli_reports_a_value_yaml_cannot_build_and_goes_on(
     # not YAMLError.
     good = _write_document(tmp_path, "good.json", _document([_CUSTOMERS], []))
     bad = tmp_path / "bad.yaml"
-    bad.write_text(f'version: "0.2.0.dev0"\nname: {scalar}\ndatasets: []\n')
+    bad.write_text(f'version: "0.3.0.dev0"\nname: {scalar}\ndatasets: []\n')
 
     code, output = _run_cli(monkeypatch, capsys, bad, good)
 
@@ -2149,7 +2149,7 @@ def _metric(name: str, expression: str, dialect: str = "ANSI_SQL") -> dict:
 
 def _renamed_model(**overrides) -> dict:
     document = {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "m",
         "datasets": [
             {
@@ -2591,14 +2591,14 @@ def test_metric_check_still_reports_a_bare_column_named_like_a_unit() -> None:
 
 @pytest.mark.parametrize("document", [
     {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "m",
         "datasets": None,
         "metrics": None,
         "relationships": None,
     },
     {
-        "version": "0.2.0.dev0",
+        "version": "0.3.0.dev0",
         "name": "m",
         "datasets": [
             {

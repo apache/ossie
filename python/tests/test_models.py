@@ -290,7 +290,7 @@ def test_document_serialization_schema_preserves_model_fields() -> None:
 def test_document_rejects_legacy_wrapper(
     document_data: dict, legacy_value: object, include_root_model: bool
 ) -> None:
-    data = document_data if include_root_model else {"version": "0.2.0.dev0"}
+    data = document_data if include_root_model else {"version": "0.3.0.dev0"}
     data["semantic_model"] = legacy_value
 
     with pytest.raises(ValidationError) as error:
@@ -337,8 +337,8 @@ def test_document_defaults_version_when_omitted(document_data: dict) -> None:
 
     document = OssieDocument.model_validate(document_data)
 
-    assert document.version == "0.2.0.dev0"
-    assert json.loads(document.to_ossie_json())["version"] == "0.2.0.dev0"
+    assert document.version == "0.3.0.dev0"
+    assert json.loads(document.to_ossie_json())["version"] == "0.3.0.dev0"
 
 
 def test_version_matches_the_core_schema_const() -> None:

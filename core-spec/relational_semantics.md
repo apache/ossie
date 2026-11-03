@@ -22,7 +22,7 @@
 **Specification (draft)**
 
 Status: Draft for the Ossie Semantics Working Group.
-Target: Apache Ossie (Open Semantic Interchange) semantic-model spec version `0.2.0.dev0`.
+Target: Apache Ossie (Open Semantic Interchange) semantic-model spec version `0.3.0.dev0`.
 Scope: how a semantic layer exposes an Ossie model to SQL-native BI and AI tools as a set of
 related SQL relations, and the semantics and correctness guarantees of querying the measures on
 those relations through SQL.
@@ -1229,7 +1229,7 @@ join path, would leave to inference:
 Apache Ossie terms (Section 3.4):
 
 - **Apache Ossie (Open Semantic Interchange).** The vendor-neutral semantic-model standard this
-  interface exposes; model spec version `0.2.0.dev0`.
+  interface exposes; model spec version `0.3.0.dev0`.
 - **Dataset (Ossie).** A logical table (fact or dimension) in an Ossie model; exposed here as a
   *relation*.
 - **Field (Ossie).** A scalar column of a dataset; our *field* (Ossie's term, adopted).
