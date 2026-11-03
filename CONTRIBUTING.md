@@ -139,7 +139,14 @@ process:
 2. **Discussion period**: The community has a minimum of 7 days (72 hours for a
    formal `[VOTE]`) to review and discuss. Complex changes may require a longer
    review window.
-3. **Vote**: Once discussion has settled, a `[VOTE]` thread is called on the dev
+3. **Impact history**: For changes that materially affect document validity, consumer
+   interpretation, or interoperability, include a dated entry in
+   [significant specification changes](docs/spec_changes.md) in the same PR.
+   Describe the rationale, compatibility impact, and migration action; for an
+   editorial change, explain why no entry is necessary. Maintainers can run
+   `python scripts/audit-spec-changes.py` to discover candidate changes missing
+   from the curated history. The audit is advisory, not a substitute for review.
+4. **Vote**: Once discussion has settled, a `[VOTE]` thread is called on the dev
    list. See [Decision Making and Voting](#decision-making-and-voting) below.
 
 ## Decision Making and Voting
