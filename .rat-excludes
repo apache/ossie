@@ -18,6 +18,10 @@
 # Files excluded from Apache RAT license header checks.
 # Keep this list minimal — only exclude files where a license header
 # is impossible or inappropriate (binary, generated, third-party).
+#
+# This file must stay at the repository root: Apache Trusted Releases (ATR)
+# reads RAT exclusions from the .rat-excludes at the top of the source
+# archive and scans only the folder that contains it.
 
 # Binary and generated files
 **/*.png

@@ -179,6 +179,9 @@ As an incubating project, every release is approved in two stages:
 
 Releases are source releases distributed through official ASF channels and must
 comply with [ASF release policy](https://www.apache.org/legal/release-policy.html).
+They are made with [Apache Trusted Releases (ATR)](https://releases.apache.org/), which
+runs both votes. The release manager steps and the checks for voters are described in
+[`dev/release/README.md`](dev/release/README.md).
 
 ## Community Values — The Apache Way
 
