@@ -28,103 +28,77 @@ datasets:
     fields:
       - name: change_nature
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: change_nature
+          sql: change_nature
         description: permanent, temporary or scheduled_reversal (Adjusted NRR/GRR)
         datatype: String
         ai_context:
           instructions: One of permanent, temporary, scheduled_reversal
       - name: currency
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: currency
+          sql: currency
         description: ISO 4217 currency code
         datatype: String
       - name: customer_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: customer_id
+          sql: customer_id
         description: Customer (account) identifier. Primary business noun; CEL name
         datatype: String
       - name: event_date
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: event_date
+          sql: event_date
         dimension:
           is_time: true
         description: Date the event occurred
         datatype: Date
       - name: event_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: event_id
+          sql: event_id
         description: Unique, immutable event identifier
         datatype: String
       - name: event_type
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: event_type
+          sql: event_type
         description: Revenue movement classifier (CEL Revenue_Event.event_type)
         datatype: String
         ai_context:
           instructions: One of new, expansion, contraction, churn, reactivation, renewal
       - name: expansion_classification
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: expansion_classification
+          sql: expansion_classification
         description: ATL expansion tag; required for NRR-M and ARR-M
         datatype: String
         ai_context:
           instructions: One of same_product, new_module, new_buying_centre, pricing_adjustment, recontracting, usage_realisation
       - name: lifecycle_attribution
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: lifecycle_attribution
+          sql: lifecycle_attribution
         description: ATL lifecycle tag
         datatype: String
         ai_context:
           instructions: One of acquisition, activation, retention, expansion, reactivation, servicing
       - name: mrr_change
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: mrr_change
+          sql: mrr_change
         description: Change in MRR; negative for contraction and churn
         datatype: Decimal
       - name: new_mrr
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: new_mrr
+          sql: new_mrr
         description: MRR after the event
         datatype: Decimal
       - name: prior_mrr
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: prior_mrr
+          sql: prior_mrr
         description: MRR before the event
         datatype: Decimal
       - name: segment
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: segment
+          sql: segment
         description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so retention and movement metrics slice by it without a join.
         datatype: String
       - name: subscription_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: subscription_id
+          sql: subscription_id
         description: Subscription identifier
         datatype: String
     custom_extensions:
@@ -138,89 +112,67 @@ datasets:
     fields:
       - name: cost
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: cost
+          sql: cost
         description: Cost amount (CEL Cost_Event.amount)
         datatype: Decimal
       - name: cost_centre
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: cost_centre
+          sql: cost_centre
         description: Department or team that incurred the cost
         datatype: String
         ai_context:
           instructions: One of marketing, sales, customer_success, support, engineering, product, finance, people, services, partnerships, general
       - name: cost_function
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: cost_function
+          sql: cost_function
         description: Purpose of cost (ATL cost function, extended to all cost events)
         datatype: String
         ai_context:
           instructions: One of gtm, implementation, onboarding, infrastructure, support, success_engineering, account_management, research_development, general_administrative, services_delivery, recruiting, partner_program, partner_commission
       - name: cost_type
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: cost_type
+          sql: cost_type
         description: Nature of cost (CEL)
         datatype: String
         ai_context:
           instructions: One of personnel, software, services, infrastructure, other
       - name: currency
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: currency
+          sql: currency
         description: ISO 4217 currency code
         datatype: String
       - name: customer_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: customer_id
+          sql: customer_id
         description: Customer (account) identifier. Primary business noun; CEL name
         datatype: String
       - name: event_date
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: event_date
+          sql: event_date
         dimension:
           is_time: true
         description: Date the event occurred
         datatype: Date
       - name: event_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: event_id
+          sql: event_id
         description: Unique, immutable event identifier
         datatype: String
       - name: lifecycle_attribution
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: lifecycle_attribution
+          sql: lifecycle_attribution
         description: ATL lifecycle tag
         datatype: String
         ai_context:
           instructions: One of acquisition, activation, retention, expansion, reactivation, servicing
       - name: partner_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: partner_id
+          sql: partner_id
         description: Partner identifier
         datatype: String
       - name: project_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: project_id
+          sql: project_id
         description: Services project identifier; null on costs not attributable to a project
         datatype: String
     custom_extensions:
@@ -235,104 +187,76 @@ datasets:
     fields:
       - name: acquisition_date
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: acquisition_date
+          sql: acquisition_date
         description: Date the customer first became paying
         datatype: Date
       - name: activation_date
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: activation_date
+          sql: activation_date
         description: Date the activation milestone was reached
         datatype: Date
       - name: composite_score
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: composite_score
+          sql: composite_score
         description: Health score on a 0 to 100 scale
         datatype: Decimal
       - name: criteria_met
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: criteria_met
+          sql: criteria_met
         description: Product-qualified criteria met
         datatype: Boolean
       - name: csm_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: csm_id
+          sql: csm_id
         description: Assigned customer success manager
         datatype: String
       - name: customer_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: customer_id
+          sql: customer_id
         description: Customer (account) identifier. Primary business noun; CEL name
         datatype: String
       - name: customer_status
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: customer_status
+          sql: customer_status
         description: Customer lifecycle status; active means at least one active subscription
         datatype: String
         ai_context:
           instructions: One of trial, active, churned, dormant
       - name: last_active_date
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: last_active_date
+          sql: last_active_date
         description: Most recent qualifying activity
         datatype: Date
       - name: onboarding_completion_date
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: onboarding_completion_date
+          sql: onboarding_completion_date
         description: Onboarding completion; null while open
         datatype: Date
       - name: qbr_completed
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: qbr_completed
+          sql: qbr_completed
         description: A QBR was held in the period
         datatype: Boolean
       - name: qbr_due
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: qbr_due
+          sql: qbr_due
         description: A QBR was due in the period
         datatype: Boolean
       - name: segment
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: segment
+          sql: segment
         description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so retention and movement metrics slice by it without a join.
         datatype: String
       - name: snapshot_date
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: snapshot_date
+          sql: snapshot_date
         dimension:
           is_time: true
         description: As-of date of the snapshot row
         datatype: Date
       - name: upgrade_eligible
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: upgrade_eligible
+          sql: upgrade_eligible
         description: Customer is on a plan with an upgrade path
         datatype: Boolean
     custom_extensions:
@@ -347,130 +271,94 @@ datasets:
     fields:
       - name: auto_renewed
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: auto_renewed
+          sql: auto_renewed
         description: Renewal happened without manual intervention
         datatype: Boolean
       - name: contract_end
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: contract_end
+          sql: contract_end
         description: Contract end date
         datatype: Date
       - name: contract_start
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: contract_start
+          sql: contract_start
         description: Contract start date
         datatype: Date
       - name: customer_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: customer_id
+          sql: customer_id
         description: Customer (account) identifier. Primary business noun; CEL name
         datatype: String
       - name: forecast_renewal_amount
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: forecast_renewal_amount
+          sql: forecast_renewal_amount
         description: Forecast renewal value
         datatype: Decimal
       - name: plan_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: plan_id
+          sql: plan_id
         description: Pricing plan identifier; the plan a subscription is priced by
         datatype: String
       - name: mrr
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: mrr
+          sql: mrr
         description: Monthly recurring revenue of the subscription
         datatype: Decimal
       - name: mrr_end
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: mrr_end
+          sql: mrr_end
         description: MRR at period end (cohort form)
         datatype: Decimal
       - name: mrr_start
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: mrr_start
+          sql: mrr_start
         description: MRR at period start (cohort form)
         datatype: Decimal
       - name: renewal_amount
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: renewal_amount
+          sql: renewal_amount
         description: Value up for renewal
         datatype: Decimal
       - name: renewal_complete_date
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: renewal_complete_date
+          sql: renewal_complete_date
         description: Date renewal processing finished
         datatype: Date
       - name: renewal_notified_on_time
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: renewal_notified_on_time
+          sql: renewal_notified_on_time
         description: Renewal notice sent within the agreed window
         datatype: Boolean
       - name: renewal_trigger_date
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: renewal_trigger_date
+          sql: renewal_trigger_date
         description: Date renewal processing started
         datatype: Date
       - name: renewed
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: renewed
+          sql: renewed
         description: Renewed at the most recent term end
         datatype: Boolean
       - name: segment
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: segment
+          sql: segment
         description: Customer segment (SMB, Mid-Market, Enterprise or the organisation's own scheme) at the time of the event or snapshot. The field behind the Segment concept; carried on revenue tables so retention and movement metrics slice by it without a join.
         datatype: String
       - name: snapshot_date
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: snapshot_date
+          sql: snapshot_date
         dimension:
           is_time: true
         description: As-of date of the snapshot row
         datatype: Date
       - name: subscription_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: subscription_id
+          sql: subscription_id
         description: Subscription identifier
         datatype: String
       - name: subscription_status
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: subscription_status
+          sql: subscription_status
         description: Subscription status
         datatype: String
         ai_context:
@@ -486,95 +374,69 @@ datasets:
     fields:
       - name: ces_score
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: ces_score
+          sql: ces_score
         description: 1 to 7 effort score
         datatype: Integer
       - name: customer_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: customer_id
+          sql: customer_id
         description: Customer (account) identifier. Primary business noun; CEL name
         datatype: String
       - name: employee_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: employee_id
+          sql: employee_id
         description: Employee identifier
         datatype: String
       - name: engagement_score
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: engagement_score
+          sql: engagement_score
         description: Engagement survey score
         datatype: Decimal
       - name: lead_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: lead_id
+          sql: lead_id
         description: Lead identifier
         datatype: String
       - name: nps_score
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: nps_score
+          sql: nps_score
         description: 0 to 10 recommend score
         datatype: Integer
       - name: partner_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: partner_id
+          sql: partner_id
         description: Partner identifier
         datatype: String
       - name: project_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: project_id
+          sql: project_id
         description: Services project identifier; null on costs not attributable to a project
         datatype: String
       - name: response_id
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: response_id
+          sql: response_id
         description: Survey response identifier
         datatype: String
       - name: satisfaction_score
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: satisfaction_score
+          sql: satisfaction_score
         description: 1 to 5 satisfaction score
         datatype: Integer
       - name: survey_completed
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: survey_completed
+          sql: survey_completed
         description: Response completed
         datatype: Boolean
       - name: survey_date
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: survey_date
+          sql: survey_date
         dimension:
           is_time: true
         description: Response date
         datatype: Date
       - name: survey_type
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: survey_type
+          sql: survey_type
         description: Survey programme the response belongs to
         datatype: String
         ai_context:
@@ -590,60 +452,44 @@ datasets:
     fields:
       - name: bad_debt_expense
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: bad_debt_expense
+          sql: bad_debt_expense
         description: Bad debt written off in the period
         datatype: Decimal
       - name: capital_expenditures
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: capital_expenditures
+          sql: capital_expenditures
         description: Capital expenditure for the period
         datatype: Decimal
       - name: ebitda
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: ebitda
+          sql: ebitda
         description: EBITDA for the period
         datatype: Decimal
       - name: net_income
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: net_income
+          sql: net_income
         description: Net income for the period
         datatype: Decimal
       - name: operating_cash_flow
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: operating_cash_flow
+          sql: operating_cash_flow
         description: Operating cash flow for the period
         datatype: Decimal
       - name: period_start
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_start
+          sql: period_start
         dimension:
           is_time: true
         description: Start of the period the row describes
         datatype: Date
       - name: revenue
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: revenue
+          sql: revenue
         description: GAAP recognised revenue for the period
         datatype: Decimal
       - name: revenue_type
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: revenue_type
+          sql: revenue_type
         description: Revenue line type
         datatype: String
         ai_context:
@@ -659,25 +505,19 @@ datasets:
     fields:
       - name: period_start
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_start
+          sql: period_start
         dimension:
           is_time: true
         datatype: Date
         description: First day of the reporting period
       - name: period_end
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_end
+          sql: period_end
         datatype: Date
         description: Last day of the reporting period
       - name: value
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: value
+          sql: value
         datatype: Decimal
         description: ARR (Annual Recurring Revenue), Operating form for the period
     custom_extensions:
@@ -691,25 +531,19 @@ datasets:
     fields:
       - name: period_start
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_start
+          sql: period_start
         dimension:
           is_time: true
         datatype: Date
         description: First day of the reporting period
       - name: period_end
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_end
+          sql: period_end
         datatype: Date
         description: Last day of the reporting period
       - name: value
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: value
+          sql: value
         datatype: Decimal
         description: MRR Growth Rate for the period
     custom_extensions:
@@ -723,25 +557,19 @@ datasets:
     fields:
       - name: period_start
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_start
+          sql: period_start
         dimension:
           is_time: true
         datatype: Date
         description: First day of the reporting period
       - name: period_end
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_end
+          sql: period_end
         datatype: Date
         description: Last day of the reporting period
       - name: value
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: value
+          sql: value
         datatype: Decimal
         description: Carry MRR for the period
     custom_extensions:
@@ -755,25 +583,19 @@ datasets:
     fields:
       - name: period_start
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_start
+          sql: period_start
         dimension:
           is_time: true
         datatype: Date
         description: First day of the reporting period
       - name: period_end
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_end
+          sql: period_end
         datatype: Date
         description: Last day of the reporting period
       - name: value
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: value
+          sql: value
         datatype: Decimal
         description: Net Revenue Retention (NRR) for the period
     custom_extensions:
@@ -787,25 +609,19 @@ datasets:
     fields:
       - name: period_start
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_start
+          sql: period_start
         dimension:
           is_time: true
         datatype: Date
         description: First day of the reporting period
       - name: period_end
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_end
+          sql: period_end
         datatype: Date
         description: Last day of the reporting period
       - name: value
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: value
+          sql: value
         datatype: Decimal
         description: Net Revenue Retention (NRR), Operating form for the period
     custom_extensions:
@@ -819,25 +635,19 @@ datasets:
     fields:
       - name: period_start
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_start
+          sql: period_start
         dimension:
           is_time: true
         datatype: Date
         description: First day of the reporting period
       - name: period_end
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_end
+          sql: period_end
         datatype: Date
         description: Last day of the reporting period
       - name: value
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: value
+          sql: value
         datatype: Decimal
         description: Net Revenue Retention (NRR), Market form for the period
     custom_extensions:
@@ -851,25 +661,19 @@ datasets:
     fields:
       - name: period_start
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_start
+          sql: period_start
         dimension:
           is_time: true
         datatype: Date
         description: First day of the reporting period
       - name: period_end
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_end
+          sql: period_end
         datatype: Date
         description: Last day of the reporting period
       - name: value
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: value
+          sql: value
         datatype: Decimal
         description: Gross Revenue Retention (GRR) for the period
     custom_extensions:
@@ -883,25 +687,19 @@ datasets:
     fields:
       - name: period_start
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_start
+          sql: period_start
         dimension:
           is_time: true
         datatype: Date
         description: First day of the reporting period
       - name: period_end
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_end
+          sql: period_end
         datatype: Date
         description: Last day of the reporting period
       - name: value
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: value
+          sql: value
         datatype: Decimal
         description: Logo Churn Rate (Customer Churn) for the period
     custom_extensions:
@@ -915,25 +713,19 @@ datasets:
     fields:
       - name: period_start
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_start
+          sql: period_start
         dimension:
           is_time: true
         datatype: Date
         description: First day of the reporting period
       - name: period_end
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_end
+          sql: period_end
         datatype: Date
         description: Last day of the reporting period
       - name: value
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: value
+          sql: value
         datatype: Decimal
         description: Revenue Churn Rate for the period
     custom_extensions:
@@ -947,25 +739,19 @@ datasets:
     fields:
       - name: period_start
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_start
+          sql: period_start
         dimension:
           is_time: true
         datatype: Date
         description: First day of the reporting period
       - name: period_end
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_end
+          sql: period_end
         datatype: Date
         description: Last day of the reporting period
       - name: value
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: value
+          sql: value
         datatype: Decimal
         description: LTV (Customer Lifetime Value) for the period
     custom_extensions:
@@ -979,25 +765,19 @@ datasets:
     fields:
       - name: period_start
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_start
+          sql: period_start
         dimension:
           is_time: true
         datatype: Date
         description: First day of the reporting period
       - name: period_end
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_end
+          sql: period_end
         datatype: Date
         description: Last day of the reporting period
       - name: value
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: value
+          sql: value
         datatype: Decimal
         description: LTV (Customer Lifetime Value), Operating form for the period
     custom_extensions:
@@ -1011,25 +791,19 @@ datasets:
     fields:
       - name: period_start
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_start
+          sql: period_start
         dimension:
           is_time: true
         datatype: Date
         description: First day of the reporting period
       - name: period_end
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_end
+          sql: period_end
         datatype: Date
         description: Last day of the reporting period
       - name: value
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: value
+          sql: value
         datatype: Decimal
         description: LTV (Customer Lifetime Value), Market form for the period
     custom_extensions:
@@ -1043,25 +817,19 @@ datasets:
     fields:
       - name: period_start
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_start
+          sql: period_start
         dimension:
           is_time: true
         datatype: Date
         description: First day of the reporting period
       - name: period_end
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_end
+          sql: period_end
         datatype: Date
         description: Last day of the reporting period
       - name: value
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: value
+          sql: value
         datatype: Decimal
         description: LTV:CAC Ratio for the period
     custom_extensions:
@@ -1075,25 +843,19 @@ datasets:
     fields:
       - name: period_start
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_start
+          sql: period_start
         dimension:
           is_time: true
         datatype: Date
         description: First day of the reporting period
       - name: period_end
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_end
+          sql: period_end
         datatype: Date
         description: Last day of the reporting period
       - name: value
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: value
+          sql: value
         datatype: Decimal
         description: LTV:CAC Ratio, Operating form for the period
     custom_extensions:
@@ -1107,25 +869,19 @@ datasets:
     fields:
       - name: period_start
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_start
+          sql: period_start
         dimension:
           is_time: true
         datatype: Date
         description: First day of the reporting period
       - name: period_end
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_end
+          sql: period_end
         datatype: Date
         description: Last day of the reporting period
       - name: value
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: value
+          sql: value
         datatype: Decimal
         description: LTV:CAC Ratio, Market form for the period
     custom_extensions:
@@ -1139,25 +895,19 @@ datasets:
     fields:
       - name: period_start
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_start
+          sql: period_start
         dimension:
           is_time: true
         datatype: Date
         description: First day of the reporting period
       - name: period_end
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: period_end
+          sql: period_end
         datatype: Date
         description: Last day of the reporting period
       - name: value
         expression:
-          dialects:
-            - dialect: OSSIE_SQL_2026
-              expression: value
+          sql: value
         datatype: Decimal
         description: Rule of 40 for the period
     custom_extensions:
@@ -1212,9 +962,7 @@ relationships:
 metrics:
   - name: gasp_mrr
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: COALESCE(SUM(subscription.mrr) FILTER (WHERE subscription.subscription_status = 'active'), 0)
+      sql: COALESCE(SUM(subscription.mrr) FILTER (WHERE subscription.subscription_status = 'active'), 0)
     description: MRR (Monthly Recurring Revenue). The total predictable revenue from active subscriptions, normalized to a monthly value.
     datatype: Decimal
     ai_context:
@@ -1226,9 +974,7 @@ metrics:
         data: "{\"gasp_id\":\"mrr\",\"gasp_version\":\"1\",\"unit\":\"currency\",\"formula\":\"sum(field.mrr where field.subscription_status = 'active') at period_end\"}"
   - name: gasp_arr
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: ((COALESCE(SUM(subscription.mrr) FILTER (WHERE subscription.subscription_status = 'active'), 0)) * 12)
+      sql: ((COALESCE(SUM(subscription.mrr) FILTER (WHERE subscription.subscription_status = 'active'), 0)) * 12)
     description: ARR (Annual Recurring Revenue). The annualized value of recurring revenue. ARR represents the yearly run rate of subscription revenue.
     datatype: Decimal
     ai_context:
@@ -1240,9 +986,7 @@ metrics:
         data: '{"gasp_id":"arr","gasp_version":"1","unit":"currency","formula":"metric.mrr * 12"}'
   - name: gasp_arr_o
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: SUM(gasp_staged_gasp_arr_o.value)
+      sql: SUM(gasp_staged_gasp_arr_o.value)
     description: ARR (Annual Recurring Revenue), Operating form. The annualized value of recurring revenue. ARR represents the yearly run rate of subscription revenue.
     datatype: Decimal
     ai_context:
@@ -1254,9 +998,7 @@ metrics:
         data: "{\"gasp_id\":\"arr\",\"gasp_version\":\"1\",\"form\":\"O\",\"unit\":\"currency\",\"formula\":\"(metric.mrr - window(sum(field.mrr_change where field.expansion_classification in ('pricing_adjustment', 'recontracting')), 12 month)) * 12 over cohort(field.customer_id, period_end)\",\"staged\":true}"
   - name: gasp_arr_m
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: ((COALESCE(SUM(subscription.mrr) FILTER (WHERE subscription.subscription_status = 'active'), 0)) * 12)
+      sql: ((COALESCE(SUM(subscription.mrr) FILTER (WHERE subscription.subscription_status = 'active'), 0)) * 12)
     description: ARR (Annual Recurring Revenue), Market form. The annualized value of recurring revenue. ARR represents the yearly run rate of subscription revenue.
     datatype: Decimal
     ai_context:
@@ -1268,9 +1010,7 @@ metrics:
         data: '{"gasp_id":"arr","gasp_version":"1","form":"M","unit":"currency","formula":"metric.mrr * 12"}'
   - name: gasp_arpa
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: (CAST((COALESCE(SUM(subscription.mrr) FILTER (WHERE subscription.subscription_status = 'active'), 0)) AS DECIMAL) / NULLIF((COUNT(DISTINCT customer.customer_id) FILTER (WHERE customer.customer_status = 'active')), 0))
+      sql: (CAST((COALESCE(SUM(subscription.mrr) FILTER (WHERE subscription.subscription_status = 'active'), 0)) AS DECIMAL) / NULLIF((COUNT(DISTINCT customer.customer_id) FILTER (WHERE customer.customer_status = 'active')), 0))
     description: ARPA (Average Revenue Per Account). Average monthly recurring revenue per customer.
     datatype: Decimal
     ai_context:
@@ -1282,9 +1022,7 @@ metrics:
         data: '{"gasp_id":"arpa","gasp_version":"1","unit":"currency","formula":"metric.mrr / metric.total_customers"}'
   - name: gasp_total_customers
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: COUNT(DISTINCT customer.customer_id) FILTER (WHERE customer.customer_status = 'active')
+      sql: COUNT(DISTINCT customer.customer_id) FILTER (WHERE customer.customer_status = 'active')
     description: Total Customers. The number of active customers at the end of the period.
     datatype: Integer
     ai_context:
@@ -1294,9 +1032,7 @@ metrics:
         data: "{\"gasp_id\":\"total_customers\",\"gasp_version\":\"1\",\"unit\":\"count\",\"formula\":\"count_distinct(field.customer_id where field.customer_status = 'active') at period_end\"}"
   - name: gasp_new_customers
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'new')
+      sql: COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'new')
     description: "New Customers. The number of customers acquired in the period: customers whose first paid subscription started in the period."
     datatype: Integer
     ai_context:
@@ -1306,9 +1042,7 @@ metrics:
         data: "{\"gasp_id\":\"new_customers\",\"gasp_version\":\"1\",\"unit\":\"count\",\"formula\":\"count_distinct(field.customer_id where field.event_type = 'new')\"}"
   - name: gasp_churned_customers
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'churn')
+      sql: COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'churn')
     description: "Churned Customers. The number of customers lost in the period: customers whose last active subscription ended."
     datatype: Integer
     ai_context:
@@ -1318,9 +1052,7 @@ metrics:
         data: "{\"gasp_id\":\"churned_customers\",\"gasp_version\":\"1\",\"unit\":\"count\",\"formula\":\"count_distinct(field.customer_id where field.event_type = 'churn')\"}"
   - name: gasp_mrr_growth_rate
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: SUM(gasp_staged_gasp_mrr_growth_rate.value)
+      sql: SUM(gasp_staged_gasp_mrr_growth_rate.value)
     description: MRR Growth Rate. The month-over-month percentage change in MRR.
     datatype: Decimal
     ai_context:
@@ -1332,9 +1064,7 @@ metrics:
         data: '{"gasp_id":"mrr_growth_rate","gasp_version":"1","unit":"percent","formula":"(metric.mrr - lag(metric.mrr, 1 month)) / lag(metric.mrr, 1 month)","staged":true}'
   - name: gasp_new_mrr
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: COALESCE(SUM(revenue_event.mrr_change) FILTER (WHERE revenue_event.event_type = 'new'), 0)
+      sql: COALESCE(SUM(revenue_event.mrr_change) FILTER (WHERE revenue_event.event_type = 'new'), 0)
     description: New MRR. MRR generated from brand new customers acquired in the period.
     datatype: Decimal
     ai_context:
@@ -1344,9 +1074,7 @@ metrics:
         data: "{\"gasp_id\":\"new_mrr\",\"gasp_version\":\"1\",\"unit\":\"currency\",\"formula\":\"sum(field.mrr_change where field.event_type = 'new')\"}"
   - name: gasp_expansion_mrr
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: COALESCE(SUM(revenue_event.mrr_change) FILTER (WHERE revenue_event.event_type = 'expansion'), 0)
+      sql: COALESCE(SUM(revenue_event.mrr_change) FILTER (WHERE revenue_event.event_type = 'expansion'), 0)
     description: Expansion MRR. Additional MRR from existing customers through upgrades, add-ons, seat increases or price increases.
     datatype: Decimal
     ai_context:
@@ -1356,9 +1084,7 @@ metrics:
         data: "{\"gasp_id\":\"expansion_mrr\",\"gasp_version\":\"1\",\"unit\":\"currency\",\"formula\":\"sum(field.mrr_change where field.event_type = 'expansion')\"}"
   - name: gasp_churned_mrr
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: (-COALESCE(SUM(revenue_event.mrr_change) FILTER (WHERE revenue_event.event_type = 'churn'), 0))
+      sql: (-COALESCE(SUM(revenue_event.mrr_change) FILTER (WHERE revenue_event.event_type = 'churn'), 0))
     description: Churned MRR. MRR lost from customers who cancelled their subscriptions.
     datatype: Decimal
     ai_context:
@@ -1368,9 +1094,7 @@ metrics:
         data: "{\"gasp_id\":\"churned_mrr\",\"gasp_version\":\"1\",\"unit\":\"currency\",\"formula\":\"-sum(field.mrr_change where field.event_type = 'churn')\"}"
   - name: gasp_contraction_mrr
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: (-COALESCE(SUM(revenue_event.mrr_change) FILTER (WHERE revenue_event.event_type = 'contraction'), 0))
+      sql: (-COALESCE(SUM(revenue_event.mrr_change) FILTER (WHERE revenue_event.event_type = 'contraction'), 0))
     description: Contraction MRR. MRR reduction from existing customers who downgraded but didn't churn.
     datatype: Decimal
     ai_context:
@@ -1380,9 +1104,7 @@ metrics:
         data: "{\"gasp_id\":\"contraction_mrr\",\"gasp_version\":\"1\",\"unit\":\"currency\",\"formula\":\"-sum(field.mrr_change where field.event_type = 'contraction')\"}"
   - name: gasp_reactivation_mrr
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: COALESCE(SUM(revenue_event.mrr_change) FILTER (WHERE revenue_event.event_type = 'reactivation'), 0)
+      sql: COALESCE(SUM(revenue_event.mrr_change) FILTER (WHERE revenue_event.event_type = 'reactivation'), 0)
     description: Reactivation MRR. MRR regained from customers who had churned and signed up again in the period.
     datatype: Decimal
     ai_context:
@@ -1392,9 +1114,7 @@ metrics:
         data: "{\"gasp_id\":\"reactivation_mrr\",\"gasp_version\":\"1\",\"unit\":\"currency\",\"formula\":\"sum(field.mrr_change where field.event_type = 'reactivation')\"}"
   - name: gasp_carry_mrr
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: SUM(gasp_staged_gasp_carry_mrr.value)
+      sql: SUM(gasp_staged_gasp_carry_mrr.value)
     description: "Carry MRR. The part of beginning MRR that existing customers kept paying in the period: beginning MRR less churned and contraction MRR, before any expansion."
     datatype: Decimal
     ai_context:
@@ -1404,9 +1124,7 @@ metrics:
         data: '{"gasp_id":"carry_mrr","gasp_version":"1","unit":"currency","formula":"metric.mrr at period_start - metric.churned_mrr - metric.contraction_mrr","staged":true}'
   - name: gasp_net_new_mrr
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: (((((COALESCE(SUM(revenue_event.mrr_change) FILTER (WHERE revenue_event.event_type = 'new'), 0)) + (COALESCE(SUM(revenue_event.mrr_change) FILTER (WHERE revenue_event.event_type = 'expansion'), 0))) + (COALESCE(SUM(revenue_event.mrr_change) FILTER (WHERE revenue_event.event_type = 'reactivation'), 0))) - ((-COALESCE(SUM(revenue_event.mrr_change) FILTER (WHERE revenue_event.event_type = 'churn'), 0)))) - ((-COALESCE(SUM(revenue_event.mrr_change) FILTER (WHERE revenue_event.event_type = 'contraction'), 0))))
+      sql: (((((COALESCE(SUM(revenue_event.mrr_change) FILTER (WHERE revenue_event.event_type = 'new'), 0)) + (COALESCE(SUM(revenue_event.mrr_change) FILTER (WHERE revenue_event.event_type = 'expansion'), 0))) + (COALESCE(SUM(revenue_event.mrr_change) FILTER (WHERE revenue_event.event_type = 'reactivation'), 0))) - ((-COALESCE(SUM(revenue_event.mrr_change) FILTER (WHERE revenue_event.event_type = 'churn'), 0)))) - ((-COALESCE(SUM(revenue_event.mrr_change) FILTER (WHERE revenue_event.event_type = 'contraction'), 0))))
     description: Net New MRR. The net change in MRR after accounting for all movements.
     datatype: Decimal
     ai_context:
@@ -1416,9 +1134,7 @@ metrics:
         data: '{"gasp_id":"net_new_mrr","gasp_version":"1","unit":"currency","formula":"metric.new_mrr + metric.expansion_mrr + metric.reactivation_mrr - metric.churned_mrr - metric.contraction_mrr"}'
   - name: gasp_nrr
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: SUM(gasp_staged_gasp_nrr.value)
+      sql: SUM(gasp_staged_gasp_nrr.value)
     description: Net Revenue Retention (NRR). The percentage of revenue retained from existing customers over a period, including expansion, contraction and churn. Also known as Net Dollar Retention (NDR).
     datatype: Decimal
     ai_context:
@@ -1431,9 +1147,7 @@ metrics:
         data: '{"gasp_id":"nrr","gasp_version":"1","unit":"percent","formula":"(metric.mrr at period_start + metric.expansion_mrr - metric.contraction_mrr - metric.churned_mrr) / metric.mrr at period_start over cohort(field.customer_id, period_start)","staged":true}'
   - name: gasp_nrr_o
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: SUM(gasp_staged_gasp_nrr_o.value)
+      sql: SUM(gasp_staged_gasp_nrr_o.value)
     description: Net Revenue Retention (NRR), Operating form. The percentage of revenue retained from existing customers over a period, including expansion, contraction and churn. Also known as Net Dollar Retention (NDR).
     datatype: Decimal
     ai_context:
@@ -1446,9 +1160,7 @@ metrics:
         data: "{\"gasp_id\":\"nrr\",\"gasp_version\":\"1\",\"form\":\"O\",\"unit\":\"percent\",\"formula\":\"(metric.mrr at period_start + sum(field.mrr_change where field.event_type = 'expansion' and field.expansion_classification in ('same_product', 'usage_realisation')) - metric.contraction_mrr - metric.churned_mrr) / metric.mrr at period_start over cohort(field.customer_id, period_start)\",\"staged\":true}"
   - name: gasp_nrr_m
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: SUM(gasp_staged_gasp_nrr_m.value)
+      sql: SUM(gasp_staged_gasp_nrr_m.value)
     description: Net Revenue Retention (NRR), Market form. The percentage of revenue retained from existing customers over a period, including expansion, contraction and churn. Also known as Net Dollar Retention (NDR).
     datatype: Decimal
     ai_context:
@@ -1461,9 +1173,7 @@ metrics:
         data: "{\"gasp_id\":\"nrr\",\"gasp_version\":\"1\",\"form\":\"M\",\"unit\":\"percent\",\"formula\":\"(metric.mrr at period_start + sum(field.mrr_change where field.event_type in ('expansion', 'reactivation') and field.expansion_classification in ('same_product', 'new_module', 'new_buying_centre', 'pricing_adjustment', 'recontracting', 'usage_realisation')) - metric.contraction_mrr - metric.churned_mrr) / metric.mrr at period_start over cohort(field.customer_id, period_start)\",\"staged\":true}"
   - name: gasp_grr
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: SUM(gasp_staged_gasp_grr.value)
+      sql: SUM(gasp_staged_gasp_grr.value)
     description: Gross Revenue Retention (GRR). The percentage of revenue retained from existing customers, excluding expansion revenue. Also known as Gross Dollar Retention.
     datatype: Decimal
     ai_context:
@@ -1475,9 +1185,7 @@ metrics:
         data: '{"gasp_id":"grr","gasp_version":"1","unit":"percent","formula":"(metric.mrr at period_start - metric.contraction_mrr - metric.churned_mrr) / metric.mrr at period_start over cohort(field.customer_id, period_start)","staged":true}'
   - name: gasp_logo_churn_rate
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: SUM(gasp_staged_gasp_logo_churn_rate.value)
+      sql: SUM(gasp_staged_gasp_logo_churn_rate.value)
     description: Logo Churn Rate (Customer Churn). The percentage of customers lost in a period. Also called customer churn or logo churn.
     datatype: Decimal
     ai_context:
@@ -1487,9 +1195,7 @@ metrics:
         data: '{"gasp_id":"logo_churn_rate","gasp_version":"1","unit":"percent","formula":"metric.churned_customers / metric.total_customers at period_start","staged":true}'
   - name: gasp_revenue_churn_rate
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: SUM(gasp_staged_gasp_revenue_churn_rate.value)
+      sql: SUM(gasp_staged_gasp_revenue_churn_rate.value)
     description: Revenue Churn Rate. The percentage of MRR lost to churn and contraction in a period. Also called MRR Churn Rate.
     datatype: Decimal
     ai_context:
@@ -1499,9 +1205,7 @@ metrics:
         data: '{"gasp_id":"revenue_churn_rate","gasp_version":"1","unit":"percent","formula":"(metric.churned_mrr + metric.contraction_mrr) / metric.mrr at period_start","staged":true}'
   - name: gasp_nps
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: ((CAST((COUNT(survey_response.nps_score) FILTER (WHERE (survey_response.survey_type = 'customer' AND survey_response.nps_score >= 9)) - COUNT(survey_response.nps_score) FILTER (WHERE (survey_response.survey_type = 'customer' AND survey_response.nps_score <= 6))) AS DECIMAL) / NULLIF(COUNT(survey_response.nps_score) FILTER (WHERE survey_response.survey_type = 'customer'), 0)) * 100)
+      sql: ((CAST((COUNT(survey_response.nps_score) FILTER (WHERE (survey_response.survey_type = 'customer' AND survey_response.nps_score >= 9)) - COUNT(survey_response.nps_score) FILTER (WHERE (survey_response.survey_type = 'customer' AND survey_response.nps_score <= 6))) AS DECIMAL) / NULLIF(COUNT(survey_response.nps_score) FILTER (WHERE survey_response.survey_type = 'customer'), 0)) * 100)
     description: NPS (Net Promoter Score). A measure of customer loyalty based on likelihood to recommend.
     datatype: Decimal
     ai_context:
@@ -1513,9 +1217,7 @@ metrics:
         data: "{\"gasp_id\":\"nps\",\"gasp_version\":\"1\",\"unit\":\"score\",\"formula\":\"(count(field.nps_score where field.survey_type = 'customer' and field.nps_score >= 9) - count(field.nps_score where field.survey_type = 'customer' and field.nps_score <= 6)) / count(field.nps_score where field.survey_type = 'customer') * 100\"}"
   - name: gasp_cac
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: (CAST(COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'gtm'), 0) AS DECIMAL) / NULLIF((COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'new')), 0))
+      sql: (CAST(COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'gtm'), 0) AS DECIMAL) / NULLIF((COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'new')), 0))
     description: CAC (Customer Acquisition Cost). The total cost to acquire a new customer.
     datatype: Decimal
     ai_context:
@@ -1527,9 +1229,7 @@ metrics:
         data: "{\"gasp_id\":\"cac\",\"gasp_version\":\"1\",\"unit\":\"currency\",\"formula\":\"sum(field.cost where field.cost_function = 'gtm') / metric.new_customers\"}"
   - name: gasp_cac_o
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: (CAST((COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'gtm'), 0) + COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function IN ('implementation', 'onboarding')), 0)) AS DECIMAL) / NULLIF((COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'new')), 0))
+      sql: (CAST((COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'gtm'), 0) + COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function IN ('implementation', 'onboarding')), 0)) AS DECIMAL) / NULLIF((COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'new')), 0))
     description: CAC (Customer Acquisition Cost), Operating form. The total cost to acquire a new customer.
     datatype: Decimal
     ai_context:
@@ -1541,9 +1241,7 @@ metrics:
         data: "{\"gasp_id\":\"cac\",\"gasp_version\":\"1\",\"form\":\"O\",\"unit\":\"currency\",\"formula\":\"(sum(field.cost where field.cost_function = 'gtm') + sum(field.cost where field.cost_function in ('implementation', 'onboarding'))) / metric.new_customers\"}"
   - name: gasp_cac_m
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: (CAST(COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'gtm'), 0) AS DECIMAL) / NULLIF((COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'new')), 0))
+      sql: (CAST(COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'gtm'), 0) AS DECIMAL) / NULLIF((COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'new')), 0))
     description: CAC (Customer Acquisition Cost), Market form. The total cost to acquire a new customer.
     datatype: Decimal
     ai_context:
@@ -1555,9 +1253,7 @@ metrics:
         data: "{\"gasp_id\":\"cac\",\"gasp_version\":\"1\",\"form\":\"M\",\"unit\":\"currency\",\"formula\":\"sum(field.cost where field.cost_function = 'gtm') / metric.new_customers\"}"
   - name: gasp_ltv
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: SUM(gasp_staged_gasp_ltv.value)
+      sql: SUM(gasp_staged_gasp_ltv.value)
     description: LTV (Customer Lifetime Value). The gross profit expected from a customer over their lifetime. Also known as CLV (Customer Lifetime Value) or CLTV.
     datatype: Decimal
     ai_context:
@@ -1571,9 +1267,7 @@ metrics:
         data: '{"gasp_id":"ltv","gasp_version":"1","unit":"currency","formula":"metric.arpa * metric.gross_margin / metric.revenue_churn_rate","staged":true}'
   - name: gasp_ltv_o
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: SUM(gasp_staged_gasp_ltv_o.value)
+      sql: SUM(gasp_staged_gasp_ltv_o.value)
     description: LTV (Customer Lifetime Value), Operating form. The gross profit expected from a customer over their lifetime. Also known as CLV (Customer Lifetime Value) or CLTV.
     datatype: Decimal
     ai_context:
@@ -1587,9 +1281,7 @@ metrics:
         data: '{"gasp_id":"ltv","gasp_version":"1","form":"O","unit":"currency","formula":"metric.arpa * metric.gross_margin.O / metric.revenue_churn_rate","staged":true}'
   - name: gasp_ltv_m
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: SUM(gasp_staged_gasp_ltv_m.value)
+      sql: SUM(gasp_staged_gasp_ltv_m.value)
     description: LTV (Customer Lifetime Value), Market form. The gross profit expected from a customer over their lifetime. Also known as CLV (Customer Lifetime Value) or CLTV.
     datatype: Decimal
     ai_context:
@@ -1603,9 +1295,7 @@ metrics:
         data: '{"gasp_id":"ltv","gasp_version":"1","form":"M","unit":"currency","formula":"metric.arpa * metric.gross_margin / metric.revenue_churn_rate","staged":true}'
   - name: gasp_ltv_cac_ratio
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: SUM(gasp_staged_gasp_ltv_cac_ratio.value)
+      sql: SUM(gasp_staged_gasp_ltv_cac_ratio.value)
     description: LTV:CAC Ratio. The ratio of customer lifetime value to acquisition cost. Measures the return on investment from sales and marketing spend.
     datatype: Decimal
     ai_context:
@@ -1615,9 +1305,7 @@ metrics:
         data: '{"gasp_id":"ltv_cac_ratio","gasp_version":"1","unit":"ratio","formula":"metric.ltv / metric.cac","staged":true}'
   - name: gasp_ltv_cac_ratio_o
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: SUM(gasp_staged_gasp_ltv_cac_ratio_o.value)
+      sql: SUM(gasp_staged_gasp_ltv_cac_ratio_o.value)
     description: LTV:CAC Ratio, Operating form. The ratio of customer lifetime value to acquisition cost. Measures the return on investment from sales and marketing spend.
     datatype: Decimal
     ai_context:
@@ -1627,9 +1315,7 @@ metrics:
         data: '{"gasp_id":"ltv_cac_ratio","gasp_version":"1","form":"O","unit":"ratio","formula":"metric.ltv.O / metric.cac.O","staged":true}'
   - name: gasp_ltv_cac_ratio_m
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: SUM(gasp_staged_gasp_ltv_cac_ratio_m.value)
+      sql: SUM(gasp_staged_gasp_ltv_cac_ratio_m.value)
     description: LTV:CAC Ratio, Market form. The ratio of customer lifetime value to acquisition cost. Measures the return on investment from sales and marketing spend.
     datatype: Decimal
     ai_context:
@@ -1639,9 +1325,7 @@ metrics:
         data: '{"gasp_id":"ltv_cac_ratio","gasp_version":"1","form":"M","unit":"ratio","formula":"metric.ltv.M / metric.cac.M","staged":true}'
   - name: gasp_cac_payback
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: (CAST(((CAST(COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'gtm'), 0) AS DECIMAL) / NULLIF((COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'new')), 0))) AS DECIMAL) / NULLIF((((CAST((COALESCE(SUM(subscription.mrr) FILTER (WHERE subscription.subscription_status = 'active'), 0)) AS DECIMAL) / NULLIF((COUNT(DISTINCT customer.customer_id) FILTER (WHERE customer.customer_status = 'active')), 0))) * ((CAST((COALESCE(SUM(financials.revenue), 0) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'infrastructure'), 0)) AS DECIMAL) / NULLIF(COALESCE(SUM(financials.revenue), 0), 0)))), 0))
+      sql: (CAST(((CAST(COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'gtm'), 0) AS DECIMAL) / NULLIF((COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'new')), 0))) AS DECIMAL) / NULLIF((((CAST((COALESCE(SUM(subscription.mrr) FILTER (WHERE subscription.subscription_status = 'active'), 0)) AS DECIMAL) / NULLIF((COUNT(DISTINCT customer.customer_id) FILTER (WHERE customer.customer_status = 'active')), 0))) * ((CAST((COALESCE(SUM(financials.revenue), 0) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'infrastructure'), 0)) AS DECIMAL) / NULLIF(COALESCE(SUM(financials.revenue), 0), 0)))), 0))
     description: CAC Payback Period. The number of months required to recover the cost of acquiring a customer. Also called "Months to Recover CAC" or "Time to Recover CAC."
     datatype: Decimal
     ai_context:
@@ -1653,9 +1337,7 @@ metrics:
         data: '{"gasp_id":"cac_payback","gasp_version":"1","unit":"months","formula":"metric.cac / (metric.arpa * metric.gross_margin)"}'
   - name: gasp_cac_payback_o
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: (CAST(((CAST((COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'gtm'), 0) + COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function IN ('implementation', 'onboarding')), 0)) AS DECIMAL) / NULLIF((COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'new')), 0))) AS DECIMAL) / NULLIF((((CAST((COALESCE(SUM(subscription.mrr) FILTER (WHERE subscription.subscription_status = 'active'), 0)) AS DECIMAL) / NULLIF((COUNT(DISTINCT customer.customer_id) FILTER (WHERE customer.customer_status = 'active')), 0))) * ((CAST(((COALESCE(SUM(financials.revenue), 0) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'infrastructure'), 0)) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function IN ('support', 'success_engineering', 'implementation', 'onboarding')), 0)) AS DECIMAL) / NULLIF(COALESCE(SUM(financials.revenue), 0), 0)))), 0))
+      sql: (CAST(((CAST((COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'gtm'), 0) + COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function IN ('implementation', 'onboarding')), 0)) AS DECIMAL) / NULLIF((COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'new')), 0))) AS DECIMAL) / NULLIF((((CAST((COALESCE(SUM(subscription.mrr) FILTER (WHERE subscription.subscription_status = 'active'), 0)) AS DECIMAL) / NULLIF((COUNT(DISTINCT customer.customer_id) FILTER (WHERE customer.customer_status = 'active')), 0))) * ((CAST(((COALESCE(SUM(financials.revenue), 0) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'infrastructure'), 0)) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function IN ('support', 'success_engineering', 'implementation', 'onboarding')), 0)) AS DECIMAL) / NULLIF(COALESCE(SUM(financials.revenue), 0), 0)))), 0))
     description: CAC Payback Period, Operating form. The number of months required to recover the cost of acquiring a customer. Also called "Months to Recover CAC" or "Time to Recover CAC."
     datatype: Decimal
     ai_context:
@@ -1667,9 +1349,7 @@ metrics:
         data: '{"gasp_id":"cac_payback","gasp_version":"1","form":"O","unit":"months","formula":"metric.cac.O / (metric.arpa * metric.gross_margin.O)"}'
   - name: gasp_cac_payback_m
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: (CAST(((CAST(COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'gtm'), 0) AS DECIMAL) / NULLIF((COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'new')), 0))) AS DECIMAL) / NULLIF((((CAST((COALESCE(SUM(subscription.mrr) FILTER (WHERE subscription.subscription_status = 'active'), 0)) AS DECIMAL) / NULLIF((COUNT(DISTINCT customer.customer_id) FILTER (WHERE customer.customer_status = 'active')), 0))) * ((CAST((COALESCE(SUM(financials.revenue), 0) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'infrastructure'), 0)) AS DECIMAL) / NULLIF(COALESCE(SUM(financials.revenue), 0), 0)))), 0))
+      sql: (CAST(((CAST(COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'gtm'), 0) AS DECIMAL) / NULLIF((COUNT(DISTINCT revenue_event.customer_id) FILTER (WHERE revenue_event.event_type = 'new')), 0))) AS DECIMAL) / NULLIF((((CAST((COALESCE(SUM(subscription.mrr) FILTER (WHERE subscription.subscription_status = 'active'), 0)) AS DECIMAL) / NULLIF((COUNT(DISTINCT customer.customer_id) FILTER (WHERE customer.customer_status = 'active')), 0))) * ((CAST((COALESCE(SUM(financials.revenue), 0) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'infrastructure'), 0)) AS DECIMAL) / NULLIF(COALESCE(SUM(financials.revenue), 0), 0)))), 0))
     description: CAC Payback Period, Market form. The number of months required to recover the cost of acquiring a customer. Also called "Months to Recover CAC" or "Time to Recover CAC."
     datatype: Decimal
     ai_context:
@@ -1681,9 +1361,7 @@ metrics:
         data: '{"gasp_id":"cac_payback","gasp_version":"1","form":"M","unit":"months","formula":"metric.cac.M / (metric.arpa * metric.gross_margin.M)"}'
   - name: gasp_gross_margin
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: (CAST((COALESCE(SUM(financials.revenue), 0) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'infrastructure'), 0)) AS DECIMAL) / NULLIF(COALESCE(SUM(financials.revenue), 0), 0))
+      sql: (CAST((COALESCE(SUM(financials.revenue), 0) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'infrastructure'), 0)) AS DECIMAL) / NULLIF(COALESCE(SUM(financials.revenue), 0), 0))
     description: Gross Margin. Revenue minus cost of goods sold (COGS), as a percentage of revenue. Measures profitability after direct delivery costs.
     datatype: Decimal
     ai_context:
@@ -1693,9 +1371,7 @@ metrics:
         data: "{\"gasp_id\":\"gross_margin\",\"gasp_version\":\"1\",\"unit\":\"percent\",\"formula\":\"(sum(field.revenue) - sum(field.cost where field.cost_function = 'infrastructure')) / sum(field.revenue)\"}"
   - name: gasp_gross_margin_o
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: (CAST(((COALESCE(SUM(financials.revenue), 0) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'infrastructure'), 0)) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function IN ('support', 'success_engineering', 'implementation', 'onboarding')), 0)) AS DECIMAL) / NULLIF(COALESCE(SUM(financials.revenue), 0), 0))
+      sql: (CAST(((COALESCE(SUM(financials.revenue), 0) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'infrastructure'), 0)) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function IN ('support', 'success_engineering', 'implementation', 'onboarding')), 0)) AS DECIMAL) / NULLIF(COALESCE(SUM(financials.revenue), 0), 0))
     description: Gross Margin, Operating form. Revenue minus cost of goods sold (COGS), as a percentage of revenue. Measures profitability after direct delivery costs.
     datatype: Decimal
     ai_context:
@@ -1705,9 +1381,7 @@ metrics:
         data: "{\"gasp_id\":\"gross_margin\",\"gasp_version\":\"1\",\"form\":\"O\",\"unit\":\"percent\",\"formula\":\"(sum(field.revenue) - sum(field.cost where field.cost_function = 'infrastructure') - sum(field.cost where field.cost_function in ('support', 'success_engineering', 'implementation', 'onboarding'))) / sum(field.revenue)\"}"
   - name: gasp_gross_margin_m
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: (CAST((COALESCE(SUM(financials.revenue), 0) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'infrastructure'), 0)) AS DECIMAL) / NULLIF(COALESCE(SUM(financials.revenue), 0), 0))
+      sql: (CAST((COALESCE(SUM(financials.revenue), 0) - COALESCE(SUM(cost_event.cost) FILTER (WHERE cost_event.cost_function = 'infrastructure'), 0)) AS DECIMAL) / NULLIF(COALESCE(SUM(financials.revenue), 0), 0))
     description: Gross Margin, Market form. Revenue minus cost of goods sold (COGS), as a percentage of revenue. Measures profitability after direct delivery costs.
     datatype: Decimal
     ai_context:
@@ -1717,9 +1391,7 @@ metrics:
         data: "{\"gasp_id\":\"gross_margin\",\"gasp_version\":\"1\",\"form\":\"M\",\"unit\":\"percent\",\"formula\":\"(sum(field.revenue) - sum(field.cost where field.cost_function = 'infrastructure')) / sum(field.revenue)\"}"
   - name: gasp_rule_of_40
     expression:
-      dialects:
-        - dialect: OSSIE_SQL_2026
-          expression: SUM(gasp_staged_gasp_rule_of_40.value)
+      sql: SUM(gasp_staged_gasp_rule_of_40.value)
     description: Rule of 40. A heuristic that balances growth and profitability. A healthy SaaS company's growth rate plus profit margin should equal 40% or more.
     datatype: Decimal
     ai_context:
