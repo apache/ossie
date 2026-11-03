@@ -42,3 +42,4 @@ alphabetically by token, and a test enforces that order.
 | [`dialects/`](dialects/) | References for individual dialects, such as [`pyiceberg.md`](dialects/pyiceberg.md). |
 | [`vendors.md`](vendors.md) | `vendor_name` tokens, and the payload convention, for `nonportable_extensions`. |
 | [`nonportable_extensions.md`](nonportable_extensions.md) | What `nonportable_extensions` is, and quoted versus unquoted `data` values. |
+| [`tool-mappings.md`](tool-mappings.md) | Non-normative dialect variations and BI-tool function mappings. |
