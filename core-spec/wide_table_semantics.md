@@ -226,7 +226,7 @@ A **component** is an aggregate expression over fields of one **home dataset**. 
 
 The **empty-input value** of a component is its value over no rows. For example, `SUM(x)` gives NULL, `COUNT(*)` gives 0, `COALESCE(SUM(x), 0)` gives 0, and `SUM(revenue) / NULLIF(COUNT(*), 0)` gives NULL. It equals the value of `AGG()` for an empty input set (Layer 2 Section 8.1). Section 5.5 requires it.
 
-An engine MUST reject a model-scoped metric expression that contains:
+An engine MUST reject a query that names a model-scoped metric whose expression contains:
 
 - an unaggregated field, such as `SUM(orders.amount) * customers.rate` ([`E_UNAGGREGATED_FINER_GRAIN_REFERENCE`](#8-errors));
 - a window function, such as `SUM(orders.amount) OVER (ORDER BY orders.order_date)` (deferred; [`E_DEFERRED_WINDOWED_METRIC`](#8-errors));
@@ -379,9 +379,9 @@ An engine reports each error with its code. If a query meets the conditions of s
 | 7 | `E_WINDOW_IN_WHERE` | The filter contains a window function. | Section 3.4 |
 | 8 | `E_CROSS_DATASET_FILTER` | The filter reads fields of more than one dataset. | Section 3.4 |
 | 9 | `E_NAME_COLLISION` | Two entries have the same output name. | Section 3.3 |
-| 10 | `E_UNAGGREGATED_FINER_GRAIN_REFERENCE` | A model-scoped metric has a field reference outside every aggregate. | Section 5.2 |
-| 11 | `E_DEFERRED_WINDOWED_METRIC` | A model-scoped metric contains a window function. Deferred. | Section 5.2 |
-| 12 | `E_AMBIGUOUS_MEASURE_GRAIN` | An aggregate in a model-scoped metric has arguments that read several datasets (deferred), has a `FILTER` that reads a dataset other than the one its arguments read, or has arguments that read no dataset. | Section 5.2 |
+| 10 | `E_UNAGGREGATED_FINER_GRAIN_REFERENCE` | A model-scoped metric of the query has a field reference outside every aggregate. | Section 5.2 |
+| 11 | `E_DEFERRED_WINDOWED_METRIC` | A model-scoped metric of the query contains a window function. Deferred. | Section 5.2 |
+| 12 | `E_AMBIGUOUS_MEASURE_GRAIN` | An aggregate in a model-scoped metric of the query has arguments that read several datasets (deferred), has a `FILTER` that reads a dataset other than the one its arguments read, or has arguments that read no dataset. | Section 5.2 |
 | 13 | `E_NO_PATH` | The query has metrics, and there is a dimension whose dataset none of them reaches. | Section 5.3 |
 | 14 | `E_PARTIAL_DIMENSION_REACHABILITY` | There is a dimension whose dataset some, but not all, metrics of the query reach. | Section 5.3 |
 | 15 | `E_NO_ANCHOR` | A query without metrics has no anchor. | Section 5.6 |
@@ -417,6 +417,7 @@ Extensions should preserve this version's behavior by default. Controls over pat
 - **Metric-value predicates (`HAVING`):** these can also break S6. Filtering may reduce a region's revenue from 300 to 100, causing it to satisfy `revenue < 200`.
 - **Grouping sets and row listings:** `ROLLUP`, `CUBE`, and `GROUPING SETS`; branch stitching would include `GROUPING()` in the key to distinguish subtotals from NULL groups.
 - **Additional join types:** for example, `INNER JOIN` when referential integrity is declared.
+- **Trusted cardinality:** a model declaration, in the manner of SQL `RELY` constraints, that lets an engine assume a relationship's declared cardinality, for example to skip de-duplication. The result on data that violates it would then be undefined, so S5 would not hold for that data. It changes measure evaluation, so it belongs in Layer 2, which lists `RELY` hints as a future extension (Layer 2 Section 13.2). In this version, the result is that of the Layer 2 lowering whether or not the data satisfies the declared cardinality (Section 4).
 - **Anchored metric queries:** choosing a dataset whose dimension values determine all groups, restoring closure (Section 6.1).
 - **More expressions:** scalar dimension expressions, aggregate metric expressions, expressions over metrics, and result-level window functions.
 
