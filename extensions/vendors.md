@@ -35,11 +35,15 @@ and consumes, see the
 This is a registry of `vendor_name` tokens the community uses (see
 [`README.md`](README.md) for how these lists are used).
 
+Each token identifies one vendor or tool. The registry has no shared,
+cross-vendor token. Metadata that more than one vendor needs belongs in the
+core specification, where it has defined semantics, and not in an opaque
+extension payload.
+
 ## Known vendors
 
 | Vendor | Description |
 |--------|-------------|
-| `COMMON` | Common/standard extensions |
 | `SNOWFLAKE` | Snowflake-specific attributes |
 | `SALESFORCE` | Salesforce/Tableau-specific attributes |
 | `DBT` | dbt-specific attributes |

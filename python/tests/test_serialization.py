@@ -289,7 +289,7 @@ def _fully_populated_document() -> dict:
         "dialects": [{"dialect": "ANSI_SQL", "expression": "amount"}],
     }
     ai_context = {"instructions": "i", "synonyms": ["s"], "examples": ["e"]}
-    extensions = [{"vendor_name": "COMMON", "data": "{}"}]
+    extensions = [{"vendor_name": "DB_VENDOR", "data": "{}"}]
     return {
         "version": "0.2.0.dev0",
         "name": "m",

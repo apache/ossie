@@ -45,9 +45,7 @@ datasets:
     fields:
       - name: ss_sold_date_sk
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: ss_sold_date_sk
+          sql: ss_sold_date_sk
         description: Foreign key to date dimension
         datatype: Integer
         dimension:
@@ -59,9 +57,7 @@ datasets:
 
       - name: ss_item_sk
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: ss_item_sk
+          sql: ss_item_sk
         description: Foreign key to item dimension
         datatype: Integer
         dimension:
@@ -73,9 +69,7 @@ datasets:
 
       - name: ss_ticket_number
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: ss_ticket_number
+          sql: ss_ticket_number
         description: Ticket number identifying the sales transaction
         datatype: Integer
         dimension:
@@ -83,9 +77,7 @@ datasets:
 
       - name: ss_customer_sk
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: ss_customer_sk
+          sql: ss_customer_sk
         description: Foreign key to customer dimension
         datatype: Integer
         dimension:
@@ -97,9 +89,7 @@ datasets:
 
       - name: ss_store_sk
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: ss_store_sk
+          sql: ss_store_sk
         description: Foreign key to store dimension
         datatype: Integer
         dimension:
@@ -111,9 +101,7 @@ datasets:
 
       - name: ss_quantity
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: ss_quantity
+          sql: ss_quantity
         description: Quantity of items sold
         datatype: Integer
         ai_context:
@@ -123,9 +111,7 @@ datasets:
 
       - name: ss_sales_price
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: ss_sales_price
+          sql: ss_sales_price
         description: Sales price per unit
         datatype: Decimal
         ai_context:
@@ -135,9 +121,7 @@ datasets:
 
       - name: ss_ext_sales_price
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: ss_ext_sales_price
+          sql: ss_ext_sales_price
         description: Extended sales price (quantity * price)
         datatype: Decimal
         ai_context:
@@ -147,9 +131,7 @@ datasets:
 
       - name: ss_net_profit
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: ss_net_profit
+          sql: ss_net_profit
         description: Net profit from the sale
         datatype: Decimal
         ai_context:
@@ -163,9 +145,7 @@ datasets:
     metrics:
       - name: total_quantity
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: SUM(ss_quantity)
+          sql: SUM(ss_quantity)
         description: Total quantity sold across all store sales
         datatype: Integer
 
@@ -185,9 +165,7 @@ datasets:
     fields:
       - name: d_date_sk
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: d_date_sk
+          sql: d_date_sk
         description: Surrogate key for date
         datatype: Integer
         dimension:
@@ -195,9 +173,7 @@ datasets:
 
       - name: d_date
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: d_date
+          sql: d_date
         description: Actual date value
         datatype: Date
         dimension: {}
@@ -208,9 +184,7 @@ datasets:
 
       - name: d_year
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: d_year
+          sql: d_year
         description: Year
         datatype: Integer
         dimension:
@@ -223,9 +197,7 @@ datasets:
       # Both datatype and is_time are independently optional.
       - name: d_quarter_name
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: d_quarter_name
+          sql: d_quarter_name
         description: Quarter name (e.g., 2024Q1)
         dimension:
           is_time: true
@@ -238,9 +210,7 @@ datasets:
       # Both datatype and is_time are independently optional.
       - name: d_moy
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: d_moy
+          sql: d_moy
         description: Month of year (1-12)
         dimension:
           is_time: true
@@ -265,9 +235,7 @@ datasets:
     fields:
       - name: c_customer_sk
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: c_customer_sk
+          sql: c_customer_sk
         description: Surrogate key for customer
         datatype: Integer
         dimension:
@@ -275,9 +243,7 @@ datasets:
 
       - name: c_customer_id
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: c_customer_id
+          sql: c_customer_id
         description: Business key for customer
         datatype: String
         dimension:
@@ -289,9 +255,7 @@ datasets:
 
       - name: c_first_name
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: c_first_name
+          sql: c_first_name
         description: Customer first name
         datatype: String
         dimension:
@@ -299,9 +263,7 @@ datasets:
 
       - name: c_last_name
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: c_last_name
+          sql: c_last_name
         description: Customer last name
         datatype: String
         dimension:
@@ -311,9 +273,6 @@ datasets:
         expression:
           # Primary, portable OSSIE_SQL_2026 form
           sql: c_first_name || ' ' || c_last_name
-          dialects:
-            - dialect: ANSI_SQL
-              expression: c_first_name || ' ' || c_last_name
         description: Customer full name (computed field)
         datatype: String
         dimension:
@@ -325,9 +284,7 @@ datasets:
 
       - name: c_email_address
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: c_email_address
+          sql: c_email_address
         description: Customer email address
         datatype: String
         dimension:
@@ -353,9 +310,7 @@ datasets:
     fields:
       - name: i_item_sk
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: i_item_sk
+          sql: i_item_sk
         description: Surrogate key for item
         datatype: Integer
         dimension:
@@ -363,9 +318,7 @@ datasets:
 
       - name: i_item_id
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: i_item_id
+          sql: i_item_id
         description: Business key for item
         datatype: String
         dimension:
@@ -378,9 +331,7 @@ datasets:
 
       - name: i_item_desc
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: i_item_desc
+          sql: i_item_desc
         description: Item description
         datatype: String
         dimension:
@@ -392,9 +343,7 @@ datasets:
 
       - name: i_brand
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: i_brand
+          sql: i_brand
         description: Brand name
         datatype: String
         dimension:
@@ -406,9 +355,7 @@ datasets:
 
       - name: i_category
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: i_category
+          sql: i_category
         description: Item category
         datatype: String
         dimension:
@@ -420,9 +367,7 @@ datasets:
 
       - name: i_current_price
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: i_current_price
+          sql: i_current_price
         description: Current price of the item
         datatype: Decimal
         dimension:
@@ -448,9 +393,7 @@ datasets:
     fields:
       - name: s_store_sk
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: s_store_sk
+          sql: s_store_sk
         description: Surrogate key for store
         datatype: Integer
         dimension:
@@ -458,9 +401,7 @@ datasets:
 
       - name: s_store_id
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: s_store_id
+          sql: s_store_id
         description: Business key for store
         datatype: String
         dimension:
@@ -472,9 +413,7 @@ datasets:
 
       - name: s_store_name
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: s_store_name
+          sql: s_store_name
         description: Store name
         datatype: String
         dimension:
@@ -486,9 +425,7 @@ datasets:
 
       - name: s_city
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: s_city
+          sql: s_city
         description: City where store is located
         datatype: String
         dimension:
@@ -500,9 +437,7 @@ datasets:
 
       - name: s_state
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: s_state
+          sql: s_state
         description: State where store is located
         datatype: String
         dimension:
@@ -514,9 +449,7 @@ datasets:
 
       - name: s_number_employees
         expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: s_number_employees
+          sql: s_number_employees
         description: Number of employees at the store
         datatype: Integer
         ai_context:
@@ -570,9 +503,7 @@ relationships:
 metrics:
   - name: total_sales
     expression:
-      dialects:
-        - dialect: ANSI_SQL
-          expression: SUM(store_sales.ss_ext_sales_price)
+      sql: SUM(store_sales.ss_ext_sales_price)
     description: Total sales revenue across all transactions
     datatype: Decimal
     ai_context:
@@ -583,9 +514,7 @@ metrics:
 
   - name: total_profit
     expression:
-      dialects:
-        - dialect: ANSI_SQL
-          expression: SUM(store_sales.ss_net_profit)
+      sql: SUM(store_sales.ss_net_profit)
     description: Total net profit from store sales
     datatype: Decimal
     ai_context:
@@ -596,9 +525,7 @@ metrics:
 
   - name: customer_lifetime_value
     expression:
-      dialects:
-        - dialect: ANSI_SQL
-          expression: SUM(store_sales.ss_ext_sales_price) / COUNT(DISTINCT customer.c_customer_sk)
+      sql: SUM(store_sales.ss_ext_sales_price) / COUNT(DISTINCT customer.c_customer_sk)
     description: Average lifetime sales value per customer
     datatype: Decimal
     ai_context:
@@ -610,9 +537,7 @@ metrics:
 
   - name: sales_by_brand
     expression:
-      dialects:
-        - dialect: ANSI_SQL
-          expression: SUM(store_sales.ss_ext_sales_price)
+      sql: SUM(store_sales.ss_ext_sales_price)
     description: Total sales by brand (requires grouping by item.i_brand)
     datatype: Decimal
     ai_context:
@@ -623,9 +548,7 @@ metrics:
 
   - name: store_productivity
     expression:
-      dialects:
-        - dialect: ANSI_SQL
-          expression: SUM(store_sales.ss_ext_sales_price) / NULLIF(SUM(store.s_number_employees), 0)
+      sql: SUM(store_sales.ss_ext_sales_price) / NULLIF(SUM(store.s_number_employees), 0)
     description: Sales per employee across stores
     datatype: Decimal
     ai_context:
@@ -638,9 +561,7 @@ metrics:
   # grain named in the description is the GROUP BY the query is expected to supply.
   - name: cumulative_sales
     expression:
-      dialects:
-        - dialect: ANSI_SQL
-          expression: SUM(SUM(store_sales.ss_ext_sales_price)) OVER (ORDER BY date_dim.d_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+      sql: SUM(SUM(store_sales.ss_ext_sales_price)) OVER (ORDER BY date_dim.d_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
     description: Running total of sales revenue by date (requires grouping by date_dim.d_date)
     datatype: Decimal
     ai_context:
@@ -651,9 +572,7 @@ metrics:
 
   - name: brand_rank_in_store
     expression:
-      dialects:
-        - dialect: ANSI_SQL
-          expression: RANK() OVER (PARTITION BY store.s_store_sk ORDER BY SUM(store_sales.ss_ext_sales_price) DESC)
+      sql: RANK() OVER (PARTITION BY store.s_store_sk ORDER BY SUM(store_sales.ss_ext_sales_price) DESC)
     description: Rank of each brand by sales within a store, 1 = highest (requires grouping by store.s_store_sk and item.i_brand)
     datatype: Integer
     ai_context:
@@ -664,9 +583,7 @@ metrics:
 
   - name: monthly_sales_change
     expression:
-      dialects:
-        - dialect: ANSI_SQL
-          expression: SUM(store_sales.ss_ext_sales_price) - LAG(SUM(store_sales.ss_ext_sales_price), 1) OVER (ORDER BY date_dim.d_year, date_dim.d_moy)
+      sql: SUM(store_sales.ss_ext_sales_price) - LAG(SUM(store_sales.ss_ext_sales_price), 1) OVER (ORDER BY date_dim.d_year, date_dim.d_moy)
     description: Sales revenue change versus the previous month (requires grouping by date_dim.d_year and date_dim.d_moy)
     datatype: Decimal
     ai_context:
