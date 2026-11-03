@@ -405,6 +405,32 @@ def test_ontology_still_accepts_an_empty_description(ontology_validator):
     assert not _only_min_length_paths(ontology_validator, document)
 
 
+@pytest.mark.parametrize("language", ["en", "pt-BR", "zh-Hant-TW", "es-419", "fil"])
+def test_ontology_accepts_a_language_tag(ontology_validator, language):
+    document = _detailed_ontology()
+    document["language"] = language
+
+    assert not list(ontology_validator.iter_errors(document))
+
+
+@pytest.mark.parametrize(
+    "language",
+    ["", "pt-br", "EN", "en_US", "en-", "en-US-x-private", "english",
+     "und", "mul", "zxx", "mis", "qst"],
+    ids=["empty", "region-lowercase", "language-uppercase", "underscore",
+         "trailing-hyphen", "private-use-subtag", "not-a-tag",
+         "undetermined", "multiple", "no-linguistic-content", "uncoded",
+         "private-use-language"],
+)
+def test_ontology_rejects_an_invalid_language_tag(ontology_validator, language):
+    """Only one well-formed, canonical-case tag naming a single language passes."""
+    document = _detailed_ontology()
+    document["language"] = language
+
+    assert [(tuple(e.absolute_path), e.validator)
+            for e in ontology_validator.iter_errors(document)] == [(("language",), "pattern")]
+
+
 def _mapping_with_nested_mappings() -> dict:
     document = _mapping_document()
     document["concept_mappings"] = [
