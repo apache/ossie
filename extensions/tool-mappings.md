@@ -1,8 +1,27 @@
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+-->
+
 # Dialect and Tool Mappings
 
 This document contains non-normative dialect-specific examples and BI-tool function mappings. These tables are references, not requirements for the portable core expression language.
 
-### Common Dialect Variations
+## Common Dialect Variations
 
 | Function | ANSI\_SQL | Snowflake | BigQuery | Databricks | PostgreSQL |
 | :---- | :---- | :---- | :---- | :---- | :---- |
@@ -13,9 +32,10 @@ This document contains non-normative dialect-specific examples and BI-tool funct
 | Current timestamp | `CURRENT_TIMESTAMP` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP()` | `CURRENT_TIMESTAMP` |
 | Substring | `SUBSTRING(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTR(s, start, len)` | `SUBSTRING(s, start, len)` | `SUBSTRING(s, start, len)` |
 
-### Dialect-Specific Extensions
+## Dialect-Specific Extensions
 
 Vendors may expose their own features through extensions. By default, Ossie should pass unknown values through.
+
 ---
 
 ## Cross-Reference: Tool Mappings
@@ -118,8 +138,6 @@ to ANSI SQL. See the [converter limitations](https://github.com/apache/ossie-con
 ---
 
 ## Database Function Support
-
-
 
 | Function | Snowflake | BigQuery | Databricks | PostgreSQL |
 | :---- | :---- | :---- | :---- | :---- |
