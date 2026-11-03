@@ -24,8 +24,8 @@ Custom extensions attach platform-specific metadata to a model (see
 
 ```yaml
 custom_extensions:
-  - vendor_name: string # Free-form string identifying the vendor
-    data: string # JSON string containing vendor-specific data
+  - vendor_name: string  # Free-form string identifying the vendor
+    data: string         # JSON string containing vendor-specific data
 ```
 
 `vendor_name` is a free-form string and `data` is an opaque string that Ossie
@@ -42,21 +42,20 @@ extension payload.
 
 ## Known vendors
 
-| Vendor        | Description                            |
-| ------------- | -------------------------------------- |
-| `COMMON`      | Common/standard extensions             |
-| `SNOWFLAKE`   | Snowflake-specific attributes          |
-| `SALESFORCE`  | Salesforce/Tableau-specific attributes |
-| `DBT`         | dbt-specific attributes                |
-| `DATABRICKS`  | Databricks-specific attributes         |
-| `GOODDATA`    | GoodData-specific attributes           |
-| `SEMANTIDO`   | Semantido-specific attributes          |
-| `HONEYDEW`    | Honeydew-specific attributes           |
-| `WISDOM`      | WisdomAI-specific attributes           |
-| `POWER_BI`    | Microsoft Power BI-specific attributes |
-| `SIGMA`       | Sigma Computing-specific attributes    |
-| `THOUGHTSPOT` | ThoughtSpot-specific attributes        |
-| `HEX`         | Hex-specific attributes                |
-| `ATACCAMA`    | Ataccama-specific attributes           |
-| `OMNI`        | Omni-specific attributes               |
-| `PRECISELY`   | Precisely-specific attributes          |
+| Vendor | Description |
+|--------|-------------|
+| `SNOWFLAKE` | Snowflake-specific attributes |
+| `SALESFORCE` | Salesforce/Tableau-specific attributes |
+| `DBT` | dbt-specific attributes |
+| `DATABRICKS` | Databricks-specific attributes |
+| `GOODDATA` | GoodData-specific attributes |
+| `SEMANTIDO` | Semantido-specific attributes |
+| `HONEYDEW` | Honeydew-specific attributes |
+| `WISDOM` | WisdomAI-specific attributes |
+| `POWER_BI` | Microsoft Power BI-specific attributes |
+| `SIGMA` | Sigma Computing-specific attributes |
+| `THOUGHTSPOT` | ThoughtSpot-specific attributes |
+| `HEX` | Hex-specific attributes |
+| `ATACCAMA` | Ataccama-specific attributes |
+| `OMNI` | Omni-specific attributes |
+| `PRECISELY` | Precisely-specific attributes |
