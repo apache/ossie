@@ -45,6 +45,29 @@ the [current core specification](../core-spec/spec.md) and
 | 2026-10-26 | Core [#617](https://github.com/apache/ossie/pull/617) | **Portable `expression.sql` and open vendor dialect tokens.** The Ossie-defined portable expression becomes primary, while vendor-specific dialects stay opaque and extensible. | Existing `expression.dialects` remains accepted; writers should prefer `expression.sql` for portable SQL, and readers should give it precedence over a duplicate `OSSIE_SQL_2026` dialect entry. Dialect names are no longer a closed enum; consumers must tolerate unknown values. |
 | 2026-11-01 | Ontology [#668](https://github.com/apache/ossie/pull/668) | **Non-empty ontology identifiers.** Validation now rejects empty names, IRIs, references, and mapping SQL expressions, matching existing restrictions elsewhere. | Authors should supply non-empty values for identifying strings. Some malformed documents that previously passed schema validation now fail earlier, with schema-layer errors. |
 
+## Semi-automated discovery and upkeep
+
+The rows above are **curated highlights**, not an exhaustive release log. For
+the live stream of all merged work, use the
+[GitHub merged-PR list](https://github.com/apache/ossie/pulls?q=is%3Apr+is%3Amerged);
+the most recent merge may not be reflected here immediately.
+
+To reduce drift, maintainers can run an **offline, standard-library-only**
+audit from a repository checkout:
+
+```bash
+python scripts/audit-spec-changes.py --since 2026-09-01
+```
+
+The audit examines first-parent commits touching `core-spec/` or `ontology/`,
+extracts linked PR numbers when present in commit subjects, and lists those
+**not yet represented** in this history. It is advisory, not a release gate:
+editorial PRs may be intentionally omitted, and commits without PR numbers
+cannot be discovered automatically. Reviewers decide which changes materially
+affect interoperability, rather than inferring migration advice from code.
+For a significant specification PR, add its history entry **in the same PR**
+or explain why no entry is warranted in the PR checklist.
+
 ## Keeping this history useful
 
 For future **merged** specification changes that materially affect adopters,
