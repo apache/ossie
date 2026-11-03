@@ -137,7 +137,7 @@ All parts are optional, but a query MUST include at least one dimension or metri
 
 Each reference MUST resolve ([`E_NAME_NOT_FOUND`](#8-errors)). Each dimension MUST name a field ([`E_METRIC_IN_DIMENSIONS`](#8-errors)), and each metric MUST name a metric ([`E_FIELD_IN_METRICS`](#8-errors)). The dataset that declares a dimension's field is the **dataset of the dimension**. Expressions over metrics (such as Layer 2's `AGG(revenue) - AGG(cost)`), row listings, sorting, limits, and predicates on metric values are not supported (Appendix A.1).
 
-In a query with one branch (Section 5.4), a dimension that is unique and non-NULL in the home dataset, such as `orders.order_id` with `orders.total_revenue`, gives one group for each home row that the filter keeps. Other branches can add groups. For example, `customers.customer_id` with metrics of `customers` and of `orders` gives an extra NULL group for orders without a matching customer.
+In a query with one branch (Section 5.4), a dimension that is unique and non-NULL in the home dataset, such as `orders.order_id` with `orders.total_revenue`, gives one group for each home row that the filter keeps. If the query also has dimensions of other datasets, this holds if the data satisfies the declared cardinality (Section 4); otherwise a home row can give several groups. Other branches can add groups. For example, `customers.customer_id` with metrics of `customers` and of `orders` gives an extra NULL group for orders without a matching customer.
 
 ### 3.3 Aliases and output names
 
@@ -155,7 +155,7 @@ Every dimension or metric can have an identifier **alias** (Layer 1). Its **outp
 - All field references (`dataset.field`) MUST belong to one dataset, the **dataset of the filter** ([`E_CROSS_DATASET_FILTER`](#8-errors)).
 - A filter with no field references, such as `TRUE`, `FALSE`, or `1 = 0`, has no dataset. It needs no reachability check, and it is evaluated in every branch (Section 5.3).
 - The filter MUST NOT contain aggregates or metric references ([`E_AGGREGATE_IN_WHERE`](#8-errors)), or window functions ([`E_WINDOW_IN_WHERE`](#8-errors)).
-- The filter applies to every branch (Section 5.4). A home row (Section 5.2) matches at most one row in the dataset of the filter; if none matches, that dataset's fields are NULL. FALSE and NULL predicates remove the row.
+- The filter applies to every branch (Section 5.4), and it is evaluated on each row that the branch's joins produce. FALSE and NULL predicates remove that row. If no row of the dataset of the filter matches a home row (Section 5.2), that dataset's fields are NULL. If the data satisfies the declared cardinality (Section 4), a home row matches at most one row of that dataset.
 
 For an order with no matching customer, `customers.region <> 'WEST'` removes the order while `customers.region IS DISTINCT FROM 'WEST'` retains it. A predicate reading both `orders.status` and `customers.segment` is rejected. Multiple filters may be added in a future version.
 
@@ -197,15 +197,15 @@ The binding identifies the model and reports the errors of Section 8.
 
 ## 4. Paths
 
-The **relationship graph** contains one node per dataset and one edge per relationship. Each relationship equates its `from_columns` with its `to_columns`; `from` is the many side and `to` the one side (core specification, Relationships).
+The **relationship graph** contains one node per dataset and one edge per relationship. Each relationship equates its `from_columns` with its `to_columns`; `from` is the many side and `to` the one side (core specification, Relationships). This many-to-one direction is the relationship's **declared cardinality**; the data need not satisfy it (Layer 2 Section 11.3).
 
-- A **step** crosses a relationship from `from` to `to`, matching at most one row.
+- A **step** crosses a relationship from `from` to `to`. If the data satisfies the declared cardinality, a step matches at most one `to` row for each `from` row.
 - A **path** from dataset X to dataset Y is a sequence of steps from X to Y with no repeated dataset. The path from a dataset to itself is empty. Y is **reachable** from X if such a path exists.
-- The lowering joins Y to X along the path from X to Y. If two or more paths lead from X to Y, the engine MUST raise [`E_AMBIGUOUS_PATH`](#8-errors), even if one path is shorter. For example, the sale date and the store's closing date give two paths from `store_sales` to `date_dim` (Appendix B.3).
+- The lowering joins Y to X along the path from X to Y. If two or more paths lead from X to Y, the engine MUST raise [`E_AMBIGUOUS_PATH`](#8-errors), even if one path is shorter. For example, if `store` relates to `date_dim` through its closing date, the sale date and the closing date give two paths from `store_sales` to `date_dim` (Appendix B.3).
 
 Only many-to-one steps are supported. Layer 2's `AGG()` also handles joins in the reverse direction (Layer 2 Section 8.3), but those paths are outside this version's shared-dimension scope.
 
-The lowering uses `LEFT JOIN` to preserve rows without matches. Engines trust declared cardinality; results are undefined when the data violates it. Self-relationships do not participate in paths.
+The lowering uses `LEFT JOIN` to preserve rows without matches. Declared cardinality affects only which paths exist. When the data violates it, the result is still that of the Layer 2 lowering, in which a home row counts once in each group it matches after the filter. Self-relationships do not participate in paths.
 
 ---
 
@@ -250,8 +250,8 @@ The **datasets of a metric** are its components' home datasets. A dataset is **r
 
 Every dimension dataset, and the filter dataset if the filter has one, MUST be reachable from every queried metric. Otherwise the engine MUST raise:
 
-- [`E_NO_PATH`](#8-errors) if no metric reaches a dimension dataset;
-- [`E_PARTIAL_DIMENSION_REACHABILITY`](#8-errors) if some, but not all, metrics reach a dimension dataset;
+- [`E_NO_PATH`](#8-errors) if there is a dimension whose dataset no metric reaches;
+- [`E_PARTIAL_DIMENSION_REACHABILITY`](#8-errors) if there is a dimension whose dataset some, but not all, metrics reach;
 - [`E_UNSUPPORTED_FILTER_PATH`](#8-errors) if any metric cannot reach the filter dataset.
 
 A filter without a dataset requires no reachability check, and it is evaluated in every branch.
@@ -335,7 +335,7 @@ These properties follow from the lowering; they introduce no additional requirem
 
 | Property | Basis |
 |---|---|
-| **S1. Preserve home rows.** Every home row contributes to one group (NULL if unmatched), unless filtered out. | `LEFT JOIN` from the home dataset (Section 5.4) |
+| **S1. Preserve home rows.** Every home row contributes to at least one group (NULL if unmatched), unless filtered out. If the data satisfies the declared cardinality (Section 4), a home row that is not filtered out contributes to exactly one. | `LEFT JOIN` from the home dataset (Section 5.4) |
 | **S2. Avoid double counting.** A home row is counted at most once per group. | `AGG()` (Layer 2 Section 8.3) |
 | **S3. Preserve metric groups.** Every group's dimension tuple survives the branch combination, exactly once. | Section 5.5 |
 | **S4. Avoid unsafe re-aggregation.** Components are evaluated at the requested grouping. | `AGG()` |
@@ -382,8 +382,8 @@ An engine reports each error with its code. If a query meets the conditions of s
 | 10 | `E_UNAGGREGATED_FINER_GRAIN_REFERENCE` | A model-scoped metric has a field reference outside every aggregate. | Section 5.2 |
 | 11 | `E_DEFERRED_WINDOWED_METRIC` | A model-scoped metric contains a window function. Deferred. | Section 5.2 |
 | 12 | `E_AMBIGUOUS_MEASURE_GRAIN` | An aggregate in a model-scoped metric has arguments that read several datasets (deferred), has a `FILTER` that reads a dataset other than the one its arguments read, or has arguments that read no dataset. | Section 5.2 |
-| 13 | `E_NO_PATH` | No metric of the query reaches the dataset of a dimension. | Section 5.3 |
-| 14 | `E_PARTIAL_DIMENSION_REACHABILITY` | Some, but not all, metrics of the query reach the dataset of a dimension. | Section 5.3 |
+| 13 | `E_NO_PATH` | The query has metrics, and there is a dimension whose dataset none of them reaches. | Section 5.3 |
+| 14 | `E_PARTIAL_DIMENSION_REACHABILITY` | There is a dimension whose dataset some, but not all, metrics of the query reach. | Section 5.3 |
 | 15 | `E_NO_ANCHOR` | A query without metrics has no anchor. | Section 5.6 |
 | 16 | `E_UNSUPPORTED_FILTER_PATH` | The filter has a dataset, and a metric, or the anchor, does not reach it. | Sections 5.3, 5.6 |
 | 17 | `E_AMBIGUOUS_PATH` | Two or more paths lead between datasets that the lowering joins, or two or more datasets qualify as the anchor. | Sections 4, 5.6 |
@@ -478,9 +478,11 @@ EAST has no visits, so `visit_count` takes the empty-input value of `COUNT(*)`, 
 
 ### B.3 Path cases
 
-- **Shared dimensions:** `store_sales` and `store_returns` both relate to `item` and `date_dim`. Querying their respective metrics by `item.brand` and `date_dim.year` succeeds with two branches.
-- **Ambiguous paths:** `store_sales` also relates to `store`, which relates to `date_dim` through its closing date. Both `store_sales.total_sales` by `date_dim.year` and a filter on `date_dim.year = 2024` raise [`E_AMBIGUOUS_PATH`](#8-errors).
-- **No path:** `customers.customer_count` by `item.brand` raises [`E_NO_PATH`](#8-errors) when `store_sales` relates to `customers`: `customers` cannot reach `store_sales` or `item`.
+`store_sales` relates to `item`, `date_dim` (through its sale date), `store`, and `customers`. `store_returns` relates to `item` and `date_dim`.
+
+- **Shared dimensions:** Querying metrics of `store_sales` and `store_returns` by `item.brand` and `date_dim.year` succeeds with two branches.
+- **Ambiguous paths:** If `store` also relates to `date_dim` through its closing date, `store_sales` has two paths to `date_dim`. Then both `store_sales.total_sales` by `date_dim.year` and `store_sales.total_sales` with the filter `date_dim.year = 2024` raise [`E_AMBIGUOUS_PATH`](#8-errors).
+- **No path:** `customers.customer_count` by `item.brand` raises [`E_NO_PATH`](#8-errors): `customers` cannot reach `store_sales` or `item`.
 - **No anchor:** `item.brand` and `store.state` with no metric raise [`E_NO_ANCHOR`](#8-errors); neither dataset reaches the other. Adding `store_sales.total_sales` makes the query valid.
 
 ### B.4 Unconnected datasets
