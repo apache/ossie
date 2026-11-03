@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Fidelity grader for the portability measurement ladder (issue #576).
+"""Fidelity grader for the portability measurement ladder (apache/ossie-converters#24, formerly #576).
 
 The grader answers one question per element: when a model is driven through a
 converter and back, what happened to each metric and field expression it started
@@ -408,7 +408,7 @@ def _format(report):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Grade a converter round-trip for #576.")
+    parser = argparse.ArgumentParser(description="Grade a converter round-trip (apache/ossie-converters#24).")
     parser.add_argument("--input", required=True, help="the input .ossie.yaml/.json document")
     parser.add_argument("--returned", required=True, help="the document the converter returned")
     parser.add_argument("--diagnostics", help="a text file of the converter's warnings/notices")
