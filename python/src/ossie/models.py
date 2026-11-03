@@ -170,7 +170,6 @@ class OssieVendor(str, Enum):
     """Well-known vendor values. The field accepts any string; see
     `extensions/vendors.md`."""
 
-    COMMON = "COMMON"
     SNOWFLAKE = "SNOWFLAKE"
     SALESFORCE = "SALESFORCE"
     DBT = "DBT"
